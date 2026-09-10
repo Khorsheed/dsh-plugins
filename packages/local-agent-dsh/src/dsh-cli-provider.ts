@@ -33,7 +33,9 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
+  assertModelExecOnly,
   assertScopeExecOnly,
+  resolveRoundModel,
   containerExecSpawn,
   containerScopedHome,
   delegationEnv,
@@ -152,10 +154,16 @@ export class DshCliProvider implements SubagentProvider {
    *   a resolver may return undefined to steer one member's round to exec
    *   while a retiring generation still hosts it).
    */
+  /**
+   * @param model - resolver for the harness's `model` plugin-config key, read
+   *   PER ROUND so a settings-card write reaches the next delegation without a
+   *   reload. A delegation that names its own model outranks it.
+   */
   constructor(
     private readonly ctx: Context,
     private readonly config: LocalAgentDshConfig,
     private readonly live?: DshLiveDriver | ((childSessionId: string) => DshLiveDriver | undefined),
+    private readonly model?: () => string | undefined,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -203,9 +211,12 @@ export class DshCliProvider implements SubagentProvider {
       assertResumeCwdUnchanged(record, cwd, 'subagent-dsh')
       // …and in the scoped home its first round ran in.
       assertResumeScopeUnchanged(record, scope, 'subagent-dsh')
-      return this.startDshResume(request, intent, cwd, homeDir, exec, scope)
+      // A resume re-requests the model the FIRST round recorded — the caller
+      // cannot name one (the facade refuses it), and a record without one is
+      // a delegation that named none, which this round repeats.
+      return this.startDshResume(request, intent, cwd, homeDir, exec, scope, record?.model)
     }
-    return this.startDshFresh(request, cwd, homeDir, exec, scope)
+    return this.startDshFresh(request, cwd, homeDir, exec, scope, intent?.model)
   }
 
   /** Fresh round: record the child session and delegation, spawn the sub-dsh create. */
@@ -215,6 +226,8 @@ export class DshCliProvider implements SubagentProvider {
     homeDir: string,
     exec: DelegationExecTarget | undefined,
     scope: string | undefined,
+    /** The model this DELEGATION requested, when the caller named one. */
+    requestedModel: string | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -261,6 +274,9 @@ export class DshCliProvider implements SubagentProvider {
       cwd,
       // …and its scoped home anchors the resume-scope check.
       ...scope === undefined ? {} : { scope },
+      // The model this delegation asked for: every resume round reads it back
+      // from here instead of the caller restating it.
+      ...requestedModel === undefined ? {} : { model: requestedModel },
     })
     // Live driver: the round goes to the resident serve process (one per
     // member). A channel that fails at spawn/handshake marks itself broken and
@@ -275,6 +291,10 @@ export class DshCliProvider implements SubagentProvider {
       // A scoped round is exec-only: the resident `serve` process is started
       // per member against the DEFAULT scoped home and its sub-profile.
       assertScopeExecOnly(scope, 'subagent-dsh')
+      // …and so is a round that names its own model: the resident sub-dsh
+      // `serve` process binds its model at spawn (`--model`) and then hosts
+      // every session it is handed.
+      assertModelExecOnly(requestedModel, 'subagent-dsh')
       try {
         return await live.startRound(request, {
           cwd,
@@ -301,6 +321,7 @@ export class DshCliProvider implements SubagentProvider {
         homeDir,
         childSession,
         sessionId: runId,
+        ...resolveRoundModel(requestedModel, this.model),
         resume: undefined,
         config: this.config,
         ctx: this.ctx,
@@ -326,6 +347,8 @@ export class DshCliProvider implements SubagentProvider {
     homeDir: string,
     exec: DelegationExecTarget | undefined,
     scope: string | undefined,
+    /** The model the delegation's FIRST round recorded, re-requested here. */
+    requestedModel: string | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -354,6 +377,7 @@ export class DshCliProvider implements SubagentProvider {
         // See the fresh path: a scoped round never goes to the resident
         // process, which binds the default scoped home.
         assertScopeExecOnly(scope, 'subagent-dsh')
+        assertModelExecOnly(requestedModel, 'subagent-dsh')
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -383,6 +407,7 @@ export class DshCliProvider implements SubagentProvider {
           homeDir,
           childSession,
           sessionId: intent.cliSessionId,
+          ...resolveRoundModel(requestedModel, this.model),
           resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
           config: this.config,
           ctx: this.ctx,
@@ -432,6 +457,13 @@ export interface DshCliRunSpec {
    * as `--session-id` on a fresh round and `--resume` on a continuation.
    */
   readonly sessionId: string
+  /**
+   * The model this round runs, spelled `provider/model` — passed to the
+   * sub-dsh as `--model`, which overrides the instance's default selection
+   * for that launch. Absent means no flag at all: the sub-dsh runs the
+   * instance's default, exactly as it did before the flag existed.
+   */
+  readonly model?: string | undefined
   /**
    * Resume round: continue the sub-dsh session named by `sessionId` with
    * `--resume` instead of a fresh `--session-id`, appending this round into
@@ -580,9 +612,14 @@ export async function startDshCliRun(
   // have pinned `cliLaunch` to the unit's own entry (`['dsh']` on the T16
   // image) — the existing config knob, not a new field on the exec target.
   const launch = dshLaunchArgv(config)
+  // The model rides `--model`, after the session flag on both variants: it is
+  // orthogonal to which session runs, and the sub-dsh's parser takes it in
+  // either mode. Nothing configured appends nothing — the argv is then
+  // byte-for-byte the shape that shipped before the flag existed.
+  const modelArgv = spec.model === undefined ? [] : ['--model', spec.model]
   const argv = spec.resume === undefined
-    ? [...launch, '--profile', profileName, '--session-id', spec.sessionId, task]
-    : [...launch, '--profile', profileName, '--resume', spec.sessionId, task]
+    ? [...launch, '--profile', profileName, '--session-id', spec.sessionId, ...modelArgv, task]
+    : [...launch, '--profile', profileName, '--resume', spec.sessionId, ...modelArgv, task]
   // The explicit env layer merges AFTER the shared credential scrub, so
   // both the credential-shaped key and the DSH_* fact survive into the
   // child — without DSH_HOME the sub-dsh would default to ~/.dsh and write

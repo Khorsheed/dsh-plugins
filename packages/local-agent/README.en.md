@@ -113,6 +113,7 @@ The `options` argument of `registry.start(parent, provider, prompt, options)` an
 | `reattach` | `resume` only: restore a non-live child session from persistence (default true); `false` fails loud instead |
 | `cwd` | The round's CLI working directory; a resume round must repeat the first round's, or it fails loud before any spawn |
 | `exec` | Run this round inside an **already-acquired container**: `{ container, workdir, env? }` |
+| `model` | The model THIS DELEGATION runs: accepted on `start` only — passing it to `resume` fails loud, because the first round's request is recorded and every later round re-requests it (none, when the first named none). A round with a model is exec-only (a resident runtime binds its model at spawn). Order below |
 | `scope` | Run this round against the harness's **named scoped home** (`<homesRoot>/<harness>@<scope>`); a resume round must repeat the first round's scope, absence included, or it fails loud |
 
 **One settled observation per round.** A provider calls `recordRoundSettled` once its round's output stream is fully parsed, and the family turns it into one `settled` progress event: the round's `observedModel`, `cliVersion`, `usage`, and its `toolCalls` (`{ count, byName }`). Every field stays absent when the round did not yield it — never guessed, never zero-filled.
@@ -120,6 +121,21 @@ The `options` argument of `registry.start(parent, provider, prompt, options)` an
 `toolCalls` is counted only from the transcript events the provider ALREADY parses — no new parse path and no second pass over the stream. `byName` keys are each CLI's own tool vocabulary (codex's `command_execution`, claude's `Bash`/`Read`, the tool names kimi's and dsh's own events carry), kept verbatim and **never normalized across harnesses**: cross-harness comparison is therefore `count` only, and `byName` is for a reader. Normalizing would invent an equivalence the CLIs never agreed to.
 
 `observedModel` and `cliVersion` merge into the delegation record (which states the delegation's latest state); `toolCalls` rides the EVENT only — it belongs to one round, and merging it would silently overwrite the previous round's count with the newest one.
+
+**The model's four layers.** Which model a round starts its CLI with is the first of these that names one:
+
+1. **the delegation's own `model`** (the `start` call option; a resume round reads the same value back off the delegation record)
+2. **the harness's `model` plugin-config key** (T30a, harness-wide)
+3. **the harness's scoped configuration file** (codex's `model`, claude's `settings.json`, kimi's `default_model`; dsh inherits the host instance's default model selection)
+4. **the CLI's own default**
+
+All four absent means no model flag on the argv at all — byte for byte the behavior before either key existed. Blank counts as absent.
+
+**Why `resume` does not take a model.** A model belongs to the DELEGATION, not to one of its rounds: the first round records what it requested and every later round re-requests it. Switching mid-conversation is something the CLI would honour and the transcript would not show, so it is a caller error that fails loud rather than a silently ignored field. To run another model, start another delegation.
+
+**Why a round with a model is exec-only.** A resident runtime (codex's `app-server`, claude's and kimi's ACP servers, the sub-dsh `serve`) binds its model when the PROCESS starts and then serves many rounds of one member. A per-delegation model would either be ignored or would silently change what every other round of that runtime runs — the same reason a named scope is refused there. The plugin-config key is not restricted this way: it is harness-wide, so a runtime bound to it is running what the instance asked for.
+
+`effectiveSettings.model` still reports the answer from **layer 2 down** — "what would a round with no model of its own run", which is the harness-wide setting the condition snapshot is asking about.
 
 **Container delegation (the `exec` target).** Given one, the provider spawns `docker exec -w <workdir> [-e NAME…] <container> <the same argv>`; stdio stays piped, and the stream parse, settle, readback and `delegations.jsonl` record are byte-for-byte the host path's. The family owns exactly one docker verb, `exec` — acquiring, mounting and destroying a container belong to the caller (lab).
 

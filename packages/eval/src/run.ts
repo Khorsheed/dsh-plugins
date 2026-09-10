@@ -874,8 +874,17 @@ async function runCellOnce(
         },
       }
       const promptBlocks = [{ type: 'text' as const, text: promptBytes.toString('utf8') }]
+      // The declared model is REQUESTED, not merely compared against: the
+      // first round names it and the family records it, so every later round
+      // of the same cell re-requests exactly that value — which is why
+      // `resume` neither takes it nor needs it. A condition that declares no
+      // model asks for none and the harness's own configuration decides, the
+      // behavior before this option existed.
       run = childSessionId === undefined
-        ? await localAgent.start(env.parentSessionId, env.condition.provider, promptBlocks, delegationOptions)
+        ? await localAgent.start(env.parentSessionId, env.condition.provider, promptBlocks, {
+          ...delegationOptions,
+          ...(env.condition.declaredModel === null ? {} : { model: env.condition.declaredModel }),
+        })
         : await localAgent.resume(env.parentSessionId, env.condition.provider, childSessionId, promptBlocks, delegationOptions)
     } catch (error) {
       clearTimeout(timer)
@@ -943,6 +952,12 @@ async function runCellOnce(
       usage,
       ...settled?.toolCalls !== undefined ? { toolCalls: settled.toolCalls } : {},
       ...settled?.cliVersion !== undefined ? { cliVersion: settled.cliVersion } : {},
+      // `requested` is what the round ASKED the harness for — the declared
+      // model when the condition names one. It is the same value as
+      // `declared` by construction today, and recorded separately because the
+      // two answer different questions: what the condition claims, and what
+      // this round actually put on the CLI's command line.
+      requestedModel: env.condition.declaredModel,
       model: { declared: env.condition.declaredModel, observed: observedModel },
     }, { runId: env.runId, by: env.by })
     if (timedOut) {

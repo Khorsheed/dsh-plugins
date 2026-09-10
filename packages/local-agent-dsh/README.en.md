@@ -45,11 +45,19 @@ The scoped home (`$DSH_HOME/local-agent/dsh`) is kept on purpose — it holds th
 | `liveIdleMs` | `1800000` (30 min) | idle lifetime of a resident runtime before reclaim |
 | `liveMirrorGranularity` | `event` | live mirror granularity; `token` reports deltas over the run-progress channel, but host 0.1.5 retired the per-chunk session event, so deltas no longer land in the child session log — the round settles as one combined message (identical final text) |
 
-### Default model: this harness has no `model` key
+### Default model (`model`)
 
-The family's other three providers — codex, claude-code, kimi — each accept an optional `model` plugin-config key that starts the CLI on every delegation round. **dsh does not**, because the headless sub-dsh exposes no place to name a model per launch: `dsh --profile headless-local-agent-dsh` accepts only `--session-id`, `--resume` and `--serve`, and the model comes from the current selection of the sub-instance's own `agentDefaultModel` service (which is what the headless bundle's agent loader reads). Giving this harness a `model` key would mean first opening a per-launch model path on the headless side — a separate piece of work.
+When T30a gave the three CLI harnesses a `model` plugin-config key, dsh did not get one — the headless sub-dsh had no place to name a model per launch. **It has one now**: the headless `--model <provider/model>` overrides the sub-instance's default model selection, so this harness carries the same key.
 
-**So: changing the model for dsh means changing the host instance's default model.** Delegation rounds started after that change run the new model. The evaluation rule is the same as for the other three: a run freezes its condition at setup, so switching the host default mid-run is caught by the next round's model read-back and fails the run as misattributed (frozen decision 5).
+**Absent = today's behavior.** Without the key the plugin adds no `--model` to the argv: the host instance's own `agentDefaultModel` selection decides which model runs, exactly as before.
+
+**Set = every delegation round starts the sub-dsh with it.** Fresh and resume rounds alike, with `--model` after `--session-id` / `--resume`. The value is spelled `provider/model` (the shape `effectiveSettings.model` reports); a bare id names the model and keeps the instance's provider. It splits at the FIRST slash, so a model id that contains one survives.
+
+The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in) plus previously saved values as suggestions. Saving applies to the **next** round with no reload; clearing the field and saving unsets the key.
+
+**A delegation's own model outranks this key.** An orchestrator may name the model for ONE delegation through the facade's `DelegationCallOptions.model`, which sits above this key (the four layers are in the family core README). The first round's request is recorded and every resume round re-requests it — `resume` takes no model of its own. A round carrying a delegation model is exec-only: a resident `--serve` sub-dsh binds its model with its own `--model` at spawn and then hosts every session it is handed.
+
+**This is not an evaluation gap.** A run freezes its condition at setup: change the key mid-run and the next round's model read-back sees declared ≠ observed and fails the run as misattributed (frozen decision 5).
 
 **Evaluation snapshot (`effectiveSettings`).** The harness's fairness snapshot carries the drive (exec/live), the no-pinned-endpoint flag, the CLI version (the very launch argv a delegation spawns, asked `--version`, cached against that entry script's path + mtime — the sub-dsh replicates the parent instance's own build), and the configured model (the host `agentDefaultModel` selection the sub-dsh inherits, formatted `provider/model`; when the service is absent or the selection unreadable the field drops out — never guessed): a headless sub-dsh has no sandbox or permission knob (the web-eval frozen baseline calls this harness unrestricted — the absent fields are themselves the honest condition-hash input), and the endpoint is the host instance's model config, which this provider never overrides. `/dsh status` and the `LocalAgentStatus` Remote attach the same snapshot.
 

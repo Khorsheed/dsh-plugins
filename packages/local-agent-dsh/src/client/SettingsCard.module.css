@@ -205,3 +205,52 @@
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
 }
+
+/* The default-model row: a free-text identifier plus its own save action. The
+   field is deliberately not a menu — no model catalog is hardcoded anywhere in
+   this plugin — so it commits on save rather than on every keystroke, and the
+   values saved before ride a datalist as suggestions. */
+.modelInput {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.modelInput:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.modelInput:disabled {
+  opacity: 0.5;
+}
+
+.modelSave {
+  flex: none;
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.modelSave:hover:not(:disabled) {
+  border-color: var(--dsw-alias-label-dimmed);
+}
+
+.modelSave:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -221,6 +221,14 @@ export interface EvalDelegationOptions {
    */
   exec?: { container: string; workdir: string; env?: Record<string, string> }
   /**
+   * T30b's per-delegation model: the condition's declared model, REQUESTED
+   * rather than merely compared against. `start` only — the family refuses it
+   * on `resume`, where the delegation re-requests what its first round
+   * recorded. Absent (a condition that declares none) leaves the harness's own
+   * configuration to decide, exactly as before.
+   */
+  model?: string
+  /**
    * T29's scoped home: run this round against the harness's NAMED scoped home
    * (`<homesRoot>/<harness>@<scope>`) instead of its default one — the
    * condition's own `scope` field, so two conditions of the same harness can

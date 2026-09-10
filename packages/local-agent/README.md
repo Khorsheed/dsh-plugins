@@ -113,6 +113,7 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 | `reattach` | 仅 `resume`：子会话不在线时从持久化恢复（默认 true），传 `false` 则 fail loud |
 | `cwd` | 本轮 CLI 的工作目录；resume 轮必须与首轮记录一致，否则进程启动前 fail loud |
 | `exec` | 本轮在**已取得的容器里**跑：`{ container, workdir, env? }` |
+| `model` | 本**次委派**跑哪个模型：只在 `start` 上接受，`resume` 传了即 fail loud——首轮请求的值记进委派记录，之后每轮照它重发（首轮没写就一直不写）。带 model 的轮次是 exec-only（长驻 runtime 在起进程时就绑定了模型）。取值顺序见下 |
 | `scope` | 本轮跑该家的**命名作用域目录**（`<homesRoot>/<家名>@<scope>`）；resume 轮必须与首轮记录的 scope 一致（含"都没有"），否则 fail loud |
 
 **每轮的 settle 观测。** provider 在一轮的输出流解析完之后调用 `recordRoundSettled`，家族把它转成一条 `settled` 进度事件：本轮的 `observedModel`、`cliVersion`、`usage`，以及本轮的 `toolCalls`（`{ count, byName }`）。每个字段取不到就缺位，绝不猜、绝不补零。
@@ -120,6 +121,21 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 `toolCalls` 只从 provider **已经解析过**的转录事件里数出来——不新开解析路径、不再走一遍流。`byName` 的键是各家 CLI 自己的工具词汇（codex 的 `command_execution`、claude 的 `Bash`/`Read`、kimi 与 dsh 各自事件里的工具名），原样保留、**不跨家归一**：因此横比只比 `count`，`byName` 是给人读的。归一化会凭空造出一份 CLI 之间从未约定过的等价关系。
 
 `observedModel` 与 `cliVersion` 会并进委派记录（记录讲的是这次委派的最新状态），`toolCalls` **只走事件**：它属于某一轮，合并进记录等于用最新一轮悄悄盖掉上一轮的计数。
+
+**模型的四层取值顺序。** 一轮 CLI 用哪个模型，按固定顺序取第一个有值的：
+
+1. **本次委派的 `model`**（`start` 的调用选项；resume 轮从委派记录里读回同一个值）
+2. **该家插件配置的 `model` 键**（T30a，按 provider 全局生效）
+3. **该家作用域配置文件**（codex 的 `model`、claude 的 `settings.json`、kimi 的 `default_model`、dsh 继承宿主实例的默认模型选择）
+4. **CLI 自己的默认**
+
+四层都没有 = argv 上一个模型参数都不加，与这两个键出现之前逐字节相同。空白算没写。
+
+**为什么 resume 不接受 model。** 模型属于这次**委派**，不属于它的某一轮：首轮请求什么就记什么，之后每轮照发。中途换模型 CLI 会照办，而转录里看不出来——所以那是调用方的错误，fail loud，而不是被悄悄忽略的字段。要换模型就另起一次委派。
+
+**为什么带 model 的轮次是 exec-only。** 长驻 runtime（codex 的 `app-server`、claude 与 kimi 的 ACP、子 dsh 的 `serve`）在**起进程时**就绑定了模型，然后为这个成员的很多轮服务。按委派给模型要么被忽略、要么会悄悄改掉那个 runtime 上其他轮次跑的模型，所以直接拒绝——与命名作用域同一条理由。插件配置的 `model` 键不受此限：它是全家统一的，长驻 runtime 绑定它正是实例要的。
+
+`effectiveSettings.model` 报的仍是**第 2 层往下**的答案——「一轮没有自带模型时会跑什么」，也就是条件快照要问的那个harness 级设置。
 
 **容器内委派（`exec` 目标）。** 给了它，provider 把 argv 换成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`；stdio 仍是 pipe，流解析、settle、回读、`delegations.jsonl` 记录全部与宿主路径逐字节相同。家族只用 `exec` 这一个 docker 动词——取得、挂载、销毁容器是调用方（lab）的事。
 

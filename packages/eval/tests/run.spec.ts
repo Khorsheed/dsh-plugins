@@ -366,6 +366,8 @@ interface DelegationCall {
   exec?: { container: string; workdir: string; env?: Record<string, string> }
   /** T29's scoped home, when the condition named one. */
   scope?: string
+  /** T30b's per-delegation model, when the condition declared one. */
+  model?: string
   /** Set on judge delegations (the fake recognizes the blind-judging prompt). */
   judge?: true
   /** Set on the pre-run readiness probe (the fake recognizes its prompt too). */
@@ -555,7 +557,7 @@ class FakeLocalAgent implements LocalAgentFace {
    */
   private readinessRun(
     provider: string,
-    options: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string } | undefined,
+    options: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string; model?: string } | undefined,
     onProgress?: (event: DelegationProgress) => void,
   ): DelegationRun {
     // The probe's label is `readiness <condition id>` — the only place the
@@ -598,15 +600,17 @@ class FakeLocalAgent implements LocalAgentFace {
   }
 
   /** How this round was addressed, for the call record. */
-  private addressed(options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string }): Record<string, unknown> {
+  private addressed(options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string; model?: string }): Record<string, unknown> {
     // The scope is orthogonal to the address: it says which scoped home the
-    // round reads its credentials from, on either path.
+    // round reads its credentials from, on either path. So is the model — it
+    // says which model the round asks the harness for.
     const scope = options?.scope !== undefined ? { scope: options.scope } : {}
-    if (options?.exec !== undefined) return { exec: options.exec, ...scope }
-    return { ...options?.cwd !== undefined ? { cwd: options.cwd } : {}, ...scope }
+    const model = options?.model !== undefined ? { model: options.model } : {}
+    if (options?.exec !== undefined) return { exec: options.exec, ...scope, ...model }
+    return { ...options?.cwd !== undefined ? { cwd: options.cwd } : {}, ...scope, ...model }
   }
 
-  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
+  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string; model?: string; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
     void parentSessionId
     // The readiness probe is answered before any scripted failure: those
     // script the STAGE rounds, and a run whose probe failed never gets there.
@@ -618,7 +622,11 @@ class FakeLocalAgent implements LocalAgentFace {
     const text = prompt[0]?.text ?? ''
     const childSessionId = `child-${++this.seq}`
     if (text.startsWith(JUDGE_PROMPT_HEADING)) {
-      this.calls.push({ kind: 'start', provider, childSessionId, prompt: text, judge: true, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
+      this.calls.push({
+        kind: 'start', provider, childSessionId, prompt: text, judge: true,
+        ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}),
+        ...(options?.model !== undefined ? { model: options.model } : {}),
+      })
       this.judge(text, options?.cwd)
       return this.makeRun(childSessionId)
     }
@@ -1371,6 +1379,10 @@ describe('runPlan — the LLM judge (frozen decision 9)', () => {
     expect(judgeCalls).toHaveLength(2)
     expect(judgeCalls.every(call => call.kind === 'start')).toBe(true) // never resume: samples must be independent
     expect(new Set(judgeCalls.map(call => call.cwd)).size).toBe(2)
+    // T30b: the judge REQUESTS its declared model rather than inheriting the
+    // instance default and being compared against it afterwards — the T22
+    // step-5 failure, where a judge declaring one model silently ran another.
+    expect(judgeCalls.every(call => call.model === 'judge-model-r1')).toBe(true)
     expect(judgeCalls[0]?.prompt).toContain('J1')
     expect(judgeCalls[0]?.prompt).toContain('J2')
     expect(judgeCalls[0]?.prompt).not.toContain('A2-1') // objective → the probes
@@ -2611,5 +2623,56 @@ describe('runPlan — the judge is probed too (T20c)', () => {
     // The player's cells still run — a failed judge is not a failed player.
     expect(report.cells[0]?.skipped).toBeUndefined()
     expect(report.readiness.find(record => record.role === 'judge')?.ok).toBe(false)
+  })
+})
+
+describe('runPlan — T30b the declared model is REQUESTED, not only compared', () => {
+  it('names the condition\u2019s model on the first round and lets the resume inherit it', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't30b-request')
+    const mission = new FakeMission(join(root, 'mission'))
+    const localAgent = new FakeLocalAgent({})
+    await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const stageStarts = localAgent.calls.filter(c => c.kind === 'start' && c.readiness !== true && c.judge !== true)
+    expect(stageStarts.length).toBeGreaterThan(0)
+    for (const call of stageStarts) expect(call.model).toBe(DECLARED_MODEL)
+    // The resume rounds carry NO model: the family records the first round's
+    // request and re-asks for it, and naming one on a resume is refused.
+    const resumes = localAgent.calls.filter(c => c.kind === 'resume')
+    expect(resumes.length).toBeGreaterThan(0)
+    for (const call of resumes) expect('model' in call).toBe(false)
+  })
+
+  it('the readiness probe asks for the same model the cells will', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't30b-readiness')
+    const mission = new FakeMission(join(root, 'mission'))
+    const localAgent = new FakeLocalAgent({})
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const probes = localAgent.calls.filter(c => c.readiness === true)
+    expect(probes.length).toBeGreaterThan(0)
+    for (const probe of probes) expect(probe.model).toBe(DECLARED_MODEL)
+    // …and the record says what it asked for, beside what it read back.
+    const readiness = (report.meta as { readiness?: Array<Record<string, unknown>> }).readiness ?? []
+    expect(readiness.length).toBeGreaterThan(0)
+    for (const record of readiness) expect(record['requestedModel']).toBe(DECLARED_MODEL)
+  })
+
+  it('the delegation annotation records what the round requested', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't30b-annotation')
+    const mission = new FakeMission(join(root, 'mission'))
+    const localAgent = new FakeLocalAgent({ readback: { settledModel: DECLARED_MODEL } })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string }
+    const delegations = orchestratorNs(mission, report.runId, cell.missionId).filter(e => e['kind'] === 'delegation')
+    expect(delegations.length).toBeGreaterThan(0)
+    for (const entry of delegations) expect(entry['requestedModel']).toBe(DECLARED_MODEL)
   })
 })

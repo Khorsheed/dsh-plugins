@@ -30,7 +30,9 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
+  assertModelExecOnly,
   assertScopeExecOnly,
+  resolveRoundModel,
   containerExecSpawn,
   containerScopedHome,
   delegationEnv,
@@ -105,18 +107,6 @@ export function kimiCliVersion(ctx: Context, homeDir: string): Promise<string | 
     spawn: spec => subprocess.spawn(spec),
     env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
   })
-}
-
-/**
- * The round's model as a run-spec fragment. No resolver, or a resolver with
- * nothing configured, yields NO field — and an absent field leaves the spawn
- * argv exactly the shape it had before the `model` key rode every round.
- * @param resolve - the per-round model resolver, when the plugin passed one.
- * @returns `{ model }` when one is configured, `{}` otherwise.
- */
-function modelArg(resolve?: () => string | undefined): { model?: string } {
-  const model = resolve?.()?.trim()
-  return model === undefined || model === '' ? {} : { model }
 }
 
 export class KimiCliProvider implements SubagentProvider {
@@ -226,9 +216,12 @@ export class KimiCliProvider implements SubagentProvider {
       assertResumeCwdUnchanged(record, cwd, 'subagent-kimi')
       // …and in the scoped home its first round ran in.
       assertResumeScopeUnchanged(record, scope, 'subagent-kimi')
-      return this.startKimiResume(request, intent, cwd, homeDir, exec, scope)
+      // A resume re-requests the model the FIRST round recorded — the caller
+      // cannot name one (the facade refuses it), and a record without one is
+      // a delegation that named none, which this round repeats.
+      return this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model)
     }
-    return this.startKimiFresh(request, cwd, homeDir, exec, scope)
+    return this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model)
   }
 
   /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */
@@ -238,6 +231,8 @@ export class KimiCliProvider implements SubagentProvider {
     homeDir: string,
     exec: DelegationExecTarget | undefined,
     scope: string | undefined,
+    /** The model this DELEGATION requested, when the caller named one. */
+    requestedModel: string | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -287,6 +282,9 @@ export class KimiCliProvider implements SubagentProvider {
       // A scoped round is exec-only: the resident `kimi acp` process is
       // started per member against the DEFAULT scoped home.
       assertScopeExecOnly(scope, 'subagent-kimi')
+      // …and so is a round that names its own model: a resident runtime binds
+      // one model at spawn and then serves every round of this member.
+      assertModelExecOnly(requestedModel, 'subagent-kimi')
       try {
         return await live.startRound(request, {
           cwd,
@@ -306,6 +304,9 @@ export class KimiCliProvider implements SubagentProvider {
               cwd,
               // …and its scoped home anchors the resume-scope check.
               ...scope === undefined ? {} : { scope },
+              // The model this delegation asked for: every resume round reads
+              // it back from here instead of the caller restating it.
+              ...requestedModel === undefined ? {} : { model: requestedModel },
             })
           },
         })
@@ -333,7 +334,7 @@ export class KimiCliProvider implements SubagentProvider {
         env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
-        ...modelArg(this.model),
+        ...resolveRoundModel(requestedModel, this.model),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -364,6 +365,8 @@ export class KimiCliProvider implements SubagentProvider {
             cwd,
             // …and its scoped home anchors the resume-scope check.
             ...scope === undefined ? {} : { scope },
+            // The model this delegation asked for (see the live branch).
+            ...requestedModel === undefined ? {} : { model: requestedModel },
           })
         },
         // Every settled round reports its observed model and usage through the
@@ -389,6 +392,8 @@ export class KimiCliProvider implements SubagentProvider {
     homeDir: string,
     exec: DelegationExecTarget | undefined,
     scope: string | undefined,
+    /** The model the delegation's FIRST round recorded, re-requested here. */
+    requestedModel: string | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -417,6 +422,7 @@ export class KimiCliProvider implements SubagentProvider {
         // See the fresh path: a scoped round never goes to the resident
         // process, which binds the default scoped home.
         assertScopeExecOnly(scope, 'subagent-kimi')
+        assertModelExecOnly(requestedModel, 'subagent-kimi')
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -451,7 +457,7 @@ export class KimiCliProvider implements SubagentProvider {
           env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
-          ...modelArg(this.model),
+          ...resolveRoundModel(requestedModel, this.model),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {

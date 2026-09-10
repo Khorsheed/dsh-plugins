@@ -51,7 +51,7 @@ function messageOf(error: unknown): string {
  *   the session/event feed.
  * @param io - process-facing effects.
  */
-export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
+export async function runServe(ctx: Context, io: ServeIo, model?: string): Promise<void> {
   // Loader siblings mount concurrently; await the complete application before
   // driving Agents so scoped tools and adapters are not half-composed.
   await ctx.get('loader')?.await()
@@ -181,7 +181,14 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
         let handle = managed.get(sessionId)
         if (handle === undefined) {
           try {
-            handle = await loadSubDshAgent(ctx, resume ? { resumeSessionId: sessionId } : { sessionId })
+            // The launch's `--model` binds every session this resident
+            // process hosts: a runtime's model is a process fact, which is
+            // exactly why the parent refuses a per-delegation model on the
+            // live path.
+            handle = await loadSubDshAgent(ctx, {
+              ...resume ? { resumeSessionId: sessionId } : { sessionId },
+              ...model === undefined ? {} : { model },
+            })
           } catch (error) {
             respondError(id, messageOf(error))
             return

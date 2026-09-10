@@ -6,6 +6,9 @@
 #   dsh --profile headless-local-agent-dsh --resume <uuid> "<task>"       (resume, one-shot)
 #   dsh --profile headless-local-agent-dsh --serve                        (resident live driver)
 #
+# Any of the three may carry `--model <provider/model>`, which overrides the
+# instance's default model selection for that launch.
+#
 # The startup provider parses the flags; one-shot mode creates (or resumes)
 # exactly that session through the core registry, drives the task, prints the
 # final assistant text, and exits; serve mode stays resident and drives turns
@@ -49,6 +52,9 @@
         sessionId: !!js ctx.localAgentDshHeadlessStartup.sessionId
         resumeSessionId: !!js ctx.localAgentDshHeadlessStartup.resumeSessionId
         serve: !!js ctx.localAgentDshHeadlessStartup.serve ?? false
+        # `--model`: the launch's model override (provider/model). Absent
+        # leaves the instance's own default selection in place.
+        model: !!js ctx.localAgentDshHeadlessStartup.model
 
     # The member bridge (local-agent member channel, M3): the parent provider
     # hands the per-run socket path, token, and bridge entry through the

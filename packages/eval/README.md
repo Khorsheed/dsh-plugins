@@ -56,6 +56,8 @@ run 开始时先为每格写一条锚点 `{kind: 'cell', task, condition, condit
 
 每次委派在 orchestrator ns 记 `{kind: 'delegation', stage, round, childSessionId, promptSha, startedAt, durationMs, usage, toolCalls?, cliVersion?, model: {declared, observed}}`（`toolCalls` 与 `cliVersion` 只在本轮 settled 事件带了才写，缺位就是「这一轮没人报过」）；`observed` 取自 T11 的回读——本轮 settled 事件优先，其次 `delegationOf(childSessionId)` 的记录。读记录要**等**：provider 在 settle 后的收尾遍里才并入观测，而门面在 result 落定的同一刻就清掉了带着 `onProgress` 的在跑记录，所以真实门面上 settled 事件根本到不了编排器、记录也要晚一拍才有值——run 结束即读会读空（第一次两格真跑的现场）。编排器因此在 settle 后有界地轮询记录（缺省 10s，`readbackWaitMs` 可调），等到与本轮开始前不同的观测即采用；等超时仍返回记录当前值（续轮跑的是同一模型时两者本就无从区分，记录本身的语义就是「该委派最近一次观测」），两处都没有才记 null。`usage` 只走 settled 事件：门面先清在跑记录的情况下这里拿不到，记 null 是诚实答案。回读到的模型与条件 `model.declared` 不符即当场失败（冻结决策 5：这次 run 归属错了），不按基础设施失败重试。
 
+**声明的模型现在是「先请求，再核对」（T30b）。**从前 `model.declared` 只用来与回读比对，实际跑哪个模型全看 harness 自己的配置——判官条件声明 dsh v4-pro、实跑宿主默认 v4-flash，就绪检查因此拒（T22 第 5 步）。现在选手轮、判官委派、就绪探测三处都把非 null 的 `model.declared` 作为委派级 `model` 传给 local-agent，由它落成各家 CLI 的模型参数；声明为 null 就照旧不传。委派注解与 `run.meta.readiness` 各多一个 `requestedModel`，记的是「这一轮向 harness 要了什么」，与「读回来什么」并列。比对本身不变：请求了还回读到别的，仍是 MisattributedRun。resume 轮不带 model——local-agent 把首轮的请求记在委派记录里，之后每轮照它重发。
+
 ## 容器路径（I3·T20）
 
 plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者与本节出现之前**逐字节相同**（pilot A 的 bundle 用本分支的 report 复算，`results.jsonl` 逐字节一致）。容器路径要 `ctx.lab` 在场；凭证不用另给——挂的是这台实例自己的作用域目录（见下）。
@@ -124,9 +126,9 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 判官条件同样在内。判官也是一次会失败的真委派，而失败的代价更大：一个选手条件挂了只损失它自己的格子，判官挂了损失的是整轮的 llm-draft 判定——pilot B 的两个判官样本全掉，run 却一路走到 `released`，llm-draft 命名空间是空的。所以判官按同一条规则探、同一条规则拒，结果以 `role: 'judge'` 记进 `run.meta.readiness`。判官在宿主上委派（判定是编排器发起的，不是格子发起的），因此容器路径下它也在宿主上探——探一个它根本不会遇到的环境毫无意义。
 
-所以开跑前的检查不问，只花一次委派。`runCreate` 之前，对 plan 里每个条件用逐字节确定的一句话提示词 `READINESS_PROMPT`（回一个 `READY`，不用工具、不写文件）跑一次委派——**与正式格子同一门面、同一 provider、同一条按目录给 cwd 的规则**，不另开后门，所以探针证明的就是格子将要遇到的。条件只有在委派**既起得来又返回 `stopReason: 'completed'`** 时才算就绪；探针同时回读模型，与 `model.declared` 不符即当场判该条件不就绪（冻结决策 5，在开跑前拦下，而不是等到第一个阶段轮次）。
+所以开跑前的检查不问，只花一次委派。`runCreate` 之前，对 plan 里每个条件用逐字节确定的一句话提示词 `READINESS_PROMPT`（回一个 `READY`，不用工具、不写文件）跑一次委派——**与正式格子同一门面、同一 provider、同一条按目录给 cwd 的规则**，不另开后门，所以探针证明的就是格子将要遇到的。条件只有在委派**既起得来又返回 `stopReason: 'completed'`** 时才算就绪；探针**请求**条件声明的那个模型（与格子将要请求的同一个），并回读实际模型，与 `model.declared` 不符即当场判该条件不就绪（冻结决策 5，在开跑前拦下，而不是等到第一个阶段轮次）。
 
-每条判定是一条 `{kind: 'readiness', condition, harness, provider, ok, startedAt, durationMs, childSessionId, declaredModel, observedModel, reason?}` 记录，既进 `run.meta.readiness`，也作为 orchestrator ns 注解写到该条件的每一格上——问「这格为什么没产出」的人，在格子上就能看到答案。任一条件失败即整 run 不启动并打印原因（打印的是那句 401，而不是「有个条件失败了」）；`--ignore-readiness` 才允许开跑，此时该条件的格子一律记 `cell-skipped` 并给出理由，一次委派都不发。
+每条判定是一条 `{kind: 'readiness', condition, harness, provider, ok, startedAt, durationMs, childSessionId, declaredModel, requestedModel, observedModel, reason?}` 记录，既进 `run.meta.readiness`，也作为 orchestrator ns 注解写到该条件的每一格上——问「这格为什么没产出」的人，在格子上就能看到答案。任一条件失败即整 run 不启动并打印原因（打印的是那句 401，而不是「有个条件失败了」）；`--ignore-readiness` 才允许开跑，此时该条件的格子一律记 `cell-skipped` 并给出理由，一次委派都不发。
 
 ## `finalize`：跑完之后的再入口
 

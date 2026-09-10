@@ -363,6 +363,56 @@ export function assertResumeScopeUnchanged(
 }
 
 /**
+ * Refuse a round that names its own model and would be served by a live
+ * driver — the model twin of {@link assertScopeExecOnly}, and refused for the
+ * same reason. A resident runtime (codex's `app-server`, claude's and kimi's
+ * ACP servers, the sub-dsh `serve`) binds its model when the PROCESS starts
+ * and then serves many rounds of one member, so a per-delegation model would
+ * either be ignored or would silently change what every other round of that
+ * runtime runs. Refused rather than quietly downgraded to exec: the caller
+ * named a model, and a fallback would answer a different question than the
+ * one asked. The evaluation pins `drive: exec` anyway (web-eval frozen
+ * decision 2).
+ * @param model - the round's requested model, or undefined for none.
+ * @param provider - the provider name, for the error message.
+ * @throws when a named model meets an active live driver.
+ */
+export function assertModelExecOnly(model: string | undefined, provider: string): void {
+  if (model === undefined) return
+  throw new Error(
+    `${provider}: a delegation that names model ${model} is exec-only — a resident runtime binds its model at spawn `
+    + 'and serves many rounds; turn the live driver off for this delegation, or drop the model',
+  )
+}
+
+/**
+ * The model one round starts its CLI with, resolved in the family's fixed
+ * order: the DELEGATION's own model (the `model` call option on the fresh
+ * round, re-requested by every resume round from the record) first, then the
+ * harness's `model` plugin-config key, then nothing — which leaves the scoped
+ * configuration file and, last, the CLI's own default to decide exactly as
+ * they did before either key existed.
+ *
+ * Blank is not a model: a whitespace-only value at either layer reads as
+ * unset, so an empty settings field cannot produce an empty flag value.
+ * @param requested - the delegation's own model, when it named one.
+ * @param configured - the plugin config's per-round resolver, when the plugin
+ *   passed one.
+ * @returns `{ model }` when either layer names one, `{}` otherwise — the
+ *   fragment a provider spreads into its run spec, so an absent model leaves
+ *   the spawn argv byte-identical to the shape that shipped before.
+ */
+export function resolveRoundModel(
+  requested: string | undefined,
+  configured?: () => string | undefined,
+): { model?: string } {
+  const own = requested?.trim()
+  if (own !== undefined && own !== '') return { model: own }
+  const fallback = configured?.()?.trim()
+  return fallback === undefined || fallback === '' ? {} : { model: fallback }
+}
+
+/**
  * Refuse a scoped round that would be served by a live driver. The resident
  * runtimes (codex's `app-server`, claude's and kimi's ACP servers, the
  * sub-dsh `serve`) are started per member against the DEFAULT scoped home and
@@ -467,6 +517,7 @@ function parseDelegationLine(
   const observedModel = record['observedModel']
   const cwd = record['cwd']
   const scope = record['scope']
+  const model = record['model']
   return {
     childSessionId,
     provider,
@@ -484,6 +535,9 @@ function parseDelegationLine(
     // field existed is, and what the fallback below preserves when a named
     // scope's own file carries an older line.
     ...typeof scope === 'string' && scope !== '' ? { scope } : {},
+    // The model the delegation requested. A line without one is a delegation
+    // that named none — which every line written before the field existed is.
+    ...typeof model === 'string' && model !== '' ? { model } : {},
   }
 }
 
@@ -1457,6 +1511,10 @@ export class LocalAgentRegistry {
       // The provider resolves `homeDir(<harness>, scope)` from it and records
       // the scope, so the resume of this delegation must repeat it.
       ...options?.scope === undefined ? {} : { scope: options.scope },
+      // The model this DELEGATION runs. The provider passes it to the CLI and
+      // records it, so a resume round re-requests the same value without the
+      // caller restating it (and without being able to change it).
+      ...options?.model === undefined ? {} : { model: options.model },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -1570,6 +1628,17 @@ export class LocalAgentRegistry {
     // facade fails before staging; the provider repeats the check at the same
     // point it checks the cwd anchor.
     assertResumeScopeUnchanged(this.delegations.get(childSessionId), options?.scope, 'localAgent')
+    // A model belongs to the delegation, not to one of its rounds: the first
+    // round recorded what it requested and this round re-requests exactly
+    // that. Naming one here would switch a live conversation's model mid-way
+    // — which the CLI would honour and the transcript would not show — so it
+    // is a caller error, not a silently ignored field.
+    if (options?.model !== undefined) {
+      throw new Error(
+        `localAgent: resume does not take a model — child session ${childSessionId} re-requests the model its first `
+        + 'round recorded; start a new delegation to run another model',
+      )
+    }
     if (this.isResumeLocked(childSessionId)) {
       throw new Error(`localAgent: child session ${childSessionId} already has an in-flight resume`)
     }

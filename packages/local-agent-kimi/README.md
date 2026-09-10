@@ -75,6 +75,8 @@ base_url = "https://your-router.example/v1"
 
 设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录）加上此前存过的值作为候选，保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键。
 
+**委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（顺序见家族核心 README 的四层）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。带委派级 model 的轮次是 exec-only：常驻 `kimi acp` 的模型是靠改写作用域配置绑定的进程事实，一次委派改不动它。
+
 **这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。
 
 **评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live,随 live 偏好)、推理强度(读作用域 config 的 `[thinking] effort`,缺则回模型 `default_effort`)、是否自动批准(作用域 config 是否带 `Bash(*)` 放行规则)、端点是否固定(只报主机名;managed 端点不算固定)、已配置模型(先看插件配置的 `model` 键——它每轮覆盖;没有才读作用域 config 的顶层 `default_model`;都没有就不给字段)、CLI 版本(`kimi --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
