@@ -142,10 +142,11 @@ describe('FilePreviewTab', () => {
     fireEvent.click(screen.getByText('agent.ts'))
     // No openResource: the detail view opens inside our tab.
     expect(tabActions.openResource).not.toHaveBeenCalled()
-    // Breadcrumb header: directory greyed, final segment solid; back button.
+    // Breadcrumb header: segmented ' / ' path, final segment solid; back.
     expect(screen.getByLabelText('detail.back')).toBeTruthy()
     expect(screen.getByText('agent.ts')).toBeTruthy()
-    expect(screen.getByText('/work/src/')).toBeTruthy()
+    expect(screen.getByText('src')).toBeTruthy()
+    expect(screen.getAllByText('/').length).toBeGreaterThan(0)
     await act(async () => {})
     // The content tab fetched the current content through the Remote
     // (CodeBlock splits tokens, so match the rendered text as a whole).

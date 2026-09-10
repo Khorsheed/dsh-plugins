@@ -16,7 +16,7 @@ Status: implemented
 - **边界**：工作区外的 bash 产物造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区，宿主应答 `workspace-file/outside-workspace`），永远进不了官方 document tab——但详情页是我们自己的、不受此限：宿主 `read` 能解析绝对路径、reveal/openExternal 也接受，故这类文件内容与改动记录都完整可看。列表行仍带「工作区外」标记。
 - **改动记录视图（逐次 write/edit diff 步进）刻意保留自绘，形态是官方 document tab 的可切换渲染器**：`ctx.documentPreviews.register()`（纯后缀匹配、无通配符——`history-definition.ts` 枚举常见文本后缀，刻意不含复合后缀，避免等档时靠长度压过官方渲染器）+ 同 id（`<pkg>/history`）注册进 keyed `sidebar.right.tab.document` seat。`priority: 'builtin'` 是显式选择：出现在预览页工具栏下拉里但不抢官方默认渲染（extension 档会抢走）。组件解析 session 作用域的 `resourceAddress`，拉 `filePreview.list` fold，按工作区解析路径匹配，渲染 `DiffHistory.tsx`；owner 备好的 `content` 不消费（`loading: 'text-pages'`，最省模式）。无记录文件显示空态。
 - **mention 打开直落我们的详情页（S1 尾巴，新绕行）**：ui-deliverables 的 `chatFileMentions` 对 `present` 交付的文件走原生默认程序、未交付的才走 sidebar。`ctx.provide` 拒绝重名、`ctx.set` 拒绝非提供方 fiber（"cannot set property in multiple fibers"），故 `mentions-wrap.ts` 就地改写所提供对象的 `forClosing`——原实现保留认领逻辑；每个 resolved `open` 改为 `sidebarRight.openTab('file-preview', { params: { path } })`（我们的详情页；抛错回退 `owner.openFile`），label 修实（官方「在默认程序中打开」已不成立）。包装住在注入 `chatFileMentions` 的嵌套 fiber 里（一次性 `ctx.get` 会与 deliverables fiber 的 provide 抢跑；嵌套 fiber 等待服务出现、HMR 重提供时重包装）。登记为缝 S1 的补充，退役条件=官方提供 opener 覆盖点。
-- **tab 类型同时认领地址**：`patterns: ['dsh-resource://file/**']` + `canOpen`（fold 成员判定来自 apply 级缓存——每次 list 拉取与回合卡片加载器都会暖它——再叠加可渲染后缀过滤，pdf/二进制留给官方）。默认 extension 档压过官方 document tab 的 fallback 档，于是所有 openResource 入口（官方产物卡片、文件树、owner.openFile）对产物文件都落我们的详情页；缓存冷或不可渲染则否决回落（best-effort，已注释）。guide 入口与认领共存。body 在没有 `params.path` 时从 `navigation.address` 解析详情路径，且每个 navigation revision 只套用一次（后到的 list 刷新不能把已返回列表的用户拽回去）。
+- **tab 类型同时认领地址**：`patterns: ['dsh-resource://file/**']` + `canOpen` = session 作用域 + 可渲染后缀，**纯静态**。默认 extension 档压过官方 document tab 的 fallback 档，所有 openResource 入口（官方产物卡片、文件树、owner.openFile）对可渲染文件都落我们的详情页；渲染不了的类型（pdf、二进制）否决回落。guide 入口与认领共存。body 在没有 `params.path` 时从 `navigation.address` 解析详情路径，每个 navigation revision 只套用一次。第一版还要求 fold 成员（apply 级缓存）——活体抓到竞态：官方卡片认领的回合不挂我们的卡片（其加载器），恰好那些文件的缓存恒冷、永远落官方页（「有时官方有时我们」）。canOpen 必须同步回答而任何数据缓存都有冷启动窗口，故成员判定整体去除——详情页对任何工作区内文件都能渲染，认领语义变为确定性。
 - **行动作恢复**（详情页头部——行悬停动作组试过，因可读性被否）：复制路径恒定（`writeClipboard` 写 cwd 解析后的绝对路径）；在文件夹打开保持旧抽屉语义——宿主半 `reveal`（选中文件），回退官方 open-in-app POST 路由开父目录；在 IDE 打开要精确到文件，官方路由只收目录，故宿主半新增 `filePreview.openExternal(path, app)`——macOS `open -a <App>`（经 dsh-native-command），catalog id → `.app` 名映射镜像官方 catalog 的 darwin 条目（`open-external.ts`）。手势可见性由每页一次的 `/open-in-app/apps` 探测驱动（镜像 local-files 的 `open-in-app.ts`——跨插件值引用被纯度门禁止）；探测无应答或无对应应用 = 按钮隐藏。
 - **回合卡片选举确定性**：链选举为升序 priority 首个非空（ui-slots ChainSelect 契约），官方 deliverables 为默认 0，故本卡片显式 `priority: 1`——官方认领恒胜，本卡片只覆盖官方数据缺失的回合；同档会随 compose 序飘移。
 - **minHost 前移至 0.1.5-rc.1**（消费的扩展面在此之前不存在），版本 0.3.0；旧宿主停留 0.2.x 线。
@@ -25,7 +25,7 @@ Status: implemented
 ### 活体对比后的打磨
 
 - diff/内容统一吃官方 document tab 的阅读字号：主题的 `--dsw-font-markdown-code-block` 是固定 11px/19px、从不跟随正文字号设置，故在 pane 作用域内重绑为 `var(--dsh-content-font-size-secondary)/1.6` + 等宽族（官方 TextPreview body 的原配方）。
-- 详情页「改动记录」tab 按需出现（fold 无 diff 记录时不显示——常驻 tab 配空态读起来像坏了）；官方渲染器下拉项仍按后缀静态匹配，不受影响。
+- 详情页「改动记录」tab 按需出现（fold 无 diff 记录时不显示——常驻 tab 配空态读起来像坏了）；官方渲染器下拉项仍按后缀静态匹配，不受影响。面包屑改 `Users / me / code / file` 分段样式（目录段弱化、分隔符留白、逐段省略号、文件名整段加粗）。guide 卡片带自绘双色 SVG 图标（文档页 + diff 强调色）与收紧文案——图标槽收任意 ComponentType<IconProps>，描述按设计单行。
 - 「在 IDE 打开」改 split button（主按钮=当前选择，chevron 列出全部探测到的 IDE，选择即换即开；官方 `OpenInAppAction` 组件受 slot 申领规则不可导入，交互照它自绘在 ui-primitives `Menu` 上）。显示名用镜像的 id→label 表（专有名词，不本地化——官方同规则）。
 
 ## Alternatives considered

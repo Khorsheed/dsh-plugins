@@ -25,7 +25,6 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { FilePreviewTabProps, FilePreviewTabInjected } from './contract.ts'
 import { useCopyPathFeedback } from './copy-path.ts'
 import { FilePreviewPane } from './FilePreviewPane.tsx'
@@ -107,9 +106,14 @@ function DetailView(props: {
   const fileManager = apps === null ? undefined : pickFileManager(apps)
   const ides = apps === null ? [] : listIdes(apps)
   // The header shows the host-resolved absolute spelling (the same one the
-  // copy/open gestures act on), directory greyed and the final segment solid.
+  // copy/open gestures act on) as a segmented breadcrumb: directory segments
+  // dimmed with ' / ' between them (the official files header's reading), the
+  // file name solid. Long segments ellipsize individually; the name never
+  // truncates.
   const displayPath = resolveWorkspacePath(cwd, path)
-  const { directory, name } = pathPartsOf(displayPath)
+  const segments = displayPath.replace(/\\/g, '/').split('/').filter(seg => seg.length > 0)
+  const name = segments[segments.length - 1] ?? displayPath
+  const directories = segments.slice(0, -1)
 
   // Fetch the current content for the content tab; a stale answer (selection
   // moved) is dropped by the effect cleanup.
@@ -138,7 +142,12 @@ function DetailView(props: {
           <IconChevronLeftOutline14 />
         </button>
         <div className={css.detailPath} title={displayPath}>
-          {directory !== '' && <span className={css.detailDir}>{directory}</span>}
+          {directories.map((segment, index) => (
+            <span key={index} className={css.detailSegWrap}>
+              <span className={css.detailSeg}>{segment}</span>
+              <span className={css.detailSep}>/</span>
+            </span>
+          ))}
           <span className={css.detailName}>{name}</span>
         </div>
         <div className={css.detailActions}>

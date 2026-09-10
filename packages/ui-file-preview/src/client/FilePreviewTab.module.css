@@ -242,22 +242,13 @@
 }
 
 .detailPath {
+  display: flex;
   flex: 1;
   min-width: 0;
+  align-items: baseline;
   overflow: hidden;
   font-size: 12px;
-  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.detailDir {
-  padding-right: 3px; /* segment breathing room in the breadcrumb */
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.detailName {
-  color: var(--dsw-alias-label-primary);
-  font-weight: 500;
 }
 
 .detailActions {
@@ -277,4 +268,33 @@
 .split .tool {
   width: 24px;
   padding: 6px 4px;
+}
+
+/* Segmented breadcrumb: directory segments dimmed with a ' / ' separator and
+   breathing room (the official files header reads "Users / me / code / x"),
+   each segment ellipsizing on its own; the file name stays whole and solid. */
+.detailSegWrap {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+}
+
+.detailSeg {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detailSep {
+  flex: none;
+  padding: 0 5px;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.55;
+}
+
+.detailName {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
 }

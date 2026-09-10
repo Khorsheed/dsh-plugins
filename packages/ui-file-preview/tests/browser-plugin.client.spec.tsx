@@ -133,9 +133,10 @@ describe('ui-file-preview browser plugin', () => {
     expect(definition?.title('sidebar://file-preview')).toBeTruthy()
     expect(definition?.title('dsh-resource://file/session/s1/docs/My%20Note.md')).toBe('My Note.md')
     expect(definition?.guide?.length).toBe(1)
-    // canOpen: cold fold cache declines (the official document tab keeps the
-    // open), and non-renderable suffixes never claim.
-    expect(definition?.canOpen?.('dsh-resource://file/session/s1/src/agent.ts')).toBe(false)
+    // canOpen is deterministic: renderable session-scoped files claim
+    // immediately (no data dependency); session-less addresses and
+    // unrenderable suffixes decline to the official document tab.
+    expect(definition?.canOpen?.('dsh-resource://file/session/s1/src/agent.ts')).toBe(true)
     expect(definition?.canOpen?.('dsh-resource://file/absolute/tmp/a.md')).toBe(false)
     // Stage two: the body under the type's id, with the store and the locale.
     const { entry } = tabApi(b)
@@ -163,17 +164,12 @@ describe('ui-file-preview browser plugin', () => {
     await b.fiber.dispose()
   })
 
-  it('claims addresses only after the fold cache warms, and never for unrenderable types', async () => {
+  it('claims renderable session files deterministically, never unrenderable ones', async () => {
     const b = await bench()
     const definition = b.registered.find(d => d.kind === FILE_PREVIEW_KIND)
-    const address = 'dsh-resource://file/session/s1/src/agent.ts'
-    expect(definition?.canOpen?.(address)).toBe(false)
-    const { injected } = tabApi(b)
-    if (injected === undefined) throw new Error('tab inject missing')
-    await injected.listFiles(sid('s1'))
-    expect(definition?.canOpen?.(address)).toBe(true)
-    // The fold recorded it, but pdf stays with the official renderer.
+    expect(definition?.canOpen?.('dsh-resource://file/session/s1/src/agent.ts')).toBe(true)
     expect(definition?.canOpen?.('dsh-resource://file/session/s1/docs/report.pdf')).toBe(false)
+    expect(definition?.canOpen?.('dsh-resource://file/session/s1/assets/logo.png')).toBe(true)
     await b.fiber.dispose()
   })
 
