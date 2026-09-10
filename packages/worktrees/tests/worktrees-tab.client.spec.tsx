@@ -191,4 +191,16 @@ describe('WorktreesTab', () => {
     // The commits mode's data plane is the commit log.
     await waitFor(() => expect(fetchCommitLog).toHaveBeenCalledWith(SESSION))
   })
+
+  it('keeps the user-switched mode instead of snapping back to the navigated one (6aae716 regression)', async () => {
+    const { instance, props } = makeHarness({ params: { mode: 'worktree' }, revision: 1 })
+    render(<WorktreesTab {...props} />)
+    await waitFor(() => expect(instance.getSnapshot().mode).toBe('worktree'))
+    // The user switches to 仓库提交记录; the navigation-params effect must NOT
+    // re-fire on the local mode change and revert it.
+    fireEvent.click(await screen.findByRole('button', { name: /mode\.commits/ }))
+    await waitFor(() => expect(instance.getSnapshot().mode).toBe('commits'))
+    await new Promise(r => setTimeout(r, 200))
+    expect(instance.getSnapshot().mode).toBe('commits')
+  })
 })

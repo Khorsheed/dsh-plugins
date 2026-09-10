@@ -89,11 +89,17 @@ export function WorktreesTab({
 
   // A navigation carrying params (the badge's branch capsule) applies its
   // mode; the revision bumps on every navigation, so a repeat open of the
-  // page re-asserts the requested mode.
+  // page re-asserts the requested mode. Applied ONCE per revision: keying the
+  // effect off the mode as well would re-fire after the user's own mode
+  // switch and snap the tab back to the navigated mode (the 6aae716
+  // regression).
   const revision = tab.navigation.revision
   const navMode = (tab.navigation.params as WorktreesTabParams | undefined)?.mode
+  const lastNavRevision = useRef(0)
   useEffect(() => {
-    if (revision !== 0 && navMode !== undefined && navMode !== mode) actions.setMode(navMode)
+    if (revision === 0 || revision === lastNavRevision.current) return
+    lastNavRevision.current = revision
+    if (navMode !== undefined && navMode !== mode) actions.setMode(navMode)
   }, [revision, navMode, mode, actions])
 
   // The session-touched set in repo-relative spelling: display paths resolve
