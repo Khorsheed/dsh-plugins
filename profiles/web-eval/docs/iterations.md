@@ -277,14 +277,16 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 |---|---|---|---|---|
 | T29 ✅ | 代码 | local-agent：作用域目录按 scope 命名，每次委派可指定 scope；登录、状态、记录、回读、exec 挂载源都跟着走；eval 条件加 `scope` 字段 | 无 | 合入 main `0d7b91b`（2026-09-10）；`homeDir(name, scope?)`，命名 scope 落 `<家名>@<scope>`，名字只许 [a-z0-9-]，读即物化；委派、记录、resume 核对、四个动词的 `--scope`、按目录取的 effectiveSettings 齐全；带 scope 撞 live 直接拒；真机缺省与命名各一轮各落各目录，命名 scope 自己 device-auth；两条件 run 就绪各过、b 格 archived、a 格被代理掐长流跳过（网络非机制）；缺省 scope 下 pilot A 复算逐字节相同；题库 `t29-scope` 并入 i1-walk `ce31e92` |
 | T30a ✅ | 代码 | local-agent：四家 provider 插件配置加可选 `model`，不写 = 今天的表现，写了每轮委派以它起 CLI；改配置后新 run 走新值、进行中的 run 不受影响；`effectiveSettings.model` 报配置值并由回读核对；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | 无 | 合入 main `8633996`；codex `-m` / claude `--model` / kimi `-m`（常驻改写 default_model）；dsh 无按次传模型的启动面，不给键；真机 codex 与 claude 两轮回读命中，kimi 到请求记录为止（配额） |
-| T30b | 代码 | local-agent：委派级模型参数——首轮委派指定、成员内固定、resume 不换；T31 的条件 provision 用它做同 harness 两模型；前置：dsh-local-agent-dsh-headless 开一条按次传模型的启动路，dsh 才能拿到 model 键 | T29 T30a | |
+| T30b | 代码 | local-agent：委派级 `model`——首轮指定、记录、resume 不换；四家 argv 或配置写入；dsh headless 加 `--model`；eval 把条件的 model.declared 作为每轮的请求模型传下去 | T29 T30a | |
 | T30c ✅ | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；每轮的 token 与工具调用落进 bundle 的 `report/usage.jsonl`，计价留给 bundle 之外的非模型环节 | 无 | 合入 main `fc5141d`（2026-09-10）；四家都在已走过的折叠分支里数，byName 记各家自己的名字（codex 是 command_execution 不是卡片上的 Bash）；kimi / dsh 按本轮不按镜像窗口；usage.jsonl 每轮一行，多 `attempt` 与 `counted` 两列，效率表从 counted:true 加总复现；未报计数打「—」不补零；codex 的 function_call 未数（0.144.0 的 exec 流里 provider 本就不解析它）；只有 exec 路径报 settle 观测 |
-| T29b | 代码 | eval + profile：`/eval run` 脱离会话轮次（后台 job，发起端断开不中止，CI 无浏览器也能发起）；plan 路径展开 `~`；install.sh 的 dsh 前置检查前移 | 无 | |
-| T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选）；一并定冻结决策 9 与「四家同一题」的互斥怎么解（第五个模型，或判官与选手同家不同模型） | T29 T30b | |
-| T32 | 代码 | capability-catalog：按 preset scope 的能力清单哈希 | 无 | |
+| T29b | 代码 | eval + profile：`/eval run` 起一个 jobs 后台任务立即返回，发起端断开不中止，Remote 入口让 CI 无浏览器也能发起；plan 与 `--out` 路径展开 `~`；install.sh / update.sh 的 dsh 前置检查前移并覆盖预设残留 | 无 | |
+| T31 | 代码 | eval：`conditions provision` 写 lock（作用域就绪 + effectiveSettings 与声明逐项核对 + home.sha）；`conditions list / diff` 数据面（只展示与 diff，不给选）；决策 9 改为模型级并进 validate | T29 T30b | |
+| T32 | 代码 | capability-catalog：`snapshotFor(presetId)` + 能力清单的规范化哈希；eval 把编排实例的能力哈希记进 run.meta；sub-dsh 的能力面按 scope 的子 profile 组 preset roster，条件的 `preset` 字段从此可被核对 | T29 T31 | |
 | T33 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T29–T32 | 三份配对结果 |
 
 T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个条件今天共用一份作用域目录（T20c 记的边界），模型之外的因子——登录身份、作用域配置——没法按条件分开；T30b、T31 都压在它上面。
+
+T30b、T31（2026-09-10 文案发出）：T22 第 5 步的互斥（判官 dsh v4-pro 声明、实跑 v4-flash、改成 v4-flash 又撞 JUDGE_IS_PLAYER）根子是模型没法按次委派——T30b 让判官条件请求 v4-pro，互斥自然解；T31 再把决策 9 收成模型级并进 validate。
 
 T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用数没人采；采集面已有、只差汇总，合成一条，不依赖 I3 与 T29。计价不让实施者做（2026-09-09 定）：token 与工具调用按轮落库即可，单价表由 bundle 之外的非模型环节套用。
 
@@ -1377,6 +1379,142 @@ local-agent 家族与 eval 测试全绿，gate 绿；真机两条委派记录与
 
 ## 回报
 分支名与 commit；Agent Note 路径；gate 输出；两条委派记录（脱敏）；两条件 run 的就绪原文与 run.meta.unit.scopedHomes。
+```
+
+### T30b · local-agent：委派级 model——首轮指定、记录、resume 不换；dsh headless 加 --model；eval 传条件的 model.declared（可发）
+
+```text
+# 任务 T30b：local-agent——委派级 model；dsh headless 加 --model；eval 把条件的 model.declared 当每轮的请求模型
+
+## 背景
+T30a 给了三家插件配置级的 model 键，按 provider 全局生效；条件文档里的 model.declared 至今没有传到 local-agent——DelegationCallOptions 只有 label / signal / onProgress / reattach / cwd / exec / scope（types.ts:557–618），eval 在 run.ts:842–875 与 judge.ts:958–961 构造委派选项时都不带模型，声明只用来与回读比对（MisattributedRun，run.ts:957）。后果在 T22 第 5 步全见到了：判官条件声明 dsh v4-pro，实跑的是宿主默认 v4-flash，就绪检查拒；改声明成 v4-flash 又与 dsh 选手同 (harness, model) 撞 JUDGE_IS_PLAYER（run.ts:1441）。同一家两个模型的条件（I4 的 pilot B / C）同样表达不了。dsh 更缺一截：无头子 dsh 的启动面只有 --session-id / --resume / --serve（local-agent-dsh-headless/src/startup.ts:44–55），模型来自 agentDefaultModel.currentSelection()（agent-loader.ts:71–76），没有按次传模型的位置。
+
+## 先读
+packages/local-agent/src/types.ts（DelegationCallOptions、Intent 的 fresh / resume、Record、effectiveSettings.model 的读取顺序注释 163–180）与 index.ts（start / resume 的 intent staging、assertResumeCwdUnchanged、assertResumeScopeUnchanged、assertScopeExecOnly、recordRoundObservation）；四家 *-cli-provider.ts 的 modelArg 与 spec 构造（codex -m 与 resume 子命令的位置、claude --model、kimi -m 与 acp 的 default_model 改写）与各自 live-driver.ts 里「runtime spawn 时绑定模型」的注释；packages/local-agent-dsh-headless/src/startup.ts、agent-loader.ts、serve.ts、cordis.patch.yml 的 runner 行；packages/local-agent-dsh/src/dsh-cli-provider.ts 的 argv 构造（586–588）与 env 层（593–617）；packages/eval/src/run.ts 的委派选项、readiness.ts 的 probeIn、judge.ts 的判官委派；T29 / T30a 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-local-agent-model-round，分支 feat/local-agent-delegation-model；改 packages/local-agent、四个 provider 包、packages/local-agent-dsh-headless、packages/eval（各 README 双语 + sidecar）；不改 lab / mission / datasets。
+
+## 已定决定（照此实现）
+- DelegationCallOptions 加 model?: string，只在 fresh 上接受；intent 的 fresh 带 model，record 记 model（请求值，与 observedModel 并列）；resume 不接受 model 参数，沿用记录里的请求值起 CLI，记录里没有就与首轮一样不传——「成员内固定、resume 不换」。
+- 取值顺序：委派级 model → 插件配置 model（T30a）→ 作用域配置 → CLI 默认。effectiveSettings.model 的读法不变（它报的是没有委派级参数时会用的那个）。
+- 四家一次性轮次：codex exec -m、claude --model、kimi -m，与 T30a 同一个 modelArg 接口，只是来源多一层；kimi 的常驻 acp 与三家的 live 驱动都不接受委派级 model——runtime 一起就绑定模型，带 model 撞 live: true 与 T29 的 assertScopeExecOnly 同款拒绝。
+- dsh：headless 的 startup.ts 加 --model <provider/model>（与 effectiveSettings 报的 provider/model 同形），经 startup provider 与 cordis.patch.yml 的 runner 行进 agent-loader.ts:76 覆盖 agentOptions，installModelSelection 同步；--serve 下对整个进程生效。dsh provider 的 argv 在 --session-id 之后带 --model；本任务同时给 dsh 补 T30a 那把插件配置 model 键（当时因没有启动路没给），取值顺序与三家相同。
+- eval：run.ts 的选手轮、judge.ts 的判官委派、readiness.ts 的就绪探测三处都把条件的 model.declared（非 null 时）作为 model 传下去；null 照旧不传。MisattributedRun 的比对不变——请求了还回读到别的，仍是 fail loud。run.meta.readiness 与每格注解记 requestedModel。
+- 契约不改：条件文档形状不动，声明从「只核对」变成「先请求再核对」，README 与协议 §（条件）措辞同步，版本记 v1-rev9 只改描述。
+
+## 交付
+五个包的改动；测试（每家：fresh 带 model 的 argv、resume 不带且沿用记录、resume 带 model 拒绝、live 拒绝、取值顺序四层；dsh headless：--model 解析与覆盖、与 --serve 共存；eval：三处委派带 model、null 不带、readiness 记录）；README 双语；Agent Note（feature）。真机：codex 与 claude 各一轮，委派级 model 与插件配置 model 故意不同，回读等于委派级；dsh 一轮 --model 指到非默认模型，回读等于请求；resume 一轮不带 model，回读不变。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；凭据不进日志与回报；不改 lab / mission / datasets；缺省行为（不传 model）逐字节不变，pilot-a-round1 复算相同。
+
+## 完成判据
+五包测试全绿，gate 绿；真机四轮回读表；一份带判官 dsh v4-pro、选手 dsh v4-flash 的 P0 计划在宿主路径上就绪检查两条都过且不再 JUDGE_IS_PLAYER（tsx 驱动即可，不必跑完）。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；四轮回读表；那份计划的就绪原文。
+```
+
+### T31 · eval：conditions provision 写 lock；conditions list / diff 数据面；决策 9 改模型级进 validate（可发，建议 T30b 之后）
+
+```text
+# 任务 T31：dsh-eval——conditions provision 写 lock（作用域就绪 + effectiveSettings 逐项核对 + home.sha）；list / diff 只展示不给选；决策 9 改模型级
+
+## 背景
+条件锚点是 T8b 立的：conditions/<id>.lock.json（dataseek.condition-lock/1，schema.ts:456）记条件哈希与 home.sha，validate 读它出 LOCK_STALE / HOME_NOT_PROVISIONED / HOME_MISMATCH（validate.ts:330–387），run 读它出 LOCK_STALE 拒绝或 LOCK_MISSING 警告（run.ts:1397–1406）。但仓库里没有任何东西写 lock——read.ts:108 与 service.ts:95 都指着「dsh-eval conditions provision（I4）」。CLI 只有 conditions hash（cli-core.ts:232–252），slash 只有 run 与 finalize，eval_conditions 工具只读。另一处空白：condition 的 model.declared、reasoning.effort、permissions、model.endpoint 从来没有和该作用域的 effectiveSettings 对过——home.sha 哈希的是配置内容，不是语义；就绪检查只核模型回读。决策 9「判官不得是选手之一」在 run.ts:1441 是 (harness.name, model.declared) 元组、在 validate.ts:268 只是条件 id 重合；T30b 让判官能按次请求别的模型后，这条要收成模型级并两处一致。
+
+## 先读
+packages/eval/src/schema.ts（CONDITION_SCHEMA、LOCK_SCHEMA）、hash.ts（hashConditionDocument、hashHome）、read.ts（ConditionSummary、lock 读取）、service.ts、cli-core.ts、slash.ts、tools.ts（eval_conditions）、validate.ts（resolveConditionReadiness、JUDGE_IS_PLAYER）、run.ts（lock 核对、JUDGE_IS_PLAYER、readiness 主体构造）；packages/local-agent 的 LocalAgentStatus / LocalAgentEffectiveSettings 与 T29 后按目录取的 effectiveSettings；faces.ts 的 LocalAgentFace；T8b / T14 / T23 / T29 / T30a / T30b 的 Agent Note；profiles/web-eval/README.md 冻结决策 5 与 9。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-conditions，分支 feat/eval-conditions-provision，只改 packages/eval（README 双语 + sidecar、协议文档双语 + sidecar）与 profiles/web-eval/README 双语（决策 9 的措辞）；local-agent 若面上缺 effectiveSettings(harness, scope) 只加只读导出。
+
+## 已定决定（照此实现）
+- 动词 conditions provision <condition.json> --repo <题库工作副本>：一、按条件的 harness + scope 取作用域目录（homeDir 读即物化）；二、credentialState 不是 present 就停下并打印该跑的登录命令（/<家> login --scope <名>），不自动登录、不复制凭据；三、读该作用域的 effectiveSettings，与条件逐项核：cliVersion 对 harness.version（声明为 null 则回填进 lock 不改条件文档）、model 对 model.declared（声明非 null 时以声明为准——T30b 会按次请求它；effectiveSettings 报的是缺省，不一致只 warn）、reasoningEffort 对 reasoning.effort、sandbox / permissionMode / autoApprove 对 permissions、baseUrl 对 model.endpoint——permissions 与 endpoint 不一致是 error，拒写 lock；四、hashHome 算 home.sha；五、写 lock：{schema, condition, sha, home{sha}, provisioned{at, cliVersion, effective{model, reasoningEffort, permissions, endpoint}}}，additive 字段留在 /1（LOCK_SCHEMA 若关着 additionalProperties 就开成可选字段，不升版本）。只写给定 --repo 的工作副本，不 commit，不碰共享检出。
+- conditions list [--repo]：现有 service.conditions() 的表（id、sha、lock 状态、home.sha 是否匹配）加 provisioned 快照列；conditions diff <a> <b>：两份条件文档的逐字段差异（canonical JSON 深比较，notes 除外），输出只标「哪些字段不同、各自取值」，不做任何推荐——「只展示与 diff，不给选」。三个动词 CLI 与 slash 都有；eval_conditions 工具加 diff 参数，仍只读。
+- 决策 9 改为模型级：判官条件请求的模型（model.declared，非 null）不得等于任何选手条件请求的模型，harness 不同也不行；model.declared 为 null 的判官条件 validate 报 error（判官必须显式 pin 模型）。run.ts:1441 与 validate.ts:268 都改成这条，错误文案点名两个条件与那个模型。README 决策 9 的措辞同步改；Agent Note 写明为什么从元组收紧到模型（判官评的是文本，模型才是会偏向自己输出的那一方，harness 不是）。
+- run 对 lock 的态度不变：缺失 warn、过期拒；validate 的 ready / unready 判定加一条：lock 里 provisioned.effective 与条件不一致 → unready 并点名字段。
+
+## 交付
+三个动词 + 工具参数；lock 写入与校验；决策 9 两处；测试（provision 的五步各自失败路径与成功写入；list / diff 输出形状；决策 9 的模型级判定、null 判官报 error；validate 的 provisioned 不一致 unready）；README 双语；协议文档条件锚点一节；Agent Note（feature）。真机：本机 codex 一个条件 provision 成功写 lock，改条件的 permissions 后再 provision 被拒；用题库 t29-two-scopes 的两个条件 diff，只差 scope 一项；一份判官与选手同模型的计划 validate 出决策 9 的 error。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；不改 datasets / mission / lab；题库只以 --repo 指向的工作副本读写，共享检出 HEAD 不动；凭据不进 lock、日志、回报。
+
+## 完成判据
+eval 测试全绿，gate 绿；真机三样输出；pilot-a-round1 复算逐字节相同。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；lock 样例（脱敏）；diff 与 validate 的原文。
+```
+
+### T29b · eval + profile：/eval run 作为后台 job；路径展开 ~；install.sh 前置检查前移（可发）
+
+```text
+# 任务 T29b：dsh-eval——/eval run 起后台 job 立即返回；Remote 入口给 CI；plan 与 --out 展开 ~；install.sh / update.sh 前置检查前移
+
+## 背景
+/eval run 今天在会话轮次里同步 await service.run（slash.ts:267），回复从跑完的 report 构造；CommandInvocation 的 signal 没接，run 循环里唯一的 AbortController 是预算计时器（run.ts:819）。发起端一断，轮次没人接收，run 的委派又都以 parentSessionId 发出（run.ts:878）——T22 第 5 步记的「发起端一断整个 run 中止」就是这个。CLI 路径 dsh-eval run 没有宿主上下文，非 --dry-run 直接拒（cli-core.ts:166、service.ts:171），所以 CI 里没有浏览器就没有任何办法起一次真 run。宿主有通用的 jobs 服务：@deepseek-ai/dsh-jobs 挂在 ctx.jobs，JobStart 的 run() 是任意函数型启动器返回 JobHooks（cancel / done / readOutput），注册跨越轮次；不带 owner 的 job 只在 job_kill 或服务销毁时结束；模型面的 job_list / job_kill / job_output 已在评测预设里（agent.cordis.yml:79）。两条小的：plan 路径与 --out 都不展开 ~（slash.ts:231、run.ts:1885；validate.ts:63 已有 expandHome，run.ts:234 还有一份私有重复）；profiles/web-eval/scripts/install.sh 在第 176 行才第一次调 dsh，此前已整目录覆盖 $DSH_HOME/.agent-presets/eval（103–110）并跑完 build + pack，失败时 trap 的提示只说删 $DEST，预设残留没人管；update.sh 同形且没有 trap。
+
+## 先读
+packages/eval/src/slash.ts、service.ts、index.ts（inject 与 ctx.dshEval）、run.ts（runPlan 的入口、预算 AbortController、parentSessionId 的用途、expandHome 的两份）、cli-core.ts、validate.ts:63；@deepseek-ai/dsh-jobs 的 types（JobStart / JobHooks / owner 语义 / attachController）与 packages/taskpilot/src/index.ts 的用法；packages/local-agent/src/index.ts 的 start 对 parentSessionId 的要求（只要求会话存在，还是要求活跃 agent——实测后写明）；profiles/web-eval/scripts/install.sh、update.sh、README 的安装节；T23 finalize 的 interrupted 分类；T27 的 Agent Note（Remote 从脚本驱动的做法）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-run-job，分支 feat/eval-run-as-job；改 packages/eval（package.json 加 jobs 的 peer 类型依赖、README 双语 + sidecar）与 profiles/web-eval/scripts/ + README 双语；不改 local-agent / mission / lab / datasets。
+
+## 已定决定（照此实现）
+- /eval run 起一个 kind 为 eval-run 的函数型 job 后立即返回 job id 与 runId；run 的日志行写进 job 输出（readOutput），报告落盘路径在结束行；--wait 保留旧行为（轮次内等到跑完再回复），供交互用。job 不带 owner——它要活过发起会话；parentSessionId 仍记发起会话作子会话的亲代；若 local-agent.start 实测要求活跃 agent 而不只是会话存在，run job 自己开一条评测会话作父并把这一点写进 README。
+- 取消只有一条路：job_kill → JobHooks.cancel → 触发 run 的预算 AbortController 同款路径（localAgent.cancel 每条在跑的委派）→ run 记 interrupted（T23 finalize 的分类照旧）。没有第二个取消入口。
+- ctx.jobs 缺席（别的 profile 没挂 jobs）时 /eval run 退回同步等待并在回复首行写明；不因缺 jobs 拒绝。
+- Remote 入口：EvalService 暴露 runStart(planPath, options) → {jobId, runId}、runStatus(jobId)、runOutput(jobId, cursor)、runCancel(jobId)，与 slash 同一实现；CLI 加 dsh-eval run --instance <url> [--token …]，经 Remote 起 run 并轮询输出到退出，CI 无浏览器就走这条；本机 dsh-eval run 没 --instance 时仍只允许 --dry-run。
+- plan 路径与 --out（slash 与 CLI 的 report --out 一并）经 expandHome；删掉 run.ts 里那份私有重复，只留 validate.ts 的导出。
+- install.sh / update.sh：第一步就检查 command -v dsh、dsh --version、以及 cordis.patch.yml 里 pin 的 headless 路径与 PATH 上的 dsh（题库 env/README 写的机器级前置），任一缺失在动任何文件之前退出并打印缺什么；预设目录改为先备份再覆盖，trap 的提示同时覆盖 $DEST 与预设的恢复；update.sh 补 trap。
+
+## 交付
+job 化的 run 与 --wait；Remote 四个入口与 CLI 客户端；路径展开；两个脚本的前置检查与 trap；测试（假 jobs：起 job 立即返回、输出行、cancel 走预算路径、缺 jobs 退回同步；expandHome 三处；脚本用 bats 或 shell 夹具验前置检查先于任何写入）；README 双语（运行一节：三种发起方式、取消唯一路径）；Agent Note（feature）。真机：3171 上 /eval run 一份 P0 × codex × 1 rep 计划，回复立即返回，关掉浏览器标签页，run 照常到 archived，job_output 能读到全程日志；再用 dsh-eval run --instance 从终端起一次 --dry-run；install.sh 在没有 dsh 的 PATH 下第一步就退出且 $DSH_HOME/.agent-presets/eval 未被碰。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；不改 local-agent / mission / lab / datasets；凭据不进日志与回报；--wait 下的行为与今天逐字节相同。
+
+## 完成判据
+eval 测试全绿，gate 绿；真机三样；pilot-a-round1 复算逐字节相同。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；断开浏览器那次 run 的 job 输出末尾十行与 mission 状态；install.sh 前置检查失败的原文。
+```
+
+### T32 · capability-catalog：snapshotFor(presetId) 与能力清单哈希；sub-dsh 的能力面按 scope 组 preset（待确认 pilot D 口径后可发）
+
+```text
+# 任务 T32：capability-catalog——按 preset 取快照并出规范化哈希；eval 记编排实例的能力哈希；sub-dsh 的子 profile 按 scope 组 preset roster
+
+## 背景
+capability-catalog 的 snapshot Remote 只按部署默认 preset 的 standing scope 取（index.ts:207–217，standingKeyFor 本就接 id 却没暴露），行没有版本字段，顺序是注册序，没有任何哈希。条件文档里 preset 与 skills.pack 两个字段早就存在且进条件哈希（schema.ts:267–277），但从没被核对——它们是「宣称」，不是「事实」。更要紧的一条事实：preset 管的是 web-eval 实例自己的规划 / 分析 agent 及其进程内子 agent，管不到被委派的四家 CLI；sub-dsh 的 headless bundle 不组 preset roster，模型面的行从宿主全局层读（local-agent-dsh-headless/src/agent-loader.ts:72–76）。所以「同 harness 两 preset」（pilot D）今天对任何受试对象都不成立。T29 之后 dsh 的子 profile 随 scope 目录物化（local-agent-dsh/src/provision.ts），这是唯一一条能让 sub-dsh 的能力面按条件变的路。
+
+## 先读
+packages/capability-catalog/src/index.ts（catalogScope、snapshot、list_capabilities）、remote.ts、types.ts、official-tools.ts；packages/eval/src/schema.ts 的 preset / skills 字段与 hash.ts 的 canonicalJson；packages/local-agent-dsh/src/provision.ts（子 profile 的 cordis.patch.yml 与 manifest）、packages/local-agent-dsh-headless 的 agent-loader.ts 与 cordis.patch.yml；profiles/web-eval/presets/eval/agent.cordis.yml 与 preset.yml（一个 preset 长什么样）；T21 / T27 / T29 / T31 的 Agent Note；README「capability-catalog」行（L140）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-capability-hash，分支 feat/capability-hash；改 packages/capability-catalog、packages/local-agent-dsh（子 profile 组 preset）、packages/eval（run.meta 与 lock 的哈希字段）；README 双语 + sidecar；不改 mission / lab / datasets。
+
+## 已定决定（照此实现）
+- capability-catalog：snapshotFor(presetId?) 与 hashOf(snapshot)。规范形：skills 与 tools 各按 name 排序；tool 行取 {name, channel, parameters}（description 不进——措辞改动不该改因子），skill 行取 {name, source, 正文 sha256}（detail 读正文；updatedAt 不进）；mcpServers 取 {name, 工具名列表}；channels 取名单。哈希 = sha256(canonicalJson)，标签 caps:<sha256>；Remote 与 list_capabilities 都能带回 sha。
+- eval：run 建立时记编排实例（当前默认 preset）的 caps 哈希进 run.meta.orchestrator.capabilities——这是 provenance，不是因子；报告的「程序一致」把它列出但不比较。
+- sub-dsh 的能力面成为因子：T29 的 scope 目录里子 profile 的 cordis.patch.yml 可带一段 preset roster（由 T31 的 provision 按条件的 preset 字段写入），headless 的 agent-loader 组它而不是读全局层；条件的 preset 非 null 时，provision 用 snapshotFor 对该子 profile 算 caps 哈希写进 lock 的 provisioned.capabilities，就绪检查核对；三家外部 CLI 的 preset 必须为 null（validate 报 error），它们的技能包（skills.pack）本任务不做，留 I6。
+- pilot D 的口径定为「sub-dsh × 两 preset」：两条 dsh 条件、两个 scope、两份子 profile roster，其余全同；caps 哈希不同即两个受试对象。
+
+## 交付
+catalog 的两个接口与哈希；eval 的 run.meta 与 lock 字段；sub-dsh 子 profile 组 preset 的路；测试（规范形稳定：同内容不同注册序同哈希、改 description 不改哈希、改 parameters 改哈希；snapshotFor 按 id；provision 写 capabilities；外部 CLI 的 preset 非 null 报 error）；README 双语；Agent Note（feature）。真机：本机起两个只差子 profile roster 的 dsh scope，各 snapshotFor 出不同哈希，各委派一轮回答「你有哪些工具」并与清单对得上。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；不改 mission / lab / datasets；不改三家外部 CLI 的 provider。
+
+## 完成判据
+三包测试全绿，gate 绿；真机两哈希两清单；pilot-a-round1 复算相同（run.meta 多一个字段，results.jsonl 不变）。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；两个 scope 的 caps 哈希与清单差异；lock 样例。
 ```
 
 ## 四、验收规程
