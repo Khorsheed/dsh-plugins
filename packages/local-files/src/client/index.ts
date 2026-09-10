@@ -2,14 +2,14 @@
  * Local-files plugin, browser half: a git-agnostic file browser over any
  * local directory, defaulting to the session's workspace. It mounts the
  * localFiles Remote through the official `ctx.remote.$mount` channel and
- * surfaces the browser twice: as the 文件列表 / Files `conversation.view` tab
- * beside chat and 产物, and — on hosts with the right Sidebar (0.1.5+) — as a
+ * surfaces the browser once: on hosts with the right Sidebar (0.1.5+), as a
  * page-type `sidebar.right.pane.tab` entry that takes over the official files
  * kind (the registry's extension-over-builtin shadowing, so the guide shows
- * one files card: ours). The sidebar registration lives in a nested plugin
- * pended on `sidebarRightTabs`, so a composition without the right Sidebar
- * simply never activates it and the conversation tab remains the only entry
- * there.
+ * one files card: ours). The registration lives in a nested plugin pended on
+ * `sidebarRightTabs`, so a composition without the right Sidebar simply never
+ * activates it and the plugin contributes no browser surface there. (The
+ * `conversation.view` tab entry was retired 2026-09-10 — the sidebar tab is
+ * the single surface.)
  *
  * @module @khorsheed/dsh-local-files/client
  */
@@ -20,8 +20,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
 import type {} from '@khorsheed/dsh-local-files/remote'
-// Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ctx.sidebarRightTabs service merge and the
 // right-Sidebar SlotMap seat ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -41,12 +39,12 @@ import { createLocalFilesStore } from './store-local.ts'
 export { WorkspaceView }
 export { LOCAL_FILES_KIND, LOCAL_FILES_TAB_ID } from './definition.tsx'
 
-/** Required services: slots, the remote channel, and the locale. */
-export const inject = ['slots', 'remote', 'locale']
+/** Required services: the remote channel and the locale (the sidebar seat is reached through the nested plugin below). */
+export const inject = ['remote', 'locale']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, and the
- * workspace view tab.
+ * sidebar files tab.
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -102,16 +100,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     openFolder: openWith(pickFileManager),
     openIDE: openWith(pickIde),
   })
-
-  ctx.slots.inject('conversation.view', () => ctx.slots.register({
-    name: 'conversation.view',
-    id: 'local-files',
-    order: 25,
-    locale: NS,
-    label: () => t('tab.label'),
-    store: createLocalFilesStore,
-    inject: browserFace,
-  }, WorkspaceView))
 
   // The right-Sidebar entry (0.1.5+). A nested plugin pended on
   // `sidebarRightTabs` — cordis only re-wakes fibers that declare a service

@@ -1,5 +1,5 @@
-/* The workspace view tab: a full-height two-pane layout (top bar over a
-   left file tree + right detail preview), filling the conversation view. */
+/* The file-list view: a full-height two-pane layout (top bar over a
+   left file tree + right detail preview), filling the sidebar pane. */
 
 .view {
   display: flex;
@@ -8,10 +8,6 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  /* The view marks data-conversation-composer-overlay, so the composer floats
-     over its bottom edge; scrollable panes pad their bottoms by this
-     clearance (the products/datasets tab's pattern). */
-  --dsh-local-files-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
   background: var(--dsw-alias-bg-base);
 }
 

@@ -1,10 +1,11 @@
 /**
  * Composed props contract for the local-files file-browser view. The browser
- * mounts on two seats — the `conversation.view` tab and, on hosts with the
- * right Sidebar, the keyed `sidebar.right.pane.tab` — whose owner shares
- * differ (conversation.view hands view-switching props the browser never
- * reads), so the runtime share is spelled structurally: the one framework
- * prop the view consumes is the session id.
+ * mounts on one seat — the keyed `sidebar.right.pane.tab` — and its props are
+ * spelled structurally (the session id plus the `GlobalStandardProps` seat
+ * that brings `useSessions`) rather than riding `PropsRuntime`, so no seat
+ * owner share leaks into the contract. (The retired `conversation.view` seat
+ * handed view-switching props the browser never read — that coupling is why
+ * the share went structural.)
  *
  * @module @khorsheed/dsh-local-files/client
  */
@@ -47,7 +48,7 @@ export interface WorkspaceViewInjected {
   openIDE: (path: string) => void
 }
 
-/** Full props of the file-browser view, on either seat it mounts on. */
+/** Full props of the file-browser view. */
 export type WorkspaceViewProps =
   & { sessionId: SessionId }
   & GlobalStandardProps

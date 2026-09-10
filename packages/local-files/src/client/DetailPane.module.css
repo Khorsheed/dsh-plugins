@@ -423,7 +423,7 @@
 .previewScroll {
   flex: 1;
   min-height: 0;
-  padding: 10px 24px calc(10px + var(--dsh-local-files-bottom-clearance, 0px));
+  padding: 10px 24px;
   overflow: auto;
   scrollbar-gutter: stable;
 }
@@ -444,7 +444,7 @@
   flex: 1;
   min-height: 0;
   place-items: center;
-  padding: 12px 24px calc(12px + var(--dsh-local-files-bottom-clearance, 0px));
+  padding: 12px 24px;
   overflow: auto;
 }
 

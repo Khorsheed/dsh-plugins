@@ -1,9 +1,10 @@
 /**
- * The workspace view tab (`conversation.view`): a git-agnostic file browser
- * over the session's workspace. Left file tree (lazy per-level loading) +
- * right detail preview (structured html/markdown/JSON/CSV/image via the shared
- * preview layer). Git-agnostic: browsable dirs are plain local filesystem
- * paths. Per-session memory keeps each session on its own last-browsed root.
+ * The file-list view (the right-Sidebar `files` tab's body): a git-agnostic
+ * file browser defaulting to the session's workspace. Left file tree (lazy
+ * per-level loading) + right detail preview (structured html/markdown/JSON/
+ * CSV/image via the shared preview layer). Git-agnostic: browsable dirs are
+ * plain local filesystem paths. Per-session memory keeps each session on its
+ * own last-browsed root.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import {
@@ -175,7 +176,7 @@ export function WorkspaceView({
         : selectedPath
 
   return (
-    <div className={css.view} data-conversation-composer-overlay="">
+    <div className={css.view}>
       <div className={css.topbar}>
         <div className={css.crumbs} title={current}>
           {crumbs.map((crumb, index) => (
