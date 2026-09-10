@@ -288,6 +288,16 @@ T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个
 
 **T30b 与 T29b 验收（2026-09-10）**：`feat/local-agent-delegation-model`（`3f67b7b`）合入 main `e43faf0`，五个 README sidecar 与主线撞了哈希、按合并后 blob 重录；`feat/eval-run-as-job`（`fa4782e`）以 squash 合入 `cdba6f4`——分支里混着五条 dsh-ankh-guard 自动打的 checkpoint 提交，一并抹掉；两条在 eval 的 run.ts / run.spec.ts / README 重叠，自动合并只剩 sidecar 一处。合并态 local-agent 224、codex 164、claude-code 151、kimi 185、dsh 124、dsh-headless 47、eval 347、脚本测试 107 全绿，双语 245 对同步。T30b 三条判断都接受：resume 传 model 抛错不忽略（CLI 会照办一次中途换模型而转录看不出来）；dsh 连设置卡一起补齐；协议只动描述。真机把 T22 第 5 步那个形状跑过了：判官 dsh v4-pro、选手 dsh v4-flash 的 P0 计划就绪两条各回读到自己的模型。T29b 三处：起 job 后发起端退出 run 照跑、`dsh-eval run --instance` 从终端到 completed、install.sh 缺 dsh 在动任何文件前退出。withInitiator 那处修改留着——job 没有轮次可继承 initiator 边界，它站得住，只是没修 stage2 那个问题。**没拿到的一块是宿主线**：3171 跑 dsh 0.1.1-rc.2，main 的插件自 16d5602 起按 0.1.2-rc.1 的 API 面写（childSession.snapshotEvents），resume 轮必挂；切 rc 工具链两次起不来，profile 的 @deepseek-ai/* 按自己 package.json 的范围解析，要上 rc 线得改 profile 模板的范围与 overrides，归 0.1.2 迁移那条线。在它落地前 3171 只能跑单轮（就绪、fresh 委派），I4 的 pilot B / C / D 跑不了两阶段。已合入的分支与 worktree（T29、T30b、T30c、T29b）本轮清掉。
 
+**宿主切 0.1.3-rc.1（2026-09-10 定）**：主线今日切到 0.1.3-rc.1，官方接口变化较多。评测侧的安排：T31、T32 的文案保留但暂不发，等迁移合入 main 后从新 main 开分支；T29c（web-eval profile 上新宿主线 + 3171 重装）合并进迁移那条线做，不单独发；local-agent 家族的适配由迁移线负责，评测侧用下面的回归清单验收。
+
+迁移合入后的评测侧回归清单（谁做迁移谁跑，回报贴原文）：
+1. 包测试：local-agent、四家 provider、dsh-headless、eval、lab、datasets、mission 全绿；`pnpm gate --all` 通过（ankh-guard 抖动按既有规则单跑复核）。
+2. 复算：pilot-a-round1 bundle 的 results.jsonl 与 usage.jsonl 与切换前逐字节相同；T22 第 5 步 run A 的报告复算不变量四行仍全 ✅。
+3. 本机四家 status：cliVersion、credentialState、effectiveSettings.model 都有值；四家各一轮最小 exec 委派回读到模型（kimi 配额未复就记原文）。
+4. 3171：切新工具链、按 T29c 改过范围的 profile 重装，install.sh 前置检查通过；`/eval run` P0 × codex × 1 rep 两阶段到 archived（这是切换前拿不到的那一格，resume 轮不再报 snapshotEvents）；再起一次 job 后关掉发起端，run 照跑。
+5. 容器路径：lab acquire 一个单元、T20c 的方式 P0 × codex 一格到 released，四条不变量 ✅。
+6. 三处已知接缝重看：T17 的 container exec 只用 ctx.subprocess；T29b 的 jobs 契约（JobStart / JobHooks / owner）是否变形；T30b 的 dsh headless `--model` 经 startup provider 与 cordis.patch.yml runner 行是否仍通。
+
 T32（2026-09-10 定）：pilot D 的口径是「sub-dsh × 两 preset」——preset 只管得到我们自己组的子实例，三家外部 CLI 的技能包留 I6 单独做。
 
 T30b、T31（2026-09-10 文案发出）：T22 第 5 步的互斥（判官 dsh v4-pro 声明、实跑 v4-flash、改成 v4-flash 又撞 JUDGE_IS_PLAYER）根子是模型没法按次委派——T30b 让判官条件请求 v4-pro，互斥自然解；T31 再把决策 9 收成模型级并进 validate。
@@ -1420,7 +1430,7 @@ packages/local-agent/src/types.ts（DelegationCallOptions、Intent 的 fresh / r
 分支名与 commit；Agent Note 路径；gate 输出；四轮回读表；那份计划的就绪原文。
 ```
 
-### T31 · eval：conditions provision 写 lock；conditions list / diff 数据面；决策 9 放宽为多判官面板（可发，建议 T30b 之后）
+### T31 · eval：conditions provision 写 lock；conditions list / diff 数据面；决策 9 放宽为多判官面板（待宿主切 0.1.3-rc.1 合入 main 后发）
 
 ```text
 # 任务 T31：dsh-eval——conditions provision 写 lock（作用域就绪 + effectiveSettings 逐项核对 + home.sha）；list / diff 只展示不给选；决策 9 放宽为多判官面板
@@ -1488,7 +1498,7 @@ eval 测试全绿，gate 绿；真机三样；pilot-a-round1 复算逐字节相�
 分支名与 commit；Agent Note 路径；gate 输出；断开浏览器那次 run 的 job 输出末尾十行与 mission 状态；install.sh 前置检查失败的原文。
 ```
 
-### T32 · capability-catalog：snapshotFor(presetId) 与能力清单哈希；sub-dsh 的能力面按 scope 组 preset（可发；2026-09-10 定 pilot D 口径为 sub-dsh × 两 preset，外部 CLI 的技能包留 I6）
+### T32 · capability-catalog：snapshotFor(presetId) 与能力清单哈希；sub-dsh 的能力面按 scope 组 preset（待宿主切 0.1.3-rc.1 合入 main 后发；pilot D 口径为 sub-dsh × 两 preset，外部 CLI 的技能包留 I6）
 
 ```text
 # 任务 T32：capability-catalog——按 preset 取快照并出规范化哈希；eval 记编排实例的能力哈希；sub-dsh 的子 profile 按 scope 组 preset roster
