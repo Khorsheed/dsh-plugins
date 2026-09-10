@@ -74,6 +74,18 @@ export interface LocalAgentDshConfig {
    * — opt-in). Deployment default; the settings card can override it live.
    */
   liveMirrorGranularity?: 'event' | 'token'
+  /**
+   * The model every delegation round starts the sub-dsh with, spelled
+   * `provider/model` (a bare id names the model and keeps the instance's
+   * provider) — passed as the headless launch's `--model`. Absent — the
+   * default — passes no flag at all: the sub-dsh runs the host instance's own
+   * `agentDefaultModel` selection, exactly as it did before this key existed.
+   *
+   * A delegation that names its own model outranks this key; the settings
+   * card writes the same key, so a change applies to the next round without a
+   * reload.
+   */
+  model?: string
 }
 
 /** Runtime schema so the Loader always passes an object, never undefined. */
@@ -82,6 +94,7 @@ export const Config: z<LocalAgentDshConfig> = z.object({
   apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
   cliLaunch: z.array(z.string()),
   headlessBundleDir: z.string(),
+  model: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
@@ -104,6 +117,10 @@ const DSH_SETTINGS_SCHEMA = z.object({
   enabled: z.boolean().default(false),
   live: z.boolean().default(false),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  // `model` deliberately carries NO default: an unset key must resolve to
+  // undefined, which is what keeps the pre-key behavior byte-identical.
+  model: z.string(),
+  recentModels: z.array(z.string()).default([]),
 })
 
 /** The delegation tool the toggle mounts while ON. */
@@ -127,8 +144,16 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       base: {
         ...config.live === undefined ? {} : { live: config.live },
         ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+        ...config.model === undefined ? {} : { model: config.model },
       },
     })
+    // Read PER ROUND, not captured at apply: the settings card writes the same
+    // namespace field, so a change has to reach the next delegation without a
+    // plugin reload. Blank is not a model — a whitespace-only value is unset.
+    const resolveModel = (): string | undefined => {
+      const model = scope.get().model?.trim()
+      return model === undefined || model === '' ? undefined : model
+    }
     const harness: LocalAgentHarness = {
       name: 'dsh',
       displayName: 'dsh',
@@ -162,20 +187,28 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // way that scope's rounds launch it.
       effectiveSettings: async (scopedHome) => {
         const cliVersion = await dshCliVersion(ctx, config, scopedHome).catch(() => undefined)
-        let model: string | undefined
-        try {
-          const defaultModel = ctx.get('agentDefaultModel') as
-            | { currentSelection?: () => { provider?: string; model?: string } }
-            | undefined
-          const selection = defaultModel?.currentSelection?.()
-          if (typeof selection?.model === 'string' && selection.model !== '') {
-            model = typeof selection.provider === 'string' && selection.provider !== ''
-              ? `${selection.provider}/${selection.model}`
-              : selection.model
+        // The family's fixed order: the plugin config key (it rides every
+        // launch as `--model`) before the host selection the sub-dsh would
+        // otherwise inherit.
+        let model: string | undefined = resolveModel()
+        // Only when the key named none: the host selection is what a round
+        // WITHOUT `--model` would inherit, so it is the second layer, not the
+        // first.
+        if (model === undefined) {
+          try {
+            const defaultModel = ctx.get('agentDefaultModel') as
+              | { currentSelection?: () => { provider?: string; model?: string } }
+              | undefined
+            const selection = defaultModel?.currentSelection?.()
+            if (typeof selection?.model === 'string' && selection.model !== '') {
+              model = typeof selection.provider === 'string' && selection.provider !== ''
+                ? `${selection.provider}/${selection.model}`
+                : selection.model
+            }
+          } catch {
+            // Degrade: an unreadable selection reports no model instead of
+            // breaking the status surface.
           }
-        } catch {
-          // Degrade: an unreadable selection reports no model instead of
-          // breaking the status surface.
         }
         return {
           drive: scope.get().live ? 'live' : 'exec',
@@ -218,7 +251,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // round. Toggling ENABLED off keeps the historical hard semantics:
       // provider unregisters and the switch disposes (disposeAll).
       const liveSwitch = new LiveDriverSwitch(ctx, scope, config)
-      disposers.push(ctx.subagents.registerProvider(new DshCliProvider(ctx, config, liveSwitch.resolve)))
+      disposers.push(ctx.subagents.registerProvider(new DshCliProvider(ctx, config, liveSwitch.resolve, resolveModel)))
       // The switch's disposal runs after the provider unregisters, so no
       // in-flight round can re-spawn a runtime the teardown already reclaimed.
       disposers.push(() => { liveSwitch.dispose() })

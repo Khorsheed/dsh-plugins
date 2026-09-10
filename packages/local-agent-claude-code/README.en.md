@@ -49,6 +49,8 @@ The scoped `settings.json` is never rewritten: `--model` overrules it per round 
 
 The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in) plus previously saved values as suggestions. Saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key, which falls back to the YAML composition base and from there to "absent" above.
 
+**A delegation's own model outranks this key.** An orchestrator may name the model for ONE delegation through the facade's `DelegationCallOptions.model`, which sits above this key (the four layers are in the family core README). The first round's request is recorded and every resume round re-requests it — `resume` takes no model of its own. A round carrying a delegation model is exec-only; this plugin-config key is not.
+
 **This is not an evaluation gap.** A run freezes its condition at setup: change the key mid-run and the next round's model read-back sees declared ≠ observed and fails the run as misattributed (frozen decision 5). "A new run follows the new value, a running one is never switched underneath you" is the design, not an oversight.
 
 ⚠️ `skip` has no OS-level sandbox — the child can write anywhere the host user can, including outside the workspace — and the scoped login's OAuth token is sent to whatever `baseUrl` points at. Prefer `normal` when a delegation needs confinement; point `baseUrl` only at endpoints you trust.

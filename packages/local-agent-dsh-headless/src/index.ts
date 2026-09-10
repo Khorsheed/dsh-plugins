@@ -38,6 +38,13 @@ export interface Config {
   resumeSessionId?: string
   /** Resident mode: drive turns over the stdio wire instead of one task. */
   serve?: boolean
+  /**
+   * The model this launch runs (`--model`), spelled `provider/model`; a bare
+   * id names the model and keeps the instance's provider. Absent means the
+   * instance's default selection, unchanged. Under `serve` it binds every
+   * session the resident process hosts.
+   */
+  model?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -45,6 +52,7 @@ export const Config: z<Config> = z.object({
   sessionId: z.string(),
   resumeSessionId: z.string(),
   serve: z.boolean().default(false),
+  model: z.string(),
 })
 
 /** Process-facing effects of one run: output streams plus the launcher's bounded exit request. */
@@ -86,6 +94,7 @@ async function run(ctx: Context, config: Config, io: HeadlessIo): Promise<void> 
   const handle = await loadSubDshAgent(ctx, {
     ...config.sessionId === undefined ? {} : { sessionId: config.sessionId },
     ...config.resumeSessionId === undefined ? {} : { resumeSessionId: config.resumeSessionId },
+    ...config.model === undefined ? {} : { model: config.model },
   })
   const agent = handle.agent
   await agent.whenIdle()
@@ -119,7 +128,7 @@ export function apply(ctx: Context, config: Config): void {
   }
   const io: HeadlessIo = { stdin: internals.stdin, stdout: internals.stdout, stderr: internals.stderr, exit }
   if (config.serve === true) {
-    void runServe(ctx, io).catch((error: unknown) => { fail(io, error) })
+    void runServe(ctx, io, config.model).catch((error: unknown) => { fail(io, error) })
     return
   }
   if (config.task === undefined || config.task.trim() === '') {

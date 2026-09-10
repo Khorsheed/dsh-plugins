@@ -64,6 +64,13 @@ export interface ReadinessRecord {
   childSessionId: string | null
   /** The condition's declared model. */
   declaredModel: string | null
+  /**
+   * The model the probe REQUESTED — the declared model when the condition
+   * names one, null when it names none and the harness's own configuration
+   * decided. Recorded beside {@link ReadinessRecord.observedModel} so a
+   * reader can tell "asked for X, got X" from "asked for nothing, got X".
+   */
+  requestedModel: string | null
   /** The named scoped home the probe ran against; absent means the default one. */
   scope?: string
   /** The model the facade read back for the probe; null when it reads none. */
@@ -200,6 +207,7 @@ async function probeOne(
       harness: condition.harnessName,
       provider: condition.provider,
       declaredModel: condition.declaredModel,
+      requestedModel: condition.declaredModel,
       ...(condition.scope === undefined ? {} : { scope: condition.scope }),
       ok: false,
       startedAt,
@@ -242,6 +250,7 @@ async function probeIn(
     harness: condition.harnessName,
     provider: condition.provider,
     declaredModel: condition.declaredModel,
+    requestedModel: condition.declaredModel,
     ...(condition.scope === undefined ? {} : { scope: condition.scope }),
   }
   const startedAt = env.now()
@@ -279,6 +288,12 @@ async function probeIn(
       // scoped home the round reads credentials from, on the host and inside
       // a unit alike (the unit bind-mounts that same directory).
       ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+      // The probe asks for the SAME model the cells will: a readiness check
+      // that ran the instance default while the cells run the declared model
+      // would prove the wrong thing — which is exactly how a judge condition
+      // declaring one model and inheriting another passed the probe and
+      // failed the run (T22 step 5).
+      ...(condition.declaredModel === null ? {} : { model: condition.declaredModel }),
       onProgress: (event: DelegationProgress) => {
         if (event.kind === 'settled' && event.observedModel !== undefined) settledModel = event.observedModel
       },

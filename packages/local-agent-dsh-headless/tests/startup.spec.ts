@@ -55,6 +55,8 @@ export const apply = ctx => globalThis.__headlessStartupApply(ctx)
     '    task: !!js ctx.localAgentDshHeadlessStartup.task',
     '    sessionId: !!js ctx.localAgentDshHeadlessStartup.sessionId',
     '    resumeSessionId: !!js ctx.localAgentDshHeadlessStartup.resumeSessionId',
+    // Mirrors the shipped patch row, so the fixture proves the same wiring.
+    '    model: !!js ctx.localAgentDshHeadlessStartup.model',
     '- id: local-agent-dsh-headless-startup',
     `  name: ${pathToFileURL(join(dir, 'startup.mjs')).href}`,
     '',
@@ -103,6 +105,25 @@ describe('sub-dsh headless command-line provider', () => {
     expect(task).toBeUndefined()
     expect(observed.runnerConfig).toBeUndefined()
     expect(observed.exits).toEqual([1])
+  })
+
+  it('carries --model into the runner config beside the session flag', async () => {
+    const { task, observed } = await bootStartup(
+      ['--model', 'deepseek-official/deepseek-v4-pro', '--session-id', '6ba7b810-9dad-11d1-80b4-00c04fd430c8', 'run'],
+    )
+    expect(task).toEqual({ task: 'run', sessionId: '6ba7b810-9dad-11d1-80b4-00c04fd430c8', model: 'deepseek-official/deepseek-v4-pro' })
+    expect(observed.runnerConfig).toMatchObject({ model: 'deepseek-official/deepseek-v4-pro' })
+    expect(observed.exits).toEqual([])
+  })
+
+  it('carries --model in serve mode too — a resident process binds one model', async () => {
+    const { task } = await bootStartup(['--serve', '--model', 'deepseek-official/deepseek-v4-pro'])
+    expect(task).toEqual({ task: '', serve: true, model: 'deepseek-official/deepseek-v4-pro' })
+  })
+
+  it('leaves the runner config without a model when the flag is absent', async () => {
+    const { task } = await bootStartup(['--resume', '6ba7b810-9dad-11d1-80b4-00c04fd430c8', 'continue'])
+    expect('model' in (task as object)).toBe(false)
   })
 
   it('rejects both session flags together', async () => {

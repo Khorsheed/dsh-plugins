@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev8** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev9** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -293,6 +293,7 @@ One condition = one harness + a model declaration + a permission word + one scop
 ```
 
 - `null` in the nullable fields (`harness.version`, `model.declared`, `model.endpoint`, `home.sha`) reads as "**unresolved**": validate lists it as a warning, and the pre-run readiness gate refuses it. `null` means "not known yet", not "none".
+- `model.declared` is a REQUEST, not only a claim (T30b). When it is non-null the orchestrator passes it to local-agent as the delegation's `model`, which lands as each harness's own CLI model flag — the same in player rounds, judge delegations and the readiness probe. `null` still means "unresolved" and still passes no model flag at all, leaving the harness's own configuration to decide. The read-back comparison is unchanged after the request: ask for X, run Y, and it is still a MisattributedRun. The contract's SHAPE did not change; what changed is that this field went from "only compared" to "requested, then compared".
 - The `permissions` vocabulary is given per harness: `dsh` → `unrestricted`; `claude-code` → `skip` or `normal`; `codex` → `danger-full-access`, `workspace-write`, `read-only`; `kimi` → `auto-approve`. The schema enum is the union; an out-of-vocabulary value for a known harness (e.g. dsh with `skip`) is a validator error.
 - `env.keys` carries variable NAMES only. No values — especially credentials — ever enter a contract file.
 - `scope` may be omitted, and omitting it means "run against this harness's default scoped home" — what every condition written before this field says. Naming one (a `[a-z0-9-]` NAME, never a path) runs the condition against `<homesRoot>/<harness>@<scope>` instead: a SIBLING of the default directory with its own login, its own session records and its own `delegations.jsonl`. Credentials are never copied into it. It IS part of the condition hash: two conditions differing only in `scope` are two SUBJECTS, because they log in as two accounts — which is how one run compares two logins of one harness (the factor I4's per-delegation model, per-condition provisioning and two-preset pilot all rest on). The readiness probe probes each condition's own scope, and a container cell mounts each condition's own directory. A scoped delegation is exec-only (the live drivers bind the default scoped home), and kimi's member bridge stays bound to the default scope too.

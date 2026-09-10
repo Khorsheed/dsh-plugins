@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev8** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev9** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器、绑定表单预填、`dataset-authoring` skill 都从本协议派生。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -293,6 +293,7 @@ datasets/<id>/
 ```
 
 - 可空字段（`harness.version`、`model.declared`、`model.endpoint`、`home.sha`）的 `null` 读作「**未解析**」：validate 列为 warning，run 前的就绪检查拦截。`null` 是显式的「还不知道」，不是「没有」。
+- `model.declared` 是**请求值**，不只是声明（T30b）。它非 null 时，编排器把它作为委派级 `model` 传给 local-agent，由后者落成各家 CLI 的模型参数——选手轮、判官委派、就绪探测三处一致。`null` 仍是「未解析」，仍不传任何模型参数、由 harness 自己的配置决定。请求之后照旧回读比对：请求了 X 却跑了 Y，仍然是 MisattributedRun。契约形状没有改变，改的是这个字段从「只用来核对」变成「先请求，再核对」。
 - `permissions` 的词表按 harness 给定：`dsh` → `unrestricted`；`claude-code` → `skip` 或 `normal`；`codex` → `danger-full-access`、`workspace-write`、`read-only`；`kimi` → `auto-approve`。schema 枚举是并集；已知 harness 的越表取值（如 dsh 配 `skip`）由校验器报 error。
 - `env.keys` 只写变量名。任何值——尤其凭证——不得进契约文件。
 - `scope` 可缺省，缺省即「跑该家的缺省作用域目录」——本字段出现之前每条条件的含义。写了名字（只允许 `[a-z0-9-]`，是名字不是路径）就改成跑 `<homesRoot>/<家名>@<scope>`：与缺省目录**同级**的另一份目录，各自登录、各自的会话记录、各自的 `delegations.jsonl`，凭证**不复制**。它进条件哈希：两条只差 `scope` 的条件是**两个受试对象**——登录的是两个账号。同一家两条条件因此可以在模型、推理强度之外再差一次登录（I4 的 T30b/T31/T33 要的正是这个）。就绪检查按各自的 scope 探各自的目录；容器轮挂的也是各自的目录。带 scope 的委派只走 exec（live 驱动绑的是缺省目录），kimi 的成员桥同理只绑缺省目录。

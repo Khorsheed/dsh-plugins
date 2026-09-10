@@ -959,6 +959,12 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
             label: `${input.runId}/${input.missionId} judge:${judge.id}#${sample}`,
             cwd: sampleDir,
             ...(judge.scope === undefined ? {} : { scope: judge.scope }),
+            // The judge condition's declared model is requested, not just
+            // compared: a judge that declares one model and silently runs the
+            // instance default is the T22-step-5 failure, and it is what
+            // forced a judge condition to be re-declared into a collision
+            // with a player.
+            ...(judge.declaredModel === null || judge.declaredModel === undefined ? {} : { model: judge.declaredModel }),
           })
           const result = await run.result
           if (result.stopReason !== 'completed') {

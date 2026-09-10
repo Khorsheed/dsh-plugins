@@ -34,6 +34,21 @@ dsh --profile headless-local-agent-dsh --serve                              # �
 
 两个 flag 都不给时，runner 自生成 `session-<uuid>` id（官方 headless 行为），因此仍是一次性使用的即插即用替代。`--serve` 不接受 task 与 session flag——turn 与会话 id 全部走 wire。
 
+### `--model <provider/model>`
+
+覆盖本次启动的模型选择：
+
+```bash
+dsh --profile headless-local-agent-dsh --model deepseek-official/deepseek-v4-pro --session-id 6ba7... "run the tests"
+```
+
+- 不给 = 用子实例自己 `agentDefaultModel` 的当前选择，与这个 flag 出现之前逐字节相同。
+- 按**第一个** `/` 切分成 provider 与 model，所以模型 id 里再带斜杠也不会被切坏；只写模型名（没有 `/`）则只换模型、沿用实例的 provider。开头或结尾的斜杠不算切分点——那会切出一个空的一半，agent 路由不了——整个值当模型名。
+- 选择的其余部分原样带过（尤其是 reasoning effort）：换模型不是重置配置。
+- 与两种模式都正交：一次性轮次绑定这一轮，`--serve` 绑定这个常驻进程托管的**每一个**会话——runtime 的模型是进程事实，这正是父侧拒绝在长驻路径上按次给模型的原因。
+
+父侧 `local-agent-dsh` provider 自动带上它：harness 的 `model` 插件配置键、或某一次委派自带的 `DelegationCallOptions.model`，都落成这个 flag。
+
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。

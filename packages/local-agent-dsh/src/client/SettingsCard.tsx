@@ -15,6 +15,9 @@ import { useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
 
+/** How many previously-saved model identifiers the input suggests. */
+const RECENT_MODEL_LIMIT = 5
+
 /** The `local-agent-dsh` settings namespace section the card edits. */
 export interface DshCardSettings {
   /** Whether the dsh harness, provider, and delegation tool are registered. */
@@ -23,6 +26,14 @@ export interface DshCardSettings {
   live?: boolean
   /** Live mirror granularity: folded events or per-chunk streaming. */
   liveMirrorGranularity?: 'event' | 'token'
+  /**
+   * The model every delegation round starts the sub-dsh with, spelled
+   * `provider/model`. Absent (the field cleared) means the plugin passes no
+   * `--model` at all — the host instance's own default selection decides.
+   */
+  model?: string
+  /** Model identifiers saved before; the input's suggestions, capped at five. */
+  recentModels?: readonly string[]
 }
 
 /** Injected face of the dsh settings card. */
@@ -69,6 +80,38 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
   const enabled = snapshot.value?.enabled ?? false
   const live = snapshot.value?.live ?? false
   const granularity = snapshot.value?.liveMirrorGranularity ?? 'event'
+  // The model input is a DRAFT until saved: `null` means "showing whatever the
+  // scope holds", so an external write (another tab, a YAML reload) still
+  // reaches the field while the user is not typing in it.
+  const storedModel = snapshot.value?.model ?? ''
+  const recentModels = snapshot.value?.recentModels ?? []
+  const [modelDraft, setModelDraft] = useState<string | null>(null)
+  const [modelSaved, setModelSaved] = useState(false)
+  const [modelError, setModelError] = useState(false)
+  const modelValue = modelDraft ?? storedModel
+  /**
+   * Commit the model field. A blank value UNSETS the key rather than storing
+   * an empty string, so the field re-inherits the YAML composition base — and
+   * with no base, the harness is back to passing no model at all.
+   */
+  const saveModel = (): void => {
+    const next = modelValue.trim()
+    setModelSaved(false)
+    setModelError(false)
+    const write = next === '' ? scope.unset('model') : scope.set('model', next)
+    void write.then(
+      async () => {
+        // Most-recent-first, deduplicated, capped: the suggestion list is a
+        // memory of what this instance has actually run, never a catalog.
+        if (next !== '') {
+          await scope.set('recentModels', [next, ...recentModels.filter(value => value !== next)].slice(0, RECENT_MODEL_LIMIT))
+        }
+        setModelDraft(null)
+        setModelSaved(true)
+      },
+      () => { setModelError(true) },
+    )
+  }
   const write = (field: string, value: unknown): void => {
     setSaved(false)
     setError(false)
@@ -133,6 +176,39 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
               </button>
             </div>
             <span className={css.hint}>{t(enabled ? 'enable.on' : 'enable.off')}</span>
+          </section>
+          <section className={css.block}>
+            <h3 className={css.blockTitle}>
+              {t('model.title')}
+              <Tooltip label={t('model.info')} side="bottom" maxWidth={360}>
+                <button type="button" className={css.info} aria-label={t('model.info.aria')}>ⓘ</button>
+              </Tooltip>
+            </h3>
+            <div className={css.row}>
+              <input
+                type="text"
+                className={css.modelInput}
+                list={`${NS}-recent-models`}
+                value={modelValue}
+                placeholder={t('model.placeholder')}
+                aria-label={t('model.title')}
+                disabled={!ready}
+                onChange={(event) => { setModelDraft(event.target.value) }}
+              />
+              <datalist id={`${NS}-recent-models`}>
+                {recentModels.map(value => <option key={value} value={value} />)}
+              </datalist>
+              <button
+                type="button"
+                className={css.modelSave}
+                disabled={!ready || modelValue.trim() === storedModel}
+                onClick={() => { saveModel() }}
+              >
+                {t('model.save')}
+              </button>
+            </div>
+            {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
+            {modelError && <span className={css.errorText}>{t('model.error')}</span>}
           </section>
           <section className={css.block}>
             <div className={css.row}>

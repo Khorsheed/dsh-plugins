@@ -34,6 +34,21 @@ dsh --profile headless-local-agent-dsh --serve                              # re
 
 With neither flag the runner generates its own `session-<uuid>` id (the official headless behavior), so it stays a drop-in replacement for one-shot use. `--serve` takes neither a task nor session flags — turns and session ids all travel over the wire.
 
+### `--model <provider/model>`
+
+Overrides this launch's model selection:
+
+```bash
+dsh --profile headless-local-agent-dsh --model deepseek-official/deepseek-v4-pro --session-id 6ba7... "run the tests"
+```
+
+- Absent means the sub-instance's own `agentDefaultModel` selection — byte for byte the behavior before the flag existed.
+- It splits at the FIRST `/` into provider and model, so a model id containing one survives; a bare id (no `/`) names the model only and keeps the instance's provider. A leading or trailing slash is not a split point — that would produce an empty half the agent cannot route — so the whole value is the model.
+- Everything else on the selection is carried through (the reasoning effort in particular): a model swap is not a config reset.
+- It is orthogonal to both modes: a one-shot launch binds that round, and `--serve` binds EVERY session the resident process hosts — a runtime's model is a process fact, which is exactly why the parent refuses a per-delegation model on the live path.
+
+The parent `local-agent-dsh` provider supplies it automatically: the harness's `model` plugin-config key, or one delegation's own `DelegationCallOptions.model`, both land as this flag.
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.

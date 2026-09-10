@@ -166,13 +166,17 @@ export interface LocalAgentEffectiveSettings {
    * key first (codex, claude-code, and kimi each accept one, and a set key
    * rides every round's CLI launch), then the harness's scoped configuration
    * surface (kimi's `default_model`, codex's `model`, claude-code's
-   * `settings.json` `model` — the CLI's own default stays unnamed), then
-   * absent. dsh has no key of its own: it reports the host
-   * `agentDefaultModel` selection its sub-instance inherits, formatted
-   * `provider/model`. Absence is the honest answer, never a substituted
-   * default.
+   * `settings.json` `model`, dsh's host `agentDefaultModel` selection
+   * formatted `provider/model` — the CLI's own default stays unnamed), then
+   * absent. Absence is the honest answer, never a substituted default.
    *
-   * This is a LIVE read of what the NEXT round would run with. A run's
+   * This deliberately does NOT report a delegation-level model
+   * ({@link DelegationCallOptions.model}): that one belongs to one
+   * delegation, while this field answers "what would a round with no model of
+   * its own run" — the harness-wide setting, which is what the evaluation's
+   * condition snapshot is asking about.
+   *
+   * This is a LIVE read of what the NEXT such round would run with. A run's
    * condition hash freezes it at run setup, so changing the key mid-run does
    * not rewrite the recorded condition — the next round's model read-back
    * fails the run as misattributed instead (web-eval frozen decision 5).
@@ -259,6 +263,20 @@ export interface LocalAgentDelegationRecord {
    * 5); it never enters any prompt or model-visible face.
    */
   observedModel?: string
+  /**
+   * The model this delegation REQUESTED — the `model` call option its first
+   * round carried, recorded so every resume round re-requests the same value.
+   * The requested half of the pair whose observed half is
+   * {@link LocalAgentDelegationRecord.observedModel}: a delegation that asked
+   * for one model and read back another is exactly what the evaluation's
+   * declared-vs-run check exists to catch.
+   *
+   * Absent means the delegation named none — its rounds fall back to the
+   * plugin config, the scoped file, then the CLI's default, and a resume of
+   * it does the same. Records written before this field existed are that
+   * case, unchanged.
+   */
+  model?: string
   /**
    * The CLI version the latest settled round actually ran, read back the same
    * way {@link LocalAgentDelegationRecord.observedModel} is: from the CLI's
@@ -416,6 +434,14 @@ export type LocalAgentDelegationIntent =
      * scope — the provider then resolves the same directory it always did.
      */
     readonly scope?: string
+    /**
+     * The model this delegation requested (the `model` call option riding the
+     * same staged intent). The provider passes it to the CLI and RECORDS it,
+     * so every resume round of this delegation re-requests the same value.
+     * Absent means the provider falls back to its plugin config, then the
+     * scoped file, then the CLI default.
+     */
+    readonly model?: string
   }
   | {
     readonly kind: 'resume'
@@ -615,4 +641,27 @@ export interface DelegationCallOptions {
    * bridge declaration is written into the default scope's `mcp.json`).
    */
   readonly scope?: string
+  /**
+   * The model this DELEGATION runs — `start` only. It outranks the harness's
+   * `model` plugin-config key, which in turn outranks the scoped
+   * configuration file and, last, the CLI's own default. Absent leaves that
+   * pre-existing order exactly as it was, so a caller that names no model
+   * gets byte-identical behavior.
+   *
+   * **Not accepted on `resume`.** A model belongs to the delegation, not to
+   * one of its rounds: the first round records what it requested and every
+   * later round of the same CLI session re-requests that same value (none,
+   * when the first round named none). Passing it to `resume` is a caller
+   * error and fails loud rather than switching a conversation's model
+   * mid-way — which the CLI would honour and the transcript would not show.
+   *
+   * A round with a model is exec-only, for the reason a scoped round is: the
+   * live drivers bind their model when the resident runtime spawns, and one
+   * runtime serves many rounds.
+   *
+   * dsh spells it `provider/model` (the shape `effectiveSettings.model`
+   * reports); the three CLI harnesses take whatever identifier their own CLI
+   * takes.
+   */
+  readonly model?: string
 }

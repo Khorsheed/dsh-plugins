@@ -33,6 +33,14 @@ export interface LocalAgentDshHeadlessStartupValues {
   resumeSessionId?: string
   /** Resident mode: drive turns over the stdio wire, never exiting on idle. */
   serve?: boolean
+  /**
+   * The model this launch runs, spelled `provider/model` (a bare id names the
+   * model and keeps the instance's provider). Absent means the instance's own
+   * default model selection, unchanged. Under `--serve` it applies to every
+   * session the resident process hosts — a resident runtime binds its model
+   * at spawn, which is why the parent refuses a per-delegation model there.
+   */
+  model?: string
 }
 
 /**
@@ -47,12 +55,14 @@ function headlessCommand(): Command {
     .option('--session-id <id>', 'create a fresh session with exactly this id')
     .option('--resume <id>', 'continue the existing session with this id')
     .option('--serve', 'stay resident and drive turns over the stdio wire (no task)')
+    .option('--model <provider/model>', 'run this model instead of the instance default (a bare id keeps the provider)')
     .argument('[task...]', 'the task text; multiple words are joined by spaces')
     .addHelpText('after', `
 Examples:
   dsh --profile headless-local-agent-dsh --session-id 6ba7... "run the tests"   create one session and answer
   dsh --profile headless-local-agent-dsh --resume 6ba7... "run the rest"       continue the same session
   dsh --profile headless-local-agent-dsh --serve                              resident live-driver mode (stdio wire)
+  dsh --profile headless-local-agent-dsh --model deepseek-official/deepseek-v4-pro --session-id 6ba7... "run the tests"
 `)
 }
 
@@ -69,7 +79,13 @@ export function apply(ctx: Context): void {
     const task = program.args.join(' ')
     // Commander camelizes `--session-id` to `sessionId` but keeps `--resume`
     // as `resume`; map both onto the service's explicit field names.
-    const options = program.opts<{ sessionId?: string; resume?: string; serve?: boolean }>()
+    const options = program.opts<{ sessionId?: string; resume?: string; serve?: boolean; model?: string }>()
+    // `--model` is orthogonal to the session flags: it names WHICH model runs,
+    // not which session, so it rides both modes.
+    const model = options.model?.trim()
+    if (model !== undefined && model === '') {
+      program.error('error: --model needs a model identifier, for example deepseek-official/deepseek-v4-pro')
+    }
     if (options.serve === true) {
       if (options.sessionId !== undefined || options.resume !== undefined) {
         program.error('error: --serve drives sessions over the wire; --session-id/--resume do not apply')
@@ -80,6 +96,7 @@ export function apply(ctx: Context): void {
       ctx.provide(LOCAL_AGENT_DSH_HEADLESS_STARTUP_SERVICE, {
         task: '',
         serve: true,
+        ...(model === undefined ? {} : { model }),
       } satisfies LocalAgentDshHeadlessStartupValues)
       return
     }
@@ -93,6 +110,7 @@ export function apply(ctx: Context): void {
       task,
       ...(options.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
       ...(options.resume !== undefined ? { resumeSessionId: options.resume } : {}),
+      ...(model === undefined ? {} : { model }),
     } satisfies LocalAgentDshHeadlessStartupValues)
   })
   parseCmdline(ctx, program)

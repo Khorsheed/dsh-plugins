@@ -622,6 +622,39 @@ describe('delegation cwd option and observation read side', () => {
     expectNothingStaged(h.registry)
   })
 
+  it('rides the delegation model into the staged fresh intent, and refuses one on resume', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', model: 'model-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a', model: 'model-a' })
+
+    // A resume re-requests what the record holds; naming one here would
+    // switch a live conversation's model mid-way, so it is refused BEFORE
+    // anything is staged.
+    h.registry.recordDelegation({
+      childSessionId: 'child-model', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-4', cwd: '/cell-a', model: 'model-a',
+    })
+    await expect(h.registry.resume(PARENT, PROVIDER, 'child-model', PROMPT, { cwd: '/cell-a', model: 'model-a' }))
+      .rejects.toThrow(/resume does not take a model/)
+    await expect(h.registry.resume(PARENT, PROVIDER, 'child-model', PROMPT, { cwd: '/cell-a', model: 'other' }))
+      .rejects.toThrow(/resume does not take a model/)
+    expect(h.consumed).toHaveLength(1)
+    expectNothingStaged(h.registry)
+
+    // Without one, the resume stages the ordinary intent and the provider
+    // reads the model back off the record.
+    await h.registry.resume(PARENT, PROVIDER, 'child-model', PROMPT, { cwd: '/cell-a' })
+    expect(h.consumed[1]).toEqual({ kind: 'resume', childSessionId: 'child-model', cliSessionId: 'cli-4', cwd: '/cell-a' })
+    expect(h.registry.getDelegation('child-model')).toMatchObject({ model: 'model-a' })
+  })
+
+  it('stages no model when the option is absent — the default intent is unchanged', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    await h.registry.start(PARENT, PROVIDER, PROMPT, {})
+    expect(h.consumed[0]).toEqual({ kind: 'fresh' })
+  })
+
   it('stages no cwd when the option is absent — the default intent is unchanged', async () => {
     const h = await mountFacade()
     h.enterParent(PARENT)

@@ -188,6 +188,28 @@ describe('LocalAgentRegistry delegation persistence', () => {
     })
   })
 
+  it('persists the delegation\u2019s REQUESTED model, so a resume after a restart still asks for it', async () => {
+    const homesRoot = mkdtempSync(join(tmpdir(), 'delegation-persist-'))
+    const first = await mountRegistry(homesRoot)
+    first.registry.register(harness('fake-cli'))
+    first.registry.recordDelegation({
+      childSessionId: 'child-model', provider: 'fake-cli', parentSessionId: 'parent-1', cliSessionId: 'session_9',
+      cwd: '/cell-a', model: 'model-a',
+    })
+    // A delegation that named none stays that way — which every record
+    // written before the field existed is.
+    appendFileSync(join(homesRoot, 'fake', DELEGATIONS_FILENAME), `${JSON.stringify({
+      childSessionId: 'child-plain', provider: 'fake-cli', parentSessionId: 'parent-1', cliSessionId: 'session_10',
+    })}\n`)
+
+    const second = await mountRegistry(homesRoot)
+    second.registry.register(harness('fake-cli'))
+    expect(second.registry.getDelegation('child-model')).toMatchObject({ model: 'model-a' })
+    const plain = second.registry.getDelegation('child-plain')
+    expect(plain).toBeDefined()
+    expect('model' in (plain as object)).toBe(false)
+  })
+
   it('persists a settled observedModel merge with the record', async () => {
     const homesRoot = mkdtempSync(join(tmpdir(), 'delegation-persist-'))
     const first = await mountRegistry(homesRoot)
