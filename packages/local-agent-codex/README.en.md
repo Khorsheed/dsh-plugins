@@ -96,6 +96,8 @@ The last line selects the provider for delegations; keep the rest of the file in
 <details>
 <summary>Internals (click to expand)</summary>
 
+**Named scopes.** `/codex login --scope <name>` opens a second scoped home at `<homesRoot>/codex@<name>`: the directory is provisioned with the same `config.toml` that pins credential storage to a file rather than the macOS keychain, so that scope's login lands in its own `auth.json`. A scoped delegation runs `codex exec` there, writes its rollout there and reads it back from there — exec-only, because the resident app-server is bound to the default scoped home.
+
 **Bundle composition.** The patch registers the `codex` harness (scoped `CODEX_HOME`, device-code login, rollout-file session records) and mounts `subagent_codex` at the profile root; the `codex-local` one-shot provider spawns `codex exec` under that home. The settings section ships with the family core's `./client` half; the core itself comes from `@khorsheed/dsh-local-agent`, declared as a dependency.
 
 **Login and credentials.** `/codex login` shows the device-code URL in-session and polls in the background; credentials land in the scoped home on authorization. First start writes a minimal `config.toml` pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` would resolve to the macOS keychain, leaking credentials outside the scoped home and defeating this package's `auth.json` presence check; an existing config is left untouched. `/codex logout` deletes the scoped `auth.json`, so a later login authorizes a fresh account.

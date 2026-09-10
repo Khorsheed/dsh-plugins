@@ -289,6 +289,10 @@ export const CONDITION_SCHEMA: SchemaObject = {
       description: 'Environment variable NAMES the condition injects — never values.',
       properties: { keys: { type: 'array', items: { type: 'string' } } },
     },
+    scope: {
+      type: 'string',
+      description: 'Optional. The harness scoped home this condition runs against, as a NAME (matching [a-z0-9-], never a path): the family resolves it to <homesRoot>/<harness>@<scope>, a sibling of the default scoped home with its own credentials, session records and delegation mappings. Absent means the harness\'s default scoped home — what every condition written before this field says. It IS part of the condition hash: two conditions differing only in scope are two subjects, because they log in as two accounts.',
+    },
     unit: {
       type: 'object',
       additionalProperties: false,

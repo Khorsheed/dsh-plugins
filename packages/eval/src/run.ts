@@ -265,6 +265,13 @@ interface ResolvedCondition {
   harnessName: string
   declaredModel: string | null
   provider: string
+  /**
+   * The condition's named harness scope, when it declares one: every round of
+   * every cell of this condition runs against `<homesRoot>/<harness>@<scope>`
+   * instead of the harness's default scoped home. Absent means the default
+   * one — what every condition written before the field asks for.
+   */
+  scope?: string
   /** The full condition document (recorded into run.meta for the report's factor diff). */
   document: Record<string, unknown>
 }
@@ -849,6 +856,11 @@ async function runCellOnce(
               env: { [(env.unit as CellUnitBinding).plan.scopedHome.var]: (env.unit as CellUnitBinding).plan.scopedHome.container },
             },
           }),
+        // Which scoped home the round reads its credentials from — the
+        // condition's own, on the host and inside a unit alike. Every round of
+        // this cell repeats it, because the family anchors the scope in the
+        // delegation record and refuses a resume that names another.
+        ...(env.condition.scope === undefined ? {} : { scope: env.condition.scope }),
         onProgress: (event: DelegationProgress) => {
           // Only the settled kind carries the read-back; the round's own
           // event wins over a later record read (last settle = this round).
@@ -1398,6 +1410,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       harnessName: (document['harness'] as { name?: string } | undefined)?.name ?? '',
       declaredModel: (document['model'] as { declared: string | null } | undefined)?.declared ?? null,
       provider: '',
+      ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
       document,
     })
   }
@@ -1437,7 +1450,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       )
     }
     judgeDocuments.set(judgeId, document)
-    judges.push({ id: judgeId, sha: hashConditionDocument(document), harnessName, declaredModel, provider: '' })
+    judges.push({
+      id: judgeId,
+      sha: hashConditionDocument(document),
+      harnessName,
+      declaredModel,
+      provider: '',
+      ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
+    })
   }
 
   if (options.dryRun === true) {
@@ -1447,7 +1467,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     // scoped home for that harness, which a dry run has no facade to ask —
     // the reviewable half is the target, and the source is named by shape.
     const units = planUnit === null ? undefined : conditions.map((condition) => {
-      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, `<scoped home of ${condition.harnessName}>`)
+      // The mount source is named by SHAPE — a dry run has no facade to ask —
+      // and a condition naming a scope says which scoped home it means.
+      const shape = `<scoped home of ${condition.harnessName}${condition.scope === undefined ? '' : `@${condition.scope}`}>`
+      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, shape)
       return resolved.ok
         ? { condition: condition.id, acquire: describeAcquireSpec(acquireSpecFor(resolved.plan)) }
         : { condition: condition.id, errors: resolved.diagnostics }
@@ -1529,7 +1552,16 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       // instance — the directory `/<harness> login` writes into and the
       // directory the read-back parses. One directory, so a containerized
       // round's rollout lands where the read-back looks.
-      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, faces.localAgent.homeDir(condition.harnessName))
+      // …and, when the condition names a scope, THAT scope's directory: two
+      // conditions of one harness then mount two different scoped homes, each
+      // holding its own login, and each round's rollout lands where that
+      // condition's read-back looks.
+      const resolved = resolveCellUnit(
+        planUnit,
+        condition.id,
+        condition.document,
+        faces.localAgent.homeDir(condition.harnessName, condition.scope),
+      )
       if (!resolved.ok) {
         problems.push(...resolved.diagnostics)
         continue
@@ -1622,6 +1654,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         declaredModel: condition.declaredModel,
         provider: condition.provider,
         role: 'player',
+        ...(condition.scope === undefined ? {} : { scope: condition.scope }),
       })),
       ...judges.map((judge): ReadinessSubject => ({
         id: judge.id,
@@ -1629,6 +1662,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         declaredModel: judge.declaredModel,
         provider: judge.provider,
         role: 'judge',
+        ...(judge.scope === undefined ? {} : { scope: judge.scope }),
       })),
     ],
     parentSessionId: options.parentSessionId,
@@ -1718,10 +1752,16 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
           ...(planUnit.network !== undefined ? { network: planUnit.network } : {}),
           ...(planUnit.user !== undefined ? { user: planUnit.user } : {}),
           ...(planUnit.resources !== undefined ? { resources: planUnit.resources } : {}),
+          // Per condition: where its credential directory is mounted, which
+          // variable names it, and — when it runs against a named harness
+          // scope — that scope's NAME. The host path stays out (an operator
+          // fact; run.meta travels in the bundle), and the scope name is what
+          // makes two cells of one harness legible as two directories.
           scopedHomes: [...cellUnits.values()].map(cellUnit => ({
             condition: cellUnit.conditionId,
             container: cellUnit.scopedHome.container,
             var: cellUnit.scopedHome.var,
+            ...(cellUnit.scope === undefined ? {} : { scope: cellUnit.scope }),
           })),
         },
       }

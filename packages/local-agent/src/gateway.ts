@@ -54,13 +54,16 @@ export default class LocalAgentGateway extends TypertRemoteService {
   }
 
   /**
-   * One harness's auth status.
+   * One harness's auth status, in the default scope or in a named one.
    * @param name - the harness name.
+   * @param scope - the named scope to report on; absent means the default
+   *   scope, so a client written before scopes existed gets exactly the
+   *   snapshot it always got.
    * @returns the status snapshot.
    */
   @Remote('status')
-  status(name: string): Promise<LocalAgentStatus> {
-    return this.ctx.localAgent.statusOf(name)
+  status(name: string, scope?: string): Promise<LocalAgentStatus> {
+    return this.ctx.localAgent.statusOf(name, scope)
   }
 
   /**
@@ -135,6 +138,10 @@ export default class LocalAgentGateway extends TypertRemoteService {
         record.provider,
         childSessionId,
         [{ type: 'text', text }],
+        // The recorded scope is the member's own: a follow-up continues the
+        // CLI session in the scoped home its earlier rounds ran in, and the
+        // record is where that fact lives (the resume refuses any other).
+        record.scope === undefined ? undefined : { scope: record.scope },
       )
     } catch (error: unknown) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

@@ -12,6 +12,7 @@ Run locally installed coding-agent CLIs — Kimi Code, Codex, Claude Code — fr
 - **Slash commands** — `/<harness> login|sessions|status|logout`, with the device-code login URL in the reply.
 - **A settings card per provider** — Settings → Plugins → 可配置插件: the auth status dot (visible on the collapsed header), web login/sign-out, and the hot-swappable resident-mode (live) toggle with mirror granularity; cards compose this package's shared `ProviderAuthBlock`.
 - **Subagent delegation** — hand work to a local CLI and resume it later, even across host restarts.
+- **Several logins per harness (named scopes)** — `/<harness> login --scope <name>` opens a second scoped home at `<homesRoot>/<harness>@<name>`: its own login, its own session records, its own `delegations.jsonl`, and nothing copied from the default one. An evaluation can therefore compare two accounts of one harness in a single run.
 
 ## Install
 
@@ -47,7 +48,7 @@ A custom composition mounts the core once:
 
 - **Login is a captured prompt or a manual handoff** — the web GUI has no interactive terminal: device-code harnesses (kimi/codex) surface the URL in the command reply while the CLI polls in the background; a harness whose auth is TTY-only (claude ≥2.1) declares the manual variant — `/login` replies with the exact command to run in the user's own terminal, and the registry watches the scoped home for the credential.
 - **Homes root placement** — defaults to `$DSH_HOME/local-agent`, pending a standardized `var/state` layout.
-- **Delegation log growth** — each harness's `delegations.jsonl` is append-only with no rotation.
+- **Delegation log growth** — each scoped home's `delegations.jsonl` is append-only with no rotation.
 - **One-sample shape** — the harness contract is induced from Kimi alone; not yet frozen.
 
 ## How it works
@@ -112,6 +113,7 @@ The `options` argument of `registry.start(parent, provider, prompt, options)` an
 | `reattach` | `resume` only: restore a non-live child session from persistence (default true); `false` fails loud instead |
 | `cwd` | The round's CLI working directory; a resume round must repeat the first round's, or it fails loud before any spawn |
 | `exec` | Run this round inside an **already-acquired container**: `{ container, workdir, env? }` |
+| `scope` | Run this round against the harness's **named scoped home** (`<homesRoot>/<harness>@<scope>`); a resume round must repeat the first round's scope, absence included, or it fails loud |
 
 **One settled observation per round.** A provider calls `recordRoundSettled` once its round's output stream is fully parsed, and the family turns it into one `settled` progress event: the round's `observedModel`, `cliVersion`, `usage`, and its `toolCalls` (`{ count, byName }`). Every field stays absent when the round did not yield it — never guessed, never zero-filled.
 
@@ -126,6 +128,15 @@ The `options` argument of `registry.start(parent, provider, prompt, options)` an
 - **The scoped home is a HOST directory, bind-mounted read-write.** Readback (codex's rollout, kimi's wire log, the sub-dsh session log) reads it straight off the host filesystem, and credential refreshes land back on the host. **The caller stages what it mounts**: mount a live scoped home and its host-only settings ride along (measured: the `https_proxy` in claude's scoped `settings.json`, meant for the host daemon, points at nothing inside the unit and the round dies with `Connection refused`).
 - **A container round is exec-only and carries no member channel.** The live drivers run resident processes on the HOST — the transport the target exists to replace; the member bridge is a host unix socket whose MCP declaration names a host node path. Both are given up on purpose, not missing by accident.
 - **The caller repeats the target on resume.** The recorded anchor is the host `cwd`, which a swapped container leaves equal — that one the record cannot catch.
+
+### Named scopes: several scoped homes per harness
+
+The default scoped home is `<homesRoot>/<harness>` — byte for byte the directory it always was. Give a NAME (`[a-z0-9-]` only; a scope is a name, never a path) and you get a SIBLING of it: `<homesRoot>/<harness>@<name>`. Not a child, because that directory belongs to the harness's own CLI, and a second state tree inside it is something that CLI will eventually prune or misread.
+
+- **Materialized lazily.** The directory is created the first time anything names the scope (`/<harness> login|status|sessions|logout --scope <name>`, a delegation carrying `scope`, the evaluation's mount source): `mkdir` 0700, then the harness's own provisioning (codex's `config.toml`, kimi's provider/model config and permission rules, claude's scoped home, dsh's sub-profile). The default scope's provisioning is unmoved — each harness bundle's `apply` still owns it.
+- **Credentials are never copied.** A new scope is empty: `status` reports `credentialState: absent` and a delegation fails exactly as it does today, so using one starts with `/<harness> login --scope <name>`. claude's keychain item is keyed by the config directory's path, so a named scope gets its own item for free — the one part of this that is path-safe by nature.
+- **Everything follows the directory.** That scope's session records, its `delegations.jsonl`, its effective-settings snapshot (the harness's `effectiveSettings(homeDir)` takes the directory as a parameter), its CLI-version probe, its credential grade and its delegation read-back all live in its own directory. The delegation record carries the `scope`, and a resume round is anchored to it: another scope — or none, when the first round had one — is refused before any process spawns. Continuing one CLI session under another account's credentials is not a mistake that can be repaired afterwards.
+- **Boundaries (named absences, not gaps).** A scoped delegation is **exec-only**: the resident drivers (codex's app-server, claude's and kimi's ACP, the sub-dsh `serve`) are bound per member to the DEFAULT scoped home, so a scoped round meeting an active live driver is refused rather than quietly downgraded. kimi's member-bridge declaration is written INTO a scoped home's `mcp.json` and `member-bridge.sock` is a single homes-root socket, so a scoped kimi round carries no member channel. dsh's sub-profile follows the directory and needs nothing special.
 
 ### Active-delegation registry and `/local-agent stop`
 

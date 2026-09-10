@@ -102,6 +102,14 @@ export interface ConditionDiagnostics {
   warnings: EvalDiagnostic[]
 }
 
+/**
+ * The shape of a condition's `scope`: the same `[a-z0-9-]` name the family's
+ * own scoped-home resolution accepts. Duplicated here rather than imported —
+ * eval imports nothing from sibling @khorsheed packages — and pinned against
+ * the family's rule by the eval condition tests.
+ */
+const CONDITION_SCOPE_RE = /^[a-z0-9-]+$/
+
 const CONDITION_NULLABLE_PATHS: ReadonlyArray<readonly [obj: string, field: string]> = [
   ['harness', 'version'],
   ['model', 'declared'],
@@ -134,6 +142,18 @@ export function conditionDiagnostics(condition: unknown): ConditionDiagnostics {
         message: `permissions ${JSON.stringify(permissions)} is not in the ${harnessName} vocabulary (${allowedByHarness.join(', ')})`,
       })
     }
+  }
+
+  // The scoped-home selector is a NAME, not a path: the family resolves it to
+  // a sibling directory under its own homes root, and a path here would be
+  // both meaningless and an escape attempt. The schema subset has no
+  // `pattern`, so the shape is checked here.
+  const scope = condition['scope']
+  if (typeof scope === 'string' && !CONDITION_SCOPE_RE.test(scope)) {
+    errors.push({
+      code: 'SCOPE_NAME',
+      message: `scope ${JSON.stringify(scope)} must be a name matching [a-z0-9-] (it selects <harness>@<scope> under the instance's homes root — a scope is a name, never a path)`,
+    })
   }
 
   const home = isPlainObject(condition['home']) ? condition['home'] : undefined

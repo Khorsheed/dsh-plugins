@@ -100,6 +100,8 @@ base_url = "https://your-router.example/v1"
 
 **工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。数的是 transcript 里**本轮 turn** 的 `tool.call` 行——刻意不按镜像窗口数：长驻模式下 settle 那一遍的 delta 可能已被 live 轮询清空，而 resume 轮也不该把前几轮的调用算进来。`byName` 的键是 wire 给出的工具名，原样保留。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。
 
+**命名 scope。** `/kimi login --scope <名>` 在 `<homesRoot>/kimi@<名>` 里另开一份 `KIMI_CODE_HOME`：目录建立时跑同一份 provision（provider/model 配置，然后是权限规则——顺序不能反，权限写入要读配置文件），之后该 scope 各自登录、各自 wire 日志、各自转写镜像。带 scope 的委派只走 exec（长驻 `kimi acp` 按成员绑缺省目录），且**不带成员通道**：成员桥声明写在作用域目录的 `mcp.json` 里、socket 又是 homes 根级单例，与其半接上不如这一轮明确不要。
+
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> kimi -p …`，其余（wire.jsonl 镜像与回读、settle、记录）逐字节不变。`env` 必须给出容器内的 `KIMI_CODE_HOME`，且它应当是宿主作用域目录的 rw bind 挂载点——转写镜像与模型回读读的是宿主那份 wire 日志。容器轮固定走 exec 一次性驱动（长驻 `kimi acp` 是宿主进程），且**不写** `mcp.json` 的成员桥条目：那条声明带着宿主 node 路径，容器里起不来，与其在共享配置文件里留一个坏 server，不如这一轮不要成员通道。
 
 **作用域目录与登录。** 本包启动的每个 Kimi 进程都以 `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi` 运行。登录只走 device-code:`/kimi login` 把授权 URL 和验证码呈现在会话中,CLI 在后台轮询,凭据写入作用域目录。`/kimi logout` 删除作用域内的凭据与 OAuth 缓存(kimi CLI 没有 logout 命令)。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制,用户没有 config 时则写入最小 managed config——因为没有 provider 与 model 定义 CLI 就拒绝认证;已存在的 config 永不覆盖。

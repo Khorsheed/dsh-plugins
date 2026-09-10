@@ -35,6 +35,8 @@ import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
+  assertResumeScopeUnchanged,
+  assertScopeExecOnly,
   containerExecSpawn,
   containerScopedHome,
   delegationEnv,
@@ -147,10 +149,13 @@ export function registerCodexMemberRun(
  * rule: a provider paired with an older core loses the grade, never the run).
  * @param ctx - host context carrying the family registry.
  */
-function markCredentialVerified(ctx: Context): void {
+function markCredentialVerified(ctx: Context, scope?: string): void {
   const registry = ctx.get('localAgent')
   if (registry === undefined || typeof registry.reportAuthSuccess !== 'function') return
-  registry.reportAuthSuccess('codex')
+  // The grade belongs to the scope the round ran against: each scoped home
+  // holds its own account, so a verified credential in one says nothing about
+  // another's.
+  registry.reportAuthSuccess('codex', scope)
 }
 
 /**
@@ -227,11 +232,15 @@ export class CodexCliProvider implements SubagentProvider {
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
-    const homeDir = this.ctx.localAgent.homeDir('codex')
     // The family tool stages exactly one intent per delegation call; the
     // provider consumes exactly one per start. A resume intent continues the
     // recorded thread inside the existing child session.
     const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
+    // The scoped home this round runs against: the staged intent's scope
+    // names a sibling directory under the homes root, absent means the
+    // default one — the directory every round used before scopes existed.
+    const scope = intent?.scope
+    const homeDir = this.ctx.localAgent.homeDir('codex', scope)
     // The effective cwd: the caller's override (the staged intent's `cwd`,
     // riding DelegationCallOptions.cwd) when present, else the parent
     // session's workspace — the behavior before overrides existed.
@@ -247,10 +256,14 @@ export class CodexCliProvider implements SubagentProvider {
     if (intent !== undefined && intent.kind === 'resume') {
       // A CLI session continues in the directory its first round ran in; a
       // round resolving elsewhere is rejected before any process spawns.
-      assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-codex')
-      return this.startCodexResume(request, intent, cwd, homeDir, exec)
+      const record = this.ctx.localAgent.getDelegation(intent.childSessionId)
+      assertResumeCwdUnchanged(record, cwd, 'subagent-codex')
+      // …and in the scoped home its first round ran in: a resume naming
+      // another scope would continue the thread under another account.
+      assertResumeScopeUnchanged(record, scope, 'subagent-codex')
+      return this.startCodexResume(request, intent, cwd, homeDir, exec, scope)
     }
-    return this.startCodexFresh(request, cwd, homeDir, exec)
+    return this.startCodexFresh(request, cwd, homeDir, exec, scope)
   }
 
   /** Fresh round: record the child session, spawn `codex exec`, append after settle. */
@@ -259,6 +272,7 @@ export class CodexCliProvider implements SubagentProvider {
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
+    scope: string | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -298,6 +312,11 @@ export class CodexCliProvider implements SubagentProvider {
     // exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
+      // A scoped round is exec-only: the resident app-server is started once
+      // per member against the DEFAULT scoped home, so serving a scoped round
+      // from it would run the round under the wrong credentials. Refused
+      // rather than silently downgraded — the caller asked for a scope.
+      assertScopeExecOnly(scope, 'subagent-codex')
       try {
         return await live.startRound(request, {
           cwd,
@@ -315,6 +334,8 @@ export class CodexCliProvider implements SubagentProvider {
               // The round's resolved working directory anchors the
               // resume-consistency check.
               cwd,
+              // …and its scoped home anchors the resume-scope check.
+              ...scope === undefined ? {} : { scope },
             })
           },
         })
@@ -343,8 +364,8 @@ export class CodexCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
         onSpawned: (pid) => { member?.bind(pid) },
-        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
-        onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail, scope) },
+        onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
         cliVersion: () => codexCliVersion(this.ctx, homeDir),
         ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
         childSession,
@@ -361,6 +382,8 @@ export class CodexCliProvider implements SubagentProvider {
             // The round's resolved working directory anchors the
             // resume-consistency check.
             cwd,
+            // …and its scoped home anchors the resume-scope check.
+            ...scope === undefined ? {} : { scope },
           })
         },
         // Every settled round reports its observed model and usage through the
@@ -385,6 +408,7 @@ export class CodexCliProvider implements SubagentProvider {
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
+    scope: string | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -412,6 +436,9 @@ export class CodexCliProvider implements SubagentProvider {
       // See the fresh path: a container target is exec-only.
       const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
+        // See the fresh path: a scoped round never goes to the resident
+        // app-server, which binds the default scoped home.
+        assertScopeExecOnly(scope, 'subagent-codex')
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -449,8 +476,8 @@ export class CodexCliProvider implements SubagentProvider {
             this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
           },
           onSpawned: (pid) => { member?.bind(pid) },
-        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
-          onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail, scope) },
+          onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
           cliVersion: () => codexCliVersion(this.ctx, homeDir),
           ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
           childSession,

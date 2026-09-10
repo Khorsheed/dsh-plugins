@@ -598,6 +598,30 @@ describe('delegation cwd option and observation read side', () => {
     })
   })
 
+  it('rides the scope into the staged fresh and resume intents, and refuses a resume that changes it', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', scope: 'eval-b' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a', scope: 'eval-b' })
+
+    h.registry.recordDelegation({
+      childSessionId: 'child-scope', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-3', cwd: '/cell-a', scope: 'eval-b',
+    })
+    await h.registry.resume(PARENT, PROVIDER, 'child-scope', PROMPT, { cwd: '/cell-a', scope: 'eval-b' })
+    expect(h.consumed[1]).toEqual({
+      kind: 'resume', childSessionId: 'child-scope', cliSessionId: 'cli-3', cwd: '/cell-a', scope: 'eval-b',
+    })
+
+    // Another scope — or none — would continue the CLI session under another
+    // account's credentials, so the facade refuses BEFORE staging anything.
+    await expect(h.registry.resume(PARENT, PROVIDER, 'child-scope', PROMPT, { cwd: '/cell-a' }))
+      .rejects.toThrow(/resume scope \(default\) differs/)
+    await expect(h.registry.resume(PARENT, PROVIDER, 'child-scope', PROMPT, { cwd: '/cell-a', scope: 'other' }))
+      .rejects.toThrow(/resume scope other differs/)
+    expect(h.consumed).toHaveLength(2)
+    expectNothingStaged(h.registry)
+  })
+
   it('stages no cwd when the option is absent — the default intent is unchanged', async () => {
     const h = await mountFacade()
     h.enterParent(PARENT)

@@ -155,12 +155,12 @@ describe('local-agent-codex apply', () => {
   })
 
   it('snapshots the defaults: exec drive, workspace-write sandbox, no pinned endpoint', async () => {
-    const { registered } = mount()
+    const { home, registered } = mount()
     const harness = registered[0]!
     expect(harness.effectiveSettings).toBeTypeOf('function')
     // The snapshot reads the scoped config only for keys the minimal one
     // never writes, so its answer is independent of provisioning timing.
-    await expect(harness.effectiveSettings!()).resolves.toEqual({
+    await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'exec',
       sandbox: 'workspace-write',
       baseUrlSet: false,
@@ -168,9 +168,9 @@ describe('local-agent-codex apply', () => {
   })
 
   it('reports the configured sandbox policy and the live drive', async () => {
-    const { registered } = mount({ live: true }, { sandbox: 'danger-full-access' })
+    const { home, registered } = mount({ live: true }, { sandbox: 'danger-full-access' })
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
       drive: 'live',
       sandbox: 'danger-full-access',
     })
@@ -190,7 +190,7 @@ describe('local-agent-codex apply', () => {
       'model_provider = "router"',
     ].join('\n'))
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toEqual({
+    await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'exec',
       sandbox: 'workspace-write',
       reasoningEffort: 'high',
@@ -208,7 +208,7 @@ describe('local-agent-codex apply', () => {
       '',
     ].join('\n'))
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ model: 'gpt-5.2' })
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({ model: 'gpt-5.2' })
   })
 
   it('omits the model field when the scoped config names no model', async () => {
@@ -221,7 +221,7 @@ describe('local-agent-codex apply', () => {
       '',
     ].join('\n'))
     const harness = registered[0]!
-    const snapshot = await harness.effectiveSettings!()
+    const snapshot = await harness.effectiveSettings!(home)
     expect(snapshot).toMatchObject({ drive: 'exec', sandbox: 'workspace-write', reasoningEffort: 'high' })
     expect('model' in snapshot).toBe(false)
   })
@@ -261,7 +261,7 @@ describe('local-agent-codex model key', () => {
       '',
     ].join('\n'))
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ model: 'gpt-5.2' })
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({ model: 'gpt-5.2' })
   })
 
   it('snapshot order: with no key, the scoped config still decides', async () => {
@@ -272,12 +272,12 @@ describe('local-agent-codex model key', () => {
       '',
     ].join('\n'))
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ model: 'scoped-model' })
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({ model: 'scoped-model' })
   })
 
   it('snapshot order: neither one names a model, so the field stays absent', async () => {
-    const { registered } = mount()
-    const snapshot = await registered[0]!.effectiveSettings!()
+    const { home, registered } = mount()
+    const snapshot = await registered[0]!.effectiveSettings!(home)
     expect('model' in snapshot).toBe(false)
   })
 })

@@ -14,6 +14,7 @@ import {
   validateJson,
 } from '../src/schema.ts'
 import { conditionDiagnostics } from '../src/validate.ts'
+import { hashConditionDocument } from '../src/hash.ts'
 
 const T1_CONDITION = JSON.parse(
   readFileSync(join(import.meta.dirname, 'fixtures/dataset/datasets/harness-comparison/conditions/dsh-exec.json'), 'utf8'),
@@ -115,6 +116,26 @@ describe('conditionDiagnostics', () => {
   it('degrades to the union check for an unknown harness name', () => {
     const future = { ...structuredClone(T1_CONDITION), harness: { ...structuredClone(T1_CONDITION).harness, name: 'future-cli' } }
     expect(conditionDiagnostics(future).errors).toEqual([])
+  })
+
+  it('accepts a [a-z0-9-] scope name and errors on anything that could be a path', () => {
+    const scoped = { ...structuredClone(T1_CONDITION), scope: 'eval-b' }
+    expect(conditionDiagnostics(scoped).errors).toEqual([])
+    // A scope selects `<harness>@<scope>` under the instance's own homes root:
+    // a path there would be both meaningless and an escape attempt.
+    for (const bad of ['../escape', 'a/b', 'Eval', 'eval_b', '']) {
+      expect(conditionDiagnostics({ ...structuredClone(T1_CONDITION), scope: bad }).errors)
+        .toEqual([{ code: 'SCOPE_NAME', message: expect.stringContaining('never a path') }])
+    }
+  })
+
+  it('makes the scope a factor: two conditions differing only in scope hash differently', () => {
+    const plain = structuredClone(T1_CONDITION)
+    const scoped = { ...structuredClone(T1_CONDITION), scope: 'eval-b' }
+    expect(hashConditionDocument(scoped)).not.toBe(hashConditionDocument(plain))
+    // …and a `notes` edit still is not a factor, so the exclusion list did not
+    // grow by accident.
+    expect(hashConditionDocument({ ...scoped, notes: 'review comment' })).toBe(hashConditionDocument(scoped))
   })
 
   it('errors on a malformed home.sha', () => {

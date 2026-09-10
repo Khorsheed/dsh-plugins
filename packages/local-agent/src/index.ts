@@ -163,7 +163,16 @@ export type LocalAgentLogin =
      */
     pty: {
       command: string
-      args: readonly string[]
+      /**
+       * The argv, or a factory that receives the scoped home being logged
+       * in. The factory form exists because one harness pins its scoped home
+       * ON the argv (claude's `env CLAUDE_CONFIG_DIR=… claude auth login`, an
+       * assignment that outranks the spawn env): with a fixed array a
+       * `--scope` login would authorize the DEFAULT directory while claiming
+       * to authorize the scope. The plain array stays the form every other
+       * harness uses.
+       */
+      args: readonly string[] | ((homeDir: string) => readonly string[])
     }
     /**
      * Credential probe polled while the login is in flight; defaults to the
@@ -203,6 +212,18 @@ export interface LocalAgentHarness {
   login?: LocalAgentLogin
   /** Session records reader for this harness's format. */
   records: LocalAgentRecordsAdapter
+  /**
+   * Bring one scoped home of this harness to the state its CLI needs before a
+   * login or a round can use it (codex's `config.toml` storage pin, kimi's
+   * provider/model config and permission rules, claude's `settings.json`,
+   * dsh's sub-profile). Called by the registry when a NAMED scope's directory
+   * is materialized — the default scope is provisioned by the harness bundle's
+   * own `apply`, exactly as it always was, so nothing about it moves.
+   * Best-effort: a failure is logged and the directory still exists (the
+   * status surface then reports what is actually there).
+   * @param homeDir - the scoped home to provision.
+   */
+  provision?: (homeDir: string) => Promise<void> | void
   /**
    * Whether the scoped home currently holds usable credentials. Absent means
    * the harness reports "not authenticated" and the status command still
@@ -249,8 +270,15 @@ export interface LocalAgentHarness {
    * values a person edited. Pure JSON, never credentials; see
    * {@link LocalAgentEffectiveSettings} for the field vocabulary and the
    * absence-is-a-knob-absent rule.
+   *
+   * The snapshot is taken of ONE scoped home, named by the parameter: a
+   * harness reads its config out of the directory it is handed, so a named
+   * scope reports the settings that scope's rounds would run with rather than
+   * the default scope's.
+   * @param homeDir - the scoped home to read; the registry passes the
+   *   directory of the scope being asked about.
    */
-  effectiveSettings?: () => LocalAgentEffectiveSettings | Promise<LocalAgentEffectiveSettings>
+  effectiveSettings?: (homeDir: string) => LocalAgentEffectiveSettings | Promise<LocalAgentEffectiveSettings>
 }
 
 /** Plugin config: the shared scoped-homes root and the login prompt wait. */
@@ -276,6 +304,83 @@ const ANSI_ESCAPE = /\[[0-9;?]*[A-Za-z]|\]8;;[^\ ]*\\/g
 /** Remove terminal escape sequences from scraped CLI text. */
 export function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE, '')
+}
+
+/**
+ * The characters a named scope may use. A scope is a NAME, never a path: the
+ * scoped home it selects always lands directly under the shared homes root,
+ * so `..`, a slash, or a leading dash can never walk out of it.
+ */
+export const SCOPE_NAME_RE = /^[a-z0-9-]+$/
+
+/**
+ * The directory NAME of one harness's scoped home under the homes root: the
+ * harness name for the default scope, `<name>@<scope>` for a named one. The
+ * named directory is a SIBLING of the default one, never a child: nesting it
+ * inside would put a second CLI state tree under a directory each harness's
+ * own CLI owns and prunes.
+ * @param name - the harness name.
+ * @param scope - the named scope, or undefined for the default one.
+ * @returns the directory name under the homes root.
+ * @throws when the scope is present but not a `[a-z0-9-]` name.
+ */
+export function scopedHomeName(name: string, scope?: string): string {
+  if (scope === undefined) return name
+  if (!SCOPE_NAME_RE.test(scope)) {
+    throw new Error(
+      `localAgent: ${JSON.stringify(scope)} is not a usable scope name — a scope is a name matching [a-z0-9-], never a path`,
+    )
+  }
+  return `${name}@${scope}`
+}
+
+/**
+ * Enforce the resume-scope consistency rule, the scoped-home twin of
+ * {@link assertResumeCwdUnchanged}: a CLI session continues in the scoped home
+ * its earlier rounds ran in, so a round naming a different scope — including
+ * naming none when the first round named one, and the reverse — is rejected
+ * instead of resuming the conversation against another account's credentials
+ * and another directory's session records. Records written before the `scope`
+ * field existed carry no scope and are default-scope records; a resume of one
+ * with a scope is exactly the mismatch this refuses.
+ * @param record - the delegation's persisted record, when one exists.
+ * @param scope - the round's scope, or undefined for the default one.
+ * @param provider - the provider name, for the error message.
+ * @throws when the record's scope differs from the round's.
+ */
+export function assertResumeScopeUnchanged(
+  record: LocalAgentDelegationRecord | undefined,
+  scope: string | undefined,
+  provider: string,
+): void {
+  if (record === undefined) return
+  if (record.scope === scope) return
+  throw new Error(
+    `${provider}: resume scope ${scope === undefined ? '(default)' : scope} differs from the first round's `
+    + `${record.scope === undefined ? '(default)' : record.scope}; a CLI session continues in the scoped home its `
+    + 'earlier rounds ran in — repeat the first round\'s scope',
+  )
+}
+
+/**
+ * Refuse a scoped round that would be served by a live driver. The resident
+ * runtimes (codex's `app-server`, claude's and kimi's ACP servers, the
+ * sub-dsh `serve`) are started per member against the DEFAULT scoped home and
+ * outlive a single round, so a scoped round taken by one would run under the
+ * wrong credentials and write its records into the wrong directory. Refused
+ * rather than silently downgraded to exec: the caller named a scope, and a
+ * quiet fallback would answer a different question than the one asked. The
+ * evaluation pins `drive: exec` anyway (web-eval frozen decision 2).
+ * @param scope - the round's scope, or undefined for the default one.
+ * @param provider - the provider name, for the error message.
+ * @throws when a named scope meets an active live driver.
+ */
+export function assertScopeExecOnly(scope: string | undefined, provider: string): void {
+  if (scope === undefined) return
+  throw new Error(
+    `${provider}: a delegation in scope ${scope} is exec-only — the live driver binds the harness's default scoped home; `
+    + 'turn the live driver off for this round, or drop the scope',
+  )
 }
 
 /** Poll interval for a manual-handoff login watch. */
@@ -361,6 +466,7 @@ function parseDelegationLine(
   const kimiMirroredLines = record['kimiMirroredLines']
   const observedModel = record['observedModel']
   const cwd = record['cwd']
+  const scope = record['scope']
   return {
     childSessionId,
     provider,
@@ -373,6 +479,11 @@ function parseDelegationLine(
     // lines that never observed them) load unchanged — absence stays absence.
     ...typeof observedModel === 'string' && observedModel !== '' ? { observedModel } : {},
     ...typeof cwd === 'string' && cwd !== '' ? { cwd } : {},
+    // The scoped home the delegation belongs to. A line without one is a
+    // DEFAULT-scope record — which is what every line written before the
+    // field existed is, and what the fallback below preserves when a named
+    // scope's own file carries an older line.
+    ...typeof scope === 'string' && scope !== '' ? { scope } : {},
   }
 }
 
@@ -511,10 +622,47 @@ function renderStatus(status: LocalAgentStatus): string {
     `harness: ${status.name}`,
     `authenticated: ${status.authenticated ? 'yes' : 'no'}`,
     `credentialState: ${status.credentialState}`,
+    ...status.scope !== undefined ? [`scope: ${status.scope}`] : [],
     `homeDir: ${status.homeDir}`,
     ...status.delegationProvider !== undefined ? [`provider: ${status.delegationProvider}`] : [],
     ...status.effectiveSettings !== undefined ? renderEffectiveSettings(status.effectiveSettings) : [],
   ].join('\n')
+}
+
+/**
+ * Split one `/<harness>` input into its optional `--scope <name>` flag and the
+ * remaining subcommand. Both spellings a person reaches for are accepted
+ * (`--scope eval-b` and `--scope=eval-b`); everything else is left in place,
+ * so an input without the flag comes back exactly as it went in.
+ * @param input - the trimmed subcommand input.
+ * @returns the remaining input and the scope, or the error naming the rule.
+ */
+export function parseScopeFlag(input: string): { input: string; scope?: string; error?: string } {
+  if (!input.includes('--scope')) return { input }
+  const tokens = input.split(/\s+/)
+  const rest: string[] = []
+  let scope: string | undefined
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index] as string
+    if (token === '--scope') {
+      const value = tokens[index + 1]
+      if (value === undefined || value.startsWith('--')) {
+        return { input, error: 'usage: --scope <name>, where the name matches [a-z0-9-] (a scope is a name, never a path)' }
+      }
+      scope = value
+      index += 1
+      continue
+    }
+    if (token.startsWith('--scope=')) {
+      scope = token.slice('--scope='.length)
+      continue
+    }
+    rest.push(token)
+  }
+  if (scope !== undefined && !SCOPE_NAME_RE.test(scope)) {
+    return { input, error: `${JSON.stringify(scope)} is not a usable scope name — a scope is a name matching [a-z0-9-], never a path` }
+  }
+  return { input: rest.join(' ').trim(), ...scope === undefined ? {} : { scope } }
 }
 
 /** Map a login failure to a command error, naming the swallowed signal. */
@@ -529,6 +677,12 @@ function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signa
  */
 export class LocalAgentRegistry {
   private readonly harnesses = new Map<string, LocalAgentHarness>()
+  /**
+   * Named scopes materialized in this host process, keyed exactly like their
+   * directory (`<name>@<scope>`) — the guard that keeps the mkdir, the
+   * harness provisioning and the per-directory delegation load to once each.
+   */
+  private readonly scopedHomes = new Set<string>()
   private readonly commandDisposers = new Map<string, () => void>()
   private readonly logins = new Map<string, LoginController>()
   /**
@@ -656,12 +810,64 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * Absolute scoped home for one harness.
+   * Absolute scoped home for one harness, in the default scope or in a NAMED
+   * one.
+   *
+   * The default scope (`scope` absent) is `<homesRoot>/<name>` and is a pure
+   * path computation, exactly as it always was. A named scope is the sibling
+   * directory `<homesRoot>/<name>@<scope>` — a name, never a path, so the
+   * directory can only ever be under the homes root — and is MATERIALIZED the
+   * first time it is named here: `mkdir` 0700 plus this harness's own
+   * provisioning, plus the load of that directory's own `delegations.jsonl`,
+   * once per (harness, scope) in this host process. Materializing on the read
+   * is what makes "a scope exists once something names it" true for every
+   * caller at once: `/<name> login --scope`, the status surfaces, a scoped
+   * delegation, and the evaluation's mount source.
+   *
+   * Credentials are never copied between scopes: a new named scope starts
+   * empty, reports `credentialState: absent`, and needs its own login.
    * @param name - the harness name.
-   * @returns `<homesRoot>/<name>`.
+   * @param scope - the named scope, or undefined for the default one.
+   * @returns `<homesRoot>/<name>`, or `<homesRoot>/<name>@<scope>`.
+   * @throws when the scope is present but not a `[a-z0-9-]` name.
    */
-  homeDir(name: string): string {
-    return join(this.homesRoot, name)
+  homeDir(name: string, scope?: string): string {
+    const dir = join(this.homesRoot, scopedHomeName(name, scope))
+    if (scope !== undefined) this.materializeScopedHome(name, scope, dir)
+    return dir
+  }
+
+  /**
+   * Create one named scope's directory the first time it is named, with the
+   * same 0700 the default scope's gets, then run the harness's own
+   * provisioning and load that directory's persisted delegation mappings.
+   * Runs at most once per (harness, scope) per host process; the mkdir itself
+   * is idempotent, so a directory a person created by hand is adopted rather
+   * than refused. An unregistered harness gets the directory and nothing
+   * else — there is no harness to ask for provisioning yet.
+   */
+  private materializeScopedHome(name: string, scope: string, dir: string): void {
+    const key = scopedHomeName(name, scope)
+    if (this.scopedHomes.has(key)) return
+    this.scopedHomes.add(key)
+    try {
+      mkdirSync(dir, { recursive: true })
+      chmodSync(dir, 0o700)
+    } catch (error: unknown) {
+      this.scopedHomes.delete(key)
+      throw error
+    }
+    const harness = this.harnesses.get(name)
+    if (harness === undefined) return
+    this.loadDelegations(harness, scope)
+    // Provisioning is async and best-effort, exactly as it is in every
+    // harness bundle's own apply: the directory exists either way, and a
+    // failure is a log line rather than a broken command reply.
+    void (async () => harness.provision?.(dir))().catch((error: unknown) => {
+      this.ctx.logger.warn(
+        `localAgent: ${name} provisioning of scope ${scope} failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    })
   }
 
   /**
@@ -732,9 +938,12 @@ export class LocalAgentRegistry {
    * rewrites the credential marker (see {@link LocalAgentHarness.credentialStamp}).
    * @param name - the harness whose credential failed.
    * @param detail - the endpoint's answer, for the log.
+   * @param scope - the scope whose credential failed; absent means the
+   *   default scope. Each scope holds its own account, so the mark is per
+   *   scope: one scope's revocation says nothing about another's.
    */
-  reportAuthFailure(name: string, detail: string): void {
-    this.authFailures.set(name, Date.now())
+  reportAuthFailure(name: string, detail: string, scope?: string): void {
+    this.authFailures.set(scopedHomeName(name, scope), Date.now())
     this.ctx.logger.warn(
       `localAgent: ${name} credential rejected by its endpoint (${detail}); the harness reports unauthenticated until a fresh login rewrites the credential marker`,
     )
@@ -748,9 +957,11 @@ export class LocalAgentRegistry {
    * same settle path. A success newer than a failure mark also clears the
    * `rejected` grade — a completed round outranks a stale rejection.
    * @param name - the harness whose credential just worked.
+   * @param scope - the scope whose credential just worked; absent means the
+   *   default scope.
    */
-  reportAuthSuccess(name: string): void {
-    this.authSuccesses.set(name, Date.now())
+  reportAuthSuccess(name: string, scope?: string): void {
+    this.authSuccesses.set(scopedHomeName(name, scope), Date.now())
   }
 
   /**
@@ -759,20 +970,26 @@ export class LocalAgentRegistry {
    * landing — because a verdict about the previous credential describes
    * nothing about the next one.
    */
-  private forgetCredentialObservations(name: string): void {
-    this.authSuccesses.delete(name)
-    this.authFailures.delete(name)
+  private forgetCredentialObservations(name: string, scope?: string): void {
+    const key = scopedHomeName(name, scope)
+    this.authSuccesses.delete(key)
+    this.authFailures.delete(key)
   }
 
   /**
-   * Query one harness's auth status.
+   * Query one harness's auth status, in the default scope or in a named one.
    * @param name - the harness name.
+   * @param scope - the named scope to report on; absent means the default
+   *   scope and the reply is exactly what it always was. A named scope is
+   *   materialized by the read (see {@link homeDir}), so a scope nobody has
+   *   logged into reports `credentialState: absent` against a real, empty
+   *   directory.
    * @returns the status snapshot.
    */
-  async statusOf(name: string): Promise<LocalAgentStatus> {
+  async statusOf(name: string, scope?: string): Promise<LocalAgentStatus> {
     const harness = this.requireHarness(name)
-    const homeDir = this.homeDir(name)
-    const credentialState = await this.credentialStateOf(harness, homeDir)
+    const homeDir = this.homeDir(name, scope)
+    const credentialState = await this.credentialStateOf(harness, homeDir, scope)
     // The boolean is exactly the two grades that mean "there is a credential
     // worth trying", so every surface written before the grade existed keeps
     // reading what it always read.
@@ -782,7 +999,7 @@ export class LocalAgentRegistry {
     // and the failure is logged instead.
     let effectiveSettings: LocalAgentEffectiveSettings | undefined
     try {
-      effectiveSettings = await harness.effectiveSettings?.()
+      effectiveSettings = await harness.effectiveSettings?.(homeDir)
     } catch (error: unknown) {
       this.ctx.logger.warn(
         `localAgent: ${name} effective-settings snapshot failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -794,12 +1011,13 @@ export class LocalAgentRegistry {
       authenticated,
       credentialState,
       homeDir,
+      ...scope === undefined ? {} : { scope },
       // Explicit capability flags so surfaces never offer a login/logout
       // action the harness would answer with an error (the dsh harness has
       // neither).
       loginable: harness.login !== undefined,
       logoutable: harness.logout !== undefined,
-      ...this.logins.get(name)?.awaitingCode === true ? { loginAwaitingCode: true } : {},
+      ...this.logins.get(scopedHomeName(name, scope))?.awaitingCode === true ? { loginAwaitingCode: true } : {},
       ...harness.delegationProvider !== undefined ? { delegationProvider: harness.delegationProvider } : {},
       ...effectiveSettings !== undefined ? { effectiveSettings } : {},
     }
@@ -813,16 +1031,21 @@ export class LocalAgentRegistry {
    * shape of a working one, and saying so is this grade's whole point.
    * @param harness - the harness to grade.
    * @param homeDir - its scoped home.
+   * @param scope - the scope that directory belongs to; the delegation-
+   *   reported observations are per scope, because each scope holds its own
+   *   account.
    * @returns the credential grade.
    */
   private async credentialStateOf(
     harness: LocalAgentHarness,
     homeDir: string,
+    scope?: string,
   ): Promise<LocalAgentCredentialState> {
     const present = await (harness.isAuthenticated?.(homeDir) ?? Promise.resolve(false))
     if (!present) return 'absent'
-    const failedAt = this.authFailures.get(harness.name)
-    const verifiedAt = this.authSuccesses.get(harness.name)
+    const key = scopedHomeName(harness.name, scope)
+    const failedAt = this.authFailures.get(key)
+    const verifiedAt = this.authSuccesses.get(key)
     // A completed round outranks a stale rejection: the endpoint answered.
     if (verifiedAt !== undefined && (failedAt === undefined || verifiedAt > failedAt)) return 'verified'
     if (failedAt !== undefined && harness.credentialStamp !== undefined) {
@@ -845,20 +1068,24 @@ export class LocalAgentRegistry {
    * Pure JSON and credential-free by contract; see
    * {@link LocalAgentEffectiveSettings}.
    * @param name - the harness name.
+   * @param scope - the scope to snapshot; absent means the default one.
    * @returns the snapshot, or undefined when the harness declares none.
    */
-  async effectiveSettings(name: string): Promise<LocalAgentEffectiveSettings | undefined> {
+  async effectiveSettings(name: string, scope?: string): Promise<LocalAgentEffectiveSettings | undefined> {
     const harness = this.requireHarness(name)
-    return harness.effectiveSettings?.()
+    return harness.effectiveSettings?.(this.homeDir(name, scope))
   }
 
   /**
    * Query one harness's scoped session records.
    * @param name - the harness name.
+   * @param scope - the scope to list; absent means the default one. Session
+   *   records belong to the directory the rounds ran in, so a named scope
+   *   lists its own and nothing of the default scope's.
    * @returns the session records in the harness's own order.
    */
-  sessionsOf(name: string): Promise<readonly LocalAgentSessionRecord[]> {
-    return this.requireHarness(name).records.listSessions(this.homeDir(name))
+  sessionsOf(name: string, scope?: string): Promise<readonly LocalAgentSessionRecord[]> {
+    return this.requireHarness(name).records.listSessions(this.homeDir(name, scope))
   }
 
   /**
@@ -1222,6 +1449,10 @@ export class LocalAgentRegistry {
       // reason: it is a family-private start fact, and the host
       // SubagentStartRequest contract has no place for it.
       ...options?.exec === undefined ? {} : { exec: options.exec },
+      // The scoped home this round runs against, for the same reason again.
+      // The provider resolves `homeDir(<harness>, scope)` from it and records
+      // the scope, so the resume of this delegation must repeat it.
+      ...options?.scope === undefined ? {} : { scope: options.scope },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -1314,6 +1545,12 @@ export class LocalAgentRegistry {
     const subagents = this.requireSubagents()
     this.requireProvider(subagents, provider)
     const { cliSessionId } = this.resolveDelegation(childSessionId, { provider, parentSessionId })
+    // The scoped home is anchored by the record: a resume naming another
+    // scope (or none, when the first round named one) would continue the CLI
+    // session against a different account's credentials. Checked here so the
+    // facade fails before staging; the provider repeats the check at the same
+    // point it checks the cwd anchor.
+    assertResumeScopeUnchanged(this.delegations.get(childSessionId), options?.scope, 'localAgent')
     if (this.isResumeLocked(childSessionId)) {
       throw new Error(`localAgent: child session ${childSessionId} already has an in-flight resume`)
     }
@@ -1338,6 +1575,10 @@ export class LocalAgentRegistry {
       // Repeat of the first round's target: the caller owns the pairing (the
       // recorded anchor is the host cwd, which a container swap leaves equal).
       ...options?.exec === undefined ? {} : { exec: options.exec },
+      // Repeat of the first round's scope — and unlike the container target,
+      // this one IS anchored: the record carries the scope and the provider
+      // refuses a round that names another one (or none).
+      ...options?.scope === undefined ? {} : { scope: options.scope },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -1628,34 +1869,48 @@ export class LocalAgentRegistry {
       return
     }
     try {
-      appendFileSync(join(this.homeDir(harness.name), DELEGATIONS_FILENAME), `${JSON.stringify(record)}\n`)
+      // The log belongs to the DIRECTORY the delegation ran in: a scoped
+      // round's mapping lands in that scope's own `delegations.jsonl`, so a
+      // scope carries its whole state (credentials, session records, resume
+      // mappings) and stays readable on its own after a host restart.
+      appendFileSync(join(this.homeDir(harness.name, record.scope), DELEGATIONS_FILENAME), `${JSON.stringify(record)}\n`)
     } catch (error: unknown) {
       this.ctx.logger.warn(`localAgent: failed to persist the delegation for child session ${record.childSessionId}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
   /**
-   * Load one harness's persisted delegation mappings into the in-memory maps.
-   * Runs synchronously inside {@link register} before `localAgent/harness-added`
-   * fires. Malformed or foreign-provider lines skip with a warn; the last line
-   * per child session wins (matching {@link recordDelegation}'s replace
-   * semantics), and a record's `kimiMirroredLines` restores the mirror offset.
+   * Load one scoped home's persisted delegation mappings into the in-memory
+   * maps. The default scope runs synchronously inside {@link register} before
+   * `localAgent/harness-added` fires — unchanged; a named scope's file is read
+   * when that scope's directory is materialized ({@link homeDir}). Malformed
+   * or foreign-provider lines skip with a warn; the last line per child
+   * session wins (matching {@link recordDelegation}'s replace semantics), and
+   * a record's `kimiMirroredLines` restores the mirror offset.
+   * @param harness - the harness whose log is read.
+   * @param scope - the scope whose directory holds the log; absent means the
+   *   default scope.
    */
-  private loadDelegations(harness: LocalAgentHarness): void {
+  private loadDelegations(harness: LocalAgentHarness, scope?: string): void {
+    const dirName = scopedHomeName(harness.name, scope)
     let text: string
     try {
-      text = readFileSync(join(this.homeDir(harness.name), DELEGATIONS_FILENAME), 'utf8')
+      text = readFileSync(join(this.homesRoot, dirName, DELEGATIONS_FILENAME), 'utf8')
     } catch {
       // No mappings persisted yet.
       return
     }
     for (const line of text.split('\n')) {
       if (line.trim() === '') continue
-      const record = parseDelegationLine(line, harness.delegationProvider)
-      if (record === undefined) {
-        this.ctx.logger.warn(`localAgent: skipping a malformed or foreign line in ${harness.name}/${DELEGATIONS_FILENAME}`)
+      const parsed = parseDelegationLine(line, harness.delegationProvider)
+      if (parsed === undefined) {
+        this.ctx.logger.warn(`localAgent: skipping a malformed or foreign line in ${dirName}/${DELEGATIONS_FILENAME}`)
         continue
       }
+      // A file inside a named scope's directory describes that scope, so a
+      // line that predates the field is restored as belonging to the
+      // directory it was found in rather than as a default-scope record.
+      const record = parsed.scope === undefined && scope !== undefined ? { ...parsed, scope } : parsed
       this.delegations.set(record.childSessionId, record)
       if (record.kimiMirroredLines !== undefined) {
         this.kimiMirrorOffsets.set(record.childSessionId, record.kimiMirroredLines)
@@ -1663,38 +1918,49 @@ export class LocalAgentRegistry {
     }
   }
 
-  /** Dispatch `/login`, `/status`, and `/sessions` for one harness. */
+  /**
+   * Dispatch `/login`, `/status`, `/sessions` and `/logout` for one harness,
+   * in the default scope or — with `--scope <name>` — in a named one. The
+   * flag is parsed off the input before the verb is matched, so every family
+   * verb takes it and an input without it is dispatched exactly as before.
+   * A harness's own extra subcommands receive the RAW input, flag included:
+   * the family does not rewrite a subcommand it does not own.
+   */
   private handle(invocation: CommandInvocation, harness: LocalAgentHarness): Promise<CommandResult> {
-    const input = invocation.rawInput.trim()
+    const raw = invocation.rawInput.trim()
+    const parsed = parseScopeFlag(raw)
+    if (parsed.error !== undefined) return Promise.resolve({ kind: 'error', text: `/${harness.name}: ${parsed.error}` })
+    const input = parsed.input
+    const scope = parsed.scope
     if (input === 'login') {
       // A login changes which account the scoped home holds, so whatever
       // rounds observed about the previous credential stops describing it.
-      this.forgetCredentialObservations(harness.name)
-      return this.login(harness)
+      this.forgetCredentialObservations(harness.name, scope)
+      return this.login(harness, scope)
     }
-    if (input.startsWith('code ')) return Promise.resolve(this.submitLoginCode(harness, input.slice('code '.length).trim()))
+    if (input.startsWith('code ')) return Promise.resolve(this.submitLoginCode(harness, input.slice('code '.length).trim(), scope))
     if (input === 'status') {
-      return this.statusOf(harness.name).then(status => ({ kind: 'success', text: renderStatus(status) }))
+      return this.statusOf(harness.name, scope).then(status => ({ kind: 'success', text: renderStatus(status) }))
     }
     if (input === 'sessions' || input === '') {
-      return this.sessionsOf(harness.name)
+      return this.sessionsOf(harness.name, scope)
         .then(records => ({ kind: 'success', text: renderSessions(harness, records) }))
     }
     if (input === 'logout') {
       if (harness.logout === undefined) {
         return Promise.resolve({
           kind: 'error',
-          text: `${harness.name} has no logout path; delete ${this.homeDir(harness.name)} to sign out.`,
+          text: `${harness.name} has no logout path; delete ${this.homeDir(harness.name, scope)} to sign out.`,
         })
       }
-      return harness.logout(this.homeDir(harness.name))
+      return harness.logout(this.homeDir(harness.name, scope))
         .then(() => {
-          this.forgetCredentialObservations(harness.name)
+          this.forgetCredentialObservations(harness.name, scope)
           return { kind: 'success', text: `${harness.displayName} signed out of the scoped home; log in again to switch accounts.` }
         })
     }
     if (harness.subcommand !== undefined) {
-      const extra = harness.subcommand(input, invocation)
+      const extra = harness.subcommand(raw, invocation)
       if (extra !== undefined) return Promise.resolve(extra)
     }
     return Promise.resolve({
@@ -1717,11 +1983,16 @@ export class LocalAgentRegistry {
    * too-short one would kill a user who is genuinely authorizing (the manual
    * watch is bounded instead). A harness without a login flow answers with an
    * error instead of spawning anything.
+   * Each scope logs in on its own: credentials are never copied between
+   * scopes, so `--scope <name>` authorizes THAT directory's account and the
+   * pending-login slot is per (harness, scope) too — a login in one scope
+   * neither replaces nor observes another's.
    * @param harness - the harness whose login flow runs.
+   * @param scope - the scope to log in; absent means the default one.
    * @returns the command result: the device-code prompt, or the manual
    *   handoff's terminal instructions.
    */
-  private login(harness: LocalAgentHarness): Promise<CommandResult> {
+  private login(harness: LocalAgentHarness, scope?: string): Promise<CommandResult> {
     const login = harness.login
     if (login === undefined) {
       return Promise.resolve({
@@ -1729,7 +2000,8 @@ export class LocalAgentRegistry {
         text: `${harness.name} has no device-code login; it authenticates through the host instance's credentials.`,
       })
     }
-    const existing = this.logins.get(harness.name)
+    const loginKey = scopedHomeName(harness.name, scope)
+    const existing = this.logins.get(loginKey)
     if (existing !== undefined) {
       // A pending login is replaced, not refused: stop its watch / terminate
       // its child so the new login gets a clean slot. The old controller's
@@ -1752,15 +2024,15 @@ export class LocalAgentRegistry {
     }
     // The manual handoff spawns nothing: reply with the terminal instructions
     // and watch for the credential.
-    if ('manual' in login) return this.manualLogin(harness, login)
-    if ('pty' in login) return this.ptyLogin(harness, login)
+    if ('manual' in login) return this.manualLogin(harness, login, scope)
+    if ('pty' in login) return this.ptyLogin(harness, login, scope)
     const controller: LoginController = { done: Promise.resolve() }
-    this.logins.set(harness.name, controller)
-    const resultPromise = this.runLogin(harness, login, controller)
+    this.logins.set(loginKey, controller)
+    const resultPromise = this.runLogin(harness, login, controller, scope)
     // The settle signal is the real one only after runLogin populated it;
     // chaining earlier would clear the guard on the placeholder promise.
     void controller.done.then(() => {
-      if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+      if (this.logins.get(loginKey) === controller) this.logins.delete(loginKey)
     })
     return resultPromise
   }
@@ -1775,13 +2047,15 @@ export class LocalAgentRegistry {
    * @param harness - the harness being logged in.
    * @param probe - the credential probe.
    * @param controller - the pending login's controller (done resolves here).
+   * @param scope - the scope being logged in; absent means the default one.
    */
   private watchCredential(
     harness: LocalAgentHarness,
     probe: (homeDir: string) => Promise<boolean>,
     controller: LoginController,
+    scope?: string,
   ): void {
-    const homeDir = this.homeDir(harness.name)
+    const homeDir = this.homeDir(harness.name, scope)
     const deadline = Date.now() + MANUAL_LOGIN_LIMIT_MS
     const watchStart = Date.now()
     let stopped = false
@@ -1835,18 +2109,21 @@ export class LocalAgentRegistry {
    * section re-probes every few seconds) picks the landed credential up.
    * @param harness - the harness declaring the manual flow.
    * @param login - the manual variant declaration.
+   * @param scope - the scope being logged in; absent means the default one.
    * @returns the instructions as the command success text.
    */
   private manualLogin(
     harness: LocalAgentHarness,
     login: Extract<LocalAgentLogin, { manual: unknown }>,
+    scope?: string,
   ): Promise<CommandResult> {
+    const loginKey = scopedHomeName(harness.name, scope)
     const controller: LoginController = { done: Promise.resolve() }
-    this.logins.set(harness.name, controller)
+    this.logins.set(loginKey, controller)
     const probe = login.watch ?? harness.isAuthenticated
-    if (probe !== undefined) this.watchCredential(harness, probe, controller)
+    if (probe !== undefined) this.watchCredential(harness, probe, controller, scope)
     void controller.done.then(() => {
-      if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+      if (this.logins.get(loginKey) === controller) this.logins.delete(loginKey)
     })
     return Promise.resolve({
       kind: 'success',
@@ -1864,23 +2141,31 @@ export class LocalAgentRegistry {
    * reply falls back to the manual instruction.
    * @param harness - the harness declaring the pty flow.
    * @param login - the pty variant declaration.
+   * @param scope - the scope being logged in; absent means the default one.
+   *   The CLI runs with its scoped-home variable pointed at THAT directory,
+   *   so the grant it writes lands in the scope that asked for it.
    * @returns the browser/paste instructions as the command success text.
    */
   private async ptyLogin(
     harness: LocalAgentHarness,
     login: Extract<LocalAgentLogin, { pty: unknown }>,
+    scope?: string,
   ): Promise<CommandResult> {
-    const homeDir = this.homeDir(harness.name)
-    const displayCommand = [login.pty.command, ...login.pty.args].join(' ')
+    const homeDir = this.homeDir(harness.name, scope)
+    const loginKey = scopedHomeName(harness.name, scope)
+    // The argv may depend on the directory being logged in (see the pty
+    // variant's `args`), so it is resolved against THIS scope's home.
+    const args = typeof login.pty.args === 'function' ? login.pty.args(homeDir) : login.pty.args
+    const displayCommand = [login.pty.command, ...args].join(' ')
     const subprocess = this.ctx.get('subprocess')
     if (subprocess === undefined) {
       // The seam is absent in this composition: degrade to the manual handoff.
       const controller: LoginController = { done: Promise.resolve() }
-      this.logins.set(harness.name, controller)
+      this.logins.set(loginKey, controller)
       const probe = login.watch ?? harness.isAuthenticated
-      if (probe !== undefined) this.watchCredential(harness, probe, controller)
+      if (probe !== undefined) this.watchCredential(harness, probe, controller, scope)
       void controller.done.then(() => {
-        if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+        if (this.logins.get(loginKey) === controller) this.logins.delete(loginKey)
       })
       return Promise.resolve({
         kind: 'success',
@@ -1889,7 +2174,7 @@ export class LocalAgentRegistry {
     }
     const controller: LoginController = { done: Promise.resolve(), awaitingCode: true }
     const terminal = await subprocess.spawnTerminal({
-      argv: [login.pty.command, ...login.pty.args],
+      argv: [login.pty.command, ...args],
       cwd: homeDir,
       env: { [harness.homeEnvVar]: homeDir },
       rows: 24,
@@ -1897,7 +2182,7 @@ export class LocalAgentRegistry {
       graceMs: REPLACE_LOGIN_GRACE_MS,
     })
     controller.terminal = terminal
-    this.logins.set(harness.name, controller)
+    this.logins.set(loginKey, controller)
     controller.writeCode = (code) => {
       void terminal.write(`${code}\r`)
       controller.awaitingCode = false
@@ -1921,9 +2206,9 @@ export class LocalAgentRegistry {
       void terminal.done.then(() => { resolve() }, () => { resolve() })
     })
     const probe = login.watch ?? harness.isAuthenticated
-    if (probe !== undefined) this.watchCredential(harness, probe, controller)
+    if (probe !== undefined) this.watchCredential(harness, probe, controller, scope)
     void controller.done.then(() => {
-      if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+      if (this.logins.get(loginKey) === controller) this.logins.delete(loginKey)
     })
     // Give the CLI a bounded moment to print its OAuth URL so the reply can
     // carry the fallback link; the browser opens on its own either way.
@@ -1939,10 +2224,13 @@ export class LocalAgentRegistry {
    * Deliver the user's pasted OAuth code to a pending pty login's stdin.
    * @param harness - the harness whose login is pending.
    * @param code - the pasted code.
+   * @param scope - the scope whose login is pending; absent means the default
+   *   one. The pending-login slot is per scope, so the code reaches the login
+   *   that asked for it.
    * @returns the command result.
    */
-  private submitLoginCode(harness: LocalAgentHarness, code: string): CommandResult {
-    const controller = this.logins.get(harness.name)
+  private submitLoginCode(harness: LocalAgentHarness, code: string, scope?: string): CommandResult {
+    const controller = this.logins.get(scopedHomeName(harness.name, scope))
     if (controller?.writeCode === undefined || code === '') {
       return {
         kind: 'error',
@@ -1954,14 +2242,19 @@ export class LocalAgentRegistry {
   }
 
 
-  /** Spawn the harness login command and capture its device-code prompt. */
+  /**
+   * Spawn the harness login command and capture its device-code prompt. The
+   * scoped-home variable points the CLI at the scope being logged in, so the
+   * grant lands in that directory and nowhere else.
+   */
   private runLogin(
     harness: LocalAgentHarness,
     login: Extract<LocalAgentLogin, { command: string }>,
     controller: LoginController,
+    scope?: string,
   ): Promise<CommandResult> {
     const child = spawn(login.command, [...login.args], {
-      env: { ...process.env, [harness.homeEnvVar]: this.homeDir(harness.name) },
+      env: { ...process.env, [harness.homeEnvVar]: this.homeDir(harness.name, scope) },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     controller.child = child

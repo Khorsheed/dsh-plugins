@@ -171,7 +171,7 @@ describe('local-agent-kimi apply', () => {
       expect(readFileSync(join(home, 'config.toml'), 'utf8')).toContain('effort = "high"')
       expect(readFileSync(join(home, 'config.toml'), 'utf8')).toContain('pattern = "Bash(*)')
     })
-    await expect(harness.effectiveSettings!()).resolves.toEqual({
+    await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'exec',
       autoApprove: true,
       reasoningEffort: 'high',
@@ -186,13 +186,13 @@ describe('local-agent-kimi apply', () => {
     await vi.waitFor(() => {
       expect(readFileSync(join(home, 'config.toml'), 'utf8')).toContain('effort = "max"')
     })
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ reasoningEffort: 'max' })
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({ reasoningEffort: 'max' })
   })
 
   it('reports the live driver preference as the drive', async () => {
-    const { registered } = mount({ live: true })
+    const { home, registered } = mount({ live: true })
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ drive: 'live' })
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({ drive: 'live' })
   })
 
   it('a pre-existing scoped config is authoritative over the config item', async () => {
@@ -211,7 +211,7 @@ describe('local-agent-kimi apply', () => {
       '',
     ].join('\n'))
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toEqual({
+    await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'exec',
       autoApprove: false,
       reasoningEffort: 'low',
@@ -233,7 +233,7 @@ describe('local-agent-kimi apply', () => {
       '',
     ].join('\n'))
     const harness = registered[0]!
-    const snapshot = await harness.effectiveSettings!()
+    const snapshot = await harness.effectiveSettings!(home)
     expect(snapshot).toMatchObject({
       drive: 'exec',
       reasoningEffort: 'high',
@@ -267,12 +267,12 @@ describe('local-agent-kimi model key', () => {
     // The scoped config still names the mirrored default; every round now
     // spawns with -m, so the key is what actually runs.
     writeFileSync(join(home, 'config.toml'), 'default_model = "scoped-model"\n')
-    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'card-model' })
+    await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ model: 'card-model' })
   })
 
   it('snapshot order: with no key, the scoped default_model still decides', async () => {
     const { home, registered } = mount()
     writeFileSync(join(home, 'config.toml'), 'default_model = "scoped-model"\n')
-    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'scoped-model' })
+    await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ model: 'scoped-model' })
   })
 })

@@ -106,13 +106,13 @@ describe('local-agent-dsh toggle controller', () => {
   })
 
   it('the harness snapshot reports the drive and no pinned endpoint', async () => {
-    const { registered, settings } = mount({ enabled: true, live: false })
+    const { home, registered, settings } = mount({ enabled: true, live: false })
     const harness = registered[0]!
     expect(harness.effectiveSettings).toBeTypeOf('function')
     // Synchronous on purpose: nothing to read from disk.
     // `containerNodeOptions` is unconditional: the provider always injects
     // `--use-env-proxy` on a container target, so the snapshot always names it.
-    expect(await harness.effectiveSettings!()).toEqual({
+    expect(await harness.effectiveSettings!(home)).toEqual({
       drive: 'exec',
       baseUrlSet: false,
       containerNodeOptions: '--use-env-proxy',
@@ -120,7 +120,7 @@ describe('local-agent-dsh toggle controller', () => {
     // The live preference rides the same namespace; flipping it flips the
     // snapshot's drive on the next read.
     settings.set({ live: true })
-    expect(await harness.effectiveSettings!()).toEqual({
+    expect(await harness.effectiveSettings!(home)).toEqual({
       drive: 'live',
       baseUrlSet: false,
       containerNodeOptions: '--use-env-proxy',
@@ -130,11 +130,11 @@ describe('local-agent-dsh toggle controller', () => {
   it('reports the inherited host model selection as provider/model', async () => {
     // The sub-dsh agent loader reads the same agentDefaultModel service, so
     // this selection is what a delegation round actually runs with.
-    const { registered } = mount({ enabled: true }, {}, {
+    const { home, registered } = mount({ enabled: true }, {}, {
       agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) },
     })
     const harness = registered[0]!
-    expect(await harness.effectiveSettings!()).toEqual({
+    expect(await harness.effectiveSettings!(home)).toEqual({
       drive: 'exec',
       baseUrlSet: false,
       containerNodeOptions: '--use-env-proxy',
@@ -145,15 +145,15 @@ describe('local-agent-dsh toggle controller', () => {
   it('omits the model field when no selection is readable', async () => {
     // Service present but empty-handed, and the service absent entirely: both
     // must leave the field out rather than guessing an identifier.
-    const { registered } = mount({ enabled: true }, {}, {
+    const { home, registered } = mount({ enabled: true }, {}, {
       agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: '' }) },
     })
     const harness = registered[0]!
-    expect('model' in (await harness.effectiveSettings!())).toBe(false)
+    expect('model' in (await harness.effectiveSettings!(home))).toBe(false)
 
     const bare = mount({ enabled: true })
     const bareHarness = bare.registered[0]!
-    expect('model' in (await bareHarness.effectiveSettings!())).toBe(false)
+    expect('model' in (await bareHarness.effectiveSettings!(home))).toBe(false)
   })
 
   it('registers the harness, provider, and tool while on, and the watch toggles them live', () => {

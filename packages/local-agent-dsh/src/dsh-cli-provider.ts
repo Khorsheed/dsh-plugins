@@ -32,6 +32,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
+  assertResumeScopeUnchanged,
+  assertScopeExecOnly,
   containerExecSpawn,
   containerScopedHome,
   delegationEnv,
@@ -171,11 +173,16 @@ export class DshCliProvider implements SubagentProvider {
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
-    const homeDir = this.ctx.localAgent.homeDir('dsh')
     // The family tool stages exactly one intent per delegation call; the
     // provider consumes exactly one per start. A resume intent continues the
     // recorded sub-dsh session inside the existing child session.
     const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
+    // The scoped home this round runs against: the staged intent's scope
+    // names a sibling directory under the homes root (with its own sub-
+    // profile), absent means the default one — the directory every round
+    // used before scopes existed.
+    const scope = intent?.scope
+    const homeDir = this.ctx.localAgent.homeDir('dsh', scope)
     // The effective cwd: the caller's override (the staged intent's `cwd`,
     // riding DelegationCallOptions.cwd) when present, else the parent
     // session's workspace — the behavior before overrides existed.
@@ -191,10 +198,13 @@ export class DshCliProvider implements SubagentProvider {
     if (intent !== undefined && intent.kind === 'resume') {
       // A CLI session continues in the directory its first round ran in; a
       // round resolving elsewhere is rejected before any process spawns.
-      assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-dsh')
-      return this.startDshResume(request, intent, cwd, homeDir, exec)
+      const record = this.ctx.localAgent.getDelegation(intent.childSessionId)
+      assertResumeCwdUnchanged(record, cwd, 'subagent-dsh')
+      // …and in the scoped home its first round ran in.
+      assertResumeScopeUnchanged(record, scope, 'subagent-dsh')
+      return this.startDshResume(request, intent, cwd, homeDir, exec, scope)
     }
-    return this.startDshFresh(request, cwd, homeDir, exec)
+    return this.startDshFresh(request, cwd, homeDir, exec, scope)
   }
 
   /** Fresh round: record the child session and delegation, spawn the sub-dsh create. */
@@ -203,6 +213,7 @@ export class DshCliProvider implements SubagentProvider {
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
+    scope: string | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -247,6 +258,8 @@ export class DshCliProvider implements SubagentProvider {
       // The round's resolved working directory anchors the
       // resume-consistency check.
       cwd,
+      // …and its scoped home anchors the resume-scope check.
+      ...scope === undefined ? {} : { scope },
     })
     // Live driver: the round goes to the resident serve process (one per
     // member). A channel that fails at spawn/handshake marks itself broken and
@@ -258,6 +271,9 @@ export class DshCliProvider implements SubagentProvider {
     // exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
+      // A scoped round is exec-only: the resident `serve` process is started
+      // per member against the DEFAULT scoped home and its sub-profile.
+      assertScopeExecOnly(scope, 'subagent-dsh')
       try {
         return await live.startRound(request, {
           cwd,
@@ -291,6 +307,7 @@ export class DshCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         onSpawned: (pid) => { member?.bind(pid) },
         cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
+        ...scope === undefined ? {} : { scope },
       })
       // The member-channel token dies with the run, whatever its stop reason.
       if (member !== undefined) void run.result.then(member.release, member.release)
@@ -308,6 +325,7 @@ export class DshCliProvider implements SubagentProvider {
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
+    scope: string | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -333,6 +351,9 @@ export class DshCliProvider implements SubagentProvider {
       // See the fresh path: a container target is exec-only.
       const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
+        // See the fresh path: a scoped round never goes to the resident
+        // process, which binds the default scoped home.
+        assertScopeExecOnly(scope, 'subagent-dsh')
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -369,6 +390,7 @@ export class DshCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           onSpawned: (pid) => { member?.bind(pid) },
           cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
+          ...scope === undefined ? {} : { scope },
         })
         void run.result.then(
           () => {
@@ -398,6 +420,12 @@ export interface DshCliRunSpec {
   readonly cwd: string
   /** The `dsh` harness's scoped home, injected as the child's `$DSH_HOME`. */
   readonly homeDir: string
+  /**
+   * The named scope {@link DshCliRunSpec.homeDir} belongs to, when the round
+   * runs against one. Absent means the default scope. Carried so a completed
+   * round grades the credential of the scope it actually used.
+   */
+  readonly scope?: string | undefined
   /** dsh subagent session recording this delegation. */
   readonly childSession?: Session | undefined
   /**
@@ -482,10 +510,11 @@ export function dshLaunchArgv(config: LocalAgentDshConfig): readonly string[] {
  * rule: a provider paired with an older core loses the grade, never the run).
  * @param ctx - host context carrying the family registry.
  */
-function markCredentialVerified(ctx: Context): void {
+function markCredentialVerified(ctx: Context, scope?: string): void {
   const registry = ctx.get('localAgent')
   if (registry === undefined || typeof registry.reportAuthSuccess !== 'function') return
-  registry.reportAuthSuccess('dsh')
+  // The grade belongs to the scope the round ran against.
+  registry.reportAuthSuccess('dsh', scope)
 }
 
 /**
@@ -725,7 +754,7 @@ export async function startDshCliRun(
   }).then((settled) => {
     // A completed round proves the resolved credential is live — the sub-dsh
     // reached its endpoint and produced an answer.
-    if (settled.stopReason === 'completed') markCredentialVerified(ctx)
+    if (settled.stopReason === 'completed') markCredentialVerified(ctx, spec.scope)
     // The turn closes at the real settle moment, so the timing projection's
     // duration equals the actual CLI runtime. Every terminal path closes the
     // window — a failed or cancelled run settles 'error'/'aborted' instead of

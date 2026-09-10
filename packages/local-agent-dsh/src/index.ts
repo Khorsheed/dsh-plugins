@@ -135,6 +135,12 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       homeEnvVar: 'DSH_HOME',
       delegationProvider: 'dsh-cli',
       records: { listSessions: homeDir => listDshSessions(homeDir) },
+      // A NAMED scope's directory is provisioned through this hook when the
+      // registry materializes it: the sub-profile the round launches from
+      // lives inside the scoped home, so a scope needs its own. (The
+      // credential does not: dsh authenticates through the host instance,
+      // which is why `isAuthenticated` below reads no directory at all.)
+      provision: scopedHome => { provisionDshSubProfile(scopedHome, config) },
       isAuthenticated: async () => {
         try {
           return (await resolveApiKey(ctx, config)) !== undefined
@@ -151,8 +157,11 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // loader reads the same service), reported as `provider/model`; a
       // composition without the service — or a selection that fails to read —
       // reports no model rather than a guessed identifier.
-      effectiveSettings: async () => {
-        const cliVersion = await dshCliVersion(ctx, config, ctx.localAgent.homeDir('dsh')).catch(() => undefined)
+      // The directory is a PARAMETER, not a re-resolution of the default
+      // scope: an evaluation snapshot of a named scope must probe the CLI the
+      // way that scope's rounds launch it.
+      effectiveSettings: async (scopedHome) => {
+        const cliVersion = await dshCliVersion(ctx, config, scopedHome).catch(() => undefined)
         let model: string | undefined
         try {
           const defaultModel = ctx.get('agentDefaultModel') as

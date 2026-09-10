@@ -200,6 +200,14 @@ export function apply(ctx: Context, config: Config): void {
       delegationProvider: 'kimi-cli',
       login: { command: 'kimi', args: ['login'] },
       records: { listSessions: homeDir => listKimiSessions(homeDir) },
+      // A NAMED scope's directory is provisioned through this hook when the
+      // registry materializes it — the same provider/model config and
+      // permission bootstrap the default scope gets from the apply above, in
+      // the same order (the permission write reads the config file).
+      provision: async (scopedHome) => {
+        await provisionKimiConfig(scopedHome, config.model ?? 'kimi-code/k3', thinkingEffort)
+        await ensureKimiPermissions(scopedHome)
+      },
       isAuthenticated: kimiAuthenticated,
       credentialStamp: kimiCredentialStamp,
       logout: kimiLogout,
@@ -211,13 +219,16 @@ export function apply(ctx: Context, config: Config): void {
       // fixed order says why: a set `model` key rides every round's launch,
       // so it beats the file it is about to overrule; with no key, the
       // scoped `default_model` is what runs.
-      effectiveSettings: async () => {
+      // The directory is a PARAMETER, not the apply-time capture: a status
+      // read (or an evaluation snapshot) of a named scope must report the
+      // config that scope's rounds would run with.
+      effectiveSettings: async (scopedHome) => {
         const [reasoningEffort, baseUrl, autoApprove, defaultModel, cliVersion] = await Promise.all([
-          readKimiReasoningEffort(homeDir).catch(() => undefined),
-          readKimiBaseUrl(homeDir).catch(() => undefined),
-          readKimiAutoApprove(homeDir).catch(() => false),
-          readKimiDefaultModel(homeDir).catch(() => undefined),
-          kimiCliVersion(ctx, homeDir).catch(() => undefined),
+          readKimiReasoningEffort(scopedHome).catch(() => undefined),
+          readKimiBaseUrl(scopedHome).catch(() => undefined),
+          readKimiAutoApprove(scopedHome).catch(() => false),
+          readKimiDefaultModel(scopedHome).catch(() => undefined),
+          kimiCliVersion(ctx, scopedHome).catch(() => undefined),
         ])
         // The managed endpoint IS kimi's own service — routing through it is
         // the default, not a pinned custom route.

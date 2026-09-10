@@ -171,9 +171,13 @@ export function apply(ctx: Context, config: Config): void {
         // via /claude-code code <value>. The relay env is scrubbed and the
         // scoped home pinned so the credential lands where delegations read
         // it (the wrapper passes the harness env through).
+        // The argv pins the config directory itself (an `env NAME=VALUE`
+        // assignment outranks the spawn env), so it is built from the
+        // directory being logged in: `/claude-code login --scope <name>`
+        // authorizes THAT scope, not the default one.
         pty: {
           command: 'env',
-          args: ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', `CLAUDE_CONFIG_DIR=${homeDir}`, 'claude', 'auth', 'login'],
+          args: (scopedHome: string) => ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', `CLAUDE_CONFIG_DIR=${scopedHome}`, 'claude', 'auth', 'login'],
         },
         // The watch syncs the keychain credential into the runtime-readable
         // file first (claude 2.1.236 writes keychain but reads the file),
@@ -184,6 +188,10 @@ export function apply(ctx: Context, config: Config): void {
         },
       },
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
+      // A NAMED scope's directory is provisioned through this hook when the
+      // registry materializes it — the same eager creation and settings the
+      // default scope gets from the apply above.
+      provision: scopedHome => provisionClaudeHome(scopedHome, config.proxyUrl).then(() => {}),
       isAuthenticated: claudeAuthenticated,
       credentialStamp: claudeCredentialStamp,
       logout: claudeLogout,
@@ -194,12 +202,15 @@ export function apply(ctx: Context, config: Config): void {
       // family's fixed order: the plugin config key (it rides every argv)
       // before the scoped settings.json's own `model`. The CLI's own default
       // model is never guessed, so neither one configured means no field.
-      effectiveSettings: async () => {
+      // The directory is a PARAMETER, not the apply-time capture: a status
+      // read (or an evaluation snapshot) of a named scope must report the
+      // settings that scope's rounds would run with.
+      effectiveSettings: async (scopedHome) => {
         const effectiveBaseUrl = baseUrl ?? process.env.ANTHROPIC_BASE_URL
         const baseUrlHost = effectiveBaseUrl !== undefined ? endpointHost(effectiveBaseUrl) : undefined
         const [scopedModel, cliVersion] = await Promise.all([
-          readClaudeConfiguredModel(homeDir).catch(() => undefined),
-          claudeCliVersion(ctx, homeDir).catch(() => undefined),
+          readClaudeConfiguredModel(scopedHome).catch(() => undefined),
+          claudeCliVersion(ctx, scopedHome).catch(() => undefined),
         ])
         const model = resolveModel() ?? scopedModel
         return {

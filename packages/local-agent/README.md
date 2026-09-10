@@ -12,6 +12,7 @@
 - **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现。
 - **每 provider 一张设置卡片**——设置 → 插件 → 插件配置：认证状态点（卡头可见）、网页登录/退出、常驻模式（live）热切开关与输出粒度；卡片直接复用本包 client 面的共享 `ProviderAuthBlock`。
 - **子 agent 委派**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上。
+- **一家多份登录（命名 scope）**——`/<harness> login --scope <名>` 在 `<homesRoot>/<家名>@<名>` 里另开一份作用域目录：各自登录、各自会话记录、各自 `delegations.jsonl`，凭证不复制。评测因此能在同一次 run 里比较同一家的两个账号。
 
 ## 安装
 
@@ -47,7 +48,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 - **登录为抓取式 prompt 或人工交接**——web GUI 没有交互式终端面：device-code harness（kimi/codex）的 URL 通过命令回复呈现、CLI 在后台轮询；认证只在 TTY 可用的 harness（claude ≥2.1）声明 manual 变体——`/login` 回复用户在自己终端运行的完整命令，registry 监听作用域目录识别登录完成。
 - **homes 根位置**——默认 `$DSH_HOME/local-agent`，待 `var/state` 布局标准化后再议。
-- **委派日志增长**——每个 harness 的 `delegations.jsonl` 只增不减、无轮转。
+- **委派日志增长**——每个作用域目录的 `delegations.jsonl` 只增不减、无轮转。
 - **单样本形状**——harness 契约仅由 Kimi 归纳，尚未冻结。
 
 ## 实现原理
@@ -112,6 +113,7 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 | `reattach` | 仅 `resume`：子会话不在线时从持久化恢复（默认 true），传 `false` 则 fail loud |
 | `cwd` | 本轮 CLI 的工作目录；resume 轮必须与首轮记录一致，否则进程启动前 fail loud |
 | `exec` | 本轮在**已取得的容器里**跑：`{ container, workdir, env? }` |
+| `scope` | 本轮跑该家的**命名作用域目录**（`<homesRoot>/<家名>@<scope>`）；resume 轮必须与首轮记录的 scope 一致（含"都没有"），否则 fail loud |
 
 **每轮的 settle 观测。** provider 在一轮的输出流解析完之后调用 `recordRoundSettled`，家族把它转成一条 `settled` 进度事件：本轮的 `observedModel`、`cliVersion`、`usage`，以及本轮的 `toolCalls`（`{ count, byName }`）。每个字段取不到就缺位，绝不猜、绝不补零。
 
@@ -126,6 +128,15 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 - **作用域目录是宿主目录、rw bind 挂进容器。** 回读（codex 的 rollout、kimi 的 wire log、子 dsh 的会话日志）直接读宿主文件系统，凭据续期也回写到宿主目录。**挂什么由调用方备好**：把活的作用域目录整个挂进去，宿主专用的设置会跟着进去（实测：claude 作用域 `settings.json` 里给宿主守护进程用的 `https_proxy` 在容器里指向不存在的地址，本轮当场 `Connection refused`）。
 - **容器轮是 exec-only、且没有成员通道。** 长驻驱动跑的是宿主上的常驻进程，正是 `exec` 目标要替换的传输；成员桥是宿主 unix socket，其 MCP 声明还带着宿主 node 路径。两者都是明确放弃，不是没接上。
 - **resume 由调用方重复同一个目标。** 记录里的锚是宿主 `cwd`，换了容器它仍然相等——这一条记录抓不到。
+
+### 命名 scope：一家多份作用域目录
+
+缺省作用域目录是 `<homesRoot>/<家名>`——逐字节还是那一份。给一个**名字**（只允许 `[a-z0-9-]`，是名字不是路径）就得到与它**同级**的另一份：`<homesRoot>/<家名>@<名>`。不嵌在缺省目录里面，因为那份目录归各家 CLI 自己管，往里塞第二棵状态树迟早被它自己清掉或读串。
+
+- **惰性建立。** 目录在第一次被点名时创建（`/<家> login|status|sessions|logout --scope <名>`、带 `scope` 的委派、评测的挂载源都算点名）：`mkdir` 0700，然后跑该家自己的 provision（codex 的 `config.toml`、kimi 的 provider/model 配置与权限、claude 的作用域目录、dsh 的子 profile）。缺省目录的 provision 时机不变——仍由各 harness bundle 的 apply 负责。
+- **凭证不复制。** 新 scope 是空的：`status` 报 `credentialState: absent`，委派按今天的规则失败，要用它先 `/<家> login --scope <名>` 登一次。claude 的 keychain 项按配置目录路径哈希，命名 scope 因此自动拿到自己的项——这是四家里唯一天然按路径安全的部分。
+- **一切按目录走。** 该 scope 的会话记录、`delegations.jsonl`、effective-settings 快照（harness 的 `effectiveSettings(homeDir)` 收目录参数）、CLI 版本探测、登录态与委派回读，全部落在它自己的目录里。委派记录带 `scope`，resume 轮拿它当锚：换了 scope（或首轮有、这轮没有）在进程启动前就拒绝——继续同一个 CLI 会话却换了账号，是事后修不回来的那种错。
+- **边界（明确放弃，不是没接上）。** 带 scope 的委派**只走 exec**：常驻驱动（codex 的 app-server、claude/kimi 的 ACP、子 dsh 的 serve）按成员绑的是缺省作用域目录，撞上 live 直接拒绝而不是悄悄降级。kimi 的成员桥声明写在作用域目录的 `mcp.json` 里、`member-bridge.sock` 又是 homes 根级单例，所以带 scope 的 kimi 轮不带成员通道。dsh 的子 profile 随目录走，不需要特殊处理。
 
 ### 活跃委派 registry 与 `/local-agent stop`
 
