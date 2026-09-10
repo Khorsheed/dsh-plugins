@@ -10,6 +10,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 import { tasksContributor } from '@khorsheed/dsh-local-agent/src/client/member-dock.ts'
 import { parseClaudeStreamJson, startClaudeCliRun, todosFromTodoWrite } from '../src/claude-cli-provider.ts'
 
@@ -127,7 +128,7 @@ function stubChild(stream: string): SubprocessHandle {
 function fakeCtx(): { ctx: Context; warns: string[] } {
   const warns: string[] = []
   const ctx = new Context()
-  ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} } as never)
+  ctx.provide('sessionPersistence', fakeSessionPersistence() as never)
   // cordis's logger is service-backed, not provide-overridable: capture warns
   // by wrapping the method (its exporter pipeline is async/buffered).
   const original = ctx.logger.warn.bind(ctx.logger)

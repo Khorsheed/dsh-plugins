@@ -11,6 +11,7 @@ import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import {
   injectMemberBridge, memberBridgeServerKey, MEMBER_BRIDGE_SERVER_PREFIX, removeMemberBridge,
 } from '../src/member-bridge-config.ts'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 
 /** A stub child that prints a reply and exits 0 on a later tick. */
 function stubChild(pid: number): SubprocessHandle {
@@ -113,7 +114,7 @@ describe('kimi-cli-provider member bridge injection', () => {
     } as unknown as SubagentStartRequest
   }
 
-  it('declares the bridge MCP with socket+token env, binds the CLI pid, and cleans up at settle', async () => {
+  it('declares the bridge MCP with socket+token env and cleans up at settle', async () => {
     const homeDir = mkdtempSync(join(tmpdir(), 'kimi-member-'))
     const ctx = new Context()
     const registry = memberRegistry(homeDir)
@@ -140,8 +141,9 @@ describe('kimi-cli-provider member bridge injection', () => {
         DSH_MEMBER_TOKEN: 'token-xyz-1234',
       },
     })
-    // The spawned CLI pid is bound for the bridge's parentage cross-check.
-    expect(registry.bindMemberRunPid).toHaveBeenCalledWith('token-xyz-1234', 4242)
+    // Host 0.1.5 hides the spawned child's pid: the cross-check cannot be bound
+    // and the channel fails closed on its unbound-run rejection.
+    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
 
     await run.result
     // Settle invalidates the token and prunes the config entry.
@@ -156,7 +158,7 @@ describe('kimi-cli-provider member bridge injection', () => {
     const ctx = new Context()
     const child = Session.create(SessionId('child-run-1'))
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} } as never)
+    ctx.provide('sessionPersistence', fakeSessionPersistence() as never)
     const registry = {
       ...memberRegistry(homeDir),
       takeDelegationIntent: () => ({ kind: 'resume', childSessionId: 'child-run-1', cliSessionId: 'run-1' }),
@@ -177,7 +179,7 @@ describe('kimi-cli-provider member bridge injection', () => {
       provider: 'kimi-cli',
     })
     expect(mcpServers(homeDir)[memberBridgeServerKey('token-xyz-1234')]).toBeDefined()
-    expect(registry.bindMemberRunPid).toHaveBeenCalledWith('token-xyz-1234', 4343)
+    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
 
     await run.result
     await vi.waitFor(() => {

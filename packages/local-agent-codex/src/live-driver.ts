@@ -27,7 +27,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
@@ -41,7 +41,6 @@ import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendCodexTranscriptLine,
-  appendCodexUsageChunk,
   codexAssistantEvent,
   codexLineText,
   DEFAULT_DISPOSE_GRACE_MS,
@@ -100,7 +99,7 @@ const DEFAULT_TIMEOUTS: CodexLiveDriverTimeouts = {
 /** How much of the live event stream crosses into the child session. */
 export type CodexLiveMirrorGranularity = 'event' | 'token'
 
-/** The fold options for one granularity: token mode streams think/text as chunks, so the fold skips it. */
+/** The fold options for one granularity: token mode accumulates think/text outside the log (no per-chunk event in host 0.1.5), so the fold skips it. */
 function mirrorOptions(granularity: CodexLiveMirrorGranularity): CodexMirrorOptions | undefined {
   return granularity === 'token' ? { skipAssistantContent: true } : undefined
 }
@@ -394,7 +393,9 @@ class CodexLiveRuntime {
       this.child.stdin?.end()
       await Promise.race([this.child.done.catch(() => {}), delay(RECLAIM_EOF_GRACE_MS)])
     }
-    if (!this.dead && this.child.pid > 0) {
+    if (!this.dead) {
+      // Host 0.1.5 hides the child pid; terminate() is an idempotent no-op
+      // once the managed range is gone.
       this.child.terminate()
       await this.child.waitForExit()
     }
@@ -587,7 +588,6 @@ export class CodexLiveDriver {
       this.markChannelBroken()
       throw new LiveChannelUnavailableError(`the app-server failed to spawn: ${thrown(error).message}`)
     }
-    member?.bind(child.pid)
     const runtime = new CodexLiveRuntime(
       child,
       (method, params) => this.answerServerRequest(method, params),
@@ -750,8 +750,6 @@ export class CodexLiveDriver {
     let roundText = ''
     /** The round's accumulated reasoning deltas (token granularity; the final message's reasoning block). */
     let roundThink = ''
-    /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
-    const chunkSeqs: SessionSeq[] = []
     /**
      * The stream's (turn, step) merge key, reserved LAZILY at the first
      * think/text delta: every item completed before that moment folds below
@@ -804,15 +802,14 @@ export class CodexLiveDriver {
       const attachUsage = withUsage && options?.skipAssistantContent !== true
       // The usage rides the last NON-tool line (tool events carry no usage
       // slot, and a kill mid-command ends the transcript with a tool line).
+      // A carrier mirrored in an earlier flush (before the usage was knowable)
+      // loses the accounting — host 0.1.5 has no usage-backfill event.
       let usageIndex = -1
       if (attachUsage) {
         for (let index = 0; index < lines.length; index += 1) {
           if (lines[index]?.kind !== 'tool') usageIndex = index
         }
       }
-      // A carrier mirrored in an earlier flush (before the usage was
-      // knowable) gets the accounting as a usage chunk pinned to its step.
-      const carrierMirrored = attachUsage && usageIndex !== -1 && usageIndex < mirrored
       for (let index = mirrored; index < upto; index += 1) {
         const line = lines[index]
         if (line === undefined) continue
@@ -827,7 +824,6 @@ export class CodexLiveDriver {
         mirrored = index + 1
         if (folded) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
       }
-      if (carrierMirrored && usage !== undefined) appendCodexUsageChunk(childSession, turn, usage)
       if (upto > 0) persist()
     }
 
@@ -880,13 +876,11 @@ export class CodexLiveDriver {
         // Reserve the stream's step past every item completed so far
         // (including the held-back carrier line), so a tool-first round
         // renders the answer after its tool cards, not above them.
+        // Host 0.1.5 removed the per-chunk session event, so token
+        // granularity no longer writes deltas to the child log; the delta
+        // rides the run progress channel and the round settles as one
+        // combined final message.
         if (streamStep === undefined) streamStep = lines.length + 1
-        const event = childSession.append('assistant/chunk', {
-          turn,
-          step: streamStep,
-          chunk: { type: reasoning ? 'reasoning-delta' : 'text-delta', index: reasoning ? 0 : 1, text },
-        })
-        chunkSeqs.push(event.seq)
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
         return
       }
@@ -1078,10 +1072,9 @@ export class CodexLiveDriver {
       try {
         if (turnOpened) {
           await persistQueue.catch(() => {})
-          // Token granularity: complete the stream with ONE combined final
-          // message at the SAME (turn, step) — the official projection
-          // replaces the stream with it (no duplicated content, no dangling
-          // '已停止' badge) and surfaces the usage. A non-completed round is
+          // Token granularity: settle the round with ONE combined final
+          // message at the reserved (turn, step), carrying the usage. A
+          // non-completed round is
           // marked interrupted, so a cancelled turn reads 已停止 legitimately.
           if (granularity === 'token') {
             // Deltas are the stream's content; a server that completed items
@@ -1103,9 +1096,10 @@ export class CodexLiveDriver {
                 // puts the fallback answer past every folded line instead.
                 step: streamStep ?? lines.length + 1,
                 message: codexAssistantEvent(blocks),
+                stream: [],
                 ...usage !== undefined ? { usage } : {},
                 ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-              }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+              }, { surfaceOp: 'append' })
               persist()
             }
           }

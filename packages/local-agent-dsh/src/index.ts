@@ -69,9 +69,11 @@ export interface LocalAgentDshConfig {
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
   /**
-   * Live mirror granularity: `event` mirrors finalized messages;
-   * `token` additionally appends `assistant/chunk` deltas (write amplification
-   * — opt-in). Deployment default; the settings card can override it live.
+   * Live mirror granularity: `event` mirrors finalized messages. `token`
+   * still reports per-token deltas over the run-progress channel, but host
+   * 0.1.5 removed the per-chunk session event, so deltas no longer land in
+   * the child session log (the round settles as one combined final message).
+   * Deployment default; the settings card can override it live.
    */
   liveMirrorGranularity?: 'event' | 'token'
 }

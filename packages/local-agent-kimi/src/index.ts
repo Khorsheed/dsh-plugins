@@ -76,8 +76,10 @@ export interface Config {
   liveIdleMs?: number
   /**
    * Live mirror granularity: `event` mirrors the wire.jsonl fold via
-   * throttled passes; `token` additionally appends `assistant/chunk` deltas
-   * (write amplification — opt-in).
+   * throttled passes. `token` still reports per-token deltas over the
+   * run-progress channel, but host 0.1.5 removed the per-chunk session
+   * event, so deltas no longer land in the child session log (the round
+   * settles as one combined final message).
    */
   liveMirrorGranularity?: 'event' | 'token'
 }

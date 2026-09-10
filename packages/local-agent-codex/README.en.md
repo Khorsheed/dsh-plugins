@@ -43,7 +43,7 @@ Optional, in the profile patch layer:
     model: gpt-5.2             # optional: every delegation round starts the CLI with it; absent passes no model flag at all (below)
     live: false                # live driver: one resident codex app-server process per member, one turn per round (runtime-level graceful interrupt, push-mode mirroring); off — or a channel that cannot come up — means the one-shot exec path
     liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
-    liveMirrorGranularity: event  # live mirror granularity; token additionally appends assistant/chunk deltas (write amplification — opt-in)
+    liveMirrorGranularity: event  # live mirror granularity; token reports deltas over the run-progress channel (host 0.1.5 no longer writes per-token events into the log)
 ```
 
 ### Default model (`model`)
@@ -82,8 +82,8 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ one degradation — `liveMirrorGranularity: token` no longer writes per-token deltas into the child session log (the host retired the per-chunk event); deltas ride the run-progress channel and the round settles as one combined message (identical final text). Everything else is full (adapted to format v2/v3 and handle-based sessionPersistence; build+test green); minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations
 

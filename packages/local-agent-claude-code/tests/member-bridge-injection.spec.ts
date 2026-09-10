@@ -4,6 +4,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 
 /** A stub child that emits a minimal stream-json run and exits 0. */
@@ -97,7 +98,7 @@ describe('claude-cli-provider member bridge injection', () => {
     expect(argv[toolsIndex + 2]).toBe('--')
   }
 
-  it('appends --mcp-config and --allowedTools to the fresh argv, binds the pid, cleans up at settle', async () => {
+  it('appends --mcp-config and --allowedTools to the fresh argv, cleans up at settle', async () => {
     const registry = memberRegistry()
     const { ctx, spawned } = mount(registry)
     const provider = new ClaudeCliProvider(ctx, 'skip')
@@ -113,7 +114,10 @@ describe('claude-cli-provider member bridge injection', () => {
     expectMemberArgv(spawned[0]!)
     // The flags precede the positional task.
     expect(spawned[0]![spawned[0]!.length - 1]).toBe('do the task')
-    expect(registry.bindMemberRunPid).toHaveBeenCalledWith('token-xyz-1234', 4242)
+    // Host 0.1.5 hides the spawned child's pid: the parentage cross-check
+    // cannot be bound and the channel fails closed on its unbound-run
+    // rejection until an upstream pid seam or a token-only decision lands.
+    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
 
     await run.result
     await vi.waitFor(() => {
@@ -131,7 +135,7 @@ describe('claude-cli-provider member bridge injection', () => {
     const { ctx, spawned } = mount(registry)
     const child = Session.create(SessionId('child-run-1'))
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} } as never)
+    ctx.provide('sessionPersistence', fakeSessionPersistence() as never)
     const provider = new ClaudeCliProvider(ctx, 'skip')
 
     const run = await provider.start(request())

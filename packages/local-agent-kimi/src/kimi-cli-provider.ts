@@ -151,17 +151,19 @@ export class KimiCliProvider implements SubagentProvider {
   /**
    * Register one run with the member channel and declare the bridge MCP server
    * in the scoped home's mcp.json (per-run entry, socket + token in its env).
-   * Returns the bind/release handles, or undefined when the mounted core
+   * Returns the release handle, or undefined when the mounted core
    * predates the member channel (declare-and-degrade: the run proceeds
-   * exactly as before). `bind` records the spawned CLI pid (the bridge's
-   * parentage cross-check); `release` invalidates the token and prunes the
+   * exactly as before). Host 0.1.5 hides the spawned child's pid, so the
+   * bridge's parentage cross-check cannot be bound — the member channel fails
+   * CLOSED on its unbound-run rejection until an upstream pid seam or a
+   * token-only decision lands. `release` invalidates the token and prunes the
    * config entry on any settle path.
    */
   private memberRun(
     childSessionId: string,
     parentSessionId: string,
     homeDir: string,
-  ): { bind(pid: number): void; release(): void } | undefined {
+  ): { release(): void } | undefined {
     const registry = this.ctx.localAgent
     if (
       typeof registry.registerMemberRun !== 'function'
@@ -182,7 +184,6 @@ export class KimiCliProvider implements SubagentProvider {
     }
     let released = false
     return {
-      bind: pid => registry.bindMemberRunPid(token, pid),
       release: () => {
         if (released) return
         released = true
@@ -344,7 +345,6 @@ export class KimiCliProvider implements SubagentProvider {
           void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
           this.ctx.localAgent.reportAuthFailure('kimi', detail, scope)
         },
-        onSpawned: (pid) => { member?.bind(pid) },
         onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
         cliVersion: () => kimiCliVersion(this.ctx, homeDir),
         childSession,
@@ -463,8 +463,7 @@ export class KimiCliProvider implements SubagentProvider {
             void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
             this.ctx.localAgent.reportAuthFailure('kimi', detail, scope)
           },
-          onSpawned: (pid) => { member?.bind(pid) },
-          onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
+            onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
           cliVersion: () => kimiCliVersion(this.ctx, homeDir),
           childSession,
           homeDir,
@@ -532,8 +531,6 @@ export interface KimiCliRunSpec {
    * to the family registry's auth-failure mark.
    */
   readonly onAuthFailure?: ((detail: string) => void) | undefined
-  /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
-  readonly onSpawned?: (pid: number) => void
   /** dsh subagent session recording this delegation; its transcript is mirrored after settle. */
   readonly childSession?: Session | undefined
   /** The `kimi` harness's scoped home, read for the transcript to mirror. */
@@ -753,8 +750,6 @@ export function startKimiCliRun(
     graceMs: spec.disposeGraceMs,
     env: launch.env,
   })
-  spec.onSpawned?.(child.pid)
-
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
   // stderr carries diagnostics plus the resume hint naming this run's session;
@@ -818,13 +813,12 @@ export function startKimiCliRun(
   }
 
   const disposeProcess = async (): Promise<void> => {
-    if (child.pid <= 0) {
-      await child.done.catch(() => {})
-      return
-    }
+    // Host 0.1.5 hides the child pid (the managed range owns termination):
+    // terminate() is an idempotent no-op once the range is gone, so a failed
+    // spawn needs no guard; done rejects there, which dispose must swallow.
     child.terminate()
-    await child.waitForExit()
-    await child.done
+    await child.waitForExit().catch(() => false)
+    await child.done.catch(() => {})
   }
 
   const runAbort = new AbortController()

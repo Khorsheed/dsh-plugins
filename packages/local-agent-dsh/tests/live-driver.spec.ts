@@ -404,27 +404,30 @@ describe('dsh live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('appends assistant/chunk deltas only under the token granularity opt-in', async () => {
-    const chunkEvents: Partial<SessionEvent>[] = [
+  it('ignores retired chunk-shaped events in both granularities (host 0.1.5)', async () => {
+    // The 0.1.5 sub-dsh never emits per-chunk events (the type is retired); a
+    // chunk-shaped row pushed by an older wire crosses in NEITHER granularity.
+    const events: Partial<SessionEvent>[] = [
       { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'hel' } } },
       { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'lo' } } },
       ...answerEvents(1, 't', 'hello'),
-    ]
+    ] as Partial<SessionEvent>[]
     const off = mount()
     const offChild = Session.create(SessionId('child-live-5a'))
-    off.queueChild(new FakeServeChild({ turn: () => ({ events: chunkEvents }) }))
+    off.queueChild(new FakeServeChild({ turn: () => ({ events }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     await off.driver.disposeAll()
 
     const on = mount({ config: { liveMirrorGranularity: 'token' } })
     const onChild = Session.create(SessionId('child-live-5b'))
-    on.queueChild(new FakeServeChild({ turn: () => ({ events: chunkEvents }) }))
+    on.queueChild(new FakeServeChild({ turn: () => ({ events }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
-    expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
-    expect(on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)).toContain('hel')
+    expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    // Identical logs: granularity no longer changes what crosses.
+    expect(onChild.snapshotEvents().map(e => e.type)).toEqual(offChild.snapshotEvents().map(e => e.type))
     await on.driver.disposeAll()
   })
 })
@@ -844,12 +847,13 @@ describe('dsh live driver drain (settings handoff)', () => {
     }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
-    // Event granularity: the pushed chunk stayed behind.
-    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    // Retired chunk-shaped rows stay behind in BOTH granularities (host 0.1.5
+    // has no per-chunk event); the message rows cross.
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
     await second.result
-    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

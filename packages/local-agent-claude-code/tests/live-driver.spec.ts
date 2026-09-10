@@ -380,24 +380,33 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('appends assistant/chunk deltas only under the token granularity', async () => {
+  it('token granularity streams deltas over run progress, never into the session log (host 0.1.5)', async () => {
     const deltas = ['hel', 'lo']
     const off = mount()
     const offChild = Session.create(SessionId('child-claude-7a'))
     off.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     expect(off.spawns[0]!.spec.argv).not.toContain('--include-partial-messages')
     await off.driver.disposeAll()
 
+    // Host 0.1.5 retired the per-chunk session event: token granularity keeps
+    // the partial-message spawn flag and reports deltas over the run-progress
+    // channel, and the round settles as ONE combined final message.
     const on = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
     const onChild = Session.create(SessionId('child-claude-7b'))
     on.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
     expect(on.spawns[0]!.spec.argv).toContain('--include-partial-messages')
-    expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    await vi.waitFor(() => {
+      expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    }, { timeout: 5_000 })
+    const final = onChild.snapshotEvents().find(e => e.type === 'assistant/message')!
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: 'hello' }])
+    const progress = on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)
+    expect(progress).toContain('hel')
+    expect(progress).toContain('lo')
     await on.driver.disposeAll()
   })
 
@@ -416,15 +425,14 @@ describe('claude live driver rounds', () => {
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
-    // One final at the stream's own (turn, step): the projection replaces the
-    // stream with it — no duplicated content, no dangling interrupted badge.
+    // One final at the stream's own (turn, step) — no duplicated content, no
+    // dangling interrupted badge.
     expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
     expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
       { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
-    expect(final.sourceEventSeqs?.length).toBeGreaterThan(0)
     // The fold skipped the think/text lines but the tool activity still folds.
     expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1)
     await m.driver.disposeAll()
@@ -470,9 +478,6 @@ describe('claude live driver rounds', () => {
     // Chronological steps: tool=1, tool=2, the stream=3, the late tool shifts to 4.
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([1, 2, 4])
-    for (const chunk of child.snapshotEvents().filter(e => e.type === 'assistant/chunk')) {
-      expect((chunk.data as { step: number }).step).toBe(3)
-    }
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     await m.driver.disposeAll()
@@ -632,11 +637,19 @@ describe('claude live driver drain (settings handoff)', () => {
     m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['一', '二'], events: answerEvents('done') }) }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
-    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    // Event granularity folds the stream lines into per-line messages.
+    const eventModeMessages = child.snapshotEvents().filter(e => e.type === 'assistant/message').length
+    expect(eventModeMessages).toBeGreaterThan(0)
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
     await second.result
-    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    // Token granularity settles the round as ONE combined final message
+    // (host 0.1.5 retired per-chunk events).
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)).toHaveLength(1)
+    }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)!
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '一二' }])
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

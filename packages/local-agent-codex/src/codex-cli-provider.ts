@@ -88,14 +88,16 @@ export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access
  * member_message is a write tool. Nothing is written to the scoped home, so
  * there is nothing to prune at settle; `release` only invalidates the token.
  * Returns undefined when the mounted core predates the member channel
- * (declare-and-degrade: the run proceeds unchanged). The exec driver
+ * (declare-and-degrade: the run proceeds unchanged). Host 0.1.5 hides the
+ * spawned child's pid, so the bridge's parentage cross-check cannot be bound
+ * — the member channel fails CLOSED on its unbound-run rejection until an
+ * upstream pid seam or a token-only decision lands. The exec driver
  * registers per round; the live driver registers per resident process and
  * releases on reclaim.
  */
 export interface CodexMemberRunHandle {
   readonly token: string
   readonly configOverride: string
-  bind(pid: number): void
   release(): void
 }
 
@@ -125,7 +127,6 @@ export function registerCodexMemberRun(
   return {
     token,
     configOverride,
-    bind: pid => registry.bindMemberRunPid(token, pid),
     release: () => {
       if (released) return
       released = true
@@ -363,7 +364,6 @@ export class CodexCliProvider implements SubagentProvider {
         onError: (error: unknown, stopReason) => {
           this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
-        onSpawned: (pid) => { member?.bind(pid) },
         onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail, scope) },
         onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
         cliVersion: () => codexCliVersion(this.ctx, homeDir),
@@ -475,8 +475,7 @@ export class CodexCliProvider implements SubagentProvider {
           onError: (error: unknown, stopReason) => {
             this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
           },
-          onSpawned: (pid) => { member?.bind(pid) },
-        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail, scope) },
+          onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail, scope) },
           onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
           cliVersion: () => codexCliVersion(this.ctx, homeDir),
           ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
@@ -558,8 +557,6 @@ export interface CodexCliRunSpec {
    * family probe. Only consulted when the round's own rollout head named none.
    */
   readonly cliVersion?: (() => Promise<string | undefined>) | undefined
-  /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
-  readonly onSpawned?: (pid: number) => void
   /**
    * Member channel: the bridge MCP declaration for this run as one `-c`
    * inline-TOML config override (per-process; nothing lands in the scoped
@@ -889,7 +886,6 @@ export function startCodexCliRun(
     graceMs: spec.disposeGraceMs,
     env: launch.env,
   })
-  spec.onSpawned?.(child.pid)
   // The spawn moment anchors the rollout-locator time window: the run's
   // rollout file starts around here (thread creation ≈ turn start ≈ spawn),
   // so the usage fallback can find it even when a kill truncated the stream
@@ -915,13 +911,12 @@ export function startCodexCliRun(
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 
   const disposeProcess = async (): Promise<void> => {
-    if (child.pid <= 0) {
-      await child.done.catch(() => {})
-      return
-    }
+    // Host 0.1.5 hides the child pid (the managed range owns termination):
+    // terminate() is an idempotent no-op once the range is gone, so a failed
+    // spawn needs no guard; done rejects there, which dispose must swallow.
     child.terminate()
-    await child.waitForExit()
-    await child.done
+    await child.waitForExit().catch(() => false)
+    await child.done.catch(() => {})
   }
 
   const runAbort = new AbortController()
@@ -1083,8 +1078,9 @@ export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
 export interface CodexMirrorOptions {
   /**
    * Do not fold think/text lines into `assistant/message` events (the
-   * token-granularity live mode streams that content as `assistant/chunk`
-   * instead; the driver completes the stream with one combined final
+   * token-granularity live mode accumulates that content outside the log —
+   * host 0.1.5 removed the per-chunk session event — and the driver settles
+   * the round with one combined final
    * message). Tool lines still fold, and the round's usage is left to the
    * caller — it rides the combined final message, not a folded line.
    */
@@ -1103,8 +1099,9 @@ export function appendCodexTranscriptLine(
   usage: TokenUsage | undefined,
   options?: CodexMirrorOptions,
 ): boolean {
-  // Token-granularity live mode streams think/text as assistant/chunk; the
-  // driver completes the stream with one combined final message, so the fold
+  // Token-granularity live mode accumulates think/text outside the log (host
+  // 0.1.5 removed the per-chunk event); the
+  // driver settles the round with one combined final message, so the fold
   // leaves these lines out (their usage rides that final message).
   if (options?.skipAssistantContent === true && line.kind !== 'tool') return false
   if (line.kind === 'tool') {
@@ -1139,6 +1136,7 @@ export function appendCodexTranscriptLine(
     turn,
     step,
     message: codexAssistantEvent(blocks),
+    stream: [],
     ...usage === undefined ? {} : { usage },
   }, { surfaceOp: 'append' })
   return true
@@ -1154,34 +1152,6 @@ function appendCodexLine(
 ): void {
   if (spec.childSession === undefined) return
   appendCodexTranscriptLine(spec.childSession, turn, step, line, usage)
-}
-
-/**
- * Book a round's usage when its carrier line (the last non-tool transcript
- * line) was already mirrored WITHOUT it — a killed run's usage is only
- * knowable at settle, and the carrier may have gone out through the live
- * mirror by then. Appends a usage chunk pinned to the carrier's turn/step:
- * the token projection treats a repeated step sample as a replacement, never
- * a double count. No-op when the round has no mirrored assistant message.
- * @param childSession - the run's child session.
- * @param turn - the round's turn number.
- * @param usage - the usage to book.
- * @returns whether the chunk was appended.
- */
-export function appendCodexUsageChunk(childSession: Session, turn: number, usage: TokenUsage): boolean {
-  for (let index = childSession.snapshotEvents().length - 1; index >= 0; index -= 1) {
-    const event = childSession.snapshotEvents()[index]
-    if (event?.type !== 'assistant/message') continue
-    const data = event.data as { turn?: number; step?: number }
-    if (data.turn !== turn || typeof data.step !== 'number') return false
-    childSession.append('assistant/chunk', {
-      turn,
-      step: data.step,
-      chunk: { type: 'usage', usage },
-    })
-    return true
-  }
-  return false
 }
 
 /** The delta-progress text for one transcript line. */
@@ -1204,7 +1174,23 @@ export async function persistIfStandalone(ctx: Context, childSession: Session): 
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.snapshotEvents())
+  if (persistence === undefined) return
+  // Host 0.1.5 handle-based persistence: claim the write handle (creating the
+  // stored session on first persist), append only the unstored suffix —
+  // re-appending the full snapshot violates the contiguous-seq contract —
+  // then flush and close.
+  const existing = await persistence.stat(childSession.id)
+  const handle = existing === undefined
+    ? await persistence.create(childSession.header)
+    : await persistence.open(childSession.id, 'write')
+  try {
+    const stored = await handle.read(0)
+    const suffix = childSession.snapshotEvents().slice(stored.events.length)
+    if (suffix.length > 0) await handle.append(suffix)
+    await handle.flush()
+  } finally {
+    await handle.close()
+  }
 }
 
 /**
@@ -1263,15 +1249,14 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
           // The usage rides the last NON-tool line (tool events carry no
           // usage slot); a stream ending on a tool line would otherwise drop
           // the round's accounting. When that carrier was mirrored in an
-          // earlier flush (before the usage was knowable), book it as a usage
-          // chunk pinned to the carrier's step instead.
+          // earlier flush (before the usage was knowable), the accounting is
+          // lost — host 0.1.5 has no usage-backfill event.
           let carrier = -1
           if (parser.completed && parser.usage !== undefined) {
             for (let scan = 0; scan < parser.lines.length; scan += 1) {
               if (parser.lines[scan]?.kind !== 'tool') carrier = scan
             }
           }
-          const carrierMirrored = carrier !== -1 && carrier < mirrored
           for (let index = mirrored; index < upto; index += 1) {
             const line = parser.lines[index]
             if (line === undefined) continue
@@ -1279,9 +1264,6 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
             appendCodexLine(spec, turn, index + 1, line, usage)
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
-          }
-          if (carrierMirrored && parser.usage !== undefined) {
-            appendCodexUsageChunk(childSession, turn, parser.usage)
           }
           await persistIfStandalone(ctx, childSession)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
@@ -1344,9 +1326,11 @@ async function appendCodexResponse(
   }
   if (parsed.usage !== undefined && usageIndex !== -1 && usageIndex < fromLines) {
     // The carrier line went out through the live mirror before the usage was
-    // knowable (a killed run recovers it from the rollout at settle): book it
-    // as a usage chunk pinned to the carrier's step.
-    appendCodexUsageChunk(childSession, turn, parsed.usage)
+    // knowable (a killed run recovers it from the rollout at settle). Host
+    // 0.1.5 has no usage-backfill event (the per-chunk event is gone and
+    // appended messages are immutable), so the round's accounting is lost in
+    // this race — log it instead of dropping it silently.
+    spec.ctx?.logger.warn(`subagent-codex: round ${turn} usage arrived after its carrier line was mirrored; the accounting is dropped`)
   }
   await persistIfStandalone(spec.ctx, childSession)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })

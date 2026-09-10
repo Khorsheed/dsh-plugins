@@ -15,6 +15,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it } from 'vitest'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 import { CodexCliProvider } from '../src/codex-cli-provider.ts'
 
 /** A stub child that emits a minimal `--json` run and exits 0. */
@@ -102,7 +103,7 @@ describe('codex exec argv: non-git delegation cwd', () => {
     })
     const child = Session.create(SessionId('child-run-1'))
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} } as never)
+    ctx.provide('sessionPersistence', fakeSessionPersistence() as never)
     const provider = new CodexCliProvider(ctx)
 
     const run = await provider.start(request())

@@ -12,7 +12,9 @@
  *
  * Mirroring contract (the kimi-specific call): kimi's ACP updates are
  * token-level chunks, NOT the wire.jsonl line fold the exec mirror owns — so
- * the live transport mirrors NOTHING directly except opt-in token chunks.
+ * the live transport mirrors NOTHING directly (host 0.1.5 removed the
+ * per-chunk session event, so token-mode deltas only ride the run-progress
+ * channel).
  * The kimi ACP runtime writes the same wire.jsonl in the same scoped home
  * (session-view.ts documents this), so push events merely TRIGGER throttled
  * `mirrorKimiDelta` passes and the settle pass stays authoritative: one fold,
@@ -35,7 +37,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
@@ -389,7 +391,9 @@ class KimiLiveRuntime {
       this.child.stdin?.end()
       await Promise.race([this.child.done.catch(() => {}), delay(RECLAIM_EOF_GRACE_MS)])
     }
-    if (!this.dead && this.child.pid > 0) {
+    if (!this.dead) {
+      // Host 0.1.5 hides the child pid; terminate() is an idempotent no-op
+      // once the managed range is gone.
       this.child.terminate()
       await this.child.waitForExit()
     }
@@ -574,7 +578,6 @@ export class KimiAcpLiveDriver {
       this.markChannelBroken()
       throw new LiveChannelUnavailableError(`kimi acp failed to spawn: ${thrown(error).message}`)
     }
-    member?.bind(child.pid)
     const runtime = new KimiLiveRuntime(
       child,
       (method, params) => this.answerServerRequest(method, params),
@@ -770,10 +773,8 @@ export class KimiAcpLiveDriver {
     let turnOpened = false
     /** The round's accumulated assistant text (the run output — chunks are the only source). */
     let roundText = ''
-    /** The round's accumulated thinking (token granularity; completes the stream's final message). */
+    /** The round's accumulated thinking (token granularity; settles as the combined final message). */
     let roundThink = ''
-    /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
-    const chunkSeqs: SessionSeq[] = []
     /**
      * The stream's (turn, step) merge key, reserved LAZILY at the first
      * think/text delta from the session's step ledger: every line folded
@@ -829,17 +830,16 @@ export class KimiAcpLiveDriver {
         if (text !== '') {
           roundText += text
           if (granularity === 'token') {
-            // The stream's block layout matches the combined final message:
-            // reasoning at index 0, reply text at index 1. The merge key is
-            // reserved past everything folded so far, so a tool-first round
-            // renders the answer after its tool cards, not above them.
+            // Host 0.1.5 removed the per-chunk session event, so token
+            // granularity no longer writes deltas to the child log; the round
+            // settles as ONE combined final message (the mirror skips
+            // assistant content meanwhile), and the delta rides the run
+            // progress channel only. The stream's block layout matches the
+            // combined final message: reasoning at index 0, reply text at
+            // index 1. The merge key is reserved past everything folded so
+            // far, so a tool-first round renders the answer after its tool
+            // cards, not above them.
             if (streamStep === undefined) streamStep = nextKimiSessionStep(childSession, turn)
-            const event = childSession.append('assistant/chunk', {
-              turn,
-              step: streamStep,
-              chunk: { type: 'text-delta', index: 1, text },
-            })
-            chunkSeqs.push(event.seq)
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
           }
         }
@@ -849,12 +849,6 @@ export class KimiAcpLiveDriver {
         if (text !== '') {
           roundThink += text
           if (streamStep === undefined) streamStep = nextKimiSessionStep(childSession, turn)
-          const event = childSession.append('assistant/chunk', {
-            turn,
-            step: streamStep,
-            chunk: { type: 'reasoning-delta', index: 0, text },
-          })
-          chunkSeqs.push(event.seq)
         }
       }
       // Every update (chunks, tool calls, plans) triggers a throttled mirror
@@ -1011,10 +1005,9 @@ export class KimiAcpLiveDriver {
             if (Date.now() >= deadline) break
             await delay(SETTLE_MIRROR_POLL_MS)
           }
-          // Token granularity: complete the stream with ONE combined final
-          // message at the SAME (turn, step) — the official projection
-          // replaces the stream with it (no duplicated content, no dangling
-          // '已停止' badge) and surfaces the usage. A non-completed round is
+          // Token granularity: settle the round with ONE combined final
+          // message at the SAME (turn, step) the deltas reserved, carrying the
+          // usage. A non-completed round is
           // marked interrupted, so a cancelled turn reads 已停止 legitimately.
           if (granularity === 'token') {
             const blocks: ContentBlock[] = []
@@ -1027,9 +1020,10 @@ export class KimiAcpLiveDriver {
                 // puts the fallback answer past every folded line instead.
                 step: streamStep ?? nextKimiSessionStep(childSession, turn),
                 message: assistantEvent(blocks),
+                stream: [],
                 ...settleUsage !== undefined ? { usage: settleUsage } : {},
                 ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-              }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+              }, { surfaceOp: 'append' })
             }
           }
         }

@@ -55,7 +55,7 @@ base_url = "https://your-router.example/v1"
     thinkingEffort: high       # 推理强度;写入"全新"作用域 config.toml 的 [thinking] effort 与模型 default_effort(low/high/max,默认 high)。仅预置期生效——已存在的 config 永不覆盖
     live: false                # 长驻驱动:每成员常驻一个 kimi acp 进程,按轮发 session/prompt(runtime 级优雅取消 session/cancel、推送触发的镜像);关闭或通道不可用即回一次性 kimi -p
     liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
-    liveMirrorGranularity: event  # live 镜像粒度;token 额外把 ACP chunk 写成 assistant/chunk(写放大,opt-in)
+    liveMirrorGranularity: event  # live 镜像粒度;token 的增量经运行进度通道上报(宿主 0.1.5 起不再逐字写入会话日志)
 ```
 
 ### 默认模型（`model`）
@@ -81,8 +81,8 @@ base_url = "https://your-router.example/v1"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 不再逐字写入子会话日志（宿主移除逐 chunk 事件），增量改走运行进度通道、轮次以一条合并消息落定（最终文本不变）；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制
 

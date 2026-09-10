@@ -89,12 +89,14 @@ export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
  * Returns undefined when the mounted core predates the member channel
  * (declare-and-degrade: the run proceeds unchanged — the row's
  * failOnStartupError is off, and the bridge itself fails closed on the absent
- * token). The exec driver registers per round; the live driver registers per
- * resident process and releases on reclaim.
+ * token). Host 0.1.5 hides the spawned child's pid, so the bridge's
+ * parentage cross-check cannot be bound — the member channel fails CLOSED on
+ * its unbound-run rejection until an upstream pid seam or a token-only
+ * decision lands. The exec driver registers per round; the live driver
+ * registers per resident process and releases on reclaim.
  */
 export interface MemberRunHandle {
   readonly env: Readonly<NodeJS.ProcessEnv>
-  bind(pid: number): void
   release(): void
 }
 
@@ -120,7 +122,6 @@ export function registerMemberRun(
       [MEMBER_BRIDGE_TOKEN_ENV]: token,
       [MEMBER_BRIDGE_ENTRY_ENV]: bridge.args[0] ?? '',
     },
-    bind: pid => registry.bindMemberRunPid(token, pid),
     release: () => {
       if (released) return
       released = true
@@ -305,7 +306,6 @@ export class DshCliProvider implements SubagentProvider {
         ctx: this.ctx,
         ...member === undefined ? {} : { memberEnv: member.env },
         ...exec === undefined ? {} : { exec },
-        onSpawned: (pid) => { member?.bind(pid) },
         cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
         ...scope === undefined ? {} : { scope },
       })
@@ -388,8 +388,7 @@ export class DshCliProvider implements SubagentProvider {
           ctx: this.ctx,
           ...member === undefined ? {} : { memberEnv: member.env },
           ...exec === undefined ? {} : { exec },
-          onSpawned: (pid) => { member?.bind(pid) },
-          cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
+            cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
           ...scope === undefined ? {} : { scope },
         })
         void run.result.then(
@@ -457,8 +456,6 @@ export interface DshCliRunSpec {
    * reaches the host process table). Absent means the host spawn, unchanged.
    */
   readonly exec?: DelegationExecTarget | undefined
-  /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
-  readonly onSpawned?: (pid: number) => void
   /**
    * The dsh build the round runs, resolved lazily and cached by the family
    * probe. The sub-dsh session log names its model but never its build, so
@@ -625,8 +622,6 @@ export async function startDshCliRun(
     graceMs: DEFAULT_DISPOSE_GRACE_MS,
   }
   const child = ctx.subprocess.spawn(spawnSpec)
-  spec.onSpawned?.(child.pid)
-
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
   let stderr = ''
@@ -682,13 +677,12 @@ export async function startDshCliRun(
   }
 
   const disposeProcess = async (): Promise<void> => {
-    if (child.pid <= 0) {
-      await child.done.catch(() => {})
-      return
-    }
+    // Host 0.1.5 hides the child pid (the managed range owns termination):
+    // terminate() is an idempotent no-op once the range is gone, so a failed
+    // spawn needs no guard; done rejects there, which dispose must swallow.
     child.terminate()
-    await child.waitForExit()
-    await child.done
+    await child.waitForExit().catch(() => false)
+    await child.done.catch(() => {})
   }
 
   const runAbort = new AbortController()

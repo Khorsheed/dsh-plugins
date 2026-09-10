@@ -306,19 +306,24 @@ function appendMirroredMessageEvent(childSession: Session, event: SessionEvent):
  * owns: the filter (only the caller task's `user/message` and every
  * `assistant/message` cross; turn boundaries stay the parent's; scaffolding
  * stays behind) and the verbatim append are exactly `mirrorDshSession`'s
- * span-loop rules. `assistant/chunk` events cross only under the `token`
- * granularity opt-in. The caller owns offset/dedupe (the live runtime pushes
+ * span-loop rules. The 0.1.5 sub-dsh emits no per-chunk events (the
+ * `assistant/chunk` type is retired — an interrupted attempt settles as
+ * `assistant/attempt`, which carries no surface content and never crosses),
+ * so the `token` granularity no longer streams deltas into the child log;
+ * live text rides the run-progress channel only.
+ * The caller owns offset/dedupe (the live runtime pushes
  * each event once) and persistence batching.
  * @param childSession - the parent-side dsh subagent session.
  * @param event - the live event from the resident sub-dsh.
- * @param options - granularity; default `event`.
+ * @param _options - granularity; retained for caller compatibility — the
+ *   retirement of per-chunk events leaves the mirror granularity-invariant.
  * @returns the mirrored text for delta progress, or undefined when the event
  *   was filtered out (or carried no text, as non-text chunks do).
  */
 export function mirrorDshLiveEvent(
   childSession: Session,
   event: SessionEvent,
-  options?: { granularity?: DshLiveMirrorGranularity },
+  _options?: { granularity?: DshLiveMirrorGranularity },
 ): string | undefined {
   if (event.type === 'user/message' && event.data.source.kind === 'user') {
     return appendMirroredMessageEvent(childSession, event)
@@ -328,11 +333,6 @@ export function mirrorDshLiveEvent(
   }
   if (event.type === 'tool/call' || event.type === 'tool/result') {
     return appendMirroredToolEvent(childSession, event)
-  }
-  if (event.type === 'assistant/chunk' && options?.granularity === 'token') {
-    childSession.append('assistant/chunk', event.data)
-    const chunk = event.data.chunk
-    return chunk.type === 'text-delta' || chunk.type === 'reasoning-delta' ? chunk.text : undefined
   }
   return undefined
 }
@@ -461,5 +461,21 @@ export async function persistIfStandalone(ctx: Context, childSession: Session): 
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.snapshotEvents())
+  if (persistence === undefined) return
+  // Host 0.1.5 handle-based persistence: claim the write handle (creating the
+  // stored session on first persist), append only the unstored suffix —
+  // re-appending the full snapshot violates the contiguous-seq contract —
+  // then flush and close.
+  const existing = await persistence.stat(childSession.id)
+  const handle = existing === undefined
+    ? await persistence.create(childSession.header)
+    : await persistence.open(childSession.id, 'write')
+  try {
+    const stored = await handle.read(0)
+    const suffix = childSession.snapshotEvents().slice(stored.events.length)
+    if (suffix.length > 0) await handle.append(suffix)
+    await handle.flush()
+  } finally {
+    await handle.close()
+  }
 }

@@ -7,6 +7,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { mirrorKimiSession } from '../src/session-mirror.ts'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 
 function tempHome(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -35,8 +36,9 @@ describe('session-mirror', () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
 
     await mirrorKimiSession(ctx, child, home)
 
@@ -78,7 +80,7 @@ describe('session-mirror', () => {
     const { home, dir } = wireHome('s1', pendingWire)
     const child = Session.create(SessionId('child-late'))
     const ctx = new Context()
-    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
 
     let total = await mirrorKimiSession(ctx, child, home, 's1')
     expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
@@ -239,8 +241,9 @@ describe('session-mirror resume deltas', () => {
 
     const child = Session.create(SessionId('child-resume'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     // Round 1 mirrors what the wire contained then (turn/start already opened
     // by the provider, so the base turn is 1).
     child.append('turn/start', { turn: 1 })
@@ -287,8 +290,9 @@ describe('session-mirror resume deltas', () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-offset'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
 
     const total = await mirrorKimiSession(ctx, child, home, 's1', 0)
     expect(total).toBeGreaterThan(0)

@@ -4,6 +4,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 import { CodexCliProvider } from '../src/codex-cli-provider.ts'
 
 /** A stub child that emits a minimal `--json` run and exits 0. */
@@ -83,7 +84,7 @@ describe('codex-cli-provider member bridge injection', () => {
     return { ctx, spawned }
   }
 
-  it('appends the -c bridge override to the fresh argv, binds the pid, cleans up at settle', async () => {
+  it('appends the -c bridge override to the fresh argv, cleans up at settle', async () => {
     const registry = memberRegistry()
     const { ctx, spawned } = mount(registry)
     const provider = new CodexCliProvider(ctx)
@@ -98,7 +99,9 @@ describe('codex-cli-provider member bridge injection', () => {
     expect(spawned[0]).toEqual([
       'codex', 'exec', '-c', EXPECTED_OVERRIDE, '--sandbox', 'workspace-write', '--skip-git-repo-check', '--json', 'do the task',
     ])
-    expect(registry.bindMemberRunPid).toHaveBeenCalledWith('token-xyz-1234', 4242)
+    // Host 0.1.5 hides the spawned child's pid: the cross-check cannot be bound
+    // and the channel fails closed on its unbound-run rejection.
+    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
 
     await run.result
     await vi.waitFor(() => {
@@ -116,7 +119,7 @@ describe('codex-cli-provider member bridge injection', () => {
     const { ctx, spawned } = mount(registry)
     const child = Session.create(SessionId('child-run-1'))
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} } as never)
+    ctx.provide('sessionPersistence', fakeSessionPersistence() as never)
     const provider = new CodexCliProvider(ctx)
 
     const run = await provider.start(request())

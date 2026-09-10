@@ -267,7 +267,9 @@ class LiveRuntime {
       await this.request('shutdown', {}, RECLAIM_SHUTDOWN_GRACE_MS).catch(() => {})
       await Promise.race([this.child.done.catch(() => {}), delay(RECLAIM_SHUTDOWN_GRACE_MS)])
     }
-    if (!this.dead && this.child.pid > 0) {
+    if (!this.dead) {
+      // Host 0.1.5 hides the child pid; terminate() is an idempotent no-op
+      // once the managed range is gone.
       this.child.terminate()
       await this.child.waitForExit()
     }
@@ -458,7 +460,6 @@ export class DshLiveDriver {
       this.markChannelBroken()
       throw new LiveChannelUnavailableError(`the serve process failed to spawn: ${thrown(error).message}`)
     }
-    member?.bind(child.pid)
     const runtime = new LiveRuntime(child, this.timeouts, message => { this.ctx.logger.warn(message) })
     runtime.onDead = () => {
       // Delete only OUR registration: a crash-then-respawn can interleave so

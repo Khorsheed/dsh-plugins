@@ -30,13 +30,15 @@
  * (`system`/`assistant`/`user`/`result`), so each turn folds through the
  * shared `ClaudeStreamParser` with the exec live mirror's hold-back rule (the
  * volatile last line waits for `result`, which carries the round's usage).
- * Token granularity (`--include-partial-messages` at spawn) adds
- * `stream_event` partials mapped to `assistant/chunk` at the stream's
- * (turn, step 1) (reasoning index 0, text index 1); the fold then skips
- * think/text lines (tool lines still fold, offset past step 1), and the
- * settle completes the stream with ONE combined `assistant/message` at the
- * same (turn, step 1) carrying the round's usage — the official projection
- * replaces the stream with it, so no duplicated content and no dangling
+ * Token granularity (`--include-partial-messages` at spawn) observes
+ * `stream_event` partials at the stream's (turn, step) merge key (reasoning
+ * index 0, text index 1) — host 0.1.5 removed the per-chunk session event, so
+ * the partials accumulate outside the log and only ride the run-progress
+ * channel live; the fold then skips
+ * think/text lines (tool lines still fold, offset past the reserved step), and
+ * the settle writes ONE combined `assistant/message` at the
+ * same (turn, step) carrying the round's usage — so no duplicated
+ * content and no dangling
  * '已停止' badge (a non-completed round's final carries `interrupted`).
  *
  * Lifecycle mirrors M1–M3's discipline: lazy spawn, one in-flight spawn per
@@ -52,7 +54,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
@@ -66,7 +68,6 @@ import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
-  appendClaudeUsageChunk,
   assistantEvent,
   claudeLineText,
   ClaudeStreamParser,
@@ -257,7 +258,9 @@ class ClaudeLiveRuntime {
       this.child.stdin?.end()
       await Promise.race([this.child.done.catch(() => {}), delay(RECLAIM_EOF_GRACE_MS)])
     }
-    if (!this.dead && this.child.pid > 0) {
+    if (!this.dead) {
+      // Host 0.1.5 hides the child pid; terminate() is an idempotent no-op
+      // once the managed range is gone.
       this.child.terminate()
       await this.child.waitForExit()
     }
@@ -457,7 +460,6 @@ export class ClaudeLiveDriver {
       this.markChannelBroken()
       throw new LiveChannelUnavailableError(`the stream-json process failed to spawn: ${thrown(error).message}`)
     }
-    member?.bind(child.pid)
     const runtime = new ClaudeLiveRuntime(child, message => { this.ctx.logger.warn(message) })
     runtime.onDead = () => {
       // Delete only OUR registration (crash-then-respawn interleave safety).
@@ -534,12 +536,10 @@ export class ClaudeLiveDriver {
     /** This turn's fold (the exec live mirror's exact parser). */
     const parser = new ClaudeStreamParser()
     let mirrored = 0
-    /** The round's accumulated streamed text (token granularity; completes the stream's final message). */
+    /** The round's accumulated streamed text (token granularity; settles as the combined final message). */
     let roundText = ''
-    /** The round's accumulated streamed thinking (token granularity; completes the stream's final message). */
+    /** The round's accumulated streamed thinking (token granularity; settles as the combined final message). */
     let roundThink = ''
-    /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
-    const chunkSeqs: SessionSeq[] = []
     /**
      * The stream's (turn, step) merge key, reserved LAZILY at the first
      * think/text delta: every line completed before that moment folds below
@@ -581,16 +581,19 @@ export class ClaudeLiveDriver {
 
     /** Mirror folded lines [mirrored, upto); the last line is held back until `result`. */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
-      // Token granularity streams think/text as assistant/chunk; the settle
-      // completes the stream with one combined final message, so the fold
-      // leaves those lines out (their usage rides `settleUsage`). Tool lines
+      // Token granularity accumulates think/text outside the log (host 0.1.5
+      // removed the per-chunk event); the settle writes one combined final
+      // message, so the fold leaves those lines out (their usage rides
+      // `settleUsage`). Tool lines
       // still fold — a fold at or past the reserved stream step shifts one
       // slot up, so tool cards keep their chronological side of the stream
       // and never take its merge key.
       const skipContent = granularity === 'token'
       // The usage rides the last NON-tool line (tool events carry no usage
-      // slot); a carrier mirrored in an earlier flush gets the accounting as
-      // a usage chunk pinned to its step.
+      // slot); a carrier mirrored in an earlier flush gets the accounting
+      // only in token mode, where the settle message still goes out (in event
+      // mode the carrier is already immutable in the log — 0.1.5 has no
+      // usage-backfill event).
       let usageIndex = -1
       if (withUsage) {
         for (let index = 0; index < parser.lines.length; index += 1) {
@@ -612,12 +615,8 @@ export class ClaudeLiveDriver {
         mirrored = index + 1
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
       }
-      if (carrierMirrored && parser.usage !== undefined) {
-        if (skipContent) {
-          settleUsage = parser.usage
-        } else {
-          appendClaudeUsageChunk(childSession, turn, parser.usage)
-        }
+      if (carrierMirrored && parser.usage !== undefined && skipContent) {
+        settleUsage = parser.usage
       }
       if (upto > 0) persist()
     }
@@ -668,17 +667,11 @@ export class ClaudeLiveDriver {
           // Reserve the stream's step past every line completed so far
           // (including the held-back carrier line), so a tool-first round
           // renders the answer after its tool cards, not above them.
+          // Host 0.1.5 removed the per-chunk session event, so token
+          // granularity no longer writes deltas to the child log; the delta
+          // rides the run progress channel and the round settles as one
+          // combined final message.
           if (streamStep === undefined) streamStep = parser.lines.length + 1
-          const chunk = childSession.append('assistant/chunk', {
-            turn,
-            step: streamStep,
-            chunk: {
-              type: deltaType === 'text_delta' ? 'text-delta' : 'reasoning-delta',
-              index: deltaType === 'text_delta' ? 1 : 0,
-              text,
-            },
-          })
-          chunkSeqs.push(chunk.seq)
           localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
         }
         return
@@ -822,9 +815,8 @@ export class ClaudeLiveDriver {
     // Settle: the turn's result already flushed the fold (the result event IS
     // the reconciliation — the fold consumed every streamed line); report the
     // authoritative mirror count and re-arm the reaper. Token granularity:
-    // complete the step-1 stream with ONE combined final message at the SAME
-    // (turn, step) — the official projection replaces the stream with it (no
-    // duplicated content, no dangling 已停止 badge) and surfaces the usage. A
+    // settle the round with ONE combined final message at the reserved
+    // (turn, step), carrying the usage. A
     // non-completed round is marked interrupted, so a cancelled turn reads
     // 已停止 legitimately.
     void result.then(async (settled) => {
@@ -841,9 +833,10 @@ export class ClaudeLiveDriver {
                 // content implies at least one delta arrived).
                 step: streamStep ?? 1,
                 message: assistantEvent(blocks),
+                stream: [],
                 ...settleUsage !== undefined ? { usage: settleUsage } : {},
                 ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-              }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+              }, { surfaceOp: 'append' })
               persist()
             }
           }

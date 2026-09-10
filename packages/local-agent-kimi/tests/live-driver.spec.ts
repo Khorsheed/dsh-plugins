@@ -485,21 +485,23 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('appends assistant/chunk deltas only under the token granularity', async () => {
-    const off = mount()
-    const offChild = Session.create(SessionId('child-kimi-8a'))
-    off.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['hel', 'lo'] }) }))
-    const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
-    await offRun.result
-    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
-    await off.driver.disposeAll()
-
+  it('token granularity streams deltas over run progress, never into the session log (host 0.1.5)', async () => {
+    // Host 0.1.5 retired the per-chunk session event: token granularity keeps
+    // reporting per-token deltas over the run-progress channel, and the round
+    // settles as ONE combined final message.
     const on = mount({ config: { liveMirrorGranularity: 'token' } })
     const onChild = Session.create(SessionId('child-kimi-8b'))
     on.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['hel', 'lo'] }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
-    expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    await vi.waitFor(() => {
+      expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    }, { timeout: 5_000 })
+    const final = onChild.snapshotEvents().find(e => e.type === 'assistant/message')!
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: 'hello' }])
+    const deltas = on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)
+    expect(deltas).toContain('hel')
+    expect(deltas).toContain('lo')
     await on.driver.disposeAll()
   })
 
@@ -521,15 +523,14 @@ describe('kimi live driver rounds', () => {
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
-    // One final at the stream's own (turn, step): the projection replaces the
-    // stream with it — no duplicated content, no dangling interrupted badge.
+    // One final at the stream's own (turn, step) — no duplicated content, no
+    // dangling interrupted badge.
     expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
     expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
       { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
-    expect(final.sourceEventSeqs?.length).toBeGreaterThan(0)
     await m.driver.disposeAll()
   })
 
@@ -583,9 +584,6 @@ describe('kimi live driver rounds', () => {
 
     // The tool card folded at step 1; the stream reserved the step after it.
     expect((child.snapshotEvents().find(e => e.type === 'tool/call')!.data as { step: number }).step).toBe(1)
-    for (const chunk of child.snapshotEvents().filter(e => e.type === 'assistant/chunk')) {
-      expect((chunk.data as { step: number }).step).toBe(2)
-    }
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect((final.data as { step: number }).step).toBe(2)
     await m.driver.disposeAll()
@@ -852,11 +850,19 @@ describe('kimi live driver drain (settings handoff)', () => {
     m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['一', '二'] }) }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
-    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    // Event granularity: no wire to fold, nothing lands in the log.
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(0)
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
     await second.result
-    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    // Token granularity settles the round as ONE combined final message
+    // (host 0.1.5 retired per-chunk events).
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
+    expect(final.data).toMatchObject({ turn: 2 })
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '一二' }])
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

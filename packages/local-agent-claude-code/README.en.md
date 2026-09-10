@@ -37,7 +37,7 @@ Optional fields on the bundle row:
 - `baseUrl` — sets `ANTHROPIC_BASE_URL` for the child CLI (e.g. a self-hosted router or proxy); absent, the child inherits the host process environment. Config wins over environment.
 - `live` — live driver: one resident stream-json process per member (`--input-format stream-json`), one stdin message per round (runtime-level graceful control interrupt, same-shape push stream); off — or a channel that cannot come up — means the one-shot `claude -p` path.
 - `liveIdleMs` — idle lifetime of a resident runtime before reclaim (default 30 min).
-- `liveMirrorGranularity` — live mirror granularity (default `event`); `token` additionally spawns with `--include-partial-messages` and appends deltas as `assistant/chunk` (write amplification — opt-in).
+- `liveMirrorGranularity` — live mirror granularity (default `event`); `token` still spawns with `--include-partial-messages` and reports deltas over the run-progress channel, but host 0.1.5 retired the per-chunk session event, so deltas no longer land in the child session log — the round settles as one combined message (identical final text).
 
 ### Default model (`model`)
 
@@ -57,8 +57,8 @@ The settings card's "Default model" writes the same key: a free-text input (no m
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ one degradation — `liveMirrorGranularity: token` no longer writes per-token deltas into the child session log (the host retired the per-chunk event); deltas ride the run-progress channel and the round settles as one combined message (identical final text). Everything else is full (adapted to format v2/v3 and handle-based sessionPersistence; build+test green); minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations
 

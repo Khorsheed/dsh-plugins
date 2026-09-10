@@ -72,9 +72,11 @@ export interface Config {
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
   /**
-   * Live mirror granularity: `event` mirrors the shared stream fold;
-   * `token` additionally spawns with `--include-partial-messages` and
-   * appends `assistant/chunk` deltas (write amplification — opt-in).
+   * Live mirror granularity: `event` mirrors the shared stream fold. `token`
+   * still spawns with `--include-partial-messages` and reports per-token
+   * deltas over the run-progress channel, but host 0.1.5 removed the
+   * per-chunk session event, so deltas no longer land in the child session
+   * log (the round settles as one combined final message).
    */
   liveMirrorGranularity?: 'event' | 'token'
 }

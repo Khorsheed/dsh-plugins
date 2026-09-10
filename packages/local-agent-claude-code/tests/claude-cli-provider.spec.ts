@@ -6,6 +6,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 import { claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 
 /** The stream a real `claude -p --verbose --output-format stream-json` emits. */
@@ -104,8 +105,9 @@ describe('claude-cli-provider run settlement', () => {
   it('settles completed, closes the turn, and appends the response with usage', async () => {
     const child = Session.create(SessionId('child-run-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const { handle, done } = stubChild()
 
     const request = {
@@ -160,8 +162,9 @@ describe('claude-cli-provider run settlement', () => {
   it('mirrors the stream-json live during the run and settles without duplicates', async () => {
     const child = Session.create(SessionId('child-live-claude'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
     ctx.provide('localAgent', {
       reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
@@ -315,8 +318,9 @@ describe('claude-cli-provider run settlement', () => {
     const done = Promise.resolve({ exitCode: 0, signal: null })
     const child = Session.create(SessionId('child-empty-claude'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const handle: SubprocessHandle = {
       pid: 4243,
       stdin: undefined,
@@ -355,8 +359,9 @@ describe('claude-cli-provider resume round', () => {
     child.append('turn/start', { turn: 1 })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     ctx.provide('localAgent', {
       homeDir: () => '/tmp/claude-home',
       get: () => ({ displayName: 'Claude Code' }),
@@ -444,8 +449,9 @@ describe('claude-cli-provider resume lock', () => {
     child.append('turn/start', { turn: 1 })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     let locked: string | undefined
     ctx.provide('localAgent', {
       homeDir: () => '/tmp/claude-home',
@@ -562,8 +568,9 @@ describe('claude-cli-provider abort path', () => {
   it('settles the result immediately on abort and mirrors the partial stream-json after the kill', async () => {
     const child = Session.create(SessionId('child-abort-claude'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const hanging = hangingChild()
 
     const controller = new AbortController()

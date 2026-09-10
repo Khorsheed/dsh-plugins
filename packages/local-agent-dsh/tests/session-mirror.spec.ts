@@ -14,6 +14,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { mirrorDshLiveEvent, mirrorDshSession, readSubDshEvents } from '../src/session-mirror.ts'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 
 /** A context whose sessionPersistence is absent (the mirror tolerates it). */
 function fakeCtx(): Context {
@@ -364,13 +365,6 @@ describe('mirrorDshSession', () => {
 })
 
 describe('mirrorDshLiveEvent', () => {
-  const chunk = (text: string): object => ({
-    type: 'assistant/chunk',
-    seq: 0,
-    time: 1,
-    data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text } },
-  })
-
   it('applies the file mirror\'s exact filter and verbatim append to one live event', () => {
     const child = Session.create(SessionId('child-live-fold'))
     // The caller task crosses; scaffolding user messages stay behind.
@@ -387,23 +381,16 @@ describe('mirrorDshLiveEvent', () => {
     expect(child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toHaveLength(0)
   })
 
-  it('crosses assistant/chunk only under the token granularity, returning the delta text', () => {
-    const off = Session.create(SessionId('child-live-fold-off'))
-    expect(mirrorDshLiveEvent(off, chunk('hel') as never)).toBeUndefined()
-    expect(off.snapshotEvents()).toHaveLength(0)
-
-    const on = Session.create(SessionId('child-live-fold-on'))
-    expect(mirrorDshLiveEvent(on, chunk('hel') as never, { granularity: 'token' })).toBe('hel')
-    const chunks = on.snapshotEvents().filter(event => event.type === 'assistant/chunk')
-    expect(chunks).toHaveLength(1)
-    expect(chunks[0]?.data).toMatchObject({ chunk: { type: 'text-delta', text: 'hel' } })
-    // Non-text chunks append but report no delta text.
-    const blockStart = {
-      type: 'assistant/chunk', seq: 0, time: 1,
-      data: { turn: 1, step: 1, chunk: { type: 'block-start', index: 1, blockType: 'text' } },
+  it('never crosses an assistant/attempt (no surface content — host 0.1.5 retired per-chunk events)', () => {
+    const child = Session.create(SessionId('child-live-fold-attempt'))
+    const attempt = {
+      type: 'assistant/attempt',
+      seq: 0,
+      time: 1,
+      data: { turn: 1, step: 1, stream: [] },
     }
-    expect(mirrorDshLiveEvent(on, blockStart as never, { granularity: 'token' })).toBeUndefined()
-    expect(on.snapshotEvents().filter(event => event.type === 'assistant/chunk')).toHaveLength(2)
+    expect(mirrorDshLiveEvent(child, attempt as never, { granularity: 'token' })).toBeUndefined()
+    expect(child.snapshotEvents()).toHaveLength(0)
   })
 
   it('keeps the file mirror\'s offset consistent after live-appended events (no double mirror)', async () => {
@@ -444,19 +431,20 @@ describe('mirrorDshSession persistence', () => {
       assistantLine(1, '回复'),
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
-    const appends: string[] = []
-    const persistence = { append: async (id: string) => { appends.push(id) } }
+    const persistence = fakeSessionPersistence()
     const standaloneCtx = {
       get: (name: string) => name === 'sessionPersistence' ? persistence : undefined,
       logger: { warn: () => undefined },
     } as unknown as Context
     const standalone = childWithRounds('child-persist', 1)
     await mirrorDshSession(standaloneCtx, standalone, home, 'child-persist')
-    expect(appends).toEqual(['child-persist'])
+    // The mirror's events reached durable storage through the write handle.
+    expect(persistence.stored.get('child-persist')).toHaveLength(standalone.snapshotEvents().length)
 
     // A session live in the sessions service must NOT get the redundant
-    // full-list append: its own write-behind pipeline is durable, and the
-    // append would violate the store's contiguous-seq contract.
+    // persist: its own write handle routing is durable, and re-appending
+    // stored events would violate the contiguous-seq contract.
+    const storedBefore = persistence.stored.get('child-persist')!.length
     const liveCtx = {
       get: (name: string) => {
         if (name === 'sessions') return { get: () => ({}) }
@@ -469,6 +457,6 @@ describe('mirrorDshSession persistence', () => {
     const delta = await mirrorDshSession(liveCtx, live, home, 'child-persist')
     expect(delta.texts.length).toBeGreaterThan(0)
     expect(live.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
-    expect(appends).toEqual(['child-persist'])
+    expect(persistence.stored.get('child-persist')).toHaveLength(storedBefore)
   })
 })

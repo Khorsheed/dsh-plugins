@@ -8,6 +8,7 @@ import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider, startKimiCliRun } from '../src/kimi-cli-provider.ts'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 
 /** A stub child that prints the reply and its resume hint, then exits 0. */
 function stubChild(sessionId: string): { handle: SubprocessHandle; done: Promise<unknown> } {
@@ -56,8 +57,9 @@ describe('kimi-cli-provider run settlement', () => {
     const homeDir = wireHome('run-1')
     const child = Session.create(SessionId('child-run-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const { handle, done } = stubChild('run-1')
 
     const request = {
@@ -92,7 +94,7 @@ describe('kimi-cli-provider run settlement', () => {
     const homeDir = wireHome('run-progress-1')
     const child = Session.create(SessionId('child-run-progress-1'))
     const ctx = new Context()
-    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
     const reportRunProgress = vi.fn()
     ctx.provide('localAgent', {
       setKimiMirroredLines: () => {},
@@ -137,7 +139,7 @@ describe('kimi-cli-provider run settlement', () => {
 
     const child = Session.create(SessionId('child-live-1'))
     const ctx = new Context()
-    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
     const offsets = new Map<string, number>()
     const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
     ctx.provide('localAgent', {
@@ -284,8 +286,9 @@ describe('kimi-cli-provider run settlement', () => {
     const done = Promise.resolve({ exitCode: 0, signal: null })
     const child = Session.create(SessionId('child-empty-kimi'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const handle: SubprocessHandle = {
       pid: 4243,
       stdin: undefined,
@@ -413,8 +416,9 @@ describe('kimi-cli-provider resume round', () => {
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const sessions = { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) }
     ctx.provide('sessions', sessions as never)
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     ctx.provide('localAgent', {
       homeDir: () => '/tmp/kimi-home',
       get: () => ({ displayName: 'Kimi Code' }),
@@ -479,7 +483,7 @@ describe('kimi-cli-provider resume round', () => {
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const sessions = { get: (id: SessionId) => (id === SessionId('child-run-legacy') ? child : undefined) }
     ctx.provide('sessions', sessions as never)
-    ctx.provide('sessionPersistence', { create: async () => {}, append: vi.fn(async () => {}) })
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
     ctx.provide('localAgent', {
       homeDir: () => '/tmp/kimi-home',
       get: () => ({ displayName: 'Kimi Code' }),
@@ -565,8 +569,9 @@ describe('kimi-cli-provider resume round', () => {
     child.append('turn/start', { turn: 1 })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     // A real registry holds the resume lock; the stub child never settles, so
     // the first resume keeps the lock while the second is attempted.
     ctx.provide('localAgent', {
@@ -649,8 +654,9 @@ describe('kimi-cli-provider resume round', () => {
     child.append('turn/start', { turn: 1 })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const releases: string[] = []
     ctx.provide('localAgent', {
       homeDir: () => '/tmp/kimi-home',
@@ -746,8 +752,9 @@ describe('kimi-cli-provider abort path', () => {
     const homeDir = wireHome('run-1')
     const child = Session.create(SessionId('child-abort-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const hanging = hangingChild('run-1')
 
     const controller = new AbortController()
@@ -804,8 +811,9 @@ describe('kimi-cli-provider abort path', () => {
   it('settles aborted without a child session record and dispose is a no-op', async () => {
     const homeDir = wireHome('run-1')
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const hanging = hangingChild('run-1')
 
     const controller = new AbortController()

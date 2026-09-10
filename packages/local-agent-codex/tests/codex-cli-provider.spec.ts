@@ -9,6 +9,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeSessionPersistence } from './fake-persistence.ts'
 import { parseCodexJsonStream, CodexCliProvider, startCodexCliRun } from '../src/codex-cli-provider.ts'
 
 /** The NDJSON event stream a real `codex exec --json` emits for one run. */
@@ -95,8 +96,9 @@ describe('codex-cli-provider run settlement', () => {
   it('settles completed, closes the turn, and appends the response with usage', async () => {
     const child = Session.create(SessionId('child-run-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const { handle, done } = stubChild()
 
     const request = {
@@ -141,8 +143,9 @@ describe('codex-cli-provider run settlement', () => {
   it('mirrors the NDJSON stream live during the run and settles without duplicates', async () => {
     const child = Session.create(SessionId('child-live-codex'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
     ctx.provide('localAgent', {
       reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
@@ -328,8 +331,9 @@ describe('codex-cli-provider run settlement', () => {
     const done = Promise.resolve({ exitCode: 0, signal: null })
     const child = Session.create(SessionId('child-empty-codex'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const errors: string[] = []
     const handle: SubprocessHandle = {
       pid: 4243,
@@ -428,8 +432,9 @@ describe('codex-cli-provider resume round', () => {
     child.append('turn/start', { turn: 1 })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     ctx.provide('localAgent', {
       homeDir: () => '/tmp/codex-home',
       get: () => ({ displayName: 'Codex' }),
@@ -516,8 +521,9 @@ describe('codex-cli-provider resume lock', () => {
     child.append('turn/start', { turn: 1 })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     let locked: string | undefined
     ctx.provide('localAgent', {
       homeDir: () => '/tmp/codex-home',
@@ -676,8 +682,9 @@ describe('codex-cli-provider abort path', () => {
   it('settles the result immediately on abort and mirrors the partial NDJSON after the kill', async () => {
     const child = Session.create(SessionId('child-abort-codex'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const hanging = hangingChild()
 
     const controller = new AbortController()
@@ -729,12 +736,13 @@ describe('codex-cli-provider abort path', () => {
     await hanging.done
   })
 
-  it('attaches the rollout file last token_count usage to a killed run (thread-id locator)', async () => {
+  it('a killed run\'s late-recovered rollout usage is dropped when its carrier already mirrored (host 0.1.5)', async () => {
     const home = homeWithRollout('t-abort')
     const child = Session.create(SessionId('child-abort-rollout'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     const hanging = hangingChild()
 
     const controller = new AbortController()
@@ -758,19 +766,18 @@ describe('codex-cli-provider abort path', () => {
     expect((await run.result).stopReason).toBe('aborted')
     await run.dispose()
 
-    // The abort mirror preserves the partial stream AND recovers the usage
-    // codex wrote to the rollout file's last token_count (input 100 − cached
-    // 40 = 60 uncached). The killed stream ends with the command, so the
-    // carrier assistant message went out through the live mirror before the
-    // usage was knowable — the recovery books it as a usage chunk pinned to
-    // the carrier's step (the token projection counts it identically).
+    // The abort mirror preserves the partial stream. The recovered usage
+    // (the rollout file's last token_count: input 100 − cached 40 = 60
+    // uncached) has nowhere to land in host 0.1.5 — the per-chunk event is
+    // retired and an appended message is immutable — so the carrier message
+    // (already mirrored live before the usage was knowable) goes out without
+    // it and the drop is logged.
     await vi.waitFor(() => {
       const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
       expect(assistant).toHaveLength(1)
-      const usageChunk = child.snapshotEvents().find(event =>
-        event.type === 'assistant/chunk' && event.data.chunk.type === 'usage')
-      expect(usageChunk?.data.chunk.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
     })
+    expect((child.snapshotEvents().find(e => e.type === 'assistant/message')!.data as { usage?: unknown }).usage)
+      .toBeUndefined()
     await hanging.done
   })
 
@@ -778,8 +785,9 @@ describe('codex-cli-provider abort path', () => {
     const home = homeWithRollout('t-window')
     const child = Session.create(SessionId('child-abort-window'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const persistence = fakeSessionPersistence()
+    const append = persistence.append
+    ctx.provide('sessionPersistence', persistence)
     // No thread.started in the stream: the locator falls back to the spawn
     // time window and still finds the run's rollout file.
     const hanging = hangingChildWith([

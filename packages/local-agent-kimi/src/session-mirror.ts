@@ -39,7 +39,7 @@ export function assistantEvent(blocks: readonly ContentBlock[]) {
 
 /**
  * The step the next fold pass would assign in one turn (the max existing
- * step + 1, assistant/chunk events included). The token-granularity live
+ * step + 1). The token-granularity live
  * driver reserves its stream merge key here LAZILY at the first delta, so
  * tool cards folded before the stream started keep their chronological
  * place below it instead of the stream squatting on step 1.
@@ -117,10 +117,11 @@ export interface KimiMirrorDelta {
 export interface KimiMirrorOptions {
   /**
    * Do not fold think/assistant lines into `assistant/message` events (the
-   * token-granularity live mode streams that content as `assistant/chunk`
-   * instead; the driver completes the stream with one combined final
-   * message). User and tool lines still fold, and the window's usage is
-   * returned on the delta instead of being attached.
+   * token-granularity live mode accumulates that content outside the log —
+   * host 0.1.5 removed the per-chunk session event — and the driver settles
+   * the round with one combined final message). User and tool lines still
+   * fold, and the window's usage is returned on the delta instead of being
+   * attached.
    */
   skipAssistantContent?: boolean
   /**
@@ -356,9 +357,10 @@ export async function mirrorKimiSessionDelta(
         }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
       }
     } else {
-      // Token-granularity live mode streams think/text as assistant/chunk;
-      // the driver completes the stream with one combined final message, so
-      // the fold leaves these lines out (their usage rides the delta).
+      // Token-granularity live mode accumulates think/text outside the log
+      // (host 0.1.5 removed the per-chunk event); the driver settles the round
+      // with one combined final message, so the fold leaves these lines out
+      // (their usage rides the delta).
       if (options?.skipAssistantContent === true) continue
       const step = steps.get(turn) ?? 1
       steps.set(turn, step + 1)
@@ -366,6 +368,7 @@ export async function mirrorKimiSessionDelta(
         turn,
         step,
         message: assistantEvent(lineBlocks(line)),
+        stream: [],
         ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
       }, { surfaceOp: 'append' })
       texts.push(kimiLineProgressText(line))
@@ -418,7 +421,23 @@ async function persistIfStandalone(ctx: Context, childSession: Session): Promise
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.snapshotEvents())
+  if (persistence === undefined) return
+  // Host 0.1.5 handle-based persistence: claim the write handle (creating the
+  // stored session on first persist), append only the unstored suffix —
+  // re-appending the full snapshot violates the contiguous-seq contract —
+  // then flush and close.
+  const existing = await persistence.stat(childSession.id)
+  const handle = existing === undefined
+    ? await persistence.create(childSession.header)
+    : await persistence.open(childSession.id, 'write')
+  try {
+    const stored = await handle.read(0)
+    const suffix = childSession.snapshotEvents().slice(stored.events.length)
+    if (suffix.length > 0) await handle.append(suffix)
+    await handle.flush()
+  } finally {
+    await handle.close()
+  }
 }
 
 /**
