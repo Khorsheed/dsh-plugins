@@ -7,13 +7,28 @@
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, CreateAgentOptions, Inbox, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { runServe, type ServeIo } from '../src/serve.ts'
+
+/** A minimal Inbox stub (host 0.1.5 made Inbox an interface, not a class). */
+function stubInbox(): Inbox {
+  const lists = { 'next-turn': [] as UserMessage[], 'next-step': [] as UserMessage[] }
+  return {
+    get nextTurn() { return lists['next-turn'] },
+    get nextStep() { return lists['next-step'] },
+    clear: () => { lists['next-turn'] = []; lists['next-step'] = [] },
+    append: (target, message) => { lists[target].push(message) },
+    prepend: (target, message) => { lists[target].unshift(message) },
+    replace: () => false,
+    remove: () => false,
+    splice: (target, start, deleteCount, inserted) => lists[target].splice(start, deleteCount, ...inserted),
+  }
+}
 
 /** What one serve session observed on the wire and process surfaces. */
 interface Observed {
@@ -124,7 +139,7 @@ async function makeHandle(
     id: session.id,
     options: options.agentOptions ?? {},
     session,
-    inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+    inbox: stubInbox(),
     status: 'idle',
     ctx: agentCtx,
     cancel: (cause: { kind?: string }) => { trace.cancels.push(cause) },
@@ -155,6 +170,7 @@ function appendTurn(session: Session, turn: number, message: UserMessage, text: 
       content: [{ type: 'text', text }],
       source: { provider: 'test-provider', model: 'test-model' },
     }),
+    stream: [],
   }, { surfaceOp: 'append' })
   session.append('step/end', { turn, step: 1 })
   session.append('turn/end', { turn, reason: { kind: 'completed' } })
