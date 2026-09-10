@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
-import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, type LocalAgentHarness } from '@khorsheed/dsh-local-agent'
@@ -61,7 +61,16 @@ async function mountChannel(): Promise<ChannelHarness> {
     },
   })
   ctx.provide('sessionPersistence', {
-    prepare: (id: SessionId) => Promise.resolve(SessionPreparation.create(ctx.sessions.prepare(id))),
+    // Host 0.1.5 handle API: open hands back an empty-log write handle.
+    open: (id: SessionId, _access: string) => Promise.resolve({
+      id,
+      header: { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false },
+      inheritedEventCount: 0,
+      read: () => Promise.resolve({ events: [], eventState: 'detached' }),
+      append: () => Promise.resolve(),
+      flush: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+    }),
   })
   const homesRoot = mkdtempSync(join(tmpdir(), 'member-channel-'))
   await ctx.plugin(localAgent, { homesRoot })

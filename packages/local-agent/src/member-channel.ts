@@ -7,7 +7,10 @@
  * Delivery chain for one `member_message` call:
  *
  * 1. token → the registered in-flight run (sender A's identity; never
- *    self-reported), cross-checked against the spawned CLI's pid;
+ *    self-reported), cross-checked against the spawned CLI's pid (host 0.1.5
+ *    hides child pids, so providers cannot bind one: the cross-check is
+ *    currently inert and every bridge callback fails CLOSED on the unbound-run
+ *    rejection until an upstream pid seam or a token-only decision lands);
  * 2. resolve B (`to` = a member's dsh child session id; member NAMES resolve
  *    only through a claiming room's roster);
  * 3. same-parent check: B's delegation must share A's parent session;

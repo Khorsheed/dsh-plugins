@@ -1356,6 +1356,10 @@ export class LocalAgentRegistry {
    * child) reports its parent pid with every callback; the host cross-checks it
    * against this binding, so a sibling run's bridge entry — visible in a shared
    * scoped home's MCP config — cannot be used to impersonate another member.
+   * Host 0.1.5's SubprocessHandle no longer exposes the child pid, so the
+   * providers bind nothing and the channel fails closed on the unbound-run
+   * rejection; the binding API stays for a future pid seam (or a deliberate
+   * token-only decision).
    * @param token - the run's member-channel token.
    * @param cliPid - the spawned CLI process pid.
    */
@@ -1500,29 +1504,44 @@ export class LocalAgentRegistry {
    * exactly this sequence):
    *
    * ```ts
-   * const prep = await ctx.sessionPersistence.prepare(SessionId(childSessionId))
+   * const handle = await ctx.sessionPersistence.open(SessionId(childSessionId), 'write')
    * try {
-   *   const detach = ctx.sessions.enter(prep.session)
-   *   await ctx.sessions.flush(prep.session)  // binds the coordinator (consumes the reservation)
-   * } finally {
-   *   prep[Symbol.dispose]()
+   *   const cold = await handle.read(0)
+   *   const session = ctx.sessions.prepare(SessionId(childSessionId), {
+   *     seed: [...cold.events],
+   *     meta: structuredClone(handle.header),
+   *     inheritedEventCount: handle.inheritedEventCount,
+   *     eventState: cold.eventState,
+   *   })
+   *   // The seeded constructor's session/end-seed marker lands before enter()
+   *   // installs publication hooks — push the unstored suffix through the
+   *   // handle directly, or the writer's contiguous cursor diverges.
+   *   const unstored = session.snapshotEvents().slice(cold.events.length)
+   *   if (unstored.length > 0) await handle.append(unstored)
+   *   const detach = ctx.sessions.enter(session)
+   *   // Hold BOTH for the reattached lifetime: the backend routes live
+   *   // session/event appends into the per-id writer only while the write
+   *   // handle is open; closing it ends persistence for the session.
+   * } catch (error) {
+   *   await handle.close().catch(() => {})
+   *   throw error
    * }
    * ```
    *
-   * Hold `detach` for the plugin lifetime. The publication is ENTER-ONLY,
-   * deliberately WITHOUT `ctx.sessions.announce()`: `enter` installs the
-   * append-publication hooks and the store entry — everything the provider's
-   * liveness probe (`sessions.get`) and the transcript mirror's `session/event`
-   * broadcast need — while `announce` only emits `session/created`, whose
-   * semantics are NEW-session creation. A persisted child already fired
-   * `session/created` in its original lifetime (fresh delegations publish
-   * through `sessions.create()`), and re-firing would re-trigger creation
-   * listeners (apiproxy projections, per-session setup invariants) for a
-   * session being RESTORED, not created. The official agent resume
-   * (`agentLoop.resume` → publish) announces because it publishes a brand-new
-   * live agent+session pair for this process lifetime; a CLI provider's child
-   * is a pure transcript container with no agent on it, so only `enter`
-   * applies.
+   * Hold `detach` and `handle` for the plugin lifetime. The publication is
+   * ENTER-ONLY, deliberately WITHOUT `ctx.sessions.announce()`: `enter`
+   * installs the append-publication hooks and the store entry — everything the
+   * provider's liveness probe (`sessions.get`) and the transcript mirror's
+   * `session/event` broadcast need — while `announce` only emits
+   * `session/created`, whose semantics are NEW-session creation. A persisted
+   * child already fired `session/created` in its original lifetime (fresh
+   * delegations publish through `sessions.create()`), and re-firing would
+   * re-trigger creation listeners (apiproxy projections, per-session setup
+   * invariants) for a session being RESTORED, not created. The official agent
+   * resume (`agentLoop.resume` → publish) announces because it publishes a
+   * brand-new live agent+session pair for this process lifetime; a CLI
+   * provider's child is a pure transcript container with no agent on it, so
+   * only `enter` applies.
    * @param parentSessionId - the delegating parent session id; must match the
    *   recorded one and have a live agent.
    * @param provider - the `ctx.subagents` provider that owns the CLI session.
@@ -1738,8 +1757,8 @@ export class LocalAgentRegistry {
   /**
    * Restore a persisted child session into the live store when it is absent —
    * the reattach recipe documented on {@link resume}. Enter-only on purpose;
-   * the detach disposer is held in {@link reattachDisposers} until plugin
-   * dispose.
+   * the detach disposer and the write handle's close are held in
+   * {@link reattachDisposers} until plugin dispose.
    */
   private async reattachChildSession(childSessionId: string): Promise<void> {
     const sessions = this.ctx.get('sessions')
@@ -1752,21 +1771,36 @@ export class LocalAgentRegistry {
     if (persistence === undefined) {
       throw new Error(`localAgent: child session ${childSessionId} is not live and the sessionPersistence service is not mounted to reattach it`)
     }
-    const preparation = await persistence.prepare(SessionId(childSessionId))
+    // Host 0.1.5 handle-based persistence: the backend routes live
+    // session/event appends into the per-id writer only while a WRITE handle
+    // is open, so the reattach claims the write handle first and holds it for
+    // the reattached lifetime (closed on dispose, together with the detach).
+    const handle = await persistence.open(SessionId(childSessionId), 'write')
     try {
-      this.reattachDisposers.set(childSessionId, sessions.enter(preparation.session))
-      // The publication is ENTER-ONLY (no announce — see resume's doc
-      // comment), so the persistence coordinator never hears session/created
-      // for the restored child; and preparation disposal would release its
-      // reservation as a REUSABLE ready entry, making every later coordinator
-      // contact (session/event buffering, flush) throw "persisted state
-      // already owns this identity" — the reattached child silently never
-      // persisted again. Flush immediately instead: the coordinator's initFor
-      // consumes the reservation (attachPrepared), after which the release
-      // below is a no-op.
-      await sessions.flush(preparation.session)
-    } finally {
-      preparation[Symbol.dispose]()
+      const cold = await handle.read(0)
+      const session = sessions.prepare(SessionId(childSessionId), {
+        seed: [...cold.events],
+        meta: structuredClone(handle.header),
+        inheritedEventCount: handle.inheritedEventCount,
+        eventState: cold.eventState,
+      })
+      // The seeded constructor appends its `session/end-seed` marker BEFORE
+      // enter() installs the publication hooks, so live routing never sees it
+      // — push the unstored suffix through the handle directly (the agent
+      // loop's resume does the same via appendUnstoredSuffix), or the writer's
+      // contiguous cursor and the session log diverge.
+      const unstored = session.snapshotEvents().slice(cold.events.length)
+      if (unstored.length > 0) await handle.append(unstored)
+      const detach = sessions.enter(session)
+      this.reattachDisposers.set(childSessionId, () => {
+        detach()
+        handle.close().catch((error: unknown) => {
+          this.ctx.logger.warn(`localAgent: closing the reattached child session ${childSessionId} write handle failed: ${String(error)}`)
+        })
+      })
+    } catch (error) {
+      await handle.close().catch(() => {})
+      throw error
     }
   }
 

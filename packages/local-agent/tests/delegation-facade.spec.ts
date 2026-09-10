@@ -7,7 +7,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, RUN_PROGRESS_HEARTBEAT_MS } from '@khorsheed/dsh-local-agent'
@@ -43,8 +43,10 @@ interface FacadeHarness {
   fiber: { await(): Promise<unknown>; dispose(): Promise<unknown> }
   /** Intents the fake provider consumed, one entry per start() call. */
   consumed: (LocalAgentDelegationIntent | undefined)[]
-  /** Child session ids the fake persistence was asked to prepare. */
+  /** Child session ids the fake persistence was asked to open (reattach). */
   prepared: string[]
+  /** Child session ids whose write handle the reattach closed at dispose. */
+  closed: string[]
   /** Requests the fake provider received. */
   requests: SubagentStartRequest[]
   setStartHandler(handler: (request: SubagentStartRequest) => SubagentRun | Promise<SubagentRun>): void
@@ -58,8 +60,8 @@ interface FacadeHarness {
  * Mount the registry stack (real SessionStore/CommandRuntime/AgentRegistry, as
  * in delegation.spec.ts) plus a fake `subagents` service whose provider
  * records takeDelegationIntent consumption and returns controllable runs, and
- * a fake `sessionPersistence` whose prepare() rebuilds a session through the
- * real SessionStore.
+ * a fake `sessionPersistence` whose open() hands back an empty-log write
+ * handle (the host 0.1.5 handle API).
  */
 async function mountFacade(): Promise<FacadeHarness> {
   const ctx = new Context()
@@ -72,6 +74,7 @@ async function mountFacade(): Promise<FacadeHarness> {
     fiber: undefined as unknown as FacadeHarness['fiber'],
     consumed: [],
     prepared: [],
+    closed: [],
     requests: [],
     setStartHandler(handler) {
       startHandler = handler
@@ -101,9 +104,22 @@ async function mountFacade(): Promise<FacadeHarness> {
     },
   })
   ctx.provide('sessionPersistence', {
-    prepare: (id: SessionId) => {
+    // Host 0.1.5 handle-based persistence: the reattach opens a write handle,
+    // reads the stored log (empty here), and holds the handle until dispose.
+    open: (id: SessionId, _access: string) => {
       harness.prepared.push(id)
-      return Promise.resolve(SessionPreparation.create(ctx.sessions.prepare(id)))
+      return Promise.resolve({
+        id,
+        header: { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false },
+        inheritedEventCount: 0,
+        read: () => Promise.resolve({ events: [], eventState: 'detached' }),
+        append: () => Promise.resolve(),
+        flush: () => Promise.resolve(),
+        close: () => {
+          harness.closed.push(id)
+          return Promise.resolve()
+        },
+      })
     },
   })
   const fiber = ctx.plugin(localAgent, { homesRoot: mkdtempSync(join(tmpdir(), 'facade-homes-')) })
@@ -169,13 +185,13 @@ describe('LocalAgentRegistry delegation facade', () => {
     expect(run.id).toBeDefined()
   })
 
-  it('flushes right after the reattach enter so the persistence coordinator consumes the reservation', async () => {
-    // Regression: the reservation from sessionPersistence.prepare() was
-    // released as a REUSABLE ready entry at preparation disposal, and every
-    // later coordinator contact (session/event buffering, flush) threw
-    // "persisted state already owns this identity" — a reattached child
-    // silently never persisted again. The reattach now flushes immediately
-    // after enter, letting the coordinator consume the reservation.
+  it('holds the reattached child\'s write handle until plugin dispose (0.1.5 handle-based persistence)', async () => {
+    // The 0.1.2 coordinator/reservation pair is gone: the backend routes a
+    // live session's events into the per-id writer only while a WRITE handle
+    // is open, so the reattach claims the handle at enter and releases it
+    // (with the store detach) at dispose. A reattached child whose handle was
+    // dropped would silently never persist again — the same regression the
+    // old reservation-flush test pinned.
     const h = await mountFacade()
     h.enterParent(PARENT)
     h.registry.recordDelegation({
@@ -184,21 +200,18 @@ describe('LocalAgentRegistry delegation facade', () => {
       parentSessionId: PARENT,
       cliSessionId: 'cli-42',
     })
-    const flushed: string[] = []
-    const store = h.ctx.sessions
-    const originalFlush = store.flush.bind(store)
-    store.flush = (async (session: never) => {
-      flushed.push((session as { id: string }).id)
-      return originalFlush(session)
-    }) as typeof store.flush
 
     await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT)
 
     const child = h.ctx.sessions.get(SessionId('child-1'))!
-    expect(flushed).toContain('child-1')
-    // A post-reattach append + flush cycle works (the coordinator is bound).
+    // A post-reattach append + flush cycle works (the writer is bound).
     child.append('subagent/descriptor', { version: 2, mode: 'one-shot', provider: PROVIDER, label: 'fake' })
-    await expect(store.flush(child)).resolves.toBeDefined()
+    await expect(h.ctx.sessions.flush(child)).resolves.toBeDefined()
+    // Disposing the plugin detaches the child and closes the write handle.
+    expect(h.closed).toEqual([])
+    await h.fiber.dispose()
+    expect(h.ctx.sessions.get(SessionId('child-1'))).toBeUndefined()
+    expect(h.closed).toEqual(['child-1'])
   })
 
   it('does not reattach when the child session is already live', async () => {

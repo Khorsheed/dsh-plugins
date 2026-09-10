@@ -41,8 +41,8 @@ A custom composition mounts the core once:
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — adapted to 0.1.5-rc.1 (format v2/v3; handle-based sessionPersistence), full build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations
 
