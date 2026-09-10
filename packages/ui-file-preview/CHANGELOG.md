@@ -11,7 +11,7 @@
 - 退役：`shell.overlay` 预览抽屉、正文 mention 的捕获阶段 DOM 拦截、turnTail 的 `priority: -1` 抢占、自绘文档预览（Markdown/JSON/CSV/HTML 沙箱渲染）
 - 回合变更卡片保留（数据含 bash 捕获，比官方产物行全），改默认优先级：官方产物行先选举，本卡片只出现在官方数据覆盖不到的回合；点击工作区内文件走官方 `openFile` 路由，工作区外产物打开右栏「产物」页并选中其改动记录
 - 边界：工作区外的 bash 产物造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区）——列表行带提示标记，但我们自己的详情页不受此限：内容与改动记录照常可看
-- 行动作恢复（旧抽屉语义，详情页头部）：复制路径（始终）/ 在文件夹中打开（宿主半 `reveal` 选中文件，回退官方 open-in-app 路由开父目录）/ 在 IDE 打开（split button：主按钮首选 IDE、下拉列出全部探测到的 IDE，下拉右对齐不再被面板右缘裁切，样式对齐官方 open-in-app pill；官方 open 路由只收目录，文件级走宿主半新方法 `openExternal`——macOS `open -a`，经 `/open-in-app/apps` 探测，无对应应用或非 macOS 时按钮隐藏）
+- 行动作恢复（旧抽屉语义，详情页头部）：复制路径（始终）/ 在文件夹中打开（宿主半 `reveal` 选中文件，回退官方 open-in-app 路由开父目录）/ 在 IDE 打开（split 图标按钮：主按钮首选 IDE、chevron 下拉列出全部探测到的 IDE，下拉右对齐不被面板右缘裁切；官方 open 路由只收目录，文件级走宿主半新方法 `openExternal`——macOS `open -a`，经 `/open-in-app/apps` 探测，无对应应用或非 macOS 时按钮隐藏）
 - 打磨：详情页面包屑改分段「 / 」样式（目录段弱化、文件名加粗、长段各自省略号）；改动记录与当前内容统一吃 `--dsh-content-font-size` 系令牌（官方 `--dsw-font-markdown-code-block` 固定 11px 不随设置，作用域内重绑到 `--dsh-content-font-size-secondary`）；详情头部面包屑段间加隙；「改动记录」tab 按需出现（fold 无 diff 记录时不显示）
 - mention 打开直落详情页：就地包装官方 `chatFileMentions`（保留官方认领逻辑，open 改走规范化文件地址、label 修为「在侧边栏打开」）；登记为缝 S1 的尾巴
 - 同一文件单一 tab：mention 与回合卡片统一走 `openResource('dsh-resource://file/session/<id>/<path>')` 规范化地址（mention 原来开 page 地址、卡片开文件地址，同一文件出现两个详情 tab）；回合卡片不再区分工作区内外——我们的认领覆盖 session 作用域内全部可渲染地址（工作区外绝对路径也在其内，详情页经 Remote read 正常渲染），重复点击聚焦已有 tab

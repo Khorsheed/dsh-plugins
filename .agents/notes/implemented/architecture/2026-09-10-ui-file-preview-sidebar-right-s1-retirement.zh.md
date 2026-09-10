@@ -26,7 +26,7 @@ Status: implemented
 
 - diff/内容统一吃官方 document tab 的阅读字号：主题的 `--dsw-font-markdown-code-block` 是固定 11px/19px、从不跟随正文字号设置，故在 pane 作用域内重绑为 `var(--dsh-content-font-size-secondary)/1.6` + 等宽族（官方 TextPreview body 的原配方）。
 - 详情页「改动记录」tab 按需出现（fold 无 diff 记录时不显示——常驻 tab 配空态读起来像坏了）；官方渲染器下拉项仍按后缀静态匹配，不受影响。面包屑改 `Users / me / code / file` 分段样式（目录段弱化、分隔符留白、逐段省略号、文件名整段加粗）。guide 卡片带自绘双色 SVG 图标（文档页 + diff 强调色）与收紧文案——图标槽收任意 ComponentType<IconProps>，描述按设计单行。
-- 「在 IDE 打开」改 split button（主按钮=当前选择，chevron 列出全部探测到的 IDE，选择即换即开；官方 `OpenInAppAction` 组件受 slot 申领规则不可导入，交互照它自绘在 ui-primitives `Menu` 上）。显示名用镜像的 id→label 表（专有名词，不本地化——官方同规则）。活体后续：(a) 下拉在面板右缘被裁切——用 Menu 自带的 `align="end"` 修好；(b) 样式对齐官方 pill（28px、l4 发丝边、chevron 发丝分隔——OpenInAppAction.module.css）。重绘前复核过复用性（0.1.5-rc.1）：该包只导出类型（client/index.ts 仅 re-export `OpenInAppActionInjected/Props`，组件不出），controller（探测+记忆+图标）同样不导出，且动作语义写死「打开会话工作目录」（`launch(appId, cwd)`）；host 路由直接拒收文件（`packages/host/open-in-app/src/index.ts:281-292`：必须绝对路径且 `stat().isDirectory()`，否则 404，无父目录兜底）。复用与文件语义都是死路，自绘 split 保留。
+- 「在 IDE 打开」改 split button（主按钮=当前选择，chevron 列出全部探测到的 IDE，选择即换即开；官方 `OpenInAppAction` 组件受 slot 申领规则不可导入，交互照它自绘在 ui-primitives `Menu` 上）。显示名用镜像的 id→label 表（专有名词，不本地化——官方同规则）。活体后续：(a) 下拉在面板右缘被裁切——用 Menu 自带的 `align="end"` 修好；(b) 样式先对齐官方 pill，用户看过后决意回退为详情页头部自有的低调图标按钮形态（图标主按钮 + 图标 chevron，无 pill 外框）——align="end" 修复保留。重绘前复核过复用性（0.1.5-rc.1）：该包只导出类型（client/index.ts 仅 re-export `OpenInAppActionInjected/Props`，组件不出），controller（探测+记忆+图标）同样不导出，且动作语义写死「打开会话工作目录」（`launch(appId, cwd)`）；host 路由直接拒收文件（`packages/host/open-in-app/src/index.ts:281-292`：必须绝对路径且 `stat().isDirectory()`，否则 404，无父目录兜底）。复用与文件语义都是死路，自绘 split 保留。
 
 ## Alternatives considered
 

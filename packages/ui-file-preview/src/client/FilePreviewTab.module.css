@@ -288,50 +288,15 @@
   font-weight: 600;
 }
 
-/* The IDE split button, the official OpenInAppAction's pill recipe: 28px,
-   hairline l4 border, 14px radius, 11px label, hairline-split chevron. */
+/* The IDE split button: two quiet icon tools read as one control (the header's
+   own button shape, not the official pill). */
 .split {
   display: inline-flex;
   flex: none;
-  align-items: stretch;
-  box-sizing: border-box;
-  height: 28px;
-  overflow: hidden;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 14px;
-}
-
-.splitMain,
-.splitChevron {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border: 0;
-  background: none;
-  color: var(--dsw-alias-label-primary);
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
-.splitMain {
-  padding: 5px 6px 5px 7px;
-}
-
-.splitMain:hover,
-.splitChevron:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.splitChevron {
-  padding: 5px 6px 5px 4px;
-  border-left: 0.5px solid var(--dsw-alias-border-l4);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.splitLabel {
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.split .tool {
+  width: 24px;
+  padding: 6px 4px;
 }
