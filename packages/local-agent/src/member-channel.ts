@@ -1,16 +1,19 @@
 /**
  * Member channel, host side: the loopback listener the bridge MCP servers call
  * back on, and the member-to-member delivery chain. One newline-delimited JSON
- * request per line (`{ token, pid, to, text }`), one response line
+ * request per line (`{ token, to, text }`), one response line
  * (`{ ok: true, receipt } | { ok: false, error }`).
  *
  * Delivery chain for one `member_message` call:
  *
  * 1. token → the registered in-flight run (sender A's identity; never
- *    self-reported), cross-checked against the spawned CLI's pid (host 0.1.5
- *    hides child pids, so providers cannot bind one: the cross-check is
- *    currently inert and every bridge callback fails CLOSED on the unbound-run
- *    rejection until an upstream pid seam or a token-only decision lands);
+ *    self-reported). The per-run token is the SOLE credential (host 0.1.5
+ *    removed the child pid the parentage cross-check used): minted at run
+ *    start, delivered through the CLI's scoped MCP config (0700 scoped home),
+ *    invalidated the moment the run settles. The residual exposure — a
+ *    same-host same-user sibling CLI replaying a token it read — is
+ *    documented in the package README and tracked by the auth-hardening
+ *    proposal;
  * 2. resolve B (`to` = a member's dsh child session id; member NAMES resolve
  *    only through a claiming room's roster);
  * 3. same-parent check: B's delegation must share A's parent session;
@@ -37,10 +40,8 @@ import type {
 
 /** One bridge callback on the wire. */
 export interface MemberBridgeRequest {
-  /** The per-run token injected into the bridge's environment. */
+  /** The per-run token injected into the bridge's environment (the sole credential). */
   token: string
-  /** The bridge's parent pid — the CLI process the family spawned. */
-  pid: number
   /** The raw `to` argument: a member child session id, or a room-roster name. */
   to: string
   /** The notification text. */
@@ -133,9 +134,6 @@ export class MemberChannel {
     const run = this.registry.resolveMemberRun(request.token)
     if (run === undefined) {
       return { ok: false, error: 'localAgent: unknown or expired member token' }
-    }
-    if (run.cliPid === undefined || run.cliPid !== request.pid) {
-      return { ok: false, error: 'localAgent: member token presented by a foreign process' }
     }
     const harness = this.registry.list()
       .map(name => this.registry.get(name))

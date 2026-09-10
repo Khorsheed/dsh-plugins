@@ -375,7 +375,7 @@ export interface RoomMemberMessageGate {
 
 /**
  * Outcome of one `member_message` delivery. Channel-level failures (unknown or
- * expired token, foreign pid, unknown member) are `ok: false` tool errors;
+ * expired token, unknown member) are `ok: false` tool errors;
  * delivery verdicts — including a failed direct send — are receipts the sender
  * can quote in its conclusion: `sent` / `pending-confirm` / `busy` /
  * `error: <reason>` (or whatever a claiming room returns, passed verbatim).
@@ -392,9 +392,11 @@ export const MEMBER_BRIDGE_TOKEN_ENV = 'DSH_MEMBER_TOKEN'
 
 /**
  * One in-flight CLI run registered for the member channel: the per-run token's
- * resolution target. The token is minted at run start (fresh or resume),
- * cross-checked against the spawned CLI's pid, and invalidated when the run
- * settles — a member's identity is never self-reported.
+ * resolution target. The token is minted at run start (fresh or resume) and
+ * invalidated when the run settles — a member's identity is never
+ * self-reported. The token is the sole credential (host 0.1.5 removed the
+ * child pid the parentage cross-check used; the auth-hardening proposal
+ * tracks a stronger second factor).
  */
 export interface LocalAgentMemberRun {
   /** The dsh child session id of the run (its member identity). */
@@ -403,8 +405,6 @@ export interface LocalAgentMemberRun {
   parentSessionId: string
   /** The `ctx.subagents` provider name running the CLI. */
   provider: string
-  /** The spawned CLI process pid, bound right after spawn. */
-  cliPid?: number
 }
 
 /**

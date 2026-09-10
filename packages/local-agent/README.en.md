@@ -50,6 +50,7 @@ A custom composition mounts the core once:
 - **Homes root placement** — defaults to `$DSH_HOME/local-agent`, pending a standardized `var/state` layout.
 - **Delegation log growth** — each scoped home's `delegations.jsonl` is append-only with no rotation.
 - **One-sample shape** — the harness contract is induced from Kimi alone; not yet frozen.
+- **The member channel authenticates on the per-run token alone** — the token is delivered through the CLI's scoped MCP config (the 0700 scoped home keeps other users out) and invalidated the moment the run settles; host 0.1.5 removed the child pid, so there is no second factor. **Residual exposure**: a same-host, same-user sibling member CLI (its model-driven bash) can read another member's token and replay it — the old pid check was a self-reported field and never stopped a deliberate forgery, so dropping it loses little; but a deliberately crafted cross-member call is now possible. Hardening (kernel-level socket peer credentials, or a spawn-time injected capability token) is tracked in `proposals/active/2026-09-10-member-channel-auth-hardening.md`.
 
 ## How it works
 

@@ -50,6 +50,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 - **homes 根位置**——默认 `$DSH_HOME/local-agent`，待 `var/state` 布局标准化后再议。
 - **委派日志增长**——每个作用域目录的 `delegations.jsonl` 只增不减、无轮转。
 - **单样本形状**——harness 契约仅由 Kimi 归纳，尚未冻结。
+- **成员通道是 per-run token 单因子认证**——token 经 CLI 作用域 MCP 配置下发（0700 的 scoped home 挡住其他用户），run 落定即焚；宿主 0.1.5 移除子进程 pid 后没有第二因子。**残余风险**：同机同用户的兄弟成员 CLI（其模型驱动的 bash）能读到另一个成员的 token 并回放它——原 pid 校验也是自报字段，本就不防刻意伪造，去掉它没有实质降级；但刻意构造的跨成员调用现在是可能的。加固（socket 内核级 peer 凭证，或 spawn 时注入的 capability token）由 `proposals/active/2026-09-10-member-channel-auth-hardening.md` 跟踪。
 
 ## 实现原理
 

@@ -1435,27 +1435,10 @@ export class LocalAgentRegistry {
    * @param run - the run's member identity (child session, parent, provider).
    * @returns the minted token, invalidated by {@link unregisterMemberRun}.
    */
-  registerMemberRun(run: Omit<LocalAgentMemberRun, 'cliPid'>): string {
+  registerMemberRun(run: LocalAgentMemberRun): string {
     const token = randomUUID()
     this.memberRuns.set(token, { ...run })
     return token
-  }
-
-  /**
-   * Bind the spawned CLI's pid to a registered run. The bridge (the CLI's MCP
-   * child) reports its parent pid with every callback; the host cross-checks it
-   * against this binding, so a sibling run's bridge entry — visible in a shared
-   * scoped home's MCP config — cannot be used to impersonate another member.
-   * Host 0.1.5's SubprocessHandle no longer exposes the child pid, so the
-   * providers bind nothing and the channel fails closed on the unbound-run
-   * rejection; the binding API stays for a future pid seam (or a deliberate
-   * token-only decision).
-   * @param token - the run's member-channel token.
-   * @param cliPid - the spawned CLI process pid.
-   */
-  bindMemberRunPid(token: string, cliPid: number): void {
-    const run = this.memberRuns.get(token)
-    if (run !== undefined) this.memberRuns.set(token, { ...run, cliPid })
   }
 
   /**

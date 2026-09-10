@@ -9,7 +9,6 @@ import { serveMemberBridge } from '../src/member-bridge.ts'
 /** One captured host-side request. */
 interface HostCall {
   token: string
-  pid: number
   to: string
   text: string
 }
@@ -39,7 +38,7 @@ interface BridgeRig {
 }
 
 /** Run the bridge loop over in-memory streams, collecting its output lines. */
-function rig(env: { socket?: string; token?: string; pid?: number }): BridgeRig {
+function rig(env: { socket?: string; token?: string }): BridgeRig {
   const input = new PassThrough()
   const output = new PassThrough()
   const responses: Record<string, unknown>[] = []
@@ -95,15 +94,15 @@ describe('member bridge (stdio MCP server)', () => {
     expect(responses).toHaveLength(2)
   })
 
-  it('forwards member_message to the host socket with token and parent pid, returning the receipt', async () => {
+  it('forwards member_message to the host socket with the per-run token, returning the receipt', async () => {
     const host = await fakeHost({ ok: true, receipt: 'pending-confirm' })
     server = host.server
-    const bridge = rig({ socket: host.socket, token: 'tok-1', pid: 4242 })
+    const bridge = rig({ socket: host.socket, token: 'tok-1' })
     bridge.write({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'member_message', arguments: { to: 'child-b', text: 'X 已完成' } } })
     const responses = await untilResponses(bridge, 1)
     bridge.close()
 
-    expect(host.calls).toEqual([{ token: 'tok-1', pid: 4242, to: 'child-b', text: 'X 已完成' }])
+    expect(host.calls).toEqual([{ token: 'tok-1', to: 'child-b', text: 'X 已完成' }])
     expect(responses[0]).toMatchObject({
       id: 7,
       result: { content: [{ type: 'text', text: 'pending-confirm' }] },
@@ -114,7 +113,7 @@ describe('member bridge (stdio MCP server)', () => {
   it('maps a host-side rejection (bad/expired token) to a tool error', async () => {
     const host = await fakeHost({ ok: false, error: 'localAgent: unknown or expired member token' })
     server = host.server
-    const bridge = rig({ socket: host.socket, token: 'stale', pid: 4242 })
+    const bridge = rig({ socket: host.socket, token: 'stale' })
     bridge.write({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'member_message', arguments: { to: 'child-b', text: 'hi' } } })
     const responses = await untilResponses(bridge, 1)
     bridge.close()

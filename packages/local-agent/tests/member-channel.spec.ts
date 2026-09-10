@@ -17,7 +17,6 @@ const PROVIDER = 'fake-cli'
 const PARENT = 'parent-1'
 const CHILD_A = 'child-a'
 const CHILD_B = 'child-b'
-const PID_A = 4242
 
 /** A minimal controllable run for the fake provider. */
 function makeRun(id: string): SubagentRun {
@@ -86,7 +85,6 @@ async function mountChannel(): Promise<ChannelHarness> {
   registry.recordDelegation({ childSessionId: CHILD_B, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-b' })
   ctx.sessions.create(SessionId(CHILD_B))
   const tokenA = registry.registerMemberRun({ childSessionId: CHILD_A, parentSessionId: PARENT, provider: PROVIDER })
-  registry.bindMemberRunPid(tokenA, PID_A)
   // The chain logic under test needs no listener; handle() stands alone.
   const channel = new MemberChannel(ctx, registry, join(homesRoot, 'test.sock'))
   return {
@@ -111,34 +109,38 @@ async function mountChannel(): Promise<ChannelHarness> {
 describe('MemberChannel delivery chain', () => {
   it('rejects an unknown token and an expired (settled) token', async () => {
     const h = await mountChannel()
-    const unknown = await h.channel.handle({ token: 'nope', pid: PID_A, to: CHILD_B, text: 'hi' })
+    const unknown = await h.channel.handle({ token: 'nope', to: CHILD_B, text: 'hi' })
     expect(unknown.ok).toBe(false)
     if (!unknown.ok) expect(unknown.error).toMatch(/unknown or expired member token/)
 
     h.registry.unregisterMemberRun(h.tokenA)
-    const expired = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'hi' })
+    const expired = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'hi' })
     expect(expired.ok).toBe(false)
     expect(h.requests).toHaveLength(0)
   })
 
-  it('rejects a token presented from a foreign pid', async () => {
+  it('token-only auth: the per-run token is the sole credential (host 0.1.5 removed child pids)', async () => {
+    // No parentage cross-check exists anymore: a well-formed request carrying
+    // a live token delivers, and a run registered but never otherwise
+    // exercised works the same. The residual same-host sibling-replay exposure
+    // is documented in the README (auth-hardening proposal tracks a second
+    // factor).
     const h = await mountChannel()
-    const wrongPid = await h.channel.handle({ token: h.tokenA, pid: 9999, to: CHILD_B, text: 'hi' })
-    expect(wrongPid.ok).toBe(false)
-    if (!wrongPid.ok) expect(wrongPid.error).toMatch(/foreign process/)
+    h.enterParent(PARENT)
+    const outcome = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'hi' })
+    expect(outcome).toEqual({ ok: true, receipt: 'sent' })
+    expect(h.requests).toHaveLength(1)
 
-    // A token whose pid was never bound (spawn failed) is equally unusable.
-    const unbound = h.registry.registerMemberRun({ childSessionId: 'child-c', parentSessionId: PARENT, provider: PROVIDER })
-    const noPid = await h.channel.handle({ token: unbound, pid: 1, to: CHILD_B, text: 'hi' })
-    expect(noPid.ok).toBe(false)
-    expect(h.requests).toHaveLength(0)
+    const second = h.registry.registerMemberRun({ childSessionId: 'child-c', parentSessionId: PARENT, provider: PROVIDER })
+    const again = await h.channel.handle({ token: second, to: CHILD_B, text: 'hi' })
+    expect(again).toEqual({ ok: true, receipt: 'sent' })
   })
 
   it('direct-sends with provenance when room is absent: facade resume with the recorded parent/provider', async () => {
     const h = await mountChannel()
     h.enterParent(PARENT)
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'X 已完成' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'X 已完成' })
 
     expect(outcome).toEqual({ ok: true, receipt: 'sent' })
     expect(h.requests).toHaveLength(1)
@@ -159,7 +161,7 @@ describe('MemberChannel delivery chain', () => {
     const h = await mountChannel()
     h.registry.recordDelegation({ childSessionId: 'child-x', provider: PROVIDER, parentSessionId: 'parent-2', cliSessionId: 'cli-x' })
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: 'child-x', text: 'hi' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: 'child-x', text: 'hi' })
 
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) expect(outcome.error).toMatch(/another parent session/)
@@ -171,7 +173,7 @@ describe('MemberChannel delivery chain', () => {
     h.enterParent(PARENT)
     expect(h.registry.acquireResumeLock(CHILD_B)).toBe(true)
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'hi' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'hi' })
 
     expect(outcome).toEqual({ ok: true, receipt: 'busy' })
     expect(h.requests).toHaveLength(0)
@@ -183,7 +185,7 @@ describe('MemberChannel delivery chain', () => {
     h.enterParent(PARENT)
     const gate = h.provideRoom(async () => 'pending-confirm')
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'X 已完成' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'X 已完成' })
 
     expect(outcome).toEqual({ ok: true, receipt: 'pending-confirm' })
     // Room claimed the dispatch: the family does NOT send.
@@ -207,7 +209,7 @@ describe('MemberChannel delivery chain', () => {
     h.enterParent(PARENT)
     const gate = h.provideRoom(async () => { throw new Error('room: not a room session (not-a-room)') })
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'hi' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'hi' })
 
     expect(outcome).toEqual({ ok: true, receipt: 'sent' })
     expect(gate).toHaveBeenCalled()
@@ -218,7 +220,7 @@ describe('MemberChannel delivery chain', () => {
     const h = await mountChannel()
     const gate = h.provideRoom(async () => 'sent')
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: 'coder-B', text: 'hi' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: 'coder-B', text: 'hi' })
 
     expect(outcome).toEqual({ ok: true, receipt: 'sent' })
     expect(gate.mock.calls[0]?.[0].to).toBe('coder-B')
@@ -228,7 +230,7 @@ describe('MemberChannel delivery chain', () => {
   it('rejects a name-addressed member when room is absent', async () => {
     const h = await mountChannel()
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: 'coder-B', text: 'hi' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: 'coder-B', text: 'hi' })
 
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) expect(outcome.error).toMatch(/unknown member/)
@@ -238,7 +240,7 @@ describe('MemberChannel delivery chain', () => {
   it('returns the facade failure as an error receipt when the parent is not live', async () => {
     const h = await mountChannel()
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'hi' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'hi' })
 
     expect(outcome.ok).toBe(true)
     if (outcome.ok) expect(outcome.receipt).toMatch(/^error: .*no live agent/)
@@ -250,7 +252,7 @@ describe('MemberChannel delivery chain', () => {
     h.enterParent(PARENT)
     h.provideRoom(async () => { throw new Error('gate exploded') })
 
-    const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'hi' })
+    const outcome = await h.channel.handle({ token: h.tokenA, to: CHILD_B, text: 'hi' })
 
     expect(outcome).toEqual({ ok: true, receipt: 'sent' })
     expect(h.requests).toHaveLength(1)

@@ -46,8 +46,6 @@ export interface MemberBridgeEnv {
   readonly socket?: string | undefined
   /** This run's member-channel token. */
   readonly token?: string | undefined
-  /** The parent (CLI) pid; defaults to `process.ppid`. */
-  readonly pid?: number | undefined
 }
 
 interface JsonRpcRequest {
@@ -89,7 +87,7 @@ function toolText(text: string, isError = false): Record<string, unknown> {
  * Handle one `member_message` tool call: forward to the host listener and map
  * the outcome to a tool result. Channel failures (missing env, unreachable
  * listener, rejected token) are tool errors; delivery verdicts are text.
- * @param env - the bridge's environment (socket, token, pid).
+ * @param env - the bridge's environment (socket, token).
  * @param args - the tool arguments (`to`, `text`).
  * @returns the MCP tool result object.
  */
@@ -106,7 +104,6 @@ export async function callMemberMessage(
   try {
     const outcome = await callHost(env.socket, {
       token: env.token,
-      pid: env.pid ?? process.ppid,
       to: args.to,
       text: args.text,
     })
