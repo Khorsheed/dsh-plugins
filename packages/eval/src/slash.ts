@@ -16,12 +16,22 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type { EvalService } from './service.ts'
 
 const USAGE = `usage:
-  /eval run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR]
+  /eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--finalize] [--out DIR]
            [--retries N] [--only id,id] [--max-cells N] [--ignore-readiness]
   /eval finalize <runId>
 
-  run starts an evaluation run from a dataseek.plan/1 document. The invoking
-  session becomes the run's originSession and the parent of every delegation.
+  run STARTS an evaluation run and answers immediately with a job id and a run
+  id: the run is a background job, so it outlives this turn, this session, and
+  the browser tab that dispatched it. Read its log with the job_output tool
+  (or job_list / job_kill) — job_kill is the ONE way to stop a run. --wait
+  keeps the old behavior instead: the reply comes when the run finishes, which
+  is what you want interactively for a short --dry-run or a one-cell plan, and
+  what you must not use for a long run.
+
+  The invoking session becomes the run's originSession and the parent of every
+  delegation, as long as it still has a live agent; a run started without one
+  (from the Remote face, e.g. CI) opens its own session for the delegations
+  and closes it when the run ends.
   --dry-run validates, generates the template, expands the matrix, and prints
   the execution order — nothing executes. Before creating the run, every
   condition is probed with one minimal delegation (the readiness check: a
@@ -117,6 +127,29 @@ function subsetLine(subset: { only: string[] | null; maxCells: number | null; to
 }
 
 /** Render the run report as the command reply. */
+/**
+ * The reply of a STARTED run: two ids, where the log is, and the one way to
+ * stop it. Deliberately short — the run has produced nothing yet, and a reply
+ * that padded this with a plan summary would read like a result.
+ * @param handle - what `runStart` answered with.
+ * @returns the success text.
+ */
+function renderStarted(handle: {
+  jobId: string
+  runId: string
+  parentSessionId: string
+  ownParentSession?: boolean
+}): string {
+  return [
+    `eval run started — job ${handle.jobId} · run ${handle.runId}`,
+    handle.ownParentSession === true
+      ? `parent session: ${handle.parentSessionId} (opened for this run; it closes when the run ends)`
+      : `parent session: ${handle.parentSessionId} (this session — the run outlives this turn either way)`,
+    `log: job_output ${handle.jobId} · status: job_list · stop: job_kill ${handle.jobId}`,
+    'the run keeps going if you close this tab; job_kill is the only way to stop it',
+  ].join('\n')
+}
+
 function renderReport(lines: readonly string[], report: {
   runId: string
   dryRun: boolean
@@ -262,18 +295,45 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
     .map(id => id.trim())
     .filter(id => id !== '')
   const parentSessionId = String(invocation.agent.session.id)
+  const runOptions = {
+    parentSessionId,
+    ...(concurrency !== undefined ? { concurrency } : {}),
+    dryRun: args.switches.has('--dry-run'),
+    finalize: args.switches.has('--finalize'),
+    ...(flagOf(args, '--out') !== undefined ? { exportsDir: flagOf(args, '--out') as string } : {}),
+    ...(retries !== undefined ? { retryInfrastructure: retries } : {}),
+    ...(only.length > 0 ? { only } : {}),
+    ...(maxCells !== undefined ? { maxCells } : {}),
+    ignoreReadiness: args.switches.has('--ignore-readiness'),
+  }
+  // A dry run is offline and finishes in the turn: making it a background job
+  // would hand back an id for work that is already done. `--wait` is the
+  // explicit ask for the old synchronous shape, and a composition without a
+  // job registry falls back to it (saying so) rather than refusing the run.
+  const wait = args.switches.has('--wait') || runOptions.dryRun
+  if (!wait && service.runJobsAvailable()) {
+    try {
+      const handle = await service.runStart(planPath, {
+        ...runOptions,
+        ...(invocation.agent.session.header?.cwd === undefined ? {} : { cwd: invocation.agent.session.header.cwd }),
+        label: `eval run ${planPath}`,
+      })
+      return { kind: 'success', text: renderStarted(handle) }
+    } catch (error) {
+      // Starting is a cheap, synchronous-ish act (validation happens inside
+      // the run): what can fail here is the wiring — no job registry, no live
+      // parent agent — and naming it beats a background job that never was.
+      return { kind: 'error', text: `eval run could not start: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
   const lines: string[] = []
+  if (!wait) {
+    lines.push('this composition mounts no jobs service, so the run is waited on in this turn'
+      + ' — the reply comes when it finishes, and closing this surface stops it')
+  }
   try {
     const report = await service.run(planPath, {
-      parentSessionId,
-      ...(concurrency !== undefined ? { concurrency } : {}),
-      dryRun: args.switches.has('--dry-run'),
-      finalize: args.switches.has('--finalize'),
-      ...(flagOf(args, '--out') !== undefined ? { exportsDir: flagOf(args, '--out') as string } : {}),
-      ...(retries !== undefined ? { retryInfrastructure: retries } : {}),
-      ...(only.length > 0 ? { only } : {}),
-      ...(maxCells !== undefined ? { maxCells } : {}),
-      ignoreReadiness: args.switches.has('--ignore-readiness'),
+      ...runOptions,
       log: (message) => { lines.push(message) },
     })
     return renderReport(lines, report)

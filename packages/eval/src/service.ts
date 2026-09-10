@@ -16,6 +16,12 @@ import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions 
 import { runPlan, EvalRunRefused, type RunDeps, type RunOptions, type RunReport } from './run.ts'
 import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport } from './finalize.ts'
 import {
+  EvalRunJobs,
+  type EvalRunHandle,
+  type EvalRunOutput,
+  type EvalRunStatus,
+} from './job.ts'
+import {
   EvalReadRefused,
   listConditions,
   runStatus,
@@ -42,7 +48,21 @@ export interface ConditionHash {
  * dry-run-only there).
  */
 export class EvalService {
-  constructor(private readonly hosts?: { get(name: string): unknown }) {}
+  /**
+   * The run-as-job layer: `/eval run` registers the run here and returns, so
+   * a run outlives the turn that started it. One instance per service, so a
+   * finished run's output stays readable for as long as the service lives.
+   */
+  private readonly jobs: EvalRunJobs
+
+  constructor(private readonly hosts?: { get(name: string): unknown }) {
+    this.jobs = new EvalRunJobs(hosts)
+  }
+
+  /** Whether a run can be started as a background job in this composition. */
+  runJobsAvailable(): boolean {
+    return this.jobs.available()
+  }
 
   /**
    * Validate a plan document against `dataseek.plan/1` and resolve what it
@@ -50,7 +70,7 @@ export class EvalService {
    * come back as diagnostics, never as throws.
    */
   validatePlan(planPath: string): Promise<PlanValidation> {
-    return validatePlan(planPath)
+    return validatePlan(expandHome(planPath))
   }
 
   /**
@@ -85,7 +105,7 @@ export class EvalService {
    * @throws Error when the directory is not a bundle (no readable run.json).
    */
   report(bundleDir: string, options: { out?: string } = {}): Promise<ReportWrite> {
-    return writeEvalReport(bundleDir, options)
+    return writeEvalReport(expandHome(bundleDir), options.out === undefined ? options : { out: expandHome(options.out) })
   }
 
   /**
@@ -165,8 +185,17 @@ export class EvalService {
    * @throws {@link EvalRunRefused} when the run is refused before executing.
    */
   run(planPath: string, options: RunOptions = {}): Promise<RunReport> {
-    if (options.dryRun === true) {
-      return runPlan(planPath, options)
+    // Paths cross this seam from three faces — the slash command, the CLI,
+    // and the Remote — and every one of them can carry a shell-unexpanded
+    // `~`: a slash argument never saw a shell, and a CLI argument quoted to
+    // survive one did not either. Expanding HERE means one rule for all
+    // three instead of three call sites that must each remember.
+    const plan = expandHome(planPath)
+    const resolved: RunOptions = options.exportsDir === undefined
+      ? options
+      : { ...options, exportsDir: expandHome(options.exportsDir) }
+    if (resolved.dryRun === true) {
+      return runPlan(plan, resolved)
     }
     if (this.hosts === undefined) {
       return Promise.reject(new EvalRunRefused(
@@ -185,7 +214,70 @@ export class EvalService {
     if (mission !== undefined) deps.mission = mission
     if (localAgent !== undefined) deps.localAgent = localAgent
     if (lab !== undefined) deps.lab = lab
-    return runPlan(planPath, options, deps)
+    return runPlan(plan, resolved, deps)
+  }
+
+  /**
+   * START a run in the background and answer immediately with its ids — the
+   * default path of `/eval run` and the only path a CI runner has.
+   *
+   * The run is registered as an unowned `eval-run` job, so it outlives the
+   * turn (and the session) that started it; its log lines are readable
+   * through {@link runOutput} while it runs, and `job_kill` — through
+   * {@link runCancel} — is its one cancellation entry.
+   * @param planPath - path to a `dataseek.plan/1` document (`~` expanded).
+   * @param options - the same run options `run` takes, minus the ones this
+   *   owns (`runId`, `signal`).
+   * @returns the job id, the minted run id, and the resolved parent session.
+   * @throws {@link EvalJobsUnavailable} when the composition mounts no job
+   *   registry (the caller then decides: `/eval run` waits synchronously and
+   *   says so).
+   */
+  runStart(planPath: string, options: RunOptions & { cwd?: string; label?: string } = {}): Promise<EvalRunHandle> {
+    const plan = expandHome(planPath)
+    return this.jobs.start(
+      runOptions => this.run(plan, runOptions),
+      { ...options, label: options.label ?? `eval run ${plan}` },
+    )
+  }
+
+  /**
+   * One background run's JOB status — lifecycle, not ledger. The run's CELLS
+   * are `runStatus(runId)`, which reads mission; this one answers "is the job
+   * still going, and what did it end as".
+   * @param jobId - the id {@link runStart} returned.
+   * @returns the status, or undefined when this service never started it.
+   */
+  runJobStatus(jobId: string): EvalRunStatus | undefined {
+    return this.jobs.status(jobId)
+  }
+
+  /**
+   * Read a background run's log from a cursor (non-consuming — the
+   * model-facing `job_output` tool has its own cursor).
+   * @param jobId - the id {@link runStart} returned.
+   * @param cursor - the cursor from the previous read; absent reads from the top.
+   * @returns the lines after the cursor, or undefined for an unknown job.
+   */
+  runJobOutput(jobId: string, cursor?: number): EvalRunOutput | undefined {
+    return this.jobs.output(jobId, cursor)
+  }
+
+  /**
+   * Cancel a background run. The same lever `job_kill` pulls, and the only
+   * one: every in-flight delegation is cancelled and the cells the cancel
+   * caught stay mid-stage, which is what makes `finalize` call them
+   * `interrupted`.
+   * @param jobId - the id {@link runStart} returned.
+   * @returns what the registry did, or `unknown-job`.
+   */
+  runJobCancel(jobId: string): 'requested' | 'already-finished' | 'unknown-job' {
+    return this.jobs.cancel(jobId)
+  }
+
+  /** Every background run this service started, in start order. */
+  runJobList(): EvalRunStatus[] {
+    return this.jobs.list()
   }
 
   /**

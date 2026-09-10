@@ -45,6 +45,62 @@ describe('/eval', () => {
   })
 })
 
+describe('/eval run as a background job', () => {
+  /** A job registry that records the producer and settles when told. */
+  function jobsHost(settleWith?: () => Promise<unknown>) {
+    const started: Array<{ kind: string; label: string; owner?: unknown }> = []
+    const jobs = {
+      started,
+      start(spec: { kind: string; label: string; owner?: unknown; run: () => { done: Promise<unknown>; cancel(): void; readOutput?(): string } }) {
+        started.push({ kind: spec.kind, label: spec.label, owner: spec.owner })
+        spec.run()
+        return `${spec.kind}-1`
+      },
+      get: () => ({ status: 'running', startedAt: 0, reported: false }),
+      kill: () => 'requested' as const,
+    }
+    void settleWith
+    const agents = { get: () => ({ session: { id: 'sess-eval-slash' } }) }
+    return { jobs, agents, host: { get: (name: string) => (name === 'jobs' ? jobs : name === 'agents' ? agents : undefined) } }
+  }
+
+  it('starts a job and answers with the ids — without waiting for the run', async () => {
+    const { jobs, host } = jobsHost()
+    const result = await handleEvalCommand(new EvalService(host), invocation(`run ${T1_PLAN}`))
+    expect(result.kind).toBe('success')
+    expect(result.text).toMatch(/eval run started — job eval-run-1 · run run-\d{14}-[a-z0-9]{4}/)
+    // The reply names the one cancel path and nothing else that stops a run.
+    expect(result.text).toContain('job_kill eval-run-1')
+    expect(result.text).toContain('the run keeps going if you close this tab')
+    // Unowned: the job must outlive the session that started it.
+    expect(jobs.started).toEqual([{ kind: 'eval-run', label: `eval run ${T1_PLAN}`, owner: undefined }])
+  })
+
+  it('--wait keeps the synchronous shape (and a dry run is always synchronous)', async () => {
+    const { jobs, host } = jobsHost()
+    const waited = await handleEvalCommand(new EvalService(host), invocation(`run ${T1_PLAN} --dry-run`))
+    expect(waited.kind).toBe('success')
+    expect(waited.text).toContain('dry-run')
+    // A dry run finishes in the turn, so it never becomes a job.
+    expect(jobs.started).toEqual([])
+
+    const wait = await handleEvalCommand(new EvalService(host), invocation(`run ${T1_PLAN} --wait`))
+    // No host services in this fake, so the run refuses — the point is that
+    // it went down the synchronous path instead of registering a job.
+    expect(wait.kind).toBe('error')
+    expect(jobs.started).toEqual([])
+  })
+
+  it('falls back to waiting when the composition mounts no jobs service, and says so', async () => {
+    const result = await handleEvalCommand(new EvalService({ get: () => undefined }), invocation(`run ${T1_PLAN}`))
+    expect(result.kind).toBe('error')
+    // The refusal below is the missing host services; the FIRST line is the
+    // fallback notice, which is what a reader needs to understand the wait.
+    expect(result.text).toContain('mounts no jobs service')
+    expect(result.text).toContain('closing this surface stops it')
+  })
+})
+
 describe('/eval finalize', () => {
   /** A host whose `mission` service is the finalize face the verb needs. */
   const hostWith = (rows: Array<{ id: string; state: string }>): { get(name: string): unknown } => {

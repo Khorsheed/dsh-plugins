@@ -34,7 +34,6 @@ import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
@@ -42,7 +41,7 @@ import type {
   DelegationProgress, DelegationResult, DelegationToolCalls, DelegationUsage,
   DatasetsFace, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
 } from './faces.ts'
-import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
+import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
 import { loadManifest, type SuiteManifest } from './manifest.ts'
 import { expandMatrix, orderCells, type EvalCell } from './matrix.ts'
@@ -93,6 +92,20 @@ class SubmissionRejected extends Error {
 /** Declared model ≠ observed model (frozen decision 5): the run is misattributed — fail loud. */
 class MisattributedRun extends Error {}
 
+/**
+ * The run was cancelled from outside (the job's `cancel`, which is the ONLY
+ * cancellation entry — see {@link RunOptions.signal}). Distinct from an
+ * infrastructure failure on purpose: a cancelled cell is NOT retried, and it
+ * is left exactly where the cancel found it, so `finalize` classifies it
+ * `interrupted` — the category T23 added for precisely this shape.
+ */
+class RunCancelled extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RunCancelled'
+  }
+}
+
 /** Options of the run service verb. */
 export interface RunOptions {
   /**
@@ -137,6 +150,18 @@ export interface RunOptions {
   now?: number
   /** Progress sink (the slash wrapper prints these lines). */
   log?: (message: string) => void
+  /**
+   * Cancellation. Aborting it stops the run: every in-flight delegation is
+   * cancelled through the same lever the per-cell budget timer pulls
+   * (`localAgent.cancel`), no further cell is started, and each cell the
+   * cancel caught is recorded — and left — mid-stage, which is what makes
+   * `finalize` call it `interrupted` instead of pretending it failed.
+   *
+   * There is exactly ONE cancellation entry in front of this: `job_kill` on
+   * the run's job. The slash command does not take a stop verb, and the run
+   * loop has no second timer of its own.
+   */
+  signal?: AbortSignal
   /** Root for the per-cell directories. Default `$DSH_HOME/state/eval`. */
   stateRoot?: string
   /** Per-probe wall-clock cap. Default 5 minutes (probes are deterministic, not agents). */
@@ -193,6 +218,12 @@ export interface RunCellReport {
   rejected?: { stage: string; violations: string[] }
   /** Set when a halt_on condition diverted the cell to `halted`. */
   halted?: boolean
+  /**
+   * Set when the run was cancelled while this cell was live: the cell stays
+   * in the state the cancel found it in (no retry, no forced transition), so
+   * `finalize` reports it `interrupted`.
+   */
+  cancelled?: { reason: string }
   /** Verdicts archived for this cell, by source ns (absent before the judging phase runs). */
   verdicts?: { script: number; llmDraft: number }
 }
@@ -229,12 +260,6 @@ export interface RunReport {
 /** sha256 hex of a buffer. */
 function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
-}
-
-function expandHome(path: string): string {
-  if (path === '~') return homedir()
-  if (path.startsWith('~/')) return join(homedir(), path.slice(2))
-  return path
 }
 
 let evalVersionCache: string | undefined
@@ -645,6 +670,8 @@ async function runCellOnce(
     judge: JudgeEnv
     /** Set when the plan declares a `unit` segment: this cell runs in a container. */
     unit?: CellUnitBinding
+    /** The run's cancellation signal (see {@link RunOptions.signal}). */
+    signal?: AbortSignal
     /**
      * Where the acquired unit is published for the retry wrapper. A unit is
      * held by the ATTEMPT, and an attempt that throws must still be able to
@@ -815,14 +842,37 @@ async function runCellOnce(
     if (remainingMs <= 0) {
       throw new InfrastructureFailure(`stage ${stageId}: the cell's active-minutes budget is exhausted`)
     }
+    // A cancel that arrives between rounds stops here, before a new round
+    // spawns anything: the cell is left in this stage's state. Read through a
+    // call, not a property test: `aborted` is a readonly property, so a
+    // control-flow narrowing of it would outlive the abort that flips it.
+    const runCancelled = (): boolean => env.signal?.aborted === true
+    if (runCancelled()) {
+      throw new RunCancelled(`stage ${stageId}: the run was cancelled before the round started`)
+    }
     const startedAt = env.now()
     const controller = new AbortController()
     let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
+    let cancelled = false
+    // ONE lever, two pullers: the cell's budget timer and the run's cancel.
+    // Both abort the round's signal (which the delegation carries) and cancel
+    // the in-flight delegation by child session id — the facade's own
+    // cancellation channel. A second, different stop path is exactly what
+    // this design refuses to grow.
+    const stopRound = (): void => {
       controller.abort()
       if (childSessionId !== undefined) localAgent.cancel(childSessionId)
+    }
+    const timer = setTimeout(() => {
+      timedOut = true
+      stopRound()
     }, remainingMs)
+    const onRunCancel = (): void => {
+      cancelled = true
+      stopRound()
+    }
+    env.signal?.addEventListener('abort', onRunCancel, { once: true })
+    const releaseRoundSignal = (): void => { env.signal?.removeEventListener('abort', onRunCancel) }
     // T11 read-back: the settled progress event carries the round's observed
     // model and usage; kept here and merged with delegationOf after settle
     // (either channel may have the value the other missed).
@@ -888,6 +938,7 @@ async function runCellOnce(
         : await localAgent.resume(env.parentSessionId, env.condition.provider, childSessionId, promptBlocks, delegationOptions)
     } catch (error) {
       clearTimeout(timer)
+      releaseRoundSignal()
       const durationMs = env.now() - startedAt
       state.spentMs += durationMs
       await mission.annotate(missionId, 'orchestrator', {
@@ -900,6 +951,9 @@ async function runCellOnce(
         durationMs,
         error: error instanceof Error ? error.message : String(error),
       }, { runId: env.runId, by: env.by })
+      if (cancelled || runCancelled()) {
+        throw new RunCancelled(`stage ${stageId}: the run was cancelled while the round was starting`)
+      }
       throw new InfrastructureFailure(`stage ${stageId} delegation failed to start: ${error instanceof Error ? error.message : String(error)}`)
     }
     state.childSessionIds.push(run.id)
@@ -911,6 +965,7 @@ async function runCellOnce(
       result = await run.result
     } catch (error) {
       clearTimeout(timer)
+      releaseRoundSignal()
       const durationMs = env.now() - startedAt
       state.spentMs += durationMs
       await mission.annotate(missionId, 'orchestrator', {
@@ -928,6 +983,7 @@ async function runCellOnce(
     const durationMs = env.now() - startedAt
     state.spentMs += durationMs
     clearTimeout(timer)
+    releaseRoundSignal()
     // The read-back after settle: this round's own settled event wins; else
     // the delegation record, waited for because the provider merges it a beat
     // after the result resolves. A facade that delivers neither leaves null —
@@ -960,6 +1016,13 @@ async function runCellOnce(
       requestedModel: env.condition.declaredModel,
       model: { declared: env.condition.declaredModel, observed: observedModel },
     }, { runId: env.runId, by: env.by })
+    // The cancel is checked FIRST: when both fired, the run was cancelled
+    // during the round's last budgeted second, and "the operator stopped it"
+    // is the truer sentence than "it ran out of budget" — and the one that
+    // decides whether the cell is retried.
+    if (cancelled) {
+      throw new RunCancelled(`stage ${stageId} delegation cancelled with the run (${run.id})`)
+    }
     if (timedOut) {
       throw new InfrastructureFailure(`stage ${stageId} delegation exceeded the cell's ${Math.round(env.budgetMs / 60_000)}min active budget — cancelled (${run.id})`)
     }
@@ -1162,6 +1225,8 @@ async function runCellWithRetry(
     readbackWaitMs: number
     judge: JudgeEnv
     unit?: CellUnitBinding
+    /** The run's cancellation signal (see {@link RunOptions.signal}). */
+    signal?: AbortSignal
   },
 ): Promise<RunCellReport> {
   const { mission } = faces
@@ -1188,6 +1253,33 @@ async function runCellWithRetry(
           },
         )
         delete held.unit
+      }
+      if (error instanceof RunCancelled) {
+        // Recorded, then left alone. No retry (the operator stopped this run),
+        // no transition (the cell's state IS the evidence of where it got to),
+        // and the annotation is what a reader — and `finalize`'s
+        // `interrupted` bucket — sees afterwards.
+        const reason = error.message
+        await mission.annotate(env.cell.missionId, 'orchestrator', {
+          kind: 'cell-cancelled',
+          reason,
+          attempts: attempt,
+        }, { runId: env.runId, by: env.by }).catch(() => {})
+        env.log(`cell ${env.cell.missionId}: cancelled — ${reason}`)
+        const after = mission.get(env.cell.missionId, env.runId)
+        const attemptRecord = after.mission.attempts[after.mission.currentAttempt - 1]
+        return {
+          missionId: env.cell.missionId,
+          task: env.cell.labels.task,
+          condition: env.cell.labels.condition,
+          rep: Number(env.cell.labels.rep),
+          attempts: after.mission.currentAttempt,
+          finalState: attemptRecord?.state ?? 'unknown',
+          childSessionIds: state.childSessionIds,
+          promptShas: state.promptShas,
+          activeMs: state.spentMs,
+          cancelled: { reason },
+        }
       }
       if (error instanceof SubmissionRejected) {
         await mission.annotate(env.cell.missionId, 'orchestrator', {
@@ -1829,6 +1921,11 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   let nextCell = 0
   const worker = async (): Promise<void> => {
     while (nextCell < ordered.length) {
+      // A cancelled run starts no further cell. The cells already running
+      // stop through the same signal inside their stage rounds; the ones
+      // never started keep their `pending` state, which is `not-started` to
+      // `finalize` — a different fact from `interrupted`, and the honest one.
+      if (options.signal?.aborted === true) break
       const cell = ordered[nextCell] as EvalCell
       nextCell += 1
       // A cell whose condition failed readiness is not delegated to: the run
@@ -1878,6 +1975,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         budgetMs,
         condition: conditions.find(condition => condition.id === cell.labels.condition) as ResolvedCondition,
         parentSessionId: options.parentSessionId as string,
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
         finalize: options.finalize === true,
         readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
         ...(cellUnit !== undefined && lab !== undefined ? { unit: { lab, plan: cellUnit } } : {}),
@@ -1895,6 +1993,13 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     }
   }
   await Promise.all(Array.from({ length: concurrency }, () => worker()))
+  if (options.signal?.aborted === true) {
+    // The bundle is still exported below: a cancelled run's cells are
+    // evidence, and the export is how a reader reaches them. `meta.cancelled`
+    // is what says the matrix is short on purpose.
+    meta['cancelled'] = true
+    log(`run ${runId} cancelled — ${reports.size} of ${ordered.length} cell(s) reached a state; the rest stay pending`)
+  }
 
   // ── Bundle export (decision 11): visible layer only. ─────────────────
   const outDir = options.exportsDir ?? planExportsDir ?? join(snapshot.repoPath, 'exports')
@@ -1928,7 +2033,13 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     runId,
     dryRun: false,
     meta,
-    cells: ordered.map(cell => reports.get(cell.missionId) as RunCellReport),
+    // A cancelled run stops mid-matrix, so the cells it never started have no
+    // report — and a hole in this array would reach every reader as an
+    // `undefined` cell. They are omitted instead; their missions stay
+    // `pending` in the ledger, which is where "never started" belongs.
+    cells: ordered
+      .map(cell => reports.get(cell.missionId))
+      .filter((cell): cell is RunCellReport => cell !== undefined),
     readiness,
     subset,
     template,

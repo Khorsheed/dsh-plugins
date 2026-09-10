@@ -69,6 +69,11 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.json'],
   },
   {
+    dir: 'packages/eval',
+    name: '@khorsheed/dsh-eval',
+    hostConfigs: ['tsconfig.json'],
+  },
+  {
     dir: 'packages/datasets',
     name: '@khorsheed/dsh-datasets',
     hostConfigs: ['tsconfig.host.json'],

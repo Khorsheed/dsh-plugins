@@ -79,6 +79,40 @@ if [ -n "$SOURCE" ]; then
   done
 fi
 
+# ── Machine-level preflight, BEFORE anything is written. ────────────────
+# The first `dsh` call used to be two hundred lines down, after the profile
+# files were copied, the agent presets replaced whole, and every member built
+# and packed. On a machine without `dsh` on PATH that meant minutes of work
+# and a REPLACED preset directory before the failure — and the trap only ever
+# told you to remove $DEST. Everything this checks is a precondition of the
+# machine, not of the install, so it is checked while nothing has changed yet.
+preflight_fail() {
+  echo "dsh-web-eval: preflight failed — nothing has been written." >&2
+  echo "$1" >&2
+  exit 2
+}
+
+command -v dsh >/dev/null 2>&1 || preflight_fail "  missing: \`dsh\` on PATH.
+  The instance itself needs it (the eval profile pins cliLaunch: [dsh], so the
+  dsh harness delegates by that name), and this script installs through it.
+  Put the dsh CLI on PATH and re-run."
+
+dsh --version >/dev/null 2>&1 || preflight_fail "  \`dsh\` is on PATH but \`dsh --version\` failed.
+  Run it by hand and fix what it reports before installing."
+
+# The headless bundle path the profile PINS. It is a machine-level
+# precondition (the dataset repo's env/README documents how to stage it):
+# the same path has to resolve on the host and inside an evaluation unit, or
+# the dsh harness's rounds fail with a loader error nothing else explains.
+HEADLESS_PIN=$(sed -n 's/^[[:space:]]*headlessBundleDir:[[:space:]]*//p' "$SRC/cordis.patch.yml" | head -1)
+if [ -n "$HEADLESS_PIN" ] && [ ! -e "$HEADLESS_PIN" ]; then
+  preflight_fail "  missing: $HEADLESS_PIN
+  cordis.patch.yml pins this as the dsh harness's headless bundle, and the same
+  path must exist on this host AND inside the evaluation image. Stage it (two
+  symlinks on the host: the bundle and its runtime dependency closure) as the
+  dataset repository's env/README describes, then re-run."
+fi
+
 if [ -d "$DEST" ]; then
   if [ -z "$FRESH" ]; then
     echo "dsh-web-eval: $DEST already exists — re-run with --fresh to reinstall over it." >&2
@@ -95,7 +129,16 @@ if [ -d "$DEST" ]; then
 fi
 
 mkdir -p "$DEST"
-trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2' 0
+# The presets are replaced WHOLE (they are apparatus, not preference), so the
+# previous copy is kept beside them until the install succeeds: a failure
+# halfway through must not be the moment a person discovers their preset
+# directory is gone.
+PRESET_BACKUP="$DSH_HOME/.agent-presets/.web-eval-backup.$$"
+trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2
+  if [ -d "$PRESET_BACKUP" ]; then
+    echo "  the agent preset(s) were replaced; the previous copy is at $PRESET_BACKUP" >&2
+    echo "  restore with: rm -rf $DSH_HOME/.agent-presets/<id> && mv $PRESET_BACKUP/<id> $DSH_HOME/.agent-presets/" >&2
+  fi' 0
 for f in $PROFILE_FILES; do
   [ -e "$SRC/$f" ] && cp -R "$SRC/$f" "$DEST/$f"
 done
@@ -104,6 +147,10 @@ PRESET_ROOT="$DSH_HOME/.agent-presets"
 for id in $PRESET_IDS; do
   [ -d "$SRC/presets/$id" ] || { echo "dsh-web-eval: presets/$id missing from the clone" >&2; exit 1; }
   mkdir -p "$PRESET_ROOT"
+  if [ -d "$PRESET_ROOT/$id" ]; then
+    mkdir -p "$PRESET_BACKUP"
+    cp -R "$PRESET_ROOT/$id" "$PRESET_BACKUP/$id"
+  fi
   rm -rf "$PRESET_ROOT/$id"
   cp -R "$SRC/presets/$id" "$PRESET_ROOT/$id"
   echo "dsh-web-eval: installed agent preset \"$id\" into $PRESET_ROOT/$id"
@@ -181,5 +228,6 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 trap - 0
+[ -d "$PRESET_BACKUP" ] && rm -rf "$PRESET_BACKUP"
 echo "dsh-web-eval: installed into $DEST — $MEMBERS @khorsheed members, $ROWS patch rows composed"
 echo "next: sh $(cd "$(dirname "$0")/.." && pwd)/scripts/restart-into-web-eval.sh   # hand the running instance over to web-eval on the same port"

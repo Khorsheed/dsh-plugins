@@ -11,6 +11,8 @@ interface ProvideSpy {
   invariants?: { register: (pkg: string, install: unknown) => () => void }
   /** Deferred injection; this composition has no tools registry, so it never fires. */
   inject?: (deps: string[], callback: (ctx: unknown) => void) => void
+  /** The Remote face mounts through the plugin seam; this fake records nothing. */
+  plugin?: (plugin: unknown) => void
 }
 
 describe('the plugin surface', () => {
@@ -29,6 +31,8 @@ describe('the plugin surface', () => {
       // No tools registry in this composition: the deferred callback never
       // fires, and the plugin mounts anyway (degrade, don't explode).
       inject: () => {},
+      // The Remote face mounts through the plugin seam (nothing to record here).
+      plugin: () => {},
     }
     entry.apply(ctx as never)
     const service = ctx.provided.get('dshEval')

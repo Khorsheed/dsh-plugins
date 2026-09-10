@@ -935,7 +935,50 @@ describe('runPlan — infrastructure retry policy (decision 8)', () => {
     expect(retryRecord?.category).toBe('infrastructure')
     expect(retryRecord?.reason).toContain('budget')
   })
+
+  it('a cancelled run stops where it is: the live cell is cancelled, not retried, and no further cell starts', async () => {
+    const root = makeDatasetTree()
+    // Two cells so the second one proves a cancelled run starts nothing more.
+    const planPath = writePlan(root, { reps: 2 })
+    const localAgent = new FakeLocalAgent({ hangUntilCancel: true })
+    const mission = new FakeMission(join(root, 'mission'))
+    const controller = new AbortController()
+    // Cancel once the first cell's round is actually in flight — the shape a
+    // `job_kill` has.
+    const cancelWhenRunning = async (): Promise<void> => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (localAgent.pending.size > 0) { controller.abort(); return }
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+      throw new Error('no delegation ever started')
+    }
+    const [report] = await Promise.all([
+      runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), signal: controller.signal },
+        { datasets: fakeDatasets(root), mission, localAgent }),
+      cancelWhenRunning(),
+    ])
+
+    // The in-flight delegation was cancelled through the facade — the same
+    // lever the budget timer pulls.
+    expect(localAgent.pending.size).toBe(0)
+    // One cell reached a state; the other was never started.
+    expect(report.cells).toHaveLength(1)
+    const cell = report.cells[0] as { attempts: number; cancelled?: { reason: string }; finalState: string }
+    expect(cell.cancelled?.reason).toContain('cancelled')
+    // NOT retried: a cancel is not an infrastructure blip.
+    expect(cell.attempts).toBe(1)
+    // Left mid-stage, which is what `finalize` reads as `interrupted`.
+    expect(cell.finalState).not.toBe('archived')
+    expect(report.meta['cancelled']).toBe(true)
+    const annotations = orchestratorNs(mission, report.runId, cell2MissionId(report))
+    expect(annotations.some(entry => entry['kind'] === 'cell-cancelled')).toBe(true)
+  })
 })
+
+/** The mission id of the cell the cancelled run actually touched. */
+function cell2MissionId(report: { cells: Array<{ missionId: string }> }): string {
+  return report.cells[0]?.missionId as string
+}
 
 describe('runPlan — refusals before anything executes', () => {
   it('refuses without the three upstream services, naming what is missing (decision 12)', async () => {

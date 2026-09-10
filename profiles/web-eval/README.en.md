@@ -306,6 +306,18 @@ Explicitly out of scope for this period (I0 through I2): new surfaces, lab's mod
 
 The eval instance needs its own `$DSH_HOME`, sharing neither sessions nor credentials with the dev instance (environment isolation is a basic evaluation requirement; see the environment topology in `docs/ops.md`). I1 through I2 run the four CLIs directly on the host and need only node, git, and the CLIs themselves; from I3 on docker is required, and the checklist for the suite-level image, the local package mirror, the allowlist proxy, and credential volumes is in the "runtime environment" section of [docs/architecture.md](docs/architecture.md).
 
+**Both scripts begin with a machine-level preflight, before anything is
+written**: `dsh` on PATH, `dsh --version` runs, and the headless-bundle path
+`cordis.patch.yml` pins exists (read out of that file, not hardcoded). Any of
+them missing prints what is missing and exits 2, with `$DSH_HOME` and
+`$DSH_HOME/.agent-presets/eval` untouched — before this the first `dsh` call
+was at the BOTTOM of the script, so a machine without it replaced the preset
+directory whole and (in source mode) built and packed every member before
+failing on the last line. The preset directory is backed up to
+`$DSH_HOME/.agent-presets/.web-eval-backup.<pid>` before it is replaced, and
+the trap says where it is; `update.sh` backs up the pinned files it
+overwrites the same way, and had no trap at all until now.
+
 `install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 23 (distinct members — the dump repeats each member as a layer header plus entry rows, and tool-subagent appears only through its per-provider entries).
 
 **npm mode** (no arguments) — every member resolves from the npm registry. It works as-is once every member is published (I6); until then, the unpublished members fail with a registry 404 at install time (the authoritative list is [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md) in dsh-plugins):

@@ -215,20 +215,38 @@ agent 在一次实验里只出现两次：规划期起草、分析期读结论�
 
 工具注册走**延迟注入**（`ctx.inject(['tools'], …)`）而不是 apply 期的 `ctx.get('tools')` 探测：探测会和工具注册表自己的挂载顺序赛跑并且输，工具静默地一个都注册不上，还没有任何东西会说（room 与 worktrees 都踩过并修过同一处）。延迟注入在注册表出现时才触发，在没有注册表的组合里永不触发——那样的组合保留 slash、CLI 与服务面，绝不炸启动。`tool:eval` 提示词段同理走 `systemPrompt` 的延迟注入。
 
-## slash 与 CLI
+## 发起一次 run：三个入口，一条取消路径
+
+run 是**后台 job**，不是一句回复。`/eval run` 把它注册成一个 `eval-run` job 后**立即返回** job id 与 run id：轮次结束、会话关掉、浏览器标签页关掉，run 照跑——它此前活在发起那一轮里，发起端一断整个 run 就没了（I3·T22 第 5 步）。
+
+| 入口 | 用在哪 | 形态 |
+|---|---|---|
+| `/eval run <plan.json>` | 人在实例里发起（缺省） | 起 job，立刻回 `job <id> · run <id>`；日志用 `job_output` 读 |
+| `/eval run <plan.json> --wait` | 交互式的短跑（`--dry-run`、一格的 plan） | 老形态：轮次内等到跑完再回复，逐字节与本改动之前相同 |
+| `dsh-eval run <plan.json> --instance <url>` | CI（没有浏览器） | 经实例的 Remote 面起同一个 job，跟着日志跑到结束，退出码即 job 结局 |
+
+- **取消只有一条路**：`job_kill <jobId>`。它触发 job 的 cancel → run 的 `AbortSignal` → 与每格预算计时器同一条杠杆（对每个在跑的委派 `localAgent.cancel`）。被取消时正在跑的格子**不重试、不强推状态**，停在当时那一步——`finalize` 因此把它归入 `interrupted`（T23 的分类）；一格都还没开的格子留在 `pending`，那是 `not-started`，两件不同的事。run 自己在 `run.meta.cancelled` 记一笔，bundle 照常导出（被取消的格子也是证据）。
+- **父会话**：委派要的是**活的 agent**，不只是一条会话记录（家族门面 `requireLiveParent` 的要求）。`/eval run` 起的 job 用发起会话作父（它的 agent 活过标签页），发起会话没有活 agent 时（Remote/CI 就没有）job 自己开一条会话作父，run 结束时关掉。回复里会说明用的是哪一种。
+- **没挂 jobs 服务的组合**：不拒绝，退回同步等待，并在回复**首行**写明这一轮的等待意味着什么。
 
 ```sh
-/eval run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N]
+/eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N]
                       [--only id,id] [--max-cells N] [--ignore-readiness]
 /eval finalize <runId>
 ```
 
-run 的发起是人的动作：在 web-eval 实例的会话里执行，该会话即 originSession 与所有委派的父会话。不注册任何 run 类模型工具——写类动词归编排器服务面与人。
+run 的发起仍是人的动作，不注册任何 run 类模型工具——写类动词归编排器服务面与人。模型面能看到的是 job：`job_list` / `job_output` / `job_kill`（评测预设里已经有这三个）。
+
+## slash 与 CLI
 
 ```sh
 dsh-eval validate <plan.json>             # 校验 plan；报告 JSON 走 stdout
-dsh-eval run <plan.json> --dry-run        # 离线彩排：校验 + 模板 + 矩阵 + 顺序；不带 --dry-run 一律拒绝
+dsh-eval run <plan.json> --dry-run        # 离线彩排：校验 + 模板 + 矩阵 + 顺序
                                           #   [--only id,id] [--max-cells N] 彩排一个子集
+dsh-eval run <plan.json> --instance URL   # 在一台**在跑的实例**上起 run 并跟日志到结束（CI 入口）
+                                          #   [--token T]（或 $DSH_TOKEN）带实例的启动 token
+                                          #   [--no-follow] 只打印 job/run id 就返回
+                                          #   plan 路径按**实例上**的路径解析；停它用实例上的 job_kill
 dsh-eval finalize <runId>                 # 把 archived 的格子走一遍释放闸
                                           #   [--data-dir DIR] [--mission-cli PATH]；以子进程调 dsh-mission CLI
 dsh-eval template <manifest.yml> [--stages a,b]  # 打印生成的 run 模板
@@ -236,7 +254,9 @@ dsh-eval conditions hash <condition.json> # 打印 { id, sha, warnings }
 dsh-eval report <bundleDir> [--out DIR]   # 出 results.jsonl + summary.md；摘要 JSON 走 stdout
 ```
 
-数据走 stdout JSON，诊断走 stderr；退出码 0 ok / 1 失败 / 2 用法错误（与 `dsh-lab` 一致）。CLI 直连内核，不需要宿主在跑——脚本场景与已挂载插件行为完全一致；进程外没有活的父 Agent，所以 CLI 的 `run` 只做 `--dry-run`。`finalize` 不需要父 Agent、只需要 ledger，所以它在进程外以子进程调 `dsh-mission` CLI 照常工作；任一格闸拒绝即退出码 1。
+plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统一展开 `~`：slash 参数没经过 shell，CLI 参数为了活过 shell 常被引号裹住，两边都到不了 `$HOME` 展开——所以展开放在三个入口共用的那一层，而不是各记各的。
+
+数据走 stdout JSON，诊断走 stderr；退出码 0 ok / 1 失败 / 2 用法错误（与 `dsh-lab` 一致）。CLI 直连内核，不需要宿主在跑——脚本场景与已挂载插件行为完全一致。进程外没有活的父 Agent、也没有 datasets/mission/localAgent 三个服务，所以**不带 `--instance` 的 `run` 只做 `--dry-run`**；`--instance` 时 CLI 不再假装自己是编排器，而是做 CI 真正需要的那件事：当调用方。它走的是实例普通的 Remote RPC（`POST <base>/api/dshEval/<method>`，`{args:{…}}` 进、`{ok,value}` 出，token 走 `?token=`），四个动词与 slash 用的是同一套 job 层。`finalize` 不需要父 Agent、只需要 ledger，所以它在进程外以子进程调 `dsh-mission` CLI 照常工作；任一格闸拒绝即退出码 1。
 
 ## 哈希规则
 

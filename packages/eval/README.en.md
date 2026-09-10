@@ -215,20 +215,58 @@ Configuration is `tools: 'all' | 'none'` (default `all`). There is no finer grou
 
 Tools join through **deferred injection** (`ctx.inject(['tools'], …)`), not an apply-time `ctx.get('tools')` probe: the probe races the tool registry's own mount order and loses, so the tools silently never register and nothing says so (room and worktrees each shipped this same fix). Deferred injection fires when the registry appears and never fires in a composition without one — such a composition keeps the slash, CLI, and service faces and never fails boot. The `tool:eval` prompt section rides through the same deferred door on `systemPrompt`.
 
-## slash and CLI
+## Starting a run: three doors, one cancel path
+
+A run is a BACKGROUND JOB, not a reply. `/eval run` registers it as an
+`eval-run` job and answers IMMEDIATELY with a job id and a run id: the turn
+ends, the session closes, the browser tab closes — the run keeps going. It
+used to live inside the turn that started it, so the initiating surface going
+away took the whole run with it (I3·T22 step 5).
+
+| Door | For | Shape |
+|---|---|---|
+| `/eval run <plan.json>` | a person, in the instance (the default) | starts the job and replies `job <id> · run <id>`; read the log with `job_output` |
+| `/eval run <plan.json> --wait` | short interactive runs (`--dry-run`, a one-cell plan) | the old shape: the reply comes when the run finishes, byte for byte what it was before this change |
+| `dsh-eval run <plan.json> --instance <url>` | CI (no browser) | starts the same job through the instance's Remote face, follows the log to the end, exits with the job's verdict |
+
+- **There is exactly one cancel path**: `job_kill <jobId>`. It calls the job's
+  cancel → the run's `AbortSignal` → the same lever the per-cell budget timer
+  pulls (`localAgent.cancel` on every in-flight delegation). A cell the cancel
+  caught is NOT retried and NOT forced anywhere: it stays in the state it was
+  in, which is what makes `finalize` count it `interrupted` (T23's category);
+  a cell that never started stays `pending`, which is `not-started` — a
+  different fact. The run records `run.meta.cancelled`, and the bundle is
+  still exported (a cancelled run's cells are evidence).
+- **The parent session**: a delegation needs a LIVE AGENT, not merely a
+  session record (the family facade's `requireLiveParent`). A job started by
+  `/eval run` parents to the calling session — its agent outlives the tab —
+  and a run started without one (the Remote/CI door has no calling session)
+  opens its own session for the delegations and closes it when the run ends.
+  The reply says which of the two happened.
+- **A composition without a jobs service** is not refused: the run is waited
+  on in the turn, and the FIRST line of the reply says what that means.
 
 ```sh
-/eval run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N]
+/eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N]
                       [--only id,id] [--max-cells N] [--ignore-readiness]
 /eval finalize <runId>
 ```
 
-Starting a run is a human action: execute it in a session of the web-eval instance and that session becomes the originSession and the parent of every delegation. No run-class model tool is registered — the write verbs belong to the orchestrator's service face and to people.
+Starting a run is still a human action, and no run-class model tool is
+registered — the write verbs belong to the orchestrator's service face and to
+people. What the model can see is the JOB: `job_list` / `job_output` /
+`job_kill`, all three already in the evaluation preset.
+
+## slash and CLI
 
 ```sh
 dsh-eval validate <plan.json>             # validate a plan; JSON report on stdout
-dsh-eval run <plan.json> --dry-run        # offline rehearsal: validate + template + matrix + order; anything else is refused
+dsh-eval run <plan.json> --dry-run        # offline rehearsal: validate + template + matrix + order
                                           #   [--only id,id] [--max-cells N] rehearse a subset
+dsh-eval run <plan.json> --instance URL   # start a run ON a running instance and follow its log (the CI door)
+                                          #   [--token T] (or $DSH_TOKEN) carries the instance's launch token
+                                          #   [--no-follow] prints the job and run ids and returns
+                                          #   the plan path resolves ON THE INSTANCE; stop it with job_kill there
 dsh-eval finalize <runId>                 # walk the archived cells through the release gate
                                           #   [--data-dir DIR] [--mission-cli PATH]; drives the dsh-mission CLI
 dsh-eval template <manifest.yml> [--stages a,b]  # print the generated run template
@@ -236,7 +274,11 @@ dsh-eval conditions hash <condition.json> # prints { id, sha, warnings }
 dsh-eval report <bundleDir> [--out DIR]   # emit results.jsonl + summary.md; JSON summary on stdout
 ```
 
-Data goes to stdout as JSON, diagnostics to stderr; exit codes 0 ok / 1 failure / 2 usage (matching `dsh-lab`). The CLI builds the kernel directly and needs no host — scripts and mounted plugins behave identically; there is no live parent agent outside a session, so the CLI's `run` is `--dry-run` only. `finalize` needs no parent agent — only the ledger — so it works outside a host by driving the `dsh-mission` CLI in a child process, and exits 1 when any cell's gate refused.
+Plan paths and `--out` (and `report`'s bundle path) expand `~` at the service
+boundary, so all three faces get one rule: a slash argument never saw a shell,
+and a CLI argument quoted to survive one did not either.
+
+Data goes to stdout as JSON, diagnostics to stderr; exit codes 0 ok / 1 failure / 2 usage (matching `dsh-lab`). The CLI builds the kernel directly and needs no host — scripts and mounted plugins behave identically. Outside an instance there is no live parent agent and none of the three upstream services, so `run` WITHOUT `--instance` is `--dry-run` only; with it the CLI stops pretending to be an orchestrator and becomes what a pipeline needs — a caller. The transport is the instance's ordinary Remote RPC (`POST <base>/api/dshEval/<method>`, `{args:{…}}` in, `{ok,value}` out, token as `?token=`), and its four verbs are the same job layer the slash face uses. `finalize` needs no parent agent — only the ledger — so it works outside a host by driving the `dsh-mission` CLI in a child process, and exits 1 when any cell's gate refused.
 
 ## Hash rules
 

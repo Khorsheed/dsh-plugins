@@ -43,6 +43,9 @@ function toolsCtx(registered: RegisteredTool[], services: Record<string, unknown
     // Deferred injection, as cordis does it: the callback fires only when
     // every named service exists, and never otherwise.
     inject: (_deps: string[], _callback: (injected: unknown) => void): void => {},
+    // The Remote face mounts through the plugin seam; this composition
+    // records nothing about it.
+    plugin: (_plugin: unknown): void => {},
   }
   ctx.inject = (deps, callback) => {
     if (deps.every(dep => get(dep) !== undefined)) callback(ctx)

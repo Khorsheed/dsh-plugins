@@ -16,7 +16,11 @@
  * @module @khorsheed/dsh-eval
  */
 import type { Context } from '@deepseek-ai/cordis'
+// Type-only: pulls the jobs Context merge in so the controller attach below
+// type-checks; the service itself is deferred-injected, never required.
+import type {} from '@deepseek-ai/dsh-jobs'
 import z from '@deepseek-ai/schemastery'
+import { EvalRemoteService } from './remote.ts'
 import { EvalService } from './service.ts'
 import { registerEvalSlash } from './slash.ts'
 import { registerEvalTools } from './tools.ts'
@@ -71,6 +75,22 @@ export function apply(ctx: Context, config: EvalConfig = {}): void {
   const service = new EvalService(ctx)
   ctx.provide('dshEval', service)
   registerEvalSlash(ctx, service)
+  // The Typert Remote face (wire namespace `dshEval`): start / watch / stop a
+  // run from outside a browser — the CI door. It mounts through the plugin
+  // seam like every other Remote, so a composition without the Typert
+  // gateway simply never registers it.
+  ctx.plugin(EvalRemoteService)
+  // A producer may register work only while a job CONTROLLER serves the
+  // owner, and a run's job is deliberately UNOWNED (it has to outlive the
+  // session that started it), which only a controller attached at this
+  // scope serves. Attaching one here is not a formality: this package IS the
+  // controller for its runs — `runJobStatus` / `runJobOutput` /
+  // `runJobCancel` on the service, and the four Remote verbs, are its read
+  // and stop surface. Deferred, so a composition without a job registry
+  // simply never attaches one and `/eval run` waits in the turn instead.
+  ctx.inject(['jobs'], (jobsCtx) => {
+    jobsCtx.effect(() => jobsCtx.jobs.attachController('eval-run'), 'eval: job controller')
+  })
   if (config.tools === 'none') return
   // Deferred injection, NOT an apply-time `ctx.get('tools')` probe: the probe
   // races the tools registry's own mount order on a real composition tree and

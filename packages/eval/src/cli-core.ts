@@ -13,6 +13,7 @@ import { EvalService } from './service.ts'
 import { CONDITION_ID_RE } from './schema.ts'
 import { finalizeRun } from './finalize.ts'
 import { missionCliFace } from './mission-cli.ts'
+import { runOnInstance } from './instance.ts'
 
 /** Injected output channels. */
 export interface CliIo {
@@ -30,6 +31,13 @@ const USAGE = `dsh-eval <verb> [options]
                                     declarations, locks, stage schemas.
                                     Report as stdout JSON; exit 0 when valid
                                     (warnings allowed), 1 when errors remain.
+  run <plan.json> --instance URL    Start a run ON a running instance through its
+                  [--token T]       Remote face and follow the log to the end: the CI
+                  [--no-follow]     door (no browser needed). The plan path is resolved
+                                    ON THE INSTANCE. --token (or \$DSH_TOKEN) carries the
+                                    instance's launch token; --no-follow prints the job
+                                    and run ids and returns. Stopping it is job_kill on
+                                    the instance — the one cancel path there is.
   run <plan.json> --dry-run         Offline rehearsal: validate, generate the
                                     run template, expand the matrix, print the
                                     seeded execution order. [--only id,id] and
@@ -117,6 +125,23 @@ function splitOptions(argv: readonly string[], valueFlags: readonly string[]): {
 }
 
 /** The condition id is the declaration's file name. */
+/**
+ * One numeric option, or undefined when absent.
+ * @param values - the parsed value flags.
+ * @param flag - the flag name.
+ * @returns the number.
+ * @throws {@link UsageError} when the value is not a positive integer.
+ */
+function numberOption(values: Map<string, string[]>, flag: string): number | undefined {
+  const raw = values.get(flag)?.[0]
+  if (raw === undefined) return undefined
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 0) {
+    throw new UsageError(`${flag} wants a non-negative integer, got ${JSON.stringify(raw)}`)
+  }
+  return value
+}
+
 function conditionIdFromPath(path: string): string {
   const id = basename(path).replace(/\.json$/, '')
   if (!CONDITION_ID_RE.test(id)) {
@@ -156,15 +181,56 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       case 'run': {
         const [planPath, ...extra] = rest
         if (planPath === undefined) throw new UsageError('run wants a plan path')
-        const { values, switches, leftovers } = splitOptions(extra, ['--only', '--max-cells'])
+        const { values, switches, leftovers } = splitOptions(extra, [
+          '--only', '--max-cells', '--instance', '--token', '--concurrency', '--retries', '--out',
+        ])
         const dryRun = switches.has('--dry-run')
         switches.delete('--dry-run')
+        const instance = values.get('--instance')?.[0]
+        const noFollow = switches.has('--no-follow')
+        switches.delete('--no-follow')
+        const finalize = switches.has('--finalize')
+        switches.delete('--finalize')
+        const ignoreReadiness = switches.has('--ignore-readiness')
+        switches.delete('--ignore-readiness')
         const unknown = [...switches, ...leftovers]
         if (unknown.length > 0) {
-          throw new UsageError(`unexpected argument(s) for run: ${unknown.join(' ')} — the CLI runs --dry-run only (a live run starts from a session: /eval run)`)
+          throw new UsageError(`unexpected argument(s) for run: ${unknown.join(' ')}`)
+        }
+        if (instance !== undefined) {
+          // The instance path: this process is a CALLER, not an orchestrator.
+          // The plan path is resolved on the INSTANCE (it is the machine that
+          // holds the dataset repository), so it is passed through verbatim.
+          const request = {
+            plan: planPath,
+            ...(dryRun ? { dryRun: true } : {}),
+            ...(finalize ? { finalize: true } : {}),
+            ...(ignoreReadiness ? { ignoreReadiness: true } : {}),
+            ...(values.get('--out')?.[0] === undefined ? {} : { out: values.get('--out')?.[0] as string }),
+            ...(numberOption(values, '--concurrency') === undefined ? {} : { concurrency: numberOption(values, '--concurrency') as number }),
+            ...(numberOption(values, '--retries') === undefined ? {} : { retries: numberOption(values, '--retries') as number }),
+            ...(numberOption(values, '--max-cells') === undefined ? {} : { maxCells: numberOption(values, '--max-cells') as number }),
+            ...((values.get('--only') ?? []).flatMap(value => value.split(',')).map(id => id.trim()).filter(id => id !== '').length > 0
+              ? { only: (values.get('--only') ?? []).flatMap(value => value.split(',')).map(id => id.trim()).filter(id => id !== '') }
+              : {}),
+          }
+          const token = values.get('--token')?.[0] ?? process.env['DSH_TOKEN']
+          try {
+            const outcome = await runOnInstance(
+              { baseUrl: instance, ...(token === undefined ? {} : { token }) },
+              request,
+              { write: line => { io.stdout(`${line}\n`) } },
+              { follow: !noFollow },
+            )
+            io.stderr(`dsh-eval: ${outcome.status}${outcome.detail === undefined ? '' : ` — ${outcome.detail}`}\n`)
+            return outcome.status === 'completed' || outcome.status === 'running' ? 0 : 1
+          } catch (error) {
+            io.stderr(`dsh-eval: ${error instanceof Error ? error.message : String(error)}\n`)
+            return 1
+          }
         }
         if (!dryRun) {
-          io.stderr(`dsh-eval: refusing: a run starts from a live session (/eval run) — outside one there is no parent agent to delegate through. Re-run with --dry-run for the offline rehearsal.\n`)
+          io.stderr(`dsh-eval: refusing: a run starts from a live session (/eval run), or from a running instance (--instance <url>) — outside both there is no parent agent to delegate through. Re-run with --dry-run for the offline rehearsal.\n`)
           return 1
         }
         const only = (values.get('--only') ?? []).flatMap(value => value.split(',')).map(id => id.trim()).filter(id => id !== '')
