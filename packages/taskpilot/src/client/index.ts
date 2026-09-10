@@ -1,70 +1,64 @@
 /**
- * TaskPilot browser half: the dock pills and the job detail drawer.
+ * TaskPilot browser half: the dock pills and the job detail right-sidebar tab.
  *
- * renders). Data flows entirely through product channels — the `useSessions`
- * mirrors for live jobs/subagents, a capability-probed history loader for the
- * trail (./history-loader.ts: alpha's generated `remote.session.follow`/`page`
- * when mounted — read via `ctx.get('remote.session')` since the namespace is
- * absent on rc.2 and must not sit in the inject list — rc.2's
- * `connection.api.sessions.history` otherwise), and `remote.commands.execute`
- * for the two verbs — so the bundle adds no RPC surface and touches no
- * product code. Uninstalling the bundle removes both registrations with their
- * effects.
+ * Data flows entirely through product channels — the `useSessions` mirrors for
+ * live jobs/subagents, a capability-probed history loader for the trail
+ * (./history-loader.ts: the generated `remote.session.follow`/`page` when
+ * mounted — read via `ctx.get('remote.session')` since the namespace may be
+ * absent and must not sit in the inject list — `connection.api.sessions.history`
+ * otherwise), and `remote.commands.execute` for the two verbs — so the bundle
+ * adds no RPC surface and touches no product code. Uninstalling the bundle
+ * removes every registration with its effects.
+ *
+ * The detail view is a page-type right-sidebar tab, registered through the
+ * public two-stage path (./definition.ts into `ctx.sidebarRightTabs`, the body
+ * and chip title into the keyed `sidebar.right.pane.tab(.title)` seats under
+ * the same id). The dock's detail entry opens it with
+ * `ctx.sidebarRight.openTab(TASKPILOT_KIND, { params: { jobId } })`; pages
+ * deduplicate, so picking another job re-navigates the one tab.
  *
  * @module dsh-taskpilot/client
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-// Type-only: pulls the Context merges (slots/sessions/remote/locale) and the
-// SlotMap rows ('conversation.input.dock' from ui-conversation, 'shell.overlay'
-// from ui-layout) into the program so the registrations type.
+// Type-only: pulls the Context merges (slots/sessions/remote/locale plus
+// sidebarRight/sidebarRightTabs) and the SlotMap rows ('conversation.input.dock'
+// from ui-conversation, 'sidebar.right.pane.tab(.title)' from ui-sidebar-right)
+// into the program so the registrations type.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-commands/remote'
-import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-import { en, NS, zh, type TaskPilotLocaleKey } from './locales.ts'
-import { createDrawerStore, type DrawerActions } from './drawer-store.ts'
+import { en, NS, zh } from './locales.ts'
 import { TaskPilotDock, type TaskPilotDockInjected } from './TaskPilotDock.tsx'
-import { JobDrawer, type JobDrawerInjected } from './JobDrawer.tsx'
+import { JobTab, type JobTabInjected } from './JobTab.tsx'
+import { JobTabTitle } from './JobTabTitle.tsx'
+import { TASKPILOT_KIND, TASKPILOT_TAB_ID, taskpilotDefinition } from './definition.ts'
 import { createHistoryLoader } from './history-loader.ts'
 import { pollActiveDelegations } from './active-delegations.ts'
 import { renderTaskPilotCommand } from '../types.ts'
 
-/** The dock/drawer copy owns its namespace, merged into the locale map. */
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface LocaleNamespaceMap {
-    /** TaskPilot pill and drawer copy. */
-    taskpilot: TaskPilotLocaleKey
-  }
-}
-
-/** Required services: slots, the session runtime, the command remote, the wire, and locale. */
-export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'connection', 'locale']
+/** Required services: slots, the session runtime, the command remote, the wire, copy, and the right-sidebar faces. */
+export const inject = [
+  'slots', 'sessions', 'remote', 'remote.commands', 'connection', 'locale',
+  'sidebarRight', 'sidebarRightTabs',
+]
 
 export function apply(ctx: Context): void {
+  const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'taskpilot: dictionaries')
+  ctx.effect(() => ctx.sidebarRightTabs.register(taskpilotDefinition(t)), 'taskpilot: tab type')
 
-  // One handle shared by the dock (opens) and the drawer (renders).
-  const drawer = createDrawerStore()
-
-  // Capability-probed at apply time: alpha's session remote namespace when
-  // mounted, rc.2's connection api otherwise (see ./history-loader.ts). The
+  // Capability-probed at apply time: the session remote namespace when
+  // mounted, the connection api otherwise (see ./history-loader.ts). The
   // namespace comes through ctx.get, not the ctx.remote proxy: declaring
-  // 'remote.session' in inject would pend the plugin on rc.2, and the proxy
-  // throws on undeclared sub-service access.
+  // 'remote.session' in inject would pend the plugin on a host without it,
+  // and the proxy throws on undeclared sub-service access.
   const loadHistory = createHistoryLoader(ctx.get('remote.session'), ctx.get('connection'))
-
-  // The drawer owns the store under the root-scope slot (one handle, one
-  // scope). Its registered actions are captured into the apply closure; the
-  // dock's openJob verb invokes them, so the two surfaces stay in lockstep
-  // without mounting the handle twice.
-  let drawerActions: BoundActions<ReturnType<typeof createDrawerStore>> | undefined
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
@@ -81,7 +75,9 @@ export function apply(ctx: Context): void {
           : { kind: 'interrupt-subagent' as const, childId, parentId }
         return ctx.remote.commands.execute(sessionId, renderTaskPilotCommand(command), [])
       },
-      openJob: (jobId) => { drawerActions?.openJob(sessionId, jobId) },
+      // The dock lives in the mounted session's conversation, so the
+      // controller's mounted-seat aim and the pill's session coincide.
+      openJob: (jobId) => { ctx.sidebarRight.openTab(TASKPILOT_KIND, { params: { jobId } }) },
       openSession: (id) => { (ctx.sessions as ISessions).open(id) },
       // Duck-typed read of the local-agent family gateway: resolves [] on an
       // absent channel or call error, so the dock's second running source is
@@ -90,18 +86,12 @@ export function apply(ctx: Context): void {
     }),
   }, TaskPilotDock))
 
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'taskpilot-drawer',
-    order: 120,
-    locale: NS,
-    store: drawer,
-    inject: (actions): JobDrawerInjected => {
-      drawerActions = actions
-      return {
-        loadHistory,
-        close: () => { actions.close() },
-      }
-    },
-  }, JobDrawer))
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+    { name: 'sidebar.right.pane.tab', key: TASKPILOT_TAB_ID, locale: NS, inject: (): JobTabInjected => ({ loadHistory }) },
+    JobTab,
+  ))
+  ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
+    { name: 'sidebar.right.pane.tab.title', key: TASKPILOT_TAB_ID },
+    JobTabTitle,
+  ))
 }

@@ -6,7 +6,7 @@
  * session summaries (the same index the header tree counts), so counts and
  * rows stay consistent with the title by construction. Jobs tick once per
  * second while a popover is open; each row carries its stop/interrupt verb,
- * the detail drawer entry, and the session jump target. A subagent row's
+ * the detail tab entry, and the session jump target. A subagent row's
  * running state is dual-source: the official summary flag, or membership in
  * the polled local-agent delegation set (one-shot external CLI rows, which
  * never carry a live agent). The delegation poll runs every 1.5s while

@@ -3,9 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { JobView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { JobDrawer, type HistoryPage } from '../src/client/JobDrawer.tsx'
-import { createDrawerStore } from '../src/client/drawer-store.ts'
-import type { TrajectoryEntry } from '../src/types.ts'
+import { JobTab, type HistoryPage } from '../src/client/JobTab.tsx'
+import { taskpilotDefinition, TASKPILOT_KIND, TASKPILOT_TAB_ID } from '../src/client/definition.ts'
 import { t } from './helpers.ts'
 
 const SESSION = 's1' as SessionId
@@ -53,35 +52,58 @@ function historyPage(): HistoryPage {
   }
 }
 
-function drawerProps(overrides: Partial<Parameters<typeof JobDrawer>[0]> = {}) {
-  const store = createDrawerStore()
-  store.actions.openJob(SESSION, 'bash-1')
-  const empty = { jobsBySession: {}, subagentsByParent: {} }
-  const base = {
-    useSessions: (selector: (state: unknown) => unknown) => selector(empty),
-    useStore: (selector: (state: unknown) => unknown) => selector(store.get()),
-    loadHistory: vi.fn(async () => historyPage()),
-    close: vi.fn(),
-    t,
-    actions: {},
-  }
-  return { ...base, ...overrides }
+/** A useTabInfo stub: one page tab navigated to the given job. */
+function useTabInfo(jobId: string | undefined, revision = 1) {
+  return () => ({
+    sidebar: { expanded: true, fullscreen: false },
+    panel: { id: 'pane-1' },
+    tab: {
+      id: 'tab-1',
+      kind: TASKPILOT_KIND,
+      contentId: `sidebar://${TASKPILOT_KIND}`,
+      title: 'Job details',
+      visible: true,
+      navigation: {
+        address: `sidebar://${TASKPILOT_KIND}`,
+        params: jobId === undefined ? undefined : { jobId },
+        revision,
+      },
+      signal: new AbortController().signal,
+      actions: { openResource: () => {}, openTab: () => {}, close: () => {} },
+    },
+  })
 }
 
-describe('JobDrawer', () => {
-  it('renders nothing while closed', () => {
-    const store = createDrawerStore()
-    const { container } = render(<JobDrawer {...drawerProps({
-      useStore: (selector) => selector(store.get()),
-    })} />)
-    expect(container.firstChild).toBeNull()
-  })
+function tabProps(overrides: Record<string, unknown> = {}) {
+  const empty = { jobsBySession: {}, subagentsByParent: {} }
+  return {
+    sessionId: SESSION,
+    useSessions: (selector: (state: unknown) => unknown) => selector(empty),
+    useTabInfo: useTabInfo('bash-1'),
+    loadHistory: vi.fn(async () => historyPage()),
+    t,
+    ...overrides,
+  }
+}
 
+describe('taskpilotDefinition', () => {
+  it('registers as a page type: no address patterns, extension band by default', () => {
+    const definition = taskpilotDefinition(t as never)
+    expect(definition.id).toBe(TASKPILOT_TAB_ID)
+    expect(definition.kind).toBe(TASKPILOT_KIND)
+    expect(definition.patterns).toBeUndefined()
+    expect(definition.priority).toBeUndefined()
+    expect(definition.guide).toBeUndefined()
+    expect(definition.title('sidebar://taskpilot')).toBe('Job details')
+  })
+})
+
+describe('JobTab', () => {
   it('shows metadata and folds the trail rows from history', async () => {
-    const props = drawerProps({
-      useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job()] } }),
+    const props = tabProps({
+      useSessions: (selector: (state: unknown) => unknown) => selector({ jobsBySession: { [SESSION]: [job()] } }),
     })
-    render(<JobDrawer {...props} />)
+    render(<JobTab {...props as never} />)
     // Metadata rows render immediately.
     expect(screen.getByText('pnpm build')).toBeTruthy()
     expect(screen.getByText('bash')).toBeTruthy()
@@ -91,50 +113,32 @@ describe('JobDrawer', () => {
     expect(props.loadHistory).toHaveBeenCalledWith(SESSION, undefined, 200)
   })
 
+  it('follows re-navigation: new params reload the trail', async () => {
+    const props = tabProps()
+    const { rerender } = render(<JobTab {...props as never} />)
+    await waitFor(() => expect(props.loadHistory).toHaveBeenCalledTimes(1))
+    rerender(<JobTab {...{ ...props, useTabInfo: useTabInfo('bash-2', 2) } as never} />)
+    await waitFor(() => expect(props.loadHistory).toHaveBeenCalledTimes(2))
+  })
+
   it('expands a trail row to show its full text', async () => {
-    render(<JobDrawer {...drawerProps({
-      useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job()] } }),
-    })} />)
+    render(<JobTab {...tabProps({
+      useSessions: (selector: (state: unknown) => unknown) => selector({ jobsBySession: { [SESSION]: [job()] } }),
+    }) as never} />)
     await waitFor(() => expect(screen.getAllByText(/job_output bash-1/).length).toBeGreaterThan(0))
     fireEvent.click(screen.getAllByText(/job_output bash-1/)[0] as Element)
     await waitFor(() => expect(screen.getByText(/compiling\.\.\./)).toBeTruthy())
   })
 
-  it('closes through the injected close verb', () => {
-    const close = vi.fn()
-    render(<JobDrawer {...drawerProps({ close })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(close).toHaveBeenCalled()
-  })
-
-  it('marks the document while open and clears it on close', () => {
-    const originalWidth = window.innerWidth
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
-    const { unmount } = render(<JobDrawer {...drawerProps()} />)
-    expect(document.documentElement.hasAttribute('data-taskpilot-drawer-open')).toBe(true)
-    expect(document.documentElement.style.getPropertyValue('--dsh-taskpilot-drawer-w')).toBe('520px')
-    unmount()
-    expect(document.documentElement.hasAttribute('data-taskpilot-drawer-open')).toBe(false)
-    expect(document.documentElement.style.getPropertyValue('--dsh-taskpilot-drawer-w')).toBe('')
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
-  })
-
-  it('keeps the document unmarked while closed', () => {
-    const store = createDrawerStore()
-    render(<JobDrawer {...drawerProps({
-      useStore: (selector) => selector(store.get()),
-    })} />)
-    expect(document.documentElement.hasAttribute('data-taskpilot-drawer-open')).toBe(false)
-  })
-
   it('renders an empty state when history carries no entries for the job', async () => {
-    const props = drawerProps({
-      loadHistory: vi.fn(async () => ({ hasMore: false, events: [] })),
-    })
-    render(<JobDrawer {...props} />)
+    render(<JobTab {...tabProps({ loadHistory: vi.fn(async () => ({ hasMore: false, events: [] })) }) as never} />)
     await waitFor(() => expect(screen.getByText(/No log entries/)).toBeTruthy())
   })
-})
 
-// Keep the TrajectoryEntry import referenced for type-level coverage.
-export type { TrajectoryEntry }
+  it('renders the empty state without loading when the tab was never navigated to a job', () => {
+    const props = tabProps({ useTabInfo: useTabInfo(undefined, 0) })
+    render(<JobTab {...props as never} />)
+    expect(screen.getByText(/No log entries/)).toBeTruthy()
+    expect(props.loadHistory).not.toHaveBeenCalled()
+  })
+})

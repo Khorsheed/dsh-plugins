@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-taskpilot",
-  "description": "TaskPilot — dock pills above the composer for background jobs and subagents, with stop/interrupt verbs, live duration and token readouts, and a job detail drawer. A zero-intrusion community bundle for DeepSeek Harness.",
+  "description": "TaskPilot — dock pills above the composer for background jobs and subagents, with stop/interrupt verbs, live duration and token readouts, and a job detail right-sidebar tab. A zero-intrusion community bundle for DeepSeek Harness.",
   "version": "0.2.0",
   "repository": {
     "type": "git",
@@ -50,12 +50,13 @@
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-commands"
+        "@deepseek-ai/dsh-commands",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ]
     },
     "compat": {
-      "minHost": "0.1.2-rc.1",
-      "verifiedHost": "0.1.2-rc.1"
+      "minHost": "0.1.5-rc.1",
+      "verifiedHost": "0.1.5-rc.1"
     }
   },
   "peerDependencies": {
@@ -64,8 +65,8 @@
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
@@ -76,8 +77,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh-api-session-controller": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-dockkit": "0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.1.5-rc.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",

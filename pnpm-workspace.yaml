@@ -85,6 +85,8 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-util-values@0.1.2-rc.1'
   - '@deepseek-ai/dsh-util-workspace-path@0.1.2-rc.1'
   - '@deepseek-ai/dsh-workspace@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-client-ui-dockkit@0.1.5-rc.1'
+  - '@deepseek-ai/dsh-client-ui-sidebar-right@0.1.5-rc.1'
 
 overrides:
   '@deepseek-ai/dsh-agent': '0.1.2-rc.1'

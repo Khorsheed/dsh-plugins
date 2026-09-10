@@ -1,7 +1,8 @@
 /**
  * TaskPilot locale dictionaries. Product copy is Chinese; English is the
- * community default. Keys are namespaced by surface so the drawer and the
- * dock stay independent.
+ * community default. Keys are namespaced by surface so the detail tab and the
+ * dock stay independent (the `drawer.*` prefix predates the right-sidebar tab
+ * migration and stays for dictionary stability).
  *
  * @module dsh-taskpilot/client/locales
  */
@@ -105,3 +106,11 @@ export const zh = {
 export type TaskPilotLocale = typeof zh
 /** The namespace key union, merged into the slot locale map. */
 export type TaskPilotLocaleKey = keyof typeof zh
+
+/** The dock/tab copy owns its namespace, merged into the locale map. */
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** TaskPilot pill and job detail tab copy. */
+    taskpilot: TaskPilotLocaleKey
+  }
+}
