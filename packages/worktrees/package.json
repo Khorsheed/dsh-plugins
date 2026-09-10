@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-worktrees",
-  "description": "Worktree status visibility: a per-session repo/worktree badge in the session header plus a right-sidebar worktrees tab (the session's own uncommitted changes with diffs, IDE-style repository commit log, full repo browse) and a local-files browser, over a Typert Remote data face",
+  "description": "Worktree status visibility: a per-session repo/worktree badge in the session header plus a right-sidebar worktrees tab (the selected worktree's pending changes with diffs, IDE-style repository commit log, full repo browse) and a local-files browser, over a Typert Remote data face",
   "version": "0.2.0",
   "publishConfig": {
     "access": "public"
@@ -95,7 +95,6 @@
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-util-workspace-path": "^0.1.5-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",

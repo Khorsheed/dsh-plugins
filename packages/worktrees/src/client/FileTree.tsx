@@ -124,8 +124,6 @@ export interface FileTreeProps {
   onSelect: (path: string) => void
   /** The tree header title (defaults to the changes-mode label). */
   treeTitle?: string
-  /** The empty-tree message (defaults to the generic no-changes copy). */
-  emptyText?: string | undefined
   /** When given, renders a collapse-to-rail toggle at the right of the header. */
   collapsed?: boolean
   onToggleCollapse?: () => void
@@ -204,7 +202,7 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, emptyText, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, t }: FileTreeProps): ReactNode {
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, t }: FileTreeProps): ReactNode {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   // Lazy sub-directory children, keyed by the directory's resolved path.
   const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
@@ -306,7 +304,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, emptyText,
   const collapseAll = (): void => setExpanded(new Set())
 
   if (roots.length === 0 && loadChildren === undefined) {
-    return <div className={css.empty}>{emptyText ?? t('group.empty')}</div>
+    return <div className={css.empty}>{t('group.empty')}</div>
   }
 
   const renderNode = (node: FileNode, groupKey: string): ReactNode => {

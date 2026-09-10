@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.md
-.agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.md: 11446d42dbd110851fdbf89b0c84072d1db38dce
-.agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.zh.md: 06a4be5e5a557e6ec75c40630371025cface71ff
+.agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.md: cfff22aaa6d5bd0e63550494025d02433aa299db
+.agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.zh.md: 093d7feaabdb191cbc538b6b52b6752f250f863e

@@ -3,9 +3,9 @@
  * Worktrees tab spec under the composed-props form: a real store instance
  * (createWorktreesStore().create()) and injected Remote mocks. Asserts the
  * mount → changes-fetch → file-select → diff-fetch chain that the browser
- * flow depends on, plus the 本会话改动 filter: the worktree mode lists the
- * git uncommitted files ∩ the session-touched set (the sibling file-preview
- * fold), with null touched set = no filter (the pre-filter behavior).
+ * flow depends on, the navigation-params guard (a user mode switch must
+ * stick), and that switching the worktree selector re-fetches so the
+ * 工作树待提交 list follows the selected worktree.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -13,7 +13,7 @@ import { useSyncExternalStore } from 'react'
 import type { WorktreesTabProps } from '../src/client/contract.ts'
 import { WorktreesTab } from '../src/client/WorktreesTab.tsx'
 import { createWorktreesStore } from '../src/client/store.ts'
-import type { ChangesResult, FileDiffResult, ReadFileResult, SessionSummary } from '../src/types.ts'
+import type { ChangesResult, FileDiffResult, ReadFileResult, SessionSummary, WorktreeInfo } from '../src/types.ts'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
@@ -51,40 +51,39 @@ const CHANGES: ChangesResult = {
   committed: [],
 }
 
+const WORKTREES: WorktreeInfo[] = [
+  { path: '/repo', branch: 'room', isMain: true, dirty: 1, stale: false },
+  { path: '/repo-wt2', branch: 'wt2', isMain: false, dirty: 2, stale: false },
+]
+
 interface HarnessOptions {
   /** Navigation params the open carried (the badge's mode). */
   params?: { mode?: 'worktree' | 'commits' | 'repo' }
   /** Navigation revision (0 = a record nobody opened by address). */
   revision?: number
-  /** The session-touched paths the fold answers; null = no filter. */
-  touched?: readonly string[] | null
-  /** Extra uncommitted files beyond the fixture's index.ts. */
-  extraUncommitted?: ChangesResult['uncommitted'][number][]
 }
 
 function makeHarness(over: HarnessOptions = {}) {
   const instance = createWorktreesStore().create()
-  const changes: ChangesResult = {
-    uncommitted: [...CHANGES.uncommitted, ...(over.extraUncommitted ?? [])],
-    committed: [],
-  }
   const fetchSummary = vi.fn<() => Promise<Result<SessionSummary>>>()
   const fetchChanges = vi.fn<() => Promise<Result<ChangesResult>>>()
-  const fetchSessionTouched = vi.fn<() => Promise<readonly string[] | null>>()
   const fetchRepoFiles = vi.fn<() => Promise<Result<string[]>>>()
   const fetchCommitLog = vi.fn<() => Promise<Result<never[]>>>()
   const fetchCommitFiles = vi.fn()
+  const fetchWorktrees = vi.fn<() => Promise<Result<WorktreeInfo[]>>>()
+  const switchWorktree = vi.fn<() => Promise<Result<WorktreeInfo>>>()
   const fetchFileDiff = vi.fn<() => Promise<Result<FileDiffResult>>>()
   const fetchReadFile = vi.fn<() => Promise<Result<ReadFileResult>>>()
   const openExternal = vi.fn()
   const copyBranch = vi.fn<() => Promise<boolean>>()
 
   fetchSummary.mockResolvedValue({ ok: true as const, value: SUMMARY })
-  fetchChanges.mockResolvedValue({ ok: true as const, value: changes })
-  fetchSessionTouched.mockResolvedValue(over.touched === undefined ? null : over.touched)
+  fetchChanges.mockResolvedValue({ ok: true as const, value: CHANGES })
   fetchRepoFiles.mockResolvedValue({ ok: true as const, value: [] })
   fetchCommitLog.mockResolvedValue({ ok: true as const, value: [] })
   fetchCommitFiles.mockResolvedValue({ ok: true as const, value: { sha: 'x', files: [] } })
+  fetchWorktrees.mockResolvedValue({ ok: true as const, value: WORKTREES })
+  switchWorktree.mockResolvedValue({ ok: true as const, value: WORKTREES[1]! })
   fetchFileDiff.mockResolvedValue({ ok: true as const, value: { diff: 'diff --git a/x b/x\n+new\n' } })
   fetchReadFile.mockResolvedValue({ ok: true as const, value: { content: 'hello\n' } })
 
@@ -96,20 +95,16 @@ function makeHarness(over: HarnessOptions = {}) {
     sessionId: SESSION,
     useTabInfo: () => ({ tab }),
     useStore: hookOf(instance),
-    useSessions: ((sel: (s: { byId: Record<string, unknown> }) => unknown) => sel({
-      byId: { [SESSION]: { cwd: '/repo' } },
-    })) as never,
     actions: instance.actions,
     // No probed apps: the open-in-app gestures stay hidden.
     useOpenInApp: ((sel: (apps: readonly string[] | null) => unknown) => sel([])) as never,
     fetchSummary,
     fetchChanges,
-    fetchSessionTouched,
     fetchRepoFiles,
     fetchCommitLog,
     fetchCommitFiles,
-    fetchWorktrees: vi.fn(),
-    switchWorktree: vi.fn(),
+    fetchWorktrees,
+    switchWorktree,
     directAgent: vi.fn(),
     bumpVersion: vi.fn(),
     fetchFileDiff,
@@ -123,10 +118,10 @@ function makeHarness(over: HarnessOptions = {}) {
     ),
   } as unknown as WorktreesTabProps
 
-  return { instance, props, fetchFileDiff, fetchReadFile, fetchChanges, fetchCommitLog }
+  return { instance, props, fetchFileDiff, fetchReadFile, fetchChanges, fetchCommitLog, switchWorktree }
 }
 
-/** Expand the tree down to the committed fixture file and click it. */
+/** Expand the tree down to the fixture file and click it. */
 async function drillToIndexTs(region: () => ReturnType<typeof within>): Promise<void> {
   for (const dir of ['packages', 'room', 'src']) {
     const dirRow = await region().findByRole('button', { name: dir })
@@ -137,7 +132,7 @@ async function drillToIndexTs(region: () => ReturnType<typeof within>): Promise<
 afterEach(() => { cleanup() })
 
 describe('WorktreesTab', () => {
-  it('fetches changes on mount and drives fileDiff on select + diff view (no touched set = no filter)', async () => {
+  it('fetches changes on mount and drives fileDiff on select + diff view', async () => {
     const { props, fetchFileDiff, fetchReadFile, fetchChanges } = makeHarness()
     render(<WorktreesTab {...props} />)
 
@@ -164,24 +159,18 @@ describe('WorktreesTab', () => {
     await waitFor(() => expect(fetchReadFile).toHaveBeenCalledWith(SESSION, { path: 'packages/room/src/index.ts' }))
   })
 
-  it('filters the worktree mode to session-touched files when the fold answers', async () => {
-    const { props } = makeHarness({
-      touched: ['packages/room/src/index.ts'],
-      extraUncommitted: [{ path: 'other.ts', status: 'M', additions: 1, deletions: 0 }],
-    })
+  it('re-fetches after a worktree switch so the pending list follows the selected worktree', async () => {
+    const { instance, props, fetchChanges, switchWorktree } = makeHarness()
     render(<WorktreesTab {...props} />)
-    const region = () => within(screen.getByRole('region'))
-    await drillToIndexTs(region)
-    await region().findByRole('button', { name: /index\.ts/ })
-    // The untouched file never enters the tree, at any expansion level.
-    expect(region().queryByRole('button', { name: /other\.ts/ })).toBeNull()
-  })
+    await waitFor(() => expect(fetchChanges).toHaveBeenCalledTimes(1))
 
-  it('shows the session-empty copy when the touched set intersects nothing', async () => {
-    const { props } = makeHarness({ touched: [] })
-    render(<WorktreesTab {...props} />)
-    await screen.findByText('group.emptySession')
-    expect(screen.queryByRole('button', { name: /index\.ts/ })).toBeNull()
+    // Open the switcher and pick the second worktree.
+    fireEvent.click(await screen.findByRole('button', { name: 'wt.pickWorktree' }))
+    fireEvent.click(await screen.findByRole('option', { name: /wt2/ }))
+    await waitFor(() => expect(switchWorktree).toHaveBeenCalledWith(SESSION, '/repo-wt2'))
+    // The switch repoints the active worktree and refreshes the data planes.
+    await waitFor(() => expect(fetchChanges).toHaveBeenCalledTimes(2))
+    expect(instance.getSnapshot().activeWorktreePath).toBe('/repo-wt2')
   })
 
   it('applies the navigation params mode on arrival', async () => {
@@ -192,7 +181,7 @@ describe('WorktreesTab', () => {
     await waitFor(() => expect(fetchCommitLog).toHaveBeenCalledWith(SESSION))
   })
 
-  it('keeps the user-switched mode instead of snapping back to the navigated one (6aae716 regression)', async () => {
+  it('keeps the user-switched mode instead of snapping back to the navigated one (5e5232d regression)', async () => {
     const { instance, props } = makeHarness({ params: { mode: 'worktree' }, revision: 1 })
     render(<WorktreesTab {...props} />)
     await waitFor(() => expect(instance.getSnapshot().mode).toBe('worktree'))

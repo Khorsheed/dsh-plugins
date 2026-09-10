@@ -20,7 +20,7 @@ import { apply, inject } from '../src/client/index.ts'
 import type { WorktreesBadgeInjected, WorktreesTabInjected } from '../src/client/contract.ts'
 
 /** Boot the plugin over fake faces; the worktrees Remote records calls. */
-async function bench(opts: { withFilePreview?: boolean } = {}) {
+async function bench() {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const record = (method: string) => vi.fn(async (...args: unknown[]) => {
@@ -57,19 +57,6 @@ async function bench(opts: { withFilePreview?: boolean } = {}) {
     readLocalFile: record('readLocalFile'),
     readLocalImage: record('readLocalImage'),
   })
-  // The optional sibling face: present only when the test opts in.
-  const filePreviewList = vi.fn(async () => ({
-    ok: true as const,
-    value: {
-      entries: [
-        { path: 'a.ts', op: 'write' },
-        { path: 'b.ts', op: 'read' },
-      ],
-      asOfSeq: 1,
-      truncated: false,
-    },
-  }))
-  if (opts.withFilePreview === true) ctx.provide('remote.filePreview', { list: filePreviewList })
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('sessions', {})
   ctx.provide('workspaces', { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } })
@@ -97,7 +84,7 @@ async function bench(opts: { withFilePreview?: boolean } = {}) {
   } as never, (() => null) as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, calls, mount, registered, openTab, filePreviewList }
+  return { ctx, fiber, calls, mount, registered, openTab }
 }
 
 /** The tab body entry's inject factory, called the way the outlet would. */
@@ -162,24 +149,6 @@ describe('worktrees browser plugin', () => {
       { method: 'summary', args: ['s1'] },
       { method: 'changes', args: ['s1'] },
     ])
-    await b.fiber.dispose()
-  })
-
-  it('answers null for the session-touched probe when the file-preview sibling is absent', async () => {
-    const b = await bench()
-    const { injected } = tabApi(b)
-    if (injected === undefined) throw new Error('tab inject missing')
-    await expect(injected.fetchSessionTouched('s1' as never)).resolves.toBeNull()
-    await b.fiber.dispose()
-  })
-
-  it('maps the file-preview fold to touched-and-modified display paths when present', async () => {
-    const b = await bench({ withFilePreview: true })
-    const { injected } = tabApi(b)
-    if (injected === undefined) throw new Error('tab inject missing')
-    // The read op drops out; the write stays.
-    await expect(injected.fetchSessionTouched('s1' as never)).resolves.toEqual(['a.ts'])
-    expect(b.filePreviewList).toHaveBeenCalledWith('s1')
     await b.fiber.dispose()
   })
 
