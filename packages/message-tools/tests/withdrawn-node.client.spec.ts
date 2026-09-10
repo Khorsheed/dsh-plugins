@@ -20,7 +20,7 @@ function replacementEvent(seq: number, start: number, end: number): SessionEvent
       content: [{ type: 'text', text: WITHDRAWN_NOTICE }],
       source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN },
     },
-    surfaceOp: { op: 'replace', start, end },
+    surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
     sourceEventSeqs: [start, end],
   } as SessionEvent
 }
@@ -335,7 +335,7 @@ describe('editedMessageDefinition', () => {
         content: [{ type: 'text', text }],
         source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN, op: 'edit' },
       },
-      surfaceOp: { op: 'replace', start, end },
+      surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
       sourceEventSeqs: [start],
     } as unknown as SessionEvent
   }

@@ -65,40 +65,31 @@ function assistantMessageReasoning(text: string): SessionEvent {
   return event as SessionEvent
 }
 
-/** An interrupted assistant stream fragment (text delta, no final message). */
-function assistantChunkText(text: string): SessionEvent {
-  const event = {
-    type: 'assistant/chunk',
-    seq,
-    time: 1000,
-    data: { turn: 0, step: 1, chunk: { type: 'text-delta', index: 0, text } },
-  }
+/** One assistant attempt that committed no surface message, carrying the given compact stream. */
+function assistantAttempt(turn: number, step: number, stream: unknown[]): SessionEvent {
+  const event = { type: 'assistant/attempt', seq, time: 1000, data: { turn, step, stream } }
   seq += 1
   return event as SessionEvent
 }
 
-/** An interrupted assistant stream fragment (reasoning delta, no final message). */
-function assistantChunkReasoning(text: string): SessionEvent {
-  const event = {
-    type: 'assistant/chunk',
-    seq,
-    time: 1000,
-    data: { turn: 0, step: 1, chunk: { type: 'reasoning-delta', index: 0, text } },
-  }
-  seq += 1
-  return event as SessionEvent
+/** One assistant attempt streaming text (packed text deltas). */
+function assistantAttemptText(turn: number, step: number, ...texts: string[]): SessionEvent {
+  return assistantAttempt(turn, step, [
+    { type: 'text-chunks', time0: 1000, index: 0, dt: texts.slice(1).map(() => 1), texts },
+  ])
 }
 
-/** An interrupted assistant stream fragment (block-end replaces prior deltas). */
-function assistantChunkBlockEnd(text: string): SessionEvent {
-  const event = {
-    type: 'assistant/chunk',
-    seq,
-    time: 1000,
-    data: { turn: 0, step: 1, chunk: { type: 'block-end', index: 0, block: { type: 'text', text } } },
-  }
-  seq += 1
-  return event as SessionEvent
+/** One assistant attempt streaming only reasoning (packed reasoning deltas). */
+function assistantAttemptReasoning(text: string): SessionEvent {
+  return assistantAttempt(0, 1, [{ type: 'reasoning-chunks', time0: 1000, index: 0, dt: [], texts: [text] }])
+}
+
+/** One assistant attempt whose raw block-end record overrides its packed deltas. */
+function assistantAttemptBlockEnd(partial: string, text: string): SessionEvent {
+  return assistantAttempt(0, 1, [
+    { type: 'text-chunks', time0: 1000, index: 0, dt: [], texts: [partial] },
+    { type: 'chunk', time: 1001, chunk: { type: 'block-end', index: 0, block: { type: 'text', text } } },
+  ])
 }
 
 /** A tool result on the surface (never replayed by a restore). */
@@ -197,7 +188,7 @@ function withdrawalReplacement(start: number, end: number, sources: readonly num
       content: [{ type: 'text', text: WITHDRAWN_NOTICE }],
       source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN },
     },
-    surfaceOp: { op: 'replace', start, end },
+    surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
     sourceEventSeqs: [...sources],
   }
   seq += 1
@@ -215,7 +206,7 @@ function editReplacement(start: number, end: number, sources: readonly number[],
       content: [{ type: 'text', text }],
       source: editReplacementSource(),
     },
-    surfaceOp: { op: 'replace', start, end },
+    surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
     sourceEventSeqs: [...sources],
   }
   seq += 1
@@ -292,7 +283,7 @@ describe('isMessageToolsReplacement', () => {
     reset()
     const event = withdrawalReplacement(2, 5, [2, 3, 4, 5])
     expect(isMessageToolsReplacement(event)).toBe(true)
-    if (isMessageToolsReplacement(event)) expect(event.surfaceOp.start).toBe(2)
+    if (isMessageToolsReplacement(event)) expect(event.surfaceOp.startSeq).toBe(2)
   })
 
   it('rejects append-surface user messages', () => {
@@ -359,15 +350,14 @@ describe('planRestore', () => {
     })
   })
 
-  it('replays interrupted assistant chunks when no assistant/message landed', () => {
+  it('replays an interrupted assistant attempt when no assistant/message landed', () => {
     reset()
     const events = [
       userMessage('问'),                                // 0
-      assistantChunkText('答'),                         // 1
-      assistantChunkText('案'),                         // 2
-      withdrawalReplacement(0, 0, [0]),                 // 3 (surface span omits chunks)
+      assistantAttemptText(0, 1, '答', '案'),            // 1
+      withdrawalReplacement(0, 0, [0]),                 // 2 (surface span omits attempts)
     ]
-    const result = planRestore(events, [3], 0)
+    const result = planRestore(events, [2], 0)
     expect(result).toEqual({
       ok: true,
       plan: {
@@ -383,8 +373,8 @@ describe('planRestore', () => {
     reset()
     const events = [
       userMessage('问'),                                // 0
-      assistantChunkReasoning('思考中'),                 // 1
-      withdrawalReplacement(0, 0, [0]),                 // 2 (surface span omits chunks)
+      assistantAttemptReasoning('思考中'),               // 1
+      withdrawalReplacement(0, 0, [0]),                 // 2 (surface span omits attempts)
     ]
     const result = planRestore(events, [2], 0)
     expect(result).toEqual({
@@ -417,12 +407,12 @@ describe('planRestore', () => {
     })
   })
 
-  it('does not duplicate chunks that belong to a finalized assistant message', () => {
+  it('does not replay an attempt superseded by the step\'s finalized assistant message', () => {
     reset()
     const events = [
       userMessage('问'),                                // 0
-      assistantChunkText('答'),                         // 1
-      assistantMessage('答案'),                          // 2
+      assistantAttemptText(0, 1, '答'),                  // 1 (failed attempt, retried)
+      assistantMessage('答案'),                          // 2 (turn 0 step 1 finalized)
       withdrawalReplacement(0, 2, [0, 2]),              // 3
     ]
     const result = planRestore(events, [3], 0)
@@ -437,13 +427,13 @@ describe('planRestore', () => {
     })
   })
 
-  it('keeps interrupted assistant chunks in original order between user messages', () => {
+  it('keeps interrupted assistant attempts in original order between user messages', () => {
     reset()
     const events = [
       userMessage('问一'),                                // 0
-      assistantChunkText('答一'),                         // 1
+      assistantAttemptText(0, 1, '答一'),                 // 1
       userMessage('问二'),                                // 2
-      assistantChunkText('答二'),                         // 3
+      assistantAttemptText(1, 1, '答二'),                 // 3
       withdrawalReplacement(0, 2, [0, 2]),                // 4
     ]
     const result = planRestore(events, [4], 0)
@@ -460,13 +450,13 @@ describe('planRestore', () => {
     })
   })
 
-  it('does not split an interrupted chunk run at log-only events', () => {
+  it('replays every unfinalized attempt in log order across log-only events', () => {
     reset()
     const events = [
       userMessage('问'),                                // 0
-      assistantChunkText('答'),                         // 1
-      turnStart(0),                                     // 2 log-only interleave
-      assistantChunkText('案'),                         // 3
+      assistantAttemptText(0, 1, '答'),                  // 1
+      turnStart(1),                                     // 2 log-only interleave
+      assistantAttemptText(1, 1, '案'),                  // 3
       withdrawalReplacement(0, 0, [0]),                 // 4
     ]
     const result = planRestore(events, [4], 0)
@@ -475,7 +465,8 @@ describe('planRestore', () => {
       plan: {
         entries: [
           { role: 'user', content: [{ type: 'text', text: '问' }], sourceSeq: 0 },
-          { role: 'assistant', text: `${RESTORED_ASSISTANT_NOTICE}\n答案`, sourceSeq: 1 },
+          { role: 'assistant', text: `${RESTORED_ASSISTANT_NOTICE}\n答`, sourceSeq: 1 },
+          { role: 'assistant', text: `${RESTORED_ASSISTANT_NOTICE}\n案`, sourceSeq: 3 },
         ],
       },
     })
@@ -485,11 +476,10 @@ describe('planRestore', () => {
     reset()
     const events = [
       userMessage('问'),                                // 0
-      assistantChunkText('partial'),                    // 1
-      assistantChunkBlockEnd('final'),                  // 2
-      withdrawalReplacement(0, 0, [0]),                 // 3
+      assistantAttemptBlockEnd('partial', 'final'),      // 1
+      withdrawalReplacement(0, 0, [0]),                 // 2
     ]
-    const result = planRestore(events, [3], 0)
+    const result = planRestore(events, [2], 0)
     expect(result).toEqual({
       ok: true,
       plan: {
@@ -629,7 +619,7 @@ describe('edit vs withdraw markers', () => {
     const edit = editReplacement(2, 5, [2, 3, 4, 5], '编辑后的文本')
     expect(isMessageToolsEdit(edit)).toBe(true)
     expect(isMessageToolsReplacement(edit)).toBe(false)
-    if (isMessageToolsEdit(edit)) expect(edit.surfaceOp.start).toBe(2)
+    if (isMessageToolsEdit(edit)) expect(edit.surfaceOp.startSeq).toBe(2)
     reset()
     const withdraw = withdrawalReplacement(2, 5, [2, 3, 4, 5])
     expect(isMessageToolsReplacement(withdraw)).toBe(true)

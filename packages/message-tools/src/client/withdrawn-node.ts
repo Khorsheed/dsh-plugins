@@ -109,7 +109,7 @@ export const withdrawnDividerDefinition: ConversationNodeDefinition<WithdrawnDiv
   kind: 'message-tools-withdrawn',
   target: 'chat',
   match: (event) => {
-    // Packed chunk rows share the bus; the guards speak SessionEvent only.
+    // Attempt and boundary rows share the bus; the guards speak SessionEvent only.
     if (event.type !== 'user/message') return null
     return isMessageToolsReplacement(event) ? { id: String(event.seq), role: 'start' } : null
   },
@@ -118,7 +118,7 @@ export const withdrawnDividerDefinition: ConversationNodeDefinition<WithdrawnDiv
     if (!isMessageToolsReplacement(event)) {
       throw new Error('message-tools-withdrawn start requires a message-tools replacement event')
     }
-    return { seq: event.seq, hiddenStartSeq: event.surfaceOp.start }
+    return { seq: event.seq, hiddenStartSeq: event.surfaceOp.startSeq }
   },
   update: context => context.state,
   buildViewNode: context => context.state === undefined
@@ -148,7 +148,7 @@ export const editedMessageDefinition: ConversationNodeDefinition<EditedMessageDa
       seq: event.seq,
       time: event.time,
       content: event.data.content,
-      hiddenStartSeq: event.surfaceOp.start,
+      hiddenStartSeq: event.surfaceOp.startSeq,
     }
   },
   update: context => context.state,

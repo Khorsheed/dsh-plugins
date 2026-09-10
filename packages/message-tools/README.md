@@ -38,10 +38,10 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——适配 0.1.5-rc.1 的 format v2/v3（`assistant/attempt` 取代 `assistant/chunk`；surfaceOp replace 字段 `start`/`end` 更名 `startSeq`/`endSeq`），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
-**版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
+**版本线对照**：0.2.0 之后的首个发布起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.2.0`，宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 请停留在 0.1.x 发布线（末版 `0.1.0`）。
 
 ## 已知限制
 
@@ -63,7 +63,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 
 **投影与隐藏。** 插件的 Definition 把 replacement 认领为锚定在其 seq 上的分隔线节点。隐藏分两层：被遮蔽的用户渲染器对区间内用户消息渲染为空；一张动态样式表把 `data-chat-flow-key`（`ChatNodeSeat.tsx`）锚点落在区间内的聊天行一律隐藏，覆盖助手步骤、工具调用、turn 尾部。隐藏器在首个非空规则集探测这个未文档化属性，探测落空进入有界重试（MutationObserver 加截止时限），避免聊天区尚未挂载时误停用；只有窗口耗尽仍探不到行才停用——`console.warn` 一次，退化为仅渲染器隐藏——且 observer 在停用后仍存活，行晚到会重新生效，绝不报错。分隔线可就地展开只读回放撤回区间（用户原文加助手文本，从实时节点存储折叠）并提供「恢复到对话末尾」；行已掉出加载窗口的区间显示「撤回的内容不在当前已加载的历史中」。
 
-**恢复**是整个被撤回区间的尾部重放，不是原位修复：surface 折叠是位置性的——被替换区间只接续成一个节点（`applySurfacePlan`）——区间无法回到模型上下文原位，其模型侧隐藏也永不回退。host 沿撤回 replacement 自身划定的日志区间 `[start, seq)` 把可重放内容按原始顺序逐条追加到尾部：用户消息逐字重放（编辑替换的内容就是最后一次编辑的新文本，恢复时即以此为准），每条助手回复的文本以带框架的插件来源用户消息重放——`assistant/message` 无法携带插件来源，且轨迹不允许在 step 之外追加助手消息，因此角色保真由框架 `(以下是先前被撤回、现随恢复放回的助手回复)` 承担，UI 上不显示该框架。未落成 `assistant/message` 的中断步骤从其 `assistant/chunk` 片段合并重放（只有 reasoning 时保留 reasoning）。工具调用/结果永不重放：配对无法重新进入，副作用不可重放。重放行渲染为「已恢复」组——用户气泡带完整操作行，助手文本走官方 `MarkdownText`——分隔线在存在引用该区间的存活恢复行期间显示「已恢复」徽标；再次撤回这些恢复行会清掉徽标并重新启用恢复操作（恢复事件始终留在日志里）。
+**恢复**是整个被撤回区间的尾部重放，不是原位修复：surface 折叠是位置性的——被替换区间只接续成一个节点（`applySurfacePlan`）——区间无法回到模型上下文原位，其模型侧隐藏也永不回退。host 沿撤回 replacement 自身划定的日志区间 `[start, seq)` 把可重放内容按原始顺序逐条追加到尾部：用户消息逐字重放（编辑替换的内容就是最后一次编辑的新文本，恢复时即以此为准），每条助手回复的文本以带框架的插件来源用户消息重放——`assistant/message` 无法携带插件来源，且轨迹不允许在 step 之外追加助手消息，因此角色保真由框架 `(以下是先前被撤回、现随恢复放回的助手回复)` 承担，UI 上不显示该框架。未落成 `assistant/message` 的中断尝试从其 `assistant/attempt` 事件内嵌的紧凑流合并重放（只有 reasoning 时保留 reasoning）。工具调用/结果永不重放：配对无法重新进入，副作用不可重放。重放行渲染为「已恢复」组——用户气泡带完整操作行，助手文本走官方 `MarkdownText`——分隔线在存在引用该区间的存活恢复行期间显示「已恢复」徽标；再次撤回这些恢复行会清掉徽标并重新启用恢复操作（恢复事件始终留在日志里）。
 
 **为什么投影层做不到（彻底修复所需的上游 seam）。** 组装器对每个事件运行所有已注册 Definition 的 `match`，没有否决机制（`conversation-assembler.ts:370`），且 `match(event)` 只能读当前事件；被遮蔽事件在日志里仍保持 `surfaceOp: 'append'`（区间元数据只存在于 replacement 自身），因此依然命中各内置 Definition——内置 Definition 排除的是 *replacement* 事件，不是被遮蔽事件。节点的 `visibility` 只能由产出它的 Definition 设置，组装器禁止把已物化节点撤回为 null，节点 key 又与其 Definition 的 kind 绑定——插件既无法翻转也无法冒充官方节点。遮蔽其余 `conversation.chat.node` key 同样行不通：官方组件没有导出，`command`/`turn-tail`/`tool-call` 声明了子槽位而遮蔽无法重复声明（`tool-call` 还持有 key 空间无界的按工具名 keyed 的 `tool.call.toolview` 槽位）。官方 compaction 流水线在设计上就做了同样选择——被替换的区间保留在 transcript 里。
 

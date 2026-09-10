@@ -69,7 +69,7 @@ export class MessageToolsService extends TypertRemoteService {
       content: [{ type: 'text', text: WITHDRAWN_NOTICE }],
       source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN },
     }), {
-      surfaceOp: { op: 'replace', start: SessionSeq(planned.plan.start), end: SessionSeq(planned.plan.end) },
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(planned.plan.start), endSeq: SessionSeq(planned.plan.end) },
       sourceEventSeqs: planned.plan.sourceEventSeqs.map(seq => SessionSeq(seq)),
     })
     await this.ctx.sessions.flush(session)
@@ -141,7 +141,7 @@ export class MessageToolsService extends TypertRemoteService {
       content: [{ type: 'text', text: request.text }],
       source: editReplacementSource(),
     }), {
-      surfaceOp: { op: 'replace', start: SessionSeq(planned.plan.start), end: SessionSeq(planned.plan.end) },
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(planned.plan.start), endSeq: SessionSeq(planned.plan.end) },
       sourceEventSeqs: planned.plan.sourceEventSeqs.map(seq => SessionSeq(seq)),
     })
     await this.ctx.sessions.flush(session)

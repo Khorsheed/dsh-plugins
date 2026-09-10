@@ -204,10 +204,10 @@ function joinAssistantMessageText(blocks: readonly unknown[]): string {
  * (the message left the surface through another producer, e.g. compaction).
  *
  * `sourceEventSeqs` is authoritative for the shadowed *surface* nodes, but an
- * interrupted assistant step may exist only as `assistant/chunk` events (no
- * `assistant/message` ever landed). Those chunks are not surface nodes, so
- * they are absent from `sourceEventSeqs`. The replacement's own `start` and
- * `seq` delimit the whole withdrawn log interval — `[start, seq)` — and are
+ * interrupted assistant step may exist only as `assistant/attempt` events (no
+ * `assistant/message` ever landed). Attempts are not surface nodes, so
+ * they are absent from `sourceEventSeqs`. The replacement's own `startSeq` and
+ * `seq` delimit the whole withdrawn log interval — `[startSeq, seq)` — and are
  * still read from the replacement itself, never guessed from another producer.
  */
 function findWithdrawnSpan(
@@ -221,7 +221,7 @@ function findWithdrawnSpan(
     const sources = event.sourceEventSeqs as readonly number[] | undefined
     if (sources?.includes(targetSeq) !== true) continue
     const span: number[] = []
-    for (let seq: number = event.surfaceOp.start; seq < event.seq; seq++) span.push(seq)
+    for (let seq: number = event.surfaceOp.startSeq; seq < event.seq; seq++) span.push(seq)
     return span
   }
   return undefined
@@ -234,70 +234,28 @@ function findWithdrawnSpan(
  * restore-assistant replays already carry the frame). Skipped: withdrawal
  * placeholders, edit triggers, other plugin context, and tool calls/results.
  *
- * Assistant text normally comes from `assistant/message` surface events. A
- * turn that was interrupted before finalization may never emit
- * `assistant/message`; its visible content survives only as `assistant/chunk`
- * rows. Those chunks are folded into one assistant replay per step when no
- * final `assistant/message` exists for that step, so withdrawing/restoring an
- * interrupted reply does not lose the partial assistant content.
+ * Assistant text normally comes from `assistant/message` surface events (a
+ * cancelled turn finalizes its delivered prefix there with `interrupted:
+ * true`). An attempt that committed no surface message — failed, retried, or
+ * stream-error — settles as an `assistant/attempt` log event carrying its
+ * exact compact stream. Each such attempt folds into one assistant replay
+ * when no final `assistant/message` exists for that step, so
+ * withdrawing/restoring an interrupted reply does not lose the partial
+ * assistant content. A retried step's earlier attempts are superseded by the
+ * step's final message and do not replay.
  */
 function replayEntries(
   events: readonly SessionEvent[],
   spanSeqs: readonly number[],
 ): RestoreReplayEntry[] {
   const entries: RestoreReplayEntry[] = []
-  interface ChunkAccumulator {
-    readonly turn: number
-    readonly step: number
-    readonly sourceSeq: number
-    readonly text: Map<number, string>
-    readonly reasoning: Map<number, string>
-    finalized: boolean
-  }
-  let pending: ChunkAccumulator | undefined
+  // A step's final message supersedes its attempts; collect the finalized
+  // steps first so an attempt is skipped regardless of log order.
   const finalizedSteps = new Set<string>()
-
-  const flushPending = (): void => {
-    if (pending === undefined) return
-    if (!pending.finalized) {
-      const text = [...pending.text.values()].join('')
-      const reasoning = [...pending.reasoning.values()].join('')
-      const replay = text !== '' ? text : reasoning
-      if (replay !== '') {
-        entries.push({
-          role: 'assistant',
-          text: `${RESTORED_ASSISTANT_NOTICE}\n${replay}`,
-          sourceSeq: pending.sourceSeq,
-        })
-      }
-    }
-    pending = undefined
-  }
-
-  const pushChunk = (event: SessionEvent<'assistant/chunk'>): void => {
-    if (finalizedSteps.has(`${event.data.turn}:${event.data.step}`)) return
-    if (pending === undefined
-      || pending.turn !== event.data.turn
-      || pending.step !== event.data.step) {
-      flushPending()
-      pending = {
-        turn: event.data.turn,
-        step: event.data.step,
-        sourceSeq: event.seq,
-        text: new Map(),
-        reasoning: new Map(),
-        finalized: false,
-      }
-    }
-    const chunk = event.data.chunk
-    if (chunk.type === 'text-delta') {
-      pending.text.set(chunk.index, (pending.text.get(chunk.index) ?? '') + chunk.text)
-    } else if (chunk.type === 'block-end' && chunk.block.type === 'text') {
-      pending.text.set(chunk.index, chunk.block.text)
-    } else if (chunk.type === 'reasoning-delta') {
-      pending.reasoning.set(chunk.index, (pending.reasoning.get(chunk.index) ?? '') + chunk.text)
-    } else if (chunk.type === 'block-end' && chunk.block.type === 'reasoning') {
-      pending.reasoning.set(chunk.index, chunk.block.text)
+  for (const seq of spanSeqs) {
+    const event = events[seq]
+    if (event?.type === 'assistant/message') {
+      finalizedSteps.add(`${event.data.turn}:${event.data.step}`)
     }
   }
 
@@ -311,16 +269,15 @@ function replayEntries(
     const event = events[seq]
     if (event === undefined) continue
     if (isMessageToolsEdit(event)) {
-      flushPending()
       entries.push({ role: 'user', content: event.data.content, sourceSeq: seq })
       continue
     }
-    if (event.type === 'assistant/chunk') {
-      pushChunk(event)
+    if (event.type === 'assistant/attempt') {
+      if (finalizedSteps.has(`${event.data.turn}:${event.data.step}`)) continue
+      pushAssistantText(joinAttemptStreamText(event.data.stream), seq)
       continue
     }
     if (event.type === 'user/message') {
-      flushPending()
       if (event.surfaceOp !== 'append') continue
       if (event.data.source.kind === 'user' || isMessageToolsRestore(event)) {
         entries.push({ role: 'user', content: event.data.content, sourceSeq: seq })
@@ -332,25 +289,52 @@ function replayEntries(
       continue
     }
     if (event.type === 'assistant/message') {
-      // A finalized step supersedes any pending chunk accumulation for the
-      // same step: flush without emitting the partial, then replay the final.
-      finalizedSteps.add(`${event.data.turn}:${event.data.step}`)
-      if (pending !== undefined
-        && pending.turn === event.data.turn
-        && pending.step === event.data.step) {
-        pending.finalized = true
-      }
-      flushPending()
       pushAssistantText(joinAssistantMessageText(event.data.message.content), seq)
       continue
     }
-    // Log-only events (boundaries, headers, titles) do not split a chunk run;
-    // the pending assistant step is flushed at the next replayable boundary or
-    // when a different step starts.
+    // Log-only events (boundaries, headers, titles) contribute nothing.
   }
 
-  flushPending()
   return entries
+}
+
+/**
+ * Join one attempt's compact stream into its visible text. Text deltas win;
+ * reasoning is the fallback so an attempt that streamed only reasoning does
+ * not lose the only assistant content the user saw (the same preference
+ * {@link joinAssistantMessageText} applies to finalized messages). Packed
+ * delta runs append per block index; a raw `block-end` record carries the
+ * assembled block and replaces its index's accumulated deltas. Tool-call
+ * runs never replay (their side effects are not replayable).
+ */
+function joinAttemptStreamText(
+  stream: SessionEvent<'assistant/attempt'>['data']['stream'],
+): string {
+  const text = new Map<number, string>()
+  const reasoning = new Map<number, string>()
+  const append = (map: Map<number, string>, index: number, fragment: string): void => {
+    map.set(index, (map.get(index) ?? '') + fragment)
+  }
+  for (const record of stream) {
+    if (record.type === 'text-chunks') {
+      append(text, record.index, record.texts.join(''))
+    } else if (record.type === 'reasoning-chunks') {
+      append(reasoning, record.index, record.texts.join(''))
+    } else if (record.type === 'chunk') {
+      const chunk = record.chunk
+      if (chunk.type === 'text-delta') {
+        append(text, chunk.index, chunk.text)
+      } else if (chunk.type === 'reasoning-delta') {
+        append(reasoning, chunk.index, chunk.text)
+      } else if (chunk.type === 'block-end' && chunk.block.type === 'text') {
+        text.set(chunk.index, chunk.block.text)
+      } else if (chunk.type === 'block-end' && chunk.block.type === 'reasoning') {
+        reasoning.set(chunk.index, chunk.block.text)
+      }
+    }
+  }
+  const joined = [...text.values()].join('')
+  return joined !== '' ? joined : [...reasoning.values()].join('')
 }
 
 /**

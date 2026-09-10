@@ -14,7 +14,7 @@ import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { UserMessageNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import {
   Button, IconCheckOutline16, IconCopyOutline16, IconEditOutline16,
-  JsonBlock, MessageText, RiskConfirmation, Tooltip, writeClipboard,
+  JsonBlock, RiskConfirmation, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconUndoOutline16 } from './icons.tsx'
 import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
@@ -62,7 +62,10 @@ function projectUserText(text: string): ReactNode {
     const tokenStart = m.index + (m[1]?.length ?? 0)
     /* v8 ignore next -- the token group always participates in a match, so m[2] is never undefined. */
     const label = m[2] ?? ''
-    if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
+    // Plain runs render through the local text-run block (the official
+    // `MessageText` primitive was retired in host 0.1.5; `.textRun` keeps its
+    // exact metrics).
+    if (tokenStart > cursor) parts.push(<div key={cursor} className={css.textRun}>{text.slice(cursor, tokenStart)}</div>)
     parts.push(
       <span key={tokenStart} className={css.refChip} data-ref-chip={label.startsWith('@') ? 'subagent' : 'skill'}>
         {label}
@@ -70,8 +73,8 @@ function projectUserText(text: string): ReactNode {
     )
     cursor = tokenStart + label.length
   }
-  if (parts.length === 0) return <MessageText text={text} />
-  if (cursor < text.length) parts.push(<MessageText key={cursor} text={text.slice(cursor)} />)
+  if (parts.length === 0) return <div className={css.textRun}>{text}</div>
+  if (cursor < text.length) parts.push(<div key={cursor} className={css.textRun}>{text.slice(cursor)}</div>)
   return <>{parts}</>
 }
 

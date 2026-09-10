@@ -33,7 +33,7 @@ function appendAssistant(ctx: Context, turn: number, step: number, text: string)
     content: [{ type: 'text', text }],
     source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
   } as unknown as AssistantMessage
-  return session.append('assistant/message', { turn, step, message }, { surfaceOp: 'append', sourceEventSeqs: [] }).seq
+  return session.append('assistant/message', { turn, step, message, stream: [] }, { surfaceOp: 'append' }).seq
 }
 
 describe('MessageToolsService (real composition)', () => {

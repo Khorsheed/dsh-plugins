@@ -11,7 +11,7 @@
  * once withdrawals backfill the draft automatically.
  */
 import { useState, type ReactNode } from 'react'
-import { Button, IconChevronDownOutline14, IconChevronRightOutline14, MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconUndoOutline16 } from './icons.tsx'
 import {
   collectWithdrawnEntries, countHiddenInSpan, foldHiddenRanges, hasRestoreForSpan, isRestoreSuperseded,
@@ -100,7 +100,8 @@ export function WithdrawnDividerView({
                 <div className={css.entryKind}>
                   {entry.kind === 'user' ? t('withdrawn.entryUser') : t('withdrawn.entryAssistant')}
                 </div>
-                <MessageText text={entry.text} />
+                {/* The retired official MessageText primitive, kept as a local text-run block. */}
+                <div className={css.textRun}>{entry.text}</div>
               </div>
             ))
           )}

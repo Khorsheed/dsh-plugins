@@ -79,7 +79,7 @@ export function stripRestoreAssistantFrame(text: string): string {
 
 /** One message-tools withdrawal replacement event, narrowed. */
 export type MessageToolsReplacementEvent = SessionEvent<'user/message'> & {
-  readonly surfaceOp: { readonly op: 'replace'; readonly start: number; readonly end: number }
+  readonly surfaceOp: { readonly op: 'replace'; readonly startSeq: number; readonly endSeq: number }
 }
 
 /** One message-tools edit replacement event, narrowed (same shape, `op: 'edit'` source). */

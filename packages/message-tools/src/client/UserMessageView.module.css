@@ -30,6 +30,15 @@
   color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));
 }
 
+/* Plain text run inside a bubble — the retired official `MessageText`
+   primitive's exact metrics (pre-wrap, break-word, inherited font metrics). */
+.textRun {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: inherit;
+  line-height: inherit;
+}
+
 /* Reference chip projection inside a user bubble (`/skill` and `@subagent`
    plain-text tokens render as chips; the logged text stays the truth). */
 .refChip {
