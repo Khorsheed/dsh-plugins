@@ -42,7 +42,9 @@
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-invariants": { "optional": true }
+    "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -81,5 +83,8 @@
   },
   "bin": {
     "dsh-lab": "lib/cli.js"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }
