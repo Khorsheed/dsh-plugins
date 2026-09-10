@@ -4,12 +4,11 @@
  * truth for every turn's mutations — write/edit calls, Code Mode dispatches,
  * render-intent paths from result diff meta, and bash captures — so the card
  * and the file-preview tab read the same host data. The claim is
- * unconditional so the card mounts for every turn the election reaches it for
- * and renders nothing until its fetch settles or the turn has no files. Since
- * the 0.1.5-rc.1 move the entry registers at priority 1 — explicitly behind
- * the official deliverables entry (default 0; the chain elects ascending), so
- * the official card wins every turn it claims and this card renders exactly
- * the turns official data misses (bash captures, S2).
+ * unconditional so the card claims every turn (priority -1, ahead of the
+ * official deliverables entry's default 0 — the chain elects ascending) and
+ * renders nothing until its fetch settles or the turn has no files. The
+ * official row never mounts while this plugin is composed: the turn's compact
+ * product table replaces it (user decision 2026-09-11).
  */
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 

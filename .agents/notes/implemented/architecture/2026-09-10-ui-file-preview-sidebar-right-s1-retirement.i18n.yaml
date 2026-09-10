@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-ui-file-preview-sidebar-right-s1-retirement.md
-.agents/notes/implemented/architecture/2026-09-10-ui-file-preview-sidebar-right-s1-retirement.md: 6ea89939bcd7c20b50538f1daa20283dfbcddf27
-.agents/notes/implemented/architecture/2026-09-10-ui-file-preview-sidebar-right-s1-retirement.zh.md: ef0ba6acba4f97d706f5a25af3e478343541e49a
+.agents/notes/implemented/architecture/2026-09-10-ui-file-preview-sidebar-right-s1-retirement.md: f643c4de58f9e8711254450ab662e6d0d31435aa
+.agents/notes/implemented/architecture/2026-09-10-ui-file-preview-sidebar-right-s1-retirement.zh.md: 62273fea85d70b2932caad61b6ab55343f5d5f60

@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
-/** TurnFileRow (async shell): renders the turn's mutated files as a summary
- * card after the host turn-files fetch settles — "N files changed" header,
- * per-file name + directory + line deltas. A click on an in-workspace file
- * goes through the owner's `openFile` (the official openResource route); an
- * outside-workspace path opens the file-preview tab through the injected
- * opener. Nothing renders before the fetch resolves, for an empty turn, or on
- * failure; visibility is decided by the fetch, not the chain select. */
+/** TurnFileRow: the turn's compact product table — plain rows at up to three
+ * products, a collapsible "N 个产物" summary row past that. A file click goes
+ * through the owner's `openFile` (the canonical address route — one file, one
+ * detail tab). Nothing renders before the fetch settles, for an empty turn,
+ * or on failure; visibility is decided by the fetch, not the chain select. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -45,25 +43,17 @@ describe('TurnFileRow', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders the summary header and files once the fetch resolves', async () => {
-    const t = vi.fn((key: string) => key)
-    const turnFiles = vi.fn(async () => FILES)
-    renderRow({ t, turnFiles })
+  it('renders the product table once the fetch resolves', async () => {
+    renderRow()
     await act(async () => {})
-    expect(screen.getByText('turn.summary')).toBeTruthy()
-    expect(t).toHaveBeenCalledWith('turn.summary', { count: 2 })
     expect(screen.getByText('agent.ts')).toBeTruthy()
-    expect(screen.getByText('/work/src')).toBeTruthy()
+    expect(screen.getByText('/work/docs')).toBeTruthy()
     expect(screen.getByText('+12')).toBeTruthy()
     expect(screen.getByText('−3')).toBeTruthy()
     expect(screen.getByText('+4')).toBeTruthy()
     expect(screen.queryByText('−0')).toBeNull()
-  })
-
-  it('uses the singular header for one file', async () => {
-    renderRow({ turnFiles: vi.fn(async () => FILES.slice(0, 1)) })
-    await act(async () => {})
-    expect(screen.getByText('turn.summaryOne')).toBeTruthy()
+    // Two products: no summary row, the table shows directly.
+    expect(screen.queryByText('turn.count')).toBeNull()
   })
 
   it('renders nothing for an empty turn or a failed fetch', async () => {
@@ -104,30 +94,20 @@ describe('TurnFileRow', () => {
     expect(openFile).toHaveBeenCalledWith('/tmp/artifact.html')
   })
 
-  it('caps the visible rows behind an overflow toggle', async () => {
-    const many = Array.from({ length: 7 }, (_, i) => ({ seq: 1, path: `/work/f${i}.ts`, added: 1, removed: 0 }))
+  it('collapses to a summary row past three products and expands in place', async () => {
+    const many = Array.from({ length: 5 }, (_, i) => ({ seq: 1, path: `/work/f${i}.ts`, added: 1, removed: 0 }))
     const t = vi.fn((key: string) => key)
     renderRow({ turnFiles: vi.fn(async () => many), t })
     await act(async () => {})
-    expect(screen.getByText('f0.ts')).toBeTruthy()
-    expect(screen.queryByText('f5.ts')).toBeNull()
-    expect(screen.getByText('turn.expand')).toBeTruthy()
-    expect(t).toHaveBeenCalledWith('turn.expand', { count: 2 })
-    fireEvent.click(screen.getByText('turn.expand'))
-    expect(screen.getByText('f6.ts')).toBeTruthy()
-    expect(screen.getByText('turn.collapse')).toBeTruthy()
-    fireEvent.click(screen.getByText('turn.collapse'))
-    expect(screen.queryByText('f5.ts')).toBeNull()
+    // Collapsed: no rows, just the summary.
+    expect(screen.queryByText('f0.ts')).toBeNull()
+    const summary = screen.getByText('turn.count')
+    expect(t).toHaveBeenCalledWith('turn.count', { count: 5 })
+    fireEvent.click(summary)
+    expect(screen.getByText('f4.ts')).toBeTruthy()
+    // And folds back.
+    fireEvent.click(screen.getByText('turn.count'))
+    expect(screen.queryByText('f0.ts')).toBeNull()
   })
 
-  it('collapses the whole card from the header chevron', async () => {
-    renderRow()
-    await act(async () => {})
-    const header = screen.getByRole('button', { name: /turn\.summary/ })
-    expect(screen.getByText('agent.ts')).toBeTruthy()
-    fireEvent.click(header)
-    expect(screen.queryByText('agent.ts')).toBeNull()
-    fireEvent.click(header)
-    expect(screen.getByText('agent.ts')).toBeTruthy()
-  })
 })

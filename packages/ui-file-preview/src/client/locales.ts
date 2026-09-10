@@ -24,6 +24,7 @@ export type FilePreviewKey =
   | 'preview.fullscreen'
   | 'preview.exitFullscreen'
   | 'preview.staticHint'
+  | 'turn.count'
   | 'turn.summary'
   | 'turn.summaryOne'
   | 'turn.expand'
@@ -107,6 +108,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.fullscreen': '全屏',
   'preview.exitFullscreen': '退出全屏',
   'preview.staticHint': '静态预览：此页面含脚本，脚本不会运行——点右上角「运行脚本」可交互',
+  'turn.count': '{count} 个产物',
   'turn.summary': '{count} 个文件已修改',
   'turn.summaryOne': '1 个文件已修改',
   'turn.expand': '展开其余 {count} 个',
@@ -184,6 +186,7 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.fullscreen': 'Fullscreen',
   'preview.exitFullscreen': 'Exit fullscreen',
   'preview.staticHint': 'Static preview: this page contains scripts, which do not run here — use "Run scripts" above for interactivity',
+  'turn.count': '{count} products',
   'turn.summary': '{count} files changed',
   'turn.summaryOne': '1 file changed',
   'turn.expand': 'Show {count} more',

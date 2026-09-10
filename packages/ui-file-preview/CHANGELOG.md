@@ -16,7 +16,7 @@
 - mention 打开直落详情页：就地包装官方 `chatFileMentions`（保留官方认领逻辑，open 改走规范化文件地址、label 修为「在侧边栏打开」）；登记为缝 S1 的尾巴
 - 同一文件单一 tab：mention 与回合卡片统一走 `openResource('dsh-resource://file/session/<id>/<path>')` 规范化地址（mention 原来开 page 地址、卡片开文件地址，同一文件出现两个详情 tab）；回合卡片不再区分工作区内外——我们的认领覆盖 session 作用域内全部可渲染地址（工作区外绝对路径也在其内，详情页经 Remote read 正常渲染），重复点击聚焦已有 tab
 - 产物打开入口统一：tab 类型升级为地址认领型（`patterns: ['dsh-resource://file/**']` + `canOpen` 纯静态：session 作用域 + 可渲染后缀；extension 档压过官方 fallback 档）。mention / 官方产物卡片 / 文件树的打开全部落我们的详情页；渲染不了的类型（pdf 等）回落官方 document tab。早期版本曾按 fold 记录过滤——冷缓存窗口导致「有时官方有时我们」的竞态，已去除
-- 回合卡片选举确定性：显式 `priority: 1` 排在官方 deliverables（默认 0）之后——官方认领的回合永远显示官方卡片，本卡片只出现在官方数据缺失的回合
+- 回合卡片升级为产物表格并取代官方 deliverables 行（用户决策 2026-09-11）：紧凑表格（图标+文件名+目录+增删行数），>3 个产物折叠为「N 个产物」可展开摘要行；`priority: -1` 抢占恢复——官方行永不挂载（其大卡不折叠、间距观感差）。选举语义记录：链为升序先选，官方默认 0
 
 ## 0.2.0（2026-09-10）
 

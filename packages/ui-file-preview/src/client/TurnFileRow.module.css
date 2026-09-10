@@ -1,7 +1,8 @@
-/* Turn mutation card: a finished turn's created/edited files as a titled
- * card with per-file line deltas — it preempts the official produced-files
- * row through the turnTail chain. The geometry follows the app's diff-card
- * chrome (hairline border, subtle header band) so the card reads as native. */
+/* Turn product table: a finished turn's created/edited files as a compact
+ * table — it preempts the official deliverables row through the turnTail
+ * chain (priority -1, a deliberate product decision). The geometry follows
+ * the app's diff-card chrome (hairline border) so the card reads as native.
+ * At >3 products the card collapses to the quiet summary row. */
 
 .card {
   margin-top: 16px;
@@ -13,7 +14,8 @@
   line-height: 22px;
 }
 
-.header {
+/* The collapsed state: one quiet full-width row, no band. */
+.summary {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -21,26 +23,31 @@
   margin: 0;
   padding: 6px 12px;
   border: none;
-  background: var(--dsw-alias-bg-l2);
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
-  font-weight: 500;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
 
-/* The header's divider exists only while the body is visible. */
-.header[aria-expanded='true'] {
+.summary:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.summaryText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The summary's divider exists only while the table is visible. */
+.summary[aria-expanded='true'] {
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.headerIcon {
+.fileIcon {
   flex: none;
-}
-
-.headerText {
-  flex: 1;
-  min-width: 0;
 }
 
 .chevron {
@@ -100,25 +107,6 @@
   white-space: nowrap;
 }
 
-/* The overflow row: quiet full-width toggle under the capped file rows. */
-.overflowToggle {
-  width: 100%;
-  margin: 0;
-  padding: 6px 12px;
-  border: none;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-size: 12px;
-  text-align: center;
-  cursor: pointer;
-}
-
-.overflowToggle:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
-}
 
 /* The deltas ride the diff meaning colors (added on success, removed on
    error), the same tokens the diff block uses. */

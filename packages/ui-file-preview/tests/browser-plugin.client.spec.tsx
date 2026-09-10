@@ -143,12 +143,12 @@ describe('ui-file-preview browser plugin', () => {
     expect(entry?.options).toMatchObject({ key: FILE_PREVIEW_ID })
     expect(entry?.locale).toBe('filePreview')
     expect(entry?.store).toBeTruthy()
-    // The turn row: priority 1, explicitly AFTER the official deliverables
-    // entry (default 0) — the official card wins every turn it claims; ours
-    // renders only the turns official data misses.
+    // The turn row: priority -1, explicitly BEFORE the official deliverables
+    // entry (default 0) — the chain elects ascending, so our product table
+    // claims every turn and the official row never mounts (product decision).
     const { entry: turnEntry } = turnApi(b)
     expect(turnEntry).toBeTruthy()
-    expect(turnEntry?.options.priority).toBe(1)
+    expect(turnEntry?.options.priority).toBe(-1)
     expect(turnEntry?.locale).toBe('filePreview')
     // The change-history renderer: builtin band (never the default), cheapest
     // loading mode, body in the keyed document seat.

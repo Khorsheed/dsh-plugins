@@ -189,14 +189,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
-    // Priority 1: the chain elects the first non-null select in ASCENDING
+    // Priority -1: the chain elects the first non-null select in ASCENDING
     // priority order (ui-slots ChainSelect contract), and the official
-    // deliverables entry carries the default 0 — so the official card claims
-    // every turn its own data covers, and this card's unconditional claim is
-    // consulted only for turns official data misses (pure bash captures, S2).
-    // Explicit beats implicit: at equal priority the election would ride on
-    // registration order, which drifts with compose order.
-    priority: 1,
+    // deliverables entry carries the default 0 — so this card claims every
+    // turn and the official row never mounts while this plugin is composed.
+    // Deliberate product decision (2026-09-11): the turn's compact product
+    // table REPLACES the official deliverables row (its presented card never
+    // collapses and its spacing reads wrong); the S1-era preemption returns
+    // in table form.
+    priority: -1,
     select: selectTurnFiles,
     locale: NS,
     inject: (): FilePreviewTurnRowInjected => ({

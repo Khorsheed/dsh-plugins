@@ -18,9 +18,13 @@ Status: implemented
 - **mention 打开直落我们的详情页（S1 尾巴，新绕行）**：ui-deliverables 的 `chatFileMentions` 对 `present` 交付的文件走原生默认程序、未交付的才走 sidebar。`ctx.provide` 拒绝重名、`ctx.set` 拒绝非提供方 fiber（"cannot set property in multiple fibers"），故 `mentions-wrap.ts` 就地改写所提供对象的 `forClosing`——原实现保留认领逻辑；每个 resolved `open` 改为 `sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))`——规范化文件地址，而不是 page 地址：openTab 的 page 打开与 openResource 的认领会给同一文件造两个 tab（page 地址 `sidebar://file-preview` vs 文件 contentId），活体试用当场抓到。回合卡片的工作区外 openTab 分支同理删除——`fileAddressFor` 把绝对路径保留在 session 地址里且我们的认领覆盖（详情页经 Remote read 照常渲染），于是所有来源对同一文件收敛到同一个 content id；包装抛错回退 `owner.openFile`，label 修实（官方「在默认程序中打开」已不成立）。包装住在注入 `chatFileMentions` 的嵌套 fiber 里（一次性 `ctx.get` 会与 deliverables fiber 的 provide 抢跑；嵌套 fiber 等待服务出现、HMR 重提供时重包装）。登记为缝 S1 的补充，退役条件=官方提供 opener 覆盖点。
 - **tab 类型同时认领地址**：`patterns: ['dsh-resource://file/**']` + `canOpen` = session 作用域 + 可渲染后缀，**纯静态**。默认 extension 档压过官方 document tab 的 fallback 档，所有 openResource 入口（官方产物卡片、文件树、owner.openFile）对可渲染文件都落我们的详情页；渲染不了的类型（pdf、二进制）否决回落。guide 入口与认领共存。body 在没有 `params.path` 时从 `navigation.address` 解析详情路径，每个 navigation revision 只套用一次。第一版还要求 fold 成员（apply 级缓存）——活体抓到竞态：官方卡片认领的回合不挂我们的卡片（其加载器），恰好那些文件的缓存恒冷、永远落官方页（「有时官方有时我们」）。canOpen 必须同步回答而任何数据缓存都有冷启动窗口，故成员判定整体去除——详情页对任何工作区内文件都能渲染，认领语义变为确定性。
 - **行动作恢复**（详情页头部——行悬停动作组试过，因可读性被否）：复制路径恒定（`writeClipboard` 写 cwd 解析后的绝对路径）；在文件夹打开保持旧抽屉语义——宿主半 `reveal`（选中文件），回退官方 open-in-app POST 路由开父目录；在 IDE 打开要精确到文件，官方路由只收目录，故宿主半新增 `filePreview.openExternal(path, app)`——macOS `open -a <App>`（经 dsh-native-command），catalog id → `.app` 名映射镜像官方 catalog 的 darwin 条目（`open-external.ts`）。手势可见性由每页一次的 `/open-in-app/apps` 探测驱动（镜像 local-files 的 `open-in-app.ts`——跨插件值引用被纯度门禁止）；探测无应答或无对应应用 = 按钮隐藏。
-- **回合卡片选举确定性**：链选举为升序 priority 首个非空（ui-slots ChainSelect 契约），官方 deliverables 为默认 0，故本卡片显式 `priority: 1`——官方认领恒胜，本卡片只覆盖官方数据缺失的回合；同档会随 compose 序飘移。
+- **回合卡片选举，最终形态**：链选举为升序 priority 首个非空（ui-slots ChainSelect 契约），官方 deliverables 默认 0。中间版曾显式 `priority: 1`（官方赢它认领的回合，我们补剩余）；活体评审随后确立两个事实——某些会话里官方大卡消失并非我们选举获胜，而是官方自身行为（大卡只渲染 `present` 工具交付的文件；produced+presented 全空时 `selectDeliverables` 否决，Deliverables.tsx），且用户直接更认我们的紧凑表格——故条目改 `priority: -1` 认领所有回合：本插件在组合内时官方行永不挂载。S1 时代的抢占以产品决策回归，形态是表格。
 - **minHost 前移至 0.1.5-rc.1**（消费的扩展面在此之前不存在），版本 0.3.0；旧宿主停留 0.2.x 线。
 - **依赖机制**：本包随全仓 0.1.5-rc.1 基线走。一处仓级调整不可避免：0.1.5 的客户端包 peer 要求 `@deepseek-ai/cordis ^4.0.2`，而仓内基线是 4.0.1——两个 cordis 实例会把每个 `declare module` 合并（Context、SlotMap、LocaleNamespaceMap）按 peer 变体劈成两份，插件自己的合并永远落不到它 import 解析到的那份上。修复最终以仓级形态落地：`overrides` 把 cordis 钉到 4.0.2（bb04c84），全图保持一个 cordis 实例。另外，0.1.5 的 `dsh-client-store` npm 产物未打包（裸 `zustand`/`immer` import 且无声明依赖——官方构建本应内联，疑似上游打包缺陷），而客户端 bundle 按 `INLINE_SAFE` 内联该引擎，因此本包 dev-depends `zustand ~4.4.7` + `immer ^10.1.1` 使内联可解析。
+
+### 产物表格（回合卡片，最终形态）
+
+turnTail 是取代官方 deliverables 行的紧凑表格：文件类型图标 + 文件名 + 弱化目录 + 行数增减；≤3 个产物直接平铺，更多则折叠为「N 个产物」可展开摘要行（官方大卡从不折叠）。点击保持规范化地址通路（owner.openFile → 我们认领的详情 tab）。这是 0.2 时代抽屉列表的密度在当前 token 上的重述。
 
 ### 活体对比后的打磨
 
