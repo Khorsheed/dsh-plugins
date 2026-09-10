@@ -1,6 +1,6 @@
 /** Composed props contracts for the file-preview right-Sidebar tab and the turn card. */
 
-import type { FilePreviewList, FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
+import type { FilePreviewList, FilePreviewRead, FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
@@ -26,6 +26,8 @@ export type FilePreviewRemote = TypertRemoteNamespaceMap['filePreview']
 export interface FilePreviewTabInjected {
   /** Fetch one session's touched-file list (one RPC; supplies the diff history). */
   listFiles: (sessionId: SessionId) => Promise<RemoteResult<FilePreviewList>>
+  /** Fetch one file's current content (one RPC, host-capped) — the detail view's content tab. */
+  readFile: (sessionId: SessionId, path: string) => Promise<RemoteResult<FilePreviewRead>>
   /** Copy one path's host-resolved absolute spelling to the clipboard; resolves true only when the host accepted the write. */
   copyPath: (path: string) => Promise<boolean>
   /** Reveal one path in the host file manager (file selected; falls back to the official open-in-app route on its parent folder). */

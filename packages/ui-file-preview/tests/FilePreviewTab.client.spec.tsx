@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
-/** FilePreviewTab: the right-Sidebar page body — the session's touched
- * files as one full-height list. List fetch rides the injected Remote face;
- * an in-workspace row click selects the file AND hands its content preview to
- * the official document tab through the tab's `openResource`; an
- * outside-workspace row only selects (no resource address exists) and carries
- * the outside marker; navigation params select on arrival. The change history
- * lives in the document tab's switchable renderer (FileHistoryBody), not here. */
+/** FilePreviewTab: the right-Sidebar page body — the session's touched files
+ * as a full-height list navigating IN-TAB to a detail view. List fetch rides
+ * the injected Remote face; a row click selects the file and the detail view
+ * (breadcrumb header + copy/folder/IDE actions + 内容/改动记录 toggle over the
+ * restored preview stack) replaces the list; the back button returns.
+ * Outside-workspace files open the same detail view (the Remote read resolves
+ * absolute paths). Navigation params select on arrival. */
 
 import { useEffect, useReducer, useRef, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { FilePreviewEntry, FilePreviewList } from '@khorsheed/dsh-file-preview/types'
+import type { FilePreviewEntry, FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { FilePreviewTab } from '../src/client/FilePreviewTab.tsx'
@@ -37,9 +37,11 @@ const LIST: FilePreviewList = {
   truncated: false,
 }
 
+const READ: FilePreviewRead = { path: 'src/agent.ts', kind: 'text', content: 'const a = 1', truncated: false }
+
 interface HarnessOptions {
   readonly listFiles?: FilePreviewTabProps['listFiles']
-  readonly openResource?: (address: string) => void
+  readonly readFile?: FilePreviewTabProps['readFile']
   readonly navigation?: { readonly params?: { readonly path?: string } | undefined; readonly revision: number }
   readonly cwd?: string | undefined
   /** Probed open-in-app catalog ids; null while the probe is unanswered. */
@@ -51,10 +53,10 @@ interface HarnessOptions {
 
 /** Render the body over a real store instance, re-rendering on store commits. */
 function renderTab(opts: HarnessOptions = {}) {
-  const openResource = opts.openResource ?? vi.fn()
   const navigation = opts.navigation ?? { params: undefined, revision: 0 }
   const cwd = 'cwd' in opts ? opts.cwd : '/work'
   const listFiles = opts.listFiles ?? vi.fn(async () => ({ ok: true as const, value: LIST }))
+  const readFile = opts.readFile ?? vi.fn(async () => ({ ok: true as const, value: READ }))
   const apps = 'apps' in opts ? (opts.apps ?? null) : ['finder', 'cursor']
   const copyPath = opts.copyPath ?? vi.fn(async () => true)
   const revealFolder = opts.revealFolder ?? vi.fn()
@@ -64,7 +66,7 @@ function renderTab(opts: HarnessOptions = {}) {
   // Stable per mount, as the slot runtime guarantees: a fresh signal per call
   // would re-arm the fetch effect on every render.
   const signal = new AbortController().signal
-  const tabActions = { openResource, openTab: vi.fn(), close: vi.fn() }
+  const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() }
   const useTabInfo = (): SidebarRightTabInfo => ({
     sidebar: { expanded: true, fullscreen: false },
     panel: { id: 'p1' as SidebarRightTabInfo['panel']['id'] },
@@ -92,6 +94,7 @@ function renderTab(opts: HarnessOptions = {}) {
       useStore: <T,>(selector: (state: never) => T): T => selector(instance.getSnapshot() as never),
       actions: instance.actions,
       listFiles,
+      readFile,
       copyPath,
       revealFolder,
       openInIde,
@@ -101,7 +104,7 @@ function renderTab(opts: HarnessOptions = {}) {
     } as unknown as FilePreviewTabProps
     return <FilePreviewTab {...props} />
   }
-  return { openResource, listFiles, copyPath, revealFolder, openInIde, ...render(<Harness />) }
+  return { listFiles, readFile, copyPath, revealFolder, openInIde, tabActions, ...render(<Harness />) }
 }
 
 afterEach(cleanup)
@@ -124,20 +127,77 @@ describe('FilePreviewTab', () => {
     expect(screen.getByText('list.empty')).toBeTruthy()
   })
 
-  it('click selects the file and opens the official document tab', async () => {
-    const openResource = vi.fn()
-    const { container } = renderTab({ openResource })
+  it('a row click navigates in-tab to the detail view (never the official tab)', async () => {
+    const { readFile, tabActions } = renderTab()
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
-    expect(openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1/src/agent.ts')
-    // The row carries the selected styling.
-    expect(container.querySelector('[title="src/agent.ts"]')?.className).toContain('rowSelected')
+    // No openResource: the detail view opens inside our tab.
+    expect(tabActions.openResource).not.toHaveBeenCalled()
+    // Breadcrumb header: directory greyed, final segment solid; back button.
+    expect(screen.getByLabelText('detail.back')).toBeTruthy()
+    expect(screen.getByText('agent.ts')).toBeTruthy()
+    expect(screen.getByText('/work/src/')).toBeTruthy()
+    await act(async () => {})
+    // The content tab fetched the current content through the Remote
+    // (CodeBlock splits tokens, so match the rendered text as a whole).
+    expect(readFile).toHaveBeenCalledWith('s1', 'src/agent.ts')
+    expect(document.body.textContent).toContain('const a = 1')
   })
 
-  it('an outside-workspace row only selects — no resource address exists', async () => {
-    const openResource = vi.fn()
-    const { container } = renderTab({
-      openResource,
+  it('detail view toggles into the change history and back', async () => {
+    renderTab()
+    await act(async () => {})
+    fireEvent.click(screen.getByText('agent.ts'))
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'drawer.tab.diff' }))
+    expect(screen.getByText(/history\.step\.count/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'drawer.tab.content' }))
+    expect(document.body.textContent).toContain('const a = 1')
+  })
+
+  it('the back button returns to the list', async () => {
+    renderTab()
+    await act(async () => {})
+    fireEvent.click(screen.getByText('agent.ts'))
+    await act(async () => {})
+    fireEvent.click(screen.getByLabelText('detail.back'))
+    expect(screen.getByText('guide.md')).toBeTruthy()
+    expect(screen.queryByLabelText('detail.back')).toBeNull()
+  })
+
+  it('detail actions: copy always, folder/IDE behind the probed catalog', async () => {
+    const copyPath = vi.fn(async () => true)
+    const revealFolder = vi.fn()
+    const openInIde = vi.fn()
+    renderTab({ copyPath, revealFolder, openInIde, apps: ['finder', 'cursor'] })
+    await act(async () => {})
+    fireEvent.click(screen.getByText('agent.ts'))
+    await act(async () => {})
+    fireEvent.click(screen.getByLabelText('row.copyPath'))
+    expect(copyPath).toHaveBeenCalledWith('src/agent.ts')
+    fireEvent.click(screen.getByLabelText('row.openFolder'))
+    expect(revealFolder).toHaveBeenCalledWith('src/agent.ts')
+    fireEvent.click(screen.getByLabelText('row.openIde'))
+    expect(openInIde).toHaveBeenCalledWith('src/agent.ts')
+  })
+
+  it('hides the folder/IDE gestures until the probe answers with a handler', async () => {
+    renderTab({ apps: null })
+    await act(async () => {})
+    fireEvent.click(screen.getByText('agent.ts'))
+    await act(async () => {})
+    expect(screen.getByLabelText('row.copyPath')).toBeTruthy()
+    expect(screen.queryByLabelText('row.openFolder')).toBeNull()
+    expect(screen.queryByLabelText('row.openIde')).toBeNull()
+  })
+
+  it('an outside-workspace file opens the same detail view (Remote read resolves it)', async () => {
+    const readFile = vi.fn(async () => ({
+      ok: true as const,
+      value: { path: '/tmp/artifact.html', kind: 'text', content: '<b>hi</b>', truncated: false } satisfies FilePreviewRead,
+    }))
+    renderTab({
+      readFile,
       listFiles: vi.fn(async () => ({
         ok: true as const,
         value: { entries: [entry('/tmp/artifact.html', 1)], asOfSeq: 1, truncated: false },
@@ -145,17 +205,16 @@ describe('FilePreviewTab', () => {
     })
     await act(async () => {})
     fireEvent.click(screen.getByText('artifact.html'))
-    expect(openResource).not.toHaveBeenCalled()
-    // The row is marked with the outside hint and shows selected styling.
-    const row = container.querySelector('[title^="/tmp/artifact.html"]')
-    expect(row?.getAttribute('title')).toContain('list.outsideWorkspace')
-    expect(row?.className).toContain('rowSelected')
+    await act(async () => {})
+    expect(readFile).toHaveBeenCalledWith('s1', '/tmp/artifact.html')
+    expect(screen.getByLabelText('detail.back')).toBeTruthy()
   })
 
-  it('navigation params select the carried path on arrival', async () => {
-    const { container } = renderTab({ navigation: { params: { path: 'src/agent.ts' }, revision: 1 } })
+  it('navigation params land directly on the detail view', async () => {
+    const { readFile } = renderTab({ navigation: { params: { path: 'src/agent.ts' }, revision: 1 } })
     await act(async () => {})
-    expect(container.querySelector('[title="src/agent.ts"]')?.className).toContain('rowSelected')
+    expect(screen.getByLabelText('detail.back')).toBeTruthy()
+    expect(readFile).toHaveBeenCalledWith('s1', 'src/agent.ts')
   })
 
   it('narrows the list by the search term', async () => {
@@ -165,37 +224,6 @@ describe('FilePreviewTab', () => {
     // The matched name renders split around a <mark>, so query by the row's title.
     expect(container.querySelector('[title="src/agent.ts"]')).toBeNull()
     expect(container.querySelector('[title="docs/guide.md"]')).not.toBeNull()
-  })
-
-  it('row actions: copy always, folder/IDE behind the probed catalog', async () => {
-    const copyPath = vi.fn(async () => true)
-    const revealFolder = vi.fn()
-    const openInIde = vi.fn()
-    const openResource = vi.fn()
-    renderTab({ copyPath, revealFolder, openInIde, openResource, apps: ['finder', 'cursor'] })
-    await act(async () => {})
-    // Two rows listed — the actions repeat per row; click the first row's.
-    fireEvent.click(screen.getAllByLabelText('row.copyPath')[0]!)
-    expect(copyPath).toHaveBeenCalledWith('src/agent.ts')
-    fireEvent.click(screen.getAllByLabelText('row.openFolder')[0]!)
-    expect(revealFolder).toHaveBeenCalledWith('src/agent.ts')
-    fireEvent.click(screen.getAllByLabelText('row.openIde')[0]!)
-    expect(openInIde).toHaveBeenCalledWith('src/agent.ts')
-    // A row action never triggers the row's own open gesture.
-    expect(openResource).not.toHaveBeenCalled()
-  })
-
-  it('hides the folder/IDE gestures until the probe answers with a handler', async () => {
-    renderTab({ apps: null })
-    await act(async () => {})
-    expect(screen.getAllByLabelText('row.copyPath').length).toBeGreaterThan(0)
-    expect(screen.queryByLabelText('row.openFolder')).toBeNull()
-    expect(screen.queryByLabelText('row.openIde')).toBeNull()
-    cleanup()
-    renderTab({ apps: [] })
-    await act(async () => {})
-    expect(screen.queryByLabelText('row.openFolder')).toBeNull()
-    expect(screen.queryByLabelText('row.openIde')).toBeNull()
   })
 
   it('refresh re-fetches the list', async () => {

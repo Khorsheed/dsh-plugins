@@ -30,6 +30,7 @@ export interface FilePreviewState {
 /** Annotation twin of the actions literal below (drift fails assignability at defineStore). */
 export type FilePreviewActions = {
   select: (draft: FilePreviewState, tabId: TabId, path: string) => void
+  deselect: (draft: FilePreviewState, tabId: TabId) => void
   refreshList: (draft: FilePreviewState) => void
   setList: (draft: FilePreviewState, list: FilePreviewList) => void
   setListLoading: (draft: FilePreviewState, loading: boolean) => void
@@ -60,6 +61,12 @@ export function createFilePreviewStore(): EngineStoreHandle<FilePreviewState, Fi
        * @param path - the recorded display path.
        */
       select: (d, tabId: TabId, path: string) => { d.selected[tabId] = path },
+      /**
+       * Clear one tab's selection (the detail view's back gesture).
+       * @param d - draft state.
+       * @param tabId - the tab going back to the list.
+       */
+      deselect: (d, tabId: TabId) => { delete d.selected[tabId] },
       /** Re-trigger the list fetch. @param d - draft state. */
       refreshList: (d) => { d.listRequestRev += 1 },
       /**

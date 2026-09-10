@@ -164,6 +164,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     store: createFilePreviewStore,
     inject: (sessionId: SessionId): FilePreviewTabInjected => ({
       listFiles: (sid: SessionId) => remote.list(sid),
+      readFile: (sid: SessionId, path: string) => remote.read(sid, path),
       copyPath: (path: string) => writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path)),
       revealFolder: (path: string) => { revealFolder(sessionId, path) },
       openInIde: (path: string) => { openInIde(sessionId, path) },

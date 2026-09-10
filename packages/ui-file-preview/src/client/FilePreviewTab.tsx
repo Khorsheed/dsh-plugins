@@ -1,86 +1,131 @@
 /**
- * The file-preview right-Sidebar tab body: the session's touched files as one
- * full-height list.
+ * The file-preview right-Sidebar tab body: the session's touched files as a
+ * full-height list, navigating IN-TAB to a detail view on row click.
  *
- * Content preview is deliberately NOT here: clicking an in-workspace file
- * hands it to the official document tab through the tab's
- * `actions.openResource('dsh-resource://file/session/<id>/<path>')` — the S1
- * seam that landed at host 0.1.5-rc.1. The per-write change history lives in
- * the document tab itself as a switchable renderer (see FileHistoryBody). A
- * bash-captured artifact outside the workspace has no address the `file`
- * resource can resolve, so its row only selects, marked with an
- * outside-workspace hint. Navigation params
- * (`openTab('file-preview', { params: { path } })`, the turn card's
- * outside-workspace gesture) select the path on arrival.
+ * The detail view carries the old drawer's grammar: a breadcrumb header
+ * (directory greyed, final segment in full ink) with the copy-path /
+ * show-in-folder / open-in-IDE actions, and a 内容 / 改动记录 toggle over the
+ * restored preview stack (FilePreviewPane: markdown/JSON/CSV renderings, the
+ * sandboxed HTML view, content search) plus the shared DiffHistory. Being our
+ * own view it works for outside-workspace files too (reveal/openExternal take
+ * absolute paths, and the host `read` resolves them) — they are no longer
+ * list-only rows. Mentions still open in the official document tab (the quick
+ * preview path); the 「改动记录」 renderer registration there is unaffected.
  *
- * Each row carries hover actions in the old drawer's semantics: copy path
- * always; open-in-folder (reveal, with the official open-in-app route as the
- * parent-folder fallback) and open-in-IDE (file-exact, through the host
- * Remote) when the once-per-page apps probe found a handler.
+ * Navigation params (`openTab('file-preview', { params: { path } })`, the
+ * turn card's outside-workspace gesture) select the path on arrival — which
+ * lands directly on the detail view.
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  FileTypeIcon, IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16,
-  IconGlobeOutline14, IconRefreshOutline16,
+  FileTypeIcon, IconCheckOutline16, IconChevronLeftOutline14, IconCodeOutline16, IconCopyOutline16,
+  IconFolderOpenOutline16, IconGlobeOutline14, IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { FilePreviewEntry } from '@khorsheed/dsh-file-preview/types'
+import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { FilePreviewTabProps, FilePreviewTabInjected } from './contract.ts'
 import { useCopyPathFeedback } from './copy-path.ts'
+import { FilePreviewPane } from './FilePreviewPane.tsx'
 import { pickFileManager, pickIde } from './open-in-app.ts'
 import { basename, highlightMatch, isWithinWorkspace, matchesQuery, parentPath, relativeToCwd, sortByLatest } from './path-utils.ts'
 import css from './FilePreviewTab.module.css'
 
-/** The gestures one row offers, cut from the injected face plus the probe snapshot. */
-interface RowActionsProps {
+/** One detail view: header (back + breadcrumb + actions) over the preview pane. */
+function DetailView(props: {
+  readonly sessionId: SessionId
   readonly path: string
+  readonly entry: FilePreviewEntry | undefined
+  readonly cwd: string | undefined
   readonly apps: readonly string[] | null
+  readonly readFile: FilePreviewTabInjected['readFile']
   readonly copyPath: FilePreviewTabInjected['copyPath']
   readonly revealFolder: FilePreviewTabInjected['revealFolder']
   readonly openInIde: FilePreviewTabInjected['openInIde']
+  readonly onBack: () => void
   readonly t: FilePreviewTabProps['t']
-}
-
-/** One row's hover actions: copy always; folder/IDE behind the probed catalog. */
-function RowActions({ path, apps, copyPath, revealFolder, openInIde, t }: RowActionsProps): ReactNode {
+}): ReactNode {
+  const { sessionId, path, entry, cwd, apps, readFile, copyPath, revealFolder, openInIde, onBack, t } = props
+  const [read, setRead] = useState<FilePreviewRead | null>(null)
+  const [failed, setFailed] = useState(false)
   const { copied, onCopy } = useCopyPathFeedback(copyPath, path)
   const fileManager = apps === null ? undefined : pickFileManager(apps)
   const ide = apps === null ? undefined : pickIde(apps)
+  // The header shows the host-resolved absolute spelling (the same one the
+  // copy/open gestures act on), directory greyed and the final segment solid.
+  const displayPath = resolveWorkspacePath(cwd, path)
+  const { directory, name } = pathPartsOf(displayPath)
+
+  // Fetch the current content for the content tab; a stale answer (selection
+  // moved) is dropped by the effect cleanup.
+  useEffect(() => {
+    let cancelled = false
+    setRead(null)
+    setFailed(false)
+    void readFile(sessionId, path).then((result) => {
+      if (cancelled) return
+      if (result.ok) setRead(result.value)
+      else setFailed(true)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, path, readFile])
+
   return (
-    <span className={css.rowActions}>
-      <button
-        type="button"
-        className={css.rowAction}
-        title={copied ? t('row.copied') : t('row.copyPath')}
-        aria-label={copied ? t('row.copied') : t('row.copyPath')}
-        onClick={(event) => { event.stopPropagation(); onCopy() }}
-      >
-        {copied ? <IconCheckOutline16 size={12} /> : <IconCopyOutline16 size={12} />}
-      </button>
-      {fileManager !== undefined && (
+    <div className={css.detail}>
+      <div className={css.detailHeader}>
         <button
           type="button"
-          className={css.rowAction}
-          title={t('row.openFolder')}
-          aria-label={t('row.openFolder')}
-          onClick={(event) => { event.stopPropagation(); revealFolder(path) }}
+          className={css.tool}
+          aria-label={t('detail.back')}
+          title={t('detail.back')}
+          onClick={onBack}
         >
-          <IconFolderOpenOutline16 size={12} />
+          <IconChevronLeftOutline14 />
         </button>
-      )}
-      {ide !== undefined && (
-        <button
-          type="button"
-          className={css.rowAction}
-          title={t('row.openIde')}
-          aria-label={t('row.openIde')}
-          onClick={(event) => { event.stopPropagation(); openInIde(path) }}
-        >
-          <IconCodeOutline16 size={12} />
-        </button>
-      )}
-    </span>
+        <div className={css.detailPath} title={displayPath}>
+          {directory !== '' && <span className={css.detailDir}>{directory}</span>}
+          <span className={css.detailName}>{name}</span>
+        </div>
+        <div className={css.detailActions}>
+          <button
+            type="button"
+            className={css.tool}
+            title={copied ? t('row.copied') : t('row.copyPath')}
+            aria-label={copied ? t('row.copied') : t('row.copyPath')}
+            onClick={onCopy}
+          >
+            {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
+          </button>
+          {fileManager !== undefined && (
+            <button
+              type="button"
+              className={css.tool}
+              title={t('row.openFolder')}
+              aria-label={t('row.openFolder')}
+              onClick={() => { revealFolder(path) }}
+            >
+              <IconFolderOpenOutline16 />
+            </button>
+          )}
+          {ide !== undefined && (
+            <button
+              type="button"
+              className={css.tool}
+              title={t('row.openIde')}
+              aria-label={t('row.openIde')}
+              onClick={() => { openInIde(path) }}
+            >
+              <IconCodeOutline16 />
+            </button>
+          )}
+        </div>
+      </div>
+      {read === null && !failed && <div className={css.empty}>{t('list.loading')}</div>}
+      {failed && <div className={css.empty}>{t('drawer.kind.error')}</div>}
+      {read !== null && <FilePreviewPane key={path} entry={entry} read={read} t={t} />}
+    </div>
   )
 }
 
@@ -90,12 +135,12 @@ function RowActions({ path, apps, copyPath, revealFolder, openInIde, t }: RowAct
  */
 export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
   const {
-    useTabInfo, sessionId, useSessions, useStore, actions, listFiles,
+    useTabInfo, sessionId, useSessions, useStore, actions, listFiles, readFile,
     copyPath, revealFolder, openInIde, loadOpenInApps, t,
   } = props
   const { useOpenInApps } = props
   const { tab } = useTabInfo()
-  const { signal, actions: tabActions, navigation } = tab
+  const { signal, navigation } = tab
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const apps = useOpenInApps(value => value)
   const list = useStore(s => s.list)
@@ -147,6 +192,26 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
   }, [list, search])
   const searching = search.trim().length > 0
 
+  if (selectedPath !== null) {
+    return (
+      <div className={css.root}>
+        <DetailView
+          sessionId={sessionId}
+          path={selectedPath}
+          entry={list?.find(entry => entry.path === selectedPath)}
+          cwd={cwd}
+          apps={apps}
+          readFile={readFile}
+          copyPath={copyPath}
+          revealFolder={revealFolder}
+          openInIde={openInIde}
+          onBack={() => { actions.deselect(tab.id) }}
+          t={t}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className={css.root}>
       <div className={css.filterRow}>
@@ -158,8 +223,10 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
           onChange={(event) => { setSearch(event.target.value) }}
           aria-label={t('view.search.placeholder')}
         />
+        {/* Borderless icon-only reload, the ui-sidebar-files header tool shape. */}
         <button
           type="button"
+          className={css.tool}
           aria-label={t('list.refresh')}
           title={t('list.refresh')}
           onClick={() => { actions.refreshList() }}
@@ -176,49 +243,33 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
           <div className={css.empty}>{searching ? t('view.search.noMatch') : t('list.empty')}</div>
         )}
         {ordered?.map((entry) => {
-          const selected = entry.path === selectedPath
           const name = basename(entry.path)
           const parts = searching ? highlightMatch(name, search.trim()) : null
           const within = isWithinWorkspace(cwd, entry.path)
           return (
-            <div key={entry.path} className={css.rowWrap}>
-              <button
-                type="button"
-                className={selected ? `${css.row} ${css.rowSelected}` : css.row}
-                title={within ? entry.path : `${entry.path} — ${t('list.outsideWorkspace')}`}
-                onClick={() => {
-                  actions.select(tab.id, entry.path)
-                  // In-workspace files hand their content preview to the
-                  // official document tab; outside-workspace paths have no
-                  // addressable resource, so the click only selects.
-                  if (within) tabActions.openResource(fileAddressFor(sessionId, cwd, entry.path))
-                }}
-              >
-                <span className={css.rowName}>
-                  <FileTypeIcon path={entry.path} size={14} />
-                  {parts === null
-                    ? name
-                    : (
-                      <>
-                        {parts[0]}
-                        <mark className={css.match}>{parts[1]}</mark>
-                        {parts[2]}
-                      </>
-                    )}
-                  {!within && <IconGlobeOutline14 className={css.rowOutside} size={12} />}
-                </span>
-                <span className={css.rowDir}>{relativeToCwd(parentPath(entry.path), cwd)}</span>
-                <span className={css.rowStep}>{t('history.step', { turn: entry.turn, step: entry.step })}</span>
-              </button>
-              <RowActions
-                path={entry.path}
-                apps={apps}
-                copyPath={copyPath}
-                revealFolder={revealFolder}
-                openInIde={openInIde}
-                t={t}
-              />
-            </div>
+            <button
+              key={entry.path}
+              type="button"
+              className={css.row}
+              title={within ? entry.path : `${entry.path} — ${t('list.outsideWorkspace')}`}
+              onClick={() => { actions.select(tab.id, entry.path) }}
+            >
+              <span className={css.rowName}>
+                <FileTypeIcon path={entry.path} size={14} />
+                {parts === null
+                  ? name
+                  : (
+                    <>
+                      {parts[0]}
+                      <mark className={css.match}>{parts[1]}</mark>
+                      {parts[2]}
+                    </>
+                  )}
+                {!within && <IconGlobeOutline14 className={css.rowOutside} size={12} />}
+              </span>
+              <span className={css.rowDir}>{relativeToCwd(parentPath(entry.path), cwd)}</span>
+              <span className={css.rowStep}>{t('history.step', { turn: entry.turn, step: entry.step })}</span>
+            </button>
           )
         })}
       </nav>

@@ -198,49 +198,68 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* One row plus its hover actions: the actions float over the row's trailing
-   edge, revealed on hover or keyboard focus, with the list's own background
-   so the row text fades under them instead of colliding. */
-.rowWrap {
-  position: relative;
-}
 
-.rowWrap .row {
-  width: 100%;
-}
-
-.rowActions {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  display: none;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 2px;
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
-  transform: translateY(-50%);
-}
-
-.rowWrap:hover .rowActions,
-.rowWrap:focus-within .rowActions {
+/* Borderless icon-only tool button (the ui-sidebar-files header `.tool`
+   shape): transparent at rest, hover tint, 28px hit area. */
+.tool {
   display: inline-flex;
-}
-
-.rowAction {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
   color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 28px;
   cursor: pointer;
 }
 
-.rowAction:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+.tool:hover {
   color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Detail view: back + breadcrumb + actions in one header row, pane below. */
+.detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.detailHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.detailPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detailDir {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.detailName {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.detailActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
 }

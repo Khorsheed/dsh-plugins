@@ -81,3 +81,33 @@ export function isWithinWorkspace(cwd: string | undefined, path: string): boolea
   const target = path.replace(/\\/g, '/')
   return target === root || target.startsWith(`${root}/`)
 }
+
+/** Whether a path names an HTML document (`.html`/`.htm`), offered a
+ * sandboxed render view alongside the source view. */
+export function isHtmlPath(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return false
+  const ext = path.slice(dot).toLowerCase()
+  return ext === '.html' || ext === '.htm'
+}
+
+/** Map a file extension to a prism language name for CodeBlock, or undefined to auto-detect. */
+const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript', '.cts': 'typescript',
+  '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+  '.json': 'json', '.jsonc': 'json', '.md': 'markdown', '.mdx': 'markdown',
+  '.yml': 'yaml', '.yaml': 'yaml', '.html': 'html', '.htm': 'html',
+  '.css': 'css', '.scss': 'scss', '.less': 'less', '.sh': 'bash', '.bash': 'bash',
+  '.py': 'python', '.sql': 'sql', '.xml': 'xml', '.toml': 'toml', '.ini': 'ini',
+  '.go': 'go', '.rs': 'rust', '.java': 'java', '.c': 'c', '.h': 'c',
+  '.cpp': 'cpp', '.hpp': 'cpp', '.rb': 'ruby', '.php': 'php', '.swift': 'swift',
+  '.kotlin': 'kotlin', '.vue': 'vue', '.svelte': 'svelte', '.dockerfile': 'docker',
+  '.graphql': 'graphql', '.proto': 'protobuf', '.diff': 'diff', '.patch': 'diff',
+}
+
+/** The prism language name for a path's extension, or undefined for auto-detection. */
+export function languageFor(path: string): string | undefined {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return undefined
+  return LANGUAGE_BY_EXTENSION[path.slice(dot).toLowerCase()]
+}
