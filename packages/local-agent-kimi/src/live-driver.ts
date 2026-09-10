@@ -669,7 +669,6 @@ export class KimiAcpLiveDriver {
    */
   private registerMember(spec: KimiLiveRoundSpec): {
     mcpServers: JsonObject[]
-    bind(pid: number): void
     release(): void
   } | undefined {
     const registry = this.ctx.localAgent
@@ -695,7 +694,6 @@ export class KimiAcpLiveDriver {
           { name: MEMBER_BRIDGE_TOKEN_ENV, value: token },
         ],
       }],
-      bind: pid => registry.bindMemberRunPid(token, pid),
       release: () => {
         if (released) return
         released = true
@@ -1061,6 +1059,5 @@ export class KimiAcpLiveDriver {
 /** The member handle each runtime carries (for its session declarations). */
 const runtimeMember = new WeakMap<KimiLiveRuntime, {
   mcpServers: JsonObject[]
-  bind(pid: number): void
   release(): void
 } | undefined>()

@@ -91,12 +91,11 @@ export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access
  * member_message is a write tool. Nothing is written to the scoped home, so
  * there is nothing to prune at settle; `release` only invalidates the token.
  * Returns undefined when the mounted core predates the member channel
- * (declare-and-degrade: the run proceeds unchanged). Host 0.1.5 hides the
- * spawned child's pid, so the bridge's parentage cross-check cannot be bound
- * — the member channel fails CLOSED on its unbound-run rejection until an
- * upstream pid seam or a token-only decision lands. The exec driver
- * registers per round; the live driver registers per resident process and
- * releases on reclaim.
+ * (declare-and-degrade: the run proceeds unchanged). Token-only auth: host
+ * 0.1.5 removed the child pid the parentage cross-check used; the per-run
+ * token is the sole credential (see the package README's threat model). The
+ * exec driver registers per round; the live driver registers per resident
+ * process and releases on reclaim.
  */
 export interface CodexMemberRunHandle {
   readonly token: string

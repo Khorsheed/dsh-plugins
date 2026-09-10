@@ -97,7 +97,6 @@ describe('kimi-cli-provider member bridge injection', () => {
       reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
       registerMemberRun: vi.fn(() => 'token-xyz-1234'),
-      bindMemberRunPid: vi.fn(),
       unregisterMemberRun: vi.fn(),
       memberBridgeSocketPath: () => join(homeDir, 'member-bridge.sock'),
       memberBridgeCommand: () => ({ command: 'node', args: ['/bridge.js'] }),
@@ -141,9 +140,6 @@ describe('kimi-cli-provider member bridge injection', () => {
         DSH_MEMBER_TOKEN: 'token-xyz-1234',
       },
     })
-    // Host 0.1.5 hides the spawned child's pid: the cross-check cannot be bound
-    // and the channel fails closed on its unbound-run rejection.
-    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
 
     await run.result
     // Settle invalidates the token and prunes the config entry.
@@ -179,7 +175,6 @@ describe('kimi-cli-provider member bridge injection', () => {
       provider: 'kimi-cli',
     })
     expect(mcpServers(homeDir)[memberBridgeServerKey('token-xyz-1234')]).toBeDefined()
-    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
 
     await run.result
     await vi.waitFor(() => {

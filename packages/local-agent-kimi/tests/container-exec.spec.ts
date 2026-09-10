@@ -84,7 +84,6 @@ function mount(intent: unknown): {
     // A member channel IS available on this core — the container path must
     // decline it on purpose, not because the core lacks one.
     registerMemberRun: vi.fn(() => 'token-xyz-1234'),
-    bindMemberRunPid: vi.fn(),
     unregisterMemberRun: vi.fn(),
     memberBridgeSocketPath: () => '/host/member.sock',
     memberBridgeCommand: () => ({ command: 'node', args: ['/host/bridge.js'] }),

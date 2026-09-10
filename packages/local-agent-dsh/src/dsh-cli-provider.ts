@@ -92,10 +92,9 @@ export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
  * Returns undefined when the mounted core predates the member channel
  * (declare-and-degrade: the run proceeds unchanged — the row's
  * failOnStartupError is off, and the bridge itself fails closed on the absent
- * token). Host 0.1.5 hides the spawned child's pid, so the bridge's
- * parentage cross-check cannot be bound — the member channel fails CLOSED on
- * its unbound-run rejection until an upstream pid seam or a token-only
- * decision lands. The exec driver registers per round; the live driver
+ * token). Token-only auth: host 0.1.5 removed the child pid the parentage
+ * cross-check used; the per-run token is the sole credential (see the package
+ * README's threat model). The exec driver registers per round; the live driver
  * registers per resident process and releases on reclaim.
  */
 export interface MemberRunHandle {

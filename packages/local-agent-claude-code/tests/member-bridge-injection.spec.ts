@@ -45,7 +45,6 @@ describe('claude-cli-provider member bridge injection', () => {
       recordRoundSettled: () => {},
       reportRunProgress: () => {},
       registerMemberRun: vi.fn(() => 'token-xyz-1234'),
-      bindMemberRunPid: vi.fn(),
       unregisterMemberRun: vi.fn(),
       memberBridgeSocketPath: () => SOCKET,
       memberBridgeCommand: () => ({ command: 'node', args: ['/bridge.js'] }),
@@ -114,11 +113,6 @@ describe('claude-cli-provider member bridge injection', () => {
     expectMemberArgv(spawned[0]!)
     // The flags precede the positional task.
     expect(spawned[0]![spawned[0]!.length - 1]).toBe('do the task')
-    // Host 0.1.5 hides the spawned child's pid: the parentage cross-check
-    // cannot be bound and the channel fails closed on its unbound-run
-    // rejection until an upstream pid seam or a token-only decision lands.
-    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
-
     await run.result
     await vi.waitFor(() => {
       expect(registry.unregisterMemberRun).toHaveBeenCalledWith('token-xyz-1234')

@@ -79,7 +79,6 @@ function mount(intent: unknown, options: { record?: unknown; live?: unknown } = 
     kimiMirroredLines: () => undefined,
     setKimiMirroredLines: () => {},
     registerMemberRun: memberRuns,
-    bindMemberRunPid: vi.fn(),
     unregisterMemberRun: vi.fn(),
     memberBridgeSocketPath: () => '/host/member.sock',
     memberBridgeCommand: () => ({ command: 'node', args: ['/host/bridge.js'] }),

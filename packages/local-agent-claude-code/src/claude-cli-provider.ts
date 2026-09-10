@@ -124,9 +124,9 @@ export function registerClaudeMemberRun(
     // The one tool the bridge exposes, pre-allowed so the child (whose
     // non-interactive mode auto-denies permission prompts) can call it.
     allowedTool: `mcp__${serverName}__member_message`,
-    // Host 0.1.5 hides the spawned child's pid, so the parentage cross-check
-    // cannot be bound: the member channel fails CLOSED (its unbound-run
-    // rejection) until an upstream pid seam or a token-only decision lands.
+    // Token-only auth: host 0.1.5 removed the child pid the parentage
+    // cross-check used; the per-run token is the sole credential (see the
+    // package README's threat model).
     release: () => {
       if (released) return
       released = true

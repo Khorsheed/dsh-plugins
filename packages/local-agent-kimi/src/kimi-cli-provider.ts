@@ -144,11 +144,10 @@ export class KimiCliProvider implements SubagentProvider {
    * in the scoped home's mcp.json (per-run entry, socket + token in its env).
    * Returns the release handle, or undefined when the mounted core
    * predates the member channel (declare-and-degrade: the run proceeds
-   * exactly as before). Host 0.1.5 hides the spawned child's pid, so the
-   * bridge's parentage cross-check cannot be bound — the member channel fails
-   * CLOSED on its unbound-run rejection until an upstream pid seam or a
-   * token-only decision lands. `release` invalidates the token and prunes the
-   * config entry on any settle path.
+   * exactly as before). Token-only auth: host 0.1.5 removed the child pid the
+   * parentage cross-check used; the per-run token is the sole credential (see
+   * the package README's threat model). `release` invalidates the token and
+   * prunes the config entry on any settle path.
    */
   private memberRun(
     childSessionId: string,

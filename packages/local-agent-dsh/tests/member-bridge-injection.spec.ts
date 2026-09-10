@@ -48,7 +48,6 @@ describe('dsh-cli-provider member bridge injection', () => {
       recordRoundSettled: () => {},
       reportRunProgress: () => {},
       registerMemberRun: vi.fn(() => 'token-xyz-1234'),
-      bindMemberRunPid: vi.fn(),
       unregisterMemberRun: vi.fn(),
       memberBridgeSocketPath: () => SOCKET,
       memberBridgeCommand: () => ({ command: 'node', args: ['/bridge.js'] }),
@@ -103,10 +102,6 @@ describe('dsh-cli-provider member bridge injection', () => {
       DSH_MEMBER_TOKEN: 'token-xyz-1234',
       DSH_MEMBER_BRIDGE_ENTRY: '/bridge.js',
     })
-    // Host 0.1.5 hides the spawned child's pid: the cross-check cannot be bound
-    // and the channel fails closed on its unbound-run rejection.
-    expect(registry.bindMemberRunPid).not.toHaveBeenCalled()
-
     await run.result
     await vi.waitFor(() => {
       expect(registry.unregisterMemberRun).toHaveBeenCalledWith('token-xyz-1234')

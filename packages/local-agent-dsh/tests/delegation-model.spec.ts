@@ -82,7 +82,6 @@ function mount(intent: unknown, options: { record?: unknown; live?: unknown; con
     releaseResumeLock: () => {},
     reportRunProgress: () => {},
     registerMemberRun: vi.fn(() => 'token-xyz-1234'),
-    bindMemberRunPid: vi.fn(),
     unregisterMemberRun: vi.fn(),
     memberBridgeSocketPath: () => '/host/member.sock',
     memberBridgeCommand: () => ({ command: 'node', args: ['/host/bridge.js'] }),
