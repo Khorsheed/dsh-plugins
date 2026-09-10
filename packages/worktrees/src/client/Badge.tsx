@@ -19,10 +19,38 @@ import { basenameOf } from './language.ts'
 import css from './Badge.module.css'
 
 /** The badge. */
-export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, subscribeVersion, getVersion, t }: WorktreesBadgeProps): ReactNode {
+export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, open, openLocalFiles, subscribeVersion, getVersion, useSessions, t }: WorktreesBadgeProps): ReactNode {
   const [data, setData] = useState<SessionSummary | null>(null)
+  // The display gate: null while the config RPC is pending or failed, and
+  // whenever the composition leaves `visiblePresets` empty — all meaning "no
+  // gate, always show" (fail-open in both directions).
+  const [gate, setGate] = useState<readonly string[] | null>(null)
   // This session's current/remembered local-files root (its badge label).
   const localRoot = useLocalRoot(sessionId)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchBadgeConfig().then(result => {
+      if (cancelled || !result.ok) return
+      const list = result.value.visiblePresets
+      setGate(list.length > 0 ? list : null)
+    }).catch(() => { /* an unreachable Remote reads as no gate (fail-open) */ })
+    return () => { cancelled = true }
+  }, [fetchBadgeConfig])
+
+  // The current session's agent preset, the same read ui-agent-preset's
+  // header label makes — per host line: the 0.1.2 line projects the preset
+  // into `projectionValues.agentPreset`, while the 0.1.1 line (npm stable
+  // 0.1.1-rc.2) carries it as the list row's TOP-LEVEL `agentPreset` field
+  // (its client row type predates the projection). Dual-read, projection
+  // first; undefined on both = the session records no preset.
+  const preset = useSessions((state) => {
+    if (sessionId === undefined) return undefined
+    const row = state.byId[sessionId]
+    const value = row?.projectionValues?.agentPreset
+      ?? (row as { agentPreset?: unknown } | undefined)?.agentPreset
+    return typeof value === 'string' ? value : undefined
+  })
 
   useEffect(() => {
     if (sessionId === undefined || sessionId === '') return
@@ -48,6 +76,12 @@ export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, subsc
     const unsubscribe = subscribeVersion(refetch)
     return unsubscribe
   }, [sessionId, summary, subscribeVersion, getVersion])
+
+  // The preset gate: a non-empty `visiblePresets` hides the badge in sessions
+  // whose preset id is outside the list; sessions with NO preset stay visible
+  // (fail-open — the gate hides dev chrome, never breaks preset-less
+  // deployments). Loading keeps its own null below.
+  if (gate !== null && preset !== undefined && !gate.includes(preset)) return null
 
   // No isRepo gate here: the local-files capsule renders in EVERY session.
   if (data === null || sessionId === undefined || sessionId === '') return null

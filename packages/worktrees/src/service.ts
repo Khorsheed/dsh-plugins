@@ -54,6 +54,26 @@ export interface SessionSummary {
   baseRef: string
 }
 
+/**
+ * The badge's own display gate: composition-level config, identical for every
+ * session, served over the Remote so the browser half can read it (the web
+ * boot composes client entries without config — `loader.create({ name })` in
+ * client-web's boot carries none — so the plugin config only ever reaches the
+ * host half, and this payload is the honest channel). An empty
+ * `visiblePresets` keeps the badge unconditionally visible (the zero-change
+ * default).
+ */
+export interface BadgeConfig {
+  /**
+   * Agent-preset ids the session-header badge stays visible for. Empty means
+   * no gate; a non-empty list hides the badge in sessions whose preset id is
+   * outside it, while sessions with NO preset projection stay visible
+   * (fail-open: the gate hides dev chrome, it never breaks deployments
+   * without presets).
+   */
+  visiblePresets: string[]
+}
+
 /** One worktree of the repository, as shown to the model by the tool. */
 export interface WorktreeInfo {
   /** Absolute worktree path. */

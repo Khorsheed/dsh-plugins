@@ -20,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type {
-  ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
+  BadgeConfig, ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalImageResult,
   ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
   ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
@@ -33,6 +33,12 @@ import type { createWorktreesStore, DrawerMode } from './store.ts'
 export interface WorktreesBadgeInjected {
   /** Fetch one session's worktree summary (one RPC). */
   summary: (sessionId: SessionId) => Promise<RemoteResult<SessionSummary>>
+  /**
+   * Fetch the badge's display gate (the composition's `visiblePresets` over
+   * the Remote — the web boot hands client entries no config, so the gate
+   * arrives through the data face). An empty list keeps the badge visible.
+   */
+  fetchBadgeConfig: () => Promise<RemoteResult<BadgeConfig>>
   /** Open the drawer in one mode (routes to the root drawer store). */
   open: (mode: DrawerMode) => void
   /** Open the local-files browser from a starting directory for one session. */

@@ -21,10 +21,22 @@ export interface WorktreesPluginConfig {
    * measured against. '' disables the committed segment entirely.
    */
   baseRef?: string
+  /**
+   * Agent-preset ids the session-header badge stays visible for. Absent or
+   * empty keeps the badge unconditionally visible (the zero-change default);
+   * a non-empty list hides the badge in sessions whose preset id is outside
+   * it, while sessions with NO preset stay visible (fail-open: the gate hides
+   * dev chrome in non-dev sessions, never breaks preset-less deployments).
+   * Reaches the browser through the Remote's `badgeConfig` method — the web
+   * boot composes client entries without config, so the client apply never
+   * sees this object.
+   */
+  visiblePresets?: string[]
 }
 
 export const Config: z<WorktreesPluginConfig> = z.object({
   baseRef: z.string().default('main'),
+  visiblePresets: z.array(z.string()).default([]),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -44,7 +56,7 @@ export const name = 'worktrees'
 export function apply(ctx: Context, config: WorktreesPluginConfig): void {
   const service = new WorktreesService(config.baseRef ?? 'main')
   ctx.provide('worktrees', service)
-  ctx.plugin(WorktreesRemoteService, {})
+  ctx.plugin(WorktreesRemoteService, { visiblePresets: config.visiblePresets ?? [] })
   // The model-facing tool joins through deferred injection inside
   // `registerWorktreesTool` (`ctx.inject` fires when the tools registry
   // appears); a composition with no tools bundle stays badge/drawer-only.

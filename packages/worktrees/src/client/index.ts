@@ -169,6 +169,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: (): WorktreesBadgeInjected => ({
       summary: (sid: SessionId) => remote.summary(sid),
+      fetchBadgeConfig: () => remote.badgeConfig(),
       open: (mode) => { controller.open(mode) },
       openLocalFiles: (sid: SessionId, start: string) => { controller.openLocalFiles(sid, start) },
       subscribeVersion: (listener) => controller.subscribeVersion(listener),

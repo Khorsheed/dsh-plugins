@@ -1,89 +1,101 @@
-# 工作模式切换（mode-switcher）
+# 工作模式（mode）：单实例多模式 —— preset + 自隐 + 模式管理器
 
 - **分类**：plugin
-- **状态**：idea
-- **最后更新**：2026-08-29
-- **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）——「模式 / 切换 / mode / profile / preset」命中：[plugin-manager](../closed/2026-08-22-plugin-manager.md)（已废除的 loader 级行开关）、worktree-governance 的「三档切换」、local-agent 的「驱动模式 live/exec」、官方 `agent-presets` 的 preset 选择器（不同粒度，见「非目标」）。**无「按 domain 切换整套插件组合」同意图提案。** 关联：[docs/roadmap.md](../../docs/roadmap.md) 的四层模型与决策 9、[package-management](2026-08-21-package-management.md)（domain 整合包形态）、[capability-catalog](2026-08-26-capability-catalog.md)（切换后核对组合的手段）。
-- **官方依赖**：纯插件。切换动作复用本仓 `@khorsheed/dsh-ankh-guard` 的 `restart`（凭证 → preflight → watchdog → canary，已在 `dsh-web-basic` 的 `restart-into-web-basic.sh` 上线验证）；profile 枚举读 `$DSH_HOME/profiles/`；UI 走 `settings.section` 槽位；快捷键复用 `@khorsheed/dsh-ui-shortcuts`。**零 harness 改动。**
+- **状态**：方向已定（试点活体验证通过），落地拆分待排期
+- **最后更新**：2026-09-10（六更·收敛：单实例多模式——场景包装进同一实例、按会话选模式；守卫重启退出产品线；eval 拿出本设计，待装置改造后重新评估）
+- **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）——「模式 / 切换 / mode / profile / preset」命中：[plugin-manager](../closed/2026-08-22-plugin-manager.md)（已废除的 loader 级行开关）、worktree-governance 的「三档切换」、local-agent 的「驱动模式 live/exec」、官方 `agent-presets` 的 preset 选择器。关联：[docs/roadmap.md](../../docs/roadmap.md)、[package-management](2026-08-21-package-management.md)（形态 A/B）、[capability-catalog](2026-08-26-capability-catalog.md)。
+- **官方依赖**：主路径零 harness 改动（preset 官方原生；自隐是 client 惯用法；建会话 chip 现成）。可选上游增强：槽位可见性谓词（见「放弃的东西」）。
 
-需求来源：产品路线图评审（2026-08-28～29）。工作台要服务开发、评测、写作等不同 workflow，它们的插件组合、界面与工具都不同。本提案是「换一套组合」这个动作在用户侧的入口。
+需求来源：产品路线图评审（2026-08-28～29）+ 2026-09-10 产品方向拍板。工作台按场景（日常/开发/写作…）组织，用户在**一个实例**里开不同会话、按会话选模式；不同模式呈现不同的可见插件与 agent 能力。
 
-> **两次重写说明。** 初稿（2026-08-26）把模式建模为**插件行的活跃性**，用「写 profile 用户 patch 层 + config HMR」热切。二稿（2026-08-28）改用官方 `agent-presets`，把模式做成会话级组合。本稿回到 profile 粒度，但机制是 **ankh-guard 守卫重启**——理由见「放弃的东西」：preset 管不到 client UI，会造成「看得见用不了」；而 patch 层 overlay 没有 preflight 这类安全网。
+> **演化说明。** 初稿（08-26）：patch 层热切（无安全网，废弃）。二稿（08-28）：preset 承载 domain（当时因「preset 管不到 UI」废弃）。三稿（08-29）：profile 粒度 + ankh-guard 守卫重启，M0 已落地。四稿（09-10）：worktrees 自隐试点双线活体通过，preset++ 升主路径。本稿（09-10 晚，产品拍板）：**单实例多模式**——不搞多实例拓扑、不搞重启切换；场景包（web-basic/dev/novel…）全部装进同一实例，模式 = 会话级 preset + 可见插件子集；eval 例外（理由见下）。守卫重启（ankh-guard M0）退出产品线，保留为运维工具。
 
-## 目标
+## 终局架构
 
-让用户在界面上切换工作模式，一个模式 = 一个 profile = 一套插件组合。切换后界面与工具完全对应该模式——`novel` 模式下就是没有 mission tab、没有 worktrees 徽标。
+```
+一个实例（一个主 profile，插件并集常驻，永不因切模式重启）
+├─ 场景包：以「可装进已有 profile 的集合包」形态安装（形态 A add 清单）
+│    每个 pack 自带：插件清单 + 模式 preset + 模式元数据（preset id + 插件子集）
+├─ 模式 = preset（会话级，官方原生）
+│    建会话时 chip 选模式；会话级锁定；工具/提示词/skill 随 preset 授予
+├─ 可见性 = 自隐约定（会话级，本仓模板）
+│    UI 组件读当前会话的 preset，对照模式注册表决定显隐
+└─ 模式管理器（轻量插件）
+     设置页：模式列表 + 各模式的 preset/插件子集 + 单插件彻底开关（patch 热禁用）
 
-1. **入口**：设置里列出可用 profile（`$DSH_HOME/profiles/` 下的目录），显示当前所在模式，一键切换。
-2. **安全**：切换走 ankh-guard 的完整闸门——preflight 在子进程里把目标组合完整 boot 一遍，**起不来就绝不停当前实例**；watchdog 托管新实例、失败回滚；canary 复检。
-3. **可逆**：切过去能切回来，界面无残留，会话数据跨切换存活。
-4. **交接体验**：同端口拉起，浏览器刷新原地址即可，不需要记新端口——`restart-into-web-basic.sh` 已验证这条路径。
-
-非目标 / 明确不做：
-
-- **不做免重启切换**。这是刻意取舍：client UI 挂在 profile 的 client 槽上，preset 管不到它，免重启就必然「看得见用不了」。几秒重启换界面与工具完全一致，划算。
-- **不与 agent preset 竞争**。preset 是**同一 profile 内的 agent 变体**（`standard` / `review`），本提案换的是整套组合。两者不同粒度，可叠加使用。
-- **不自己实现重启**。凭证、preflight、watchdog、canary、回滚全部是 ankh-guard 的既有能力，本插件只提供入口与呈现。
-- **不做 profile 编辑**。创建/修改 profile 是 domain 整合包的事（见 package-management），本插件只切换已存在的。
-- **不做同实例并行模式**。一个实例一个模式；需要同时开发与评测时用独立实例（评测常驻 :3082 独立 `$DSH_HOME`）。
-
-## 现状（官方契约实测 / 已有实现）
-
-| 事实 | 来源 | 对本提案的含义 |
-|---|---|---|
-| `ankh-guard restart --port <p> --start "<cmd>" --profile <name>` 已上线 | `dsh-web-basic/scripts/restart-into-web-basic.sh` | 切换动作是现成的，`--start` 里换 `--profile` 即可 |
-| 六道闸：绿色凭证 → **preflight 深度干跑** → 记录 → watchdog 停旧启新 → canary PASS → 失败回滚 | `packages/ankh-guard/README.md` | 安全网齐备；preflight 是「切不过去不伤当前实例」的保证 |
-| 重启后 canary 在新实例上跑，凭证与检查点存状态文件、跨重启存活 | 同上 | 切换结果可自动复检 |
-| 发起方会随宿主一起断开，watchdog 在原端口拉起 | `restart-into-web-basic.sh` 说明 | 前端需要一次强制刷新；重启报告可寻址回发起会话 |
-| skill / tool 注册表是 host + per-scope 分层，profile 挂载的落 global 层 | 官方 `dsh-skill` README | **profile 挂载的挑不掉**——这正是隔离必须走 profile 的技术原因 |
-| 会话数据存 `$DSH_HOME`，与 profile 组合无关 | 官方会话持久化 | 切换不影响历史会话的数据；但旧会话在缺少对应插件的组合下渲染需实测 |
-| 沙箱会话里发起的监督会继承沙箱 | `ankh-guard` README 已知限制 | 切换入口若从受限会话触发需给出明确提示 |
+eval：本次不纳入（维持独立 profile/实例），装置改造完成后重新评估
+```
 
 ## 方案
 
-一个独立插件包 `@khorsheed/dsh-mode-switcher`（host 半 + client 半）。
+### A. 场景包：从「独立 profile 模板」扩展为「可装入主实例的集合包」
 
-### 1) 模式清单 = profile 清单
+现有 `profiles/web-*` 是形态 B（独立 profile）。单实例多模式要求同时具备**形态 A**（add 清单，成员装进运行中的 profile——package-management 提案已规划）。pack 新增**模式元数据**：声明该模式的 preset id + 插件子集（供注册表集中下发显隐映射）。合并前提：pack 的 patch 层为空（basic/dev 本就为空，零冲突）。
 
-枚举 `$DSH_HOME/profiles/` 下的目录，读各自的 `package.json` / `cordis.yml` 取显示名与成员摘要。不引入独立的模式定义文件——**profile 目录本身就是事实源**。
+### B. 模式 preset（官方原生，零 harness 改动）
 
-### 2) 入口：设置里的模式区
+- pack 自带 preset，`install` 时卸进 `$DSH_HOME/.agent-presets/` 名册（web-eval 已是此形态）；建会话时官方 chip 选择，会话级锁定。
+- preset 自带工具行（`disabled` 休眠行语义 = 该 preset 授不授予此工具）；**工具行只进 preset、不进 profile 根**——会话间的能力差异由此产生，`tools: none` 类 pin 在新形态下不再需要。
+- 前提：插件的工具注册可独立挂载（官方 subagent 形态：「Bundle owns Host availability; the preset separately grants the tool」）。local-agent 家族已合规；融合包（mission、datasets）按需把工具注册拆成独立模块——拆模块，不是改架构。
 
-列出可用 profile，标出当前所在的那个，每项一键切换。切换前展示将要发生什么（停止当前实例 → preflight → 同端口拉起 → 刷新页面），并明确提示「本会话会断开，刷新后回来」。
+### C. 自隐约定 + 模式注册表
 
-### 3) 切换执行
+- 机制（worktrees 试点双线验证）：槽位组件读 `useSessions` 的会话 preset 投影，不属于当前模式则 `return null`；缺省永远显示；无投影 fail-open。
+- **映射集中下发**：模式注册表（模式管理器的 host 服务）从各 pack 元数据收集「preset ↔ 插件子集」，经 Remote 下发；插件读注册表判断显隐，不再逐包手配名单（worktrees 的 `visiblePresets` 是无注册表时的单机版先例）。
+- 两条已知成本（推广时每包执行）：① preset 读取 key 跨宿主线不同（0.1.2 投影 / 0.1.1 顶层字段），双读兜底；② web 线 client 拿不到自己的 config，配置走 host → Remote。模板见 `.agents/notes/implemented/feature/2026-09-10-worktrees-badge-preset-gate.md`。
+- 自隐是约定不是强制：list 槽位无可见性谓词，不接约定的插件会漏 UI——生态内可推，强制需上游。
 
-host 半调 ankh-guard 的 restart 通道，参数照 `restart-into-web-basic.sh` 的形态。preflight 失败时**不停实例**，把失败原因（哪几行组合起不来）原样呈现给用户。
+### D. 模式管理器（轻量，与重启/ankh-guard 无关）
 
-### 4) 切换后的自我刷新
+`@khorsheed/dsh-mode-switcher`（沿名）：注册表服务 + Remote + 设置页（模式列表、各模式的 preset 与插件子集展示）+ 单插件彻底开关（patch 层 `disabled` 热生效 + 写成功后自刷新页面，服务「完全关掉某插件」场景）。无守卫重启、无凭证/preflight——单插件「关」方向爆炸半径极小。
 
-新实例在原端口起来后，前端检测到连接恢复即强制刷新（client 名录变了必须整页重载）。ankh-guard 的重启报告可寻址回发起会话，切换完成的通知落在那里。
+### eval：本次不纳入（2026-09-10 拍板）
 
-### 5) 快捷键（可选）
+**范围决定：eval 拿出本设计，先只做 basic / dev / novel；待装置改造（named-provider、装置即条件）完成后重新评估。** eval 维持现状：独立 profile/实例、patch 层归 pack。
 
-经 `ctx.shortcuts.registerAction` 注册「切到某模式」，键位可配；探测不到 `ui-shortcuts` 时静默降级。
+背景（重新评估时的依据）：
+
+- **今天仍是实例级 pin**：`live` / `sandbox` / 端点等是 provider 行的实例级 config，并进主实例则互斥（pin 了 dev 残废，不 pin eval 失去「两格只差一个因子」）。
+- **后门存在**：官方支持同产品多命名 provider 实例（host-plane 多行 + 唯一 `providerName`，preset 工具行按名指）。我们家族今天不支持（provider 名写死，`local-agent-codex/src/index.ts:138-140` 注册 `'codex'`，两行撞名）——改为从 config 读名是包级小改，列入候选；I4 把 provider 配置收进条件哈希（home.sha）后，eval 的实例隔离从「必须」软化为「偏好」。
+- **即便如此仍建议独立**：测量纯净性（评测起 CLI/容器，与日常会话争资源污染测量）、爆炸半径（`danger-full-access` 委派不常与日常并存）、eval 是编排器驱动的批量装置而非聊天模式。
+
+## 现状（关键实测事实）
+
+| 事实 | 来源 | 含义 |
+|---|---|---|
+| preset 是自包含组合，工具行自带、`disabled` 是休眠模板行；「Host availability alone grants no tool」 | harness `presets/standard/agent.cordis.yml:199-219`、官方 skill《editing-cordis-compositions》 | 会话级工具授予官方原生 |
+| 官方支持同产品多命名 provider 实例（host-plane 行 + preset 工具行按名指） | 同上 skill「Native product subagents」 | eval 的 provider pin 有 per-session 化的后门（包级改动） |
+| 发布服务的行不能进 preset（跨会话消费者/撞名）；沙箱、审批、模型路由禁止 | 同上 skill plane rule | 服务与注册表永远实例级 |
+| **活体验证**：自隐在 0.1.2-rc.1 与 0.1.1 双线通过（对照显示、名单内显示、名单外隐藏、切换三次稳定翻转、console 零错误） | worktrees 试点，截图 `scratch-screenshots/pilot-badge-*.png` | 「preset 即模式 + 自隐」实锤可行 |
+| 会话 preset 读取 key 跨线不同（0.1.2 投影 / 0.1.1 顶层） | 试点探针实锤 | 自隐跨线兼容是每包成本（双读） |
+| web 线 client 拿不到自身 config（boot 无注入） | 试点实测（harness `web/src/boot.ts:127`） | 配置一律 host → Remote |
+| preset 切换限空白会话（首回合后锁定） | harness `agent-presets` | 模式对会话是创建时选择，锁定期一致 |
+| 一个实例只能跑一个 profile | harness `profile-boot` | 「多模式」必须装在同一个 profile 里（并集），多 profile ≠ 多模式 |
 
 ## 里程碑
 
-- **M1 切换闭环**：模式清单 + 一键切换 + preflight 失败呈现 + 切换后自我刷新。
-- **M2 可逆性与安全性验收**：见下方判据。
-- **M3 快捷键**与切换历史（最近用过的模式）。
+- **M0 ankh-guard 前置**（0.2.0）✅ 已落地（`0f776cc`）——最终定位：运维工具，不进产品线。
+- **M1' 自隐试点** ✅ 已落地（worktrees `visiblePresets` 门 + 双读，待提交）。
+- **M2' 模式注册表 + pack 元数据**：模式管理器包（注册表/Remote/设置页）；各 pack 补模式元数据 + 自带模式 preset；basic/dev 先跑通。
+- **M3' 自隐推广**：mission tab、lab 面板等接注册表显隐；决定共享 helper（`useSessionPreset`）包取舍。
+- **M4' 工具行解耦**：融合包（mission、datasets）工具注册拆为 preset 可挂载；候选：local-agent named-provider 支持。
+- 落地待讨论：模式清单与边界、模式 preset 与官方 standard 的关系、自隐推广顺序、helper 包取舍、named-provider 是否排期。
 
-## 验收标准（done 判定，绑定可插拔交付）
+## 验收标准
 
-- 从 `web-basic` 切到 `dsh-dev`：同端口交接，刷新后是 dev 界面（worktrees 徽标、mission tab 出现）。
-- **切回 `web-basic`**：界面回到 daily 形态，无残留组件、无报错空槽。
-- 故意坏掉目标 profile 的组合（改坏一行 patch YAML）：**preflight 拒绝且当前实例不停**，失败原因可读。
-- 会话数据跨切换存活：切过去再切回来，之前的会话仍可打开。
-- 切换后 `capability-catalog` 列出的工具与该 profile 相符（dev 有 mission / 委派工具，web-basic 没有）。
-- 未装本插件的环境行为逐字不变；卸载后入口消失、无残留。
-- hygiene / note 格式 / 翻译配对门禁绿；`check-plugin-independence` 绿。
+- 同一实例：dev 模式会话有 worktrees 徽标/mission 入口，写作模式会话没有；切会话界面干净翻转。
+- 设置页列出全部已装模式及其 preset + 插件子集；单插件彻底开关热生效。
+- 历史会话在任何模式下打开不报错、渲染不缺失。
+- 不接自隐约定的插件缺席不影响他包；卸载任一自隐包回到「永远显示」。
+- hygiene / note / 翻译配对 / `check-plugin-independence` 门禁绿。
 
 ## 风险 / 放弃的东西
 
-- **放弃：agent preset 承载 domain（二稿方案）。** preset 只组合 tools / prompt sections / skills，**client UI 挂在 profile 的 client 槽上、preset 管不到**——novel 模式下 mission tab 仍在，「看得见用不了」。要隔离 UI 就得把每个 feature 包拆成 host/client 两行，改动落在每个包上。另有两条官方约束叠加：会话零产出才能切、子 agent 继承父组合。preset 保留在「同一 profile 内的 agent 变体」这个它本该在的粒度上。
-- **放弃：profile 用户 patch 层 + config HMR 行开关（初稿方案）。** 它没有 preflight 这类安全网——写坏了 overlay，下一次组合就炸，而炸的时候实例已经在跑。守卫重启把「验证」放在「停止」之前，这是本质区别。该路线的唯一消费方消失后，`plugin-manager` 也随之废除。
-- **一个实例一个模式。** 需要并行时开独立实例，评测本就该如此（环境隔离是评测要求）。
-- **重启期间不可用。** 秒级，但确实中断；长任务跑着时不该切——入口需要检测活跃 run 并警告。
-- **旧会话在新组合下的渲染未验证。** 会话数据与 profile 无关，但一个在 dev 模式下产生的会话（含 mission 卡片等）在 daily 模式下打开会怎样，需实测；预期是降级为普通消息，但要确认不报错。
-- **沙箱会话发起的切换会继承沙箱**（ankh-guard 已知限制），入口需给出明确提示而非静默失败。
+- **放弃：patch 层热切做模式切换（初稿）**——无安全网。
+- **放弃：多实例拓扑与守卫重启做日常切换（三稿）**——「切场景」没有重启动作；ankh-guard M0 退为运维工具。
+- **放弃：eval 并入主实例**——装置 pin 实例级；named-provider 后门保留为候选。
+- **放弃：per-session UI 强制隔离**——槽位无可见性谓词；自隐是约定，强制需上游 `visibleWhen`。
+- **自隐是约定**：新插件不接就漏 UI。缓解：注册表集中下发 + helper 包 + AGENTS.md 约定。
+- **跨版本线兼容成本**：宿主 client store 形状是内部 API（0.1.1/0.1.2 key 差异实证），每包双读 + compat 标注。
+- **超集资源代价**：主实例所有插件服务常驻；近亲场景可接受，重装置（eval）不并入。
+- **模式对会话是创建时选择**：已存在会话保持原模式（官方锁定语义，渲染器恒在无一致性问题）。

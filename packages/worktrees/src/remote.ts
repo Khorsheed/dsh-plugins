@@ -15,7 +15,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
-  ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
+  BadgeConfig, ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalImageResult,
   ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
   ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
@@ -28,8 +28,11 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Remote construction options (reserved for future config-driven knobs). */
-export interface WorktreesRemoteConfig {}
+/** Remote construction options: the badge's display gate, forwarded from the plugin config. */
+export interface WorktreesRemoteConfig {
+  /** The composition's `visiblePresets` (empty = the badge always shows). */
+  visiblePresets?: string[]
+}
 
 /**
  * Session-scoped worktree status for web surfaces. The wire namespace is
@@ -41,11 +44,15 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   /**
    * @param ctx - owning Cordis Context carrying `worktrees` (provided by the
    *   plugin's apply before this service mounts).
-   * @param _config - reserved for future knobs (unused today).
+   * @param config - the badge's display gate, forwarded from the plugin config.
    */
-  constructor(ctx: Context, _config: WorktreesRemoteConfig = {}) {
+  constructor(ctx: Context, config: WorktreesRemoteConfig = {}) {
     super(ctx, 'worktreesRemote', { namespace: 'worktrees' })
+    this.visiblePresets = config.visiblePresets ?? []
   }
+
+  /** The composition's `visiblePresets` (empty = the badge always shows). */
+  private readonly visiblePresets: string[]
 
   private get worktrees(): WorktreesService {
     return this.ctx.worktrees
@@ -56,6 +63,17 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
    * falls back to the session's static `header.cwd`. */
   private cwd(agent: Agent): string {
     return this.worktrees.activeWorktreeOf(agent.id) ?? (agent.session.header.cwd ?? '')
+  }
+
+  /**
+   * The badge's display gate: composition-level config, identical for every
+   * session, so the method takes NO caller lookup parameter (pure JSON args).
+   * The browser half reads it once per badge mount; an empty `visiblePresets`
+   * means the gate is off (the zero-change default).
+   */
+  @Remote('badgeConfig')
+  badgeConfig(): Promise<BadgeConfig> {
+    return Promise.resolve({ visiblePresets: this.visiblePresets })
   }
 
   /** The badge + drawer summary for the calling session's worktree. */

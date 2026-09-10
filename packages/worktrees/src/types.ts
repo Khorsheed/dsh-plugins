@@ -9,7 +9,7 @@
 
 export type { ChangedFile, LogRow } from './git.ts'
 export type {
-  ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
+  BadgeConfig, ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFileEntry,
   LocalImageResult, ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
   ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
