@@ -24,8 +24,8 @@ dsh plugin add @khorsheed/dsh-room
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：⚠️ 降级——**CLI 成员不可用**：CLI 成员依赖 local-agent 家族的公开委派门面（`start`/`resume`/`cancel`，即 `proposals/active/2026-08-18-local-agent-delegation-api.md` 的 M1，已合入本仓 main），已发布的 `@khorsheed/dsh-local-agent` 尚未携带（npm 上尚无该包）。invite 返回 `local-agent-unavailable`；主 agent 成员与其余所有面正常。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅ 完整——CLI 成员需挂载 M1 及以后的 local-agent 家族（verifiedHost: 0.1.2-rc.1）。结构化的成员互通知另需家族的 member-channel 桥接（`proposals/active/2026-08-19-local-agent-member-channel.md`）；桥接缺席时由降级通道（回复末尾独占行 `@名字 <内容>`）承载通知。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级——**CLI 成员不可用**：CLI 成员依赖 local-agent 家族的公开委派门面（`start`/`resume`/`cancel`，即 `proposals/active/2026-08-18-local-agent-delegation-api.md` 的 M1，已合入本仓 main），已发布的 `@khorsheed/dsh-local-agent` 尚未携带（npm 上尚无该包）。invite 返回 `local-agent-unavailable`；主 agent 成员与其余所有面正常。0.1.5 的冷读路径走 handle 制 sessionPersistence（`open(id, 'read')` → `read` → `close`；一次性 `inspect` 已移除）。minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- 源码线（deepseek-harness master）：✅ 完整——CLI 成员需挂载 M1 及以后的 local-agent 家族（verifiedHost: 0.1.5-rc.1）。结构化的成员互通知另需家族的 member-channel 桥接（`proposals/active/2026-08-19-local-agent-member-channel.md`）；桥接缺席时由降级通道（回复末尾独占行 `@名字 <内容>`）承载通知。
 
 **持久化**：room 在 apply 时把全部 `room/*` 事件类型登记进 harness 的 `KNOWN_SESSION_EVENT_TYPES` 目录（一次带断言的 `Set.add`；该目录头部注释把仓外插件的注册面推迟到"出现消费方"——room 就是这个消费方，此处是该注册面的临时形态，上游出正式 surface 后迁移）。持久化的 room 会话在任何装了 room 的 build 上可重载；在未装 room 的 build 上依然被拒绝——这是安全语义，原样保留。
 

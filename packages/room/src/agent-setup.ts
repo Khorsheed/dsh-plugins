@@ -126,22 +126,24 @@ export function roomSessionPreset(session: Session): string | undefined {
 }
 
 /** The sessionPersistence face this package consumes (probed, never injected). */
-export type SessionPersistenceProbe = Pick<SessionPersistence, 'inspect'>
+export type SessionPersistenceProbe = Pick<SessionPersistence, 'open'>
 
 /**
  * Probe the session-persistence service.
  * @param ctx - host context.
- * @returns the inspection slice, or undefined when no backend is mounted.
+ * @returns the handle-opening slice, or undefined when no backend is mounted.
  */
 export function probeSessionPersistence(ctx: Context): SessionPersistenceProbe | undefined {
   const service = ctx.get('sessionPersistence') as SessionPersistenceProbe | undefined
   if (service === undefined || service === null) return undefined
-  return typeof service.inspect === 'function' ? service : undefined
+  return typeof service.open === 'function' ? service : undefined
 }
 
 /**
  * Read a cold session's log from persistence without attaching or resuming
- * anything (the read-only remotes' cold path).
+ * anything (the read-only remotes' cold path). The 0.1.5 handle-based API
+ * replaced the one-shot `inspect`: open a read handle (no write ownership),
+ * read the full log, close.
  * @param ctx - host context.
  * @param sessionId - the persisted session.
  * @returns the inspection, or undefined when absent/unreadable.
@@ -150,7 +152,17 @@ export async function inspectCold(ctx: Context, sessionId: SessionId): Promise<S
   const persistence = probeSessionPersistence(ctx)
   if (persistence === undefined) return undefined
   try {
-    return await persistence.inspect(sessionId)
+    const handle = await persistence.open(sessionId, 'read')
+    try {
+      const cold = await handle.read(0)
+      return {
+        meta: structuredClone(handle.header),
+        inheritedEventCount: handle.inheritedEventCount,
+        events: [...cold.events],
+      }
+    } finally {
+      await handle.close()
+    }
   } catch {
     // Unknown id, torn log, refused vocabulary: the probe answers "absent".
     return undefined

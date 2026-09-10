@@ -23,6 +23,10 @@ export function stubAgents(ctx: Context, options: AgentsStubOptions = {}) {
     get: vi.fn((id: SessionId) => options.live === false ? undefined : live.get(id)),
     create: vi.fn(async (request: { sessionId: SessionId; meta?: Record<string, unknown> }) => {
       const session = ctx.sessions.create(request.sessionId, { meta: request.meta ?? {} })
+      // Mimic the 0.1.5 agent factory: the agent loop holds the session's
+      // write handle, which is what routes live appends into durable storage.
+      const persistence = ctx.get('sessionPersistence') as { create(header: unknown): Promise<unknown> } | undefined
+      await persistence?.create(session.header)
       const agent = { id: session.id, session }
       live.set(session.id, agent)
       return { agent, dispose: async () => { live.delete(session.id) } }

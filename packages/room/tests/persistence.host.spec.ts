@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { KNOWN_SESSION_EVENT_TYPES, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import RoomService, { ROOM_EVENT_TYPES } from '../src/index.ts'
@@ -75,10 +75,18 @@ describe('room journal persistence', () => {
     try {
       const id = SessionId('foreign-room')
       expect(ROOM_EVENT_TYPES.some(type => !KNOWN_SESSION_EVENT_TYPES.has(type))).toBe(true)
-      await fix.ctx.sessionPersistence.create({ version: 0, id, createdAt: 1 })
-      await fix.ctx.sessionPersistence.append(id, roomLogFixture())
-      const failure = await fix.ctx.sessionPersistence.load(id)
-        .then(() => undefined, (error: unknown) => error as Error)
+      const handle = await fix.ctx.sessionPersistence.create({ version: SESSION_FORMAT_VERSION, id, createdAt: 1, isSeeded: false })
+      await handle.append(roomLogFixture())
+      await handle.flush()
+      // The refusal fires on the READ path (the write path accepts any JSON).
+      const failure = await (async () => {
+        const reader = await fix.ctx.sessionPersistence.open(id, 'read')
+        try {
+          await reader.read(0)
+        } finally {
+          await reader.close()
+        }
+      })().then(() => undefined, (error: unknown) => error as Error)
       expect(failure?.name).toBe('SessionFormatUnsupportedError')
       expect(failure?.message).toMatch(/not marked ignorable/)
     } finally {
@@ -116,8 +124,14 @@ describe('room journal persistence', () => {
       session.append('room/goal', { text: '插件 API v2 上线' })
       await fix.ctx.sessions.flush(session)
 
-      const loaded = await fix.ctx.sessionPersistence.load(sessionId)
-      const types = new Set(loaded.events.map(event => event.type as string))
+      const reader = await fix.ctx.sessionPersistence.open(sessionId, 'read')
+      let loadedEvents: readonly SessionEvent[]
+      try {
+        loadedEvents = (await reader.read(0)).events
+      } finally {
+        await reader.close()
+      }
+      const types = new Set(loadedEvents.map(event => event.type as string))
       for (const type of ROOM_EVENT_TYPES) expect(types.has(type)).toBe(true)
     } finally {
       await fix.cleanup()
@@ -144,9 +158,21 @@ describe('room journal persistence', () => {
       const ctxB = new Context()
       const agents = stubAgents(ctxB, {
         resume: async ({ resumeSessionId }) => {
-          const preparation = await ctxB.sessionPersistence.prepare(resumeSessionId)
-          ctxB.sessions.enter(preparation.session)
-          return { agent: { id: resumeSessionId, session: preparation.session }, dispose: async () => {} }
+          // The 0.1.5 handle-based reattach (mirrors agentLoop.resume).
+          const handle = await ctxB.sessionPersistence.open(resumeSessionId, 'write')
+          const cold = await handle.read(0)
+          const session = ctxB.sessions.prepare(resumeSessionId, {
+            seed: [...cold.events],
+            meta: structuredClone(handle.header),
+            inheritedEventCount: handle.inheritedEventCount,
+            eventState: cold.eventState,
+          })
+          // The seeded constructor's session/end-seed marker lands before
+          // enter() installs publication hooks — push it through the handle.
+          const unstored = session.snapshotEvents().slice(cold.events.length)
+          if (unstored.length > 0) await handle.append(unstored)
+          ctxB.sessions.enter(session)
+          return { agent: { id: resumeSessionId, session }, dispose: async () => { await handle.close() } }
         },
       })
       await ctxB.plugin(SessionStore)
