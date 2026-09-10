@@ -175,12 +175,3 @@ overrides:
   '@deepseek-ai/dsh-util-values': '0.1.5-rc.1'
   '@deepseek-ai/dsh-util-workspace-path': '0.1.5-rc.1'
   '@deepseek-ai/dsh-workspace': '0.1.5-rc.1'
-
-# The 0.1.5 client packages peer on @deepseek-ai/cordis ^4.0.2 while the repo
-# line is 4.0.1 — two cordis instances split every `declare module` merge
-# (Context, SlotMap) into per-variant copies and break type resolution for
-# packages importing the 0.1.5 client faces. Allow 4.0.1 to satisfy the peer
-# so the whole graph keeps one cordis instance.
-peerDependencyRules:
-  allowedVersions:
-    '@deepseek-ai/cordis': '4.0.1'
