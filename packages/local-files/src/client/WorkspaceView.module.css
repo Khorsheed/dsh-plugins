@@ -50,7 +50,14 @@
   cursor: pointer;
 }
 .crumb:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
-.crumbCur { color: var(--dsw-alias-label-primary); font-weight: 500; }
+/* The current segment is a span (see WorkspaceView): same padding keeps the
+   rhythm identical to the button segments; weight + color carry the "you are
+   here" read, and no background ever paints. */
+.crumbCur {
+  padding: 1px 5px;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
 
 .actions { display: flex; flex: none; gap: 2px; }
 .action {

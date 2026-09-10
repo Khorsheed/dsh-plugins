@@ -184,9 +184,16 @@ export function WorkspaceView({
           {crumbs.map((crumb, index) => (
             <span key={`${crumb}/${index}`} className={css.crumbWrap}>
               {index > 0 && <span className={css.crumbSep}>/</span>}
-              <button type="button" className={`${css.crumb} ${index === crumbs.length - 1 ? css.crumbCur : ''}`} onClick={() => { navigate(crumb.path) }}>
-                {crumb.label}
-              </button>
+              {index === crumbs.length - 1 ? (
+                // The current segment is where you ARE — a span, not a button:
+                // no hover/focus state may paint a pill behind it; the current
+                // position reads through weight and color only.
+                <span className={css.crumbCur}>{crumb.label}</span>
+              ) : (
+                <button type="button" className={css.crumb} onClick={() => { navigate(crumb.path) }}>
+                  {crumb.label}
+                </button>
+              )}
             </span>
           ))}
         </div>

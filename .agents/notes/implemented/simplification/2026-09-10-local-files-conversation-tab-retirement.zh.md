@@ -22,4 +22,4 @@ Status: implemented
 
 ## Consequences
 
-一个插件 = 一个表面 = 一个名字（文件列表 / Files）。client bundle 甩掉会话槽位类型与 ui-conversation 依赖边；`inject` 收敛到 `['slots', 'remote', 'locale', 'sidebarRightTabs']`（`slots` 回归的缘由见上方修正段）。0.1.2–0.1.4 宿主上本插件零贡献——那些线上的用户须停留旧发布线（npm 上还没有任何发布，退役赶在别人依赖该 tab 之前落地）。测试：套件钉住 sidebar definition、端到端注册与 WorkspaceView 行为（27 个全绿）；没有任何用例引用被移除的槽位。相关[特性 note](../feature/2026-09-10-files-list-naming-and-sidebar-entry.md) 已同步到单表面现状。
+一个插件 = 一个表面 = 一个名字（文件列表 / Files）。client bundle 甩掉会话槽位类型与 ui-conversation 依赖边；`inject` 收敛到 `['slots', 'remote', 'locale', 'sidebarRightTabs']`（`slots` 回归的缘由见上方修正段）。0.1.2–0.1.4 宿主上本插件零贡献——那些线上的用户须停留旧发布线（npm 上还没有任何发布，退役赶在别人依赖该 tab 之前落地）。测试：套件钉住 sidebar definition、端到端注册与 WorkspaceView 行为（27 个全绿）；没有任何用例引用被移除的槽位。相关[特性 note](../feature/2026-09-10-files-list-naming-and-sidebar-entry.md) 已同步到单表面现状。单表面上的跟进打磨：面包屑当前段改为纯文本 span（本就不导航），任何按钮状态都无法在其背后画出 pill 底色——当前位置只由字重与颜色表达（对照过 ui-file-preview 的分段面包屑，它本来就这么做，无分歧）。

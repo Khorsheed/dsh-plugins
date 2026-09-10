@@ -85,6 +85,17 @@ describe('WorkspaceView root defaulting', () => {
   })
 })
 
+describe('WorkspaceView breadcrumb', () => {
+  it('renders the current segment as plain text, not a button (no pill state)', () => {
+    const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    render(<WorkspaceView {...props} />)
+    // Root /work/repo → crumbs "work" (button) and "repo" (current, a span).
+    expect(screen.getByRole('button', { name: 'work' })).toBeTruthy()
+    const current = screen.getByText('repo')
+    expect(current.tagName).toBe('SPAN')
+  })
+})
+
 describe('WorkspaceView back-to-workspace', () => {
   it('shows the button only while the current root differs from the workspace', () => {
     rememberLocalRoot(SESSION, '/tmp/elsewhere')
