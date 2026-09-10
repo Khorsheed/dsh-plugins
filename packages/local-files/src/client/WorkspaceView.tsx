@@ -7,7 +7,8 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  IconFolderClose16, IconFolderOpenOutline16, IconProjectAddOutline16, IconRefreshOutline16, writeClipboard,
+  IconFolderOpenOutline16, IconProjectAddOutline16, IconRefreshOutline16, writeClipboard,
+  type IconProps,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListLocalDirectoryResult } from '../types.ts'
 import type { WorkspaceViewProps } from './contract.ts'
@@ -26,6 +27,38 @@ function toItems(listing: ListLocalDirectoryResult | null, showHidden: boolean):
     .map(entry => entry.isDir
       ? { path: entry.name, isDir: true }
       : { path: entry.name, status: '' })
+}
+
+/**
+ * The back-to-original-workspace glyph: a closed folder with a return arrow.
+ * Self-drawn (the BranchGlyph / ProductsGlyph precedent) — the official icon
+ * set has no undo / home / return glyph, and IconFolderClose16 read as
+ * "closed folder", not "go back".
+ */
+function IconFolderReturn16({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2.6 4.4c0-.7.5-1.2 1.2-1.2h2.3c.4 0 .8.2 1 .5l.9 1h4.8c.7 0 1.2.5 1.2 1.2v5.5c0 .7-.5 1.2-1.2 1.2H3.8c-.7 0-1.2-.5-1.2-1.2V4.4z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.6 7.3v1.5a1.5 1.5 0 0 1-1.5 1.5H7.2"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8.6 9.1 7.2 10.3l1.4 1.4"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
 }
 
 /** The workspace view tab. */
@@ -160,7 +193,7 @@ export function WorkspaceView({
           </button>
           {workspaceRoot !== undefined && workspaceRoot !== '' && root !== null && root !== workspaceRoot && (
             <button type="button" className={css.action} title={t('local.backToWorkspace')} onClick={() => { navigate(workspaceRoot) }}>
-              <IconFolderClose16 />
+              <IconFolderReturn16 />
             </button>
           )}
           {canOpenFolder && root !== null && (

@@ -4,7 +4,7 @@
 export const zh = {
   'tab.label': '文件列表',
   'local.chooseWorkspace': '选择工作区',
-  'local.backToWorkspace': '返回本工作区',
+  'local.backToWorkspace': '退回原始工作区',
   'guide.description': '随时浏览任何目录的文件，不限于当前工作区',
   'local.refreshFiles': '刷新文件',
   'local.openFolder': '在文件夹中显示',
@@ -89,7 +89,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en = {
   'tab.label': 'Files',
   'local.chooseWorkspace': 'Choose workspace',
-  'local.backToWorkspace': 'Back to workspace',
+  'local.backToWorkspace': 'Back to original workspace',
   'guide.description': 'Browse the files of any directory at any time — not limited to the current workspace',
   'local.refreshFiles': 'Refresh files',
   'local.openFolder': 'Show in folder',
