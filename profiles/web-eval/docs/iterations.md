@@ -277,14 +277,16 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 |---|---|---|---|---|
 | T29 ✅ | 代码 | local-agent：作用域目录按 scope 命名，每次委派可指定 scope；登录、状态、记录、回读、exec 挂载源都跟着走；eval 条件加 `scope` 字段 | 无 | 合入 main `0d7b91b`（2026-09-10）；`homeDir(name, scope?)`，命名 scope 落 `<家名>@<scope>`，名字只许 [a-z0-9-]，读即物化；委派、记录、resume 核对、四个动词的 `--scope`、按目录取的 effectiveSettings 齐全；带 scope 撞 live 直接拒；真机缺省与命名各一轮各落各目录，命名 scope 自己 device-auth；两条件 run 就绪各过、b 格 archived、a 格被代理掐长流跳过（网络非机制）；缺省 scope 下 pilot A 复算逐字节相同；题库 `t29-scope` 并入 i1-walk `ce31e92` |
 | T30a ✅ | 代码 | local-agent：四家 provider 插件配置加可选 `model`，不写 = 今天的表现，写了每轮委派以它起 CLI；改配置后新 run 走新值、进行中的 run 不受影响；`effectiveSettings.model` 报配置值并由回读核对；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | 无 | 合入 main `8633996`；codex `-m` / claude `--model` / kimi `-m`（常驻改写 default_model）；dsh 无按次传模型的启动面，不给键；真机 codex 与 claude 两轮回读命中，kimi 到请求记录为止（配额） |
-| T30b | 代码 | local-agent：委派级 `model`——首轮指定、记录、resume 不换；四家 argv 或配置写入；dsh headless 加 `--model`；eval 把条件的 model.declared 作为每轮的请求模型传下去 | T29 T30a | |
+| T30b ✅ | 代码 | local-agent：委派级 `model`——首轮指定、记录、resume 不换；四家 argv 或配置写入；dsh headless 加 `--model`；eval 把条件的 model.declared 作为每轮的请求模型传下去 | T29 T30a | 合入 main `e43faf0`（2026-09-10）；resume 带 model 抛错而非忽略；dsh 补上插件键与设置卡那一行；协议 v1-rev9 只改描述；真机 codex / claude / dsh 各轮回读等于委派级请求；判官 v4-pro + 选手 v4-flash 的 P0 计划就绪两条各回读到自己的模型 |
 | T30c ✅ | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；每轮的 token 与工具调用落进 bundle 的 `report/usage.jsonl`，计价留给 bundle 之外的非模型环节 | 无 | 合入 main `fc5141d`（2026-09-10）；四家都在已走过的折叠分支里数，byName 记各家自己的名字（codex 是 command_execution 不是卡片上的 Bash）；kimi / dsh 按本轮不按镜像窗口；usage.jsonl 每轮一行，多 `attempt` 与 `counted` 两列，效率表从 counted:true 加总复现；未报计数打「—」不补零；codex 的 function_call 未数（0.144.0 的 exec 流里 provider 本就不解析它）；只有 exec 路径报 settle 观测 |
-| T29b | 代码 | eval + profile：`/eval run` 起一个 jobs 后台任务立即返回，发起端断开不中止，Remote 入口让 CI 无浏览器也能发起；plan 与 `--out` 路径展开 `~`；install.sh / update.sh 的 dsh 前置检查前移并覆盖预设残留 | 无 | |
+| T29b ✅ | 代码 | eval + profile：`/eval run` 起一个 jobs 后台任务立即返回，发起端断开不中止，Remote 入口让 CI 无浏览器也能发起；plan 与 `--out` 路径展开 `~`；install.sh / update.sh 的 dsh 前置检查前移并覆盖预设残留 | 无 | 合入 main `cdba6f4`（squash，2026-09-10）；三扇门一条取消路；真机：起 job 后发起端退出、run 在实例里继续、另一进程读回全程日志；`dsh-eval run --instance` 从终端起 run 到 completed；install.sh 缺 dsh 时第一步退出、预设未碰。**格子到 archived 没拿到**：3171 跑 0.1.1-rc.2，main 的插件已迁到 0.1.2-rc.1 API（16d5602），resume 轮报 childSession.snapshotEvents is not a function——宿主线不匹配，不是 T29b 的缺口 |
 | T31 | 代码 | eval：`conditions provision` 写 lock（作用域就绪 + effectiveSettings 与声明逐项核对 + home.sha）；`conditions list / diff` 数据面（只展示与 diff，不给选）；决策 9 放宽：多判官面板、每格由谁判进报告、自评格标出不拒绝 | T29 T30b | |
 | T32 | 代码 | capability-catalog：`snapshotFor(presetId)` + 能力清单的规范化哈希；eval 把编排实例的能力哈希记进 run.meta；sub-dsh 的能力面按 scope 的子 profile 组 preset roster，条件的 `preset` 字段从此可被核对 | T29 T31 | |
 | T33 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T29–T32 | 三份配对结果 |
 
 T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个条件今天共用一份作用域目录（T20c 记的边界），模型之外的因子——登录身份、作用域配置——没法按条件分开；T30b、T31 都压在它上面。
+
+**T30b 与 T29b 验收（2026-09-10）**：`feat/local-agent-delegation-model`（`3f67b7b`）合入 main `e43faf0`，五个 README sidecar 与主线撞了哈希、按合并后 blob 重录；`feat/eval-run-as-job`（`fa4782e`）以 squash 合入 `cdba6f4`——分支里混着五条 dsh-ankh-guard 自动打的 checkpoint 提交，一并抹掉；两条在 eval 的 run.ts / run.spec.ts / README 重叠，自动合并只剩 sidecar 一处。合并态 local-agent 224、codex 164、claude-code 151、kimi 185、dsh 124、dsh-headless 47、eval 347、脚本测试 107 全绿，双语 245 对同步。T30b 三条判断都接受：resume 传 model 抛错不忽略（CLI 会照办一次中途换模型而转录看不出来）；dsh 连设置卡一起补齐；协议只动描述。真机把 T22 第 5 步那个形状跑过了：判官 dsh v4-pro、选手 dsh v4-flash 的 P0 计划就绪两条各回读到自己的模型。T29b 三处：起 job 后发起端退出 run 照跑、`dsh-eval run --instance` 从终端到 completed、install.sh 缺 dsh 在动任何文件前退出。withInitiator 那处修改留着——job 没有轮次可继承 initiator 边界，它站得住，只是没修 stage2 那个问题。**没拿到的一块是宿主线**：3171 跑 dsh 0.1.1-rc.2，main 的插件自 16d5602 起按 0.1.2-rc.1 的 API 面写（childSession.snapshotEvents），resume 轮必挂；切 rc 工具链两次起不来，profile 的 @deepseek-ai/* 按自己 package.json 的范围解析，要上 rc 线得改 profile 模板的范围与 overrides，归 0.1.2 迁移那条线。在它落地前 3171 只能跑单轮（就绪、fresh 委派），I4 的 pilot B / C / D 跑不了两阶段。已合入的分支与 worktree（T29、T30b、T30c、T29b）本轮清掉。
 
 T32（2026-09-10 定）：pilot D 的口径是「sub-dsh × 两 preset」——preset 只管得到我们自己组的子实例，三家外部 CLI 的技能包留 I6 单独做。
 
@@ -1383,7 +1385,7 @@ local-agent 家族与 eval 测试全绿，gate 绿；真机两条委派记录与
 分支名与 commit；Agent Note 路径；gate 输出；两条委派记录（脱敏）；两条件 run 的就绪原文与 run.meta.unit.scopedHomes。
 ```
 
-### T30b · local-agent：委派级 model——首轮指定、记录、resume 不换；dsh headless 加 --model；eval 传条件的 model.declared（可发）
+### T30b · local-agent：委派级 model——首轮指定、记录、resume 不换；dsh headless 加 --model；eval 传条件的 model.declared（已完成，2026-09-10 验收）
 
 ```text
 # 任务 T30b：local-agent——委派级 model；dsh headless 加 --model；eval 把条件的 model.declared 当每轮的请求模型
@@ -1451,7 +1453,7 @@ eval 测试全绿，gate 绿；真机三样输出；pilot-a-round1 复算逐字�
 分支名与 commit；Agent Note 路径；gate 输出；lock 样例（脱敏）；diff 与 validate 的原文。
 ```
 
-### T29b · eval + profile：/eval run 作为后台 job；路径展开 ~；install.sh 前置检查前移（可发）
+### T29b · eval + profile：/eval run 作为后台 job；路径展开 ~；install.sh 前置检查前移（已完成，2026-09-10 验收；archived 一格因宿主线不匹配未拿到）
 
 ```text
 # 任务 T29b：dsh-eval——/eval run 起后台 job 立即返回；Remote 入口给 CI；plan 与 --out 展开 ~；install.sh / update.sh 前置检查前移
