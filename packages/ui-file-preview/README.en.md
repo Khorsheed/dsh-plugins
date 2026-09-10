@@ -2,23 +2,16 @@
 
 English | [中文](README.md)
 
-See every file the agent wrote or edited — content and each individual change — without opening an IDE.
+Every file the agent wrote or edited, in one right-sidebar Produced page: the file list plus a step-through diff history of each change.
 
-The agent worked for an hour; which files did it actually touch, and what did they end up looking like? With this plugin, the session grows a Produced tab listing every file the session touched; select one and preview it right in the page — markdown rendered as a document, JSON as an inspector tree, CSV as a table, images inline — and page back through the diff of every write/edit. Each finished turn also ends with a small card summarizing which files changed and by how many lines. The data comes from the companion host half `@khorsheed/dsh-file-preview`; install both to get the UI, and without the host half it simply renders an empty state, never an error.
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="640" alt="the Produced tab: every file the session wrote listed on the left, the selected file's current content previewed on the right">
+The agent worked for an hour; which files did it actually touch, and what did they end up looking like? With this plugin, the right sidebar's guide page gains a "Session products" entry: every file the session touched, latest activity first. Clicking an in-workspace file renders it in the official document tab in the same column (markdown, code, images, PDF, HTML — all official renderers); below the list sits what this plugin uniquely adds — the change history, stepping through the diff of every recorded write/edit. Each finished turn also ends with a small card summarizing which files changed and by how many lines. The data comes from the companion host half `@khorsheed/dsh-file-preview` (including bash write captures the official data misses); install both to get the UI, and without the host half it simply renders an empty state, never an error.
 
 ## Features
 
-- **Produced tab** — every file the session wrote or edited, latest activity first, with an all-files toggle.
-- **Document-form previews** — markdown rendered, JSON/CSV as inspector/table, HTML with a source ⇄ sandboxed-render toggle, images inline.
-- **Change history** — step through every recorded write/edit diff with its turn and step.
-- **Turn mutation card** — each finished turn ends with a collapsible "N files changed" card with per-file line deltas.
-- **In-place drawer** — previews open in a content-only drawer with content search; copy-path always, show-in-folder/open-in-IDE when the deployment can hand paths to a native desktop.
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="640" alt="the per-turn 'N files changed' card at the end of a turn, and a produced file opened in the right-hand drawer with copy-path, folder, and IDE buttons in its header">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="640" alt="the drawer's change-history tab: page through every per-turn diff recorded for the file">
+- **Right-sidebar Produced page** — a page-type right-sidebar tab (entered from the guide page) listing every file the session wrote or edited, latest activity first, searchable.
+- **Official document preview** — clicking an in-workspace file hands rendering to the official document tab via `openResource('dsh-resource://file/session/<id>/<path>')`; this plugin no longer draws content previews of its own.
+- **Change history** — the official document tab has no notion of history, so this part stays self-drawn: step through every recorded write/edit diff with its turn and step.
+- **Turn mutation card** — each finished turn ends with a collapsible "N files changed" card (including bash captures — broader than the official deliverables row) with per-file line deltas. Clicking an in-workspace file takes the official open route; an outside-workspace artifact opens the Produced page with that file's change history selected.
 
 ## Install
 
@@ -37,35 +30,33 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ⚠️ degraded — preview and folding are intact; the external-open buttons (open in folder / open in IDE) are hidden on 0.1.2: the host description snapshot no longer carries `canOpenPath` (the capability became an RPC probe), so the loopback gate can never confirm it; restoration is a follow-up against the official `remote.session.canOpenWorkspacePath` RPC seam. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1; same external-open degradation)
+| Host line | Verdict |
+| --- | --- |
+| npm release (`>= 0.1.5-rc.1`) | ✅ full (`verifiedHost: 0.1.5-rc.1`) |
+| npm release (`<= 0.1.4.x`) | ❌ unsupported — the right-sidebar tab system (`ctx.sidebarRightTabs` / `openResource`) landed in 0.1.5; older hosts stay on the previous release line |
 
-**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
+**Version line mapping**: 0.3.0 and up require host `0.1.5-rc.1` or later; hosts on `0.1.2-rc.1` ~ `0.1.4.x` stay on the 0.2.x release line, and hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
 ## Known Limitations
 
-- **Text preview only** — binary, oversized, and missing files render classified notices with their size, not content.
+- **No content preview for outside-workspace artifacts** — files bash wrote beyond the session's workspace root cannot be named by a `dsh-resource://file/...` address (the official `file` resource is workspace-scoped); their rows only select (the change history still renders) with an inline notice, and no self-drawn preview is offered.
 - **Current session only** — shows the selected session's files; not an arbitrary file browser.
 - **Read-only** — previewing never edits; the session continues to own file mutations.
-- **Mention interception is unofficial** — only official mention buttons are rerouted, via an unofficial DOM structure; if the core changes it, mention clicks silently degrade to the OS open.
 
 ## How it works
 
 <details>
 <summary>Internals (click to expand)</summary>
 
-- `src/client/index.ts` — apply: registers the view/turn-row/drawer and mounts the `filePreview` Remote
-- `src/client/FilePreviewView.tsx` — the Produced tab (file list + preview pane)
-- `src/client/FilePreviewDrawer.tsx` — the in-place preview drawer
+- `src/client/index.ts` — apply: registers the tab type / tab body / turn row and mounts the `filePreview` Remote
+- `src/client/definition.tsx` — the page-type tab's registry definition (guide entry, claims no address)
+- `src/client/FilePreviewTab.tsx` — the right-sidebar Produced page (file list + change history)
+- `src/client/DiffHistory.tsx` — per-write diff stepping (unique to this plugin)
 - `src/client/TurnFileRow.tsx` — the per-turn "N files changed" card
-- `src/client/structured.tsx` — document-form renderers (markdown/JSON/CSV/HTML sandbox)
-- `src/client/mention-intercept.ts` — capture-phase reroute of official mention clicks
 
-Purely additive: one conversation view (`conversation.view`), one turn-tail row (`conversation.chat.turnTail`), one overlay drawer (`shell.overlay`), and a self-mounted `filePreview` Remote via `ctx.remote.$mount` — a stock dsh core runs it with zero edits. The namespace is not declared as an inject (self-mounting it would deadlock the loader); the mount is awaited and the service read back via `ctx.get('remote.filePreview')`. The file list is folded host-side by `@khorsheed/dsh-file-preview` (nested Code Mode dispatches included). Data flows one way: `filePreview.list` on each tab activation/refresh, `filePreview.read` on selection, stale in-flight requests dropped. The turn card reads the same host `filePreview.turnFiles` RPC through a per-session client cache — one source of truth for card and tab — and claims every turn unconditionally, so the official produced-files row never mounts.
+Purely additive: one right-sidebar tab type (`ctx.sidebarRightTabs` + the keyed `sidebar.right.pane.tab` seat) and one turn-tail row (`conversation.chat.turnTail`, default priority — the official deliverables row elects first, so the card renders exactly the turns official data misses), plus a self-mounted `filePreview` Remote via `ctx.remote.$mount` — a stock dsh core runs it with zero edits. The namespace is not declared as an inject (self-mounting it would deadlock the loader); the mount is awaited and the service read back via `ctx.get('remote.filePreview')`. The file list is folded host-side by `@khorsheed/dsh-file-preview` (nested Code Mode dispatches and bash write captures included). The turn card reads the same host `filePreview.turnFiles` RPC through a per-session client cache — one source of truth for card and tab.
 
-Preview rendering: markdown goes through the official `MarkdownText` pipeline at a preview-scaled 14px (font tokens overridden scoped to the preview only); JSON uses the official `JsonTree` inspector; CSV/TSV render as tables (first row as header); every other text file stays in the syntax-highlighted code view. HTML files get a source ⇄ render toggle: the render view is a sandboxed iframe (empty `sandbox` — no scripts, forms, or popups; relative assets do not resolve against a file base), because the official pipeline keeps raw HTML literal by design. Content search switches any text read to the raw matched lines so hits stay visible.
-
-Drawer gestures: the header shows the host-resolved absolute path with "copy path" always available, plus "show in folder" and "open in IDE" behind the same loopback + `canOpenPath` gate the official row uses. Reveal resolves the path against the session cwd and opens the folder with the file selected (Finder `open -R`, Explorer `explorer /select`, or a select-capable Linux file manager), falling back to the parent folder. Official prose mentions are rerouted to the drawer by a capture-phase click interceptor (`code > button[title]`), failing open to the official behavior; both reroutes are marked `TODO(official-opener-seam)` to retire once the core offers a file-opener override. While the drawer is open, the conversation shifts left by the drawer's width. No model involvement: nothing here assembles or sends a provider request (no KV-cache effect).
+The 0.1.5-rc.1 move retired four workarounds (upstream seam S1 landed): the `conversation.view` Produced tab, the `shell.overlay` preview drawer, the capture-phase DOM interception of prose mentions, and the turnTail `priority: -1` preemption — the official file-open entries (deliverables row / prose mentions / tool-result lines) all converge on `ctx.sidebarRight.openResource()`. Content preview now belongs to the official document tab (`dsh-resource://file/**` is claimed by the official `text` type); the change history has no official counterpart and stays self-drawn for the long haul.
 
 </details>
 

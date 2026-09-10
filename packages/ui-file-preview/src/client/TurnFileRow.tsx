@@ -1,13 +1,19 @@
 /** TurnFileRow: the mutation card a finished turn ends with — every file the
  * turn created or edited, as a titled card with per-file line deltas. The
  * paths come from the host `filePreview.turnFiles` RPC — the single source of
- * truth shared with the products tab (write/edit calls, Code Mode dispatches,
- * render-intent paths, and bash captures all land here), fetched once per
- * session through the turn-files cache. Clicking a file opens the file-preview
- * drawer in place rather than the host OS. Long turns collapse: the body folds
- * away from the header chevron, and an expanded card caps its visible rows
- * behind a "show more" row. Until the fetch settles — or when the turn has no
- * files, or the fetch fails — the card renders nothing. */
+ * truth shared with the file-preview tab (write/edit calls, Code Mode
+ * dispatches, render-intent paths, and bash captures all land here), fetched
+ * once per session through the turn-files cache. The entry registers at
+ * default priority: the official deliverables row elects first and claims
+ * turns its own data covers, so this card renders exactly the turns official
+ * data misses (bash captures, S2). A file click goes through the owner's
+ * `openFile` — the official openResource route into the document tab — for
+ * in-workspace paths; an outside-workspace path (bash artifact beyond the
+ * session root, no `dsh-resource://file/...` address) opens this plugin's
+ * file-preview tab with the path selected instead. Long turns collapse: the
+ * body folds away from the header chevron, and an expanded card caps its
+ * visible rows behind a "show more" row. Until the fetch settles — or when
+ * the turn has no files, or the fetch fails — the card renders nothing. */
 
 import { useEffect, useState } from 'react'
 import type { FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
@@ -16,7 +22,7 @@ import {
   IconChevronDownOutline14, IconChevronUpOutline14, IconFolderOpenOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { basename } from './turn-files.ts'
-import { parentPath } from './path-utils.ts'
+import { isWithinWorkspace, parentPath } from './path-utils.ts'
 import css from './TurnFileRow.module.css'
 
 /** Rows visible before the "show more" overflow row takes over. */
@@ -24,12 +30,14 @@ const SHOWN_LIMIT = 5
 
 /**
  * Render one turn's mutated files as a summary card, fetched from the host.
- * @param props - session standard kit (sessionId), the chain owner (turn), the
- *   injected drawer opener + turn-files loader, and the locale seat.
+ * @param props - session standard kit (sessionId, useSessions), the chain
+ *   owner (turn, openFile), the injected turn-files loader + page opener, and
+ *   the locale seat.
  */
 export function TurnFileRow(props: FilePreviewTurnRowProps) {
-  const { sessionId, openDrawer, turnFiles, t } = props
+  const { sessionId, useSessions, openFile, openOutsideWorkspace, turnFiles, t } = props
   const turn = props.turn.turn
+  const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const [files, setFiles] = useState<readonly FilePreviewTurnFile[] | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -76,7 +84,10 @@ export function TurnFileRow(props: FilePreviewTurnRowProps) {
                 type="button"
                 className={css.file}
                 title={file.path}
-                onClick={() => { openDrawer(file.path) }}
+                onClick={() => {
+                  if (isWithinWorkspace(cwd, file.path)) void openFile(file.path)
+                  else openOutsideWorkspace(sessionId, file.path)
+                }}
               >
                 <span className={css.name}>{basename(file.path)}</span>
                 {dir !== '' && <span className={css.dir}>{dir}</span>}

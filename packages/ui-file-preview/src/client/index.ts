@@ -1,56 +1,51 @@
 /**
  * File-preview plugin, browser half: a pure additive surface over official
- * extension points only. It registers the file browser as the 'file-preview'
- * entry in the conversation's `conversation.view` tab ring (beside chat and
- * trajectory), a content-only link-click drawer in the frame's additive
- * `shell.overlay` slot (with host "show in folder" / "open in IDE" gestures
- * gated by the loopback + canOpenPath capability), and a per-turn mutation
- * card in the `conversation.chat.turnTail` chain — at negative priority with
- * a select unioning the official deliverables vocabulary, so the card claims
- * every file-mutating turn and the official OS-open row never mounts while
- * this plugin is composed. Official prose mentions (no slot or service seam
- * reaches them) are rerouted into the drawer by a capture-phase click
- * interceptor (see mention-intercept.ts). The filePreview Remote is mounted
- * here through the official `ctx.remote.$mount` channel, so the plugin
- * distributes as an independent package with no edits to core packages.
- * Composing this plugin out of cordis.yml removes every surface it adds.
+ * extension points only. It registers a page-type right-Sidebar tab (the
+ * session's touched files with their per-write diff history, entered from the
+ * guide page; in-workspace file clicks hand content preview to the official
+ * document tab through the tab's `actions.openResource`) and a per-turn
+ * mutation card in the `conversation.chat.turnTail` chain at default priority
+ * — the official deliverables row elects first, so the card renders exactly
+ * the turns official data misses (the bash captures the host half collects,
+ * S2). The filePreview Remote is mounted here through the official
+ * `ctx.remote.$mount` channel, so the plugin distributes as an independent
+ * package with no edits to core packages. Composing this plugin out of
+ * cordis.yml removes every surface it adds.
+ *
+ * Retired at the 0.1.5-rc.1 move (seam registry S1): the conversation.view
+ * tab, the shell.overlay drawer, the mention capture-phase DOM interception,
+ * and the turnTail `priority: -1` preemption — the right-Sidebar resource
+ * routing (openResource + the tab-type registry) covers all three openings.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { HostDescriptionSource } from './host-description.ts'
-// Type-only: pulls the ctx.workspaces service merge.
-import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
 import type {} from '@khorsheed/dsh-file-preview/remote'
-// Type-only: pulls ui-conversation's SlotMap merges ('conversation.view',
-// 'conversation.chat.turnTail').
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-// Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.turnTail').
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+// Type-only: pulls the ctx.sidebarRight/ctx.sidebarRightTabs service merges.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import filePreviewRemote from '@khorsheed/dsh-file-preview/remote'
-import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { FilePreviewDrawer } from './FilePreviewDrawer.tsx'
-import { FilePreviewView } from './FilePreviewView.tsx'
+import { FilePreviewTab } from './FilePreviewTab.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'
 import { createFilePreviewStore } from './file-preview-store.ts'
-import { interceptMentionClicks } from './mention-intercept.ts'
-import { FilePreviewController, type FilePreviewActions } from './panel-service.ts'
+import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition } from './definition.tsx'
 import { en, NS, zh } from './locales.ts'
-import { parentPath } from './path-utils.ts'
 import { createTurnFilesLoader } from './turn-files-cache.ts'
 import { selectTurnFiles } from './turn-files.ts'
-import type { FilePreviewDrawerInjected, FilePreviewRemote, FilePreviewTurnRowInjected, FilePreviewViewInjected } from './contract.ts'
+import type { FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
 
-export { FilePreviewDrawer, FilePreviewView, FilePreviewController }
+export { DiffHistory } from './DiffHistory.tsx'
+export { FilePreviewTab, TurnFileRow }
+export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND }
 
-/** Required services: slots, sessions, the remote channel, and the locale. The
+/** Required services: slots, the remote channel, the locale, and the
+ * right-Sidebar faces (tab-type registry + the navigation service the turn
+ * card's outside-workspace gesture opens pages through). The
  * `remote.filePreview` namespace is deliberately NOT an inject: this plugin
  * both mounts the namespace (through `$mount` below) and consumes it, and the
  * Cordis property proxy only resolves services declared in `inject` or
@@ -60,45 +55,11 @@ export { FilePreviewDrawer, FilePreviewView, FilePreviewController }
  * The mount is awaited and the namespace is then read back from the global
  * store with `ctx.get`, which resolves any active provider in the same
  * isolation scope. */
-export const inject = ['slots', 'sessions', 'workspaces', 'connection', 'remote', 'locale']
-
-/** Static absence: no host-facts source on an unrecognized line (never reached on rc or 0.1.2). */
-const ABSENT_HOST_DESCRIPTION: HostDescriptionSource = {
-  getSnapshot: () => undefined,
-  subscribe: () => () => {},
-}
+export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs']
 
 /**
- * Host-facts source for the view/drawer hooks, probed per host line: rc
- * hosts expose `Connection.hostDescription` directly; 0.1.2 folded the facts
- * into the connection generation's opening frame (upstream e14d354e83), so
- * the source is derived from `connection.generation` there. The derived
- * snapshot carries `home` but no `canOpenPath` (that capability became an
- * RPC probe), which reads as unavailable and hides the "show in folder" /
- * "open in IDE" buttons — the intended degrade on 0.1.2.
- * @param connection - the connection service handle.
- * @returns an observable HostDescription source on either host line.
- */
-function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionSource {
-  const probe = connection as unknown as {
-    hostDescription?: HostDescriptionSource
-    generation?: {
-      getSnapshot(): { readonly host: unknown } | undefined
-      subscribe(listener: () => void): () => void
-    }
-  }
-  if (probe.hostDescription !== undefined) return probe.hostDescription
-  const generation = probe.generation
-  if (generation === undefined) return ABSENT_HOST_DESCRIPTION
-  return {
-    getSnapshot: () => generation.getSnapshot()?.host,
-    subscribe: listener => generation.subscribe(listener),
-  } as HostDescriptionSource
-}
-
-/**
- * Client plugin body: mount the Remote, register the dictionaries, the panel
- * controller, the file view tab, the per-turn file row, and the drawer.
+ * Client plugin body: mount the Remote, register the dictionaries, the tab
+ * type, its body, and the per-turn file row.
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -107,61 +68,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     disposers.push(await ctx.remote.$mount(filePreviewRemote))
   } catch (error) {
     // A Remote already mounted by another composition fails loud at boot; the
-    // rest of the plugin still registers (the view would answer an unmounted
+    // rest of the plugin still registers (the tab would answer an unmounted
     // namespace with a typed RPC error, which the surfaces render).
     /* v8 ignore next -- double-mount is a composition error, not a runtime path */
     ctx.logger.error(error)
   }
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-file-preview: dictionaries')
   const t = ctx.locale.bind(NS)
-  const controller = new FilePreviewController()
-  const connection = ctx.get('connection') as ConnectionHandle
-  const sessions: ISessions = ctx.sessions
-  // Path verbs (open / reveal / copy) resolve the recorded display path
-  // against a session's cwd at call time — the tool may have recorded it
-  // relative to the session cwd. The drawer only ever previews the CURRENT
-  // session; the file view knows its own session id and resolves against
-  // that one, never the current.
-  const sessionCwd = (sessionId: SessionId | undefined): string | undefined => {
-    const snapshot = sessions.list.getSnapshot()
-    if (sessionId !== undefined) return snapshot.byId[sessionId]?.cwd
-    return snapshot.current === undefined ? undefined : snapshot.byId[snapshot.current]?.cwd
-  }
-  const openOnHost = (sessionId: SessionId | undefined, path: string): void => {
-    // rc hosts expose workspaces.openPath; 0.1.2 moved path opens to the
-    // session Remote namespace (remote.session.openWorkspacePath) — probe
-    // both, degrade to a no-op when neither exists.
-    const legacy = (ctx.workspaces as unknown as { openPath?: (path: string) => Promise<unknown> }).openPath
-    const opened = legacy !== undefined
-      ? legacy.call(ctx.workspaces, resolveWorkspacePath(sessionCwd(sessionId), path))
-      : ((ctx.remote as unknown as {
-        session?: { openWorkspacePath(request: { path: string }): Promise<unknown> }
-      }).session?.openWorkspacePath({ path: resolveWorkspacePath(sessionCwd(sessionId), path) })
-        ?? Promise.resolve(false))
-    void Promise.resolve(opened).catch(() => {
-      // Host/OS open failures stay silent in the drawer; the native app
-      // surfaces its own error dialog when the path is unusable.
-    })
-  }
-  const copyPathFor = (sessionId: SessionId | undefined, path: string): Promise<boolean> =>
-    writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path))
-  // "Show in folder": reveal the file in the host file manager (open its
-  // folder and select it — Finder/Explorer/a select-capable file manager).
-  // The host resolves the display path against the session cwd and selects
-  // when it can; when the file is gone or the platform cannot select, fall
-  // back to opening the parent folder (the pre-reveal behavior) so the
-  // gesture always lands somewhere visible. The drawer only ever previews
-  // the CURRENT session; the file view knows its own session id.
-  const revealFolder = (sessionId: SessionId | undefined, path: string): void => {
-    const sid = sessionId ?? sessions.list.getSnapshot().current
-    if (sid === undefined) return
-    void remote.reveal(sid, path).then((result) => {
-      if (result.ok && result.value.revealed) return
-      openOnHost(sessionId, parentPath(path) || '.')
-    }).catch(() => {
-      openOnHost(sessionId, parentPath(path) || '.')
-    })
-  }
   // The namespace is registered by $mount above; `ctx.remote.filePreview`
   // cannot see it (the property proxy walks the fiber chain, and the namespace
   // lives in the sibling fiber $mount spawned), so read it from the global
@@ -173,70 +86,45 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // (the host returns the whole per-turn map, cached by the log watermark).
   const turnFilesLoader = createTurnFilesLoader(remote)
 
-  ctx.slots.inject('conversation.view', () => ctx.slots.register({
-    name: 'conversation.view',
-    id: 'file-preview',
-    order: 20,
+  // Stage one of the right-Sidebar registration: the page type itself (guide
+  // entry, no address claims). The default band is 'extension', which outranks
+  // every builtin viewer — correct here because the type claims nothing.
+  ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t)), 'ui-file-preview: tab type')
+
+  // Stage two: the body under the type's id in the keyed pane seat.
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab',
+    key: FILE_PREVIEW_ID,
     locale: NS,
-    label: () => t('open'),
     store: createFilePreviewStore,
-    inject: (sessionId: SessionId, actions: FilePreviewActions): FilePreviewViewInjected => {
-      controller.attachSession(sessionId, actions)
-      return {
-        listFiles: (sid: SessionId) => remote.list(sid),
-        readFile: (sid: SessionId, path: string) => remote.read(sid, path),
-        isLoopback: connection.isLoopback,
-        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
-        openExternal: (path) => { openOnHost(sessionId, path) },
-        revealFolder: (path) => { revealFolder(sessionId, path) },
-        copyPath: (path) => copyPathFor(sessionId, path),
-      }
-    },
-  }, FilePreviewView))
+    inject: (): FilePreviewTabInjected => ({
+      listFiles: (sid: SessionId) => remote.list(sid),
+    }),
+  }, FilePreviewTab)), 'ui-file-preview: tab body')
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
-    // Priority -1: the chain elects the first non-null select in ascending
-    // priority order. selectTurnFiles claims EVERY turn unconditionally (the
-    // card is an async shell whose visibility its host fetch decides), so the
-    // official produced-files entry never mounts. See the
-    // TODO(official-opener-seam) note: the row still opens the drawer in place.
-    priority: -1,
+    // No priority: the chain elects the first non-null select in ascending
+    // priority order, and the official deliverables entry (also default)
+    // registered first at host boot. This card's unconditional claim is
+    // consulted only for turns the official row declines.
     select: selectTurnFiles,
     locale: NS,
     inject: (): FilePreviewTurnRowInjected => ({
-      openDrawer: (path: string) => { controller.openDrawer(path) },
       turnFiles: (sessionId: SessionId, turn: number) => turnFilesLoader(sessionId, turn),
+      // Outside-workspace paths have no `dsh-resource://file/...` address; open
+      // this plugin's page with the path selected. The page service acts on the
+      // mounted session's surface — a throw (no surface mounted) degrades to
+      // nothing rather than breaking the chat view.
+      openOutsideWorkspace: (_sessionId: SessionId, path: string) => {
+        try {
+          ctx.sidebarRight.openTab(FILE_PREVIEW_KIND, { params: { path } })
+        } catch (error) {
+          ctx.logger.warn('ui-file-preview: openTab failed', error)
+        }
+      },
     }),
   }, TurnFileRow))
-
-  // Official prose mentions have no slot/service seam; reroute their clicks
-  // into the drawer at the DOM capture phase (fail-open, own surfaces
-  // excluded). See the TODO(official-opener-seam) in mention-intercept.ts.
-  ctx.effect(
-    () => interceptMentionClicks((path) => { controller.openDrawer(path) }),
-    'ui-file-preview: mention click intercept',
-  )
-
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'file-preview-drawer',
-    order: 110,
-    locale: NS,
-    store: createFilePreviewStore,
-    inject: (actions: FilePreviewActions): FilePreviewDrawerInjected => {
-      controller.attachDrawer(actions)
-      return {
-        listFiles: (sid: SessionId) => remote.list(sid),
-        readFile: (sid: SessionId, path: string) => remote.read(sid, path),
-        isLoopback: connection.isLoopback,
-        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
-        openExternal: (path) => { openOnHost(undefined, path) },
-        revealFolder: (path) => { revealFolder(undefined, path) },
-        copyPath: (path) => copyPathFor(undefined, path),
-      }
-    },
-  }, FilePreviewDrawer))
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

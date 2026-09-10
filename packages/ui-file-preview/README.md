@@ -2,23 +2,16 @@
 
 [English](README.en.md) | 中文
 
-agent 写过、改过的文件，不开 IDE 就能看到内容和每一次改动。
+agent 写过、改过的文件，收进右栏一个「产物」页：文件清单 + 每一次改动的 diff 步进。
 
-agent 干了半天活，到底动了哪些文件、改成了什么样？装了这个插件，会话顶部会多出一个「产物」tab：这个会话碰过的文件全列在里面，选中一个就在页面里直接预览——Markdown 渲染成文档、JSON 是检查树、CSV 是表格、图片直接显示，还能一页页回看每次 write/edit 的 diff。每个回合结束，对话里也会出现一张小卡片，汇总这一轮改了哪几个文件、各增删了多少行。数据由配套的宿主半 `@khorsheed/dsh-file-preview` 提供，两边一起装才有界面可看；宿主半不在时它只是空态，不会报错。
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="640" alt="「产物」tab：左侧列出会话写过的全部文件，右侧预览选中文件的当前内容">
+agent 干了半天活，到底动了哪些文件、改成了什么样？装了这个插件，右栏向导页会多出「会话产物」入口：这个会话碰过的文件按最近活动倒序列出，点一个就在同栏的官方文档预览里渲染（Markdown/代码/图片/PDF/HTML 都是官方渲染器），清单下方是这个插件独有的改动记录——逐次 write/edit 的 diff 步进回看。每个回合结束，对话里也会出现一张小卡片，汇总这一轮改了哪几个文件、各增删了多少行。数据由配套的宿主半 `@khorsheed/dsh-file-preview` 提供（含官方数据覆盖不到的 bash 写入捕获），两边一起装才有界面可看；宿主半不在时它只是空态，不会报错。
 
 ## 特性
 
-- **产物 tab**——列出会话写入或编辑过的每个文件，按最近活动倒序，可切换到全部文件。
-- **文档形态预览**——Markdown 渲染为文档，JSON/CSV 呈现为检查树/表格，HTML 提供源码 ⇄ 沙箱渲染切换，图片内联。
-- **改动记录**——步进查看每一次 write/edit 的 diff，每条带所属轮次与步骤。
-- **回合变更卡片**——每个已完成回合末尾出现可收起的「N 个文件已修改」卡片，逐文件列出行数增减。
-- **就地抽屉**——预览在仅内容抽屉中打开，支持内容搜索；「复制路径」始终可用，部署可对接原生桌面时另有「在文件夹中打开」和「在 IDE 打开」。
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="640" alt="回合末尾的「N 个文件已修改」卡片，以及点开产物后在右侧抽屉里查看文件内容，抽屉头部有复制路径、文件夹、IDE 按钮">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="640" alt="抽屉里的「改动记录」页签：逐轮翻看该文件的每一次 diff">
+- **右栏「产物」页**——page-type 右栏 tab（向导页进入），列出会话写入或编辑过的每个文件，按最近活动倒序，可搜索。
+- **官方文档预览**——点击工作区内的文件，经 `openResource('dsh-resource://file/session/<id>/<path>')` 交给官方 document tab 渲染；本插件不再自绘内容预览。
+- **改动记录**——官方文档预览没有历史概念，这一部分保留自绘：步进查看每一次 write/edit 的 diff，每条带所属轮次与步骤。
+- **回合变更卡片**——每个已完成回合末尾出现可收起的「N 个文件已修改」卡片（含 bash 捕获，比官方产物行数据全），逐文件列出行数增减；点击工作区内文件走官方打开路由，工作区外的产物打开右栏「产物」页并选中该文件的改动记录。
 
 ## 安装
 
@@ -37,35 +30,33 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：⚠️ 降级——预览与折叠主体完整；external-open 按钮（打开目录 / 在 IDE 打开）在 0.1.2 上隐藏：host description 快照不再携带 `canOpenPath`（该能力已改为 RPC 探测），loopback 闸门无法确认；恢复是 follow-up，官方 seam 为 `remote.session.canOpenWorkspacePath` RPC。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1；external-open 降级同上）
+| Host 行 | 结论 |
+| --- | --- |
+| npm release（`>= 0.1.5-rc.1`） | ✅ 完整（`verifiedHost: 0.1.5-rc.1`） |
+| npm release（`<= 0.1.4.x`） | ❌ 不可用——右栏 tab 体系（`ctx.sidebarRightTabs` / `openResource`）随 0.1.5 落地；旧宿主请停留在旧发布线 |
 
-**版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
+**版本线对照**：0.3.0 起要求宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` ~ `0.1.4.x` 的用户请停留在 0.2.x 发布线，宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
 
 ## 已知限制
 
-- **仅文本预览** —— 二进制、超大、缺失文件只渲染带大小的分类提示，不渲染内容。
-- **仅当前会话** —— 只显示当前所选会话的文件，不是任意文件浏览器。
-- **只读** —— 预览永不修改；文件变更仍归会话所有。
-- **mention 拦截是非官方的** —— 只有官方 mention 按钮会被改道，且依赖非官方 DOM 结构；核心改动该结构时，mention 点击会静默退回 OS 打开。
+- **工作区外的产物无内容预览**——bash 写到会话工作区之外的文件造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区内），列表里只可选中查看改动记录，不另做自绘预览。
+- **仅当前会话**——只显示当前所选会话的文件，不是任意文件浏览器。
+- **只读**——预览与改动记录永不修改文件；文件变更仍归会话所有。
 
 ## 实现原理
 
 <details>
 <summary>内部结构（点击展开）</summary>
 
-- `src/client/index.ts` —— apply：注册视图/回合行/抽屉并挂载 `filePreview` Remote
-- `src/client/FilePreviewView.tsx` —— 产物 tab（文件列表 + 预览区）
-- `src/client/FilePreviewDrawer.tsx` —— 就地预览抽屉
+- `src/client/index.ts` —— apply：注册 tab 类型 / tab body / 回合行并挂载 `filePreview` Remote
+- `src/client/definition.tsx` —— page-type tab 的注册表定义（guide 入口，不认领地址）
+- `src/client/FilePreviewTab.tsx` —— 右栏「产物」页（文件列表 + 改动记录）
+- `src/client/DiffHistory.tsx` —— 逐次 write/edit diff 步进（本插件独有）
 - `src/client/TurnFileRow.tsx` —— 每回合的「N 个文件已修改」卡片
-- `src/client/structured.tsx` —— 文档形态渲染器（markdown/JSON/CSV/HTML 沙箱）
-- `src/client/mention-intercept.ts` —— 官方 mention 点击的捕获阶段改道
 
-纯增量插件：注册一个会话视图（`conversation.view`）、一个回合文件行（`conversation.chat.turnTail`）、一个抽屉（`shell.overlay`），并通过 `ctx.remote.$mount` 自挂载 `filePreview` Remote——原版 dsh 核心零改动即可运行。该命名空间不声明为 inject（自挂载会让加载器死锁）；挂载被 await 之后用 `ctx.get('remote.filePreview')` 读回。文件列表由 `@khorsheed/dsh-file-preview` 在宿主侧折叠（含嵌套 Code Mode 派发）。数据单向流动：tab 激活/刷新时拉取 `filePreview.list`，选中时拉取 `filePreview.read`，过期的在途请求丢弃。回合卡片经按会话的客户端缓存读同一个宿主 `filePreview.turnFiles` RPC——卡片与 tab 同一事实源——并无条件认领每个回合，官方产出文件行永不挂载。
+纯增量插件：注册一个右栏 tab 类型（`ctx.sidebarRightTabs` + keyed `sidebar.right.pane.tab` seat）与一个回合文件行（`conversation.chat.turnTail`，默认优先级——官方产物行先选举，本卡片只出现在官方数据覆盖不到的回合），并通过 `ctx.remote.$mount` 自挂载 `filePreview` Remote——原版 dsh 核心零改动即可运行。该命名空间不声明为 inject（自挂载会让加载器死锁）；挂载被 await 之后用 `ctx.get('remote.filePreview')` 读回。文件列表由 `@khorsheed/dsh-file-preview` 在宿主侧折叠（含嵌套 Code Mode 派发与 bash 写入捕获）。回合卡片经按会话的客户端缓存读同一个宿主 `filePreview.turnFiles` RPC——卡片与 tab 同一事实源。
 
-预览渲染：Markdown 走官方 `MarkdownText` 管线，缩放到预览专用的 14px（仅在预览范围内覆盖字体 token）；JSON 走官方 `JsonTree` 检查树；CSV/TSV 渲染为表格（首行作表头）；其余文本文件保持语法高亮的代码视图。HTML 文件提供源码 ⇄ 渲染切换：渲染视图是沙箱 iframe（空 `sandbox`——无脚本、无表单、无弹窗；相对资源无法解析），因为官方管线按设计把原始 HTML 当字面文本。内容搜索时任何文本切换为原始匹配行，命中始终可见。
-
-抽屉手势：头部显示宿主解析后的绝对路径，「复制路径」始终可用；「在文件夹中打开」和「在 IDE 打开」走与官方行相同的 loopback + `canOpenPath` 门禁。「在文件夹中打开」以会话 cwd 为基准解析路径，打开所在文件夹并选中文件（Finder `open -R`、Explorer `explorer /select`，或支持选中的 Linux 文件管理器），失败时回退为打开父文件夹。官方正文 mention 由捕获阶段点击拦截器（识别 `code > button[title]` 结构）改道到抽屉，无法识别时放行回官方行为；两处改道都标注 `TODO(official-opener-seam)`，待核心提供文件打开覆盖点后退役。抽屉打开时会话区按抽屉宽度向左让位。与模型无关：本包不组装也不发送任何提供方请求（无 KV 缓存影响）。
+0.1.5-rc.1 迁移退役了四处绕行（上游缝 S1 已落地）：`conversation.view` 的「产物」tab、`shell.overlay` 预览抽屉、正文 mention 的捕获阶段 DOM 拦截、turnTail 的 `priority: -1` 抢占——产物行 / 正文 mention / 工具结果行的打开入口官方已统一收敛到 `ctx.sidebarRight.openResource()`。内容预览整体交给官方 document tab（`dsh-resource://file/**` 由官方 `text` 类型认领）；改动记录官方无对应物，长期自留。
 
 </details>
 

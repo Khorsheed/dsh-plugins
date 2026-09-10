@@ -10,6 +10,8 @@ Status: implemented
 
 ## 决策
 
+> 已于宿主 0.1.5-rc.1 退役：下文两个机制在 ui-file-preview 0.3.0 中拆除（右栏资源路由落地，缝注册表 S1）。见[退役记录](../architecture/2026-09-10-ui-file-preview-sidebar-right-s1-retirement.md)。
+
 两个增量机制把每个官方文件入口改道进抽屉，两处都标注了 `TODO(official-opener-seam)`，写明退役条件与每次官方升级时的复查清单。
 
 **产出文件行的 chain 抢占。** 插件的 turn-tail 条目以 `priority: -1` 注册，`selectTurnFiles` 把自己的变更文件词汇表（write/edit 的 `file_path` 参数，加上来自 diff 调用视图的逐文件行数增减）与官方 `deliverables` 回合数据求并集（通过对 `@deepseek-ai/dsh-client-ui-deliverables/client` 的纯类型导入做结构化读取——client bundle 纯度门禁止对 `producedForClosing` 的跨插件值导入）。该条目渲染一张"N 个文件已修改"的变更卡片，卡片中的文件行打开抽屉：它认领每个有文件变更的回合，官方条目不再挂载，其 OS 打开 chips 随之消失。ui-deliverables 被取消组合时，`deliverables` 键缺席，并集一致降级。若上游 chain 语义变更，最坏结果是官方行重新出现——静默退回之前的行为，绝不崩溃。

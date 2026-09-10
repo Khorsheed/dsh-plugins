@@ -1,41 +1,33 @@
 // @vitest-environment jsdom
 /**
  * ui-file-preview browser half on a real cordis Context with fake slots /
- * remote / sessions / locale / conversationEvents faces: the plugin mounts
- * its Remote, registers the file browser as the 'file-preview' entry in the
- * conversation view ring, a per-turn file row in the turnTail chain, and a
- * content-only drawer in the root overlay slot; the entries' inject factories
- * attach their stores to the controller, and the injected callbacks reach the
- * mounted filePreview Remote. Registration disposal rides the plugin fiber
- * (HMR safety).
+ * remote / sidebarRight faces and a real tab-type registry: the plugin mounts
+ * its Remote, registers the `file-preview` page type into
+ * `ctx.sidebarRightTabs`, the tab body into the keyed `sidebar.right.pane.tab`
+ * seat under the type's id, and the per-turn file row into the turnTail chain
+ * at default priority (no more `priority: -1` preemption — the official
+ * deliverables row elects first). Registration disposal rides the plugin
+ * fiber (HMR safety).
  */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { createFilePreviewStore } from '../src/client/file-preview-store.ts'
-import type { FilePreviewDrawerInjected, FilePreviewViewInjected } from '../src/client/contract.ts'
+import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND } from '../src/client/definition.tsx'
 import { apply, inject } from '../src/client/index.ts'
+import type { FilePreviewTabInjected, FilePreviewTurnRowInjected } from '../src/client/contract.ts'
 
 const sid = (k: string): SessionId => k as SessionId
 
 /** Boot the plugin over fake faces; the filePreview Remote records calls. */
-async function bench(opts: { current?: SessionId | undefined; connectionSeat?: 'rc' | 'alpha' } = {}) {
-  const current = 'current' in opts ? opts.current : sid('s1')
+async function bench() {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const list = vi.fn(async (...args: unknown[]) => {
     calls.push({ method: 'list', args })
     return { ok: true, value: { entries: [], asOfSeq: -1, truncated: false } }
-  })
-  const read = vi.fn(async (...args: unknown[]) => {
-    calls.push({ method: 'read', args })
-    return { ok: true, value: { path: 'a.md', kind: 'text', content: 'x', truncated: false } }
-  })
-  const reveal = vi.fn(async (...args: unknown[]) => {
-    calls.push({ method: 'reveal', args })
-    return { ok: true, value: { revealed: true } }
   })
   const turnFiles = vi.fn(async (...args: unknown[]) => {
     calls.push({ method: 'turnFiles', args })
@@ -53,204 +45,108 @@ async function bench(opts: { current?: SessionId | undefined; connectionSeat?: '
   // `ctx.get('remote.filePreview')` after the mount settles).
   const mount = vi.fn(async () => () => {})
   Object.assign(ctx.remote, { $mount: mount })
-  ctx.provide('remote.filePreview', { list, read, reveal, turnFiles })
-  ctx.provide('sessions', {
-    list: { getSnapshot: () => ({ current, byId: current === undefined ? {} : { [current]: { cwd: '/work' } } }) },
-  })
-  const openPath = vi.fn(async () => {})
-  ctx.provide('workspaces', { openPath })
-  ctx.provide('connection', opts.connectionSeat === 'alpha'
-    // 0.1.2 folded the host facts into the generation's opening frame
-    // (Connection.hostDescription removed, upstream e14d354e83).
-    ? {
-      isLoopback: true,
-      generation: { getSnapshot: () => ({ host: { home: '/h' } }), subscribe: () => () => {} },
-    }
-    : {
-      isLoopback: true,
-      hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
-    })
+  ctx.provide('remote.filePreview', { list, turnFiles })
   ctx.provide('locale', new LocaleRuntime(ctx))
+  // A fake tab-type registry recording registrations; the real registry's
+  // ranking/coexistence rules are the host's own test coverage.
+  const registered: SidebarRightTabDefinition[] = []
+  ctx.provide('sidebarRightTabs', {
+    register: (definition: SidebarRightTabDefinition) => {
+      registered.push(definition)
+      return () => { registered.splice(registered.indexOf(definition), 1) }
+    },
+  })
+  const openTab = vi.fn()
+  ctx.provide('sidebarRight', { openTab })
   await ctx.plugin(SlotRegistry).await()
-  // Declare the target slots (normally declared by ui-conversation / ui-layout).
+  // Declare the target slots (normally declared by ui-sidebar-right / ui-chat).
   ctx.slots.register({
     name: 'root',
     children: {
-      'conversation.view': { kind: 'list', scope: 'session' },
+      'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
       'conversation.chat.turnTail': { kind: 'chain', scope: 'session', owner: {} },
-      'shell.overlay': { kind: 'list', scope: 'root' },
     },
   } as never, (() => null) as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, calls, list, read, reveal, turnFiles, mount, openPath }
+  return { ctx, fiber, calls, list, turnFiles, mount, registered, openTab }
 }
 
-/** The view entry's inject factory, called the way the outlet would. */
-function viewApi(b: Awaited<ReturnType<typeof bench>>) {
-  const entry = b.ctx.slots.entries('conversation.view')[0]
-  const store = createFilePreviewStore().create()
-  const injected = (entry?.inject as unknown as ((sessionId: SessionId, actions: never) => FilePreviewViewInjected) | undefined)?.(
-    sid('s1'), store.actions as never)
-  return { entry, store, injected }
+/** The tab body entry's inject factory, called the way the outlet would. */
+function tabApi(b: Awaited<ReturnType<typeof bench>>) {
+  const entry = b.ctx.slots.entries('sidebar.right.pane.tab')[0]
+  const injected = (entry?.inject as unknown as (() => FilePreviewTabInjected) | undefined)?.()
+  return { entry, injected }
 }
 
-/** The drawer entry's inject factory (root scope: actions only). */
-function drawerApi(b: Awaited<ReturnType<typeof bench>>) {
-  const entry = b.ctx.slots.entries('shell.overlay')[0]
-  const store = createFilePreviewStore().create()
-  const injected = (entry?.inject as unknown as ((actions: never) => FilePreviewDrawerInjected) | undefined)?.(
-    store.actions as never)
-  return { entry, store, injected }
+/** The turn card entry's inject factory, called the way the outlet would. */
+function turnApi(b: Awaited<ReturnType<typeof bench>>) {
+  const entry = b.ctx.slots.entries('conversation.chat.turnTail')[0]
+  const injected = (entry?.inject as unknown as (() => FilePreviewTurnRowInjected) | undefined)?.()
+  return { entry, injected }
 }
 
 describe('ui-file-preview browser plugin', () => {
-  // Runs first: the document-level mention interceptor is per-bench, and an
-  // undisposed earlier bench's listener would claim the click first.
-  it('reroutes an official prose-mention click into the drawer', async () => {
-    const b = await bench()
-    const { store: drawerStore } = drawerApi(b)
-    const code = document.createElement('code')
-    const button = document.createElement('button')
-    button.title = '/work/notes.md'
-    button.textContent = 'notes.md'
-    code.appendChild(button)
-    document.body.appendChild(code)
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    expect(drawerStore.getSnapshot().open).toBe(true)
-    expect(drawerStore.getSnapshot().selectedPath).toBe('/work/notes.md')
-    await b.fiber.dispose()
-    document.body.innerHTML = ''
-  })
-
-  it('mounts the Remote and registers the view tab, the turn row, and the drawer', async () => {
+  it('mounts the Remote and registers the tab type, the body, and the turn row', async () => {
     const b = await bench()
     expect(b.mount).toHaveBeenCalledTimes(1)
-    const viewEntry = b.ctx.slots.entries('conversation.view')[0]
-    expect(viewEntry?.options).toMatchObject({ id: 'file-preview', order: 20 })
-    expect(viewEntry?.locale).toBe('filePreview')
-    expect(viewEntry?.inject).toBeTypeOf('function')
-    const label = viewEntry?.options.label
-    if (typeof label === 'function') expect(label()).toBeTruthy()
-    const turnEntry = b.ctx.slots.entries('conversation.chat.turnTail')[0]
+    // Stage one: the page type, entered from the guide, claiming no address.
+    const definition = b.registered.find(d => d.kind === FILE_PREVIEW_KIND)
+    expect(definition?.id).toBe(FILE_PREVIEW_ID)
+    expect(definition?.patterns).toBeUndefined()
+    expect(definition?.title('sidebar://file-preview')).toBeTruthy()
+    expect(definition?.guide?.length).toBe(1)
+    // Stage two: the body under the type's id, with the store and the locale.
+    const { entry } = tabApi(b)
+    expect(entry?.options).toMatchObject({ key: FILE_PREVIEW_ID })
+    expect(entry?.locale).toBe('filePreview')
+    expect(entry?.store).toBeTruthy()
+    // The turn row: default priority (no preemption of the official row).
+    const { entry: turnEntry } = turnApi(b)
     expect(turnEntry).toBeTruthy()
-    expect(turnEntry?.options).toMatchObject({ priority: -1 })
-    const drawerEntry = b.ctx.slots.entries('shell.overlay')[0]
-    expect(drawerEntry?.options).toMatchObject({ id: 'file-preview-drawer', order: 110 })
-    expect(drawerEntry?.inject).toBeTypeOf('function')
-  })
-
-  it('derives the host-facts hook from the connection generation on hosts without hostDescription (0.1.2)', async () => {
-    const b = await bench({ connectionSeat: 'alpha' })
-    const { injected } = viewApi(b)
-    expect(injected?.hooks.hostDescription.getSnapshot()).toEqual({ home: '/h' })
-    const drawer = drawerApi(b)
-    expect(drawer.injected?.hooks.hostDescription.getSnapshot()).toEqual({ home: '/h' })
+    expect(turnEntry?.options.priority).toBeUndefined()
+    expect(turnEntry?.locale).toBe('filePreview')
     await b.fiber.dispose()
   })
 
-  it('routes view callbacks through the generated filePreview Remote', async () => {
+  it('routes the tab body and turn card callbacks through the filePreview Remote', async () => {
     const b = await bench()
-    const { injected } = viewApi(b)
-    if (injected === undefined) throw new Error('view inject missing')
+    const { injected } = tabApi(b)
+    if (injected === undefined) throw new Error('tab inject missing')
     const listResult = await injected.listFiles(sid('s1'))
     expect(listResult).toMatchObject({ ok: true, value: { entries: [] } })
-    const readResult = await injected.readFile(sid('s1'), 'a.md')
-    expect(readResult).toMatchObject({ ok: true, value: { kind: 'text' } })
-    const { injected: drawerInjected } = drawerApi(b)
-    if (drawerInjected === undefined) throw new Error('drawer inject missing')
-    await drawerInjected.listFiles(sid('s1'))
-    await drawerInjected.readFile(sid('s1'), 'a.md')
-    expect(b.calls).toEqual([
-      { method: 'list', args: ['s1'] },
-      { method: 'read', args: ['s1', 'a.md'] },
-      { method: 'list', args: ['s1'] },
-      { method: 'read', args: ['s1', 'a.md'] },
-    ])
-  })
-
-  it('routes a drawer gesture through the controller without a session handle', async () => {
-    const b = await bench()
-    const { store: drawerStore } = drawerApi(b)
-    const turnEntry = b.ctx.slots.entries('conversation.chat.turnTail')[0]
-    const turnInjected = (
-      turnEntry?.inject as unknown as
-      ((owner: never) => { openDrawer: (path: string) => void; turnFiles: (sessionId: SessionId, turn: number) => Promise<unknown> }) | undefined
-    )?.({} as never)
+    const { injected: turnInjected } = turnApi(b)
     if (turnInjected === undefined) throw new Error('turn inject missing')
-    turnInjected.openDrawer('notes.md')
-    expect(drawerStore.getSnapshot().open).toBe(true)
-    expect(drawerStore.getSnapshot().selectedPath).toBe('notes.md')
     // The turn card's host-fed loader reaches the turnFiles RPC (cached: the
     // second call for the same session+turn does not hit the wire again).
     await turnInjected.turnFiles(sid('s1'), 1)
     await turnInjected.turnFiles(sid('s1'), 1)
     expect(b.turnFiles).toHaveBeenCalledTimes(1)
     expect(b.turnFiles).toHaveBeenCalledWith('s1')
+    expect(b.calls).toEqual([
+      { method: 'list', args: ['s1'] },
+      { method: 'turnFiles', args: ['s1'] },
+    ])
+    await b.fiber.dispose()
   })
 
-  it('routes the drawer open gesture through workspaces.openPath and reveal through the Remote', async () => {
+  it('opens the file-preview page for an outside-workspace path, silently degrading without a surface', async () => {
     const b = await bench()
-    const { injected } = drawerApi(b)
-    if (injected === undefined) throw new Error('drawer inject missing')
-    injected.openExternal('docs/a.md')
-    injected.revealFolder('/work/docs/a.md')
-    injected.revealFolder('a.md')
-    expect(b.openPath).toHaveBeenCalledWith('/work/docs/a.md')
-    // Reveal selects through the Remote against the current session; a
-    // successful reveal never falls back to the parent-folder open.
-    expect(b.reveal).toHaveBeenCalledWith('s1', '/work/docs/a.md')
-    expect(b.reveal).toHaveBeenCalledWith('s1', 'a.md')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(b.openPath).not.toHaveBeenCalledWith('/work/docs')
-    expect(b.openPath).not.toHaveBeenCalledWith('/work/.')
-    // A host-side open failure stays silent (the native app owns the error dialog).
-    b.openPath.mockRejectedValueOnce(new Error('denied'))
-    injected.openExternal('/work/a.md')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    await b.fiber.dispose()
-  })
-
-  it('falls back to opening the parent folder when reveal cannot select', async () => {
-    const b = await bench()
-    b.reveal.mockResolvedValue({ ok: false, error: { code: 'x', message: 'no select-capable file manager' } })
-    const { injected } = drawerApi(b)
-    if (injected === undefined) throw new Error('drawer inject missing')
-    injected.revealFolder('/work/docs/a.md')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(b.openPath).toHaveBeenCalledWith('/work/docs')
-    injected.revealFolder('a.md')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    // A rootless path reveals the session cwd itself (the official show-folder behavior).
-    expect(b.openPath).toHaveBeenCalledWith('/work/.')
-    await b.fiber.dispose()
-  })
-
-  it('reveals nothing without a current session (no session handle, no fallback)', async () => {
-    const b = await bench({ current: undefined })
-    const { injected } = drawerApi(b)
-    if (injected === undefined) throw new Error('drawer inject missing')
-    injected.revealFolder('/work/docs/a.md')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(b.reveal).not.toHaveBeenCalled()
-    expect(b.openPath).not.toHaveBeenCalled()
-    await b.fiber.dispose()
-  })
-
-  it('passes host-open paths through unresolved without a current session', async () => {
-    const b = await bench({ current: undefined })
-    const { injected } = drawerApi(b)
-    if (injected === undefined) throw new Error('drawer inject missing')
-    injected.openExternal('docs/a.md')
-    expect(b.openPath).toHaveBeenCalledWith('docs/a.md')
+    const { injected } = turnApi(b)
+    if (injected === undefined) throw new Error('turn inject missing')
+    injected.openOutsideWorkspace(sid('s1'), '/tmp/artifact.html')
+    expect(b.openTab).toHaveBeenCalledWith(FILE_PREVIEW_KIND, { params: { path: '/tmp/artifact.html' } })
+    // A throw from the page service (no mounted surface) stays contained.
+    b.openTab.mockImplementationOnce(() => { throw new Error('sidebarRight: no session surface is mounted') })
+    expect(() => { injected.openOutsideWorkspace(sid('s1'), '/tmp/x') }).not.toThrow()
     await b.fiber.dispose()
   })
 
   it('unregisters every surface on fiber disposal', async () => {
     const b = await bench()
     await b.fiber.dispose()
-    expect(b.ctx.slots.entries('conversation.view')).toHaveLength(0)
+    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
     expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
-    expect(b.ctx.slots.entries('shell.overlay')).toHaveLength(0)
+    expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND)).toBe(false)
   })
 })

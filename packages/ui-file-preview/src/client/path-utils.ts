@@ -1,5 +1,6 @@
-/** Pure path display helpers for the file-preview view. */
+/** Pure path display helpers for the file-preview tab. */
 
+import { isAbsoluteWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { FilePreviewEntry } from '@khorsheed/dsh-file-preview/types'
 
 /** The last path segment; the path itself when it has no separator. */
@@ -61,32 +62,22 @@ export function relativeToCwd(path: string, cwd: string | undefined): string {
   return path.startsWith(rooted) ? path.slice(rooted.length) : path
 }
 
-/** Whether a path names an HTML document (`.html`/`.htm`), offered a
- * sandboxed render view alongside the source view. */
-export function isHtmlPath(path: string): boolean {
-  const dot = path.lastIndexOf('.')
-  if (dot < 0) return false
-  const ext = path.slice(dot).toLowerCase()
-  return ext === '.html' || ext === '.htm'
-}
-
-/** Map a file extension to a prism language name for CodeBlock, or undefined to auto-detect. */
-const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
-  '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript', '.cts': 'typescript',
-  '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
-  '.json': 'json', '.jsonc': 'json', '.md': 'markdown', '.mdx': 'markdown',
-  '.yml': 'yaml', '.yaml': 'yaml', '.html': 'html', '.htm': 'html',
-  '.css': 'css', '.scss': 'scss', '.less': 'less', '.sh': 'bash', '.bash': 'bash',
-  '.py': 'python', '.sql': 'sql', '.xml': 'xml', '.toml': 'toml', '.ini': 'ini',
-  '.go': 'go', '.rs': 'rust', '.java': 'java', '.c': 'c', '.h': 'c',
-  '.cpp': 'cpp', '.hpp': 'cpp', '.rb': 'ruby', '.php': 'php', '.swift': 'swift',
-  '.kotlin': 'kotlin', '.vue': 'vue', '.svelte': 'svelte', '.dockerfile': 'docker',
-  '.graphql': 'graphql', '.proto': 'protobuf', '.diff': 'diff', '.patch': 'diff',
-}
-
-/** The prism language name for a path's extension, or undefined for auto-detection. */
-export function languageFor(path: string): string | undefined {
-  const dot = path.lastIndexOf('.')
-  if (dot < 0) return undefined
-  return LANGUAGE_BY_EXTENSION[path.slice(dot).toLowerCase()]
+/**
+ * Whether the official document tab can render this path: the `file` resource
+ * is workspace-scoped (the host answers outside-workspace stats with
+ * `workspace-file/outside-workspace`), so only workspace-rooted paths get a
+ * `dsh-resource://file/...` open. Relative paths qualify (the host resolves
+ * them against the session root); an absolute path qualifies when the session
+ * cwd is known and contains it, or when the cwd is unknown — the host's own
+ * failure line is the honest answer there.
+ * @param cwd - the session's workspace root, when known.
+ * @param path - the recorded display path (absolute or workspace-relative).
+ * @returns whether `openResource` stands a chance of rendering the file.
+ */
+export function isWithinWorkspace(cwd: string | undefined, path: string): boolean {
+  if (!isAbsoluteWorkspacePath(path)) return true
+  if (cwd === undefined || cwd.length === 0) return true
+  const root = cwd.replace(/\\/g, '/').replace(/\/+$/, '')
+  const target = path.replace(/\\/g, '/')
+  return target === root || target.startsWith(`${root}/`)
 }

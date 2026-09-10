@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-file-preview-official-open-rerouting.md
-.agents/notes/implemented/feature/2026-08-15-file-preview-official-open-rerouting.md: 761372ab646996f4dd5025f81800247c3681f47d
-.agents/notes/implemented/feature/2026-08-15-file-preview-official-open-rerouting.zh.md: bf299bb1f6790a4aaea11ff152e64ec0eb025334
+.agents/notes/implemented/feature/2026-08-15-file-preview-official-open-rerouting.md: 84034c370a77a9c65b79eff31369fe40a66c8829
+.agents/notes/implemented/feature/2026-08-15-file-preview-official-open-rerouting.zh.md: 0434dba730d3416b4ae46835a1343e0511886b80

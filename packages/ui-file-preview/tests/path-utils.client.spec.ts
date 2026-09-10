@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  basename, highlightMatch, languageFor, matchesQuery, parentPath, relativeToCwd, sortByLatest,
+  basename, highlightMatch, isWithinWorkspace, matchesQuery, parentPath, relativeToCwd, sortByLatest,
 } from '../src/client/path-utils.ts'
 import type { FilePreviewEntry } from '@khorsheed/dsh-file-preview/types'
 
@@ -77,17 +77,27 @@ describe('highlightMatch', () => {
   })
 })
 
-describe('languageFor', () => {
-  it('maps known extensions to prism languages', () => {
-    expect(languageFor('src/a.ts')).toBe('typescript')
-    expect(languageFor('pkg.json')).toBe('json')
-    expect(languageFor('README.md')).toBe('markdown')
-    expect(languageFor('script.sh')).toBe('bash')
-    expect(languageFor('UPPER.PY')).toBe('python')
+describe('isWithinWorkspace', () => {
+  it('accepts relative paths (the host resolves them against the root)', () => {
+    expect(isWithinWorkspace('/work', 'docs/a.md')).toBe(true)
+    expect(isWithinWorkspace(undefined, 'docs/a.md')).toBe(true)
   })
 
-  it('returns undefined for unknown or extensionless paths', () => {
-    expect(languageFor('Makefile')).toBeUndefined()
-    expect(languageFor('a.unknown-ext')).toBeUndefined()
+  it('accepts absolute paths under the session root, rejects the rest', () => {
+    expect(isWithinWorkspace('/work', '/work/docs/a.md')).toBe(true)
+    expect(isWithinWorkspace('/work', '/work')).toBe(true)
+    expect(isWithinWorkspace('/work/', '/work/docs/a.md')).toBe(true)
+    expect(isWithinWorkspace('/work', '/tmp/artifact.html')).toBe(false)
+    expect(isWithinWorkspace('/work', '/workother/a.md')).toBe(false)
+  })
+
+  it('accepts absolute paths when the root is unknown (the host answers)', () => {
+    expect(isWithinWorkspace(undefined, '/anywhere/a.md')).toBe(true)
+    expect(isWithinWorkspace('', '/anywhere/a.md')).toBe(true)
+  })
+
+  it('treats windows separators consistently', () => {
+    expect(isWithinWorkspace('C:\\work', 'C:\\work\\a.md')).toBe(true)
+    expect(isWithinWorkspace('C:\\work', 'D:\\else\\a.md')).toBe(false)
   })
 })

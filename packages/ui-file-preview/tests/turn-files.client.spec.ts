@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { basename, selectTurnFiles } from '../src/client/turn-files.ts'
-import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 
 describe('selectTurnFiles', () => {
   const owner = {} as TurnTailOwnerProps

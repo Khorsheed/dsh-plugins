@@ -10,6 +10,8 @@ The [file-preview drawer](2026-08-14-file-preview-side-drawer.md) gave the plugi
 
 ## Decision
 
+> Retired at host 0.1.5-rc.1: both mechanisms below were removed in ui-file-preview 0.3.0 when the right-Sidebar resource routing landed (seam registry S1). See [the retirement note](../architecture/2026-09-10-ui-file-preview-sidebar-right-s1-retirement.md).
+
 Two additive mechanisms reroute every official file entry into the drawer, both marked `TODO(official-opener-seam)` with the retirement condition and the per-upgrade re-check list.
 
 **Chain preemption for the produced-files row.** The plugin's turn-tail entry registers at `priority: -1`, and its `selectTurnFiles` unions its own mutated-files vocabulary (the write/edit `file_path` arguments plus per-file line deltas from their diff call views) with the official `deliverables` Turn data (read structurally through a type-only import of `@deepseek-ai/dsh-client-ui-deliverables/client` — the client bundle purity gate forbids the cross-plugin value import of `producedForClosing`). The entry renders a "N files changed" mutation card whose file rows open the drawer: it claims every file-mutating turn, the official entry never mounts, and its OS-open chips disappear with it. When ui-deliverables is composed out, the `deliverables` key is simply absent and the union degrades consistently. If the chain semantics ever change upstream, the worst case is the official row reappearing — a silent return to the previous behavior, never a crash.

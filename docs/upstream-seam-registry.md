@@ -13,9 +13,10 @@
 ### S1. 文件打开路由不可覆盖（产物行 / 正文 mention / 工具结果行）
 
 - **需求**：第三方能替换"打开文件"的目标（官方写死 `workspaces.openPath` → 跳 OS/IDE）。
-- **现状绕行**：turnTail chain 以 `priority: -1` 抢占官方产物行（first-match 选举）；正文 mention 用 document 捕获阶段 click 拦截（三道闸门 + fail-open）。代码标记 `TODO(official-opener-seam)`。**2026-08-21 E2E 实测补丁**：官方**工具结果行**的文件链接（write/run_code 等工具输出里的 disclosure 行 `button.fileLink`）同样是官方 openPath，不在上述两个拦截面内——点击静默跳 IDE（headless 无反应），插件无法接管；该入口留作官方打开覆盖点落地后的统一受益者，暂不另做拦截（避免与工具行披露折叠交互冲突）。
-- **退役条件**：ui-conversation 提供文件打开覆盖点（可选 opener 服务或可替换的 `chatFileMentions`)。每次官方升级核对：chain 选举语义、`deliverables` 回合数据形状、mention 的 `code > button[title]` 结构、工具结果行的 `button.fileLink` 结构。
-- **状态**：绕行中（@khorsheed/dsh-client-ui-file-preview）。
+- **曾用绕行**：turnTail chain 以 `priority: -1` 抢占官方产物行（first-match 选举）；正文 mention 用 document 捕获阶段 click 拦截（三道闸门 + fail-open）。官方**工具结果行**的文件链接（`button.fileLink`）不在拦截面内，留作官方落地后的统一受益者。
+- **官方落地（0.1.5-rc.1）**：三处打开入口统一收敛到 `ctx.sidebarRight.openResource()`（ui-chat 的 `openFile` 即 `fileAddressFor` + `openResource`）；`ctx.sidebarRightTabs.register()` 认领注册表（glob patterns + `priority: 'extension'` 默认压过内置）允许第三方接管地址类型；官方 `text` 类型（ui-sidebar-documentpreview）认领 `dsh-resource://file/**`。
+- **退役动作**：ui-file-preview 0.3.0 拆除 DOM 拦截、`shell.overlay` 抽屉、`conversation.view` 注册与 turnTail `priority: -1` 抢占；列表/卡片点击改走 `openResource` / owner `openFile`。工作区外路径造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区）,降级为仅改动记录——这是资源层语义,不是缝。
+- **状态**：已退役（0.1.5-rc.1，@khorsheed/dsh-client-ui-file-preview 0.3.0）。
 
 ### S2. bash/子进程写入的文件不进任何日志结构
 

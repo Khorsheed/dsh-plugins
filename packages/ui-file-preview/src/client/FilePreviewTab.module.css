@@ -1,0 +1,222 @@
+/* Right-Sidebar file-preview tab: one column stacking the filter, the file
+   list, and the selected file's change history; the list and the history
+   scroll independently. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.filterRow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+
+/* The search box shares the filter row, taking the leftover width. */
+.search {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.search:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.search::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The matched substring inside a file name. */
+.match {
+  border-radius: 3px;
+  background: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-neutral-00);
+  padding: 0 1px;
+}
+
+.list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowSelected {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.rowName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  grid-column: 1 / -1;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowDir {
+  overflow: hidden;
+  grid-column: 1;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowStep {
+  overflow: hidden;
+  grid-column: 2;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Outside-workspace marker on a row name: the official document tab cannot
+   render these, so the click only selects (change history stays ours). */
+.rowOutside {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.history {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.historyTitle {
+  flex: none;
+  padding: 8px 12px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.historyScroll {
+  flex: 1;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+/* The changes-tab step control: one pill grouping ◀ position ▶ (the arrows
+   never separate — a lone trailing arrow reads as decoration, not a button),
+   clamped at both ends of the change chain. */
+.stepper {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: flex-start;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.stepButton {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stepButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stepButton:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.stepLabel {
+  flex: none;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Soft-wrap the diff lines to the surface width without touching the shared
+   DiffBlock. The `className` prop and the stable `data-diff` root land on the
+   SAME element (DiffBlock does `clsx(css.block, className)` + `data-diff`), so
+   this must be a compound same-element selector — a descendant selector never
+   matches. The body div follows the root, then the line divs (structural,
+   since line classes are css-module-hashed). */
+.diffWrap[data-diff] > div > div {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.notice {
+  margin: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l2);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}

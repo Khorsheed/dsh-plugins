@@ -1,50 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { createFilePreviewStore } from '../src/client/file-preview-store.ts'
+import type { TabId } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+
+const tab = (id: string): TabId => id as TabId
 
 function makeStore() {
   const instance = createFilePreviewStore().create()
   return { actions: instance.actions, getState: () => instance.getSnapshot() }
 }
 
-describe('file-preview view store', () => {
-  it('starts closed with no data', () => {
+describe('file-preview tab store', () => {
+  it('starts empty with no data', () => {
     const { getState } = makeStore()
     expect(getState()).toMatchObject({
-      open: false, selectedPath: null, list: null, listAsOfSeq: -1, listRequestRev: 0,
-      listLoading: false, listError: null, preview: null, previewLoading: false, previewError: null,
+      list: null, listAsOfSeq: -1, listRequestRev: 0, listLoading: false, listError: null, selected: {},
     })
   })
 
-  it('open, close, and toggle flip the open flag', () => {
+  it('selects per tab, independently', () => {
     const { actions, getState } = makeStore()
-    actions.open()
-    expect(getState().open).toBe(true)
-    actions.open()
-    expect(getState().open).toBe(true)
-    actions.close()
-    expect(getState().open).toBe(false)
-    actions.toggle()
-    expect(getState().open).toBe(true)
-    actions.toggle()
-    expect(getState().open).toBe(false)
-  })
-
-  it('select clears the previous preview', () => {
-    const { actions, getState } = makeStore()
-    actions.setPreview({ path: 'a.md', kind: 'text', content: 'x' })
-    actions.select('b.md')
-    expect(getState().selectedPath).toBe('b.md')
-    expect(getState().preview).toBeNull()
-    expect(getState().previewError).toBeNull()
-  })
-
-  it('openPath opens the view at the given file', () => {
-    const { actions, getState } = makeStore()
-    actions.setPreview({ path: 'a.md', kind: 'text', content: 'x' })
-    actions.openPath('notes.md')
-    expect(getState().open).toBe(true)
-    expect(getState().selectedPath).toBe('notes.md')
-    expect(getState().preview).toBeNull()
+    actions.select(tab('t1'), 'a.md')
+    actions.select(tab('t2'), 'b.md')
+    expect(getState().selected).toEqual({ t1: 'a.md', t2: 'b.md' })
+    actions.select(tab('t1'), 'c.md')
+    expect(getState().selected['t1']).toBe('c.md')
+    expect(getState().selected['t2']).toBe('b.md')
   })
 
   it('list lifecycle actions replace the whole value', () => {
@@ -65,16 +45,5 @@ describe('file-preview view store', () => {
     const { actions, getState } = makeStore()
     actions.refreshList()
     expect(getState().listRequestRev).toBe(1)
-  })
-
-  it('preview lifecycle actions clear errors on success', () => {
-    const { actions, getState } = makeStore()
-    actions.setPreviewError('boom')
-    actions.setPreviewLoading(true)
-    actions.setPreview({ path: 'a.md', kind: 'text', content: 'x' })
-    actions.setPreviewLoading(false)
-    expect(getState().previewError).toBeNull()
-    expect(getState().previewLoading).toBe(false)
-    expect(getState().preview).toMatchObject({ path: 'a.md', kind: 'text' })
   })
 })

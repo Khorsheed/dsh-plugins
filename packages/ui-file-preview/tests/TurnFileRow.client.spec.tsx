@@ -1,32 +1,40 @@
 // @vitest-environment jsdom
 /** TurnFileRow (async shell): renders the turn's mutated files as a summary
  * card after the host turn-files fetch settles — "N files changed" header,
- * per-file name + directory + line deltas — and a file click opens the drawer
- * through the injected opener. Nothing renders before the fetch resolves, for
- * an empty turn, or on failure; visibility is decided by the fetch, not the
- * chain select. */
+ * per-file name + directory + line deltas. A click on an in-workspace file
+ * goes through the owner's `openFile` (the official openResource route); an
+ * outside-workspace path opens the file-preview tab through the injected
+ * opener. Nothing renders before the fetch resolves, for an empty turn, or on
+ * failure; visibility is decided by the fetch, not the chain select. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { TurnFileRow, type FilePreviewTurnRowProps } from '../src/client/TurnFileRow.tsx'
+import { TurnFileRow } from '../src/client/TurnFileRow.tsx'
+import type { FilePreviewTurnRowProps } from '../src/client/contract.ts'
 
 const FILES: readonly FilePreviewTurnFile[] = [
   { seq: 1, path: '/work/src/agent.ts', added: 12, removed: 3 },
   { seq: 2, path: '/work/docs/guide.md', added: 4, removed: undefined },
 ]
 
+/** A useSessions stand-in: the session s1 rooted at /work. */
+const useSessionsFake = (selector: (state: { byId: Record<string, { cwd: string }> }) => unknown) =>
+  selector({ byId: { s1: { cwd: '/work' } } })
+
 function renderRow(overrides: Partial<FilePreviewTurnRowProps> = {}) {
-  const props: FilePreviewTurnRowProps = {
+  const props = {
     sessionId: 's1' as SessionId,
     turn: { turn: 3 } as TurnLocation,
-    openDrawer: vi.fn(),
+    openFile: vi.fn(),
+    openOutsideWorkspace: vi.fn(),
     turnFiles: vi.fn(async () => FILES),
     t: ((key: string) => key),
+    useSessions: useSessionsFake,
     ...overrides,
-  }
+  } as unknown as FilePreviewTurnRowProps
   return render(<TurnFileRow {...props} />)
 }
 
@@ -78,12 +86,28 @@ describe('TurnFileRow', () => {
     expect(container.querySelectorAll('[class*="dir"]')).toHaveLength(0)
   })
 
-  it('opens the drawer with the full path on file click', async () => {
-    const openDrawer = vi.fn()
-    renderRow({ openDrawer })
+  it('routes an in-workspace file click through the owner openFile', async () => {
+    const openFile = vi.fn()
+    const openOutsideWorkspace = vi.fn()
+    renderRow({ openFile, openOutsideWorkspace })
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
-    expect(openDrawer).toHaveBeenCalledWith('/work/src/agent.ts')
+    expect(openFile).toHaveBeenCalledWith('/work/src/agent.ts')
+    expect(openOutsideWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('opens the file-preview tab for an outside-workspace file click', async () => {
+    const openFile = vi.fn()
+    const openOutsideWorkspace = vi.fn()
+    renderRow({
+      openFile,
+      openOutsideWorkspace,
+      turnFiles: vi.fn(async () => [{ seq: 1, path: '/tmp/artifact.html', added: 40, removed: 0 }]),
+    })
+    await act(async () => {})
+    fireEvent.click(screen.getByText('artifact.html'))
+    expect(openFile).not.toHaveBeenCalled()
+    expect(openOutsideWorkspace).toHaveBeenCalledWith('s1', '/tmp/artifact.html')
   })
 
   it('caps the visible rows behind an overflow toggle', async () => {

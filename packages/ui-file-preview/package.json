@@ -1,13 +1,13 @@
 {
   "name": "@khorsheed/dsh-client-ui-file-preview",
-  "description": "Session file-preview side drawer: lists the files the session wrote or edited and previews their current content without opening an IDE",
+  "description": "Session products page in the right sidebar: the files a session wrote or edited with per-change diff history; content preview delegates to the official document tab",
   "keywords": [
     "dsh",
     "dsh-plugin",
     "cordis",
     "file-preview"
   ],
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public"
   },
@@ -38,11 +38,12 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-layout"
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
       "platform": "web"
     },
@@ -50,9 +51,8 @@
       "patch": "./cordis.patch.yml"
     },
     "compat": {
-      "minHost": "0.1.2-rc.1",
-      "notes": "the external-open gestures (open-in-folder / open-in-IDE) are hidden on 0.1.2: the host description snapshot no longer carries `canOpenPath` (it became an RPC probe), so the loopback gate can never confirm it; restoration is a follow-up against the official `remote.session.canOpenWorkspacePath` RPC seam",
-      "verifiedHost": "0.1.2-rc.1"
+      "minHost": "0.1.5-rc.1",
+      "verifiedHost": "0.1.5-rc.1"
     }
   },
   "scripts": {
@@ -66,12 +66,10 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-deliverables": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
@@ -81,27 +79,25 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-api-workspace-controller": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-connection": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-test-runtime": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-chat": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-deliverables": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-session": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-util-workspace-path": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-util-workspace-path": "^0.1.5-rc.1",
     "@khorsheed/dsh-file-preview": "workspace:*",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
+    "immer": "^10.1.1",
+    "zustand": "~4.4.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
