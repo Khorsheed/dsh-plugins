@@ -1,6 +1,6 @@
-/* Right-Sidebar file-preview tab: one column stacking the filter, the file
-   list, and the selected file's change history; the list and the history
-   scroll independently. */
+/* Right-Sidebar file-preview tab: the filter row over a full-height file
+   list; the change-history document renderer (FileHistoryBody) reuses the
+   stepper/diff/scroll classes below. */
 
 .root {
   display: flex;
@@ -119,21 +119,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.history {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-}
 
-.historyTitle {
-  flex: none;
-  padding: 8px 12px 0;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--dsw-alias-label-tertiary);
-}
 
 .historyScroll {
   flex: 1;
@@ -205,15 +191,6 @@
   word-break: break-word;
 }
 
-.notice {
-  margin: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-  overflow-wrap: anywhere;
-}
 
 .empty {
   padding: 16px 12px;

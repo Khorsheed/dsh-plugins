@@ -1,14 +1,15 @@
 /**
- * The file-preview right-Sidebar tab body: the session's touched files (list)
- * with the selected file's change history (per-write diff stepping).
+ * The file-preview right-Sidebar tab body: the session's touched files as one
+ * full-height list.
  *
  * Content preview is deliberately NOT here: clicking an in-workspace file
  * hands it to the official document tab through the tab's
  * `actions.openResource('dsh-resource://file/session/<id>/<path>')` — the S1
- * seam that landed at host 0.1.5-rc.1. A bash-captured artifact outside the
- * workspace has no address the `file` resource can resolve, so its row only
- * selects (the change history is this package's own data and renders
- * regardless), marked with an outside-workspace hint. Navigation params
+ * seam that landed at host 0.1.5-rc.1. The per-write change history lives in
+ * the document tab itself as a switchable renderer (see FileHistoryBody). A
+ * bash-captured artifact outside the workspace has no address the `file`
+ * resource can resolve, so its row only selects, marked with an
+ * outside-workspace hint. Navigation params
  * (`openTab('file-preview', { params: { path } })`, the turn card's
  * outside-workspace gesture) select the path on arrival.
  */
@@ -17,7 +18,6 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { FileTypeIcon, IconGlobeOutline14, IconRefreshOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FilePreviewTabProps } from './contract.ts'
-import { DiffHistory } from './DiffHistory.tsx'
 import { basename, highlightMatch, isWithinWorkspace, matchesQuery, parentPath, relativeToCwd, sortByLatest } from './path-utils.ts'
 import css from './FilePreviewTab.module.css'
 
@@ -74,9 +74,6 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
     return query.length === 0 ? products : products.filter(entry => matchesQuery(entry.path, query))
   }, [list, search])
   const searching = search.trim().length > 0
-
-  const selectedEntry = selectedPath === null ? undefined : list?.find(entry => entry.path === selectedPath)
-  const selectedOutside = selectedPath !== null && !isWithinWorkspace(cwd, selectedPath)
 
   return (
     <div className={css.root}>
@@ -144,18 +141,6 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
           )
         })}
       </nav>
-      <section className={css.history} aria-label={t('history.title')}>
-        <div className={css.historyTitle}>{t('history.title')}</div>
-        {selectedPath === null && <div className={css.empty}>{t('history.selectPrompt')}</div>}
-        {selectedPath !== null && (
-          <div className={css.historyScroll}>
-            {selectedOutside && <div className={css.notice}>{t('list.outsideWorkspace')}</div>}
-            {selectedEntry !== undefined && selectedEntry.diffs.length > 0
-              ? <DiffHistory key={selectedPath} entry={selectedEntry} t={t} />
-              : selectedEntry !== undefined && <div className={css.empty}>{t('history.empty')}</div>}
-          </div>
-        )}
-      </section>
     </div>
   )
 }

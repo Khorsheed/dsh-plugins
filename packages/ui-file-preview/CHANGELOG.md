@@ -5,11 +5,12 @@
 迁入官方 0.1.5 右栏体系，退役绕行缝 S1。
 
 - **BREAKING**：minHost 前移至 `0.1.5-rc.1`；宿主 `0.1.2-rc.1` ~ `0.1.4.x` 的用户请停留在 0.2.x 线
-- 「产物」从 `conversation.view` tab 变为右栏 page-type tab（向导页进入）：文件清单 + 改动记录（逐次 write/edit diff 步进，本插件独有，保留自绘）
+- 「产物」从 `conversation.view` tab 变为右栏 page-type tab（向导页进入）：纯文件列表
 - 内容预览整体交给官方 document tab：点击工作区内文件经 `openResource('dsh-resource://file/session/<id>/<path>')` 渲染（Markdown/代码/图片/PDF/HTML 官方渲染器）
+- 改动记录（逐次 write/edit diff 步进，本插件独有，保留自绘）成为官方预览页的可切换渲染器：工具栏下拉选「改动记录」（`ctx.documentPreviews` + keyed `sidebar.right.tab.document`，`priority: 'builtin'` 不抢官方默认渲染）
 - 退役：`shell.overlay` 预览抽屉、正文 mention 的捕获阶段 DOM 拦截、turnTail 的 `priority: -1` 抢占、自绘文档预览（Markdown/JSON/CSV/HTML 沙箱渲染）
 - 回合变更卡片保留（数据含 bash 捕获，比官方产物行全），改默认优先级：官方产物行先选举，本卡片只出现在官方数据覆盖不到的回合；点击工作区内文件走官方 `openFile` 路由，工作区外产物打开右栏「产物」页并选中其改动记录
-- 边界：工作区外的 bash 产物造不出 `dsh-resource://file/...` 地址，列表中仅可选中查看改动记录（行内提示），不另做自绘预览
+- 边界：工作区外的 bash 产物造不出 `dsh-resource://file/...` 地址，列表中仅可选中（行内提示）；其内容与改动记录均无预览面，不另做自绘
 
 ## 0.2.0（2026-09-10）
 

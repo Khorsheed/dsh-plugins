@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-/** FilePreviewTab: the right-Sidebar page body — the session's touched-file
- * list over the selected file's change history. List fetch rides the injected
- * Remote face; an in-workspace row click selects the file AND hands its
- * content preview to the official document tab through the tab's
- * `openResource`; an outside-workspace row only selects (no resource address
- * exists) and carries the outside marker; navigation params select on
- * arrival. */
+/** FilePreviewTab: the right-Sidebar page body — the session's touched
+ * files as one full-height list. List fetch rides the injected Remote face;
+ * an in-workspace row click selects the file AND hands its content preview to
+ * the official document tab through the tab's `openResource`; an
+ * outside-workspace row only selects (no resource address exists) and carries
+ * the outside marker; navigation params select on arrival. The change history
+ * lives in the document tab's switchable renderer (FileHistoryBody), not here. */
 
 import { useEffect, useReducer, useRef, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -106,20 +106,19 @@ describe('FilePreviewTab', () => {
     expect(screen.getByText('list.empty')).toBeTruthy()
   })
 
-  it('click selects the file, opens the official document tab, and shows the change history', async () => {
+  it('click selects the file and opens the official document tab', async () => {
     const openResource = vi.fn()
-    renderTab({ openResource })
+    const { container } = renderTab({ openResource })
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     expect(openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1/src/agent.ts')
-    // The change history renders the latest diff first, with the stepper label.
-    expect(screen.getByText(/history\.step\.count/)).toBeTruthy()
-    await act(async () => {})
+    // The row carries the selected styling.
+    expect(container.querySelector('[title="src/agent.ts"]')?.className).toContain('rowSelected')
   })
 
   it('an outside-workspace row only selects — no resource address exists', async () => {
     const openResource = vi.fn()
-    renderTab({
+    const { container } = renderTab({
       openResource,
       listFiles: vi.fn(async () => ({
         ok: true as const,
@@ -129,13 +128,16 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('artifact.html'))
     expect(openResource).not.toHaveBeenCalled()
-    expect(screen.getAllByText('list.outsideWorkspace').length).toBeGreaterThan(0)
+    // The row is marked with the outside hint and shows selected styling.
+    const row = container.querySelector('[title^="/tmp/artifact.html"]')
+    expect(row?.getAttribute('title')).toContain('list.outsideWorkspace')
+    expect(row?.className).toContain('rowSelected')
   })
 
   it('navigation params select the carried path on arrival', async () => {
-    renderTab({ navigation: { params: { path: 'src/agent.ts' }, revision: 1 } })
+    const { container } = renderTab({ navigation: { params: { path: 'src/agent.ts' }, revision: 1 } })
     await act(async () => {})
-    expect(screen.getByText(/history\.step\.count/)).toBeTruthy()
+    expect(container.querySelector('[title="src/agent.ts"]')?.className).toContain('rowSelected')
   })
 
   it('narrows the list by the search term', async () => {

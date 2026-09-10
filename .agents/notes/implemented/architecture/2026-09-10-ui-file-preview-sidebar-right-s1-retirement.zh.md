@@ -10,11 +10,11 @@ Status: implemented
 
 ## Decision
 
-- **新**：page-type 右栏 tab（`kind: 'file-preview'`，id = 包名，guide 入口，不认领地址——即 ui-sidebar-files 形态）。body 为会话改动文件清单（最近活动倒序、可搜索）+ 选中文件的改动记录。工作区内的行点击既在本地选中，又经 tab 的 `actions.openResource(fileAddressFor(sessionId, cwd, path))`（`dsh-resource://file/session/<id>/<path>`）把内容预览交给官方 document tab。回合卡片对工作区外路径用 `openTab('file-preview', { params: { path } })` 打开该页；body 在每次 navigation revision 上套用 params 携带的选中。
+- **新**：page-type 右栏 tab（`kind: 'file-preview'`，id = 包名，guide 入口，不认领地址——即 ui-sidebar-files 形态）。body 为会话改动文件清单（最近活动倒序、可搜索），整栏高度，别无他物。工作区内的行点击既在本地选中，又经 tab 的 `actions.openResource(fileAddressFor(sessionId, cwd, path))`（`dsh-resource://file/session/<id>/<path>`）把内容预览交给官方 document tab。回合卡片对工作区外路径用 `openTab('file-preview', { params: { path } })` 打开该页；body 在每次 navigation revision 上套用 params 携带的选中。（第一版把改动记录堆在列表下方，活体试用观感不对，遂迁入 document tab 作可切换渲染器——见下条。）
 - **删**：`conversation.view` 注册、`shell.overlay` 抽屉、`mention-intercept.ts`、turnTail 的 `priority: -1`、panel controller（`panel-service.ts`）、host-description 探测，以及整套自绘内容预览（FilePreviewPane 的内容半、`structured.tsx`、`html-bridge.ts`、`html-src-doc.ts`、复制/文件夹/IDE 手势）——内容渲染是官方 `text` tab 类型的职责。
 - **留**：turnTail 回合变更卡片（宿主数据含 bash 捕获——S2 仍绕行中——因此它覆盖官方产物行 decline 的回合）。改默认优先级：官方条目（同档、宿主启动时先注册）先选举，卡片的无条件认领只在官方数据缺失的回合被咨询。卡片点击对工作区内路径走 owner 的 `openFile`（官方 openResource 路由），工作区外走 `openTab`。
-- **边界**：工作区外的 bash 产物造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区，宿主应答 `workspace-file/outside-workspace`）。这些行仅可选中——diff 历史是本插件自有数据，照常渲染——并行内提示；不另做自绘预览。
-- **改动记录视图（逐次 write/edit diff 步进）刻意保留自绘**：官方 document tab 没有历史概念。`DiffHistory.tsx` 是抽出的步进器；列表拉取（`filePreview.list`）自带 diff，body 不再调用 `read`。
+- **边界**：工作区外的 bash 产物造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区，宿主应答 `workspace-file/outside-workspace`）。这些行仅可选中并附行内提示；由于改动记录已迁入 document tab 而这类文件永远打不开 document tab，它们目前没有任何预览面——不另做自绘兜底。
+- **改动记录视图（逐次 write/edit diff 步进）刻意保留自绘，形态是官方 document tab 的可切换渲染器**：`ctx.documentPreviews.register()`（纯后缀匹配、无通配符——`history-definition.ts` 枚举常见文本后缀，刻意不含复合后缀，避免等档时靠长度压过官方渲染器）+ 同 id（`<pkg>/history`）注册进 keyed `sidebar.right.tab.document` seat。`priority: 'builtin'` 是显式选择：出现在预览页工具栏下拉里但不抢官方默认渲染（extension 档会抢走）。组件解析 session 作用域的 `resourceAddress`，拉 `filePreview.list` fold，按工作区解析路径匹配，渲染 `DiffHistory.tsx`；owner 备好的 `content` 不消费（`loading: 'text-pages'`，最省模式）。无记录文件显示空态。
 - **minHost 前移至 0.1.5-rc.1**（消费的扩展面在此之前不存在），版本 0.3.0；旧宿主停留 0.2.x 线。
 - **依赖机制**：本包随全仓 0.1.5-rc.1 基线走。一处仓级调整不可避免：0.1.5 的客户端包 peer 要求 `@deepseek-ai/cordis ^4.0.2`，而仓内基线是 4.0.1——两个 cordis 实例会把每个 `declare module` 合并（Context、SlotMap、LocaleNamespaceMap）按 peer 变体劈成两份，插件自己的合并永远落不到它 import 解析到的那份上。`pnpm-workspace.yaml` 增加 `peerDependencyRules.allowedVersions: { '@deepseek-ai/cordis': '4.0.1' }`，让全图保持一个 cordis 实例。另外，0.1.5 的 `dsh-client-store` npm 产物未打包（裸 `zustand`/`immer` import 且无声明依赖——官方构建本应内联，疑似上游打包缺陷），而客户端 bundle 按 `INLINE_SAFE` 内联该引擎，因此本包 dev-depends `zustand ~4.4.7` + `immer ^10.1.1` 使内联可解析。
 

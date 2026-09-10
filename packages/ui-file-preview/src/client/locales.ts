@@ -17,7 +17,6 @@ export type FilePreviewKey =
   | 'list.refresh'
   | 'history.title'
   | 'history.empty'
-  | 'history.selectPrompt'
   | 'history.step'
   | 'history.step.count'
   | 'history.step.latest'
@@ -56,7 +55,6 @@ export const zh: Record<FilePreviewKey, string> = {
   'list.refresh': '刷新',
   'history.title': '改动记录',
   'history.empty': '该文件没有记录到改动内容',
-  'history.selectPrompt': '选择一个文件查看改动记录',
   'history.step': '第 {turn} 轮 · 第 {step} 步',
   'history.step.count': '修改 {current}/{total}',
   'history.step.latest': '最新',
@@ -89,7 +87,6 @@ export const en: Record<FilePreviewKey, string> = {
   'list.refresh': 'Refresh',
   'history.title': 'Change history',
   'history.empty': 'No change content recorded for this file',
-  'history.selectPrompt': 'Select a file to see its change history',
   'history.step': 'Turn {turn} · Step {step}',
   'history.step.count': 'Change {current}/{total}',
   'history.step.latest': 'latest',

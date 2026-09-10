@@ -1,16 +1,19 @@
 /**
  * File-preview plugin, browser half: a pure additive surface over official
  * extension points only. It registers a page-type right-Sidebar tab (the
- * session's touched files with their per-write diff history, entered from the
- * guide page; in-workspace file clicks hand content preview to the official
- * document tab through the tab's `actions.openResource`) and a per-turn
- * mutation card in the `conversation.chat.turnTail` chain at default priority
- * — the official deliverables row elects first, so the card renders exactly
- * the turns official data misses (the bash captures the host half collects,
- * S2). The filePreview Remote is mounted here through the official
- * `ctx.remote.$mount` channel, so the plugin distributes as an independent
- * package with no edits to core packages. Composing this plugin out of
- * cordis.yml removes every surface it adds.
+ * session's touched files as one full-height list, entered from the guide
+ * page; in-workspace file clicks hand content preview to the official
+ * document tab through the tab's `actions.openResource`), a switchable
+ * change-history renderer in that document tab (the toolbar dropdown's
+ * 「改动记录」 entry — the per-write diff stepping the official renderers
+ * have no counterpart for), and a per-turn mutation card in the
+ * `conversation.chat.turnTail` chain at default priority — the official
+ * deliverables row elects first, so the card renders exactly the turns
+ * official data misses (the bash captures the host half collects, S2). The
+ * filePreview Remote is mounted here through the official `ctx.remote.$mount`
+ * channel, so the plugin distributes as an independent package with no edits
+ * to core packages. Composing this plugin out of cordis.yml removes every
+ * surface it adds.
  *
  * Retired at the 0.1.5-rc.1 move (seam registry S1): the conversation.view
  * tab, the shell.overlay drawer, the mention capture-phase DOM interception,
@@ -29,19 +32,24 @@ import type {} from '@khorsheed/dsh-file-preview/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls the ctx.sidebarRight/ctx.sidebarRightTabs service merges.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+// Type-only: pulls the ctx.documentPreviews merge, the 'sidebar.right.tab.document'
+// SlotMap seat, and DocumentPreviewProps.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import filePreviewRemote from '@khorsheed/dsh-file-preview/remote'
 import { FilePreviewTab } from './FilePreviewTab.tsx'
+import { FileHistoryBody } from './FileHistoryBody.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'
 import { createFilePreviewStore } from './file-preview-store.ts'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition } from './definition.tsx'
+import { FILE_HISTORY_ID, HISTORY_EXTENSIONS } from './history-definition.ts'
 import { en, NS, zh } from './locales.ts'
 import { createTurnFilesLoader } from './turn-files-cache.ts'
 import { selectTurnFiles } from './turn-files.ts'
 import type { FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
 
 export { DiffHistory } from './DiffHistory.tsx'
-export { FilePreviewTab, TurnFileRow }
-export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND }
+export { FilePreviewTab, FileHistoryBody, TurnFileRow }
+export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_HISTORY_ID }
 
 /** Required services: slots, the remote channel, the locale, and the
  * right-Sidebar faces (tab-type registry + the navigation service the turn
@@ -125,6 +133,36 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       },
     }),
   }, TurnFileRow))
+
+  // The change-history document renderer: metadata into the registry, the
+  // body into the keyed document seat. `priority: 'builtin'` keeps the
+  // official renderer the default (an extension band would take it over);
+  // the toolbar dropdown lists every match regardless. Degrade silently on a
+  // composition without the document-preview package (its seat is absent
+  // there anyway).
+  const previews = ctx.get('documentPreviews')
+  if (previews !== undefined) {
+    ctx.effect(() => previews.register({
+      id: FILE_HISTORY_ID,
+      extensions: HISTORY_EXTENSIONS,
+      priority: 'builtin',
+      title: () => t('history.title'),
+      // The body never touches the owner's prepared content — the diffs come
+      // from the filePreview fold — so the cheapest delivery mode applies.
+      loading: 'text-pages',
+    }), 'ui-file-preview: history renderer metadata')
+    ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
+      {
+        name: 'sidebar.right.tab.document',
+        key: FILE_HISTORY_ID,
+        locale: NS,
+        inject: (): Pick<FilePreviewTabInjected, 'listFiles'> => ({
+          listFiles: (sid: SessionId) => remote.list(sid),
+        }),
+      },
+      FileHistoryBody,
+    )), 'ui-file-preview: history renderer body')
+  }
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
