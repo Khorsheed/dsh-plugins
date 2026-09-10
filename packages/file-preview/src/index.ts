@@ -14,8 +14,9 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import z from '@deepseek-ai/schemastery'
 import { BashWriteCollector } from './bash-writes.ts'
 import { foldFilePreview, foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
+import { openExternalNative, macAppName } from './open-external.ts'
 import { revealNativePath } from './reveal.ts'
-import type { FilePreviewConfig, FilePreviewEntry, FilePreviewList, FilePreviewRead, FilePreviewReveal, FilePreviewTurnFile, FilePreviewTurnMap } from './types.ts'
+import type { FilePreviewConfig, FilePreviewEntry, FilePreviewList, FilePreviewOpenExternal, FilePreviewRead, FilePreviewReveal, FilePreviewTurnFile, FilePreviewTurnMap } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -196,6 +197,8 @@ export class FilePreviewService extends TypertRemoteService {
   private readonly agents: AgentRegistry | undefined
   /** Native reveal runner; a constructor seam for deterministic tests. */
   private readonly revealNative: (path: string, signal: AbortSignal) => Promise<void>
+  /** Native open-in-app runner; a constructor seam for deterministic tests. */
+  private readonly openExternalNative: (path: string, app: string, signal: AbortSignal) => Promise<void>
   /** Bash-write collector (S2 seam), or undefined when disabled in config. */
   private readonly collector: BashWriteCollector | undefined
   /** Per-session by-turn fold cache, invalidated by the log watermark. */
@@ -211,7 +214,10 @@ export class FilePreviewService extends TypertRemoteService {
   constructor(
     ctx: Context,
     config: FilePreviewConfig = {},
-    deps: { revealNative?: (path: string, signal: AbortSignal) => Promise<void> } = {},
+    deps: {
+      revealNative?: (path: string, signal: AbortSignal) => Promise<void>
+      openExternalNative?: (path: string, app: string, signal: AbortSignal) => Promise<void>
+    } = {},
   ) {
     super(ctx, 'filePreview')
     this.resolved = {
@@ -221,6 +227,7 @@ export class FilePreviewService extends TypertRemoteService {
       captureBashWrites: config.captureBashWrites ?? true,
     }
     this.revealNative = deps.revealNative ?? revealNativePath
+    this.openExternalNative = deps.openExternalNative ?? openExternalNative
     if (config.captureBashWrites !== false) {
       this.collector = new BashWriteCollector({ fs: this.fs, maxFiles: this.resolved.maxFiles })
       ctx.effect(
@@ -563,6 +570,50 @@ export class FilePreviewService extends TypertRemoteService {
       // No select-capable file manager (or a failed launch): fall back to the
       // parent-folder open rather than failing the whole gesture.
       return { revealed: false, reason: 'select-failed' }
+    }
+  }
+
+  /**
+   * Open one recorded file in a specific host application (the "open in IDE"
+   * gesture). The official open-in-app route only accepts directories — a
+   * file path 404s — so file-exact opens go through this method: macOS
+   * `open -a <App> <path>` via the same native-command runner reveal uses.
+   * The browser names the application by official open-in-app catalog id
+   * (probed from `/open-in-app/apps`); the id → app-name map lives in
+   * open-external.ts. Non-macOS hosts and unknown ids answer without
+   * launching, and the client hides the gesture.
+   * @param agent - owning live agent; its session cwd anchors relative paths.
+   * @param path - the display path recorded by the read/write/edit tool call.
+   * @param app - official open-in-app catalog id (e.g. `cursor`).
+   * @param signal - cooperative cancellation from the calling UI request.
+   * @returns whether the application launched, or why not.
+   */
+  @Remote('openExternal')
+  async openExternal(agent: Agent, path: string, app: string, signal: AbortSignal): Promise<FilePreviewOpenExternal> {
+    if (typeof path !== 'string' || path.length === 0 || typeof app !== 'string' || app.length === 0) {
+      return { opened: false, reason: 'missing' }
+    }
+    if (macAppName(app) === undefined) return { opened: false, reason: 'unknown-app' }
+    const cwd = agent.session.header.cwd
+    let target
+    try {
+      target = await this.fs.resolve(path, cwd === undefined ? { signal } : { cwd, signal })
+    } catch {
+      return { opened: false, reason: 'missing' }
+    }
+    let info
+    try {
+      info = await this.fs.stat(target, signal)
+    } catch {
+      info = undefined
+    }
+    if (info === undefined) return { opened: false, reason: 'missing' }
+    try {
+      await this.openExternalNative(this.fs.processPath(target), app, signal)
+      return { opened: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { opened: false, reason: message.startsWith('open-in-app is unsupported on ') ? 'unsupported-platform' : 'launch-failed' }
     }
   }
 }

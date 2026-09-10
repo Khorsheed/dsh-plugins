@@ -1,5 +1,10 @@
 # 变更记录
 
+## 0.2.1（2026-09-10）
+
+- 新增 Remote 方法 `openExternal(agent, path, app, signal)`：在指定宿主应用中打开文件（macOS `open -a`），供浏览器半的「在 IDE 打开」手势使用——官方 open-in-app 路由只收目录。`app` 为官方 catalog id（id → `.app` 名映射镜像官方 catalog 的 darwin 条目）；非 macOS / 未知 id 返回 `opened: false`，不写入。
+
+
 ## 0.2.0（2026-09-10）
 
 适配宿主 0.1.2 线。

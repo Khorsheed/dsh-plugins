@@ -103,6 +103,19 @@ export type FilePreviewReveal =
     readonly reason: 'missing' | 'select-failed'
   }
 
+/** Outcome of a `filePreview.openExternal` call (the "open in IDE" gesture). */
+export type FilePreviewOpenExternal =
+  | {
+    /** The application launched on the file. */
+    readonly opened: true
+  }
+  | {
+    /** The file could not be opened in the named application. */
+    readonly opened: false
+    /** Why: `missing` = the recorded path does not resolve to an existing target; `unknown-app` = the catalog id is not mapped; `unsupported-platform` = the host is not macOS; `launch-failed` = the native launch rejected. */
+    readonly reason: 'missing' | 'unknown-app' | 'unsupported-platform' | 'launch-failed'
+  }
+
 /** One file's mutation facts within one turn — the turn card's vocabulary. */
 export interface FilePreviewTurnFile {
   /** The display path (absolute for bash-captured writes; as-recorded otherwise). */

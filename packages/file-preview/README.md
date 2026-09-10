@@ -68,11 +68,12 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 <details>
 <summary>内部结构（点击展开）</summary>
 
-`ctx.filePreview`（wire 命名空间 `filePreview`）暴露四个生成的 Remote 方法：
+`ctx.filePreview`（wire 命名空间 `filePreview`）暴露五个生成的 Remote 方法：
 
 - `list(agent)`——对 `agent.session.events` 的纯折叠：`read`/`write`/`edit` 的 `tool/call` 贡献展示路径，这些工具的已完结嵌套 PTC `tool/ptc-dispatch` 同样计入（失败的派发不记录；条目借用根调用的 turn/step）。携带 `diffs` 元数据的 `write`/`edit` `tool/result` 把每次改动按事件序追加进条目，`lastDiff` 保留为最后一次。响应携带条目、最后扫描的 seq，以及是否触达 `maxFiles`。折叠本身不访问文件系统；`captureBashWrites` 开启时并入采集器验证过的 bash 写入路径。返回前按会话 cwd 解析每条路径并 `stat`，只保留当前仍存在的常规文件——日志折叠是历史，产物列表只看磁盘现状（某回合写后又清理的临时脚本不再是产物）；存在性每次调用都现查（不随日志折叠缓存）。
 - `read(agent, path, signal)`——以会话 cwd 为基准解析 `path`，返回 `kind: 'text'`（超过 `maxReadBytes` 截断并标记 `truncated`）；web 宿主上图片返回 `kind: 'image'` 及浏览器可加载 URL——字节走专门的 `/file-preview-image/<sessionId>/<path>` 路由，仅当组合了可选的 `webServer` 与 `agents` 服务时注册；无 web 宿主返回 `binary`——否则返回分类提示：`binary`（二进制扩展名或 NUL 字节；绝不读取）、`missing`、`too-large`、`error`（含消息）。
 - `reveal(agent, path, signal)`——在宿主文件管理器中打开文件所在文件夹并选中它，全程无 shell，走 `@deepseek-ai/dsh-native-command`：macOS `open -R`、Windows `explorer /select,<path>`、WSL 经 `wslpath`、桌面 Linux 依次尝试 `nautilus`/`dolphin`/`nemo --select`。选中返回 `{ revealed: true }`，否则 `false` 及 `reason: 'missing'`（目标不存在）或 `'select-failed'`（无可用文件管理器——调用方改开父文件夹，手势总能落在可见处）。不写入任何东西。
+- `openExternal(agent, path, app, signal)`——在指定宿主应用中打开文件（「在 IDE 打开」手势）：官方 open-in-app 路由只收目录，文件级打开走这里——macOS `open -a <App> <path>`，同样无 shell。`app` 是官方 open-in-app catalog id（客户端经 `/open-in-app/apps` 探测）；id → `.app` 名映射在 `open-external.ts`（镜像官方 catalog 的 darwin 条目）。非 macOS 或未知 id 返回 `{ opened: false, reason }`，客户端据此隐藏手势。不写入任何东西。
 - `turnFiles(agent)`——每个回合的文件变更，回合卡片与 `list` 同源但**不**去重：同一文件在两个回合改过，两个分组都有它——每张卡片精确列出该回合改了什么。行数增减由 result diff 求和；折叠按会话缓存、由日志水位线失效，响应携带水位线供客户端自缓存。与 `list` 一样，返回前按会话 cwd 校验存在性，只保留当前仍存在的文件（被清理的临时脚本不占卡片）。
 
 bash 写入采集器：监听每个会话的 bash `tool/call`/`tool/result` 配对，提取高精度写入目标（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`），按宿主环境与会话 cwd 展开 `$VAR`/`~`/相对路径，只记录 `fs.stat` 确认为文件的路径（宁缺毋滥）。采集结果存于按会话的内存登记表，`session/created` 时重放会话自身历史重建——宿主重启后不丢；会话日志本身绝不被改动（官方 `Session.append` 无法给插件事件标 `ignorable`——见 `docs/upstream-seam-registry.md` 的 S2 条目）。bash 采集的文件没有 diff 历史；预览与普通条目一样通过 `read` 读当前内容。
