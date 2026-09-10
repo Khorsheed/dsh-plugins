@@ -1,21 +1,12 @@
 /** Pure log fold over the files a session read, wrote, or edited. @module @khorsheed/dsh-file-preview/fold */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-// Type-only: pulls the SessionEventMap merge for 'tool/code-dispatch'.
+// Type-only: pulls the SessionEventMap merge for 'tool/ptc-dispatch'.
 import type {} from '@deepseek-ai/dsh-tools/types'
 import type { FilePreviewDiff, FilePreviewEntry, FilePreviewList, FilePreviewOp } from './types.ts'
 
 /** Tool names whose calls record a touched file path. */
 const FILE_TOOL_NAMES: ReadonlySet<string> = new Set(['read', 'write', 'edit'])
-
-/**
- * Settled nested-dispatch event names, matched by name (feature detection,
- * never a version check): `tool/code-dispatch` is the Code Mode name every
- * host through 0.1.2-rc.1 emits; `tool/ptc-dispatch` is the PTC rename later
- * 0.1.2 seats move to. Both carry the same settled-dispatch payload, so one
- * branch serves either.
- */
-const DISPATCH_EVENT_NAMES: ReadonlySet<string> = new Set(['tool/code-dispatch', 'tool/ptc-dispatch'])
 
 /** The argument key carrying the touched path (shared by all three file tools). */
 const FILE_PATH_ARGUMENT = 'file_path'
@@ -87,10 +78,11 @@ export function diffsFromResultMeta(meta: unknown): readonly FilePreviewResultDi
  * first-seen order and deduplicated by display path; a later occurrence
  * refreshes the entry's op and location without moving it, and each write/edit
  * tool result appends its change's diff to the entry's `diffs` in event order.
- * Nested Code Mode file dispatches (`tool/code-dispatch` events, or
- * `tool/ptc-dispatch` on seats running the PTC rename) count too —
- * they carry no turn/step of their own, so the entry borrows the enclosing
- * root call's location.
+ * Nested PTC file dispatches (`tool/ptc-dispatch` events — the host's Code
+ * Mode name through 0.1.2, renamed with the 0.1.5 format; the v2→v3 log
+ * migration renames persisted rows, so only the ptc name is matched) count
+ * too — they carry no turn/step of their own, so the entry borrows the
+ * enclosing root call's location.
  * @param events - the session's events in ascending seq order.
  * @param maxFiles - cap on returned entries; excess files are dropped in
  *   first-seen order after the cap is reached.
@@ -98,7 +90,7 @@ export function diffsFromResultMeta(meta: unknown): readonly FilePreviewResultDi
  */
 export function foldFilePreview(events: readonly SessionEvent[], maxFiles: number): FilePreviewList {
   const entries = new Map<string, FilePreviewEntry>()
-  /** Root tool/call locations, so nested code dispatches borrow their turn/step. */
+  /** Root tool/call locations, so nested dispatches borrow their turn/step. */
   const callSites = new Map<string, { turn: number; step: number }>()
   let asOfSeq = -1
   /** Upsert one touched path, refreshing a repeat in place and keeping its diffs. */
@@ -117,17 +109,14 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
       record(target, event.seq, event.data.turn, event.data.step)
       continue
     }
-    if (DISPATCH_EVENT_NAMES.has(event.type)) {
+    if (event.type === 'tool/ptc-dispatch') {
       // The dispatch event IS the settled outcome: a failed sub-call changed
-      // nothing, so only successful file touches record. The PTC rename keeps
-      // the code-dispatch payload shape (the ptc name has no SessionEventMap
-      // row yet), so the data reads through the declared constituent.
-      const dispatch = event as SessionEvent<'tool/code-dispatch'>
-      if (dispatch.data.isError) continue
-      const target = targetFromArguments(dispatch.data.name, dispatch.data.arguments)
+      // nothing, so only successful file touches record.
+      if (event.data.isError) continue
+      const target = targetFromArguments(event.data.name, event.data.arguments)
       if (target === undefined) continue
-      const site = callSites.get(String(dispatch.data.rootCallId)) ?? { turn: 0, step: 0 }
-      record(target, dispatch.seq, site.turn, site.step)
+      const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
+      record(target, event.seq, site.turn, site.step)
       continue
     }
     if (event.type === 'tool/result') {
@@ -229,7 +218,7 @@ function resultCallFacts(
  * turn maps, so each turn's card lists exactly what that turn mutated.
  * Reads leave no card entry (the card is the mutation vocabulary — write/edit
  * only), so a pure-read call never registers; write/edit calls register with
- * their own turn; nested Code Mode dispatches borrow the enclosing root call's
+ * their own turn; nested PTC dispatches borrow the enclosing root call's
  * turn (dispatch events carry none); a `tool/result` whose presentation meta
  * carries diffs registers its paths (the render-intent vocabulary) with the
  * result's turn, and per-turn line deltas are summed from the diffs. A `write` whose result carries no diffs is a
@@ -240,7 +229,7 @@ function resultCallFacts(
  * Count discipline: a write/edit tool/call only registers the path's location
  * and never touches counts (its counted result follows); the first count
  * contribution for a turn+path is adopted verbatim, later ones accumulate per
- * field with unknown-wins — an uncounted mutation (a Code Mode dispatch, or a
+ * field with unknown-wins — an uncounted mutation (a PTC dispatch, or a
  * diff whose side reports no prior content) poisons that field to undefined
  * rather than reporting a misleading partial.
  * @param events - the session's events in ascending seq order.
@@ -248,7 +237,7 @@ function resultCallFacts(
  */
 export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFilesByTurn {
   const byTurn = new Map<number, Map<string, TurnFileFact>>()
-  /** Root tool/call locations, so nested code dispatches borrow their turn/step. */
+  /** Root tool/call locations, so nested dispatches borrow their turn/step. */
   const callSites = new Map<string, { turn: number; step: number }>()
   /** Write-tool calls keyed by callId (create fallback; see {@link WriteCallFacts}). */
   const writeCalls = new Map<string, WriteCallFacts>()
@@ -278,7 +267,7 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
    *  a turn+path is adopted verbatim (a count-less placeholder from a
    *  preceding tool/call must not poison it); later contributions accumulate
    *  per field with unknown-wins. `unknown` marks an uncountable mutation (a
-   *  Code Mode dispatch): it poisons both fields. */
+   *  PTC dispatch): it poisons both fields. */
   const recordContribution = (
     path: string, turn: number, seq: number, step: number,
     added: number | undefined, removed: number | undefined,
@@ -317,7 +306,7 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       const target = pathFromToolCall(event.data.name, event.data.arguments)
       if (target === undefined) continue
       // The card's vocabulary is mutations only: a read call registers
-      // nothing (it may still anchor a nested code dispatch's location via
+      // nothing (it may still anchor a nested dispatch's location via
       // callSites above).
       if (target.op === 'read') continue
       if (target.op === 'write') {
@@ -331,21 +320,19 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       recordLocation(target.path, event.data.turn, event.seq, event.data.step)
       continue
     }
-    if (DISPATCH_EVENT_NAMES.has(event.type)) {
+    if (event.type === 'tool/ptc-dispatch') {
       // The dispatch event IS the settled outcome: a failed sub-call changed
-      // nothing, so only successful file touches record. Code Mode writes are
+      // nothing, so only successful file touches record. PTC writes are
       // uncountable (no result diffs reach the session), so they register the
-      // path and poison the line-count totals (unknown wins). Same payload
-      // shape caveat as foldFilePreview above.
-      const dispatch = event as SessionEvent<'tool/code-dispatch'>
-      if (dispatch.data.isError) continue
-      const target = targetFromArguments(dispatch.data.name, dispatch.data.arguments)
+      // path and poison the line-count totals (unknown wins).
+      if (event.data.isError) continue
+      const target = targetFromArguments(event.data.name, event.data.arguments)
       if (target === undefined) continue
       // Reads leave no card entry here too — only mutations register.
       if (target.op === 'read') continue
-      const site = callSites.get(String(dispatch.data.rootCallId)) ?? { turn: 0, step: 0 }
+      const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
       sessionSeen.add(target.path)
-      recordContribution(target.path, site.turn, dispatch.seq, site.step, undefined, undefined, true)
+      recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)
       continue
     }
     if (event.type === 'tool/result') {

@@ -113,7 +113,7 @@ export interface FilePreviewTurnFile {
   /** Lines added across the turn's mutations of this path. */
   readonly added?: number
   /** Lines removed; 0 for a create; absent when an uncounted mutation (a write
-   *  whose prior content was not diffable, a Code Mode dispatch) reported no
+   *  whose prior content was not diffable, a PTC dispatch) reported no
    *  total. */
   readonly removed?: number
 }

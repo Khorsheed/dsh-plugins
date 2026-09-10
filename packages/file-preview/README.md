@@ -53,10 +53,10 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——适配 0.1.5-rc.1 的 PTC 更名（只匹配 `tool/ptc-dispatch`；旧日志由官方 v2→v3 迁移改写到新名），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
-**版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.1`）。
+**版本线对照**：0.2.0 之后的首个发布起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.2.0`，宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 请停留在 0.1.x 发布线（末版 `0.1.1`）。
 
 ## Known Limitations
 
@@ -70,7 +70,7 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 
 `ctx.filePreview`（wire 命名空间 `filePreview`）暴露四个生成的 Remote 方法：
 
-- `list(agent)`——对 `agent.session.events` 的纯折叠：`read`/`write`/`edit` 的 `tool/call` 贡献展示路径，这些工具的已完结嵌套 Code Mode `tool/code-dispatch` 同样计入（失败的派发不记录；条目借用根调用的 turn/step）。携带 `diffs` 元数据的 `write`/`edit` `tool/result` 把每次改动按事件序追加进条目，`lastDiff` 保留为最后一次。响应携带条目、最后扫描的 seq，以及是否触达 `maxFiles`。折叠本身不访问文件系统；`captureBashWrites` 开启时并入采集器验证过的 bash 写入路径。返回前按会话 cwd 解析每条路径并 `stat`，只保留当前仍存在的常规文件——日志折叠是历史，产物列表只看磁盘现状（某回合写后又清理的临时脚本不再是产物）；存在性每次调用都现查（不随日志折叠缓存）。
+- `list(agent)`——对 `agent.session.events` 的纯折叠：`read`/`write`/`edit` 的 `tool/call` 贡献展示路径，这些工具的已完结嵌套 PTC `tool/ptc-dispatch` 同样计入（失败的派发不记录；条目借用根调用的 turn/step）。携带 `diffs` 元数据的 `write`/`edit` `tool/result` 把每次改动按事件序追加进条目，`lastDiff` 保留为最后一次。响应携带条目、最后扫描的 seq，以及是否触达 `maxFiles`。折叠本身不访问文件系统；`captureBashWrites` 开启时并入采集器验证过的 bash 写入路径。返回前按会话 cwd 解析每条路径并 `stat`，只保留当前仍存在的常规文件——日志折叠是历史，产物列表只看磁盘现状（某回合写后又清理的临时脚本不再是产物）；存在性每次调用都现查（不随日志折叠缓存）。
 - `read(agent, path, signal)`——以会话 cwd 为基准解析 `path`，返回 `kind: 'text'`（超过 `maxReadBytes` 截断并标记 `truncated`）；web 宿主上图片返回 `kind: 'image'` 及浏览器可加载 URL——字节走专门的 `/file-preview-image/<sessionId>/<path>` 路由，仅当组合了可选的 `webServer` 与 `agents` 服务时注册；无 web 宿主返回 `binary`——否则返回分类提示：`binary`（二进制扩展名或 NUL 字节；绝不读取）、`missing`、`too-large`、`error`（含消息）。
 - `reveal(agent, path, signal)`——在宿主文件管理器中打开文件所在文件夹并选中它，全程无 shell，走 `@deepseek-ai/dsh-native-command`：macOS `open -R`、Windows `explorer /select,<path>`、WSL 经 `wslpath`、桌面 Linux 依次尝试 `nautilus`/`dolphin`/`nemo --select`。选中返回 `{ revealed: true }`，否则 `false` 及 `reason: 'missing'`（目标不存在）或 `'select-failed'`（无可用文件管理器——调用方改开父文件夹，手势总能落在可见处）。不写入任何东西。
 - `turnFiles(agent)`——每个回合的文件变更，回合卡片与 `list` 同源但**不**去重：同一文件在两个回合改过，两个分组都有它——每张卡片精确列出该回合改了什么。行数增减由 result diff 求和；折叠按会话缓存、由日志水位线失效，响应携带水位线供客户端自缓存。与 `list` 一样，返回前按会话 cwd 校验存在性，只保留当前仍存在的文件（被清理的临时脚本不占卡片）。

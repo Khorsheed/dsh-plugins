@@ -389,7 +389,7 @@ export class FilePreviewService extends TypertRemoteService {
   /**
    * Every turn's file mutations for the turn-tail card — the single source of
    * truth the card renders (the client's old write/edit-only fold retired).
-   * Built by folding the session log per turn (write/edit calls, Code Mode
+   * Built by folding the session log per turn (write/edit calls, PTC
    * dispatches borrowing the root call's turn, and render-intent paths from
    * result diff meta) and merging the collector's bash-written captures by
    * their own turn. The fold is cached per session and invalidated by the log

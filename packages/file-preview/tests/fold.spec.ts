@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
-import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
@@ -13,7 +13,7 @@ function toolCall(seq: number, name: string, args: unknown, turn = 1, step = 1):
     seq,
     time: seq,
     type: 'tool/call',
-    data: { turn, step, callId: `call-${seq}` as CallId, name, arguments: JSON.stringify(args) },
+    data: { turn, step, callId: `call-${seq}` as ToolCallId, name, arguments: JSON.stringify(args) },
   }
 }
 
@@ -26,7 +26,7 @@ function toolResult(seq: number, diffs: JsonValue, turn = 1, step = 2): SessionE
     data: {
       turn,
       step,
-      message: createToolResultMessage({ callId: `call-${seq}` as CallId, content: [{ type: 'text', text: 'ok' }], isError: false }),
+      message: createToolResultMessage({ callId: `call-${seq}` as ToolCallId, content: [{ type: 'text', text: 'ok' }], isError: false }),
       meta: diffs,
     },
   }
@@ -46,7 +46,7 @@ function writeResult(seq: number, callSeq: number, turn = 1, step = 2): SessionE
       turn,
       step,
       message: createToolResultMessage({
-        callId: `call-${callSeq}` as CallId,
+        callId: `call-${callSeq}` as ToolCallId,
         content: [{ type: 'text', text: 'Created' }],
         isError: false,
       }),
@@ -227,18 +227,18 @@ describe('foldFilePreview', () => {
   })
 })
 
-/** Build one settled nested Code Mode dispatch event (arguments already parsed). */
-function codeDispatch(
+/** Build one settled nested PTC dispatch event (arguments already parsed). */
+function ptcDispatch(
   seq: number, name: string, args: unknown, rootSeq: number, isError = false,
-): SessionEvent<'tool/code-dispatch'> {
+): SessionEvent<'tool/ptc-dispatch'> {
   return {
     seq,
     time: seq,
-    type: 'tool/code-dispatch',
+    type: 'tool/ptc-dispatch',
     data: {
-      rootCallId: `call-${rootSeq}` as CallId,
-      parentCallId: `call-${rootSeq}` as CallId,
-      subCallId: `call-${rootSeq}:code:1` as CallId,
+      rootCallId: `call-${rootSeq}` as ToolCallId,
+      parentCallId: `call-${rootSeq}` as ToolCallId,
+      subCallId: `call-${rootSeq}:ptc:1` as ToolCallId,
       name,
       arguments: args,
       isError,
@@ -247,22 +247,11 @@ function codeDispatch(
   }
 }
 
-/**
- * Build the PTC-rename twin of a settled dispatch: later 0.1.2 seats emit
- * `tool/ptc-dispatch` with the same payload, and the fold must recognize both
- * names (feature detection, never a version check).
- */
-function ptcDispatch(
-  seq: number, name: string, args: unknown, rootSeq: number, isError = false,
-): SessionEvent<'tool/code-dispatch'> {
-  return { ...codeDispatch(seq, name, args, rootSeq, isError), type: 'tool/ptc-dispatch' as unknown as 'tool/code-dispatch' }
-}
-
-describe('foldFilePreview code dispatches', () => {
-  it('records nested Code Mode file dispatches with the root call location', () => {    const events = [
+describe('foldFilePreview ptc dispatches', () => {
+  it('records nested PTC file dispatches with the root call location', () => {    const events = [
       toolCall(0, 'run_code', { code: '…' }, 3, 2),
-      codeDispatch(1, 'write', { file_path: 'a.md' }, 0),
-      codeDispatch(2, 'edit', { file_path: 'b.ts' }, 0),
+      ptcDispatch(1, 'write', { file_path: 'a.md' }, 0),
+      ptcDispatch(2, 'edit', { file_path: 'b.ts' }, 0),
     ]
     const result = foldFilePreview(events, 500)
     expect(result.entries).toMatchObject([
@@ -274,35 +263,24 @@ describe('foldFilePreview code dispatches', () => {
   it('skips failed, non-file, and malformed dispatches', () => {
     const events = [
       toolCall(0, 'run_code', { code: '…' }),
-      codeDispatch(1, 'write', { file_path: 'a.md' }, 0, true),
-      codeDispatch(2, 'bash', { command: 'echo hi' }, 0),
-      codeDispatch(3, 'write', { nope: 1 }, 0),
-      codeDispatch(4, 'write', { file_path: 'b.md' }, 0),
+      ptcDispatch(1, 'write', { file_path: 'a.md' }, 0, true),
+      ptcDispatch(2, 'bash', { command: 'echo hi' }, 0),
+      ptcDispatch(3, 'write', { nope: 1 }, 0),
+      ptcDispatch(4, 'write', { file_path: 'b.md' }, 0),
     ]
     expect(foldFilePreview(events, 500).entries.map(entry => entry.path)).toEqual(['b.md'])
   })
 
   it('falls back to a zero location when the root call is outside the window', () => {
-    const events = [codeDispatch(1, 'write', { file_path: 'a.md' }, 99)]
+    const events = [ptcDispatch(1, 'write', { file_path: 'a.md' }, 99)]
     expect(foldFilePreview(events, 500).entries[0]).toMatchObject({ path: 'a.md', turn: 0, step: 0 })
-  })
-
-  it('recognizes the PTC rename (tool/ptc-dispatch) with the same payload', () => {
-    const events = [
-      toolCall(0, 'run_code', { code: '…' }, 3, 2),
-      ptcDispatch(1, 'write', { file_path: 'a.md' }, 0),
-    ]
-    expect(foldFilePreview(events, 500).entries).toMatchObject([
-      { path: 'a.md', op: 'write', seq: 1, turn: 3, step: 2 },
-    ])
-    expect(foldFilePreviewByTurn(events).get(3)?.get('a.md')?.step).toBe(2)
   })
 
   it('refreshes a top-level entry in place when a dispatch repeats the path', () => {
     const events = [
       toolCall(0, 'write', { file_path: 'a.md' }, 1, 1),
       toolCall(1, 'run_code', { code: '…' }, 2, 1),
-      codeDispatch(2, 'edit', { file_path: 'a.md' }, 1),
+      ptcDispatch(2, 'edit', { file_path: 'a.md' }, 1),
     ]
     const result = foldFilePreview(events, 500)
     expect(result.entries).toHaveLength(1)
@@ -347,10 +325,10 @@ describe('foldFilePreviewByTurn', () => {
     expect(byTurn.get(2)?.get('a.md')).toMatchObject({ added: 1, removed: 0 })
   })
 
-  it('a code-mode read dispatch leaves no turn entry', () => {
+  it('a ptc read dispatch leaves no turn entry', () => {
     const events = [
       toolCall(0, 'run_code', { code: '…' }, 3, 1),
-      codeDispatch(1, 'read', { file_path: 'a.md' }, 0),
+      ptcDispatch(1, 'read', { file_path: 'a.md' }, 0),
     ]
     const byTurn = foldFilePreviewByTurn(events)
     expect(byTurn.get(3)?.get('a.md')).toBeUndefined()
@@ -402,11 +380,11 @@ describe('foldFilePreviewByTurn', () => {
     expect(byTurn.get(2)?.get('new.md')).toMatchObject({ added: 3, removed: 1 })
   })
 
-  it('a code-mode dispatch to the same file poisons the deltas (unknown wins)', () => {
+  it('a ptc dispatch to the same file poisons the deltas (unknown wins)', () => {
     const events = [
       toolCall(0, 'edit', { file_path: 'a.md', old_string: 'x', new_string: 'y\nz\n' }, 2, 1),
       toolResult(1, { diffs: [{ path: 'a.md', oldText: 'x', newText: 'y\nz\n' }] }, 2, 2),
-      codeDispatch(2, 'write', { file_path: 'a.md' }, 0),
+      ptcDispatch(2, 'write', { file_path: 'a.md' }, 0),
     ]
     const byTurn = foldFilePreviewByTurn(events)
     const fact = byTurn.get(2)?.get('a.md')
@@ -429,10 +407,10 @@ describe('foldFilePreviewByTurn', () => {
     expect(byTurn.get(2)?.get('a.md')?.removed).toBeUndefined()
   })
 
-  it('borrows the enclosing root call turn for code dispatches', () => {
+  it('borrows the enclosing root call turn for ptc dispatches', () => {
     const events = [
       toolCall(0, 'run_code', { code: '…' }, 3, 1),
-      codeDispatch(1, 'write', { file_path: 'a.md' }, 0),
+      ptcDispatch(1, 'write', { file_path: 'a.md' }, 0),
     ]
     const byTurn = foldFilePreviewByTurn(events)
     expect(byTurn.get(3)?.get('a.md')?.step).toBe(1)
