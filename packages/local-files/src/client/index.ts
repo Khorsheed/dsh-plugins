@@ -1,22 +1,19 @@
 /**
  * Local-files plugin, browser half: a git-agnostic file browser over any
- * local directory. It mounts the localFiles Remote through the official
- * `ctx.remote.$mount` channel and surfaces the browser twice: as the 文件列表
- * / Files `conversation.view` tab beside chat and 产物, and — on hosts with
- * the right Sidebar (0.1.5+) — as a page-type `sidebar.right.pane.tab` entry
- * the guide page offers (the official files card stays workspace-scoped;
- * ours browses any directory). The sidebar registration lives in a nested
- * plugin pended on `sidebarRightTabs`, so a composition without the right
- * Sidebar simply never activates it and the conversation tab remains the
- * only entry there.
+ * local directory, defaulting to the session's workspace. It mounts the
+ * localFiles Remote through the official `ctx.remote.$mount` channel and
+ * surfaces the browser twice: as the 文件列表 / Files `conversation.view` tab
+ * beside chat and 产物, and — on hosts with the right Sidebar (0.1.5+) — as a
+ * page-type `sidebar.right.pane.tab` entry that takes over the official files
+ * kind (the registry's extension-over-builtin shadowing, so the guide shows
+ * one files card: ours). The sidebar registration lives in a nested plugin
+ * pended on `sidebarRightTabs`, so a composition without the right Sidebar
+ * simply never activates it and the conversation tab remains the only entry
+ * there.
  *
  * @module @khorsheed/dsh-local-files/client
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-// Type-only: pulls the Controller service merge (ctx.sessions).
-import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.locale service merge.
@@ -44,8 +41,8 @@ import { createLocalFilesStore } from './store-local.ts'
 export { WorkspaceView }
 export { LOCAL_FILES_KIND, LOCAL_FILES_TAB_ID } from './definition.tsx'
 
-/** Required services: slots, sessions, the remote channel, and the locale. */
-export const inject = ['slots', 'sessions', 'remote', 'locale']
+/** Required services: slots, the remote channel, and the locale. */
+export const inject = ['slots', 'remote', 'locale']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, and the
@@ -65,7 +62,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-files: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.get('remote.localFiles') as LocalFilesRemote
-  const sessions: ISessions = ctx.sessions
 
   // The external-open gestures ride the official open-in-app routes (host
   // 0.1.5): one apps probe decides their visibility — a host without the
@@ -97,18 +93,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return result.value ?? null
   }
 
-  /** The session's workspace cwd (its creation `cwd`), or undefined when unknown. */
-  const sessionCwd = (sessionId: SessionId): string | undefined => {
-    const snapshot = sessions.list.getSnapshot()
-    return snapshot.byId[sessionId]?.cwd
-  }
-
   /** The injected business face — identical for every surface the browser mounts on. */
   const browserFace = (): WorkspaceViewInjected => ({
     listDirectory: (request: ListLocalDirectoryRequest) => remote.listDirectory(request),
     readFile: (request: ReadLocalFileRequest) => remote.readFile(request),
     pickWorkspace,
-    sessionCwd,
     hooks: { openInApps: openInApp.apps },
     openFolder: openWith(pickFileManager),
     openIDE: openWith(pickIde),
@@ -128,7 +117,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // `sidebarRightTabs` — cordis only re-wakes fibers that declare a service
   // in `inject`, and a composition without the right Sidebar (hosts before
   // 0.1.5) never provides it, so the registration simply never activates
-  // there instead of pending the whole plugin.
+  // there instead of pending the whole plugin. The kind is the official
+  // files type's own: the registry admits one extension per builtin kind and
+  // puts the extension in force — the guide lists only in-force types, so
+  // the official 工作区文件 card is shadowed (never doubled) and resumes if
+  // this plugin unregisters.
   ctx.plugin({
     name: '@khorsheed/dsh-local-files/sidebar-tab',
     inject: ['sidebarRightTabs'],

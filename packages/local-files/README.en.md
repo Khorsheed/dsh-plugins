@@ -6,10 +6,10 @@ A standalone file-browser plugin: adds a **Files tab** to the session view ring 
 
 ## Features
 
-- **Files tab** (`conversation.view` list entry, parallel to chat / products / worktrees) + **right-sidebar entry** (0.1.5+: a page-type `sidebar.right.pane.tab`, guide card titled "Files"): left file tree (lazy per-level loading, show/hide dot-files, toggle, draggable width) + right detail pane (structured HTML/Markdown/JSON/CSV preview + image preview).
-- **Breadcrumb top bar + action row**: breadcrumbs navigate by level; the action buttons are "Choose Directory" (native directory picker), "Open Folder" (shown when the host's open-in-app probe resolved a file manager), and "Refresh".
+- **Files tab** (`conversation.view` list entry, parallel to chat / products / worktrees) + **right-sidebar entry** (0.1.5+: a page-type `sidebar.right.pane.tab`): left file tree (lazy per-level loading, show/hide dot-files, toggle, draggable width) + right detail pane (structured HTML/Markdown/JSON/CSV preview + image preview). The registration takes over the official `files` kind (the registry's designed extension-over-builtin shadowing), so the guide page shows a single files card — ours; the official "Workspace files" card resumes when this plugin unregisters.
+- **Default root = the session's workspace**: same data source as the official files tree (the session row's `cwd`, read reactively — a late-loading row fills in); a manually chosen directory is remembered per session (localStorage `dsh-local-files-root:<sessionId>`) and restored across tab reopens and page reloads; the toolbar's "Back to workspace" jumps to the current session's workspace root (hidden while already there).
+- **Breadcrumb top bar + action row**: breadcrumbs navigate by level; the action buttons are "Choose Directory" (native directory picker), "Back to workspace", "Open Folder" (shown when the host's open-in-app probe resolved a file manager), and "Refresh".
 - **Git-agnostic**: it browses any absolute local path (including untracked, ignored, and git-external files), with no repository judgment.
-- **Per-session memory**: each session remembers its last-browsed root (localStorage `dsh-local-files-root:<sessionId>`); switching sessions restores it automatically without cross-talk.
 
 ## Install
 
@@ -34,7 +34,7 @@ No config. It installs standalone as a plugin, or drops into a cordis.yml compos
 | npm release (`0.1.2-rc.1` … `0.1.4.x`) | ⚠️ degraded — the external-open gestures stay hidden (the host has no open-in-app routes) |
 | deepseek-harness master | ✅ full (open-in-app landed with 0.1.5; `verifiedHost: 0.1.2-rc.1`) |
 
-- The Files tab and the right-sidebar entry are web surfaces; on headless profiles with no browser consumer the plugin contributes nothing. The sidebar registration lives in a nested plugin pended on `sidebarRightTabs`, so 0.1.2–0.1.4 hosts never activate it and the conversation.view tab stays the only entry there.
+- The Files tab and the right-sidebar entry are web surfaces; on headless profiles with no browser consumer the plugin contributes nothing. The sidebar registration lives in a nested plugin pended on `sidebarRightTabs`, so 0.1.2–0.1.4 hosts never activate it and the conversation.view tab stays the only entry there. On 0.1.5+ the registration takes over the official `files` kind at the extension band (the registry's built-in per-kind shadowing: the guide lists only in-force types, and the official card resumes on uninstall).
 - The "open in folder / open in IDE" gestures are restored through the official open-in-app capability: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager, resp. editor/IDE); the official open route accepts directories only, so a file gesture opens its containing directory. Hosts without open-in-app (< 0.1.5) fail the probe and keep the gestures hidden — a silent degrade, so minHost does not move.
 - minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 

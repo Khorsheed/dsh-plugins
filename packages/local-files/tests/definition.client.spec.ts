@@ -1,7 +1,7 @@
 /**
  * The right-Sidebar tab type definition: identity, page shape (no address
- * claims, extension band), and the guide entry that names the browser 文件列表
- * / Files against the official workspace-scoped files card.
+ * claims, extension band), the kind takeover of the official files type, and
+ * the guide entry that names the browser 文件列表 / Files.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -14,7 +14,11 @@ describe('localFilesDefinition', () => {
   it('registers as a page type under the package identity, claiming no address', () => {
     const definition = localFilesDefinition(t)
     expect(definition.id).toBe(LOCAL_FILES_TAB_ID)
-    expect(definition.kind).toBe(LOCAL_FILES_KIND)
+    // The kind is the official files type's own: the extension band takes the
+    // builtin kind over (the registry's designed shadowing), so the guide
+    // lists one files card — ours.
+    expect(definition.kind).toBe('files')
+    expect(LOCAL_FILES_KIND).toBe('files')
     expect(definition.patterns).toBeUndefined()
     expect(definition.priority).toBeUndefined()
     expect(definition.title('sidebar://local-files')).toBe('t:tab.label')

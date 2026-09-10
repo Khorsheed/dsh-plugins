@@ -1,20 +1,28 @@
 /**
  * Stage one of this package's right-Sidebar registration (0.1.5+): what the
- * `local-files` tab type IS.
+ * `files` tab type becomes once we register.
  *
- * The type is a page, not a viewer: it claims no address. The guide page
- * offers it as an entry box next to the official workspace-scoped files card
- * — theirs is "the session's workspace" (`sidebarFiles`), ours is "any
- * directory, any time", and the naming keeps that split: the tab is 文件列表
- * / Files, leaving 工作区 / workspace to the official surface.
+ * The kind is the official files type's own (`dsh-client-ui-sidebar-files`):
+ * the registry (`ui-sidebar-right`'s tab-registry) admits exactly one
+ * `extension` registration per `builtin` kind and puts the extension in force
+ * — claims, `get`, the guide page, and the body/title seat lookup all follow
+ * the in-force definition, and the shadowed builtin resumes when the
+ * extension unregisters. Our browser defaults to the session workspace and
+ * browses any directory on top, a functional superset, so the official
+ * workspace card is shadowed rather than duplicated on the guide page. The
+ * `id` stays our own — ids collide hard (a duplicate id throws), kinds are
+ * the designed takeover channel.
+ *
+ * The type is a page, not a viewer: it claims no address, exactly like the
+ * builtin it shadows.
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { FileTypeIcon, type IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from './locales.ts'
 
-/** The tab kind this package owns. */
-export const LOCAL_FILES_KIND = 'local-files'
+/** The tab kind: the official files kind, taken over at the extension band. */
+export const LOCAL_FILES_KIND = 'files'
 
 /** This implementation's identity in the tab system, and the key its body registers under. */
 export const LOCAL_FILES_TAB_ID = '@khorsheed/dsh-local-files'
@@ -30,9 +38,8 @@ function FolderGlyph({ size, className }: IconProps) {
 
 /**
  * The local-files type's registry definition. No `priority`: the default
- * `extension` band is exactly what a type shipped from outside the product
- * is. Guide order 40 parks the card after the official files card (10), the
- * products card (20), and the worktrees card (30).
+ * `extension` band is both what a type shipped from outside the product is
+ * and the band the takeover needs.
  * @param t - namespace-bound translate, read fresh on every label call.
  * @returns the definition to register.
  */

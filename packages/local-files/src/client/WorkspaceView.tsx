@@ -7,7 +7,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  IconFolderOpenOutline16, IconProjectAddOutline16, IconRefreshOutline16, writeClipboard,
+  IconFolderClose16, IconFolderOpenOutline16, IconProjectAddOutline16, IconRefreshOutline16, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListLocalDirectoryResult } from '../types.ts'
 import type { WorkspaceViewProps } from './contract.ts'
@@ -30,8 +30,8 @@ function toItems(listing: ListLocalDirectoryResult | null, showHidden: boolean):
 
 /** The workspace view tab. */
 export function WorkspaceView({
-  sessionId, useStore, actions, t,
-  listDirectory, readFile, pickWorkspace, sessionCwd, useOpenInApps, openFolder, openIDE,
+  sessionId, useStore, useSessions, actions, t,
+  listDirectory, readFile, pickWorkspace, useOpenInApps, openFolder, openIDE,
 }: WorkspaceViewProps): ReactNode {
   const root = useStore(s => s.root)
   const currentSession = useStore(s => s.sessionId)
@@ -40,6 +40,10 @@ export function WorkspaceView({
   const preview = useStore(s => s.preview)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
+  // The session's workspace root, reactively (the same read the official
+  // sidebar files tree makes); undefined until the session row loads.
+  const workspaceRoot = useSessions(sessions =>
+    sessionId === undefined ? undefined : sessions.byId[sessionId]?.cwd)
   // The open-in-app probe publishes null until the host answered; both
   // gestures hide until their catalog id resolved (and on hosts without
   // open-in-app, forever).
@@ -51,14 +55,22 @@ export function WorkspaceView({
   const [hideHidden, setHideHidden] = useState(true)
   const [treeWidth, setTreeWidth] = useState(300)
 
-  // Bind the view to the session when it changes — restore that session's
-  // remembered root, or fall back to the session's workspace cwd.
+  // Bind the view to the session: a remembered root (the operator's manual
+  // choice) always wins; otherwise the session's workspace root is the
+  // default. The workspace row can load after the first render, so a root
+  // that locked in empty fills in when the row arrives — never overwriting a
+  // remembered or manually chosen root.
   useEffect(() => {
-    if (sessionId === undefined || currentSession === sessionId) return
-    const remembered = localRootOf(sessionId)
-    const fallback = sessionCwd(sessionId) ?? ''
-    actions.setSession(sessionId, remembered !== '' ? remembered : fallback)
-  }, [sessionId, currentSession, actions])
+    if (sessionId === undefined) return
+    if (currentSession !== sessionId) {
+      const remembered = localRootOf(sessionId)
+      actions.setSession(sessionId, remembered !== '' ? remembered : (workspaceRoot ?? ''))
+      return
+    }
+    if ((root ?? '') === '' && localRootOf(sessionId) === '' && workspaceRoot !== undefined && workspaceRoot !== '') {
+      actions.setRoot(workspaceRoot)
+    }
+  }, [sessionId, currentSession, root, workspaceRoot, actions])
 
   // Load the root directory's first level whenever the root changes. An empty
   // root means the session has no workspace cwd yet — show the empty state
@@ -146,6 +158,11 @@ export function WorkspaceView({
           <button type="button" className={css.action} title={t('local.chooseWorkspace')} onClick={() => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}>
             <IconProjectAddOutline16 />
           </button>
+          {workspaceRoot !== undefined && workspaceRoot !== '' && root !== null && root !== workspaceRoot && (
+            <button type="button" className={css.action} title={t('local.backToWorkspace')} onClick={() => { navigate(workspaceRoot) }}>
+              <IconFolderClose16 />
+            </button>
+          )}
           {canOpenFolder && root !== null && (
             <button type="button" className={css.action} title={t('local.openFolder')} onClick={() => { openFolder(root) }}>
               <IconFolderOpenOutline16 />

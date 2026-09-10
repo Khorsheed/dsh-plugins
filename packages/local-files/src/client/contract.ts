@@ -12,11 +12,14 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
-  InjectFace, PropsLocale, PropsStore,
+  GlobalStandardProps, InjectFace, PropsLocale, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the generated Remote API (ctx.remote merge + namespace).
 import type {} from '@khorsheed/dsh-local-files/remote'
+// Type-only: pulls ui-session's GlobalStandardProps merge (useSessions — the
+// workspace root's reactive data source, the same read ui-sidebar-files makes).
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFilesRead,
   ReadLocalFileRequest,
@@ -26,7 +29,7 @@ import type { createLocalFilesStore } from './store-local.ts'
 /** The localFiles Remote namespace (list + readFile), as mounted by this plugin. */
 export type LocalFilesRemote = TypertRemoteNamespaceMap['localFiles']
 
-/** Business face injected into the conversation.view workspace entry. */
+/** Business face injected into the file-browser view (either seat). */
 export interface WorkspaceViewInjected {
   /** List one local directory (git-agnostic browser plane). */
   listDirectory: (request: ListLocalDirectoryRequest) => Promise<RemoteResult<ListLocalDirectoryResult>>
@@ -34,8 +37,6 @@ export interface WorkspaceViewInjected {
   readFile: (request: ReadLocalFileRequest) => Promise<RemoteResult<LocalFilesRead>>
   /** Open the host's native directory picker; resolves the chosen path, or null when cancelled. */
   pickWorkspace: () => Promise<string | null>
-  /** The session's workspace cwd (its creation `cwd`), or undefined when unknown. */
-  sessionCwd: (sessionId: SessionId) => string | undefined
   hooks: {
     /** open-in-app catalog ids the host probed as installed (null until answered). */
     openInApps: ObservableSnapshot<readonly string[] | null>
@@ -49,6 +50,7 @@ export interface WorkspaceViewInjected {
 /** Full props of the file-browser view, on either seat it mounts on. */
 export type WorkspaceViewProps =
   & { sessionId: SessionId }
+  & GlobalStandardProps
   & PropsStore<ReturnType<typeof createLocalFilesStore>>
   & InjectFace<WorkspaceViewInjected>
   & PropsLocale<'localFiles'>
