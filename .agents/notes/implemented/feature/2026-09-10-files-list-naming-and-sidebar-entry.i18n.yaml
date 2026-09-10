@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-files-list-naming-and-sidebar-entry.md
-.agents/notes/implemented/feature/2026-09-10-files-list-naming-and-sidebar-entry.md: c08fd166347a885be514031eb0599b35994703c4
-.agents/notes/implemented/feature/2026-09-10-files-list-naming-and-sidebar-entry.zh.md: 9c15fe4a100e4c2f9cb76fc16ecac4f77d4b21e1
+.agents/notes/implemented/feature/2026-09-10-files-list-naming-and-sidebar-entry.md: e0392a39b898783035e6786e65d5e0d3f52b3562
+.agents/notes/implemented/feature/2026-09-10-files-list-naming-and-sidebar-entry.zh.md: 6af32639e5ac7f305e9ddbba5d71e2db3f2f98c8

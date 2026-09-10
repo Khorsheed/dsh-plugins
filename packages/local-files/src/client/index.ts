@@ -2,14 +2,11 @@
  * Local-files plugin, browser half: a git-agnostic file browser over any
  * local directory, defaulting to the session's workspace. It mounts the
  * localFiles Remote through the official `ctx.remote.$mount` channel and
- * surfaces the browser once: on hosts with the right Sidebar (0.1.5+), as a
- * page-type `sidebar.right.pane.tab` entry that takes over the official files
- * kind (the registry's extension-over-builtin shadowing, so the guide shows
- * one files card: ours). The registration lives in a nested plugin pended on
- * `sidebarRightTabs`, so a composition without the right Sidebar simply never
- * activates it and the plugin contributes no browser surface there. (The
- * `conversation.view` tab entry was retired 2026-09-10 — the sidebar tab is
- * the single surface.)
+ * surfaces the browser once: as a page-type `sidebar.right.pane.tab` entry
+ * that takes over the official files kind (the registry's
+ * extension-over-builtin shadowing, so the guide shows one files card: ours).
+ * (The `conversation.view` tab entry was retired 2026-09-10 — the sidebar tab
+ * is the single surface.)
  *
  * @module @khorsheed/dsh-local-files/client
  */
@@ -39,8 +36,8 @@ import { createLocalFilesStore } from './store-local.ts'
 export { WorkspaceView }
 export { LOCAL_FILES_KIND, LOCAL_FILES_TAB_ID } from './definition.tsx'
 
-/** Required services: the remote channel and the locale (the sidebar seat is reached through the nested plugin below). */
-export const inject = ['remote', 'locale']
+/** Required services: slots, the remote channel, the locale, and the tab-type registry. */
+export const inject = ['slots', 'remote', 'locale', 'sidebarRightTabs']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, and the
@@ -101,29 +98,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     openIDE: openWith(pickIde),
   })
 
-  // The right-Sidebar entry (0.1.5+). A nested plugin pended on
-  // `sidebarRightTabs` — cordis only re-wakes fibers that declare a service
-  // in `inject`, and a composition without the right Sidebar (hosts before
-  // 0.1.5) never provides it, so the registration simply never activates
-  // there instead of pending the whole plugin. The kind is the official
-  // files type's own: the registry admits one extension per builtin kind and
-  // puts the extension in force — the guide lists only in-force types, so
-  // the official 工作区文件 card is shadowed (never doubled) and resumes if
-  // this plugin unregisters.
-  ctx.plugin({
-    name: '@khorsheed/dsh-local-files/sidebar-tab',
-    inject: ['sidebarRightTabs'],
-    apply: (sub: Context) => {
-      sub.effect(() => sub.sidebarRightTabs.register(localFilesDefinition(t)), 'local-files: tab type')
-      sub.effect(() => sub.slots.inject('sidebar.right.pane.tab', () => sub.slots.register({
-        name: 'sidebar.right.pane.tab',
-        key: LOCAL_FILES_TAB_ID,
-        locale: NS,
-        store: createLocalFilesStore,
-        inject: browserFace,
-      }, WorkspaceView)), 'local-files: sidebar tab body')
-    },
-  })
+  // The right-Sidebar registration, straight-line (the ui-file-preview
+  // pattern): the tab type into the registry, the body into the keyed pane
+  // seat under the type's id. The kind is the official files type's own: the
+  // registry admits one extension per builtin kind and puts the extension in
+  // force — the guide lists only in-force types, so the official 工作区文件
+  // card is shadowed (never doubled) and resumes if this plugin unregisters.
+  ctx.effect(() => ctx.sidebarRightTabs.register(localFilesDefinition(t)), 'local-files: tab type')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab',
+    key: LOCAL_FILES_TAB_ID,
+    locale: NS,
+    store: createLocalFilesStore,
+    inject: browserFace,
+  }, WorkspaceView)), 'local-files: sidebar tab body')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

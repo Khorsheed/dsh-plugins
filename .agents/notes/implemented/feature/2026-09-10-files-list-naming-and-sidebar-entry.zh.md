@@ -14,7 +14,7 @@ Status: implemented
 
 - **worktrees**：徽标的左（文件夹）胶囊移除——header 只留分支胶囊，非仓库会话现在完全不渲染徽标（胶囊曾是那里唯一的内容）。胶囊是徽标打开本地文件浏览器的唯一入口，但浏览器表面本身（`shell.overlay`，含工作区切换器与原生目录选择器）按明确指示保留挂载，不丢能力。`aria.openLocal` / `local.title` 随之离字典。
 - **local-files**：`conversation.view` tab 改名「文件列表 / Files」，并额外注册为右栏 page-type tab。（会话 tab 同日退役——右栏 tab 是唯一表面，见[退役 note](../simplification/2026-09-10-local-files-conversation-tab-retirement.md)；下列改名、接管、默认根等事实仍为现状。）kind 直接沿用官方文件类型的 `files`：ui-sidebar-right 的注册表允许每个 builtin kind 带一个 extension 注册并让 extension 生效——地址认领、`get`、guide 页与 body/title 槽位查找都跟随在force的 definition，被遮蔽的 builtin 在 extension 注销时自动恢复（已在 tab-registry.ts 核实；这不是 agent-32 在 utilities list 槽踩过的同 id 双份渲染——id 保持唯一，kind 才是设计好的接管通道）。因此 guide 页只有一张文件卡片——我们的（官方彩色文件夹 glyph，order 40），官方「工作区文件」卡片在我们安装期间消失。默认根目录 = 本会话工作区，从会话行的 `cwd` 响应式读取（`useSessions`，与官方文件树同一读法），会话行晚到时补入；手动切换的目录按会话记忆（localStorage `dsh-local-files-root:<sessionId>`），重开 tab / 重载页面恢复；工具行的「退回原始工作区 / Back to original workspace」一键回到当前会话工作区根，已在工作区时隐藏；图标为自绘的「文件夹 + 回退箭头」（官方图标库无 undo、home、回退类 glyph，IconFolderClose16 读起来是「关闭的文件夹」而非「退回」）。
-- sidebar 注册是 pending 于 `sidebarRightTabs` 的嵌套 `ctx.plugin`（ui-file-preview 的 `documentPreviews` 先例——没有该服务的组合永不激活它）。（落笔时 minHost 靠 conversation tab 维持 0.1.2-rc.1；退役后地板前移至 0.1.5-rc.1——嵌套从此护的是组合而非旧宿主行。）
+- sidebar 注册最初是 pending 于 `sidebarRightTabs` 的嵌套 `ctx.plugin`（ui-file-preview 的 `documentPreviews` 先例）。退役改动把它改成了直线式（`sidebarRightTabs` 进顶层 inject）：嵌套形态在顶层撤掉 `slots` 声明的那一刻就坏了——嵌套 fiber 只有在自身或祖先的 inject 里声明后才能碰到别的插件的服务，修正记录在[退役 note](../simplification/2026-09-10-local-files-conversation-tab-retirement.md)。
 
 根目录记忆维持**按会话**而非全局：两个槽位都是会话级表面，全局记忆会让会话 B 一打开就落在会话 A 最后浏览的目录——恰好违背「默认落工作区」存在的意义。按会话记忆同样满足「重开恢复上次」，而「返回本工作区」永远指当前会话的工作区。
 

@@ -34,7 +34,7 @@ Host 提供 `listLocalDirectory` / `readLocalFile` / `readLocalImage` 三个纯 
 | npm release (`0.1.2-rc.1` … `0.1.4.x`) | ❌ 无浏览器表面——唯一的入口是右栏 tab（0.1.5 起），请停留在旧发布线 |
 | deepseek-harness master | ✅ 完整（`verifiedHost: 0.1.5-rc.1`） |
 
-- 右栏 tab 是 web 表面；headless 无浏览器消费者时本插件零贡献。注册挂在 pending 于 `sidebarRightTabs` 的嵌套插件上，以 extension 档接管官方 `files` kind（注册表内建的 kind 级遮蔽：guide 页只列在force类型，卸载即恢复官方卡片）。
+- 右栏 tab 是 web 表面；headless 无浏览器消费者时本插件零贡献。直线注册进 `ctx.sidebarRightTabs`（顶层 inject 声明），以 extension 档接管官方 `files` kind（注册表内建的 kind 级遮蔽：guide 页只列在force类型，卸载即恢复官方卡片）。
 - 「打开目录 / 在 IDE 打开」手势走官方 open-in-app：浏览器每页探测一次 `GET /open-in-app/apps`，宿主解析出对应应用（文件管理器，或编辑器/IDE）才显示该手势；官方 open 路由只收目录路径，文件上的手势打开其所在目录。探测失败时手势保持隐藏——静默降级。
 - minHost 随 conversation.view tab 退役前移至 0.1.5-rc.1（原会话 tab 是 0.1.2–0.1.4 上唯一的入口）。
 

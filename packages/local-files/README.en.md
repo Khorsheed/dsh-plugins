@@ -34,7 +34,7 @@ No config. It installs standalone as a plugin, or drops into a cordis.yml compos
 | npm release (`0.1.2-rc.1` … `0.1.4.x`) | ❌ no browser surface — the only entry is the right-sidebar tab (0.1.5+); stay on the previous release line |
 | deepseek-harness master | ✅ full (`verifiedHost: 0.1.5-rc.1`) |
 
-- The right-sidebar tab is a web surface; on headless profiles with no browser consumer the plugin contributes nothing. The registration lives in a nested plugin pended on `sidebarRightTabs` and takes over the official `files` kind at the extension band (the registry's built-in per-kind shadowing: the guide lists only in-force types, and the official card resumes on uninstall).
+- The right-sidebar tab is a web surface; on headless profiles with no browser consumer the plugin contributes nothing. The registration is straight-line into `ctx.sidebarRightTabs` (declared in the top-level inject) and takes over the official `files` kind at the extension band (the registry's built-in per-kind shadowing: the guide lists only in-force types, and the official card resumes on uninstall).
 - The "open in folder / open in IDE" gestures ride the official open-in-app capability: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager, resp. editor/IDE); the official open route accepts directories only, so a file gesture opens its containing directory. A failed probe keeps the gestures hidden — a silent degrade.
 - minHost moves up to 0.1.5-rc.1 with the conversation.view tab's retirement (that tab was the only entry on 0.1.2–0.1.4).
 

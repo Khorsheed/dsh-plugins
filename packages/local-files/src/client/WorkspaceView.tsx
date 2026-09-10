@@ -34,27 +34,29 @@ function toItems(listing: ListLocalDirectoryResult | null, showHidden: boolean):
  * The back-to-original-workspace glyph: a closed folder with a return arrow.
  * Self-drawn (the BranchGlyph / ProductsGlyph precedent) — the official icon
  * set has no undo / home / return glyph, and IconFolderClose16 read as
- * "closed folder", not "go back".
+ * "closed folder", not "go back". Sized on the official 16px grid: the folder
+ * footprint (x 1.7–14.3, y 2.6–13.4) matches the official folder glyphs'
+ * near-full-bleed outline, stroke 1.4 to their filled-ring weight.
  */
 function IconFolderReturn16({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
-        d="M2.6 4.4c0-.7.5-1.2 1.2-1.2h2.3c.4 0 .8.2 1 .5l.9 1h4.8c.7 0 1.2.5 1.2 1.2v5.5c0 .7-.5 1.2-1.2 1.2H3.8c-.7 0-1.2-.5-1.2-1.2V4.4z"
+        d="M1.7 3.8a1.2 1.2 0 0 1 1.2-1.2h2.4a1.2 1.2 0 0 1 1 .5l1.1 1.3h6.7a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H2.9a1.2 1.2 0 0 1-1.2-1.2V3.8z"
         stroke="currentColor"
-        strokeWidth="1.3"
+        strokeWidth="1.4"
         strokeLinejoin="round"
       />
       <path
-        d="M11.6 7.3v1.5a1.5 1.5 0 0 1-1.5 1.5H7.2"
+        d="M11.6 6.9v2.1a1.6 1.6 0 0 1-1.6 1.6H7.2"
         stroke="currentColor"
-        strokeWidth="1.3"
+        strokeWidth="1.4"
         strokeLinecap="round"
       />
       <path
-        d="M8.6 9.1 7.2 10.3l1.4 1.4"
+        d="M8.7 9.3 7.2 10.6l1.5 1.5"
         stroke="currentColor"
-        strokeWidth="1.3"
+        strokeWidth="1.4"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
