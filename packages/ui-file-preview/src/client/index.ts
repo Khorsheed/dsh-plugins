@@ -33,6 +33,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@khorsheed/dsh-file-preview/remote'
 // Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.turnTail').
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls the ctx.sidebarRight/ctx.sidebarRightTabs service merges.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls the ctx.documentPreviews merge, the 'sidebar.right.tab.document'
@@ -103,11 +104,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   // S1 tail: route prose-mention opens into the sidebar too. The wrap is
   // in-place on ui-deliverables' provided object (see mentions-wrap.ts for
-  // why not provide/set); the dsh.client.inject edge on
-  // @deepseek-ai/dsh-client-ui-deliverables orders its apply before ours, and
-  // a composition without it simply has no prose links to wrap.
-  const mentions = ctx.get('chatFileMentions')
-  if (mentions !== undefined) wrapChatFileMentions(mentions)
+  // why not provide/set). Ordering cannot ride the package edge alone — cordis
+  // only re-wakes fibers that DECLARE the service in `inject`
+  // (vendor/cordis reflect.ts notify), so a one-shot `ctx.get` here races the
+  // deliverables fiber's provide. A nested plugin whose inject names
+  // 'chatFileMentions' stays pending until the service appears (and re-runs on
+  // HMR re-provide, re-wrapping); in compositions without ui-deliverables it
+  // simply never activates, without blocking this plugin.
+  ctx.plugin({
+    name: '@khorsheed/dsh-client-ui-file-preview/mentions-wrap',
+    inject: ['chatFileMentions'],
+    apply: (sub: Context) => {
+      wrapChatFileMentions((sub as unknown as { chatFileMentions: ChatFileMentions }).chatFileMentions)
+    },
+  })
 
   // Row gestures: copy always works (clipboard needs no host capability);
   // folder/IDE gestures key off the once-per-page open-in-app probe — a host
