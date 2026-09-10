@@ -36,10 +36,13 @@ import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 export interface MentionReroute {
   /**
    * Open one resolved path in this package's own surface (the detail view).
-   * May throw (no mounted sidebar surface); the wrap then falls back to the
-   * owner's official `openFile`.
+   * Takes the viewed session so the open can name the canonical
+   * `dsh-resource://file/session/<id>/<path>` address — the same tab the
+   * deliverables card's open reveals (one file, one tab). May throw (no
+   * mounted sidebar surface); the wrap then falls back to the owner's
+   * official `openFile`.
    */
-  open(path: string): void
+  open(sessionId: string, path: string): void
   /**
    * The mention's action label.
    * @param path - the resolved path (the hit's title).
@@ -71,7 +74,7 @@ export function wrapChatFileMentions(mentions: ChatFileMentions, reroute: Mentio
           label: reroute.label(hit.title),
           open: () => {
             try {
-              reroute.open(hit.title)
+              reroute.open(sessionId, hit.title)
             } catch {
               // No mounted sidebar surface (or a lost race): the official
               // openFile still lands the file in the right sidebar.

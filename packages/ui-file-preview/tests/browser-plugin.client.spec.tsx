@@ -220,8 +220,8 @@ describe('ui-file-preview browser plugin', () => {
       turnFiles: vi.fn(), reveal: vi.fn(), openExternal: vi.fn(),
     })
     ctx2.provide('sidebarRightTabs', { register: () => () => {} })
-    const openTab = vi.fn()
-    ctx2.provide('sidebarRight', { openTab })
+    const openResource = vi.fn()
+    ctx2.provide('sidebarRight', { openResource })
     await ctx2.plugin(SlotRegistry).await()
     ctx2.slots.register({
       name: 'root',
@@ -235,7 +235,9 @@ describe('ui-file-preview browser plugin', () => {
     // The official "在默认程序中打开" label is replaced by the sidebar wording.
     expect(hit?.label).not.toBe('打开 a.md')
     hit?.open()
-    expect(openTab).toHaveBeenCalledWith('file-preview', { params: { path: '/work/a.md' } })
+    // The canonical file address — the same content id the deliverables
+    // card's open resolves to, so one file is one tab.
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1//work/a.md')
     expect(openFile).not.toHaveBeenCalled()
     expect(nativeOpen).not.toHaveBeenCalled()
     await fiber.dispose()
@@ -261,18 +263,6 @@ describe('ui-file-preview browser plugin', () => {
     } finally {
       globalThis.fetch = originalFetch
     }
-    await b.fiber.dispose()
-  })
-
-  it('opens the file-preview page for an outside-workspace path, silently degrading without a surface', async () => {
-    const b = await bench()
-    const { injected } = turnApi(b)
-    if (injected === undefined) throw new Error('turn inject missing')
-    injected.openOutsideWorkspace(sid('s1'), '/tmp/artifact.html')
-    expect(b.openTab).toHaveBeenCalledWith(FILE_PREVIEW_KIND, { params: { path: '/tmp/artifact.html' } })
-    // A throw from the page service (no mounted surface) stays contained.
-    b.openTab.mockImplementationOnce(() => { throw new Error('sidebarRight: no session surface is mounted') })
-    expect(() => { injected.openOutsideWorkspace(sid('s1'), '/tmp/x') }).not.toThrow()
     await b.fiber.dispose()
   })
 

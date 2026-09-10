@@ -29,7 +29,6 @@ function renderRow(overrides: Partial<FilePreviewTurnRowProps> = {}) {
     sessionId: 's1' as SessionId,
     turn: { turn: 3 } as TurnLocation,
     openFile: vi.fn(),
-    openOutsideWorkspace: vi.fn(),
     turnFiles: vi.fn(async () => FILES),
     t: ((key: string) => key),
     useSessions: useSessionsFake,
@@ -86,28 +85,23 @@ describe('TurnFileRow', () => {
     expect(container.querySelectorAll('[class*="dir"]')).toHaveLength(0)
   })
 
-  it('routes an in-workspace file click through the owner openFile', async () => {
+  it('routes every file click through the owner openFile (one address, one tab)', async () => {
     const openFile = vi.fn()
-    const openOutsideWorkspace = vi.fn()
-    renderRow({ openFile, openOutsideWorkspace })
+    renderRow({ openFile })
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     expect(openFile).toHaveBeenCalledWith('/work/src/agent.ts')
-    expect(openOutsideWorkspace).not.toHaveBeenCalled()
   })
 
-  it('opens the file-preview tab for an outside-workspace file click', async () => {
+  it('an outside-workspace file click also goes through openFile (our claim covers it)', async () => {
     const openFile = vi.fn()
-    const openOutsideWorkspace = vi.fn()
     renderRow({
       openFile,
-      openOutsideWorkspace,
       turnFiles: vi.fn(async () => [{ seq: 1, path: '/tmp/artifact.html', added: 40, removed: 0 }]),
     })
     await act(async () => {})
     fireEvent.click(screen.getByText('artifact.html'))
-    expect(openFile).not.toHaveBeenCalled()
-    expect(openOutsideWorkspace).toHaveBeenCalledWith('s1', '/tmp/artifact.html')
+    expect(openFile).toHaveBeenCalledWith('/tmp/artifact.html')
   })
 
   it('caps the visible rows behind an overflow toggle', async () => {

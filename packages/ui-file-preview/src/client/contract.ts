@@ -53,12 +53,6 @@ export type FilePreviewTabProps =
 export interface FilePreviewTurnRowInjected {
   /** Resolve one session's files for one turn through the session-level cache. */
   turnFiles: (sessionId: SessionId, turn: number) => Promise<readonly FilePreviewTurnFile[]>
-  /**
-   * Open the file-preview page tab with one path selected — the click target
-   * for outside-workspace paths, which no `dsh-resource://file/...` address can
-   * name (in-workspace paths go through the owner's `openFile` instead).
-   */
-  openOutsideWorkspace: (sessionId: SessionId, path: string) => void
 }
 
 /** Full props of the turn mutation card (owner + injected + locale shares). */

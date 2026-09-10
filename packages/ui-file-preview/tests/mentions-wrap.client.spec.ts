@@ -40,7 +40,7 @@ describe('wrapChatFileMentions', () => {
     expect(hit?.title).toBe('/work/a.md')
     expect(hit?.label).toBe('在侧边栏打开 /work/a.md')
     hit?.open()
-    expect(route.open).toHaveBeenCalledWith('/work/a.md')
+    expect(route.open).toHaveBeenCalledWith('s1', '/work/a.md')
     expect(nativeOpen).not.toHaveBeenCalled()
     expect(owner.openFile).not.toHaveBeenCalled()
   })

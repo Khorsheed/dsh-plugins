@@ -23,7 +23,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { fileAddressFor, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -117,10 +117,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: ['chatFileMentions'],
     apply: (sub: Context) => {
       wrapChatFileMentions((sub as unknown as { chatFileMentions: ChatFileMentions }).chatFileMentions, {
-        // Mentions land in this package's detail view, not the official
-        // document tab; a throw (no mounted sidebar surface) falls back to
-        // the owner's openFile inside the wrap.
-        open: (path) => { ctx.sidebarRight.openTab(FILE_PREVIEW_KIND, { params: { path } }) },
+        // Mentions open at the canonical file address — the same
+        // `dsh-resource://file/session/<id>/<path>` content id the
+        // deliverables card's open resolves to, so one file is one tab (the
+        // page address `sidebar://file-preview` would mint a second tab for
+        // the same file). Our type claims the renderable ones; the rest fall
+        // through to the official document tab. A throw (no mounted sidebar
+        // surface) falls back to the owner's openFile inside the wrap.
+        open: (sessionId, path) => {
+          ctx.sidebarRight.openResource(fileAddressFor(sessionId, sessionCwd(sessionId as SessionId), path))
+        },
         label: (path) => t('mention.open', { name: basename(path) }),
       })
     },
@@ -195,17 +201,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: (): FilePreviewTurnRowInjected => ({
       turnFiles: (sessionId: SessionId, turn: number) => turnFilesLoader(sessionId, turn),
-      // Outside-workspace paths have no `dsh-resource://file/...` address; open
-      // this plugin's page with the path selected. The page service acts on the
-      // mounted session's surface — a throw (no surface mounted) degrades to
-      // nothing rather than breaking the chat view.
-      openOutsideWorkspace: (_sessionId: SessionId, path: string) => {
-        try {
-          ctx.sidebarRight.openTab(FILE_PREVIEW_KIND, { params: { path } })
-        } catch (error) {
-          ctx.logger.warn('ui-file-preview: openTab failed', error)
-        }
-      },
     }),
   }, TurnFileRow))
 

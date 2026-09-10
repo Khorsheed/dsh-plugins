@@ -6,11 +6,11 @@
  * once per session through the turn-files cache. The entry registers at
  * default priority: the official deliverables row elects first and claims
  * turns its own data covers, so this card renders exactly the turns official
- * data misses (bash captures, S2). A file click goes through the owner's
- * `openFile` — the official openResource route into the document tab — for
- * in-workspace paths; an outside-workspace path (bash artifact beyond the
- * session root, no `dsh-resource://file/...` address) opens this plugin's
- * file-preview tab with the path selected instead. Long turns collapse: the
+ * data misses (bash captures, S2). Every file click goes through the owner's
+ * `openFile` — the official openResource route; our tab type claims
+ * renderable session-scoped addresses (outside-workspace absolutes included,
+ * via the Remote read), so one file is one tab for every origin. Long turns
+ * collapse: the
  * body folds away from the header chevron, and an expanded card caps its
  * visible rows behind a "show more" row. Until the fetch settles — or when
  * the turn has no files, or the fetch fails — the card renders nothing. */
@@ -22,7 +22,7 @@ import {
   IconChevronDownOutline14, IconChevronUpOutline14, IconFolderOpenOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { basename } from './turn-files.ts'
-import { isWithinWorkspace, parentPath } from './path-utils.ts'
+import { parentPath } from './path-utils.ts'
 import css from './TurnFileRow.module.css'
 
 /** Rows visible before the "show more" overflow row takes over. */
@@ -35,9 +35,8 @@ const SHOWN_LIMIT = 5
  *   the locale seat.
  */
 export function TurnFileRow(props: FilePreviewTurnRowProps) {
-  const { sessionId, useSessions, openFile, openOutsideWorkspace, turnFiles, t } = props
+  const { sessionId, openFile, turnFiles, t } = props
   const turn = props.turn.turn
-  const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const [files, setFiles] = useState<readonly FilePreviewTurnFile[] | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -84,10 +83,13 @@ export function TurnFileRow(props: FilePreviewTurnRowProps) {
                 type="button"
                 className={css.file}
                 title={file.path}
-                onClick={() => {
-                  if (isWithinWorkspace(cwd, file.path)) void openFile(file.path)
-                  else openOutsideWorkspace(sessionId, file.path)
-                }}
+                // Every path goes through the owner's openFile — the official
+                // openResource route. Our tab type claims renderable
+                // session-scoped addresses (fileAddressFor keeps outside-
+                // workspace absolutes inside the session address, and our
+                // detail view renders them via the Remote read), so one file
+                // is one tab for every origin.
+                onClick={() => { void openFile(file.path) }}
               >
                 <span className={css.name}>{basename(file.path)}</span>
                 {dir !== '' && <span className={css.dir}>{dir}</span>}
