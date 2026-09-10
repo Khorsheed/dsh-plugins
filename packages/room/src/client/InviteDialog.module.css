@@ -1,6 +1,10 @@
 /* Invite/edit dialog: transparent overlay (no dimming — the conversation
-   stays readable behind it) + centered card; Esc/overlay-click closes. Alias
-   tokens with fallbacks. */
+   stays readable behind it) + centered card; Esc/overlay-click closes. The
+   visual language rides the official design tokens (ui-theme
+   design-platform.css, ui-primitives Modal/Button/FeedbackDialog): hierarchy
+   comes from weight and spacing, the one filled action is the near-black
+   button-primary-fill capsule, and the blue accent appears nowhere — dark
+   theme follows the same aliases. Alias tokens with fallbacks. */
 
 .overlay {
   position: fixed;
@@ -15,14 +19,14 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 20px;
   width: 560px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 96px);
   overflow-y: auto;
-  padding: 16px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
-  border-radius: 14px;
+  padding: 22px 24px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.16));
+  border-radius: 18px;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
   /* The card carries the whole separation now that the overlay does not dim. */
   box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
@@ -32,7 +36,7 @@
    Narrow viewports stack with the preview on top (column-reverse). */
 .body {
   display: flex;
-  gap: 16px;
+  gap: 20px;
   min-width: 0;
 }
 
@@ -68,10 +72,12 @@
   }
 }
 
+/* The official Modal title (ui-primitives Modal.module.css): 16/24, the
+   figma wt510 rendered as 500. */
 .title {
-  font-size: 15px;
-  line-height: 22px;
-  font-weight: 510;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
   color: var(--dsw-alias-label-primary, #1f2329);
 }
 
@@ -81,9 +87,12 @@
   gap: 4px;
 }
 
+/* Field labels match the official panel section header (client-ui-agent-team
+   TeamAction h3): small, medium weight, secondary ink. */
 .label {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 18px;
+  font-weight: 500;
   color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
 }
 
@@ -101,14 +110,22 @@
   outline: none;
 }
 
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--dsw-alias-label-caption, rgba(173, 178, 184, 1));
+}
+
 .textarea {
   resize: vertical;
 }
 
+/* The focus cue is a neutral ring (FeedbackDialog.detail), never the blue
+   accent: a stronger border plus a 1px halo in the same tone. */
 .input:focus,
 .select:focus,
 .textarea:focus {
-  border-color: var(--dsw-alias-border-accent, #3370ff);
+  border-color: var(--dsw-alias-border-l4, rgba(127, 127, 127, 0.4));
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l4, rgba(127, 127, 127, 0.4));
 }
 
 .hint {
@@ -156,11 +173,16 @@
 }
 
 .advancedSummary {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
   cursor: pointer;
   user-select: none;
+}
+
+.advancedSummary:hover {
+  color: var(--dsw-alias-label-primary, #1f2329);
 }
 
 .advancedBody {
@@ -213,7 +235,7 @@
 .error {
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-text-error, #d9363e);
+  color: var(--dsw-alias-state-error-primary, #d9363e);
 }
 
 .buttons {
@@ -222,35 +244,58 @@
   gap: 8px;
 }
 
+/* Footer actions follow the official Button (ui-primitives Button.module.css):
+   capsule geometry; Cancel is the bordered outline on transparent fill, and
+   the submit is the one filled action — button-primary-fill, brand-primary,
+   near-black on light and near-white on dark, so both themes stay on the
+   black/white/grey scale. */
 .button,
 .primary {
-  border-radius: 8px;
-  padding: 5px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 999px;
   font-size: 13px;
   line-height: 20px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .button {
-  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, 0.3));
   background: transparent;
   color: var(--dsw-alias-label-primary, #1f2329);
 }
 
+.button:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
 .primary {
   border: none;
-  color: var(--dsw-alias-label-on-accent, #ffffff);
-  background: var(--dsw-alias-bg-accent, #3370ff);
+  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  background: var(--dsw-alias-button-primary-fill, #1f2329);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover, #43454a);
 }
 
 .primary:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
 }
 
 /* Mouse clicks never raise a focus ring; keyboard navigation keeps the
-   visible one. (The text fields carry no outline at all — their focus cue is
-   the accent border.) */
+   visible one (the official chip/dialog ring: 2px in the primary fill). */
+.button:focus-visible,
+.primary:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill, #1f2329);
+  outline-offset: 2px;
+}
+
 .button:focus:not(:focus-visible),
 .primary:focus:not(:focus-visible) {
   outline: none;

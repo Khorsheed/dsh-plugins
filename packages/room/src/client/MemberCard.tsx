@@ -43,7 +43,13 @@ export function MemberCard({
   return (
     <div className={css.card} data-member={member.name}>
       <div className={css.head}>
-        <span className={css.avatarTile} style={{ '--member-color': color } as CSSProperties} aria-hidden>
+        {/* The dialog preview keeps the tile neutral (the stylesheet's
+            fallback); the name-hash color joins once the member is seated. */}
+        <span
+          className={css.avatarTile}
+          style={preview ? undefined : { '--member-color': color } as CSSProperties}
+          aria-hidden
+        >
           {member.name.slice(0, 1).toUpperCase()}
         </span>
         <span className={css.identity}>

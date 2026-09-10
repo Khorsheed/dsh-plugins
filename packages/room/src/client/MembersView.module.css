@@ -41,7 +41,8 @@
 /* The avatar tile: a small rounded square in the member color (passed in as
    --member-color), slightly deepened through color-mix for white-letter
    contrast — a shade, not a gradient. Keeps the member identity quiet: a
-   tile, not a banner. */
+   tile, not a banner. No inline color (the invite dialog's preview) falls
+   back to the neutral tertiary ink. */
 .avatarTile {
   display: grid;
   place-items: center;
@@ -49,7 +50,7 @@
   height: 40px;
   flex: none;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--member-color, #5b8ff9) 85%, black);
+  background: color-mix(in srgb, var(--member-color, var(--dsw-alias-label-tertiary, #7f8287)) 85%, black);
   color: #fff;
   font-size: 16px;
   font-weight: 600;

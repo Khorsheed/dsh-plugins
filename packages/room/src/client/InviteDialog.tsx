@@ -2,9 +2,12 @@
  * The invite/edit dialog as a character-creation card: a self-drawn
  * lightweight modal (overlay + centered card, Esc/overlay-click closes) with
  * a live member-card preview beside the form — every keystroke re-renders
- * the preview (the avatar color is a name hash, so it follows the name), and
- * a 🎲 dice button rolls a random game-flavored name from the pool
- * (name-pool.ts), skipping names already on the roster.
+ * the preview (the preview avatar stays neutral; the name-hash color joins
+ * once the member is seated), and a 🎲 dice button rolls a random
+ * game-flavored name from the pool (name-pool.ts), skipping names already
+ * on the roster. The chrome rides the official design tokens: the near-black
+ * button-primary-fill capsule is the one filled action, and no blue accent
+ * appears (see InviteDialog.module.css).
  *
  * Field order is primary-first: provider → 称呼(+🎲) → 首个任务 → ▸ 高级设置
  * (role instructions + the member-level cwd, collapsed on invite — editing

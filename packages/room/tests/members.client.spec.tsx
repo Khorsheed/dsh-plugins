@@ -9,7 +9,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MembersView } from '../src/client/MembersView.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
-import { memberColor } from '../src/client/member-color.ts'
 import { NAME_POOL, rollName } from '../src/client/name-pool.ts'
 import type { MembersViewProps, RoomMembersInjected } from '../src/client/slots.ts'
 import type { RoomProviderList, RoomState } from '../src/types.ts'
@@ -308,12 +307,15 @@ describe('MembersView', () => {
     expect(preview.textContent).toContain('未设置角色')
     expect(preview.textContent).not.toContain('轨迹→')
     expect(preview.textContent).not.toContain('移除')
-    // Typing a name re-renders the card; the avatar color follows the hash.
+    // Typing a name re-renders the card; the preview avatar stays neutral
+    // (no --member-color inline — the name-hash color joins on the roster).
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dex' } })
     const updated = dialog.querySelector('[data-member="dex"]') as HTMLElement
     expect(updated).not.toBeNull()
     const tile = updated.querySelector('[class*="avatarTile"]') as HTMLElement
-    expect(tile.style.getPropertyValue('--member-color')).toBe(memberColor('dex'))
+    expect(tile.style.getPropertyValue('--member-color')).toBe('')
+    // The one filled action: the submit button carries the primary class.
+    expect(screen.getByRole('button', { name: '邀请入队' }).className).toContain('_primary')
     // Role instructions ride the preview too (advanced drawer stays folded).
     fireEvent.change(dialog.querySelectorAll('textarea')[1]!, { target: { value: '后端' } })
     expect((dialog.querySelector('[data-member="dex"]') as HTMLElement).textContent).toContain('后端')
