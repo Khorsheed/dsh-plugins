@@ -71,7 +71,8 @@
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "@khorsheed/dsh-worktrees-tool": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-client-locale": {
@@ -93,6 +94,9 @@
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "@khorsheed/dsh-worktrees-tool": {
       "optional": true
     }
   },
@@ -121,7 +125,8 @@
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@khorsheed/dsh-worktrees-tool": "workspace:*"
   },
   "scripts": {
     "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",

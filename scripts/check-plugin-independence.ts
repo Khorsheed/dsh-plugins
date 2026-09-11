@@ -95,6 +95,11 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // tool-definition factory and probes its global service (declare-and-degrade
   // — the probe is `ctx.get`, the peer dep keeps the module resolvable).
   'worktrees-tool': ['@khorsheed/dsh-worktrees'],
+  // The reverse edge is OPTIONAL integration, not a dependency: the core's badge
+  // lights up when the preset names the companion row (its module name rides the
+  // gate constant in the client bundle) and is invisible without it — declared so
+  // pack-dist's family-edge check passes.
+  'worktrees': ['@khorsheed/dsh-worktrees-tool'],
   // The room core/companion pair (same declare-and-degrade pattern).
   'room-tool': ['@khorsheed/dsh-room'],
   'ui-file-preview': ['@khorsheed/dsh-file-preview'],
@@ -102,7 +107,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent
   // as its only member). Sanctioned per the declare-and-degrade pattern.
-  'room': ['@khorsheed/dsh-local-agent'],
+  // ...plus the same optional reverse edge as worktrees (the self-hide
+  // criterion names the companion).
+  'room': ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-room-tool'],
 }
 
 /**

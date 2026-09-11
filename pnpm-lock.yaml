@@ -1494,6 +1494,9 @@ importers:
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent
+      '@khorsheed/dsh-room-tool':
+        specifier: workspace:*
+        version: link:../room-tool
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -1895,6 +1898,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.2
+      '@khorsheed/dsh-worktrees-tool':
+        specifier: workspace:*
+        version: link:../worktrees-tool
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
