@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-10-local-files-conversation-tab-retirement.md
-.agents/notes/implemented/simplification/2026-09-10-local-files-conversation-tab-retirement.md: ac7dd268b192392afb14ec0b85d2c484247f243e
-.agents/notes/implemented/simplification/2026-09-10-local-files-conversation-tab-retirement.zh.md: 271d44f0c28b979a6187f5690fc0d04d42402361
+.agents/notes/implemented/simplification/2026-09-10-local-files-conversation-tab-retirement.md: ce59f718f2bca86a8d2b62edf60402927cc35b9c
+.agents/notes/implemented/simplification/2026-09-10-local-files-conversation-tab-retirement.zh.md: 4a721963f619ab0f4c9dafc5271d20a471024d90
