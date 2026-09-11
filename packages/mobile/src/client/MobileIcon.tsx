@@ -1,5 +1,6 @@
-export type MobileIconName = 'back' | 'settings' | 'compose' | 'folder' | 'search' | 'scan' | 'close' | 'down' | 'right' | 'plus' | 'attachment' | 'commands' | 'shield'
+export type MobileIconName = 'members' | 'back' | 'settings' | 'compose' | 'folder' | 'search' | 'scan' | 'close' | 'down' | 'right' | 'plus' | 'attachment' | 'commands' | 'shield'
 const paths: Record<MobileIconName, string> = {
+  members: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8m8 .13a4 4 0 0 1 0 7.75',
   plus: 'M12 5v14M5 12h14', commands: 'm16 4-8 16', shield: 'm12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Zm-4 9 3 3 5-6',
   attachment: 'm9 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8M7 14l7-7a1 1 0 0 1 2 2l-7 7',
   back: 'm15 18-6-6 6-6', settings: 'M4 7h6m4 0h6M4 17h10m4 0h2M10 4v6m4 4v6',

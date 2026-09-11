@@ -5,16 +5,21 @@ type Receipt = { id: string; text: string }
 const textOf = (content: unknown): string => Array.isArray(content) ? content.map(b => b?.type === 'text' ? b.text : '').join('') : ''
 /** Read durable public chat records, never local optimistic submission echoes. */
 export function acceptedMessages(chat: unknown): Receipt[] {
-  const value = chat as { nodes?: { values?: () => readonly { kind?: string; seq?: number; content?: unknown }[] } } | undefined
-  return (value?.nodes?.values?.() ?? []).flatMap(node =>
-    (node.kind === 'user' || node.kind === 'steering') && typeof node.seq === 'number'
-      ? [{ id: `message:${node.seq}`, text: textOf(node.content) }] : [])
+  const value = chat as { nodes?: { values?: () => unknown } } | undefined
+  const nodes = value?.nodes?.values?.()
+  if (!Array.isArray(nodes)) return []
+  return nodes.flatMap(node => {
+    const data = node?.data ?? node
+    return (node?.kind === 'user' || node?.kind === 'steering') && typeof data?.seq === 'number'
+      ? [{ id: `message:${data.seq}`, text: textOf(data.content) }] : []
+  })
 }
 
 /** A successful admission may hide the keyboard only for this exact local send.
  * Failed sends, history loads, remote sends and newly typed drafts keep focus. */
 export class SubmissionFocus {
   private receipts = new Set<string>()
+  private highWater = -1
   private attempt: { editor: HTMLElement; text: string } | undefined
   constructor(private doc: Document) {
     doc.addEventListener('pointerdown', this.click, true)
@@ -35,7 +40,8 @@ export class SubmissionFocus {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && this.editor()) this.arm()
   }
   update(receipts: Receipt[]) {
-    const fresh = receipts.filter(r => !this.receipts.has(r.id))
+    const fresh = receipts.filter(r => !this.receipts.has(r.id) && (!r.id.startsWith('message:') || Number(r.id.slice(8)) > this.highWater))
+    for (const row of receipts) if (row.id.startsWith('message:')) this.highWater = Math.max(this.highWater, Number(row.id.slice(8)))
     this.receipts = new Set(receipts.map(r => r.id))
     const attempt = this.attempt
     if (!attempt || !fresh.some(r => r.text.trim() === attempt.text)) return

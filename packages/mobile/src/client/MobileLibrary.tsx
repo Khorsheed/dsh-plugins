@@ -1,14 +1,15 @@
-import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { GROUPING_KEY, groupSessions, recentSessions } from './navigation.ts'
 import type { LibraryGrouping, NavigationCapabilities } from './navigation.ts'
+import type { MobileRooms } from './rooms.ts'
 import { MobileIcon } from './MobileIcon.tsx'
 import { hasNativeAction, requestNativeAction } from './native.ts'
 
-type Props = PropsLocale<'mobile'> & { navigation: NavigationCapabilities; onOpen: () => void; onBeforeOpen?: () => void }
+type Props = PropsLocale<'mobile'> & { rooms?: MobileRooms; navigation: NavigationCapabilities; onOpen: () => void; onBeforeOpen?: () => void }
 
 /** Browse official metadata; the official workspace service remains the only navigation writer. */
-export function MobileLibrary({ navigation, onOpen, onBeforeOpen, t }: Props) {
+export function MobileLibrary({ rooms, navigation, onOpen, onBeforeOpen, t }: Props) {
   const sessionFeed = navigation.sessions.list, workspaceFeed = navigation.workspaces.list
   // Official feeds may expose prototype methods. Keep their receiver and stable subscriptions.
   const sessions = useSyncExternalStore(useCallback(listener => sessionFeed.subscribe(listener), [sessionFeed]), useCallback(() => sessionFeed.getSnapshot(), [sessionFeed]))
@@ -41,10 +42,10 @@ export function MobileLibrary({ navigation, onOpen, onBeforeOpen, t }: Props) {
             const next = new Set(previous); next.has(group.key) ? next.delete(group.key) : next.add(group.key); return next
           })}><MobileIcon name="folder" size={18}/><strong>{group.label}</strong><small>{group.rows.length}</small><MobileIcon name={open ? "down" : "right"} size={18}/></button> : <h2>{group.label}</h2>}
           {open && <ul>{group.rows.map(row => <li key={row.id}>
-            <button data-mobile-session aria-current={sessions.current === row.id ? 'page' : undefined} onClick={() => {
+            <button data-mobile-session data-mobile-session-id={row.id} aria-current={sessions.current === row.id ? 'page' : undefined} onClick={() => {
               try { onBeforeOpen?.(); navigation.workspace.openSession(row.id); setError(false); onOpen() } catch { setError(true) }
             }}>
-              <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><small>{grouping === 'time' ? row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) || t('unassignedWorkspace') : row.running ? t('running') : row.completed ? t('completed') : ''}</small></span>
+              <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><SessionMetadata id={row.id} cwd={row.cwd ?? ''} {...(rooms ? { rooms } : {})} t={t}/></span>
               {row.running ? <span data-mobile-activity role="status">{t('running')}</span> : <time dateTime={new Date(row.updatedAt).toISOString()}>{new Date(row.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time>}
             </button>
           </li>)}</ul>}
@@ -56,4 +57,19 @@ export function MobileLibrary({ navigation, onOpen, onBeforeOpen, t }: Props) {
       {searching ? <button data-mobile-search-cancel aria-label={t('cancel')} onClick={() => { setQuery(''); setSearching(false); input.current?.blur() }}><MobileIcon name="close"/></button> : hasNativeAction('scan') && <button data-mobile-scan aria-label={t('scan')} onClick={() => requestNativeAction('scan')}><MobileIcon name="scan"/></button>}
     </footer>
   </section>
+}
+
+const emptyRoomSubscribe = () => () => {}
+const emptyRoomSnapshot = () => 0
+function SessionMetadata({ id, cwd, rooms, t }: { id: string; cwd: string; rooms?: MobileRooms } & PropsLocale<'mobile'>) {
+  const ref = useRef<HTMLElement>(null)
+  useSyncExternalStore(rooms?.subscribe ?? emptyRoomSubscribe, rooms?.getSnapshot ?? emptyRoomSnapshot)
+  useEffect(() => {
+    if (!rooms?.available() || !ref.current) return
+    if (typeof IntersectionObserver === 'undefined') { void rooms.refresh(id); return }
+    const observer = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) { void rooms.refresh(id); observer.disconnect() } })
+    observer.observe(ref.current); return () => observer.disconnect()
+  }, [rooms, id])
+  const state = rooms?.get(id), count = state ? state.members.length : state === null || !rooms?.available() ? 1 : '…'
+  return <small ref={ref}>{cwd.split(/[\\/]/).filter(Boolean).at(-1) || t('unassignedWorkspace')} · {count} {t('memberUnit')}</small>
 }

@@ -99,3 +99,15 @@ Slot ownership may limit layout fidelity; private interfaces and DOM anchors may
 ### September 12 admission and surface correction
 
 Mobile observes accepted public chat/queue records after a local send gesture and dismisses only the same empty focused editor. It does not wrap the submit machine or clear drafts; failures and later drafts keep focus. The context meter stays in its original composer row beside Send. Theme-derived translucent surfaces use visible edges and opaque foregrounds, with a solid reduced-transparency fallback. The isolated rc1 browser check covers Enter submission and 393px geometry; native keyboard behavior still needs device confirmation.
+
+### September 12 optional collaboration implementation
+
+The approved mobile entry map is now implemented inside mobile: plus for input tools/invitation, the room header for roster management, message long-press for the original message callbacks, and the existing docks for goals/todos/TaskPilot. Room takeover queue controls call scoped `conversation.updateQueue` with the official edit/remove/steer vocabulary. Mobile adds an owned portal only while the recognized Room queue and mutation service exist; removal restores the original preview. No sibling source changes or foreign slot ownership are introduced.
+
+Room roster reads use an optional Remote with visible-row fetching and a 200-entry cache; only the active conversation refreshes periodically while foregrounded. Transport failure is unknown, not proof of an ordinary one-member session. Provider authentication is shown explicitly. Child navigation uses the host session id, never a synthetic chat. Running members must be stopped before removal through the mobile sheet.
+
+The source audit found that Room's initial positive `isRoom` cache fill does not refresh its composer election, although an in-place promotion does. Mobile contributes an always-declining chain entry and refreshes its registration after room metadata arrives, so the existing Room/approval/local-agent selectors re-evaluate. It never elects a mobile replacement composer or touches another plugin's store. Retire this presentation bridge once the Room owner supplies an initial-fill notification.
+
+A future mobile integration profile should contain base + web-app + mobile + message-tools + TaskPilot + Room + Local Agent core, with CLI provider packages chosen by the installer. Mobile remains independently removable. The isolated acceptance profile uses standard local tarballs and explicit family overrides for unreleased versions. This is an integration candidate, not a published community profile; mainline owns profile membership/version release under `docs/development.md`. No existing integration profile was modified.
+
+Evidence: [September 12 collaboration acceptance](../../../../docs/acceptance/mobile-collaboration-2026-09-12.md). Unauthenticated CLI dispatch, native keyboard dismissal and final phone appearance remain device/authentication acceptance items, rather than inferred from unit tests.

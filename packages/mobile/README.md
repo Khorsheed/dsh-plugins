@@ -75,6 +75,16 @@ The polished mobile view retains composer statistics and official message action
 
 The composer’s plus menu groups the existing attachment, command and permission triggers. The current permission name and available options remain official. Checked rc1 button anchors retain the original callbacks and confirmation flow, with original controls restored if the structure is unknown. Workspace/preset metadata sits below the mobile title; known desktop header controls are hidden, while unknown plugin contributions remain available.
 
+## Optional collaboration surfaces
+
+Install message-tools, TaskPilot, Room and the Local Agent family separately. Mobile reads their public capabilities and does not require them to boot. Long-press recognized user messages for the original copy/edit/withdraw actions; assistant messages use their own turn actions. Confirmations, disabled actions and mutation semantics remain with their owners. Unrecognized renderers retain their original controls.
+
+The plus sheet adds invitation when Room is available. A room's header opens a member sheet with role editing, idle-member removal, stop confirmation and navigation to an existing child session. Providers and sign-in availability come from the host; inviting does not dispatch a task. Room and Local Agent keep their own composers. Queue edit/remove/send-now use the same scoped Conversation API as the official dock (`steer` for send-now); attachment-bearing Room queue items keep edit disabled to avoid losing attachments. Official goal/todo and TaskPilot dock entries remain installed, with mobile sizing for their panels.
+
+The library preserves workspace identity and shows member counts for both room and ordinary sessions. Visible rows fetch optional Room metadata; failures remain unknown rather than displaying a false count. In this Room revision, an asynchronous initial cache fill can leave the composer election stale; a declining mobile chain entry refreshes the public slot election without replacing its winner. Pending interactions still take precedence.
+
+Successful local message admission dismisses the same empty focused editor; rejected submissions and newer drafts retain focus. The context meter stays beside Send. Glass-like surfaces use host light/dark colors with opaque text and a reduced-transparency fallback. See [collaboration acceptance](../../docs/acceptance/mobile-collaboration-2026-09-12.md).
+
 ## Compatibility
 
 | Host line | Verdict |

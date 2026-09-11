@@ -37,7 +37,7 @@ describe('mobile session navigation', () => {
     const page = render(<MobileLibrary {...f} t={t}/>)
     fireEvent.click(screen.getByRole('button', { name: en.byWorkspace, exact: true }))
     expect(localStorage.getItem(GROUPING_KEY)).toBe('workspace')
-    fireEvent.click(screen.getByRole('button', { name: /project/ }))
+    fireEvent.click(screen.getByRole('button', { name: /project/, expanded: true }))
     expect(screen.queryByText('First draft')).toBeNull()
     fireEvent.focus(screen.getByRole('searchbox'))
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'first' } })

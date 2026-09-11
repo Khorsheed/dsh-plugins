@@ -28,6 +28,11 @@ export class MobileSurface {
       for (const button of row.querySelectorAll<HTMLElement>('[data-sidebar-right-expand], [data-slot="conversation.session.header.utilities"] > span > button[aria-haspopup="menu"][aria-busy]')) {
         if (button.hasAttribute('data-sidebar-right-expand') || /^(更多操作|More actions)$/i.test(button.getAttribute('aria-label') ?? '')) this.mark(button, 'data-mobile-header-hidden')
       }
+      if (this.doc.querySelector('[data-mobile-members-open], [data-mobile-tools-open]')) {
+        for (const button of row.querySelectorAll<HTMLElement>('[data-slot="conversation.session.header.actions"] button')) {
+          if (/^(＋|\+)?\s*(邀请 agent|Invite agent)$/i.test(button.textContent?.trim() ?? '')) this.mark(button, 'data-mobile-header-hidden')
+        }
+      }
       // Collapse only a fully accounted-for row. Keep any plugin action or unknown text.
       const content = row.cloneNode(true) as HTMLElement
       content.querySelectorAll('[data-mobile-header-hidden], nav, svg').forEach(el => el.remove())
@@ -41,6 +46,13 @@ export class MobileSurface {
         if (trajectory && trajectory.getAttribute('aria-selected') !== 'true') {
           this.mark(trajectory, 'data-mobile-hidden-tab')
           if (tabs.querySelectorAll('[role="tab"]').length === 2) this.mark(tabs, 'data-mobile-hidden-tab')
+        }
+      }
+      if (this.doc.querySelector('[data-mobile-members-open]') && tabs) {
+        const memberTab = Array.from(tabs.querySelectorAll<HTMLElement>('[role="tab"]')).find(el => /^(成员|Members)$/i.test(el.textContent?.trim() ?? ''))
+        if (memberTab && memberTab.getAttribute('aria-selected') !== 'true') {
+          this.mark(memberTab, 'data-mobile-hidden-tab')
+          if (tabs.querySelectorAll('[role="tab"]:not([data-mobile-hidden-tab])').length === 1) this.mark(tabs, 'data-mobile-hidden-tab')
         }
       }
       const header = row?.parentElement

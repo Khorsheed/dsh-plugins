@@ -35,7 +35,7 @@ it('ignores history without send intent, IME Enter, desktop and unmounted observ
 })
 it('accepts only durable user/steering records, excluding optimistic echoes and assistant text', () => {
   expect(acceptedMessages({ nodes: { values: () => [
-    { kind: 'user', seq: 2, content: [{ type: 'text', text: 'yes' }] },
+    { kind: 'user', data: { seq: 2, content: [{ type: 'text', text: 'yes' }] } },
     { kind: 'assistant', seq: 3, content: [{ type: 'text', text: 'no' }] },
     { kind: 'user', content: [{ type: 'text', text: 'pending' }] },
   ] } })).toEqual([{ id: 'message:2', text: 'yes' }])

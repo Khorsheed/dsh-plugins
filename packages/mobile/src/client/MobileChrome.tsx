@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { MobileRoomNavigation } from './MobileRooms.tsx'
+import type { MobileRooms } from './rooms.ts'
 import { MobileIcon } from './MobileIcon.tsx'
 import { MobileLibrary } from './MobileLibrary.tsx'
 import type { MobileNavigation, NavigationCapabilities } from './navigation.ts'
@@ -9,6 +11,7 @@ import type { MobileSurface } from './surface.ts'
 import { hasNativeAction, reportChrome, requestNativeAction } from './native.ts'
 
 export interface MobileChromeInjected {
+  rooms?: MobileRooms
   navigation: MobileNavigation
   presentation: MobilePresentation
   toggleSidebar: () => void
@@ -28,7 +31,7 @@ function ConversationTitle({ navigation, fallback, prepareNavigation, surface }:
 }
 
 /** One visible navigation bar, with native connection sheets when supported. */
-export function MobileChrome({ presentation, toggleSidebar, connection, navigation, t }: MobileChromeInjected & PropsLocale<'mobile'>) {
+export function MobileChrome({ presentation, toggleSidebar, connection, navigation, rooms, t }: MobileChromeInjected & PropsLocale<'mobile'>) {
   const state = useSyncExternalStore(presentation.subscribe, presentation.getSnapshot)
   const wire = useSyncExternalStore(connection.state.subscribe, connection.state.getSnapshot)
   const available = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot)
@@ -85,7 +88,7 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
   return <>
     {!state.active && state.mode === 'desktop' && <button data-mobile-restore onClick={() => presentation.setMode('mobile')}>{t('restoreMobile')}</button>}
     {state.active && <>
-      {library && available && <MobileLibrary navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} />}
+      {library && available && <MobileLibrary {...(rooms ? { rooms } : {})} navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} />}
       {state.drawer && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
       <nav data-mobile-toolbar data-library={library} aria-label={t('menu')}>
         <button aria-label={library ? t('settings') : t('menu')} onClick={library ? openSettings : openLibrary}>
@@ -93,6 +96,7 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
         </button>
         <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
         <button data-mobile-new={!!available} aria-label={available ? t('newSession') : t('settings')} onClick={available ? startSession : openSettings}><MobileIcon name={available ? "compose" : "settings"}/></button>
+        {!library && available && rooms && <MobileRoomNavigation rooms={rooms} navigation={available} prepareNavigation={presentation.prepareNavigation} t={t}/>}
       </nav>
       {wire !== 'connected' && connectionExpanded && <div data-mobile-connection-status role="status"><span>{t(wire ?? 'connecting')}</span><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></div>}
     </>}

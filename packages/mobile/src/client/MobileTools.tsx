@@ -1,10 +1,13 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRuntime, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { ComposerActions, type ComposerAction } from './composerActions.ts'
+import { openMobileMembers } from './MobileRooms.tsx'
+import type { MobileRooms } from './rooms.ts'
 import { MobileIcon } from './MobileIcon.tsx'
 
 /** Own only the launcher and grouped navigation; action targets stay host-owned. */
-export function MobileTools({ t }: PropsLocale<'mobile'>) {
+export function MobileTools({ t, useSession, rooms }: PropsLocale<'mobile'> & PropsRuntime<'conversation.input.left'> & { rooms: MobileRooms }) {
+  const sessionId = useSession(s => s.sessionId)
   const seat = useRef<HTMLSpanElement>(null)
   const [actions, setActions] = useState<ComposerActions>()
   useLayoutEffect(() => {
@@ -12,9 +15,9 @@ export function MobileTools({ t }: PropsLocale<'mobile'>) {
     const controller = new ComposerActions(seat.current); setActions(controller)
     return () => controller.dispose()
   }, [])
-  return <span ref={seat} data-mobile-tools-seat>{actions && <Tools actions={actions} t={t}/>}</span>
+  return <span ref={seat} data-mobile-tools-seat>{actions && <Tools actions={actions} t={t} invite={rooms.available() ? () => openMobileMembers(sessionId, true) : undefined}/>}</span>
 }
-function Tools({ actions, t }: { actions: ComposerActions } & PropsLocale<'mobile'>) {
+function Tools({ actions, t, invite }: { actions: ComposerActions; invite: (() => void) | undefined } & PropsLocale<'mobile'>) {
   const targets = useSyncExternalStore(actions.subscribe, actions.getSnapshot)
   const dialog = useRef<HTMLDialogElement>(null), launcher = useRef<HTMLButtonElement>(null)
   const close = () => { dialog.current?.close(); launcher.current?.setAttribute('aria-expanded', 'false') }
@@ -31,6 +34,7 @@ function Tools({ actions, t }: { actions: ComposerActions } & PropsLocale<'mobil
         <button disabled={targets.commands.disabled} onClick={() => invoke('commands')}><MobileIcon name="commands"/>{t('commands')}</button>
       </div>
       {targets.permissions && <button data-mobile-tools-permission disabled={targets.permissions.disabled} onClick={() => invoke('permissions')}><MobileIcon name="shield"/><span>{t('permissions')}</span><small>{targets.permissions.label}</small><MobileIcon name="right" size={16}/></button>}
+      {invite && <button data-mobile-tools-permission onClick={() => { close(); invite() }}><MobileIcon name="members"/><span>{t('inviteMember')}</span><small/><MobileIcon name="right" size={16}/></button>}
     </dialog>
   </>
 }

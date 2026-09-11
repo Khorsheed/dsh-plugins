@@ -222,6 +222,12 @@ html[data-dsh-mobile] [data-slot="conversation.input.model"] { max-width:min(56v
 /* Keep the host context meter immediately before Send in the same flex row. */
 html[data-dsh-mobile] [data-composer-card] > div:last-child, html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child { flex-wrap:nowrap; }
 html[data-dsh-mobile] [data-slot="conversation.input.model"] { min-width:0; max-width:min(43vw,210px); flex:1 1 auto; }
+/* rc1's model slot uses display:contents. Size its root and restore the label
+   after folding the other input controls; unknown renderers keep their markup. */
+html[data-dsh-mobile] [data-slot="conversation.input.model"] > div { min-width:0; max-width:min(43vw,210px); }
+html[data-dsh-mobile] [data-slot="conversation.input.model"] > div > button[aria-haspopup="menu"]:has(> svg:first-child + span) { max-width:100%; height:44px; }
+html[data-dsh-mobile] [data-slot="conversation.input.model"] > div > button[aria-haspopup="menu"] > svg:first-child:has(+ span) { display:none; }
+html[data-dsh-mobile] [data-slot="conversation.input.model"] > div > button[aria-haspopup="menu"] > svg:first-child + span { display:block; }
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > span:has(> button[aria-haspopup="dialog"] > svg > circle) { position:static; flex:0 0 auto; }
 /* Translucency belongs to surfaces. Foreground colors remain fully opaque. */
 html[data-dsh-mobile] body { --mobile-shadow:0 6px 22px color-mix(in srgb,var(--dsw-alias-label-primary) 9%,transparent); --mobile-glass:color-mix(in srgb,var(--mobile-face) 86%,transparent); --mobile-edge:color-mix(in srgb,var(--dsw-alias-label-primary) 14%,transparent); }
@@ -233,5 +239,48 @@ html[data-dsh-mobile] :is([data-mobile-toolbar] button,[data-mobile-scan],[data-
 html[data-dsh-mobile] [data-mobile-icon] { flex-shrink:0; aspect-ratio:1; }
 @media (prefers-reduced-transparency: reduce) { html[data-dsh-mobile] body { --mobile-glass:var(--mobile-face); } }
 @supports not (backdrop-filter:blur(1px)) { html[data-dsh-mobile] body { --mobile-glass:var(--mobile-face); } }
+html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child { flex:1 1 0; justify-content:flex-end; }
+html[data-dsh-mobile] [data-composer-seat] div:has(> textarea):has(> div > button[aria-label]) { border-radius:25px; background:var(--mobile-glass); border:1px solid var(--mobile-edge); box-shadow:var(--mobile-shadow); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); }
+html[data-dsh-mobile] [data-composer-seat] textarea { font-size:16px; max-height:26dvh; }
+html[data-dsh-mobile] [data-composer-seat] div:has(> textarea) > div > button[aria-label] { width:44px; height:44px; min-width:44px; padding:0; border-radius:50%; }
+html[data-dsh-mobile] [data-composer-seat]:has([data-mobile-room-queue]) [data-testid="room-queue-strip"] { display:none; }
+[data-mobile-room-queue] { padding:4px 16px; }
+[data-mobile-queue-pill] { border:1px solid var(--mobile-edge); background:var(--mobile-glass); border-radius:20px; padding:8px 14px; min-height:36px; color:var(--dsw-alias-label-primary); }
+[data-mobile-queue-row] { padding:8px 0; border-bottom:1px solid var(--mobile-line); }
+[data-mobile-queue-row] p { overflow-wrap:anywhere; white-space:pre-wrap; font-size:14px; }
+[data-mobile-queue-row] button { min-height:44px; padding:8px 12px; }
+[data-mobile-queue-row] textarea { width:100%; background:var(--mobile-soft); color:var(--dsw-alias-label-primary); border:1px solid var(--mobile-line); border-radius:12px; padding:8px; }
+/* Mobile action surfaces retain each plugin's controls and callback semantics. */
+[data-mobile-message-menu] { position:fixed; margin:0; width:240px; max-width:calc(100vw - 24px); padding:8px; border-radius:22px; border:1px solid var(--mobile-edge); background:var(--mobile-glass); color:var(--dsw-alias-label-primary); box-shadow:var(--mobile-shadow); -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px); }
+[data-mobile-message-menu]::backdrop { background:#0002; }
+[data-mobile-message-menu] button { display:flex; gap:14px; align-items:center; width:100%; min-height:48px; padding:8px 14px; border:0; border-radius:14px; background:none; color:inherit; font:inherit; text-align:left; }
+[data-mobile-message-menu] button:active { background:var(--mobile-soft); }
+[data-mobile-message-menu] svg { width:20px; height:20px; flex:none; }
+[data-mobile-message-menu] button:disabled { opacity:.45; }
+[data-mobile-toolbar]:has([data-mobile-members-open]) > [data-mobile-new] { display:none; }
+[data-mobile-members-open] { position:relative; }
+[data-mobile-members-open] small { position:absolute; bottom:-3px; right:-2px; min-width:16px; border-radius:10px; font-size:10px; background:var(--mobile-soft); color:var(--dsw-alias-label-primary); }
+[data-mobile-room-dialog] { text-align:left; line-height:1.5; }
+[data-mobile-room-dialog] header button { background:var(--mobile-soft); }
+[data-mobile-room-dialog] label { display:block; font-size:13px; margin:16px 0; }
+[data-mobile-room-dialog] :is(input,textarea,select) { display:block; width:100%; box-sizing:border-box; border:1px solid var(--mobile-line); border-radius:14px; padding:12px; margin-top:6px; font:inherit; font-size:16px; background:var(--mobile-soft); color:var(--dsw-alias-label-primary); }
+[data-mobile-room-dialog] [role=alert] { color:var(--dsw-alias-state-danger-primary,#b73535); font-size:13px; }
+[data-mobile-room-hint], [data-mobile-room-dialog] details { font-size:12px; color:var(--dsw-alias-label-secondary); }
+[data-mobile-room-dialog] details { overflow-wrap:anywhere; }
+[data-mobile-member-row] { display:flex; align-items:center; gap:8px; padding:6px 0; }
+[data-mobile-member-chat] { display:flex!important; align-items:center; flex:1; min-width:0; gap:12px; text-align:left; padding:8px 0; }
+[data-mobile-member-chat]:disabled { opacity:1!important; }
+[data-mobile-member-chat] > span:last-child { min-width:0; }
+[data-mobile-member-chat] strong, [data-mobile-member-chat] small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+[data-mobile-member-chat] small { font-size:12px; color:var(--dsw-alias-label-secondary); }
+[data-mobile-avatar] { display:grid; place-items:center; width:42px; height:42px; flex:none; border-radius:15px; background:var(--mobile-soft); }
+[data-mobile-room-dialog] [data-mobile-room-primary] { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:46px; margin:18px 0 8px; border-radius:16px; background:var(--mobile-accent); color:var(--dsw-alias-bg-base); }
+[data-mobile-room-dialog] :is([data-mobile-room-back],[data-mobile-room-secondary] button,[data-mobile-confirm] button) { min-height:44px; padding:8px 16px; }
+[data-mobile-room-secondary] { display:flex; justify-content:space-between; }
+html[data-dsh-mobile] [data-queue-dock] { max-width:100%; }
+html[data-dsh-mobile] [data-queue-dock] button { min-height:40px; }
+html[data-dsh-mobile] [data-slot="conversation.input.dock"] section:has(> button[aria-expanded]) > button { min-height:36px; border-radius:20px; }
+html[data-dsh-mobile] [data-slot="conversation.input.dock"] section > ul[aria-label] { position:fixed; inset:auto 12px max(12px,env(safe-area-inset-bottom)); min-width:0; max-width:none; max-height:62dvh; border-radius:24px; padding:12px; z-index:1200; box-shadow:var(--mobile-shadow); }
+html[data-dsh-mobile] [data-slot="conversation.input.dock"] section > ul[aria-label] button { min-height:44px; }
 @media (prefers-reduced-motion: reduce) { [data-mobile-frame] * { scroll-behavior:auto !important; } }
 `
