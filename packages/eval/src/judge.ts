@@ -6,10 +6,14 @@
  * `dataseek.condition/1`, delegated exactly like a player, never a session
  * with tools. `human-final` stays a person's act and is written elsewhere.
  *
- * Frozen decision 9 is the whole design: the judge must not be a contestant,
- * the material is de-fingerprinted before it is shown, and every criterion is
- * sampled at least twice so the report can print an agreement number instead
- * of a single opinion.
+ * Decision 9 is the whole design, as relaxed on 2026-09-10: the material is
+ * de-fingerprinted before it is shown, every criterion is sampled at least
+ * twice so the report can print an agreement number instead of a single
+ * opinion, and a PANEL of judges may be named. A judge sharing a model with
+ * one of the players is no longer refused — every public leaderboard that
+ * evaluates all the models has that overlap by construction — it is RECORDED:
+ * the sample carries who judged, and a cell judged by its own model is marked
+ * `selfJudged` so the reader discounts it rather than never seeing it.
  *
  * Two layer disciplines hold here and nowhere else in the run loop:
  * - the `grading` layer (rubrics, oracle notes) and the `verify` layer
@@ -890,6 +894,14 @@ export interface JudgeSampleRecord {
   sample: number
   judgeCondition: string
   judgeSha: string
+  /** The judge condition's declared model — `validate` refuses a judge without one. */
+  judgeModel: string | null
+  /**
+   * This judge's model is the model the CELL ran (decision 9 as relaxed): the
+   * sample is a self-judgement. Not refused, and not silently averaged in
+   * either — the report marks the cell and the reader decides.
+   */
+  selfJudged: boolean
   promptSha: string
   verdicts: Array<Record<string, unknown>>
 }
@@ -904,6 +916,12 @@ export interface JudgeRunInput {
   now: () => number
   taskId: string
   parentSessionId: string
+  /**
+   * The CELL's own condition — what makes a judge's verdict a SELF-judgement.
+   * A judge whose declared model equals this one is judging its own family's
+   * work, which decision 9 now allows and the record marks.
+   */
+  cell: { condition: string; declaredModel: string | null }
   judges: readonly ResolvedJudge[]
   samples: number
   criteria: readonly RubricCriterion[]
@@ -934,6 +952,14 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
   const records: JudgeSampleRecord[] = []
   const failures: Array<{ judgeCondition: string; sample: number; error: string }> = []
   for (const judge of input.judges) {
+    // Two DIFFERENT condition ids naming the same model: the judge and the
+    // player are the same subject wearing two hats. `null` on either side is
+    // never a match — an unknown model cannot be shown to be the same one
+    // (and `validate` refuses a judge that leaves its model null).
+    const selfJudged = judge.declaredModel !== null && judge.declaredModel === input.cell.declaredModel
+    if (selfJudged) {
+      input.log(`judge ${judge.id}: SELF-JUDGED — its model ${JSON.stringify(judge.declaredModel)} is what condition ${input.cell.condition} ran; the sample is recorded and marked, not dropped`)
+    }
     const prompt = buildJudgePrompt({
       taskId: input.taskId,
       judgeConditionId: judge.id,
@@ -982,6 +1008,8 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
             kind: 'judge',
             judgeCondition: judge.id,
             judgeSha: judge.sha,
+            judgeModel: judge.declaredModel,
+            selfJudged,
             sample,
             attempt,
             childSessionId: run.id,
@@ -1001,6 +1029,8 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
             kind: 'judge',
             judgeCondition: judge.id,
             judgeSha: judge.sha,
+            judgeModel: judge.declaredModel,
+            selfJudged,
             sample,
             attempt,
             promptSha,
@@ -1013,7 +1043,7 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
         }
 
         if (outcome.ok) {
-          records.push({ sample, judgeCondition: judge.id, judgeSha: judge.sha, promptSha, verdicts: outcome.verdicts })
+          records.push({ sample, judgeCondition: judge.id, judgeSha: judge.sha, judgeModel: judge.declaredModel, selfJudged, promptSha, verdicts: outcome.verdicts })
           break
         }
         await input.mission.annotate(input.missionId, 'orchestrator', {

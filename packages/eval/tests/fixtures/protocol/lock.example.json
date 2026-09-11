@@ -2,5 +2,17 @@
   "schema": "dataseek.condition-lock/1",
   "condition": "claude-exec",
   "sha": "fb2bd2b2417d2c2f52b7fb3b133765e1a439ed89e318d685d20a014fa4632671",
-  "home": { "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74" }
+  "home": {
+    "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74"
+  },
+  "provisioned": {
+    "at": 1757500000000,
+    "cliVersion": "2.1.236",
+    "effective": {
+      "model": "claude-opus-5",
+      "reasoningEffort": null,
+      "permissions": "skip",
+      "endpoint": "api.anthropic.com"
+    }
+  }
 }

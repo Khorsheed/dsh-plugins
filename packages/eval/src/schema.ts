@@ -470,5 +470,27 @@ export const LOCK_SCHEMA: SchemaObject = {
       description: 'Present once provision has materialized the scoped home.',
       properties: { sha: { type: 'string' } },
     },
+    provisioned: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['at', 'effective'],
+      description: 'What `dsh-eval conditions provision` read back off the scope it provisioned. ADDITIVE in /1: a lock written before provision existed simply has no such key, and validate reads its absence as "provision has not run" rather than as a violation.',
+      properties: {
+        at: { type: 'integer', description: 'Epoch ms the provision ran.' },
+        cliVersion: { type: ['string', 'null'], description: "The harness CLI's own version as the CLI reported it; null when it could not be asked." },
+        effective: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['model', 'reasoningEffort', 'permissions', 'endpoint'],
+          description: "The four condition fields as the scope's effective settings answered them. null means the harness declares no such knob — which is itself the honest input, never a substituted guess.",
+          properties: {
+            model: { type: ['string', 'null'] },
+            reasoningEffort: { type: ['string', 'null'] },
+            permissions: { type: ['string', 'null'] },
+            endpoint: { type: ['string', 'null'] },
+          },
+        },
+      },
+    },
   },
 }

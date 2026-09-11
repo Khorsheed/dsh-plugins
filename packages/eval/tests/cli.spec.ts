@@ -124,9 +124,15 @@ describe('dsh-eval usage', () => {
     expect(noSub.code).toBe(2)
     expect(noSub.stderr).toContain('conditions wants a verb')
 
-    const badSub = await run(['conditions', 'provision', 'x'])
+    const badSub = await run(['conditions', 'frobnicate'])
     expect(badSub.code).toBe(2)
     expect(badSub.stderr).toContain('unknown conditions verb')
+
+    // provision IS a verb now, but not one this process can perform: it needs
+    // the harness family, so it refuses (exit 1) rather than reading as usage.
+    const provision = await run(['conditions', 'provision', 'x', '--repo', '/tmp'])
+    expect(provision.code).toBe(1)
+    expect(provision.stderr).toContain('/eval conditions provision')
 
     const extra = await run(['validate', T1_PLAN, 'extra'])
     expect(extra.code).toBe(2)

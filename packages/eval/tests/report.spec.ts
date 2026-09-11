@@ -629,6 +629,120 @@ describe('report — S7 judge double sampling', () => {
     const { summaryPath } = await writeEvalReport(bundle)
     expect(readFileSync(summaryPath, 'utf8')).toContain('双采样判据 2 条，完全一致 2 条')
   })
+
+  it('carries NO judge key for an envelope written before the model was recorded — an older bundle recomputes byte-identically', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'pre-panel',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+      missions: [{
+        id: 'P0-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m1')),
+          annotations: [{
+            ns: 'llm-draft', by: 'eval-orchestrator', createdAt: 1,
+            // The T9 shape: a judge condition, and nothing about its model —
+            // because back then a judge could not be a player at all.
+            payload: { sample: 1, judgeCondition: 'judge-r1', judgeSha: sha('7d'), promptSha: sha('9e'), verdicts: [verdict('P0', 'R1', true, 'judge-r1')] },
+          }],
+        }],
+      }],
+    })
+    const report = await analyzeBundle(bundle)
+    expect(report.rows[0]).not.toHaveProperty('judge')
+    expect(report.judgeAssignments).toEqual([])
+    expect(report.judge.crossJudged).toBe(0)
+  })
+})
+
+// --- T31 · the judge panel (decision 9, relaxed) -----------------------------
+
+describe('report — the judge panel: who judged, and which cells judged themselves', () => {
+  /** One sample envelope of the panel shape: judge identity beside the verdicts. */
+  const panelSample = (judge: string, model: string, selfJudged: boolean, n: number, pass: boolean): Record<string, unknown> => ({
+    sample: n,
+    judgeCondition: judge,
+    judgeSha: sha('7d'),
+    judgeModel: model,
+    selfJudged,
+    promptSha: sha('9e'),
+    verdicts: [verdict('P0', 'R1', pass, judge)],
+  })
+
+  /** One cell judged by a two-judge panel; `twinAgrees` decides whether they agree. */
+  function panelBundle(twinAgrees: boolean): string {
+    return writeBundle(tmpTree(), {
+      runId: 'panel',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+      missions: [{
+        id: 'P0-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m1')),
+          annotations: [
+            { ns: 'llm-draft', by: 'eval-orchestrator', createdAt: 1, payload: panelSample('judge-twin', 'gpt-x', true, 1, true) },
+            { ns: 'llm-draft', by: 'eval-orchestrator', createdAt: 2, payload: panelSample('judge-twin', 'gpt-x', true, 2, true) },
+            { ns: 'llm-draft', by: 'eval-orchestrator', createdAt: 3, payload: panelSample('judge-other', 'other-model', false, 1, twinAgrees) },
+            orchestratorNote('stage1', 1, 1000, 100),
+          ],
+        }],
+      }],
+    })
+  }
+
+  it('puts the judge on every llm-draft row of results.jsonl', async () => {
+    const report = await analyzeBundle(panelBundle(true))
+    const rows = report.rows.filter(row => row.ns === 'llm-draft')
+    // The rows share a criterion, so the sort is stable and they keep the
+    // order the samples landed in.
+    expect(rows.map(row => row.judge)).toEqual([
+      { condition: 'judge-twin', model: 'gpt-x', selfJudged: true, sample: 1 },
+      { condition: 'judge-twin', model: 'gpt-x', selfJudged: true, sample: 2 },
+      { condition: 'judge-other', model: 'other-model', selfJudged: false, sample: 1 },
+    ])
+  })
+
+  it('lists who judged each cell and marks the self-judged one', async () => {
+    const report = await analyzeBundle(panelBundle(true))
+    expect(report.judgeAssignments).toEqual([{
+      missionId: 'P0-dsh-exec-rep1',
+      task: 'P0',
+      condition: 'dsh-exec',
+      rep: 1,
+      judges: [
+        { condition: 'judge-other', model: 'other-model', selfJudged: false, samples: 1, verdicts: 1 },
+        { condition: 'judge-twin', model: 'gpt-x', selfJudged: true, samples: 2, verdicts: 2 },
+      ],
+    }])
+  })
+
+  it('keeps the repeated-sample κ per judge and adds a cross-judge line beside it', async () => {
+    const agreeing = await analyzeBundle(panelBundle(true))
+    // judge-twin answered twice and agreed with itself: ONE multi-sampled
+    // criterion, not one polluted by the other judge's single answer.
+    expect(agreeing.judge.multiSampled).toBe(1)
+    expect(agreeing.judge.llmAgreement).toEqual({ agreed: 1, total: 1 })
+    expect(agreeing.judge.crossJudged).toBe(1)
+    expect(agreeing.judge.crossAgreement).toEqual({ agreed: 1, total: 1 })
+
+    const split = await analyzeBundle(panelBundle(false))
+    expect(split.judge.multiSampled).toBe(1) // judge-twin still agrees with itself
+    expect(split.judge.llmAgreement).toEqual({ agreed: 1, total: 1 })
+    expect(split.judge.crossAgreement).toEqual({ agreed: 0, total: 1 }) // the panel does not
+    expect(split.judge.selfJudgedCriteria).toBe(1)
+  })
+
+  it('prints the panel line, the assignment table and the self-judged caveat in summary.md', async () => {
+    const bundle = panelBundle(false)
+    const { summaryPath } = await writeEvalReport(bundle)
+    const summary = readFileSync(summaryPath, 'utf8')
+
+    expect(summary).toContain('每格由谁判')
+    expect(summary).toContain('judge-twin（gpt-x · 2 采样） **自评**')
+    expect(summary).toContain('judge-other（other-model · 1 采样）')
+    expect(summary).toContain('跨判官（判官面板 2 位')
+    expect(summary).toContain('自评判据 1 条')
+  })
 })
 
 // --- S8 \u00b7 writtenBy tool: red flag ---------------------------------------------------
