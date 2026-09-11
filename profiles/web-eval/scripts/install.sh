@@ -53,7 +53,8 @@ PRESET_IDS="eval"
 # dependency), then the providers, then the independents.
 UNPUBLISHED_DIRS="local-agent local-agent-tool-subagent local-agent-dsh-headless \
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
-capability-catalog datasets eval inline-html-render lab local-files mission"
+capability-catalog datasets eval inline-html-render lab local-files mission \
+mission-tool datasets-tool eval-tool"
 
 SOURCE=""
 FRESH=""

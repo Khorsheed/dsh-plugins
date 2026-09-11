@@ -25,6 +25,7 @@
     "src/client/contract.ts",
     "src/client/store.ts",
     "src/client/locales.ts",
-    "src/client/MissionsView.tsx"
+    "src/client/MissionsView.tsx",
+    "src/client/preset-visibility.ts"
   ]
 }

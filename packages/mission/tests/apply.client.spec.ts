@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-/** The browser half's apply: Remote mount, the conversation.view entry, the injected face, teardown. */
+/** The browser half's apply: Remote mount, the conversation.view entry (registered exactly while the current session's preset composition grants the mission tool row), the injected face, teardown. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import type { MissionsViewInjected } from '../src/client/contract.ts'
+import { MISSION_TOOL_ROW_MODULE, type MissionPluginInventorySnapshot } from '../src/client/preset-visibility.ts'
 
 /** Stub Remote namespace: carried result envelopes like production. */
 function remoteStub() {
@@ -22,8 +25,25 @@ function remoteStub() {
   }
 }
 
-/** Real cordis composition with the slot registry, locale runtime, and stub remotes. */
-async function bench(options: { mountFails?: boolean } = {}) {
+/** The composition answer used by the gate tests. */
+const DEV: MissionPluginInventorySnapshot = {
+  agentPresets: [
+    { id: 'dev', rows: [{ moduleName: MISSION_TOOL_ROW_MODULE }] },
+    { id: 'standard', rows: [{ moduleName: '@deepseek-ai/dsh-tool-bash' }] },
+  ],
+}
+
+/** Flush the visibility controller's inventory fetch. */
+async function settled(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
+
+/** Real cordis composition with the slot registry, locale runtime, a session list, and stub remotes. */
+async function bench(options: {
+  mountFails?: boolean
+  preset?: string
+  composition?: MissionPluginInventorySnapshot
+} = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -35,6 +55,19 @@ async function bench(options: { mountFails?: boolean } = {}) {
   ctx.provide('remote', remoteService as never)
   const remote = remoteStub()
   ctx.provide('remote.mission', remote as never)
+  // No preset on the row = the fail-open default; a named preset reads the composition.
+  const list = createSnapshotStore({
+    ids: ['s1'],
+    byId: options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } },
+    current: 's1' as SessionId,
+    phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+  })
+  ctx.provide('sessions', { list, open: vi.fn() } as never)
+  if (options.composition !== undefined) {
+    ctx.provide('remote.pluginInventory', {
+      list: async () => ({ ok: true as const, value: options.composition }),
+    } as never)
+  }
   const slots = ctx.get('slots') as SlotRegistry
   // The view ring as ui-conversation declares it in production.
   slots.register({
@@ -48,7 +81,7 @@ describe('mission client apply', () => {
   afterEach(() => { document.head.innerHTML = '' })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'remote', 'locale'])
+    expect(inject).toEqual(['slots', 'remote', 'locale', 'sessions'])
   })
 
   it('mounts the Remote and registers the missions view entry', async () => {
@@ -65,6 +98,28 @@ describe('mission client apply', () => {
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('leaves the tab registered when the current preset composition names the mission-tool row', async () => {
+    const { ctx, slots } = await bench({ preset: 'dev', composition: DEV })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('drops the tab registration in a session whose preset grants no mission tools', async () => {
+    const { ctx, slots } = await bench({ preset: 'standard', composition: DEV })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  it('keeps the tab when the composition cannot be read (fail-open)', async () => {
+    // No `remote.pluginInventory` namespace at all — a pre-0.1.5 host.
+    const { ctx, slots } = await bench({ preset: 'standard' })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 

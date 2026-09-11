@@ -72,6 +72,14 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // name the row — a dsh.bundle declaration would auto-mount the tools at
   // the profile root, exactly what the split removes.
   'room-tool',
+  // mission-tool / datasets-tool / eval-tool are the same shape for the
+  // mission / datasets / eval cores (M4'③): each only makes its tool module
+  // resolvable, and an agent preset names its row — a dsh.bundle declaration
+  // would auto-mount the tools (and their guidance sections) at the profile
+  // root, exactly what the split removes.
+  'mission-tool',
+  'datasets-tool',
+  'eval-tool',
 ]
 
 /**
@@ -102,6 +110,21 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'worktrees': ['@khorsheed/dsh-worktrees-tool'],
   // The room core/companion pair (same declare-and-degrade pattern).
   'room-tool': ['@khorsheed/dsh-room'],
+  // The mission / datasets / eval core/companion pairs (M4'③, same pattern,
+  // zero deviations): each companion consumes its core's `./tool` definition
+  // factory and probes the core's global service.
+  'mission-tool': ['@khorsheed/dsh-mission'],
+  'datasets-tool': ['@khorsheed/dsh-datasets'],
+  'eval-tool': ['@khorsheed/dsh-eval'],
+  // The same optional reverse edges as worktrees/room: each core's self-hide
+  // criterion names its companion by module name (a data string in the client
+  // bundle, not an import), declared so pack-dist's family-edge check passes.
+  'mission': ['@khorsheed/dsh-mission-tool'],
+  'datasets': ['@khorsheed/dsh-datasets-tool'],
+  // eval has no browser half, so no artifact of it names the companion; the
+  // peer edge exists for the loader-level family contract alone (deploy:3080
+  // packs peer companions), declared here so the intent is on the record.
+  'eval': ['@khorsheed/dsh-eval-tool'],
   'ui-file-preview': ['@khorsheed/dsh-file-preview'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested

@@ -2,6 +2,14 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 单实例多模式 M4'③：mission / datasets / eval 工具行拆分
+
+- 三个新伴生包（0.1.0）：`@khorsheed/dsh-mission-tool`（12 个 mission 工具 + `tool:mission` 段；`tools`: all / read / none）、`@khorsheed/dsh-datasets-tool`（8 个 datasets 工具 + `datasets:tools` 段；`tools`: all / read / authoring / none）、`@khorsheed/dsh-eval-tool`（3 个只读 eval 工具 + `tool:eval` 段；`tools`: all / none）——只注册工具与提示词段、不发布服务、不声明 `dsh.bundle`（依赖安装仅可解析、不自挂载），由各 agent preset 的 `agent.cordis.yml` 按名引用；core 缺席时记一条日志后静默不注册
+- **BREAKING**（`@khorsheed/dsh-mission` / `-datasets` / `-eval`）：三个 core 不再在 profile 根注册模型工具、不再贡献工具提示词段，`tools` 配置键从 core 移除并搬到伴生行（迁移两条：装伴生包 + preset 引用该行）；服务 / CLI / slash / Typert Remote / 会话 tab 全部不变。工具定义工厂经各 core 新增的 `./tool` 子路径导出，伴生包零复制复用业务逻辑
+- 任务 tab（mission）与数据集 tab（datasets）按 preset 组合自隐（M3'③/M3'④）：当前会话的预设组合里有对应伴生行才注册，读不到组合数据 fail-open，「有页签没有工具」的空体按钮不再出现
+- 评测包的 `eval` 预设接管原先挂在 profile 根的按域档位（`mission-tool: read` / `datasets-tool: authoring` / `eval-tool: all`），`profiles/web-eval/cordis.patch.yml` 不再给三个 core 写 `tools`；三个伴生包加进该 pack 的成员清单与源码模式的 `UNPUBLISHED_DIRS`（profile 的 `autoInstallPeers: false`，peer 不会被自动安装）。web-dev 的 dev preset **刻意不引用**这三行——三个 core 不在它的成员清单里，缺行会让整个 preset 报 broken
+- 修复一处观察：标准模式会话的拼装提示词此前带 mission / datasets / eval / Agent Teams 四段（2026-09-11 session-aabca0ed 轨迹为证）；拆分后标准模式恢复干净默认
+
 ## Unreleased —— 单实例多模式：工具行拆分（worktrees ① + room ②）
 
 - 新伴生包 `@khorsheed/dsh-worktrees-tool`（0.1.0）：模型可见的 `worktrees` 工具按会话授予——只注册工具、不发布服务、不声明 `dsh.bundle`（依赖安装仅可解析、不自挂载），由各 agent preset 的 `agent.cordis.yml` 按名引用；core 的服务缺席时静默不注册

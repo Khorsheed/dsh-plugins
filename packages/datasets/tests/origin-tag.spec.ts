@@ -1,31 +1,18 @@
-/** Tool origin tagging (AGENTS.md § Tool origin tagging; seam S12): every
- * model-visible tool this package registers carries the `dsh.tool.origin`
- * tag naming this package — the catalog's plugin section depends on it. */
+/** Tool origin tagging (AGENTS.md § Tool origin tagging; seam S12): the core's
+ * definition factory leaves every tool untagged — the tag names the MOUNTING
+ * package, so it belongs to the companion `@khorsheed/dsh-datasets-tool` (that
+ * package's spec carries the positive assertion). */
 import { describe, expect, it } from 'vitest'
-import { apply } from '../src/index.ts'
+import { datasetToolDefinitions } from '../src/tool.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 
 describe('tool origin tagging', () => {
-  it('tags every registered tool as plugin-owned by this package', () => {
-    const registered: Record<symbol, unknown>[] = []
-    const ctx = {
-      provide: () => {},
-      plugin: () => {},
-      get: () => undefined,
-      commands: { register: () => () => {} },
-      tools: {
-        register: (def: Record<symbol, unknown>) => {
-          registered.push(def)
-          return () => {}
-        },
-      },
-    }
-    // apply only stores the paths; no service method is called here.
-    apply(ctx as never, { repo: '', worktreeRoot: '' })
-    expect(registered.length).toBeGreaterThan(0)
-    for (const def of registered) {
-      expect(def[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-datasets' })
+  it('leaves every definition untagged, delegating attribution to the companion row', () => {
+    const definitions = datasetToolDefinitions({} as never, { defaultRepo: '', group: 'all' })
+    expect(definitions.length).toBeGreaterThan(0)
+    for (const definition of definitions) {
+      expect((definition as Record<symbol, unknown>)[ORIGIN]).toBeUndefined()
     }
   })
 })

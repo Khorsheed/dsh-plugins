@@ -231,7 +231,9 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 
 ## 模型工具（只读，三个）
 
-agent 在一次实验里只出现两次：规划期起草、分析期读结论。两次都不需要写。所以本包注册的模型工具**只有三个，全是读**，并且刻意没有第四个——能起 run 的 agent 就能起一次人没批准的 run。
+**本包不再注册任何模型工具（BREAKING）**：下面这三个只读工具与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，由 agent preset 按会话授予。迁移两步：把伴生包作为依赖安装，并在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval-tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**伴生行**的工具面；服务面、CLI 与 `/eval` slash 仍归本包。
+
+agent 在一次实验里只出现两次：规划期起草、分析期读结论。两次都不需要写。所以模型工具**只有三个，全是读**，并且刻意没有第四个——能起 run 的 agent 就能起一次人没批准的 run。
 
 | 工具 | 答什么 |
 |---|---|
@@ -241,7 +243,7 @@ agent 在一次实验里只出现两次：规划期起草、分析期读结论�
 
 写类动词一个都不开：run 由人在会话里用 `/eval run` 发起，materialize / submit / transition / annotate / archive / export / finalize 归编排器服务面与人的 CLI（profile 的[「工具按域开放」](../../profiles/web-eval/README.md#工具按域开放)）。
 
-配置项 `tools: 'all' | 'none'`（缺省 `all`）。没有更细的分组，因为没有可分的：本包一个写工具都不注册。`none` 时插件只留 slash、CLI 与服务面。
+配置项 `tools: 'all' | 'none'`（缺省 `all`）随之搬到**伴生行**，本行不再有这个键。没有更细的分组，因为没有可分的：模型工具面一个写工具都不注册。`none`（或没有引用这一行）时模型看不到这三个工具，本包的服务面、CLI 与 `/eval` slash 照常。
 
 工具注册走**延迟注入**（`ctx.inject(['tools'], …)`）而不是 apply 期的 `ctx.get('tools')` 探测：探测会和工具注册表自己的挂载顺序赛跑并且输，工具静默地一个都注册不上，还没有任何东西会说（room 与 worktrees 都踩过并修过同一处）。延迟注入在注册表出现时才触发，在没有注册表的组合里永不触发——那样的组合保留 slash、CLI 与服务面，绝不炸启动。`tool:eval` 提示词段同理走 `systemPrompt` 的延迟注入。
 
@@ -308,7 +310,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：
 
-- 三个只读工具与 `tool:eval` 提示词段走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，slash、CLI 与服务面照常，不炸启动。
+- 三个只读工具与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，slash、CLI 与服务面照常，不炸启动；`tools: 'none'`（或没有引用这一行）只是让模型看不到这三个工具。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。本包没有浏览器半，不存在 tab 自隐。
 - 面向早于 T11 的 local-agent：委派 `cwd` 被忽略、子代理继承父会话 cwd，格子因收不到产出文件而如实拒绝（submission-rejected），不会错记；`delegationOf` 与 settled 回读均缺席时 `usage` 与 `model.observed` 记 null，「受试对象一致」在报告里降为不可核验，而不是假定成立。判官同样靠 `cwd` 收 `verdicts.json`，没有 cwd 时该样本按解析失败记，不会误判。
 - `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（I5）。
 - 没有 `ctx.lab` 的组合照常跑宿主路径；只有带 `unit` 段的 plan 会因为缺 lab 而被拒绝，并在拒绝语里点名。

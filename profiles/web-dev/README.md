@@ -124,7 +124,7 @@ sh scripts/restart-into-web-dev.sh                          # 重启生效
 
 ## 自带 Agent 预设：开发模式（dev）
 
-pack 自带一个**开发模式** preset（`presets/dev`，官方「标准模式」组合为底）：外加三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具三件套（`room_invite` / `room_task` / `room_message`），全部**按会话授予**——工具行只在本 preset 的组合里，不进 profile 根。`install.sh` / `update.sh` 把它卸进 `$DSH_HOME/.agent-presets/dev`（整体替换——它是 pack 装置，不是个人偏好；同名自建会被覆盖，自己的预设请用别的 id）。建会话时在 preset chip 选「开发模式」即可；默认 preset 仍是「标准模式」，要改默认在**设置 → Agent 预设**里选（patch 层是你的，pack 不钉）。
+pack 自带一个**开发模式** preset（`presets/dev`，官方「标准模式」组合为底）：外加三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具三件套（`room_invite` / `room_task` / `room_message`），全部**按会话授予**——工具行只在本 preset 的组合里，不进 profile 根。`install.sh` / `update.sh` 把它卸进 `$DSH_HOME/.agent-presets/dev`（整体替换——它是 pack 装置，不是个人偏好；同名自建会被覆盖，自己的预设请用别的 id）。建会话时在 preset chip 选「开发模式」即可；默认 preset 仍是「标准模式」，要改默认在**设置 → Agent 预设**里选（patch 层是你的，pack 不钉）。mission / datasets / eval 的伴生工具行**刻意不在这里**：三个 core 不在本 pack 的成员清单里（孵化中），而伴生包运行时要 import core 的 `./tool` 工厂，缺行会让整个 dev preset 报 broken——等它们上架、并加进 `profiles/web-dev/package.json` 之后再补（见 CHANGELOG）。
 
 ## 自定义 Agent 预设
 

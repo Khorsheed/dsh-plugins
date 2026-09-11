@@ -3,14 +3,19 @@
  * entry in the conversation's `conversation.view` tab ring (beside chat and
  * trajectory). The mission Remote is mounted here through the official
  * `ctx.remote.$mount` channel, so the plugin distributes as an independent
- * package with no edits to core packages. Composing this plugin out of
- * cordis.yml removes the tab.
+ * package with no edits to core packages. The tab self-hides (M3'③) unless
+ * the current session's preset composition names the
+ * `@khorsheed/dsh-mission-tool` row — the tools it views are granted there,
+ * and a viewer over a toolset the session never got is an empty shell.
+ * Composing this plugin out of cordis.yml removes the tab.
  * @module @khorsheed/dsh-mission/client
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the ctx.sessions service merge (ISessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -25,22 +30,25 @@ import type {
 import type { MissionRemote, MissionsViewInjected } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
 import { MissionsView } from './MissionsView.tsx'
+import { MissionPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createMissionsViewStore } from './store.ts'
 
 export { MissionsView }
 
-/** Required services: the slot registry, the remote channel, and the copy.
+/** Required services: the slot registry, the remote channel, the copy, and the
+ * session list (the preset-composition criterion reads the current session).
  * `remote.mission` is deliberately NOT an inject: this plugin both mounts the
  * namespace (through `$mount` below) and consumes it, and the Cordis property
  * proxy only resolves services declared in `inject` or provided by an ancestor
  * fiber — declaring it would deadlock the loader. The mount is awaited and the
  * namespace is then read back from the global store with `ctx.get` (the
  * ui-file-preview precedent). */
-export const inject = ['slots', 'remote', 'locale']
+export const inject = ['slots', 'remote', 'locale', 'sessions']
 
 /**
- * Client plugin body: mount the Remote, register the dictionaries and the
- * missions view tab.
+ * Client plugin body: mount the Remote, register the dictionaries, and
+ * inject the missions view tab (registered exactly while the current
+ * session's preset composition grants the mission tool row).
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -62,22 +70,35 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // spawned).
   const remote = ctx.get('remote.mission') as MissionRemote
 
-  ctx.slots.inject('conversation.view', () => ctx.slots.register({
-    name: 'conversation.view',
-    id: 'missions',
-    order: 35,
-    locale: NS,
-    label: () => t('open'),
-    store: createMissionsViewStore,
-    inject: (_sessionId: SessionId): MissionsViewInjected => ({
-      fetchQueue: (sid: SessionId, request: MissionQueueRequest) => remote.queue(sid, request),
-      fetchMission: (sid: SessionId, request: MissionGetRequest) => remote.get(sid, request),
-      retryMission: (sid: SessionId, request: MissionRetryRequest) => remote.retry(sid, request),
-      checkReleasable: (sid: SessionId, request: MissionRefRequest) => remote.isReleasable(sid, request),
-      planExport: (sid: SessionId, request: MissionExportPlanRequest) => remote.exportPlan(sid, request),
-      exportRun: (sid: SessionId, request: MissionExportRequest) => remote.exportRun(sid, request),
-    }),
-  }, MissionsView))
+  // The M3'③ self-hide criterion for the 任务 tab: the official preset
+  // composition data, fail-open on every unreadable path. Hidden means NO
+  // registration (the tab strip's buttons enumerate registrations), so the
+  // strip never carries an empty-body button.
+  const chrome = new MissionPresetVisibility(ctx)
+  const missionsToggle = new RegistrationToggle(
+    () => ctx.slots.register({
+      name: 'conversation.view',
+      id: 'missions',
+      order: 35,
+      locale: NS,
+      label: () => t('open'),
+      store: createMissionsViewStore,
+      inject: (_sessionId: SessionId): MissionsViewInjected => ({
+        fetchQueue: (sid: SessionId, request: MissionQueueRequest) => remote.queue(sid, request),
+        fetchMission: (sid: SessionId, request: MissionGetRequest) => remote.get(sid, request),
+        retryMission: (sid: SessionId, request: MissionRetryRequest) => remote.retry(sid, request),
+        checkReleasable: (sid: SessionId, request: MissionRefRequest) => remote.isReleasable(sid, request),
+        planExport: (sid: SessionId, request: MissionExportPlanRequest) => remote.exportPlan(sid, request),
+        exportRun: (sid: SessionId, request: MissionExportRequest) => remote.exportRun(sid, request),
+      }),
+    }, MissionsView),
+    () => chrome.show(ctx.sessions.list.getSnapshot().current),
+  )
+  ctx.slots.inject('conversation.view', () => {
+    missionsToggle.setReady(true)
+    return () => { missionsToggle.setReady(false) }
+  })
+  ctx.effect(() => chrome.subscribe(() => { missionsToggle.sync() }), 'mission: missions tab visibility')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
