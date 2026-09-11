@@ -9,6 +9,7 @@ monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGE
 - **BREAKING**（`@khorsheed/dsh-worktrees`）：core 不再在 profile 根注册该模型工具（迁移路径见包 CHANGELOG/README）；工具定义工厂 `defineWorktreesTool(service)` 经 `./tool` 导出供伴生包零复制复用
 - **BREAKING**（`@khorsheed/dsh-room`）：core 不再在 profile 根注册 3 个 room 模型工具（迁移路径见包 CHANGELOG/README）；room 服务/成员 UI/Remote 不变
 - worktrees 徽标显隐默认判据改读官方 `pluginInventory` preset 组合数据（组合里有工具行则显示），`visiblePresets` 保留为手动 override，数据不可得 fail-open
+- room 会话 chrome（「邀请 agent」chip +「成员」tab）按同一判据自隐（M3'②）：组合无 `@khorsheed/dsh-room-tool` 行则隐藏，读不到 fail-open，已是 room 的会话始终保留；成员 tab 走注册层隐藏（注销条目，不留空体按钮）
 - web-dev 场景包新增开发模式 preset（`profiles/web-dev/presets/dev`，官方 standard 为底 + 三家委派工具行 + worktrees 工具行 + room 工具行），install.sh/update.sh 负责卸进 `$DSH_HOME/.agent-presets/dev`
 - 0.1.5-rc.1 活体验收通过：A3/B1/C1/C2/D1/D3 + M4'② room 行活挂载（3299 实例，截图 `scratch-screenshots/m4-*.png`）
 

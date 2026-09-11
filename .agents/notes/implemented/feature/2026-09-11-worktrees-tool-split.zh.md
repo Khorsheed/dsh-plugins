@@ -41,3 +41,7 @@ Status: implemented
 ## 附记（同日）：room 对（M4'②）——模式零改动复用
 
 `@khorsheed/dsh-room` 在 worktrees 对落地几小时后按同一形态完成拆分，**零形状变化**——这正说明该模式是模板而非一次性特例：room core 的三个工具工厂（`roomInviteTool` / `roomTaskTool` / `roomMessageTool`）把 origin tag 挪给注册方、经 core 的 `./tool` 导出；伴生包 `@khorsheed/dsh-room-tool` 以 `inject = []` 挂载、`ctx.get('room')` 探测、core 缺席静默不注册；`RoomService` 构造器里的 profile 根注册删除（BREAKING，同样两行迁移）；dev preset 加裸 `- id: room-tool` 行（无配置——可邀请 provider 名单由工具调用时从全局 room 服务读取）。checker 增加 `room-tool → @khorsheed/dsh-room` 边与一条 `NO_OWN_PATCH`。重建后的 3299 体验实例实测：dev preset「会话插件」组 33 行含 `room-tool` 且 `fiberPhase: active`，standard 组无此行；dev 会话头出现「邀请 agent」chip 与「成员」tab；console 零错误（证据：`scratch-screenshots/m4-room-dev-session.png`）。一条 room 特有的记录：既有 `tool.host.spec.ts` 本就在真实组合上测工厂行为，core 侧改为直接由工厂构建并钉住「不再注册」不变量，注册/origin 覆盖移到伴生包 spec——两对里最顺滑的一次测试迁移。
+
+## 附记（同日）：room 会话 chrome 自隐（M3'②）
+
+M3' 的另一半在 room 落地：「邀请 agent」头部 chip 与「成员」tab 只在当前会话的 preset 组合含 `@khorsheed/dsh-room-tool` 行时呈现——徽标判据包内内联（`src/client/preset-visibility.ts`；helper 包的取舍维持暂缓，两份内联仍比抽包便宜）。两条值得记录的决策：① **成员 tab 的隐藏发生在注册层**——`conversation.view` 的 tab 按钮由 ui-conversation 的 `viewTabs()` 从槽位注册表枚举，没有按会话谓词，组件 `return null` 只会留下一个空体按钮；`RegistrationToggle` 在判据通过时注册、不通过时注销（槽位自身的订阅会重渲染 tab strip——与 composer 晋升 bump 同一机制），而头部 chip 在会话树内按会话渲染，与 worktrees 徽标同走组件级。② **真 room 豁免**：已是 room 的会话无论 preset 授予什么都保留全部 chrome——纯组合判据会把拆分前创建的历史 room 搞残（E1）；豁免读 RoomStore 的缓存判定，所以非 room 的 standard 会话隐藏、任何 preset 上的 room 照常。3299 实测：dev 会话 chip + tab 齐全，standard 会话两者皆无（无空体 tab），来回切换干净翻转，console 零错误。
