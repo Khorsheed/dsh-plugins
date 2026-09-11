@@ -46,6 +46,18 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm run build:lib
 
+      # The host's session-persistence-jsonl flocks its journal through a
+      # native addon (@deepseek-ai/node-addon-system-<platform>), whose .node
+      # binaries are NOT in the harness git tree — they are compiled by this
+      # script. Without it, require.resolve finds the package manifest but
+      # bin/ is empty, and packages/room's journal persistence tests (which
+      # run on the host persistence layer) fail on this Linux runner.
+      # --host-addon-only compiles only this runner's flock addon with cc +
+      # the setup-node headers; no musl/cross toolchain is involved.
+      - name: Build harness native addon (flock)
+        working-directory: deepseek-harness
+        run: pnpm run build:native-system
+
       - name: Install (repo)
         run: pnpm install --frozen-lockfile
 
@@ -132,6 +144,12 @@ jobs:
       - name: Build harness libs (type seed)
         working-directory: deepseek-harness
         run: pnpm run build:lib
+
+      # Same native-addon seed as the gates job: the host's journal flock
+      # needs the compiled .node binary, which is not in the harness git tree.
+      - name: Build harness native addon (flock)
+        working-directory: deepseek-harness
+        run: pnpm run build:native-system
 
       - name: Install (repo)
         run: pnpm install --frozen-lockfile
