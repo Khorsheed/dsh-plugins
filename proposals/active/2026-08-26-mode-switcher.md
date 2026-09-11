@@ -32,22 +32,24 @@ eval：本次不纳入（维持独立 profile/实例），装置改造完成后�
 
 现有 `profiles/web-*` 是形态 B（独立 profile）。单实例多模式要求同时具备**形态 A**（add 清单，成员装进运行中的 profile——package-management 提案已规划）。pack 新增**模式元数据**：声明该模式的 preset id + 插件子集（供注册表集中下发显隐映射）。合并前提：pack 的 patch 层为空（basic/dev 本就为空，零冲突）。
 
-### B. 模式 preset（官方原生，零 harness 改动）
+### B. 模式 preset 与「会话插件化」（官方原生，零 harness 改动）
 
-- pack 自带 preset，`install` 时卸进 `$DSH_HOME/.agent-presets/` 名册（web-eval 已是此形态）；建会话时官方 chip 选择，会话级锁定。
+- pack 自带 preset，`install` 时卸进 `$DSH_HOME/.agent-presets/` 名册（web-eval 已是此形态）；建会话时官方 chip 选择，会话级锁定。各模式 preset 一律以官方 `standard` 为底 copy 改造，差异只在模式特有部分。
 - preset 自带工具行（`disabled` 休眠行语义 = 该 preset 授不授予此工具）；**工具行只进 preset、不进 profile 根**——会话间的能力差异由此产生，`tools: none` 类 pin 在新形态下不再需要。
-- 前提：插件的工具注册可独立挂载（官方 subagent 形态：「Bundle owns Host availability; the preset separately grants the tool」）。local-agent 家族已合规；融合包（mission、datasets）按需把工具注册拆成独立模块——拆模块，不是改架构。
+- **会话插件化判据**（一个包能否只被 preset 引用、不全局挂载）：不 `ctx.provide` 任何服务（或包 isolate realm）、只注册工具/prompt、依赖的都是 host 注册表。装法：包进 profile 的 `node_modules`（可解析）但**不声明 `dsh.bundle`**（不自动挂载，类比 headless bundle 的 plain-dependency 形态），由各 preset 的 `agent.cordis.yml` 按 `name` 引用；0.1.5 插件列表里它呈现在该 preset 的「会话插件」组（2026-09-11 实测）。
+- **全仓盘点（2026-09-11）**：可直接会话插件化的只有 `local-agent-tool-subagent`（已验证）；融合需拆的：**worktrees**（`tool.ts` + `worktrees` 服务）、**room**（3 个工具 + RoomService）——本次 basic/dev/novel 范围内仅此两个；mission/datasets/eval 同属融合但只在 web-eval，随 eval 缓拆；capability-catalog 等通用型保持全局 + fail-open 自隐，不拆。
+- 拆法：把工具注册拆成**不 provide 的独立可挂载模块**，工具行 inject 全局常驻的宿主服务（consumer 行可裸放 preset，官方 tool-bash 同构）。打包形态默认**伴生包**（`@khorsheed/dsh-<x>-tool-*`，local-agent core/companion 先例，`check-plugin-independence` 认这个对）；包内第二 export 的形态待验证 loader 支持后再考虑。
 
 ### C. 自隐约定 + 模式注册表
 
 - 机制（worktrees 试点双线验证）：槽位组件读 `useSessions` 的会话 preset 投影，不属于当前模式则 `return null`；缺省永远显示；无投影 fail-open。
 - **映射集中下发**：模式注册表（模式管理器的 host 服务）从各 pack 元数据收集「preset ↔ 插件子集」，经 Remote 下发；插件读注册表判断显隐，不再逐包手配名单（worktrees 的 `visiblePresets` 是无注册表时的单机版先例）。
 - 两条已知成本（推广时每包执行）：① preset 读取 key 跨宿主线不同（0.1.2 投影 / 0.1.1 顶层字段），双读兜底；② web 线 client 拿不到自己的 config，配置走 host → Remote。模板见 `.agents/notes/implemented/feature/2026-09-10-worktrees-badge-preset-gate.md`。
-- 自隐是约定不是强制：list 槽位无可见性谓词，不接约定的插件会漏 UI——生态内可推，强制需上游。
+- 自隐是约定不是强制：list 槽位无可见性谓词，不接约定的插件会漏 UI——生态内可推，强制需上游。（已排查替代：`disabled: !!js` 的「条件启用」是平台门，表达式作用域读不到会话/preset 身份，不能承担声明式显隐。）
 
 ### D. 模式管理器（轻量，与重启/ankh-guard 无关）
 
-`@khorsheed/dsh-mode-switcher`（沿名）：注册表服务 + Remote + 设置页（模式列表、各模式的 preset 与插件子集展示）+ 单插件彻底开关（patch 层 `disabled` 热生效 + 写成功后自刷新页面，服务「完全关掉某插件」场景）。无守卫重启、无凭证/preflight——单插件「关」方向爆炸半径极小。
+`@khorsheed/dsh-mode-switcher`（沿名）：注册表服务 + Remote + 单插件彻底开关（patch 层 `disabled` 热生效 + 写成功后自刷新页面，服务「完全关掉某插件」场景）。**不设独立设置页**——「模式的插件子集」视图由 0.1.5 官方插件列表的会话插件组覆盖（按 preset 分组、状态徽标齐全、按需 compose 查看免费，2026-09-11 在 3092 实测社区工具行呈现正确）；模式管理器至多注册一个 `settings.plugins.tab` 薄页做注册表状态展示，非必需。无守卫重启、无凭证/preflight——单插件「关」方向爆炸半径极小。
 
 ### eval：本次不纳入（2026-09-10 拍板）
 
@@ -71,15 +73,18 @@ eval：本次不纳入（维持独立 profile/实例），装置改造完成后�
 | web 线 client 拿不到自身 config（boot 无注入） | 试点实测（harness `web/src/boot.ts:127`） | 配置一律 host → Remote |
 | preset 切换限空白会话（首回合后锁定） | harness `agent-presets` | 模式对会话是创建时选择，锁定期一致 |
 | 一个实例只能跑一个 profile | harness `profile-boot` | 「多模式」必须装在同一个 profile 里（并集），多 profile ≠ 多模式 |
+| 0.1.5 官方插件列表分「会话插件 / 全局插件」两组；社区工具行在会话插件组呈现正确（短名标题、状态徽标、计数同步），按需 compose 查看、preset 热发现 | 2026-09-11 3092 实测（`scratch-screenshots/pilot-015-session-plugins*.png`） | 「模式的插件子集」视图官方已覆盖，模式管理器不设独立设置页 |
+| 只有不发布服务的工具行能直接进 preset；`ctx.provide` 的包（worktrees/mission）整包进 preset 被 isolate-realm 规则拒绝 | 同上实测 | M4' 融合包拆工具行是硬前提，拆法 = 工具模块不 provide |
+| 「条件启用」= `disabled: !!js` 用 Loader 表达式作用域求值，作用域只有 `process` 等全局，**读不到会话/preset 身份**（求值失败才落 conditional 标签） | harness `agent-presets/composition-inventory.ts`、`plugin-inventory` | 平台/环境门，不能做声明式按会话显隐——自隐约定不变 |
 
 ## 里程碑
 
 - **M0 ankh-guard 前置**（0.2.0）✅ 已落地（`0f776cc`）——最终定位：运维工具，不进产品线。
-- **M1' 自隐试点** ✅ 已落地（worktrees `visiblePresets` 门 + 双读，待提交）。
-- **M2' 模式注册表 + pack 元数据**：模式管理器包（注册表/Remote/设置页）；各 pack 补模式元数据 + 自带模式 preset；basic/dev 先跑通。
-- **M3' 自隐推广**：mission tab、lab 面板等接注册表显隐；决定共享 helper（`useSessionPreset`）包取舍。
-- **M4' 工具行解耦**：融合包（mission、datasets）工具注册拆为 preset 可挂载；候选：local-agent named-provider 支持。
-- 落地待讨论：模式清单与边界、模式 preset 与官方 standard 的关系、自隐推广顺序、helper 包取舍、named-provider 是否排期。
+- **M1' 自隐试点** ✅ 已落地（worktrees `visiblePresets` 门 + 双读，待提交；0.1.5 复验并入迁移验收）。
+- **M2' 模式基础设施**：① 模式管理器包 `@khorsheed/dsh-mode-switcher`（注册表 + Remote + 单插件彻底开关，无独立设置页）；② pack 模式元数据（preset id + 插件子集 + 专属/通用语义）；③ 各模式自带 preset（以 standard 为底；dev preset 带委派工具行；novel 新建写作 preset）；④ pack 的形态 A 安装形态（可装进已有 profile）。
+- **M3' 自隐推广**：dev 专属 UI 接注册表显隐（worktrees 徽标从手配名单改读注册表；room 面板、local-agent 家族 UI 评估归属）；helper 包（`useSessionPreset`）取舍在此决定。
+- **M4' 工具行解耦**（范围内仅两包）：① worktrees 工具行拆为伴生包（工具 inject 全局 worktrees 服务）；② room 工具行同理。mission/datasets/eval 随 eval 场景缓拆。local-agent named-provider 支持为 eval 预备候选，不排期。
+- 落地待讨论：模式清单与边界（novel 的第一个 preset 内容）、自隐推广顺序、helper 包取舍、形态 A 的安装命令形态。
 
 ## 验收标准
 
