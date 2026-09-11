@@ -1878,6 +1878,20 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
     now,
     log,
+    // Freshness: the lock says what the preset hashed to at provision time;
+    // this asks what it hashes to now. Only the instance's own catalog can
+    // answer, so a composition without one keeps the pre-T32b gate
+    // (presence and agreement, no freshness).
+    ...(deps?.capabilityCatalog === undefined
+      ? {}
+      : {
+        capabilitiesNow: async (subject: ReadinessSubject): Promise<string | undefined> => {
+          const preset = subject.preset ?? undefined
+          if (preset === undefined || preset === null) return undefined
+          const face = await (deps.capabilityCatalog as CapabilityCatalogFace).snapshotFor(preset)
+          return face.sha
+        },
+      }),
     ...(planUnit === null || lab === undefined ? {} : {
       unitFor: async (subject: ReadinessSubject): Promise<ReadinessUnit | undefined> => {
         // The judge delegates from the orchestrator, not from a cell, and it

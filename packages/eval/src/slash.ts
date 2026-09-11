@@ -282,15 +282,24 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
           + ' (the shared checkout stays read-only — point it at your own worktree)',
       }
     }
+    // The capability probe's diagnostics arrive on the log, not on the
+    // report: every one of its stops is "measured nothing, and here is
+    // which step declined", and an operator who only sees
+    // CAPABILITIES_UNMEASURED cannot tell a missing roster from an
+    // unresolvable preset.
+    const probeLines: string[] = []
     let report: Awaited<ReturnType<EvalService['provision']>>
     try {
-      report = await service.provision(target, { repo })
+      report = await service.provision(target, {
+        repo,
+        log: (message) => { if (message.startsWith('capability probe ')) probeLines.push(message) },
+      })
     } catch (error) {
       const diagnostics = error instanceof EvalProvisionRefused ? error.diagnostics.map(d => `  [${d.code}] ${d.message}`) : []
       const text = error instanceof Error ? error.message : String(error)
       return { kind: 'error', text: diagnostics.length === 0 ? `eval provision refused: ${text}` : `eval provision refused: ${text}\n${diagnostics.join('\n')}` }
     }
-    const body = renderProvision(report)
+    const body = renderProvision(report, probeLines)
     return report.written ? { kind: 'success', text: body } : { kind: 'error', text: body }
   }
 
@@ -356,7 +365,7 @@ function renderConditionDiff(diff: {
 }
 
 /** The provision reply: the five steps, whether the lock landed, and why not. */
-function renderProvision(report: Awaited<ReturnType<EvalService['provision']>>): string {
+function renderProvision(report: Awaited<ReturnType<EvalService['provision']>>, probeLines: readonly string[] = []): string {
   const body: string[] = [
     `provision ${report.condition} — ${report.harness}${report.scope === null ? ' (default scope)' : `@${report.scope}`}`,
     `  scoped home: ${report.homeDir}`,
@@ -369,6 +378,13 @@ function renderProvision(report: Awaited<ReturnType<EvalService['provision']>>):
   if (report.home !== null) {
     body.push(`  home.sha: ${report.home.sha} (${report.home.files} config file(s) hashed, ${report.home.denied} skipped)`)
   }
+  const provisioned = (report.lock as { provisioned?: { capabilities?: { sha: string; skills?: number; tools?: number } } } | null)?.provisioned
+  if (provisioned?.capabilities !== undefined) {
+    const face = provisioned.capabilities
+    body.push(`  capabilities: caps:${face.sha}`
+      + `${face.skills === undefined ? '' : ` (${face.skills} skill(s), ${String(face.tools)} tool(s))`}`)
+  }
+  for (const line of probeLines) body.push(`  · ${line.replace(/^capability probe [^:]*: /, '')}`)
   for (const warning of report.warnings) body.push(`  ! [${warning.code}] ${warning.message}`)
   for (const error of report.errors) body.push(`  ✗ [${error.code}] ${error.message}`)
   body.push(report.written

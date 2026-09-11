@@ -351,6 +351,15 @@ export async function provisionCondition(conditionPath: string, options: Provisi
         })
       }
       if (capabilities === undefined) {
+        // A probe that DECLINED, as against one that threw. Both mean "no
+        // measurement", and both have to reach the report: a log line alone
+        // leaves `conditions list` and the slash output showing a lock that
+        // looks complete. The probe's own log says which step declined.
+        warnings.push({
+          code: 'CAPABILITIES_UNMEASURED',
+          message: `the capability face of preset ${JSON.stringify(declaredPreset)} could not be measured`
+            + ' — the lock carries no provisioned.capabilities, and the pre-run readiness gate refuses a preset claim without one',
+        })
         log(`provision ${id}: capability face NOT measured for preset ${declaredPreset}`)
       } else {
         log(`provision ${id}: capability face caps:${capabilities.sha.slice(0, 12)}… (preset ${String(capabilities.preset ?? declaredPreset)})`)
