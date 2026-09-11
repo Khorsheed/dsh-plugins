@@ -48,15 +48,18 @@ export class MobileSurface {
           if (tabs.querySelectorAll('[role="tab"]').length === 2) this.mark(tabs, 'data-mobile-hidden-tab')
         }
       }
-      if (this.doc.querySelector('[data-mobile-members-open]') && tabs) {
-        const memberTab = Array.from(tabs.querySelectorAll<HTMLElement>('[role="tab"]')).find(el => /^(成员|Members)$/i.test(el.textContent?.trim() ?? ''))
-        if (memberTab && memberTab.getAttribute('aria-selected') !== 'true') {
-          this.mark(memberTab, 'data-mobile-hidden-tab')
-          if (tabs.querySelectorAll('[role="tab"]:not([data-mobile-hidden-tab])').length === 1) this.mark(tabs, 'data-mobile-hidden-tab')
-        }
-      }
+      // Members remains the authoritative settings/removal view, also reachable
+      // if the mobile shortcut cannot recognize a future Room action layout.
       const header = row?.parentElement
       if (header && Array.from(header.children).every(child => child.hasAttribute('data-mobile-header-hidden') || child.hasAttribute('data-mobile-hidden-tab'))) this.mark(header, 'data-mobile-header-hidden')
+    }
+    if (frame) for (const dialog of frame.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')) {
+      // Room invite/edit signature: preview member, name dice, advanced cwd.
+      // Never style arbitrary host/plugin dialogs based on title text alone.
+      if (!dialog.querySelector('[data-member]') || !dialog.querySelector('details input[readonly]') || !dialog.querySelector('button[aria-label]:not([disabled])')) continue
+      this.mark(dialog, 'data-mobile-room-form')
+      const overlay = dialog.parentElement
+      if (overlay?.getAttribute('role') === 'presentation') this.mark(overlay, 'data-mobile-room-overlay')
     }
   }
   private clearMarks() { for (const [el, names] of this.marks) for (const name of names) el.removeAttribute(name); this.marks.clear() }

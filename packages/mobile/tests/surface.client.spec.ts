@@ -46,3 +46,12 @@ it('keeps selected trajectory and unrelated views available', () => {
   expect(tabs.hasAttribute('data-mobile-hidden-tab')).toBe(false)
   expect(tabs.lastElementChild!.hasAttribute('data-mobile-hidden-tab')).toBe(false)
 })
+it('restyles only the checked Room form and restores its original nodes on desktop', () => {
+  const { frame, surface } = fixture()
+  frame.insertAdjacentHTML('beforeend', '<div role="presentation"><div role="dialog" aria-modal="true"><div data-member="ada"></div><details><input readonly /></details><button aria-label="Random name">Dice</button></div></div><div role="dialog" aria-modal="true"><input /></div>')
+  const original = frame.innerHTML
+  surface.sync(frame)
+  expect(frame.querySelectorAll('[data-mobile-room-form]')).toHaveLength(1)
+  expect(frame.querySelectorAll('[data-mobile-room-overlay]')).toHaveLength(1)
+  surface.dispose(); expect(frame.innerHTML).toBe(original)
+})

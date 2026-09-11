@@ -23,6 +23,7 @@ export function MobileQueue({ useSession, updateQueue, t }: PropsRuntime<'conver
       const root = fallback?.closest('[data-composer-seat]')
       const roomQueue = root?.querySelector('[data-testid="room-queue-strip"]')
       if (document.documentElement.hasAttribute('data-dsh-mobile') && fallback?.style.display === 'none' && roomQueue && root) {
+        if (owned && owned.parentElement !== root) { owned.remove(); owned = undefined }
         if (!owned) { owned = document.createElement('div'); owned.dataset.mobileRoomQueue = ''; root.prepend(owned); setSeat(owned) }
       } else if (owned) { owned.remove(); owned = undefined; setSeat(null) }
     }
@@ -31,17 +32,23 @@ export function MobileQueue({ useSession, updateQueue, t }: PropsRuntime<'conver
   }, [updateQueue])
   useEffect(() => { if (open && seat) dialog.current?.showModal(); else dialog.current?.close() }, [open, seat])
   const queued = rows.filter(r => r.placement === 'queued')
-  useEffect(() => { if (!queued.length) { setOpen(false); setEdit(null) } }, [queued.length])
+  const admitted = new Set(queued.flatMap(row => row.rpcId === undefined ? [] : [row.rpcId]))
+  const pendingQueue = pending.filter(row => row.placement === 'queued' && !admitted.has(row.requestId))
+  const count = queued.length + pendingQueue.length
+  useEffect(() => {
+    if (!count) setOpen(false)
+    if (edit && (!mutable || !queued.some(row => row.id === edit.id))) setEdit(null)
+  }, [count, mutable, queued, edit])
   const apply = async (id: string, action: Parameters<NonNullable<MobileQueueInjected['updateQueue']>>[1]) => {
-    if (!updateQueue || busy) return
+    if (!updateQueue || busy || !mutable || !queued.some(row => row.id === id)) return
     setBusy(true); setError(false)
     try { await updateQueue(id as Parameters<typeof updateQueue>[0], action); if (alive.current) setEdit(null) }
     catch { if (alive.current) setError(true) }
     finally { if (alive.current) setBusy(false) }
   }
-  if (!seat || !updateQueue || !queued.length) return null
+  if (!seat || !updateQueue || !count) return null
   return createPortal(<>
-    <button data-mobile-queue-pill onClick={() => setOpen(true)}>{t('queued')} · {queued.length}</button>
+    <button data-mobile-queue-pill onClick={() => setOpen(true)}>{t('queued')} · {count}</button>
     <dialog ref={dialog} data-mobile-tools-dialog aria-label={t('queued')} onClose={() => setOpen(false)}>
       <div data-mobile-tools-handle/><header><strong>{t('queued')}</strong><button aria-label={t('done')} onClick={() => dialog.current?.close()}><MobileIcon name="close"/></button></header>
       {error && <p role="alert">{t('queueError')}</p>}
@@ -50,12 +57,12 @@ export function MobileQueue({ useSession, updateQueue, t }: PropsRuntime<'conver
         <div>
           {edit?.id === row.id ? <><button disabled={busy || !edit.text.trim()} onClick={() => void apply(row.id, { kind: 'edit', content: [{ type: 'text', text: edit.text }] })}>{t('save')}</button><button disabled={busy} onClick={() => setEdit(null)}>{t('cancel')}</button></> : <>
             <button disabled={!mutable || busy || !running} onClick={() => void apply(row.id, { kind: 'steer' })}>{t('sendNow')}</button>
-            <button disabled={!mutable || busy || row.content.some(b => b.type !== 'text')} onClick={() => setEdit({ id: row.id, text: row.content.map(b => b.type === 'text' ? b.text : '').join('') })}>{t('editQueued')}</button>
+            <button disabled={!mutable || busy || row.text === null} onClick={() => { if (row.text !== null) setEdit({ id: row.id, text: row.text }) }}>{t('editQueued')}</button>
             <button disabled={!mutable || busy} onClick={() => void apply(row.id, { kind: 'remove' })}>{t('removeQueued')}</button>
           </>}
         </div>
       </section>)}
-      {pending.some(p => p.placement === 'queued') && <p role="status">{t('sendingQueued')}</p>}
+      {pendingQueue.length > 0 && <p role="status">{t('sendingQueued')}</p>}
     </dialog>
   </>, seat)
 }

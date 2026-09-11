@@ -283,4 +283,49 @@ html[data-dsh-mobile] [data-slot="conversation.input.dock"] section:has(> button
 html[data-dsh-mobile] [data-slot="conversation.input.dock"] section > ul[aria-label] { position:fixed; inset:auto 12px max(12px,env(safe-area-inset-bottom)); min-width:0; max-width:none; max-height:62dvh; border-radius:24px; padding:12px; z-index:1200; box-shadow:var(--mobile-shadow); }
 html[data-dsh-mobile] [data-slot="conversation.input.dock"] section > ul[aria-label] button { min-height:44px; }
 @media (prefers-reduced-motion: reduce) { [data-mobile-frame] * { scroll-behavior:auto !important; } }
+
+/* One mobile reading scale; derived from host text size without writing its preference. */
+html[data-dsh-mobile] body { --mobile-text:max(17px,var(--dsh-content-font-size,14px)); --mobile-caption:max(14px,var(--dsh-content-font-size-secondary,13px)); }
+html[data-dsh-mobile] :is([data-mobile-library],[data-mobile-dialog],[data-mobile-tools-dialog],[data-mobile-message-menu]) { font-size:var(--mobile-text); line-height:1.55; }
+html[data-dsh-mobile] :is([data-mobile-nav-title] strong,[data-mobile-session-copy] strong,[data-mobile-search] input,[data-composer-card] [contenteditable],[data-composer-seat] textarea,[data-mobile-member-chat] strong) { font-size:var(--mobile-text); line-height:1.55; }
+html[data-dsh-mobile] :is([data-mobile-workspace-group] strong,[data-mobile-tools-grid] button,[data-mobile-tools-permission],[data-mobile-dialog] h3,[data-mobile-grouping] button) { font-size:16px!important; }
+html[data-dsh-mobile] :is([data-mobile-subtitle],[data-mobile-nav-title] small,[data-mobile-session-copy] small,[data-mobile-session] time,[data-mobile-workspace-group] small,[data-mobile-session-group] h2,[data-mobile-activity],[data-mobile-room-hint],[data-mobile-member-chat] small,[data-mobile-tools-permission] small,[data-mobile-dialog] p) { font-size:var(--mobile-caption); line-height:1.5; color:var(--dsw-alias-label-secondary); }
+html[data-dsh-mobile] [data-slot="conversation.input.model"] button { font-size:15px; }
+html[data-dsh-mobile] [data-conversation-scroll] {
+  --dsh-content-font-size:var(--mobile-text); --dsh-content-font-size-secondary:var(--mobile-caption);
+  --dsw-font-markdown-base:var(--mobile-text)/1.65 var(--dsw-font-family);
+  --dsw-font-markdown-base-font-size:var(--mobile-text); --dsw-font-markdown-base-line-height:1.65;
+  --dsw-font-markdown-base-strong:600 var(--mobile-text)/1.65 var(--dsw-font-family);
+  --dsw-font-markdown-base-strong-font-size:var(--mobile-text);
+  --dsw-font-markdown-base-italic:italic var(--mobile-text)/1.65 var(--dsw-font-family);
+  --dsw-font-markdown-base-italic-font-size:var(--mobile-text);
+}
+/* All Room invite/edit entry points retain the same React form and callbacks. */
+html[data-dsh-mobile] [data-mobile-header-hidden]:has([data-mobile-room-form]) { display:contents!important; }
+html[data-dsh-mobile] [data-mobile-room-overlay] { position:fixed; inset:0; height:var(--mobile-height,100dvh); z-index:1400; align-items:flex-end; justify-content:center; padding:8px; box-sizing:border-box; background:#0005; -webkit-backdrop-filter:blur(5px); backdrop-filter:blur(5px); }
+html[data-dsh-mobile] [data-mobile-room-form] { box-sizing:border-box; width:100%; max-width:560px; max-height:calc(var(--mobile-height,100dvh) - 24px); margin:0; gap:16px; padding:20px 20px max(16px,env(safe-area-inset-bottom)); border-radius:28px; border:1px solid var(--mobile-edge); background:var(--mobile-face); color:var(--dsw-alias-label-primary); box-shadow:var(--mobile-shadow); text-align:left; overflow-y:auto; font-size:var(--mobile-text); }
+html[data-dsh-mobile] [data-mobile-room-form]::before { content:''; display:block; flex:none; width:36px; height:4px; border-radius:4px; background:var(--dsw-alias-label-secondary); opacity:.35; align-self:center; margin:-10px 0 0; }
+html[data-dsh-mobile] [data-mobile-room-form] > div:first-child { font-size:21px; line-height:1.4; font-weight:600; }
+html[data-dsh-mobile] [data-mobile-room-form] > div:has(> div > label) { flex-direction:column; gap:16px; }
+html[data-dsh-mobile] [data-mobile-room-form] > div > div:has(>label) { gap:18px; }
+html[data-dsh-mobile] [data-mobile-room-form] > div > div:has(>[data-member]) { order:-1; width:auto; }
+html[data-dsh-mobile] [data-mobile-room-form] > div > div:has(>[data-member]) > span { display:none; }
+html[data-dsh-mobile] [data-mobile-room-form] [data-member] { border:0; background:var(--mobile-soft); border-radius:18px; padding:14px; }
+html[data-dsh-mobile] [data-mobile-room-form] [data-member] p { font-size:14px; margin:6px 0 0; }
+html[data-dsh-mobile] [data-mobile-room-form] label { gap:7px; }
+html[data-dsh-mobile] [data-mobile-room-form] label > span:first-child { font-size:15px; line-height:1.5; font-weight:500; color:var(--dsw-alias-label-primary); }
+html[data-dsh-mobile] [data-mobile-room-form] label > span:last-child:not(:first-child), html[data-dsh-mobile] [data-mobile-room-form] [role=status] { font-size:14px; line-height:1.5; color:var(--dsw-alias-label-secondary); }
+html[data-dsh-mobile] [data-mobile-room-form] :is(input,textarea,select) { box-sizing:border-box; min-width:0; min-height:48px; border-radius:14px; padding:11px 12px; font-size:17px; line-height:1.5; background:var(--mobile-soft); border:1px solid var(--mobile-edge); color:var(--dsw-alias-label-primary); }
+html[data-dsh-mobile] [data-mobile-room-form] textarea { min-height:94px; resize:vertical; }
+html[data-dsh-mobile] [data-mobile-room-form] button { min-height:44px; min-width:44px; font-size:16px; border-radius:14px; }
+html[data-dsh-mobile] [data-mobile-room-form] summary { min-height:44px; padding:10px 0; font-size:16px; color:var(--dsw-alias-label-primary); }
+html[data-dsh-mobile] [data-mobile-room-form] > div:last-child { position:sticky; bottom:-16px; background:var(--mobile-face); padding:12px 0 0; margin-top:0; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+html[data-dsh-mobile] [data-mobile-room-form] [role=alert] { font-size:15px; line-height:1.5; }
+html[data-dsh-mobile] [data-member] { font-size:16px; }
+html[data-dsh-mobile] [data-member] button { min-height:44px; font-size:15px; }
+html[data-dsh-mobile] [data-mobile-room-form] [data-member] > div:first-child > span:nth-child(2) > span:first-child { font-size:16px; }
+html[data-dsh-mobile] [data-mobile-room-form] [data-member] p { color:var(--dsw-alias-label-secondary); }
+html[data-dsh-mobile] [data-mobile-room-form] > div:last-child button:disabled { opacity:1; color:var(--dsw-alias-label-secondary); background:var(--mobile-soft); border:1px solid var(--mobile-edge); cursor:default; }
+html[data-dsh-mobile] [data-mobile-queue-row] p { font-size:var(--mobile-text); }
+html[data-dsh-mobile] [data-mobile-members-open] small { font-size:12px; min-width:18px; }
 `

@@ -2,8 +2,6 @@
  * No sibling runtime import, registration, roster persistence or agent execution. */
 export interface MobileMember { name: string; kind: 'main-agent' | 'cli'; provider?: string; instructions?: string; cwd?: string; childSessionId?: string }
 export interface MobileRoom { members: readonly MobileMember[]; runs: readonly { member: string; state: string }[] }
-export interface MobileProvider { provider: string; displayName: string; authenticated: boolean }
-export interface ProviderList { localAgentAvailable: boolean; providers: readonly MobileProvider[] }
 export type RoomRemoteFace = Record<string, (request: Record<string, unknown>) => Promise<{ ok: boolean; value?: unknown }>>
 export class RoomFailure extends Error { constructor(readonly code: string) { super(code) } }
 export class MobileRooms {
@@ -26,7 +24,7 @@ export class MobileRooms {
   }
   private async fetch(id: string) {
     try {
-      const state = await this.mutate<MobileRoom>('getState', { sessionId: id })
+      const state = await this.readState(id)
       if (!Array.isArray(state.members) || !Array.isArray(state.runs)) throw new RoomFailure('unsupported')
       this.publish(id, state); return state
     } catch (error) {
@@ -40,18 +38,14 @@ export class MobileRooms {
     if (this.cache.size > 200) this.cache.delete(this.cache.keys().next().value!)
     this.version++; for (const fn of this.listeners) fn()
   }
-  async providers(): Promise<ProviderList> { return this.call('listProviders', {}) as Promise<ProviderList> }
-  private async call(method: string, request: Record<string, unknown>): Promise<unknown> {
-    const remote = this.remote(), fn = remote?.[method]
-    if (!fn) throw new RoomFailure('unavailable')
-    const result = await fn.call(remote, request)
-    if (!result.ok) throw new RoomFailure('connection')
+  private async readState(sessionId: string): Promise<MobileRoom> {
+    const remote = this.remote()
+    if (!remote?.getState) throw new RoomFailure('unavailable')
+    const carried = await remote.getState({ sessionId })
+    if (!carried.ok) throw new RoomFailure('connection')
+    const result = carried.value as { ok: boolean; value?: MobileRoom; error?: { code?: string } }
+    if (!result?.ok || !result.value) throw new RoomFailure(result?.error?.code ?? 'unknown')
     return result.value
-  }
-  async mutate<T = unknown>(method: string, request: Record<string, unknown>): Promise<T> {
-    const result = await this.call(method, request) as { ok: boolean; value?: T; error?: { code?: string } }
-    if (!result?.ok) throw new RoomFailure(result?.error?.code ?? 'unknown')
-    return result.value as T
   }
   dispose() { this.alive = false; this.listeners.clear(); this.cache.clear() }
 }

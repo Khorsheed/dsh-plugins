@@ -31,15 +31,12 @@ it('opens the real child identity and distinguishes main from invitable members'
   fireEvent.click(screen.getByRole('button', { name: /ada.*codex-local/ }))
   expect(open).toHaveBeenCalledExactlyOnceWith('child-1')
 })
-it('invites through Room Remote without dispatching a first task and edits roles through the same service', async () => {
-  const { invite, updateMember } = fixture(); fireEvent.click(await screen.findByRole('button', { name: en.members }))
-  fireEvent.click(screen.getByRole('button', { name: en.inviteMember })); await waitFor(() => expect(screen.getByRole('combobox').value).toBe('codex-local'))
-  fireEvent.change(screen.getByLabelText(en.memberName), { target: { value: 'lin' } })
-  fireEvent.change(screen.getByLabelText(en.memberRole), { target: { value: 'Review changes' } })
+it('opens the installed Room invite action, never a second mutation implementation', async () => {
+  document.documentElement.setAttribute('data-dsh-mobile', '')
+  const anchor = document.createElement('div'); anchor.innerHTML = '<div data-slot="main.conversation"><div data-slot="conversation.session.header.actions"><button aria-label="Invite agent">Invite agent</button></div></div>'; document.body.append(anchor)
+  const action = vi.fn(); anchor.querySelector('button')!.onclick = action
+  const { invite } = fixture(); fireEvent.click(await screen.findByRole('button', { name: en.members }))
   fireEvent.click(screen.getByRole('button', { name: en.inviteMember }))
-  await waitFor(() => expect(invite).toHaveBeenCalledExactlyOnceWith({ sessionId: 'room-1', name: 'lin', provider: 'codex-local', instructions: 'Review changes' }))
-  fireEvent.click(await screen.findByRole('button', { name: `${en.memberSettings} ada` }))
-  fireEvent.change(screen.getByLabelText(en.memberRole), { target: { value: 'Check tests' } })
-  fireEvent.click(screen.getByRole('button', { name: en.save }))
-  await waitFor(() => expect(updateMember).toHaveBeenCalledExactlyOnceWith({ sessionId: 'room-1', name: 'ada', rename: 'ada', instructions: 'Check tests' }))
+  expect(action).toHaveBeenCalledOnce(); expect(invite).not.toHaveBeenCalled()
+  anchor.remove(); document.documentElement.removeAttribute('data-dsh-mobile')
 })
