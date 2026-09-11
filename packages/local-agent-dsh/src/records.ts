@@ -1,10 +1,13 @@
 /**
  * Session records adapter for the `dsh` harness: list the sub-dsh's own
  * sessions from its scoped-home store. The sub-dsh persists JSONL logs under
- * `<scoped home>/sessions/<project>/<session-id>/session.jsonl.zstd` (the
- * same physical layout the official JSONL persistence backend writes), so the
- * adapter reads headers directly instead of asking the parent's persistence
- * service, which is bound to the parent's own store root.
+ * `<scoped home>/sessions/<project>/<session-id>/` (the same physical layout
+ * the official JSONL persistence backend writes), so the adapter reads headers
+ * directly instead of asking the parent's persistence service, which is bound
+ * to the parent's own store root. WHICH file in that directory holds the log
+ * is the host's generation choice, resolved through the same
+ * {@link resolveDshSessionLog} the session mirror uses — the two readers must
+ * never disagree about where a session's history lives.
  * @module @khorsheed/dsh-local-agent-dsh/records
  */
 
@@ -12,6 +15,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
+import { resolveDshSessionLog } from './session-log.ts'
 
 /** A stored session's header line, the subset this adapter reads. */
 interface DshSessionHeader {
@@ -47,10 +51,16 @@ function isENOENT(error: unknown): boolean {
  * Read a session log's first line (its header). The JSONL backend stores one
  * zstd frame per append batch; node's zstdDecompress decodes the first frame,
  * which holds the header line written at session creation.
- * @param logPath - the `session.jsonl.zstd` file to read.
+ * @param logPath - the session log file to read (any generation, compressed
+ *   or raw — the caller resolved which one).
+ * @param compressed - whether the file is zstd-compressed; a raw log is read
+ *   as text. Defaults to compressed, the backend's own default.
  * @returns the first line, or undefined when the file is empty/half-written.
  */
-export async function readDshSessionHeaderLine(logPath: string): Promise<string | undefined> {
+export async function readDshSessionHeaderLine(
+  logPath: string,
+  compressed = true,
+): Promise<string | undefined> {
   let buffer: Buffer
   try {
     buffer = await readFile(logPath)
@@ -61,7 +71,7 @@ export async function readDshSessionHeaderLine(logPath: string): Promise<string 
   if (buffer.length === 0) return undefined
   let text: string
   try {
-    text = zstdDecompressSync(buffer).toString('utf8')
+    text = compressed ? zstdDecompressSync(buffer).toString('utf8') : buffer.toString('utf8')
   } catch {
     // A torn or non-zstd file is not a readable session; treat as absent.
     return undefined
@@ -97,7 +107,11 @@ export async function listDshSessions(homeDir: string): Promise<readonly LocalAg
       throw error
     }
     for (const sessionId of sessionIds) {
-      const headerLine = await readDshSessionHeaderLine(join(root, project, sessionId, 'session.jsonl.zstd'))
+      // The generation the store actually wrote — hardcoding one filename is
+      // what made `/dsh sessions` list nothing at all on host 0.1.5.
+      const log = await resolveDshSessionLog(join(root, project, sessionId))
+      if (log === undefined) continue
+      const headerLine = await readDshSessionHeaderLine(log.path, log.compressed)
       if (headerLine === undefined) continue
       const header = parseDshSessionHeader(headerLine)
       if (header === undefined) continue

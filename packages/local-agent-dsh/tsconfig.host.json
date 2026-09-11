@@ -13,6 +13,7 @@
     "src/dsh-cli-provider.ts",
     "src/live-driver.ts",
     "src/live-switch.ts",
-    "src/session-mirror.ts"
+    "src/session-mirror.ts",
+    "src/session-log.ts"
   ]
 }
