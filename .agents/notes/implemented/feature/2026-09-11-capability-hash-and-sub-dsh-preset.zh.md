@@ -37,6 +37,8 @@ Status: implemented
 
 `snapshotFor(presetId?, workdir?)` 是指纹动词：解析 `standingKeyFor(presetId ?? defaultId)`，按该 scope 读 skill 与 tool 注册表，加载每个技能正文使行带上 `bodySha`，并盖 `sha`。`snapshot()` 仍是清单动词——同样的行，不读正文，不出摘要——因为设置卡要的就是一份清单，为了画一张网格而每个技能多读一次注册表，这笔开销没有买主。`list_capabilities` 以 `capabilities` 带回**整面**的标签，即使调用方只要了 skill 或只要了 tool：标签命名的是这个实例，不是别人向它提的那个问题。
 
+**清单降级，指纹拒绝**（`resolvePresetScope`）。preset 的 scope 解析不出来时——没有 roster、id 不存在、composition 挂不起来——`snapshot()` 退回全局层并且**不带** `preset` 标签：设置卡不该因为一行配置坏了就变空，而一份不带标签的全局层读数是诚实的。`snapshotFor()` 则抛错，带上 preset 名与原因。这条规则写下来，是因为本次改动的第一次真机跑：一个 preset 只错了一行 persona 配置，降级版本让两个 roster 着**不同** preset 的 scope 拿到同一个哈希，还各自贴着自己 preset 的名字，全程无声。会降级的指纹不是「弱一点的指纹」，是**假的**指纹。
+
 两处代价明说而不藏：算指纹时每个技能多读一次正文；问一个还没人组过的 preset 会把它**挂起来**——roster 的 standing mount 本来就是「该 preset 的 scope」这句话的全部含义。
 
 ### sub-dsh 的作用域目录成为它的能力面
@@ -61,14 +63,31 @@ preset 目录从哪来这件事不需要新机制：子 dsh 以 `DSH_HOME` 指�
 
 eval 不 import 任何兄弟 `@khorsheed` 包，所以它只记摘要、从不重算：规范形是 catalog 的契约。`canonicalJson` 在两个包里各有一份逐字节相同的实现，由各自的测试钉住——这是独立性规则买来的那份重复。
 
+## 真机验证
+
+一套私有工具链（npm 装 `@deepseek-ai/dsh@0.1.5-rc.1`，两个本仓包以本地 tarball 解包进去，确保所有模块从**同一份安装**解析），scratch homes 根下三个 sub-dsh 作用域目录，各由 `provisionDshSubProfile` 配出。三个 scope 的 `cordis.patch.yml` 只差一行——roster 的 `default:`。三份子 profile 里都（同样地）挂了 catalog，由一个零 import 的探针行读出能力面：面来自真实启动起来的 composition，且不花任何模型调用。
+
+| 核对 | 结果 |
+|---|---|
+| 两份 roster，两张面 | `eval-lean` → `caps:b140934bbc4b…`，技能 `[eval-planning]`；`eval-full` → `caps:3f3b4e781741…`，技能 `[eval-analysis, eval-planning]` |
+| preset 的**名字**不是能力 | 第三个 scope 把 eval-lean 的内容换名为 `renamed-lean`，哈希 `b140934bbc4b…`——与 scope A 逐字节相同 |
+| 改描述不动哈希 | 就地改掉技能的 `description:`，仍是 `b140934bbc4b…` |
+| 改正文动哈希 | SKILL.md 正文改一句，变为 `4b8346cf27b8…` |
+| 指纹拒绝坏掉的 preset | 一行 persona 配置写错时：`snapshotFor` 抛 `cannot fingerprint preset "renamed-lean": … failed to mount`，而 `snapshot()` 正常返回全局层清单、`preset: null` |
+| roster 从安装锚点解析 | 三份子 profile 里都没有 `@deepseek-ai` 软链；`@deepseek-ai/dsh-agent-presets` 与 `dsh-base` 一样从 dsh 安装里加载 |
+
+真机立住了两件单元测试立不住的事。其一是上面那条降级/拒绝的缺陷——只有当「本该不同的两个 scope 并没有不同」时才会被发现。其二：**preset 在 sub-dsh 上拿不走能力**。`dsh-base` 把整套模型面工具挂在 profile 根上，而 preset 是往上**组**行，不过滤根。两个 scope 的 26 个工具完全一样，两张面的差别落在各自 preset 注册的技能上。所以 pilot D 的两条条件差在各自 preset **加了什么**——这是一个真实的因子，也是这套装置今天能诚实给出的那一个，但它不是「同一 harness 换一套更小的工具集」。
+
+**没有跑的那一项**：给每个 sub-dsh 委派一轮问「你有哪些工具」。本机在生产 home 之外没有 DeepSeek 凭据，而生产 home 不在本任务范围内。探针读的是那一轮本来要描述的同一张能力面，来自同一个启动起来的 composition，比模型的自述更精确——但它没有证明模型的提示词组装看得见它，这一点本次未验。
+
 ## pilot D 现在能说什么
 
 「同一 harness 两 preset」现在是一句关于 sub-dsh 的话：两条 dsh 条件、两个 scope、两份子 profile roster，其余全同。两份 roster 出两个能力哈希，两个能力哈希就是两个受试对象。这也是本决定唯一支持的那个形状——preset 仍然够不到三家外部 CLI，而在 `validate` 里把这句话说出口，正是这套装置停止做相反承诺的方式。
 
 ## Testing
 
-- `capability-catalog/tests/capabilities.spec.ts`：规范形每类行的取字段、排序、正文 sha 与参数 schema 缺席时的 `null`、MCP 工具名单；四条稳定性主张（同内容不同注册序同哈希；改工具描述与碰 mtime 不动哈希；改 parameters 与改技能正文动哈希）；对已带 `sha` 的 snapshot 幂等；摘要逐字等于规范 JSON 的 sha256；以及 `catalogSnapshot` 的两种模式，含注册表拒绝加载的技能。
-- `local-agent-dsh/tests/provision.spec.ts`：不给 preset 就没有那一层；追加的 `insert` 操作与 bundle 自己那份列表原样留在前面；两个只差 preset 的 scope 出两份 patch；显式 roots 与两个派生根开关；被拒的 preset id；幂等；roster 软链；以及撤掉 preset 后那一层原样消失。
+- `capability-catalog/tests/capabilities.spec.ts`：规范形每类行的取字段、排序、正文 sha 与参数 schema 缺席时的 `null`、MCP 工具名单；四条稳定性主张（同内容不同注册序同哈希；改工具描述与碰 mtime 不动哈希；改 parameters 与改技能正文动哈希）；对已带 `sha` 的 snapshot 幂等；摘要逐字等于规范 JSON 的 sha256；以及 `catalogSnapshot` 的两种模式，含注册表拒绝加载的技能。`resolvePresetScope` 覆盖清单/指纹的分岔：标签只在 scope 真解析出来时才贴、三种降级形状、三种严格拒绝，以及无 roster 的组合仍可为其默认面出指纹。
+- `local-agent-dsh/tests/provision.spec.ts`：不给 preset 就没有那一层；追加的 `insert` 操作与 bundle 自己那份列表原样留在前面；两个只差 preset 的 scope 出两份 patch；显式 roots 与两个派生根开关；被拒的 preset id；幂等；子 profile 里**不**链任何 `@deepseek-ai` 副本（roster 是官方包，链第二份会带进第二份 cordis）；以及撤掉 preset 后那一层原样消失。
 - `local-agent-dsh-headless/tests/preset-join.spec.ts`：join 与它报出的 id、两种 no-op 形状、以及拒绝的 roster 向上抛而不是降级。
 - `eval/tests/capabilities.spec.ts`：三家外部 CLI 各自的 `PRESET_NOT_FOR_HARNESS`，以及 dsh 与未知 harness 上它的缺席；lock 的几种形状（只锁哈希、完整 `provisioned`、坏摘要被拒）；经 `resolveConditionReadiness` 的往返；两条能力 warning；`capabilityRefusal` 的四种情形；以及 `checkReadiness` 用一个「`start` 被调用就抛」的门面证明未测量的 preset 不花委派。
 - `eval/tests/run.spec.ts`：`run.meta.orchestrator.capabilities` 每 run 记一次、无 catalog 时不记、catalog 抛错时 run 照跑。
@@ -100,4 +119,5 @@ eval 不 import 任何兄弟 `@khorsheed` 包，所以它只记摘要、从不�
 - 协议走到 **v1-rev10**。给 lock 加 `provisioned` 不改任何条件哈希——lock 本身不进哈希——所以单凭这次改动没有任何既有条件需要重新 provision。给条件**加** `preset` 会改哈希，那是既有的「加因子即重新 provision」规则。
 - 任何已经在外部 CLI 上写了非 null `preset` 的条件现在校验不过。题库里没有这样的条件；这条拒绝是未来的作者会拿到的东西，代替一句无声的虚构。
 - sub-dsh 不组 roster 时什么都没失去，而「不组 roster」在各处仍是默认。
+- **preset 在 sub-dsh 上拿不走能力。** `dsh-base` 把模型面工具挂在 profile 根，而 preset 是往上组行、不过滤根，所以两个 sub-dsh preset 的差别在于各自**加了什么**。pilot D 的两条条件因此是「同样的工具 + 不同的技能」，不是「更小的工具集」——是真因子，也是这套装置今天能诚实给出的那一个。要能收窄 sub-dsh 的工具集，得把 `dsh-base` 的模型面行搬进 preset，那是宿主侧的改动。
 - 测量本身——一份子 profile 的能力哈希在真机上究竟怎么取——归 T31；本 note 的 alternatives 一节记下了它必须遵守的约束。

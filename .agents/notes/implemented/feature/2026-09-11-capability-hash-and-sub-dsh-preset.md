@@ -37,6 +37,8 @@ The hash is written `caps:<sha256>`. A snapshot's own `sha` field is not part of
 
 `snapshotFor(presetId?, workdir?)` is the fingerprint verb: it resolves `standingKeyFor(presetId ?? defaultId)`, reads the skill and tool registries at that scope, loads every skill body so the rows carry `bodySha`, and stamps `sha`. `snapshot()` stays the listing verb — the same rows, no body loads, no digest — because the settings card wants a listing and paying one registry load per skill to draw a grid is a cost with no buyer. `list_capabilities` reports the full face's tag as `capabilities` even when the caller filtered its answer to skills or tools: the tag names the instance, not the question asked of it.
 
+**A listing degrades; a fingerprint refuses** (`resolvePresetScope`). When the preset's scope will not resolve — no roster, unknown id, a composition that fails to mount — `snapshot()` falls back to the global layer and carries NO `preset` label, because a settings card must not blank over one bad row and an unlabelled global reading is honest. `snapshotFor()` throws, naming the preset and the reason. The first machine run of this change is why the rule is written down: on a real sub-dsh whose preset carried one invalid persona row, the degrading version handed two scopes rostering two DIFFERENT presets one identical hash, labelled with each scope's own preset name, and nothing said a word. A fingerprint that degrades is not a weaker fingerprint, it is a false one.
+
 Two costs are stated rather than hidden. Fingerprinting loads one skill body per skill. And asking for a preset nothing has composed yet MOUNTS it, because the roster's standing mount is what "that preset's scope" means.
 
 ### The sub-dsh's scope directory becomes its capability face
@@ -61,14 +63,31 @@ The generated layer is also a PARSEABLE layer: `readSubProfilePreset(homeDir)` r
 
 eval imports no sibling `@khorsheed` package, so it records digests and never recomputes them: the canonical form is the catalog's contract. The `canonicalJson` helper exists byte-identically in both packages, pinned by each side's own tests — the duplication the independence rule buys.
 
+## Real-machine verification
+
+A private toolchain (npm `@deepseek-ai/dsh@0.1.5-rc.1` plus local tarballs of this repo's two packages, so every module resolves from ONE installation), three sub-dsh scoped homes under a scratch homes root, each provisioned by `provisionDshSubProfile`. The scopes' `cordis.patch.yml` files differ in exactly one line — the roster's `default:`. The catalog was mounted in each sub-profile for the run (identically in all three) and read through a zero-import probe row, so the face comes from the real booted composition and costs no model call.
+
+| Check | Result |
+|---|---|
+| Two rosters, two faces | `eval-lean` → `caps:b140934bbc4b…` with skills `[eval-planning]`; `eval-full` → `caps:3f3b4e781741…` with `[eval-analysis, eval-planning]` |
+| The preset NAME is not a capability | a third scope carrying eval-lean's content under the id `renamed-lean` hashes to `b140934bbc4b…` — byte-identical to scope A |
+| Rewording a description does not move it | editing the skill's `description:` in place left `b140934bbc4b…` unchanged |
+| Editing the body does | changing one sentence of the SKILL.md body moved it to `4b8346cf27b8…` |
+| A fingerprint refuses a broken preset | with one invalid persona row: `snapshotFor` throws `cannot fingerprint preset "renamed-lean": … failed to mount`, while `snapshot()` returns the global-layer listing with `preset: null` |
+| The roster resolves from the installation anchor | no `@deepseek-ai` link in any sub-profile; `@deepseek-ai/dsh-agent-presets` loaded from the dsh installation beside `dsh-base` |
+
+Two facts the run established that the unit tests could not. First, the degrade-vs-refuse defect above — found only because two scopes that must differ did not. Second, **a preset cannot take capabilities away from a sub-dsh**: `dsh-base` mounts the whole model-facing tool set at the profile root, and a preset composes rows, it does not filter the root. Both scopes carry the same 26 tools; their faces differ in the skills their presets register. So pilot D's two conditions differ in what their presets ADD — which is a real factor and the one this apparatus can honestly offer, but it is not "the same harness with a smaller tool set".
+
+The delegated round ("ask each sub-dsh what tools it has") was NOT run: this machine has no DeepSeek credential outside the production home, which is out of scope for this task. The probe reads the same capability face that round would have described, from the same booted composition, and more precisely than a model's prose — but it does not prove the model's prompt assembly sees it, so that remains unverified here.
+
 ## What pilot D can now say
 
 "One harness under two presets" is now a statement about the sub-dsh: two dsh conditions, two scopes, two sub-profile rosters, everything else identical. Two rosters produce two capability hashes, and two capability hashes are two subjects. That is the only shape of the pilot this decision supports — presets still do not reach the three external CLIs, and saying so in `validate` is how the apparatus stops promising otherwise.
 
 ## Testing
 
-- `capability-catalog/tests/capabilities.spec.ts`: the canonical form's field selection per row kind; sorting; `null` for an absent body sha or parameter schema; MCP tool names; the four stability claims (same content in a different registration order hashes alike; a reworded tool description and a touched mtime do not move it; a changed parameter schema and a changed skill body do); idempotence over a snapshot that already carries `sha`; the digest equals sha256 of the canonical JSON verbatim; and `catalogSnapshot`'s two modes, including a skill the registry declines to load.
-- `local-agent-dsh/tests/provision.spec.ts`: no layer without a preset; the appended `insert` operation and the bundle's own list surviving ahead of it; two scopes differing only in preset producing two patches; explicit roots and the derived-root switches; a refused preset id; idempotence; the roster symlink; and the layer disappearing when the preset is withdrawn.
+- `capability-catalog/tests/capabilities.spec.ts`: the canonical form's field selection per row kind; sorting; `null` for an absent body sha or parameter schema; MCP tool names; the four stability claims (same content in a different registration order hashes alike; a reworded tool description and a touched mtime do not move it; a changed parameter schema and a changed skill body do); idempotence over a snapshot that already carries `sha`; the digest equals sha256 of the canonical JSON verbatim; and `catalogSnapshot`'s two modes, including a skill the registry declines to load. `resolvePresetScope` covers the listing/fingerprint split: the label set only on a resolved scope, all three degrade shapes, all three strict refusals, and a rosterless composition still fingerprinting its default face.
+- `local-agent-dsh/tests/provision.spec.ts`: no layer without a preset; the appended `insert` operation and the bundle's own list surviving ahead of it; two scopes differing only in preset producing two patches; explicit roots and the derived-root switches; a refused preset id; idempotence; NO `@deepseek-ai` copy linked into the sub-profile (the roster is an official package and a second copy would bring a second cordis); and the layer disappearing when the preset is withdrawn.
 - `local-agent-dsh-headless/tests/preset-join.spec.ts`: the join and the id it reports, the two no-op shapes, and a refusing roster propagating rather than degrading.
 - `eval/tests/capabilities.spec.ts`: `PRESET_NOT_FOR_HARNESS` for each external CLI and its absence for dsh and for an unknown harness; the lock shapes (hash alone, full `provisioned`, malformed digests refused); the round trip through `resolveConditionReadiness`; both capability warnings; `capabilityRefusal`'s four cases; and `checkReadiness` failing an unmeasured preset with a facade whose `start` throws if called.
 - `eval/tests/run.spec.ts`: `run.meta.orchestrator.capabilities` recorded once per run, absent without a catalog, and a throwing catalog costing the run nothing.
@@ -100,4 +119,5 @@ eval imports no sibling `@khorsheed` package, so it records digests and never re
 - The protocol goes to **v1-rev10**. Adding `provisioned` to a lock does not change any condition hash — the lock is not hashed — so no existing condition is re-provisioned by this change alone. A condition that ADDS a `preset` changes its hash, which is the existing "adding a factor re-provisions" rule.
 - Any condition already declaring a non-null `preset` on an external CLI now fails validation. Nothing in the dataset repository does; the refusal is what a future author gets instead of a silent fiction.
 - The sub-dsh gives up nothing when it rosters no preset, and a rosterless composition is still the default everywhere.
+- **A preset cannot take capabilities AWAY from a sub-dsh.** `dsh-base` mounts the model-facing tool set at the profile root, and a preset composes rows rather than filtering the root, so two sub-dsh presets differ in what they ADD. Pilot D's two conditions are therefore "the same tools plus different skills", not "a smaller tool set" — a real factor, and the one this apparatus can honestly offer today. Narrowing a sub-dsh's tool set would mean moving `dsh-base`'s model-facing rows into presets, which is a host-side change.
 - The measurement itself — how a sub-profile's capability hash is actually taken on a real machine — is T31's, and this note's alternatives section records the constraint it must respect.

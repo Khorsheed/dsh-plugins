@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-capability-hash-and-sub-dsh-preset.md
-.agents/notes/implemented/feature/2026-09-11-capability-hash-and-sub-dsh-preset.md: a44a3e51df3a7e8244a6939f58bfae5f8cbd6c11
-.agents/notes/implemented/feature/2026-09-11-capability-hash-and-sub-dsh-preset.zh.md: 827722e79213c8cb63957d3a0e6cf95a336f4150
+.agents/notes/implemented/feature/2026-09-11-capability-hash-and-sub-dsh-preset.md: a268acd00bf4807c2f465d8d0ace198a8206860c
+.agents/notes/implemented/feature/2026-09-11-capability-hash-and-sub-dsh-preset.zh.md: 441921b35f1556b05a77d4d3a538047e9b83c96c
