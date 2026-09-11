@@ -1577,6 +1577,84 @@ catalog 的两个接口与哈希；eval 的 run.meta 与 lock 字段；sub-dsh �
 分支名与 commit；Agent Note 路径；gate 输出；两个 scope 的 caps 哈希与清单差异；lock 样例。
 ```
 
+### T30d · local-agent-dsh：认 0.1.5 的 session.v3.jsonl.zstd（可发，挡着 pilot B）
+
+```text
+# 任务 T30d：local-agent-dsh——子 dsh 会话文件按前缀匹配，不写死文件名
+
+## 背景
+T29c 回归第 6 项：dsh 的请求侧完整（--model → startup provider → runner 行 → applyModelRequest，记录 cliVersion 0.1.5-rc.1），但 session-mirror.ts 按写死的 session.jsonl.zstd 找子 dsh 会话，0.1.5 写的是 session.v3.jsonl.zstd；真目录实测新线 undefined、旧线 2435 条事件。observedModel / usage / toolCalls 三样一起丢，报告第三条不变量对 dsh 格只剩声明侧，效率表 dsh 的 token 列空，pilot B（dsh × 两模型）两格都配不出对子。records.ts 的 /dsh sessions 走同一个写死文件名，同样受影响。
+
+## 先读
+packages/local-agent-dsh/src/session-mirror.ts、records.ts（文件名常量与目录扫描）；T11 / T25 的 Agent Note（回读的定位规则）；宿主 0.1.5 的会话存储布局（用 ~/.dsh-toolchains/rc-0.1.5-rc.1 起一次性 HOME 看真目录）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-dsh-session-v3，分支 fix/local-agent-dsh-session-v3，只改 packages/local-agent-dsh（README 双语 + sidecar）。
+
+## 已定决定
+- 会话文件按前缀匹配 session*.jsonl.zstd，多份时取版本号最高的（v3 > 无版本），并把选中的文件名记进回读结果；找不到仍报缺位不猜。
+- session-mirror 与 records 用同一个解析函数；旧线文件名继续认（历史兼容：floor + current）。
+- 不改协议、不改 eval。
+
+## 交付 / 完成判据
+两条路径的测试各钉旧线与新线的真实目录夹具；真机：0.1.5-rc.1 上 dsh 一轮委派回读到 observedModel、usage、toolCalls 三样；/dsh sessions 列得出会话；pilot-a-round1 复算逐字节相同。
+
+## 回报
+分支名与 commit；Agent Note 路径（bug-fix）；gate 输出；那一轮的记录（脱敏）。
+```
+
+### T29d · eval：job 起的 run 走容器路径；起格前出网自检（可发）
+
+```text
+# 任务 T29d：dsh-eval——job 起的 run 能走容器路径；容器路径起格前做一次出网自检
+
+## 背景
+T29c 回归：job 造的父会话没有 cwd，容器条件的就绪检查报 the parent session has no working directory to run the CLI in，本轮容器格只能用 T20c 那种进程内驱动跑；同一轮还发现单元断网时（eval-net 是 internal，边车 eval-proxy / eval-registry 停了）codex 在单元里正常起来、230 秒后 task_complete 交回空回答，没有任何一句网络错误——四分钟空转会在每一格重演。
+
+## 先读
+packages/eval/src/run.ts（job 路径造父会话的位置、readiness 的 unitFor 与 probeIn、容器路径的 acquire → populate 顺序）、readiness.ts、slash.ts 的 job 启动；packages/lab 的 verify 动词；题库 env/README.md（eval-net、边车、白名单代理地址）；T29b / T20c / T22 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-job-container，分支 fix/eval-job-container-path，只改 packages/eval（README 双语 + sidecar）。
+
+## 已定决定
+- job 路径的父会话带上工作目录（与 --wait 路径同一个取值，run 的 cell 根目录），容器条件与宿主条件的就绪检查都能起 CLI；测试钉住 job 起的 run 在两条路径上就绪原文相同。
+- 出网自检：容器路径 acquire 之后、populate 之前，经 lab.verify 在单元里对白名单代理跑一次最小连通检查（命令与目标从计划 unit 段或题库 env 层读，不写死地址）；失败按基础设施故障记 EGRESS_UNAVAILABLE 并拒绝整个 run，不进入委派；就绪窗口默认值提到能装下镜像冷启动加首次 exec（T29c 实测 420 秒够），可配置。
+- 不改 lab、local-agent。
+
+## 交付 / 完成判据
+eval 测试全绿，gate 绿；真机（3171，边车在）：/eval run 起 job 的 P0 × codex 容器一格到 released；把 eval-proxy 停掉再起一次，run 在自检处被拒且原文点名代理。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；两次真机的原文。
+```
+
+### T32b · eval：provision 在实例内接 capability-catalog 填能力哈希（可发）
+
+```text
+# 任务 T32b：dsh-eval——/eval conditions provision 在实例内取 preset 的能力哈希写进 lock
+
+## 背景
+T32 把能力哈希的实测留成 ProvisionOptions.capabilities 钩子：没钩子时 lock 不带能力记录并报 CAPABILITIES_UNMEASURED，就绪检查再拒一次。今天没有任何路径接这个钩子，带 preset 的条件进不了 ready，pilot D 起不了。capability-catalog 已有 snapshotFor(presetId) 与 hashOf，服务面在 ctx 上；eval 不 import 兄弟包，按既有做法用结构面经 ctx 服务查找。
+
+## 先读
+packages/eval/src/service.ts（provision 的入口与 ProvisionOptions）、faces.ts（现有四个面的写法）、slash.ts；packages/capability-catalog/src/index.ts（snapshotFor / hashOf 的签名与 scope 解析）；packages/local-agent-dsh/src/provision.ts（子 profile 的 preset roster 在哪、preset id 怎么命名）；T31 / T32 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-caps-wire，分支 feat/eval-provision-capabilities，只改 packages/eval（README 双语 + sidecar）。
+
+## 已定决定
+- faces.ts 加 CapabilityCatalogFace { snapshotFor(presetId), hashOf(snapshot) }，经 hosts.get('capabilityCatalog') 取，缺席时 provision 照旧报 CAPABILITIES_UNMEASURED。
+- /eval conditions provision 对 preset 非 null 的条件：按该条件 scope 的子 profile 解析 preset id，取快照算哈希填 ProvisionOptions.capabilities；lock 的 provisioned.capabilities 与就绪检查的核对沿用 T32。
+- CLI 路径照旧拒绝（进程外没有服务面）。
+
+## 交付 / 完成判据
+eval 测试全绿，gate 绿；真机：本机 dsh 两个只差 preset 的 scope 各 provision 一次，lock 里两个不同的 caps 哈希，validate 报 ready；改一个技能正文再 provision，哈希变、旧 lock 报 unready。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；两份 lock（脱敏）与 validate 原文。
+```
+
 ## 四、验收规程
 
 实施 agent 回报四样：分支名与 commit、Agent Note 路径、`pnpm gate` 输出、一份脱敏的示例输出。协调者做的事：
