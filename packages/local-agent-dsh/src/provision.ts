@@ -93,7 +93,21 @@ export interface DshSubProfileConfig {
 /** The roster row's id inside the sub-profile patch (and the marker this module rewrites). */
 const PRESET_ROSTER_ROW_ID = 'agent-presets'
 
-/** The roster package the roster row names. */
+/**
+ * The roster package the roster row names.
+ *
+ * Deliberately NOT symlinked into the sub-profile the way the headless bundle
+ * is. The headless bundle is a `@khorsheed` package the dsh installation does
+ * not carry, so it must be linked in from the plugin installation; the roster
+ * is an OFFICIAL package, already in the installation anchor's closure beside
+ * `@deepseek-ai/dsh-base`. Linking a second copy would give it a second
+ * `@deepseek-ai/cordis` — and cordis does service lookup and type checks by
+ * instance identity, so the symptom would be silently missing services rather
+ * than an error (the same failure the dual-filesystem contract in the README
+ * describes for the bundle). A deployment whose anchor genuinely lacks the
+ * roster gets the loader's own "cannot resolve" message, which names the
+ * module better than provisioning could.
+ */
 export const PRESET_ROSTER_MODULE = '@deepseek-ai/dsh-agent-presets'
 
 /** A preset id doubles as a directory name — the roster's own rule. */
@@ -249,29 +263,5 @@ export function provisionDshSubProfile(homeDir: string, config: DshSubProfileCon
   const bundleLink = join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
   mkdirSync(dirname(bundleLink), { recursive: true })
   ensureSymlink(bundleLink, bundleDir)
-  if (config.preset !== undefined) linkPresetRoster(profileDir)
   return profileDir
-}
-
-/**
- * Resolve `@deepseek-ai/dsh-agent-presets` from this package's installation
- * and link it beside the headless bundle, so the roster row resolves the same
- * way every other row of the sub-profile does.
- *
- * Best-effort by design: a deployment whose dsh installation already exposes
- * the roster (the profile's healed `profiles/node_modules` fallback) needs no
- * link, and one where neither resolves fails at boot with the loader's own
- * "cannot resolve" message — which names the module, where a throw here would
- * only name the provisioning step.
- */
-function linkPresetRoster(profileDir: string): void {
-  let rosterDir: string
-  try {
-    rosterDir = dirname(createRequire(import.meta.url).resolve(`${PRESET_ROSTER_MODULE}/package.json`))
-  } catch {
-    return
-  }
-  const link = join(profileDir, 'node_modules', '@deepseek-ai', 'dsh-agent-presets')
-  mkdirSync(dirname(link), { recursive: true })
-  ensureSymlink(link, rosterDir)
 }

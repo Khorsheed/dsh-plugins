@@ -146,18 +146,20 @@ describe('preset roster layer', () => {
     expect(readSubProfilePreset(home)).toBeUndefined()
   })
 
-  it('is idempotent with a preset, and links the roster module beside the bundle', () => {
+  it('is idempotent with a preset, and links NO copy of the roster module', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
     const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
     const profileDir = provisionDshSubProfile(home, { headlessBundleDir: bundleDir, preset: { id: 'eval-lean' } })
     const first = readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')
     provisionDshSubProfile(home, { headlessBundleDir: bundleDir, preset: { id: 'eval-lean' } })
     expect(readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')).toBe(first)
-    // The roster resolves from this package's own installation in the repo,
-    // so the link exists here; a deployment where it does not resolve leaves
-    // the module to the installation anchor rather than failing provisioning.
-    const link = join(profileDir, 'node_modules', '@deepseek-ai', 'dsh-agent-presets')
-    expect(lstatSync(link).isSymbolicLink()).toBe(true)
-    expect(existsSync(join(readlinkSync(link), 'package.json'))).toBe(true)
+    // The roster is an OFFICIAL package: it resolves from the dsh
+    // installation anchor beside @deepseek-ai/dsh-base. A linked second copy
+    // would drag in a second @deepseek-ai/cordis, and cordis keys services by
+    // instance identity — the symptom would be silently missing services.
+    expect(existsSync(join(profileDir, 'node_modules', '@deepseek-ai'))).toBe(false)
+    // The headless bundle IS linked: it is a @khorsheed package the dsh
+    // installation does not carry.
+    expect(lstatSync(join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')).isSymbolicLink()).toBe(true)
   })
 })
