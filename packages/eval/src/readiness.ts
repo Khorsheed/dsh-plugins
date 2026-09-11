@@ -137,7 +137,7 @@ export interface ReadinessSubject {
  * @param condition - the probed condition.
  * @returns the refusal reason, or undefined when nothing is claimed or all agrees.
  */
-export function capabilityRefusal(condition: ReadinessSubject): string | undefined {
+export function capabilityRefusal(condition: ReadinessSubject, fresh?: string): string | undefined {
   const preset = condition.preset ?? null
   if (preset === null) return undefined
   if (condition.capabilities === undefined) {
@@ -149,6 +149,16 @@ export function capabilityRefusal(condition: ReadinessSubject): string | undefin
   if (measured !== undefined && measured !== preset) {
     return `the condition declares preset ${JSON.stringify(preset)} but its capability record was taken under ${JSON.stringify(measured)}`
       + ' — the provisioned environment belongs to another subject'
+  }
+  // The lock records a hash; this compares it to the face that is there NOW.
+  // Without it a lock stays "verified" forever while the preset it measured
+  // is edited underneath it — and a skill BODY edit moves no other recorded
+  // hash (`home.sha` hashes config files, not SKILL.md), so this is the only
+  // thing that sees it.
+  if (fresh !== undefined && fresh !== condition.capabilities.sha) {
+    return `the lock records capability face caps:${condition.capabilities.sha.slice(0, 12)}… for preset ${JSON.stringify(preset)}`
+      + ` but it now measures caps:${fresh.slice(0, 12)}… — the preset changed after provision`
+      + ' (re-run `conditions provision` for this condition)'
   }
   return undefined
 }
@@ -182,6 +192,17 @@ export interface ReadinessInput {
   readbackWaitMs?: number
   now?: () => number
   log?: (message: string) => void
+  /**
+   * Re-measure one condition's capability face, for the comparison in
+   * {@link capabilityRefusal}. Called only for a condition that declares a
+   * preset AND carries a locked hash; `undefined` back means "could not
+   * measure", which leaves the locked record unchallenged rather than
+   * failing the condition on the measurement's own absence.
+   *
+   * Omitted entirely — a composition with no capability catalog — the gate
+   * keeps exactly the T32 behavior: presence and agreement, no freshness.
+   */
+  capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
   /**
    * Container path: acquire a throwaway unit for one condition and hand back
    * where to run and how to destroy it. Omitted, the probe runs on the host
@@ -224,6 +245,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
       now,
       log,
       ...(input.unitFor !== undefined ? { unitFor: input.unitFor } : {}),
+      ...(input.capabilitiesNow !== undefined ? { capabilitiesNow: input.capabilitiesNow } : {}),
     }))
   }
   return records
@@ -240,6 +262,7 @@ async function probeOne(
     now: () => number
     log: (message: string) => void
     unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit | undefined>
+    capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
   },
 ): Promise<ReadinessRecord> {
   if (env.unitFor === undefined) return await probeIn(localAgent, condition, env, undefined)
@@ -291,6 +314,7 @@ async function probeIn(
     readbackWaitMs: number
     now: () => number
     log: (message: string) => void
+    capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
   },
   unit: ReadinessUnit | undefined,
 ): Promise<ReadinessRecord> {
@@ -307,10 +331,25 @@ async function probeIn(
   }
   const startedAt = env.now()
   // Before spending a delegation: does the subject's capability claim have
-  // anything behind it? A condition whose preset was never measured fails
-  // here, at no token cost, instead of producing a whole run's worth of cells
+  // anything behind it, and does it still hold? A condition whose preset was
+  // never measured — or was measured before someone edited it — fails here,
+  // at no token cost, instead of producing a whole run's worth of cells
   // attributed to a capability face nobody checked.
-  const capabilityProblem = capabilityRefusal(condition)
+  //
+  // A re-measure that itself fails leaves the locked record unchallenged: it
+  // is evidence about the PRESET, and its absence is evidence about the
+  // catalog. Failing the condition on the second would refuse runs for a
+  // reason that has nothing to do with the subject.
+  let freshCapabilities: string | undefined
+  if (env.capabilitiesNow !== undefined && condition.capabilities !== undefined && (condition.preset ?? null) !== null) {
+    try {
+      freshCapabilities = await env.capabilitiesNow(condition)
+    } catch (error) {
+      env.log(`readiness ${condition.id}: the capability face could not be re-measured`
+        + ` (${error instanceof Error ? error.message : String(error)}) — the locked record stands`)
+    }
+  }
+  const capabilityProblem = capabilityRefusal(condition, freshCapabilities)
   if (capabilityProblem !== undefined) {
     env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${capabilityProblem}`)
     return {
