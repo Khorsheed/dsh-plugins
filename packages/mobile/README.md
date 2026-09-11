@@ -34,7 +34,37 @@ Unload removes owned styles, frame markers, observers, listeners, routes and slo
 
 The App accepts a configured HTTPS origin or official launch-token login URL. It persists the clean origin only; WebKit stores the official browser session cookie. The bridge accepts only matching-origin main-frame messages with bridge version 1, and only reports availability. It does not grant file or command privileges.
 
-Different physical networks need an independently configured private HTTPS/WSS ingress to loopback 3080, valid official authentication, an awake/online Mac and reachable phone. Starting 3080 alone does not establish remote access. The App does not configure networking or credentials on your behalf. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS. Clear local App data and server-side device revocation are different operations.
+Different physical networks need an independently configured HTTPS/WSS ingress to the loopback Host port (3080 in production), valid official authentication, an awake/online Mac and reachable phone. Starting 3080 alone does not establish remote access. The App does not configure networking or credentials on your behalf. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS. Clear local App data and server-side device revocation are different operations.
+
+## Optional Quick Tunnel preview
+
+Networking is deployment configuration, not a plugin dependency. Community users can choose Quick Tunnel for temporary previews, their own HTTPS reverse tunnel/server, or private networking. No personal domain, server or Cloudflare account is embedded in the plugin. A stable managed relay would be a separate service with its own operating costs.
+
+[Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) create a temporary HTTPS address without a Cloudflare account or your own domain. They are for testing, have no uptime guarantee, allow 200 concurrent requests and do not support SSE. The tested rc1 conversation transport uses WebSocket; this does not qualify unrelated plugins that require SSE.
+
+Use an isolated Host profile with the mobile tarball installed. Install `cloudflared` from its official distribution and use Node 22+. From the repository root, start the tunnel first (the origin can be offline while the address is allocated):
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:3182 --protocol http2 --no-autoupdate
+```
+
+Copy its generated hostname in place of `YOUR-HOST.trycloudflare.com` below. Start the standalone example in a second terminal:
+
+```sh
+PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com HOST_PORT=3181 INGRESS_PORT=3182 node packages/mobile/examples/https-ingress.mjs
+```
+
+Then start the isolated Host with its own `DSH_HOME`, workspace and configured model, adding the exact public authority through the official flag:
+
+```sh
+dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
+```
+
+The example is also included under `examples/` in the package tarball. It binds only to loopback, preserves the public Host and Origin for official authentication, requires an HTTPS forwarded scheme, adds Secure to upstream cookies, and forwards HTTP streams and WebSocket upgrades. It neither reads Host private keys nor adds a pairing or device-revocation system. Run it only behind the HTTPS tunnel; a local header is not proof of an authenticated user. The Host remains responsible for authorization.
+
+For phone login, replace only the origin of the Host's launch URL with the tunnel HTTPS origin, preserving its `?token=...`. Open it in Safari or paste it into the iOS shell. Keep that credential-bearing URL private. Login redirects to a clean `/`; use `?mobile=1` afterwards if the device does not enable mobile layout automatically.
+
+Keep the Mac awake and all three services running. Stop the tunnel process to close this public access path; removing the mobile plugin alone does not stop the tunnel or revoke official sessions. A newly allocated hostname requires updating both `PUBLIC_ORIGIN` and `--trusted-host` and logging in again. This preview does not establish long-term cellular availability. See the [Quick Tunnel acceptance record](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md).
 
 ## Compatibility
 

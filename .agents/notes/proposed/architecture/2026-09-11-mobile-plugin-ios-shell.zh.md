@@ -20,7 +20,7 @@ Status: proposed
 
 ### Remote access and versioning
 
-私网 HTTPS/WSS 转发到现有 loopback 3080。手机使用蜂窝网络也可经已配置的 tailnet 访问另一网络的 Mac，条件是双方联网、Mac 唤醒、宿主和接入服务运行、凭据有效。后台挂起后要前台重同步，不保证 iOS socket 永久存活。APNs 后续增量交付。
+独立配置 HTTPS/WSS 转发到 loopback Host 服务（生产为 3080）。手机使用蜂窝网络也可经已配置的 tailnet 访问另一网络的 Mac，条件是双方联网、Mac 唤醒、宿主和接入服务运行、凭据有效。后台挂起后要前台重同步，不保证 iOS socket 永久存活。APNs 后续增量交付。
 
 先用 HTTPS 上的官方浏览器认证。后续独立网关可以增加短时一次性配对和可撤销设备凭据，但必须保留上游认证，不依赖私有内部实现。若无法独立实现，明确保留基础登录并把增强配对标为不可用。卸载插件不等于撤销官方 Cookie 或移除 VPN。
 
@@ -49,6 +49,8 @@ Host/插件/移动 Web 按组合验收，以版本化的窄原生桥接使兼容
 原生壳保存干净的 origin 与 WebKit 浏览器 Cookie，不把启动 token 写入偏好。Release 强制 HTTPS，Debug 仅为模拟器允许 loopback HTTP。桥接只报告可用状态并校验主框架、同 origin 和版本；回前台触发官方重连，不重放写命令。设备凭据、扫码配对、分享和推送尚未实现。
 
 [验收记录](../../../../docs/acceptance/mobile-rc1-2026-09-11.md)覆盖本地流式、保留草稿的重连、认证握手、tarball 重装、10 项插件测试与 20 项原生 URL 检查。实测 rc1 进程未对标准依赖移除执行热卸载，要求受控重启 Host 并刷新客户端。单元 disposer 覆盖不等于完整 Host HMR 实证。模拟器已编译/安装/启动，但原生画面自动化受 macOS 权限阻挡。本次实现未编辑主工作区、官方或兄弟源码，未部署生产。
+
+可选部署示例 `packages/mobile/examples/https-ingress.mjs` 支持无需域名或账号的临时 Quick Tunnel，保留官方 Host/Origin 认证，在 HTTPS 边界补充 Secure Cookie 并转发 WebSocket；它不是 Cordis 依赖或设备网关。社区分发不绑定任何个人服务器或主机名。停止隧道与卸载插件是独立动作。[公网入口证据](../../../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md) 将 HTTP/升级检查与待完成的手机及公网流式 UI 验收分开记录。
 
 ## Risks
 

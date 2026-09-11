@@ -20,7 +20,7 @@ The source audit uses rc1 commit `183f08e9c6`. BrowserAuth already exchanges a p
 
 ### Remote access and versioning
 
-Use private HTTPS/WSS forwarding to the existing loopback 3080 service. A phone on cellular can reach a Mac on another network through a configured tailnet, provided both are online, the Mac is awake, the host and access service run, and credentials remain valid. Background suspension requires foreground resynchronization; it is not a persistent iOS socket guarantee. APNs is a later increment.
+Use independently configured HTTPS/WSS forwarding to the loopback Host service (3080 in production). A phone on cellular can reach a Mac on another network through a configured tailnet, provided both are online, the Mac is awake, the host and access service run, and credentials remain valid. Background suspension requires foreground resynchronization; it is not a persistent iOS socket guarantee. APNs is a later increment.
 
 Start with official browser authentication over HTTPS. A later independent gateway may add short-lived one-time pairing and revocable device credentials, but must preserve upstream authentication without private internals. If that seam cannot be implemented independently, explicitly retain the basic login path and mark enhanced pairing unavailable. Plugin removal is not equivalent to revoking official cookies or removing the VPN.
 
@@ -49,6 +49,8 @@ Keep the official root and declare no foreign child slots. An owned style elemen
 The native shell persists a clean origin and WebKit browser cookies, not the launch token in preferences. Release enforces HTTPS; Debug allows loopback HTTP for simulator tests. The bridge reports availability only and checks main frame, same origin and version. Foreground signals official reconnect; no write commands are replayed. Device credentials, QR pairing, sharing and push are still unimplemented.
 
 The [acceptance record](../../../../docs/acceptance/mobile-rc1-2026-09-11.md) covers local streaming, draft-preserving reconnect, authenticated handshake, tarball reinstall, 10 plugin tests and 20 native URL checks. Standard dependency removal did not hot-unload in the tested rc1 process: require controlled Host restart and client reload. Unit disposer coverage is not evidence of full Host HMR. The simulator builds/installs/launches, but native visual automation is blocked by macOS permissions. No main-workspace, upstream or sibling edits and no production deployment are part of this implementation.
+
+The optional `packages/mobile/examples/https-ingress.mjs` deployment example supports a temporary Quick Tunnel without a domain or account. It preserves official Host/Origin authentication, adds Secure cookies at the HTTPS boundary and forwards WebSocket traffic; it is not a Cordis dependency or a device gateway. Community distribution remains independent of any personal server or hostname. Stopping the tunnel and uninstalling the plugin are separate actions. The [public-ingress evidence](../../../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md) distinguishes HTTP/upgrade checks from pending phone and public-stream UI qualification.
 
 ## Risks
 

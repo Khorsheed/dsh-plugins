@@ -34,7 +34,37 @@ pnpm exec tsx scripts/pack-dist.ts --package packages/mobile --scope @khorsheed 
 
 App 接受配置的 HTTPS 主机地址或官方启动 token 登录链接，只保存无凭据的 origin；WebKit 保存官方浏览器会话 Cookie。桥接仅接受同 origin 主框架、bridge version 1 的消息，只报告插件可用性，不授予文件或命令权限。
 
-跨物理网络需要独立配置的私网 HTTPS/WSS 入口转发到 loopback 3080、有效官方认证、保持唤醒和联网的 Mac，以及网络可达的手机。仅启动 3080 不等于远程可用。App 不自动配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。清除 App 本地数据与服务端设备撤销是不同操作。
+跨物理网络需要独立配置的 HTTPS/WSS 入口转发到 loopback Host 端口（生产为 3080）、有效官方认证、保持唤醒和联网的 Mac，以及网络可达的手机。仅启动 3080 不等于远程可用。App 不自动配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。清除 App 本地数据与服务端设备撤销是不同操作。
+
+## 可选的 Quick Tunnel 预览
+
+网络接入属于部署配置，不是插件依赖。社区用户可以选择临时预览用的 Quick Tunnel、自建 HTTPS 反向隧道/服务器或私网连接。插件不嵌入个人域名、服务器或 Cloudflare 账号。稳定的托管中继属于独立服务，会有自己的运营成本。
+
+[Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) 无需 Cloudflare 账号或自有域名即可生成临时 HTTPS 地址。它用于测试，不保证在线时间，允许 200 个并发请求，不支持 SSE。实测 rc1 的会话传输使用 WebSocket；这不代表需要 SSE 的其他插件已通过验收。
+
+使用已安装 mobile tarball 的隔离 Host profile。从官方渠道安装 `cloudflared`，使用 Node 22+。在仓库根目录先启动隧道（分配地址时本地入口可以尚未启动）：
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:3182 --protocol http2 --no-autoupdate
+```
+
+将生成的主机名替换下方的 `YOUR-HOST.trycloudflare.com`，在第二个终端启动独立示例：
+
+```sh
+PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com HOST_PORT=3181 INGRESS_PORT=3182 node packages/mobile/examples/https-ingress.mjs
+```
+
+然后使用独立的 `DSH_HOME`、工作区和已配置模型启动隔离 Host，通过官方参数加入精确的公网 authority：
+
+```sh
+dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
+```
+
+示例也随 tarball 的 `examples/` 分发。它仅绑定 loopback，保留公网 Host 与 Origin 交给官方认证，要求转发协议为 HTTPS，为上游 Cookie 补充 Secure，并透传 HTTP 流和 WebSocket 升级。它不读取 Host 私有密钥，不增加配对或逐设备撤销系统。仅在 HTTPS 隧道之后运行；本地请求头不构成用户已认证的证明，授权仍由 Host 负责。
+
+手机登录时，仅将 Host 启动链接的 origin 替换为隧道 HTTPS origin，保留 `?token=...`，在 Safari 打开或粘贴到 iOS 壳。带凭据链接应私下保存。登录会跳转到干净的 `/`；如果设备没有自动启用移动布局，认证后再加 `?mobile=1`。
+
+Mac 保持唤醒，三个服务持续运行。停止隧道进程可关闭这条公网访问路径；仅卸载 mobile 不会停止隧道或撤销官方会话。重新分配域名后，需要同步更新 `PUBLIC_ORIGIN`、`--trusted-host` 并重新登录。这次预览不代表长期蜂窝网络可达性已验证。参见 [Quick Tunnel 验收记录](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md)。
 
 ## Compatibility
 
