@@ -51,6 +51,22 @@ T32 的 provision 在探针返回 `undefined` 时只 log 了 `capability face NO
   - `checkReadiness`：preset 变了则不起任何委派就失败（门面的 `start` 一被调用就抛）、没声明 preset 的条件从不重量、重量抛错时条件仍 ready。
   - `EvalService.provision`：挂了 catalog 时测到的面进 lock；没挂时保持 T32 的降级；没声明 preset 的条件从不问 catalog；作用域不 roster 时报 warning 而不是写个猜测。
 
+## 真机验证
+
+一套私有工具链（npm 装 `@deepseek-ai/dsh@0.1.5-rc.1`，本分支的 catalog 以本地 tarball 解包进去），一个实例 home，其 roster 根里放着 `eval-lean` 与 `eval-full`，以及两个作用域目录，其子 profile 只差一行——roster 的 `default:`。两个 scope 都不自带 preset 目录，因此都让位给实例的根。catalog、preset、子 profile patch 与 lock 都是真的；local-agent 面是桩，因为 T32b 在那条路上什么都没改，而 T31 自己的真机跑已经覆盖过它。
+
+| 核对 | 结果 |
+|---|---|
+| 两个 scope，两个哈希 | `dsh-lean` → `caps:326eb05ecf89…`（1 技能、26 工具）；`dsh-full` → `caps:3f3b4e781741…`（2 技能、26 工具） |
+| `provisioned.preset` 是回读 | 每份 lock 记的是该 scope 子 profile roster 的那个 preset，不是声明要的那个（这里两者一致——要点在于值来自文件） |
+| validate | 两条都 `ready`，无 warning；先按 T31 的环把 `home.sha` 解进声明、再 provision 一次 |
+| 改技能**正文**、保留旧 lock | 就绪检查：**NOT READY**——「the lock records capability face caps:326eb05ecf89… but it now measures caps:92a2c1b0965b… — the preset changed after provision」，且 `childSessionId: null`（一次委派都没起） |
+| 改完重新 provision | 哈希从 `326eb05ecf89…` 变为 `92a2c1b0965b…`，就绪检查重新通过 |
+
+有一条结果与文案的预期不同，值得写出来：**`validate` 对过期的 lock 仍报 `ready`。** 它是离线的、量不了，所以新鲜度比对只能待在有 catalog 的地方——就绪检查，而那也正是过期记录真正需要拦住点什么的地方。于是 `dsh-eval validate` 与 `conditions list` 会对一份 run 将要拒掉的 lock 说「ready」；要堵上，就得给这两个读动词各自配一次实例内测量。
+
+两边工具数都是 26，是 T32 那条结论的复述：`dsh-base` 把模型面工具挂在 profile 根上，preset 是往上**组**行而不是过滤行，所以两个 sub-dsh preset 的差别在于各自**加了什么**。
+
 ## Alternatives considered
 
 **直接哈希条件**声明**的那个 preset，不回读作用域。** 否决。那样它永远成功、永远与声明一致，并把 `provisioned.preset` 变成它本该作为对应物的那个字段的副本。这一段的全部价值就在于它**能够**不一致。

@@ -51,6 +51,22 @@ The `!!js` tags a real sub-profile patch is full of are parsed to `undefined` th
   - `checkReadiness`: a changed preset fails with no delegation started (the facade throws if `start` is called), a preset-less condition is never re-measured, and a throwing re-measure leaves the condition ready.
   - `EvalService.provision`: the measured face reaches the lock with a catalog mounted; the T32 degrade without one; the catalog is never asked for a preset-less condition; and a scope that rosters nothing warns rather than writing a guess.
 
+## Real-machine verification
+
+A private toolchain (npm `@deepseek-ai/dsh@0.1.5-rc.1` plus this branch's catalog as a local tarball), an instance home whose roster root holds `eval-lean` and `eval-full`, and two scoped homes whose sub-profiles differ in exactly one line — the roster's `default:`. Neither scope keeps a preset directory of its own, so both defer to the instance's root. The catalog, the presets, the sub-profile patches and the locks are real; the local-agent face is a stub, since T32b changes nothing on that path and T31's own machine run covered it.
+
+| Check | Result |
+|---|---|
+| Two scopes, two hashes | `dsh-lean` → `caps:326eb05ecf89…` (1 skill, 26 tools); `dsh-full` → `caps:3f3b4e781741…` (2 skills, 26 tools) |
+| `provisioned.preset` is a read-back | each lock names the preset its scope's sub-profile rosters, not the one the declaration asks for (they agree here — the point is that the value came from the file) |
+| validate | both `ready`, no warnings, after the T31 loop resolved `home.sha` into the declarations and provision ran again |
+| A skill BODY edited, old lock kept | the readiness gate: **NOT READY** — "the lock records capability face caps:326eb05ecf89… but it now measures caps:92a2c1b0965b… — the preset changed after provision", and `childSessionId: null` (no delegation was started) |
+| Re-provisioned after the edit | the hash moves `326eb05ecf89…` → `92a2c1b0965b…`, and the readiness gate passes again |
+
+One result is not what the brief predicted and is worth stating: **`validate` still reports the stale lock `ready`.** It is offline and cannot measure, so the freshness comparison can only live where a catalog does — the readiness gate, which is where a stale record actually has to stop something. A `dsh-eval validate` run and a `conditions list` therefore say "ready" about a lock the run will refuse; closing that would mean giving the read verbs an optional in-instance measurement of their own.
+
+The tools count being 26 in both is the T32 finding restated: `dsh-base` mounts the model-facing tools at the profile root and a preset composes rows rather than filtering them, so two sub-dsh presets differ in what they ADD.
+
 ## Alternatives considered
 
 **Hash the preset the condition DECLARES instead of reading the scope back.** Rejected. It would always succeed, always agree with the declaration, and make `provisioned.preset` a copy of the field it is supposed to be the counterpart of. The whole value of the block is that it can disagree.

@@ -136,7 +136,7 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 - **谁可以声明。** 只有 `dsh`。它的作用域目录里那份子 profile 是评测实例自己写的，preset roster 是那份 patch 的一层。三家外部 CLI 跑厂商自己的编排，本家族组不了——给它们写 preset 由 validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那侧的等价物是 `skills.pack`，同样尚未落地（I6）。
 - **provision 写下实物。** `conditions provision`（T31）在 `provisioned` 里多记两项：`preset` 从写出去的子 profile 回读，`capabilities.sha` 是 capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。测量由**实例内的探针**做（T32b，见下）；没有 catalog 的组合里探针不在，条件照样落 lock 但不带能力记录，并按名报 `CAPABILITIES_UNMEASURED`——之后就绪检查再拒一次。
-- **就绪检查还比新鲜度。** lock 记的是 provision 当时的哈希；run 起来时就绪检查**再量一次**，两者不等即判该条件不就绪、点名「preset 在 provision 之后变了」。少了这一步，lock 会永远读作「已核对」而它量的那个 preset 在底下被改——而改技能**正文**不会动任何别的已记哈希（`home.sha` 只哈希配置类文件，不含 SKILL.md），只有这一步看得见。量不出来（catalog 不在、preset 挂不起来）时，原记录照旧算数：测不到是关于 catalog 的证据，不是关于受试对象的。
+- **就绪检查还比新鲜度。** lock 记的是 provision 当时的哈希；run 起来时就绪检查**再量一次**，两者不等即判该条件不就绪、点名「preset 在 provision 之后变了」。少了这一步，lock 会永远读作「已核对」而它量的那个 preset 在底下被改——而改技能**正文**不会动任何别的已记哈希（`home.sha` 只哈希配置类文件，不含 SKILL.md），只有这一步看得见。量不出来（catalog 不在、preset 挂不起来）时，原记录照旧算数：测不到是关于 catalog 的证据，不是关于受试对象的。**注意 `validate` 看不见这件事**：它是离线的、量不了，所以一份 preset 已被改过的 lock 在 `dsh-eval validate` 与 `conditions list` 里仍读作 ready，直到 run 起来时就绪检查拒掉它。
 - **就绪检查核对。** 声明了 preset 而 lock 里没有能力记录，或记录取自另一个 preset——在花掉任何一次委派**之前**就判该条件不就绪。preset 进哈希却没人量过，等于两个纸面上的受试对象、事实上的一个。
 
 编排实例自己的能力哈希另算一回事：它记在 `run.meta.orchestrator.capabilities` 里，是**取证**。报告的「程序一致」把它列出来，不做任何比较——编排器不回答题库的任何一道题，把它做成通过/不通过的输入，等于「我们升级了规划 agent」就判一条不变量违反。组合里没挂 capability-catalog 就不记这一行。
