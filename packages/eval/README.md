@@ -65,11 +65,12 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 **一格一单元，顺序固定**（架构轨迹表第 11–17 步）：
 
 1. **`acquire`**：镜像、网络、`user`、资源上限来自 plan 的 `unit` 段；**挂载只有一条**——该条件的凭证目录，`bind` 且可写（凭证续期要写回宿主，T17 的决定）；**env 只有**该条件 `unit.scopedHome.var` = 容器内路径，dsh 再加 `NODE_OPTIONS=--use-env-proxy`；`missionId` 与 `runId` 都带上。`workdir` 是 `/workspace`，并要求 lab 把它交给单元自己的用户（`ownWorkdir`）——docker 建出来的 workdir 归 root，非 root 单元写不进去。
-2. **`setRefs({resource, fingerprint})`**：编排器自己写，acquire 之后立刻。lab 也写，但那是 warn-and-skip 的尽力而为，而「环境一致」这条不变量不能建在允许跳过的写上——pilot A 的指纹列整轮是空的，报告整轮 `unverifiable`。
-3. **`populate`**：宿主物化目录 → `/workspace`，`manifestPath` 指向该 attempt 的 `materialization.json`，由 lab 算哈希、写文件、登记 artifact。编排器不再另算一份：两个同名 `materialization.json` 带两个不同哈希，比任一个单独存在都糟。工作区里因此**只有题面字节**——没有清单，也就没有宿主路径进单元。
-4. **每阶段一轮委派**：`exec = {container, workdir: '/workspace', env: {<VAR>: <容器内路径>}}`，**不传 `cwd`**（单元里宿主 cwd 没有意义；作用域目录变量不点名的话 T17 会当场拒绝这一轮）。
-5. **每阶段结束 `checkpoint({name: <阶段 id>})`**（ref 经 lab 进 mission），再 `collect('/workspace' → 格子目录)`。格子目录在容器路径上是**工作区的宿主镜像**：收产出、结构校验、`submit`、判官取材都在它上面，因此第 7、9 两步的代码两条路径共用。
-6. **判定在单元内**：探针经 `lab.verify` 跑，判定材料走 verify 自己的 scratch（`/run/dsh-lab/verify`，跑完即删）；`--out` 写到 `/run/dsh-lab/verdicts/<探针>/`，**不在 `/workspace`**——归档是选手的产物，不该带判定输出。全部跑完一次 `collect` 把整棵 verdict 树收回该 attempt 的 `probe-verdicts/`，在宿主上解析、判定，再删掉单元内那个目录。退出码三态、`task` / `by` 先回填后校验的顺序，与宿主路径逐字相同。
+2. **出网自检（T29d，plan 声明了 `unit.egressCheck` 才有）**：`acquire` 之后、`populate` 之前，经 `lab.verify` 在单元里跑一次 plan 声明的那条命令，退出码 0 才继续。**先问再用**的理由是实测出来的：`eval-net` 是 `--internal` 网络，出网全靠边车代理；边车停掉时 codex 在单元里正常起来、读到自己的模型与沙箱档位、跑满 230 秒，然后 `task_complete` 的 `last_agent_message` 是 **null**——一个空回答，没有一句网络错误。上面每一层只能读成「探针失败」，而同样的四分钟会在每一格重演。就绪探针的单元同样先问、且在**委派之前**问，所以出网断了是一次 `EGRESS_UNAVAILABLE` 拒绝，**一次委派都不花**。命令与目标写在 plan 里（与网络放在一起），编排器自己不持有任何地址；声明为空或含空词，run 以 `EGRESS_CHECK_MALFORMED` 拒绝。plan 有 `network` 却没声明自检时，run 在日志里说一次——能跑，但这一轮分不清「网络不通」与「模型没话说」。
+3. **`setRefs({resource, fingerprint})`**：编排器自己写，acquire 之后立刻。lab 也写，但那是 warn-and-skip 的尽力而为，而「环境一致」这条不变量不能建在允许跳过的写上——pilot A 的指纹列整轮是空的，报告整轮 `unverifiable`。
+4. **`populate`**：宿主物化目录 → `/workspace`，`manifestPath` 指向该 attempt 的 `materialization.json`，由 lab 算哈希、写文件、登记 artifact。编排器不再另算一份：两个同名 `materialization.json` 带两个不同哈希，比任一个单独存在都糟。工作区里因此**只有题面字节**——没有清单，也就没有宿主路径进单元。
+5. **每阶段一轮委派**：`exec = {container, workdir: '/workspace', env: {<VAR>: <容器内路径>}}`，**不传 `cwd`**（单元里宿主 cwd 没有意义；作用域目录变量不点名的话 T17 会当场拒绝这一轮）。
+6. **每阶段结束 `checkpoint({name: <阶段 id>})`**（ref 经 lab 进 mission），再 `collect('/workspace' → 格子目录)`。格子目录在容器路径上是**工作区的宿主镜像**：收产出、结构校验、`submit`、判官取材都在它上面，因此第 7、9 两步的代码两条路径共用。
+7. **判定在单元内**：探针经 `lab.verify` 跑，判定材料走 verify 自己的 scratch（`/run/dsh-lab/verify`，跑完即删）；`--out` 写到 `/run/dsh-lab/verdicts/<探针>/`，**不在 `/workspace`**——归档是选手的产物，不该带判定输出。全部跑完一次 `collect` 把整棵 verdict 树收回该 attempt 的 `probe-verdicts/`，在宿主上解析、判定，再删掉单元内那个目录。退出码三态、`task` / `by` 先回填后校验的顺序，与宿主路径逐字相同。
 7. **`archive`**：lab 导出 `workspace/` 与 `manifest.json` 到该 attempt 的 `archive/`；`verdicts/` 早已在旁边（判在归档之前，闸要求它非空）。
 
 ### 「环境一致」比的是环境类
@@ -266,7 +267,7 @@ run 是**后台 job**，不是一句回复。`/eval run` 把它注册成一个 `
 | `dsh-eval run <plan.json> --instance <url>` | CI（没有浏览器） | 经实例的 Remote 面起同一个 job，跟着日志跑到结束，退出码即 job 结局 |
 
 - **取消只有一条路**：`job_kill <jobId>`。它触发 job 的 cancel → run 的 `AbortSignal` → 与每格预算计时器同一条杠杆（对每个在跑的委派 `localAgent.cancel`）。被取消时正在跑的格子**不重试、不强推状态**，停在当时那一步——`finalize` 因此把它归入 `interrupted`（T23 的分类）；一格都还没开的格子留在 `pending`，那是 `not-started`，两件不同的事。run 自己在 `run.meta.cancelled` 记一笔，bundle 照常导出（被取消的格子也是证据）。
-- **父会话**：委派要的是**活的 agent**，不只是一条会话记录（家族门面 `requireLiveParent` 的要求）。`/eval run` 起的 job 用发起会话作父（它的 agent 活过标签页），发起会话没有活 agent 时（Remote/CI 就没有）job 自己开一条会话作父，run 结束时关掉。回复里会说明用的是哪一种。
+- **父会话**：委派要的是**活的 agent**，不只是一条会话记录（家族门面 `requireLiveParent` 的要求）。`/eval run` 起的 job 用发起会话作父（它的 agent 活过标签页），发起会话没有活 agent 时（Remote/CI 就没有）job 自己开一条会话作父，run 结束时关掉。回复里会说明用的是哪一种。**自己开的那条会话带工作目录**（T29d）：run 自己的格子根 `<stateRoot>/cells/<runId>`，开之前先建出来。容器轮**不传每轮 cwd**（单元里宿主路径没有意义），provider 于是回落到父会话的 cwd——没有 cwd 的父会话让每个容器条件都以「the parent session has no working directory to run the CLI in」被拒，一句在讲编排器自己的管道、却像是 harness 的错的话（I4·T29c 记的）。两条起法的就绪原文因此逐字相同，测试钉住了这一点。
 - **没挂 jobs 服务的组合**：不拒绝，退回同步等待，并在回复**首行**写明这一轮的等待意味着什么。
 
 ```sh

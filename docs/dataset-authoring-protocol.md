@@ -733,6 +733,27 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
               ]
             }
           }
+        },
+        "egressCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ],
+          "description": "Optional. One command run INSIDE each freshly acquired unit — the readiness probe's before it delegates, each cell's between acquire and populate. Exit 0 passes; anything else (including a timeout) refuses the whole run as EGRESS_UNAVAILABLE, before a single delegation is spent. Declare it on any run whose units sit on an internal network: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say. The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own.",
+          "properties": {
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "argv, run through lab.verify inside the unit (name a shell explicitly if you want one). Must be non-empty and carry no empty word — the run refuses an empty one as EGRESS_CHECK_MALFORMED, since this subset cannot say minItems."
+            },
+            "timeoutMs": {
+              "type": "number",
+              "description": "Budget for the check; default 30000, and must be positive. A proxy that is up answers in milliseconds — this is sized for a TLS handshake, not for a model."
+            }
+          }
         }
       }
     },
@@ -751,6 +772,7 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
 - plan **不含 template 字段**：run 模板是题集 manifest 的确定性函数，validate 时生成、lint，随 plan 一起审阅（I2）。
 - `dataset.commit` 为 `null` 表示「run 启动时由 snapshot 钉入」，run.meta 记实际值。
 - `unit` 可缺省。缺省即**宿主路径**：格子目录在 `$DSH_HOME/state/eval` 下，与容器无关，与本字段出现之前逐字节相同。在场即**容器路径**：本 run 的每一格都在一个由 `image` 建出的 lab 单元里跑完 acquire → populate → 逐阶段委派与 checkpoint → 探针（经 `lab.verify` 在单元内）→ archive → release。`network` 不声明就是 docker 默认网桥（**有外网**），封闭跑法必须点名内网；`user` 不声明就是镜像自带的 `USER`；`resources` 既真加到容器上，也进环境指纹。
+- `unit.egressCheck` 可缺省，缺省即与本字段出现之前逐字节相同。在场即**出网自检**：每个新 acquire 出来的单元都先跑这条命令——就绪探针在委派之前跑，每一格在 acquire 与 populate 之间跑；退出码 0 过，其余（含超时）以 `EGRESS_UNAVAILABLE` 拒掉整个 run，一次委派都不花。**内网跑法应当声明它**：单元够不到代理时不会失败，而是**什么都不答**，读起来与「选手没话说」一模一样（实测：codex 在断网单元里跑满 230 秒，`task_complete` 的 `last_agent_message` 是 null，全程没有一句网络错误）。命令与目标写在这里、与它们所属的网络放在一起——编排器自己不持有任何地址。声明了但 `command` 为空或含空词，run 以 `EGRESS_CHECK_MALFORMED` 拒绝（契约子集没有 `minItems`，只能在 run 这一层挡）。
 - validate **不查镜像是否存在**：审阅一份 plan 不该要求 docker daemon 在场。第一次 `acquire` 就是这项检查。
 - 例：
 

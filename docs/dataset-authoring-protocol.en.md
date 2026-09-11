@@ -733,6 +733,27 @@ A sub-dsh condition carries two more lines — `provisioned.preset` is read back
               ]
             }
           }
+        },
+        "egressCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ],
+          "description": "Optional. One command run INSIDE each freshly acquired unit — the readiness probe's before it delegates, each cell's between acquire and populate. Exit 0 passes; anything else (including a timeout) refuses the whole run as EGRESS_UNAVAILABLE, before a single delegation is spent. Declare it on any run whose units sit on an internal network: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say. The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own.",
+          "properties": {
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "argv, run through lab.verify inside the unit (name a shell explicitly if you want one). Must be non-empty and carry no empty word — the run refuses an empty one as EGRESS_CHECK_MALFORMED, since this subset cannot say minItems."
+            },
+            "timeoutMs": {
+              "type": "number",
+              "description": "Budget for the check; default 30000, and must be positive. A proxy that is up answers in milliseconds — this is sized for a TLS handshake, not for a model."
+            }
+          }
         }
       }
     },
@@ -751,6 +772,7 @@ A sub-dsh condition carries two more lines — `provisioned.preset` is read back
 - A plan carries **no template field**: the run template is a deterministic function of the dataset manifest, generated and linted at validate time and reviewed alongside the plan (I2).
 - `dataset.commit` of `null` means "pinned by the snapshot at run start"; run.meta records the actual commit.
 - `unit` may be omitted. Omitted, the run takes the **host path**: per-cell directories under `$DSH_HOME/state/eval`, no containers, byte for byte what it was before this field existed. Present, it takes the **container path**: every cell of the run goes acquire → populate → one delegation round and one checkpoint per stage → probes (inside the unit, through `lab.verify`) → archive → release, in one lab unit built from `image`. An undeclared `network` is docker's default bridge, which HAS egress — a sealed run must name its internal network; an undeclared `user` is the image's own `USER`; `resources` is both applied to the container and hashed into the environment fingerprint.
+- `unit.egressCheck` may be omitted, and omitted it is byte for byte what the run was before this field existed. Present, it is the **egress self-check**: every freshly acquired unit runs this command first — the readiness probe's unit before it delegates, each cell's between acquire and populate. Exit 0 passes; anything else, a timeout included, refuses the whole run as `EGRESS_UNAVAILABLE` without spending one delegation. **A run on an internal network should declare it**: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say (measured: codex ran 230 seconds in a unit with no egress and returned `task_complete` with `last_agent_message: null`, and not one word about the network). The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own. A declaration whose `command` is empty or carries an empty word is refused as `EGRESS_CHECK_MALFORMED` (the contract subset has no `minItems`, so the run loop is the only place that can catch it).
 - validate does NOT check that the image exists: reviewing a plan must not require a reachable docker daemon. The first `acquire` is that check.
 - Example:
 

@@ -433,6 +433,23 @@ export const PLAN_SCHEMA: SchemaObject = {
             memory: { type: ['string', 'number'] },
           },
         },
+        egressCheck: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['command'],
+          description: 'Optional. One command run INSIDE each freshly acquired unit — the readiness probe\'s before it delegates, each cell\'s between acquire and populate. Exit 0 passes; anything else (including a timeout) refuses the whole run as EGRESS_UNAVAILABLE, before a single delegation is spent. Declare it on any run whose units sit on an internal network: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say. The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own.',
+          properties: {
+            command: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'argv, run through lab.verify inside the unit (name a shell explicitly if you want one). Must be non-empty and carry no empty word — the run refuses an empty one as EGRESS_CHECK_MALFORMED, since this subset cannot say minItems.',
+            },
+            timeoutMs: {
+              type: 'number',
+              description: 'Budget for the check; default 30000, and must be positive. A proxy that is up answers in milliseconds — this is sized for a TLS handshake, not for a model.',
+            },
+          },
+        },
       },
     },
     notes: {
