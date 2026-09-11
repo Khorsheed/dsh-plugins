@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.md
-.agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.md: 4394a0e8fdfa6439f42076dba21d28339ca354a9
-.agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.zh.md: e756c5a61e0e2a73f58da7980b04f8e2eb2333f5
+.agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.md: d0a415e7364a4308836c52995e2a2d19a50f2b3c
+.agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.zh.md: 31dfe5821c5a24774eda91cca5a6432a395fa337
