@@ -22,6 +22,8 @@ dsh plugin add @khorsheed/dsh-room
 
 The package is self-mounting: `dsh.bundle.patch` inserts the `room` loader row, and the browser half is discovered through the `dsh.client` block. Removing the plugin removes every surface it adds.
 
+> **The model tools split out (BREAKING)**: the core no longer registers the model-facing `room_invite` / `room_task` / `room_message` tools at the profile root — they now ride the companion `@khorsheed/dsh-room-tool`, **granted per session** through agent-preset compositions (migration: install the companion and add `- id: room-tool / name: '@khorsheed/dsh-room-tool'` to the target preset's `agent.cordis.yml`; the web-dev dev preset already carries it). The room service, members UI, and every Remote are unchanged.
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ degraded — **CLI members are unavailable**: they require the local-agent family's public delegation facade (`start`/`resume`/`cancel`, the M1 of `proposals/active/2026-08-18-local-agent-delegation-api.md`, merged on this repo's main), which no published `@khorsheed/dsh-local-agent` carries yet. Invite answers `local-agent-unavailable`; the main-agent member and every other surface work. The 0.1.5 cold-read path rides the handle-based sessionPersistence (`open(id, 'read')` → `read` → `close`; the one-shot `inspect` is gone). minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.

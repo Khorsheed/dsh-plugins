@@ -1,6 +1,9 @@
 /**
- * room host half: the `room` Typert Remote service plus the `room_invite` /
- * `room_task` / `room_message` model tools. The room's entire state is the session's `room/*` custom-event
+ * room host half: the `room` Typert Remote service. (The `room_invite` /
+ * `room_task` / `room_message` model tools left this package's profile-root
+ * registration in the M4' tool-row split — their definition factories live
+ * in ./tool.ts and the companion `@khorsheed/dsh-room-tool` mounts them
+ * inside agent-preset compositions.) The room's entire state is the session's `room/*` custom-event
  * journal (log-only events — persistence and reload-replay come free, the
  * model never sees them, and harnesses without this plugin replay the session
  * safely); every read folds the journal through the pure replay, and every
@@ -45,13 +48,10 @@ import { agentPresetsDerivationHost, composeRoomAgent, deriveSessionPreset, insp
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Type-only: pulls the `room/*` SessionEventMap merges.
 import type {} from './types.ts'
-// Type-only: pulls the `tools` ToolRuntime merge onto Context (deferred inject).
-import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
 import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
-import { roomInviteTool, roomMessageTool, roomTaskTool } from './tool.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
@@ -130,16 +130,10 @@ export class RoomService extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'room')
     this.engine = new DispatchEngine(ctx)
-    // The tools registry joins through DEFERRED injection, not a constructor
-    // probe: an apply-time ctx.get races the registry's own mount order (the
-    // probe loses on the real composition tree), while ctx.inject fires when
-    // the registry appears and never fires in a composition without one —
-    // losing only the model-facing invitation path, never the boot.
-    this.ctx.inject(['tools'], (toolsCtx) => {
-      toolsCtx.effect(() => toolsCtx.tools.register(roomInviteTool(this)), 'room: room_invite tool')
-      toolsCtx.effect(() => toolsCtx.tools.register(roomTaskTool(this)), 'room: room_task tool')
-      toolsCtx.effect(() => toolsCtx.tools.register(roomMessageTool(this)), 'room: room_message tool')
-    })
+    // The model-facing room tools are deliberately NOT registered here: they
+    // moved to the companion `@khorsheed/dsh-room-tool`, which mounts the
+    // tool row inside agent-preset compositions (session-granted). The
+    // definition factories stay exported from ./tool.ts for that companion.
   }
 
   /** Resolve a LIVE session as a room: presence, marker, replayed state. */
