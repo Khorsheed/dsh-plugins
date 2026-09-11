@@ -176,11 +176,9 @@ describe('service face (ctx.mission)', () => {
     const mission = ctx.get('mission') as MissionService
     expect(mission).toBeInstanceOf(MissionService)
     expect(commands).toEqual(['mission'])
-    expect(registered.sort()).toEqual([
-      'mission_annotate', 'mission_attest', 'mission_create', 'mission_get', 'mission_is_releasable',
-      'mission_list', 'mission_retry', 'mission_run_create', 'mission_run_list', 'mission_run_status',
-      'mission_submit', 'mission_transition',
-    ])
+    // The model tools moved to the companion `@khorsheed/dsh-mission-tool`:
+    // the core row registers nothing into either model-facing registry.
+    expect(registered).toEqual([])
 
     await mission.create({ id: 'cell', by: 'service' })
     await mission.setRefs('cell', { resource: 'box-1', fingerprint: 'sha256:abc', sessions: ['s-1'] })

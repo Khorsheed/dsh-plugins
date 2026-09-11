@@ -53,18 +53,11 @@
 
 # ── 工具按域开放（README「工具按域开放」）────────────────────────────
 # 执行期没有 agent，写类动词归编排器服务面与人的 CLI。
-
-- id: mission
-  config:
-    tools: read           # run_list / run_status / list / get 四个读工具
-
-- id: datasets
-  config:
-    tools: authoring      # 读类全开 + put_item（出题）；worktree_path 留给服务面
-
-- id: eval
-  config:
-    tools: all            # 本包只注册三个读工具，all 即三个读工具
+#
+# M4'③ 起这三个机制包拆成 core + companion：profile 根只挂 core（服务 / CLI /
+# slash / 标签页），模型工具行与工具提示词段落归 companion，授予点是 eval 预设
+# （presets/eval/agent.cordis.yml 的 mission-tool / datasets-tool / eval-tool 三
+# 行，tools tier 原样跟随）。本层不再给 core 写 tools——那已不是 core 的字段。
 
 # ── 委派工具不注册（冻结决策 12 的第三个执行点）──────────────────────
 # 前两个执行点在上面：「工具按域开放」（三个机制插件按域注册）与 agent-presets

@@ -294,3 +294,8 @@
 # service at call time.
 - id: room-tool
   name: '@khorsheed/dsh-room-tool'
+
+# mission / datasets / eval 的伴生工具行（M4'③）刻意不在这里：三个 core 不在本
+# pack 的成员清单里（孵化中），而伴生包运行时要 import core 的 ./tool 工厂——缺行
+# 会让整个 dev preset 报 broken（实例 boot 不受影响，但开发模式整体不可用）。等
+# 它们上架、并加进 profiles/web-dev/package.json 的 dependencies 之后再补三行。

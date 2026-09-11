@@ -6,29 +6,19 @@
  * a human act (`/eval run`), and every write-class verb — materialize,
  * delegate, submit, transition, annotate, archive, export, finalize — belongs
  * to the orchestrator's service face or to the human's CLI. So this module
- * registers exactly three tools and there is deliberately no fourth: an agent
+ * builds exactly three tools and there is deliberately no fourth: an agent
  * that could start a run could start one the human never approved.
  *
  * Every tool is a thin adapter over {@link EvalService} — the service is the
- * body, the adapters only translate (the mission precedent).
+ * body, the adapters only translate (the mission precedent). This module is
+ * the core's `./tool` export: it BUILDS the definitions and registers
+ * nothing — creating them is the companion `@khorsheed/dsh-eval-tool`'s job.
  * @module @khorsheed/dsh-eval
  */
-import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { EvalService } from './service.ts'
 import { expandHome } from './validate.ts'
-
-/**
- * Tag model-visible tools with their origin (AGENTS.md § Tool origin tagging;
- * seam S12): the catalog reads this `Symbol.for`-keyed tag back through
- * `ctx.tools.get()`. The tag is host-side only — the model-facing schema is
- * rebuilt by `schemaOf()` and never carries it.
- */
-const definePluginTool = <T extends object>(def: T): T =>
-  Object.assign(def, {
-    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: '@khorsheed/dsh-eval' },
-  })
 
 /** The names this module registers, in registration order. */
 export const EVAL_TOOL_NAMES: readonly string[] = ['eval_conditions', 'eval_plan_validate', 'eval_run_status']
@@ -55,12 +45,16 @@ function sessionOf(exec: { agent?: { session: { id: string } } | undefined }): {
 }
 
 /**
- * Register the three read tools on the plugin context.
- * @param ctx - a context carrying the tool registry.
+ * Build the three read tools. This module is the core's `./tool` export: it
+ * BUILDS the definitions and registers nothing — creating them is the
+ * companion `@khorsheed/dsh-eval-tool`'s job, and that row applies its own
+ * origin tag (attribution follows the mounting package, not this core).
  * @param service - the eval service the adapters translate to.
+ * @returns the three definitions, untagged and unregistered.
  */
-export function registerEvalTools(ctx: Context, service: EvalService): void {
-  ctx.tools.register(definePluginTool(defineTool({
+export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
+  const definitions: ToolDefinition[] = []
+  definitions.push(defineTool({
     name: 'eval_conditions',
     description:
       'List the evaluation conditions (the subjects under test) a dataset repository declares, with their '
@@ -99,9 +93,9 @@ export function registerEvalTools(ctx: Context, service: EvalService): void {
       }
       return (await service.conditionDiff({ ...scope, a: diff[0] as string, b: diff[1] as string })) as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  definitions.push(defineTool({
     name: 'eval_plan_validate',
     description:
       'Validate a dataseek.plan/1 document: schema, cross-field semantics (the judge must not be a player, '
@@ -122,9 +116,9 @@ export function registerEvalTools(ctx: Context, service: EvalService): void {
     async execute(args) {
       return (await service.validatePlan(expandHome(args.plan))) as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  definitions.push(defineTool({
     name: 'eval_run_status',
     description:
       'Where one evaluation run stands: the run.meta digest (plan sha, pinned commit, conditions, seeded '
@@ -139,5 +133,7 @@ export function registerEvalTools(ctx: Context, service: EvalService): void {
     execute(args) {
       return Promise.resolve(service.runStatus(args.run_id) as unknown as JsonValue)
     },
-  })))
+  }))
+
+  return definitions
 }

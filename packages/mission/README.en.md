@@ -37,7 +37,7 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # this plugin
 
 The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `mission` mount) into the profile's bundles layer — no hand-edited cordis.yml. A composition may mount the `mission` row id only once; check with `dsh --profile web --dump-config | grep mission` before adding to a composition that might already mount it. From source: clone the monorepo; the package lives at `packages/mission` (`pnpm install && pnpm run build`).
 
-Config (all optional): `dataDir` — the host instance's data root (default `$DSH_HOME/state/mission`, else `<cwd>/.dsh-mission`); `tools` — which model-tool group to register, `all` (default, all twelve) / `read` (the four queue queries only) / `none` (no model tools), see [Model tools](#model-tools).
+Config (all optional): `dataDir` — the host instance's data root (default `$DSH_HOME/state/mission`, else `<cwd>/.dsh-mission`). `tools` is no longer a key on this row: the model-tool grouping moved to the companion row `@khorsheed/dsh-mission-tool`, see [Model tools](#model-tools).
 
 ## Storage and concurrency
 
@@ -72,6 +72,8 @@ The state machine also nests under a `stateMachine` key; both forms normalize id
 The `simple` template's `releasableStates` is deliberately empty: everyday work items hold no destroyable resources, and a guard on every `active → done` would make the zero-config path impossible.
 
 ## Model tools
+
+**This package registers no model tool any more (BREAKING)**: the tools and the `tool:mission` prompt section belong to the companion row `@khorsheed/dsh-mission-tool`, granted per session by an agent preset. Migration is two lines: install the companion as a dependency and add `- id: mission-tool` / `  name: '@khorsheed/dsh-mission-tool'` to the target preset's `agent.cordis.yml` (that row may carry `config: { tools: read }`). The inventory, group table, and behavior prose below describe the **companion's** tool face from here on; the service face, CLI, slash command, and tab still belong to this package.
 
 `mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`. `mission_submit.to` has the service face's intended-edge semantics; `mission_retry` requires `reason` and `category`. Write tools ride the standard `tools/pre-execute` approval pipeline; the calling session id is recorded into history as `tool:<sessionId>`. A companion system-prompt section (`tool:mission`) briefs the model. **Export is intentionally not a tool** — sharing a run bundle is an initiating-class human decision (CLI/slash/tab only, with the leak gate).
 
@@ -142,10 +144,10 @@ The `missions` entry in the conversation tab ring (web profile): five-bucket fil
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, CLI, and slash commands all work on the published host. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, CLI, and slash commands all work on the published host (the model tools come from the companion row `@khorsheed/dsh-mission-tool`, below). minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master, fork or upstream): ✅ — same (verifiedHost: 0.1.2-rc.1).
 
-Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands need an interactive UI adapter (web/TUI) — headless profiles have no command adapter, so `/mission` is unavailable there while tools, the service face, and the CLI stay fully functional. A mount that sets `tools: 'read'` or `'none'` trims the model tools per the table above — that is the mounting profile's choice, not a missing host capability; the service face, CLI, slash command, and tab are unaffected. The session tab is a web surface; TUI has no tab mechanism, and headless profiles expose the Remote data face without a browser consumer. The tab is live-smoke-tested on the `0.1.0-rc.8` web profile; earlier release lines share the same gateway conventions but were not smoke-tested.
+Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands need an interactive UI adapter (web/TUI) — headless profiles have no command adapter, so `/mission` is unavailable there while tools, the service face, and the CLI stay fully functional. The model-tool grouping (`tools: 'read'` / `'none'`) is now a choice on the **companion row** `@khorsheed/dsh-mission-tool`, not a config key of this row — trimming the model tools per the table above is the mounting party's choice, not a missing host capability; the service face, CLI, slash command, and tab are unaffected. The 任务 tab self-hides: it registers only when the current session's preset composition names the `@khorsheed/dsh-mission-tool` row, read from the official `pluginInventory` Remote, and every unreadable path fails OPEN (stays visible). Release order matters: a pack that names a companion row needs the companion published / installed first — a row that fails to resolve reports the preset composition `broken` while the instance boots unaffected. The session tab is a web surface; TUI has no tab mechanism, and headless profiles expose the Remote data face without a browser consumer. The tab is live-smoke-tested on the `0.1.0-rc.8` web profile; earlier release lines share the same gateway conventions but were not smoke-tested.
 
 ## Known Limitations and Deferred Work
 

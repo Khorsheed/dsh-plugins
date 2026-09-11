@@ -69,7 +69,8 @@ UNPUBLISHED_DIRS="local-agent local-agent-tool-subagent local-agent-dsh-headless
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
 capability-catalog datasets eval inline-html-render lab local-files mission \
 ankh-guard context-guard file-preview message-timeline message-tools taskpilot \
-ui-file-preview ui-shortcuts session-title-edit whalesong"
+ui-file-preview ui-shortcuts session-title-edit whalesong \
+mission-tool datasets-tool eval-tool"
 
 SOURCE=""
 FRESH=""

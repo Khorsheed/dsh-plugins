@@ -241,7 +241,9 @@ Polarity comes from the rubric, never from the verdict. The rubric lives in the 
 
 ## Model tools (read-only, three of them)
 
-The agent appears twice in an evaluation: drafting during planning, reading during analysis. Neither needs to write. So this package registers **exactly three model tools, all reads**, and deliberately no fourth — an agent that could start a run could start one the human never approved.
+**This package registers no model tool any more (BREAKING)**: the three read tools below and the `tool:eval` prompt section belong to the companion row `@khorsheed/dsh-eval-tool`, granted per session by an agent preset. Migration is two lines: install the companion as a dependency and add `- id: eval-tool` / `  name: '@khorsheed/dsh-eval-tool'` to the target preset's `agent.cordis.yml` (that row may carry `config: { tools: none }`). The inventory, configuration, and behavior prose below describe the **companion's** tool face from here on; the service face, CLI, and `/eval` slash command still belong to this package.
+
+The agent appears twice in an evaluation: drafting during planning, reading during analysis. Neither needs to write. So the model-tool face has **exactly three tools, all reads**, and deliberately no fourth — an agent that could start a run could start one the human never approved.
 
 | Tool | What it answers |
 |---|---|
@@ -251,7 +253,7 @@ The agent appears twice in an evaluation: drafting during planning, reading duri
 
 Not one write verb is exposed: a run is started by a person with `/eval run` in their session, and materialize / submit / transition / annotate / archive / export / finalize belong to the orchestrator's service face and the human's CLI (the profile's [tool-opening-by-domain rule](../../profiles/web-eval/README.md#工具按域开放)).
 
-Configuration is `tools: 'all' | 'none'` (default `all`). There is no finer grouping because there is nothing to group: this package registers no write tool at all. Under `none` the plugin keeps only its slash, CLI, and service faces.
+Configuration is `tools: 'all' | 'none'` (default `all`) and it MOVED to the **companion row**; this row no longer has that key. There is no finer grouping because there is nothing to group: the model-tool face registers no write tool at all. Under `none` (or with no row named at all) the model simply does not see these three tools, while this package's service face, CLI, and `/eval` slash command stay mounted.
 
 Tools join through **deferred injection** (`ctx.inject(['tools'], …)`), not an apply-time `ctx.get('tools')` probe: the probe races the tool registry's own mount order and loses, so the tools silently never register and nothing says so (room and worktrees each shipped this same fix). Deferred injection fires when the registry appears and never fires in a composition without one — such a composition keeps the slash, CLI, and service faces and never fails boot. The `tool:eval` prompt section rides through the same deferred door on `systemPrompt`.
 
@@ -341,7 +343,7 @@ Data goes to stdout as JSON, diagnostics to stderr; exit codes 0 ok / 1 failure 
 
 Degraded / absent items (kept in sync with `dsh.compat` in package.json):
 
-- The three read tools and the `tool:eval` prompt section arrive by deferred injection: in a composition with no tool registry / no systemPrompt they simply do not register — the slash, CLI, and service faces keep working and boot is unaffected.
+- The three read tools and the `tool:eval` prompt section belong to the companion row `@khorsheed/dsh-eval-tool` and arrive by deferred injection: in a composition with no tool registry / no systemPrompt they simply do not register — the slash, CLI, and service faces keep working and boot is unaffected; `tools: 'none'` (or no such row) merely hides the three tools from the model. Release order matters: a pack that names a companion row needs the companion published / installed first — a row that fails to resolve reports the preset composition `broken` while the instance boots unaffected. This package has no browser half, so there is no tab to self-hide.
 - Against a local-agent predating T11: the delegation `cwd` is ignored and the child inherits the parent session's cwd — the cell is then refused honestly at collection (submission-rejected), never mis-attributed; with neither `delegationOf` nor a settled read-back, `usage` and `model.observed` are recorded as null and the report's 受试对象一致 invariant degrades to unverifiable rather than assumed. The judge collects `verdicts.json` through the same `cwd`; without it the sample is recorded as a parse failure, never as a verdict.
 - `human-final` is not written by this package: it arrives only from the judge bench or `dsh-mission annotate --ns human-final` (I5).
 - A composition without `ctx.lab` runs the host path as before; only a plan with a `unit` segment is refused for lab's absence, and the refusal names it.

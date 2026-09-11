@@ -1,5 +1,16 @@
+/** The definition factory the companion row imports: group selection, the
+ * absence of an origin tag (that follows the MOUNTING package), and the
+ * adapters' argument forwarding. */
 import { describe, expect, it } from 'vitest'
-import { registerMissionTools } from '../src/tools.ts'
+import { MISSION_READ_TOOLS, missionToolDefinitions } from '../src/tool.ts'
+
+const ORIGIN = Symbol.for('dsh.tool.origin')
+
+const ALL_TOOLS = [
+  'mission_run_create', 'mission_run_list', 'mission_run_status', 'mission_create', 'mission_list', 'mission_get',
+  'mission_transition', 'mission_submit', 'mission_annotate', 'mission_attest', 'mission_retry',
+  'mission_is_releasable',
+]
 
 interface ToolParameters {
   required?: string[]
@@ -13,7 +24,21 @@ interface RegisteredTool {
   execute: (args: Record<string, unknown>, execution: { agent?: { session: { id: string } } }) => Promise<unknown>
 }
 
-describe('mission tool adapters', () => {
+describe('mission tool definitions', () => {
+  it('builds all twelve definitions untagged — the companion owns tagging and registration', () => {
+    const definitions = missionToolDefinitions({} as never)
+    expect(definitions.map(definition => definition.name).sort()).toEqual([...ALL_TOOLS].sort())
+    for (const definition of definitions) {
+      expect((definition as Record<symbol, unknown>)[ORIGIN]).toBeUndefined()
+    }
+  })
+
+  it('builds only the four queue queries under `read`, and none under `none`', () => {
+    const read = missionToolDefinitions({} as never, 'read')
+    expect(read.map(definition => definition.name).sort()).toEqual([...MISSION_READ_TOOLS].sort())
+    expect(missionToolDefinitions({} as never, 'none')).toEqual([])
+  })
+
   it('forwards submit intent and requires retry reason/category with caller attribution', async () => {
     const calls: Array<{ method: string; missionId: string; options: Record<string, unknown> }> = []
     const service = {
@@ -26,12 +51,9 @@ describe('mission tool adapters', () => {
         return Promise.resolve({ attempt: 2 })
       },
     }
-    const registered: RegisteredTool[] = []
-    registerMissionTools({
-      tools: { register: (definition: RegisteredTool) => { registered.push(definition); return () => {} } },
-    } as never, service as never)
+    const definitions = missionToolDefinitions(service as never) as unknown as RegisteredTool[]
 
-    const submit = registered.find(tool => tool.name === 'mission_submit') as RegisteredTool
+    const submit = definitions.find(tool => tool.name === 'mission_submit') as RegisteredTool
     await submit.execute(
       { mission_id: 'm', json: { ok: true }, to: 'accepted' },
       { agent: { session: { id: 's1' } } },
@@ -41,7 +63,7 @@ describe('mission tool adapters', () => {
       options: { json: { ok: true }, to: 'accepted', by: 'tool:s1' },
     })
 
-    const retry = registered.find(tool => tool.name === 'mission_retry') as RegisteredTool
+    const retry = definitions.find(tool => tool.name === 'mission_retry') as RegisteredTool
     expect(retry.parameters.required).toEqual(expect.arrayContaining(['mission_id', 'reason', 'category']))
     expect(retry.parameters.properties?.category?.enum).toEqual(['infrastructure', 'operator', 'outcome'])
     await expect(retry.execute(

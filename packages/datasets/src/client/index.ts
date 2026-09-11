@@ -5,7 +5,10 @@
  * the official `ctx.remote.$mount` channel, so the plugin distributes as an
  * independent package with no edits to core packages; content previews are
  * delegated to the official reader primitives (MarkdownText / CodeBlock), the
- * tab only navigates the tree and hands the selected file's content over.
+ * tab only navigates the tree and hands the selected file's content over. The
+ * tab self-hides (M3'④) unless the current session's preset composition names
+ * the `@khorsheed/dsh-datasets-tool` row — the tools it exercises are granted
+ * there, and a viewer over a toolset the session never got is an empty shell.
  * Composing this plugin out of cordis.yml removes the tab.
  * @module @khorsheed/dsh-datasets/client
  */
@@ -14,6 +17,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the ctx.sessions service merge (ISessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -24,19 +29,22 @@ import datasetsRemote from '@khorsheed/dsh-datasets/remote'
 import type { DatasetBinding, ReadPassthroughRequest, ReadQuery } from '../types.ts'
 import { DatasetsView } from './DatasetsView.tsx'
 import { en, NS, zh } from './locales.ts'
+import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createDatasetsViewStore } from './store.ts'
 import type { DatasetsRemote, DatasetsViewInjected, HostDescriptionSource } from './contract.ts'
 
 export { DatasetsView }
 
-/** Required services: the slot registry, the remote channel, and the copy.
+/** Required services: the slot registry, the remote channel, the copy, the
+ * workspace/connection facts the view reads, and the session list (the
+ * preset-composition criterion reads the current session).
  * `remote.datasets` is deliberately NOT an inject: this plugin both mounts the
  * namespace (through `$mount` below) and consumes it, and the Cordis property
  * proxy only resolves services declared in `inject` or provided by an ancestor
  * fiber — declaring it would deadlock the loader. The mount is awaited and the
  * namespace is then read back from the global store with `ctx.get` (the
  * ui-file-preview precedent). */
-export const inject = ['slots', 'remote', 'locale', 'workspaces', 'connection']
+export const inject = ['slots', 'remote', 'locale', 'workspaces', 'connection', 'sessions']
 
 /** Static absence: no host-facts source on an unrecognized line (never reached on rc or 0.1.2). */
 const ABSENT_HOST_DESCRIPTION: HostDescriptionSource = {
@@ -73,8 +81,9 @@ function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionS
 }
 
 /**
- * Client plugin body: mount the Remote, register the dictionaries and the
- * datasets view tab.
+ * Client plugin body: mount the Remote, register the dictionaries, and inject
+ * the datasets view tab (registered exactly while the current session's preset
+ * composition grants the dataset tool row).
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -97,35 +106,48 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const remote = ctx.get('remote.datasets') as DatasetsRemote
   const connection = ctx.get('connection') as ConnectionHandle
 
-  ctx.slots.inject('conversation.view', () => ctx.slots.register({
-    name: 'conversation.view',
-    id: 'datasets',
-    order: 30,
-    locale: NS,
-    label: () => t('open'),
-    store: createDatasetsViewStore,
-    inject: (_sessionId: SessionId): DatasetsViewInjected => ({
-      fetchBinding: (sid: SessionId) => remote.binding(sid),
-      bindSession: (sid: SessionId, binding: DatasetBinding) => remote.bind(sid, binding),
-      unbindSession: (sid: SessionId) => remote.unbind(sid),
-      previewRepo: (sid: SessionId, path: string) => remote.previewRepo(sid, { path }),
-      listDatasets: (sid: SessionId, dataset?: string) => remote.list(sid, dataset === undefined ? {} : { dataset }),
-      readFile: (sid: SessionId, query: ReadQuery) => remote.read(sid, query),
-      readPassthroughFile: (sid: SessionId, query: ReadPassthroughRequest) => remote.readPassthrough(sid, query),
-      isLoopback: connection.isLoopback,
-      hooks: { hostDescription: hostDescriptionSourceOf(connection) },
-      // rc hosts hang the native picker on the workspaces service; 0.1.2
-      // moved it to uiWorkspace (ui-workspace) — probe both, resolve null
-      // (the picker-cancel value) when neither exists.
-      pickDirectory: () => {
-        const legacy = (ctx.workspaces as unknown as { pickDirectory?: () => Promise<string | null> }).pickDirectory
-        if (legacy !== undefined) return legacy.call(ctx.workspaces)
-        const getService = ctx.get.bind(ctx) as (name: string) => unknown
-        const uiWorkspace = getService('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
-        return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
-      },
-    }),
-  }, DatasetsView))
+  // The M3'④ self-hide criterion for the 数据集 tab: the official preset
+  // composition data, fail-open on every unreadable path. Hidden means NO
+  // registration (the tab strip's buttons enumerate registrations), so the
+  // strip never carries an empty-body button.
+  const chrome = new DatasetsPresetVisibility(ctx)
+  const datasetsToggle = new RegistrationToggle(
+    () => ctx.slots.register({
+      name: 'conversation.view',
+      id: 'datasets',
+      order: 30,
+      locale: NS,
+      label: () => t('open'),
+      store: createDatasetsViewStore,
+      inject: (_sessionId: SessionId): DatasetsViewInjected => ({
+        fetchBinding: (sid: SessionId) => remote.binding(sid),
+        bindSession: (sid: SessionId, binding: DatasetBinding) => remote.bind(sid, binding),
+        unbindSession: (sid: SessionId) => remote.unbind(sid),
+        previewRepo: (sid: SessionId, path: string) => remote.previewRepo(sid, { path }),
+        listDatasets: (sid: SessionId, dataset?: string) => remote.list(sid, dataset === undefined ? {} : { dataset }),
+        readFile: (sid: SessionId, query: ReadQuery) => remote.read(sid, query),
+        readPassthroughFile: (sid: SessionId, query: ReadPassthroughRequest) => remote.readPassthrough(sid, query),
+        isLoopback: connection.isLoopback,
+        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
+        // rc hosts hang the native picker on the workspaces service; 0.1.2
+        // moved it to uiWorkspace (ui-workspace) — probe both, resolve null
+        // (the picker-cancel value) when neither exists.
+        pickDirectory: () => {
+          const legacy = (ctx.workspaces as unknown as { pickDirectory?: () => Promise<string | null> }).pickDirectory
+          if (legacy !== undefined) return legacy.call(ctx.workspaces)
+          const getService = ctx.get.bind(ctx) as (name: string) => unknown
+          const uiWorkspace = getService('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
+          return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
+        },
+      }),
+    }, DatasetsView),
+    () => chrome.show(ctx.sessions.list.getSnapshot().current),
+  )
+  ctx.slots.inject('conversation.view', () => {
+    datasetsToggle.setReady(true)
+    return () => { datasetsToggle.setReady(false) }
+  })
+  ctx.effect(() => chrome.subscribe(() => { datasetsToggle.sync() }), 'datasets: datasets tab visibility')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
