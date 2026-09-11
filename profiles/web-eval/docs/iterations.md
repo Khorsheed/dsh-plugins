@@ -354,7 +354,17 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 
 ## 三、指引文案
 
-可直接转发给实施 agent。每段自包含，含分支与 worktree 要求。
+可直接转发给实施 agent。每段自包含，含分支与 worktree 要求。**下面这段「实施者通用提醒」随每条文案一起转，文案正文不再重复**（2026-09-11 起）：
+
+```text
+实施者通用提醒（随任务文案一起生效）
+- 合并归协调者：做完只回报分支名与 commit，不要自己 merge 进 main，也不要删分支或 worktree——协调者验收、合并、清理。
+- 分支里不要混进 ankh-guard 自动打的「dsh-ankh-guard checkpoint」提交；若已混入，回报里点名，协调者按 squash 合。
+- npm 账号风控期间不从 npm 安装任何 @khorsheed 包：装 profile 用源码模式打 tarball 或本地已有 tarball（web-eval 的 install.sh 已按此处理）。
+- 从 main 开 worktree，分支只改文案指明的目录；题库仓库是多 agent 共享检出，写操作一律 `git worktree add` 后再动，从 i1-walk 开，不在共享检出上 checkout。
+- 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
+- Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。
+```
 
 ### I1 的文案（已全部完成）
 
