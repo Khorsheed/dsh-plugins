@@ -31,6 +31,7 @@ import {
   type RunStatusReport,
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
+import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace,
 } from './faces.ts'
@@ -163,7 +164,7 @@ export class EvalService {
    *   the local-agent facade makes provisioning impossible; a condition that
    *   simply is not ready comes back as a report with `written: false`.
    */
-  provision(conditionPath: string, options: { repo: string }): Promise<ProvisionReport> {
+  provision(conditionPath: string, options: { repo: string; log?: (message: string) => void }): Promise<ProvisionReport> {
     const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
     if (localAgent === undefined) {
       return Promise.reject(new EvalProvisionRefused(
@@ -171,7 +172,20 @@ export class EvalService {
         + ' — run it from a live session (/eval conditions provision <condition.json> --repo <working copy>), or mount the dsh-local-agent plugin',
       ))
     }
-    return provisionCondition(conditionPath, { repo: options.repo, localAgent })
+    // The capability probe is the one part of provision that needs a LIVE
+    // instance rather than a facade: the hash is what the instance's own
+    // catalog reads for that preset. Absent catalog, absent measurement —
+    // provision then warns CAPABILITIES_UNMEASURED and the readiness gate
+    // refuses the condition, which is the honest degrade.
+    const catalog = this.hosts?.get('capabilityCatalog') as CapabilityCatalogFace | undefined
+    return provisionCondition(conditionPath, {
+      repo: options.repo,
+      localAgent,
+      ...(options.log === undefined ? {} : { log: options.log }),
+      ...(catalog === undefined
+        ? {}
+        : { capabilities: instanceCapabilityProbe({ catalog, ...(options.log === undefined ? {} : { log: options.log }) }) }),
+    })
   }
 
   /**

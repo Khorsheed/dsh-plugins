@@ -92,14 +92,29 @@ export interface CapabilityCatalogFace {
   /**
    * The capability face of one preset, with its hash. `presetId` omitted
    * reads the deployment default — which is what the orchestrating instance
-   * runs on.
+   * runs on. A named preset the roster cannot resolve REJECTS rather than
+   * degrading to the global layer: a fingerprint that falls back is a false
+   * one, not a weaker one.
    */
-  snapshotFor(presetId?: string, workdir?: string): Promise<{
-    sha?: string
-    preset?: string
-    skills: readonly unknown[]
-    tools: readonly unknown[]
-  }>
+  snapshotFor(presetId?: string, workdir?: string): Promise<CapabilitySnapshotFace>
+  /**
+   * The digest of a snapshot the caller already holds. OPTIONAL, and the
+   * fallback rather than the first choice: `snapshotFor` stamps `sha`
+   * itself, so this is only reached against a catalog whose snapshot verb
+   * predates the stamp. It is a module function on the catalog package and
+   * may well be absent from the mounted service — probe, then degrade.
+   */
+  hashOf?(snapshot: CapabilitySnapshotFace): string
+}
+
+/** A capability snapshot as eval reads it — rows counted, never interpreted. */
+export interface CapabilitySnapshotFace {
+  /** The capability hash, stamped by the fingerprint verb. */
+  sha?: string
+  /** The preset the face was taken under; absent when the scope resolved to none. */
+  preset?: string
+  skills: readonly unknown[]
+  tools: readonly unknown[]
 }
 
 /** One file of a mission submission. */
