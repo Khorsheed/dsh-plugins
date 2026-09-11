@@ -6,7 +6,8 @@ An independently removable mobile presentation for DeepSeek Harness. The Mac con
 
 ## Features
 
-- Client-local mobile layout, conversation drawer, full-width right-panel details and mobile settings.
+- A mobile conversation library with recent sessions, title/workspace filtering, status indicators and New Conversation. Official workspace management remains reachable; the chat and its draft stay mounted behind navigation.
+- Client-local mobile layout, full-width right-panel details, mobile settings and a wrapping composer toolbar with larger touch targets.
 - Official conversation renderer, composer, model/permission selectors, attachments and streaming transport stay in place.
 - Add a workspace by entering an existing absolute **computer** directory through the public directory-flow slots. The official owner validates and adopts it; no chooser opens on the Mac.
 - Authenticated `GET /api/mobile/handshake`; versioned, status-only native bridge. Foreground requests reconnect through the official connection service, never replays a send command.
@@ -75,6 +76,6 @@ Keep the Mac awake and all three services running. Stop the tunnel process to cl
 | Official `0.1.5-rc.1`, `183f08e9c6` | Local browser/Host validation; iOS simulator build passes. Full device/network qualification pending. |
 | Other npm RCs / Harness master | Not verified. Audit before adopting. |
 
-`dsh.compat.minHost` is `0.1.5-rc.1`; no `verifiedHost` is claimed while the release matrix is incomplete. The public frame/slot DOM anchors are checked before enabling layout; an unknown frame retains the official page. A changed structure can reduce mobile usability without breaking Host execution. Native bridge version changes require an App compatibility decision; compatible Web updates do not automatically require a new IPA.
+`dsh.compat.minHost` is `0.1.5-rc.1`; no `verifiedHost` is claimed while the release matrix is incomplete. The library uses the optional official sessions/workspaces/uiWorkspace services; it filters archived sessions and subagent rows while retaining ordinary forks. Missing services fall back to the basic official sidebar. Search here filters titles and workspace paths, not message contents. The public frame/slot DOM anchors are checked before enabling layout; an unknown frame retains the official page. A changed structure can reduce mobile usability without breaking Host execution. Native bridge version changes require an App compatibility decision; compatible Web updates do not automatically require a new IPA.
 
 See [acceptance evidence](../../docs/acceptance/mobile-rc1-2026-09-11.md) and the [proposal](../../proposals/active/2026-08-19-mobile-access.md). No upstream or sibling source changes are required.

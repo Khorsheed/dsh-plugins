@@ -7,6 +7,7 @@ final class BrowserState: ObservableObject {
     @Published var failure: String?
     @Published var loading = false
     @Published var mobileAvailable = false
+    @Published var layoutDiagnostic = ""
     weak var webView: WKWebView?
 
     init() {
@@ -28,6 +29,7 @@ final class BrowserState: ObservableObject {
             host = address
             failure = nil
             mobileAvailable = false
+            layoutDiagnostic = ""
             UserDefaults.standard.set(address.origin.absoluteString, forKey: "hostOrigin")
         } catch { failure = error.localizedDescription }
     }
@@ -36,6 +38,7 @@ final class BrowserState: ObservableObject {
         webView?.stopLoading()
         host = nil
         mobileAvailable = false
+        layoutDiagnostic = ""
         UserDefaults.standard.removeObject(forKey: "hostOrigin")
     }
 
@@ -118,10 +121,13 @@ struct ConnectionView: View {
                     if let host = browser.host {
                         Text(host.origin.absoluteString).font(.footnote).foregroundStyle(.secondary)
                         Text(browser.mobileAvailable ? "移动插件已连接" : "尚未检测到移动插件，可继续使用官方页面").font(.footnote)
+                        #if DEBUG
+                        if !browser.layoutDiagnostic.isEmpty { Text(browser.layoutDiagnostic).font(.caption).foregroundStyle(.secondary) }
+                        #endif
                         Button("断开连接") { browser.disconnect(); dismiss() }
                         Button("清除本 App 的登录数据", role: .destructive) { clearConfirmation = true }
                     }
-                    Text("跨网络使用需要已配置的私网 HTTPS 入口。电脑需保持唤醒和联网。").font(.footnote).foregroundStyle(.secondary)
+                    Text("跨网络使用需要可达的 HTTPS 入口。电脑需保持唤醒和联网。").font(.footnote).foregroundStyle(.secondary)
                 }.padding(28)
             }.background(LinearGradient(colors: [Color(red: 0.61, green: 0.76, blue: 0.91).opacity(0.35), Color(.systemBackground)], startPoint: .top, endPoint: .center))
             .toolbar { if browser.host != nil { Button("完成") { dismiss() } } }

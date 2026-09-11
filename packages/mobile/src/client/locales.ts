@@ -9,6 +9,7 @@ export const en = {
   connecting: 'Connecting…', disconnected: 'Connection interrupted',
   server: 'Host', privacy: 'Models, tools and files run on your host.',
   done: 'Done', brand: 'DSH',
+  libraryEyebrow: 'YOUR WORKSPACE', libraryTitle: 'Pick up where you left off.', librarySubtitle: 'A thought, a conversation, a little progress.', newSession: 'New conversation', searchTitles: 'Search titles or workspaces', searchResults: 'Results', recent: 'Recent conversations', workspaces: 'Workspaces', loadingSessions: 'Loading conversations…', noMatches: 'No matching conversations.', noSessions: 'Your conversations will appear here.', navigationError: 'Could not open this conversation. Please try again.', running: 'Working', completed: 'Completed', libraryFooter: 'A little closer, wherever you are.',
   workspace: 'Open workspace', hostPath: 'Computer directory', hostPathHelp: 'Enter an existing absolute directory on your computer. This does not select a folder on your phone.', openWorkspace: 'Open', cancel: 'Cancel',
 } as const
 export const zh: Record<keyof typeof en, string> = {
@@ -20,6 +21,7 @@ export const zh: Record<keyof typeof en, string> = {
   connecting: '正在连接…', disconnected: '连接已中断',
   server: '主机', privacy: '模型、工具与文件操作由电脑执行。',
   done: '完成', brand: 'DSH',
+  libraryEyebrow: '随身工作空间', libraryTitle: '继续你的想法。', librarySubtitle: '从一段对话，开始新的进展。', newSession: '新建会话', searchTitles: '搜索标题或工作区', searchResults: '搜索结果', recent: '最近会话', workspaces: '工作区', loadingSessions: '正在加载会话…', noMatches: '没有匹配的会话。', noSessions: '新的对话，会出现在这里。', navigationError: '暂时无法打开这段会话，请重试。', running: '进行中', completed: '已完成', libraryFooter: '让每一个想法，向前一步。',
   workspace: '打开工作区', hostPath: '电脑目录', hostPathHelp: '输入电脑上已有目录的完整路径。这里选择的是电脑工作区，不是手机文件夹。', openWorkspace: '打开', cancel: '取消',
 }
 declare module '@deepseek-ai/dsh-client-ui-slots' {

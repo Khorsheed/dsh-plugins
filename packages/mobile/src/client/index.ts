@@ -6,6 +6,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
 import { MobilePresentation } from './presentation.ts'
 import { DirectoryFlow } from './DirectoryFlow.tsx'
+import { MobileNavigation } from './navigation.ts'
 import { MobileChrome } from './MobileChrome.tsx'
 import type { MobileChromeInjected } from './MobileChrome.tsx'
 import { NS, en, zh } from './locales.ts'
@@ -28,11 +29,16 @@ export function apply(ctx: Context): void {
     window.addEventListener('dsh-mobile-foreground', reconnect)
     return () => { window.removeEventListener('dsh-mobile-foreground', reconnect) }
   }, 'mobile: foreground reconnect')
+  const navigation = new MobileNavigation()
+  ctx.inject(['sessions', 'workspaces', 'uiWorkspace'], scoped => {
+    navigation.set({ sessions: scoped.sessions, workspaces: scoped.workspaces, workspace: scoped.uiWorkspace })
+    scoped.effect(() => () => { navigation.set(undefined) }, 'mobile: optional navigation')
+  })
   const presentation = new MobilePresentation(window, window.__DSH_MOBILE_SHELL__?.bridgeVersion === BRIDGE_VERSION)
   ctx.effect(() => () => { presentation.dispose() }, 'mobile: presentation')
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay', id: 'mobile-navigation', locale: NS,
-    inject: (): MobileChromeInjected => ({ presentation, connection, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
+    inject: (): MobileChromeInjected => ({ presentation, connection, navigation, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
   }, MobileChrome))
   // Shadow only these public flow slots while this client is in mobile mode.
   for (const name of ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const) {
@@ -50,8 +56,10 @@ export function apply(ctx: Context): void {
   }
   const post = (type: 'ready' | 'unloaded') => {
     if (window.__DSH_MOBILE_SHELL__?.bridgeVersion !== BRIDGE_VERSION) return
-    window.webkit?.messageHandlers?.dshMobile?.postMessage({ type, bridgeVersion: BRIDGE_VERSION, mobileVersion: MOBILE_VERSION })
+    window.webkit?.messageHandlers?.dshMobile?.postMessage({ type, bridgeVersion: BRIDGE_VERSION, mobileVersion: MOBILE_VERSION, layout: presentation.getSnapshot(), navigation: !!navigation.getSnapshot(), anchors: { root: document.querySelectorAll('[data-slot="root"]').length, overlay: document.querySelectorAll('[data-shell-overlay]').length, main: document.querySelectorAll('[data-slot="main"]').length, sidebar: document.querySelectorAll('[data-slot="sidebar"]').length } })
   }
   post('ready')
+  ctx.effect(() => presentation.subscribe(() => post('ready')), 'mobile: layout availability')
+  ctx.effect(() => navigation.subscribe(() => post('ready')), 'mobile: navigation availability')
   ctx.effect(() => () => { post('unloaded') }, 'mobile: shell availability')
 }

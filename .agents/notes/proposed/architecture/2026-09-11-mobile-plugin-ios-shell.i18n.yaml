@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md
-.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md: 4b7079d32410e4ad11c73273fd0594bd77152c6b
-.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.zh.md: 4ac0e30d6bcacf010b2bf5c41c5bb94b66550eff
+.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md: 670c801529e5c854186d12961506c592fd35e48d
+.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.zh.md: 2969ac9becbfb226491a86fad924cda18ca53d04

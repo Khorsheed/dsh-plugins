@@ -52,6 +52,14 @@ Host/插件/移动 Web 按组合验收，以版本化的窄原生桥接使兼容
 
 可选部署示例 `packages/mobile/examples/https-ingress.mjs` 支持无需域名或账号的临时 Quick Tunnel，保留官方 Host/Origin 认证，在 HTTPS 边界补充 Secure Cookie 并转发 WebSocket；它不是 Cordis 依赖或设备网关。社区分发不绑定任何个人服务器或主机名。停止隧道与卸载插件是独立动作。[公网入口证据](../../../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md) 记录认证 HTTP/WS、28 帧公网模拟回复与重连历史恢复；手机及公网流式 UI 验收仍待完成。续测在 HTTP/2 连接故障后改用 QUIC，测试进程独立于短生命周期工具会话运行。
 
+### Mobile library and physical-device probe (2026-09-11)
+
+mobile 自有会话首页位于现有 shell overlay，使用可选的官方 Session/Workspace store 投影最近会话，在本地筛选标题/工作区路径，将选择/新建交给 `uiWorkspace`。普通分叉会话保留，已归档行及 subagent 来源子会话遵循官方可见性规则。不声明他人的子槽，不复制会话传输；缺少可选服务时恢复基础移动导航。官方聊天持续挂载；首页打开时暂时将主内容区设为 inert，关闭或卸载时恢复。输入控件保留原所有者，增加换行和触控区域。
+
+用户指定移除一个已有免费签名测试 App 并完成开发者信任后，签名开发 App 已在 iPhone Air / iOS 26.5.2 安装和启动。个人团队/设备标识不进入跟踪文件。用户最初反馈桥接 ready 但仍为旧桌面展示，因此不将 ready 等同于布局成功。同 origin 桥接诊断现在报告显示模式、已检查的 frame 支持、可选导航可用性及不含正文的锚点数量；Debug 展示/记录这些事实，Release 不展示。[真机验收记录](../../../../docs/acceptance/mobile-device-2026-09-11.md)将诊断状态与用户确认的视觉及交互结果分开。
+
+首次真机截图暴露了桥接 ready 掩盖的渲染失败：将官方工作区 feed 的原型方法直接传入 React，导致方法丢失 receiver。现使用稳定回调通过各 feed 调用方法；回归测试使用依赖 receiver 的 feed，覆盖归档更新与订阅释放。修复部署后真机 DOM 诊断为无槽位错误、toolbar/library 各 1，视觉验收仍单列。临时 console 错误转发在定位后移除；保留的诊断只含布局及元素元数据。
+
 ## Risks
 
 槽位所有权可能限制设计还原，私有接口和 DOM 锚点可能随 RC 失效。设备撤销需要真实网关授权模型，不能给官方 Cookie 改名代替。主机休眠、网络或认证故障会中断访问。即使移动行为是插件，原生 App 与接入设施仍独立安装。已有本地运行时及模拟器构建证据，真机验收待完成。

@@ -48,7 +48,18 @@ struct HarnessWebView: UIViewRepresentable {
                   let url = message.frameInfo.request.url, host.contains(url),
                   let body = message.body as? [String: Any], body["bridgeVersion"] as? Int == 1,
                   let type = body["type"] as? String else { return }
-            if type == "ready" { state.mobileAvailable = true }
+            if type == "ready" {
+                state.mobileAvailable = true
+                #if DEBUG
+                if let layout = body["layout"] as? [String: Any], let anchors = body["anchors"] as? [String: Any] {
+                    let active = layout["active"] as? Bool ?? false
+                    let supported = layout["supported"] as? Bool ?? false
+                    let mode = layout["mode"] as? String ?? "unknown"
+                    state.layoutDiagnostic = "布局 \(active ? "mobile" : "desktop") · mode \(mode) · frame \(supported) · navigation \(body["navigation"] as? Bool ?? false) · anchors \(anchors)"
+                    print("DSH mobile diagnostic: \(state.layoutDiagnostic)")
+                }
+                #endif
+            }
             if type == "unloaded" { state.mobileAvailable = false }
         }
 
@@ -66,8 +77,19 @@ struct HarnessWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             state.loading = true
             state.mobileAvailable = false
+            state.layoutDiagnostic = ""
         }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { state.loading = false }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            state.loading = false
+            #if DEBUG
+            Task { @MainActor [weak webView] in
+                try? await Task.sleep(for: .seconds(2))
+                webView?.evaluateJavaScript("JSON.stringify({ errors: Array.from(document.querySelectorAll('[data-slot-error]')).map(e => e.getAttribute('data-slot-error')), toolbar: document.querySelectorAll('[data-mobile-toolbar]').length, library: document.querySelectorAll('[data-mobile-library]').length })") { value, _ in
+                    if let value { print("DSH rendered surface: \(value)") }
+                }
+            }
+            #endif
+        }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { fail(error) }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { fail(error) }
         private func fail(_ error: Error) {
