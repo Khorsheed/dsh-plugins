@@ -28,7 +28,7 @@ import {
   type ConditionsReport,
   type RunStatusReport,
 } from './read.ts'
-import type { DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace } from './faces.ts'
+import type { CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace } from './faces.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
@@ -209,11 +209,15 @@ export class EvalService {
     // `unit` segment needs it, and its absence is then a refusal that names
     // it — never a boot failure, never a silent fallback to the host path.
     const lab = this.hosts.get('lab') as LabFace | undefined
+    // Provenance only: the orchestrating instance's own capability face goes
+    // into run.meta and is never compared. Absent catalog, absent line.
+    const capabilityCatalog = this.hosts.get('capabilityCatalog') as CapabilityCatalogFace | undefined
     const deps: Partial<RunDeps> & { stateRoot?: string } = {}
     if (datasets !== undefined) deps.datasets = datasets
     if (mission !== undefined) deps.mission = mission
     if (localAgent !== undefined) deps.localAgent = localAgent
     if (lab !== undefined) deps.lab = lab
+    if (capabilityCatalog !== undefined) deps.capabilityCatalog = capabilityCatalog
     return runPlan(plan, resolved, deps)
   }
 

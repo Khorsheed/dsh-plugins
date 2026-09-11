@@ -200,6 +200,21 @@ export const PERMISSIONS_BY_HARNESS: Readonly<Record<string, readonly string[]>>
   kimi: ['auto-approve'],
 }
 
+/**
+ * The harnesses whose capability face this family can COMPOSE, and therefore
+ * the only ones a condition may name a `preset` for.
+ *
+ * A preset is an agent-preset roster the evaluation instance provisions into
+ * the harness's scoped home — which it can only do for the sub-dsh, whose
+ * profile it writes (`@khorsheed/dsh-local-agent-dsh`'s sub-profile). The
+ * three external CLIs run their vendor's own composition: a condition
+ * declaring `preset` for one of them would be a claim with nothing behind it,
+ * so validate refuses it rather than hashing a fiction into the subject's
+ * identity. Their equivalent — a skill pack materialized into the scoped
+ * home — is `skills.pack`, which this family does not yet provision either.
+ */
+export const PRESET_CAPABLE_HARNESSES: readonly string[] = ['dsh']
+
 /** Every word any harness accepts; the schema-level enum. */
 export const PERMISSION_VALUES: readonly string[] =
   [...new Set(Object.values(PERMISSIONS_BY_HARNESS).flat())].sort()
@@ -469,6 +484,30 @@ export const LOCK_SCHEMA: SchemaObject = {
       required: ['sha'],
       description: 'Present once provision has materialized the scoped home.',
       properties: { sha: { type: 'string' } },
+    },
+    provisioned: {
+      type: 'object',
+      additionalProperties: false,
+      required: [],
+      description: 'What provision actually built, as opposed to what the condition declares. Present once provision has run.',
+      properties: {
+        preset: {
+          type: ['string', 'null'],
+          description: 'The preset the provisioned environment composes — read back from what was written, not copied from the declaration.',
+        },
+        capabilities: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sha'],
+          description: 'The capability fingerprint of the provisioned environment: the hash capability-catalog computes over its canonical skill/tool face (caps:<sha>). It is what turns the condition\'s `preset` claim into a checkable fact.',
+          properties: {
+            sha: { type: 'string', description: '64-hex sha256 of the canonical capability face.' },
+            preset: { type: ['string', 'null'], description: 'The preset the snapshot was taken under.' },
+            skills: { type: 'integer', description: 'How many skills the face carries (a reader aid; the sha is the identity).' },
+            tools: { type: 'integer', description: 'How many tools the face carries (a reader aid; the sha is the identity).' },
+          },
+        },
+      },
     },
   },
 }

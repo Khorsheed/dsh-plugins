@@ -62,7 +62,7 @@ const SCHEMA_BY_TITLE: Record<string, Record<string, unknown>> = {
  */
 const FIXTURES_BY_SCHEMA: Record<string, string[]> = {
   [CONDITION_SCHEMA_ID]: ['condition.example.json'],
-  [LOCK_SCHEMA_ID]: ['lock.example.json'],
+  [LOCK_SCHEMA_ID]: ['lock.example.json', 'lock-preset.example.json'],
   [PLAN_SCHEMA_ID]: ['plan.example.json'],
   [VERDICT_SCHEMA_ID]: ['verdict.example.json', 'verdict-ratio.example.json'],
 }

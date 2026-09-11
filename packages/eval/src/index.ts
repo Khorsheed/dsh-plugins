@@ -118,16 +118,21 @@ export { missionCliFace, MissionCliError, parseMissionRow } from './mission-cli.
 export type { MissionCliOptions } from './mission-cli.ts'
 export { checkReadiness, READINESS_PROMPT, DEFAULT_READINESS_TIMEOUT_MS } from './readiness.ts'
 export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit } from './readiness.ts'
+export { capabilityRefusal } from './readiness.ts'
 export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 export { EvalReadRefused } from './read.ts'
 export type { ConditionHash, RunOptions, RunReport, RunCellReport, RunSubset } from './service.ts'
-export type { PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness } from './validate.ts'
+export type {
+  PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness, LockedCapabilities,
+} from './validate.ts'
 export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './validate.ts'
 export { listConditions, runStatus } from './read.ts'
 export type { ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
 export { registerEvalTools, EVAL_TOOL_NAMES } from './tools.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
+export { conditionLockOf, writeConditionLock } from './provision.ts'
+export type { ConditionLock, ConditionLockFacts, ProvisionedCapabilities } from './provision.ts'
 export {
   buildDeidentifyRules, buildJudgePrompt, collectProbes, deidentify, itemLayerPath, itemProbeCwd,
   itemVerifyRoot, llmDraftCriteria, mergeReplacements, pickChecklistPath, pickRubricPath, probePaths,

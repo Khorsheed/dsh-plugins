@@ -15,7 +15,9 @@
  *
  * The check also catches the misattribution the run loop can only find at its
  * first stage round: a facade that reads back a model different from the
- * condition's declared one (frozen decision 5).
+ * condition's declared one (frozen decision 5) — and, before spending any
+ * delegation at all, a condition whose declared `preset` has no measured
+ * capability face behind it (see {@link capabilityRefusal}).
  * @module @khorsheed/dsh-eval
  */
 import { mkdirSync } from 'node:fs'
@@ -73,6 +75,13 @@ export interface ReadinessRecord {
   requestedModel: string | null
   /** The named scoped home the probe ran against; absent means the default one. */
   scope?: string
+  /**
+   * The capability fingerprint of the environment this condition runs in,
+   * from its lock's `provisioned.capabilities`. Recorded so the bundle
+   * carries WHICH capability face each subject was measured at, not merely
+   * that one existed. Absent for a condition that composes no preset.
+   */
+  capabilities?: { sha: string; preset?: string | null }
   /** The model the facade read back for the probe; null when it reads none. */
   observedModel: string | null
   /** Why the condition is not ready; absent when it is. */
@@ -101,6 +110,47 @@ export interface ReadinessSubject {
    * scope-`b` condition would prove another account's login.
    */
   scope?: string
+  /** The condition's declared preset, or null / absent for none. */
+  preset?: string | null
+  /**
+   * The capability fingerprint the condition's lock records, when provision
+   * measured one. A condition that declares a preset and has none of these
+   * is refused before its delegation: see {@link capabilityRefusal}.
+   */
+  capabilities?: { sha: string; preset?: string | null }
+}
+
+/**
+ * Why a condition's capability claim fails, or undefined when it holds.
+ *
+ * A `preset` is a claim about the subject's capability FACE — which tools and
+ * skills the model has. It enters the condition hash, so two conditions
+ * differing only in preset are two subjects; if nothing checks it, they are
+ * two subjects on paper and one in fact, and the run's whole comparison rests
+ * on a field nobody measured. Provision measures it (the catalog's capability
+ * hash over the provisioned environment) and records it in the lock; this is
+ * where the record is required to exist and to agree.
+ *
+ * The check is cheap and local — it reads the lock, not the machine — and it
+ * runs beside the delegation probe because it answers the same question:
+ * is this subject the one the declaration names?
+ * @param condition - the probed condition.
+ * @returns the refusal reason, or undefined when nothing is claimed or all agrees.
+ */
+export function capabilityRefusal(condition: ReadinessSubject): string | undefined {
+  const preset = condition.preset ?? null
+  if (preset === null) return undefined
+  if (condition.capabilities === undefined) {
+    return `the condition declares preset ${JSON.stringify(preset)} but its lock records no provisioned.capabilities`
+      + ' — the capability face was never measured, so the declared preset is a claim with nothing behind it'
+      + ' (run `conditions provision` for this condition)'
+  }
+  const measured = condition.capabilities.preset
+  if (measured !== undefined && measured !== preset) {
+    return `the condition declares preset ${JSON.stringify(preset)} but its capability record was taken under ${JSON.stringify(measured)}`
+      + ' — the provisioned environment belongs to another subject'
+  }
+  return undefined
 }
 
 /**
@@ -209,6 +259,7 @@ async function probeOne(
       declaredModel: condition.declaredModel,
       requestedModel: condition.declaredModel,
       ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+      ...(condition.capabilities === undefined ? {} : { capabilities: condition.capabilities }),
       ok: false,
       startedAt,
       durationMs: env.now() - startedAt,
@@ -252,8 +303,26 @@ async function probeIn(
     declaredModel: condition.declaredModel,
     requestedModel: condition.declaredModel,
     ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+    ...(condition.capabilities === undefined ? {} : { capabilities: condition.capabilities }),
   }
   const startedAt = env.now()
+  // Before spending a delegation: does the subject's capability claim have
+  // anything behind it? A condition whose preset was never measured fails
+  // here, at no token cost, instead of producing a whole run's worth of cells
+  // attributed to a capability face nobody checked.
+  const capabilityProblem = capabilityRefusal(condition)
+  if (capabilityProblem !== undefined) {
+    env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${capabilityProblem}`)
+    return {
+      ...base,
+      ok: false,
+      startedAt,
+      durationMs: env.now() - startedAt,
+      childSessionId: null,
+      observedModel: null,
+      reason: capabilityProblem,
+    }
+  }
   // Inside a unit the host cwd means nothing: the round runs in the unit's
   // workdir and no host directory is created for it.
   if (unit === undefined) mkdirSync(env.cwd, { recursive: true })

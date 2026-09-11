@@ -130,6 +130,16 @@ So the pre-run check does not ask; it spends one delegation. Before `runCreate`,
 
 Each verdict is a `{kind: 'readiness', condition, harness, provider, ok, startedAt, durationMs, childSessionId, declaredModel, requestedModel, observedModel, reason?}` record. It lands in `run.meta.readiness` AND as an orchestrator-ns annotation on every cell of that condition, so a reader asking why a cell produced nothing finds the answer on the cell. A failed condition refuses the whole run and prints the reason (the 401, not "a condition failed"); `--ignore-readiness` starts anyway, and then every cell of that condition is recorded `cell-skipped` with the reason and is never delegated to.
 
+## The capability face: `preset` becomes a fact
+
+`preset` in a condition document was always a sentence with **no counterpart**. It enters the condition hash, so two conditions differing only in preset are two subjects on paper — but nothing ever wrote a preset anywhere, so nothing could disagree with the claim. T32 gives it one:
+
+- **Who may declare it.** `dsh` alone. The sub-profile inside its scoped home is written by the evaluation instance, and the preset roster is a layer of that patch. The three external CLIs run their vendor's own composition, which this family cannot compose — a preset for one of them is a validate error (`PRESET_NOT_FOR_HARNESS`) and the only legal value is `null`. Their equivalent is `skills.pack`, which does not exist yet either (I6).
+- **Provision writes down what it built.** The lock gains a `provisioned` block: `preset` is read back from the sub-profile that was written, and `capabilities.sha` is the CAPABILITY HASH capability-catalog computed over the provisioned environment (the canonical form keeps each skill's name/source/body-sha and each tool's name/channel/parameters — descriptions stay out, because rewording one must not mint a new subject). `writeConditionLock` is the seam of that write: it owns the file and the shape, never the act — it provisions nothing and hashes nothing — so the lock's contract is testable without a machine.
+- **Readiness checks it.** A declared preset with no capability record in the lock, or a record taken under a different preset, fails the condition BEFORE any delegation is spent. A factor that enters the hash and that nobody measured leaves two subjects on paper and one in fact.
+
+The orchestrating instance's own capability hash is a different thing: it is recorded in `run.meta.orchestrator.capabilities` as PROVENANCE. The report's 程序一致 invariant lists it and compares nothing against it — the orchestrator answers none of the dataset's questions, and making its capabilities a pass/fail input would turn "we upgraded the planning agent" into a violated invariant. A composition without the catalog records no such line.
+
 ## `finalize`: the re-entry point after `archived`
 
 `--finalize` exists only at the moment a run starts, and judging-then-final-review is exactly the work that happens after archiving. Pilot A therefore pushed twelve cells through `dsh-mission transition` by hand. `/eval finalize <runId>` is that walk, mechanized: for every `archived` cell of a run it takes the same gate (`archived → releasable → released`, the archive gate's non-empty `verdicts/` file-check included), and for every cell that is not `archived` it reports the state and moves on.
@@ -286,6 +296,7 @@ Data goes to stdout as JSON, diagnostics to stderr; exit codes 0 ok / 1 failure 
 - **planSha**: sha256 of the canonical JSON of the whole plan document (notes included — an edited comment IS a new plan, which is exactly the "same plan, same program" reading).
 - **home.sha**: hash config-suffixed files only (`.json .jsonc .yml .yaml .toml .ini .cfg .conf .xml .properties`), fed to sha256 as `<relPath>\0<content>\0` in sorted relative-path order. Deny list: `auth.json`, `.env*`; file names containing `token` / `key` / `credential` / `secret` / `password` / `auth` (case-insensitive); the `credentials/`, `oauth/`, `sessions/`, `keys/`, `secrets/` directories whole; symlinks and oversize files (>1 MiB). File content is never logged or printed.
 - **materialization.json**: the item's visible-layer files, path-sorted, each with its sha256; the overall sha folds `<path>\0<fileSha>\0` in sorted order — same-task cells can PROVE identical materialization.
+- **Capability hash** (`provisioned.capabilities.sha`, `run.meta.orchestrator.capabilities.sha`): computed by capability-catalog; this package records it and never recomputes it — the canonical form is that package's contract, and eval depends on no sibling. The two byte-identical `canonicalJson` copies are pinned by each side's own tests.
 
 ## Compatibility
 

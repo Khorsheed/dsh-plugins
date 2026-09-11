@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev9** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev10** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器、绑定表单预填、`dataset-authoring` skill 都从本协议派生。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -297,6 +297,8 @@ datasets/<id>/
 - `permissions` 的词表按 harness 给定：`dsh` → `unrestricted`；`claude-code` → `skip` 或 `normal`；`codex` → `danger-full-access`、`workspace-write`、`read-only`；`kimi` → `auto-approve`。schema 枚举是并集；已知 harness 的越表取值（如 dsh 配 `skip`）由校验器报 error。
 - `env.keys` 只写变量名。任何值——尤其凭证——不得进契约文件。
 - `scope` 可缺省，缺省即「跑该家的缺省作用域目录」——本字段出现之前每条条件的含义。写了名字（只允许 `[a-z0-9-]`，是名字不是路径）就改成跑 `<homesRoot>/<家名>@<scope>`：与缺省目录**同级**的另一份目录，各自登录、各自的会话记录、各自的 `delegations.jsonl`，凭证**不复制**。它进条件哈希：两条只差 `scope` 的条件是**两个受试对象**——登录的是两个账号。同一家两条条件因此可以在模型、推理强度之外再差一次登录（I4 的 T30b/T31/T33 要的正是这个）。就绪检查按各自的 scope 探各自的目录；容器轮挂的也是各自的目录。带 scope 的委派只走 exec（live 驱动绑的是缺省目录），kimi 的成员桥同理只绑缺省目录。
+- `preset` 只对**由本家族组出来的**受试对象有意义。今天只有 `dsh` 一家：它的作用域目录里那份子 profile 是评测实例自己写的，preset roster 也写在那份 patch 里。三家外部 CLI 跑的是各自厂商的编排，本家族组不了——给它们写 `preset` 是一句没有对应物的声明，validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那一侧的等价物是 `skills.pack`（技能包物化进作用域目录），本家族同样尚未落地，留 I6。
+- `preset` 非 null 时，lock 里必须有 `provisioned.capabilities`：capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。没有它，就绪检查在花掉任何一次委派之前就拒（`CAPABILITIES_NOT_PROVISIONED`）：preset 进条件哈希，两条只差 preset 的条件是两个受试对象，没人量过就只是纸面上的两个。记录里的 preset 与声明不一致同样拒——配出来的是另一个受试对象。
 - `unit` 可缺省，缺省即「本条件只在宿主上跑」。plan 声明了 `unit` 时它**必须在场**：`unit.scopedHome` 说这条件的凭证目录挂到容器内的哪里、由哪个变量指向它（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），`var` 必须同时出现在 `env.keys` 里——注入的名字要跟声明的名字一致，validate 报 error。宿主一侧的目录**不写在这里**：编排器挂的是评测实例自己的该家作用域目录——`/<家> login` 写进去的那个，也是委派回读读的那个。挂副本会静默坏掉：容器轮把 rollout 写进挂进去的那个目录，回读却按 `homeDir(家名)` 去找，两者不是一处时不报错，只是永远读不到。
 - `unit` 进条件哈希（只有 `notes` 不进）：受试对象从哪里读凭证是一项因子，不是注释。给既有条件补 `unit` 会改哈希，lock 随之过期，要重新 provision。
 - 例（已全部解析；I1 手写格的「进行中」形态见题库 `conditions/dsh-exec.json`，四个 null 字段以 warning 列出）：
@@ -344,6 +346,8 @@ datasets/<id>/
 
 `sha` 是条件哈希（§6.5），由 `dsh-eval conditions hash` 回算；`home.sha` 是 provision（I4）配出的 scoped home 内容哈希。plan 不写 sha——它写条件 id（§6.4），sha 从本文件解析；缺 lock 即「未就绪」。声明与实物不符（lock 落后于条件文件、`home.sha` 对不上）由 validate 以 warning 列出，就绪检查拦截。
 
+`provisioned` 记的是 provision **实际配出来的东西**，与条件文件里的声明相对：`provisioned.preset` 从写出去的子 profile 回读，`provisioned.capabilities.sha` 是 capability-catalog 对那份环境算的能力哈希（`caps:<sha>` 去掉前缀）。声明是一句话，这一段是那句话的对应物——`preset` 字段从此可核对，而不是只能相信。
+
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -379,6 +383,50 @@ datasets/<id>/
           "type": "string"
         }
       }
+    },
+    "provisioned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "description": "What provision actually built, as opposed to what the condition declares. Present once provision has run.",
+      "properties": {
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The preset the provisioned environment composes — read back from what was written, not copied from the declaration."
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha"
+          ],
+          "description": "The capability fingerprint of the provisioned environment: the hash capability-catalog computes over its canonical skill/tool face (caps:<sha>). It is what turns the condition's `preset` claim into a checkable fact.",
+          "properties": {
+            "sha": {
+              "type": "string",
+              "description": "64-hex sha256 of the canonical capability face."
+            },
+            "preset": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The preset the snapshot was taken under."
+            },
+            "skills": {
+              "type": "integer",
+              "description": "How many skills the face carries (a reader aid; the sha is the identity)."
+            },
+            "tools": {
+              "type": "integer",
+              "description": "How many tools the face carries (a reader aid; the sha is the identity)."
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -390,6 +438,28 @@ datasets/<id>/
   "condition": "claude-exec",
   "sha": "fb2bd2b2417d2c2f52b7fb3b133765e1a439ed89e318d685d20a014fa4632671",
   "home": { "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74" }
+}
+```
+
+子 dsh 的条件长这样——`provisioned` 是 provision 写下的实物，`capabilities.sha` 即 `caps:` 标签去掉前缀：
+
+```json
+{
+  "schema": "dataseek.condition-lock/1",
+  "condition": "dsh-exec-lean",
+  "sha": "6d2e4f1b8c9a0731e5b4d6a2c8f3097b1e4a5d6c7b8a9012f3e4d5c6b7a80912",
+  "home": {
+    "sha": "9a1c3e5b7d9f0246810a2c4e6081a3c5e709b1d3f507192a3c5e7091b3d5f709"
+  },
+  "provisioned": {
+    "preset": "eval-lean",
+    "capabilities": {
+      "sha": "2f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a4c6e80b1d3f5709a2c4e6",
+      "preset": "eval-lean",
+      "skills": 3,
+      "tools": 11
+    }
+  }
 }
 ```
 

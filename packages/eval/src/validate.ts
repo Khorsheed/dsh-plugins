@@ -22,6 +22,7 @@ import {
   LOCK_SCHEMA,
   PERMISSIONS_BY_HARNESS,
   PLAN_SCHEMA,
+  PRESET_CAPABLE_HARNESSES,
   SHA256_HEX_RE,
   schemaSubsetProblems,
   validateJson,
@@ -33,13 +34,21 @@ export interface EvalDiagnostic {
   message: string
 }
 
+/** The capability fingerprint a lock records for a provisioned condition. */
+export interface LockedCapabilities {
+  /** 64-hex sha256 of the canonical capability face (`caps:<sha>` without the tag). */
+  sha: string
+  /** The preset the face was taken under, as provision read it back. */
+  preset?: string | null
+}
+
 /** One plan-referenced condition, resolved as far as the dataset repo allows. */
 export interface ConditionResolution {
   id: string
   /** sha256 of the condition document; null when it could not be read or validated. */
   sha: string | null
   /** The parsed lock record; null when absent or unreadable. */
-  lock: { sha: string; homeSha?: string } | null
+  lock: { sha: string; homeSha?: string; capabilities?: LockedCapabilities } | null
   /** ready: lock matches the fresh hash and home is verified. missing: no usable declaration. */
   status: 'ready' | 'unready' | 'missing'
 }
@@ -154,6 +163,26 @@ export function conditionDiagnostics(condition: unknown): ConditionDiagnostics {
       code: 'SCOPE_NAME',
       message: `scope ${JSON.stringify(scope)} must be a name matching [a-z0-9-] (it selects <harness>@<scope> under the instance's homes root — a scope is a name, never a path)`,
     })
+  }
+
+  // A preset is a composition THIS family provisions, and it can only
+  // provision the sub-dsh's own profile. Naming one for an external CLI puts
+  // a factor into the condition hash that nothing writes and nothing can
+  // check — the exact shape of claim this contract exists to refuse.
+  const preset = condition['preset']
+  if (typeof preset === 'string') {
+    const harness = isPlainObject(condition['harness']) ? condition['harness'] : undefined
+    const harnessName = typeof harness?.['name'] === 'string' ? harness['name'] : undefined
+    if (harnessName !== undefined
+      && PERMISSIONS_BY_HARNESS[harnessName] !== undefined
+      && !PRESET_CAPABLE_HARNESSES.includes(harnessName)) {
+      errors.push({
+        code: 'PRESET_NOT_FOR_HARNESS',
+        message: `preset ${JSON.stringify(preset)} is not composable for harness ${harnessName}`
+          + ` (only ${PRESET_CAPABLE_HARNESSES.join(', ')} runs a composition this instance provisions;`
+          + ' an external CLI brings its own — use null, and express its capability face through skills.pack when that lands)',
+      })
+    }
   }
 
   const home = isPlainObject(condition['home']) ? condition['home'] : undefined
@@ -365,7 +394,12 @@ export async function resolveConditionReadiness(id: string, root: string): Promi
   }
   const lockHome = isPlainObject(lock.value['home']) ? lock.value['home'] : undefined
   const lockHomeSha = typeof lockHome?.['sha'] === 'string' ? lockHome['sha'] : undefined
-  entry.lock = { sha: lockSha, ...(lockHomeSha !== undefined ? { homeSha: lockHomeSha } : {}) }
+  const capabilities = lockedCapabilitiesOf(lock.value)
+  entry.lock = {
+    sha: lockSha,
+    ...(lockHomeSha !== undefined ? { homeSha: lockHomeSha } : {}),
+    ...(capabilities !== undefined ? { capabilities } : {}),
+  }
   if (lock.value['condition'] !== id) {
     warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json records condition ${JSON.stringify(lock.value['condition'])}, not ${JSON.stringify(id)}` })
     return readiness
@@ -382,9 +416,38 @@ export async function resolveConditionReadiness(id: string, root: string): Promi
   } else if (declaredSha !== undefined && lockHomeSha !== undefined && declaredSha !== lockHomeSha) {
     warnings.push({ code: 'HOME_MISMATCH', message: `condition ${id} home.sha does not match the locked home — the scoped home changed after provision` })
   }
+  // The `preset` claim against what provision actually built. A condition
+  // that names a preset and has no capability record is a subject whose
+  // capability face nobody measured; one whose record names ANOTHER preset is
+  // a scoped home provisioned for a different subject.
+  const declaredPreset = typeof loaded.value['preset'] === 'string' ? loaded.value['preset'] : null
+  if (declaredPreset !== null && capabilities === undefined) {
+    warnings.push({
+      code: 'CAPABILITIES_NOT_PROVISIONED',
+      message: `condition ${id} declares preset ${JSON.stringify(declaredPreset)} but the lock records no provisioned.capabilities`
+        + ' — the capability face was never measured (provision has not run)',
+    })
+  } else if (declaredPreset !== null && capabilities?.preset !== undefined && capabilities.preset !== declaredPreset) {
+    warnings.push({
+      code: 'CAPABILITIES_PRESET_MISMATCH',
+      message: `condition ${id} declares preset ${JSON.stringify(declaredPreset)} but the lock's capability record was taken`
+        + ` under ${JSON.stringify(capabilities.preset)} — the provisioned environment is another subject`,
+    })
+  }
+
   const homeVerified = declaredSha !== undefined && declaredSha === lockHomeSha
   entry.status = entry.lock.sha === entry.sha && homeVerified ? 'ready' : 'unready'
   return readiness
+}
+
+/** Read `provisioned.capabilities` off a lock document (absent / malformed yields undefined). */
+function lockedCapabilitiesOf(lock: Record<string, unknown>): LockedCapabilities | undefined {
+  const provisioned = isPlainObject(lock['provisioned']) ? lock['provisioned'] : undefined
+  const capabilities = isPlainObject(provisioned?.['capabilities']) ? provisioned['capabilities'] : undefined
+  const sha = capabilities?.['sha']
+  if (typeof sha !== 'string' || !SHA256_HEX_RE.test(sha)) return undefined
+  const preset = capabilities?.['preset']
+  return { sha, ...(typeof preset === 'string' || preset === null ? { preset } : {}) }
 }
 
 /** Display paths under one of an item's layer directories; empty when absent. */

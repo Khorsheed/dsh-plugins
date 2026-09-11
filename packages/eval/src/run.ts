@@ -38,10 +38,11 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
 import type {
+  CapabilityCatalogFace,
   DelegationProgress, DelegationResult, DelegationToolCalls, DelegationUsage,
   DatasetsFace, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
 } from './faces.ts'
-import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
+import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type LockedCapabilities, type PlanValidation } from './validate.ts'
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
 import { loadManifest, type SuiteManifest } from './manifest.ts'
 import { expandMatrix, orderCells, type EvalCell } from './matrix.ts'
@@ -103,6 +104,36 @@ class RunCancelled extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'RunCancelled'
+  }
+}
+
+/**
+ * The orchestrating instance's capability fingerprint, for `run.meta`.
+ *
+ * Never throws and never refuses a run: the catalog is optional, and a
+ * provenance line that could stop a run would be a factor in everything but
+ * name.
+ * @param catalog - the optional catalog face.
+ * @param log - the run log, for the one line a failure is worth.
+ * @returns the recorded shape, or undefined when there is nothing to record.
+ */
+async function readOrchestratorCapabilities(
+  catalog: CapabilityCatalogFace | undefined,
+  log: (message: string) => void,
+): Promise<{ sha: string; preset?: string; skills: number; tools: number } | undefined> {
+  if (catalog?.snapshotFor === undefined) return undefined
+  try {
+    const face = await catalog.snapshotFor()
+    if (typeof face.sha !== 'string' || face.sha === '') return undefined
+    return {
+      sha: face.sha,
+      ...(typeof face.preset === 'string' ? { preset: face.preset } : {}),
+      skills: face.skills.length,
+      tools: face.tools.length,
+    }
+  } catch (error) {
+    log(`orchestrator capabilities unavailable: ${error instanceof Error ? error.message : String(error)} — run.meta records none`)
+    return undefined
   }
 }
 
@@ -193,6 +224,12 @@ export interface RunDeps {
   localAgent: LocalAgentFace
   /** Required only by a plan that declares a `unit` segment; the host path never touches it. */
   lab?: LabFace
+  /**
+   * The orchestrating instance's own capability catalog. Optional and
+   * PROVENANCE ONLY: its hash is recorded in `run.meta.orchestrator`, never
+   * compared and never a factor. A composition without it records no line.
+   */
+  capabilityCatalog?: CapabilityCatalogFace
   stateRoot: string
 }
 
@@ -297,6 +334,20 @@ interface ResolvedCondition {
    * one — what every condition written before the field asks for.
    */
   scope?: string
+  /**
+   * The condition's declared preset — the agent composition its environment
+   * runs under — or null for none. Only a harness whose composition this
+   * family provisions may name one (validate refuses the rest), so in
+   * practice this is the sub-dsh's sub-profile roster.
+   */
+  preset: string | null
+  /**
+   * The capability fingerprint the condition's lock records, when provision
+   * has measured one. It is the only evidence the declared `preset` was
+   * actually built; a condition that declares a preset without it is a
+   * subject whose capability face nobody checked.
+   */
+  lockedCapabilities?: LockedCapabilities
   /** The full condition document (recorded into run.meta for the report's factor diff). */
   document: Record<string, unknown>
 }
@@ -1511,6 +1562,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     } else {
       conditionWarnings.push({ code: 'LOCK_MISSING', message: `condition ${resolution.id} has no lock — running on the fresh hash (the full readiness gate lands with provision, I4)` })
     }
+    // The capability record rides validate's resolution, which already read
+    // and schema-checked the lock — re-reading it here would be a second
+    // opinion on the same file.
+    const lockedCapabilities = resolution.lock?.capabilities
     conditions.push({
       id: resolution.id,
       sha,
@@ -1518,6 +1573,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       declaredModel: (document['model'] as { declared: string | null } | undefined)?.declared ?? null,
       provider: '',
       ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
+      preset: typeof document['preset'] === 'string' ? document['preset'] : null,
+      ...(lockedCapabilities === undefined ? {} : { lockedCapabilities }),
       document,
     })
   }
@@ -1762,6 +1819,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         provider: condition.provider,
         role: 'player',
         ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+        preset: condition.preset,
+        ...(condition.lockedCapabilities === undefined ? {} : { capabilities: condition.lockedCapabilities }),
       })),
       ...judges.map((judge): ReadinessSubject => ({
         id: judge.id,
@@ -1830,6 +1889,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     harnesses: conditions.map(condition => condition.harnessName),
   })
 
+  // The orchestrating instance's own capability face — PROVENANCE, not a
+  // factor. It says what the apparatus could do while the run happened; the
+  // report lists it and compares nothing against it, because the
+  // orchestrator answers none of the dataset's questions. A composition
+  // without a catalog, or a catalog that fails to answer, records nothing
+  // rather than a guess.
+  const orchestratorCapabilities = await readOrchestratorCapabilities(deps?.capabilityCatalog, log)
+
   const startedAt = now()
   const meta: Record<string, unknown> = {
     datasetId: plan.dataset.id,
@@ -1849,6 +1916,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     startedAt,
     subset,
     readiness,
+    ...(orchestratorCapabilities === undefined ? {} : { orchestrator: { capabilities: orchestratorCapabilities } }),
     // What every cell of this run was built from. The host credential root is
     // deliberately absent: it is an operator fact, and run.meta travels in the
     // bundle.

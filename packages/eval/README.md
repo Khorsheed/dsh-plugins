@@ -130,6 +130,16 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 每条判定是一条 `{kind: 'readiness', condition, harness, provider, ok, startedAt, durationMs, childSessionId, declaredModel, requestedModel, observedModel, reason?}` 记录，既进 `run.meta.readiness`，也作为 orchestrator ns 注解写到该条件的每一格上——问「这格为什么没产出」的人，在格子上就能看到答案。任一条件失败即整 run 不启动并打印原因（打印的是那句 401，而不是「有个条件失败了」）；`--ignore-readiness` 才允许开跑，此时该条件的格子一律记 `cell-skipped` 并给出理由，一次委派都不发。
 
+## 能力面：`preset` 从声明变成事实
+
+条件文档里的 `preset` 一直是一句**没有对应物**的话。它进条件哈希，所以两条只差 preset 的条件在账面上是两个受试对象；但从来没有任何东西把 preset 写到哪里去过，也就没有任何东西能与它不符。T32 给了它对应物：
+
+- **谁可以声明。** 只有 `dsh`。它的作用域目录里那份子 profile 是评测实例自己写的，preset roster 是那份 patch 的一层。三家外部 CLI 跑厂商自己的编排，本家族组不了——给它们写 preset 由 validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那侧的等价物是 `skills.pack`，同样尚未落地（I6）。
+- **provision 写下实物。** lock 多一段 `provisioned`：`preset` 从写出去的子 profile 回读，`capabilities.sha` 是 capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。`writeConditionLock` 是这个写动作的接缝：它只管文件与形状，不配环境、不算哈希，所以 lock 的契约不需要一台机器就能测。
+- **就绪检查核对。** 声明了 preset 而 lock 里没有能力记录，或记录取自另一个 preset——在花掉任何一次委派**之前**就判该条件不就绪。preset 进哈希却没人量过，等于两个纸面上的受试对象、事实上的一个。
+
+编排实例自己的能力哈希另算一回事：它记在 `run.meta.orchestrator.capabilities` 里，是**取证**。报告的「程序一致」把它列出来，不做任何比较——编排器不回答题库的任何一道题，把它做成通过/不通过的输入，等于「我们升级了规划 agent」就判一条不变量违反。组合里没挂 capability-catalog 就不记这一行。
+
 ## `finalize`：跑完之后的再入口
 
 `--finalize` 只在 run 启动的那一刻存在，而「判官与终评」恰恰是归档**之后**的工作。pilot A 因此人手把十二格逐个 `dsh-mission transition` 推过去。`/eval finalize <runId>` 就是这条路，机械化：对 run 内每个 `archived` 的格子走同一条闸（`archived → releasable → released`，含归档闸对 `verdicts/` 非空的 file-check），非 `archived` 的格子逐格列出状态并跳过。
@@ -264,6 +274,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 - **planSha**：plan 全文档规范化 JSON 的 sha256（含 notes——审阅时改注释也会换 plan，这正是「同 plan 即同一套程序」的口径）。
 - **home.sha**：只哈希配置类文件（`.json .jsonc .yml .yaml .toml .ini .cfg .conf .xml .properties`），按相对路径排序后对 `<relPath>\0<content>\0` 逐文件喂 sha256。拒绝清单：`auth.json`、`.env*`；文件名含 `token` / `key` / `credential` / `secret` / `password` / `auth`（不分大小写）；`credentials/`、`oauth/`、`sessions/`、`keys/`、`secrets/` 目录整棵跳过；符号链接与超大文件（>1 MiB）跳过。文件内容绝不读入日志、绝不打印。
 - **materialization.json**：该题 visible 层文件按路径排序后逐文件 sha256，整体 sha 按排序 `<path>\0<fileSha>\0` 折进 sha256——同题各格可被证明题面一致。
+- **能力哈希**（`provisioned.capabilities.sha`、`run.meta.orchestrator.capabilities.sha`）：由 capability-catalog 算，本包只记不算——规范形是它的契约，而 eval 不依赖任何兄弟包。两边各有一份逐字节相同的 `canonicalJson`，由各自的测试钉住。
 
 ## 兼容性
 
