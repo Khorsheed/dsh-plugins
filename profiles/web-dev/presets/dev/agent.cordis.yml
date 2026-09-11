@@ -287,3 +287,10 @@
 # stays global (badge/tab/service), the tool row is session-granted here.
 - id: worktrees-tool
   name: '@khorsheed/dsh-worktrees-tool'
+
+# The room model tools (invite/task/message), same split (M4'②): the core
+# stays global (room service/UI), the tool row is session-granted here. No
+# config — the tools read the invitable provider roster from the global room
+# service at call time.
+- id: room-tool
+  name: '@khorsheed/dsh-room-tool'
