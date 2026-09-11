@@ -36,6 +36,8 @@ Modifiers apply to mouse gestures exactly as they do to keys, so `primary`+middl
 
 **Recording.** While an action records, the settings row installs a capture-phase `mousedown` listener next to its `keydown` one: a bindable button completes the binding and claims the down event. The primary button is ignored, so clicking the recorder again still cancels through the button's own `onClick`. The global listeners are registered before the row's, so they observe the `capturing` flag on the very event that completes a binding and never fire the action being bound.
 
+**Presentation.** A mouse-bound keycap is a device diagram, not a word: `MouseGlyph` draws a 16×22 top view (silhouette, button split, wheel) and fills the claimed button with the theme accent, and the row puts the locale's word beside it (`gesture.middle` / `gesture.right`) — the keycap says *which button on the device*, which no numbering dialect does consistently (Source's `MOUSE2` is the right button, Ren'Py's `2` is the middle one, DOM's `1` is the middle one). `bindingParts` therefore returns slots — `{kind:'modifier'} | {kind:'key'} | {kind:'mouse'}` — rather than finished labels, and `formatBinding` takes an optional per-slot labeler: the row passes its translator, so the default-binding hint and the text form use the same word the keycap shows. The glyph is `aria-hidden` and carries no `id` or clip path (the lit caps are arcs reusing the body's corner geometry), so several diagrams on one page cannot collide on fragment ids; the visible word stays the button's accessible name.
+
 ## Alternatives considered
 
 **Inject `layout` (`inject: ['layout']`).** Rejected: cordis injection makes the whole plugin pending until the service exists — a composition without ui-layout would lose *every* shortcut, not just this one. The "degrade, don't explode" rule owns this case, and the probe is the same one the repo's other optional-service packages use.
@@ -54,10 +56,18 @@ Modifiers apply to mouse gestures exactly as they do to keys, so `primary`+middl
 
 **A per-action `middleClick: boolean` flag instead of a general mouse binding kind.** Rejected: it special-cases one action inside the registry, the settings row, and the durable format, and the recorder would still need mouse capture. The general kind costs one union member and makes every action (including contributed ones) bindable to a button.
 
+**A `MOUSE3`-style text token instead of the device diagram.** Rejected: the numbering is a per-engine dialect (Source `MOUSE1`–`MOUSE5`, Ren'Py's `mousedown_1`–`5` putting the wheel on 4/5, DOM's 0/1/2), so the label with no lookup table is the picture — and a six-character token would bring back the exact width problem the diagram exists to solve.
+
+**Keeping the English word `Middle Click`.** Rejected: it was the one label a Chinese card would render as prose next to 「插队发送」, and at roughly 90px it was by far the widest keycap in the row. The word is now locale-owned; modifier and key legends (`Ctrl/Cmd`, `Esc`) deliberately stay English keycap legends, unchanged from before.
+
+**A glyph-only keycap.** Rejected even though it is the most compact option: the button's accessible name comes from its text content, so dropping the word would require an `aria-label` or hidden text to keep any name at all, and the suite's `getByRole('button', { name })` lookups pin that contract. Reintroducing it means shipping that label layer first.
+
 ## Consequences
 
 - The durable `ui-shortcuts` section is a three-arm dict now. Existing documents (`kind: 'none'` / `kind: 'key'`) read unchanged and need no migration. **Downgrade is the asymmetric case**: an older plugin build validates against the two-arm union, so a section carrying a `kind: 'mouse'` entry is rejected by the old schema — clearing that entry (or re-recording the action to a key) is the way back. This is the first durable-format change the package makes that a downgrade cannot read.
 - Five rows render in the settings card, and the capture hint now names the mouse.
+- The label contract changed shape: `bindingParts` yields slots instead of strings and `formatBinding` takes an optional labeler. Only the mouse word is locale-owned — modifier and key legends stay the English keycap legends they always were, so a Chinese card reads `Ctrl/Cmd` + `[diagram] 中键`, not translated modifiers.
+- Accessibility rests on the word, not the picture: the glyph is `aria-hidden` and the button's accessible name is its visible text. A future glyph-only variant must add an `aria-label` (or hidden text) in the same change, or the name disappears.
 - A bound mouse button is a global gesture with a real cost: the browser defaults listed above are suppressed while the binding is live. Documented under 已知限制 in both READMEs, with the escape hatch (rebind to a key) stated.
 - No new dependency, no peer-dependency change, no lockfile change, `minHost`/`verifiedHost` unchanged, and no host change is required — both actions were already reachable through public verbs.
 - Verification: the package's own suite (44 tests) covers the mouse vocabulary (capture, matching, formatting, equality), the durable schema's acceptance of `button: 1|2` and its rejection of `0`, `3`, and unknown modifiers, dispatch through `ISession.command`, the probed-layout path with and without the service, mouse dispatch and its `auxclick`/`contextmenu` suppression, the `yield` tier for mouse gestures, and the recording-time stand-down. The READMEs' action tables and 已知限制 follow the shipped behavior.
