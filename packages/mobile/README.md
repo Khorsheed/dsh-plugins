@@ -45,8 +45,10 @@ Networking is deployment configuration, not a plugin dependency. Community users
 Use an isolated Host profile with the mobile tarball installed. Install `cloudflared` from its official distribution and use Node 22+. From the repository root, start the tunnel first (the origin can be offline while the address is allocated):
 
 ```sh
-cloudflared tunnel --url http://127.0.0.1:3182 --protocol http2 --no-autoupdate
+cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
 ```
+
+The latest isolated preview uses `--protocol quic` after HTTP/2 edge connections timed out. Protocol choice depends on the local network; a registered tunnel alone is not enough evidence. Verify public login and a full WebSocket reply before sharing the preview. Keep these processes running independently of short-lived automation sessions.
 
 Copy its generated hostname in place of `YOUR-HOST.trycloudflare.com` below. Start the standalone example in a second terminal:
 

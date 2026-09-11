@@ -45,8 +45,10 @@ App 接受配置的 HTTPS 主机地址或官方启动 token 登录链接，只�
 使用已安装 mobile tarball 的隔离 Host profile。从官方渠道安装 `cloudflared`，使用 Node 22+。在仓库根目录先启动隧道（分配地址时本地入口可以尚未启动）：
 
 ```sh
-cloudflared tunnel --url http://127.0.0.1:3182 --protocol http2 --no-autoupdate
+cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
 ```
+
+最新隔离预览在 HTTP/2 边缘连接超时后改用 `--protocol quic`。协议选择取决于本地网络；仅看到隧道注册成功还不够，分享预览前需验证公网登录和完整 WebSocket 回复。测试进程应独立运行，避免依赖短生命周期的自动化会话。
 
 将生成的主机名替换下方的 `YOUR-HOST.trycloudflare.com`，在第二个终端启动独立示例：
 

@@ -50,7 +50,7 @@ Host/插件/移动 Web 按组合验收，以版本化的窄原生桥接使兼容
 
 [验收记录](../../../../docs/acceptance/mobile-rc1-2026-09-11.md)覆盖本地流式、保留草稿的重连、认证握手、tarball 重装、10 项插件测试与 20 项原生 URL 检查。实测 rc1 进程未对标准依赖移除执行热卸载，要求受控重启 Host 并刷新客户端。单元 disposer 覆盖不等于完整 Host HMR 实证。模拟器已编译/安装/启动，但原生画面自动化受 macOS 权限阻挡。本次实现未编辑主工作区、官方或兄弟源码，未部署生产。
 
-可选部署示例 `packages/mobile/examples/https-ingress.mjs` 支持无需域名或账号的临时 Quick Tunnel，保留官方 Host/Origin 认证，在 HTTPS 边界补充 Secure Cookie 并转发 WebSocket；它不是 Cordis 依赖或设备网关。社区分发不绑定任何个人服务器或主机名。停止隧道与卸载插件是独立动作。[公网入口证据](../../../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md) 将 HTTP/升级检查与待完成的手机及公网流式 UI 验收分开记录。
+可选部署示例 `packages/mobile/examples/https-ingress.mjs` 支持无需域名或账号的临时 Quick Tunnel，保留官方 Host/Origin 认证，在 HTTPS 边界补充 Secure Cookie 并转发 WebSocket；它不是 Cordis 依赖或设备网关。社区分发不绑定任何个人服务器或主机名。停止隧道与卸载插件是独立动作。[公网入口证据](../../../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md) 记录认证 HTTP/WS、28 帧公网模拟回复与重连历史恢复；手机及公网流式 UI 验收仍待完成。续测在 HTTP/2 连接故障后改用 QUIC，测试进程独立于短生命周期工具会话运行。
 
 ## Risks
 
