@@ -286,7 +286,8 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T30d ✅ | 代码 | local-agent-dsh：session-mirror 与 records 认 0.1.5 的 `session.v3.jsonl.zstd`（按前缀匹配而不是写死文件名）——dsh 的 observedModel / usage / toolCalls 在新宿主线上全丢，挡着 pilot B | 无 | 合入 main `590c7b0`（2026-09-12，`b35dee4`）；新 `session-log.ts` 按宿主自己的规则解析代次（`^session(\.v[1-9][0-9]*)?\.jsonl$`，去 .zstd 后匹配，取版本号最高，同代压缩优先），镜像与 `/dsh sessions` 走同一函数，回读带 `sessionLogFile`；真机两条工具链各一轮：0.1.5 线回读到模型 / 用量 / 工具调用与会话列表，0.1.2 线不变；pilot-a-round1 复算逐字节相同 |
 | T29d ✅ | 代码 | eval：job 起的 run 走容器路径——job 造的父会话没有 cwd，容器条件就绪检查报 the parent session has no working directory；起格前加一次出网自检（单元断网时 codex 跑满超时交回空回答，无任何网络错误） | T29b T20c | 合入 main `e5649df`（2026-09-12，`6821eb8`、`550ac70`）；job 起的 run 父会话拿 run 的 cell 根目录做工作目录，两条起法就绪原文相同；计划契约加可选 `unit.egressCheck{command,timeoutMs}`（协议 v1-rev11），就绪探针与每一格各在 acquire 后跑一次，失败以 EGRESS_UNAVAILABLE 拒整个 run、零委派；就绪窗口缺省 420 秒；真机：Remote 门起 job 的容器格 P0 × codex 到 released，四条不变量 ✅；停掉 eval-proxy 同一计划秒级被拒、原文点名代理；题库 `i4-host-line` 加验收计划并入 i1-walk `346a0c3` |
 | T32b ✅ | 代码 | eval：/eval conditions provision 在实例内接 capability-catalog 的 snapshotFor 填 ProvisionOptions.capabilities，preset 条件才能就绪；CLI 路径照旧拒绝 | T32 | 合入 main `376838f`（2026-09-12，四提交）；`instanceCapabilityProbe` 读回 scope 子 profile 实际 roster 的 preset、核对两边指向同一目录、再 `snapshotFor`；就绪检查再量一次，过期 lock 报「preset changed after provision」并指回 provision；探针拒测也进 CAPABILITIES_UNMEASURED（T32 遗留）；真机两 scope 两哈希、改技能正文旧 lock unready、重 provision 过；validate 离线仍报 ready（接受，见验收记录） |
-| T33a | 运维 | 3171 回到 ankh-guard 守着的健康态（启动器透传 stdout 给看门狗）、源码模式重装到 main `376838f`（T30d / T29d / T32b 与 eval 预设的 persona 修正落地）、capability-catalog 能量 `eval` 预设 | T30d T29d T32b | 3171 健康且插件在合并态 |
+| T33a ✅ | 运维 | 3171 回到 ankh-guard 守着的健康态（启动器透传 stdout 给看门狗）、源码模式重装到 main `376838f`（T30d / T29d / T32b 与 eval 预设的 persona 修正落地）、capability-catalog 能量 `eval` 预设 | T30d T29d T32b | 2026-09-12 验收：启动器透传后看门狗 18 秒证到就绪（此前四次 60 秒超时）、canary PASS，attempt log 由看门狗就地脱敏、无明文 token；`install.sh --source --fresh` 从 `b7fb020` 打 27 个成员、零 npm；四项 pin 在位，三个 core 行不带 tools、tier 在 eval 预设三行上；四件核验齐：run.meta.orchestrator 带 capabilities（caps 面 37 工具 3 技能）、dsh 委派回读到模型 / 用量 / 工具调用、T29d 计划到 released、eval 预设 37 工具含三套机制工具而 standard 28 个一套没有；deployment proof 因缺 preflight 绑定 FAIL、credentialRepo 仍指 T29c worktree——放行方案见验收记录（专用 worktree，不指主检出） |
+| T33d | 代码 | eval / mission / datasets / lab 四个 CLI 的入口守卫拿 `process.argv[1]` 不 realpath 就与 `import.meta.url` 比——经 pnpm `.bin` 软链调用时永不相等，主体不执行、退出 0、零输出；lab 的 CLI 路径把 `dsh-mission is-releasable` 的退出码当释放闸，空跑的 0 会被读成放行 | 无 | 四处守卫 realpath 后比对；软链调用有输出、直连不变 |
 | T33b | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型——P0 先证机制与配对形状，真题预算先报 | T33a | 两份 P0 配对结果 + 真题预算 |
 | T33c | 运维 | pilot D：sub-dsh × 两 preset（同工具、不同技能）——两 scope 各 provision、两 caps 哈希、P0 一轮 | T33a | P0 配对结果 + 真题预算 |
 
@@ -311,6 +312,8 @@ T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个
 - **T32**：snapshotFor 与 hashOf 的规范形按文案（tool 取 name / channel / parameters，skill 取 name / source / 正文 sha，描述不进）；三个 scope 两个哈希，改名不动、改正文动。三处偏离：一、真机跑出实施者自己引入的缺陷——preset 挂不起来时 snapshotFor 悄悄退回全局层还贴着该 preset 的名字，两个本该不同的 scope 同哈希，已改成清单降级、指纹抛错（5915d4a），接受。二、**preset 在 sub-dsh 上拿不走能力**：dsh-base 把工具挂在 profile 根，preset 只能加不能减，两个 scope 的 26 个工具完全一样，差别在各自注册的技能——pilot D 的口径改成「同工具 + 不同技能」；要减工具得等 T45 的伴生工具包拆分。三、两项没做到：委派一轮问「你有哪些工具」改为直接读启动起来的 composition（本机生产 home 之外没有 DeepSeek 凭据）；子 profile 能力哈希的实测留成 ProvisionOptions.capabilities 钩子，没钩子时 lock 报 CAPABILITIES_UNMEASURED、就绪再拒一次——接受，但这意味着 preset 条件今天进不了 ready，接线记 T32b。与 T31 抢 provisioned 块的合并方式对：T31 拥有写入者与必填字段，T32 只加 preset / capabilities 两个可选字段。
 
 **T30d / T29d / T32b 验收（2026-09-12）**：三条分支依次合入 main `590c7b0`、`e5649df`、`376838f`，两条 eval 分支只在 README sidecar 撞哈希、重录；合并态 eval 461、local-agent-dsh 146 全绿。T29d 的真机第一跑同时补齐 T29c 回归第 5 项，T29c 转 ✅。三件裁决：T32b 的 validate 对过期 lock 仍报 ready——接受，validate 离线量不了，新鲜度只在有 catalog 的就绪检查上比，`conditions list` 的实例内测量留作后话；T32b 两处超出文案（就绪再量、T32 遗留的探针拒测不进报告）都收；T29d 动了根目录的协议文档——契约加字段本该动，协调者补了 v1-rev11 的版本号。T29d 顺带发现的两件：capability-catalog 在 3171 上量不了 `eval` 预设（persona 行在 0.1.5 线的配置键是 `prefix`，本 profile 的预设还写着 0.1.2 线的 `text`，协调者已在预设文件改正，随 T33a 落地）；ankh-guard 的 credentialRepo 仍是 T29c 的 worktree，重新 adopt 前不删。**3171 事故**：T29d 回报「已交回 ankh-guard」时看门狗其实还没证到就绪——启动器为了不让 token 进日志把子进程 stdout 整个吞掉，而看门狗靠子进程 stdout 里的启动 URL 做 303 交换来证就绪，只见 401 就永远「readiness not proven within 60s」，四次失败后回滚 credentialRepo（到 47ac944，无变化，留了 `guard-backup-20260911-170315-q4ec` 分支）并挂出兜底页；修法是启动器把原始 stdout 透传（看门狗自己会在 attempt log 里脱敏）再给看门狗发 SIGUSR1，归 T33a——协调者的自动模式不放行改启动器与发信号，所以交实施者做。
+
+**T33a 验收（2026-09-12）**：看门狗的就绪协议是「子进程 stdout 里的启动 URL → 303 交换 → cookie 200」，启动器透传后 18 秒证到，attempt log 由看门狗自己就地脱敏（0600、`[launch-url-redacted]`），token 只在 0600 文件里；实施者顺手把 `process.exit(code)` 改成 `process.exitCode = code`，否则排在管道里的透传会被截断。重装走 `install.sh --source --fresh`（第一版文案写成 update.sh，被实施者指出——update.sh 会把 file:tarballs 清单覆盖回 npm 范围），27 个成员从 `b7fb020` 打，`--dump-config` 只 compose profile 根所以仍报 24——伴生三包的授予点在 eval 预设层，是 M4'③ 的本意。四件核验齐（见表）。**credentialRepo 的裁决**：实施者提议指向主检出，不放行——看门狗连续两次起不来会对 credentialRepo 做 `git reset --hard`，主检出是多 agent 共享工作区，不能让一个看门狗有权清空别人的未提交改动；改为专用 worktree `../dsh-plugins-wt-eval-guard`（分支 `guard/eval-3171`，只作部署锚点，不在上面开发，每次重装后前移到装的那个 commit），其余参数照实施者的方案（`DSH_HOME=~/.dsh-lab`、`--state-dir`、`--profile web-eval`、`--preflight-surface built` + install anchor 指工具链的 dsh package.json）；切换要等看门狗重新 supervise（WD_REPO 是 supervise 启动时读进环境的），顺便把看门狗从稳定的 cwd 起（现在的 cwd 是已删的 T29d worktree，重启路径上已冒出 uv_cwd ENOENT），成功后删主检出的 `.dsh-guard-state/` 与 T29c 的 worktree。路上撞见的既有问题：四个 CLI 的入口守卫经 `.bin` 软链静默空跑（→ T33d）；finalize 事后单跑会把单元晾住（is-releasable 闸只在 archived → released 间开，正路是 `run --finalize`，写进 T33b / T33c 的约束）。
 
 T32（2026-09-10 定）：pilot D 的口径是「sub-dsh × 两 preset」——preset 只管得到我们自己组的子实例，三家外部 CLI 的技能包留 I6 单独做。
 
@@ -1677,7 +1680,7 @@ eval 测试全绿，gate 绿；真机：本机 dsh 两个只差 preset 的 scope
 
 **验收（2026-09-12）**：`feat/eval-provision-capabilities`（`4aabf3d`…`cbd0a9e`）合入 main `376838f`，只动 packages/eval；合并态 eval 461 全绿。三件裁决：一、validate 对过期 lock 仍报 ready——接受。validate 是离线的，量不了；新鲜度只能在有 catalog 的地方比，就绪检查正是 run 起来时真正要拦住东西的那处。要让 validate / `conditions list` 也看得见，得给读动词各配一次实例内测量，另立任务、暂不排。二、两处超出文案都收：就绪再量一次——只填钩子的话写下的哈希永远没人再比，改技能正文又不动 home.sha，等于白记；T32 遗留的探针拒测只 log 不进报告，与同文件契约矛盾，现在与抛错同样进 CAPABILITIES_UNMEASURED。三、量的是实例这份 composition 里的那张面而不是子 dsh 自己那份——沿用文案；守卫（scope 自带 preset 副本即拒并给修法）是这个折中站得住的前提。`provisioned.preset` 是从子 profile 读回的，不是声明的复制。真机（私有工具链，catalog 用本分支 tarball）：两 scope 两哈希、改技能正文旧 lock 报「preset changed after provision」且零委派、重 provision 后哈希变、就绪过。Agent Note：`.agents/notes/implemented/feature/2026-09-12-eval-provision-capability-probe.md`。
 
-### T33a · 运维：3171 回到 ankh-guard 守着的健康态，重装到合并态 main（可发）
+### T33a · 运维：3171 回到 ankh-guard 守着的健康态，重装到合并态 main（已完成，2026-09-12 验收）
 
 ```text
 # 任务 T33a：3171——看门狗证得到就绪、插件更新到 main 376838f、eval 预设能被量
@@ -1705,6 +1708,51 @@ watchdog.log 里 instance ready + canary PASS；3171 上 27 个 @khorsheed 成�
 watchdog.log 的就绪与 canary 两行；install.sh 与 --dump-config 输出；第 4 步四件的原文；credentialRepo 的建议。
 ```
 
+**验收（2026-09-12）**：判据两行齐（02:57 instance ready、03:00 canary PASS），boot-attempt.log 227 字节、0600、无明文 token、有脱敏标记，give-up 标记已清，3171 回登录墙而不是兜底页；27 个 @khorsheed 成员在 node_modules，零 npm；四项 pin 与三个 core 行的形状按 M4'③；四件核验原文在回报里。第 3 步与判据经两次补充文案修正（update.sh → install.sh --source --fresh；成员 24 → 27）。credentialRepo 的放行见下：
+
+```text
+# T33a 放行（2026-09-12）：credentialRepo 切到专用 worktree，不切主检出
+
+不放行「--repo 指主检出」：看门狗连续两次起不来会对 credentialRepo 做 git reset --hard（先留 guard-backup-* 锚点），主检出是多 agent 共享工作区，不能让看门狗有权清空别人的未提交改动。改为：
+
+1. 从 main 开 worktree ../dsh-plugins-wt-eval-guard，分支 guard/eval-3171，HEAD 就是这次装的 b7fb020。它只作 guard 的部署锚点：不在上面开发、不开分支；以后每次重装 3171，把它 fast-forward 到装的那个 commit（写进以后重装的步骤）。
+2. configure-launch 按你的参数，只把 --repo 换成那个 worktree 的绝对路径：DSH_HOME=~/.dsh-lab、--port 3171、--start 指 ~/.dsh-lab/bin/eval-launch.mjs、--home ~/.dsh-lab、--state-dir ~/.dsh-lab/state、--harness-root 与 --preflight-install-anchor 指 rc-0.1.5-rc.1 工具链、--profile web-eval、--preflight-surface built。不带 --if-absent。
+3. 让新 spec 生效：WD_REPO 是 supervise 启动时读进环境的，要么走 reconfigure 在线切换，要么经 guard 通道重启实例让插件重新 supervise——两条路你选，回报里写清用了哪条。重新 supervise 时从稳定的目录起（例如 ~/.dsh-lab），现在的看门狗 cwd 是已删的 T29d worktree，重启路径上已冒出 uv_cwd ENOENT。
+4. 验：watchdog.log 再出一次 instance ready + canary PASS，且 deployment proof 从 FAIL 变 PASS（有了 preflight 绑定）；贴三行。
+5. 成功后删两样：主检出根目录的 .dsh-guard-state/（上次没带 DSH_HOME 写错地方的那份）；T29c 的 worktree ../dsh-plugins-wt-eval-host-line 与分支 chore/eval-family-host-0.1.5（已合并）——这两样删之前在回报里点名。
+
+约束照旧：不碰 ~/.dsh-official 与 3080；token 不进日志、回报、提交；动看门狗与实例进程在回报里写明。
+```
+
+### T33d · 代码：四个 CLI 的入口守卫 realpath 后再比（可发）
+
+```text
+# 任务 T33d：eval / mission / datasets / lab——CLI 入口守卫经 .bin 软链调用时静默空跑
+
+## 背景
+四个包的 src/cli.ts 都用同一句判「是不是被当作入口执行」：process.argv[1] 转 file URL 后与 import.meta.url 比。Node 会把 ESM 主模块 realpath，argv[1] 不会——经 pnpm 的 .bin 软链（或任何软链路径）调用时两者永不相等，主体不执行、退出码 0、零输出。T33a 在 3171 上实测到：dsh-eval / dsh-mission 从 PATH 上调都是空跑，要用真路径 node …/lib/cli.js 才动。后果不止不便：packages/lab 的 CLI 路径（cli-core.ts）把 dsh-mission is-releasable 的退出码当释放闸（0 / 1，其它 fail closed），空跑的 0 会被读成「可释放」。
+
+## 先读
+packages/eval/src/cli.ts、packages/mission/src/cli.ts、packages/datasets/src/cli.ts、packages/lab/src/cli.ts 顶部的守卫（各约 16–18 行、datasets 在 254 行）；packages/lab/src/cli-core.ts 的 Mission integration 注释与 is-releasable 那段；四个包各自的 cli 测试。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-cli-entry-guard，分支 fix/cli-entry-guard-realpath，只改这四个包（各自 README 若提到 CLI 入口就补一句 + sidecar）。
+
+## 已定决定
+- 守卫改为对 argv[1] 做 realpathSync（失败即按原字符串）再转 URL 比对；import.meta.url 一侧不动。四处同一改法，各自留一句注释说明为什么要 realpath。
+- 不改 lab 的闸语义（0 / 1 / 其它 fail closed 是对的），只让 dsh-mission 真的执行。
+- 每包一条测试：经软链路径 spawn 出的 CLI 有输出、退出码来自主体；直连路径行为不变。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；不改四个包的其它逻辑；不改 profile。
+
+## 完成判据
+四包测试全绿，gate 绿；本机用 pnpm .bin 软链调 dsh-eval --help 与 dsh-mission --help 各有输出。
+
+## 回报
+分支名与 commit；Agent Note 路径（bug-fix）；gate 输出；软链调用前后的原文各一行。
+```
+
 ### T33b · 运维：pilot B（dsh × 两模型）与 pilot C（claude × 两模型）（可发，依赖 T33a）
 
 ```text
@@ -1727,7 +1775,7 @@ I4 的目标是「同 harness 两条件的配对结果」。机制已齐：条�
 - 预算：从这两跑的 usage.jsonl 与 pilot-b-log 里 F2 / F3 的历史用量，各估一份「真题 × 两条件 × 2 rep + 判官双采样」的 token 与时长，写进日志的「预算」节，停在这里等放行。
 
 ## 约束
-不碰 ~/.dsh-official 与 3080；凭据不复制、不进日志与回报；边车与实例进程要动先报；只跑 P0；题库写操作一律 worktree。
+不碰 ~/.dsh-official 与 3080；凭据不复制、不进日志与回报；边车与实例进程要动先报；只跑 P0；题库写操作一律 worktree。收尾用 run --finalize，不要事后单跑 finalize（is-releasable 闸只在 archived → released 间开，事后单跑会把单元晾住只能 --force）；T33d 修好前 CLI 一律用真路径 node …/lib/cli.js 调，经 .bin 软链会静默空跑。
 
 ## 完成判据
 两份 P0 配对报告各四条不变量 ✅、第三条两格都有回读；dsh 两格 token 列有数（T30d 之前是空的）；i4-pilots-log 有两节结果 + 一节预算；validate 0 error。
@@ -1759,7 +1807,7 @@ T32 与 T32b 的 Agent Note（哈希的规范形、量的是哪张面、守卫�
 - 预算：与 T33b 同法估真题一份，停在预算等放行。
 
 ## 约束
-不碰 ~/.dsh-official 与 3080；凭据不复制、不进日志与回报；边车与实例进程要动先报；只跑 P0；不与 T33b 同时跑（同一实例、同一 docker）。
+不碰 ~/.dsh-official 与 3080；凭据不复制、不进日志与回报；边车与实例进程要动先报；只跑 P0；不与 T33b 同时跑（同一实例、同一 docker）。收尾用 run --finalize，不要事后单跑 finalize；T33d 修好前 CLI 一律用真路径 node …/lib/cli.js 调，经 .bin 软链会静默空跑。
 
 ## 完成判据
 两 lock 两哈希、P0 配对报告四条不变量 ✅、就绪拒绝与重 provision 的两段原文、i4-pilots-log 的 pilot D 节 + 预算、validate 0 error。
