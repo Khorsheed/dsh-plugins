@@ -24,6 +24,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DelegationProgress, DelegationResult, LocalAgentFace } from './faces.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
+import { EGRESS_UNAVAILABLE } from './egress.ts'
 
 /**
  * The probe task, byte-for-byte. One sentence, no tools, no files: the point
@@ -34,8 +35,18 @@ import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 export const READINESS_PROMPT
   = 'Readiness check: reply with the single word READY and nothing else. Do not use any tools and do not write any files.\n'
 
-/** Default wall-clock cap on one readiness probe. */
-export const DEFAULT_READINESS_TIMEOUT_MS = 120_000
+/**
+ * Default wall-clock cap on one readiness probe.
+ *
+ * Sized for the SLOWEST honest start, not the fastest: on the container path
+ * a probe pays a cold unit acquire (T29c measured a 3.2GB image pulling into
+ * a just-started daemon) plus the harness CLI's own first `docker exec`
+ * before a single token moves. 120s — the host-path value this used to be —
+ * cancelled those probes while they were still legitimately starting, which
+ * reads exactly like an unauthenticated harness. `readinessTimeoutMs`
+ * narrows it for a composition that knows its units are warm.
+ */
+export const DEFAULT_READINESS_TIMEOUT_MS = 420_000
 
 /** What a probed condition is FOR: a subject under test, or the blind judge. */
 export type ReadinessRole = 'player' | 'judge'
@@ -93,6 +104,13 @@ export interface ReadinessRecord {
    * host — which is the whole reason the probe moved into a unit.
    */
   unit?: { resource: string; fingerprint: string }
+  /**
+   * Set when the condition is not ready because its ENVIRONMENT is broken
+   * rather than its subject — today only the unit's egress check. The run
+   * refuses under this code instead of `READINESS_FAILED`, because "the proxy
+   * is down" and "this harness cannot authenticate" want different people.
+   */
+  infrastructure?: string
 }
 
 /** One condition as the readiness check needs it (the run loop's resolved shape). */
@@ -163,6 +181,14 @@ export interface ReadinessUnit {
   exec: { container: string; workdir: string; env?: Record<string, string> }
   /** The unit's composite environment fingerprint, recorded on the verdict. */
   fingerprint: string
+  /**
+   * Ask the unit whether it can reach what the plan says it needs, BEFORE a
+   * delegation is spent in it. The caller supplies it (only the caller has
+   * lab and the plan); absent means the plan declared no check and the probe
+   * runs exactly as it did before this hook existed.
+   * @throws {@link EgressUnavailable} when the unit cannot reach its endpoints.
+   */
+  checkEgress?(): Promise<void>
   /** Destroy the unit. Called whatever the probe did, including when it threw. */
   release(): Promise<void>
 }
@@ -251,15 +277,7 @@ async function probeOne(
     const reason = `the probe unit could not be acquired: ${error instanceof Error ? error.message : String(error)}`
     env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${reason}`)
     return {
-      kind: 'readiness',
-      condition: condition.id,
-      role: condition.role ?? 'player',
-      harness: condition.harnessName,
-      provider: condition.provider,
-      declaredModel: condition.declaredModel,
-      requestedModel: condition.declaredModel,
-      ...(condition.scope === undefined ? {} : { scope: condition.scope }),
-      ...(condition.capabilities === undefined ? {} : { capabilities: condition.capabilities }),
+      ...baseRecord(condition),
       ok: false,
       startedAt,
       durationMs: env.now() - startedAt,
@@ -272,12 +290,60 @@ async function probeOne(
   if (unit === undefined) return await probeIn(localAgent, condition, env, undefined)
   const held = unit
   try {
+    // Before the delegation, not after: a unit with no way out does not fail
+    // a round, it produces an EMPTY one (T29c), and an empty round is
+    // indistinguishable from a subject that had nothing to say. The check
+    // costs one in-unit command; skipping it costs the whole probe window and
+    // still does not say what went wrong.
+    if (held.checkEgress !== undefined) {
+      try {
+        await held.checkEgress()
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${reason}`)
+        return {
+          ...baseRecord(condition),
+          ok: false,
+          startedAt,
+          durationMs: env.now() - startedAt,
+          childSessionId: null,
+          observedModel: null,
+          reason,
+          infrastructure: EGRESS_UNAVAILABLE,
+          unit: { resource: held.exec.container, fingerprint: held.fingerprint },
+        }
+      }
+    }
     const record = await probeIn(localAgent, condition, env, held)
     return { ...record, unit: { resource: held.exec.container, fingerprint: held.fingerprint } }
   } finally {
     // Whatever the probe did, the unit goes. It is bound to no mission, so
     // this is the ONE destroy in the whole orchestrator that needs `force`.
     await held.release()
+  }
+}
+
+/**
+ * The identity half of every readiness record — the fields that describe WHO
+ * was probed, which are the same whether the probe ran, failed to acquire a
+ * unit, or never started because the unit had no egress.
+ * @param condition - the subject.
+ * @returns the shared fields.
+ */
+function baseRecord(condition: ReadinessSubject): Pick<
+  ReadinessRecord,
+  'kind' | 'condition' | 'role' | 'harness' | 'provider' | 'declaredModel' | 'requestedModel' | 'scope' | 'capabilities'
+> {
+  return {
+    kind: 'readiness',
+    condition: condition.id,
+    role: condition.role ?? 'player',
+    harness: condition.harnessName,
+    provider: condition.provider,
+    declaredModel: condition.declaredModel,
+    requestedModel: condition.declaredModel,
+    ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+    ...(condition.capabilities === undefined ? {} : { capabilities: condition.capabilities }),
   }
 }
 
@@ -294,17 +360,7 @@ async function probeIn(
   },
   unit: ReadinessUnit | undefined,
 ): Promise<ReadinessRecord> {
-  const base = {
-    kind: 'readiness' as const,
-    condition: condition.id,
-    role: condition.role ?? 'player',
-    harness: condition.harnessName,
-    provider: condition.provider,
-    declaredModel: condition.declaredModel,
-    requestedModel: condition.declaredModel,
-    ...(condition.scope === undefined ? {} : { scope: condition.scope }),
-    ...(condition.capabilities === undefined ? {} : { capabilities: condition.capabilities }),
-  }
+  const base = baseRecord(condition)
   const startedAt = env.now()
   // Before spending a delegation: does the subject's capability claim have
   // anything behind it? A condition whose preset was never measured fails

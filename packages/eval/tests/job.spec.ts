@@ -7,7 +7,8 @@
  * `read` consumes — so the assertions are about this package's producer, not
  * about a mock's convenience.
  */
-import { homedir } from 'node:os'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { EvalRunJobs } from '../src/job.ts'
@@ -209,6 +210,43 @@ describe('EvalRunJobs', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: '/work' } }))
     await new Promise(resolve => setTimeout(resolve, 5))
     expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives the session it opens the run\'s own cell root, so a container round has a cwd (T29d)', async () => {
+    const jobs = fakeJobs()
+    const stateRoot = mkdtempSync(join(tmpdir(), 'eval-job-cwd-'))
+    const create = vi.fn(async (options: { sessionId: string }) => ({
+      agent: { session: { id: options.sessionId } },
+      dispose: async () => {},
+    }))
+    const runner = new EvalRunJobs(hosts({ jobs, agents: { get: () => undefined, create } }))
+    const handle = await runner.start(async () => report(), { stateRoot, runId: 'run-t29d' })
+
+    // The container path passes no per-round cwd (inside a unit a host path
+    // means nothing), so the provider falls back to the parent session's —
+    // and a session opened without one made every container condition refuse
+    // with «the parent session has no working directory to run the CLI in».
+    const expected = join(stateRoot, 'cells', 'run-t29d')
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: expected } }))
+    // And it exists: a CLI spawned into a missing directory fails in the
+    // shell, before the harness that would have explained it.
+    expect(existsSync(expected)).toBe(true)
+    expect(handle.ownParentSession).toBe(true)
+    rmSync(stateRoot, { recursive: true, force: true })
+  })
+
+  it('leaves the caller\'s own working directory alone when it has one', async () => {
+    const jobs = fakeJobs()
+    const create = vi.fn(async (options: { sessionId: string }) => ({
+      agent: { session: { id: options.sessionId } },
+      dispose: async () => {},
+    }))
+    const runner = new EvalRunJobs(hosts({ jobs, agents: { get: () => undefined, create } }))
+    // `/eval run` passes the calling session\'s cwd. That directory is an
+    // existing workspace — taken as given, never created here.
+    await runner.start(async () => report(), { cwd: '/work', stateRoot: '/nowhere' })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: '/work' } }))
+    expect(existsSync('/nowhere')).toBe(false)
   })
 
   it('refuses to start when the composition mounts no job registry', async () => {

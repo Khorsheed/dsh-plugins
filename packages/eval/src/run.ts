@@ -58,8 +58,10 @@ import {
   type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
 } from './judge.ts'
 import { hostProbeExecutor, unitProbeExecutor, type ProbeExecutor } from './probe-exec.ts'
+import { checkUnitEgress } from './egress.ts'
+import type { EgressCheckDecl } from './unit.ts'
 import {
-  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, describeAcquireSpec,
+  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, describeAcquireSpec, egressCheckAbsentNote, planUnitDiagnostics,
   environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   type CellUnitPlan, type CredentialsCheck,
 } from './unit.ts'
@@ -379,6 +381,8 @@ interface CellState {
 interface CellUnitBinding {
   lab: LabFace
   plan: CellUnitPlan
+  /** The plan's egress self-check, when it declares one. */
+  egressCheck?: EgressCheckDecl
 }
 
 /**
@@ -806,6 +810,15 @@ async function runCellOnce(
     // once, and the fingerprint that describes it exists before any work does.
     unit = await env.unit.lab.acquire(acquireSpecFor(env.unit.plan, { missionId, runId: env.runId }))
     if (env.held !== undefined) env.held.unit = unit
+    // Between acquire and populate, for the same reason the readiness probe
+    // asks before delegating: a unit that cannot reach its endpoints wastes
+    // the whole cell and then reports nothing about why. The readiness gate
+    // already asked this of a unit of the same class; asking again per cell
+    // catches a sidecar that died mid-run, which is exactly how T29c's
+    // containers ended up unreachable in the first place.
+    if (env.unit.egressCheck !== undefined) {
+      await checkUnitEgress(env.unit.lab, unit.id, env.unit.egressCheck, `cell ${missionId}`)
+    }
     // The «环境一致» invariant's input, written by the ORCHESTRATOR the moment
     // the unit exists. lab registers the same two refs itself, but that write
     // is best-effort by design (it warns and skips), and an invariant may not
@@ -1758,12 +1771,18 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       if (!check.ok) problems.push({ code: 'CREDENTIALS_UNUSABLE', message: check.reason as string })
       else if (check.ownerNote !== undefined) log(`credentials ${condition.id}: ${check.ownerNote}`)
     }
+    // The half the contract subset cannot state: a well-typed declaration
+    // that would check nothing. Refused rather than dropped — a run that
+    // believes it was checked is the failure this whole change is about.
+    problems.push(...planUnitDiagnostics(plan))
     if (problems.length > 0) {
       throw new EvalRunRefused(
         `the plan's unit segment cannot be satisfied for ${problems.length} condition(s) — nothing was executed`,
         problems,
       )
     }
+    const absentNote = egressCheckAbsentNote(planUnit)
+    if (absentNote !== undefined) log(absentNote)
     if (options.finalize !== true) {
       // Not a refusal: stopping at `archived` is a legitimate thing to want.
       // But on the container path it means every cell's container survives
@@ -1875,6 +1894,21 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
             env: { [cellUnit.scopedHome.var]: cellUnit.scopedHome.container },
           },
           fingerprint: unit.fingerprint,
+          // The plan's own question, asked in the probe's own unit. Absent
+          // declaration, absent hook — the probe then runs exactly as it did
+          // before this key existed.
+          ...(planUnit.egressCheck === undefined ? {} : {
+            // No condition name in `where`: both consumers of this message —
+            // the readiness log line and the run's diagnostic — already
+            // prefix it with the condition, and saying it three times in one
+            // sentence is how a message stops being read.
+            checkEgress: (): Promise<void> => checkUnitEgress(
+              lab,
+              unit.id,
+              planUnit.egressCheck as EgressCheckDecl,
+              'the probe unit',
+            ),
+          }),
           release: async () => {
             await destroyUnit({ lab, mission: faces.mission }, { runId: '', by, log }, unit, 'the readiness probe finished', { force: true })
           },
@@ -1888,7 +1922,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       `${failedReadiness.size} of ${readiness.length} condition(s) failed the pre-run readiness check — nothing was executed`
       + ' (fix the condition, or re-run with --ignore-readiness to start anyway and record its cells as skipped)',
       [...failedReadiness.values()].map(record => ({
-        code: 'READINESS_FAILED',
+        // An environment that cannot reach its endpoints is not a condition
+        // that failed its check: the subject was never asked. The code says
+        // which, so the refusal reaches whoever can fix it.
+        code: record.infrastructure ?? 'READINESS_FAILED',
         message: `${record.role === 'judge' ? 'judge ' : ''}${record.condition} (harness ${record.harness}): ${record.reason ?? 'unknown'}`,
       })),
     )
@@ -2068,7 +2105,9 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
         finalize: options.finalize === true,
         readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
-        ...(cellUnit !== undefined && lab !== undefined ? { unit: { lab, plan: cellUnit } } : {}),
+        ...(cellUnit !== undefined && lab !== undefined
+          ? { unit: { lab, plan: cellUnit, ...(planUnit?.egressCheck === undefined ? {} : { egressCheck: planUnit.egressCheck }) } }
+          : {}),
         judge: {
           judges,
           samples: judgeSamples,

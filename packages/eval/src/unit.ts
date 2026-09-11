@@ -45,7 +45,34 @@ export interface PlanUnitDecl {
   network?: string
   user?: string
   resources?: { cpus?: string | number; memory?: string | number }
+  /** The in-unit egress self-check, when the plan declares one. */
+  egressCheck?: EgressCheckDecl
 }
+
+/**
+ * One in-unit command that answers "can this unit reach what it needs to".
+ *
+ * The COMMAND and its target live in the plan (or the dataset's env layer
+ * beside it), never here: an evaluation network's proxy, registry and
+ * whitelist are the dataset's apparatus, and an address compiled into the
+ * orchestrator would be the one thing a plan could not change. What the
+ * orchestrator owns is only the rule — exit 0 passes, anything else refuses
+ * the run before a delegation is spent.
+ */
+export interface EgressCheckDecl {
+  /** argv run inside the unit through `lab.verify` (no shell unless the argv names one). */
+  command: string[]
+  /** How long the check may take. Defaults to {@link DEFAULT_EGRESS_CHECK_TIMEOUT_MS}. */
+  timeoutMs?: number
+}
+
+/**
+ * Default budget for the egress check: long enough for a proxy CONNECT and a
+ * TLS handshake on a cold unit, short enough that a dead proxy is named in
+ * seconds rather than at the readiness window's far end (T29c: a unit with no
+ * egress produced a 230-second EMPTY turn and no network error at all).
+ */
+export const DEFAULT_EGRESS_CHECK_TIMEOUT_MS = 30_000
 
 /** One condition's `unit` segment — the per-subject half. */
 export interface ConditionUnitDecl {
@@ -86,7 +113,61 @@ export function planUnitOf(plan: unknown): PlanUnitDecl | null {
   if (typeof unit['network'] === 'string') decl.network = unit['network']
   if (typeof unit['user'] === 'string') decl.user = unit['user']
   if (isPlainObject(unit['resources'])) decl.resources = unit['resources'] as NonNullable<PlanUnitDecl['resources']>
+  const egress = egressCheckOf(unit['egressCheck'])
+  if (egress !== null) decl.egressCheck = egress
   return decl
+}
+
+/**
+ * Read an `egressCheck` declaration. A malformed one reads as absent here and
+ * is reported by {@link planUnitDiagnostics} — parsing and complaining are
+ * separate jobs, as everywhere else in this module.
+ * @param value - the declaration as it appears in the plan document.
+ * @returns the declaration, or null when it is absent or unusable.
+ */
+export function egressCheckOf(value: unknown): EgressCheckDecl | null {
+  if (!isPlainObject(value)) return null
+  const command = value['command']
+  if (!Array.isArray(command) || command.length === 0) return null
+  if (!command.every((word): word is string => typeof word === 'string' && word !== '')) return null
+  const decl: EgressCheckDecl = { command: [...command] }
+  const timeoutMs = value['timeoutMs']
+  if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0) decl.timeoutMs = timeoutMs
+  return decl
+}
+
+/**
+ * Diagnostics for a plan's `unit.egressCheck` that the SCHEMA cannot state.
+ * The contract subset has type/required/properties/items and no cardinality
+ * keywords, so `{ command: [] }` and `{ command: [''] }` are schema-valid and
+ * meaningless — and a check that silently evaporates is worse than a plan
+ * that declared none, because the run then believes it was checked.
+ * @param plan - the plan document.
+ * @returns diagnostics; empty when the declaration is usable or absent.
+ */
+export function planUnitDiagnostics(plan: unknown): EvalDiagnostic[] {
+  if (planUnitOf(plan) === null) return []
+  const raw = isPlainObject(plan) && isPlainObject(plan['unit']) ? plan['unit']['egressCheck'] : undefined
+  if (raw === undefined || egressCheckOf(raw) !== null) return []
+  return [{
+    code: 'EGRESS_CHECK_MALFORMED',
+    message: 'unit.egressCheck needs a non-empty command of non-empty words'
+      + ' (and, if given, a positive timeoutMs)'
+      + ` — got ${JSON.stringify(raw)}`,
+  }]
+}
+
+/**
+ * The one-line note a networked run without an egress check prints, or
+ * undefined when there is nothing to say.
+ * @param decl - the plan's unit segment.
+ * @returns the log line, or undefined.
+ */
+export function egressCheckAbsentNote(decl: PlanUnitDecl): string | undefined {
+  if (decl.egressCheck !== undefined || decl.network === undefined) return undefined
+  return `egress: this plan's unit segment declares network ${JSON.stringify(decl.network)} but no unit.egressCheck`
+    + ' — a unit that cannot reach its proxy answers nothing rather than failing, so a dead proxy will look'
+    + ' like a model that said nothing (declare unit.egressCheck to have the run refuse instead)'
 }
 
 /** Read a condition document's `unit` segment; null when it declares none. */

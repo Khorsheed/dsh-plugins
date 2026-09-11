@@ -28,6 +28,9 @@
  * @module @khorsheed/dsh-eval
  */
 import { randomUUID } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { defaultStateRoot } from './run.ts'
 // Type-only, and the producer contract is the REAL one: the kind merge below
 // registers `eval-run` in the registry's own kind map, and `JobStart` /
 // `JobHooks` keep this producer honest at compile time.
@@ -153,6 +156,31 @@ export function evalRunId(now: number): string {
  * after it settles (a run that ended twenty minutes ago is exactly when
  * someone reads its tail).
  */
+/**
+ * The working directory a run's OWN parent session gets.
+ *
+ * A delegation needs a host working directory even when the round runs inside
+ * a container: the provider resolves `intent.cwd ?? parent.session.cwd`, and
+ * the container path passes no per-round cwd on purpose (inside a unit a host
+ * path means nothing), so the parent's is the only one left. A session this
+ * runner opened for itself had none, and every container condition refused
+ * with «the parent session has no working directory to run the CLI in» — a
+ * message about the orchestrator's own plumbing, delivered as though the
+ * harness were at fault (T29c).
+ *
+ * The value is the run's cell root, the same directory the run is about to
+ * fill: it exists for the run's lifetime, it is where the run's own bytes
+ * live, and it puts a session started by CI in the same place a session
+ * started by `/eval run --wait` would be working from.
+ * @param options - the run options (`stateRoot`, else `$DSH_HOME/state/eval`).
+ * @param runId - the run this session belongs to.
+ * @returns the directory, or undefined when no state root can be resolved.
+ */
+export function runWorkDir(options: { stateRoot?: string }, runId: string): string | undefined {
+  const stateRoot = options.stateRoot ?? defaultStateRoot()
+  return stateRoot === undefined ? undefined : join(stateRoot, 'cells', runId)
+}
+
 export class EvalRunJobs {
   private readonly records = new Map<string, RunRecord>()
 
@@ -200,7 +228,19 @@ export class EvalRunJobs {
     }
     const runId = options.runId ?? evalRunId(Date.now())
     const agents = this.hosts?.get('agents') as AgentsFace | undefined
-    const parent = await this.resolveParent(options.parentSessionId, options.cwd)
+    // The caller's cwd wins and is taken as given — it is an existing
+    // session's workspace, not ours to create. Only the directory this runner
+    // CHOOSES is created here: a CLI spawned with a cwd that is not there
+    // fails in the shell, before the harness that would have explained it.
+    let cwd = options.cwd
+    if (cwd === undefined) {
+      const derived = runWorkDir(options, runId)
+      if (derived !== undefined) {
+        mkdirSync(derived, { recursive: true })
+        cwd = derived
+      }
+    }
+    const parent = await this.resolveParent(options.parentSessionId, cwd)
     const controller = new AbortController()
     const record: RunRecord = {
       jobId: '',
