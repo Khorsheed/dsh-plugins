@@ -802,6 +802,53 @@ describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)',
   })
 })
 
+describe('runPlan — the orchestrator capability record (T32)', () => {
+  const face = {
+    snapshotFor: async () => ({ sha: 'c'.repeat(64), preset: 'eval', skills: [{}, {}], tools: [{}, {}, {}] }),
+  }
+
+  it('records the orchestrating instance\'s capability hash in run.meta — provenance, not a factor', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(), capabilityCatalog: face })
+
+    const meta = (mission.runs.get(report.runId) as { meta: Record<string, unknown> }).meta
+    expect(meta['orchestrator']).toEqual({
+      capabilities: { sha: 'c'.repeat(64), preset: 'eval', skills: 2, tools: 3 },
+    })
+    // It is recorded ONCE, for the run — not per condition and not per cell:
+    // the orchestrator answers none of the dataset's questions.
+    expect(JSON.stringify(meta['conditions'])).not.toContain('c'.repeat(64))
+  })
+
+  it('records nothing when the composition mounts no catalog — an optional face, absent by default', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
+    expect((mission.runs.get(report.runId) as { meta: Record<string, unknown> }).meta['orchestrator']).toBeUndefined()
+  })
+
+  it('a catalog that throws costs the run nothing — provenance never refuses', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const lines: string[] = []
+    const broken = { snapshotFor: async (): Promise<never> => { throw new Error('registry absent') } }
+    const report = await runPlan(
+      planPath,
+      { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), log: line => lines.push(line) },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(), capabilityCatalog: broken },
+    )
+    expect(report.cells[0]?.finalState).toBe('archived')
+    expect((mission.runs.get(report.runId) as { meta: Record<string, unknown> }).meta['orchestrator']).toBeUndefined()
+    expect(lines.join('\n')).toContain('orchestrator capabilities unavailable')
+  })
+})
+
 describe('runPlan — the derived rubric weight table (T24)', () => {
   it('writes report/rubric-weights.json from the grading layer — numbers only, no criterion text', async () => {
     const root = makeDatasetTree()

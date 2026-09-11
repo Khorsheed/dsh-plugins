@@ -537,6 +537,52 @@ describe('report — S5 insufficient n refuses ranking', () => {
   })
 })
 
+// --- the orchestrator's capability line (T32) --------------------------------
+
+describe('report — the orchestrator capability record is listed, never compared', () => {
+  it('prints the caps tag under 程序一致 and leaves the verdict on evalVersion/planSha', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'caps',
+      meta: {
+        conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')],
+        orchestrator: { capabilities: { sha: sha('cafe'), preset: 'eval', skills: 3, tools: 11 } },
+      },
+      missions: [{
+        id: 'P0-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m1')),
+          annotations: [scriptNote('P0', [['placeholder-check', true]]), orchestratorNote('stage1', 1, 1000, 100)],
+        }],
+      }],
+    })
+    const report = await analyzeBundle(bundle)
+    const procedure = report.invariants.find(check => check.id === 'procedure')
+    expect(procedure?.details.some(line => line.includes(`caps:${sha('cafe').slice(0, 12)}`))).toBe(true)
+    expect(procedure?.details.some(line => line.includes('不参与比较'))).toBe(true)
+    expect(procedure?.status).toBe('ok')
+  })
+
+  it('says nothing for a run that recorded none — absence is not a violation', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'nocaps',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+      missions: [{
+        id: 'P0-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m1')),
+          annotations: [scriptNote('P0', [['placeholder-check', true]]), orchestratorNote('stage1', 1, 1000, 100)],
+        }],
+      }],
+    })
+    const report = await analyzeBundle(bundle)
+    const procedure = report.invariants.find(check => check.id === 'procedure')
+    expect(procedure?.details.some(line => line.includes('caps:'))).toBe(false)
+    expect(procedure?.status).toBe('ok')
+  })
+})
+
 // --- S6 · missing human-final ------------------------------------------------------
 
 describe('report — S6 missing human-final is honest', () => {

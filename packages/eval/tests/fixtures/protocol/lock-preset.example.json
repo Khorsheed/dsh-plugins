@@ -1,0 +1,25 @@
+{
+  "schema": "dataseek.condition-lock/1",
+  "condition": "dsh-exec-lean",
+  "sha": "6d2e4f1b8c9a0731e5b4d6a2c8f3097b1e4a5d6c7b8a9012f3e4d5c6b7a80912",
+  "home": {
+    "sha": "9a1c3e5b7d9f0246810a2c4e6081a3c5e709b1d3f507192a3c5e7091b3d5f709"
+  },
+  "provisioned": {
+    "at": 1757600000000,
+    "cliVersion": "0.1.5-rc.1",
+    "effective": {
+      "model": "deepseek-official/deepseek-v4-pro",
+      "reasoningEffort": "high",
+      "permissions": "unrestricted",
+      "endpoint": "default"
+    },
+    "preset": "eval-lean",
+    "capabilities": {
+      "sha": "2f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a4c6e80b1d3f5709a2c4e6",
+      "preset": "eval-lean",
+      "skills": 3,
+      "tools": 11
+    }
+  }
+}

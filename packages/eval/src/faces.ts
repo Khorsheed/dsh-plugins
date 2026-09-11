@@ -72,6 +72,36 @@ export interface DatasetsFace {
   }): Promise<{ content: string; commit: string }>
 }
 
+/**
+ * The capability catalog's read face — OPTIONAL, and only ever read for
+ * provenance.
+ *
+ * The orchestrating instance has a capability face of its own (its planning
+ * agent's tools and skills), and it is not a factor: the orchestrator does
+ * not answer the dataset's questions, the players do. But it decides what the
+ * apparatus could do while the run happened, so a bundle that cannot say what
+ * the orchestrator was leaves a reader unable to reproduce the run's
+ * conditions. It is recorded in `run.meta.orchestrator.capabilities` and
+ * never compared.
+ *
+ * Structural, like every other face here: eval imports nothing from
+ * `@khorsheed/dsh-capability-catalog`, and a composition without the catalog
+ * simply records no capability line.
+ */
+export interface CapabilityCatalogFace {
+  /**
+   * The capability face of one preset, with its hash. `presetId` omitted
+   * reads the deployment default — which is what the orchestrating instance
+   * runs on.
+   */
+  snapshotFor(presetId?: string, workdir?: string): Promise<{
+    sha?: string
+    preset?: string
+    skills: readonly unknown[]
+    tools: readonly unknown[]
+  }>
+}
+
 /** One file of a mission submission. */
 export interface MissionSubmitFile {
   path: string

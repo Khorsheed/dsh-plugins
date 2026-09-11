@@ -80,6 +80,17 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 **命名 scope。** 带 scope 的委派跑 `<homesRoot>/dsh@<名>`：子 profile 随目录走——目录建立时就地 provision 一份，因此该 scope 的轮从它自己的 profile 起 sub-dsh、会话日志也写在它自己那儿。凭据不在目录里（dsh 通过宿主实例认证），所以命名 scope 换的是 profile 与会话记录，不是账号。只走 exec：长驻 `serve` 按成员绑的是缺省目录。
 
+**按 scope 的 preset roster（能力面成为因子）。** 子 profile 的 patch 可以多带一层：一条 `insert` 行挂 `@deepseek-ai/dsh-agent-presets`，`default` 写这个 scope 的 preset id；headless 的 agent loader 在 agent setup 里 join 它。不带这一层就是本字段出现之前的表现——模型可见的行在宿主面，agent 从全局层读。带上之后**这个作用域目录就是能力面**：两个 scope 的 roster 写两个 preset，就是两个受试对象，差别是一份人能读的文件。
+
+```ts
+import { provisionDshSubProfile, readSubProfilePreset } from '@khorsheed/dsh-local-agent-dsh/provision'
+
+provisionDshSubProfile(scopedHome, { preset: { id: 'eval-lean' } })
+readSubProfilePreset(scopedHome)   // 'eval-lean'——生成的层也是可解析的层
+```
+
+preset 目录从哪来：子 dsh 以 `DSH_HOME=<作用域目录>` 启动，所以 roster 自带的用户根就是 `<作用域目录>/.agent-presets`——把一份 preset 目录放在那里，这个 scope 就有了自己的 preset（`roots` / `includeShippedRoot` / `includeUserRoot` 可另行指定）。roster 模块**不软链**：它是官方包，本来就在 dsh 安装锚点的闭包里、与 `@deepseek-ai/dsh-base` 并列。链第二份会给它第二份 `@deepseek-ai/cordis`，而 cordis 按实例身份做服务查找与类型判断，症状是静默的服务缺失而不是报错（与上文「双文件系统契约」里 bundle 那一节同一个坑）。锚点里真没有它的部署会拿到 loader 自己那句「模块解析不了」，比这一步能说的更准。preset id 只接受 `[a-z0-9][a-z0-9-]*`（它是目录名）。撤掉 `preset` 再 provision 一次，这一层原样消失。
+
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`，其余（会话镜像、settle、记录）逐字节不变。`env` 必须给出容器内的 `DSH_HOME`；解析出的 API key 只以 `-e DEEPSEEK_API_KEY` 的**名字**上 argv，值留在 docker 客户端环境里，不进宿主进程表。容器轮另有两条本包独有的行为。其一，**自动补 `NODE_OPTIONS=--use-env-proxy`**（调用方在 `target.env` 里自己给了就不覆盖）：dsh 的 HTTP 客户端是 node 的 `fetch`（undici），**默认不读** `HTTP(S)_PROXY`，在只有白名单代理、没有 NAT 出网的单元里会直连 API 并当场失败，而代理连一条 `CONNECT` 都收不到；这个开关打开 undici 的 `EnvHttpProxyAgent`。四家里只有 dsh 需要它，因此由 provider 自动补上，并在 `effectiveSettings.containerNodeOptions` 里报出来让条件文件看得见。其二，**跳过宿主侧子 profile 的 provisioning**：那份 profile 的 `node_modules` 符号链接指向宿主上的 headless bundle，在单元里解析不到；而作用域目录是 bind 挂载的，写进去等于在单元真正会读的目录里放一份坏 profile。容器轮的入口与 profile 由调用方用既有旋钮点名（`cliLaunch`、`profileName`），且**单元里必须备好家族 headless bundle 及其运行期依赖闭包**——镜像自带的 in-box `headless` profile 是另一个更小的 app，不认 `--session-id`/`--resume`，不足以承载一次委派轮。实测：`eval-env:pinned` 单元里备好之后，一次「回答 2+2」settle 为 `completed`、输出 `4`，`observedModel` 从容器写进宿主作用域目录的子 dsh 会话日志里回读为 `deepseek-official/deepseek-v4-flash`。
 
 **同一 scoped home 被多个文件系统解析时（双文件系统契约）。** 当 scoped home 同时被宿主（判官委派、就绪检查）和容器单元（bind 挂载）读写——例如 T20c「一个主人，一个目录」的评测布局——子 profile 里那条 `node_modules` 符号链接的目标是一个**字符串**，由读到它的文件系统各自解释：指向宿主安装路径时链接在单元里悬空，而宿主侧就绪重探会重新 provision、把宿主专用路径再写回去（跳过容器轮自己的 provisioning 防不住这条**已存在**的链接）。契约只有一条：**把 `headlessBundleDir` pin 到一条在两个文件系统里都成立的绝对路径**——宿主侧在同名路径建一条符号链接指向宿主安装里的 bundle（Node 按 realpath 解析，其依赖闭包随之可用），镜像侧在同名路径放真安装。pin 住之后，就绪检查的重 provision 只是把同一目标重写一遍，不再产生宿主专用路径。两个被评估后否决的替代：其一，**把 bundle 拷进 scoped home**——家族代码在运行期从 `@deepseek-ai/*` 导入的是服务键与类（`credentialRef`、`TypertRemoteService`、`SessionId` 等），拷一份闭包会让这些包出现第二份实例，cordis 按实例身份做服务查找与类型判断，症状是静默的服务缺失而非报错；bundle 的 `@deepseek-ai` peer 必须从**运行该子 dsh 的同一份安装**解析，pin 在两个运行时里都保住了这一点，拷贝必然破坏。其二，**给单元加第二条 bundle 挂载**——破坏 T20c「挂载只有一条」的立场，且只有 dsh 一家需要。pin 因此是调用方的一条机器级前置条件（写进题库 env/README），本包零代码改动。

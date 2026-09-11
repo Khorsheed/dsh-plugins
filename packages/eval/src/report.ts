@@ -1182,6 +1182,18 @@ function checkProcedure(meta: Record<string, unknown>): InvariantCheck {
   // A run written before the field simply says nothing: absence here means
   // "unrecorded", and claiming "full matrix" would be a guess.
   if (subset !== null) details.push(subset)
+  // The orchestrator's own capability face is PROVENANCE: it is listed so a
+  // reader can reproduce the apparatus, and compared against nothing. The
+  // orchestrator answers none of the dataset's questions — making its
+  // capabilities a pass/fail input would turn "we upgraded the planning
+  // agent" into a violated invariant.
+  const orchestrator = isPlainObject(meta['orchestrator']) ? meta['orchestrator'] : undefined
+  const capabilities = isPlainObject(orchestrator?.['capabilities']) ? orchestrator['capabilities'] : undefined
+  const capabilitySha = capabilities === undefined ? null : str(capabilities['sha'])
+  if (capabilitySha !== null) {
+    const preset = str(capabilities?.['preset'] ?? null)
+    details.push(`编排实例能力 caps:${capabilitySha.slice(0, 12)}…${preset === null ? '' : `（preset ${preset}）`}——取证，不参与比较`)
+  }
   const ok = evalVersion !== null && planSha !== null
   return {
     id: 'procedure',

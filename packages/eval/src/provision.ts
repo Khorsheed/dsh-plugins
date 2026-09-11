@@ -20,7 +20,18 @@
  *    field ({@link checkAgainstEffective}). `permissions` and `model.endpoint`
  *    disagreeing is an ERROR and no lock is written;
  * 4. hash the scoped home's config content (`home.sha`);
- * 5. write the lock.
+ * 5. measure the provisioned environment's CAPABILITY FACE, when the
+ *    condition declares a `preset` ({@link ProvisionOptions.capabilities});
+ * 6. write the lock.
+ *
+ * Step 5 is a HOOK rather than a built-in, and that is a boundary worth
+ * stating: measuring a sub-dsh's capability face means booting its
+ * sub-profile and asking the catalog mounted inside it, which is a launch
+ * path this module deliberately does not own (see the T32 Agent Note). With
+ * no hook supplied, a condition declaring a preset is locked WITHOUT a
+ * capability record and warned about by name — and the readiness gate then
+ * refuses it. The failure is loud at both ends rather than a lock that reads
+ * as verified.
  *
  * Credentials never enter the lock, the log, or the report: the home hash
  * already excludes credential-shaped files by name and by directory, and
@@ -99,11 +110,57 @@ export function loginCommandFor(harness: string, scope: string | null): string {
   return `/${harness} login${scope === null ? '' : ` --scope ${scope}`}`
 }
 
+/** The capability fingerprint a provisioned environment reports. */
+export interface ProvisionedCapabilities {
+  /**
+   * 64-hex sha256 of the canonical capability face — `capability-catalog`'s
+   * `hashOf(snapshotFor(preset))`, the `caps:` tag without its prefix. This
+   * module accepts the digest and never recomputes it: the canonical form is
+   * the catalog's contract, and eval imports no sibling package.
+   */
+  sha: string
+  /** The preset the face was taken under; null for an environment with no roster. */
+  preset?: string | null
+  /** Reader aids — how many rows the face carried. The sha is the identity. */
+  skills?: number
+  tools?: number
+}
+
+/** What a capability probe is asked about. */
+export interface CapabilityProbeInput {
+  /** The condition id being provisioned. */
+  condition: string
+  harness: string
+  /** The named scope, or null for the harness's default scoped home. */
+  scope: string | null
+  /** The scoped home the condition resolved to. */
+  homeDir: string
+  /** The preset the condition declares — never null when the probe is called. */
+  preset: string
+}
+
+/**
+ * Measure the capability face of a provisioned environment.
+ *
+ * Called only for a condition that declares a `preset`. Returning `undefined`
+ * means "could not measure", which provision records as a warning and the
+ * readiness gate turns into a refusal — the same outcome as no probe at all,
+ * so a probe never has to lie to stay quiet.
+ */
+export type CapabilityProbe = (input: CapabilityProbeInput) => Promise<ProvisionedCapabilities | undefined>
+
 /** Options of {@link provisionCondition}. */
 export interface ProvisionOptions {
   /** The dataset-repository WORKING COPY writes are confined to (`~` expanded). */
   repo: string
   localAgent: LocalAgentFace
+  /**
+   * Measure the provisioned environment's capability face. Absent means the
+   * face is not measured: a condition declaring a preset is then locked
+   * without a capability record and warned about, and the readiness gate
+   * refuses it later.
+   */
+  capabilities?: CapabilityProbe
   now?: () => number
   log?: (message: string) => void
 }
@@ -267,7 +324,50 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     })
   }
 
-  // ── 5. the lock ───────────────────────────────────────────────────────
+  // ── 5. the provisioned environment's capability face ──────────────────
+  // Only for a condition that CLAIMS one. `preset` enters the condition
+  // hash, so two conditions differing only in it are two subjects; a claim
+  // nobody measured leaves them two on paper and one in fact. Measuring is
+  // the caller's hook (see the module doc), and its absence is said out
+  // loud rather than papered over.
+  const declaredPreset = stringOrNull(document['preset'])
+  let capabilities: ProvisionedCapabilities | undefined
+  if (declaredPreset !== null) {
+    if (options.capabilities === undefined) {
+      warnings.push({
+        code: 'CAPABILITIES_UNMEASURED',
+        message: `the condition declares preset ${JSON.stringify(declaredPreset)} but this provision has no capability probe`
+          + ' — the lock will carry no provisioned.capabilities, and the pre-run readiness gate refuses a preset claim without one',
+      })
+    } else {
+      try {
+        capabilities = await options.capabilities({ condition: id, harness, scope, homeDir, preset: declaredPreset })
+      } catch (error) {
+        capabilities = undefined
+        warnings.push({
+          code: 'CAPABILITIES_UNMEASURED',
+          message: `measuring the capability face of preset ${JSON.stringify(declaredPreset)} failed: ${error instanceof Error ? error.message : String(error)}`
+            + ' — the lock carries no provisioned.capabilities, and the readiness gate refuses the condition',
+        })
+      }
+      if (capabilities === undefined) {
+        log(`provision ${id}: capability face NOT measured for preset ${declaredPreset}`)
+      } else {
+        log(`provision ${id}: capability face caps:${capabilities.sha.slice(0, 12)}… (preset ${String(capabilities.preset ?? declaredPreset)})`)
+        if (capabilities.preset !== undefined && capabilities.preset !== declaredPreset) {
+          // The measurement disagreeing with the declaration is the whole
+          // reason to record what was measured rather than what was asked for.
+          warnings.push({
+            code: 'CAPABILITIES_PRESET_MISMATCH',
+            message: `the condition declares preset ${JSON.stringify(declaredPreset)} but the provisioned environment reports`
+              + ` ${JSON.stringify(capabilities.preset)} — the lock records what was measured, and the readiness gate refuses the pair`,
+          })
+        }
+      }
+    }
+  }
+
+  // ── 6. the lock ───────────────────────────────────────────────────────
   const effectiveOf = (field: string): string | null => report.checks.find(row => row.field === field)?.effective ?? null
   const lock: Record<string, unknown> = {
     schema: LOCK_SCHEMA_ID,
@@ -283,6 +383,11 @@ export async function provisionCondition(conditionPath: string, options: Provisi
         permissions: effectiveOf('permissions'),
         endpoint: effectiveOf('model.endpoint'),
       },
+      // Recorded only when there is something to record: a `preset: null`
+      // key on a condition that declares none would read as "measured, and
+      // it composes nothing", which is a different claim from silence.
+      ...(declaredPreset === null ? {} : { preset: capabilities?.preset ?? declaredPreset }),
+      ...(capabilities === undefined ? {} : { capabilities }),
     },
   }
   const violations = validateJson(LOCK_SCHEMA, lock)

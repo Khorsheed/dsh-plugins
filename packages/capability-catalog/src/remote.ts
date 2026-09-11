@@ -22,6 +22,7 @@ import {
   collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice,
 } from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
+import { hashOf } from './capabilities.ts'
 import type { ToolOrigin } from './tool-origin.ts'
 import { addSkillFromPayload, commandInstall, listDirSkills, resolveSkillNameFromContent } from './import.ts'
 import { OFFICIAL_TOOLS } from './official-tools.ts'
@@ -64,7 +65,14 @@ interface ToolSchemaLike {
   readonly parameters?: CatalogJsonValue
 }
 
-/** Build the full catalog snapshot (skills + tools). */
+/**
+ * Build the full catalog snapshot (skills + tools).
+ *
+ * `fingerprint` decides whether the snapshot is a LISTING or an IDENTITY: it
+ * loads every skill body (one registry read each) so the rows carry
+ * `bodySha`, and stamps `sha` — the capability hash. The browser card wants
+ * the listing; a condition's capability record wants the identity.
+ */
 export async function catalogSnapshot(
   workdir: string | undefined,
   registry: RegistrySlice,
@@ -73,10 +81,12 @@ export async function catalogSnapshot(
   appearedAfterApply: ReadonlySet<string>,
   scopes: readonly unknown[] = [undefined],
   toolOrigins: ReadonlyMap<string, ToolOrigin> = new Map(),
+  options: { fingerprint?: boolean; preset?: string } = {},
 ): Promise<CapabilityCatalogSnapshot> {
-  const base = await collectSkills(registry, workdir, scopes)
+  const fingerprint = options.fingerprint === true
+  const base = await collectSkills(registry, workdir, scopes, { bodySha: fingerprint })
   const tools = projectTools(toolsSchemas, mcpServers, appearedAfterApply as Set<string>, toolOrigins)
-  return {
+  const snapshot: CapabilityCatalogSnapshot = {
     skills: base.skills,
     tools,
     mcpServers: mcpServers.map(name => ({ name, toolCount: tools.filter(t => t.serverName === name).length })),
@@ -84,7 +94,9 @@ export async function catalogSnapshot(
       { channel: 'skill', count: base.skills.length },
       { channel: 'tool', count: tools.length },
     ],
+    ...options.preset !== undefined ? { preset: options.preset } : {},
   }
+  return fingerprint ? { ...snapshot, sha: hashOf(snapshot) } : snapshot
 }
 
 /** Load one skill detail. */

@@ -45,6 +45,8 @@ import { MCP_TOOL_PREFIX } from './channels.ts'
 import { toolOrigin, isValidOrigin, type ToolOrigin } from './tool-origin.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
+import { capsTag, hashOf } from './capabilities.ts'
+import { resolvePresetScope, type PresetRosterSlice } from './preset-scope.ts'
 
 // Community tool-origin convention: re-export the tag helpers so any plugin can
 // `import { setToolOrigin } from '@khorsheed/dsh-capability-catalog'`.
@@ -68,6 +70,18 @@ export type {
 } from './types.ts'
 
 export { resolveSkillNameFromContent } from './import.ts'
+export { resolvePresetScope } from './preset-scope.ts'
+export type { PresetRosterSlice, ResolvedPresetScope } from './preset-scope.ts'
+
+// The capability fingerprint: the canonical form, its digest, and the tag.
+// Exported from the package root so a host reader can hash a snapshot it
+// already holds without a second Remote round-trip.
+export {
+  canonicalCapabilities, canonicalJson, capsTag, hashOf, hashSkillBody, CAPS_TAG_PREFIX,
+} from './capabilities.ts'
+export type {
+  CanonicalCapabilities, CanonicalMcpServer, CanonicalSkill, CanonicalTool,
+} from './capabilities.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -196,30 +210,31 @@ export class CapabilityCatalogService extends TypertRemoteService {
   }
 
   /**
-   * The single standing skill view scope. In the web bundle the host-global
-   * skill-filesystem provider is mounted under each agent preset's standing
-   * scope, so a host-global snapshot sees only runtime skills. A host reader
-   * with no agent (the catalog's settings case) resolves a preset's standing
-   * registrations via `agentPresets.standingKeyFor(defaultId)`, which surfaces
-   * the official/plugin/user skills the model actually sees. When the presets
-   * service is absent the catalog degrades to the global layer alone.
+   * The standing skill view scope of ONE preset. In the web bundle the
+   * host-global skill-filesystem provider is mounted under each agent
+   * preset's standing scope, so a host-global snapshot sees only runtime
+   * skills; reading at the preset's scope surfaces the official/plugin/user
+   * skills the model actually sees. When the presets service is absent the
+   * catalog degrades to the global layer alone.
+   *
+   * `presetId` names WHICH preset — the deployment default when omitted, the
+   * way every reader before `snapshotFor` behaved. The roster's own
+   * `standingKeyFor` has always taken an id; the catalog simply never passed
+   * one, so "the capability face of preset X" was unaskable and a condition
+   * declaring `preset: X` could only be believed.
+   *
+   * `strict` is the listing/fingerprint split — see
+   * {@link resolvePresetScope}, which owns the policy.
+   * @param presetId - the preset to read, or undefined for the default.
+   * @param strict - throw instead of degrading when the roster cannot answer.
    */
-  private async catalogScope(): Promise<unknown | undefined> {
-    const agentPresets = this.ctx.get?.('agentPresets') as
-      | { defaultId?: string; standingKeyFor?: (id?: string) => Promise<unknown> }
-      | undefined
-    if (agentPresets?.standingKeyFor === undefined) return undefined
-    try {
-      return await agentPresets.standingKeyFor(agentPresets.defaultId)
-    } catch {
-      return undefined
-    }
+  private async catalogScope(presetId?: string, strict = false): Promise<unknown | undefined> {
+    return (await resolvePresetScope(this.agentPresets(), presetId, strict)).scope
   }
 
-  /** The scope list the snapshot enumerates (the standing key, or global alone). */
-  private async catalogScopes(): Promise<readonly unknown[]> {
-    const scope = await this.catalogScope()
-    return scope === undefined ? [undefined] : [scope]
+  /** The optional agent-preset roster (absent in a rosterless composition). */
+  private agentPresets(): PresetRosterSlice | undefined {
+    return this.ctx.get?.('agentPresets') as PresetRosterSlice | undefined
   }
 
   /** Register the model-facing `list_capabilities` tool (optional; called from the
@@ -246,35 +261,78 @@ export class CapabilityCatalogService extends TypertRemoteService {
       execute: async (args: { kind?: string }, exec?: { agent?: unknown }): Promise<string> => {
         const { registry } = resolveServicesHelper(this.ctx)
         if (registry === undefined) return 'skills service absent in this composition'
+        // The FULL face is fingerprinted even when the answer is filtered:
+        // `sha` names the instance's capabilities, so it must not change with
+        // what the caller asked to see.
+        const scope = exec?.agent ?? await this.catalogScope()
         const snapshot = await catalogSnapshot(
           undefined,
           registry,
-          await this.toolSchemas(),
-          await this.mcpServerNames(),
+          this.toolSchemasIn(scope),
+          this.mcpServerNamesIn(scope),
           this.appearedAfterApply,
-          exec?.agent === undefined ? [undefined] : [exec.agent],
-          this.toolOriginsMap(exec?.agent),
+          [scope],
+          this.toolOriginsMap(scope),
+          { fingerprint: true },
         )
         const filter = args?.kind
         const skills = filter === undefined || filter === 'skill' ? snapshot.skills : []
         const toolsRows = filter === undefined || filter === 'tool' ? snapshot.tools : []
-        return JSON.stringify({ skills, tools: toolsRows }, null, 2)
+        return JSON.stringify({ capabilities: capsTag(snapshot.sha as string), skills, tools: toolsRows }, null, 2)
       },
     }))
   }
 
   @Remote('snapshot')
   async snapshot(workdir?: string): Promise<CapabilityCatalogSnapshot> {
+    return this.collect(undefined, workdir, false)
+  }
+
+  /**
+   * The capability face of ONE preset, with its {@link hashOf} digest.
+   *
+   * This is the fingerprint verb: every skill body is loaded (so the rows
+   * carry `bodySha`) and `sha` is stamped, which is what makes the answer an
+   * identity rather than a listing. `presetId` omitted reads the deployment
+   * default — the same face `snapshot` reads, now hashable.
+   *
+   * Degrades like every other verb: without a skills registry the answer is
+   * an empty face with the hash of an empty face, not a throw. Note that a
+   * preset nobody has composed yet is MOUNTED by the read (the roster's
+   * single-flight standing mount), so asking is not free.
+   * @param presetId - the preset to fingerprint, or undefined for the default.
+   * @param workdir - optional cwd for project-scoped skill roots.
+   */
+  @Remote('snapshotFor')
+  async snapshotFor(presetId?: string, workdir?: string): Promise<CapabilityCatalogSnapshot> {
+    return this.collect(presetId, workdir, true)
+  }
+
+  /**
+   * Shared body of {@link snapshot} and {@link snapshotFor}. The scope is
+   * resolved ONCE — three resolutions of a mounting preset would race the
+   * roster's single-flight for no reason — and `fingerprint` makes the
+   * resolution strict.
+   */
+  private async collect(presetId: string | undefined, workdir: string | undefined, fingerprint: boolean): Promise<CapabilityCatalogSnapshot> {
     const { registry } = resolveServicesHelper(this.ctx)
-    if (registry === undefined) return { skills: [], tools: [], mcpServers: [], channels: [] }
+    const { scope, preset } = await resolvePresetScope(this.agentPresets(), presetId, fingerprint)
+    if (registry === undefined) {
+      const empty: CapabilityCatalogSnapshot = {
+        skills: [], tools: [], mcpServers: [], channels: [],
+        ...preset !== undefined ? { preset } : {},
+      }
+      return fingerprint ? { ...empty, sha: hashOf(empty) } : empty
+    }
     return catalogSnapshot(
       workdir,
       registry,
-      await this.toolSchemas(),
-      await this.mcpServerNames(),
+      this.toolSchemasIn(scope),
+      this.mcpServerNamesIn(scope),
       this.appearedAfterApply,
-      await this.catalogScopes(),
-      this.toolOriginsMap(await this.catalogScope()),
+      [scope],
+      this.toolOriginsMap(scope),
+      { fingerprint, ...preset !== undefined ? { preset } : {} },
     )
   }
 
@@ -376,12 +434,11 @@ export class CapabilityCatalogService extends TypertRemoteService {
 
   /** The visible tool schemas in the standing scope (the set the model sees),
    * or the global layer when no preset standing key resolves. Skills already
-   * enumerate through `catalogScopes()`; tools must use the same scope so the
+   * enumerate through the same scope; tools must use it too so the
    * settings reader sees the official/plugin/MCP tools the model actually has. */
-  private async toolSchemas(): Promise<readonly ToolSchemaLike[]> {
+  private toolSchemasIn(scope: unknown): readonly ToolSchemaLike[] {
     const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
     if (tools?.schemas === undefined) return []
-    const scope = await this.catalogScope()
     return scope === undefined ? tools.schemas() : tools.schemas(scope)
   }
 
@@ -414,9 +471,9 @@ export class CapabilityCatalogService extends TypertRemoteService {
   }
 
   /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */
-  private async mcpServerNames(): Promise<string[]> {
+  private mcpServerNamesIn(scope: unknown): string[] {
     const names: string[] = []
-    for (const schema of await this.toolSchemas()) {
+    for (const schema of this.toolSchemasIn(scope)) {
       if (!schema.name.startsWith(MCP_TOOL_PREFIX)) continue
       const rest = schema.name.slice(MCP_TOOL_PREFIX.length)
       const sep = rest.indexOf('__')

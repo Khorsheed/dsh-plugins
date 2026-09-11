@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev9** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev10** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -298,6 +298,8 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `model.endpoint` is the UPSTREAM ROUTE (frozen decision 5: the endpoint belongs to the subject under test). Only two spellings are checkable: `"default"` — no base URL in force, so the CLI's own endpoint — or the endpoint's URL or hostname, where `"https://api.anthropic.com"` and `"api.anthropic.com"` are equivalent (provision reduces a URL to its host before comparing: a path can carry tenant or project ids, so the harness family only ever reports a hostname). A label like `"proxy"` names no endpoint anyone can check; provision calls it a mismatch and writes no lock. `null` still means "unresolved".
 - `env.keys` carries variable NAMES only. No values — especially credentials — ever enter a contract file.
 - `scope` may be omitted, and omitting it means "run against this harness's default scoped home" — what every condition written before this field says. Naming one (a `[a-z0-9-]` NAME, never a path) runs the condition against `<homesRoot>/<harness>@<scope>` instead: a SIBLING of the default directory with its own login, its own session records and its own `delegations.jsonl`. Credentials are never copied into it. It IS part of the condition hash: two conditions differing only in `scope` are two SUBJECTS, because they log in as two accounts — which is how one run compares two logins of one harness (the factor I4's per-delegation model, per-condition provisioning and two-preset pilot all rest on). The readiness probe probes each condition's own scope, and a container cell mounts each condition's own directory. A scoped delegation is exec-only (the live drivers bind the default scoped home), and kimi's member bridge stays bound to the default scope too.
+- `preset` is meaningful only for a subject THIS family composes. Today that is `dsh` alone: the sub-profile inside its scoped home is written by the evaluation instance, and the preset roster is a layer of that same patch. The three external CLIs run their vendor's own composition, which this family cannot compose — a `preset` for one of them is a claim with no counterpart, so validate refuses it (`PRESET_NOT_FOR_HARNESS`) and the only legal value is `null`. Their equivalent is `skills.pack` (a skill pack materialized into the scoped home), which this family does not provision yet either; that is I6.
+- A non-null `preset` REQUIRES `capabilities` inside the lock's `provisioned` block: the CAPABILITY HASH capability-catalog computes over the provisioned environment (the canonical form keeps each skill's name/source/body-sha and each tool's name/channel/parameters — descriptions stay out, because rewording one must not mint a new subject). Without it the readiness gate refuses before spending a single delegation (`CAPABILITIES_NOT_PROVISIONED`): `preset` enters the condition hash, so two conditions differing only in preset are two subjects, and nobody measuring it leaves them two subjects on paper and one in fact. A record whose `preset` disagrees with the declaration is refused the same way — what was provisioned belongs to another subject.
 - `unit` may be omitted, and omitting it means "this condition only ever runs on the host". A plan that declares a `unit` REQUIRES it: `unit.scopedHome` says where this condition's credential directory is mounted inside the unit and which variable names it (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), and `var` must also appear in `env.keys` — the name that gets injected has to be a name the document admits to injecting, which validate enforces as an error. The HOST side of that directory is deliberately absent: the orchestrator mounts the evaluation instance's own scoped home for that harness — the one `/<harness> login` writes into, and the one the delegation read-back reads. Mounting a COPY fails silently: a containerized round writes its rollout into whatever was bound, while the read-back looks under `homeDir(<harness>)`, and two different directories produce no error at all — just a read-back that is empty forever.
 - `unit` IS part of the condition hash (only `notes` is not): where a subject reads its credentials from is a factor, not a comment. Adding `unit` to an existing condition changes its hash and stales its lock, which is a re-provision.
 - Example (fully resolved; the in-progress I1 hand-walked shape lives in the dataset repo's `conditions/dsh-exec.json`, its four null fields listed as warnings):
@@ -347,7 +349,7 @@ One condition = one harness + a model declaration + a permission word + one scop
 
 **Only provision writes this file.** A hand-written lock claims the scoped home was checked when nobody checked it, so provision is the sole writer: it resolves the condition's `(harness, scope)` to a scoped home (reading it materializes it), stops unless that scope's credential is present and prints the login command if it is not (`/<harness> login --scope <name>` — provision never logs in and never copies a credential), checks the declaration against that scope's effective settings field by field, then hashes the home and writes the lock.
 
-`provisioned` records that check, and is ADDITIVE in `/1`: a lock without it was written before provision existed, and validate reads that as "nobody ever checked" rather than as a violation. `at` is when provision ran; `cliVersion` is the version the CLI reported then (back-filled into the lock when the condition declares `harness.version: null` — the condition document is never rewritten); `effective` is what that scope answered for the four fields, with `null` meaning the harness has no such knob at all (dsh has no permission knob, which is exactly why its permission word is `unrestricted`).
+`provisioned` records that check, and is ADDITIVE in `/1`: a lock without it was written before provision existed, and validate reads that as "nobody ever checked" rather than as a violation. `preset` and `capabilities` are in turn additive WITHIN `provisioned`: a lock without them is a complete record of what provision checked at the time, not a broken one. `at` is when provision ran; `cliVersion` is the version the CLI reported then (back-filled into the lock when the condition declares `harness.version: null` — the condition document is never rewritten); `effective` is what that scope answered for the four fields, with `null` meaning the harness has no such knob at all (dsh has no permission knob, which is exactly why its permission word is `unrestricted`).
 
 The grading split is not arbitrary: `permissions` is the approval boundary (frozen decision 3) and `model.endpoint` is the upstream route (frozen decision 5), so those two ARE the subject under test — a disagreement is an error and NO lock is written. `harness.version`, `model.declared` and `reasoning.effort` disagreeing are warnings: a declared model differing from the harness default is normal since T30b (the declaration is the value REQUESTED per delegation), a missing reasoning knob is an honest absence, and a CLI version is a fact to record rather than to enforce. The comparable spellings of `model.endpoint` are `"default"` (no base URL in force) or the endpoint's URL or hostname (a URL is reduced to its host before comparing — a path can carry tenant ids, so the family only ever reports a hostname); a label like `"proxy"` names no endpoint anyone can check and reads as a mismatch.
 
@@ -445,6 +447,42 @@ validate re-checks with the same function: when a lock's `provisioned.effective`
               ]
             }
           }
+        },
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The preset the provisioned environment composes, read back from what was written — not copied from the declaration. null means the environment rosters none."
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha"
+          ],
+          "description": "The capability fingerprint of the provisioned environment: the hash capability-catalog computes over its canonical skill/tool face (the `caps:` tag without its prefix). It is what turns the condition's `preset` claim into a checkable fact; absent means nobody measured it, and the readiness gate refuses a preset claim without it.",
+          "properties": {
+            "sha": {
+              "type": "string",
+              "description": "64-hex sha256 of the canonical capability face."
+            },
+            "preset": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The preset the snapshot was taken under."
+            },
+            "skills": {
+              "type": "integer",
+              "description": "How many skills the face carries (a reader aid; the sha is the identity)."
+            },
+            "tools": {
+              "type": "integer",
+              "description": "How many tools the face carries (a reader aid; the sha is the identity)."
+            }
+          }
         }
       }
     }
@@ -468,6 +506,36 @@ validate re-checks with the same function: when a lock's `provisioned.effective`
       "reasoningEffort": null,
       "permissions": "skip",
       "endpoint": "api.anthropic.com"
+    }
+  }
+}
+```
+
+A sub-dsh condition carries two more lines — `provisioned.preset` is read back from the sub-profile that was written, and `capabilities.sha` is the `caps:` tag without its prefix:
+
+```json
+{
+  "schema": "dataseek.condition-lock/1",
+  "condition": "dsh-exec-lean",
+  "sha": "6d2e4f1b8c9a0731e5b4d6a2c8f3097b1e4a5d6c7b8a9012f3e4d5c6b7a80912",
+  "home": {
+    "sha": "9a1c3e5b7d9f0246810a2c4e6081a3c5e709b1d3f507192a3c5e7091b3d5f709"
+  },
+  "provisioned": {
+    "at": 1757600000000,
+    "cliVersion": "0.1.5-rc.1",
+    "effective": {
+      "model": "deepseek-official/deepseek-v4-pro",
+      "reasoningEffort": "high",
+      "permissions": "unrestricted",
+      "endpoint": "default"
+    },
+    "preset": "eval-lean",
+    "capabilities": {
+      "sha": "2f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a4c6e80b1d3f5709a2c4e6",
+      "preset": "eval-lean",
+      "skills": 3,
+      "tools": 11
     }
   }
 }

@@ -12,6 +12,7 @@
 import { readFile, readdir, rm, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { hashSkillBody } from './capabilities.ts'
 import type {
   CapabilityCatalogSnapshot,
   CatalogCredentialDecl,
@@ -120,7 +121,7 @@ export function mergeCredentialDecls(
 }
 
 /** Project one summary onto a wire skill row. */
-export function skillRowFrom(summary: SkillSummaryLike, updatedAt?: number): CatalogSkillRow {
+export function skillRowFrom(summary: SkillSummaryLike, updatedAt?: number, bodySha?: string): CatalogSkillRow {
   return {
     name: summary.name,
     description: summary.description,
@@ -130,6 +131,7 @@ export function skillRowFrom(summary: SkillSummaryLike, updatedAt?: number): Cat
     userInvocable: summary.invocation.userInvocable,
     ...summary.whenToUse !== undefined ? { whenToUse: summary.whenToUse } : {},
     ...updatedAt !== undefined ? { updatedAt } : {},
+    ...bodySha !== undefined ? { bodySha } : {},
   }
 }
 
@@ -156,11 +158,38 @@ export function resolveServices(
   return { registry, credentials }
 }
 
-/** Collect the skills portion of the catalog across the given view scopes. */
+/**
+ * sha256 of one skill's body, loaded through the registry so the digest is
+ * taken over what the MODEL would be handed rather than over whichever file
+ * happens to sit in the bundle directory. A skill the registry declines to
+ * load (remote, opaque, or raced away) contributes no digest — the
+ * fingerprint records `null` for it rather than guessing.
+ */
+async function skillBodySha(
+  registry: RegistrySlice,
+  name: string,
+  options: { cwd?: string; scope?: unknown },
+): Promise<string | undefined> {
+  try {
+    const definition = await registry.get(name, options)
+    if (typeof definition?.content !== 'string') return undefined
+    return hashSkillBody(definition.content)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Collect the skills portion of the catalog across the given view scopes.
+ *
+ * `bodySha` costs one registry load per skill, so it is opt-in: the browser
+ * card wants a listing, and the capability fingerprint wants the bodies.
+ */
 export async function collectSkills(
   registry: RegistrySlice,
   workdir: string | undefined,
   scopes: readonly unknown[] = [undefined],
+  collectOptions: { bodySha?: boolean } = {},
 ): Promise<CapabilityCatalogSnapshot> {
   const byName = new Map<string, CatalogSkillRow>()
   for (const scope of scopes) {
@@ -175,8 +204,12 @@ export async function collectSkills(
       continue
     }
     for (const summary of snapshot.skills) {
-      const row = skillRowFrom(summary, await skillUpdatedAt(summary))
-      if (!byName.has(row.name)) byName.set(row.name, row)
+      if (byName.has(summary.name)) continue
+      const bodySha = collectOptions.bodySha === true
+        ? await skillBodySha(registry, summary.name, options)
+        : undefined
+      const row = skillRowFrom(summary, await skillUpdatedAt(summary), bodySha)
+      byName.set(row.name, row)
     }
   }
   const skills = [...byName.values()]
