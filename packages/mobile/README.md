@@ -6,14 +6,14 @@ An independently removable mobile presentation for DeepSeek Harness. The Mac con
 
 ## Features
 
-- A mobile conversation library with recent sessions, title/workspace filtering, status indicators and New Conversation. Official workspace management remains reachable; the chat and its draft stay mounted behind navigation.
+- A conversation library with time/workspace grouping, collapsible workspace sections and bottom search. Grouping stays local to this browser; the official chat and draft remain mounted behind navigation.
 - Client-local mobile layout, full-width right-panel details, mobile settings and a wrapping composer toolbar with larger touch targets.
 - Official conversation renderer, composer, model/permission selectors, attachments and streaming transport stay in place.
 - Add a workspace by entering an existing absolute **computer** directory through the public directory-flow slots. The official owner validates and adopts it; no chooser opens on the Mac.
-- Authenticated `GET /api/mobile/handshake`; versioned, status-only native bridge. Foreground requests reconnect through the official connection service, never replays a send command.
+- Authenticated `GET /api/mobile/handshake`; versioned native bridge for presentation status and optional native settings/QR scanning. Foreground requests reconnect through the official connection service, never replays a send command.
 - No required community plugins. Existing message-tools/member/preview surfaces retain their owners; their mobile combinations still require acceptance.
 
-This is a development baseline, not a released or real-device-qualified app. Camera/file picking, sharing/downloads, background recovery and community combinations are not yet qualified. No QR pairing, per-device credential revocation or APNs is provided.
+This is a development baseline, not a released or real-device-qualified app. Camera/file picking, sharing/downloads, background recovery and community combinations are not yet qualified. The iOS scanner accepts existing official HTTPS login links and requires host confirmation; camera acceptance is still pending. No one-time device pairing, per-device credential revocation or APNs is provided.
 
 ## Install and remove
 
@@ -27,13 +27,13 @@ pnpm exec tsx scripts/pack-dist.ts --package packages/mobile --scope @khorsheed 
 
 Install the resulting tarball with `dsh plugin --profile web add /path/to/package.tgz`; remove with `dsh plugin --profile web remove @khorsheed/dsh-mobile`. The package self-mounts; do not edit profile YAML. On the tested rc1 instance, dependency changes require a controlled Host restart and client reload; hot uninstall is not qualified. Use an isolated `DSH_HOME` and test port during development. Production 3080 still goes through the repository deployment gate.
 
-A narrow touch screen or the native shell enables the layout automatically. `?mobile=1` explicitly enables it; `?mobile=0` disables it. The mobile settings choice persists only in this browser under `dsh.mobile.display`. After selecting desktop layout, `?mobile=1` restores the settings entry. The login exchange redirects to `/`, so apply a query override after authentication if needed.
+A narrow touch screen or the native shell enables the layout automatically. `?mobile=1` explicitly enables it; `?mobile=0` disables it. The mobile settings choice persists only in this browser under `dsh.mobile.display`; library grouping uses `dsh.mobile.grouping`. After selecting desktop layout, `?mobile=1` restores the settings entry. The login exchange redirects to `/`, so apply a query override after authentication if needed.
 
 Unload removes owned styles, frame markers, observers, listeners, routes and slot contributions. It does not delete sessions, cancel Host tasks, close the shared connection, revoke official cookies or uninstall the App/VPN. Preferences may remain for reinstall. Browser hot-unload and tarball acceptance are recorded separately below.
 
 ## Connection and authentication
 
-The App accepts a configured HTTPS origin or official launch-token login URL. It persists the clean origin only; WebKit stores the official browser session cookie. The bridge accepts only matching-origin main-frame messages with bridge version 1, and only reports availability. It does not grant file or command privileges.
+The App accepts a configured HTTPS origin or official launch-token login URL. It persists the clean origin only; WebKit stores the official browser session cookie. The bridge accepts only matching-origin main-frame messages with bridge version 1, and supports `ready`, `unloaded`, `chrome`, `settings` and `scan`. New native actions require advertised capabilities; older shells keep their fallback controls. It does not grant file or command privileges.
 
 Different physical networks need an independently configured HTTPS/WSS ingress to the loopback Host port (3080 in production), valid official authentication, an awake/online Mac and reachable phone. Starting 3080 alone does not establish remote access. The App does not configure networking or credentials on your behalf. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS. Clear local App data and server-side device revocation are different operations.
 
@@ -78,4 +78,4 @@ Keep the Mac awake and all three services running. Stop the tunnel process to cl
 
 `dsh.compat.minHost` is `0.1.5-rc.1`; no `verifiedHost` is claimed while the release matrix is incomplete. The library uses the optional official sessions/workspaces/uiWorkspace services; it filters archived sessions and subagent rows while retaining ordinary forks. Missing services fall back to the basic official sidebar. Search here filters titles and workspace paths, not message contents. The public frame/slot DOM anchors are checked before enabling layout; an unknown frame retains the official page. A changed structure can reduce mobile usability without breaking Host execution. Native bridge version changes require an App compatibility decision; compatible Web updates do not automatically require a new IPA.
 
-See [acceptance evidence](../../docs/acceptance/mobile-rc1-2026-09-11.md) and the [proposal](../../proposals/active/2026-08-19-mobile-access.md). No upstream or sibling source changes are required.
+See [navigation/QR acceptance](../../docs/acceptance/mobile-navigation-2026-09-11.md), [acceptance evidence](../../docs/acceptance/mobile-rc1-2026-09-11.md) and the [proposal](../../proposals/active/2026-08-19-mobile-access.md). No upstream or sibling source changes are required.

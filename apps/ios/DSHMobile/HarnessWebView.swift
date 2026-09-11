@@ -11,7 +11,7 @@ struct HarnessWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.userContentController.addUserScript(WKUserScript(
-            source: "window.__DSH_MOBILE_SHELL__ = Object.freeze({ bridgeVersion: 1 });",
+            source: "window.__DSH_MOBILE_SHELL__ = Object.freeze({ bridgeVersion: 1, capabilities: Object.freeze(['settings', 'scan']) });",
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.add(context.coordinator, name: "dshMobile")
         let view = WKWebView(frame: .zero, configuration: config)
@@ -60,7 +60,15 @@ struct HarnessWebView: UIViewRepresentable {
                 }
                 #endif
             }
-            if type == "unloaded" { state.mobileAvailable = false }
+            if type == "chrome" {
+                state.chromeVisible = body["visible"] as? Bool ?? false
+                #if DEBUG
+                print("DSH chrome visible: \(state.chromeVisible)")
+                #endif
+            }
+            if type == "settings" { state.sheet = .settings }
+            if type == "scan" { state.sheet = .scan }
+            if type == "unloaded" { state.mobileAvailable = false; state.chromeVisible = false }
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -77,14 +85,26 @@ struct HarnessWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             state.loading = true
             state.mobileAvailable = false
+            state.chromeVisible = false
             state.layoutDiagnostic = ""
+        }
+        func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            if response.isForMainFrame, let http = response.response as? HTTPURLResponse, http.statusCode == 401 {
+                state.loading = false
+                state.chromeVisible = false
+                state.mobileAvailable = false
+                state.failure = String(localized: "登录已失效，请在连接设置中输入新的官方登录链接，或重新扫码。")
+                decisionHandler(.cancel)
+                return
+            }
+            decisionHandler(.allow)
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             state.loading = false
             #if DEBUG
             Task { @MainActor [weak webView] in
                 try? await Task.sleep(for: .seconds(2))
-                webView?.evaluateJavaScript("JSON.stringify({ errors: Array.from(document.querySelectorAll('[data-slot-error]')).map(e => e.getAttribute('data-slot-error')), toolbar: document.querySelectorAll('[data-mobile-toolbar]').length, library: document.querySelectorAll('[data-mobile-library]').length })") { value, _ in
+                webView?.evaluateJavaScript("JSON.stringify({ errors: Array.from(document.querySelectorAll('[data-slot-error]')).map(e => e.getAttribute('data-slot-error')), toolbar: document.querySelectorAll('[data-mobile-toolbar]').length, library: document.querySelectorAll('[data-mobile-library]').length, searchDock: document.querySelectorAll('[data-mobile-search-dock]').length, scan: document.querySelectorAll('[data-mobile-scan]').length })") { value, _ in
                     if let value { print("DSH rendered surface: \(value)") }
                 }
             }
@@ -95,10 +115,13 @@ struct HarnessWebView: UIViewRepresentable {
         private func fail(_ error: Error) {
             if (error as NSError).code == NSURLErrorCancelled { return }
             state.loading = false
+            state.chromeVisible = false
             // Network errors may embed an authenticated URL; display no raw error text.
             state.failure = String(localized: "连接暂时不可用。请检查电脑和网络后重试。")
         }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            state.chromeVisible = false
+            state.mobileAvailable = false
             state.failure = String(localized: "页面已暂停，请重新载入以恢复会话。")
         }
     }

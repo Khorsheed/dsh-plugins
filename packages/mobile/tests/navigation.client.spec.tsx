@@ -5,11 +5,11 @@ import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-sess
 import { MobileChrome } from '../src/client/MobileChrome.tsx'
 import type { MobileChromeInjected } from '../src/client/MobileChrome.tsx'
 import { MobileLibrary } from '../src/client/MobileLibrary.tsx'
-import { MobileNavigation, recentSessions } from '../src/client/navigation.ts'
+import { GROUPING_KEY, groupSessions, MobileNavigation, recentSessions } from '../src/client/navigation.ts'
 import type { NavigationCapabilities } from '../src/client/navigation.ts'
 import { en } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); localStorage.clear(); delete window.__DSH_MOBILE_SHELL__; delete window.webkit })
 const t = (key: keyof typeof en) => en[key]
 function row(id: string, more: Partial<SessionSummary> = {}): SessionSummary {
   return { id, displayTitle: id, blank: false, running: false, updatedAt: 1, ...more } as SessionSummary
@@ -25,6 +25,43 @@ function fixture() {
   return { navigation, openSession, onOpen }
 }
 describe('mobile session navigation', () => {
+  it('groups by local calendar boundaries and keeps full workspace identities in recency order', () => {
+    const labels = { today: 'today', yesterday: 'yesterday', earlier: 'earlier', workspace: 'unassigned' }
+    const today = new Date(2026, 8, 11), yesterday = new Date(2026, 8, 10)
+    const rows = [row('a', { cwd: '/home/user/a/project', updatedAt: +today }), row('b', { cwd: '/home/user/b/project', updatedAt: +yesterday }), row('c', { cwd: '/home/user/a/project', updatedAt: +yesterday - 1 })]
+    expect(groupSessions(rows, 'time', labels, today).map(g => [g.key, g.rows.map(r => r.id)])).toEqual([['today', ['a']], ['yesterday', ['b']], ['earlier', ['c']]])
+    expect(groupSessions(rows, 'workspace', labels, today).map(g => [g.label, g.rows.map(r => r.id)])).toEqual([['/home/user/a/project', ['a', 'c']], ['/home/user/b/project', ['b']]])
+  })
+  it('remembers grouping and reveals search matches without losing collapsed workspace state', () => {
+    const f = fixture()
+    const page = render(<MobileLibrary {...f} t={t}/>)
+    fireEvent.click(screen.getByRole('button', { name: en.byWorkspace, exact: true }))
+    expect(localStorage.getItem(GROUPING_KEY)).toBe('workspace')
+    fireEvent.click(screen.getByRole('button', { name: /project/ }))
+    expect(screen.queryByText('First draft')).toBeNull()
+    fireEvent.focus(screen.getByRole('searchbox'))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'first' } })
+    expect(screen.getByText('First draft')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+    expect(screen.queryByText('First draft')).toBeNull()
+    page.unmount()
+    render(<MobileLibrary {...f} t={t}/>)
+    expect(screen.getByRole('button', { name: en.byWorkspace, exact: true }).getAttribute('aria-pressed')).toBe('true')
+  })
+  it('shows native scanning only on a capable shell and substitutes cancel while searching', () => {
+    const f = fixture(), postMessage = vi.fn()
+    const page = render(<MobileLibrary {...f} t={t}/>)
+    expect(screen.queryByRole('button', { name: en.scan })).toBeNull()
+    window.__DSH_MOBILE_SHELL__ = { bridgeVersion: 1, capabilities: ['scan'] }
+    window.webkit = { messageHandlers: { dshMobile: { postMessage } } }
+    page.rerender(<MobileLibrary {...f} t={t}/>)
+    fireEvent.click(screen.getByRole('button', { name: en.scan }))
+    expect(postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'scan', bridgeVersion: 1 })
+    fireEvent.focus(screen.getByRole('searchbox'))
+    expect(screen.queryByRole('button', { name: en.scan })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+    expect(screen.getByRole('button', { name: en.scan })).toBeTruthy()
+  })
   it('keeps archived, unselected blanks and addressed children out of ordinary recents without changing Host order', () => {
     const state = list([row('old'), row('archived'), row('blank', { blank: true }), row('child', { origin: 'subagent' }), row('current', { blank: true, updatedAt: 3 }), row('new', { updatedAt: 2 }), row('fork', { parentId: 'old' as SessionSummary['id'], updatedAt: 4 })], 'current')
     const original = [...state.ids]
@@ -33,7 +70,7 @@ describe('mobile session navigation', () => {
   })
   it('filters metadata and delegates selection to the official navigation owner exactly once', () => {
     const f = fixture()
-    render(<MobileLibrary {...f} t={t} onNew={vi.fn()} onSettings={vi.fn()} onWorkspaces={vi.fn()} />)
+    render(<MobileLibrary {...f} t={t} />)
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'PROJECT' } })
     expect(screen.queryByText('Second draft')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /First draft/ }))
@@ -42,7 +79,7 @@ describe('mobile session navigation', () => {
   })
   it('retains navigation on owner failure and presents a retryable error', () => {
     const f = fixture(); f.openSession.mockImplementation(() => { throw Error('fixture failure') })
-    render(<MobileLibrary {...f} t={t} onNew={vi.fn()} onSettings={vi.fn()} onWorkspaces={vi.fn()} />)
+    render(<MobileLibrary {...f} t={t} />)
     fireEvent.click(screen.getByRole('button', { name: /First draft/ }))
     expect(screen.getByRole('alert').textContent).toBe(en.navigationError)
     expect(f.onOpen).not.toHaveBeenCalled()
@@ -62,7 +99,7 @@ describe('mobile session navigation', () => {
     const sessions = new Feed(f.navigation.sessions.list.getSnapshot())
     const workspaces = new Feed(f.navigation.workspaces.list.getSnapshot())
     const navigation = { ...f.navigation, sessions: { list: sessions }, workspaces: { list: workspaces } } as unknown as NavigationCapabilities
-    const page = render(<MobileLibrary {...f} navigation={navigation} t={t} onNew={vi.fn()} onSettings={vi.fn()} onWorkspaces={vi.fn()} />)
+    const page = render(<MobileLibrary {...f} navigation={navigation} t={t} />)
     expect(screen.getByRole('button', { name: /First draft/ })).toBeTruthy()
     act(() => workspaces.set({ ...workspaces.value, archivedSessionIds: ['one'] as typeof workspaces.value.archivedSessionIds }))
     expect(screen.queryByRole('button', { name: /First draft/ })).toBeNull()
@@ -101,7 +138,7 @@ describe('mobile session navigation', () => {
     expect(main.inert).toBe(true)
     act(() => navigation.set(undefined))
     expect(main.inert).toBeFalsy()
-    expect(screen.queryByRole('heading', { name: en.libraryTitle })).toBeNull()
+    expect(screen.queryByRole('heading', { name: en.menu })).toBeNull()
     expect(editor.value).toBe('unsent draft')
   })
 

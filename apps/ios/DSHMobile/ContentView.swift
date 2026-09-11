@@ -1,12 +1,19 @@
 import SwiftUI
 import WebKit
 
+enum MobileSheet: String, Identifiable {
+    case settings, scan
+    var id: String { rawValue }
+}
+
 @MainActor
 final class BrowserState: ObservableObject {
     @Published var host: HostAddress?
     @Published var failure: String?
     @Published var loading = false
     @Published var mobileAvailable = false
+    @Published var chromeVisible = false
+    @Published var sheet: MobileSheet?
     @Published var layoutDiagnostic = ""
     weak var webView: WKWebView?
 
@@ -29,6 +36,7 @@ final class BrowserState: ObservableObject {
             host = address
             failure = nil
             mobileAvailable = false
+            chromeVisible = false
             layoutDiagnostic = ""
             UserDefaults.standard.set(address.origin.absoluteString, forKey: "hostOrigin")
         } catch { failure = error.localizedDescription }
@@ -38,6 +46,7 @@ final class BrowserState: ObservableObject {
         webView?.stopLoading()
         host = nil
         mobileAvailable = false
+        chromeVisible = false
         layoutDiagnostic = ""
         UserDefaults.standard.removeObject(forKey: "hostOrigin")
     }
@@ -52,7 +61,7 @@ final class BrowserState: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var browser = BrowserState()
-    @State private var showConnection = false
+    @AppStorage("appearance") private var appearance = "system"
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
@@ -65,21 +74,27 @@ struct ContentView: View {
                         VStack(spacing: 12) {
                             Text(failure).font(.callout)
                             Button("重新载入") { browser.failure = nil; browser.webView?.reload() }
-                            Button("连接设置") { showConnection = true }
+                            Button("连接设置") { browser.sheet = .settings }
                         }.padding(24).frame(maxWidth: .infinity).background(.regularMaterial)
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    HStack {
-                        Label(host.origin.host ?? "DSH", systemImage: "network").lineLimit(1)
-                        Spacer()
-                        Button("连接", systemImage: "slider.horizontal.3") { showConnection = true }
-                    }.font(.caption).padding(.horizontal, 16).padding(.vertical, 8).background(.bar)
+                    if !browser.chromeVisible {
+                        HStack {
+                            Text("DSH Mobile")
+                            Spacer()
+                            Button("连接设置", systemImage: "slider.horizontal.3") { browser.sheet = .settings }
+                        }.font(.caption).padding(.horizontal, 16).padding(.vertical, 8).background(.bar)
+                    }
                 }
             } else { ConnectionView(browser: browser) }
         }
         .tint(Color(red: 0.30, green: 0.42, blue: 1))
-        .sheet(isPresented: $showConnection) { ConnectionView(browser: browser).presentationDetents([.large]) }
+        .preferredColorScheme(appearance == "system" ? nil : appearance == "dark" ? .dark : .light)
+        .sheet(item: $browser.sheet) { page in
+            if page == .scan { ScanConnectionView(browser: browser) }
+            else { ConnectionView(browser: browser).presentationDetents([.large]) }
+        }
         .onChange(of: phase) { _, newValue in
             if newValue == .active {
                 // Reconnect belongs to the official Client; this event
@@ -94,42 +109,51 @@ struct ConnectionView: View {
     @ObservedObject var browser: BrowserState
     @State private var address = ""
     @State private var clearConfirmation = false
+    @AppStorage("appearance") private var appearance = "system"
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    Spacer().frame(height: 36)
-                    Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 48, weight: .light)).foregroundStyle(.tint)
-                    Text("工作空间，\n随身同行。 ").font(.system(size: 36, weight: .regular)).tracking(-1)
-                    Text("连接电脑上的 Harness，继续你的会话。").foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("主机地址或官方登录链接").font(.subheadline)
-                        SecureField("https://your-host.example", text: $address)
-                            .textContentType(.none).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .keyboardType(.URL).padding(16).background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
-                        Text("首次连接使用电脑提供的官方登录链接。只保存主机地址，登录 token 不会保存到设置中。").font(.caption).foregroundStyle(.secondary)
+            Form {
+                if let host = browser.host {
+                    Section("当前主机") {
+                        Label(host.origin.host ?? "Harness", systemImage: "laptopcomputer")
+                        Text(host.origin.absoluteString).font(.footnote).foregroundStyle(.secondary)
+                        Text(browser.mobileAvailable ? "移动插件已连接" : "尚未检测到移动插件").font(.footnote)
+                        Button("重新载入") { browser.failure = nil; browser.webView?.reload(); dismiss() }
                     }
-                    if let failure = browser.failure { Text(failure).font(.callout).foregroundStyle(.red) }
-                    Button {
+                }
+                Section {
+                    Button("扫码连接电脑", systemImage: "qrcode.viewfinder") { browser.sheet = .scan }
+                    SecureField("主机地址或官方登录链接", text: $address)
+                        .textContentType(.none).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    Button("连接主机") {
                         browser.connect(address)
                         if browser.failure == nil { address = ""; dismiss() }
-                    } label: {
-                        Text("连接主机").frame(maxWidth: .infinity).padding(.vertical, 10)
-                    }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    if let host = browser.host {
-                        Text(host.origin.absoluteString).font(.footnote).foregroundStyle(.secondary)
-                        Text(browser.mobileAvailable ? "移动插件已连接" : "尚未检测到移动插件，可继续使用官方页面").font(.footnote)
-                        #if DEBUG
-                        if !browser.layoutDiagnostic.isEmpty { Text(browser.layoutDiagnostic).font(.caption).foregroundStyle(.secondary) }
-                        #endif
+                    }.disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } header: { Text("连接") } footer: { Text("首次连接使用电脑提供的官方登录链接。仅保存主机地址，登录 token 不保存到设置中。") }
+                if let failure = browser.failure { Section { Text(failure).foregroundStyle(.red) } }
+                Section("此设备") {
+                    Picker("外观", selection: $appearance) {
+                        Text("跟随系统").tag("system")
+                        Text("浅色").tag("light")
+                        Text("深色").tag("dark")
+                    }
+                }
+                if browser.host != nil {
+                    Section {
                         Button("断开连接") { browser.disconnect(); dismiss() }
                         Button("清除本 App 的登录数据", role: .destructive) { clearConfirmation = true }
                     }
-                    Text("跨网络使用需要可达的 HTTPS 入口。电脑需保持唤醒和联网。").font(.footnote).foregroundStyle(.secondary)
-                }.padding(28)
-            }.background(LinearGradient(colors: [Color(red: 0.61, green: 0.76, blue: 0.91).opacity(0.35), Color(.systemBackground)], startPoint: .top, endPoint: .center))
+                }
+                #if DEBUG
+                if !browser.layoutDiagnostic.isEmpty {
+                    Section("开发诊断") { Text(browser.layoutDiagnostic).font(.caption).foregroundStyle(.secondary) }
+                }
+                #endif
+                Section { Text("电脑需保持唤醒和联网。跨网络访问使用已配置的 HTTPS 入口。").font(.footnote).foregroundStyle(.secondary) }
+            }
+            .navigationTitle(browser.host == nil ? "连接电脑" : "设置").navigationBarTitleDisplayMode(.inline)
             .toolbar { if browser.host != nil { Button("完成") { dismiss() } } }
             .confirmationDialog("清除本 App 的登录和缓存？", isPresented: $clearConfirmation, titleVisibility: .visible) {
                 Button("清除", role: .destructive) { Task { await browser.clearLogin(); dismiss() } }

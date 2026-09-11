@@ -20,4 +20,9 @@ rejects("http://127.0.0.1:3181")
 rejects("http://192.168.1.2:3080", debug: true)
 let debugAddress = try HostAddress("http://127.0.0.1:3181", allowLoopbackHTTP: true)
 expect(debugAddress.origin.port == 3181, "Debug permits loopback only")
+// QR payloads use the same strict HTTPS parser, never an arbitrary deep-link opener.
+for code in ["dsh://pair?token=x", "https://host.example/?token=a&redirect=https://other.example", "https://host.example/login", "https://host.example/?token=a#other"] { rejects(code) }
+let scanned = try HostAddress("  https://host.example:8443/?token=qr-example  ")
+expect(scanned.origin.absoluteString == "https://host.example:8443/", "QR preview contains authority only")
+expect(scanned.loginURL.query == "token=qr-example", "QR login stays available for explicit confirmation")
 print("HostAddress: \(checks) checks passed")

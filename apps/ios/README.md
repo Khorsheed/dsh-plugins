@@ -29,9 +29,13 @@ Debug connection settings display the mobile plugin's layout status and non-cont
 
 Install the plugin on your Host, then enter an official login URL using the reachable HTTPS authority. WebKit exchanges the token through official browser authentication. Only the clean origin is stored in UserDefaults. The App keeps browser cookies locally; it does not implement device pairing, Keychain device credentials or server-side revocation.
 
-The connection sheet can change hosts, disconnect or clear this App's cookies/cache. Clearing does not delete Host sessions or revoke another device. External user-activated links open outside the configured WebView. The native message handler checks main frame, matching origin and bridge version; its only messages are `ready` and `unloaded`. Returning foreground signals the mobile plugin to use official reconnect without repeating write commands.
+The connection sheet can change hosts, disconnect or clear this App's cookies/cache. Clearing does not delete Host sessions or revoke another device. External user-activated links open outside the configured WebView. The native message handler checks main frame, matching origin and bridge version; it handles `ready`, `unloaded`, mounted `chrome` status, and capability-gated `settings`/`scan` requests. The fallback connection strip hides only when mobile navigation mounts and returns when it is removed. Returning foreground signals the mobile plugin to use official reconnect without repeating write commands.
 
 For cellular access, provision HTTPS/WSS forwarding separately and retain upstream Host/Origin checks. The Mac must stay awake and online. Network provisioning, cookie Secure hardening at ingress, device signing and cellular acceptance are not performed by this project.
+
+## QR login and native settings
+
+Native grouped settings contain the current host, connection actions and a device-only appearance preference. QR scanning uses VisionKit with camera permission, stops when the view closes or the App backgrounds, validates the same HTTPS root/login URL contract, and previews the clean authority before an explicit Connect. The scanned login URL stays in memory; it is never saved to preferences or printed. Invalid codes, denied/unavailable cameras and unsupported devices retain manual entry. Main-frame HTTP 401 opens a recoverable login error. This consumes an existing official login link; it does not issue pairing credentials or configure a tunnel. Physical camera/permission and scan-to-login acceptance remains pending.
 
 ## Current limits
 

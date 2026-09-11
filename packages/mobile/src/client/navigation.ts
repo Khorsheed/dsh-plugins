@@ -8,6 +8,32 @@ export interface NavigationCapabilities {
   workspace: UiWorkspace
 }
 
+export type LibraryGrouping = 'time' | 'workspace'
+export const GROUPING_KEY = 'dsh.mobile.grouping'
+export interface SessionGroup { key: string; label: string; rows: SessionSummary[] }
+
+/** Group an ordered projection without joining different directories with the same basename. */
+export function groupSessions(rows: SessionSummary[], mode: LibraryGrouping, labels: { today: string; yesterday: string; earlier: string; workspace: string }, now = new Date()): SessionGroup[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
+  const groups = new Map<string, SessionGroup>()
+  for (const row of rows) {
+    const key = mode === 'workspace' ? row.cwd || '' : row.updatedAt >= today ? 'today' : row.updatedAt >= yesterday ? 'yesterday' : 'earlier'
+    let group = groups.get(key)
+    if (!group) {
+      const label = mode === 'workspace' ? key.split(/[\\/]/).filter(Boolean).at(-1) || labels.workspace : labels[key as 'today' | 'yesterday' | 'earlier']
+      group = { key, label, rows: [] }; groups.set(key, group)
+    }
+    group.rows.push(row)
+  }
+  if (mode === 'workspace') {
+    const counts = new Map<string, number>()
+    for (const group of groups.values()) counts.set(group.label, (counts.get(group.label) ?? 0) + 1)
+    for (const group of groups.values()) if ((counts.get(group.label) ?? 0) > 1 && group.key) group.label = group.key
+  }
+  return [...groups.values()]
+}
+
 /** Optional official services can disappear without removing basic mobile presentation. */
 export class MobileNavigation {
   private value: NavigationCapabilities | undefined

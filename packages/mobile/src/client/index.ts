@@ -13,7 +13,7 @@ import { NS, en, zh } from './locales.ts'
 
 declare global {
   interface Window {
-    __DSH_MOBILE_SHELL__?: { bridgeVersion: number }
+    __DSH_MOBILE_SHELL__?: { bridgeVersion: number; capabilities?: readonly string[] }
     webkit?: { messageHandlers?: { dshMobile?: { postMessage(value: unknown): void } } }
   }
 }
