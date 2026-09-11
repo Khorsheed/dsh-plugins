@@ -137,7 +137,7 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 第 23 个成员是 **`@khorsheed/dsh-eval`**（编排器，I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。待补：判官委派（T9）、`dsh-eval report`（T10）、只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status`（T14）。
 
-`capability-catalog` 在这里多一个用途：它按 preset 的 standing scope 读注册表，是「这个条件下 agent 有哪些工具和 skill」的取证来源，I4 让它输出可哈希的能力清单。
+`capability-catalog` 在这里多一个用途：它按 preset 的 standing scope 读注册表，是「这个条件下 agent 有哪些工具和 skill」的取证来源。T32 起它给出 `snapshotFor(presetId)` 与 `hashOf(snapshot)`：规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters（描述措辞不进——改一次文案不该换一个受试对象），哈希写作 `caps:<sha256>`。编排实例自己的那份记进 `run.meta.orchestrator.capabilities` 做取证；受试对象那份由 provision 算进 lock 的 `provisioned.capabilities`，就绪检查据此核对条件声明的 `preset`。
 
 ### 工具按域开放
 
