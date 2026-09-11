@@ -58,7 +58,7 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # 卸载
 | 插队发送 | 对当前草稿调用 `conversation.input.for(scope).submit('steer')`；空草稿保持静默无操作。 |
 | 新建会话 | `sessions.create()` → `sessions.open()`——侧边栏 New-session 按钮的同一 create-then-open 入口；全局动作，不限定焦点。 |
 | 压缩上下文 | 对当前会话调用公开的 `ISession.command('/compact')`——composer 斜杠菜单执行 `/compact` 的同一命令通道；忙碌等拒绝由宿主裁决，并渲染成与手敲命令相同的流程节点。 |
-| 开关右侧边栏（默认鼠标中键） | `ctx.sidebarRight.toggleExpanded()`——ui-sidebar-right 的公开服务，与右栏自身的展开/收起同一动作。该服务是**探测**而非注入（`ctx.reflect.get('sidebarRight')`）：没有右栏的组合里其余快捷键照常工作，只是这个动作静默不做事；没有任何会话面板挂载时也让位（该服务的写入口此时会直接抛错）。 |
+| 开关右侧边栏（默认鼠标中键） | `ctx.sidebarRight.toggleExpanded()`——ui-sidebar-right 的公开服务，与右栏自身的展开/收起同一动作。该服务是**探测**而非注入（`ctx.reflect.get('sidebarRight')`）：没有右栏的组合里其余快捷键照常工作，只是这个动作静默不做事。门禁只要求「有右栏服务 + 屏幕上有当前会话」，写入口在挂载前的抛错另有兜底——**刻意不去读服务自身的 `active()`**：从未打开过的右栏没有活动 tab，而那正是这个手势要展开的状态。 |
 
 重绑：点击键位录制下一个组合键或鼠标键（`Esc` 取消，`Delete`/`Backspace` 解绑，`Ctrl/Cmd` 在所有平台都计为一个 `primary` 修饰键，中键/右键在录制状态下可直接按下绑定），或恢复默认。偏好持久化在 `$DSH_HOME/settings.yaml` 的 `ui-shortcuts` 小节。
 
