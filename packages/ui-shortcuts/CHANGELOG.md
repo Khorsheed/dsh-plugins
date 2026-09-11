@@ -6,6 +6,7 @@
 - 新增「开关侧边栏」动作（默认 `Ctrl/Cmd+B`）：调用 ui-layout 的公开服务 `ctx.layout.toggleSidebar()`；该服务是**探测**而非注入（`ctx.reflect.get('layout')`），没有 shell 的组合里其余快捷键照常工作
 - **键位模型扩展**：一条偏好现在可以是键盘键位或鼠标键（`kind: 'mouse'`，DOM `MouseEvent.button`，只收 1=中键 / 2=右键；主键与浏览器后退/前进侧键刻意不可绑）。设置卡片在录制状态下可直接按下中键/右键完成绑定
 - `global` 鼠标动作在 `mousedown` 执行并接管该键的浏览器默认：自动滚屏（Windows）与主选区粘贴（Linux）挂在下按事件上，链接新标签页（`auxclick`）与右键系统菜单（`contextmenu`）在后续事件上
+- 鼠标绑定的显示：键帽内画鼠标俯视图并**点亮所绑的那颗键**，旁边是本语言的「中键 / 右键」（新增 `gesture.middle`/`gesture.right` 文案），不再出现硬编码英文 `Middle Click`；示意图 `aria-hidden`，可访问名由旁边的词承担
 
 ## 0.2.1（2026-09-11）
 

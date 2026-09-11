@@ -99,10 +99,15 @@ const MODIFIER_LABELS: Record<ShortcutModifier, string> = {
   shift: 'Shift',
 }
 
-/** Display label for one bindable mouse button. */
+/**
+ * Display label for one bindable mouse button — the locale-free fallback. The
+ * settings row renders its own localized word beside the mouse diagram (see
+ * ShortcutsRow), so this legend only serves consumers without a locale seat
+ * (accessible text, the default-binding hint when no translator is passed).
+ */
 const MOUSE_BUTTON_LABELS: Record<ShortcutMouseButton, string> = {
-  1: 'Middle Click',
-  2: 'Right Click',
+  1: 'Middle',
+  2: 'Right',
 }
 
 /** Display label for one action key. */
@@ -119,24 +124,59 @@ export function keyLabel(key: string): string {
 }
 
 /**
- * Display labels for one bound gesture, one entry per keycap (e.g.
- * ["Ctrl/Cmd", "S"], ["Esc"], ["Middle Click"]).
- * @param binding - the bound gesture to display.
- * @returns the per-keycap labels in display order.
+ * One rendered slot of a bound gesture: a modifier keycap, an action-key
+ * keycap, or a mouse button (which the settings row draws as a diagram plus a
+ * localized word instead of a text keycap).
  */
-export function bindingParts(binding: ShortcutBinding): string[] {
-  const gesture = binding.kind === 'mouse' ? MOUSE_BUTTON_LABELS[binding.button] : keyLabel(binding.key)
-  return [...binding.modifiers.map(modifier => MODIFIER_LABELS[modifier]), gesture]
+export type BindingPart =
+  | { readonly kind: 'modifier'; readonly modifier: ShortcutModifier }
+  | { readonly kind: 'key'; readonly key: string }
+  | { readonly kind: 'mouse'; readonly button: ShortcutMouseButton }
+
+/**
+ * The locale-free display label of one slot. Modifier and key labels are
+ * keycap legends rather than prose and stay identical in every language;
+ * mouse-button words are the one part locales override, through the settings
+ * row's translator.
+ * @param part - the slot to label.
+ * @returns the fallback label.
+ */
+export function partLabel(part: BindingPart): string {
+  switch (part.kind) {
+    case 'modifier': return MODIFIER_LABELS[part.modifier]
+    case 'key': return keyLabel(part.key)
+    case 'mouse': return MOUSE_BUTTON_LABELS[part.button]
+  }
+}
+
+/**
+ * The slots of one bound gesture, in display order (e.g. [{modifier primary},
+ * {key s}], [{mouse 1}]).
+ * @param binding - the bound gesture to display.
+ * @returns the slots in display order.
+ */
+export function bindingParts(binding: ShortcutBinding): BindingPart[] {
+  const slots: BindingPart[] = []
+  for (const modifier of binding.modifiers) slots.push({ kind: 'modifier', modifier })
+  slots.push(binding.kind === 'mouse'
+    ? { kind: 'mouse', button: binding.button }
+    : { kind: 'key', key: binding.key })
+  return slots
 }
 
 /**
  * Human-readable bound-gesture text for accessible names and hints (e.g.
- * "Ctrl/Cmd+S", "Esc", "Middle Click").
+ * "Ctrl/Cmd+S", "Esc", "Middle").
  * @param binding - the bound gesture to display.
+ * @param label - per-slot labeler; defaults to the locale-free legends, and
+ * the settings row passes its translator so mouse buttons read as localized words.
  * @returns the display text.
  */
-export function formatBinding(binding: ShortcutBinding): string {
-  return bindingParts(binding).join('+')
+export function formatBinding(
+  binding: ShortcutBinding,
+  label: (part: BindingPart) => string = partLabel,
+): string {
+  return bindingParts(binding).map(part => label(part)).join('+')
 }
 
 /** Whether two modifier lists agree element by element (canonical order). */

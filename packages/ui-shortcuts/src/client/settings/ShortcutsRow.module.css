@@ -104,6 +104,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* A mouse-bound keycap holds a diagram plus its word; a text keycap holds
+     one label, where the gap costs nothing. */
+  gap: 6px;
   min-width: 28px;
   height: 28px;
   padding: 0 8px;

@@ -5,10 +5,21 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge, so this
 // component's props type matches the plugin configuration card contract.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import { bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey, mouseBindingOfEvent } from '../bindings.ts'
+import { bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey, mouseBindingOfEvent, partLabel } from '../bindings.ts'
+import type { BindingPart } from '../bindings.ts'
 import type { ShortcutPreference } from '../../settings.ts'
 import type { ShortcutActionContribution } from '../contract.ts'
+import { MouseGlyph } from './MouseGlyph.tsx'
 import css from './ShortcutsRow.module.css'
+
+/** Stable React key for one gesture slot (slot identities are unique per kind). */
+function partKey(part: BindingPart): string {
+  switch (part.kind) {
+    case 'modifier': return `modifier:${part.modifier}`
+    case 'key': return `key:${part.key}`
+    case 'mouse': return `mouse:${part.button}`
+  }
+}
 
 /** Registration-side preference face. */
 export interface ShortcutsRowInjected {
@@ -48,6 +59,13 @@ export function ShortcutsRow({
   const actions = useActions(value => value)
   const preferences = usePreferences(value => value)
   const capturing = useCapturing(value => value)
+
+  // The one slot the dictionaries own: modifier and key legends are keycap
+  // legends and read the same in every language, while a mouse button is prose
+  // — and it renders as the device diagram plus its word.
+  const visibleLabel = (part: BindingPart): string => part.kind === 'mouse'
+    ? t(part.button === 1 ? 'gesture.middle' : 'gesture.right')
+    : partLabel(part)
 
   // Gesture capture: while one action records, the next keydown or bindable
   // mousedown completes the binding; Escape cancels and Delete/Backspace
@@ -110,7 +128,7 @@ export function ShortcutsRow({
                 <div className={css.fieldDesc}>{translate(action.description.ns, action.description.key)}</div>
                 {modified && (
                   <div className={css.defaultHint}>
-                    {t('default', { binding: formatBinding(action.defaultBinding) })}
+                    {t('default', { binding: formatBinding(action.defaultBinding, visibleLabel) })}
                   </div>
                 )}
               </div>
@@ -128,9 +146,12 @@ export function ShortcutsRow({
                       : preference.kind === 'none'
                         ? t('unbound')
                         : bindingParts(preference).map((part, index) => (
-                          <Fragment key={part}>
+                          <Fragment key={partKey(part)}>
                             {index > 0 && <span className={css.plus}>+</span>}
-                            <span className={css.keycap}>{part}</span>
+                            <span className={css.keycap}>
+                              {part.kind === 'mouse' && <MouseGlyph button={part.button} />}
+                              {visibleLabel(part)}
+                            </span>
                           </Fragment>
                         ))}
                   </button>

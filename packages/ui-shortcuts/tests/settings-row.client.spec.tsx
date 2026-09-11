@@ -180,7 +180,18 @@ describe('ShortcutsRow', () => {
     const middle = fireEvent.mouseDown(document, { button: 1 })
     expect(middle).toBe(false) // preventDefault
     expect(b.setPreference).toHaveBeenCalledWith('toggleSidebar', { kind: 'mouse', modifiers: [], button: 1 })
-    expect(screen.getByRole('button', { name: 'Middle Click' })).toBeDefined()
+    // The keycap draws the device diagram (decorative) and names the bound
+    // button in the locale's own word — the word is the accessible name.
+    const glyph = document.querySelector('svg[data-gesture="mouse"]')
+    expect(glyph?.getAttribute('data-button')).toBe('1')
+    expect(glyph?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByRole('button', { name: '中键' })).toBeDefined()
+
+    // Modifiers stack into their own keycap, exactly as they do on a chord.
+    fireEvent.click(screen.getByRole('button', { name: '中键' }))
+    fireEvent.mouseDown(document, { button: 1, ctrlKey: true })
+    expect(b.setPreference).toHaveBeenCalledWith('toggleSidebar', { kind: 'mouse', modifiers: ['primary'], button: 1 })
+    expect(screen.getByRole('button', { name: 'Ctrl/Cmd+中键' })).toBeDefined()
   })
 
   it('Escape cancels capture and Delete unbinds', () => {

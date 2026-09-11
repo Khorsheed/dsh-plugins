@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingButton, isBindingKey, keyLabel, matches,
-  matchesMouse, mouseBindingOfEvent, normalizeKey,
+  matchesMouse, mouseBindingOfEvent, normalizeKey, partLabel,
 } from '../src/client/bindings.ts'
 import type { ShortcutPreference } from '../src/settings.ts'
 
@@ -58,10 +58,22 @@ describe('binding display', () => {
     expect(formatBinding({ kind: 'key', modifiers: [], key: 'Escape' })).toBe('Esc')
     expect(formatBinding({ kind: 'key', modifiers: ['primary'], key: 's' })).toBe('Ctrl/Cmd+S')
     expect(formatBinding({ kind: 'key', modifiers: ['primary', 'shift'], key: 'e' })).toBe('Ctrl/Cmd+Shift+E')
-    // The same labels split per keycap for the settings row's keycap cluster.
-    expect(bindingParts({ kind: 'key', modifiers: [], key: 'Escape' })).toEqual(['Esc'])
-    expect(bindingParts({ kind: 'key', modifiers: ['primary'], key: 's' })).toEqual(['Ctrl/Cmd', 'S'])
-    expect(bindingParts({ kind: 'key', modifiers: ['primary', 'shift'], key: 'e' })).toEqual(['Ctrl/Cmd', 'Shift', 'E'])
+    // The same gesture split per keycap for the settings row's keycap cluster.
+    expect(bindingParts({ kind: 'key', modifiers: [], key: 'Escape' }))
+      .toEqual([{ kind: 'key', key: 'Escape' }])
+    expect(bindingParts({ kind: 'key', modifiers: ['primary'], key: 's' }))
+      .toEqual([{ kind: 'modifier', modifier: 'primary' }, { kind: 'key', key: 's' }])
+    expect(bindingParts({ kind: 'key', modifiers: ['primary', 'shift'], key: 'e' }))
+      .toEqual([
+        { kind: 'modifier', modifier: 'primary' },
+        { kind: 'modifier', modifier: 'shift' },
+        { kind: 'key', key: 'e' },
+      ])
+    // The locale-free legends the row falls back to.
+    expect(partLabel({ kind: 'key', modifiers: [], key: 'Escape' })).toBe('Esc')
+    expect(partLabel({ kind: 'modifier', modifier: 'primary' })).toBe('Ctrl/Cmd')
+    expect(partLabel({ kind: 'mouse', modifiers: [], button: 1 })).toBe('Middle')
+    expect(partLabel({ kind: 'mouse', modifiers: [], button: 2 })).toBe('Right')
   })
 
   it('compares preferences structurally, including both-unbound', () => {
@@ -113,9 +125,16 @@ describe('mouse bindings', () => {
   })
 
   it('formats mouse gestures and compares them structurally', () => {
-    expect(bindingParts({ kind: 'mouse', modifiers: [], button: 1 })).toEqual(['Middle Click'])
-    expect(bindingParts({ kind: 'mouse', modifiers: ['primary'], button: 2 })).toEqual(['Ctrl/Cmd', 'Right Click'])
-    expect(formatBinding({ kind: 'mouse', modifiers: [], button: 1 })).toBe('Middle Click')
+    expect(bindingParts({ kind: 'mouse', modifiers: [], button: 1 })).toEqual([{ kind: 'mouse', button: 1 }])
+    expect(bindingParts({ kind: 'mouse', modifiers: ['primary'], button: 2 }))
+      .toEqual([{ kind: 'modifier', modifier: 'primary' }, { kind: 'mouse', button: 2 }])
+    expect(formatBinding({ kind: 'mouse', modifiers: [], button: 1 })).toBe('Middle')
+    // The settings row passes its translator: the mouse word is the one slot a
+    // locale owns, so the same binding reads "中键" there.
+    expect(formatBinding(
+      { kind: 'mouse', modifiers: ['primary'], button: 1 },
+      part => part.kind === 'mouse' ? '中键' : partLabel(part),
+    )).toBe('Ctrl/Cmd+中键')
     expect(equalPreference({ kind: 'mouse', modifiers: [], button: 1 }, { kind: 'mouse', modifiers: [], button: 1 })).toBe(true)
     expect(equalPreference({ kind: 'mouse', modifiers: [], button: 1 }, { kind: 'mouse', modifiers: [], button: 2 })).toBe(false)
     expect(equalPreference({ kind: 'mouse', modifiers: ['primary'], button: 1 }, { kind: 'mouse', modifiers: [], button: 1 })).toBe(false)
