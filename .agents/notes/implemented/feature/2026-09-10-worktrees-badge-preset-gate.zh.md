@@ -27,3 +27,7 @@ worktrees 插件配置新增可选 `visiblePresets?: string[]`（host 侧 schema
 ## Consequences
 
 对一切既有组合默认行为逐字节不变（空列表 = 无闸门；唯一新增流量是每次徽标挂载的一次 `badgeConfig` RPC，且从内存直接应答）。闸门是组合级而非用户级，改动需重启——对开发铬件试点可接受。覆盖：`tests/badge.client.spec.tsx` 钉死四条闸门语义（无闸门 / preset 在列表 / preset 在列表外 / 投影缺失）外加原样的加载中 null；host 配置归一化由 schemastery schema 默认值承担。若 mode-switcher 验证成立，这套模式（config → Remote → 经 `useSessions` 按会话自隐藏）就是其他会话级 chrome 的模板。
+
+## 附记（2026-09-11）：默认判据已改读官方组合数据
+
+[工具行拆分](2026-09-11-worktrees-tool-split.zh.md)改变了默认形态：`visiblePresets` 为空时徽标不再等于「永远显示」——改读官方 `pluginInventory.list()` 的 preset 组合数据，当前会话的 preset 组合里有 `@khorsheed/dsh-worktrees-tool` 行才显示。`visiblePresets` 保留为手动 override，语义即本 note 所钉；所有 fail-open 路径（无 preset、无 namespace、RPC 失败、组缺席或 broken）不变。

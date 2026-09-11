@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
 /**
- * Badge spec for the `visiblePresets` display gate (pilot: per-session UI
- * self-hide). The gate arrives over the Remote (`fetchBadgeConfig`) because
- * the web boot hands client entries no config; the badge reads the current
- * session's preset through `useSessions` (the ui-agent-preset header-label
- * read). Semantics pinned here: an absent/empty list never gates (the
- * zero-change default), a non-empty list hides the badge when the session's
- * preset id is outside it, and a session with NO preset projection stays
- * visible (fail-open).
+ * Badge spec for the display gate (per-session UI self-hide). Two criteria,
+ * pinned here: a configured non-empty `visiblePresets` is the OVERRIDE (the
+ * pilot semantics — list outside = hidden); otherwise the DEFAULT criterion
+ * reads the OFFICIAL pluginInventory composition data and shows the badge
+ * exactly when the session's preset composition names the
+ * `@khorsheed/dsh-worktrees-tool` row. Sessions with no preset, a missing
+ * namespace, a failed RPC, and a missing/broken preset group all fail open
+ * (visible). The badge reads the current session's preset through
+ * `useSessions` (the ui-agent-preset header-label read, dual key per host
+ * line); the config arrives over the Remote (`fetchBadgeConfig`) because the
+ * web boot hands client entries no config.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import type { WorktreesBadgeProps } from '../src/client/contract.ts'
 import { WorktreesBadge } from '../src/client/Badge.tsx'
-import type { BadgeConfig, SessionSummary } from '../src/types.ts'
+import type { BadgeConfig, PluginInventorySnapshot, SessionSummary } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
@@ -44,16 +47,32 @@ interface HarnessOptions {
    * type predates the projection); absent = the 0.1.2 shape.
    */
   legacyAgentPreset?: unknown
+  /**
+   * The OFFICIAL inventory snapshot as the probed namespace answers it;
+   * absent = the host mounts no pluginInventory namespace (fail-open path).
+   */
+  composition?: PluginInventorySnapshot
+  /** Make the inventory RPC fail outright (still the fail-open path). */
+  compositionFails?: boolean
 }
 
 function makeHarness(over: HarnessOptions = {}) {
   const summary = vi.fn<() => Promise<Result<SessionSummary>>>()
   const fetchBadgeConfig = vi.fn<() => Promise<Result<BadgeConfig>>>()
+  const fetchComposition = vi.fn<() => Promise<Result<PluginInventorySnapshot>>>()
   summary.mockResolvedValue({ ok: true as const, value: SUMMARY })
   fetchBadgeConfig.mockResolvedValue({
     ok: true as const,
     value: { visiblePresets: over.visiblePresets ?? [] },
   })
+  if (over.compositionFails === true) {
+    fetchComposition.mockResolvedValue({ ok: false as const, error: { code: 'x', message: 'unavailable' } })
+  } else {
+    fetchComposition.mockResolvedValue({
+      ok: true as const,
+      value: over.composition ?? { agentPresets: [] },
+    })
+  }
   const sessionRow = {
     ...(over.projectionValues === undefined ? {} : { projectionValues: over.projectionValues }),
     ...(over.legacyAgentPreset === undefined ? {} : { agentPreset: over.legacyAgentPreset }),
@@ -62,6 +81,11 @@ function makeHarness(over: HarnessOptions = {}) {
     sessionId: SESSION,
     summary,
     fetchBadgeConfig,
+    // The client wiring leaves the prop undefined on a namespace-less host;
+    // the harness mirrors that (only the presence cases pass a fetcher).
+    ...(over.composition === undefined && over.compositionFails !== true
+      ? {}
+      : { fetchComposition }),
     open: vi.fn(),
     subscribeVersion: vi.fn(() => () => {}),
     getVersion: vi.fn(() => Promise.resolve(0)),
@@ -72,7 +96,7 @@ function makeHarness(over: HarnessOptions = {}) {
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
   } as unknown as WorktreesBadgeProps
-  return { props, summary, fetchBadgeConfig }
+  return { props, summary, fetchBadgeConfig, fetchComposition }
 }
 
 afterEach(() => { cleanup() })
@@ -130,5 +154,59 @@ describe('WorktreesBadge visiblePresets gate', () => {
     render(<WorktreesBadge {...props} />)
     await waitFor(() => expect(summary).toHaveBeenCalled())
     expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+describe('WorktreesBadge composition criterion (the default, no visiblePresets)', () => {
+  const WITH_ROW: PluginInventorySnapshot = {
+    agentPresets: [
+      { id: 'dev', rows: [{ moduleName: '@khorsheed/dsh-worktrees-tool' }] },
+      { id: 'standard', rows: [{ moduleName: '@deepseek-ai/dsh-tool-bash' }] },
+    ],
+  }
+
+  it('shows the badge when the session preset composition names the tool row', async () => {
+    const { props } = makeHarness({ projectionValues: { agentPreset: 'dev' }, composition: WITH_ROW })
+    render(<WorktreesBadge {...props} />)
+    expect(await screen.findByRole('status')).toBeTruthy()
+  })
+
+  it('hides the badge when the session preset composition does not name the tool row', async () => {
+    const { props } = makeHarness({ projectionValues: { agentPreset: 'standard' }, composition: WITH_ROW })
+    render(<WorktreesBadge {...props} />)
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+  })
+
+  it('fails open when the host answers no inventory (no namespace)', async () => {
+    const { props } = makeHarness({ projectionValues: { agentPreset: 'standard' } })
+    render(<WorktreesBadge {...props} />)
+    expect(await screen.findByRole('status')).toBeTruthy()
+  })
+
+  it('fails open when the inventory RPC fails', async () => {
+    const { props } = makeHarness({ projectionValues: { agentPreset: 'standard' }, compositionFails: true })
+    render(<WorktreesBadge {...props} />)
+    expect(await screen.findByRole('status')).toBeTruthy()
+  })
+
+  it('fails open when the session preset group is broken or absent from the snapshot', async () => {
+    const broken: PluginInventorySnapshot = {
+      agentPresets: [{ id: 'standard', broken: 'unreadable', rows: [] }],
+    }
+    const { props } = makeHarness({ projectionValues: { agentPreset: 'standard' }, composition: broken })
+    render(<WorktreesBadge {...props} />)
+    expect(await screen.findByRole('status')).toBeTruthy()
+  })
+
+  it('lets a configured visiblePresets override the composition criterion', async () => {
+    // The list admits 'standard' even though the composition names no row —
+    // the override wins over the default criterion (pilot back-compat).
+    const { props } = makeHarness({
+      visiblePresets: ['standard'],
+      projectionValues: { agentPreset: 'standard' },
+      composition: WITH_ROW,
+    })
+    render(<WorktreesBadge {...props} />)
+    expect(await screen.findByRole('status')).toBeTruthy()
   })
 })

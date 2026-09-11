@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.md
+.agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.md: 83264b20422084c0954bfe9245a85fc5866dc7d3
+.agents/notes/implemented/feature/2026-09-11-worktrees-tool-split.zh.md: 13ad4da275e66796decf397c77077f5b9d50bb30

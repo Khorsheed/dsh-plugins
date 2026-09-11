@@ -62,6 +62,16 @@ export interface Finding {
 export const NO_OWN_PATCH: ReadonlyArray<string> = [
   'local-agent-tool-subagent',
   'local-agent-dsh-headless',
+  // worktrees-tool is the worktrees core's preset-composed companion row:
+  // it only makes the tool module resolvable; agent presets name the row
+  // (a `dsh.bundle` declaration would auto-mount the tool at the profile
+  // root — exactly what the split removes).
+  'worktrees-tool',
+  // room-tool is the room core's preset-composed companion row (same shape as
+  // worktrees-tool): it only makes the tool module resolvable; agent presets
+  // name the row — a dsh.bundle declaration would auto-mount the tools at
+  // the profile root, exactly what the split removes.
+  'room-tool',
 ]
 
 /**
@@ -81,6 +91,12 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
     '@khorsheed/dsh-local-agent-dsh-headless',
   ],
   'local-agent-tool-subagent': ['@khorsheed/dsh-local-agent'],
+  // The worktrees core/companion pair: the companion consumes the core's
+  // tool-definition factory and probes its global service (declare-and-degrade
+  // — the probe is `ctx.get`, the peer dep keeps the module resolvable).
+  'worktrees-tool': ['@khorsheed/dsh-worktrees'],
+  // The room core/companion pair (same declare-and-degrade pattern).
+  'room-tool': ['@khorsheed/dsh-room'],
   'ui-file-preview': ['@khorsheed/dsh-file-preview'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested

@@ -14,17 +14,30 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SessionSummary } from '../types.ts'
+import type { PluginInventorySnapshot, SessionSummary } from '../types.ts'
 import type { WorktreesBadgeProps } from './contract.ts'
 import css from './Badge.module.css'
 
+/**
+ * The composition criterion's row: the companion package whose presence in
+ * the current session's preset composition keeps the badge visible (the
+ * mode-switcher proposal's "组合里有我的行" — the preset composition file
+ * is the single source of truth, no registry to maintain).
+ */
+const TOOL_ROW_MODULE = '@khorsheed/dsh-worktrees-tool'
+
 /** The badge. */
-export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, open, subscribeVersion, getVersion, useSessions, t }: WorktreesBadgeProps): ReactNode {
+export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComposition, open, subscribeVersion, getVersion, useSessions, t }: WorktreesBadgeProps): ReactNode {
   const [data, setData] = useState<SessionSummary | null>(null)
   // The display gate: null while the config RPC is pending or failed, and
   // whenever the composition leaves `visiblePresets` empty — all meaning "no
   // gate, always show" (fail-open in both directions).
   const [gate, setGate] = useState<readonly string[] | null>(null)
+  // The OFFICIAL preset-composition data the DEFAULT criterion reads; null
+  // while the inventory RPC is pending/failed and whenever the host mounts
+  // no pluginInventory namespace at all — all "no composition data,
+  // fail-open" (the badge never disappears for want of an answer).
+  const [composition, setComposition] = useState<PluginInventorySnapshot | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -35,6 +48,16 @@ export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, open, sub
     }).catch(() => { /* an unreachable Remote reads as no gate (fail-open) */ })
     return () => { cancelled = true }
   }, [fetchBadgeConfig])
+
+  useEffect(() => {
+    if (fetchComposition === undefined) return
+    let cancelled = false
+    void fetchComposition().then(result => {
+      if (cancelled || !result.ok) return
+      setComposition(result.value)
+    }).catch(() => { /* an unreachable inventory reads as no data (fail-open) */ })
+    return () => { cancelled = true }
+  }, [fetchComposition])
 
   // The current session's agent preset, the same read ui-agent-preset's
   // header label makes — per host line: the 0.1.2 line projects the preset
@@ -75,11 +98,25 @@ export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, open, sub
     return unsubscribe
   }, [sessionId, summary, subscribeVersion, getVersion])
 
-  // The preset gate: a non-empty `visiblePresets` hides the badge in sessions
-  // whose preset id is outside the list; sessions with NO preset stay visible
-  // (fail-open — the gate hides dev chrome, never breaks preset-less
-  // deployments). Loading keeps its own null below.
-  if (gate !== null && preset !== undefined && !gate.includes(preset)) return null
+  // The visibility decision, in criterion order (sessions with NO preset
+  // stay visible on every path — fail-open; the gate hides dev chrome,
+  // never breaks preset-less deployments):
+  // 1. A configured `visiblePresets` (non-empty) is the OVERRIDE: the
+  //    hand-maintained list gates, exactly the pilot semantics.
+  // 2. Otherwise the OFFICIAL composition data decides: the badge shows
+  //    exactly when the session's preset composition names the
+  //    `@khorsheed/dsh-worktrees-tool` row. A preset group that is missing
+  //    from the snapshot or answered `broken` is unreadable data, not an
+  //    answer — fail-open; so is a pending/failed inventory fetch.
+  if (preset !== undefined) {
+    if (gate !== null) {
+      if (!gate.includes(preset)) return null
+    } else if (composition !== null) {
+      const group = composition.agentPresets?.find(candidate => candidate.id === preset)
+      if (group !== undefined && group.broken === undefined
+        && !group.rows.some(row => row.moduleName === TOOL_ROW_MODULE)) return null
+    }
+  }
 
   // The branch capsule is the badge's only content: non-repo sessions render
   // nothing (the folder capsule that used to cover them left the header).

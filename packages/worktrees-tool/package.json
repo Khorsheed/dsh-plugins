@@ -1,0 +1,63 @@
+{
+  "name": "@khorsheed/dsh-worktrees-tool",
+  "description": "The session-granted `worktrees` model tool, companion to @khorsheed/dsh-worktrees: a tool-only row (provides no service) that agent presets compose to grant worktree management per session. Deliberately NOT self-mounting — installing it as a dependency only makes the module resolvable; an agent preset's agent.cordis.yml references the row by name.",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/worktrees-tool"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "worktree",
+    "git",
+    "tool",
+    "agent-preset"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+    "@khorsheed/dsh-worktrees": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+    "@khorsheed/dsh-worktrees": "workspace:*",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "dsh": {
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "verifiedHost": "0.1.5-rc.1",
+      "notes": "Host-plane companion row: provides no service, registers one model tool into the host tools registry, so agent presets may compose it bare (the official tool-row shape). Probes the global `ctx.worktrees` service at apply time and silently skips registration when the core plugin is absent — a preset naming this row still mounts cleanly. No browser half: the badge/tab UI lives in the core package."
+    }
+  }
+}

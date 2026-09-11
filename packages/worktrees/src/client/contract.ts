@@ -29,7 +29,7 @@ import type {
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalImageResult,
   ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
   ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
-  SessionSummary, WorktreeInfo,
+  PluginInventorySnapshot, SessionSummary, WorktreeInfo,
 } from '../types.ts'
 import type { OpenInAppSource } from './open-in-app.ts'
 import type { createLocalFilesStore } from './store-local.ts'
@@ -45,6 +45,16 @@ export interface WorktreesBadgeInjected {
    * arrives through the data face). An empty list keeps the badge visible.
    */
   fetchBadgeConfig: () => Promise<RemoteResult<BadgeConfig>>
+  /**
+   * Fetch the OFFICIAL plugin inventory — the preset-composition data the
+   * badge's DEFAULT visibility criterion reads ("the current session's
+   * preset composition names the `@khorsheed/dsh-worktrees-tool` row").
+   * Undefined on a host without the pluginInventory namespace (the read is
+   * probed, never injected): the badge then has no composition data and
+   * fails open. A configured `visiblePresets` overrides this criterion, so
+   * the fetch is skipped whenever the list is non-empty anyway.
+   */
+  fetchComposition?: () => Promise<RemoteResult<PluginInventorySnapshot>>
   /** Open the worktrees right-Sidebar tab in one mode. */
   open: (mode: DrawerMode) => void
   /** Subscribe to active-worktree changes (a tab switch bumps it). */

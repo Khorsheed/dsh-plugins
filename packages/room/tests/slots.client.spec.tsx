@@ -169,6 +169,8 @@ describe('room client apply', () => {
       listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
       browseDirectory: vi.fn(async () => null),
       listNames: vi.fn(() => []),
+      // The criterion's fail-open stub: everything shows.
+      roomChrome: { show: () => true, subscribe: () => () => {} },
     }
     render(<InviteAgentAction {...({ ...face, t: (key: string) => key } as never)} />)
     fireEvent.click(screen.getByRole('button', { name: 'action.inviteAgent' }))

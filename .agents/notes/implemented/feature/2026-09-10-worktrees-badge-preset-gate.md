@@ -27,3 +27,7 @@ The config reaches the browser through the plugin's own Remote: the host `apply`
 ## Consequences
 
 Default behavior is byte-identical for every existing composition (empty list = no gate; the one extra `badgeConfig` RPC per badge mount is the only new traffic, and it resolves from memory). The gate is composition-wide, not per-user, and requires a restart to change — acceptable for a dev-chrome pilot. Coverage: `tests/badge.client.spec.tsx` pins the four gate semantics (no gate, preset in list, preset outside list, projection absent) plus the untouched loading-null; host config normalization rides the schemastery schema default. If the mode-switcher validates, this pattern (config → Remote → per-session self-hide via `useSessions`) is the template for other session-scoped chrome.
+
+## Addendum (2026-09-11): the default criterion moved to official composition data
+
+The [tool-row split](2026-09-11-worktrees-tool-split.md) changed the DEFAULT: with `visiblePresets` empty the badge no longer means "always visible" — it reads the official `pluginInventory.list()` preset-composition data and shows exactly when the session's preset names the `@khorsheed/dsh-worktrees-tool` row. `visiblePresets` survives as the manual override with the semantics this note pins; every fail-open path (no preset, no namespace, failed RPC, missing/broken group) is unchanged.

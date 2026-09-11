@@ -35,6 +35,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the ctx.workspaces service merge.
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 // Type-only: pulls the ctx.slots service merge.
@@ -54,7 +55,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import worktreesRemote from '@khorsheed/dsh-worktrees/remote'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  FileDiffRequest, ListLocalDirectoryRequest, ReadFileAtCommitRequest, ReadFileRequest,
+  FileDiffRequest, ListLocalDirectoryRequest, PluginInventorySnapshot,
+  ReadFileAtCommitRequest, ReadFileRequest,
   ReadLocalFileRequest, ReadLocalImageRequest, ReadRepoImageRequest,
 } from '../types.ts'
 import { WorktreesBadge } from './Badge.tsx'
@@ -114,6 +116,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'worktrees: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.get('remote.worktrees') as WorktreesRemote
+  // The OFFICIAL pluginInventory namespace, probed the taskpilot way: through
+  // ctx.get, not the ctx.remote proxy — declaring 'remote.pluginInventory' in
+  // inject would pend the whole client on a host without it, and the badge's
+  // composition criterion must degrade to fail-open there instead. Undefined
+  // on such hosts (and on every pre-0.1.5 line); the badge skips the fetch
+  // and keeps its visiblePresets/fail-open semantics.
+  const pluginInventory = ctx.get('remote.pluginInventory') as {
+    list: () => Promise<RemoteResult<PluginInventorySnapshot>>
+  } | undefined
   // The once-per-page open-in-app probe; kicks off at apply and publishes
   // through a snapshot store the surfaces bind as a hook.
   const openInApp = new OpenInAppProbe()
@@ -193,6 +204,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (): WorktreesBadgeInjected => ({
       summary: (sid: SessionId) => remote.summary(sid),
       fetchBadgeConfig: () => remote.badgeConfig(),
+      ...(pluginInventory === undefined ? {} : { fetchComposition: () => pluginInventory.list() }),
       open: (mode) => { controller.open(mode) },
       subscribeVersion: (listener) => controller.subscribeVersion(listener),
       getVersion: () => controller.getVersion(),

@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type { RoomProviderList } from '../types.ts'
+import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
 
 /** A mutation outcome with a localized failure message. */
@@ -71,6 +72,13 @@ export interface RoomInviteInjected {
    * miss — the host's duplicate check stays the backstop.
    */
   readonly listNames: () => readonly string[]
+  /**
+   * The preset-composition visibility of room's session chrome (M3'
+   * self-hide): the invite chip returns null when this says no, and the
+   * members tab's registration toggle reads it. Every unreadable path fails
+   * open, and an actual room always shows.
+   */
+  readonly roomChrome: RoomChromeVisibility
 }
 
 /**
