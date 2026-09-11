@@ -13,15 +13,20 @@
  * what "ready" means.
  * @module @khorsheed/dsh-eval
  */
-import type { Dirent } from 'node:fs'
-import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { statSync, type Dirent } from 'node:fs'
+import { readdir, readFile } from 'node:fs/promises'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { MissionReadFace } from './faces.ts'
+import { hashConditionDocument } from './hash.ts'
+import { CONDITION_ID_RE, jsonEquals } from './schema.ts'
 import {
+  conditionDiagnostics,
+  expandHome,
   resolveConditionReadiness,
   unresolvedFields,
   type ConditionResolution,
   type EvalDiagnostic,
+  type LockProvisionRecord,
 } from './validate.ts'
 
 /** Thrown when a read verb cannot answer — a missing service, an unusable path. */
@@ -47,8 +52,20 @@ export interface ConditionSummary {
   model: { declared: string | null }
   /** sha256 of the declaration; null when it is unreadable or contract-violating. */
   sha: string | null
-  /** The lock record beside the declaration: present, and does it still match? */
-  lock: { present: boolean; sha: string | null; homeSha: string | null; matches: boolean }
+  /**
+   * The lock record beside the declaration: present, does it still match, and
+   * what did provision see when it wrote it? `provisioned` is null on a lock
+   * written before `conditions provision` existed — nothing checked that
+   * declaration against a real scoped home, and the listing says so rather
+   * than leaving the column blank.
+   */
+  lock: {
+    present: boolean
+    sha: string | null
+    homeSha: string | null
+    matches: boolean
+    provisioned: LockProvisionRecord | null
+  }
   /** ready = locked, matching, and home verified; missing = no usable declaration. */
   status: ConditionResolution['status']
   /** Nullable contract fields still unresolved, as dotted paths. */
@@ -136,6 +153,7 @@ export async function listConditions(repo: string, only?: readonly string[]): Pr
           sha: entry.lock?.sha ?? null,
           homeSha: entry.lock?.homeSha ?? null,
           matches: entry.lock !== null && entry.sha !== null && entry.lock.sha === entry.sha,
+          provisioned: entry.lock?.provisioned ?? null,
         },
         status: entry.status,
         unresolved: unresolvedFields(document),
@@ -145,6 +163,174 @@ export async function listConditions(repo: string, only?: readonly string[]): Pr
     }
   }
   return { repo, datasets, conditions }
+}
+
+// ── condition diff ──────────────────────────────────────────────────────────
+
+/**
+ * One field two condition documents disagree on. Values are carried VERBATIM
+ * (whatever JSON the documents hold); `undefined` means the field is absent
+ * from that side, which is a difference like any other — `scope` absent versus
+ * `scope: "eval-b"` is exactly the two-subjects case the field exists for.
+ */
+export interface ConditionFieldDiff {
+  /** Dotted path, e.g. `model.declared`, `unit.scopedHome.container`. */
+  path: string
+  a?: unknown
+  b?: unknown
+}
+
+/** One side of a {@link ConditionDiff}. */
+export interface ConditionDiffSide {
+  /** The condition id (the file stem). */
+  id: string
+  /** The declaration that was read (absolute). */
+  path: string
+  /** The condition hash; null when the document violates the contract. */
+  sha: string | null
+  /** Contract violations, if any — a diff of an invalid document is still shown. */
+  errors: EvalDiagnostic[]
+}
+
+/** The `conditions diff` answer: what differs, and nothing else. */
+export interface ConditionDiff {
+  a: ConditionDiffSide
+  b: ConditionDiffSide
+  /** True when the two hash alike (`notes` excluded, as everywhere). */
+  identical: boolean
+  /**
+   * The differing fields, path-sorted. Deliberately just the facts: which
+   * fields differ and what each side says. No recommendation, no "this looks
+   * like a single-factor pair" — deciding whether two conditions are a usable
+   * comparison is the reviewer's call, and a tool that guessed it would be
+   * believed.
+   */
+  differences: ConditionFieldDiff[]
+  /** True when `notes` differs and nothing else does — a comment edit is not a factor. */
+  notesOnly: boolean
+}
+
+/**
+ * Flatten a document to leaf paths. Arrays are leaves: `env.keys` differing is
+ * one fact a reader wants whole, not three index-keyed ones.
+ */
+function leaves(value: unknown, prefix: string, sink: Map<string, unknown>): void {
+  if (!isPlainObject(value)) {
+    sink.set(prefix, value)
+    return
+  }
+  for (const [key, child] of Object.entries(value)) {
+    leaves(child, prefix === '' ? key : `${prefix}.${key}`, sink)
+  }
+}
+
+/**
+ * Field-by-field difference between two condition documents. Pure; `notes` is
+ * excluded from `identical` for the same reason it is excluded from the hash
+ * (a comment edit is not a new factor) but IS reported as a difference, so a
+ * reader is never surprised by text that changed.
+ * @param a - the first document.
+ * @param b - the second.
+ */
+export function diffConditionDocuments(a: unknown, b: unknown): { differences: ConditionFieldDiff[]; identical: boolean; notesOnly: boolean } {
+  const left = new Map<string, unknown>()
+  const right = new Map<string, unknown>()
+  leaves(a, '', left)
+  leaves(b, '', right)
+  const differences: ConditionFieldDiff[] = []
+  for (const path of [...new Set([...left.keys(), ...right.keys()])].sort()) {
+    const hasA = left.has(path)
+    const hasB = right.has(path)
+    if (hasA && hasB && jsonEquals(left.get(path), right.get(path))) continue
+    differences.push({
+      path,
+      ...(hasA ? { a: left.get(path) } : {}),
+      ...(hasB ? { b: right.get(path) } : {}),
+    })
+  }
+  const substantive = differences.filter(difference => difference.path !== 'notes')
+  return {
+    differences,
+    identical: substantive.length === 0,
+    notesOnly: substantive.length === 0 && differences.length > 0,
+  }
+}
+
+/** Whether a diff argument is a path rather than a bare condition id. */
+function looksLikePath(ref: string): boolean {
+  return ref.includes('/') || ref.includes(sep) || ref.startsWith('~') || ref.endsWith('.json')
+}
+
+/** Load one side of a diff: a path, or a condition id resolved against the repo. */
+async function loadSide(repo: string, ref: string, datasets: readonly string[]): Promise<{ side: ConditionDiffSide; document: unknown }> {
+  let path: string
+  let id: string
+  if (looksLikePath(ref)) {
+    const expanded = expandHome(ref)
+    path = isAbsolute(expanded) ? expanded : resolve(expanded)
+    id = (path.split(sep).pop() ?? ref).replace(/\.json$/, '')
+  } else {
+    if (!CONDITION_ID_RE.test(ref)) throw new EvalReadRefused(`${JSON.stringify(ref)} is neither a usable condition id nor a path`)
+    const found = datasets
+      .map(dataset => ({ dataset, path: join(repo, 'datasets', dataset, 'conditions', `${ref}.json`) }))
+      .filter(candidate => existsSyncSafe(candidate.path))
+    if (found.length === 0) {
+      throw new EvalReadRefused(
+        `no condition ${JSON.stringify(ref)} in ${datasets.length === 0 ? 'this repository' : datasets.join(', ')}`
+        + ' — pass a path, or name the dataset set',
+      )
+    }
+    if (found.length > 1) {
+      throw new EvalReadRefused(
+        `condition ${JSON.stringify(ref)} is declared by ${found.length} dataset sets (${found.map(candidate => candidate.dataset).join(', ')})`
+        + ' — name the dataset set, or pass a path',
+      )
+    }
+    path = (found[0] as { path: string }).path
+    id = ref
+  }
+  let document: unknown
+  try {
+    document = JSON.parse(await readFile(path, 'utf8'))
+  } catch (error) {
+    throw new EvalReadRefused(`cannot read condition ${path}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const { errors } = conditionDiagnostics(document)
+  return {
+    document,
+    side: { id, path, sha: errors.length === 0 ? hashConditionDocument(document) : null, errors },
+  }
+}
+
+function existsSyncSafe(path: string): boolean {
+  try {
+    statSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Diff two condition declarations field by field.
+ *
+ * Shows, never chooses: the answer is which fields differ and what each side
+ * says. Two conditions differing in exactly one field are a single-factor
+ * pair, and that is worth seeing — but whether the pair is worth RUNNING
+ * depends on things no file knows, so the verb stops at the facts.
+ * @param repo - the dataset repository root (already `~`-expanded).
+ * @param a - a condition id or a path to a declaration.
+ * @param b - the other one.
+ * @param only - dataset sets an id may resolve against; omit to scan every set
+ *   that declares conditions.
+ * @throws {@link EvalReadRefused} when a side cannot be resolved or read.
+ */
+export async function diffConditions(repo: string, a: string, b: string, only?: readonly string[]): Promise<ConditionDiff> {
+  const datasets = only !== undefined && only.length > 0 ? [...only] : await datasetsWithConditions(repo)
+  const left = await loadSide(repo, a, datasets)
+  const right = await loadSide(repo, b, datasets)
+  const { differences, identical, notesOnly } = diffConditionDocuments(left.document, right.document)
+  return { a: left.side, b: right.side, identical, notesOnly, differences }
 }
 
 // ── run status ──────────────────────────────────────────────────────────────

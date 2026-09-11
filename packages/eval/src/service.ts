@@ -23,12 +23,18 @@ import {
 } from './job.ts'
 import {
   EvalReadRefused,
+  diffConditions,
   listConditions,
   runStatus,
+  type ConditionDiff,
   type ConditionsReport,
   type RunStatusReport,
 } from './read.ts'
-import type { DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace } from './faces.ts'
+import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
+import { instanceCapabilityProbe } from './capability-probe.ts'
+import type {
+  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace,
+} from './faces.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
@@ -121,6 +127,76 @@ export class EvalService {
    *   session binding's whitelist.
    */
   conditions(options: { repo?: string; dataset?: string; session?: { id: string } } = {}): Promise<ConditionsReport> {
+    const scope = this.resolveRepoScope(options)
+    if (scope instanceof EvalReadRefused) return Promise.reject(scope)
+    return listConditions(scope.repo, scope.datasets)
+  }
+
+  /**
+   * Diff two condition declarations field by field — SHOWS, never chooses.
+   * Two conditions that differ in exactly one field are a single-factor pair,
+   * which is worth seeing; whether the pair is worth running depends on things
+   * no file knows, so the verb stops at the facts and makes no
+   * recommendation.
+   * @param options - the two references (a condition id, or a path), plus the
+   *   same repo / dataset / session resolution {@link EvalService.conditions}
+   *   uses.
+   * @throws {@link EvalReadRefused} when a repository or a side cannot be resolved.
+   */
+  conditionDiff(options: { a: string; b: string; repo?: string; dataset?: string; session?: { id: string } }): Promise<ConditionDiff> {
+    const scope = this.resolveRepoScope(options)
+    if (scope instanceof EvalReadRefused) return Promise.reject(scope)
+    return diffConditions(scope.repo, options.a, options.b, scope.datasets)
+  }
+
+  /**
+   * Provision one condition: resolve its `(harness, scope)` to a real scoped
+   * home, refuse unless that scope holds a credential, check the declaration
+   * against the scope's effective settings field by field, hash the home, and
+   * write `conditions/<id>.lock.json` beside the declaration.
+   *
+   * The ONE writer of a condition lock. Writes go only into the working copy
+   * `repo` names — nothing is committed, and the shared checkout stays
+   * untouched.
+   * @param conditionPath - path to the declaration (`~` expanded).
+   * @param options - the working copy to write into.
+   * @throws {@link EvalProvisionRefused} when the path, the declaration, or
+   *   the local-agent facade makes provisioning impossible; a condition that
+   *   simply is not ready comes back as a report with `written: false`.
+   */
+  provision(conditionPath: string, options: { repo: string; log?: (message: string) => void }): Promise<ProvisionReport> {
+    const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
+    if (localAgent === undefined) {
+      return Promise.reject(new EvalProvisionRefused(
+        'no localAgent service: provision reads the scoped home, its credential grade and its effective settings from the harness family'
+        + ' — run it from a live session (/eval conditions provision <condition.json> --repo <working copy>), or mount the dsh-local-agent plugin',
+      ))
+    }
+    // The capability probe is the one part of provision that needs a LIVE
+    // instance rather than a facade: the hash is what the instance's own
+    // catalog reads for that preset. Absent catalog, absent measurement —
+    // provision then warns CAPABILITIES_UNMEASURED and the readiness gate
+    // refuses the condition, which is the honest degrade.
+    const catalog = this.hosts?.get('capabilityCatalog') as CapabilityCatalogFace | undefined
+    return provisionCondition(conditionPath, {
+      repo: options.repo,
+      localAgent,
+      ...(options.log === undefined ? {} : { log: options.log }),
+      ...(catalog === undefined
+        ? {}
+        : { capabilities: instanceCapabilityProbe({ catalog, ...(options.log === undefined ? {} : { log: options.log }) }) }),
+    })
+  }
+
+  /**
+   * Resolve which repository and which dataset sets a read verb may see:
+   * `repo` wins; otherwise the calling session's datasets binding decides, and
+   * its whitelist is honoured — which datasets an agent may see is the human's
+   * decision, not the agent's.
+   */
+  private resolveRepoScope(
+    options: { repo?: string; dataset?: string; session?: { id: string } },
+  ): { repo: string; datasets: string[] | undefined } | EvalReadRefused {
     const binding = options.session === undefined
       ? undefined
       : (this.hosts?.get('datasets') as DatasetsBindingFace | undefined)?.binding(options.session)
@@ -128,20 +204,20 @@ export class EvalService {
       ? expandHome(options.repo)
       : binding?.repoPath
     if (repo === undefined || repo === '') {
-      return Promise.reject(new EvalReadRefused(
+      return new EvalReadRefused(
         'no dataset repository: pass repo, or ask the human to bind one for this session (/datasets bind <repoPath>)',
-      ))
+      )
     }
     const allowed = binding?.datasets
     if (options.dataset !== undefined && options.dataset !== '') {
       if (allowed !== undefined && !allowed.includes(options.dataset)) {
-        return Promise.reject(new EvalReadRefused(
+        return new EvalReadRefused(
           `dataset ${JSON.stringify(options.dataset)} is outside this session's binding (${allowed.join(', ')})`,
-        ))
+        )
       }
-      return listConditions(repo, [options.dataset])
+      return { repo, datasets: [options.dataset] }
     }
-    return listConditions(repo, allowed)
+    return { repo, datasets: allowed === undefined ? undefined : [...allowed] }
   }
 
   /**
@@ -209,11 +285,15 @@ export class EvalService {
     // `unit` segment needs it, and its absence is then a refusal that names
     // it — never a boot failure, never a silent fallback to the host path.
     const lab = this.hosts.get('lab') as LabFace | undefined
+    // Provenance only: the orchestrating instance's own capability face goes
+    // into run.meta and is never compared. Absent catalog, absent line.
+    const capabilityCatalog = this.hosts.get('capabilityCatalog') as CapabilityCatalogFace | undefined
     const deps: Partial<RunDeps> & { stateRoot?: string } = {}
     if (datasets !== undefined) deps.datasets = datasets
     if (mission !== undefined) deps.mission = mission
     if (localAgent !== undefined) deps.localAgent = localAgent
     if (lab !== undefined) deps.lab = lab
+    if (capabilityCatalog !== undefined) deps.capabilityCatalog = capabilityCatalog
     return runPlan(plan, resolved, deps)
   }
 
@@ -309,4 +389,7 @@ export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run.ts'
 export { EvalFinalizeRefused } from './finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
 export { EvalReadRefused } from './read.ts'
-export type { ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
+export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
+export { EvalProvisionRefused } from './provision.ts'
+export type { ProvisionReport } from './provision.ts'
+export type { ProvisionCheck } from './effective.ts'

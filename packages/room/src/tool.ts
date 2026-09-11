@@ -1,5 +1,5 @@
 /**
- * The room's model-facing tools, `room_invite`, `room_task`, and
+ * The room's model-facing tool DEFINITIONS, `room_invite`, `room_task`, and
  * `room_message`: the main
  * agent's paths into the room it belongs to. `room_invite` and
  * `room_message` PROMOTE: calling them in a plain session turns it into a
@@ -14,6 +14,14 @@
  * task is indistinguishable from a human-added one; `room_message` dispatches
  * a message to a member through the same engine path as the human's
  * `@member text`, minus the user bubble (the caller is the room's own agent).
+ *
+ * Since the tool-row split (M4') the core no longer REGISTERS these tools:
+ * the factories are consumed by the companion `@khorsheed/dsh-room-tool`,
+ * which mounts the tool row inside agent-preset compositions (session-granted,
+ * never at the profile root). The definitions are therefore returned
+ * UNTAGGED — the registering package applies its own tool-origin tag
+ * (AGENTS.md § Tool origin tagging — the owner is whichever package mounts
+ * the row).
  * @module @khorsheed/dsh-room/tool
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -27,18 +35,6 @@ import type {
   RoomUpdateTaskRequest, RoomUpdateTaskResult,
 } from './types.ts'
 
-/**
- * Tag every room tool with its origin before registration (the AGENTS.md
- * "Tool origin tagging" convention): a `Symbol.for('dsh.tool.origin')`-keyed
- * property — host-side only, never on the model wire. Generic form (not
- * `typeof defineTool`, which trips typert TS2321); same shape as the
- * datasets package's definePluginTool.
- */
-const definePluginTool = <T extends object>(def: T): T =>
-  Object.assign(def, {
-    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: '@khorsheed/dsh-room' },
-  })
-
 /** The slice of RoomService the tool drives. */
 export interface RoomInviteToolBackend {
   /** Validate and journal an invitation (see RoomService.inviteMember). */
@@ -51,7 +47,7 @@ export interface RoomInviteToolBackend {
  * @returns a registry-ready tool definition.
  */
 export function roomInviteTool(backend: RoomInviteToolBackend) {
-  return definePluginTool(defineTool({
+  return defineTool({
     name: 'room_invite',
     description:
       'Invite a CLI agent member into the current session (any session works — inviting promotes it '
@@ -139,7 +135,7 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
           : `Member ${result.value.name} joined the room (idle; @-address it to dispatch work).`,
       }
     },
-  }))
+  })
 }
 
 /** The slice of RoomService the room_task tool drives. */
@@ -162,7 +158,7 @@ export interface RoomTaskToolBackend {
  * @returns a registry-ready tool definition.
  */
 export function roomTaskTool(backend: RoomTaskToolBackend) {
-  return definePluginTool(defineTool({
+  return defineTool({
     name: 'room_task',
     description:
       'Manage the current room\'s SHARED task board (only usable inside a room session). This '
@@ -295,7 +291,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
         }
       }
     },
-  }))
+  })
 }
 
 /** The slice of RoomService the room_message tool drives. */
@@ -315,7 +311,7 @@ export interface RoomMessageToolBackend {
  * @returns a registry-ready tool definition.
  */
 export function roomMessageTool(backend: RoomMessageToolBackend) {
-  return definePluginTool(defineTool({
+  return defineTool({
     name: 'room_message',
     description:
       'Dispatch a message to a member of the current room (works in any session — it promotes the '
@@ -374,5 +370,5 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
           + 'appears in the room as member speech. Do not wait on it; the human watches the room.',
       }
     },
-  }))
+  })
 }

@@ -4,10 +4,11 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
+import { roomInviteTool, roomMessageTool, roomTaskTool } from '../src/tool.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
-/** The REAL composition plus a stubbed tools registry capturing the registered definition. */
+/** The REAL composition; tools come from the factories (registration moved to the companion). */
 async function boot() {
   const ctx = new Context()
   stubAgents(ctx)
@@ -30,16 +31,13 @@ async function boot() {
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
-  expect(tools.register).toHaveBeenCalledTimes(3)
-  const registered = tools.register.mock.calls.map(call => call[0] as ToolDefinition)
-  // Every room tool carries the origin tag (AGENTS.md "Tool origin tagging").
-  for (const entry of registered) {
-    expect((entry as Record<symbol, unknown>)[Symbol.for('dsh.tool.origin')])
-      .toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
-  }
-  const tool = registered.find(entry => entry.name === 'room_invite')!
-  const taskTool = registered.find(entry => entry.name === 'room_task')!
-  const messageTool = registered.find(entry => entry.name === 'room_message')!
+  // The split, pinned: mounting the core registers NO model tool — the
+  // companion `@khorsheed/dsh-room-tool` owns registration now (its own spec
+  // covers registration and the origin tag).
+  expect(tools.register).not.toHaveBeenCalled()
+  const tool = roomInviteTool(service)
+  const taskTool = roomTaskTool(service)
+  const messageTool = roomMessageTool(service)
   return { ctx, service, tool, taskTool, messageTool }
 }
 

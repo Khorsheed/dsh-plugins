@@ -29,6 +29,8 @@
  */
 
 import { readFile, readdir } from 'node:fs/promises'
+import { resolveDshSessionLog } from './session-log.ts'
+import type { DshSessionLog } from './session-log.ts'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { zstdDecompress } from 'node:zlib'
@@ -67,16 +69,28 @@ async function decompressZstdFrames(content: Buffer): Promise<string> {
   return parts.join('')
 }
 
+/** One session log read back: its events, and which file they came from. */
+export interface SubDshEventLog {
+  /** The session's events, header line excluded. */
+  readonly events: SessionEvent[]
+  /** The log file the events were read from (its generation and encoding). */
+  readonly log: DshSessionLog
+}
+
 /**
  * Read a sub-dsh session's event log from the scoped home. The session lives
- * at `<homeDir>/sessions/<workspace>/<id>/` (the runner passes the bare uuid)
- * as `session.jsonl.zstd` or plaintext `session.jsonl`; the first line is the
- * header, the rest are events.
+ * at `<homeDir>/sessions/<workspace>/<id>/` (the runner passes the bare uuid);
+ * WHICH file inside that directory holds the history is the host's choice —
+ * `session.jsonl` on the original generation, `session.v3.jsonl.zstd` on host
+ * 0.1.5 — so the name is resolved, never assumed (see
+ * {@link resolveDshSessionLog}). The first line is the header, the rest are
+ * events.
  * @param homeDir - the `dsh` harness's scoped home.
  * @param sessionId - the sub-dsh session id (same uuid as the child session).
- * @returns the parsed events, or undefined when the session is absent/unreadable.
+ * @returns the events and their source file, or undefined when the session is
+ *   absent or unreadable.
  */
-export async function readSubDshEvents(homeDir: string, sessionId: string): Promise<SessionEvent[] | undefined> {
+export async function readSubDshEvents(homeDir: string, sessionId: string): Promise<SubDshEventLog | undefined> {
   let workspaces: string[]
   try {
     workspaces = await readdir(join(homeDir, 'sessions'))
@@ -85,28 +99,27 @@ export async function readSubDshEvents(homeDir: string, sessionId: string): Prom
   }
   for (const workspace of workspaces) {
     for (const name of [sessionId, `session-${sessionId}`]) {
-      const dir = join(homeDir, 'sessions', workspace, name)
-      for (const file of ['session.jsonl.zstd', 'session.jsonl']) {
-        let text: string
-        try {
-          const content = await readFile(join(dir, file))
-          text = file.endsWith('.zstd') ? await decompressZstdFrames(content) : content.toString('utf8')
-        } catch {
-          continue
-        }
-        const events: SessionEvent[] = []
-        for (const line of text.split('\n')) {
-          if (line === '') continue
-          try {
-            const parsed = JSON.parse(line) as { type?: string }
-            if (parsed.type === 'session') continue
-            events.push(parsed as SessionEvent)
-          } catch {
-            // A torn tail line (killed mid-flush) is skipped, not fatal.
-          }
-        }
-        if (events.length > 0) return events
+      const log = await resolveDshSessionLog(join(homeDir, 'sessions', workspace, name))
+      if (log === undefined) continue
+      let text: string
+      try {
+        const content = await readFile(log.path)
+        text = log.compressed ? await decompressZstdFrames(content) : content.toString('utf8')
+      } catch {
+        continue
       }
+      const events: SessionEvent[] = []
+      for (const line of text.split('\n')) {
+        if (line === '') continue
+        try {
+          const parsed = JSON.parse(line) as { type?: string }
+          if (parsed.type === 'session') continue
+          events.push(parsed as SessionEvent)
+        } catch {
+          // A torn tail line (killed mid-flush) is skipped, not fatal.
+        }
+      }
+      if (events.length > 0) return { events, log }
     }
   }
   return undefined
@@ -141,6 +154,15 @@ export interface DshMirrorDelta {
    * no tool call.
    */
   toolCalls?: LocalAgentToolCalls
+  /**
+   * The session-log file this pass read, by basename (`session.jsonl.zstd`,
+   * `session.v3.jsonl.zstd`, …). Carried so a read-back says WHICH generation
+   * it read rather than leaving a future filename change to look like an empty
+   * session — the failure this field exists because of. Absent when no log was
+   * found, which is the same "nothing to read" the other fields report by
+   * staying absent.
+   */
+  sessionLogFile?: string
 }
 
 /**
@@ -362,8 +384,9 @@ export async function mirrorDshSession(
 ): Promise<DshMirrorDelta> {
   const empty: DshMirrorDelta = { texts: [], total: 0 }
   try {
-    const events = await readSubDshEvents(homeDir, subSessionId)
-    if (events === undefined) return empty
+    const read = await readSubDshEvents(homeDir, subSessionId)
+    if (read === undefined) return empty
+    const { events, log } = read
     // The round mirrors the sub-dsh turn with the same number: the parent's
     // turn/start count IS this round's number (appended before spawn), and the
     // sub-dsh numbers its turns identically across fresh and resume rounds.
@@ -441,6 +464,7 @@ export async function mirrorDshSession(
     return {
       texts,
       total: mirrored + mirroredTodos.length + texts.length + todosAppended,
+      sessionLogFile: log.filename,
       ...observation,
     }
   } catch (error) {

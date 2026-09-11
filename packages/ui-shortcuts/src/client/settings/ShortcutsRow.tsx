@@ -5,10 +5,21 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge, so this
 // component's props type matches the plugin configuration card contract.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import { bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey } from '../bindings.ts'
+import { bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey, mouseBindingOfEvent, partLabel } from '../bindings.ts'
+import type { BindingPart } from '../bindings.ts'
 import type { ShortcutPreference } from '../../settings.ts'
 import type { ShortcutActionContribution } from '../contract.ts'
+import { MouseGlyph } from './MouseGlyph.tsx'
 import css from './ShortcutsRow.module.css'
+
+/** Stable React key for one gesture slot (slot identities are unique per kind). */
+function partKey(part: BindingPart): string {
+  switch (part.kind) {
+    case 'modifier': return `modifier:${part.modifier}`
+    case 'key': return `key:${part.key}`
+    case 'mouse': return `mouse:${part.button}`
+  }
+}
 
 /** Registration-side preference face. */
 export interface ShortcutsRowInjected {
@@ -26,7 +37,7 @@ export interface ShortcutsRowInjected {
   setPreference: (id: string, preference: ShortcutPreference) => void
   /** Restore one action to its shipped default binding. */
   reset: (id: string) => void
-  /** Enter or leave key-capture mode for one action. */
+  /** Enter or leave gesture-capture mode for one action. */
   setCapturing: (id: string | null) => void
 }
 
@@ -38,7 +49,7 @@ export type ShortcutsRowProps =
 
 /**
  * Render the shortcut preferences: one row per registered action with its
- * current binding, a key-capture recorder, and a reset-to-default control.
+ * current binding, a gesture recorder, and a reset-to-default control.
  * @param props - composed Settings slot props.
  * @returns the preference section.
  */
@@ -49,11 +60,22 @@ export function ShortcutsRow({
   const preferences = usePreferences(value => value)
   const capturing = useCapturing(value => value)
 
-  // Key capture: while one action records, every keydown completes, cancels
-  // (Escape), or unbinds (Delete/Backspace). The chord is fully claimed in the
-  // capture phase so the browser default (e.g. save) and the settings modal's
-  // own Escape never fire, and the policy flag keeps the global wiring
-  // standed down while recording. Leaving the row aborts the capture.
+  // The one slot the dictionaries own: modifier and key legends are keycap
+  // legends and read the same in every language, while a mouse button is prose
+  // — and it renders as the device diagram plus its word.
+  const visibleLabel = (part: BindingPart): string => part.kind === 'mouse'
+    ? t(part.button === 1 ? 'gesture.middle' : 'gesture.right')
+    : partLabel(part)
+
+  // Gesture capture: while one action records, the next keydown or bindable
+  // mousedown completes the binding; Escape cancels and Delete/Backspace
+  // unbinds. The event is fully claimed in the capture phase so the browser
+  // default (save, open-file) and the settings modal's own Escape never fire,
+  // and the policy flag keeps the global wiring standed down while recording —
+  // the global listeners are registered before this one, so they see the
+  // capture flag on the very event that completes a binding. The primary
+  // mouse button is deliberately not bindable and is left alone: it is how the
+  // recorder itself is operated. Leaving the row aborts the capture.
   useEffect(() => {
     if (capturing === null) return
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -72,8 +94,20 @@ export function ShortcutsRow({
       setPreference(capturing, bindingOfEvent(event))
       setCapturing(null)
     }
+    const onMouseDown = (event: MouseEvent): void => {
+      const binding = mouseBindingOfEvent(event)
+      if (binding === null) return
+      event.preventDefault() // autoscroll / primary-selection paste must not start
+      event.stopPropagation()
+      setPreference(capturing, binding)
+      setCapturing(null)
+    }
     document.addEventListener('keydown', onKeyDown, true)
-    return () => { document.removeEventListener('keydown', onKeyDown, true) }
+    document.addEventListener('mousedown', onMouseDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('mousedown', onMouseDown, true)
+    }
   }, [capturing, setPreference, setCapturing])
 
   useEffect(() => () => { setCapturing(null) }, [setCapturing])
@@ -94,7 +128,7 @@ export function ShortcutsRow({
                 <div className={css.fieldDesc}>{translate(action.description.ns, action.description.key)}</div>
                 {modified && (
                   <div className={css.defaultHint}>
-                    {t('default', { binding: formatBinding(action.defaultBinding) })}
+                    {t('default', { binding: formatBinding(action.defaultBinding, visibleLabel) })}
                   </div>
                 )}
               </div>
@@ -112,9 +146,12 @@ export function ShortcutsRow({
                       : preference.kind === 'none'
                         ? t('unbound')
                         : bindingParts(preference).map((part, index) => (
-                          <Fragment key={part}>
+                          <Fragment key={partKey(part)}>
                             {index > 0 && <span className={css.plus}>+</span>}
-                            <span className={css.keycap}>{part}</span>
+                            <span className={css.keycap}>
+                              {part.kind === 'mouse' && <MouseGlyph button={part.button} />}
+                              {visibleLabel(part)}
+                            </span>
                           </Fragment>
                         ))}
                   </button>

@@ -200,6 +200,21 @@ export const PERMISSIONS_BY_HARNESS: Readonly<Record<string, readonly string[]>>
   kimi: ['auto-approve'],
 }
 
+/**
+ * The harnesses whose capability face this family can COMPOSE, and therefore
+ * the only ones a condition may name a `preset` for.
+ *
+ * A preset is an agent-preset roster the evaluation instance provisions into
+ * the harness's scoped home — which it can only do for the sub-dsh, whose
+ * profile it writes (`@khorsheed/dsh-local-agent-dsh`'s sub-profile). The
+ * three external CLIs run their vendor's own composition: a condition
+ * declaring `preset` for one of them would be a claim with nothing behind it,
+ * so validate refuses it rather than hashing a fiction into the subject's
+ * identity. Their equivalent — a skill pack materialized into the scoped
+ * home — is `skills.pack`, which this family does not yet provision either.
+ */
+export const PRESET_CAPABLE_HARNESSES: readonly string[] = ['dsh']
+
 /** Every word any harness accepts; the schema-level enum. */
 export const PERMISSION_VALUES: readonly string[] =
   [...new Set(Object.values(PERMISSIONS_BY_HARNESS).flat())].sort()
@@ -418,6 +433,23 @@ export const PLAN_SCHEMA: SchemaObject = {
             memory: { type: ['string', 'number'] },
           },
         },
+        egressCheck: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['command'],
+          description: 'Optional. One command run INSIDE each freshly acquired unit — the readiness probe\'s before it delegates, each cell\'s between acquire and populate. Exit 0 passes; anything else (including a timeout) refuses the whole run as EGRESS_UNAVAILABLE, before a single delegation is spent. Declare it on any run whose units sit on an internal network: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say. The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own.',
+          properties: {
+            command: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'argv, run through lab.verify inside the unit (name a shell explicitly if you want one). Must be non-empty and carry no empty word — the run refuses an empty one as EGRESS_CHECK_MALFORMED, since this subset cannot say minItems.',
+            },
+            timeoutMs: {
+              type: 'number',
+              description: 'Budget for the check; default 30000, and must be positive. A proxy that is up answers in milliseconds — this is sized for a TLS handshake, not for a model.',
+            },
+          },
+        },
       },
     },
     notes: {
@@ -469,6 +501,44 @@ export const LOCK_SCHEMA: SchemaObject = {
       required: ['sha'],
       description: 'Present once provision has materialized the scoped home.',
       properties: { sha: { type: 'string' } },
+    },
+    provisioned: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['at', 'effective'],
+      description: 'What `dsh-eval conditions provision` read back off the scope it provisioned. ADDITIVE in /1: a lock written before provision existed simply has no such key, and validate reads its absence as "provision has not run" rather than as a violation.',
+      properties: {
+        at: { type: 'integer', description: 'Epoch ms the provision ran.' },
+        cliVersion: { type: ['string', 'null'], description: "The harness CLI's own version as the CLI reported it; null when it could not be asked." },
+        effective: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['model', 'reasoningEffort', 'permissions', 'endpoint'],
+          description: "The four condition fields as the scope's effective settings answered them. null means the harness declares no such knob — which is itself the honest input, never a substituted guess.",
+          properties: {
+            model: { type: ['string', 'null'] },
+            reasoningEffort: { type: ['string', 'null'] },
+            permissions: { type: ['string', 'null'] },
+            endpoint: { type: ['string', 'null'] },
+          },
+        },
+        preset: {
+          type: ['string', 'null'],
+          description: 'The preset the provisioned environment composes, read back from what was written — not copied from the declaration. null means the environment rosters none.',
+        },
+        capabilities: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sha'],
+          description: 'The capability fingerprint of the provisioned environment: the hash capability-catalog computes over its canonical skill/tool face (the `caps:` tag without its prefix). It is what turns the condition\'s `preset` claim into a checkable fact; absent means nobody measured it, and the readiness gate refuses a preset claim without it.',
+          properties: {
+            sha: { type: 'string', description: '64-hex sha256 of the canonical capability face.' },
+            preset: { type: ['string', 'null'], description: 'The preset the snapshot was taken under.' },
+            skills: { type: 'integer', description: 'How many skills the face carries (a reader aid; the sha is the identity).' },
+            tools: { type: 'integer', description: 'How many tools the face carries (a reader aid; the sha is the identity).' },
+          },
+        },
+      },
     },
   },
 }

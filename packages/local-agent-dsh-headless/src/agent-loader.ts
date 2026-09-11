@@ -1,8 +1,9 @@
 /**
  * Agent loading and turn aggregation shared by the one-shot runner and the
  * serve loop: both drive a direct Agent over the core registry with the same
- * model selection, the same scoped installModelSelection setup, and the same
- * caller-supplied session identity, differing only in process lifetime.
+ * model selection, the same scoped installModelSelection setup, the same
+ * preset join, and the same caller-supplied session identity, differing only
+ * in process lifetime.
  * @module @khorsheed/dsh-local-agent-dsh-headless/agent-loader
  */
 
@@ -76,6 +77,44 @@ export function applyModelRequest(selection: ModelSelection, request: string | u
 }
 
 /**
+ * The optional agent-preset roster: present only when the sub-profile's patch
+ * composes one (`local-agent-dsh`'s provisioning writes that layer when a
+ * scope names a preset).
+ */
+interface PresetRosterSlice {
+  mount?: (agentCtx: Context, id?: string) => Promise<{ id: string }>
+  defaultId?: string
+}
+
+/**
+ * Join this agent to the sub-profile's preset, when the sub-profile composes
+ * a roster.
+ *
+ * Without a roster this is a no-op and the agent reads the model-facing rows
+ * off the global layer — byte for byte the behavior of every sub-dsh before
+ * the roster layer existed, and the right answer for a rosterless
+ * composition (`@deepseek-ai/dsh-agent-presets` README, "Composing a child
+ * agent"). With one, the preset decides the tools, prompt sections and
+ * skills of every session this process hosts, which is what makes the
+ * scope's capability face a per-condition factor instead of an instance-wide
+ * constant.
+ *
+ * A roster that REFUSES (unknown preset id, broken composition) is not
+ * degraded past: mounting rejects, the agent creation rolls back, and the
+ * launch fails naming the preset. A sub-dsh that silently ran the global
+ * layer after being told to run preset X would attribute the round to a
+ * capability face it never had.
+ * @param ctx - plugin context (where the roster service is resolved).
+ * @param agentCtx - the agent's scope context, which joins the standing mount.
+ * @returns the preset id joined, or undefined when the composition has no roster.
+ */
+export async function joinSubDshPreset(ctx: Context, agentCtx: Context): Promise<string | undefined> {
+  const roster = ctx.get('agentPresets' as never) as PresetRosterSlice | undefined
+  if (roster?.mount === undefined) return undefined
+  return (await roster.mount(agentCtx)).id
+}
+
+/**
  * Create or resume the direct Agent for one caller-named session. The caller
  * resolved the core services first (both call sites bail out on a disposed
  * tree). The caller-supplied id is authoritative for both branches: the
@@ -103,12 +142,17 @@ export async function loadSubDshAgent(
   // that DOES configure one has to join it here first
   // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
   const agentOptions = { provider: selection.provider, model: selection.model }
-  const setup = (agentCtx: Context) => {
+  const setup = async (agentCtx: Context): Promise<void> => {
     const selected: ModelSelectionRef = { current: selection, assembled: undefined }
     // The released installModelSelection registers the two scoped waterfall
     // listeners and returns their disposer; the run owns the whole process
     // lifetime, so the disposer is deliberately dropped.
     installModelSelection(agentCtx, selected)
+    // The preset join happens INSIDE setup, before the agent is published:
+    // the roster parents this agent's scope key to the preset's standing
+    // mount, so the preset's tools and prompt sections exist before the first
+    // prompt assembly. A rejection here rolls the creation back.
+    await joinSubDshPreset(ctx, agentCtx)
   }
   if (identity.resumeSessionId !== undefined) {
     return agents.resume({

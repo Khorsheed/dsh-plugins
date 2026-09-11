@@ -74,11 +74,26 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 <details>
 <summary>内部结构（点击展开）</summary>
 
+**会话日志按代次解析，不写死文件名。** 子 dsh 的历史住在 `<作用域目录>/sessions/<项目>/<会话 id>/` 里，但**哪个文件**是宿主的代次选择：最初的一代叫 `session.jsonl`，此后每一代带一个小写 `vN`——宿主 0.1.5 写的是 `session.v3.jsonl.zstd`；两种基名都可能再带 `.zstd`（压缩是缺省）。本包按宿主自己的规则解析目录里的每个条目（`^session(\.v[1-9][0-9]*)?\.jsonl$`，去掉压缩后缀后匹配——`.v0`、前导零、大写、`session.lock` 与临时文件都不是代次），取**版本号最高**的那一份，并把选中的文件名带回读回结果（`sessionLogFile`）。
+
+写死一个文件名的代价是实测过的：宿主升到 0.1.5 之后，一轮委派照样 settle 成 `completed`，而 observedModel、usage、toolCalls **三样一起变成缺位**，`/dsh sessions` 一条都列不出来——读不到日志与「这一轮什么都没产生」在下游长得一模一样。会话镜像与 `/dsh sessions` 因此走同一个解析函数：两个读者不可能对「历史在哪个文件里」有不同看法。旧线的 `session.jsonl(.zstd)` 继续认，历史目录照读。
+
 **模型回读与 cwd 覆盖。** 每轮 settle 后，provider 从子会话事件自身读取实际模型：本轮最后一个 `assistant/message` 事件的 `message.source`，格式化为 `provider/model`（与 effectiveSettings 快照报告已配置模型的形状一致）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
 **工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。数的是**本轮窗口**（模型与用量取的同一段 roundSpan）里的 `tool/call` 事件，按事件自带的工具名归类——因此 live 轮询已经镜像过的一轮，settle 那遍照样报得出真实计数。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。
 
 **命名 scope。** 带 scope 的委派跑 `<homesRoot>/dsh@<名>`：子 profile 随目录走——目录建立时就地 provision 一份，因此该 scope 的轮从它自己的 profile 起 sub-dsh、会话日志也写在它自己那儿。凭据不在目录里（dsh 通过宿主实例认证），所以命名 scope 换的是 profile 与会话记录，不是账号。只走 exec：长驻 `serve` 按成员绑的是缺省目录。
+
+**按 scope 的 preset roster（能力面成为因子）。** 子 profile 的 patch 可以多带一层：一条 `insert` 行挂 `@deepseek-ai/dsh-agent-presets`，`default` 写这个 scope 的 preset id；headless 的 agent loader 在 agent setup 里 join 它。不带这一层就是本字段出现之前的表现——模型可见的行在宿主面，agent 从全局层读。带上之后**这个作用域目录就是能力面**：两个 scope 的 roster 写两个 preset，就是两个受试对象，差别是一份人能读的文件。
+
+```ts
+import { provisionDshSubProfile, readSubProfilePreset } from '@khorsheed/dsh-local-agent-dsh/provision'
+
+provisionDshSubProfile(scopedHome, { preset: { id: 'eval-lean' } })
+readSubProfilePreset(scopedHome)   // 'eval-lean'——生成的层也是可解析的层
+```
+
+preset 目录从哪来：子 dsh 以 `DSH_HOME=<作用域目录>` 启动，所以 roster 自带的用户根就是 `<作用域目录>/.agent-presets`——把一份 preset 目录放在那里，这个 scope 就有了自己的 preset（`roots` / `includeShippedRoot` / `includeUserRoot` 可另行指定）。roster 模块**不软链**：它是官方包，本来就在 dsh 安装锚点的闭包里、与 `@deepseek-ai/dsh-base` 并列。链第二份会给它第二份 `@deepseek-ai/cordis`，而 cordis 按实例身份做服务查找与类型判断，症状是静默的服务缺失而不是报错（与上文「双文件系统契约」里 bundle 那一节同一个坑）。锚点里真没有它的部署会拿到 loader 自己那句「模块解析不了」，比这一步能说的更准。preset id 只接受 `[a-z0-9][a-z0-9-]*`（它是目录名）。撤掉 `preset` 再 provision 一次，这一层原样消失。
 
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`，其余（会话镜像、settle、记录）逐字节不变。`env` 必须给出容器内的 `DSH_HOME`；解析出的 API key 只以 `-e DEEPSEEK_API_KEY` 的**名字**上 argv，值留在 docker 客户端环境里，不进宿主进程表。容器轮另有两条本包独有的行为。其一，**自动补 `NODE_OPTIONS=--use-env-proxy`**（调用方在 `target.env` 里自己给了就不覆盖）：dsh 的 HTTP 客户端是 node 的 `fetch`（undici），**默认不读** `HTTP(S)_PROXY`，在只有白名单代理、没有 NAT 出网的单元里会直连 API 并当场失败，而代理连一条 `CONNECT` 都收不到；这个开关打开 undici 的 `EnvHttpProxyAgent`。四家里只有 dsh 需要它，因此由 provider 自动补上，并在 `effectiveSettings.containerNodeOptions` 里报出来让条件文件看得见。其二，**跳过宿主侧子 profile 的 provisioning**：那份 profile 的 `node_modules` 符号链接指向宿主上的 headless bundle，在单元里解析不到；而作用域目录是 bind 挂载的，写进去等于在单元真正会读的目录里放一份坏 profile。容器轮的入口与 profile 由调用方用既有旋钮点名（`cliLaunch`、`profileName`），且**单元里必须备好家族 headless bundle 及其运行期依赖闭包**——镜像自带的 in-box `headless` profile 是另一个更小的 app，不认 `--session-id`/`--resume`，不足以承载一次委派轮。实测：`eval-env:pinned` 单元里备好之后，一次「回答 2+2」settle 为 `completed`、输出 `4`，`observedModel` 从容器写进宿主作用域目录的子 dsh 会话日志里回读为 `deepseek-official/deepseek-v4-flash`。
 

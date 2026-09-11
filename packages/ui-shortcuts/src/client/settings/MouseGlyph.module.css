@@ -1,0 +1,37 @@
+/* Top-view mouse diagram drawn inside a mouse-bound keycap. Geometry is
+   viewBox-relative (16x22); the keycap sizes the SVG, so the same markup works
+   at the shipped 14x19 and in a zoomed/print rendering. */
+
+.mouse {
+  display: block;
+  flex: none;
+  width: 14px;
+  height: 19px;
+  /* The silhouette is secondary to the keycap's word; the lit button carries
+     the accent, so the diagram reads as a device, not as another key. */
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mouse .body {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.mouse .split {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.mouse .wheel {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+/* The claimed button: accent fill, kept after `.wheel` so the lit wheel wins
+   the equal-specificity tie on `fill` while keeping its own stroke. */
+.mouse .lit {
+  fill: var(--dsw-alias-state-business-primary);
+}

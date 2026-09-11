@@ -33,6 +33,10 @@
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
     },
+    "./tool": {
+      "types": "./lib/types/tool.d.ts",
+      "default": "./lib/tool.js"
+    },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
@@ -73,7 +77,8 @@
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "@khorsheed/dsh-mission-tool": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-api-remotes": { "optional": true },
@@ -84,13 +89,15 @@
     "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
     "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
     "@deepseek-ai/dsh-invariants": { "optional": true },
-    "react": { "optional": true }
+    "react": { "optional": true },
+    "@khorsheed/dsh-mission-tool": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-store": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1",
@@ -109,6 +116,7 @@
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "@khorsheed/dsh-mission-tool": "workspace:*",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
@@ -141,9 +149,9 @@
       "platform": "web"
     },
     "compat": {
-      "minHost": "0.1.2-rc.1",
-      "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while model tools, the service surface, and the CLI stay fully functional. The model-tool face is registered as a mount-time group (config `tools`: all / read / none), so a profile may trim it deliberately; the service surface, CLI, slash command, and tab are unaffected by that choice. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer. The tab is live-smoke-tested on the 0.1.0-rc.8 web profile; earlier release lines share the same gateway conventions but were not smoke-tested.",
-      "verifiedHost": "0.1.2-rc.1"
+      "minHost": "0.1.5-rc.1",
+      "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while the service surface and the CLI stay fully functional. The model-tool face is NOT registered by this package any more: the companion `@khorsheed/dsh-mission-tool` owns it, and an agent preset grants it per session (`tools`: all / read / none on that row) — this core's service surface, CLI, slash command, and tab are unaffected by that choice. The 任务 tab self-hides in sessions whose preset composition names no `@khorsheed/dsh-mission-tool` row (fail-open on every unreadable path). The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer. The tab is live-smoke-tested on the 0.1.0-rc.8 web profile; earlier release lines share the same gateway conventions but were not smoke-tested.",
+      "verifiedHost": "0.1.5-rc.1"
     }
   },
   "dependencies": {

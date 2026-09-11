@@ -4,7 +4,7 @@
 
 **在一个界面里跑对照实验：同一批题交给不同的 harness、模型、preset 或 skill，按题配对比较。** 题库、条件、计划进 git 评审；执行由确定性编排器驱动；判定分脚本、LLM 初评、人终评三源互不覆盖；结论随自包含 bundle 导出。基础体验与本地 Agent 家族全部内含。
 
-> **状态**：I2 已收口（2026-09-08）：编排器 v0（run 循环、判官、报告、只读工具）合入 main；pilot A 在宿主上真跑 F2 + F3 × codex / dsh 三格到 released，报告因无环境指纹如实拒绝比较，判官一致性 κ 0.655（单格支撑），第一份结论是 14 条缺口而不是名次（题库 `docs/pilot-a-log.md`）。I3 已收口（2026-09-09）：一格在容器内走完全流程、release 经闸；四家在容器内跑通同一题（P0），报告四条不变量首次全部成立、比较节首次打开、效率表 token 四列有数（题库 `docs/pilot-b-log.md`）；阶段三的数据缺口记 T19d。I4 进行中：放宽因子。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)。路线图里的「dsh-eval 整合包」即本 profile。
+> **状态**：I2 已收口（2026-09-08）：编排器 v0（run 循环、判官、报告、只读工具）合入 main；pilot A 在宿主上真跑 F2 + F3 × codex / dsh 三格到 released，报告因无环境指纹如实拒绝比较，判官一致性 κ 0.655（单格支撑），第一份结论是 14 条缺口而不是名次（题库 `docs/pilot-a-log.md`）。I3 已收口（2026-09-09）：一格在容器内走完全流程、release 经闸；四家在容器内跑通同一题（P0），报告四条不变量首次全部成立、比较节首次打开、效率表 token 四列有数（题库 `docs/pilot-b-log.md`）；阶段三的数据缺口记 T19d。I4 进行中：放宽因子——机制已齐（作用域、模型、provision 与 lock、能力哈希实测、job 起的容器路径与出网自检、dsh 的会话回读），三份 pilot 待跑（题库 `docs/i4-pilots-log.md`）。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)。路线图里的「dsh-eval 整合包」即本 profile。
 
 ## 定位
 
@@ -137,7 +137,7 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 第 23 个成员是 **`@khorsheed/dsh-eval`**（编排器，I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。待补：判官委派（T9）、`dsh-eval report`（T10）、只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status`（T14）。
 
-`capability-catalog` 在这里多一个用途：它按 preset 的 standing scope 读注册表，是「这个条件下 agent 有哪些工具和 skill」的取证来源，I4 让它输出可哈希的能力清单。
+`capability-catalog` 在这里多一个用途：它按 preset 的 standing scope 读注册表，是「这个条件下 agent 有哪些工具和 skill」的取证来源。T32 起它给出 `snapshotFor(presetId)` 与 `hashOf(snapshot)`：规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters（描述措辞不进——改一次文案不该换一个受试对象），哈希写作 `caps:<sha256>`。编排实例自己的那份记进 `run.meta.orchestrator.capabilities` 做取证；受试对象那份由 provision 算进 lock 的 `provisioned.capabilities`，就绪检查据此核对条件声明的 `preset`。
 
 ### 工具按域开放
 
@@ -150,6 +150,8 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 | lab | 不开 | 全部 | status、release |
 | eval | `eval_conditions` `eval_plan_validate` `eval_run_status`；不开 run | 内核 | 批准、run、report |
 | tool-subagent（四家委派工具） | 不开——三行 `tools: none`，第四家默认不挂（I3·T27 落地） | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
+
+**M4'③ 起这三个机制插件拆成 core + companion**：profile 根只挂 core（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归 companion，所以上表的按域 tier 由 pack 的 `eval` 预设的三行授予——`mission-tool: read`、`datasets-tool: authoring`、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这三套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。三个伴生包随 pack 安装：`package.json` 的成员清单加依赖，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 
@@ -276,7 +278,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 6. **prompt 是 visible 层文件的逐字节内容。** 母 agent 不参与 prompt 构造；prompt 哈希入 refs。
 7. **超时与轮次上限归编排器。** provider 不管；取消原因记录。
 8. **预算用选手活跃时长，不用墙钟。** 各次委派运行时长之和；墙钟只作解释变量。
-9. **判官不得是选手之一；判前去指纹；双采样报一致性。**
+9. **判官显式 pin 模型；每格由谁判进报告；自评格标出。** 判前去指纹，每位判官双采样报一致性，可以列多位判官组成面板。判官与选手同模型**不再拒绝**——要评的就是全部模型时评委必然与某个选手重合，公开榜单的做法是多评委加披露而不是排除——改为每条判定带判官（条件 id 与模型），报告逐格列出由谁判，同模型的格标「自评」，一致性一节在同判官 κ 之外多一行跨判官一致性。（2026-09-10 放宽；原文「判官不得是选手之一」见 I4·T31 的 Agent Note。）
 10. **跨家效率用标价成本或活跃秒数；token 只在同模型内比。**
 11. **运行顺序随机交错并记录种子。**
 12. **销毁路径唯一。** 评测实例的 agent preset 不挂 Bash 与 docker；只有编排器持有 docker socket。执行点见[同名小节](#冻结决策-12-的执行点eval-预设)。
@@ -292,7 +294,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 | **I2 编排器 v0 + pilot A** | 宿主插件 + CLI，只覆盖阶段一二；F2 + F3 × 四家 × 3 rep，每格独立 cwd | `@khorsheed/dsh-eval` 进成员清单；模板由 manifest 生成；`script` 与 `llm-draft` 自动入库；模型回读；datasets 金丝雀字段；datasets 与 mission 的 `tools` 分组配置；bundle；`dsh-eval report` 配对表 | 一格全自动跑完；一份带保留条款的结论；判官一致性有数字 |
 | **I3 容器化 + 阶段三四** | 验证题集级镜像；四家 Linux CLI；容器内 exec；复合指纹；verify 探针脚本；pilot A 的缺口（活性探测、finalize 再入口、负分判据与权重、CLI 版本回读、可判性检查） | lab 复合指纹；provider 容器包装或 CLI 驱动独立包；F2 阶段三的探针；阶段一二的 objective 探针；eval preset | 容器内一格走完全流程，release 经闸；四家在容器内跑通同一题 |
 | **I4 放宽因子** | 条件参数化：模型、preset、skill 包 | provider 的模型参数与每条件 scoped home 覆盖；`dsh-eval conditions provision`；条件注册表数据面；capability-catalog 能力清单哈希 | dsh × 两模型的配对结果；claude × 两模型验证参数路径；同 harness 两 preset 的配对结果 |
-| **I5 agent 配实验 + 界面** | `eval-planning` skill；实验台 tab；计划审阅；判官台；报告视图 | 三个新面 + skill | 一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评 |
+| **I5 agent 配实验 + 界面** | `eval-planning` skill；实验台 tab；计划审阅；判官台；报告视图；eval 模式化（preset + 伴生工具包 + 命名 provider，重跑批仍在独立实例） | 三个新面 + skill | 一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评 |
 | **I6 外部评测集与开放** | SWE-bench / Terminal-Bench 适配脚本；item 级外部源指针；train/dev/test 标签；npm 发布 | 适配脚本；协议扩展；镜像仓 | 一个外部题集跑通一格；`dsh plugin add` 装齐 |
 
 为什么放宽因子排在 I4 而不是 I1：条件哈希的**形状**在 I1 就定死，所以 I4 不需要改契约，只是让 provider 认识更多字段。先在四家 harness 上出一份结论，判官、rubric、去指纹的问题会在那一步全部暴露，比先做多因子更省。
@@ -306,6 +308,8 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 评测实例要独立的 `$DSH_HOME`，不与开发实例共享会话与凭据（环境隔离是评测的基本要求，见 `docs/ops.md` 的环境拓扑）。I1 到 I2 在宿主上直跑四家 CLI，只需要 node、git 与各家 CLI；I3 起需要 docker，题集级镜像、本地包镜像、白名单代理与凭证卷的清单见 [docs/architecture.md](docs/architecture.md) 的「运行环境」一节。
 
 **两个脚本第一步都是机器级前置检查，在动任何文件之前**：`dsh` 在 PATH 上、`dsh --version` 能跑、以及 `cordis.patch.yml` 里 pin 的 headless bundle 路径存在（它从该文件里读，不写死）。任一条不满足就打印缺什么并以退出码 2 退出，`$DSH_HOME` 与 `$DSH_HOME/.agent-presets/eval` 一个字节都不动——此前第一次 `dsh` 调用在脚本末尾，缺 `dsh` 的机器要先整目录覆盖预设、（源码模式还要）把每个成员构建打包一遍，才在最后一行失败。预设目录在被整目录替换之前会备份到 `$DSH_HOME/.agent-presets/.web-eval-backup.<pid>`，失败时 trap 会告诉你它在哪；`update.sh` 同样备份它覆盖的 pin 文件，并且此前根本没有 trap。
+
+**宿主线：本 profile 要求 `dsh` ≥ 0.1.5-rc.1**（评测家族六个包的 `dsh.compat.minHost` 与 `verifiedHost` 自 2026-09-11 起都写这条线；local-agent 家族自基线提交 `bb04c84` 起已是）。源码模式的前置检查里因此多一条**宿主线核对**：脚本读每个待打包成员 `package.json` 的 `dsh.compat.minHost`，与 `dsh --version` 比一次，低于任一成员就在动文件前退出（退出码 2）并逐行列出谁要求什么版本。这条检查只在源码模式有——npm 模式的成员由 registry 解析，本地没有 `package.json` 可读。它挡的是一种到不了安装期的失败：宿主偏低不会在装的时候报错，而是在**起实例时**从某个插件的 import 里抛一个缺失导出（本机测到两次：`@deepseek-ai/dsh-settings` 在 0.1.5 上没有 `settingsNamespace`，而 npm 上 0.2.0 的 context-guard / ui-shortcuts 会 import 它），或者更晚——装完能起、跑到 resume 轮才报 `childSession.snapshotEvents is not a function`。
 
 `install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 23（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
 
@@ -332,7 +336,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 同理由**归 pack** 的还有 agent 预设：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。它落在 profile 目录**之外**（预设名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它——见[卸载](#更新切换装卸单个成员卸载)。
 
-当前 pin（I2·T15 写入，I3·T27 补三行）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
+当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起前三条的授予点在 pack 的 `eval` 预设的三行上）：`mission-tool: read`、`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 

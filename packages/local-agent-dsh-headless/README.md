@@ -87,6 +87,9 @@ local-agent 家族需要在多次委派之间续接**同一个** dsh 对话：�
 
 startup provider 解析 task 位置参数与互斥的 `--session-id` / `--resume`（或 `--serve`）并发布调用；一次性模式下 runner 通过 `agents.create` / `agents.resume` 创建或续接该会话、驱动任务、打印最终助手文本并退出，serve 模式下转入常驻 wire 循环（`src/serve.ts`）。子 profile 本身由父级 provider 在运行时 provision（`provisionDshSubProfile`）到 dsh harness 的 scoped home 下：manifest 只列 `@deepseek-ai/dsh-base`，本 bundle 的 patch 从包内 `cordis.patch.yml` 逐字节拷贝为该 profile 自己的 patch 层（本包不声明 `dsh.bundle`，见已知限制），另加一条解析本 bundle 的符号链接供 loader 解析 insert 行。
 
+**preset roster（可选）。** 如果子 profile 的 patch 多带一层 `@deepseek-ai/dsh-agent-presets`（父级 provider 在这个 scope 声明了 preset 时写进去的），agent loader 会在 `setup` 里 join 它——在 agent 发布之前，因此 preset 的工具与提示词片段在第一次组装提示词之前就在位。没有这一层就什么也不做，模型可见的行留在宿主面、agent 从全局层读，与本行为出现之前逐字节相同。roster **拒绝**（preset id 不存在、composition 坏了）不会被降级绕过：mount 抛错，agent 创建回滚，启动带着 preset 名失败——一个被要求跑 preset X 却悄悄跑了全局层的子 dsh，会把这一轮归到它从没有过的能力面上。
+
+
 </details>
 
 ## 开发

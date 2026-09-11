@@ -46,7 +46,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    prefix: >-
       You are the planning and analysis agent of a dsh evaluation instance, powered by the {{model}} model. Your working directory is {{cwd}}.
       Execution belongs to the deterministic orchestrator: you read the dataset repository and finished run bundles, draft plan and condition files for a person to approve, and write analysis drafts.
       You have no shell and no container controls — that is the apparatus, not a gap to work around. Ask the person to run what needs running.
@@ -169,3 +169,22 @@
   config:
     fetch: false
     searchTimeoutMs: 60000
+
+# ── 工具按域开放（M4'③：companion 行按域授予）──────────────────────────────
+# 这三个行原先挂在 profile 根并带 tools 配置（profiles/web-eval/cordis.patch.yml）。
+# 拆包后工具行不再全局：授予点移到这里，tier 原样跟随——eval 预设的会话拿到
+# 按域裁剪过的三个工具集，同 profile 里其它预设的会话一个都拿不到。
+- id: mission-tool
+  name: '@khorsheed/dsh-mission-tool'
+  config:
+    tools: read           # run_list / run_status / list / get 四个读工具
+
+- id: datasets-tool
+  name: '@khorsheed/dsh-datasets-tool'
+  config:
+    tools: authoring      # 读类全开 + put_item（出题）；worktree_path 留给服务面
+
+- id: eval-tool
+  name: '@khorsheed/dsh-eval-tool'
+  config:
+    tools: all            # 本包只注册三个读工具，all 即三个读工具

@@ -67,9 +67,9 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # this plugin
 
 The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `datasets` mount) into the profile's bundles layer — no hand-edited cordis.yml. A composition may mount the `datasets` row id only once; `dsh --profile web --dump-config | grep datasets` printing nothing means the add is safe.
 
-Config (all optional): `repo` (default dataset repository when a call has no explicit `repo` and the session has no binding; default none), `worktreeRoot` (managed worktree root override; default `$DSH_HOME/state/datasets/worktrees`, else `<cwd>/.dsh-datasets/worktrees`), and `tools` (which group of model tools to register; default `all`, see [Model tools](#model-tools)).
+Config (all optional): `repo` (default dataset repository when a call has no explicit `repo` and the session has no binding; default none) and `worktreeRoot` (managed worktree root override; default `$DSH_HOME/state/datasets/worktrees`, else `<cwd>/.dsh-datasets/worktrees`). `tools` is no longer a key on this row: the model-tool grouping moved to the companion row `@khorsheed/dsh-datasets-tool`, see [Model tools](#model-tools).
 
-The plugin provides the `ctx.datasets` service for other plugins to consume optionally, registers the `datasets_*` model tools (which ones depends on the `tools` group; the default registers all eight) and the `/datasets` slash command, mounts the `datasetsRemote` Typert Remote service (the web session tab's data face), and (when the composition mounts `@khorsheed/dsh-datasets/invariant`) checks the managed worktree root's structural integrity at load.
+The plugin provides the `ctx.datasets` service for other plugins to consume optionally, provides the `/datasets` slash command, mounts the `datasetsRemote` Typert Remote service (the web session tab's data face), and (when the composition mounts `@khorsheed/dsh-datasets/invariant`) checks the managed worktree root's structural integrity at load. The `datasets_*` model tools and the `datasets:tools` prompt section belong to the companion row `@khorsheed/dsh-datasets-tool`, granted per session by an agent preset — see [Model tools](#model-tools).
 
 ## The session binding
 
@@ -88,6 +88,8 @@ Binding **writes** are human operations: `/datasets bind` in a live session, the
 The whitelist is a session-level constraint, not a security boundary: a same-machine human can rebind, and an agent with shell access can read the original repository. It prevents accidental fetches and workflow cross-contamination, not malice.
 
 ## Model tools
+
+**This package registers no model tool any more (BREAKING)**: the eight tools below and the `datasets:tools` prompt section belong to the companion row `@khorsheed/dsh-datasets-tool`, granted per session by an agent preset. Migration is two lines: install the companion as a dependency and add `- id: datasets-tool` / `  name: '@khorsheed/dsh-datasets-tool'` to the target preset's `agent.cordis.yml` (that row may carry `config: { tools: authoring }`). The inventory, groups, and behavior prose below describe the **companion's** tool face from here on; the service, CLI, `/datasets`, and the session tab still belong to this package.
 
 | Tool | Writes? | Purpose |
 |---|---|---|
@@ -145,8 +147,8 @@ The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — every capability works; the contract surface (`ctx.tools`, `ctx.commands`, log-only session events, the Typert Remote channel, `conversation.view`) is stable on this line. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1).
-- The `tools` grouping, the canary check and the judgeability check are all internal (the first only calls `ctx.tools.register` fewer times, the other two only read git objects) — no new host capability, identical on both lines.
-- ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the model tools and the CLI stay fully functional. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer.
+- The canary check and the judgeability check are both internal (they only read git objects) — no new host capability, identical on both lines; the `tools` grouping moved with the model-tool face to the companion row `@khorsheed/dsh-datasets-tool` (`read` / `authoring` / `all` / `none`), and this row no longer has that config key.
+- ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the CLI stays fully functional (the model tools come from the companion row). The 数据集 tab self-hides: it registers only when the current session's preset composition names the `@khorsheed/dsh-datasets-tool` row, read from the official `pluginInventory` Remote, and every unreadable path fails OPEN (stays visible). Release order matters: a pack that names a companion row needs the companion published / installed first — a row that fails to resolve reports the preset composition `broken` while the instance boots unaffected. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer.
 
 This section mirrors the `dsh.compat` field in package.json; the two move together.
 

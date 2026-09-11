@@ -15,13 +15,16 @@
  *
  * The check also catches the misattribution the run loop can only find at its
  * first stage round: a facade that reads back a model different from the
- * condition's declared one (frozen decision 5).
+ * condition's declared one (frozen decision 5) — and, before spending any
+ * delegation at all, a condition whose declared `preset` has no measured
+ * capability face behind it (see {@link capabilityRefusal}).
  * @module @khorsheed/dsh-eval
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DelegationProgress, DelegationResult, LocalAgentFace } from './faces.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
+import { EGRESS_UNAVAILABLE } from './egress.ts'
 
 /**
  * The probe task, byte-for-byte. One sentence, no tools, no files: the point
@@ -32,8 +35,18 @@ import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 export const READINESS_PROMPT
   = 'Readiness check: reply with the single word READY and nothing else. Do not use any tools and do not write any files.\n'
 
-/** Default wall-clock cap on one readiness probe. */
-export const DEFAULT_READINESS_TIMEOUT_MS = 120_000
+/**
+ * Default wall-clock cap on one readiness probe.
+ *
+ * Sized for the SLOWEST honest start, not the fastest: on the container path
+ * a probe pays a cold unit acquire (T29c measured a 3.2GB image pulling into
+ * a just-started daemon) plus the harness CLI's own first `docker exec`
+ * before a single token moves. 120s — the host-path value this used to be —
+ * cancelled those probes while they were still legitimately starting, which
+ * reads exactly like an unauthenticated harness. `readinessTimeoutMs`
+ * narrows it for a composition that knows its units are warm.
+ */
+export const DEFAULT_READINESS_TIMEOUT_MS = 420_000
 
 /** What a probed condition is FOR: a subject under test, or the blind judge. */
 export type ReadinessRole = 'player' | 'judge'
@@ -73,6 +86,13 @@ export interface ReadinessRecord {
   requestedModel: string | null
   /** The named scoped home the probe ran against; absent means the default one. */
   scope?: string
+  /**
+   * The capability fingerprint of the environment this condition runs in,
+   * from its lock's `provisioned.capabilities`. Recorded so the bundle
+   * carries WHICH capability face each subject was measured at, not merely
+   * that one existed. Absent for a condition that composes no preset.
+   */
+  capabilities?: { sha: string; preset?: string | null }
   /** The model the facade read back for the probe; null when it reads none. */
   observedModel: string | null
   /** Why the condition is not ready; absent when it is. */
@@ -84,6 +104,13 @@ export interface ReadinessRecord {
    * host — which is the whole reason the probe moved into a unit.
    */
   unit?: { resource: string; fingerprint: string }
+  /**
+   * Set when the condition is not ready because its ENVIRONMENT is broken
+   * rather than its subject — today only the unit's egress check. The run
+   * refuses under this code instead of `READINESS_FAILED`, because "the proxy
+   * is down" and "this harness cannot authenticate" want different people.
+   */
+  infrastructure?: string
 }
 
 /** One condition as the readiness check needs it (the run loop's resolved shape). */
@@ -101,6 +128,57 @@ export interface ReadinessSubject {
    * scope-`b` condition would prove another account's login.
    */
   scope?: string
+  /** The condition's declared preset, or null / absent for none. */
+  preset?: string | null
+  /**
+   * The capability fingerprint the condition's lock records, when provision
+   * measured one. A condition that declares a preset and has none of these
+   * is refused before its delegation: see {@link capabilityRefusal}.
+   */
+  capabilities?: { sha: string; preset?: string | null }
+}
+
+/**
+ * Why a condition's capability claim fails, or undefined when it holds.
+ *
+ * A `preset` is a claim about the subject's capability FACE — which tools and
+ * skills the model has. It enters the condition hash, so two conditions
+ * differing only in preset are two subjects; if nothing checks it, they are
+ * two subjects on paper and one in fact, and the run's whole comparison rests
+ * on a field nobody measured. Provision measures it (the catalog's capability
+ * hash over the provisioned environment) and records it in the lock; this is
+ * where the record is required to exist and to agree.
+ *
+ * The check is cheap and local — it reads the lock, not the machine — and it
+ * runs beside the delegation probe because it answers the same question:
+ * is this subject the one the declaration names?
+ * @param condition - the probed condition.
+ * @returns the refusal reason, or undefined when nothing is claimed or all agrees.
+ */
+export function capabilityRefusal(condition: ReadinessSubject, fresh?: string): string | undefined {
+  const preset = condition.preset ?? null
+  if (preset === null) return undefined
+  if (condition.capabilities === undefined) {
+    return `the condition declares preset ${JSON.stringify(preset)} but its lock records no provisioned.capabilities`
+      + ' — the capability face was never measured, so the declared preset is a claim with nothing behind it'
+      + ' (run `conditions provision` for this condition)'
+  }
+  const measured = condition.capabilities.preset
+  if (measured !== undefined && measured !== preset) {
+    return `the condition declares preset ${JSON.stringify(preset)} but its capability record was taken under ${JSON.stringify(measured)}`
+      + ' — the provisioned environment belongs to another subject'
+  }
+  // The lock records a hash; this compares it to the face that is there NOW.
+  // Without it a lock stays "verified" forever while the preset it measured
+  // is edited underneath it — and a skill BODY edit moves no other recorded
+  // hash (`home.sha` hashes config files, not SKILL.md), so this is the only
+  // thing that sees it.
+  if (fresh !== undefined && fresh !== condition.capabilities.sha) {
+    return `the lock records capability face caps:${condition.capabilities.sha.slice(0, 12)}… for preset ${JSON.stringify(preset)}`
+      + ` but it now measures caps:${fresh.slice(0, 12)}… — the preset changed after provision`
+      + ' (re-run `conditions provision` for this condition)'
+  }
+  return undefined
 }
 
 /**
@@ -113,6 +191,14 @@ export interface ReadinessUnit {
   exec: { container: string; workdir: string; env?: Record<string, string> }
   /** The unit's composite environment fingerprint, recorded on the verdict. */
   fingerprint: string
+  /**
+   * Ask the unit whether it can reach what the plan says it needs, BEFORE a
+   * delegation is spent in it. The caller supplies it (only the caller has
+   * lab and the plan); absent means the plan declared no check and the probe
+   * runs exactly as it did before this hook existed.
+   * @throws {@link EgressUnavailable} when the unit cannot reach its endpoints.
+   */
+  checkEgress?(): Promise<void>
   /** Destroy the unit. Called whatever the probe did, including when it threw. */
   release(): Promise<void>
 }
@@ -132,6 +218,17 @@ export interface ReadinessInput {
   readbackWaitMs?: number
   now?: () => number
   log?: (message: string) => void
+  /**
+   * Re-measure one condition's capability face, for the comparison in
+   * {@link capabilityRefusal}. Called only for a condition that declares a
+   * preset AND carries a locked hash; `undefined` back means "could not
+   * measure", which leaves the locked record unchallenged rather than
+   * failing the condition on the measurement's own absence.
+   *
+   * Omitted entirely — a composition with no capability catalog — the gate
+   * keeps exactly the T32 behavior: presence and agreement, no freshness.
+   */
+  capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
   /**
    * Container path: acquire a throwaway unit for one condition and hand back
    * where to run and how to destroy it. Omitted, the probe runs on the host
@@ -174,6 +271,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
       now,
       log,
       ...(input.unitFor !== undefined ? { unitFor: input.unitFor } : {}),
+      ...(input.capabilitiesNow !== undefined ? { capabilitiesNow: input.capabilitiesNow } : {}),
     }))
   }
   return records
@@ -190,6 +288,7 @@ async function probeOne(
     now: () => number
     log: (message: string) => void
     unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit | undefined>
+    capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
   },
 ): Promise<ReadinessRecord> {
   if (env.unitFor === undefined) return await probeIn(localAgent, condition, env, undefined)
@@ -201,14 +300,7 @@ async function probeOne(
     const reason = `the probe unit could not be acquired: ${error instanceof Error ? error.message : String(error)}`
     env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${reason}`)
     return {
-      kind: 'readiness',
-      condition: condition.id,
-      role: condition.role ?? 'player',
-      harness: condition.harnessName,
-      provider: condition.provider,
-      declaredModel: condition.declaredModel,
-      requestedModel: condition.declaredModel,
-      ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+      ...baseRecord(condition),
       ok: false,
       startedAt,
       durationMs: env.now() - startedAt,
@@ -221,12 +313,60 @@ async function probeOne(
   if (unit === undefined) return await probeIn(localAgent, condition, env, undefined)
   const held = unit
   try {
+    // Before the delegation, not after: a unit with no way out does not fail
+    // a round, it produces an EMPTY one (T29c), and an empty round is
+    // indistinguishable from a subject that had nothing to say. The check
+    // costs one in-unit command; skipping it costs the whole probe window and
+    // still does not say what went wrong.
+    if (held.checkEgress !== undefined) {
+      try {
+        await held.checkEgress()
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${reason}`)
+        return {
+          ...baseRecord(condition),
+          ok: false,
+          startedAt,
+          durationMs: env.now() - startedAt,
+          childSessionId: null,
+          observedModel: null,
+          reason,
+          infrastructure: EGRESS_UNAVAILABLE,
+          unit: { resource: held.exec.container, fingerprint: held.fingerprint },
+        }
+      }
+    }
     const record = await probeIn(localAgent, condition, env, held)
     return { ...record, unit: { resource: held.exec.container, fingerprint: held.fingerprint } }
   } finally {
     // Whatever the probe did, the unit goes. It is bound to no mission, so
     // this is the ONE destroy in the whole orchestrator that needs `force`.
     await held.release()
+  }
+}
+
+/**
+ * The identity half of every readiness record — the fields that describe WHO
+ * was probed, which are the same whether the probe ran, failed to acquire a
+ * unit, or never started because the unit had no egress.
+ * @param condition - the subject.
+ * @returns the shared fields.
+ */
+function baseRecord(condition: ReadinessSubject): Pick<
+  ReadinessRecord,
+  'kind' | 'condition' | 'role' | 'harness' | 'provider' | 'declaredModel' | 'requestedModel' | 'scope' | 'capabilities'
+> {
+  return {
+    kind: 'readiness',
+    condition: condition.id,
+    role: condition.role ?? 'player',
+    harness: condition.harnessName,
+    provider: condition.provider,
+    declaredModel: condition.declaredModel,
+    requestedModel: condition.declaredModel,
+    ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+    ...(condition.capabilities === undefined ? {} : { capabilities: condition.capabilities }),
   }
 }
 
@@ -240,20 +380,44 @@ async function probeIn(
     readbackWaitMs: number
     now: () => number
     log: (message: string) => void
+    capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
   },
   unit: ReadinessUnit | undefined,
 ): Promise<ReadinessRecord> {
-  const base = {
-    kind: 'readiness' as const,
-    condition: condition.id,
-    role: condition.role ?? 'player',
-    harness: condition.harnessName,
-    provider: condition.provider,
-    declaredModel: condition.declaredModel,
-    requestedModel: condition.declaredModel,
-    ...(condition.scope === undefined ? {} : { scope: condition.scope }),
-  }
+  const base = baseRecord(condition)
   const startedAt = env.now()
+  // Before spending a delegation: does the subject's capability claim have
+  // anything behind it, and does it still hold? A condition whose preset was
+  // never measured — or was measured before someone edited it — fails here,
+  // at no token cost, instead of producing a whole run's worth of cells
+  // attributed to a capability face nobody checked.
+  //
+  // A re-measure that itself fails leaves the locked record unchallenged: it
+  // is evidence about the PRESET, and its absence is evidence about the
+  // catalog. Failing the condition on the second would refuse runs for a
+  // reason that has nothing to do with the subject.
+  let freshCapabilities: string | undefined
+  if (env.capabilitiesNow !== undefined && condition.capabilities !== undefined && (condition.preset ?? null) !== null) {
+    try {
+      freshCapabilities = await env.capabilitiesNow(condition)
+    } catch (error) {
+      env.log(`readiness ${condition.id}: the capability face could not be re-measured`
+        + ` (${error instanceof Error ? error.message : String(error)}) — the locked record stands`)
+    }
+  }
+  const capabilityProblem = capabilityRefusal(condition, freshCapabilities)
+  if (capabilityProblem !== undefined) {
+    env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${capabilityProblem}`)
+    return {
+      ...base,
+      ok: false,
+      startedAt,
+      durationMs: env.now() - startedAt,
+      childSessionId: null,
+      observedModel: null,
+      reason: capabilityProblem,
+    }
+  }
   // Inside a unit the host cwd means nothing: the round runs in the unit's
   // workdir and no host directory is created for it.
   if (unit === undefined) mkdirSync(env.cwd, { recursive: true })

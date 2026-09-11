@@ -122,6 +122,10 @@ dsh --profile web-dev plugin add @khorsheed/dsh-whalesong   # add back
 sh scripts/restart-into-web-dev.sh                          # restart to apply
 ```
 
+## Bundled agent preset: the dev mode (dev)
+
+The pack ships a **dev mode** preset (`presets/dev`, built on the official Standard composition): it adds the three local-agent delegation tools (`subagent_kimi` / `subagent_codex` / `subagent_claude_code`), the worktrees model tool, and the room tool trio (`room_invite` / `room_task` / `room_message`), all **granted per session** — the tool rows live in this preset's composition only, never at the profile root. `install.sh` / `update.sh` drops it into `$DSH_HOME/.agent-presets/dev` (replaced whole — it is pack apparatus, not preference; a same-id preset of yours would be overwritten, so author your own under a different id). Pick the dev preset in the preset chip when creating a session; the default preset stays Standard — change it under **Settings → Agent presets** (the patch layer is yours, the pack pins nothing). The mission / datasets / eval companion tool rows are **deliberately absent here**: the three cores are not members of this pack (unpublished incubation) and a companion imports its core's `./tool` factory at runtime, so a missing row would mark the whole dev preset `broken` — they join once they are published and listed in `profiles/web-dev/package.json` (see CHANGELOG).
+
 ## Custom agent presets
 
 This profile runs the official Standard preset. To build your own: **Settings → Agent presets** → copy a built-in preset and edit it, or use "create with Creation mode" at the bottom to have an agent build it with you. Your presets live in `$DSH_HOME/.agent-presets/` and are unaffected by updates to this profile.

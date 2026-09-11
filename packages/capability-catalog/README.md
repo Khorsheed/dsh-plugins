@@ -39,11 +39,68 @@ discovers the result.
 The catalog reads the skill registry at the **agent preset's standing scope**
 (`agentPresets.standingKeyFor(defaultId)`) so it lists the same official/plugin/user
 skills the model sees, and the `list_capabilities` tool runs in the caller's agent
-scope.
+scope. `snapshotFor(presetId)` reads any OTHER preset's scope the same way — see
+[The capability fingerprint](#the-capability-fingerprint).
 
 Zero host edits. If `ctx.skills` / `ctx.tools` / `ctx.credentials` /
 `ctx.agentPresets` are absent it degrades to an empty state rather than failing
 boot.
+
+## The capability fingerprint
+
+A snapshot is a LISTING — registration order, human wording, file mtimes. The
+capability FACE is what is left when you remove everything that is not a
+capability, and `hashOf` is its sha256:
+
+| Row | What enters | What does not |
+|---|---|---|
+| skill | `name`, `source`, sha256 of the SKILL.md body | description, whenToUse, provider, `updatedAt` |
+| tool | `name`, `channel`, `parameters` | description, confidence, owner |
+| mcpServer | `name` + its tool NAMES | the tool count (derived) |
+| channel | the names | the counts (derived) |
+
+Every list is sorted by name and the digest is taken over canonical JSON, so
+two instances registering the same things in a different order hash alike.
+The exclusions are the claim: **prose is not a capability**. Rewording a tool
+description changes what the model reads, not what it can do — and a
+fingerprint that moved when someone fixed a typo would be useless as an
+identity. A skill's BODY is the opposite (it is the procedure), so it enters
+as a sha.
+
+```ts
+import { hashOf, capsTag } from '@khorsheed/dsh-capability-catalog'
+
+const face = await remote.snapshotFor('eval-lean')   // sha already stamped
+capsTag(face.sha)          // 'caps:2f8b6d40…'
+hashOf(face) === face.sha  // true — the `sha` field is not part of what it digests
+```
+
+`snapshotFor(presetId?, workdir?)` is the fingerprint verb: it reads the
+skill and tool registries at **that preset's** standing scope
+(`agentPresets.standingKeyFor(id)`), loads every skill body so the rows carry
+`bodySha`, and stamps `sha`. `presetId` omitted reads the deployment default.
+`snapshot()` stays the listing verb — same rows, no body loads, no digest.
+`list_capabilities` reports the full face's tag as `capabilities`, even when
+the caller filtered the answer to skills or tools.
+
+**A listing degrades; a fingerprint refuses.** When the preset's scope cannot
+be resolved — no roster, unknown id, a composition that will not mount —
+`snapshot()` falls back to the global layer and carries NO `preset` label,
+because a settings card must not go blank over a bad row. `snapshotFor()`
+throws instead, naming the preset and the reason. This is not hypothetical:
+on a real sub-dsh whose preset had one invalid row, the degrading version
+gave two scopes rostering two *different* presets one identical hash,
+silently.
+
+Two costs are worth naming. Fingerprinting loads one skill body per skill
+(the listing path still does not), and asking for a preset nothing has
+composed yet MOUNTS it — the roster's standing mount is what "that preset's
+scope" means.
+
+Who uses it: an evaluation records the orchestrating instance's own hash in
+`run.meta.orchestrator.capabilities` as provenance, and a condition that
+declares a `preset` must carry the hash of its provisioned environment in its
+lock — which is what turns that declaration from a claim into a fact.
 
 ## Skill credential env injection
 

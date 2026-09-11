@@ -1,56 +1,24 @@
 /**
- * The three READ tools: registration discipline (names, origin tag, the
- * `tools: 'none'` off switch) and each adapter's `execute` against fake
- * service faces — a temp dataset tree for the two contract tools, a fake
- * mission ledger for the run projection.
+ * The three READ tools the companion row registers: the definition factory's
+ * names and each adapter's `execute` against fake service faces — a temp
+ * dataset tree for the two contract tools, a fake mission ledger for the run
+ * projection. Registration, origin tagging, and the `tools: 'none'` switch
+ * belong to `@khorsheed/dsh-eval-tool` and are pinned in its own spec.
  */
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
-import { apply } from '../src/index.ts'
 import { EvalService } from '../src/service.ts'
-import { registerEvalTools, EVAL_TOOL_NAMES } from '../src/tools.ts'
+import { evalToolDefinitions } from '../src/tool.ts'
 import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)
-
-const ORIGIN = Symbol.for('dsh.tool.origin')
 
 interface RegisteredTool {
   name: string
   parameters: { required?: string[] }
   output: { render: (args: unknown, value: unknown) => Array<{ type: string; text: string }> }
   execute: (args: Record<string, unknown>, exec: { agent?: { session: { id: string } } }) => Promise<unknown>
-  [ORIGIN]?: unknown
-}
-
-/** A tool registry spy plus the deferred-injection doors `apply` goes through. */
-function toolsCtx(registered: RegisteredTool[], services: Record<string, unknown> = {}) {
-  const provided = new Map<string, unknown>()
-  const tools = {
-    register: (definition: RegisteredTool) => {
-      registered.push(definition)
-      return () => {}
-    },
-  }
-  const get = (name: string): unknown => (name === 'tools' ? tools : services[name])
-  const ctx = {
-    provided,
-    provide: (name: string, value: unknown) => { provided.set(name, value) },
-    commands: { register: () => {} },
-    tools,
-    get,
-    // Deferred injection, as cordis does it: the callback fires only when
-    // every named service exists, and never otherwise.
-    inject: (_deps: string[], _callback: (injected: unknown) => void): void => {},
-    // The Remote face mounts through the plugin seam; this composition
-    // records nothing about it.
-    plugin: (_plugin: unknown): void => {},
-  }
-  ctx.inject = (deps, callback) => {
-    if (deps.every(dep => get(dep) !== undefined)) callback(ctx)
-  }
-  return ctx
 }
 
 /** A condition document; `overrides` replaces whole sections. */
@@ -93,50 +61,10 @@ function writeRepo(): string {
   return repo
 }
 
-describe('registration', () => {
-  it('registers exactly the three read tools, each tagged with this package', () => {
-    const registered: RegisteredTool[] = []
-    apply(toolsCtx(registered) as never, {})
-    expect(registered.map(tool => tool.name)).toEqual(EVAL_TOOL_NAMES)
-    for (const tool of registered) {
-      expect(tool[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-eval' })
-    }
-  })
-
-  it('renders the whole document — the rendering is what the model reads', () => {
-    const registered: RegisteredTool[] = []
-    apply(toolsCtx(registered) as never, {})
-    const value = { ok: true, conditions: [{ id: 'c', sha: 'a'.repeat(64) }] }
-    for (const tool of registered) {
-      // A one-line summary here would answer the question a second time, and
-      // more poorly: the shas, diagnostics, and per-cell rows ARE the answer.
-      expect(tool.output.render({}, value)).toEqual([{ type: 'text', text: JSON.stringify(value, null, 2) }])
-    }
-  })
-
-  it('registers no tool at all under tools: none', () => {
-    const registered: RegisteredTool[] = []
-    apply(toolsCtx(registered) as never, { tools: 'none' })
-    expect(registered).toEqual([])
-  })
-
-  it('adds the tool:eval prompt section only where a systemPrompt registry exists', () => {
-    const sections: Array<{ name: string; order: number; text: string }> = []
-    apply(toolsCtx([], { systemPrompt: { section: (s: { name: string; order: number; text: string }) => { sections.push(s) } } }) as never, {})
-    expect(sections.map(section => section.name)).toEqual(['tool:eval'])
-    expect(sections[0]?.text).toMatch(/READ ONLY/)
-    // No systemPrompt service: the tools still register, nothing throws.
-    const registered: RegisteredTool[] = []
-    apply(toolsCtx(registered) as never, {})
-    expect(registered).toHaveLength(3)
-  })
-})
-
-/** Register the three tools over one service and index them by name. */
+/** Build the three tools over one service and index them by name. */
 function toolsOver(service: EvalService): Map<string, RegisteredTool> {
-  const registered: RegisteredTool[] = []
-  registerEvalTools(toolsCtx(registered) as never, service)
-  return new Map(registered.map(tool => [tool.name, tool]))
+  const definitions = evalToolDefinitions(service) as unknown as RegisteredTool[]
+  return new Map(definitions.map(tool => [tool.name, tool]))
 }
 
 describe('eval_conditions', () => {

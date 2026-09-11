@@ -87,6 +87,9 @@ The bundle's patch rides over `dsh-base` in its own profile (e.g. `headless-loca
 
 The startup provider parses the task positional plus the mutually exclusive `--session-id` / `--resume` flags (or `--serve`) and publishes the invocation; in one-shot mode the runner creates or resumes that session via `agents.create` / `agents.resume`, drives the task, prints the final assistant text, and exits, while serve mode switches to the resident wire loop (`src/serve.ts`). The sub-profile itself is provisioned at runtime by the parent provider (`provisionDshSubProfile`) under the dsh harness's scoped home: the manifest lists only `@deepseek-ai/dsh-base`, and this bundle's patch is copied byte-for-byte from the package's `cordis.patch.yml` into that profile's own patch layer (the bundle declares no `dsh.bundle`, see Known Limitations), plus one symlink resolving this bundle for the loader's insert rows.
 
+**Preset roster (optional).** When the sub-profile's patch carries an extra `@deepseek-ai/dsh-agent-presets` layer — written by the parent provider when the scope declares a preset — the agent loader joins it inside `setup`, before the agent is published, so the preset's tools and prompt sections exist before the first prompt assembly. Without the layer it does nothing: the model-facing rows stay in the host plane and the agent reads the global layer, byte for byte the behavior before this existed. A roster that REFUSES (unknown preset id, broken composition) is not degraded past: the mount rejects, the agent creation rolls back, and the launch fails naming the preset — a sub-dsh that silently ran the global layer after being told to run preset X would attribute the round to a capability face it never had.
+
+
 </details>
 
 ## Development

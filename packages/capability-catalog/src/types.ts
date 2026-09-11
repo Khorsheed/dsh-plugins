@@ -33,6 +33,14 @@ export interface CatalogSkillRow {  /** Kebab-case skill name. */
   readonly whenToUse?: string
   /** Last-modified time (epoch ms) of the skill body, when a local bundle exists. */
   readonly updatedAt?: number
+  /**
+   * sha256 of the skill's SKILL.md body — the one part of a skill that IS a
+   * capability (the procedure the model executes), carried so the capability
+   * fingerprint can be taken from a snapshot alone. Absent when the body
+   * could not be read (a remote/opaque skill, or a registry that declines
+   * the load).
+   */
+  readonly bodySha?: string
 }
 
 /** Credential declared by a skill's metadata (the plugin-defined convention). */
@@ -137,6 +145,14 @@ export interface CapabilityCatalogSnapshot {
   readonly tools: readonly CatalogToolRow[]
   readonly mcpServers: readonly CatalogMcpServerRow[]
   readonly channels: readonly CatalogChannelSummary[]
+  /**
+   * The capability hash of this snapshot (`hashOf`), filled by the host half.
+   * It is NOT part of the canonical form it digests — a snapshot carrying it
+   * and the same snapshot without it hash alike.
+   */
+  readonly sha?: string
+  /** The agent preset this snapshot was taken under; absent when none resolved. */
+  readonly preset?: string
 }
 
 /** Fresh detail of one skill (body + metadata), loaded on demand. */
@@ -221,6 +237,8 @@ export interface CatalogCredentialSetRequest {
 /** Remote surface the browser card binds through. */
 export interface CapabilityCatalogRemote {
   readonly snapshot: (workdir?: string) => Promise<CapabilityCatalogSnapshot>
+  /** The capability face of one preset, with its `sha` (see the host half). */
+  readonly snapshotFor: (presetId?: string, workdir?: string) => Promise<CapabilityCatalogSnapshot>
   readonly detail: (name: string, workdir?: string) => Promise<CatalogSkillDetail | undefined>
   readonly readSkillFile: (name: string, filePath: string, workdir?: string) => Promise<CatalogSkillFileRead | undefined>
   readonly listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>

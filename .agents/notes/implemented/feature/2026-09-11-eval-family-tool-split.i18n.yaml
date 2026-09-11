@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.md
+.agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.md: 2759d52b39e85bdd9afb08fd46e8394c574eff4a
+.agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.zh.md: cb47893f5bde61c34a633c6473c273f05fc4da92

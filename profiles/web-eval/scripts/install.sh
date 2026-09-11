@@ -45,15 +45,32 @@ PROFILE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml"
 # profile does NOT remove them — the README says so beside the `rm -rf`.
 PRESET_IDS="eval"
 
-# Members not on npm yet — docs/release-status.md in the dsh-plugins checkout
-# is the authority; when a member ships, remove its directory here (and when
-# the last one does, source mode retires). Dependency order: the family core
-# first, then tool-subagent, the headless bundle (local-agent-dsh's own
-# dependency — packed so the override can pin it, never a direct profile
-# dependency), then the providers, then the independents.
+# Members source mode packs from the checkout — "no usable release on npm".
+# Two reasons a member lands here, and docs/release-status.md is the authority
+# for both:
+#
+#   1. never published (the evaluation family: eval, lab, datasets, mission,
+#      the local-agent family, capability-catalog, …);
+#   2. published, but only against an OLDER host line. npm's newest is the
+#      0.2.0 wave (host 0.1.2-rc.1); this profile now boots on 0.1.5-rc.1, and
+#      a plugin built against the older line fails at import with a missing
+#      export (measured: `@deepseek-ai/dsh-settings` has no `settingsNamespace`
+#      on 0.1.5, and context-guard / ui-shortcuts 0.2.0 import it). Their
+#      0.1.5-aligned releases are cut in the repo but not on npm yet (the
+#      publish freeze), so until that wave lands they are packed from source
+#      like group 1. Remove a member from this list the moment its
+#      host-aligned version is ON npm.
+#
+# Dependency order: the family core first, then tool-subagent, the headless
+# bundle (local-agent-dsh's own dependency — packed so the override can pin
+# it, never a direct profile dependency), then the providers, then the
+# independents, then the published-but-lagging members.
 UNPUBLISHED_DIRS="local-agent local-agent-tool-subagent local-agent-dsh-headless \
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
-capability-catalog datasets eval inline-html-render lab local-files mission"
+capability-catalog datasets eval inline-html-render lab local-files mission \
+ankh-guard context-guard file-preview message-timeline message-tools taskpilot \
+ui-file-preview ui-shortcuts session-title-edit whalesong \
+mission-tool datasets-tool eval-tool"
 
 SOURCE=""
 FRESH=""
@@ -99,6 +116,57 @@ command -v dsh >/dev/null 2>&1 || preflight_fail "  missing: \`dsh\` on PATH.
 
 dsh --version >/dev/null 2>&1 || preflight_fail "  \`dsh\` is on PATH but \`dsh --version\` failed.
   Run it by hand and fix what it reports before installing."
+
+# The host LINE, checked against what the members declare they need. A host
+# older than a member's `dsh.compat.minHost` does not fail at install — it
+# fails at boot, as a missing export inside a plugin import, which reads like
+# a plugin bug and is not one (measured on this profile twice). Source mode
+# knows exactly which members it is about to pack, so it can say so first.
+if [ -n "$SOURCE" ]; then
+  HOST_VERSION=$(dsh --version 2>/dev/null | tr -d '[:space:]')
+  MINHOST_FAIL=$(SOURCE_CHECKOUT="$SOURCE" UNPUBLISHED_DIRS="$UNPUBLISHED_DIRS" HOST_VERSION="$HOST_VERSION" node <<'NODE'
+const fs = require('node:fs')
+/** Compare two dotted versions with an optional -rc.N / -alpha.N tail. */
+const parse = (v) => {
+  const [core, tail] = String(v).split('-')
+  const nums = core.split('.').map(Number)
+  // A release outranks its own prereleases; among prereleases, rc > alpha,
+  // then by number. Anything unparseable sorts as "unknown", never as newer.
+  const kinds = { alpha: 1, beta: 2, rc: 3 }
+  const [kind, seq] = tail === undefined ? ['release', 0] : tail.split('.')
+  return { nums, rank: tail === undefined ? 9 : (kinds[kind] ?? 0), seq: Number(seq ?? 0) }
+}
+const cmp = (a, b) => {
+  const x = parse(a), y = parse(b)
+  if (x.nums.some(Number.isNaN) || y.nums.some(Number.isNaN)) return null
+  for (let i = 0; i < Math.max(x.nums.length, y.nums.length); i += 1) {
+    const d = (x.nums[i] ?? 0) - (y.nums[i] ?? 0)
+    if (d !== 0) return d < 0 ? -1 : 1
+  }
+  if (x.rank !== y.rank) return x.rank < y.rank ? -1 : 1
+  return x.seq === y.seq ? 0 : x.seq < y.seq ? -1 : 1
+}
+const host = process.env.HOST_VERSION
+const behind = []
+for (const dir of process.env.UNPUBLISHED_DIRS.split(/\s+/).filter(Boolean)) {
+  const path = `${process.env.SOURCE_CHECKOUT}/packages/${dir}/package.json`
+  if (!fs.existsSync(path)) continue
+  const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))
+  const min = pkg.dsh?.compat?.minHost
+  if (min === undefined) continue
+  if (cmp(host, min) === -1) behind.push(`${pkg.name} needs >= ${min}`)
+}
+if (behind.length > 0) process.stdout.write(behind.join('\n'))
+NODE
+)
+  if [ -n "$MINHOST_FAIL" ]; then
+    preflight_fail "  the \`dsh\` on PATH is $HOST_VERSION, older than what these members declare:
+$(printf '%s\n' "$MINHOST_FAIL" | sed 's/^/    /')
+  Point PATH at a matching toolchain (e.g. ~/.dsh-toolchains/rc-<version>/node_modules/.bin)
+  and re-run. A host below a member's minHost does not fail here — it fails at
+  boot, inside a plugin import, as a missing export that reads like a plugin bug."
+  fi
+fi
 
 # The headless bundle path the profile PINS. It is a machine-level
 # precondition (the dataset repo's env/README documents how to stage it):

@@ -1,0 +1,50 @@
+# @khorsheed/dsh-eval-tool
+
+[English](README.en.md) | 中文
+
+`@khorsheed/dsh-eval` 的伴生工具行：模型可见的三个**只读**工具（`eval_conditions` / `eval_plan_validate` / `eval_run_status`）与 `tool:eval` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。服务面（`ctx.dshEval`）、CLI 与 `/eval` slash 留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
+
+## 形态：不自挂载的伴生包
+
+- **只注册工具，不发布服务**（`ctx.provide` 为零）——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset（官方 `tool-bash` 行同构）。
+- **不声明 `dsh.bundle`**：作为依赖安装只让模块可解析（plain dependency，同 `@khorsheed/dsh-local-agent-dsh-headless` 先例），不会自动挂到任何组合。授予入口是 preset 的 `agent.cordis.yml` 按名引用：
+
+  ```yaml
+  - id: eval-tool
+    name: '@khorsheed/dsh-eval-tool'
+    config:
+      tools: all           # 可选；缺省 all
+  ```
+
+- **运行依赖 core 的全局服务**：apply 时探测的是 **`ctx.dshEval`，不是 `ctx.eval`**——ctx 上叫 `eval` 的属性会遮蔽 loader `with (ctx) { return eval(expr) }` 里的全局 `eval`，凡挂载的组合一遇 `!!js` 即炸（真实 3171 实例踩出）。core（`@khorsheed/dsh-eval`）未挂载则**静默跳过注册**并留一行日志（degrade：不炸 preset 挂载，该 preset 组合照常挂上，只是模型看不到这三个工具）；工具注册走 `ctx.inject(['tools'])` 延迟注入（挂载序竞态的历史教训），无 tools 注册表的组合同样安全。
+- 工具定义工厂由 core 的 `./tool` 子路径导出（`@khorsheed/dsh-eval/tool` 的 `evalToolDefinitions(service)`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。三个工具全是读：run 由人在会话里用 `/eval run` 发起，写类动词（materialize / submit / transition / annotate / archive / export）归编排器服务面与人的 CLI。
+
+**配置**（可选）：`tools` 决定这一行授予哪一组工具。分组是从 core 搬来的：core 不再注册任何模型工具，也不再贡献提示词段。
+
+| `tools` | 注册的工具 |
+|---|---|
+| `all`（缺省） | 三个只读工具 |
+| `none` | 无——连 `tool:eval` 提示词段也不贡献 |
+
+没有更细的分组，因为没有可分的：这一行一个写工具都不注册。
+
+## 安装
+
+```sh
+# core 仍按原样全局安装（服务面 / CLI / /eval slash 都在 core）
+dsh plugin --profile web add @khorsheed/dsh-eval
+# 伴生包只需装到 profile 的 node_modules（可解析即可，不会自挂载）
+dsh plugin --profile web add @khorsheed/dsh-eval-tool
+# 然后在目标 preset 的 agent.cordis.yml 加上面那行
+```
+
+web-dev 场景包的开发模式 preset（`profiles/web-dev/presets/dev`）已带此行（缺省 `all`）；评测包的 `eval` 预设（`profiles/web-eval`）同样以 `tools: all` 引用它——三个机制行的 tier 都跟着授予点走，同一 profile 里其它预设的会话一个都拿不到。
+
+## Compatibility
+
+- **npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）**：✅ 完整——工具注册进宿主 tools 注册表并贡献提示词段；0.1.5 官方插件列表的「会话插件」组按 preset 组合呈现本行（短名标题、状态徽标、活挂载相位点）。core 缺席时行照常挂载，只是不注册工具（记一行日志）。
+- **源码线（deepseek-harness master）**：✅（verifiedHost: 0.1.5-rc.1）。
+- 低于 0.1.5 的宿主：preset 组合与工具行机制在更早的线上已存在，但「会话插件」清单视图是 0.1.5 的呈现——与 worktrees-tool / room-tool 两条伴生行同一档，minHost 钉 0.1.5-rc.1。
+- **发布顺序**：引用伴生行的 pack 必须先有伴生包被发布 / 安装；行解析失败会让该 preset 组合报 broken（实例 boot 不受影响），不是静默降级。本包是纯宿主面，没有浏览器半（core 的 `/eval` slash 与 CLI 也一样）。
+
+**版本线对照**：`0.1.0` 起支持宿主 `0.1.5-rc.1` 及以后。

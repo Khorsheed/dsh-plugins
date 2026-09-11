@@ -6,7 +6,7 @@
  * tab uses.
  * @module @khorsheed/dsh-room/client/InviteAgentAction
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useReducer, useState, type ReactNode } from 'react'
 import type { RoomProviderList } from '../types.ts'
 import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
 import type { InviteAgentActionProps } from './slots.ts'
@@ -14,10 +14,14 @@ import css from './InviteAgentAction.module.css'
 
 /** The header chip plus its dialog. */
 export function InviteAgentAction({
-  roomCwd, invite, listProviders, listNames, browseDirectory, t,
+  roomCwd, invite, listProviders, listNames, browseDirectory, roomChrome, sessionId, t,
 }: InviteAgentActionProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
+  // Re-render when the criterion's inputs move (the inventory answer lands,
+  // or the current session flips the per-session verdict).
+  const [, bump] = useReducer((count: number): number => count + 1, 0)
+  useEffect(() => roomChrome.subscribe(bump), [roomChrome])
 
   const openDialog = (): void => {
     setProviders(undefined)
@@ -37,6 +41,11 @@ export function InviteAgentAction({
     })
     return outcome
   }
+
+  // M3' self-hide: the chip is the room's dev affordance — it renders only
+  // when this session's preset composition grants the room tools (or the
+  // session IS a room, or the criterion has no answer — all fail-open).
+  if (!roomChrome.show(sessionId)) return null
 
   return (
     <>

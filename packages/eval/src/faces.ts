@@ -72,6 +72,51 @@ export interface DatasetsFace {
   }): Promise<{ content: string; commit: string }>
 }
 
+/**
+ * The capability catalog's read face — OPTIONAL, and only ever read for
+ * provenance.
+ *
+ * The orchestrating instance has a capability face of its own (its planning
+ * agent's tools and skills), and it is not a factor: the orchestrator does
+ * not answer the dataset's questions, the players do. But it decides what the
+ * apparatus could do while the run happened, so a bundle that cannot say what
+ * the orchestrator was leaves a reader unable to reproduce the run's
+ * conditions. It is recorded in `run.meta.orchestrator.capabilities` and
+ * never compared.
+ *
+ * Structural, like every other face here: eval imports nothing from
+ * `@khorsheed/dsh-capability-catalog`, and a composition without the catalog
+ * simply records no capability line.
+ */
+export interface CapabilityCatalogFace {
+  /**
+   * The capability face of one preset, with its hash. `presetId` omitted
+   * reads the deployment default — which is what the orchestrating instance
+   * runs on. A named preset the roster cannot resolve REJECTS rather than
+   * degrading to the global layer: a fingerprint that falls back is a false
+   * one, not a weaker one.
+   */
+  snapshotFor(presetId?: string, workdir?: string): Promise<CapabilitySnapshotFace>
+  /**
+   * The digest of a snapshot the caller already holds. OPTIONAL, and the
+   * fallback rather than the first choice: `snapshotFor` stamps `sha`
+   * itself, so this is only reached against a catalog whose snapshot verb
+   * predates the stamp. It is a module function on the catalog package and
+   * may well be absent from the mounted service — probe, then degrade.
+   */
+  hashOf?(snapshot: CapabilitySnapshotFace): string
+}
+
+/** A capability snapshot as eval reads it — rows counted, never interpreted. */
+export interface CapabilitySnapshotFace {
+  /** The capability hash, stamped by the fingerprint verb. */
+  sha?: string
+  /** The preset the face was taken under; absent when the scope resolved to none. */
+  preset?: string
+  skills: readonly unknown[]
+  tools: readonly unknown[]
+}
+
 /** One file of a mission submission. */
 export interface MissionSubmitFile {
   path: string
@@ -254,6 +299,57 @@ export interface DelegationInfo {
   scope?: string
 }
 
+/**
+ * How much is known about one scoped home's credential, as the family grades
+ * it. `absent` and `rejected` both mean "provision has nothing usable to
+ * anchor": one has no record at all, the other has one the endpoint refused.
+ */
+export type LocalAgentCredentialGrade = 'absent' | 'present-unverified' | 'verified' | 'rejected'
+
+/**
+ * The fairness-relevant effective settings of ONE scoped home (structurally
+ * the family's `LocalAgentEffectiveSettings`). Every knob is optional because
+ * absence is a real answer — "this harness has no such knob" — and provision
+ * records it as such rather than substituting a default.
+ *
+ * Credential-free by contract: an endpoint reports its HOSTNAME only, never a
+ * URL whose path could carry a tenant or project id.
+ */
+export interface LocalAgentEffectiveSettingsFace {
+  drive: string
+  /** codex: the sandbox policy every round passes to `codex exec --sandbox`. */
+  sandbox?: string
+  /** claude-code: the `claude -p` permission handling (`skip` / `normal`). */
+  permissionMode?: string
+  /** kimi: whether the scoped config's rules auto-approve tool use. */
+  autoApprove?: boolean
+  /** The reasoning effort in force, when the harness has one. */
+  reasoningEffort?: string
+  /** Whether a non-default endpoint is in force. */
+  baseUrlSet: boolean
+  /** The endpoint's hostname, present exactly when `baseUrlSet`. */
+  baseUrlHost?: string
+  /** The CLI's own version, as the CLI itself reports it. */
+  cliVersion?: string
+  /** The configured model a round with no model of its own would run. */
+  model?: string
+}
+
+/** One scoped home's status snapshot (structurally the family's `LocalAgentStatus`). */
+export interface LocalAgentScopeStatus {
+  name: string
+  /** Absolute scoped home of the scope this status describes. */
+  homeDir: string
+  /** How much is actually known about the credential. */
+  credentialState: LocalAgentCredentialGrade
+  /** The named scope; absent means the default one. */
+  scope?: string
+  /** Whether the harness declares a device-code login flow (`/<name> login`). */
+  loginable?: boolean
+  /** The snapshot, when the harness declares one. */
+  effectiveSettings?: LocalAgentEffectiveSettingsFace
+}
+
 /** The localAgent verbs the run loop uses. */
 export interface LocalAgentFace {
   start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: EvalDelegationOptions): Promise<DelegationRun>
@@ -287,6 +383,22 @@ export interface LocalAgentFace {
    * mount of the wrong directory.
    */
   homeDir?(harness: string, scope?: string): string
+  /**
+   * One scoped home's auth status — the credential grade `conditions
+   * provision` gates on. OPTIONAL on the face: a facade predating it makes
+   * provision a refusal that names the method, never a lock written against
+   * a credential nobody checked.
+   */
+  statusOf?(harness: string, scope?: string): Promise<LocalAgentScopeStatus>
+  /**
+   * One scoped home's fairness-relevant effective settings — the READ side of
+   * the condition hash, and what `conditions provision` checks a condition
+   * against field by field. OPTIONAL for the same reason as
+   * {@link LocalAgentFace.statusOf}; `undefined` (rather than absent) means
+   * the harness declares no snapshot at all, and provision then records that
+   * it could compare nothing.
+   */
+  effectiveSettings?(harness: string, scope?: string): Promise<LocalAgentEffectiveSettingsFace | undefined>
 }
 
 /**

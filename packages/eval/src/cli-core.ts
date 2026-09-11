@@ -69,6 +69,26 @@ const USAGE = `dsh-eval <verb> [options]
   conditions hash <condition.json>  sha256 of the condition document's
                                     canonical JSON (notes excluded); the file
                                     must be a valid dataseek.condition/1.
+  conditions list [--repo DIR]      Every condition a dataset repository
+                  [--dataset ID]    declares: id, hash, lock state, whether the
+                                    locked home still matches, and the
+                                    provisioned snapshot the lock recorded.
+                                    Read-only.
+  conditions diff <a> <b>           Field-by-field difference between two
+                  [--repo DIR]      declarations (canonical deep compare; the
+                  [--dataset ID]    hash excludes notes, the diff still shows
+                                    them). Each side is a condition id or a
+                                    path. Prints WHICH fields differ and what
+                                    each side says — and nothing else: whether
+                                    a pair is worth running is the reviewer's
+                                    call, not a tool's.
+  conditions provision <cond.json>  Turn a declaration into a real scoped home
+                  --repo DIR        and write conditions/<id>.lock.json beside
+                                    it. Needs the local-agent service (the
+                                    credential grade and the scope's effective
+                                    settings live there), so it runs from a
+                                    live session: /eval conditions provision.
+                                    Outside one this CLI refuses and says so.
   report <bundleDir> [--out DIR]    Build report/results.jsonl (one verdict per
                                     line) and report/summary.md (four
                                     invariants, paired comparison) from a
@@ -295,27 +315,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         io.stderr(`dsh-eval: template generated from ${manifestPath} (${template.states.length} states, ${template.transitions.length} transitions)\n`)
         return 0
       }
-      case 'conditions': {
-        const [sub, target, ...extra] = rest
-        if (sub !== 'hash') {
-          throw new UsageError(sub === undefined
-            ? 'conditions wants a verb (hash)'
-            : `unknown conditions verb ${JSON.stringify(sub)} (want hash)`)
-        }
-        if (target === undefined) throw new UsageError('conditions hash wants a condition file')
-        if (extra.length > 0) throw new UsageError(`unexpected argument(s): ${extra.join(' ')}`)
-        let document: unknown
-        try {
-          document = JSON.parse(await readFile(target, 'utf8'))
-        } catch (error) {
-          throw new Error(`cannot read condition ${target}: ${error instanceof Error ? error.message : String(error)}`)
-        }
-        const id = conditionIdFromPath(target)
-        const { sha, warnings } = service.hashCondition(document)
-        io.stdout(`${JSON.stringify({ id, sha, warnings }, null, 2)}\n`)
-        io.stderr(`dsh-eval: ${id} sha ${sha.slice(0, 12)}… (${warnings.length} unresolved field(s))\n`)
-        return 0
-      }
+      case 'conditions':
+        return await runConditions(service, rest, io)
       case 'report': {
         const positional: string[] = []
         let outDir: string | undefined
@@ -367,4 +368,80 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     io.stderr(`dsh-eval: ${error instanceof Error ? error.message : String(error)}\n`)
     return 1
   }
+}
+
+/**
+ * The `conditions` verb family: `hash`, `list`, `diff` — and `provision`,
+ * which refuses here and names the surface that can do it.
+ * @param service - the offline kernel.
+ * @param rest - arguments after `conditions`.
+ * @param io - output channels.
+ * @returns the exit code.
+ */
+async function runConditions(service: EvalService, rest: readonly string[], io: CliIo): Promise<number> {
+  const [sub, ...tail] = rest
+  const VERBS = 'hash, list, diff, provision'
+  if (sub === undefined) throw new UsageError(`conditions wants a verb (${VERBS})`)
+  const { values, switches, leftovers } = splitOptions(tail, ['--repo', '--dataset'])
+  if (switches.size > 0) throw new UsageError(`unexpected option(s) for conditions ${sub}: ${[...switches].join(' ')}`)
+  const repo = values.get('--repo')?.[0]
+  const dataset = values.get('--dataset')?.[0]
+
+  if (sub === 'hash') {
+    const [target, ...extra] = leftovers
+    if (target === undefined) throw new UsageError('conditions hash wants a condition file')
+    if (extra.length > 0) throw new UsageError(`unexpected argument(s): ${extra.join(' ')}`)
+    let document: unknown
+    try {
+      document = JSON.parse(await readFile(target, 'utf8'))
+    } catch (error) {
+      throw new Error(`cannot read condition ${target}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    const id = conditionIdFromPath(target)
+    const { sha, warnings } = service.hashCondition(document)
+    io.stdout(`${JSON.stringify({ id, sha, warnings }, null, 2)}\n`)
+    io.stderr(`dsh-eval: ${id} sha ${sha.slice(0, 12)}… (${warnings.length} unresolved field(s))\n`)
+    return 0
+  }
+
+  if (sub === 'list') {
+    if (leftovers.length > 0) throw new UsageError(`unexpected argument(s): ${leftovers.join(' ')}`)
+    const report = await service.conditions({
+      ...(repo !== undefined ? { repo } : {}),
+      ...(dataset !== undefined ? { dataset } : {}),
+    })
+    io.stdout(`${JSON.stringify(report, null, 2)}\n`)
+    const ready = report.conditions.filter(condition => condition.status === 'ready').length
+    const provisioned = report.conditions.filter(condition => condition.lock.provisioned !== null).length
+    io.stderr(`dsh-eval: ${report.conditions.length} condition(s) over ${report.datasets.length} dataset set(s)`
+      + ` — ${ready} ready, ${provisioned} carrying a provisioned record\n`)
+    return 0
+  }
+
+  if (sub === 'diff') {
+    const [a, b, ...extra] = leftovers
+    if (a === undefined || b === undefined) throw new UsageError('conditions diff wants two conditions (id or path)')
+    if (extra.length > 0) throw new UsageError(`unexpected argument(s): ${extra.join(' ')}`)
+    const diff = await service.conditionDiff({
+      a,
+      b,
+      ...(repo !== undefined ? { repo } : {}),
+      ...(dataset !== undefined ? { dataset } : {}),
+    })
+    io.stdout(`${JSON.stringify(diff, null, 2)}\n`)
+    const substantive = diff.differences.filter(difference => difference.path !== 'notes')
+    io.stderr(diff.identical
+      ? `dsh-eval: ${diff.a.id} and ${diff.b.id} are identical${diff.notesOnly ? ' apart from notes (not a factor — notes are excluded from the hash)' : ''}\n`
+      : `dsh-eval: ${diff.a.id} vs ${diff.b.id} — ${substantive.length} field(s) differ: ${substantive.map(difference => difference.path).join(', ')}\n`)
+    return 0
+  }
+
+  if (sub === 'provision') {
+    io.stderr('dsh-eval: refusing: provision resolves the condition\'s scoped home, grades its credential and reads that scope\'s'
+      + ' effective settings — all three live in the local-agent service, which this process does not have.'
+      + ' Run it from a live session: /eval conditions provision <condition.json> --repo <working copy>.\n')
+    return 1
+  }
+
+  throw new UsageError(`unknown conditions verb ${JSON.stringify(sub)} (want ${VERBS})`)
 }

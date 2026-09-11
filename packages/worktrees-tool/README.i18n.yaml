@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/worktrees-tool/README.en.md
+packages/worktrees-tool/README.en.md: 529829d63778f202fba6fcbbee05ed456c687574
+packages/worktrees-tool/README.md: 82c1254ac0bad9c2e9e68d63e7f991a2a1b33c42

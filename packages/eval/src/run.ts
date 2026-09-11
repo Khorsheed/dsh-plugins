@@ -38,10 +38,11 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
 import type {
+  CapabilityCatalogFace,
   DelegationProgress, DelegationResult, DelegationToolCalls, DelegationUsage,
   DatasetsFace, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
 } from './faces.ts'
-import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
+import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type LockedCapabilities, type PlanValidation } from './validate.ts'
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
 import { loadManifest, type SuiteManifest } from './manifest.ts'
 import { expandMatrix, orderCells, type EvalCell } from './matrix.ts'
@@ -57,8 +58,10 @@ import {
   type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
 } from './judge.ts'
 import { hostProbeExecutor, unitProbeExecutor, type ProbeExecutor } from './probe-exec.ts'
+import { checkUnitEgress } from './egress.ts'
+import type { EgressCheckDecl } from './unit.ts'
 import {
-  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, describeAcquireSpec,
+  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, describeAcquireSpec, egressCheckAbsentNote, planUnitDiagnostics,
   environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   type CellUnitPlan, type CredentialsCheck,
 } from './unit.ts'
@@ -103,6 +106,36 @@ class RunCancelled extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'RunCancelled'
+  }
+}
+
+/**
+ * The orchestrating instance's capability fingerprint, for `run.meta`.
+ *
+ * Never throws and never refuses a run: the catalog is optional, and a
+ * provenance line that could stop a run would be a factor in everything but
+ * name.
+ * @param catalog - the optional catalog face.
+ * @param log - the run log, for the one line a failure is worth.
+ * @returns the recorded shape, or undefined when there is nothing to record.
+ */
+async function readOrchestratorCapabilities(
+  catalog: CapabilityCatalogFace | undefined,
+  log: (message: string) => void,
+): Promise<{ sha: string; preset?: string; skills: number; tools: number } | undefined> {
+  if (catalog?.snapshotFor === undefined) return undefined
+  try {
+    const face = await catalog.snapshotFor()
+    if (typeof face.sha !== 'string' || face.sha === '') return undefined
+    return {
+      sha: face.sha,
+      ...(typeof face.preset === 'string' ? { preset: face.preset } : {}),
+      skills: face.skills.length,
+      tools: face.tools.length,
+    }
+  } catch (error) {
+    log(`orchestrator capabilities unavailable: ${error instanceof Error ? error.message : String(error)} — run.meta records none`)
+    return undefined
   }
 }
 
@@ -193,6 +226,12 @@ export interface RunDeps {
   localAgent: LocalAgentFace
   /** Required only by a plan that declares a `unit` segment; the host path never touches it. */
   lab?: LabFace
+  /**
+   * The orchestrating instance's own capability catalog. Optional and
+   * PROVENANCE ONLY: its hash is recorded in `run.meta.orchestrator`, never
+   * compared and never a factor. A composition without it records no line.
+   */
+  capabilityCatalog?: CapabilityCatalogFace
   stateRoot: string
 }
 
@@ -297,6 +336,20 @@ interface ResolvedCondition {
    * one — what every condition written before the field asks for.
    */
   scope?: string
+  /**
+   * The condition's declared preset — the agent composition its environment
+   * runs under — or null for none. Only a harness whose composition this
+   * family provisions may name one (validate refuses the rest), so in
+   * practice this is the sub-dsh's sub-profile roster.
+   */
+  preset: string | null
+  /**
+   * The capability fingerprint the condition's lock records, when provision
+   * has measured one. It is the only evidence the declared `preset` was
+   * actually built; a condition that declares a preset without it is a
+   * subject whose capability face nobody checked.
+   */
+  lockedCapabilities?: LockedCapabilities
   /** The full condition document (recorded into run.meta for the report's factor diff). */
   document: Record<string, unknown>
 }
@@ -328,6 +381,8 @@ interface CellState {
 interface CellUnitBinding {
   lab: LabFace
   plan: CellUnitPlan
+  /** The plan's egress self-check, when it declares one. */
+  egressCheck?: EgressCheckDecl
 }
 
 /**
@@ -456,6 +511,8 @@ async function judgeCell(
     attemptDataDir: string
     attempt: number
     parentSessionId: string
+    /** The cell's own condition — the judging side needs it to mark a self-judged sample. */
+    condition: { id: string; declaredModel: string | null }
     judge: JudgeEnv
     /** Set on the container path: the probes run inside this cell's unit. */
     unit?: { lab: LabFace; unitId: string }
@@ -617,6 +674,7 @@ async function judgeCell(
     now: env.now,
     taskId: env.taskId,
     parentSessionId: env.parentSessionId,
+    cell: { condition: env.condition.id, declaredModel: env.condition.declaredModel },
     judges: env.judge.judges,
     samples: env.judge.samples,
     criteria,
@@ -631,6 +689,11 @@ async function judgeCell(
       sample: record.sample,
       judgeCondition: record.judgeCondition,
       judgeSha: record.judgeSha,
+      // Who judged, in the two words a reader needs: the condition id and the
+      // model. Decision 9 stopped forbidding the overlap, so the report has to
+      // be able to SAY which cells a model judged — including its own.
+      judgeModel: record.judgeModel,
+      selfJudged: record.selfJudged,
       promptSha: record.promptSha,
       verdicts: record.verdicts,
     }, { runId: env.runId, by: env.by })
@@ -747,6 +810,15 @@ async function runCellOnce(
     // once, and the fingerprint that describes it exists before any work does.
     unit = await env.unit.lab.acquire(acquireSpecFor(env.unit.plan, { missionId, runId: env.runId }))
     if (env.held !== undefined) env.held.unit = unit
+    // Between acquire and populate, for the same reason the readiness probe
+    // asks before delegating: a unit that cannot reach its endpoints wastes
+    // the whole cell and then reports nothing about why. The readiness gate
+    // already asked this of a unit of the same class; asking again per cell
+    // catches a sidecar that died mid-run, which is exactly how T29c's
+    // containers ended up unreachable in the first place.
+    if (env.unit.egressCheck !== undefined) {
+      await checkUnitEgress(env.unit.lab, unit.id, env.unit.egressCheck, `cell ${missionId}`)
+    }
     // The «环境一致» invariant's input, written by the ORCHESTRATOR the moment
     // the unit exists. lab registers the same two refs itself, but that write
     // is best-effort by design (it warns and skips), and an invariant may not
@@ -1131,6 +1203,7 @@ async function runCellOnce(
     attemptDataDir,
     attempt: current.mission.currentAttempt,
     parentSessionId: env.parentSessionId,
+    condition: { id: env.condition.id, declaredModel: env.condition.declaredModel },
     judge: env.judge,
     ...(unit !== undefined ? { unit: { lab: (env.unit as CellUnitBinding).lab, unitId: unit.id } } : {}),
   })
@@ -1511,6 +1584,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     } else {
       conditionWarnings.push({ code: 'LOCK_MISSING', message: `condition ${resolution.id} has no lock — running on the fresh hash (the full readiness gate lands with provision, I4)` })
     }
+    // The capability record rides validate's resolution, which already read
+    // and schema-checked the lock — re-reading it here would be a second
+    // opinion on the same file.
+    const lockedCapabilities = resolution.lock?.capabilities
     conditions.push({
       id: resolution.id,
       sha,
@@ -1518,15 +1595,28 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       declaredModel: (document['model'] as { declared: string | null } | undefined)?.declared ?? null,
       provider: '',
       ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
+      preset: typeof document['preset'] === 'string' ? document['preset'] : null,
+      ...(lockedCapabilities === undefined ? {} : { lockedCapabilities }),
       document,
     })
   }
 
-  // ── The judge is a condition too, and must not be a contestant. ───────
-  // validate() already refuses an id that appears on both lists; this is the
-  // stronger check the brief asks for — two DIFFERENT ids that name the same
-  // (harness, declared model) are the same subject wearing two hats, and a
-  // judge grading itself is the failure decision 9 exists to prevent.
+  // ── The judge is a condition too — and, since 2026-09-10, may be a
+  // contestant's twin. Decision 9 used to refuse two DIFFERENT ids naming the
+  // same (harness, declared model); that rule made "evaluate every model" and
+  // "judge with a model" mutually exclusive, which is the corner T22 step 5
+  // died in. Every public leaderboard that judges with models has the overlap
+  // by construction (MT-Bench, AlpacaEval, Arena-Hard all let contestants
+  // judge, and record the self-preference); the answer there is a PANEL plus
+  // disclosure, not exclusion, and a benchmark that wants neither uses
+  // deterministic graders instead (SWE-bench). So the refusal is gone and its
+  // job moved into the record: every sample says who judged, and a cell judged
+  // by its own model is marked `selfJudged` in the verdicts, in results.jsonl,
+  // and in the report's comparison section.
+  //
+  // What is still refused lives in validate(): the same id on both lists (a
+  // bookkeeping mistake, not a panel), and a judge that pins no model (without
+  // one, "self-judged" is undecidable).
   const judgeIds = plan.judge?.conditions ?? []
   const judgeDocuments = new Map<string, Record<string, unknown>>()
   const judges: ResolvedJudge[] = []
@@ -1545,16 +1635,18 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     const harness = document['harness'] as { name?: string; drive?: string } | undefined
     const harnessName = harness?.name ?? ''
     const declaredModel = (document['model'] as { declared: string | null } | undefined)?.declared ?? null
-    const clash = conditions.find(player => player.harnessName === harnessName && player.declaredModel === declaredModel)
-    if (clash !== undefined) {
-      throw new EvalRunRefused(
-        `judge condition ${judgeId} is a contestant — nothing was executed`,
-        [{
-          code: 'JUDGE_IS_PLAYER',
-          message: `${judgeId} declares (harness ${JSON.stringify(harnessName)}, model ${JSON.stringify(declaredModel)}), which is exactly player condition ${clash.id}`
-            + ' — frozen decision 9: the judge must not be one of the players. Give the judge a different harness or a different declared model.',
-        }],
-      )
+    if (declaredModel === null) {
+      throw new EvalRunRefused(`judge condition ${judgeId} pins no model — nothing was executed`, [{
+        code: 'JUDGE_MODEL_UNDECLARED',
+        message: `${judgeId} declares model.declared: null. A judge must pin its model: decision 9 now allows a judge to share a model with a player`
+          + ' and marks those cells self-judged, and that marking is undecidable when the judge runs whatever its harness happens to default to.',
+      }])
+    }
+    // Not a refusal any more, but the run says it out loud before it starts:
+    // the panel overlaps the field, and the affected cells will carry the mark.
+    for (const player of conditions.filter(player => player.declaredModel !== null && player.declaredModel === declaredModel)) {
+      log(`judge ${judgeId}: model ${JSON.stringify(declaredModel)} is also player condition ${player.id}`
+        + " — that condition's cells will be marked selfJudged for this judge (decision 9, relaxed)")
     }
     judgeDocuments.set(judgeId, document)
     judges.push({
@@ -1679,12 +1771,18 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       if (!check.ok) problems.push({ code: 'CREDENTIALS_UNUSABLE', message: check.reason as string })
       else if (check.ownerNote !== undefined) log(`credentials ${condition.id}: ${check.ownerNote}`)
     }
+    // The half the contract subset cannot state: a well-typed declaration
+    // that would check nothing. Refused rather than dropped — a run that
+    // believes it was checked is the failure this whole change is about.
+    problems.push(...planUnitDiagnostics(plan))
     if (problems.length > 0) {
       throw new EvalRunRefused(
         `the plan's unit segment cannot be satisfied for ${problems.length} condition(s) — nothing was executed`,
         problems,
       )
     }
+    const absentNote = egressCheckAbsentNote(planUnit)
+    if (absentNote !== undefined) log(absentNote)
     if (options.finalize !== true) {
       // Not a refusal: stopping at `archived` is a legitimate thing to want.
       // But on the container path it means every cell's container survives
@@ -1762,6 +1860,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         provider: condition.provider,
         role: 'player',
         ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+        preset: condition.preset,
+        ...(condition.lockedCapabilities === undefined ? {} : { capabilities: condition.lockedCapabilities }),
       })),
       ...judges.map((judge): ReadinessSubject => ({
         id: judge.id,
@@ -1778,6 +1878,20 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
     now,
     log,
+    // Freshness: the lock says what the preset hashed to at provision time;
+    // this asks what it hashes to now. Only the instance's own catalog can
+    // answer, so a composition without one keeps the pre-T32b gate
+    // (presence and agreement, no freshness).
+    ...(deps?.capabilityCatalog === undefined
+      ? {}
+      : {
+        capabilitiesNow: async (subject: ReadinessSubject): Promise<string | undefined> => {
+          const preset = subject.preset ?? undefined
+          if (preset === undefined || preset === null) return undefined
+          const face = await (deps.capabilityCatalog as CapabilityCatalogFace).snapshotFor(preset)
+          return face.sha
+        },
+      }),
     ...(planUnit === null || lab === undefined ? {} : {
       unitFor: async (subject: ReadinessSubject): Promise<ReadinessUnit | undefined> => {
         // The judge delegates from the orchestrator, not from a cell, and it
@@ -1794,6 +1908,21 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
             env: { [cellUnit.scopedHome.var]: cellUnit.scopedHome.container },
           },
           fingerprint: unit.fingerprint,
+          // The plan's own question, asked in the probe's own unit. Absent
+          // declaration, absent hook — the probe then runs exactly as it did
+          // before this key existed.
+          ...(planUnit.egressCheck === undefined ? {} : {
+            // No condition name in `where`: both consumers of this message —
+            // the readiness log line and the run's diagnostic — already
+            // prefix it with the condition, and saying it three times in one
+            // sentence is how a message stops being read.
+            checkEgress: (): Promise<void> => checkUnitEgress(
+              lab,
+              unit.id,
+              planUnit.egressCheck as EgressCheckDecl,
+              'the probe unit',
+            ),
+          }),
           release: async () => {
             await destroyUnit({ lab, mission: faces.mission }, { runId: '', by, log }, unit, 'the readiness probe finished', { force: true })
           },
@@ -1807,7 +1936,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       `${failedReadiness.size} of ${readiness.length} condition(s) failed the pre-run readiness check — nothing was executed`
       + ' (fix the condition, or re-run with --ignore-readiness to start anyway and record its cells as skipped)',
       [...failedReadiness.values()].map(record => ({
-        code: 'READINESS_FAILED',
+        // An environment that cannot reach its endpoints is not a condition
+        // that failed its check: the subject was never asked. The code says
+        // which, so the refusal reaches whoever can fix it.
+        code: record.infrastructure ?? 'READINESS_FAILED',
         message: `${record.role === 'judge' ? 'judge ' : ''}${record.condition} (harness ${record.harness}): ${record.reason ?? 'unknown'}`,
       })),
     )
@@ -1830,6 +1962,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     harnesses: conditions.map(condition => condition.harnessName),
   })
 
+  // The orchestrating instance's own capability face — PROVENANCE, not a
+  // factor. It says what the apparatus could do while the run happened; the
+  // report lists it and compares nothing against it, because the
+  // orchestrator answers none of the dataset's questions. A composition
+  // without a catalog, or a catalog that fails to answer, records nothing
+  // rather than a guess.
+  const orchestratorCapabilities = await readOrchestratorCapabilities(deps?.capabilityCatalog, log)
+
   const startedAt = now()
   const meta: Record<string, unknown> = {
     datasetId: plan.dataset.id,
@@ -1849,6 +1989,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     startedAt,
     subset,
     readiness,
+    ...(orchestratorCapabilities === undefined ? {} : { orchestrator: { capabilities: orchestratorCapabilities } }),
     // What every cell of this run was built from. The host credential root is
     // deliberately absent: it is an operator fact, and run.meta travels in the
     // bundle.
@@ -1978,7 +2119,9 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
         finalize: options.finalize === true,
         readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
-        ...(cellUnit !== undefined && lab !== undefined ? { unit: { lab, plan: cellUnit } } : {}),
+        ...(cellUnit !== undefined && lab !== undefined
+          ? { unit: { lab, plan: cellUnit, ...(planUnit?.egressCheck === undefined ? {} : { egressCheck: planUnit.egressCheck }) } }
+          : {}),
         judge: {
           judges,
           samples: judgeSamples,

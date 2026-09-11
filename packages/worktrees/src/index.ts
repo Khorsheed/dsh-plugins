@@ -12,7 +12,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { WorktreesRemoteService } from './remote.ts'
 import { WorktreesService } from './service.ts'
-import { registerWorktreesTool } from './tool.ts'
 
 /** Plugin configuration. */
 export interface WorktreesPluginConfig {
@@ -57,8 +56,8 @@ export function apply(ctx: Context, config: WorktreesPluginConfig): void {
   const service = new WorktreesService(config.baseRef ?? 'main')
   ctx.provide('worktrees', service)
   ctx.plugin(WorktreesRemoteService, { visiblePresets: config.visiblePresets ?? [] })
-  // The model-facing tool joins through deferred injection inside
-  // `registerWorktreesTool` (`ctx.inject` fires when the tools registry
-  // appears); a composition with no tools bundle stays badge/drawer-only.
-  registerWorktreesTool(ctx)
+  // The model-facing `worktrees` tool is deliberately NOT registered here:
+  // it moved to the companion `@khorsheed/dsh-worktrees-tool`, which mounts
+  // the tool row inside agent-preset compositions (session-granted). The
+  // definition factory stays exported from ./tool.ts for that companion.
 }

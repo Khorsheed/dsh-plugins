@@ -20,6 +20,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run.ts'
+import type { RunOptions, RunReport } from '../src/run.ts'
+import { EvalRunJobs } from '../src/job.ts'
+import { EgressUnavailable } from '../src/egress.ts'
 import { READINESS_PROMPT } from '../src/readiness.ts'
 import type { DatasetsFace, LabAcquireSpec, LabFace, LabFingerprintComponents, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
 import type { DelegationProgress, DelegationResult, DelegationRun } from '../src/faces.ts'
@@ -802,6 +805,53 @@ describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)',
   })
 })
 
+describe('runPlan — the orchestrator capability record (T32)', () => {
+  const face = {
+    snapshotFor: async () => ({ sha: 'c'.repeat(64), preset: 'eval', skills: [{}, {}], tools: [{}, {}, {}] }),
+  }
+
+  it('records the orchestrating instance\'s capability hash in run.meta — provenance, not a factor', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(), capabilityCatalog: face })
+
+    const meta = (mission.runs.get(report.runId) as { meta: Record<string, unknown> }).meta
+    expect(meta['orchestrator']).toEqual({
+      capabilities: { sha: 'c'.repeat(64), preset: 'eval', skills: 2, tools: 3 },
+    })
+    // It is recorded ONCE, for the run — not per condition and not per cell:
+    // the orchestrator answers none of the dataset's questions.
+    expect(JSON.stringify(meta['conditions'])).not.toContain('c'.repeat(64))
+  })
+
+  it('records nothing when the composition mounts no catalog — an optional face, absent by default', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
+    expect((mission.runs.get(report.runId) as { meta: Record<string, unknown> }).meta['orchestrator']).toBeUndefined()
+  })
+
+  it('a catalog that throws costs the run nothing — provenance never refuses', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const lines: string[] = []
+    const broken = { snapshotFor: async (): Promise<never> => { throw new Error('registry absent') } }
+    const report = await runPlan(
+      planPath,
+      { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), log: line => lines.push(line) },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(), capabilityCatalog: broken },
+    )
+    expect(report.cells[0]?.finalState).toBe('archived')
+    expect((mission.runs.get(report.runId) as { meta: Record<string, unknown> }).meta['orchestrator']).toBeUndefined()
+    expect(lines.join('\n')).toContain('orchestrator capabilities unavailable')
+  })
+})
+
 describe('runPlan — the derived rubric weight table (T24)', () => {
   it('writes report/rubric-weights.json from the grading layer — numbers only, no criterion text', async () => {
     const root = makeDatasetTree()
@@ -1568,23 +1618,61 @@ describe('runPlan — the LLM judge (frozen decision 9)', () => {
   })
 })
 
-describe('runPlan — the judge must not be a contestant (frozen decision 9)', () => {
-  it('refuses before executing when a judge condition matches a player on (harness, model)', async () => {
+describe('runPlan — the judge panel (decision 9, relaxed 2026-09-10)', () => {
+  it('runs a judge that shares a model with a player, and marks those cells selfJudged', async () => {
     const root = makeDatasetTree()
     // A different id, the same subject: dsh + the same declared model the
-    // fixture player carries (T8b filled it in from the real dataset).
+    // fixture player carries (T8b filled it in from the real dataset). Before
+    // the relaxation this refused the whole run; now it runs and is DISCLOSED.
     writeCondition(root, 'judge-twin', { model: { declared: DECLARED_MODEL, endpoint: null } })
-    const planPath = writeJudgingPlan(root, ['judge-twin'], 2)
+    const planPath = writeJudgingPlan(root, ['judge-twin'], 1)
     const localAgent = new FakeLocalAgent()
     const mission = new FakeMission(join(root, 'mission'))
 
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
-      { datasets: fakeDatasets(root), mission, localAgent })).rejects.toThrow(EvalRunRefused)
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
-      { datasets: fakeDatasets(root), mission, localAgent })).rejects.toThrow(/is a contestant/)
-    // Nothing executed: no run was created and no delegation was made.
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+    const cell = report.cells[0] as { missionId: string }
+    const envelopes = llmDraftAnnotations(mission, report.runId, cell.missionId)
+    expect(envelopes).toHaveLength(1)
+    expect(envelopes[0]?.['judgeCondition']).toBe('judge-twin')
+    expect(envelopes[0]?.['judgeModel']).toBe(DECLARED_MODEL)
+    expect(envelopes[0]?.['selfJudged']).toBe(true)
+  })
+
+  it('refuses a judge that pins no model — self-judgement would be undecidable', async () => {
+    const root = makeDatasetTree()
+    writeCondition(root, 'judge-unpinned') // model.declared: null
+    const planPath = writeJudgingPlan(root, ['judge-unpinned'], 2)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+
+    // Refused OFFLINE, by validate: the plan never reaches the run loop's own
+    // copy of the rule, which is the right order — a plan that cannot run
+    // should fail review, not execution.
+    const refused = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(EvalRunRefused)
+    expect((refused as EvalRunRefused).diagnostics.map(d => d.code)).toContain('JUDGE_MODEL_UNDECLARED')
     expect(mission.runs.size).toBe(0)
     expect(localAgent.calls).toHaveLength(0)
+  })
+
+  it('runs a PANEL: every judge judges every cell, and only the twin is marked selfJudged', async () => {
+    const root = makeDatasetTree()
+    writeCondition(root, 'judge-twin', { model: { declared: DECLARED_MODEL, endpoint: null } })
+    const other = writeJudgeCondition(root, 'judge-other')
+    const planPath = writeJudgingPlan(root, ['judge-twin', other], 1)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+    const cell = report.cells[0] as { missionId: string }
+    const envelopes = llmDraftAnnotations(mission, report.runId, cell.missionId)
+    expect(envelopes.map(envelope => [envelope['judgeCondition'], envelope['selfJudged']])).toEqual([
+      ['judge-twin', true],
+      ['judge-other', false],
+    ])
   })
 
   it('accepts the same harness on a different declared model', async () => {
@@ -2717,5 +2805,247 @@ describe('runPlan — T30b the declared model is REQUESTED, not only compared', 
     const delegations = orchestratorNs(mission, report.runId, cell.missionId).filter(e => e['kind'] === 'delegation')
     expect(delegations.length).toBeGreaterThan(0)
     for (const entry of delegations) expect(entry['requestedModel']).toBe(DECLARED_MODEL)
+  })
+})
+
+describe('runPlan — the unit says whether it can reach anything, before anyone asks a model (T29d)', () => {
+  /** The unit segment plus a declared egress check with the given script. */
+  function unitWithEgress(script: string, timeoutMs?: number): Record<string, unknown> {
+    return {
+      ...UNIT_SEGMENT,
+      egressCheck: { command: ['sh', '-c', script], ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+    }
+  }
+
+  it('refuses the whole run under EGRESS_UNAVAILABLE, with no delegation spent', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const homesRoot = stageScopedHome(root)
+    const planPath = writePlan(
+      root,
+      { conditions: ['dsh-unit'], unit: unitWithEgress('echo "proxy CONNECT failed" >&2; exit 7') },
+      'container-egress-down',
+    )
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ homesRoot })
+    const lines: string[] = []
+    const refusal = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      log: (line: string) => lines.push(line),
+    }, { datasets: fakeDatasets(root), mission, localAgent: agent, lab }).catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(EvalRunRefused)
+    const diagnostics = (refusal as EvalRunRefused).diagnostics
+    expect(diagnostics.map(d => d.code)).toEqual(['EGRESS_UNAVAILABLE'])
+    // The reason names the command and what it said — a person reading only
+    // this line has to be able to go look at the proxy.
+    expect(diagnostics[0]?.message).toContain('exited 7')
+    expect(diagnostics[0]?.message).toContain('proxy CONNECT failed')
+    // The point of checking first: the subject was never asked anything, so
+    // no round, no tokens, and nothing to mis-attribute to the harness.
+    expect(agent.calls.filter(call => call.kind === 'start')).toEqual([])
+    // One condition name in the sentence, not three: the log line and the
+    // diagnostic each add their own prefix, so the check's own message does
+    // not repeat it.
+    const notReady = lines.find(line => line.includes('NOT READY')) ?? ''
+    expect(notReady).toContain('the probe unit: the egress check')
+    expect(notReady.match(/codex-exec|dsh-unit/g) ?? []).toHaveLength(1)
+  })
+
+  it('asks between acquire and populate on the cell path, and lets a passing unit through', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const homesRoot = stageScopedHome(root)
+    const planPath = writePlan(
+      root,
+      { conditions: ['dsh-unit'], unit: unitWithEgress('exit 0') },
+      'container-egress-ok',
+    )
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: agent, lab, probes: unitProbes() })
+    expect(report.cells[0]?.finalState).toBe('archived')
+    // Two units are acquired (the readiness probe's and the cell's) and each
+    // is asked before it is used: the probe before its delegation, the cell
+    // between acquire and populate — mounts cannot change after acquire, so
+    // there is no earlier place for the cell's.
+    const verbs = lab.calls.filter(call => ['acquire', 'verify', 'populate'].includes(call.verb)).map(call => call.verb)
+    expect(verbs.slice(0, 4)).toEqual(['acquire', 'verify', 'acquire', 'verify'])
+    expect(verbs[4]).toBe('populate')
+  })
+
+  it('refuses a declaration that would check nothing, before anything is acquired', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    stageScopedHome(root)
+    const planPath = writePlan(
+      root,
+      // Schema-valid (an array of strings) and meaningless: the contract
+      // subset has no cardinality keywords, so the run loop is the only place
+      // that can catch this.
+      { conditions: ['dsh-unit'], unit: { ...UNIT_SEGMENT, egressCheck: { command: [] } } },
+      'container-egress-malformed',
+    )
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const refusal = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent({ homesRoot: join(root, 'homes') }), lab })
+      .catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(EvalRunRefused)
+    const diagnostics = (refusal as EvalRunRefused).diagnostics
+    expect(diagnostics.map(d => d.code)).toEqual(['EGRESS_CHECK_MALFORMED'])
+    expect(diagnostics[0]?.message).toContain('non-empty command')
+    // Refused before anything was acquired: a plan that cannot be trusted to
+    // check its network has not earned a container.
+    expect(lab.calls.filter(call => call.verb === 'acquire')).toEqual([])
+  })
+
+  it('refuses a wrongly typed declaration at the schema', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    stageScopedHome(root)
+    const planPath = writePlan(
+      root,
+      { conditions: ['dsh-unit'], unit: { ...UNIT_SEGMENT, egressCheck: { command: 'curl example' } } },
+      'container-egress-mistyped',
+    )
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const refusal = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent({ homesRoot: join(root, 'homes') }), lab })
+      .catch((error: unknown) => error)
+    expect((refusal as EvalRunRefused).diagnostics.map(d => d.code)).toEqual(['PLAN_SCHEMA'])
+    expect((refusal as EvalRunRefused).diagnostics[0]?.message).toContain('egressCheck')
+  })
+
+  it('aborts the run when a sidecar dies mid-run, instead of retrying cells against a dead network', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const homesRoot = stageScopedHome(root)
+    // Passes once (the readiness probe's unit) and fails after: a proxy that
+    // was up when the run started and is not up when the first cell acquires.
+    const counter = join(root, 'egress-calls')
+    const planPath = writePlan(root, {
+      conditions: ['dsh-unit'],
+      unit: {
+        ...UNIT_SEGMENT,
+        egressCheck: { command: ['sh', '-c', `n=$(cat ${counter} 2>/dev/null || echo 0); echo $((n+1)) > ${counter}; [ "$n" = "0" ] || { echo 'curl: (5) Could not resolve proxy' >&2; exit 5; }`] },
+      },
+    }, 'container-egress-mid-run')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const error = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: agent, lab, probes: unitProbes() })
+      .catch((e: unknown) => e)
+    // Not an InfrastructureFailure, so the cell loop does not swallow it into
+    // a retry: one unreachable unit means the next one is unreachable too,
+    // and retrying is answering "the network is gone" with "let me try again".
+    expect(error).toBeInstanceOf(EgressUnavailable)
+    expect((error as Error).message).toContain('Could not resolve proxy')
+    expect((error as Error).message).toContain('cell p0-placeholder-dsh-unit-rep1')
+    // The readiness probe DID pass — this is the mid-run shape, not the
+    // refused-at-the-gate one.
+    expect(agent.calls.some(call => call.readiness === true)).toBe(true)
+  })
+
+  it('says once, in the log, when a networked plan declares no check at all', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const homesRoot = stageScopedHome(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-egress-absent')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const lines: string[] = []
+    await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      log: (line: string) => lines.push(line),
+    }, { datasets: fakeDatasets(root), mission, localAgent: agent, lab, probes: unitProbes() })
+    const notes = lines.filter(line => line.startsWith('egress:'))
+    expect(notes).toHaveLength(1)
+    expect(notes[0]).toContain('"eval-net"')
+    // And nothing was asked of the unit: an absent declaration is the shape
+    // every plan had before this key, so the run is byte-for-byte the old one.
+    expect(lab.calls.filter(call => call.verb === 'verify').map(call => call.options)).toEqual([])
+  })
+})
+
+describe('runPlan — a run started as a job reads exactly like one started with --wait (T29d)', () => {
+  /** One run of the container plan, returning only what it logged. */
+  async function containerRun(
+    root: string,
+    start: (execute: (options: RunOptions) => Promise<RunReport>, options: RunOptions & { cwd?: string }) => Promise<unknown>,
+    extra: Partial<RunOptions> = {},
+  ): Promise<string[]> {
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ homesRoot: join(root, 'homes'), workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const planPath = join(root, 'datasets', 'harness-comparison', 'plans', 'container-parity.json')
+    const lines: string[] = []
+    await start(
+      options => runPlan(planPath, options, { datasets: fakeDatasets(root), mission, localAgent: agent, lab, probes: unitProbes() }),
+      {
+        stateRoot: join(root, 'state'),
+        log: (line: string) => lines.push(line),
+        ...extra,
+      },
+    )
+    return lines.filter(line => line.startsWith('readiness '))
+  }
+
+  it('produces the same readiness lines on both paths, unit and all', async () => {
+    const waitRoot = makeDatasetTree()
+    writeUnitCondition(waitRoot)
+    stageScopedHome(waitRoot)
+    writePlan(waitRoot, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-parity')
+    // `--wait`: runPlan is called directly, parented to the calling session.
+    const waited = await containerRun(waitRoot, (execute, options) => execute({ ...options, parentSessionId: PARENT_SESSION }))
+
+    const jobRoot = makeDatasetTree()
+    writeUnitCondition(jobRoot)
+    stageScopedHome(jobRoot)
+    writePlan(jobRoot, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-parity')
+    // The job path: no calling session at all (the CI shape), so the runner
+    // opens its own — the case that used to refuse every container condition.
+    const runner = new EvalRunJobs({
+      get: (key: string) => key === 'jobs'
+        ? { start: (spec: { run: () => { done: Promise<unknown> } }) => { started = spec.run(); return 'eval-run-1' } }
+        : key === 'agents'
+          ? { get: () => undefined, create: async (options: { sessionId: string; meta?: { cwd?: string } }) => {
+            createdCwd = options.meta?.cwd
+            return { agent: { session: { id: options.sessionId } }, dispose: async () => {} }
+          } }
+          : undefined,
+    } as never)
+    let started: { done: Promise<unknown> } | undefined
+    let createdCwd: string | undefined
+    const jobbed = await containerRun(jobRoot, async (execute, options) => {
+      await runner.start(execute, { ...options, runId: 'run-t29d-parity' })
+      await started?.done
+    })
+
+    expect(jobbed).toEqual(waited)
+    // …and they are real lines, not two empty arrays agreeing with each other.
+    expect(waited.some(line => line.includes('ready'))).toBe(true)
+    // The session the job opened is the reason the container probe could run
+    // at all: it carries the run's cell root.
+    expect(createdCwd).toBe(join(jobRoot, 'state', 'cells', 'run-t29d-parity'))
   })
 })

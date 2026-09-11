@@ -36,6 +36,10 @@
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
     },
+    "./tool": {
+      "types": "./lib/types/tool.d.ts",
+      "default": "./lib/tool.js"
+    },
     "./typert": {
       "types": "./lib/typert.host.d.ts",
       "default": "./lib/typert.host.js"
@@ -96,13 +100,25 @@
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@khorsheed/dsh-local-agent": "workspace:*",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "@khorsheed/dsh-room-tool": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-session-stats": { "optional": true },
-    "@deepseek-ai/dsh-token-meter": { "optional": true },
-    "@deepseek-ai/dsh-tool-todo": { "optional": true },
-    "@khorsheed/dsh-local-agent": { "optional": true }
+    "@deepseek-ai/dsh-session-stats": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-token-meter": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tool-todo": {
+      "optional": true
+    },
+    "@khorsheed/dsh-local-agent": {
+      "optional": true
+    },
+    "@khorsheed/dsh-room-tool": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -134,12 +150,15 @@
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@khorsheed/dsh-room-tool": "workspace:*"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
     "lib/client.js",
+    "lib/tool.js",
+    "lib/journal-*.js",
     "cordis.patch.yml",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",

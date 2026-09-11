@@ -62,6 +62,24 @@ export interface Finding {
 export const NO_OWN_PATCH: ReadonlyArray<string> = [
   'local-agent-tool-subagent',
   'local-agent-dsh-headless',
+  // worktrees-tool is the worktrees core's preset-composed companion row:
+  // it only makes the tool module resolvable; agent presets name the row
+  // (a `dsh.bundle` declaration would auto-mount the tool at the profile
+  // root — exactly what the split removes).
+  'worktrees-tool',
+  // room-tool is the room core's preset-composed companion row (same shape as
+  // worktrees-tool): it only makes the tool module resolvable; agent presets
+  // name the row — a dsh.bundle declaration would auto-mount the tools at
+  // the profile root, exactly what the split removes.
+  'room-tool',
+  // mission-tool / datasets-tool / eval-tool are the same shape for the
+  // mission / datasets / eval cores (M4'③): each only makes its tool module
+  // resolvable, and an agent preset names its row — a dsh.bundle declaration
+  // would auto-mount the tools (and their guidance sections) at the profile
+  // root, exactly what the split removes.
+  'mission-tool',
+  'datasets-tool',
+  'eval-tool',
 ]
 
 /**
@@ -81,12 +99,40 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
     '@khorsheed/dsh-local-agent-dsh-headless',
   ],
   'local-agent-tool-subagent': ['@khorsheed/dsh-local-agent'],
+  // The worktrees core/companion pair: the companion consumes the core's
+  // tool-definition factory and probes its global service (declare-and-degrade
+  // — the probe is `ctx.get`, the peer dep keeps the module resolvable).
+  'worktrees-tool': ['@khorsheed/dsh-worktrees'],
+  // The reverse edge is OPTIONAL integration, not a dependency: the core's badge
+  // lights up when the preset names the companion row (its module name rides the
+  // gate constant in the client bundle) and is invisible without it — declared so
+  // pack-dist's family-edge check passes.
+  'worktrees': ['@khorsheed/dsh-worktrees-tool'],
+  // The room core/companion pair (same declare-and-degrade pattern).
+  'room-tool': ['@khorsheed/dsh-room'],
+  // The mission / datasets / eval core/companion pairs (M4'③, same pattern,
+  // zero deviations): each companion consumes its core's `./tool` definition
+  // factory and probes the core's global service.
+  'mission-tool': ['@khorsheed/dsh-mission'],
+  'datasets-tool': ['@khorsheed/dsh-datasets'],
+  'eval-tool': ['@khorsheed/dsh-eval'],
+  // The same optional reverse edges as worktrees/room: each core's self-hide
+  // criterion names its companion by module name (a data string in the client
+  // bundle, not an import), declared so pack-dist's family-edge check passes.
+  'mission': ['@khorsheed/dsh-mission-tool'],
+  'datasets': ['@khorsheed/dsh-datasets-tool'],
+  // eval has no browser half, so no artifact of it names the companion; the
+  // peer edge exists for the loader-level family contract alone (deploy:3080
+  // packs peer companions), declared here so the intent is on the record.
+  'eval': ['@khorsheed/dsh-eval-tool'],
   'ui-file-preview': ['@khorsheed/dsh-file-preview'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent
   // as its only member). Sanctioned per the declare-and-degrade pattern.
-  'room': ['@khorsheed/dsh-local-agent'],
+  // ...plus the same optional reverse edge as worktrees (the self-hide
+  // criterion names the companion).
+  'room': ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-room-tool'],
 }
 
 /**

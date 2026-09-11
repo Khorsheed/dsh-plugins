@@ -11,6 +11,10 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* The top bar paints no surface of its own: it sits on the pane's base
+   background like the worktrees tab's header (`bg-layer-1` here read as a
+   lighter band across the dark theme and broke the pane into two slabs). The
+   rule below the breadcrumb is the only separation — same as worktrees. */
 .topbar {
   display: flex;
   flex: none;
@@ -19,7 +23,6 @@
   min-height: 40px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
 }
 
 .crumbs {

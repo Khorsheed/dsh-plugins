@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev9** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev11** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -295,8 +295,11 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `null` in the nullable fields (`harness.version`, `model.declared`, `model.endpoint`, `home.sha`) reads as "**unresolved**": validate lists it as a warning, and the pre-run readiness gate refuses it. `null` means "not known yet", not "none".
 - `model.declared` is a REQUEST, not only a claim (T30b). When it is non-null the orchestrator passes it to local-agent as the delegation's `model`, which lands as each harness's own CLI model flag — the same in player rounds, judge delegations and the readiness probe. `null` still means "unresolved" and still passes no model flag at all, leaving the harness's own configuration to decide. The read-back comparison is unchanged after the request: ask for X, run Y, and it is still a MisattributedRun. The contract's SHAPE did not change; what changed is that this field went from "only compared" to "requested, then compared".
 - The `permissions` vocabulary is given per harness: `dsh` → `unrestricted`; `claude-code` → `skip` or `normal`; `codex` → `danger-full-access`, `workspace-write`, `read-only`; `kimi` → `auto-approve`. The schema enum is the union; an out-of-vocabulary value for a known harness (e.g. dsh with `skip`) is a validator error.
+- `model.endpoint` is the UPSTREAM ROUTE (frozen decision 5: the endpoint belongs to the subject under test). Only two spellings are checkable: `"default"` — no base URL in force, so the CLI's own endpoint — or the endpoint's URL or hostname, where `"https://api.anthropic.com"` and `"api.anthropic.com"` are equivalent (provision reduces a URL to its host before comparing: a path can carry tenant or project ids, so the harness family only ever reports a hostname). A label like `"proxy"` names no endpoint anyone can check; provision calls it a mismatch and writes no lock. `null` still means "unresolved".
 - `env.keys` carries variable NAMES only. No values — especially credentials — ever enter a contract file.
 - `scope` may be omitted, and omitting it means "run against this harness's default scoped home" — what every condition written before this field says. Naming one (a `[a-z0-9-]` NAME, never a path) runs the condition against `<homesRoot>/<harness>@<scope>` instead: a SIBLING of the default directory with its own login, its own session records and its own `delegations.jsonl`. Credentials are never copied into it. It IS part of the condition hash: two conditions differing only in `scope` are two SUBJECTS, because they log in as two accounts — which is how one run compares two logins of one harness (the factor I4's per-delegation model, per-condition provisioning and two-preset pilot all rest on). The readiness probe probes each condition's own scope, and a container cell mounts each condition's own directory. A scoped delegation is exec-only (the live drivers bind the default scoped home), and kimi's member bridge stays bound to the default scope too.
+- `preset` is meaningful only for a subject THIS family composes. Today that is `dsh` alone: the sub-profile inside its scoped home is written by the evaluation instance, and the preset roster is a layer of that same patch. The three external CLIs run their vendor's own composition, which this family cannot compose — a `preset` for one of them is a claim with no counterpart, so validate refuses it (`PRESET_NOT_FOR_HARNESS`) and the only legal value is `null`. Their equivalent is `skills.pack` (a skill pack materialized into the scoped home), which this family does not provision yet either; that is I6.
+- A non-null `preset` REQUIRES `capabilities` inside the lock's `provisioned` block: the CAPABILITY HASH capability-catalog computes over the provisioned environment (the canonical form keeps each skill's name/source/body-sha and each tool's name/channel/parameters — descriptions stay out, because rewording one must not mint a new subject). Without it the readiness gate refuses before spending a single delegation (`CAPABILITIES_NOT_PROVISIONED`): `preset` enters the condition hash, so two conditions differing only in preset are two subjects, and nobody measuring it leaves them two subjects on paper and one in fact. A record whose `preset` disagrees with the declaration is refused the same way — what was provisioned belongs to another subject.
 - `unit` may be omitted, and omitting it means "this condition only ever runs on the host". A plan that declares a `unit` REQUIRES it: `unit.scopedHome` says where this condition's credential directory is mounted inside the unit and which variable names it (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), and `var` must also appear in `env.keys` — the name that gets injected has to be a name the document admits to injecting, which validate enforces as an error. The HOST side of that directory is deliberately absent: the orchestrator mounts the evaluation instance's own scoped home for that harness — the one `/<harness> login` writes into, and the one the delegation read-back reads. Mounting a COPY fails silently: a containerized round writes its rollout into whatever was bound, while the read-back looks under `homeDir(<harness>)`, and two different directories produce no error at all — just a read-back that is empty forever.
 - `unit` IS part of the condition hash (only `notes` is not): where a subject reads its credentials from is a factor, not a comment. Adding `unit` to an existing condition changes its hash and stales its lock, which is a re-provision.
 - Example (fully resolved; the in-progress I1 hand-walked shape lives in the dataset repo's `conditions/dsh-exec.json`, its four null fields listed as warnings):
@@ -311,7 +314,7 @@ One condition = one harness + a model declaration + a permission word + one scop
   },
   "model": {
     "declared": "claude-opus-5",
-    "endpoint": "proxy"
+    "endpoint": "https://api.anthropic.com"
   },
   "reasoning": {
     "effort": "default"
@@ -342,7 +345,15 @@ One condition = one harness + a model declaration + a permission word + one scop
 
 ### 6.3 dataseek.condition-lock/1 — the material record
 
-`sha` is the condition hash (§6.5), recomputed by `dsh-eval conditions hash`; `home.sha` is the scoped-home content hash provision (I4) produced. A plan never writes shas — it writes condition ids (§6.4) and resolves them from this file; a missing lock means "not ready". Declaration vs reality mismatches (a lock lagging the condition file, a `home.sha` that no longer matches) come back as validate warnings and are refused by the readiness gate.
+`sha` is the condition hash (§6.5), recomputed by `dsh-eval conditions hash`; `home.sha` is the scoped-home content hash `dsh-eval conditions provision` (I4, landed in T31) produced. A plan never writes shas — it writes condition ids (§6.4) and resolves them from this file; a missing lock means "not ready". Declaration vs reality mismatches (a lock lagging the condition file, a `home.sha` that no longer matches) come back as validate warnings and are refused by the readiness gate.
+
+**Only provision writes this file.** A hand-written lock claims the scoped home was checked when nobody checked it, so provision is the sole writer: it resolves the condition's `(harness, scope)` to a scoped home (reading it materializes it), stops unless that scope's credential is present and prints the login command if it is not (`/<harness> login --scope <name>` — provision never logs in and never copies a credential), checks the declaration against that scope's effective settings field by field, then hashes the home and writes the lock.
+
+`provisioned` records that check, and is ADDITIVE in `/1`: a lock without it was written before provision existed, and validate reads that as "nobody ever checked" rather than as a violation. `preset` and `capabilities` are in turn additive WITHIN `provisioned`: a lock without them is a complete record of what provision checked at the time, not a broken one. `at` is when provision ran; `cliVersion` is the version the CLI reported then (back-filled into the lock when the condition declares `harness.version: null` — the condition document is never rewritten); `effective` is what that scope answered for the four fields, with `null` meaning the harness has no such knob at all (dsh has no permission knob, which is exactly why its permission word is `unrestricted`).
+
+The grading split is not arbitrary: `permissions` is the approval boundary (frozen decision 3) and `model.endpoint` is the upstream route (frozen decision 5), so those two ARE the subject under test — a disagreement is an error and NO lock is written. `harness.version`, `model.declared` and `reasoning.effort` disagreeing are warnings: a declared model differing from the harness default is normal since T30b (the declaration is the value REQUESTED per delegation), a missing reasoning knob is an honest absence, and a CLI version is a fact to record rather than to enforce. The comparable spellings of `model.endpoint` are `"default"` (no base URL in force) or the endpoint's URL or hostname (a URL is reduced to its host before comparing — a path can carry tenant ids, so the family only ever reports a hostname); a label like `"proxy"` names no endpoint anyone can check and reads as a mismatch.
+
+validate re-checks with the same function: when a lock's `provisioned.effective` disagrees with the condition file on those two fields, the condition is "not ready" and the field is named. With the sha still matching, that can only mean the lock was not written by provision — which is exactly the forgery worth seeing.
 
 ```json
 {
@@ -379,6 +390,101 @@ One condition = one harness + a model declaration + a permission word + one scop
           "type": "string"
         }
       }
+    },
+    "provisioned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "effective"
+      ],
+      "description": "What `dsh-eval conditions provision` read back off the scope it provisioned. ADDITIVE in /1: a lock written before provision existed simply has no such key, and validate reads its absence as \"provision has not run\" rather than as a violation.",
+      "properties": {
+        "at": {
+          "type": "integer",
+          "description": "Epoch ms the provision ran."
+        },
+        "cliVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The harness CLI's own version as the CLI reported it; null when it could not be asked."
+        },
+        "effective": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "reasoningEffort",
+            "permissions",
+            "endpoint"
+          ],
+          "description": "The four condition fields as the scope's effective settings answered them. null means the harness declares no such knob — which is itself the honest input, never a substituted guess.",
+          "properties": {
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoningEffort": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permissions": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "endpoint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The preset the provisioned environment composes, read back from what was written — not copied from the declaration. null means the environment rosters none."
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha"
+          ],
+          "description": "The capability fingerprint of the provisioned environment: the hash capability-catalog computes over its canonical skill/tool face (the `caps:` tag without its prefix). It is what turns the condition's `preset` claim into a checkable fact; absent means nobody measured it, and the readiness gate refuses a preset claim without it.",
+          "properties": {
+            "sha": {
+              "type": "string",
+              "description": "64-hex sha256 of the canonical capability face."
+            },
+            "preset": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The preset the snapshot was taken under."
+            },
+            "skills": {
+              "type": "integer",
+              "description": "How many skills the face carries (a reader aid; the sha is the identity)."
+            },
+            "tools": {
+              "type": "integer",
+              "description": "How many tools the face carries (a reader aid; the sha is the identity)."
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -389,7 +495,49 @@ One condition = one harness + a model declaration + a permission word + one scop
   "schema": "dataseek.condition-lock/1",
   "condition": "claude-exec",
   "sha": "fb2bd2b2417d2c2f52b7fb3b133765e1a439ed89e318d685d20a014fa4632671",
-  "home": { "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74" }
+  "home": {
+    "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74"
+  },
+  "provisioned": {
+    "at": 1757500000000,
+    "cliVersion": "2.1.236",
+    "effective": {
+      "model": "claude-opus-5",
+      "reasoningEffort": null,
+      "permissions": "skip",
+      "endpoint": "api.anthropic.com"
+    }
+  }
+}
+```
+
+A sub-dsh condition carries two more lines — `provisioned.preset` is read back from the sub-profile that was written, and `capabilities.sha` is the `caps:` tag without its prefix:
+
+```json
+{
+  "schema": "dataseek.condition-lock/1",
+  "condition": "dsh-exec-lean",
+  "sha": "6d2e4f1b8c9a0731e5b4d6a2c8f3097b1e4a5d6c7b8a9012f3e4d5c6b7a80912",
+  "home": {
+    "sha": "9a1c3e5b7d9f0246810a2c4e6081a3c5e709b1d3f507192a3c5e7091b3d5f709"
+  },
+  "provisioned": {
+    "at": 1757600000000,
+    "cliVersion": "0.1.5-rc.1",
+    "effective": {
+      "model": "deepseek-official/deepseek-v4-pro",
+      "reasoningEffort": "high",
+      "permissions": "unrestricted",
+      "endpoint": "default"
+    },
+    "preset": "eval-lean",
+    "capabilities": {
+      "sha": "2f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a4c6e80b1d3f5709a2c4e6",
+      "preset": "eval-lean",
+      "skills": 3,
+      "tools": 11
+    }
+  }
 }
 ```
 
@@ -585,6 +733,27 @@ One condition = one harness + a model declaration + a permission word + one scop
               ]
             }
           }
+        },
+        "egressCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ],
+          "description": "Optional. One command run INSIDE each freshly acquired unit — the readiness probe's before it delegates, each cell's between acquire and populate. Exit 0 passes; anything else (including a timeout) refuses the whole run as EGRESS_UNAVAILABLE, before a single delegation is spent. Declare it on any run whose units sit on an internal network: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say. The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own.",
+          "properties": {
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "argv, run through lab.verify inside the unit (name a shell explicitly if you want one). Must be non-empty and carry no empty word — the run refuses an empty one as EGRESS_CHECK_MALFORMED, since this subset cannot say minItems."
+            },
+            "timeoutMs": {
+              "type": "number",
+              "description": "Budget for the check; default 30000, and must be positive. A proxy that is up answers in milliseconds — this is sized for a TLS handshake, not for a model."
+            }
+          }
         }
       }
     },
@@ -603,6 +772,7 @@ One condition = one harness + a model declaration + a permission word + one scop
 - A plan carries **no template field**: the run template is a deterministic function of the dataset manifest, generated and linted at validate time and reviewed alongside the plan (I2).
 - `dataset.commit` of `null` means "pinned by the snapshot at run start"; run.meta records the actual commit.
 - `unit` may be omitted. Omitted, the run takes the **host path**: per-cell directories under `$DSH_HOME/state/eval`, no containers, byte for byte what it was before this field existed. Present, it takes the **container path**: every cell of the run goes acquire → populate → one delegation round and one checkpoint per stage → probes (inside the unit, through `lab.verify`) → archive → release, in one lab unit built from `image`. An undeclared `network` is docker's default bridge, which HAS egress — a sealed run must name its internal network; an undeclared `user` is the image's own `USER`; `resources` is both applied to the container and hashed into the environment fingerprint.
+- `unit.egressCheck` may be omitted, and omitted it is byte for byte what the run was before this field existed. Present, it is the **egress self-check**: every freshly acquired unit runs this command first — the readiness probe's unit before it delegates, each cell's between acquire and populate. Exit 0 passes; anything else, a timeout included, refuses the whole run as `EGRESS_UNAVAILABLE` without spending one delegation. **A run on an internal network should declare it**: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say (measured: codex ran 230 seconds in a unit with no egress and returned `task_complete` with `last_agent_message: null`, and not one word about the network). The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own. A declaration whose `command` is empty or carries an empty word is refused as `EGRESS_CHECK_MALFORMED` (the contract subset has no `minItems`, so the run loop is the only place that can catch it).
 - validate does NOT check that the image exists: reviewing a plan must not require a reachable docker daemon. The first `acquire` is that check.
 - Example:
 

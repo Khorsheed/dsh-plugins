@@ -17,6 +17,7 @@
     "src/remote.ts",
     "src/rubric.ts",
     "src/service.ts",
+    "src/tool.ts",
     "src/types.ts",
     "src/worktree.ts"
   ]

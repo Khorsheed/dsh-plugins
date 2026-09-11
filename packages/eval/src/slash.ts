@@ -10,6 +10,7 @@
  * transition, archive, export) are the orchestrator's service face, not
  * model surface.
  */
+import { EvalProvisionRefused } from './provision.ts'
 import { EvalRunRefused } from './run.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
@@ -19,6 +20,21 @@ const USAGE = `usage:
   /eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--finalize] [--out DIR]
            [--retries N] [--only id,id] [--max-cells N] [--ignore-readiness]
   /eval finalize <runId>
+  /eval conditions list [--repo DIR] [--dataset ID]
+  /eval conditions diff <a> <b> [--repo DIR] [--dataset ID]
+  /eval conditions provision <condition.json> --repo <working copy>
+
+  conditions provision is the ONE writer of conditions/<id>.lock.json. It
+  resolves the condition's (harness, scope) to a real scoped home, refuses
+  unless that scope holds a credential (and prints the login command —
+  provision never logs in and never copies a credential), checks the
+  declaration against that scope's effective settings field by field, hashes
+  the home, and writes the lock. permissions or model.endpoint disagreeing is
+  an error and no lock is written. --repo names the WORKING COPY it may write
+  into; nothing is committed.
+  conditions list shows every declaration with its hash, lock state and
+  provisioned snapshot. conditions diff prints which fields two declarations
+  differ on and what each says — facts only, no recommendation.
 
   run STARTS an evaluation run and answers immediately with a job id and a run
   id: the run is a background job, so it outlives this turn, this session, and
@@ -93,7 +109,7 @@ function parseArgs(tokens: readonly string[]): SlashArgs {
   const positionals: string[] = []
   const flags = new Map<string, string[]>()
   const switches = new Set<string>()
-  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries', '--only', '--max-cells'])
+  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries', '--only', '--max-cells', '--repo', '--dataset'])
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as string
     if (!token.startsWith('--')) {
@@ -204,6 +220,179 @@ const SKIP_CATEGORY_LABEL: Record<string, string> = {
   'not-started': 'pending（未开跑）',
 }
 
+/**
+ * Handle `/eval conditions <list|diff|provision>`.
+ *
+ * provision lives HERE rather than on the CLI because it needs the harness
+ * family: the scoped home, its credential grade and its effective settings are
+ * all local-agent's, and the CLI has no host to ask. Same reason `/eval run`
+ * is a slash command (decision 1) — the acts that touch a real instance start
+ * from a live session.
+ */
+async function handleConditions(service: EvalService, args: SlashArgs, invocation: CommandInvocation): Promise<CommandResult> {
+  const [sub, ...rest] = args.positionals
+  const session = { id: String(invocation.agent.session.id) }
+  const repo = flagOf(args, '--repo')
+  const dataset = flagOf(args, '--dataset')
+  const unknown = [...args.switches]
+  if (unknown.length > 0) return { kind: 'error', text: `unknown option(s): ${unknown.join(' ')}\n\n${USAGE}` }
+
+  if (sub === 'list') {
+    if (rest.length > 0) return { kind: 'error', text: `conditions list takes no positional arguments\n\n${USAGE}` }
+    try {
+      const report = await service.conditions({
+        session,
+        ...(repo !== undefined ? { repo } : {}),
+        ...(dataset !== undefined ? { dataset } : {}),
+      })
+      return { kind: 'success', text: renderConditionList(report) }
+    } catch (error) {
+      return { kind: 'error', text: `eval conditions list refused: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+
+  if (sub === 'diff') {
+    const [a, b, ...extra] = rest
+    if (a === undefined || b === undefined || extra.length > 0) {
+      return { kind: 'error', text: `conditions diff wants exactly two conditions (id or path)\n\n${USAGE}` }
+    }
+    try {
+      const diff = await service.conditionDiff({
+        a,
+        b,
+        session,
+        ...(repo !== undefined ? { repo } : {}),
+        ...(dataset !== undefined ? { dataset } : {}),
+      })
+      return { kind: 'success', text: renderConditionDiff(diff) }
+    } catch (error) {
+      return { kind: 'error', text: `eval conditions diff refused: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+
+  if (sub === 'provision') {
+    const [target, ...extra] = rest
+    if (target === undefined || extra.length > 0) {
+      return { kind: 'error', text: `conditions provision wants exactly one condition file\n\n${USAGE}` }
+    }
+    if (repo === undefined) {
+      return {
+        kind: 'error',
+        text: 'conditions provision wants --repo <working copy>: it writes the lock into that copy and nowhere else'
+          + ' (the shared checkout stays read-only — point it at your own worktree)',
+      }
+    }
+    // The capability probe's diagnostics arrive on the log, not on the
+    // report: every one of its stops is "measured nothing, and here is
+    // which step declined", and an operator who only sees
+    // CAPABILITIES_UNMEASURED cannot tell a missing roster from an
+    // unresolvable preset.
+    const probeLines: string[] = []
+    let report: Awaited<ReturnType<EvalService['provision']>>
+    try {
+      report = await service.provision(target, {
+        repo,
+        log: (message) => { if (message.startsWith('capability probe ')) probeLines.push(message) },
+      })
+    } catch (error) {
+      const diagnostics = error instanceof EvalProvisionRefused ? error.diagnostics.map(d => `  [${d.code}] ${d.message}`) : []
+      const text = error instanceof Error ? error.message : String(error)
+      return { kind: 'error', text: diagnostics.length === 0 ? `eval provision refused: ${text}` : `eval provision refused: ${text}\n${diagnostics.join('\n')}` }
+    }
+    const body = renderProvision(report, probeLines)
+    return report.written ? { kind: 'success', text: body } : { kind: 'error', text: body }
+  }
+
+  return {
+    kind: 'error',
+    text: sub === undefined
+      ? `conditions wants a verb (list, diff, provision)\n\n${USAGE}`
+      : `unknown conditions verb ${JSON.stringify(sub)} (want list, diff, provision)\n\n${USAGE}`,
+  }
+}
+
+/** One line per condition: hash, lock state, and what provision recorded. */
+function renderConditionList(report: { repo: string; datasets: string[]; conditions: Array<{
+  id: string
+  dataset: string
+  harness: { name: string | null }
+  model: { declared: string | null }
+  sha: string | null
+  status: string
+  lock: { present: boolean; matches: boolean; homeSha: string | null; provisioned: { at: number; cliVersion: string | null } | null }
+}> }): string {
+  const body: string[] = [`conditions in ${report.repo} (${report.datasets.join(', ') || 'no dataset set declares any'}):`]
+  for (const condition of report.conditions) {
+    const lock = !condition.lock.present
+      ? 'no lock'
+      : `${condition.lock.matches ? 'lock ok' : 'LOCK STALE'}${condition.lock.homeSha === null ? ', home not provisioned' : ''}`
+    const provisioned = condition.lock.provisioned === null
+      ? 'no provisioned record'
+      : `provisioned ${new Date(condition.lock.provisioned.at).toISOString()}${condition.lock.provisioned.cliVersion === null ? '' : ` · cli ${condition.lock.provisioned.cliVersion}`}`
+    body.push(`  ${condition.id} (${condition.dataset}) — ${condition.status} · ${condition.harness.name ?? '—'}`
+      + ` · model ${condition.model.declared ?? '—'} · sha ${condition.sha === null ? '—' : `${condition.sha.slice(0, 12)}…`}`
+      + ` · ${lock} · ${provisioned}`)
+  }
+  if (report.conditions.length === 0) body.push('  (none)')
+  return body.join('\n')
+}
+
+/** What differs, and what each side says. No recommendation — that is the point. */
+function renderConditionDiff(diff: {
+  a: { id: string; sha: string | null }
+  b: { id: string; sha: string | null }
+  identical: boolean
+  notesOnly: boolean
+  differences: Array<{ path: string; a?: unknown; b?: unknown }>
+}): string {
+  const body: string[] = [
+    `${diff.a.id} (${diff.a.sha === null ? 'invalid' : `${diff.a.sha.slice(0, 12)}…`})`
+    + ` vs ${diff.b.id} (${diff.b.sha === null ? 'invalid' : `${diff.b.sha.slice(0, 12)}…`})`,
+  ]
+  if (diff.differences.length === 0) {
+    body.push('identical, field for field.')
+    return body.join('\n')
+  }
+  const show = (value: unknown): string => (value === undefined ? '(absent)' : JSON.stringify(value))
+  for (const difference of diff.differences) {
+    body.push(`  ${difference.path}: ${show(difference.a)}  |  ${show(difference.b)}`)
+  }
+  const substantive = diff.differences.filter(difference => difference.path !== 'notes')
+  body.push(diff.identical
+    ? `same condition hash${diff.notesOnly ? ' — only notes differ, and notes are excluded from the hash' : ''}`
+    : `${substantive.length} field(s) differ: ${substantive.map(difference => difference.path).join(', ')}`)
+  return body.join('\n')
+}
+
+/** The provision reply: the five steps, whether the lock landed, and why not. */
+function renderProvision(report: Awaited<ReturnType<EvalService['provision']>>, probeLines: readonly string[] = []): string {
+  const body: string[] = [
+    `provision ${report.condition} — ${report.harness}${report.scope === null ? ' (default scope)' : `@${report.scope}`}`,
+    `  scoped home: ${report.homeDir}`,
+    `  credential: ${report.credentialState}`,
+  ]
+  for (const row of report.checks) {
+    const mark = row.status === 'match' ? '✓' : row.status === 'mismatch' ? (row.severity === 'error' ? '✗' : '!') : '·'
+    body.push(`  ${mark} ${row.field}: declared ${JSON.stringify(row.declared)} / scope ${JSON.stringify(row.effective)} — ${row.detail}`)
+  }
+  if (report.home !== null) {
+    body.push(`  home.sha: ${report.home.sha} (${report.home.files} config file(s) hashed, ${report.home.denied} skipped)`)
+  }
+  const provisioned = (report.lock as { provisioned?: { capabilities?: { sha: string; skills?: number; tools?: number } } } | null)?.provisioned
+  if (provisioned?.capabilities !== undefined) {
+    const face = provisioned.capabilities
+    body.push(`  capabilities: caps:${face.sha}`
+      + `${face.skills === undefined ? '' : ` (${face.skills} skill(s), ${String(face.tools)} tool(s))`}`)
+  }
+  for (const line of probeLines) body.push(`  · ${line.replace(/^capability probe [^:]*: /, '')}`)
+  for (const warning of report.warnings) body.push(`  ! [${warning.code}] ${warning.message}`)
+  for (const error of report.errors) body.push(`  ✗ [${error.code}] ${error.message}`)
+  body.push(report.written
+    ? `lock written → ${report.lockPath}`
+    : 'NO LOCK WRITTEN — fix the above and provision again')
+  return body.join('\n')
+}
+
 /** Handle `/eval finalize <runId>` — the post-run release walk. */
 async function handleFinalize(service: EvalService, args: SlashArgs): Promise<CommandResult> {
   const runId = args.positionals[0]
@@ -258,6 +447,7 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
     return { kind: 'error', text: `${String(error)}\n\n${USAGE}` }
   }
   if (sub === 'finalize') return await handleFinalize(service, args)
+  if (sub === 'conditions') return await handleConditions(service, args, invocation)
   if (sub !== 'run') {
     return { kind: 'error', text: `unknown /eval verb ${JSON.stringify(sub)}\n\n${USAGE}` }
   }
@@ -361,8 +551,8 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
 export function registerEvalSlash(ctx: Context, service: EvalService): void {
   ctx.commands.register({
     name: 'eval',
-    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session (dry-run validates and prints the order without executing); /eval finalize <runId> walks an already-archived run through the release gate.',
-    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId>' },
+    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session (dry-run validates and prints the order without executing); /eval finalize <runId> walks an already-archived run through the release gate; /eval conditions list|diff|provision reads the condition registry and writes the one lock that anchors it.',
+    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId> | conditions list|diff|provision' },
     handler: (invocation: CommandInvocation) => handleEvalCommand(service, invocation),
   })
 }

@@ -14,6 +14,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { mirrorDshLiveEvent, mirrorDshSession, readSubDshEvents } from '../src/session-mirror.ts'
+import { parseDshSessionLogFilename } from '../src/session-log.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 
 /** A context whose sessionPersistence is absent (the mirror tolerates it). */
@@ -74,7 +75,17 @@ function twoRoundLines(): object[] {
   ]
 }
 
-function writeSubDshSession(homeDir: string, id: string, lines: object[], compressed = false): void {
+function writeSubDshSession(
+  homeDir: string,
+  id: string,
+  lines: object[],
+  compressed = false,
+  /**
+   * The generation basename the store wrote. Defaults to the original
+   * unversioned log; host 0.1.5 writes `session.v3.jsonl.zstd`.
+   */
+  basename?: string,
+): void {
   const dir = join(homeDir, 'sessions', 'wd_test', id)
   mkdirSync(dir, { recursive: true })
   if (compressed) {
@@ -83,11 +94,11 @@ function writeSubDshSession(homeDir: string, id: string, lines: object[], compre
     // would stop at the first frame — the bug this fixture guards).
     const first = lines.slice(0, 3).map(line => JSON.stringify(line)).join('\n') + '\n'
     const rest = lines.slice(3).map(line => JSON.stringify(line)).join('\n') + '\n'
-    writeFileSync(join(dir, 'session.jsonl.zstd'), Buffer.concat([zstdCompressSync(first), zstdCompressSync(rest)]))
+    writeFileSync(join(dir, basename ?? 'session.jsonl.zstd'), Buffer.concat([zstdCompressSync(first), zstdCompressSync(rest)]))
     return
   }
   const text = lines.map(line => JSON.stringify(line)).join('\n') + '\n'
-  writeFileSync(join(dir, 'session.jsonl'), text)
+  writeFileSync(join(dir, basename ?? 'session.jsonl'), text)
 }
 
 /** A child session pre-loaded with `rounds` turn boundaries, as the provider leaves it. */
@@ -108,7 +119,11 @@ describe('readSubDshEvents', () => {
   it('reads a zstd-compressed session log', async () => {
     const home = tempHome()
     writeSubDshSession(home, 's1', twoRoundLines(), true)
-    await expect(readSubDshEvents(home, 's1')).resolves.toHaveLength(twoRoundLines().length - 1)
+    const read = await readSubDshEvents(home, 's1')
+    expect(read?.events).toHaveLength(twoRoundLines().length - 1)
+    // …and it says WHICH file it read, so a generation change cannot look
+    // like an empty session.
+    expect(read?.log).toMatchObject({ filename: 'session.jsonl.zstd', version: 0, compressed: true })
   })
 })
 
@@ -266,6 +281,7 @@ describe('mirrorDshSession', () => {
       texts: ['第一轮任务', 'thinking 1第一条回复'],
       total: 2,
       // The round's own span names the model and sums the assistant usage.
+      sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 100, outputTokens: 10 },
     })
@@ -285,6 +301,7 @@ describe('mirrorDshSession', () => {
     expect(second).toEqual({
       texts: ['thinking 1第二条回复'],
       total: 3,
+      sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 200, outputTokens: 20 },
     })
@@ -292,6 +309,7 @@ describe('mirrorDshSession', () => {
     expect(third).toEqual({
       texts: [],
       total: 3,
+      sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 200, outputTokens: 20 },
     })
@@ -331,6 +349,7 @@ describe('mirrorDshSession', () => {
     expect(repeat).toEqual({
       texts: [],
       total: 3,
+      sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 100, outputTokens: 10 },
     })
@@ -355,6 +374,7 @@ describe('mirrorDshSession', () => {
     expect(second).toEqual({
       texts: [],
       total: 4,
+      sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 100, outputTokens: 10 },
     })
@@ -414,6 +434,7 @@ describe('mirrorDshLiveEvent', () => {
     expect(delta).toEqual({
       texts: ['thinking 1第二条回复'],
       total: 3,
+      sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 200, outputTokens: 20 },
     })
@@ -458,5 +479,86 @@ describe('mirrorDshSession persistence', () => {
     expect(delta.texts.length).toBeGreaterThan(0)
     expect(live.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     expect(persistence.stored.get('child-persist')).toHaveLength(storedBefore)
+  })
+})
+
+// --- T30d · the log filename is resolved, never assumed ------------------------
+
+describe('sub-dsh session log generations', () => {
+  it('reads host 0.1.5\u2019s session.v3.jsonl.zstd, the name that read as an empty session', async () => {
+    const home = tempHome()
+    // The real 0.1.5 directory: one versioned compressed log plus the lock
+    // file the store keeps beside it.
+    writeSubDshSession(home, 's-v3', twoRoundLines(), true, 'session.v3.jsonl.zstd')
+    writeFileSync(join(home, 'sessions', 'wd_test', 's-v3', 'session.lock'), '')
+    const read = await readSubDshEvents(home, 's-v3')
+    expect(read?.events).toHaveLength(twoRoundLines().length - 1)
+    expect(read?.log).toMatchObject({ filename: 'session.v3.jsonl.zstd', version: 3, compressed: true })
+  })
+
+  it('still reads the original unversioned log (the old host line)', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 's-v0', twoRoundLines(), true)
+    const read = await readSubDshEvents(home, 's-v0')
+    expect(read?.events).toHaveLength(twoRoundLines().length - 1)
+    expect(read?.log).toMatchObject({ filename: 'session.jsonl.zstd', version: 0 })
+  })
+
+  it('reads a RAW versioned log too (compression: none)', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 's-raw', twoRoundLines(), false, 'session.v3.jsonl')
+    const read = await readSubDshEvents(home, 's-raw')
+    expect(read?.log).toMatchObject({ filename: 'session.v3.jsonl', version: 3, compressed: false })
+  })
+
+  it('picks the numerically highest generation when a directory holds several', async () => {
+    const home = tempHome()
+    // A store migrated in place keeps the older generations beside the new
+    // one; the newest is the history, exactly as the backend selects it.
+    writeSubDshSession(home, 's-many', twoRoundLines(), true)
+    writeSubDshSession(home, 's-many', twoRoundLines(), true, 'session.v2.jsonl.zstd')
+    writeSubDshSession(home, 's-many', twoRoundLines(), true, 'session.v10.jsonl.zstd')
+    const read = await readSubDshEvents(home, 's-many')
+    // v10 beats v2 numerically — a lexicographic pick would have said v2.
+    expect(read?.log).toMatchObject({ filename: 'session.v10.jsonl.zstd', version: 10 })
+  })
+
+  it('the mirror reports the file it read on the delta', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-v3', twoRoundLines(), true, 'session.v3.jsonl.zstd')
+    const child = childWithRounds('child-v3', 1)
+    const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-v3')
+    expect(delta.sessionLogFile).toBe('session.v3.jsonl.zstd')
+    // …and the three read-backs a hardcoded name used to lose come back.
+    expect(delta.observedModel).toBe('deepseek-official/deepseek-v4-flash')
+    expect(delta.usage).toEqual({ inputTokens: 100, outputTokens: 10 })
+  })
+
+  it('a directory with only a lock file yields nothing — absence, not a guess', async () => {
+    const home = tempHome()
+    const dir = join(home, 'sessions', 'wd_test', 's-lock')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.lock'), '')
+    await expect(readSubDshEvents(home, 's-lock')).resolves.toBeUndefined()
+  })
+})
+
+describe('parseDshSessionLogFilename', () => {
+  it('accepts the canonical names and reads their generation', () => {
+    expect(parseDshSessionLogFilename('session.jsonl')).toEqual({ version: 0, compressed: false })
+    expect(parseDshSessionLogFilename('session.jsonl.zstd')).toEqual({ version: 0, compressed: true })
+    expect(parseDshSessionLogFilename('session.v3.jsonl.zstd')).toEqual({ version: 3, compressed: true })
+    expect(parseDshSessionLogFilename('session.v12.jsonl')).toEqual({ version: 12, compressed: false })
+  })
+
+  it('refuses what the host itself calls noncanonical', () => {
+    // The host's own rule, character for character: `.v0`, leading zeros and
+    // uppercase are not generations, and a lock or temp file is not a log.
+    for (const name of [
+      'session.v0.jsonl', 'session.v01.jsonl', 'session.V3.jsonl', 'session.lock',
+      'session.jsonl.tmp', 'session.v3.jsonl.zstd.tmp', 'sessions.jsonl', 'session.v3.json',
+    ]) {
+      expect(parseDshSessionLogFilename(name), name).toBeUndefined()
+    }
   })
 })
