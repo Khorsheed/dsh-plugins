@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-// apply wiring: the shortcut settings card registers, and the global keydown
-// listeners drive the public services — steer-send submits through
-// conversation.input, Escape-pause cancels through the scope-addressed
+// apply wiring: the shortcut settings card registers, and the global
+// keydown/mousedown listeners drive the public services — steer-send submits
+// through conversation.input, Escape-pause cancels through the scope-addressed
 // conversation face, gated on the composer's own Escape layering (a consumed
 // key, an outside target, IME composition, repeats, capture mode, and unbound
-// actions all stand down).
+// actions all stand down); compaction runs the `/compact` command through the
+// session face; the sidebar toggle calls the probed ctx.layout service; and a
+// mouse-bound action claims the button's down/up defaults.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
@@ -21,6 +23,8 @@ const SID = 's1' as SessionId
 type BenchOptions = {
   running?: boolean
   subagent?: SessionSnapshot['subagent']
+  /** Whether the composition carries ui-layout's ctx.layout service. */
+  layout?: boolean
 }
 
 async function bench(over: BenchOptions = {}) {
@@ -35,6 +39,9 @@ async function bench(over: BenchOptions = {}) {
     input: { for: () => ({ submit }) },
     cancel,
   } as never)
+  // ui-layout provides this in production; the toggle action probes it.
+  const toggleSidebar = vi.fn()
+  if (over.layout !== false) runtime.ctx.provide('layout', { toggleSidebar })
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
@@ -43,14 +50,17 @@ async function bench(over: BenchOptions = {}) {
   // root declares it here so the registration lands.
   await runtime.root.declare({ 'settings.plugin.item': { kind: 'keyed', scope: 'root' } }, (_p: { renderSlot?: unknown }) => null)
   const feature = await runtime.mount({ inject: [...inject], apply })
+  // Compaction rides the public session face's command verb.
+  const command = vi.fn(async () => ({ ok: true as const, value: { matched: true } }))
   await runtime.sessions.add({
     id: SID,
     snapshot: {
       running: over.running ?? false,
       ...(over.subagent !== undefined ? { subagent: over.subagent } : {}),
     },
+    session: { command },
   })
-  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession }
+  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession, toggleSidebar, command }
 }
 
 /** The inject face the settings card entry serves (reaches the apply-built policy). */
@@ -108,6 +118,105 @@ describe('ui-shortcuts apply', () => {
     const cmd = new KeyboardEvent('keydown', { key: 'O', metaKey: true, bubbles: true, cancelable: true })
     document.dispatchEvent(cmd)
     expect(b.startSession).toHaveBeenCalledTimes(2)
+    await b.runtime.dispose()
+  })
+
+  it('Ctrl/Cmd+Shift+X compacts through the session command face', async () => {
+    const b = await bench()
+    const chord = new KeyboardEvent('keydown', { key: 'x', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+    document.dispatchEvent(chord)
+    expect(b.command).toHaveBeenCalledWith('/compact')
+    expect(chord.defaultPrevented).toBe(true)
+
+    // Without a current session the gate stands the gesture down before the
+    // browser default on the chord is claimed.
+    await b.runtime.sessions.setCurrent(undefined)
+    const gated = new KeyboardEvent('keydown', { key: 'x', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+    document.dispatchEvent(gated)
+    expect(b.command).toHaveBeenCalledTimes(1)
+    expect(gated.defaultPrevented).toBe(false)
+    await b.runtime.dispose()
+  })
+
+  it('Ctrl/Cmd+B toggles the sidebar through the probed ctx.layout service, and degrades without it', async () => {
+    const b = await bench()
+    const chord = new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true })
+    document.dispatchEvent(chord)
+    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(chord.defaultPrevented).toBe(true)
+    await b.runtime.dispose()
+
+    // A composition without the shell keeps every other shortcut alive; the
+    // gated action never claims the chord either.
+    const bare = await bench({ layout: false })
+    const orphan = new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true })
+    document.dispatchEvent(orphan)
+    expect(orphan.defaultPrevented).toBe(false)
+    await bare.runtime.dispose()
+  })
+
+  it('a mouse-bound action runs on mousedown and claims that button defaults', async () => {
+    const b = await bench()
+    const injected = await rowInjected(b)
+    injected.setPreference('toggleSidebar', { kind: 'mouse', modifiers: [], button: 1 })
+    // The primary button is not part of the vocabulary: a left click never dispatches.
+    const primary = new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true })
+    document.dispatchEvent(primary)
+    expect(b.toggleSidebar).not.toHaveBeenCalled()
+    expect(primary.defaultPrevented).toBe(false)
+
+    // The middle button runs the action and claims autoscroll (Windows) /
+    // primary-selection paste (Linux), which hang off the down event.
+    const down = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
+    document.dispatchEvent(down)
+    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(down.defaultPrevented).toBe(true)
+
+    // The other defaults a claimed binding owns surface later: open-link-in-
+    // new-tab on auxclick, the context menu on contextmenu. Neither re-runs
+    // the action.
+    const aux = new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true })
+    document.dispatchEvent(aux)
+    expect(aux.defaultPrevented).toBe(true)
+    const menu = new MouseEvent('contextmenu', { button: 2, bubbles: true, cancelable: true })
+    document.dispatchEvent(menu)
+    expect(menu.defaultPrevented).toBe(false) // button 2 is not the bound button
+    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    await b.runtime.dispose()
+  })
+
+  it('recording a binding and the yield tier both stand mouse dispatch down', async () => {
+    const b = await bench()
+    const injected = await rowInjected(b)
+    injected.setPreference('toggleSidebar', { kind: 'mouse', modifiers: [], button: 1 })
+    // Recording another action claims the pointer too.
+    injected.setCapturing('pause')
+    const recording = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
+    document.dispatchEvent(recording)
+    expect(b.toggleSidebar).not.toHaveBeenCalled()
+    expect(recording.defaultPrevented).toBe(false)
+    injected.setCapturing(null)
+
+    // A yield-tier mouse action stands down while an overlay owns the pointer.
+    const registry = b.runtime.ctx.get('shortcuts')!
+    const run = vi.fn()
+    const dispose = registry.registerAction({
+      id: 'test.yieldMouse',
+      label: { ns: 'shortcuts', key: 'action.pause' },
+      description: { ns: 'shortcuts', key: 'action.pause.desc' },
+      defaultBinding: { kind: 'mouse', modifiers: [], button: 2 },
+      layering: 'yield',
+      run,
+    })
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.appendChild(dialog)
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true, cancelable: true }))
+    expect(run).not.toHaveBeenCalled()
+    dialog.remove()
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true, cancelable: true }))
+    expect(run).toHaveBeenCalledTimes(1)
+    dispose()
     await b.runtime.dispose()
   })
 

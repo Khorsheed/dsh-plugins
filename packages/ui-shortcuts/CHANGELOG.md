@@ -1,5 +1,12 @@
 # 变更记录
 
+## 0.2.2（未发布）
+
+- 新增「压缩上下文」动作（默认 `Ctrl/Cmd+Shift+X`）：对当前会话调用公开的 `ISession.command('/compact')`，与 composer 斜杠菜单走同一条宿主命令通道
+- 新增「开关侧边栏」动作（默认 `Ctrl/Cmd+B`）：调用 ui-layout 的公开服务 `ctx.layout.toggleSidebar()`；该服务是**探测**而非注入（`ctx.reflect.get('layout')`），没有 shell 的组合里其余快捷键照常工作
+- **键位模型扩展**：一条偏好现在可以是键盘键位或鼠标键（`kind: 'mouse'`，DOM `MouseEvent.button`，只收 1=中键 / 2=右键；主键与浏览器后退/前进侧键刻意不可绑）。设置卡片在录制状态下可直接按下中键/右键完成绑定
+- `global` 鼠标动作在 `mousedown` 执行并接管该键的浏览器默认：自动滚屏（Windows）与主选区粘贴（Linux）挂在下按事件上，链接新标签页（`auxclick`）与右键系统菜单（`contextmenu`）在后续事件上
+
 ## 0.2.1（2026-09-11）
 
 - 无功能变更：开发基线随仓内 pin 对齐官方 `0.1.5-rc.1` / cordis `4.0.2`（消除 4.0.1/4.0.2 双实例图分裂）；peer 依赖范围与 minHost（`0.1.2-rc.1`）不变

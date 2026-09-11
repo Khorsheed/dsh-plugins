@@ -2,18 +2,20 @@
 
 English | [中文](README.md)
 
-Esc to stop, Cmd+S to steer-send your draft, Cmd+O for a new session — every key rebindable.
+Esc to stop, Cmd+S to steer-send your draft, Cmd+O for a new session, Cmd+Shift+X to compact the context, Cmd+B to toggle the sidebar — every binding rebindable, keyboard or mouse.
 
-Want to halt a runaway turn? No hunting for the tiny stop button — Esc does it. A finished draft that shouldn't wait in line goes out with Cmd/Ctrl+S; Cmd/Ctrl+O starts a new session from anywhere. Don't like the defaults? Click a binding in Settings → Plugins → Keyboard shortcuts and record your own. These shortcuts call the same actions the on-screen buttons do — they never send anything extra to the model.
+Want to halt a runaway turn? No hunting for the tiny stop button — Esc does it. A finished draft that shouldn't wait in line goes out with Cmd/Ctrl+S; Cmd/Ctrl+O starts a new session from anywhere; when the context fills up, Cmd/Ctrl+Shift+X compacts it in place; to give the conversation room, Cmd/Ctrl+B collapses the sidebar — and any action can be re-recorded onto the middle mouse button instead. Don't like the defaults? Click a binding in Settings → Plugins → Keyboard shortcuts and record your own. These shortcuts call the same actions the on-screen buttons and slash commands do — they never send anything extra to the model.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="the keyboard-shortcuts card in Settings: pause the current task (Esc), send with priority (Ctrl/Cmd+S), new session (Ctrl/Cmd+O) — click a binding to re-record it">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="the keyboard-shortcuts card in Settings: one row per action, click a binding to re-record it">
 
 ## Features
 
 - **Pause the turn** (`Esc`) — the composer's Stop button, from anywhere on the page.
 - **Steer-send the draft** (`Ctrl/Cmd+S`) — queue-jump delivery of the current draft; the browser save gesture is suppressed.
 - **New session** (`Ctrl/Cmd+O`) — the sidebar's New-session entry; the browser open-file gesture is suppressed.
-- **Rebindable keys** — click a binding in Settings → Plugins → Keyboard shortcuts to record, unbind, or reset; persists in `$DSH_HOME/settings.yaml`.
+- **Compact the context** (`Ctrl/Cmd+Shift+X`) — runs the host's `/compact` command for the current session, exactly the path a typed `/compact` takes (same flow node, same busy error, same admission semantics).
+- **Toggle the sidebar** (`Ctrl/Cmd+B`) — calls ui-layout's public `ctx.layout.toggleSidebar()`, the action behind the sidebar's own collapse control.
+- **Rebindable keys and mouse buttons** — click a binding in Settings → Plugins → Keyboard shortcuts to record, unbind, or reset; besides keys, the middle and secondary mouse buttons can be recorded. Persists in `$DSH_HOME/settings.yaml`.
 
 ## Install
 
@@ -33,8 +35,10 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # uninstall
 
 ## Known Limitations
 
-- **No user-defined actions** — actions come from plugins via `ctx.shortcuts`; arbitrary command lines or toggles are not offered.
+- **No user-defined actions** — actions come from plugins via `ctx.shortcuts`; arbitrary command lines or toggles are not offered (`/compact` and the sidebar toggle are built-ins, not a general command palette).
 - **Ctrl/Cmd+S is draft-only** — an empty draft is a no-op; whole-queue steering stays on the composer's `Cmd/Ctrl+Enter` gesture.
+- **Mouse bindings are the middle and secondary buttons only** — the primary button is deliberately not bindable (a page-wide left-click action would consume every ordinary click), and the browser's back/forward buttons are absent too: engines hand them to history navigation before the page sees a reliable event.
+- **A mouse binding is a global gesture** — a `global` action takes over that button's browser defaults: autoscroll (Windows) and primary-selection paste (Linux), the middle-click open-link-in-new-tab gesture, and the secondary button's system context menu. That is the price of the middle button; rebinding to a key restores all of it.
 
 ## How it works
 
@@ -52,11 +56,15 @@ Actions go through public services, never ui-conversation internals:
 | --- | --- |
 | 暂停当前任务 (Pause current task) | `conversation.cancel()` — the same operation as the composer's Stop button. One-shot subagents do not stop, mirroring Stop's visibility. |
 | 插队发送 (Send with priority) | `conversation.input.for(scope).submit('steer')` on the current draft; an empty draft is a silent no-op. |
-| 新建会话 (New session) | `workspaces.startSession()` — the sidebar's New-session entry; global, focus-independent. |
+| 新建会话 (New session) | `sessions.create()` → `sessions.open()` — the same create-then-open entry the sidebar's New-session button rides; global, focus-independent. |
+| 压缩上下文 (Compact context) | `ISession.command('/compact')` on the current session — the same command channel the composer's slash menu uses; the host owns admission (busy, nothing to compact) and renders the outcome as the flow node a typed command produces. |
+| 开关侧边栏 (Toggle sidebar) | `ctx.layout.toggleSidebar()` — ui-layout's public service, the same action the sidebar's own collapse control calls. The service is **probed**, not injected (`ctx.reflect.get('layout')`): a composition without the shell keeps every other shortcut alive and this one simply does nothing. |
 
-Rebinding: click a binding to record the next chord (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
+Rebinding: click a binding to record the next chord or mouse button (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform, and while recording the middle/right button binds on press), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
 
 **Escape layering**: Escape pause is global but yields to whatever owns the key first: a consumed keydown (`defaultPrevented` — the composer's slash menu, popupSelect), an open overlay (modals, menus, the settings panel), or a non-composer editable (inline rename, search fields). Everywhere else — composer textarea, sidebar, session list — Escape pauses the running turn. IME composition and held-repeat keys never trigger any action.
+
+**Mouse layering and default suppression**: mouse actions share the key layer exactly. A `global` action runs on `mousedown` and takes over the defaults hung off the down action (autoscroll, primary-selection paste); it then also takes over the ones that only surface later — a link's middle-click new tab (`auxclick`) and the secondary button's system context menu (`contextmenu`) — because a binding must not buy two outcomes at once. A `yield` action stands down while an overlay is open or the target is editable, and recording a binding stands the whole global wiring down, mouse included.
 
 **For plugin authors** — contribute actions through the `ctx.shortcuts` registry:
 
@@ -66,14 +74,16 @@ ctx.effect(() => ctx.shortcuts.registerAction({
   label: { ns: 'my-plugin', key: 'action.myAction' },
   description: { ns: 'my-plugin', key: 'action.myAction.desc' },
   defaultBinding: { kind: 'key', modifiers: ['primary', 'shift'], key: 'o' },
+                                     // or { kind: 'mouse', modifiers: [], button: 1 }
+                                     // button: DOM MouseEvent.button, 1 = middle, 2 = secondary (the primary button is not bindable)
   layering: 'global',                // 'global': capture-phase, browser default suppressed
-                                     // 'yield': bubble-phase, yields to consumed keys / open overlays / editables
+                                     // 'yield': bubble-phase, yields to consumed events / open overlays / editables
   available: () => true,             // optional dispatch-time gate
   run: () => { /* ... */ },
 }), 'my-plugin: shortcut')
 ```
 
-Locale entries stay in the contributing plugin's own namespace. Duplicate ids fail loud; on a shared chord the first registration wins. Users rebind or unbind any action in Settings → Plugins → Keyboard shortcuts. No model requests, no KV-cache effect — the actions call the same public verbs the composer's own controls use.
+Locale entries stay in the contributing plugin's own namespace. Duplicate ids fail loud; on a shared gesture the first registration wins. Users rebind or unbind any action in Settings → Plugins → Keyboard shortcuts (a key chord and a mouse button are interchangeable). No model requests, no KV-cache effect — the actions call the same public verbs the app's own controls use.
 
 </details>
 

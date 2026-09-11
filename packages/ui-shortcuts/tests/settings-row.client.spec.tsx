@@ -44,6 +44,22 @@ const ACTIONS: readonly ShortcutActionContribution[] = [
     layering: 'global',
     run: () => {},
   },
+  {
+    id: 'compact',
+    label: { ns: NS, key: 'action.compact' },
+    description: { ns: NS, key: 'action.compact.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['compact']!,
+    layering: 'global',
+    run: () => {},
+  },
+  {
+    id: 'toggleSidebar',
+    label: { ns: NS, key: 'action.toggleSidebar' },
+    description: { ns: NS, key: 'action.toggleSidebar.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['toggleSidebar']!,
+    layering: 'global',
+    run: () => {},
+  },
 ]
 
 function emptySessions() {
@@ -103,9 +119,13 @@ describe('ShortcutsRow', () => {
     expect(screen.getByText('暂停当前任务')).toBeDefined()
     expect(screen.getByText('插队发送')).toBeDefined()
     expect(screen.getByText('新建会话')).toBeDefined()
+    expect(screen.getByText('压缩上下文')).toBeDefined()
+    expect(screen.getByText('开关侧边栏')).toBeDefined()
     expect(screen.getByRole('button', { name: 'Esc' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+S' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+O' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Ctrl/Cmd+Shift+X' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Ctrl/Cmd+B' })).toBeDefined()
     // At the shipped defaults there is nothing to reset and no hint to show.
     expect(screen.queryByRole('button', { name: '恢复默认' })).toBeNull()
     expect(screen.queryByText(/默认：/)).toBeNull()
@@ -139,11 +159,28 @@ describe('ShortcutsRow', () => {
     expect(b.setPreference).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: /按下新键位/ })).toBeDefined()
     // The capture hint sits next to the recording field only while recording.
-    expect(screen.getByText('Esc 取消 · Delete 解绑')).toBeDefined()
+    expect(screen.getByText('Esc 取消 · Delete 解绑 · 中键/右键可直录')).toBeDefined()
     // A chord completes and is prevented from reaching the browser (save).
     const chord = fireEvent.keyDown(document, { key: 's', ctrlKey: true })
     expect(chord).toBe(false) // preventDefault
     expect(b.setPreference).toHaveBeenCalledWith('pause', { kind: 'key', modifiers: ['primary'], key: 's' })
+  })
+
+  it('records a mouse button, leaving the primary button to the recorder itself', () => {
+    const b = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Ctrl/Cmd+B' }))
+    // The primary button is not part of the vocabulary: it is how the recorder
+    // is operated, so a plain left click neither binds nor claims anything.
+    const primary = fireEvent.mouseDown(document, { button: 0 })
+    expect(primary).toBe(true) // not prevented
+    expect(b.setPreference).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /按下新键位或鼠标键/ })).toBeDefined()
+    // The middle button completes the binding and claims the down event's
+    // browser default (autoscroll on Windows, primary-selection paste on Linux).
+    const middle = fireEvent.mouseDown(document, { button: 1 })
+    expect(middle).toBe(false) // preventDefault
+    expect(b.setPreference).toHaveBeenCalledWith('toggleSidebar', { kind: 'mouse', modifiers: [], button: 1 })
+    expect(screen.getByRole('button', { name: 'Middle Click' })).toBeDefined()
   })
 
   it('Escape cancels capture and Delete unbinds', () => {

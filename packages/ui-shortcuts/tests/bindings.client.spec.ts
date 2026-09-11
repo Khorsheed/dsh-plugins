@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import {
-  bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey, keyLabel, matches, normalizeKey,
+  bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingButton, isBindingKey, keyLabel, matches,
+  matchesMouse, mouseBindingOfEvent, normalizeKey,
 } from '../src/client/bindings.ts'
 import type { ShortcutPreference } from '../src/settings.ts'
 
@@ -78,5 +79,47 @@ describe('binding display', () => {
     expect(isBindingKey(event({ key: 'Alt' }))).toBe(false)
     expect(isBindingKey(event({ key: 'Shift' }))).toBe(false)
     expect(isBindingKey(event({ key: 'x' }))).toBe(true)
+  })
+})
+
+describe('mouse bindings', () => {
+  function mousedown(init: MouseEventInit): MouseEvent {
+    return new MouseEvent('mousedown', init)
+  }
+
+  it('snapshots a bindable button and refuses the primary and reserved ones', () => {
+    expect(mouseBindingOfEvent(mousedown({ button: 1 }))).toEqual({ kind: 'mouse', modifiers: [], button: 1 })
+    expect(mouseBindingOfEvent(mousedown({ button: 2, ctrlKey: true, shiftKey: true })))
+      .toEqual({ kind: 'mouse', modifiers: ['primary', 'shift'], button: 2 })
+    // The primary button and the browser-reserved back/forward buttons never bind.
+    expect(mouseBindingOfEvent(mousedown({ button: 0 }))).toBeNull()
+    expect(mouseBindingOfEvent(mousedown({ button: 3 }))).toBeNull()
+    expect(isBindingButton(1)).toBe(true)
+    expect(isBindingButton(2)).toBe(true)
+    expect(isBindingButton(0)).toBe(false)
+    expect(isBindingButton(4)).toBe(false)
+  })
+
+  it('matches a mouse preference exactly, and never across gesture kinds', () => {
+    const binding: ShortcutPreference = { kind: 'mouse', modifiers: [], button: 1 }
+    expect(matchesMouse(mousedown({ button: 1 }), binding)).toBe(true)
+    expect(matchesMouse(mousedown({ button: 2 }), binding)).toBe(false)
+    // Extra modifiers are not ignored.
+    expect(matchesMouse(mousedown({ button: 1, ctrlKey: true }), binding)).toBe(false)
+    expect(matchesMouse(mousedown({ button: 1 }), { kind: 'none' })).toBe(false)
+    // A mouse binding never answers a keydown, and a key chord never answers a mouse event.
+    expect(matchesMouse(mousedown({ button: 1 }), { kind: 'key', modifiers: [], key: 'Escape' })).toBe(false)
+    expect(matches(event({ key: 'Escape' }), binding)).toBe(false)
+  })
+
+  it('formats mouse gestures and compares them structurally', () => {
+    expect(bindingParts({ kind: 'mouse', modifiers: [], button: 1 })).toEqual(['Middle Click'])
+    expect(bindingParts({ kind: 'mouse', modifiers: ['primary'], button: 2 })).toEqual(['Ctrl/Cmd', 'Right Click'])
+    expect(formatBinding({ kind: 'mouse', modifiers: [], button: 1 })).toBe('Middle Click')
+    expect(equalPreference({ kind: 'mouse', modifiers: [], button: 1 }, { kind: 'mouse', modifiers: [], button: 1 })).toBe(true)
+    expect(equalPreference({ kind: 'mouse', modifiers: [], button: 1 }, { kind: 'mouse', modifiers: [], button: 2 })).toBe(false)
+    expect(equalPreference({ kind: 'mouse', modifiers: ['primary'], button: 1 }, { kind: 'mouse', modifiers: [], button: 1 })).toBe(false)
+    // Gesture kinds are never interchangeable.
+    expect(equalPreference({ kind: 'mouse', modifiers: [], button: 1 }, { kind: 'key', modifiers: [], key: 'Escape' })).toBe(false)
   })
 })
