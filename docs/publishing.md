@@ -27,7 +27,8 @@ T=$(mktemp -d) && cd "$T" && npm install <包名>@<新版本> \
 
 | 报错 | 原因 | 解法 |
 |---|---|---|
-| `requires a one-time password` | 账号开了 2FA | `npm publish --otp=<6 位动态码>`;过期就换新的重试。npm 账号的 64 位十六进制恢复码(recovery code)可直接作 `--otp` 值——但一次性、用过即废,余量不足时在账号设置里重新生成(重新生成会作废旧的一套);恢复码等价于第二因子,不得入库或进公开记录 |
+| `requires a one-time password` | 账号开了 2FA | `npm publish --otp=<6 位动态码>`;过期就换新的重试。**不要把恢复码当日常 OTP**（见下行） |
+| 403 且账号页显示 "temporarily suspended due to a recent security-sensitive action" | npm 2026-06 起的防劫持冻结：**使用恢复码、换邮箱等敏感动作会触发 72 小时只读冻结**（安装/下载不受影响，发布/token 管理全停，到期自动解除） | 无捷径，等 72 小时；预防 = 日常发布只用认证器 TOTP 动态码，恢复码只留作真正的账号恢复。另注意 2026 年的新规：颗粒度 token（GAT）在强制 2FA 的账号上**不能直接发布**（bypass-2FA 也在收紧下线），发布用 `npm login --auth-type=web` 拿的 session token + TOTP |
 | `403`(版本没变)/ `409` | 版本号 ≤ 线上已发布版本 | bump 版本再发;npm 不允许覆盖 |
 | `403`(包名从没发过) | 没有该 scope 的权限 | 只能发自己拥有的 scope(@khorsheed);@deepseek-ai 是官方 org,不要尝试 |
 | `Cannot resolve workspace protocol` | package.json 里残留 `workspace:*` 依赖 | 用 `scripts/pack-dist.ts` 打包(它会改写),不要直接对源目录 `npm publish` |
