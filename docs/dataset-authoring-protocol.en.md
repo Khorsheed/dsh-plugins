@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev10** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev11** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
