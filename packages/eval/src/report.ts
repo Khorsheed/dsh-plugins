@@ -77,6 +77,29 @@ export interface ToolCallCounts {
   byName?: Record<string, number>
 }
 
+/**
+ * Who produced one llm-draft verdict. Present only on bundles written since
+ * decision 9 was relaxed (2026-09-10): before that a judge could not be a
+ * player, so "which judge" was answerable from `by` alone and no envelope
+ * carried the model. A bundle without it reports no judge rather than a
+ * reconstructed one — and, because the key is then absent entirely, a report
+ * recomputed over an older bundle is byte-identical to the one before.
+ */
+export interface VerdictJudge {
+  /** The judge condition id (also the verdict's `by`). */
+  condition: string
+  /** The judge's declared model; null only on a record that predates pinning it. */
+  model: string | null
+  /**
+   * This judge's model is the model the CELL ran — the verdict is a
+   * self-judgement. Recorded, not dropped: excluding it would mean a run that
+   * evaluates every model has no judge at all.
+   */
+  selfJudged: boolean
+  /** Which sample of that judge this verdict came from. */
+  sample: number | null
+}
+
 /** One line of results.jsonl — one verdict, carrying its cell coordinates. */
 export interface ReportRow {
   task: string | null
@@ -102,6 +125,8 @@ export interface ReportRow {
    * recomputed over an older bundle is byte-identical to the one before.
    */
   toolCalls?: ToolCallCounts
+  /** llm-draft only, and only on bundles that recorded it — see {@link VerdictJudge}. */
+  judge?: VerdictJudge
   evidence: string
   by: string
 }
@@ -159,15 +184,48 @@ export interface PairComparison {
   rankReason: string
 }
 
+/** One cell's judges, as the bundle recorded them. */
+export interface JudgeAssignmentJudge {
+  condition: string
+  model: string | null
+  selfJudged: boolean
+  /** Distinct samples of this judge that landed on the cell. */
+  samples: number
+  /** Verdict rows those samples produced. */
+  verdicts: number
+}
+
+/** Which judges judged one cell — the report's answer to "who judged this". */
+export interface JudgeAssignment {
+  missionId: string
+  task: string | null
+  condition: string | null
+  rep: number | null
+  /** Judge-id-sorted; empty cells are not listed. */
+  judges: JudgeAssignmentJudge[]
+}
+
 /** Judge (llm-draft) consistency numbers for the whole run. */
 export interface JudgeConsistency {
   /** Criteria (per cell) with ≥2 llm-draft samples. */
   multiSampled: number
   llmAgreement: { agreed: number; total: number } | null
-  /** Cohen κ over llm-draft samples; NaN when degenerate (constant raters). */
+  /** Cohen κ over one judge's repeated samples; NaN when degenerate (constant raters). */
   llmKappa: number | null
   /** llm-draft vs human-final agreement, when human-final verdicts exist. */
   humanAgreement: { agreed: number; total: number } | null
+  /**
+   * Criteria judged by two or more DIFFERENT judge conditions — the panel's
+   * own number, separate from one judge sampled twice. Zero on a single-judge
+   * run and on any bundle that recorded no judge identity.
+   */
+  crossJudged: number
+  /** How many of those every judge on the panel agreed on. */
+  crossAgreement: { agreed: number; total: number } | null
+  /** Cohen κ across judge pairs; null when no criterion had two judges. */
+  crossKappa: number | null
+  /** Criteria whose llm-draft verdicts include at least one self-judged sample. */
+  selfJudgedCriteria: number
   details: string[]
 }
 
@@ -264,6 +322,8 @@ export interface EvalReport {
   efficiency: ConditionEfficiency[]
   /** Per-round token/tool ledger — the source `report/usage.jsonl` is written from. */
   usageRows: UsageRow[]
+  /** Which judges judged each cell (empty when the bundle recorded no judge identity). */
+  judgeAssignments: JudgeAssignment[]
   /** Cells the efficiency table left out, by condition and state — one line under the table. */
   efficiencyExcluded: ExcludedCells[]
   /** Condition → tasks where ALL its current-attempt cells finished their stages (halted is not finished). */
@@ -359,6 +419,8 @@ interface CellVerdict {
   ns: string
   criterion: string
   pass: boolean
+  /** llm-draft only: who judged, when the envelope said so. */
+  judge: VerdictJudge | null
   /** A usable `ratio`; null when absent or out of bounds. */
   ratio: VerdictRatio | null
   /** The verdict declared a `ratio` that could not be used — counted, never scored. */
@@ -566,10 +628,34 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
  * verdicts rather than inside them. Reading only the first two shapes would
  * silently drop every LLM sample the judge wrote.
  */
-function verdictDocsOf(payload: unknown): unknown[] {
-  if (Array.isArray(payload)) return payload
-  if (isPlainObject(payload) && Array.isArray(payload['verdicts'])) return payload['verdicts']
-  return [payload]
+function verdictDocsOf(payload: unknown): Array<{ doc: unknown; judge: VerdictJudge | null }> {
+  if (Array.isArray(payload)) return payload.map(doc => ({ doc, judge: null }))
+  if (isPlainObject(payload) && Array.isArray(payload['verdicts'])) {
+    const judge = judgeOf(payload)
+    return payload['verdicts'].map(doc => ({ doc, judge }))
+  }
+  return [{ doc: payload, judge: null }]
+}
+
+/**
+ * The judge identity carried by an llm-draft sample envelope.
+ *
+ * `judgeModel` and `selfJudged` were added when decision 9 was relaxed, and
+ * BOTH are required here: an envelope with only `judgeCondition` came from a
+ * run where a judge could not be a player, so "self-judged" was not merely
+ * unrecorded but impossible. Returning null for those keeps every older
+ * bundle's report byte-identical — the `judge` key is then absent rather than
+ * half-filled.
+ * @param envelope - the llm-draft annotation payload.
+ * @returns who judged, or null when the bundle does not say.
+ */
+function judgeOf(envelope: Record<string, unknown>): VerdictJudge | null {
+  const condition = str(envelope['judgeCondition'])
+  if (condition === null) return null
+  const model = envelope['judgeModel']
+  const selfJudged = envelope['selfJudged']
+  if (typeof selfJudged !== 'boolean' || (model !== null && typeof model !== 'string')) return null
+  return { condition, model, selfJudged, sample: num(envelope['sample']) }
 }
 
 /**
@@ -669,13 +755,14 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
       continue
     }
     if (!VERDICT_NS.has(ns)) continue
-    for (const doc of verdictDocsOf(annotation['payload'])) {
+    for (const { doc, judge } of verdictDocsOf(annotation['payload'])) {
       if (!isPlainObject(doc) || validateJson(VERDICT_SCHEMA, doc).length > 0) continue
       const { ratio, malformed } = ratioOf(doc)
       verdicts.push({
         ns,
         criterion: doc['criterion'] as string,
         pass: doc['pass'] as boolean,
+        judge,
         ratio,
         ratioMalformed: malformed,
         doc,
@@ -1351,18 +1438,39 @@ function comparePair(
 function judgeConsistencyOf(cells: BundleCell[]): JudgeConsistency {
   const current = cells.filter(c => c.isCurrent)
   const details: string[] = []
-  // (cell, criterion) → sample pass values in annotation order.
+  // (cell, criterion) → sample pass values in annotation order. With a PANEL
+  // the repeated-sample number has to stay per judge: two judges answering
+  // once each is a disagreement between raters, not one rater contradicting
+  // itself, and averaging them into the same κ would report the panel's
+  // spread as the judge's noise. A bundle that records no judge identity
+  // falls back to the single bucket it always used — same numbers as before.
   const samples = new Map<string, boolean[]>()
+  // (cell, criterion) → judge condition → that judge's sample values.
+  const byJudge = new Map<string, Map<string, boolean[]>>()
   const human = new Map<string, boolean>()
+  let selfJudgedCriteria = 0
+  const selfJudgedSeen = new Set<string>()
   for (const cell of current) {
     const ordered = [...cell.verdicts].sort((x, y) => x.createdAt - y.createdAt || x.seq - y.seq)
     for (const verdict of ordered) {
       if (verdict.ns === 'human-final') {
         human.set(`${cell.missionId}|${verdict.criterion}`, verdict.pass)
       } else if (verdict.ns === 'llm-draft') {
-        const key = `${cell.missionId}|${verdict.criterion}`
+        const cellCriterion = `${cell.missionId}|${verdict.criterion}`
+        const judge = verdict.judge?.condition ?? ''
+        const key = judge === '' ? cellCriterion : `${cellCriterion}|${judge}`
         if (!samples.has(key)) samples.set(key, [])
         samples.get(key)?.push(verdict.pass)
+        if (judge !== '') {
+          if (!byJudge.has(cellCriterion)) byJudge.set(cellCriterion, new Map())
+          const perJudge = byJudge.get(cellCriterion) as Map<string, boolean[]>
+          if (!perJudge.has(judge)) perJudge.set(judge, [])
+          perJudge.get(judge)?.push(verdict.pass)
+        }
+        if (verdict.judge?.selfJudged === true && !selfJudgedSeen.has(cellCriterion)) {
+          selfJudgedSeen.add(cellCriterion)
+          selfJudgedCriteria += 1
+        }
       }
     }
   }
@@ -1387,12 +1495,19 @@ function judgeConsistencyOf(cells: BundleCell[]): JudgeConsistency {
   } else {
     details.push('llm-draft 无多采样判据——一致性不可计算')
   }
+  // The human comparison is about the criterion, not about one rater: every
+  // llm-draft value for it, whoever wrote it.
+  const llmByCriterion = new Map<string, boolean[]>()
+  for (const [key, values] of samples) {
+    const cellCriterion = key.split('|').slice(0, 2).join('|')
+    llmByCriterion.set(cellCriterion, [...(llmByCriterion.get(cellCriterion) ?? []), ...values])
+  }
   let humanAgreement: { agreed: number; total: number } | null = null
-  if (human.size > 0 && samples.size > 0) {
+  if (human.size > 0 && llmByCriterion.size > 0) {
     let agreed = 0
     let total = 0
     for (const [key, humanPass] of human) {
-      const llmValues = samples.get(key)
+      const llmValues = llmByCriterion.get(key)
       if (llmValues === undefined || llmValues.length === 0) continue
       total++
       if (llmValues.every(v => v === humanPass)) agreed++
@@ -1406,6 +1521,38 @@ function judgeConsistencyOf(cells: BundleCell[]): JudgeConsistency {
   } else if (human.size === 0) {
     details.push('无 human-final 记录——终评一致率不可计算')
   }
+
+  // The panel's own line (决策 9 放宽后): how often two DIFFERENT judges land
+  // on the same answer. Each judge is first reduced to its own majority, so a
+  // judge sampled twice counts once here and its internal spread stays in the
+  // κ above.
+  const crossPairs: Array<[boolean, boolean]> = []
+  let crossJudged = 0
+  let crossAgreed = 0
+  for (const perJudge of byJudge.values()) {
+    const verdictsPerJudge = [...perJudge.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([, values]) => values.filter(Boolean).length > values.length / 2)
+    if (verdictsPerJudge.length < 2) continue
+    crossJudged += 1
+    if (verdictsPerJudge.every(value => value === verdictsPerJudge[0])) crossAgreed += 1
+    for (let i = 0; i < verdictsPerJudge.length; i++) {
+      for (let j = i + 1; j < verdictsPerJudge.length; j++) {
+        crossPairs.push([verdictsPerJudge[i] as boolean, verdictsPerJudge[j] as boolean])
+      }
+    }
+  }
+  const crossKappa = crossPairs.length > 0 ? cohenKappa(crossPairs) : null
+  const panelSize = new Set([...byJudge.values()].flatMap(perJudge => [...perJudge.keys()])).size
+  if (panelSize > 1) {
+    details.push(`跨判官（判官面板 ${panelSize} 位，每位先按自身多数定调）: ${crossJudged} 条判据被两位以上判官判过，`
+      + `全员一致 ${crossAgreed} 条（${pct(crossAgreed, crossJudged)}）`
+      + `；Cohen κ ${crossKappa === null || Number.isNaN(crossKappa) ? '不适用（判定恒定，期望一致率无定义）' : crossKappa.toFixed(3)}`)
+  }
+  if (selfJudgedCriteria > 0) {
+    details.push(`自评判据 ${selfJudgedCriteria} 条：判官模型与该格选手模型相同（决策 9 放宽后允许并标注，不排除）`
+      + '——这些判据的 llm-draft 值带自评偏好，读数时单独看，别与他评混为一谈')
+  }
   return {
     multiSampled: multi.length,
     llmAgreement: multi.length > 0
@@ -1413,8 +1560,54 @@ function judgeConsistencyOf(cells: BundleCell[]): JudgeConsistency {
       : null,
     llmKappa: kappa,
     humanAgreement,
+    crossJudged,
+    crossAgreement: crossJudged > 0 ? { agreed: crossAgreed, total: crossJudged } : null,
+    crossKappa,
+    selfJudgedCriteria,
     details,
   }
+}
+
+/**
+ * Who judged each cell. Built from the llm-draft envelopes, so a bundle that
+ * recorded no judge identity yields an empty list and the report says so
+ * rather than printing a table of blanks.
+ */
+function judgeAssignmentsOf(cells: BundleCell[]): JudgeAssignment[] {
+  const assignments: JudgeAssignment[] = []
+  for (const cell of cells.filter(c => c.isCurrent)) {
+    const perJudge = new Map<string, { judge: VerdictJudge; samples: Set<number>; verdicts: number }>()
+    for (const verdict of cell.verdicts) {
+      if (verdict.ns !== 'llm-draft' || verdict.judge === null) continue
+      const entry = perJudge.get(verdict.judge.condition)
+        ?? { judge: verdict.judge, samples: new Set<number>(), verdicts: 0 }
+      entry.verdicts += 1
+      if (verdict.judge.sample !== null) entry.samples.add(verdict.judge.sample)
+      // Self-judgement is a property of the (judge, cell) pair, so any sample
+      // carrying it settles the row.
+      if (verdict.judge.selfJudged) entry.judge = verdict.judge
+      perJudge.set(verdict.judge.condition, entry)
+    }
+    if (perJudge.size === 0) continue
+    assignments.push({
+      missionId: cell.missionId,
+      task: cell.task,
+      condition: cell.condition,
+      rep: cell.rep,
+      judges: [...perJudge.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([condition, entry]) => ({
+          condition,
+          model: entry.judge.model,
+          selfJudged: entry.judge.selfJudged,
+          samples: entry.samples.size,
+          verdicts: entry.verdicts,
+        })),
+    })
+  }
+  return assignments.sort((a, b) =>
+    (a.task ?? '').localeCompare(b.task ?? '') || (a.condition ?? '').localeCompare(b.condition ?? '')
+    || (a.rep ?? 0) - (b.rep ?? 0) || a.missionId.localeCompare(b.missionId))
 }
 
 function pct(part: number, total: number): string {
@@ -1640,6 +1833,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
         ...(weight !== undefined ? { weight } : {}),
         ...(facts !== undefined ? { negative: facts.negative } : {}),
         ...(cellToolCalls !== null ? { toolCalls: cellToolCalls } : {}),
+        ...(verdict.judge !== null ? { judge: verdict.judge } : {}),
         evidence: typeof verdict.doc['evidence'] === 'string' ? verdict.doc['evidence'] : '',
         by: typeof verdict.doc['by'] === 'string' ? verdict.doc['by'] : '',
       })
@@ -1673,6 +1867,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   }
 
   const judge = judgeConsistencyOf(cells)
+  const judgeAssignments = judgeAssignmentsOf(cells)
   const efficiency = efficiencyOf(cells, conditionEntries, meta)
   const efficiencyExcluded = excludedCellsOf(cells)
   const usageRows = usageRowsOf(cells, runId)
@@ -1732,6 +1927,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     comparisons,
     singleCondition,
     judge,
+    judgeAssignments,
     efficiency,
     usageRows,
     efficiencyExcluded,

@@ -22,16 +22,18 @@ dsh plugin --profile web add @khorsheed/dsh-worktrees      # 安装
 dsh plugin --profile web remove @khorsheed/dsh-worktrees   # 卸载
 ```
 
+> **模型工具已拆出（BREAKING）**：core 不再在 profile 根注册模型可见的 `worktrees` 工具——工具改由伴生包 `@khorsheed/dsh-worktrees-tool` 承载，在 agent preset 组合里**按会话授予**（迁移路径：安装伴生包，并在目标 preset 的 `agent.cordis.yml` 加 `- id: worktrees-tool / name: '@khorsheed/dsh-worktrees-tool'`；web-dev 的 dev preset 已带此行）。徽标/右栏 tab/服务/Remote 全部保留、行为不变。
+
 ## 配置
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `baseRef` | `main` | 「已提交」段（`base...HEAD`）与 ahead/behind 的基准分支；设为 `''` 则完全禁用已提交段 |
-| `visiblePresets` | `[]` | 会话头徽标只在列出的 agent preset 会话中显示。缺省或空数组 = 永远显示（零行为变化）；非空时，preset id 不在列表里的会话不渲染徽标，而**没有 preset 的会话保持显示**（fail-open：用来在非开发会话里藏开发铬件，绝不破坏无 preset 的部署）。配置经 Remote 的 `badgeConfig` 方法到达浏览器端——web 引导不给 client 条目传 config |
+| `visiblePresets` | `[]` | 徽标显隐的**手动 override**。缺省或空数组 = 走**组合判据**：读官方 `pluginInventory` 的 preset 组合数据，当前会话的 preset 组合里有 `@khorsheed/dsh-worktrees-tool` 行则显示、没有则隐藏；组合数据不可得（无 namespace、RPC 失败、preset 组缺席或 broken）以及没有 preset 的会话都保持显示（fail-open）。配了非空名单则退回试点语义：preset id 不在列表里的会话不渲染徽标。配置经 Remote 的 `badgeConfig` 方法到达浏览器端——web 引导不给 client 条目传 config |
 
 ## Compatibility
 
-- **npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）**：✅ 完整——改动/提交/仓库视图迁移至官方右栏 tab 面（page-type 注册进 `ctx.sidebarRightTabs`，body 进 keyed `sidebar.right.pane.tab` 槽位，徽标点按经 `ctx.sidebarRight.openTab` 打开）；「在文件夹中显示」手势改走官方 open-in-app 路由探测（GET `/open-in-app/apps` + POST `/open-in-app/open`，仅目录），恢复了 0.1.2 上被迫隐藏的手势。徽标留在 `conversation.session.header.utilities`：0.1.5 的 header corner 是 single 槽，默认 web 组合里已被 ui-sidebar-right 的 ExpandButton 占用，而 single 槽语义是遮蔽（同优先级注册即抛错，不同优先级替换占用者），无法共存。全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
-- **源码线（deepseek-harness master）**：✅（verifiedHost: 0.1.5-rc.1）。headless profile 无浏览器消费方，本插件不贡献任何东西（model tools 属于治理阶段，尚未实现）。`visiblePresets` 闸门读取会话投影 `projectionValues.agentPreset`；读不到 preset 的会话保持显示（fail-open），只有会话确实带 preset 且 preset 不在列表里才隐藏。
+- **npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）**：✅ 完整——改动/提交/仓库视图迁移至官方右栏 tab 面（page-type 注册进 `ctx.sidebarRightTabs`，body 进 keyed `sidebar.right.pane.tab` 槽位，徽标点按经 `ctx.sidebarRight.openTab` 打开）；「在文件夹中显示」手势改走官方 open-in-app 路由探测（GET `/open-in-app/apps` + POST `/open-in-app/open`，仅目录），恢复了 0.1.2 上被迫隐藏的手势。徽标留在 `conversation.session.header.utilities`：0.1.5 的 header corner 是 single 槽，默认 web 组合里已被 ui-sidebar-right 的 ExpandButton 占用，而 single 槽语义是遮蔽（同优先级注册即抛错，不同优先级替换占用者），无法共存。徽标显隐默认读官方 `pluginInventory` 组合判据（0.1.5 实测：dev preset 显示、standard 隐藏、切换干净翻转）。全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- **源码线（deepseek-harness master）**：✅（verifiedHost: 0.1.5-rc.1）。headless profile 无浏览器消费方，本插件不贡献任何东西。徽标显隐判据：默认读官方 `pluginInventory.list()` 的 preset 组合数据（组合里有 `@khorsheed/dsh-worktrees-tool` 行则显示）；`visiblePresets` 非空时是手动 override（读会话投影 `projectionValues.agentPreset`）；两条路径读不到都保持显示（fail-open）。
 
 **版本线对照**：`0.2.0` 起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.1.0-rc.9`。

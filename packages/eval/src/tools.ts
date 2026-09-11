@@ -67,20 +67,37 @@ export function registerEvalTools(ctx: Context, service: EvalService): void {
       + 'harness, declared model, condition hash, and READINESS: whether conditions/<id>.lock.json exists and '
       + 'still matches the declaration, and which contract fields are still null. A condition is a data file — '
       + 'draft a new one by copying an existing one and changing ONE field, then have the human provision and '
-      + 'lock it. Resolves against this session\'s bound dataset repository unless `repo` says otherwise.',
+      + 'lock it (/eval conditions provision — a human act, and the only writer of a lock). Each lock also '
+      + 'reports the `provisioned` snapshot: what the scoped home actually read back when it was provisioned. '
+      + 'With `diff` set to two conditions instead, answers which FIELDS the two declarations differ on and '
+      + 'what each side says — facts only, no recommendation about whether the pair is worth running. '
+      + 'Resolves against this session\'s bound dataset repository unless `repo` says otherwise.',
     parameters: {
       repo: { type: 'string', description: 'Dataset repository path. Omit to use the session\'s datasets binding.' },
       dataset: { type: 'string', description: 'One dataset set (default: every set in the repository that declares conditions).' },
+      diff: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Exactly two conditions (a condition id, or a path to a declaration) to compare field by field '
+          + 'instead of listing. Two conditions differing in exactly one field are a single-factor pair — the '
+          + 'shape an experiment wants — but this only SHOWS the difference; it never recommends one.',
+      },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => true,
     async execute(args, exec) {
       const session = sessionOf(exec)
-      return (await service.conditions({
+      const scope = {
         ...(args.repo !== undefined ? { repo: args.repo } : {}),
         ...(args.dataset !== undefined ? { dataset: args.dataset } : {}),
         ...(session !== undefined ? { session } : {}),
-      })) as unknown as JsonValue
+      }
+      const diff = args.diff
+      if (diff === undefined) return (await service.conditions(scope)) as unknown as JsonValue
+      if (diff.length !== 2) {
+        throw new Error(`diff wants exactly two conditions, got ${diff.length} — a diff is between two declarations`)
+      }
+      return (await service.conditionDiff({ ...scope, a: diff[0] as string, b: diff[1] as string })) as unknown as JsonValue
     },
   })))
 

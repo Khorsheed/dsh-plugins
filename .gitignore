@@ -1,4 +1,9 @@
 node_modules/
+# …and a SYMLINK named node_modules, which the trailing-slash rule above does
+# not match: the worktree recipe for running `pnpm gate` links each package's
+# node_modules in from the main checkout, and `git add -A` would otherwise
+# commit those links — which then replace the real directories on checkout.
+node_modules
 lib/
 *.tgz
 .DS_Store

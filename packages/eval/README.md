@@ -135,7 +135,7 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 条件文档里的 `preset` 一直是一句**没有对应物**的话。它进条件哈希，所以两条只差 preset 的条件在账面上是两个受试对象；但从来没有任何东西把 preset 写到哪里去过，也就没有任何东西能与它不符。T32 给了它对应物：
 
 - **谁可以声明。** 只有 `dsh`。它的作用域目录里那份子 profile 是评测实例自己写的，preset roster 是那份 patch 的一层。三家外部 CLI 跑厂商自己的编排，本家族组不了——给它们写 preset 由 validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那侧的等价物是 `skills.pack`，同样尚未落地（I6）。
-- **provision 写下实物。** lock 多一段 `provisioned`：`preset` 从写出去的子 profile 回读，`capabilities.sha` 是 capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。`writeConditionLock` 是这个写动作的接缝：它只管文件与形状，不配环境、不算哈希，所以 lock 的契约不需要一台机器就能测。
+- **provision 写下实物。** `conditions provision`（T31）在 `provisioned` 里多记两项：`preset` 从写出去的子 profile 回读，`capabilities.sha` 是 capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。**测量本身是一个钩子**（`ProvisionOptions.capabilities`）：量一份子 dsh 的能力面要把它的子 profile 启起来、问挂在里面的 catalog，那条启动路本模块刻意不拥有。没给钩子时，声明了 preset 的条件照样落 lock，但不带能力记录，并当场按名报 `CAPABILITIES_UNMEASURED`——之后就绪检查再拒一次。两头都出声，好过一份读起来「已核对」的 lock。
 - **就绪检查核对。** 声明了 preset 而 lock 里没有能力记录，或记录取自另一个 preset——在花掉任何一次委派**之前**就判该条件不就绪。preset 进哈希却没人量过，等于两个纸面上的受试对象、事实上的一个。
 
 编排实例自己的能力哈希另算一回事：它记在 `run.meta.orchestrator.capabilities` 里，是**取证**。报告的「程序一致」把它列出来，不做任何比较——编排器不回答题库的任何一道题，把它做成通过/不通过的输入，等于「我们升级了规划 agent」就判一条不变量违反。组合里没挂 capability-catalog 就不记这一行。
@@ -147,6 +147,32 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 它不 force。闸拒绝按格记 `{kind: 'finalize-refused', from, error}` 到 orchestrator ns，格子停在闸拦下它的地方——闸正是「归档」这两个字有意义的原因。它也不碰没走到 `archived` 的格子：pending 或半途的格子是**没做完的工作**，不是**没释放的工作**。跳过按 `already-released` / `interrupted` / `not-started` 归类，一整个 run 一行就能说清。
 
 进程外没有 mission 服务，所以 `dsh-eval finalize` 以子进程调用 `dsh-mission` 的 CLI（`--data-dir`、`--mission-cli`、`$DSH_MISSION_CLI`）——正是人手工用的那条缝。eval 仍然不 import mission 包的任何东西。
+
+## 条件 provision：声明 → 实物 → lock（I4·T31）
+
+condition 是**声明**；`conditions/<id>.lock.json` 是「这份声明对过一次实物」的锚点。T8b 立了锚点与它的两个读者——validate 报 `LOCK_STALE` / `HOME_NOT_PROVISIONED` / `HOME_MISMATCH`，run 遇过期 lock 直接拒——但在 T31 之前**没有任何东西写它**。`dsh-eval conditions provision` 是那个写入者，而且刻意是唯一的：手写一份 lock 等于声称作用域目录核对过，而其实没有。
+
+五步，每步都能停：
+
+1. **取作用域目录** —— 按条件的 `(harness, scope)` 问 local-agent 要 `homeDir`；读即物化。
+2. **核凭证** —— `credentialState` 不是 present（`present-unverified` / `verified`）就停下，并打印该跑的登录命令 `/<家> login [--scope <名>]`。**provision 从不代登录，也从不从别的 scope 复制凭证**——登录是人的事。
+3. **逐项核声明** —— 读该作用域的 effectiveSettings，与条件逐字段比：
+
+   | 条件字段 | 对什么 | 不一致 |
+   |---|---|---|
+   | `harness.version` | CLI 自报版本 | warning（声明为 null 时把实测值**回填进 lock**，不改条件文档） |
+   | `model.declared` | harness 缺省模型 | warning——T30b 之后声明是**按次请求**的值，与缺省不同是常态；跑错仍由回读拒 |
+   | `reasoning.effort` | `reasoningEffort` | warning（harness 没这旋钮就是诚实的「没有」） |
+   | `permissions` | codex `sandbox` / claude-code `permissionMode` / kimi `autoApprove`（dsh 无旋钮） | **error，拒写 lock** |
+   | `model.endpoint` | 无 base URL 即 `"default"`，否则端点主机名（声明写整个 URL 会先取 host 再比） | **error，拒写 lock** |
+
+   两条 error 不是随手挑的：`permissions` 是审批边界（冻结决策 3）、`model.endpoint` 是上游路由（冻结决策 5），这两项**就是**受试对象，对不上说明这份条件描述的实验没人跑过。
+4. **算 `home.sha`** —— 作用域目录的配置内容哈希（见[哈希规则](#哈希规则)，凭证形状的文件按名与按目录整棵排除）。声明里的 `home.sha` 还是 null，或与实测不符，都以 warning 报出并把实测值原样给出——provision **不改条件文档**（`home.sha` 进条件哈希，改它是改条件，那是人的决定）。
+5. **写 lock** —— `{schema, condition, sha, home:{sha}, provisioned:{at, cliVersion, effective:{model, reasoningEffort, permissions, endpoint}}}`。`provisioned` 是 `dataseek.condition-lock/1` 的**增补字段**，没有它的 lock 是 provision 之前写的，validate 读作「没人核对过」而不是违约。
+
+validate 用**同一个函数**复核 lock 里的 `provisioned.effective`：两条 error 级字段对不上即「未就绪」并点名字段。sha 还匹配却对不上，只可能是这份 lock 不是 provision 写的——这正是要看见的那种伪造。
+
+provision 需要 local-agent 服务（作用域目录、凭证等级、effectiveSettings 都在那儿），所以它和 `/eval run` 一样从活会话起：`/eval conditions provision <condition.json> --repo <工作副本>`。`--repo` 指的那份工作副本是它唯一能写的地方，且**不 commit**——共享检出只读，要写就指自己的 worktree。
 
 ## 判定：探针（script）与判官盲评（llm-draft）
 
@@ -162,15 +188,17 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 产出写 `script` ns 与 `archive/verdicts/script.json`；两个层都没有探针就什么都不写。每次探针运行的记录（`{probe, origin, exitCode, outcome, ok, verdicts, durationMs, error?, reason?, overwritten?, dropped?}`）进 orchestrator ns 的 `kind: 'probes'`。
 
-**判官盲评（`llm-draft`）** —— 判官本身是一份 condition，由 `plan.judge.conditions` 指定，`plan.judge.samples`（缺省 2）是每个判官条件的采样数。三条约束由编排器强制（冻结决策 9）：
+**判官盲评（`llm-draft`）** —— 判官本身是一份 condition，由 `plan.judge.conditions` 指定（可以列**多个**，即一个判官面板），`plan.judge.samples`（缺省 2）是每个判官条件的采样数。约束由编排器强制（决策 9，2026-09-10 放宽）：
 
-- **判官不得是选手**：除 validate 的 id 交集检查外，run 前再比一次 `(harness.name, model.declared)`——不同 id 指向同一受试对象照样拒绝，并说明撞在哪一条上。
+- **判官显式 pin 模型**：`model.declared` 为 null 的判官条件被 validate 判为 error、被 run 拒绝——判官跑什么由它家 harness 的缺省决定时，「这格是不是自评」无从判定，报告只会安静地错。
+- **判官可以与选手同模型，但每格由谁判要进报告**：不同 id、同 `(harness, model)` 不再拒绝。每条 `llm-draft` 判定带 `judge`（判官条件 id、模型、`selfJudged`、样本号），summary.md 逐格列出这一格由谁判，判官模型等于该格选手模型的格标「**自评**」。仍然拒绝的只有两件事：同一个 id 同时出现在 `conditions` 与 `judge.conditions`（那不是面板，是记账错误），以及同一个判官 id 列两次。
+  - 为什么不做全局排除：要评的就是全部模型时，评委必然与某个选手重合。公开榜单（MT-Bench、AlpacaEval、Arena-Hard）都让选手模型当评委并如实记录自评偏好，补救是**多评委面板 + 标出「谁判了谁」**；根本不想要模型评委的（SWE-bench 一类）用确定性打分器。旧规则的代价是实测过的：T22 第 5 步里判官声明一个模型、实际跑另一个，改声明就与选手撞车，两种声明都跑不了。
 - **判前去指纹**：`stage1.json` / `stage1.md` / `stage2.json` / `stage2.md` 里的 harness 名、CLI 名、成员自报名字换 `<harness>`，plan 各条件的模型标识换 `<model>`；替换表与次数记 `{kind: 'deidentify', files, table, total}`，**原件不动**，判官只看副本。
 - **双采样**：每个样本是**全新委派**（续聊会让判官看见自己上一次的答案），独立 cwd = 判官材料目录。
 
-judge prompt = 该题 grading 层 rubric 里 `kind: llm-draft` 的判据（`objective` 归探针、`human` 归判官台，都不给判官看）+ 去指纹材料 + 输出要求。判官把 `dataseek.verdict/1` 数组写进自己 cwd 的 `verdicts.json`；读不出来记 `{kind: 'judge-parse-failed'}` 并**重试一次**，再失败该样本如实丢弃。每个样本一条 `llm-draft` 注解 `{sample, judgeCondition, judgeSha, promptSha, verdicts}`，并落 `archive/verdicts/llm-draft-<判官条件>-<样本号>.json`；`task` 与 `by` 由编排器回填（判定方只是回声，写错会污染报告的每一次 join）。
+judge prompt = 该题 grading 层 rubric 里 `kind: llm-draft` 的判据（`objective` 归探针、`human` 归判官台，都不给判官看）+ 去指纹材料 + 输出要求。判官把 `dataseek.verdict/1` 数组写进自己 cwd 的 `verdicts.json`；读不出来记 `{kind: 'judge-parse-failed'}` 并**重试一次**，再失败该样本如实丢弃。每个样本一条 `llm-draft` 注解 `{sample, judgeCondition, judgeSha, judgeModel, selfJudged, promptSha, verdicts}`，并落 `archive/verdicts/llm-draft-<判官条件>-<样本号>.json`；`task` 与 `by` 由编排器回填（判定方只是回声，写错会污染报告的每一次 join）。
 
-判官的用量与耗时记 `{kind: 'judge', judgeCondition, judgeSha, sample, attempt, childSessionId, promptSha, startedAt, durationMs, usage, model}`——`kind` 不是 `delegation`，所以**不进报告的选手效率表**。判官材料目录（`$DSH_HOME/state/eval/judge/<runId>/…`：prompt + 去指纹材料 + 判官的回答）在 run 结束后保留，供复核；探针目录跑完即删。
+判官的用量与耗时记 `{kind: 'judge', judgeCondition, judgeSha, judgeModel, selfJudged, sample, attempt, childSessionId, promptSha, startedAt, durationMs, usage, model}`——`kind` 不是 `delegation`，所以**不进报告的选手效率表**。判官材料目录（`$DSH_HOME/state/eval/judge/<runId>/…`：prompt + 去指纹材料 + 判官的回答）在 run 结束后保留，供复核；探针目录跑完即删。
 
 grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: ['grading']` / `['verify']`）读取，物化进宿主侧目录，**绝不进选手格子**。
 
@@ -185,7 +213,9 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 | `hashHome(homeDir)` | scoped home 内容哈希：只取配置类文件，按拒绝清单跳过凭证形状的路径；内容只进摘要，绝不返回或打印 |
 | `generateTemplate(manifestPath, opts?)` | 由题集 manifest 生成 run 模板（可选项：`stages` 子集、`missions` 格批次、`name`、schemaPath 前缀）。纯函数：不探测 schema 文件，探测归 mission 的 runCreate lint |
 | `run(planPath, options?)` | run 循环本体（见上节）。缺 datasets / mission / localAgent 任一即拒绝并列出哪个；`dryRun` 选项只做校验 + 模板 + 矩阵 + 顺序，不需要任何上游 |
-| `conditions({repo?, dataset?, session?})` | 列出题库声明的条件：harness、声明模型、条件哈希、就绪（lock 在不在、还对不对、home 是否核过）、未解析字段。`repo` 缺省时取会话的 datasets 绑定，并遵守绑定的题集白名单——agent 能看哪些题集是人的决定 |
+| `conditions({repo?, dataset?, session?})` | 列出题库声明的条件：harness、声明模型、条件哈希、就绪（lock 在不在、还对不对、home 是否核过）、lock 里的 `provisioned` 快照、未解析字段。`repo` 缺省时取会话的 datasets 绑定，并遵守绑定的题集白名单——agent 能看哪些题集是人的决定 |
+| `conditionDiff({a, b, repo?, dataset?, session?})` | 两份条件声明的逐字段差异（规范化深比较；`notes` 进差异清单但不影响 `identical`）。两侧各可以是条件 id 或路径。**只展示，不推荐**：哪些字段不同、各自取值，就这些——这对条件值不值得跑，取决于文件里没有的东西 |
+| `provision(conditionPath, {repo})` | 把声明变成实物并写 `conditions/<id>.lock.json`，见下节。**lock 的唯一写入者**；只写 `repo` 指的那份工作副本，不 commit |
 | `runStatus(runId)` | 投影一次 run：run.meta 摘要（planSha、快照 commit、条件、随机顺序与种子、启动时间）+ 逐格一行（题、条件、rep、attempt、状态、桶、编排器最近一条注解、submission-rejected 次数）。缺 mission 服务即拒绝并说明原因 |
 | `finalize(runId, options?)` | 把 run 内每个 `archived` 的格子走一遍 `archived → releasable → released`（与 `--finalize` 同一条闸），非 archived 的格子逐格列出状态。闸拒绝按格记录，不 force。组合里没有 mission 服务即拒绝并说明原因 |
 | `report(bundleDir, {out?})` | 把 mission export 的自包含 bundle 变成 `results.jsonl` + `summary.md`（见下节）。只读 bundle，写入缺省 `<bundleDir>/report/`，重复运行覆盖（报告是派生态，bundle 本身只增不改） |
@@ -195,7 +225,7 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 输入是 mission export 的 bundle（manifest.json、run.json、missions/<id>/attempt-N/{meta,annotations,artifacts}、dataset/<layer>/），输出三份文件：
 
 - **results.jsonl** — 一行一个判定：`{task, condition, conditionSha, rep, attempt, stage, ns, criterion, pass, ratio?, weight?, negative?, toolCalls?, evidence, by}`（`toolCalls` 是该**格**各轮工具调用之和，本格没有任何一轮报过就整个键缺位——因此在旧 bundle 上复算出的 results.jsonl 逐字节不变）。ratio 只在判定声明了可用的 `{passed, total}` 时出现；weight / negative 只在该判据的极性可知时出现（见下）；stage 取自注解记录的 stage 字段（判定契约本身不含 stage，未记录即 null）。
-- **summary.md** — 开头先核四条不变量（题面一致 / 环境一致 / 受试对象一致 / 程序一致）。**任一项不成立或无法核验，只输出事实表，不输出比较**。比较启用时：因子由 run.meta.conditions 的条件文档两两 diff 推出（只差一项即因子名，差多项标「多因子」只做描述统计）；配对以题为区组、rep 为重采样单元，输出逐题差值（得分判据数与加权分）、n、自助法 95% 置信区间（seed 确定性，统计手写无依赖）；n < 3 或因子未知/多因子时打印「不可排名」并拒绝名次。判官一致性按 criterion 算双采样一致率与 Cohen κ，human-final 在场时算 llm-draft 对终评的一致率。效率并列不合成，且每一项**只统计已完成的格子**（`judged` / `archived` / `releasable` / `released`）：活跃时长（委派 durationMs 之和）、工具调用（各轮 `toolCalls.count` 之和；没有任何一轮报过计数就打「—」而不是 0——「没人报过」不是「一次没用」）、标价成本（run.meta.pricing 给了才有）、委派轮次（只在双方都完成的题上比）、token 只在同模型内比。未完成格子的委派时长买到的工作量未知，混进来得到的数没有意义——pilot A 两家活跃时长同为 21.0 min，那个巧合就是一格只跑了阶段一的 dsh 格子撑出来的。被排除的格子按条件与状态在表下单列一行；`results.jsonl` 不受影响。「程序一致」一节在 run 记了 `run.meta.subset` 时把它打印出来，只覆盖了一部分 plan 的 run 因此不会被读成完整的。expectedNs 里某 ns 的判定全由 `tool:` 写入时 summary 顶部红字标出。
+- **summary.md** — 开头先核四条不变量（题面一致 / 环境一致 / 受试对象一致 / 程序一致）。**任一项不成立或无法核验，只输出事实表，不输出比较**。比较启用时：因子由 run.meta.conditions 的条件文档两两 diff 推出（只差一项即因子名，差多项标「多因子」只做描述统计）；配对以题为区组、rep 为重采样单元，输出逐题差值（得分判据数与加权分）、n、自助法 95% 置信区间（seed 确定性，统计手写无依赖）；n < 3 或因子未知/多因子时打印「不可排名」并拒绝名次。判官一致性按 criterion 算**同一判官**双采样的一致率与 Cohen κ（面板里每位判官各算各的，不把两位判官的分歧算成某一位的噪声），列了多个判官时另加一行跨判官一致性（每位先按自身多数定调，再比判官之间）；human-final 在场时算 llm-draft 对终评的一致率；自评判据单列一行提醒单独读。「每格由谁判」一表在比较启用时进比较节，否则进判官一致性节——谁判的是事实，不因不变量拦下比较而消失。效率并列不合成，且每一项**只统计已完成的格子**（`judged` / `archived` / `releasable` / `released`）：活跃时长（委派 durationMs 之和）、工具调用（各轮 `toolCalls.count` 之和；没有任何一轮报过计数就打「—」而不是 0——「没人报过」不是「一次没用」）、标价成本（run.meta.pricing 给了才有）、委派轮次（只在双方都完成的题上比）、token 只在同模型内比。未完成格子的委派时长买到的工作量未知，混进来得到的数没有意义——pilot A 两家活跃时长同为 21.0 min，那个巧合就是一格只跑了阶段一的 dsh 格子撑出来的。被排除的格子按条件与状态在表下单列一行；`results.jsonl` 不受影响。「程序一致」一节在 run 记了 `run.meta.subset` 时把它打印出来，只覆盖了一部分 plan 的 run 因此不会被读成完整的。expectedNs 里某 ns 的判定全由 `tool:` 写入时 summary 顶部红字标出。
 
 - **usage.jsonl** — **一轮委派一行**的花销台账：`{run, cell, attempt, condition, task, stage, round, counted, observedModel?, cliVersion?, durationMs?, usage?, toolCalls?}`。这里不聚合、不计价——效率表由它汇总，外部计价也只读它。`counted` 说明这一轮是否在效率表口径内（当前 attempt 且已完成，T23 规则）：把某条件 `counted: true` 的行加起来，就逐项等于它在效率表里的那一行；`counted: false` 的行是表**有意排除**的花销，留在这里而不是丢掉，好让外部按自己的口径取用。取不到的字段一律缺位，绝不补零——「没人报过」和「花了 0」是两件事。
 
@@ -215,7 +245,7 @@ agent 在一次实验里只出现两次：规划期起草、分析期读结论�
 
 | 工具 | 答什么 |
 |---|---|
-| `eval_conditions` | 题库里有哪些条件、各自的哈希与就绪状态、哪些字段还是 null。参数 `repo`（缺省取会话的 datasets 绑定）与 `dataset`（缺省扫全库）|
+| `eval_conditions` | 题库里有哪些条件、各自的哈希与就绪状态、lock 里的 provisioned 快照、哪些字段还是 null。参数 `repo`（缺省取会话的 datasets 绑定）、`dataset`（缺省扫全库），以及 `diff`（恰好两条条件，改为逐字段比较两份声明——只展示差异，不推荐哪条值得跑）|
 | `eval_plan_validate` | 给定 plan 路径的校验结果：`ok` / `errors`（不能跑）/ `warnings`（还没解析）与解析出的条件 sha。校验从不启动任何东西 |
 | `eval_run_status` | 一次 run 的 run.meta 摘要与逐格状态；数据源是 `mission.runStatus` 与 orchestrator ns |
 
@@ -261,6 +291,12 @@ dsh-eval finalize <runId>                 # 把 archived 的格子走一遍释�
                                           #   [--data-dir DIR] [--mission-cli PATH]；以子进程调 dsh-mission CLI
 dsh-eval template <manifest.yml> [--stages a,b]  # 打印生成的 run 模板
 dsh-eval conditions hash <condition.json> # 打印 { id, sha, warnings }
+dsh-eval conditions list [--repo DIR]     # 逐条件：哈希、lock 状态、home 是否核过、provisioned 快照
+                                          #   [--dataset ID] 只看一个题集
+dsh-eval conditions diff <a> <b>          # 两份声明的逐字段差异（各侧是条件 id 或路径）
+                                          #   [--repo DIR] [--dataset ID]
+dsh-eval conditions provision <cond.json> # 需要 local-agent 服务，进程外没有——CLI 如实拒绝
+                  --repo DIR              #   并指向 /eval conditions provision
 dsh-eval report <bundleDir> [--out DIR]   # 出 results.jsonl + summary.md；摘要 JSON 走 stdout
 ```
 

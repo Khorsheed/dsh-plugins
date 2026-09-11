@@ -22,6 +22,10 @@ dsh plugin add @khorsheed/dsh-room
 
 包是自挂载的：`dsh.bundle.patch` 插入 `room` loader 行，浏览器半经 `dsh.client` 块被发现。卸载插件即移除它添加的所有界面。
 
+> **模型工具已拆出（BREAKING）**：core 不再在 profile 根注册模型可见的 `room_invite` / `room_task` / `room_message` 工具——改由伴生包 `@khorsheed/dsh-room-tool` 承载，在 agent preset 组合里**按会话授予**（迁移路径：安装伴生包，并在目标 preset 的 `agent.cordis.yml` 加 `- id: room-tool / name: '@khorsheed/dsh-room-tool'`；web-dev 的 dev preset 已带此行）。room 服务、成员 UI 与全部 Remote 行为不变。
+>
+> **会话 chrome 按 preset 自隐（M3'）**：「邀请 agent」头部 chip 与「成员」tab 只在当前会话的 preset 组合里有 `@khorsheed/dsh-room-tool` 行时呈现（读官方 `pluginInventory` 数据，无手配名单）；读不到一律 fail-open 显示；已是 room 的会话无论 preset 如何都保留全部界面。成员 tab 的隐藏发生在**注册层**：tab 按钮来自槽位注册表，所以是注销条目而不是渲染空体。
+
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级——**CLI 成员不可用**：CLI 成员依赖 local-agent 家族的公开委派门面（`start`/`resume`/`cancel`，即 `proposals/active/2026-08-18-local-agent-delegation-api.md` 的 M1，已合入本仓 main），已发布的 `@khorsheed/dsh-local-agent` 尚未携带（npm 上尚无该包）。invite 返回 `local-agent-unavailable`；主 agent 成员与其余所有面正常。0.1.5 的冷读路径走 handle 制 sessionPersistence（`open(id, 'read')` → `read` → `close`；一次性 `inspect` 已移除）。minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。

@@ -488,18 +488,32 @@ export const LOCK_SCHEMA: SchemaObject = {
     provisioned: {
       type: 'object',
       additionalProperties: false,
-      required: [],
-      description: 'What provision actually built, as opposed to what the condition declares. Present once provision has run.',
+      required: ['at', 'effective'],
+      description: 'What `dsh-eval conditions provision` read back off the scope it provisioned. ADDITIVE in /1: a lock written before provision existed simply has no such key, and validate reads its absence as "provision has not run" rather than as a violation.',
       properties: {
+        at: { type: 'integer', description: 'Epoch ms the provision ran.' },
+        cliVersion: { type: ['string', 'null'], description: "The harness CLI's own version as the CLI reported it; null when it could not be asked." },
+        effective: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['model', 'reasoningEffort', 'permissions', 'endpoint'],
+          description: "The four condition fields as the scope's effective settings answered them. null means the harness declares no such knob — which is itself the honest input, never a substituted guess.",
+          properties: {
+            model: { type: ['string', 'null'] },
+            reasoningEffort: { type: ['string', 'null'] },
+            permissions: { type: ['string', 'null'] },
+            endpoint: { type: ['string', 'null'] },
+          },
+        },
         preset: {
           type: ['string', 'null'],
-          description: 'The preset the provisioned environment composes — read back from what was written, not copied from the declaration.',
+          description: 'The preset the provisioned environment composes, read back from what was written — not copied from the declaration. null means the environment rosters none.',
         },
         capabilities: {
           type: 'object',
           additionalProperties: false,
           required: ['sha'],
-          description: 'The capability fingerprint of the provisioned environment: the hash capability-catalog computes over its canonical skill/tool face (caps:<sha>). It is what turns the condition\'s `preset` claim into a checkable fact.',
+          description: 'The capability fingerprint of the provisioned environment: the hash capability-catalog computes over its canonical skill/tool face (the `caps:` tag without its prefix). It is what turns the condition\'s `preset` claim into a checkable fact; absent means nobody measured it, and the readiness gate refuses a preset claim without it.',
           properties: {
             sha: { type: 'string', description: '64-hex sha256 of the canonical capability face.' },
             preset: { type: ['string', 'null'], description: 'The preset the snapshot was taken under.' },

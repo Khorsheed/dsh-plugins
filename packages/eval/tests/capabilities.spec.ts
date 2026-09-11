@@ -6,16 +6,18 @@
  * measured), and the readiness gate (the claim must have a measurement
  * behind it, checked before any delegation is spent).
  */
-import { mkdtempSync, readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { conditionLockOf, writeConditionLock } from '../src/provision.ts'
+import { afterEach, describe, expect, it } from 'vitest'
+import { provisionCondition, type ProvisionedCapabilities } from '../src/provision.ts'
 import { conditionDiagnostics, resolveConditionReadiness } from '../src/validate.ts'
 import { capabilityRefusal, checkReadiness, type ReadinessSubject } from '../src/readiness.ts'
-import { hashConditionDocument } from '../src/hash.ts'
 import { LOCK_SCHEMA, PRESET_CAPABLE_HARNESSES, validateJson } from '../src/schema.ts'
+import type { LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus } from '../src/faces.ts'
+import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+
+afterEach(cleanupTmp)
 
 const CAPS_SHA = 'a'.repeat(64)
 const HOME_SHA = 'b'.repeat(64)
@@ -24,7 +26,7 @@ function conditionDoc(over: Record<string, unknown> = {}): Record<string, unknow
   return {
     schema: 'dataseek.condition/1',
     harness: { name: 'dsh', version: '0.1.5-rc.1', drive: 'exec' },
-    model: { declared: 'deepseek-official/deepseek-v4-pro', endpoint: 'https://api.example/v1' },
+    model: { declared: 'deepseek-official/deepseek-v4-pro', endpoint: 'default' },
     reasoning: { effort: 'high' },
     permissions: 'unrestricted',
     instructions: 'none',
@@ -34,6 +36,50 @@ function conditionDoc(over: Record<string, unknown> = {}): Record<string, unknow
     env: { keys: ['DSH_HOME'] },
     ...over,
   }
+}
+
+/** A dsh scope whose effective settings agree with {@link conditionDoc}. */
+function agreeingSettings(): LocalAgentEffectiveSettingsFace {
+  return {
+    drive: 'exec',
+    baseUrlSet: false,
+    reasoningEffort: 'high',
+    cliVersion: '0.1.5-rc.1',
+    model: 'deepseek-official/deepseek-v4-pro',
+  }
+}
+
+/** The read-only local-agent face provision uses, over a real homes root. */
+function fakeLocalAgent(homesRoot: string): LocalAgentFace {
+  const homeDir = (harness: string, scope?: string): string => {
+    const dir = join(homesRoot, scope === undefined ? harness : `${harness}@${scope}`)
+    mkdirSync(dir, { recursive: true })
+    return dir
+  }
+  return {
+    start: () => Promise.reject(new Error('provision never delegates')),
+    resume: () => Promise.reject(new Error('provision never delegates')),
+    cancel: () => false,
+    get: () => undefined,
+    homeDir,
+    statusOf: (harness: string, scope?: string): Promise<LocalAgentScopeStatus> => Promise.resolve({
+      name: harness,
+      homeDir: homeDir(harness, scope),
+      credentialState: 'present-unverified',
+      ...(scope === undefined ? {} : { scope }),
+      loginable: true,
+    }),
+    effectiveSettings: () => Promise.resolve(agreeingSettings()),
+  } as unknown as LocalAgentFace
+}
+
+/** A repo working copy holding one dsh condition, plus a homes root. */
+function tree(condition: Record<string, unknown>): { repo: string; homesRoot: string; conditionPath: string; datasetRoot: string } {
+  const root = tmpTree()
+  const repo = join(root, 'repo')
+  const datasetRoot = join(repo, 'datasets', 'ds')
+  const conditionPath = writeJson(join(datasetRoot, 'conditions'), 'dsh-lean.json', condition)
+  return { repo, homesRoot: join(root, 'homes'), conditionPath, datasetRoot }
 }
 
 describe('the preset field is only for a harness this family composes', () => {
@@ -76,79 +122,77 @@ describe('the preset field is only for a harness this family composes', () => {
   })
 })
 
-describe('conditionLockOf — provision writes what it built', () => {
-  it('locks the hash alone when provision has built nothing', () => {
-    const document = conditionDoc()
-    const lock = conditionLockOf('dsh-exec', document)
-    expect(lock).toEqual({
-      schema: 'dataseek.condition-lock/1',
-      condition: 'dsh-exec',
-      sha: hashConditionDocument(document),
-    })
-    // "provision has not run" and "provision ran and built nothing" must not
-    // read alike: an empty provisioned block is never written.
-    expect('provisioned' in lock).toBe(false)
-  })
+describe('conditions provision — the capability face it records', () => {
+  const probe = (over: Partial<ProvisionedCapabilities> = {}) =>
+    async (): Promise<ProvisionedCapabilities> => ({ sha: CAPS_SHA, preset: 'eval-lean', skills: 3, tools: 11, ...over })
 
-  it('records the home hash, the preset read back, and the capability fingerprint', () => {
-    const document = conditionDoc({ preset: 'eval-lean' })
-    const lock = conditionLockOf('dsh-exec-lean', document, {
-      homeSha: HOME_SHA,
-      preset: 'eval-lean',
-      capabilities: { sha: CAPS_SHA, preset: 'eval-lean', skills: 3, tools: 11 },
+  it('records the measured face, and validate reads it back as ready', async () => {
+    const document = conditionDoc({ preset: 'eval-lean', home: { sha: null } })
+    const { repo, homesRoot, conditionPath, datasetRoot } = tree(document)
+    const report = await provisionCondition(conditionPath, {
+      repo, localAgent: fakeLocalAgent(homesRoot), capabilities: probe(),
     })
-    expect(lock.home).toEqual({ sha: HOME_SHA })
-    expect(lock.provisioned).toEqual({
-      preset: 'eval-lean',
-      capabilities: { sha: CAPS_SHA, preset: 'eval-lean', skills: 3, tools: 11 },
-    })
-    expect(validateJson(LOCK_SCHEMA, lock)).toEqual([])
-  })
+    expect(report.written).toBe(true)
+    const lock = report.lock as { provisioned: Record<string, unknown> }
+    expect(lock.provisioned['preset']).toBe('eval-lean')
+    expect(lock.provisioned['capabilities']).toEqual({ sha: CAPS_SHA, preset: 'eval-lean', skills: 3, tools: 11 })
+    expect(validateJson(LOCK_SCHEMA, report.lock)).toEqual([])
+    expect(readFileSync(report.lockPath, 'utf8').endsWith('\n')).toBe(true)
 
-  it('refuses a malformed digest — a lock carrying one reads as verified', () => {
-    const document = conditionDoc()
-    expect(() => conditionLockOf('c', document, { capabilities: { sha: 'not-a-sha' } })).toThrow(/64-hex/)
-    expect(() => conditionLockOf('c', document, { homeSha: 'nope' })).toThrow(/64-hex/)
-  })
-
-  it('writes the file where validate reads it back', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'eval-lock-'))
-    await mkdir(join(root, 'conditions'), { recursive: true })
-    const document = conditionDoc({ preset: 'eval-lean' })
-    await writeFile(join(root, 'conditions', 'dsh-lean.json'), JSON.stringify(document, null, 2), 'utf8')
-    const { path } = await writeConditionLock(root, 'dsh-lean', document, {
-      homeSha: HOME_SHA,
-      preset: 'eval-lean',
-      capabilities: { sha: CAPS_SHA, preset: 'eval-lean', skills: 3, tools: 11 },
-    })
-    expect(readFileSync(path, 'utf8').endsWith('\n')).toBe(true)
-
-    const readiness = await resolveConditionReadiness('dsh-lean', root)
+    // The same file, through the reader every other surface uses.
+    const readiness = await resolveConditionReadiness('dsh-lean', datasetRoot)
     expect(readiness.entry.lock?.capabilities).toEqual({ sha: CAPS_SHA, preset: 'eval-lean' })
-    expect(readiness.entry.status).toBe('ready')
     expect(readiness.warnings.map(warning => warning.code)).not.toContain('CAPABILITIES_NOT_PROVISIONED')
   })
 
-  it('warns when a preset condition has a lock with no capability record', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'eval-lock-'))
-    await mkdir(join(root, 'conditions'), { recursive: true })
-    const document = conditionDoc({ preset: 'eval-lean' })
-    await writeFile(join(root, 'conditions', 'dsh-lean.json'), JSON.stringify(document, null, 2), 'utf8')
-    await writeConditionLock(root, 'dsh-lean', document, { homeSha: HOME_SHA })
-    const readiness = await resolveConditionReadiness('dsh-lean', root)
+  it('records nothing about capabilities for a condition that declares no preset', async () => {
+    const { repo, homesRoot, conditionPath } = tree(conditionDoc({ home: { sha: null } }))
+    const report = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot), capabilities: probe() })
+    const provisioned = (report.lock as { provisioned: Record<string, unknown> }).provisioned
+    // Silence, not `preset: null`: "measured, and it composes nothing" is a
+    // different claim from "nothing was claimed".
+    expect('preset' in provisioned).toBe(false)
+    expect('capabilities' in provisioned).toBe(false)
+  })
+
+  it('warns by name when a preset claim goes unmeasured — no probe supplied', async () => {
+    const { repo, homesRoot, conditionPath, datasetRoot } = tree(conditionDoc({ preset: 'eval-lean', home: { sha: null } }))
+    const report = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot) })
+    // The lock is still written — the scope WAS checked — but it carries no
+    // capability record, and both ends say so.
+    expect(report.written).toBe(true)
+    expect(report.warnings.map(warning => warning.code)).toContain('CAPABILITIES_UNMEASURED')
+    const provisioned = (report.lock as { provisioned: Record<string, unknown> }).provisioned
+    expect(provisioned['preset']).toBe('eval-lean')
+    expect('capabilities' in provisioned).toBe(false)
+
+    const readiness = await resolveConditionReadiness('dsh-lean', datasetRoot)
     expect(readiness.warnings.map(warning => warning.code)).toContain('CAPABILITIES_NOT_PROVISIONED')
   })
 
-  it('warns when the capability record was taken under another preset', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'eval-lock-'))
-    await mkdir(join(root, 'conditions'), { recursive: true })
-    const document = conditionDoc({ preset: 'eval-lean' })
-    await writeFile(join(root, 'conditions', 'dsh-lean.json'), JSON.stringify(document, null, 2), 'utf8')
-    await writeConditionLock(root, 'dsh-lean', document, {
-      homeSha: HOME_SHA,
-      capabilities: { sha: CAPS_SHA, preset: 'eval-full' },
+  it('a probe that throws is a warning, not a crashed provision', async () => {
+    const { repo, homesRoot, conditionPath } = tree(conditionDoc({ preset: 'eval-lean', home: { sha: null } }))
+    const report = await provisionCondition(conditionPath, {
+      repo,
+      localAgent: fakeLocalAgent(homesRoot),
+      capabilities: async () => { throw new Error('the sub-profile would not boot') },
     })
-    const readiness = await resolveConditionReadiness('dsh-lean', root)
+    expect(report.written).toBe(true)
+    const warning = report.warnings.find(row => row.code === 'CAPABILITIES_UNMEASURED')
+    expect(warning?.message).toMatch(/would not boot/)
+  })
+
+  it('records what was MEASURED when it disagrees with the declaration, and says so', async () => {
+    const { repo, homesRoot, conditionPath, datasetRoot } = tree(conditionDoc({ preset: 'eval-lean', home: { sha: null } }))
+    const report = await provisionCondition(conditionPath, {
+      repo, localAgent: fakeLocalAgent(homesRoot), capabilities: probe({ preset: 'eval-full' }),
+    })
+    expect(report.warnings.map(warning => warning.code)).toContain('CAPABILITIES_PRESET_MISMATCH')
+    const provisioned = (report.lock as { provisioned: Record<string, unknown> }).provisioned
+    // What was built, not what was asked for.
+    expect(provisioned['preset']).toBe('eval-full')
+
+    const readiness = await resolveConditionReadiness('dsh-lean', datasetRoot)
     expect(readiness.warnings.map(warning => warning.code)).toContain('CAPABILITIES_PRESET_MISMATCH')
   })
 })

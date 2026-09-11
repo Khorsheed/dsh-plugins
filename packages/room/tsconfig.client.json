@@ -5,24 +5,17 @@
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
     "jsx": "react-jsx",
-    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
   "files": [
-    "src/css-modules.d.ts",
-    "src/journal.ts",
-    "src/types.ts",
-    "src/client/format.ts",
-    "src/client/index.ts",
-    "src/client/locales.ts",
-    "src/client/member-color.ts",
-    "src/client/nodes.ts",
-    "src/client/room-store.ts",
-    "src/client/slots.ts",
     "src/client/InviteAgentAction.tsx",
     "src/client/InviteDialog.tsx",
     "src/client/MemberCard.tsx",
     "src/client/MembersView.tsx",
-    "src/client/name-pool.ts",
     "src/client/RoomComposer.tsx",
     "src/client/RoomDockCapsules.tsx",
     "src/client/RoomEventView.tsx",
@@ -32,6 +25,18 @@
     "src/client/RoomSpeechView.tsx",
     "src/client/RoomStatsLine.tsx",
     "src/client/RoomTaskLineView.tsx",
-    "src/client/RoomTodoStrip.tsx"
+    "src/client/RoomTodoStrip.tsx",
+    "src/client/format.ts",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/member-color.ts",
+    "src/client/name-pool.ts",
+    "src/client/nodes.ts",
+    "src/client/preset-visibility.ts",
+    "src/client/room-store.ts",
+    "src/client/slots.ts",
+    "src/css-modules.d.ts",
+    "src/journal.ts",
+    "src/types.ts"
   ]
 }

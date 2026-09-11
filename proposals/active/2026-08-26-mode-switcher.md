@@ -19,9 +19,8 @@
 ├─ 模式 = preset（会话级，官方原生）
 │    建会话时 chip 选模式；会话级锁定；工具/提示词/skill 随 preset 授予
 ├─ 可见性 = 自隐约定（会话级，本仓模板）
-│    UI 组件读当前会话的 preset，对照模式注册表决定显隐
-└─ 模式管理器（轻量插件）
-     设置页：模式列表 + 各模式的 preset/插件子集 + 单插件彻底开关（patch 热禁用）
+│    UI 组件读当前会话的 preset 组合（官方 pluginInventory 数据），决定显隐
+└─ 彻底开关 = 手改 cordis.patch.yml 的 disabled 行（热生效，非产品功能）
 
 eval：本次不纳入（维持独立 profile/实例），装置改造完成后重新评估
 ```
@@ -30,7 +29,7 @@ eval：本次不纳入（维持独立 profile/实例），装置改造完成后�
 
 ### A. 场景包：从「独立 profile 模板」扩展为「可装入主实例的集合包」
 
-现有 `profiles/web-*` 是形态 B（独立 profile）。单实例多模式要求同时具备**形态 A**（add 清单，成员装进运行中的 profile——package-management 提案已规划）。pack 新增**模式元数据**：声明该模式的 preset id + 插件子集（供注册表集中下发显隐映射）。合并前提：pack 的 patch 层为空（basic/dev 本就为空，零冲突）。
+现有 `profiles/web-*` 是形态 B（独立 profile）。单实例多模式要求同时具备**形态 A**（add 清单，成员装进运行中的 profile——package-management 提案已规划）。合并前提：pack 的 patch 层为空（basic/dev 本就为空，零冲突）。（原规划的 pack 模式元数据已随注册表一并取消——显隐判据走官方组合数据，见 C。）
 
 ### B. 模式 preset 与「会话插件化」（官方原生，零 harness 改动）
 
@@ -40,16 +39,17 @@ eval：本次不纳入（维持独立 profile/实例），装置改造完成后�
 - **全仓盘点（2026-09-11）**：可直接会话插件化的只有 `local-agent-tool-subagent`（已验证）；融合需拆的：**worktrees**（`tool.ts` + `worktrees` 服务）、**room**（3 个工具 + RoomService）——本次 basic/dev/novel 范围内仅此两个；mission/datasets/eval 同属融合但只在 web-eval，随 eval 缓拆；capability-catalog 等通用型保持全局 + fail-open 自隐，不拆。
 - 拆法：把工具注册拆成**不 provide 的独立可挂载模块**，工具行 inject 全局常驻的宿主服务（consumer 行可裸放 preset，官方 tool-bash 同构）。打包形态默认**伴生包**（`@khorsheed/dsh-<x>-tool-*`，local-agent core/companion 先例，`check-plugin-independence` 认这个对）；包内第二 export 的形态待验证 loader 支持后再考虑。
 
-### C. 自隐约定 + 模式注册表
+### C. 自隐约定（判据直接取自官方数据，无注册表）
 
 - 机制（worktrees 试点双线验证）：槽位组件读 `useSessions` 的会话 preset 投影，不属于当前模式则 `return null`；缺省永远显示；无投影 fail-open。
-- **映射集中下发**：模式注册表（模式管理器的 host 服务）从各 pack 元数据收集「preset ↔ 插件子集」，经 Remote 下发；插件读注册表判断显隐，不再逐包手配名单（worktrees 的 `visiblePresets` 是无注册表时的单机版先例）。
+- **显隐判据 = 官方 preset 组合数据，不自建注册表**：官方 `pluginInventory.list()` Remote 本身就返回每个 preset 的组合行（`agentPresets` 组，0.1.5 实测）。组件问的是「**当前会话的 preset 组合里有没有我（我的包/我的工具行）**」——有则显示，无则隐藏。唯一事实源就是 preset 组合文件本身：M4' 把模式专属工具行挪进 preset 后，「会话插件」身份天然等于「该模式可见」，映射零维护。pack 元数据/注册表随之取消。
+- 纯 UI、组合里无任何行可 keyed 的模式专属插件是例外：放一个工具行进 preset，或退回 worktrees 试点的手配名单形态。
 - 两条已知成本（推广时每包执行）：① preset 读取 key 跨宿主线不同（0.1.2 投影 / 0.1.1 顶层字段），双读兜底；② web 线 client 拿不到自己的 config，配置走 host → Remote。模板见 `.agents/notes/implemented/feature/2026-09-10-worktrees-badge-preset-gate.md`。
-- 自隐是约定不是强制：list 槽位无可见性谓词，不接约定的插件会漏 UI——生态内可推，强制需上游。（已排查替代：`disabled: !!js` 的「条件启用」是平台门，表达式作用域读不到会话/preset 身份，不能承担声明式显隐。）
+- 自隐是约定不是强制：list 槽位无可见性谓词（0.1.5 `ui-slots` 已复核无任何 preset/visibility 钩子），不接约定的插件会漏 UI——生态内可推，强制需上游。会话插件身份**不产生**官方 UI 显隐（它是 host 侧 agent 平面概念，client 模块名录 boot 时按 profile 扫描，preset 不携带 client 维度）。（已排查替代：`disabled: !!js` 的「条件启用」是平台门，表达式作用域读不到会话/preset 身份，不能承担声明式显隐。）
 
-### D. 模式管理器（轻量，与重启/ankh-guard 无关）
+### D. ~~模式管理器包~~：砍掉（2026-09-11 拍板）
 
-`@khorsheed/dsh-mode-switcher`（沿名）：注册表服务 + Remote + 单插件彻底开关（patch 层 `disabled` 热生效 + 写成功后自刷新页面，服务「完全关掉某插件」场景）。**不设独立设置页**——「模式的插件子集」视图由 0.1.5 官方插件列表的会话插件组覆盖（按 preset 分组、状态徽标齐全、按需 compose 查看免费，2026-09-11 在 3092 实测社区工具行呈现正确）；模式管理器至多注册一个 `settings.plugins.tab` 薄页做注册表状态展示，非必需。无守卫重启、无凭证/preflight——单插件「关」方向爆炸半径极小。
+盘点后确认官方能力已全覆盖，不设 `@khorsheed/dsh-mode-switcher` 包：模式选择 = 官方 preset chip；模式插件子集视图 = 官方插件列表会话插件组；名册管理 = 官方 Agent 预设设置页；显隐判据 = 官方 `pluginInventory.list()` 数据（见 C）；单插件彻底开关 = 手改 profile `cordis.patch.yml` 一行 `disabled`（热生效），做成 UI 等真实需求信号再说。
 
 ### eval：本次不纳入（2026-09-10 拍板）
 
@@ -81,18 +81,45 @@ eval：本次不纳入（维持独立 profile/实例），装置改造完成后�
 
 - **M0 ankh-guard 前置**（0.2.0）✅ 已落地（`0f776cc`）——最终定位：运维工具，不进产品线。
 - **M1' 自隐试点** ✅ 已落地（worktrees `visiblePresets` 门 + 双读，待提交；0.1.5 复验并入迁移验收）。
-- **M2' 模式基础设施**：① 模式管理器包 `@khorsheed/dsh-mode-switcher`（注册表 + Remote + 单插件彻底开关，无独立设置页）；② pack 模式元数据（preset id + 插件子集 + 专属/通用语义）；③ 各模式自带 preset（以 standard 为底；dev preset 带委派工具行；novel 新建写作 preset）；④ pack 的形态 A 安装形态（可装进已有 profile）。
-- **M3' 自隐推广**：dev 专属 UI 接注册表显隐（worktrees 徽标从手配名单改读注册表；room 面板、local-agent 家族 UI 评估归属）；helper 包（`useSessionPreset`）取舍在此决定。
+- **M2' 模式内容落地**：① 各模式自带 preset（以 standard 为底；dev preset 带委派工具行；novel 新建写作 preset）；② pack 的形态 A 安装形态（可装进已有 profile）。~~模式管理器包/pack 元数据~~已砍（2026-09-11，见 D）。
+- **M3' 自隐推广**：dev 专属 UI 按官方组合数据自隐（worktrees 徽标从手配名单改读 `pluginInventory` 组合判据；room 面板、local-agent 家族 UI 评估归属）；helper（`useSessionPresetIncludes` 五行 hook，放 capability-catalog 或各包内联）取舍在此决定。
 - **M4' 工具行解耦**（范围内仅两包）：① worktrees 工具行拆为伴生包（工具 inject 全局 worktrees 服务）；② room 工具行同理。mission/datasets/eval 随 eval 场景缓拆。local-agent named-provider 支持为 eval 预备候选，不排期。
 - 落地待讨论：模式清单与边界（novel 的第一个 preset 内容）、自隐推广顺序、helper 包取舍、形态 A 的安装命令形态。
 
-## 验收标准
+## 验收标准（done 判定，2026-09-11 定稿）
 
-- 同一实例：dev 模式会话有 worktrees 徽标/mission 入口，写作模式会话没有；切会话界面干净翻转。
-- 设置页列出全部已装模式及其 preset + 插件子集；单插件彻底开关热生效。
-- 历史会话在任何模式下打开不报错、渲染不缺失。
-- 不接自隐约定的插件缺席不影响他包；卸载任一自隐包回到「永远显示」。
-- hygiene / note / 翻译配对 / `check-plugin-independence` 门禁绿。
+### A. 模式定义与安装（M2'）
+
+- **A1** dev / novel 模式 preset 以官方 `standard` 为底，安装后进 `$DSH_HOME/.agent-presets/` 名册，建会话 chip 可见可选；官方 standard 基础工具（bash 等）在两种模式的会话里都在。
+- **A2** pack 具备形态 A 安装路径：dev/novel 的插件能装进**已在运行的主 profile**，过程不产生重启、不破坏已有会话。
+- **A3** 官方插件列表「会话插件」组：dev preset 下可见 dev 专属工具行（委派工具 + worktrees 工具行），standard/basic 下没有；「全局插件」组不含任何模式专属工具行。
+
+### B. 会话级能力（方案 B）
+
+- **B1** dev preset 会话的模型工具列表含 `subagent_*` 委派工具与 worktrees 工具，且调用返回正确数据（工具 inject 全局服务真实生效，非空壳挂载）。
+- **B2** 写作 preset 会话的模型工具列表不含上述 dev 工具，含写作特有 skill/persona（内容以 novel pack 定义为准）。
+
+### C. UI 自隐（M3'）
+
+- **C1** worktrees 徽标：dev preset 会话显示、非 dev preset 会话隐藏；**判据来自官方 `pluginInventory` 的 preset 组合数据**（"组合里有我的行"），不再依赖手配 `visiblePresets` 名单。
+- **C2** 两个会话间来回切换：显隐干净翻转、无残留占位、无布局塌陷、console 零错误（对照片：`scratch-screenshots/pilot-badge-*.png` 的试点基线）。
+- **C3** 通用插件（capability-catalog、context-guard 等 fail-open 组）在所有模式下行为逐字不变。
+
+### D. 工具行解耦（M4'）
+
+- **D1** worktrees 工具行拆为伴生包：不声明 `dsh.bundle`（直接依赖安装时仅 plain-dependency 警告、不自动挂载）；出现在 dev preset 组合里；该 preset 会话中工具可用且数据正确。
+- **D2** room 工具行同判据。
+- **D3** 卸载伴生包后对应 preset 组合优雅降级（行报解析失败、实例 boot 不受影响）。
+
+### E. 兼容与回归
+
+- **E1** 历史会话（任何 preset 创建的）打开渲染正常、无报错空槽。
+- **E2** 全量验证在 **0.1.5-rc1** 基线通过（含 worktrees 门的双读在该线实测——并入迁移验收）。
+- **E3** 门禁绿：相关包 `build && test`、`pnpm check:plugins`、`check:hygiene`、翻译配对、note 格式。
+
+### 明确不验收（非目标）
+
+- eval 场景（独立实例维持现状）；模式管理器包；强制 UI 隔离（自隐是约定）；任何重启类切换。
 
 ## 风险 / 放弃的东西
 

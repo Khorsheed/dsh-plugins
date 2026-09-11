@@ -1,0 +1,3 @@
+name: 开发模式
+description: 单实例多模式的开发场景：官方标准模式的全部能力，外加 local-agent 委派工具（kimi/codex/claude）与 worktrees 模型工具，按会话授予。
+order: 10

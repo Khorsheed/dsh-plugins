@@ -52,7 +52,8 @@ preset 目录从哪来这件事不需要新机制：子 dsh 以 `DSH_HOME` 指�
 ### 契约：谁可以声明 preset，以及必须有什么撑着它
 
 - **`PRESET_CAPABLE_HARNESSES = ['dsh']`。** preset 是本家族配出来的一份 composition，而 sub-dsh 的子 profile 是它唯一会写的一份。给 `codex` / `claude-code` / `kimi` 写 preset 是 validate 的 **error**（`PRESET_NOT_FOR_HARNESS`），不是 warning：它会往条件哈希里塞一个没人写、也没人能核的因子。未知 harness 不管——降级，不爆炸。它们那侧的等价物 `skills.pack` 本家族同样没配，留 I6，错误信息里写明了。
-- **lock 多一段 `provisioned`**（协议 **v1-rev10**）：`provisioned.preset` 从写出去的子 profile 回读，`provisioned.capabilities` 带 `{sha, preset?, skills?, tools?}`。`writeConditionLock` 只管文件与形状，别的一概不管——它不配环境、不算哈希——所以 lock 的契约不需要一台机器就能测，而 `conditions provision`（T31）是它的调用方。
+- **lock 的 `provisioned` 里多两个字段**（协议 **v1-rev10**；在 T31 那个增补块里再增补）：`preset` 从写出去的子 profile 回读，`capabilities` 带 `{sha, preset?, skills?, tools?}`。记它们的是 `conditions provision`——T31 的写入者，仍然是唯一的那个——作为它的第 5 步。**测量本身是一个钩子**（`ProvisionOptions.capabilities`）：量一份子 dsh 的能力面要把它的子 profile 启起来、问挂在里面的 catalog，那条启动路 provision 刻意不拥有。没给钩子时，声明了 preset 的条件照样落 lock（作用域确实核对过了），但不带能力记录，并按名报 `CAPABILITIES_UNMEASURED`；之后就绪检查再拒一次。两头都出声，好过一份读起来「已核对」的 lock。
+- **记测到的，不记声明的。** 探针报出的 preset 与条件声明不一致时，lock 记**测到的**那个并报 warning——记声明等于抹掉「两者不一致」这唯一的证据。
 - **就绪检查拒绝没有对应物的声明。** `capabilityRefusal` 跑在探针委派之前：声明了 preset 而没有能力记录的条件不就绪（`the capability face was never measured`），记录取自另一个 preset 的同样不就绪（`the provisioned environment belongs to another subject`）。它不花 token——读的是 lock，不是机器——而它与委派探针并排，是因为两者回答的是同一个问题：这个受试对象是不是声明里那一个？
 
 ### 编排实例自己的哈希是取证，仅此而已
@@ -89,10 +90,14 @@ eval 不 import 任何兄弟 `@khorsheed` 包，所以它只记摘要、从不�
 - `capability-catalog/tests/capabilities.spec.ts`：规范形每类行的取字段、排序、正文 sha 与参数 schema 缺席时的 `null`、MCP 工具名单；四条稳定性主张（同内容不同注册序同哈希；改工具描述与碰 mtime 不动哈希；改 parameters 与改技能正文动哈希）；对已带 `sha` 的 snapshot 幂等；摘要逐字等于规范 JSON 的 sha256；以及 `catalogSnapshot` 的两种模式，含注册表拒绝加载的技能。`resolvePresetScope` 覆盖清单/指纹的分岔：标签只在 scope 真解析出来时才贴、三种降级形状、三种严格拒绝，以及无 roster 的组合仍可为其默认面出指纹。
 - `local-agent-dsh/tests/provision.spec.ts`：不给 preset 就没有那一层；追加的 `insert` 操作与 bundle 自己那份列表原样留在前面；两个只差 preset 的 scope 出两份 patch；显式 roots 与两个派生根开关；被拒的 preset id；幂等；子 profile 里**不**链任何 `@deepseek-ai` 副本（roster 是官方包，链第二份会带进第二份 cordis）；以及撤掉 preset 后那一层原样消失。
 - `local-agent-dsh-headless/tests/preset-join.spec.ts`：join 与它报出的 id、两种 no-op 形状、以及拒绝的 roster 向上抛而不是降级。
-- `eval/tests/capabilities.spec.ts`：三家外部 CLI 各自的 `PRESET_NOT_FOR_HARNESS`，以及 dsh 与未知 harness 上它的缺席；lock 的几种形状（只锁哈希、完整 `provisioned`、坏摘要被拒）；经 `resolveConditionReadiness` 的往返；两条能力 warning；`capabilityRefusal` 的四种情形；以及 `checkReadiness` 用一个「`start` 被调用就抛」的门面证明未测量的 preset 不花委派。
+- `eval/tests/capabilities.spec.ts`：三家外部 CLI 各自的 `PRESET_NOT_FOR_HARNESS`，以及 dsh 与未知 harness 上它的缺席；`conditions provision` 记下测到的面、再经 `resolveConditionReadiness` 读回；没声明 preset 的条件是**沉默**而不是 `preset: null`；无钩子与钩子抛错两种 `CAPABILITIES_UNMEASURED`；「记测到的不记声明的」；`capabilityRefusal` 的四种情形；以及 `checkReadiness` 用一个「`start` 被调用就抛」的门面证明未测量的 preset 不花委派。
 - `eval/tests/run.spec.ts`：`run.meta.orchestrator.capabilities` 每 run 记一次、无 catalog 时不记、catalog 抛错时 run 照跑。
 - `eval/tests/report.spec.ts`：「程序一致」里的 caps 行，以及没记过的 run 上它的缺席。
 - `eval/tests/protocol.spec.ts`：v1-rev10 的 lock schema 对两个语种的协议文档，外加第二份公开的 lock 例子（一条已配好的 sub-dsh 条件）钉到它自己的夹具。
+
+## 与 T31 的合并
+
+T31（`conditions provision`）在本分支在途时合入了 main，两件任务都伸手去动 lock 的 `provisioned`。合并方式是显而易见的那一种，记在这里是因为未来的读者会在同一个对象里看到两件任务的字段：T31 拥有**写入者**与该块的必填字段（`at`、`cliVersion`、`effective`——作用域的回答），T32 往里加两个可选字段（`preset`、`capabilities`——那份环境组出了什么）。本分支自己那份草稿写入者（`conditionLockOf` / `writeConditionLock`）是**删掉**而不是合进去的：只有一个写入者正是 T31 的全部要点，第二个会让一份 lock 绕开凭证与 effective settings 的核对——而正是那些核对让第一个值得信。
 
 ## Alternatives considered
 

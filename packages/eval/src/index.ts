@@ -131,8 +131,10 @@ export type { ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport
 export { registerEvalTools, EVAL_TOOL_NAMES } from './tools.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
-export { conditionLockOf, writeConditionLock } from './provision.ts'
-export type { ConditionLock, ConditionLockFacts, ProvisionedCapabilities } from './provision.ts'
+export { EvalProvisionRefused, loginCommandFor, provisionCondition } from './provision.ts'
+export type {
+  CapabilityProbe, CapabilityProbeInput, ProvisionedCapabilities, ProvisionOptions, ProvisionReport,
+} from './provision.ts'
 export {
   buildDeidentifyRules, buildJudgePrompt, collectProbes, deidentify, itemLayerPath, itemProbeCwd,
   itemVerifyRoot, llmDraftCriteria, mergeReplacements, pickChecklistPath, pickRubricPath, probePaths,
