@@ -318,6 +318,22 @@ failing on the last line. The preset directory is backed up to
 the trap says where it is; `update.sh` backs up the pinned files it
 overwrites the same way, and had no trap at all until now.
 
+**Host line: this profile needs `dsh` >= 0.1.5-rc.1.** The evaluation family's
+six packages carry that line in `dsh.compat.minHost` / `verifiedHost` as of
+2026-09-11; the local-agent family has since the baseline commit `bb04c84`.
+Source mode's preflight therefore carries one more check: it reads
+`dsh.compat.minHost` out of every member it is about to pack, compares it
+against `dsh --version` once, and exits 2 before touching a file when the host
+is older than any of them, listing who needs what. The check exists in source
+mode only — npm mode resolves its members from the registry, so there is no
+local `package.json` to read. What it catches is a failure that never reaches
+install time: too old a host does not fail while installing, it throws a
+missing export out of some plugin's import AT BOOT (measured twice on this
+machine: `@deepseek-ai/dsh-settings` has no `settingsNamespace` on 0.1.5, and
+the 0.2.0 context-guard / ui-shortcuts on npm import it) — or later still, on
+an instance that boots fine and only reports
+`childSession.snapshotEvents is not a function` on a resume round.
+
 `install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 23 (distinct members — the dump repeats each member as a layer header plus entry rows, and tool-subagent appears only through its per-provider entries).
 
 **npm mode** (no arguments) — every member resolves from the npm registry. It works as-is once every member is published (I6); until then, the unpublished members fail with a registry 404 at install time (the authoritative list is [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md) in dsh-plugins):

@@ -307,6 +307,8 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 **两个脚本第一步都是机器级前置检查，在动任何文件之前**：`dsh` 在 PATH 上、`dsh --version` 能跑、以及 `cordis.patch.yml` 里 pin 的 headless bundle 路径存在（它从该文件里读，不写死）。任一条不满足就打印缺什么并以退出码 2 退出，`$DSH_HOME` 与 `$DSH_HOME/.agent-presets/eval` 一个字节都不动——此前第一次 `dsh` 调用在脚本末尾，缺 `dsh` 的机器要先整目录覆盖预设、（源码模式还要）把每个成员构建打包一遍，才在最后一行失败。预设目录在被整目录替换之前会备份到 `$DSH_HOME/.agent-presets/.web-eval-backup.<pid>`，失败时 trap 会告诉你它在哪；`update.sh` 同样备份它覆盖的 pin 文件，并且此前根本没有 trap。
 
+**宿主线：本 profile 要求 `dsh` ≥ 0.1.5-rc.1**（评测家族六个包的 `dsh.compat.minHost` 与 `verifiedHost` 自 2026-09-11 起都写这条线；local-agent 家族自基线提交 `bb04c84` 起已是）。源码模式的前置检查里因此多一条**宿主线核对**：脚本读每个待打包成员 `package.json` 的 `dsh.compat.minHost`，与 `dsh --version` 比一次，低于任一成员就在动文件前退出（退出码 2）并逐行列出谁要求什么版本。这条检查只在源码模式有——npm 模式的成员由 registry 解析，本地没有 `package.json` 可读。它挡的是一种到不了安装期的失败：宿主偏低不会在装的时候报错，而是在**起实例时**从某个插件的 import 里抛一个缺失导出（本机测到两次：`@deepseek-ai/dsh-settings` 在 0.1.5 上没有 `settingsNamespace`，而 npm 上 0.2.0 的 context-guard / ui-shortcuts 会 import 它），或者更晚——装完能起、跑到 resume 轮才报 `childSession.snapshotEvents is not a function`。
+
 `install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 23（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
 
 **npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：

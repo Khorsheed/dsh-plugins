@@ -147,9 +147,9 @@
       "platform": "web"
     },
     "compat": {
-      "minHost": "0.1.2-rc.1",
+      "minHost": "0.1.5-rc.1",
       "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while model tools and the CLI stay fully functional. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer. The tab is live-smoke-tested on the 0.1.0-rc.8 web profile; earlier release lines share the same gateway conventions but were not smoke-tested.",
-      "verifiedHost": "0.1.2-rc.1"
+      "verifiedHost": "0.1.5-rc.1"
     }
   }
 }
