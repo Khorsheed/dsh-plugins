@@ -7,7 +7,9 @@ import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, writeFi
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile, resolveHeadlessBundleDir } from '../src/provision.ts'
+import {
+  DEFAULT_SUB_PROFILE_NAME, presetRosterLayer, provisionDshSubProfile, readSubProfilePreset, resolveHeadlessBundleDir,
+} from '../src/provision.ts'
 
 /** A stand-in headless bundle directory carrying a patch to provision. */
 function makeBundleDir(patch: string): string {
@@ -79,5 +81,83 @@ describe('dsh sub-profile provisioning', () => {
     expect(existsSync(join(dir, 'package.json'))).toBe(true)
     const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: string }
     expect(manifest.name).toBe('@khorsheed/dsh-local-agent-dsh-headless')
+  })
+
+  it('writes no preset roster layer when the scope names no preset', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const profileDir = provisionDshSubProfile(home, { headlessBundleDir: bundleDir })
+    expect(readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')).toBe('- id: local-agent-dsh-headless-runner\n')
+    expect(readSubProfilePreset(home)).toBeUndefined()
+  })
+})
+
+describe('preset roster layer', () => {
+  it('appends an insert operation naming the roster and the default preset', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const profileDir = provisionDshSubProfile(home, { headlessBundleDir: bundleDir, preset: { id: 'eval-lean' } })
+    const patch = readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')
+    // The bundle's own list survives untouched ahead of the appended layer.
+    expect(patch.startsWith('- id: local-agent-dsh-headless-runner\n')).toBe(true)
+    expect(patch).toContain("      name: '@deepseek-ai/dsh-agent-presets'")
+    expect(patch).toContain('        default: "eval-lean"')
+    expect(readSubProfilePreset(home)).toBe('eval-lean')
+  })
+
+  it('two scopes differing only in preset produce two different patches', () => {
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const a = mkdtempSync(join(tmpdir(), 'dsh-scope-a-'))
+    const b = mkdtempSync(join(tmpdir(), 'dsh-scope-b-'))
+    provisionDshSubProfile(a, { headlessBundleDir: bundleDir, preset: { id: 'eval-lean' } })
+    provisionDshSubProfile(b, { headlessBundleDir: bundleDir, preset: { id: 'eval-full' } })
+    const patchA = readFileSync(join(a, 'profiles', DEFAULT_SUB_PROFILE_NAME, 'cordis.patch.yml'), 'utf8')
+    const patchB = readFileSync(join(b, 'profiles', DEFAULT_SUB_PROFILE_NAME, 'cordis.patch.yml'), 'utf8')
+    expect(patchA).not.toBe(patchB)
+    expect(readSubProfilePreset(a)).toBe('eval-lean')
+    expect(readSubProfilePreset(b)).toBe('eval-full')
+  })
+
+  it('carries explicit roots and the derived-root switches when given', () => {
+    const layer = presetRosterLayer({
+      id: 'eval-lean',
+      includeShippedRoot: false,
+      includeUserRoot: true,
+      roots: [{ path: '~/eval-presets', trust: 'system' }, { path: '/srv/presets' }],
+    })
+    expect(layer).toContain('        includeShippedRoot: false')
+    expect(layer).toContain('        includeUserRoot: true')
+    expect(layer).toContain('          - path: "~/eval-presets"')
+    expect(layer).toContain('            trust: system')
+    expect(layer).toContain('          - path: "/srv/presets"')
+  })
+
+  it('refuses a preset id that is not a directory name', () => {
+    expect(() => presetRosterLayer({ id: '../escape' })).toThrow(/must match/)
+    expect(() => presetRosterLayer({ id: 'Eval Lean' })).toThrow(/must match/)
+  })
+
+  it('re-provisioning drops the layer again when the preset is withdrawn', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir, preset: { id: 'eval-lean' } })
+    expect(readSubProfilePreset(home)).toBe('eval-lean')
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir })
+    expect(readSubProfilePreset(home)).toBeUndefined()
+  })
+
+  it('is idempotent with a preset, and links the roster module beside the bundle', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const profileDir = provisionDshSubProfile(home, { headlessBundleDir: bundleDir, preset: { id: 'eval-lean' } })
+    const first = readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir, preset: { id: 'eval-lean' } })
+    expect(readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')).toBe(first)
+    // The roster resolves from this package's own installation in the repo,
+    // so the link exists here; a deployment where it does not resolve leaves
+    // the module to the installation anchor rather than failing provisioning.
+    const link = join(profileDir, 'node_modules', '@deepseek-ai', 'dsh-agent-presets')
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(existsSync(join(readlinkSync(link), 'package.json'))).toBe(true)
   })
 })
