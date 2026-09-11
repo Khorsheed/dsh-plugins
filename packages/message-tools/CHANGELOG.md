@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.3.0（2026-09-11）
+
+适配宿主 0.1.5 线。
+
+- **BREAKING**：minHost 前移至 `0.1.5-rc.1`；宿主 `0.1.2-rc.1` ~ `0.1.4.x` 的用户请停留在 0.2.x 线（末版 `0.2.0`）
+- 撤回/恢复投影适配 0.1.5 的会话格式：`assistant/attempt`（每次模型尝试一条聚合 settlement）取代已退役的 `assistant/chunk`；surfaceOp replace 字段 `start`/`end` 更名 `startSeq`/`endSeq`，撤回与就地编辑写出的替换 op 同步改用新名
+- 开发基线随仓内 pin 对齐官方 `0.1.5-rc.1` / cordis `4.0.2`；peer 范围保持宽松
+
 ## 0.2.0（2026-09-10）
 
 适配宿主 0.1.2 线。
