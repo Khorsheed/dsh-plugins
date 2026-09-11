@@ -20,7 +20,7 @@ The product owner asked for both, and specifically asked whether the sidebar cou
 | Action id | Default | Runs |
 | --- | --- | --- |
 | `compact` | `Ctrl/Cmd+Shift+X` | `ISession.command('/compact')` on the current session |
-| `toggleSidebar` | `Ctrl/Cmd+B` | `ctx.layout.toggleSidebar()` |
+| `toggleSidebar` | middle mouse button | `ctx.layout.toggleSidebar()` |
 
 Both are `global` (capture-phase, browser default claimed) and both carry an `available` gate: no current session for `compact`, no live `ctx.layout` for `toggleSidebar`. The gates matter on the mouse path too — they are what keeps a bound button from being claimed for a no-op.
 
@@ -46,7 +46,7 @@ Modifiers apply to mouse gestures exactly as they do to keys, so `primary`+middl
 
 **Call `ctx.remote.commands.execute()` directly for compaction.** Rejected: `ISession.command(line)` is the documented public verb for the session-addressed command channel and the plugin already resolves sessions through `ctx.sessions`; going to the Remote would add an inject edge and duplicate addressing the facade owns.
 
-**Middle click as the shipped default for the sidebar.** Rejected by the product owner. It is awkward on macOS, where a trackpad has no middle button by default, and a global middle-click steals "open link in new tab" from every link on the page — a bad default for a published plugin. The chord is the default; the mouse is one click away in Settings, which is what the mouse-binding work exists to make possible.
+**`Ctrl/Cmd+B` as the shipped default for the sidebar.** This is what the branch shipped first, and the product owner overrode it: toggling the sidebar is a hand-on-the-mouse gesture, so the middle button is the default and the chord is the alternative. The cost is recorded rather than argued away — macOS trackpads have no middle button by default, and a global middle-click steals "open link in new tab" from every link on the page — and it is accepted because the chord is one rebind away in Settings, which is exactly what the mouse-binding work exists to make possible.
 
 **Ctrl/Cmd+Shift+C or Ctrl/Cmd+Shift+K for compaction** (the mnemonic initials). Rejected: DevTools' inspect shortcut and the Firefox Web Console own those at browser level and are not reliably interceptable — the user would get the action *and* the browser's panel. Compaction ships on a chord with no browser default as a result, and is rebindable.
 
@@ -68,6 +68,6 @@ Modifiers apply to mouse gestures exactly as they do to keys, so `primary`+middl
 - Five rows render in the settings card, and the capture hint now names the mouse.
 - The label contract changed shape: `bindingParts` yields slots instead of strings and `formatBinding` takes an optional labeler. Only the mouse word is locale-owned — modifier and key legends stay the English keycap legends they always were, so a Chinese card reads `Ctrl/Cmd` + `[diagram] 中键`, not translated modifiers.
 - Accessibility rests on the word, not the picture: the glyph is `aria-hidden` and the button's accessible name is its visible text. A future glyph-only variant must add an `aria-label` (or hidden text) in the same change, or the name disappears.
-- A bound mouse button is a global gesture with a real cost: the browser defaults listed above are suppressed while the binding is live. Documented under 已知限制 in both READMEs, with the escape hatch (rebind to a key) stated.
+- The shipped default is a global middle click, so that cost is paid out of the box rather than only by users who opt in: autoscroll, primary-selection paste, and middle-click open-link-in-new-tab are claimed by the sidebar toggle on every install. Both READMEs put it at the top of 已知限制 / Known Limitations together with the one-click escape (rebind to a chord).
 - No new dependency, no peer-dependency change, no lockfile change, `minHost`/`verifiedHost` unchanged, and no host change is required — both actions were already reachable through public verbs.
-- Verification: the package's own suite (44 tests) covers the mouse vocabulary (capture, matching, formatting, equality), the durable schema's acceptance of `button: 1|2` and its rejection of `0`, `3`, and unknown modifiers, dispatch through `ISession.command`, the probed-layout path with and without the service, mouse dispatch and its `auxclick`/`contextmenu` suppression, the `yield` tier for mouse gestures, and the recording-time stand-down. The READMEs' action tables and 已知限制 follow the shipped behavior.
+- Verification: the package's own suite (45 tests) covers the mouse vocabulary (capture, matching, formatting, equality), the durable schema's acceptance of `button: 1|2` and its rejection of `0`, `3`, and unknown modifiers, dispatch through `ISession.command`, the probed-layout path with and without the service, the shipped middle-click default (and its stand-down without `ctx.layout`), the right-button binding owning the context menu, mouse dispatch and its `auxclick` suppression, the `yield` tier for mouse gestures, and the recording-time stand-down. The READMEs' action tables and 已知限制 follow the shipped behavior.
