@@ -18,13 +18,15 @@ jobs:
       # The harness checkout seeds dev-time type/test resolution and typert
       # generation (AGENTS.md build contract). Pinned to the STABLE line the
       # repo currently tracks (see dsh.compat / the rc adaptation notes);
-      # bump deliberately when the host line moves. The alpha-compat job
-      # below covers the line we are adapting to.
+      # bump deliberately when the host line moves — the pin, the packages'
+      # dsh.compat fields and the prod (3080) host move in one migration
+      # (docs/host-migration-playbook). The alpha-compat job below covers the
+      # line we are adapting to.
       - name: Clone deepseek-harness (type/test seed)
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: dsh-v0.1.2-rc.1
+          ref: dsh-v0.1.5-rc.1
           path: deepseek-harness
           fetch-depth: 1
 
@@ -82,15 +84,17 @@ jobs:
           pnpm run verify-translation-pairing
 
   # The stable line above gates merges. This one reports: it builds and tests
-  # the same tree against the host line we are adapting TO, so a package that
-  # only works on one line is visible before the eventual baseline migration
-  # instead of during it.
+  # the same tree against the host's FORWARD line (the `next` dist-tag — the
+  # rc of the upcoming release), so a package that only works on one line is
+  # visible before the eventual baseline migration instead of during it.
+  # (We track `next`, not `alpha`: during the 0.1.5 wave the alpha tag rotted
+  # at 0.1.5-alpha.2 while rc.1/rc.2 shipped through next/latest — a lane
+  # pinned to a stale tag stops meaning anything.)
   #
-  # Deliberately non-blocking. The alpha line shipped alpha.1 through alpha.4
-  # inside a week, so upstream can turn this red at any time for reasons that
-  # are not ours. A required check somebody else controls is one people learn
-  # to ignore — and an ignored gate protects nothing.
-  alpha-compat:
+  # Deliberately non-blocking. Upstream can turn this red at any time for
+  # reasons that are not ours. A required check somebody else controls is one
+  # people learn to ignore — and an ignored gate protects nothing.
+  next-compat:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -102,22 +106,22 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # Track whatever the alpha dist-tag points at rather than pinning a
-      # version here: a pinned alpha rots within days, and a job testing a
-      # host nobody is adapting to any more quietly stops meaning anything.
-      # The harness tags its releases `dsh-v<npm version>`.
-      - name: Resolve the current alpha host
-        id: alpha
+      # Track whatever the next dist-tag points at rather than pinning a
+      # version here: a pinned forward line rots within days, and a job
+      # testing a host nobody is adapting to any more quietly stops meaning
+      # anything. The harness tags its releases `dsh-v<npm version>`.
+      - name: Resolve the forward host
+        id: next
         run: |
-          version=$(npm view @deepseek-ai/dsh dist-tags.alpha)
+          version=$(npm view @deepseek-ai/dsh dist-tags.next)
           echo "ref=dsh-v${version}" >> "$GITHUB_OUTPUT"
-          echo "tracking alpha host ${version}"
+          echo "tracking forward host ${version}"
 
-      - name: Clone deepseek-harness (alpha line)
+      - name: Clone deepseek-harness (forward line)
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: ${{ steps.alpha.outputs.ref }}
+          ref: ${{ steps.next.outputs.ref }}
           path: deepseek-harness
           fetch-depth: 1
 
@@ -135,12 +139,12 @@ jobs:
       # Only the harness-sensitive steps run here. Hygiene, plugin
       # independence, the doc gates and the mirror check never read the
       # harness, so repeating them would double the cost for no new signal.
-      - name: Build (alpha host)
+      - name: Build (forward host)
         run: pnpm run build
         env:
           DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
 
-      - name: Test (alpha host)
+      - name: Test (forward host)
         run: pnpm run test
         env:
           DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
