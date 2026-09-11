@@ -1,6 +1,8 @@
 # 变更记录
 
-## 0.2.1（2026-09-11）
+## 0.3.0（2026-09-11）
+
+（以 minor 发布：openExternal 是新增能力；pair 包 ui-file-preview 的 peer 边由 pack-dist 按本包版本重写，两包版本线须一致。）
 
 - **BREAKING**：minHost 前移至 `0.1.5-rc.1`；宿主 `0.1.2-rc.1` 的用户请停留在 `0.2.0`。dispatch 事件只匹配 0.1.5 的 `tool/ptc-dispatch`（官方 v2→v3 日志迁移会把持久化的旧名改写过来，0.1.5 宿主不会再发出 `tool/code-dispatch`），0.2.0 的双名探测退役
 - 新增 Remote 方法 `openExternal(agent, path, app, signal)`：在指定宿主应用中打开文件（macOS `open -a`），供浏览器半的「在 IDE 打开」手势使用——官方 open-in-app 路由只收目录。`app` 为官方 catalog id（id → `.app` 名映射镜像官方 catalog 的 darwin 条目）；非 macOS / 未知 id 返回 `opened: false`，不写入。
