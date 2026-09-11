@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md
+.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md: a80ae98c6bb23ae19e7543c69aff82c788aca95f
+.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.zh.md: 8425f2128aac6e5cc44e58f50b0082b1d099c4e0

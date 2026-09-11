@@ -1,122 +1,139 @@
-# 移动端接入（mobile-access）
+# 移动端接入：独立插件与 iOS 薄壳（mobile-access）
 
-- **分类**：plugin（交付形态为可插拔包 + 部署配方；全部部件以纯插件 / 纯配置交付，零官方代码改动）
+- **分类**：plugin
 - **状态**：planned
-- **最后更新**：2026-08-19
-- **查重结果**：已搜 `proposals/active/`、`proposals/closed/`、`.agents/notes/`（含 implemented/proposed/rejected）——无移动端 / 远程认证 / PWA / 推送 / IM bot 相关提案或 note。与 local-agent 家族的 device-code 网页登录（harness 自身认证，不涉 Web 网关，[note 先例](../.agents/notes/implemented/feature/2026-08-14-local-agent-family.md)）无意图重叠。
-- **官方依赖**：纯插件。**硬约束：不修改官方包、不提交 upstream 需求**——凡无法纯插件 / 纯配置达成的形态一律不做或以降级形态交付，取舍与体验上限在 M1 / M3 如实标注。
+- **最后更新**：2026-09-11
+- **查重结果**：已搜 `proposals/active/`、`proposals/closed/` 与 `.agents/notes/`（含 archived）。本文件已承载移动接入意图，按总账规则原位更新；member-channel-auth-hardening 处理成员 CLI 回调，不承担手机登录；room-composer-parity 处理 room 输入框，不作为本插件前置。
+- **官方依赖**：纯插件（交付约束；rc1 公开契约已作源码审计，布局、认证接合与热卸载仍待 M0 探针验收）。不得修改、替换或 monkey-patch 官方包；公开契约不足时缩减具体功能并登记，不以宿主补丁完成本提案。
 
 ## 目标
 
-单用户自用场景（用户已确认）：**随时随地（不在同一 WiFi）访问完整 dsh Web UI**，保留全部现有插件能力（文件预览 / 产物 / 消息工具 / 会话等——它们全部跑在 `packages/client/*` 的 slot 系统上，换壳不换 UI），并具备主动推送通知（问完锁屏、答案好了弹通知）。
+以官方 `0.1.5-rc.1` 为首版基线，交付独立的 `@khorsheed/dsh-mobile` 插件（拟定包名），以及连接它的 iOS 薄壳。插件实现移动页面、移动适配与桥接；iOS 工程承担系统能力。电脑上的 Harness 继续持有会话、模型凭据、skill、preset 与插件执行，手机是远程客户端。
 
-交付形态：一组独立可插拔包 + 部署配方（Tailscale / 网关认证 / TLS）。**零官方代码改动且不提交 upstream 需求**为总体纪律——部件取舍以"能否纯插件交付"为界：不能的（进程内登录页、完整移动布局）明确放弃或降级，不阻塞其余部件。
+目标用户为访问自己 Harness 的单用户。手机与电脑无需处于同一 Wi-Fi：经私网 HTTPS 入口，在蜂窝网络或另一 Wi-Fi 下访问同一个 3080 服务。持续可用要求电脑保持唤醒、联网，Harness 与安全接入服务运行，手机有网络且认证有效；仅 3080 进程存在不是充分条件。
 
-## 现状（官方契约实测）
+独立性是 done 条件：纯官方 web profile 加装 mobile 即可使用基础移动会话，不依赖其他社区插件。与 message-tools、local-agent、file-preview 等已安装插件兼容，但不改它们的代码、配置、业务语义或持久化结构。
 
-| 面 | 实测事实 | 对方案的含义 |
+### 本次范围调整
+
+2026-08-19 草案以 PWA / Web Push / Telegram 为主并排除原生 App。用户于 2026-09-11 确认改为 iOS 优先、插件承载主要功能，并明确采用 rc1，不等待后续 RC。原生 App 纳入本期；PWA 安装增强、Web Push、Telegram bot 不进入本期验收。APNs 完成通知保留后续增量，未交付前不得宣称锁屏推送可用。
+
+## 现状（官方契约源码审计 / 已有实现）
+
+审计基线：官方 `0.1.5-rc.1`，commit `183f08e9c6`。以下是源码事实，不是真机验收结果。官方路径相对 Harness 仓库根目录；实施时重新确认实际检出版本。
+
+| 面 | rc1 事实与依据 | 方案影响 |
 |---|---|---|
-| 认证 | `packages/host/webserver` 只有 route / upgrade / fallback / `tapIndex` 四类注册，**无中间件链**；`packages/client/connection` 的 `trustedHosts` 源码注释明言 *"a DNS-rebinding fence, explicitly not authentication"*；`PRIVILEGED_METHODS`（settings / credentials / agentPreset 等配置面方法）强制 loopback-only；全 host 包无 login / token / bearer 实现 | 进程内认证**无现成 seam 且官方不可改** → 认证完全由**网关前置**（dsh 进程外）承担；**放弃进程内登录页**（M1） |
-| 端点 | webserver 仅 bind `127.0.0.1` / `0.0.0.0`，无 TLS；CLI 已有 `--host` / `--port` / `--trusted-host` | 端点与 TLS 全部可落在进程外（反代 / Tailscale），dsh 保持 loopback + `--trusted-host` 即可 |
-| PWA | `apps/web/public/manifest.webmanifest` 存在（`display: fullscreen`、SVG icon），**无 service worker** → 当前不可安装、无离线、无推送 | SW 注册 + manifest 增强可通过 `webServer.tapIndex`（公开注入面，ui-theme 已用它注入 boot 主题）**纯插件注入** |
-| 移动 UI | `ui-layout` 的 AppFrame 注册进 `'root'` slot（独占，**不可被插件替换**）；conversation 表面与 column 子槽可替换；`CENTER_MIN=640`、`SIDEBAR_AUTO_COLLAPSE=1024`；client 包无 `@media` 断点、无触控优化 | 完整移动布局**不可达**（官方不可改）→ 纯插件降级为**最终形态**：窄视口 CSS 覆盖 + 子槽替换 + `tapIndex` 注入，上限为"单栏沉浸"（M3） |
-| 推送 | host 侧无 Web Push 基建；`turn/end` 是现成触发点；`packages/credentials` 现成（配置只存引用、`role('secret')` 不进响应） | 推送 host 半（VAPID + 订阅 + 触发）可纯插件实现 |
-| Bot 通道 | `packages/sdk`（protocol / client / server，stdio JSON-RPC）+ `dsh --profile headless "task"` 一次性执行模式现成 | IM bot 可纯插件实现，零域名零入站（平台 long-polling） |
-
-## 数据主权（本方案的核心特性）
-
-dsh 是自托管架构，**所有用户数据收在单一根目录 `$DSH_HOME`（默认 `~/.dsh/`）**：会话数据为事件溯源模型，由本地后端（web profile 为 SQLite，另有 JSONL 可选）持久化；产物文件在工作区；配置与凭据在 `$DSH_HOME` 下（凭据走 `ctx.credentials` 引用，密钥不入配置）。
-
-- **M1 + M2 默认路径：会话数据完全不上云**。手机经 Tailscale 加密 P2P 隧道（DERP 中继仅转发加密流量、不存储）访问本机 dsh；Tailscale 协调服务器只做设备发现与密钥交换；出网字节仅：Web Push 通知 payload（Web Push 标准加密，推送服务不可见内容，但通知文本明文显示于锁屏）、LLM API 调用（dsh 固有）、Tailscale 元数据。
-- **M4 例外**：启用 Telegram bot 时，问答消息经 Telegram 服务器并存储于其侧（聊天记录）——可选通道，README 明示"开启即同意该数据路径"；不启用则数据全程本地。
+| 浏览器认证 | `packages/client/connection/src/browser-auth.ts` 已有进程启动 token 换签名 Cookie；默认 30 天，绑定请求 authority，含 `HttpOnly; SameSite=Strict`，当前未附 `Secure` | 旧稿“官方无认证”过时。首版复用官方登录；HTTPS 入口处理 Secure 属性及域名一致性。启动 token 不是一次性配对码或逐设备可撤销凭据 |
+| 请求信任 | `packages/client/connection/src/api-request-trust.ts`、`rpc-host.ts` 执行 Host / Origin 检查及 Cookie 认证 | `trustedHosts` 不是登录机制；代理不能关闭官方校验 |
+| 流式与恢复 | `packages/api/gateway/README.md` 定义 HTTP `/api`、WS `/api/remote.mux`、多路流、心跳及重连；session-controller 的 Client transport 使用历史序号和 assistant baseline | 复用官方客户端；按快照和历史恢复。进行中快照含进程内状态，不承诺主机重启后自动续跑 |
+| 客户端发现 | `docs/subsystems/client-modules.md`：`dsh.client.platform: web`、`./client` bundle | WKWebView 使用浏览器客户端图，无需虚构 ios 插件平台或手机 npm 安装器 |
+| UI 外壳 | `packages/client/ui-layout/src/client/index.ts` 提供布局服务并声明子槽；`packages/client/ui-slots/src/index.ts` 支持不同 priority 的 shadowing，但子槽仍只有一个声明者，渲染权限绑定声明者 | 旧稿“root 完全不可替换”过于绝对；“换 root 就能复用全部子槽”也未经证明，完整替换列入 M0 |
+| Desktop | `apps/desktop/README.md`：Electron + 内置 Node/pnpm + 独立 profile；管道与 `dsh-app://`，无 Web 端口，壳与 Host 精确同版 | 借鉴客户端复用；iOS 不运行 Desktop Host，也不假设 Desktop 自动提供 3080 |
+| message-tools | 本仓库 `packages/message-tools/README.md` 与 Client 实现拥有编辑/撤回/恢复；部分遮蔽使用 `data-chat-flow-key` | 沿用插件语义与渲染，不重写撤回算法；组合列入升级回归 |
+| 待确认 | 官方 Client 维护按会话组织的 pending interaction 状态 | 首版显示收到的提示并进入会话处理；不宣称持久离线收件箱或跨设备接管 |
 
 ## 方案
 
-### M1 远程安全接入（纯部署 + 纯配置，零官方改动）
+### 1. 交付边界
 
-- **端点**：Tailscale mesh（手机 + 宿主机器同账号），`<host>.<tailnet>.ts.net` 私有域名 + 自动 HTTPS；与 WiFi 无关，4G/5G 可达，公网不可见。
-- **认证**：网关前置。Tailscale Serve / Caddy basic-auth 在 dsh 进程外做 token 门禁；dsh 继续 bind `127.0.0.1` 只收本机回环转发，`--trusted-host <ts.net 域名>` 让 connection 的 DNS-rebinding fence 放行该权威。**无 token 请求在网关层即被拒，dsh 进程零改动。**
-- **不做进程内登录页**：无 seam 且官方不可改，认证形态即网关 basic-auth（浏览器原生凭据弹窗）——单用户场景足够，README 写明取舍。
-- **产物**：部署配方文档 + 一键脚本（装 Tailscale、生成 token、配反代、起 dsh）。
+| 部件 | 拟定位置 / 形态 | 职责与独立性 |
+|---|---|---|
+| 移动插件 | `packages/mobile/`；单包 `@khorsheed/dsh-mobile`，Host + Client | 移动适配、受认证的能力握手、原生桥接；没有原生桥接时浏览器基础会话仍可用 |
+| iOS 薄壳 | `apps/ios/`；独立 Xcode 工程 | SwiftUI + WKWebView，主机连接、扫码、Keychain、文件选择、系统分享；IPA 单独编译和签名 |
+| 安全接入 | Tailscale Serve 私网 HTTPS 配方；增强认证另用进程外网关 | 不属于 Cordis 插件依赖，生命周期独立；安装 mobile 不自动修改网络、系统服务、防火墙 |
 
-### M2 PWA 化（纯插件，两个包分工）
+包遵守现有规则：`dsh.bundle.patch` → `cordis.patch.yml` 自挂载；包名 / loader id / `PACKAGE_NAME` 一致；`./client` 使用共享 `clientBundle`；官方 peer 依赖按仓库规范声明；Host 生成契约后再构建 Client；不新增社区插件强依赖。标准 `dsh plugin add / remove` 完成插件安装/移除，不要求手改 profile YAML。HTTPS 等外部服务的一次性设置另行说明。
 
-**包 A `@khorsheed/dsh-pwa` —— 安装壳（PWA 基础）**
+`dsh.compat.minHost` 是最低支持版本，`verifiedHost` 只在验收后推进。拟支持 rc1 不等于已验证；当前没有实现包或真机通过记录。
 
-职责：让 dsh 网页变成"可安装、可全屏、断网可开壳"的 App。解决**"怎么装、怎么像 App"**。
+### 2. 不侵入与可卸载契约
 
-- host 半：
-  - 静态资源：`sw.js` 与多尺寸 icons（192 / 512 / maskable PNG）经 `webServer.register` 提供（现有 manifest 只有 SVG icon，不足以触发安装）；
-  - `webServer.tapIndex` 注入：manifest 增强（icons / `display: standalone` / theme-color）、SW 注册脚本、移动 viewport meta。
-- client 半：
-  - `beforeinstallprompt` 拦截 → 页面内"安装到主屏"提示条；
-  - SW 生命周期：检测到新版本 → "刷新以更新"提示；
-  - 离线壳：SW 缓存 app shell（HTML/JS/CSS），断网显示离线提示；**不缓存会话数据**——数据始终在 host，离线只是壳。
+“不侵入”指只用公开服务、注册、slot、生命周期及正常插件配置，不代表没有界面贡献。禁止改官方源码/产物、复制官方包形成分叉、改兄弟包或其配置、patch 原型、全局改写 fetch/WS、篡改官方会话存储或拦截兄弟插件内部调用。
 
-**包 B `@khorsheed/dsh-web-push` —— 推送桥（Web Push 通知）**
+- **基础独立**：仅官方必需组件 + mobile 即能登录、查看会话、发送、流式回答。缺 message-tools 不出现它的编辑/撤回；缺 local-agent 不出现成员入口；缺预览插件只保留官方可用的文件功能。不得显示假功能或阻塞启动。
+- **可选集成**：优先保留兄弟插件自己的渲染/操作槽；需要服务时探测公开能力，处理晚加载和卸载。没有公开接口则不集成，不要求对方提供私有 mobile 接口。
+- **客户端隔离**：移动标记、样式、监听属于当前浏览器/WebView，桌面窗口不受影响。不得全局禁用 `ui-layout` 或切整个 profile 实现手机布局。展示模式不是权限边界。
+- **效果清理**：自有路由、Remote、slot、DOM 标记、样式、observer、监听、定时器、bridge handler 均绑定 effect/disposer。只释放自有资源，不关闭官方共享连接，不取消主机任务。
+- **退出/卸载**：退出移动模式恢复桌面表现，热卸载恢复官方可用表面。若公开 HMR 契约不能安全原位恢复，必须明确要求受控刷新并保留草稿，不能标为无感热卸载；宿主不得崩溃。
+- **持久状态**：偏好只写插件 namespace，普通卸载可保留以便重装；显式清除只删除自有记录，不删会话、产物、兄弟设置、Host 签名密钥、模型凭据。
+- **外部生命周期**：卸载 mobile 不卸载 Tailscale / iOS App / 网关，也不撤销官方 Cookie；官方远程 Web 可独立存在。增强网关的设备撤销/配对重置另有入口，插件卸载停止自有续期/推送贡献，不宣称删除 npm 包就清除了全部外部授权。
 
-职责：把 host 侧的**会话事件变成手机系统通知**，点通知直达对应会话。解决**"装完之后怎么主动通知你"**。
+### 3. 页面与原生桥接
 
-- host 半：
-  - VAPID 密钥对生成 / 加载，存 `ctx.credentials`（配置只存引用，密钥不进配置文件和 API 响应）；
-  - 订阅端点：接收并持久化浏览器的 PushSubscription；
-  - 触发：监听 session 事件（默认 `turn/end`），按配置模板构造标题 / 正文 / 深链 URL，用 web-push 加密发送到订阅 endpoint；
-  - 配置：触发事件集、通知模板、深链格式。
-- client 半：
-  - 设置分区 UI：请求通知权限、注册 / 注销订阅、推送开关、状态展示（已授权 / 被拒 / 未决定）；
-  - SW 内 `push` 事件处理：收到推送 → 弹系统通知；`notificationclick` → 打开 / 聚焦对应会话页。
+主要导航为“会话 / 设置”，会话内沉浸阅读。用户与助手操作分开：编辑/撤回继承 message-tools 影响后续内容的真实语义；助手继承官方/插件的复制、分支等。预览、成员与执行详情从会话进入。模型、权限、附件、排队/插话、停止、命令、引用、上下文读数及工具确认复用官方输入框。
 
-**两包边界与 SW 所有权**：包 B **独立可用**（自带最小 SW，含 push / notificationclick 处理——不装包 A 也能在浏览器收推送）；包 A 专注缓存与安装。两者都注册 SW 时所有权在实现期对齐（如包 A 的 `sw.js` 经 `importScripts` 组合包 B 的 push 模块，或注册入口统一由 tapIndex 注入），README 写明"独立可用、共存协商"。**不装包 A 时包 B 推送可用；不装包 B 时包 A 安装 + 离线壳可用。**
+正文与输入框处在同一 Web 运行时，共享连接/会话状态。只用公开槽位与局部样式适配，不复制消息引擎，不在 Swift 重写流协议。手机文件选择与 Mac 工作区目录选择区分，不误触发只在 Mac 显示的原生 chooser。
 
-**平台支持条件（iPhone 与 Android 不同）**：
-- **Android（Chrome）**：任意网页可直接订阅 Web Push，无前置条件。
-- **iPhone（iOS 16.4+，Safari）**：**必须先"添加到主屏"成为 Web App，再在其中请求通知权限**，普通 Safari 标签页不能收推送——与包 A 天然配套，iPhone 用户路径固定为「包 A 安装提示 → 添加到主屏 → Web App 内授权通知 → 收推送」，README 写明该路径。
-- **iOS < 16.4**：不支持 Web Push，由 M4 bot 通道（IM 平台推送，与 iOS 版本无关）兜底。
+桥接拟提供受限的打开会话、选择文件、分享及连接状态通知。握手拟含 `bridgeVersion`、`capabilities`、`hostVersion`、`mobileVersion`、`minAppVersion`；这是待定义的 mobile 契约，不是官方 API。展示由当前客户端开关和原生能力探测选择，不以 UA 授权。
 
-- **依赖面**：`webServer.tapIndex` / `webServer.register`（公开）、session 事件（公开）、`ctx.credentials`（公开）、Push API（浏览器标准）——零官方改动。
+WKWebView 仅向可信已配对主机页面开放允许列表中的桥接操作；外部链接和不可信产物页面不继承权限。长期设备凭据不进入页面 JS，原生与 Web Cookie 存储明确衔接。插件缺席或协议不兼容时显示可恢复的连接/升级状态。
 
-**与 M1 的依赖关系（验收依赖，非实现依赖）**：M2 的插件开发在本机 `localhost`（浏览器视为 secure context）即可完成，**与 M1 并行**；但 SW / Web Push / beforeinstallprompt 只在 secure context 下工作（HTTPS 或 localhost），**手机经 `http://<LAN-IP>` 访问时 SW 不会注册、PWA 不可安装、推送不可用**（页面看似正常，极易误判）。因此 M2 的**真机端到端验收必须已有 M1 的 HTTPS 端点**（Tailscale `ts.net` 或同类）。
+**M0 布局关口**：先证明子槽与局部样式可以实现基础会话，再验证 root shadowing 的子槽所有权、布局服务、顺序、卸载恢复。不能凭 priority 支持认定任意接管可行。公开契约不足时保留官方可用布局并登记设计差距；不能全局禁用官方布局或侵入实现换取视觉一致，也不能把未达到的完整设计标成 done。
 
-### M3 移动 UI 适配（纯插件；降级路径即最终形态）
+### 4. 跨网络连接与认证
 
-官方 `ui-layout` 不可修改、也不提交 upstream 需求，**完整移动布局不可达**。本部件交付移动适配插件 `@khorsheed/dsh-mobile-ui`，以可插拔方式把三栏压成手机可用单栏，**上限为"单栏沉浸"**：
+默认路径：`iPhone → 私网 HTTPS/WSS :443 → 本机接入入口 → 127.0.0.1:3080`。App 保存可配置 URL，不硬编码端口。3080 保持 loopback；部署入口时明确配置允许的 authority。Tailscale Serve 让两台设备在不同物理网络下通过同一 tailnet 连接，不把 3080 裸露到公网。依据：[Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve)。
 
-- **窄视口 CSS 覆盖**（插件自有样式表）：窄视口下隐藏 sidebar / details、center 全宽、触控目标放大、safe-area 适配。DOM 锚点按仓库纪律是 last resort，必须带 fallback——官方样式变更导致覆盖失效时**静默降回官方三栏**（degrade, don't explode），绝不破坏布局；
-- **conversation 表面子槽替换**（官方公开槽）：移动端消息卡片触控优化（更大的点按区、长按操作入口）；
-- **`tapIndex` 注入**：移动 viewport / meta（键盘弹起、双击缩放策略）。
+**可用条件**：电脑开机且未系统休眠、联网，Harness web profile 与私网 HTTPS 入口运行；手机联网且私网可达，证书及凭据有效。模型/provider 另需自己的网络和凭据。关屏不等于系统休眠；不承诺关机执行、睡眠唤醒、无网发送成功或无限免登录。iOS 后台可能挂起，前台恢复走重新认证/重连/补齐。
 
-**明示上限**：无法改 AppFrame 内部结构——抽屉式导航、底部输入栏等需要官方改动的形态不做；交付形态就是单栏沉浸，README 如实标注。若未来官方 ui-layout 自带移动断点，本插件 CSS 覆盖自然空转（兼容不冲突），届时可退役覆盖层。
+首阶段复用 rc1 token → Cookie 登录，全部经可信 HTTPS；登录 token 不写日志、不作为设备 ID，交换完成清除 URL 中凭据。HTTPS 接入层补齐 Secure 属性或通过公开契约处理；验证 Host、Origin、Cookie authority 与 WS 一致性，不放宽官方校验解决代理问题。
 
-### M4 IM Bot 补充通道（纯插件，可独立交付）
+增强配对：Mac 生成短时一次性二维码，手机经 HTTPS 提交，主机确认后发独立设备凭据；Keychain 保存长期凭据，受控交换建立短期 Web 会话。进程外网关统一校验 HTTP、上传、资源、WS，负责续期/撤销并断开已撤销设备的现有连接。保留上游官方认证，网关合法获得/续用上游会话的方式必须在 rc1 公开接口下验证；不得读取私有签名密钥或私有字段。
 
-- **包 C `@khorsheed/dsh-telegram-bot`**：dsh SDK 驱动 headless profile；问 → 答（流式回传）；**服务器主动推送**（Telegram bot API 允许服务端发起消息——"问完锁屏、答案好了弹通知"的零安装实现）；回答附带深链回 Web UI 对应会话。
-- 与 M2 互补：Bot = 轻问答快速通道，PWA = 完整 UI。可推广到微信 / 钉钉 / 飞书（按平台适配器拆分，v1 只做 Telegram）。
+若无法无侵入接合增强网关，明确交付官方登录 + tailnet 设备访问控制的基础版本，把一次性配对/App 级逐设备撤销标为未交付；不能给官方启动 token 或 Tailscale 登录换名冒充。网络可达性与应用认证分别验收；preset 不承担认证或多用户隔离。
+
+### 5. 流式、恢复与通知
+
+- 复用官方 HTTP / WS 与 session follow；切网后恢复历史和回答，不重复追加或执行。
+- 切后台、退出页面、卸载只释放客户端订阅；通过闭环测试确认主机继续执行，不把取消订阅误做 stop。回前台恢复快照与持久历史。
+- 发送/编辑/撤回遇到响应丢失，先查权威状态；无明确幂等契约不自动重试。双端竞争、确认被另一端处理，显示最新服务端结果。
+- 主机重启与网络重连分别报告：进程内未持久化状态可能丢失，不保证恢复全部瞬时输出或自动续跑。
+- 后续 APNs 需 Host/网关通知生产者、Apple 推送凭据、设备订阅生命周期；不以常驻 WS 代替。默认通知最少必要内容，点击回会话。基础版不承诺离线收件箱或锁屏完成提醒。
+
+### 6. 官方 RC 升级维护
+
+新 RC 必审计，不自动部署到日常 3080。移动 Web 随 Host + 插件组合验证和发布；原生只在系统能力/桥接出现不兼容变化时更新。
+
+候选使用独立 checkout、`DSH_HOME`、端口；审计认证、Remote、流协议、slot、输入机、存储迁移，按影响面适配，再跑完整构建/测试/打包及移动回归。记录精确 Host tag/commit、插件 tarball 版本/校验值、移动页面版本、桥接范围和实测 iOS；未验证与已知不兼容分开。
+
+沿用 `compat:report` / `dsh.compat` / `pnpm gate` 和现有部署流程，不另造升级器，不改共享 CI 或升级兄弟插件；CI 基线校准归 mainline。当前支持组合必过，新 RC 先报告，决定采用后进入发布门槛。升级前备份；不兼容存储迁移后的回退需配套数据恢复，不能只退程序。
 
 ## 里程碑
 
-| 里程碑 | 内容 | 官方依赖 | 周期 |
-|---|---|---|---|
-| M1 | 部署配方（Tailscale + 网关认证 + TLS）+ 实测验证 | 纯配置 | 0.5 周 |
-| M2 | PWA 安装 + 推送通知端到端 | 纯插件 | 1–1.5 周 |
-| M3 | 移动 UI 适配插件（单栏沉浸 + 降级 fallback） | 纯插件 | 1 周 |
-| M4 | Telegram bot 问答 + 推送 + 深链 | 纯插件 | 1 周 |
+| 阶段 | 产物与判据 |
+|---|---|
+| M0 契约探针 | rc1 + mobile 独立加载；验证发现、布局/子槽、双端隔离、认证接合、热卸载；逐项记录通过/降级/不支持，不接生产数据 |
+| M1 插件基础版 | 单包自挂载；移动会话、设置、官方输入；缺所有社区插件仍可用；装/卸/重装清理验证 |
+| M2 跨网真机 | iOS 薄壳 + 私网 HTTPS + 官方登录；关闭 Wi-Fi 用蜂窝网络，完成发送/流式/停止/断网恢复，Mac Web 同时可用 |
+| M3 可选组合 | message-tools、local-agent、产物预览逐项验证；缺席/晚加载/卸载不影响基础版；操作沿用各自所有者语义 |
+| M4 认证增强裁决 | 验收一次性配对、续期、撤销；或记录公开契约阻碍，明确降级为官方登录，不宣传未实现能力 |
+| M5 发布验收 | 插件产物、iOS 构建、版本组合/回退记录；按流程上 3080 验收；基础目标和明确范围内的界面达成才转 done |
+
+APNs、PWA/Web Push、IM bot、多用户权限、手机本地模型/CLI、手机离线执行不在本期。后续按能力意图规则增量更新或立项。
 
 ## 实现记录
 
-（随实施追加：Agent Note / PR / 包名。）
+- 2026-09-11：根据用户确认原位重写提案，以 rc1 为基线，新增独立装卸载、零侵入、跨网边界，同步总表。仅文档与源码审计，无实现包、宿主修改或网络部署。
+- 架构提议：[独立 mobile 插件与 iOS 薄壳](../../.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md)。实施后登记代码、包、验收证据与未通过项。
 
 ## 验收标准（done 判定，绑定可插拔交付）
 
-1. **M1**：手机在非同一 WiFi（4G/5G）可访问完整 Web UI；无 token 请求在网关层被拒（实测 401/403）；dsh 进程零代码改动（仅配置）。→ done。
-2. **M2**：Chrome/Safari 可将 dsh 安装为主屏 App、全屏运行；任务完成推送到达且点击深链回正确会话；**两包独立可装可卸——不装包 A 时包 B 推送仍工作（Android），反之亦然**；**iPhone（iOS 16.4+）实测：添加到主屏后推送可达，普通标签页不可达（README 写明路径）**。→ done。
-3. **M3**：手机视口（实测 390px）下单栏沉浸可用；官方样式变更导致覆盖失效时静默降回三栏（单元 spec 覆盖 fallback 路径）；`dsh plugin add` / `remove` 可装可卸、热卸载干净。→ done（体验上限 = 单栏沉浸，README 如实说明）。
-4. **M4**：bot 问 → 答端到端；主动推送到达；深链回会话正确。→ done。
-5. 每包 `pnpm run build && pnpm run test` 绿；双语 README + Compatibility 段 + `dsh.compat`；Agent Note 三件套。
+1. **零侵入**：不改官方/社区包和共享会话格式；profile patch 仅自挂载；安装前后检查其他包及配置无额外改写。
+2. **独立安装**：干净 rc1 web profile 只加 mobile 通过基础闭环；无社区强依赖，`check:plugins` 通过。
+3. **装卸清理**：启用/停用/热卸载/重装；无重复 slot/监听/样式/路由或遗留 bridge handler；桌面恢复、数据不丢。插件数据、VPN、官方登录分别说明清理边界。
+4. **双端共存**：桌面与手机同服务，移动模式只影响手机；更新一致，写入竞争遵循服务端；卸载不取消任务或破坏其他客户端。
+5. **跨网真机**：手机关闭 Wi-Fi，以蜂窝访问 Mac，验证登录/列表/发送/流式/附件/停止/切网恢复；记录系统/构建/入口类型，不提交凭据或私有地址。
+6. **认证**：无有效认证时业务 HTTP/上传/受保护资源/WS 均拒绝；Host/Origin 保持。若宣布增强认证可用，补测码复用/过期、设备撤销、既有流断开与网关不可绕过；否则标未交付。
+7. **交互恢复**：真机键盘/安全区/长内容/草稿/附件/工具确认；后台返回与 Mac 重启分别验证；写操作不盲目重放。
+8. **可选组合**：message-tools 编辑/撤回/恢复、助手操作、成员/产物按组合验收；缺失/卸载入口消失或明确降级，基础功能仍可用。
+9. **交付证据**：构建/测试/打包、独立性和文档门禁通过；双语 README Compatibility 与机器声明一致；证据进 `docs/acceptance/`，列明交付/降级/后续项，原生 App 和外部部署分别说明安装/移除。
 
 ## 风险 / 放弃的东西
 
-- **不做进程内登录页**：认证完全依赖网关前置（basic-auth / Tailscale 身份）——单用户场景的可接受取舍；若未来出现多用户需求，只能等官方提供 seam 或更换部署形态，提案届时重开。
-- **移动 UI 上限为单栏沉浸**：无法改 AppFrame 内部结构，抽屉导航 / 底部输入栏等形态不做；CSS 覆盖依赖官方 DOM 结构，按 last-resort 纪律带 fallback，失效静默降回三栏，绝不破坏布局。
-- **宿主机器必须保持开机在线**（Tailscale 免费版 100 设备 / 3 用户，单用户无虞）——这是"随时随地"的唯一前提，文档写明。
-- **Web Push 依赖系统通知权限，且 iPhone 必须先"添加到主屏"（iOS 16.4+）才能收推送，iOS < 16.4 完全不支持**——用户可关权限、旧 iPhone 无解；M4 bot 通道（IM 平台推送）作为与 iOS 版本无关的兜底，两者不互斥。
-- **放弃**：原生 App（Tauri / Capacitor）商店分发——单用户场景 ROI 低，且移动适配照样躲不掉，留待需求出现；不做离线全量数据（仅离线壳）；不做多用户 / 团队体系。
+- 完整 mobile 外壳拼装尚未通过探针，零侵入优先；设计差距须明确验收，不能藏在“纯插件”标签内。
+- 浏览器插件不等于触控适配；未公开接口/DOM 锚点是组合风险，mobile 不修补兄弟内部实现。
+- 官方 Cookie 缺逐设备模型；增强网关上游会话接合待验证，不访问私有签名密钥填空。
+- 休眠/断网/VPN/证书/认证失效会中断可用性；不自动装守护或改电源设置。持续可用不等于手机后台永不断流。
+- 卸载插件不卸载 App/VPN/网关或撤销官方登录，交付文档分开说明退出/撤销/清理。
+- 不维护官方分叉、不复制消息/输入引擎、不重写兄弟业务、不承诺无限版本兼容；每个 RC 实际审计验收。
