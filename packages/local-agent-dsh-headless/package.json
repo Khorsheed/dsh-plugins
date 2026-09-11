@@ -40,8 +40,8 @@
   },
   "dsh": {
     "compat": {
-      "minHost": "0.1.2-rc.1",
-      "verifiedHost": "0.1.2-rc.1"
+      "minHost": "0.1.5-rc.1",
+      "verifiedHost": "0.1.5-rc.1"
     }
   },
   "files": [
