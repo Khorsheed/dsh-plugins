@@ -1,0 +1,3 @@
+- insert:
+    - id: mobile
+      name: "@khorsheed/dsh-mobile"

@@ -1,7 +1,7 @@
 # 移动端接入：独立插件与 iOS 薄壳（mobile-access）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress
 - **最后更新**：2026-09-11
 - **查重结果**：已搜 `proposals/active/`、`proposals/closed/` 与 `.agents/notes/`（含 archived）。本文件已承载移动接入意图，按总账规则原位更新；member-channel-auth-hardening 处理成员 CLI 回调，不承担手机登录；room-composer-parity 处理 room 输入框，不作为本插件前置。
 - **官方依赖**：纯插件（交付约束；rc1 公开契约已作源码审计，布局、认证接合与热卸载仍待 M0 探针验收）。不得修改、替换或 monkey-patch 官方包；公开契约不足时缩减具体功能并登记，不以宿主补丁完成本提案。
@@ -45,7 +45,7 @@
 
 包遵守现有规则：`dsh.bundle.patch` → `cordis.patch.yml` 自挂载；包名 / loader id / `PACKAGE_NAME` 一致；`./client` 使用共享 `clientBundle`；官方 peer 依赖按仓库规范声明；Host 生成契约后再构建 Client；不新增社区插件强依赖。标准 `dsh plugin add / remove` 完成插件安装/移除，不要求手改 profile YAML。HTTPS 等外部服务的一次性设置另行说明。
 
-`dsh.compat.minHost` 是最低支持版本，`verifiedHost` 只在验收后推进。拟支持 rc1 不等于已验证；当前没有实现包或真机通过记录。
+`dsh.compat.minHost` 是最低支持版本，`verifiedHost` 只在验收后推进。拟支持 rc1 不等于已验证；当前已有开发实现与本地验收，尚无真机通过记录。
 
 ### 2. 不侵入与可卸载契约
 
@@ -113,6 +113,9 @@ WKWebView 仅向可信已配对主机页面开放允许列表中的桥接操作�
 APNs、PWA/Web Push、IM bot、多用户权限、手机本地模型/CLI、手机离线执行不在本期。后续按能力意图规则增量更新或立项。
 
 ## 实现记录
+
+- 2026-09-11 开始实施：`packages/mobile/` 与 `apps/ios/` 已在独立 `feat/mobile-rc1` worktree 落地基础版，不改宿主、兄弟插件或生产 3080。M0/M1 本地闭环、10 项插件测试、20 项原生 URL 检查、模拟器编译/安装/启动通过。保留官方 root，以公开目录流程槽替代手机上的 Mac chooser；工作区第一版输入电脑完整路径。标准移除需要受控 Host 重启与页面刷新，不能声明无感热卸载。证据见 [mobile rc1 验收](../../docs/acceptance/mobile-rc1-2026-09-11.md)。
+- M2 真机蜂窝、键盘/附件/后台恢复、M3 社区组合、M4 认证增强、M5 生产发布仍未完成；当前不是 proposal done。桥接仅提供状态报告，未实现扫码、设备 Keychain 凭据或系统分享。
 
 - 2026-09-11：根据用户确认原位重写提案，以 rc1 为基线，新增独立装卸载、零侵入、跨网边界，同步总表。仅文档与源码审计，无实现包、宿主修改或网络部署。
 - 架构提议：[独立 mobile 插件与 iOS 薄壳](../../.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md)。实施后登记代码、包、验收证据与未通过项。

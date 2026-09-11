@@ -10,7 +10,7 @@ The mobile-access proposal predates the current browser authentication and slot 
 
 ## Proposal
 
-Update the existing [mobile-access capability proposal](../../../../proposals/active/2026-08-19-mobile-access.md) rather than creating another intent. Keep it planned until implementation starts. Propose one self-mounting `@khorsheed/dsh-mobile` package with Host and browser faces, plus an independently signed iOS shell. Reuse the official Web conversation and composer in one runtime; use native code for host connection and platform functions. No package is implemented by this documentation change.
+Update the existing [mobile-access capability proposal](../../../../proposals/active/2026-08-19-mobile-access.md) rather than creating another intent. Implementation has started; the capability proposal is in-progress. Propose one self-mounting `@khorsheed/dsh-mobile` package with Host and browser faces, plus an independently signed iOS shell. Reuse the official Web conversation and composer in one runtime; use native code for host connection and platform functions. The initial implementation now lives in `packages/mobile/` and `apps/ios/`; the complete proposal remains unqualified.
 
 The plugin must run with the official web profile alone. Sibling integrations are optional and use public capabilities or preserve their existing renderers. No host fork, package replacement, private-key access, sibling edits, global profile switching or duplicated message engine is allowed. Mobile presentation is client-local. Every registration and effect has an owner and disposer; uninstall preserves sessions and other plugins. External VPN, gateway and official login lifetimes remain separate and have explicit removal/revocation instructions.
 
@@ -42,6 +42,14 @@ Qualify each Host/plugin/mobile-Web combination together. Keep a versioned, narr
 - M0 records layout and authentication limitations. Only verified features are advertised; enhanced pairing, if delivered, proves expiration, replay rejection and immediate device revocation.
 - Version combinations, uninstall boundaries and deferred notification capabilities are documented before release.
 
+### Implementation boundary (2026-09-11)
+
+Keep the official root and declare no foreign child slots. An owned style element and checked rc1 frame/slot anchors provide mobile layout; unknown frames fall back to the official page. Shadow only the two public directory-flow slots at priority -100 while this client is mobile, accepting a computer path through the official owner callbacks. Restoring desktop mode or disposal removes these registrations. Do not call the Host-native chooser from this flow.
+
+The native shell persists a clean origin and WebKit browser cookies, not the launch token in preferences. Release enforces HTTPS; Debug allows loopback HTTP for simulator tests. The bridge reports availability only and checks main frame, same origin and version. Foreground signals official reconnect; no write commands are replayed. Device credentials, QR pairing, sharing and push are still unimplemented.
+
+The [acceptance record](../../../../docs/acceptance/mobile-rc1-2026-09-11.md) covers local streaming, draft-preserving reconnect, authenticated handshake, tarball reinstall, 10 plugin tests and 20 native URL checks. Standard dependency removal did not hot-unload in the tested rc1 process: require controlled Host restart and client reload. Unit disposer coverage is not evidence of full Host HMR. The simulator builds/installs/launches, but native visual automation is blocked by macOS permissions. No main-workspace, upstream or sibling edits and no production deployment are part of this implementation.
+
 ## Risks
 
-Slot ownership may limit layout fidelity; private interfaces and DOM anchors may break with a new RC. Device revocation requires a real gateway authorization model, not renamed official cookies. Host sleep or network/authentication failure interrupts access. A native app and the access infrastructure remain separate installations even when the mobile behavior is a plugin. No runtime or true-device verification has occurred in this proposal revision.
+Slot ownership may limit layout fidelity; private interfaces and DOM anchors may break with a new RC. Device revocation requires a real gateway authorization model, not renamed official cookies. Host sleep or network/authentication failure interrupts access. A native app and the access infrastructure remain separate installations even when the mobile behavior is a plugin. Local runtime and simulator build evidence exists; true-device acceptance is pending.

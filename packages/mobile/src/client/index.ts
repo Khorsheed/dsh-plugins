@@ -1,0 +1,57 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
+import { MobilePresentation } from './presentation.ts'
+import { DirectoryFlow } from './DirectoryFlow.tsx'
+import { MobileChrome } from './MobileChrome.tsx'
+import type { MobileChromeInjected } from './MobileChrome.tsx'
+import { NS, en, zh } from './locales.ts'
+
+declare global {
+  interface Window {
+    __DSH_MOBILE_SHELL__?: { bridgeVersion: number }
+    webkit?: { messageHandlers?: { dshMobile?: { postMessage(value: unknown): void } } }
+  }
+}
+
+export const inject = ['slots', 'locale', 'layout', 'connection']
+
+/** One browser-owned presentation; no Host preference or sibling plugin is changed. */
+export function apply(ctx: Context): void {
+  ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'mobile: dictionaries')
+  const connection = ctx.get('connection') as ConnectionHandle
+  ctx.effect(() => {
+    const reconnect = () => { connection.reconnect() }
+    window.addEventListener('dsh-mobile-foreground', reconnect)
+    return () => { window.removeEventListener('dsh-mobile-foreground', reconnect) }
+  }, 'mobile: foreground reconnect')
+  const presentation = new MobilePresentation(window, window.__DSH_MOBILE_SHELL__?.bridgeVersion === BRIDGE_VERSION)
+  ctx.effect(() => () => { presentation.dispose() }, 'mobile: presentation')
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay', id: 'mobile-navigation', locale: NS,
+    inject: (): MobileChromeInjected => ({ presentation, connection, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
+  }, MobileChrome))
+  // Shadow only these public flow slots while this client is in mobile mode.
+  for (const name of ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const) {
+    ctx.slots.inject(name, () => {
+      let remove: (() => void) | undefined
+      const sync = () => {
+        if (presentation.getSnapshot().active) {
+          remove ??= ctx.slots.register({ name, priority: -100, locale: NS }, DirectoryFlow)
+        } else { remove?.(); remove = undefined }
+      }
+      sync()
+      const unsubscribe = presentation.subscribe(sync)
+      return () => { unsubscribe(); remove?.() }
+    })
+  }
+  const post = (type: 'ready' | 'unloaded') => {
+    if (window.__DSH_MOBILE_SHELL__?.bridgeVersion !== BRIDGE_VERSION) return
+    window.webkit?.messageHandlers?.dshMobile?.postMessage({ type, bridgeVersion: BRIDGE_VERSION, mobileVersion: MOBILE_VERSION })
+  }
+  post('ready')
+  ctx.effect(() => () => { post('unloaded') }, 'mobile: shell availability')
+}
