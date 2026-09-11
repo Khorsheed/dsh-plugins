@@ -23,6 +23,8 @@ dsh plugin add @khorsheed/dsh-room
 The package is self-mounting: `dsh.bundle.patch` inserts the `room` loader row, and the browser half is discovered through the `dsh.client` block. Removing the plugin removes every surface it adds.
 
 > **The model tools split out (BREAKING)**: the core no longer registers the model-facing `room_invite` / `room_task` / `room_message` tools at the profile root — they now ride the companion `@khorsheed/dsh-room-tool`, **granted per session** through agent-preset compositions (migration: install the companion and add `- id: room-tool / name: '@khorsheed/dsh-room-tool'` to the target preset's `agent.cordis.yml`; the web-dev dev preset already carries it). The room service, members UI, and every Remote are unchanged.
+>
+> **Session chrome self-hides by preset (M3')**: the「invite agent」header chip and the 成员 tab show exactly when the current session's preset composition names the `@khorsheed/dsh-room-tool` row (the official `pluginInventory` data — no hand-maintained list); every unreadable path fails open, and an actual room always keeps its chrome whatever its preset granted. The members tab hides at the REGISTRATION level: the tab strip's buttons come from the slot registry, so the entry unregisters rather than rendering an empty body.
 
 ## Compatibility
 

@@ -1,12 +1,15 @@
 /**
  * room client plugin, browser half. Mounts the room Remote through the
  * official `ctx.remote.$mount` channel, feeds the client-side RoomStore, and
- * registers the slot entries: the session-header「邀请 agent」action (every
- * session — inviting promotes it into a room), the `conversation.composer`
+ * registers the slot entries: the session-header「邀请 agent」action and the
+ * 成员 `conversation.view` tab — both self-hiding by the current session's
+ * preset composition (M3': visible exactly when the composition names the
+ * `@khorsheed/dsh-room-tool` row, fail-open on every unreadable path, and
+ * always visible inside an actual room) — plus the `conversation.composer`
  * chain takeover (claims the composer exactly when the current session is a
  * cached room — and renders the dock capsules plus the session stats row
  * itself, because both of their official homes ride the fallback tree the
- * takeover hides), and the 成员 `conversation.view` tab. Composing this
+ * takeover hides). Composing this
  * plugin out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-room/client
  */
@@ -36,6 +39,7 @@ import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
 import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
+import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
@@ -86,6 +90,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
+
+  // The M3' self-hide criterion for room's session chrome (the invite chip
+  // and the members tab): the official preset-composition data, with the
+  // RoomStore's cached verdict as the actual-room escape.
+  const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
   const submit = async (sessionId: SessionId, text: string, targets?: readonly string[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
@@ -202,6 +211,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
     },
     listNames: () => roomStore.getCached(sessionId)?.members.map(member => member.name) ?? [],
+    roomChrome,
   })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
@@ -310,17 +320,28 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   // Registration-time text (the tab label) reads through the bound translate
   // as a thunk, so it follows the active locale without re-registration.
-  ctx.slots.inject('conversation.view', () => ctx.slots.register(
-    {
+  // The members tab's REGISTRATION is the hide level (M3'): the tab strip's
+  // buttons enumerate `conversation.view` registrations with no per-session
+  // predicate, so a hidden tab means no registration — the toggle registers
+  // exactly while the criterion passes for the current session and disposes
+  // otherwise (the slot's own subscription re-renders the strip, the same
+  // re-registration mechanism the composer promotion bump uses).
+  const membersToggle = new RegistrationToggle(
+    () => ctx.slots.register({
       name: 'conversation.view',
       id: 'room-members',
       order: 20,
       locale: NS,
       label: () => t('view.members'),
       inject: (sessionId: SessionId): RoomMembersInjected => membersFace(sessionId),
-    },
-    MembersView,
-  ))
+    }, MembersView),
+    () => roomChrome.show(ctx.sessions.list.getSnapshot().current),
+  )
+  ctx.slots.inject('conversation.view', () => {
+    membersToggle.setReady(true)
+    return () => { membersToggle.setReady(false) }
+  })
+  ctx.effect(() => roomChrome.subscribe(() => { membersToggle.sync() }), 'room: members tab visibility')
   // The three chat-node renderers, keyed behind the definitions above.
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {
