@@ -1,8 +1,8 @@
 /**
  * Browser shortcuts plugin: the shortcut action registry provider plus five
  * built-in actions (pause the running turn, steer-send the draft, new
- * session, compact the context, toggle the sidebar) bound to user-chosen key
- * chords or mouse buttons. Pure UI over public services — the built-in
+ * session, compact the context, toggle the right sidebar) bound to user-chosen
+ * key chords or mouse buttons. Pure UI over public services — the built-in
  * handlers never reach ui-conversation internals, and every action (built-in
  * or contributed by another plugin through `ctx.shortcuts`) rides the same
  * registration path:
@@ -22,10 +22,12 @@
  * - compact runs the host's `/compact` command through the public session
  *   face (`ISession.command`) — the typed slash command's own admission path,
  *   so the outcome is the same flow node. `global`.
- * - toggle-sidebar calls ui-layout's public `ctx.layout.toggleSidebar()`, the
- *   action behind the sidebar's own collapse control. Probed at dispatch time,
- *   not injected: a composition without the shell keeps every other shortcut
- *   alive. `global`.
+ * - toggle-right-sidebar calls ui-sidebar-right's public
+ *   `ctx.sidebarRight.toggleExpanded()` — the right column's own
+ *   expand/collapse action. Probed at dispatch time, not injected, so a
+ *   composition without the right column keeps every other shortcut alive;
+ *   the gesture stands down while no session surface is mounted, because the
+ *   write face has no session to write to. `global`.
  *
  * Gestures: a preference is a key chord or a mouse button (the middle and
  * secondary buttons — see settings.ts for why the primary button is not
@@ -195,27 +197,39 @@ function compactCurrentSession(ctx: Context): void {
   })
 }
 
-/** Minimal face of ui-layout's `ctx.layout` this plugin probes for. */
-interface LayoutFace {
-  /** Toggle the sidebar panel (closed ⟷ contract default width). */
-  toggleSidebar(): void
-}
-
-/** The live ui-layout service, or undefined in a composition without the shell. */
-function layoutService(ctx: Context): LayoutFace | undefined {
-  return ctx.reflect.get('layout') as LayoutFace | undefined
+/** Minimal face of ui-sidebar-right's `ctx.sidebarRight` this plugin probes for. */
+interface RightSidebarFace {
+  /** The active tab of the mounted surface, or undefined when none is mounted. */
+  active(): unknown
+  /** Collapse an expanded right column, or expand a collapsed one. */
+  toggleExpanded(): void
 }
 
 /**
- * Toggle the sidebar through ui-layout's public `ctx.layout` face — the same
- * service action the sidebar's own collapse control calls. Probed rather than
- * injected so a composition without the shell keeps every other shortcut
- * alive; the minimal local face is why this package carries no dependency on
- * ui-layout.
+ * The live right-column service, or undefined when there is nothing to toggle.
+ * `active()` doubles as the seat probe: a mounted surface always holds at least
+ * the docked guide tab, while `toggleExpanded()` throws with no session surface
+ * — so the gate answers "can this gesture act at all" instead of catching a
+ * throw on every press.
+ * @param ctx - client root context.
+ * @returns the service face, or undefined.
+ */
+function rightSidebarService(ctx: Context): RightSidebarFace | undefined {
+  const service = ctx.reflect.get('sidebarRight') as RightSidebarFace | undefined
+  if (service === undefined || service.active() === undefined) return undefined
+  return service
+}
+
+/**
+ * Toggle the right column through ui-sidebar-right's public
+ * `ctx.sidebarRight.toggleExpanded()` — the same action the column's own
+ * expand/collapse control performs. Probed rather than injected so a
+ * composition without the right column keeps every other shortcut alive; the
+ * minimal local face is why this package carries no dependency on it.
  * @param ctx - client root context.
  */
-function toggleSidebarPanel(ctx: Context): void {
-  layoutService(ctx)?.toggleSidebar()
+function toggleRightSidebar(ctx: Context): void {
+  rightSidebarService(ctx)?.toggleExpanded()
 }
 
 /**
@@ -341,15 +355,18 @@ export function apply(ctx: Context): void {
     run: () => { compactCurrentSession(ctx) },
   }), 'ui-shortcuts: action compact')
   ctx.effect(() => registry.registerAction({
+    // The id stays `toggleSidebar` from the first cut of this action: it is a
+    // durable settings key, and the retarget from the left column to the right
+    // one must not orphan a binding the user already recorded under it.
     id: 'toggleSidebar',
     label: { ns: NS, key: 'action.toggleSidebar' },
     description: { ns: NS, key: 'action.toggleSidebar.desc' },
     defaultBinding: DEFAULT_PREFERENCES['toggleSidebar']!,
     layering: 'global',
-    // A composition without ui-layout has no sidebar to toggle; the gate also
-    // keeps the mouse path from claiming a button for a no-op.
-    available: () => layoutService(ctx) !== undefined,
-    run: () => { toggleSidebarPanel(ctx) },
+    // No right column, or no session surface to write to: nothing to toggle.
+    // The gate also keeps the mouse path from claiming a button for a no-op.
+    available: () => rightSidebarService(ctx) !== undefined,
+    run: () => { toggleRightSidebar(ctx) },
   }), 'ui-shortcuts: action toggleSidebar')
 
   ctx.effect(() => {

@@ -5,7 +5,8 @@
 // conversation face, gated on the composer's own Escape layering (a consumed
 // key, an outside target, IME composition, repeats, capture mode, and unbound
 // actions all stand down); compaction runs the `/compact` command through the
-// session face; the sidebar toggle calls the probed ctx.layout service; and a
+// session face; the right-sidebar toggle calls the probed ctx.sidebarRight
+// service; and a
 // mouse-bound action claims the button's down/up defaults.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -23,8 +24,8 @@ const SID = 's1' as SessionId
 type BenchOptions = {
   running?: boolean
   subagent?: SessionSnapshot['subagent']
-  /** Whether the composition carries ui-layout's ctx.layout service. */
-  layout?: boolean
+  /** Whether the composition carries ui-sidebar-right's ctx.sidebarRight service. */
+  sidebarRight?: boolean
 }
 
 async function bench(over: BenchOptions = {}) {
@@ -39,9 +40,19 @@ async function bench(over: BenchOptions = {}) {
     input: { for: () => ({ submit }) },
     cancel,
   } as never)
-  // ui-layout provides this in production; the toggle action probes it.
-  const toggleSidebar = vi.fn()
-  if (over.layout !== false) runtime.ctx.provide('layout', { toggleSidebar })
+  // ui-sidebar-right provides this in production; the toggle action probes it.
+  // `active()` answers with the mounted surface's tab — the same seat probe the
+  // action's gate reads, and undefined is what makes `toggleExpanded()` throw.
+  // `seat.mounted` lets a test unmount the surface without providing the
+  // service twice (a second provide fails loud).
+  const seat = { mounted: true }
+  const toggleExpanded = vi.fn()
+  if (over.sidebarRight !== false) {
+    runtime.ctx.provide('sidebarRight', {
+      active: () => (seat.mounted ? { id: 'tab.guide' } : undefined),
+      toggleExpanded,
+    })
+  }
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
@@ -60,7 +71,7 @@ async function bench(over: BenchOptions = {}) {
     },
     session: { command },
   })
-  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession, toggleSidebar, command }
+  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession, toggleExpanded, seat, command }
 }
 
 /** The inject face the settings card entry serves (reaches the apply-built policy). */
@@ -138,21 +149,33 @@ describe('ui-shortcuts apply', () => {
     await b.runtime.dispose()
   })
 
-  it('the shipped sidebar binding is a middle click; it toggles through the probed ctx.layout and degrades without it', async () => {
+  it('the shipped right-sidebar binding is a middle click; it toggles through the probed ctx.sidebarRight and degrades without it', async () => {
     const b = await bench()
     const down = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
     document.dispatchEvent(down)
-    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(b.toggleExpanded).toHaveBeenCalledTimes(1)
     expect(down.defaultPrevented).toBe(true)
     await b.runtime.dispose()
 
-    // A composition without the shell keeps every other shortcut alive; the
-    // gated action never claims the gesture either.
-    const bare = await bench({ layout: false })
+    // A composition without the right column keeps every other shortcut alive;
+    // the gated action never claims the gesture either.
+    const bare = await bench({ sidebarRight: false })
     const orphan = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
     document.dispatchEvent(orphan)
     expect(orphan.defaultPrevented).toBe(false)
     await bare.runtime.dispose()
+  })
+
+  it('a right column with no mounted session surface stands the gesture down', async () => {
+    // The service is present but answers "no seat": `toggleExpanded()` would
+    // throw, so the gate must stand the gesture down instead of claiming it.
+    const b = await bench()
+    b.seat.mounted = false
+    const down = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
+    document.dispatchEvent(down)
+    expect(b.toggleExpanded).not.toHaveBeenCalled()
+    expect(down.defaultPrevented).toBe(false)
+    await b.runtime.dispose()
   })
 
   it('a mouse-bound action runs on mousedown and claims that button defaults', async () => {
@@ -162,14 +185,14 @@ describe('ui-shortcuts apply', () => {
     // The primary button is not part of the vocabulary: a left click never dispatches.
     const primary = new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true })
     document.dispatchEvent(primary)
-    expect(b.toggleSidebar).not.toHaveBeenCalled()
+    expect(b.toggleExpanded).not.toHaveBeenCalled()
     expect(primary.defaultPrevented).toBe(false)
 
     // The middle button runs the action and claims autoscroll (Windows) /
     // primary-selection paste (Linux), which hang off the down event.
     const down = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
     document.dispatchEvent(down)
-    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(b.toggleExpanded).toHaveBeenCalledTimes(1)
     expect(down.defaultPrevented).toBe(true)
 
     // The other defaults a claimed binding owns surface later: open-link-in-
@@ -181,7 +204,7 @@ describe('ui-shortcuts apply', () => {
     const menu = new MouseEvent('contextmenu', { button: 2, bubbles: true, cancelable: true })
     document.dispatchEvent(menu)
     expect(menu.defaultPrevented).toBe(false) // button 2 is not the bound button
-    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(b.toggleExpanded).toHaveBeenCalledTimes(1)
     await b.runtime.dispose()
   })
 
@@ -192,7 +215,7 @@ describe('ui-shortcuts apply', () => {
     // The down event runs the action, as with any mouse binding.
     const down = new MouseEvent('mousedown', { button: 2, bubbles: true, cancelable: true })
     document.dispatchEvent(down)
-    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(b.toggleExpanded).toHaveBeenCalledTimes(1)
     expect(down.defaultPrevented).toBe(true)
     // The context menu is not a preventable default of the down event, so the
     // claimed binding owns it on `contextmenu` too.
@@ -210,7 +233,7 @@ describe('ui-shortcuts apply', () => {
     injected.setCapturing('pause')
     const recording = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
     document.dispatchEvent(recording)
-    expect(b.toggleSidebar).not.toHaveBeenCalled()
+    expect(b.toggleExpanded).not.toHaveBeenCalled()
     expect(recording.defaultPrevented).toBe(false)
     injected.setCapturing(null)
 

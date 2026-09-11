@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-Esc to stop, Cmd+S to steer-send your draft, Cmd+O for a new session, Cmd+Shift+X to compact the context, middle-click to toggle the sidebar — every binding rebindable, keyboard or mouse.
+Esc to stop, Cmd+S to steer-send your draft, Cmd+O for a new session, Cmd+Shift+X to compact the context, middle-click to toggle the right sidebar — every binding rebindable, keyboard or mouse.
 
-Want to halt a runaway turn? No hunting for the tiny stop button — Esc does it. A finished draft that shouldn't wait in line goes out with Cmd/Ctrl+S; Cmd/Ctrl+O starts a new session from anywhere; when the context fills up, Cmd/Ctrl+Shift+X compacts it in place; to give the conversation room, **middle-click** collapses the sidebar (rebind it to a chord if that doesn't suit). Don't like the defaults? Click a binding in Settings → Plugins → Keyboard shortcuts and record your own. These shortcuts call the same actions the on-screen buttons and slash commands do — they never send anything extra to the model.
+Want to halt a runaway turn? No hunting for the tiny stop button — Esc does it. A finished draft that shouldn't wait in line goes out with Cmd/Ctrl+S; Cmd/Ctrl+O starts a new session from anywhere; when the context fills up, Cmd/Ctrl+Shift+X compacts it in place; when you are done with the right column (previews, files, whatever a tool row opened), **middle-click** tucks it away (rebind it to a chord if that doesn't suit). Don't like the defaults? Click a binding in Settings → Plugins → Keyboard shortcuts and record your own. These shortcuts call the same actions the on-screen buttons and slash commands do — they never send anything extra to the model.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="the keyboard-shortcuts card in Settings: one row per action, click a binding to re-record it">
 
@@ -14,7 +14,7 @@ Want to halt a runaway turn? No hunting for the tiny stop button — Esc does it
 - **Steer-send the draft** (`Ctrl/Cmd+S`) — queue-jump delivery of the current draft; the browser save gesture is suppressed.
 - **New session** (`Ctrl/Cmd+O`) — the sidebar's New-session entry; the browser open-file gesture is suppressed.
 - **Compact the context** (`Ctrl/Cmd+Shift+X`) — runs the host's `/compact` command for the current session, exactly the path a typed `/compact` takes (same flow node, same busy error, same admission semantics).
-- **Toggle the sidebar** (middle mouse button) — calls ui-layout's public `ctx.layout.toggleSidebar()`, the action behind the sidebar's own collapse control. The pointer gesture is the shipped default (the hand is already on the mouse); rebind it to a chord in Settings if that suits you better.
+- **Toggle the right sidebar** (middle mouse button) — calls ui-sidebar-right's public `ctx.sidebarRight.toggleExpanded()`, the action behind the right column's own expand/collapse control. The pointer gesture is the shipped default (the right column is what a link or a tool row opens, so the button that opens it also gives the room back); rebind it to a chord in Settings if that suits you better.
 - **Rebindable keys and mouse buttons** — click a binding in Settings → Plugins → Keyboard shortcuts to record, unbind, or reset; besides keys, the middle and secondary mouse buttons can be recorded. Persists in `$DSH_HOME/settings.yaml`.
 
 ## Install
@@ -35,10 +35,10 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # uninstall
 
 ## Known Limitations
 
-- **No user-defined actions** — actions come from plugins via `ctx.shortcuts`; arbitrary command lines or toggles are not offered (`/compact` and the sidebar toggle are built-ins, not a general command palette).
+- **No user-defined actions** — actions come from plugins via `ctx.shortcuts`; arbitrary command lines or toggles are not offered (`/compact` and the right-sidebar toggle are built-ins, not a general command palette).
 - **Ctrl/Cmd+S is draft-only** — an empty draft is a no-op; whole-queue steering stays on the composer's `Cmd/Ctrl+Enter` gesture.
 - **Mouse bindings are the middle and secondary buttons only** — the primary button is deliberately not bindable (a page-wide left-click action would consume every ordinary click), and the browser's back/forward buttons are absent too: engines hand them to history navigation before the page sees a reliable event.
-- **The shipped default is a global middle click** — the sidebar ships bound to the middle button, which means **out of the box** it takes over autoscroll (Windows), primary-selection paste (Linux), and — the one people notice — **middle-clicking a link no longer opens it in a new tab**. That is a deliberate product choice: toggling the sidebar is a hand-on-the-mouse gesture. On a trackpad, or if you want those gestures back, one click in Settings → Plugins → Keyboard shortcuts rebinds it to `Ctrl/Cmd+B` or any other chord.
+- **The shipped default is a global middle click** — the right-sidebar toggle ships bound to the middle button, which means **out of the box** it takes over autoscroll (Windows), primary-selection paste (Linux), and — the one people notice — **middle-clicking a link no longer opens it in a new tab**. That is a deliberate product choice: the right column is what a link click opens, so the middle button is the one that puts it away again. On a trackpad, or if you want those gestures back, one click in Settings → Plugins → Keyboard shortcuts rebinds it to `Ctrl/Cmd+B` or any other chord.
 
 ## How it works
 
@@ -58,7 +58,7 @@ Actions go through public services, never ui-conversation internals:
 | 插队发送 (Send with priority) | `conversation.input.for(scope).submit('steer')` on the current draft; an empty draft is a silent no-op. |
 | 新建会话 (New session) | `sessions.create()` → `sessions.open()` — the same create-then-open entry the sidebar's New-session button rides; global, focus-independent. |
 | 压缩上下文 (Compact context) | `ISession.command('/compact')` on the current session — the same command channel the composer's slash menu uses; the host owns admission (busy, nothing to compact) and renders the outcome as the flow node a typed command produces. |
-| 开关侧边栏 (Toggle sidebar, middle click by default) | `ctx.layout.toggleSidebar()` — ui-layout's public service, the same action the sidebar's own collapse control calls. The service is **probed**, not injected (`ctx.reflect.get('layout')`): a composition without the shell keeps every other shortcut alive and this one simply does nothing. |
+| 开关右侧边栏 (Toggle right sidebar, middle click by default) | `ctx.sidebarRight.toggleExpanded()` — ui-sidebar-right's public service, the same action the right column's own expand/collapse control performs. The service is **probed**, not injected (`ctx.reflect.get('sidebarRight')`): a composition without the right column keeps every other shortcut alive and this one simply does nothing; with no session surface mounted the gesture also stands down, because the write face would throw. |
 
 Rebinding: click a binding to record the next chord or mouse button (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform, and while recording the middle/right button binds on press), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
 
