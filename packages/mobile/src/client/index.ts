@@ -8,6 +8,7 @@ import { MobilePresentation } from './presentation.ts'
 import { DirectoryFlow } from './DirectoryFlow.tsx'
 import { MobileNavigation } from './navigation.ts'
 import { MobileWelcome } from './MobileSeats.tsx'
+import { MobileSubmissionFocus } from './SubmissionFocus.tsx'
 import { MobileTools } from './MobileTools.tsx'
 import { MobileChrome } from './MobileChrome.tsx'
 import type { MobileChromeInjected } from './MobileChrome.tsx'
@@ -42,6 +43,9 @@ export function apply(ctx: Context): void {
     name: 'shell.overlay', id: 'mobile-navigation', locale: NS,
     inject: (): MobileChromeInjected => ({ presentation, connection, navigation, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
   }, MobileChrome))
+  for (const name of ['conversation.input.dock', 'conversation.session.header.actions'] as const) {
+    ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'mobile-send-focus' }, MobileSubmissionFocus))
+  }
   // Contribute through existing seats; no foreign child-slot ownership is claimed.
   ctx.slots.inject('conversation.hero.brand.mark', () => {
     let remove: (() => void) | undefined

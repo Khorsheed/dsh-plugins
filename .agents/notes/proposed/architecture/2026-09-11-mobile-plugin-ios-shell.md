@@ -95,3 +95,7 @@ Validation: package build and 38 tests pass, including original callback identit
 ## Risks
 
 Slot ownership may limit layout fidelity; private interfaces and DOM anchors may break with a new RC. Device revocation requires a real gateway authorization model, not renamed official cookies. Host sleep or network/authentication failure interrupts access. A native app and the access infrastructure remain separate installations even when the mobile behavior is a plugin. Local runtime and simulator build evidence exists; true-device acceptance is pending.
+
+### September 12 admission and surface correction
+
+Mobile observes accepted public chat/queue records after a local send gesture and dismisses only the same empty focused editor. It does not wrap the submit machine or clear drafts; failures and later drafts keep focus. The context meter stays in its original composer row beside Send. Theme-derived translucent surfaces use visible edges and opaque foregrounds, with a solid reduced-transparency fallback. The isolated rc1 browser check covers Enter submission and 393px geometry; native keyboard behavior still needs device confirmation.

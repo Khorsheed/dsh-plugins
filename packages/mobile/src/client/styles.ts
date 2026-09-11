@@ -219,7 +219,19 @@ html[data-mobile-input=pointer] [data-mobile-tools-dialog] button:focus { outlin
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > button:has(>svg):not([aria-haspopup]) { width:44px; height:44px; min-width:44px; padding:0; border-radius:50%; corner-shape:round; transform:none; }
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > button:has(>svg):not([aria-haspopup]) > svg { width:20px; height:20px; flex:none; }
 html[data-dsh-mobile] [data-slot="conversation.input.model"] { max-width:min(56vw,260px); }
-[data-mobile-context-meter] { position:absolute!important; bottom:-35px; right:8px; }
-html[data-dsh-mobile] [data-composer-seat]:has([data-mobile-context-meter]) [data-composer-stats] { padding-right:48px; }
+/* Keep the host context meter immediately before Send in the same flex row. */
+html[data-dsh-mobile] [data-composer-card] > div:last-child, html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child { flex-wrap:nowrap; }
+html[data-dsh-mobile] [data-slot="conversation.input.model"] { min-width:0; max-width:min(43vw,210px); flex:1 1 auto; }
+html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > span:has(> button[aria-haspopup="dialog"] > svg > circle) { position:static; flex:0 0 auto; }
+/* Translucency belongs to surfaces. Foreground colors remain fully opaque. */
+html[data-dsh-mobile] body { --mobile-shadow:0 6px 22px color-mix(in srgb,var(--dsw-alias-label-primary) 9%,transparent); --mobile-glass:color-mix(in srgb,var(--mobile-face) 86%,transparent); --mobile-edge:color-mix(in srgb,var(--dsw-alias-label-primary) 14%,transparent); }
+html[data-dsh-mobile] :is([data-mobile-toolbar] button,[data-mobile-scan],[data-mobile-search-cancel],[data-mobile-search],[data-mobile-tools-open],[data-composer-card]) {
+  background:var(--mobile-glass); border:1px solid var(--mobile-edge); box-shadow:inset 0 1px 0 color-mix(in srgb,var(--dsw-alias-label-primary) 5%,transparent),var(--mobile-shadow);
+  -webkit-backdrop-filter:blur(18px) saturate(1.25); backdrop-filter:blur(18px) saturate(1.25);
+}
+html[data-dsh-mobile] :is([data-mobile-toolbar] button,[data-mobile-scan],[data-mobile-tools-open]):active { background:var(--mobile-soft); transform:scale(.97); }
+html[data-dsh-mobile] [data-mobile-icon] { flex-shrink:0; aspect-ratio:1; }
+@media (prefers-reduced-transparency: reduce) { html[data-dsh-mobile] body { --mobile-glass:var(--mobile-face); } }
+@supports not (backdrop-filter:blur(1px)) { html[data-dsh-mobile] body { --mobile-glass:var(--mobile-face); } }
 @media (prefers-reduced-motion: reduce) { [data-mobile-frame] * { scroll-behavior:auto !important; } }
 `

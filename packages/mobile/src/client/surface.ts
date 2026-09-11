@@ -45,8 +45,6 @@ export class MobileSurface {
       }
       const header = row?.parentElement
       if (header && Array.from(header.children).every(child => child.hasAttribute('data-mobile-header-hidden') || child.hasAttribute('data-mobile-hidden-tab'))) this.mark(header, 'data-mobile-header-hidden')
-      const meter = root.querySelector<HTMLElement>('[data-composer-card] > div:last-child > div:last-child > span:has(> button[aria-haspopup="dialog"] > svg > circle)')
-      if (meter && root.querySelector('[data-composer-stats]')) this.mark(meter, 'data-mobile-context-meter')
     }
   }
   private clearMarks() { for (const [el, names] of this.marks) for (const name of names) el.removeAttribute(name); this.marks.clear() }
