@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-ui-shortcuts-compact-and-sidebar.md
-.agents/notes/implemented/feature/2026-09-11-ui-shortcuts-compact-and-sidebar.md: fd10b394f72fdb562e8e043624c74e754d3d1d51
-.agents/notes/implemented/feature/2026-09-11-ui-shortcuts-compact-and-sidebar.zh.md: bb2226c5bd6e891fe9970870615dffcc15a710e1
+.agents/notes/implemented/feature/2026-09-11-ui-shortcuts-compact-and-sidebar.md: fe70df87563b0d3a75341b7d269898970cbb6a46
+.agents/notes/implemented/feature/2026-09-11-ui-shortcuts-compact-and-sidebar.zh.md: b4f0b2acb8999bcba004268d0cef33e77da94348

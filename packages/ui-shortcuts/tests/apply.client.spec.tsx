@@ -26,6 +26,8 @@ type BenchOptions = {
   subagent?: SessionSnapshot['subagent']
   /** Whether the composition carries ui-sidebar-right's ctx.sidebarRight service. */
   sidebarRight?: boolean
+  /** Make the service's write path throw, as it does with no mounted surface. */
+  sidebarWriteThrows?: boolean
 }
 
 async function bench(over: BenchOptions = {}) {
@@ -41,18 +43,14 @@ async function bench(over: BenchOptions = {}) {
     cancel,
   } as never)
   // ui-sidebar-right provides this in production; the toggle action probes it.
-  // `active()` answers with the mounted surface's tab — the same seat probe the
-  // action's gate reads, and undefined is what makes `toggleExpanded()` throw.
-  // `seat.mounted` lets a test unmount the surface without providing the
-  // service twice (a second provide fails loud).
-  const seat = { mounted: true }
-  const toggleExpanded = vi.fn()
-  if (over.sidebarRight !== false) {
-    runtime.ctx.provide('sidebarRight', {
-      active: () => (seat.mounted ? { id: 'tab.guide' } : undefined),
-      toggleExpanded,
-    })
-  }
+  // ui-sidebar-right provides this in production; the toggle action probes it.
+  // The fake deliberately carries ONLY the write verb: the action must not read
+  // the face's `active()` (a never-opened column answers undefined with nothing
+  // expanded yet, which is the state the gesture exists to expand).
+  const toggleExpanded = vi.fn(() => {
+    if (over.sidebarWriteThrows === true) throw new Error('sidebarRight: no session surface is mounted')
+  })
+  if (over.sidebarRight !== false) runtime.ctx.provide('sidebarRight', { toggleExpanded })
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
@@ -71,7 +69,7 @@ async function bench(over: BenchOptions = {}) {
     },
     session: { command },
   })
-  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession, toggleExpanded, seat, command }
+  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession, toggleExpanded, command }
 }
 
 /** The inject face the settings card entry serves (reaches the apply-built policy). */
@@ -166,16 +164,38 @@ describe('ui-shortcuts apply', () => {
     await bare.runtime.dispose()
   })
 
-  it('a right column with no mounted session surface stands the gesture down', async () => {
-    // The service is present but answers "no seat": `toggleExpanded()` would
-    // throw, so the gate must stand the gesture down instead of claiming it.
+  it('the gesture expands a right column that has never been opened', async () => {
+    // Regression: gating on the service's `active()` read stands the gesture
+    // down exactly when the user wants to open a never-opened column (nothing
+    // is expanded yet, so there is no active tab). The bench's fake exposes
+    // only the write verb, so reading `active()` would also throw here.
     const b = await bench()
-    b.seat.mounted = false
     const down = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
     document.dispatchEvent(down)
-    expect(b.toggleExpanded).not.toHaveBeenCalled()
-    expect(down.defaultPrevented).toBe(false)
+    expect(b.toggleExpanded).toHaveBeenCalledTimes(1)
+    expect(down.defaultPrevented).toBe(true)
     await b.runtime.dispose()
+  })
+
+  it('the gesture stands down with no session on screen, and survives a seat that throws', async () => {
+    // No session: there is no column of this session's to write to, so the
+    // button must not be claimed either.
+    const noSession = await bench()
+    await noSession.runtime.sessions.setCurrent(undefined)
+    const idle = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
+    document.dispatchEvent(idle)
+    expect(noSession.toggleExpanded).not.toHaveBeenCalled()
+    expect(idle.defaultPrevented).toBe(false)
+    await noSession.runtime.dispose()
+
+    // A seat whose write face throws (the window before it binds) must not
+    // escape the listener: the gesture is claimed and swallowed.
+    const throwing = await bench({ sidebarWriteThrows: true })
+    const throwingDown = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
+    document.dispatchEvent(throwingDown)
+    expect(throwing.toggleExpanded).toHaveBeenCalledTimes(1)
+    expect(throwingDown.defaultPrevented).toBe(true)
+    await throwing.runtime.dispose()
   })
 
   it('a mouse-bound action runs on mousedown and claims that button defaults', async () => {

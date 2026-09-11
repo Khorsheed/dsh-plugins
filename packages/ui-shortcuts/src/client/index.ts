@@ -199,25 +199,24 @@ function compactCurrentSession(ctx: Context): void {
 
 /** Minimal face of ui-sidebar-right's `ctx.sidebarRight` this plugin probes for. */
 interface RightSidebarFace {
-  /** The active tab of the mounted surface, or undefined when none is mounted. */
-  active(): unknown
   /** Collapse an expanded right column, or expand a collapsed one. */
   toggleExpanded(): void
 }
 
 /**
- * The live right-column service, or undefined when there is nothing to toggle.
- * `active()` doubles as the seat probe: a mounted surface always holds at least
- * the docked guide tab, while `toggleExpanded()` throws with no session surface
- * — so the gate answers "can this gesture act at all" instead of catching a
- * throw on every press.
+ * The live right-column service, or undefined in a composition without the
+ * right column.
+ *
+ * Deliberately **not** gated on the face's own `active()` read. A column that
+ * has never been opened has no active tab, and that is precisely the state this
+ * gesture exists to expand — using `active()` as a seat probe made the shortcut
+ * do nothing until something else opened the panel first. The seat check lives
+ * on the write path instead (see {@link toggleRightSidebar}).
  * @param ctx - client root context.
  * @returns the service face, or undefined.
  */
 function rightSidebarService(ctx: Context): RightSidebarFace | undefined {
-  const service = ctx.reflect.get('sidebarRight') as RightSidebarFace | undefined
-  if (service === undefined || service.active() === undefined) return undefined
-  return service
+  return ctx.reflect.get('sidebarRight') as RightSidebarFace | undefined
 }
 
 /**
@@ -226,10 +225,19 @@ function rightSidebarService(ctx: Context): RightSidebarFace | undefined {
  * expand/collapse control performs. Probed rather than injected so a
  * composition without the right column keeps every other shortcut alive; the
  * minimal local face is why this package carries no dependency on it.
+ *
+ * The write face throws while no session surface is mounted, which the action's
+ * gate normally rules out; the catch is the backstop for the window before the
+ * seat binds and for a session whose surface was never materialized.
  * @param ctx - client root context.
  */
 function toggleRightSidebar(ctx: Context): void {
-  rightSidebarService(ctx)?.toggleExpanded()
+  try {
+    rightSidebarService(ctx)?.toggleExpanded()
+  } catch {
+    // No session surface to write to; the gesture is already claimed, so the
+    // failure is swallowed rather than escaping the listener.
+  }
 }
 
 /**
@@ -363,9 +371,12 @@ export function apply(ctx: Context): void {
     description: { ns: NS, key: 'action.toggleSidebar.desc' },
     defaultBinding: DEFAULT_PREFERENCES['toggleSidebar']!,
     layering: 'global',
-    // No right column, or no session surface to write to: nothing to toggle.
-    // The gate also keeps the mouse path from claiming a button for a no-op.
-    available: () => rightSidebarService(ctx) !== undefined,
+    // A composition without the right column has nothing to toggle, and with
+    // no session on screen there is no column of this session's to write to.
+    // Neither case may claim the gesture (and with it the button's browser
+    // default) for a no-op.
+    available: () => rightSidebarService(ctx) !== undefined
+      && ctx.get('sessions')?.list.getSnapshot().current !== undefined,
     run: () => { toggleRightSidebar(ctx) },
   }), 'ui-shortcuts: action toggleSidebar')
 
