@@ -20,13 +20,15 @@ Status: implemented
 | 动作 id | 默认键位 | 行为 |
 | --- | --- | --- |
 | `compact` | `Ctrl/Cmd+Shift+X` | 对当前会话调用 `ISession.command('/compact')` |
-| `toggleSidebar` | 鼠标中键 | 调用 `ctx.layout.toggleSidebar()` |
+| `toggleSidebar`（右栏） | 鼠标中键 | 调用 `ctx.sidebarRight.toggleExpanded()` |
 
-两者都是 `global` 分层（capture 阶段、接管浏览器默认），并且都带 `available` 门禁：`compact` 需要当前会话，`toggleSidebar` 需要活着的 `ctx.layout`。门禁在鼠标路径上同样必要——它正是"不给一个空操作白占按键"的东西。
+两者都是 `global` 分层（capture 阶段、接管浏览器默认），并且都带 `available` 门禁：`compact` 需要当前会话，`toggleSidebar` 需要活着的右栏服务（且其上有会话面板挂载）。门禁在鼠标路径上同样必要——它正是"不给一个空操作白占按键"的东西。
 
 压缩走会话面的 command 动词，而不是某个压缩服务：`/compact` 是宿主自己的命令，所以准入（智能体忙碌、无可压缩历史）、`command/run`/`command/done` 耐久生命周期、以及渲染出的流程节点都与手敲命令完全一致——插件只加了一个键位，没有加第二条代码路径。
 
-`ctx.layout` 是**探测**而非注入：`ctx.reflect.get('layout')` 不需要 `inject` 边就能读到 ui-layout 的服务，因此没有 shell 的组合里暂停/插队/新会话/压缩照常工作，只有这一个动作让位。探测的类型由包内最小的 `LayoutFace` 承载，所以本包依然不对 ui-layout 产生依赖（也没有 lockfile 边）。
+**目标本来是错的，右栏才是对的。** 第一版把这个动作接到 `ctx.layout.toggleSidebar()`——那是**左侧**导航栏；产品负责人要的是右栏，也就是链接与工具行打开内容落地的那一栏。ui-layout 拥有框架几何，但明确**不拥有**右栏的展开状态（占用者记录它、再通过 `ctx.layout` 回报组合结果），所以可写的公开面是 ui-sidebar-right 的 `ctx.sidebarRight.toggleExpanded()`——与右栏自身的展开/收起同一动作。动作 id 保持 `toggleSidebar`：它是耐久设置键，改目标不能把用户已经录在它下面的绑定变成孤儿。
+
+`ctx.sidebarRight` 是**探测**而非注入：`ctx.reflect.get('sidebarRight')` 不需要 `inject` 边就能读到 ui-sidebar-right 的服务，因此没有右栏的组合里暂停/插队/新会话/压缩照常工作，只有这一个动作让位。探测的类型由包内最小的 `RightSidebarFace` 承载，所以本包依然不对 ui-sidebar-right 产生依赖（也没有 lockfile 边）。这个门禁同时充当该服务写入口要求的挂载检查：没有会话面板挂载时 `active()` 返回 undefined，而 `toggleExpanded()` 在那种状态下会抛错——所以手势直接让位（也就不会白占那个键的浏览器默认），而不是每次按下都去 catch 一次抛错。
 
 **一条偏好现在可以是键盘键位，也可以是鼠标键。** `BoundMouse { kind: 'mouse', modifiers, button }` 与 `BoundKey` 一起并入 `ShortcutBinding`，耐久 schema 变成三臂联合。词汇表是 `SHORTCUT_MOUSE_BUTTONS = [1, 2]`——DOM `MouseEvent.button` 的 1（中键）与 2（右键）。主键刻意不在其中：一个全页左键动作会吃掉每一次普通点击，而且左键正是操作录制器本身的按键。浏览器的后退/前进侧键（3/4）出于另一个原因缺席——引擎会先把它们交给历史导航，页面拿不到可靠事件。
 
@@ -40,13 +42,15 @@ Status: implemented
 
 ## 考虑过的备选
 
-**注入 `layout`（`inject: ['layout']`）。** 否决：cordis 的注入会让整个插件在服务就位前处于 pending——没有 ui-layout 的组合会丢掉**全部**快捷键，而不只是这一个。"degrade, don't explode" 正是为这种情形写的，探测也是仓内其他可选服务包用的同一手法。
+**注入 `sidebarRight`（`inject: ['sidebarRight']`）。** 否决：cordis 的注入会让整个插件在服务就位前处于 pending——没有 ui-sidebar-right 的组合会丢掉**全部**快捷键，而不只是这一个。"degrade, don't explode" 正是为这种情形写的，探测也是仓内其他可选服务包用的同一手法。
 
-**声明 `@deepseek-ai/dsh-client-ui-layout` 可选 peer 依赖并导入它的 Context merge。** 否决：它只为一次探测换来更好的类型，代价是一条 lockfile 边——那是 mainline 掌管的共享状态；包内最小 face 已经够用，也让本包保持零依赖。
+**声明 `@deepseek-ai/dsh-client-ui-sidebar-right` 可选 peer 依赖并导入它的 Context merge。** 否决：它只为一次探测换来更好的类型，代价是一条 lockfile 边——那是 mainline 掌管的共享状态；包内最小 face 已经够用，也让本包保持零依赖。
+
+**继续绑左栏的 `ctx.layout.toggleSidebar()` 不动。** 被产品负责人否决：要的就是右栏。保留两者也不可行——出厂的中键默认会和用户已经持久化的 `toggleSidebar` 绑定直接抢同一个手势（共享手势先注册者生效），所以这里是改目标而不是再加一个动作。
 
 **压缩直接调 `ctx.remote.commands.execute()`。** 否决：`ISession.command(line)` 才是会话寻址命令通道的公开文档动词，而插件本来就用 `ctx.sessions` 解析会话；绕到 Remote 只会多一条注入边，并重复 facade 已经拥有的寻址。
 
-**把 `Ctrl/Cmd+B` 作为侧边栏的出厂默认。** 这是本分支最初的做法，被产品负责人改掉了：开关侧边栏是"手在鼠标上"的动作，所以默认给中键，键盘组合键退为备选。代价被记录而不是被辩掉——macOS 触控板默认没有中键，而全局中键会把页面上每一个链接的"新标签页打开"都抢走——之所以接受，是因为改回键盘只需在设置里一次点击，而这正是这次鼠标绑定工作要让它成为可能的事。
+**把 `Ctrl/Cmd+B` 作为右栏的出厂默认。** 这是本分支最初的做法，被产品负责人改掉了：右栏是"点出来的"面板（链接与工具行打开的内容都落在那里），所以默认给中键，键盘组合键退为备选。代价被记录而不是被辩掉——macOS 触控板默认没有中键，而全局中键会把页面上每一个链接的"新标签页打开"都抢走——之所以接受，是因为改回键盘只需在设置里一次点击，而这正是这次鼠标绑定工作要让它成为可能的事。
 
 **压缩用 Ctrl/Cmd+Shift+C 或 Ctrl/Cmd+Shift+K**（首字母助记）。否决：DevTools 的 inspect 与 Firefox 的 Web Console 在浏览器层占着这两个组合键且不可靠拦截——用户会同时得到动作**和**浏览器的面板。压缩因此落在一个无浏览器默认的键位上，且可重绑。
 
@@ -70,4 +74,4 @@ Status: implemented
 - 无障碍靠词而不是图：示意图 `aria-hidden`，按钮的可访问名就是它可见的文本。将来做纯图形变体，必须同一次改动里补上 `aria-label`（或隐藏文本），否则名字会消失。
 - 出厂默认就是全局中键，所以这份代价是**开箱即付**而非只有主动选择的人付：自动滚屏、主选区粘贴、中键点链接开新标签页都被侧边栏开关认领。两份 README 都把它放在「已知限制 / Known Limitations」最前面，并写明一次点击的退路（改绑键盘组合键）。
 - 无新依赖、无 peer 依赖变更、无 lockfile 变更，`minHost`/`verifiedHost` 不变，也不需要任何宿主改动——两个动作本来就能通过公开动词到达。
-- 验证：本包测试套件（45 个用例）覆盖鼠标词汇（录制、匹配、显示、相等性）、耐久 schema 对 `button: 1|2` 的接受与对 `0`、`3` 及未知修饰键的拒绝、经 `ISession.command` 的分发、有/无 layout 服务的两条探测路径、出厂的中键默认（以及无 `ctx.layout` 时的让位）、右键绑定对系统菜单的认领、鼠标分发与其 `auxclick` 抑制、鼠标手势的 `yield` 层、以及录制期间的全局停摆。两份 README 的动作表与已知限制与实际行为一致。
+- 验证：本包测试套件（46 个用例）覆盖鼠标词汇（录制、匹配、显示、相等性）、耐久 schema 对 `button: 1|2` 的接受与对 `0`、`3` 及未知修饰键的拒绝、经 `ISession.command` 的分发、右栏服务的有/无两条探测路径、服务报"无挂载面板"时门禁的让位、出厂的中键默认、右键绑定对系统菜单的认领、鼠标分发与其 `auxclick` 抑制、鼠标手势的 `yield` 层、以及录制期间的全局停摆。两份 README 的动作表与已知限制与实际行为一致。

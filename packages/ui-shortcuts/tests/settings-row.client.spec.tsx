@@ -120,12 +120,12 @@ describe('ShortcutsRow', () => {
     expect(screen.getByText('插队发送')).toBeDefined()
     expect(screen.getByText('新建会话')).toBeDefined()
     expect(screen.getByText('压缩上下文')).toBeDefined()
-    expect(screen.getByText('开关侧边栏')).toBeDefined()
+    expect(screen.getByText('开关右侧边栏')).toBeDefined()
     expect(screen.getByRole('button', { name: 'Esc' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+S' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+O' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+Shift+X' })).toBeDefined()
-    // The sidebar ships on the middle mouse button: a diagram plus the locale's word.
+    // The right sidebar ships on the middle mouse button: a diagram plus the locale's word.
     expect(screen.getByRole('button', { name: '中键' })).toBeDefined()
     // At the shipped defaults there is nothing to reset and no hint to show.
     expect(screen.queryByRole('button', { name: '恢复默认' })).toBeNull()

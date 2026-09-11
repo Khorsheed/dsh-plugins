@@ -3,7 +3,8 @@
 ## 0.2.2（未发布）
 
 - 新增「压缩上下文」动作（默认 `Ctrl/Cmd+Shift+X`）：对当前会话调用公开的 `ISession.command('/compact')`，与 composer 斜杠菜单走同一条宿主命令通道
-- 新增「开关侧边栏」动作，**默认绑定鼠标中键**（产品决策：手本来就在鼠标上）：调用 ui-layout 的公开服务 `ctx.layout.toggleSidebar()`；该服务是**探测**而非注入（`ctx.reflect.get('layout')`），没有 shell 的组合里其余快捷键照常工作
+- 新增「开关右侧边栏」动作（原「开关侧边栏」的**目标已修正**：`ctx.layout.toggleSidebar()` 是左导航栏，产品要的是右栏），**默认绑定鼠标中键**：调用 ui-sidebar-right 的公开服务 `ctx.sidebarRight.toggleExpanded()`；该服务是**探测**而非注入（`ctx.reflect.get('sidebarRight')`），没有右栏的组合里其余快捷键照常工作，且没有会话面板挂载时手势让位（该服务写入口此时会抛错）
+- 动作 id 仍是 `toggleSidebar`（耐久键不改名），所以已录制的绑定（含中键）在新版本里继续按右栏生效
 - 上述默认意味着开箱即接管中键的浏览器默认行为——自动滚屏（Windows）、主选区粘贴（Linux）、**中键点链接不再开新标签页**；不想让出这些手势或使用触控板，可在设置里一次点击改绑键盘组合键（如 `Ctrl/Cmd+B`）
 - **键位模型扩展**：一条偏好现在可以是键盘键位或鼠标键（`kind: 'mouse'`，DOM `MouseEvent.button`，只收 1=中键 / 2=右键；主键与浏览器后退/前进侧键刻意不可绑）。设置卡片在录制状态下可直接按下中键/右键完成绑定
 - `global` 鼠标动作在 `mousedown` 执行并接管该键的浏览器默认：自动滚屏（Windows）与主选区粘贴（Linux）挂在下按事件上，链接新标签页（`auxclick`）与右键系统菜单（`contextmenu`）在后续事件上
