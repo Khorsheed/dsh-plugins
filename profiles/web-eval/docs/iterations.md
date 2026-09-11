@@ -1691,18 +1691,18 @@ eval 测试全绿，gate 绿；真机：本机 dsh 两个只差 preset 的 scope
 ## 步骤
 1. 启动器：把子进程的原始 stdout / stderr 原样透传到自己的 stdout，token 仍只写 0600 文件、本地日志副本仍脱敏——看门狗的 attempt log 由它自己脱敏。改前留备份。
 2. 给看门狗发 SIGUSR1（pid 见 watchdog.log 最后一行「send SIGUSR1 to <pid>」），看 watchdog.log 出现「instance ready on :3171 (authenticated launch URL …)」与 canary PASS；贴这两行。
-3. 重装到合并态：源码模式装的实例**不跑 update.sh**——它会把安装副本的 file:tarballs 清单、pnpm-workspace 的 overrides 与 lockfile 覆盖回模板的 npm 范围，随后 plugin install 就去 npm 拉 @khorsheed（README「更新」节明写源码模式实例用重跑 install.sh --source 代替）。先按 ankh-guard 的方式停实例（看门狗在守，用它的停法而不是 kill），再 `DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/install.sh --source <主检出> --fresh`：--fresh 先清 node_modules / lockfile / tarballs，从 main 376838f 逐个构建并打全部成员的 tarball，预设与 cordis.patch.yml 整目录覆盖（persona 修正随之落地），分钟级；装完经看门狗起实例。--dump-config 核对成员数与 pin 不变（codex danger-full-access、三行 tools: none、dsh 的 headlessBundleDir / cliLaunch）。
-4. 验三件：/eval run 任一计划的 run.meta.orchestrator 带 capabilities（persona 修正生效，不再报 $.prefix missing）；dsh 一轮最小委派回读到 observedModel / usage / toolCalls（T30d）；plans/t29d-container-egress.json 再跑一次到 released（T29d 在新 tarball 上仍通）。
+3. 重装到合并态：源码模式装的实例**不跑 update.sh**——它会把安装副本的 file:tarballs 清单、pnpm-workspace 的 overrides 与 lockfile 覆盖回模板的 npm 范围，随后 plugin install 就去 npm 拉 @khorsheed（README「更新」节明写源码模式实例用重跑 install.sh --source 代替）。先按 ankh-guard 的方式停实例（看门狗在守，用它的停法而不是 kill），再 `DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/install.sh --source <主检出> --fresh`：--fresh 先清 node_modules / lockfile / tarballs，从 main 376838f 逐个构建并打全部成员的 tarball，预设与 cordis.patch.yml 整目录覆盖（persona 修正随之落地），分钟级；装完经看门狗起实例。--dump-config 核对：成员 27（M4'③ 把 mission / datasets / eval 拆成 core + companion，pack 多了 mission-tool / datasets-tool / eval-tool 三个伴生包，24 → 27，三个都在 install.sh 的源码打包名单里）；pin 不变（codex danger-full-access、三行委派工具 tools: none、dsh 的 headlessBundleDir / cliLaunch）；三个 core 行不再带 tools，按域 tier 挂在 eval 预设的三行上（mission-tool: read、datasets-tool: authoring、eval-tool: all）。
+4. 验四件：/eval run 任一计划的 run.meta.orchestrator 带 capabilities（persona 修正生效，不再报 $.prefix missing）；dsh 一轮最小委派回读到 observedModel / usage / toolCalls（T30d）；plans/t29d-container-egress.json 再跑一次到 released（T29d 在新 tarball 上仍通）；M4'③ 第一次落到 web-eval 实例——eval 预设的会话看得到三套模型工具，走别的预设的会话一套都看不到，任务 / 数据集两个标签页按同一判据自隐（服务 / CLI / slash 仍全局，pilot 的 /eval run 不受影响）。
 5. guard 的 credentialRepo 仍指向 T29c 的 worktree ../dsh-plugins-wt-eval-host-line：要不要 re-adopt 到主检出，在回报里提出方案，由协调者放行；没放行前那个 worktree 不删。上次 configure-launch 没带 DSH_HOME，spec 写进了主检出的 .dsh-guard-state/（CLI 的兜底目录 <cwd>/.dsh-guard-state），看门狗读的是 ~/.dsh-lab/state 那份，所以「改不动」其实是改错了地方；重做时带 DSH_HOME=~/.dsh-lab（或显式 --state-dir），成功后把主检出那个目录删掉。
 
 ## 约束
 不碰 ~/.dsh-official 与 3080；token 不进日志、回报、提交；只改启动器与实例，不改仓库代码；共享资源（看门狗、实例进程、边车）动之前先在回报里写明动了什么。
 
 ## 完成判据
-watchdog.log 里 instance ready + canary PASS；3171 上 @khorsheed 成员版本与 main 376838f 一致；第 4 步三件各有原文。
+watchdog.log 里 instance ready + canary PASS；3171 上 27 个 @khorsheed 成员与 main 一致（376838f 之后只有文档提交，代码相同）；第 4 步四件各有原文。
 
 ## 回报
-watchdog.log 的就绪与 canary 两行；update.sh 与 --dump-config 输出；第 4 步三件的原文；credentialRepo 的建议。
+watchdog.log 的就绪与 canary 两行；install.sh 与 --dump-config 输出；第 4 步四件的原文；credentialRepo 的建议。
 ```
 
 ### T33b · 运维：pilot B（dsh × 两模型）与 pilot C（claude × 两模型）（可发，依赖 T33a）
