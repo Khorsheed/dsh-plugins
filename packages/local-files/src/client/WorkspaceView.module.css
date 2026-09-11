@@ -49,7 +49,11 @@
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
-.crumb:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
+/* Segment hover is color-only — the official files pane's path segments
+   (ui-sidebar-files) never paint a fill, and a fill here read as a stuck pill
+   in the dark theme whenever :hover applied (e.g. the pane opening under the
+   resting cursor). No crumb state paints a background, ever. */
+.crumb:hover { color: var(--dsw-alias-label-primary); }
 /* The current segment is a span (see WorkspaceView): same padding keeps the
    rhythm identical to the button segments; weight + color carry the "you are
    here" read, and no background ever paints. */
