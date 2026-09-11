@@ -69,6 +69,8 @@ For phone login, replace only the origin of the Host's launch URL with the tunne
 
 Keep the Mac awake and all three services running. Stop the tunnel process to close this public access path; removing the mobile plugin alone does not stop the tunnel or revoke official sessions. A newly allocated hostname requires updating both `PUBLIC_ORIGIN` and `--trusted-host` and logging in again. This preview does not establish long-term cellular availability. See the [Quick Tunnel acceptance record](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md).
 
+Desktop mode keeps a “Return to mobile layout” button even after reload. Mobile entry suppresses automatic composer focus until an explicit input gesture; rc1 DOM-anchor changes fall back to official focus behavior. Ordinary session titles are deduplicated while ancestor/lineage controls remain visible. These Web-only fixes do not require reinstalling the native App.
+
 ## Compatibility
 
 | Host line | Verdict |

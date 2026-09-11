@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { MobileLibrary } from './MobileLibrary.tsx'
@@ -13,11 +13,12 @@ export interface MobileChromeInjected {
   connection: ConnectionHandle
 }
 
-function ConversationTitle({ navigation, fallback }: { navigation: NavigationCapabilities; fallback: string }) {
+function ConversationTitle({ navigation, fallback, prepareNavigation }: { navigation: NavigationCapabilities; fallback: string; prepareNavigation: () => void }) {
   const feed = navigation.sessions.list
   const sessions = useSyncExternalStore(useCallback(listener => feed.subscribe(listener), [feed]), useCallback(() => feed.getSnapshot(), [feed]))
+  useLayoutEffect(() => prepareNavigation(), [sessions.current, prepareNavigation])
   const row = sessions.current ? sessions.byId[sessions.current] : undefined
-  return <strong>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>
+  return <strong data-mobile-session-title={row && !row.blank ? '' : undefined}>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>
 }
 
 /** One visible navigation bar, with native connection sheets when supported. */
@@ -48,6 +49,7 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     setLibrary(true)
   }
   const startSession = () => {
+    presentation.prepareNavigation()
     available?.workspace.startSession()
     if (state.drawer) toggleSidebar()
     setSettings(false); setLibrary(false)
@@ -66,16 +68,17 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     window.addEventListener('keydown', escape)
     return () => window.removeEventListener('keydown', escape)
   }, [state.drawer, settings, library, toggleSidebar])
-  if (!state.active && !settings) return null
+  if (!state.active && !settings && state.mode !== 'desktop') return null
   return <>
+    {!state.active && state.mode === 'desktop' && <button data-mobile-restore onClick={() => presentation.setMode('mobile')}>{t('restoreMobile')}</button>}
     {state.active && <>
-      {library && available && <MobileLibrary navigation={available} t={t} onOpen={() => setLibrary(false)} />}
+      {library && available && <MobileLibrary navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} />}
       {state.drawer && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
       <nav data-mobile-toolbar aria-label={t('menu')}>
         <button aria-label={library ? t('settings') : t('menu')} onClick={library ? openSettings : openLibrary}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">{library ? <><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--dsw-alias-bg-base, white)"/><circle cx="15" cy="17" r="3" fill="var(--dsw-alias-bg-base, white)"/></> : <path d="m14 5-7 7 7 7"/>}</svg>
         </button>
-        <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}</div>
+        <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}</div>
         <button aria-label={library ? t('newSession') : t('options')} onClick={library ? startSession : () => setSettings(true)}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">{library ? <path d="M14 4H5v15h15v-9M10 14l2-5 6-6 3 3-6 6-5 2Z"/> : <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>}</svg>
         </button>

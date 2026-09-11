@@ -4,10 +4,10 @@ import { GROUPING_KEY, groupSessions, recentSessions } from './navigation.ts'
 import type { LibraryGrouping, NavigationCapabilities } from './navigation.ts'
 import { hasNativeAction, requestNativeAction } from './native.ts'
 
-type Props = PropsLocale<'mobile'> & { navigation: NavigationCapabilities; onOpen: () => void }
+type Props = PropsLocale<'mobile'> & { navigation: NavigationCapabilities; onOpen: () => void; onBeforeOpen?: () => void }
 
 /** Browse official metadata; the official workspace service remains the only navigation writer. */
-export function MobileLibrary({ navigation, onOpen, t }: Props) {
+export function MobileLibrary({ navigation, onOpen, onBeforeOpen, t }: Props) {
   const sessionFeed = navigation.sessions.list, workspaceFeed = navigation.workspaces.list
   // Official feeds may expose prototype methods. Keep their receiver and stable subscriptions.
   const sessions = useSyncExternalStore(useCallback(listener => sessionFeed.subscribe(listener), [sessionFeed]), useCallback(() => sessionFeed.getSnapshot(), [sessionFeed]))
@@ -38,10 +38,10 @@ export function MobileLibrary({ navigation, onOpen, t }: Props) {
         return <section key={group.key} data-mobile-session-group>
           {grouping === 'workspace' ? <button data-mobile-workspace-group aria-expanded={open} onClick={() => setCollapsed(previous => {
             const next = new Set(previous); next.has(group.key) ? next.delete(group.key) : next.add(group.key); return next
-          })}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 6h7l2 3h9v11H3V6Z"/></svg><strong>{group.label}</strong><small>{group.rows.length}</small><span aria-hidden="true">{open ? '⌄' : '›'}</span></button> : <h2>{group.label}</h2>}
+          })}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 6h7l2 3h9v11H3V6Z"/></svg><strong>{group.label}</strong><small>{group.rows.length}</small><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d={open ? "m6 9 6 6 6-6" : "m9 6 6 6-6 6"}/></svg></button> : <h2>{group.label}</h2>}
           {open && <ul>{group.rows.map(row => <li key={row.id}>
             <button data-mobile-session aria-current={sessions.current === row.id ? 'page' : undefined} onClick={() => {
-              try { navigation.workspace.openSession(row.id); setError(false); onOpen() } catch { setError(true) }
+              try { onBeforeOpen?.(); navigation.workspace.openSession(row.id); setError(false); onOpen() } catch { setError(true) }
             }}>
               <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><small>{grouping === 'time' ? row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) || t('unassignedWorkspace') : row.running ? t('running') : row.completed ? t('completed') : t('conversation')}</small></span>
               {row.running ? <span data-mobile-activity role="status">{t('running')}</span> : <time dateTime={new Date(row.updatedAt).toISOString()}>{new Date(row.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time>}

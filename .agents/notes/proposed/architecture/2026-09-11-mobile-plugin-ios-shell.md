@@ -68,6 +68,12 @@ QR recognition validates an existing official HTTPS login URL and previews only 
 
 Continue deployment only to isolated 3181. A 3080 transition is a separate integration step: mobile is not installed there, and tarball installation, trusted-host configuration, authentication and gated restart must be assessed together. See [navigation acceptance](../../../../docs/acceptance/mobile-navigation-2026-09-11.md).
 
+### Phone feedback fixes (2026-09-11)
+
+The user confirmed four regressions: misaligned workspace disclosure, navigation-triggered keyboard, a duplicate ordinary session title and no recovery after closing desktop-mode options. Workspace groups now use aligned grid columns and SVG disclosure icons. A desktop-only return control remains mounted across preference reloads. The checked rc1 ordinary breadcrumb is hidden only while a real mobile session title is present; contributed lineage, ancestors, actions and tabs stay intact. Unknown markup retains the official header.
+
+rc1 InputBar focuses on session mount/switch and exposes no autofocus opt-out. The plugin arms a disposable DOM focus guard before navigation and in the title's layout effect: it blurs automatic composer focus until a composer/message action or keyboard Tab expresses input intent. It does not patch DOM/Lexical methods, selection, drafts or Host state; missing composer anchors leave official behavior intact. WebKit keyboard timing still requires phone confirmation. All fixes ship through the existing Web plugin; no native rebuild or 3080 deployment is needed.
+
 ## Risks
 
 Slot ownership may limit layout fidelity; private interfaces and DOM anchors may break with a new RC. Device revocation requires a real gateway authorization model, not renamed official cookies. Host sleep or network/authentication failure interrupts access. A native app and the access infrastructure remain separate installations even when the mobile behavior is a plugin. Local runtime and simulator build evidence exists; true-device acceptance is pending.

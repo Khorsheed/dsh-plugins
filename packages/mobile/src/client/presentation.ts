@@ -1,4 +1,5 @@
 import { MOBILE_CSS } from './styles.ts'
+import { ComposerFocus } from './composerFocus.ts'
 
 export type DisplayMode = 'auto' | 'mobile' | 'desktop'
 export interface MobileSnapshot { mode: DisplayMode; active: boolean; drawer: boolean; supported: boolean }
@@ -14,6 +15,7 @@ export class MobilePresentation {
   private snapshot: MobileSnapshot
   private disposed = false
   private pending = 0
+  private readonly composerFocus: ComposerFocus
 
   constructor(private readonly win: Window, private readonly shell: boolean) {
     const query = new URL(win.location.href).searchParams.get('mobile')
@@ -22,6 +24,7 @@ export class MobilePresentation {
     const mode = query === '1' ? 'mobile' : query === '0' ? 'desktop'
       : saved === 'mobile' || saved === 'desktop' ? saved : 'auto'
     this.snapshot = { mode, active: false, drawer: false, supported: false }
+    this.composerFocus = new ComposerFocus(win.document, () => this.snapshot.active)
     this.media = win.matchMedia('(max-width: 760px) and (pointer: coarse)')
     this.style = win.document.createElement('style')
     this.style.dataset.mobileOwned = 'styles'
@@ -36,6 +39,7 @@ export class MobilePresentation {
   }
 
   readonly getSnapshot = (): MobileSnapshot => this.snapshot
+  readonly prepareNavigation = (): void => { this.composerFocus.arm() }
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
@@ -76,6 +80,7 @@ export class MobilePresentation {
   dispose(): void {
     this.disposed = true
     this.observer.disconnect()
+    this.composerFocus.dispose()
     this.media.removeEventListener('change', this.schedule)
     this.win.removeEventListener('resize', this.schedule)
     this.win.visualViewport?.removeEventListener('resize', this.schedule)

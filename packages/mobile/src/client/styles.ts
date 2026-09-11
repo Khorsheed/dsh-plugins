@@ -1,3 +1,4 @@
+export const ORDINARY_TITLE = '[data-slot="main.conversation"] header:has([data-conversation-header-corner]) nav:has(> span:only-child > button:disabled + [data-slot="conversation.session.header.lineage"]:empty)'
 /** Local overrides target official slot anchors; frame attributes are verified before activation. */
 export const MOBILE_CSS = `
 html[data-dsh-mobile] { --mobile-bar: 56px; --mobile-accent: #4d6bfe; }
@@ -67,6 +68,11 @@ html[data-dsh-mobile] [data-slot="conversation.input.right"] { max-width: 100%; 
 [data-mobile-dialog] button[aria-pressed="true"] { color: #4d6bfe; background: #4d6bfe12; }
 [data-mobile-dialog] [data-mobile-done] { display: block; width: 100%; margin-top: 24px; background: #4d6bfe; color: white; border-radius: 100px; }
 
+/* Only the checked rc1 single, ordinary breadcrumb is redundant with our title.
+   Keep child lineage, ancestor navigation, actions, utilities and tabs untouched. */
+html[data-dsh-mobile]:has([data-mobile-session-title]) ${ORDINARY_TITLE} { display:none; }
+[data-mobile-restore] { position:fixed; right:16px; bottom:max(16px,env(safe-area-inset-bottom)); z-index:1200; pointer-events:auto; min-height:44px; padding:10px 18px; border:1px solid #4d6bfe40; border-radius:24px; background:var(--dsw-alias-bg-base,white); color:#4d6bfe; font:inherit; box-shadow:0 3px 18px #15244318; }
+
 /* Mobile-owned library: scrolling content and a separate keyboard-aware search dock. */
 [data-mobile-library] { position:absolute; inset:var(--mobile-bar,56px) 0 0; display:flex; flex-direction:column; overflow:hidden; pointer-events:auto; background:var(--dsw-alias-bg-base,white); color:var(--dsw-alias-label-primary,#181a20); }
 [data-mobile-library] button { font:inherit; cursor:pointer; color:inherit; -webkit-tap-highlight-color:transparent; }
@@ -78,8 +84,10 @@ html[data-dsh-mobile] [data-slot="conversation.input.right"] { max-width: 100%; 
 [data-mobile-recents] { flex:1; min-height:0; overflow-y:auto; padding:0 22px 12px; overscroll-behavior:contain; }
 [data-mobile-session-group] h2 { color:var(--dsw-alias-label-tertiary,#727680); font-size:12px; font-weight:500; margin:16px 0 4px; }
 [data-mobile-session-group] ul { list-style:none; padding:0; margin:0; }
-[data-mobile-workspace-group] { display:flex; align-items:center; width:100%; gap:9px; padding:14px 0; min-height:48px; text-align:left; background:none; border:0; }
-[data-mobile-workspace-group] strong { flex:1; min-width:0; overflow-wrap:anywhere; font-size:14px; font-weight:500; }
+[data-mobile-workspace-group] { display:grid; grid-template-columns:18px minmax(0,1fr) auto 18px; align-items:center; width:100%; gap:9px; padding:14px 0; min-height:48px; text-align:left; background:none; border:0; }
+[data-mobile-workspace-group] svg { display:block; }
+[data-mobile-workspace-group] strong, [data-mobile-workspace-group] small { line-height:20px; margin:0; }
+[data-mobile-workspace-group] strong { min-width:0; overflow-wrap:anywhere; font-size:14px; font-weight:500; }
 [data-mobile-workspace-group] small { color:var(--dsw-alias-label-tertiary,#727680); font-size:12px; }
 [data-mobile-session] { display:flex; align-items:center; gap:12px; width:100%; min-height:78px; padding:16px 0; text-align:left; border:0; border-bottom:1px solid var(--dsw-alias-border-l3,#e8e9ee); background:none; }
 [data-mobile-session-copy] { min-width:0; flex:1; }

@@ -122,7 +122,7 @@ describe('mobile session navigation', () => {
     const snapshot = { active: true, drawer: false, supported: true, mode: 'mobile' }
     const props = {
       navigation, toggleSidebar: vi.fn(),
-      presentation: { getSnapshot: () => snapshot, subscribe: () => () => {} },
+      presentation: { prepareNavigation: vi.fn(), getSnapshot: () => snapshot, subscribe: () => () => {} },
       connection: { state: { getSnapshot: () => 'connected', subscribe: () => () => {} } },
     } as unknown as MobileChromeInjected
     HTMLDialogElement.prototype.close = function () { this.open = false }

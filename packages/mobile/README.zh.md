@@ -69,6 +69,8 @@ dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
 
 Mac 保持唤醒，三个服务持续运行。停止隧道进程可关闭这条公网访问路径；仅卸载 mobile 不会停止隧道或撤销官方会话。重新分配域名后，需要同步更新 `PUBLIC_ORIGIN`、`--trusted-host` 并重新登录。这次预览不代表长期蜂窝网络可达性已验证。参见 [Quick Tunnel 验收记录](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md)。
 
+桌面模式在重载后仍保留“返回移动布局”按钮。移动端进入会话时阻止输入框自动聚焦，等待明确的输入手势；rc1 DOM 锚点变化时回退官方聚焦行为。普通会话标题去重，保留祖先/lineage 导航。这些 Web 层修复无需重新安装原生 App。
+
 ## Compatibility
 
 | 宿主线 | 结论 |
