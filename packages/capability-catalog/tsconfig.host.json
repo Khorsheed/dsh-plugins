@@ -13,6 +13,7 @@
     "src/tool-origin.ts",
     "src/skills.ts",
     "src/capabilities.ts",
+    "src/preset-scope.ts",
     "src/remote.ts",
     "src/import.ts",
     "src/zip.ts",

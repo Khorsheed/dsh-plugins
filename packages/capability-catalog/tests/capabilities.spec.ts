@@ -4,6 +4,7 @@ import {
   CAPS_TAG_PREFIX, canonicalCapabilities, canonicalJson, capsTag, hashOf, hashSkillBody,
 } from '../src/capabilities.ts'
 import { catalogSnapshot } from '../src/remote.ts'
+import { resolvePresetScope } from '../src/preset-scope.ts'
 import type { CapabilityCatalogSnapshot, CatalogSkillRow, CatalogToolRow } from '../src/types.ts'
 
 function skill(name: string, extra: Partial<CatalogSkillRow> = {}): CatalogSkillRow {
@@ -203,5 +204,42 @@ describe('catalogSnapshot fingerprint mode', () => {
     const face = await catalogSnapshot(undefined, declining, schemas, [], new Set(), [undefined], new Map(), { fingerprint: true })
     expect(face.skills[0]?.bodySha).toBeUndefined()
     expect(face.sha).toMatch(/^[0-9a-f]{64}$/)
+  })
+})
+
+describe('resolvePresetScope — a listing degrades, a fingerprint does not', () => {
+  const key = Symbol('standing-scope')
+  const healthy = { defaultId: 'eval-lean', standingKeyFor: async (id?: string) => (id === 'ghost' ? undefined : key) }
+  const broken = {
+    defaultId: 'eval-lean',
+    standingKeyFor: async (): Promise<unknown> => { throw new Error('preset "eval-lean" failed to mount: invalid config') },
+  }
+
+  it('resolves the named preset and labels the reading with it', async () => {
+    expect(await resolvePresetScope(healthy, 'eval-full', true)).toEqual({ scope: key, preset: 'eval-full' })
+    expect(await resolvePresetScope(healthy, undefined, true)).toEqual({ scope: key, preset: 'eval-lean' })
+  })
+
+  it('degrades a LISTING to the global layer, and labels it with NOTHING', async () => {
+    // The label is the whole point: a global-layer reading carrying a preset
+    // name would claim rows that do not belong to that preset.
+    expect(await resolvePresetScope(broken, 'eval-lean', false)).toEqual({ scope: undefined, preset: undefined })
+    expect(await resolvePresetScope(healthy, 'ghost', false)).toEqual({ scope: undefined, preset: undefined })
+    expect(await resolvePresetScope(undefined, 'eval-lean', false)).toEqual({ scope: undefined, preset: undefined })
+  })
+
+  it('a FINGERPRINT throws instead, naming the preset and the reason', async () => {
+    // Measured on a real sub-dsh: with this degrading, two scopes rostering
+    // two different presets produced one identical hash, silently.
+    await expect(resolvePresetScope(broken, 'eval-lean', true)).rejects.toThrow(/cannot fingerprint preset "eval-lean".*failed to mount/s)
+    await expect(resolvePresetScope(healthy, 'ghost', true)).rejects.toThrow(/resolved no standing scope for preset "ghost"/)
+    await expect(resolvePresetScope(undefined, 'eval-lean', true)).rejects.toThrow(/mounts no agent-preset roster/)
+  })
+
+  it('a rosterless composition may still be fingerprinted for its DEFAULT face', async () => {
+    // There is no preset to misreport, so the global layer is the honest
+    // answer — and it carries no label.
+    expect(await resolvePresetScope(undefined, undefined, true)).toEqual({ scope: undefined, preset: undefined })
+    expect(await resolvePresetScope({ defaultId: 'x' }, undefined, true)).toEqual({ scope: undefined, preset: undefined })
   })
 })

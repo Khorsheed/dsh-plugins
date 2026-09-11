@@ -42,6 +42,8 @@ hashOf(face) === face.sha  // true——`sha` 字段本身不进它摘要的那�
 
 `snapshotFor(presetId?, workdir?)` 是指纹动词：按**该 preset** 的 standing scope（`agentPresets.standingKeyFor(id)`）读 skill 与 tool 注册表，加载每个技能正文使行带上 `bodySha`，并盖 `sha`。不给 presetId 就读部署默认 preset。`snapshot()` 仍是清单动词——同样的行，不读正文，不出摘要。`list_capabilities` 以 `capabilities` 带回**整面**的标签，即使调用方只要了 skill 或只要了 tool。
 
+**清单降级，指纹拒绝。** preset 的 scope 解析不出来时——没有 roster、id 不存在、composition 挂不起来——`snapshot()` 退回全局层并且**不带** `preset` 标签（设置卡不该因为一行配置坏了就变空）；`snapshotFor()` 则抛错，带上 preset 名与原因。这不是假想：真机上一个 preset 只错了一行，降级版本让两个 roster 着**不同** preset 的 scope 算出了同一个哈希，而且悄无声息。
+
 两处代价要说清楚：算指纹时每个技能多读一次正文（清单那条路不读）；问一个还没人组过的 preset 会把它**挂起来**——「该 preset 的 scope」本来就只有挂了才存在。
 
 谁在用：评测把编排实例自己的哈希记进 `run.meta.orchestrator.capabilities` 做取证；声明了 `preset` 的条件必须在 lock 里带上其已配环境的哈希——正是这一步把声明从「一句话」变成「一个事实」。

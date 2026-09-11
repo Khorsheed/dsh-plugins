@@ -83,6 +83,15 @@ skill and tool registries at **that preset's** standing scope
 `list_capabilities` reports the full face's tag as `capabilities`, even when
 the caller filtered the answer to skills or tools.
 
+**A listing degrades; a fingerprint refuses.** When the preset's scope cannot
+be resolved — no roster, unknown id, a composition that will not mount —
+`snapshot()` falls back to the global layer and carries NO `preset` label,
+because a settings card must not go blank over a bad row. `snapshotFor()`
+throws instead, naming the preset and the reason. This is not hypothetical:
+on a real sub-dsh whose preset had one invalid row, the degrading version
+gave two scopes rostering two *different* presets one identical hash,
+silently.
+
 Two costs are worth naming. Fingerprinting loads one skill body per skill
 (the listing path still does not), and asking for a preset nothing has
 composed yet MOUNTS it — the roster's standing mount is what "that preset's
