@@ -172,10 +172,123 @@ describe('validatePlan — retry and exports (protocol §6.4)', () => {
   })
 })
 
+describe('validatePlan — the provisioned record (T31)', () => {
+  /** A repo whose condition IS locked and provisioned, with the given effective snapshot. */
+  function lockedRepo(effective: Record<string, unknown>, condition: Record<string, unknown> = {}): { repoPath: string; planPath: string } {
+    const dir = tmpTree()
+    const repoPath = join(dir, 'repo')
+    const dataset = join(repoPath, 'datasets', 'ds')
+    const document = { ...T1_CONDITION, ...condition, home: { sha: 'c'.repeat(64) } }
+    writeJson(dataset, 'conditions/c1.json', document)
+    writeJson(dataset, 'conditions/c1.lock.json', {
+      schema: 'dataseek.condition-lock/1',
+      condition: 'c1',
+      sha: hashConditionDocument(document),
+      home: { sha: 'c'.repeat(64) },
+      provisioned: { at: 1, cliVersion: null, effective },
+    })
+    const planPath = writeJson(dir, 'plan.json', planBody({ dataset: { repo: repoPath, commit: null, id: 'ds', items: ['I1'] } }))
+    return { repoPath, planPath }
+  }
+
+  const AGREEING = {
+    model: (T1_CONDITION['model'] as { declared: string | null }).declared,
+    reasoningEffort: (T1_CONDITION['reasoning'] as { effort: string }).effort,
+    permissions: T1_CONDITION['permissions'],
+    endpoint: (T1_CONDITION['model'] as { endpoint: string | null }).endpoint,
+  }
+
+  it('calls a condition ready when the lock, the home and the provisioned record all agree', async () => {
+    const report = await validatePlan(lockedRepo(AGREEING).planPath)
+    expect(report.conditions[0]?.status).toBe('ready')
+    expect(report.conditions[0]?.lock?.provisioned?.effective).toEqual(AGREEING)
+    expect(codes(report.warnings)).not.toContain('PROVISION_MISMATCH')
+  })
+
+  it('calls it UNREADY and names the field when the lock records other permissions', async () => {
+    const report = await validatePlan(lockedRepo({ ...AGREEING, permissions: 'read-only' }).planPath)
+    expect(report.conditions[0]?.status).toBe('unready')
+    const mismatch = report.warnings.find(w => w.code === 'PROVISION_MISMATCH')
+    expect(mismatch?.message).toContain('permissions')
+    expect(mismatch?.message).toContain('conditions provision')
+  })
+
+  it('calls it UNREADY when the lock records another endpoint', async () => {
+    const report = await validatePlan(lockedRepo({ ...AGREEING, endpoint: 'elsewhere.example' }, {
+      model: { declared: null, endpoint: 'api.example' },
+    }).planPath)
+    expect(report.conditions[0]?.status).toBe('unready')
+    expect(report.warnings.find(w => w.code === 'PROVISION_MISMATCH')?.message).toContain('model.endpoint')
+  })
+
+  it('leaves it ready when only a warn-grade field differs — a declared model may differ from the harness default (T30b)', async () => {
+    const report = await validatePlan(lockedRepo({ ...AGREEING, model: 'some-other-default', reasoningEffort: 'high' }).planPath)
+    expect(report.conditions[0]?.status).toBe('ready')
+    expect(codes(report.warnings)).not.toContain('PROVISION_MISMATCH')
+  })
+
+  it('refuses a half-written provisioned block as a malformed lock, not as a partial truth', async () => {
+    // The lock schema closes `provisioned.effective`: all four fields or none.
+    const report = await validatePlan(lockedRepo({ permissions: 'unrestricted' } as Record<string, unknown>).planPath)
+    expect(report.conditions[0]?.status).toBe('unready')
+    expect(report.conditions[0]?.lock?.provisioned).toBeUndefined()
+    expect(codes(report.warnings)).toContain('LOCK_MALFORMED')
+  })
+
+  it('warns that a lock without a provisioned record was never checked against a scope', async () => {
+    const dir = tmpTree()
+    const repoPath = join(dir, 'repo')
+    const dataset = join(repoPath, 'datasets', 'ds')
+    const document = { ...T1_CONDITION }
+    writeJson(dataset, 'conditions/c1.json', document)
+    writeJson(dataset, 'conditions/c1.lock.json', {
+      schema: 'dataseek.condition-lock/1', condition: 'c1', sha: hashConditionDocument(document),
+    })
+    const planPath = writeJson(dir, 'plan.json', planBody({ dataset: { repo: repoPath, commit: null, id: 'ds', items: ['I1'] } }))
+    const report = await validatePlan(planPath)
+    expect(report.warnings.find(w => w.code === 'PROVISION_RECORD_MISSING')?.message).toContain('conditions provision')
+  })
+})
+
+describe('validatePlan — the judge is resolved too (T31)', () => {
+  function repoWithJudge(judge: Record<string, unknown>): string {
+    const dir = tmpTree()
+    const repoPath = join(dir, 'repo')
+    const dataset = join(repoPath, 'datasets', 'ds')
+    writeJson(dataset, 'conditions/c1.json', { ...T1_CONDITION })
+    writeJson(dataset, 'conditions/j1.json', judge)
+    return writeJson(dir, 'plan.json', planBody({
+      dataset: { repo: repoPath, commit: null, id: 'ds', items: ['I1'] },
+      judge: { conditions: ['j1'], samples: 2 },
+      expectedNs: ['script', 'llm-draft'],
+    }))
+  }
+
+  it('errors when the judge pins no model — self-judgement would be undecidable', async () => {
+    const report = await validatePlan(repoWithJudge({ ...T1_CONDITION, model: { declared: null, endpoint: null } }))
+    expect(report.ok).toBe(false)
+    expect(codes(report.errors)).toContain('JUDGE_MODEL_UNDECLARED')
+  })
+
+  it('accepts a judge that pins a model, and reports it OFF the players list', async () => {
+    const report = await validatePlan(repoWithJudge({ ...T1_CONDITION, model: { declared: 'judge-model', endpoint: null } }))
+    expect(codes(report.errors)).toEqual([])
+    expect(report.conditions.map(c => c.id)).toEqual(['c1'])
+    expect(report.judges.map(c => c.id)).toEqual(['j1'])
+  })
+
+  it('accepts a judge declaring the SAME model as a player — decision 9, relaxed', async () => {
+    const declared = (T1_CONDITION['model'] as { declared: string | null }).declared
+    const report = await validatePlan(repoWithJudge({ ...T1_CONDITION, model: { declared, endpoint: null } }))
+    expect(codes(report.errors)).toEqual([])
+  })
+})
+
 describe('validatePlan — contract errors', () => {
   it.each([
     ['judge absent + llm-draft expected', { expectedNs: ['script', 'llm-draft'] }, 'JUDGE_REQUIRED_FOR_LLM_DRAFT'],
-    ['judge is a player', { judge: { conditions: ['c1'], samples: 2 } }, 'JUDGE_IS_PLAYER'],
+    ['judge id is also a player id', { judge: { conditions: ['c1'], samples: 2 } }, 'JUDGE_IS_SAME_CONDITION'],
+    ['judge listed twice', { judge: { conditions: ['j1', 'j1'], samples: 2 } }, 'JUDGE_DUPLICATED'],
     ['judge with samples but no condition', { judge: { conditions: [], samples: 2 } }, 'JUDGE_INCOMPLETE'],
     ['reps below one', { reps: 0 }, 'REPS_INVALID'],
     ['budget below one', { budget: { activeMinutes: 0, turns: 5 } }, 'BUDGET_INVALID'],

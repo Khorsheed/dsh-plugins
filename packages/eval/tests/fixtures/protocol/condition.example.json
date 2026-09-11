@@ -7,7 +7,7 @@
   },
   "model": {
     "declared": "claude-opus-5",
-    "endpoint": "proxy"
+    "endpoint": "https://api.anthropic.com"
   },
   "reasoning": {
     "effort": "default"

@@ -71,6 +71,44 @@ function renderPair(comparison: PairComparison): string[] {
   return lines
 }
 
+/**
+ * Who judged each cell, and which of those cells were judged by their own
+ * model. Decision 9 stopped excluding a judge that is also a player
+ * (2026-09-10) and started DISCLOSING it instead, which only works if the
+ * report says, per cell, whose opinion the llm-draft numbers are.
+ *
+ * Rendered inside the comparison section when comparison is allowed — a
+ * reader weighing a delta needs it right there — and under 判官一致性
+ * otherwise, because "who judged" is a fact about the run and does not stop
+ * being one when an invariant refuses the comparison.
+ */
+function renderJudgeAssignment(report: EvalReport): string[] {
+  const lines: string[] = ['**每格由谁判**（决策 9 放宽：判官可与选手同模型，同模型的格标「自评」而不排除）', '']
+  if (report.judgeAssignments.length === 0) {
+    lines.push('bundle 未记录判官身份——要么本次 run 没有 llm-draft 判定，要么它早于「判定带判官」的版本（不猜，留空）。')
+    lines.push('')
+    return lines
+  }
+  lines.push('| 题 | 条件 | rep | 判官（模型 · 采样数） |')
+  lines.push('|---|---|---:|---|')
+  for (const assignment of report.judgeAssignments) {
+    const judges = assignment.judges
+      .map(judge => `${judge.condition}（${judge.model ?? DASH} · ${judge.samples > 0 ? `${judge.samples} 采样` : `${judge.verdicts} 判定`}）${judge.selfJudged ? ' **自评**' : ''}`)
+      .join('；')
+    lines.push(`| ${assignment.task ?? DASH} | ${assignment.condition ?? DASH} | ${assignment.rep ?? DASH} | ${judges} |`)
+  }
+  const selfJudged = report.judgeAssignments.filter(assignment => assignment.judges.some(judge => judge.selfJudged))
+  lines.push('')
+  if (selfJudged.length > 0) {
+    lines.push(`自评格 ${selfJudged.length} 个：该格的判官模型就是该格选手的模型。公开榜单（MT-Bench / AlpacaEval / Arena-Hard）都测到过模型偏好自己的输出，`
+      + '所以这些格的 llm-draft 值**单独读**，不要用来支持含该模型的名次结论。')
+  } else {
+    lines.push('无自评格：没有任何格的判官模型与该格选手模型相同。')
+  }
+  lines.push('')
+  return lines
+}
+
 function renderEfficiency(report: EvalReport): string[] {
   const lines: string[] = []
   if (report.efficiency.length === 0) {
@@ -253,12 +291,18 @@ export function renderSummaryMd(report: EvalReport): string {
       + '加权分 = Σ weight × 该判据得到的比例，负 weight 自然扣分。')
     lines.push('')
     for (const comparison of report.comparisons) lines.push(...renderPair(comparison))
+    lines.push(...renderJudgeAssignment(report))
   }
 
   lines.push('## 判官一致性')
   lines.push('')
   for (const detail of report.judge.details) lines.push(`- ${detail}`)
   lines.push('')
+  // The comparison section already carried it when it ran; without one, this
+  // is where "who judged" has to live.
+  if (!(report.comparisonAllowed && report.comparisons.length > 0 && !report.singleCondition)) {
+    lines.push(...renderJudgeAssignment(report))
+  }
 
   lines.push('## 效率（并列，不合成）')
   lines.push('')

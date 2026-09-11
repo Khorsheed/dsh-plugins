@@ -295,6 +295,7 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `null` in the nullable fields (`harness.version`, `model.declared`, `model.endpoint`, `home.sha`) reads as "**unresolved**": validate lists it as a warning, and the pre-run readiness gate refuses it. `null` means "not known yet", not "none".
 - `model.declared` is a REQUEST, not only a claim (T30b). When it is non-null the orchestrator passes it to local-agent as the delegation's `model`, which lands as each harness's own CLI model flag — the same in player rounds, judge delegations and the readiness probe. `null` still means "unresolved" and still passes no model flag at all, leaving the harness's own configuration to decide. The read-back comparison is unchanged after the request: ask for X, run Y, and it is still a MisattributedRun. The contract's SHAPE did not change; what changed is that this field went from "only compared" to "requested, then compared".
 - The `permissions` vocabulary is given per harness: `dsh` → `unrestricted`; `claude-code` → `skip` or `normal`; `codex` → `danger-full-access`, `workspace-write`, `read-only`; `kimi` → `auto-approve`. The schema enum is the union; an out-of-vocabulary value for a known harness (e.g. dsh with `skip`) is a validator error.
+- `model.endpoint` is the UPSTREAM ROUTE (frozen decision 5: the endpoint belongs to the subject under test). Only two spellings are checkable: `"default"` — no base URL in force, so the CLI's own endpoint — or the endpoint's URL or hostname, where `"https://api.anthropic.com"` and `"api.anthropic.com"` are equivalent (provision reduces a URL to its host before comparing: a path can carry tenant or project ids, so the harness family only ever reports a hostname). A label like `"proxy"` names no endpoint anyone can check; provision calls it a mismatch and writes no lock. `null` still means "unresolved".
 - `env.keys` carries variable NAMES only. No values — especially credentials — ever enter a contract file.
 - `scope` may be omitted, and omitting it means "run against this harness's default scoped home" — what every condition written before this field says. Naming one (a `[a-z0-9-]` NAME, never a path) runs the condition against `<homesRoot>/<harness>@<scope>` instead: a SIBLING of the default directory with its own login, its own session records and its own `delegations.jsonl`. Credentials are never copied into it. It IS part of the condition hash: two conditions differing only in `scope` are two SUBJECTS, because they log in as two accounts — which is how one run compares two logins of one harness (the factor I4's per-delegation model, per-condition provisioning and two-preset pilot all rest on). The readiness probe probes each condition's own scope, and a container cell mounts each condition's own directory. A scoped delegation is exec-only (the live drivers bind the default scoped home), and kimi's member bridge stays bound to the default scope too.
 - `unit` may be omitted, and omitting it means "this condition only ever runs on the host". A plan that declares a `unit` REQUIRES it: `unit.scopedHome` says where this condition's credential directory is mounted inside the unit and which variable names it (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), and `var` must also appear in `env.keys` — the name that gets injected has to be a name the document admits to injecting, which validate enforces as an error. The HOST side of that directory is deliberately absent: the orchestrator mounts the evaluation instance's own scoped home for that harness — the one `/<harness> login` writes into, and the one the delegation read-back reads. Mounting a COPY fails silently: a containerized round writes its rollout into whatever was bound, while the read-back looks under `homeDir(<harness>)`, and two different directories produce no error at all — just a read-back that is empty forever.
@@ -311,7 +312,7 @@ One condition = one harness + a model declaration + a permission word + one scop
   },
   "model": {
     "declared": "claude-opus-5",
-    "endpoint": "proxy"
+    "endpoint": "https://api.anthropic.com"
   },
   "reasoning": {
     "effort": "default"
@@ -342,7 +343,15 @@ One condition = one harness + a model declaration + a permission word + one scop
 
 ### 6.3 dataseek.condition-lock/1 — the material record
 
-`sha` is the condition hash (§6.5), recomputed by `dsh-eval conditions hash`; `home.sha` is the scoped-home content hash provision (I4) produced. A plan never writes shas — it writes condition ids (§6.4) and resolves them from this file; a missing lock means "not ready". Declaration vs reality mismatches (a lock lagging the condition file, a `home.sha` that no longer matches) come back as validate warnings and are refused by the readiness gate.
+`sha` is the condition hash (§6.5), recomputed by `dsh-eval conditions hash`; `home.sha` is the scoped-home content hash `dsh-eval conditions provision` (I4, landed in T31) produced. A plan never writes shas — it writes condition ids (§6.4) and resolves them from this file; a missing lock means "not ready". Declaration vs reality mismatches (a lock lagging the condition file, a `home.sha` that no longer matches) come back as validate warnings and are refused by the readiness gate.
+
+**Only provision writes this file.** A hand-written lock claims the scoped home was checked when nobody checked it, so provision is the sole writer: it resolves the condition's `(harness, scope)` to a scoped home (reading it materializes it), stops unless that scope's credential is present and prints the login command if it is not (`/<harness> login --scope <name>` — provision never logs in and never copies a credential), checks the declaration against that scope's effective settings field by field, then hashes the home and writes the lock.
+
+`provisioned` records that check, and is ADDITIVE in `/1`: a lock without it was written before provision existed, and validate reads that as "nobody ever checked" rather than as a violation. `at` is when provision ran; `cliVersion` is the version the CLI reported then (back-filled into the lock when the condition declares `harness.version: null` — the condition document is never rewritten); `effective` is what that scope answered for the four fields, with `null` meaning the harness has no such knob at all (dsh has no permission knob, which is exactly why its permission word is `unrestricted`).
+
+The grading split is not arbitrary: `permissions` is the approval boundary (frozen decision 3) and `model.endpoint` is the upstream route (frozen decision 5), so those two ARE the subject under test — a disagreement is an error and NO lock is written. `harness.version`, `model.declared` and `reasoning.effort` disagreeing are warnings: a declared model differing from the harness default is normal since T30b (the declaration is the value REQUESTED per delegation), a missing reasoning knob is an honest absence, and a CLI version is a fact to record rather than to enforce. The comparable spellings of `model.endpoint` are `"default"` (no base URL in force) or the endpoint's URL or hostname (a URL is reduced to its host before comparing — a path can carry tenant ids, so the family only ever reports a hostname); a label like `"proxy"` names no endpoint anyone can check and reads as a mismatch.
+
+validate re-checks with the same function: when a lock's `provisioned.effective` disagrees with the condition file on those two fields, the condition is "not ready" and the field is named. With the sha still matching, that can only mean the lock was not written by provision — which is exactly the forgery worth seeing.
 
 ```json
 {
@@ -379,6 +388,65 @@ One condition = one harness + a model declaration + a permission word + one scop
           "type": "string"
         }
       }
+    },
+    "provisioned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "effective"
+      ],
+      "description": "What `dsh-eval conditions provision` read back off the scope it provisioned. ADDITIVE in /1: a lock written before provision existed simply has no such key, and validate reads its absence as \"provision has not run\" rather than as a violation.",
+      "properties": {
+        "at": {
+          "type": "integer",
+          "description": "Epoch ms the provision ran."
+        },
+        "cliVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The harness CLI's own version as the CLI reported it; null when it could not be asked."
+        },
+        "effective": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "reasoningEffort",
+            "permissions",
+            "endpoint"
+          ],
+          "description": "The four condition fields as the scope's effective settings answered them. null means the harness declares no such knob — which is itself the honest input, never a substituted guess.",
+          "properties": {
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoningEffort": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permissions": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "endpoint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -389,7 +457,19 @@ One condition = one harness + a model declaration + a permission word + one scop
   "schema": "dataseek.condition-lock/1",
   "condition": "claude-exec",
   "sha": "fb2bd2b2417d2c2f52b7fb3b133765e1a439ed89e318d685d20a014fa4632671",
-  "home": { "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74" }
+  "home": {
+    "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74"
+  },
+  "provisioned": {
+    "at": 1757500000000,
+    "cliVersion": "2.1.236",
+    "effective": {
+      "model": "claude-opus-5",
+      "reasoningEffort": null,
+      "permissions": "skip",
+      "endpoint": "api.anthropic.com"
+    }
+  }
 }
 ```
 

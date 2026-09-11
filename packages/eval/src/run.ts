@@ -456,6 +456,8 @@ async function judgeCell(
     attemptDataDir: string
     attempt: number
     parentSessionId: string
+    /** The cell's own condition — the judging side needs it to mark a self-judged sample. */
+    condition: { id: string; declaredModel: string | null }
     judge: JudgeEnv
     /** Set on the container path: the probes run inside this cell's unit. */
     unit?: { lab: LabFace; unitId: string }
@@ -617,6 +619,7 @@ async function judgeCell(
     now: env.now,
     taskId: env.taskId,
     parentSessionId: env.parentSessionId,
+    cell: { condition: env.condition.id, declaredModel: env.condition.declaredModel },
     judges: env.judge.judges,
     samples: env.judge.samples,
     criteria,
@@ -631,6 +634,11 @@ async function judgeCell(
       sample: record.sample,
       judgeCondition: record.judgeCondition,
       judgeSha: record.judgeSha,
+      // Who judged, in the two words a reader needs: the condition id and the
+      // model. Decision 9 stopped forbidding the overlap, so the report has to
+      // be able to SAY which cells a model judged — including its own.
+      judgeModel: record.judgeModel,
+      selfJudged: record.selfJudged,
       promptSha: record.promptSha,
       verdicts: record.verdicts,
     }, { runId: env.runId, by: env.by })
@@ -1131,6 +1139,7 @@ async function runCellOnce(
     attemptDataDir,
     attempt: current.mission.currentAttempt,
     parentSessionId: env.parentSessionId,
+    condition: { id: env.condition.id, declaredModel: env.condition.declaredModel },
     judge: env.judge,
     ...(unit !== undefined ? { unit: { lab: (env.unit as CellUnitBinding).lab, unitId: unit.id } } : {}),
   })
@@ -1522,11 +1531,22 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     })
   }
 
-  // ── The judge is a condition too, and must not be a contestant. ───────
-  // validate() already refuses an id that appears on both lists; this is the
-  // stronger check the brief asks for — two DIFFERENT ids that name the same
-  // (harness, declared model) are the same subject wearing two hats, and a
-  // judge grading itself is the failure decision 9 exists to prevent.
+  // ── The judge is a condition too — and, since 2026-09-10, may be a
+  // contestant's twin. Decision 9 used to refuse two DIFFERENT ids naming the
+  // same (harness, declared model); that rule made "evaluate every model" and
+  // "judge with a model" mutually exclusive, which is the corner T22 step 5
+  // died in. Every public leaderboard that judges with models has the overlap
+  // by construction (MT-Bench, AlpacaEval, Arena-Hard all let contestants
+  // judge, and record the self-preference); the answer there is a PANEL plus
+  // disclosure, not exclusion, and a benchmark that wants neither uses
+  // deterministic graders instead (SWE-bench). So the refusal is gone and its
+  // job moved into the record: every sample says who judged, and a cell judged
+  // by its own model is marked `selfJudged` in the verdicts, in results.jsonl,
+  // and in the report's comparison section.
+  //
+  // What is still refused lives in validate(): the same id on both lists (a
+  // bookkeeping mistake, not a panel), and a judge that pins no model (without
+  // one, "self-judged" is undecidable).
   const judgeIds = plan.judge?.conditions ?? []
   const judgeDocuments = new Map<string, Record<string, unknown>>()
   const judges: ResolvedJudge[] = []
@@ -1545,16 +1565,18 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     const harness = document['harness'] as { name?: string; drive?: string } | undefined
     const harnessName = harness?.name ?? ''
     const declaredModel = (document['model'] as { declared: string | null } | undefined)?.declared ?? null
-    const clash = conditions.find(player => player.harnessName === harnessName && player.declaredModel === declaredModel)
-    if (clash !== undefined) {
-      throw new EvalRunRefused(
-        `judge condition ${judgeId} is a contestant — nothing was executed`,
-        [{
-          code: 'JUDGE_IS_PLAYER',
-          message: `${judgeId} declares (harness ${JSON.stringify(harnessName)}, model ${JSON.stringify(declaredModel)}), which is exactly player condition ${clash.id}`
-            + ' — frozen decision 9: the judge must not be one of the players. Give the judge a different harness or a different declared model.',
-        }],
-      )
+    if (declaredModel === null) {
+      throw new EvalRunRefused(`judge condition ${judgeId} pins no model — nothing was executed`, [{
+        code: 'JUDGE_MODEL_UNDECLARED',
+        message: `${judgeId} declares model.declared: null. A judge must pin its model: decision 9 now allows a judge to share a model with a player`
+          + ' and marks those cells self-judged, and that marking is undecidable when the judge runs whatever its harness happens to default to.',
+      }])
+    }
+    // Not a refusal any more, but the run says it out loud before it starts:
+    // the panel overlaps the field, and the affected cells will carry the mark.
+    for (const player of conditions.filter(player => player.declaredModel !== null && player.declaredModel === declaredModel)) {
+      log(`judge ${judgeId}: model ${JSON.stringify(declaredModel)} is also player condition ${player.id}`
+        + " — that condition's cells will be marked selfJudged for this judge (decision 9, relaxed)")
     }
     judgeDocuments.set(judgeId, document)
     judges.push({

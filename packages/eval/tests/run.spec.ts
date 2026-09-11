@@ -1568,23 +1568,61 @@ describe('runPlan — the LLM judge (frozen decision 9)', () => {
   })
 })
 
-describe('runPlan — the judge must not be a contestant (frozen decision 9)', () => {
-  it('refuses before executing when a judge condition matches a player on (harness, model)', async () => {
+describe('runPlan — the judge panel (decision 9, relaxed 2026-09-10)', () => {
+  it('runs a judge that shares a model with a player, and marks those cells selfJudged', async () => {
     const root = makeDatasetTree()
     // A different id, the same subject: dsh + the same declared model the
-    // fixture player carries (T8b filled it in from the real dataset).
+    // fixture player carries (T8b filled it in from the real dataset). Before
+    // the relaxation this refused the whole run; now it runs and is DISCLOSED.
     writeCondition(root, 'judge-twin', { model: { declared: DECLARED_MODEL, endpoint: null } })
-    const planPath = writeJudgingPlan(root, ['judge-twin'], 2)
+    const planPath = writeJudgingPlan(root, ['judge-twin'], 1)
     const localAgent = new FakeLocalAgent()
     const mission = new FakeMission(join(root, 'mission'))
 
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
-      { datasets: fakeDatasets(root), mission, localAgent })).rejects.toThrow(EvalRunRefused)
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
-      { datasets: fakeDatasets(root), mission, localAgent })).rejects.toThrow(/is a contestant/)
-    // Nothing executed: no run was created and no delegation was made.
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+    const cell = report.cells[0] as { missionId: string }
+    const envelopes = llmDraftAnnotations(mission, report.runId, cell.missionId)
+    expect(envelopes).toHaveLength(1)
+    expect(envelopes[0]?.['judgeCondition']).toBe('judge-twin')
+    expect(envelopes[0]?.['judgeModel']).toBe(DECLARED_MODEL)
+    expect(envelopes[0]?.['selfJudged']).toBe(true)
+  })
+
+  it('refuses a judge that pins no model — self-judgement would be undecidable', async () => {
+    const root = makeDatasetTree()
+    writeCondition(root, 'judge-unpinned') // model.declared: null
+    const planPath = writeJudgingPlan(root, ['judge-unpinned'], 2)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+
+    // Refused OFFLINE, by validate: the plan never reaches the run loop's own
+    // copy of the rule, which is the right order — a plan that cannot run
+    // should fail review, not execution.
+    const refused = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(EvalRunRefused)
+    expect((refused as EvalRunRefused).diagnostics.map(d => d.code)).toContain('JUDGE_MODEL_UNDECLARED')
     expect(mission.runs.size).toBe(0)
     expect(localAgent.calls).toHaveLength(0)
+  })
+
+  it('runs a PANEL: every judge judges every cell, and only the twin is marked selfJudged', async () => {
+    const root = makeDatasetTree()
+    writeCondition(root, 'judge-twin', { model: { declared: DECLARED_MODEL, endpoint: null } })
+    const other = writeJudgeCondition(root, 'judge-other')
+    const planPath = writeJudgingPlan(root, ['judge-twin', other], 1)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+    const cell = report.cells[0] as { missionId: string }
+    const envelopes = llmDraftAnnotations(mission, report.runId, cell.missionId)
+    expect(envelopes.map(envelope => [envelope['judgeCondition'], envelope['selfJudged']])).toEqual([
+      ['judge-twin', true],
+      ['judge-other', false],
+    ])
   })
 
   it('accepts the same harness on a different declared model', async () => {

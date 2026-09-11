@@ -13,6 +13,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { statSync } from 'node:fs'
+import { checkAgainstEffective, type EffectiveSnapshot } from './effective.ts'
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
 import { conditionUnitDiagnostics, planUnitOf } from './unit.ts'
@@ -33,14 +34,28 @@ export interface EvalDiagnostic {
   message: string
 }
 
+/**
+ * What `conditions provision` recorded about the scope it provisioned — the
+ * lock's `provisioned` block, read back. Absent on any lock written before
+ * provision existed (the field is additive in `dataseek.condition-lock/1`).
+ */
+export interface LockProvisionRecord {
+  /** Epoch ms the provision ran. */
+  at: number
+  /** The harness CLI's own version at provision time; null when it could not be asked. */
+  cliVersion: string | null
+  /** The four condition fields as that scope answered them; null means "no such knob". */
+  effective: { model: string | null; reasoningEffort: string | null; permissions: string | null; endpoint: string | null }
+}
+
 /** One plan-referenced condition, resolved as far as the dataset repo allows. */
 export interface ConditionResolution {
   id: string
   /** sha256 of the condition document; null when it could not be read or validated. */
   sha: string | null
   /** The parsed lock record; null when absent or unreadable. */
-  lock: { sha: string; homeSha?: string } | null
-  /** ready: lock matches the fresh hash and home is verified. missing: no usable declaration. */
+  lock: { sha: string; homeSha?: string; provisioned?: LockProvisionRecord } | null
+  /** ready: lock matches the fresh hash, home is verified, and provision agrees. missing: no usable declaration. */
   status: 'ready' | 'unready' | 'missing'
 }
 
@@ -51,6 +66,13 @@ export interface PlanValidation {
   errors: EvalDiagnostic[]
   warnings: EvalDiagnostic[]
   conditions: ConditionResolution[]
+  /**
+   * The plan's JUDGE conditions, resolved the same way — kept OFF
+   * {@link PlanValidation.conditions} on purpose: that list is the players,
+   * and the run loop expands its matrix from it. A judge is a condition, not
+   * a contestant's cell.
+   */
+  judges: ConditionResolution[]
   /** The dataset-set directory the plan's contract files resolved against; null when unresolved. */
   datasetRoot: string | null
 }
@@ -263,9 +285,26 @@ function planSemantics(plan: unknown): { diagnostics: EvalDiagnostic[]; semantic
     if (typeof samples === 'number' && samples >= 1 && judgeIds.length === 0) {
       diagnostics.push({ code: 'JUDGE_INCOMPLETE', message: 'judge.samples >= 1 but judge.conditions is empty' })
     }
+    const judgeSeen = new Set<string>()
     for (const id of judgeIds) {
       if (!CONDITION_ID_RE.test(id)) diagnostics.push({ code: 'CONDITION_ID_INVALID', message: `judge condition id ${JSON.stringify(id)} is not a usable file name` })
-      if (seen.has(id)) diagnostics.push({ code: 'JUDGE_IS_PLAYER', message: `judge condition ${JSON.stringify(id)} is also a player condition — the judge must not be a contestant` })
+      // Decision 9 relaxed (2026-09-10): a judge MAY be a player. What is
+      // still refused is the same id on both lists, which is not a panel but
+      // a bookkeeping mistake — it would make one condition its own cell's
+      // judge and double every count keyed by condition id. Two DIFFERENT ids
+      // that happen to name the same model are a self-judged cell, marked in
+      // the report rather than refused.
+      if (seen.has(id)) {
+        diagnostics.push({
+          code: 'JUDGE_IS_SAME_CONDITION',
+          message: `condition ${JSON.stringify(id)} appears in both conditions and judge.conditions`
+            + ' — a judge may share a model with a player (self-judged cells are marked in the report), but it must be its own condition id',
+        })
+      }
+      if (judgeSeen.has(id)) {
+        diagnostics.push({ code: 'JUDGE_DUPLICATED', message: `judge condition ${JSON.stringify(id)} appears more than once — a panel of one judge listed twice is not two opinions` })
+      }
+      judgeSeen.add(id)
     }
   }
   return {
@@ -383,8 +422,67 @@ export async function resolveConditionReadiness(id: string, root: string): Promi
     warnings.push({ code: 'HOME_MISMATCH', message: `condition ${id} home.sha does not match the locked home — the scoped home changed after provision` })
   }
   const homeVerified = declaredSha !== undefined && declaredSha === lockHomeSha
-  entry.status = entry.lock.sha === entry.sha && homeVerified ? 'ready' : 'unready'
+
+  // What provision RECORDED about the scope, re-checked against the
+  // declaration as it stands now. A lock whose sha still matches cannot have
+  // drifted by an honest edit — the condition hash would have moved — so a
+  // disagreement here means the lock was written by something other than
+  // provision. That is precisely the forgery T31 exists to make visible: the
+  // two error-grade fields (permissions, model.endpoint) are the approval
+  // boundary and the upstream route, and a run on a lock that lies about
+  // either is not the experiment the condition describes.
+  const provisioned = provisionRecordOf(lock.value['provisioned'])
+  let provisionVerified = true
+  if (provisioned === null) {
+    warnings.push({
+      code: 'PROVISION_RECORD_MISSING',
+      message: `conditions/${id}.lock.json has no provisioned record — it predates \`dsh-eval conditions provision\`, so nothing ever checked the declaration against a real scoped home`,
+    })
+  } else {
+    entry.lock.provisioned = provisioned
+    const snapshot: EffectiveSnapshot = { cliVersion: provisioned.cliVersion, ...provisioned.effective, available: true }
+    for (const row of checkAgainstEffective(loaded.value, snapshot)) {
+      if (row.status !== 'mismatch' || row.severity !== 'error') continue
+      provisionVerified = false
+      warnings.push({
+        code: 'PROVISION_MISMATCH',
+        message: `condition ${id}: ${row.field} disagrees with the scope the lock was provisioned against — ${row.detail}; re-run \`dsh-eval conditions provision\``,
+      })
+    }
+  }
+
+  entry.status = entry.lock.sha === entry.sha && homeVerified && provisionVerified ? 'ready' : 'unready'
   return readiness
+}
+
+/**
+ * Read a lock's `provisioned` block. Every field must be there and be the
+ * right shape: a half-written record is read as ABSENT rather than as a
+ * partial truth, because the whole point of the block is that something
+ * checked the scope.
+ * @param value - the lock's `provisioned` property.
+ * @returns the record, or null when there is none to trust.
+ */
+function provisionRecordOf(value: unknown): LockProvisionRecord | null {
+  if (!isPlainObject(value) || typeof value['at'] !== 'number') return null
+  const effective = value['effective']
+  if (!isPlainObject(effective)) return null
+  const field = (key: string): string | null | undefined => {
+    const raw = effective[key]
+    if (raw === null || typeof raw === 'string') return raw
+    return undefined
+  }
+  const model = field('model')
+  const reasoningEffort = field('reasoningEffort')
+  const permissions = field('permissions')
+  const endpoint = field('endpoint')
+  if (model === undefined || reasoningEffort === undefined || permissions === undefined || endpoint === undefined) return null
+  const cliVersion = value['cliVersion']
+  return {
+    at: value['at'],
+    cliVersion: typeof cliVersion === 'string' ? cliVersion : null,
+    effective: { model, reasoningEffort, permissions, endpoint },
+  }
 }
 
 /** Display paths under one of an item's layer directories; empty when absent. */
@@ -503,6 +601,7 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
   const errors: EvalDiagnostic[] = []
   const warnings: EvalDiagnostic[] = []
   const conditions: ConditionResolution[] = []
+  const judges: ConditionResolution[] = []
   const report: PlanValidation = {
     planPath: planAbs,
     schema: 'dataseek.plan/1',
@@ -510,6 +609,7 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
     errors,
     warnings,
     conditions,
+    judges,
     datasetRoot: null,
   }
 
@@ -547,6 +647,7 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
       message: 'cannot locate the dataset root (dataset.repo/datasets/<id> does not exist and the plan is not inside a plans/ tree) — conditions and stage schemas go unchecked',
     })
     conditions.push(...semantics.conditionIds.map(id => ({ id, sha: null, lock: null, status: 'unready' as const })))
+    judges.push(...semantics.judgeIds.map(id => ({ id, sha: null, lock: null, status: 'unready' as const })))
     return report
   }
 
@@ -566,6 +667,42 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
       errors.push(...conditionUnitDiagnostics(id, readiness.document))
     }
   }
+  // The judge conditions are resolved too — they were not before, so a judge
+  // whose declaration violated the contract was only ever caught by the run
+  // loop, with the plan already approved. A judge does NOT need a unit: it
+  // delegates from the orchestrator, not from a cell, and runs on the host
+  // even in a container run.
+  for (const id of semantics.judgeIds) {
+    const readiness = await resolveConditionReadiness(id, root)
+    errors.push(...readiness.errors.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}` })))
+    warnings.push(...readiness.warnings.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}` })))
+    judges.push(readiness.entry)
+    errors.push(...judgeModelDiagnostics(id, readiness.document))
+  }
   report.ok = errors.length === 0
   return report
+}
+
+/**
+ * A judge condition must PIN its model (decision 9, as relaxed 2026-09-10).
+ *
+ * The relaxation lets a judge share a model with a player and marks the cells
+ * that judged themselves. That marking is only possible if every judge's model
+ * is knowable BEFORE the run: a judge declaring `model.declared: null` runs
+ * whatever its harness happens to be configured for, so no cell could be
+ * called self-judged or not, and the report would be quietly wrong instead of
+ * loudly incomplete. So the null the player conditions may still carry as
+ * "unresolved" is an ERROR here.
+ * @param id - the judge condition id.
+ * @param document - its declaration, or null when it could not be resolved.
+ */
+function judgeModelDiagnostics(id: string, document: Record<string, unknown> | null): EvalDiagnostic[] {
+  if (document === null) return []
+  const model = isPlainObject(document['model']) ? document['model'] : undefined
+  if (model?.['declared'] !== null) return []
+  return [{
+    code: 'JUDGE_MODEL_UNDECLARED',
+    message: `judge condition ${id} declares model.declared: null — a judge must pin its model`
+      + ' (decision 9 allows a judge to share a model with a player and marks those cells self-judged, which is undecidable when the judge runs whatever its harness defaults to)',
+  }]
 }
