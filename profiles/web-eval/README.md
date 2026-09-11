@@ -292,7 +292,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 | **I2 编排器 v0 + pilot A** | 宿主插件 + CLI，只覆盖阶段一二；F2 + F3 × 四家 × 3 rep，每格独立 cwd | `@khorsheed/dsh-eval` 进成员清单；模板由 manifest 生成；`script` 与 `llm-draft` 自动入库；模型回读；datasets 金丝雀字段；datasets 与 mission 的 `tools` 分组配置；bundle；`dsh-eval report` 配对表 | 一格全自动跑完；一份带保留条款的结论；判官一致性有数字 |
 | **I3 容器化 + 阶段三四** | 验证题集级镜像；四家 Linux CLI；容器内 exec；复合指纹；verify 探针脚本；pilot A 的缺口（活性探测、finalize 再入口、负分判据与权重、CLI 版本回读、可判性检查） | lab 复合指纹；provider 容器包装或 CLI 驱动独立包；F2 阶段三的探针；阶段一二的 objective 探针；eval preset | 容器内一格走完全流程，release 经闸；四家在容器内跑通同一题 |
 | **I4 放宽因子** | 条件参数化：模型、preset、skill 包 | provider 的模型参数与每条件 scoped home 覆盖；`dsh-eval conditions provision`；条件注册表数据面；capability-catalog 能力清单哈希 | dsh × 两模型的配对结果；claude × 两模型验证参数路径；同 harness 两 preset 的配对结果 |
-| **I5 agent 配实验 + 界面** | `eval-planning` skill；实验台 tab；计划审阅；判官台；报告视图 | 三个新面 + skill | 一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评 |
+| **I5 agent 配实验 + 界面** | `eval-planning` skill；实验台 tab；计划审阅；判官台；报告视图；eval 模式化（preset + 伴生工具包 + 命名 provider，重跑批仍在独立实例） | 三个新面 + skill | 一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评 |
 | **I6 外部评测集与开放** | SWE-bench / Terminal-Bench 适配脚本；item 级外部源指针；train/dev/test 标签；npm 发布 | 适配脚本；协议扩展；镜像仓 | 一个外部题集跑通一格；`dsh plugin add` 装齐 |
 
 为什么放宽因子排在 I4 而不是 I1：条件哈希的**形状**在 I1 就定死，所以 I4 不需要改契约，只是让 provider 认识更多字段。先在四家 harness 上出一份结论，判官、rubric、去指纹的问题会在那一步全部暴露，比先做多因子更省。
