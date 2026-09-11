@@ -1898,11 +1898,15 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
           // declaration, absent hook — the probe then runs exactly as it did
           // before this key existed.
           ...(planUnit.egressCheck === undefined ? {} : {
+            // No condition name in `where`: both consumers of this message —
+            // the readiness log line and the run's diagnostic — already
+            // prefix it with the condition, and saying it three times in one
+            // sentence is how a message stops being read.
             checkEgress: (): Promise<void> => checkUnitEgress(
               lab,
               unit.id,
               planUnit.egressCheck as EgressCheckDecl,
-              `readiness ${subject.id}`,
+              'the probe unit',
             ),
           }),
           release: async () => {

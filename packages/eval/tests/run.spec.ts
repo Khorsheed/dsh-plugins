@@ -22,6 +22,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run.ts'
 import type { RunOptions, RunReport } from '../src/run.ts'
 import { EvalRunJobs } from '../src/job.ts'
+import { EgressUnavailable } from '../src/egress.ts'
 import { READINESS_PROMPT } from '../src/readiness.ts'
 import type { DatasetsFace, LabAcquireSpec, LabFace, LabFingerprintComponents, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
 import type { DelegationProgress, DelegationResult, DelegationRun } from '../src/faces.ts'
@@ -2844,7 +2845,12 @@ describe('runPlan — the unit says whether it can reach anything, before anyone
     // The point of checking first: the subject was never asked anything, so
     // no round, no tokens, and nothing to mis-attribute to the harness.
     expect(agent.calls.filter(call => call.kind === 'start')).toEqual([])
-    expect(lines.some(line => line.includes('NOT READY') && line.includes('egress check'))).toBe(true)
+    // One condition name in the sentence, not three: the log line and the
+    // diagnostic each add their own prefix, so the check's own message does
+    // not repeat it.
+    const notReady = lines.find(line => line.includes('NOT READY')) ?? ''
+    expect(notReady).toContain('the probe unit: the egress check')
+    expect(notReady.match(/codex-exec|dsh-unit/g) ?? []).toHaveLength(1)
   })
 
   it('asks between acquire and populate on the cell path, and lets a passing unit through', async () => {
@@ -2916,6 +2922,40 @@ describe('runPlan — the unit says whether it can reach anything, before anyone
       .catch((error: unknown) => error)
     expect((refusal as EvalRunRefused).diagnostics.map(d => d.code)).toEqual(['PLAN_SCHEMA'])
     expect((refusal as EvalRunRefused).diagnostics[0]?.message).toContain('egressCheck')
+  })
+
+  it('aborts the run when a sidecar dies mid-run, instead of retrying cells against a dead network', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const homesRoot = stageScopedHome(root)
+    // Passes once (the readiness probe's unit) and fails after: a proxy that
+    // was up when the run started and is not up when the first cell acquires.
+    const counter = join(root, 'egress-calls')
+    const planPath = writePlan(root, {
+      conditions: ['dsh-unit'],
+      unit: {
+        ...UNIT_SEGMENT,
+        egressCheck: { command: ['sh', '-c', `n=$(cat ${counter} 2>/dev/null || echo 0); echo $((n+1)) > ${counter}; [ "$n" = "0" ] || { echo 'curl: (5) Could not resolve proxy' >&2; exit 5; }`] },
+      },
+    }, 'container-egress-mid-run')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const error = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: agent, lab, probes: unitProbes() })
+      .catch((e: unknown) => e)
+    // Not an InfrastructureFailure, so the cell loop does not swallow it into
+    // a retry: one unreachable unit means the next one is unreachable too,
+    // and retrying is answering "the network is gone" with "let me try again".
+    expect(error).toBeInstanceOf(EgressUnavailable)
+    expect((error as Error).message).toContain('Could not resolve proxy')
+    expect((error as Error).message).toContain('cell p0-placeholder-dsh-unit-rep1')
+    // The readiness probe DID pass — this is the mid-run shape, not the
+    // refused-at-the-gate one.
+    expect(agent.calls.some(call => call.readiness === true)).toBe(true)
   })
 
   it('says once, in the log, when a networked plan declares no check at all', async () => {

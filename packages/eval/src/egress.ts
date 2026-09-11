@@ -62,7 +62,9 @@ function tail(stream: string, limit = 300): string {
  * @param lab - the lab face (only `verify` is used).
  * @param unitId - the acquired unit.
  * @param decl - the plan's declaration.
- * @param where - what is being checked, for the message (`readiness codex-exec`).
+ * @param where - whose unit this is, for the message (`the probe unit`,
+ *   `cell p0-placeholder-codex-exec-rep1`). It does NOT name the condition:
+ *   both readers of this message prefix it with one already.
  * @throws {@link EgressUnavailable} when the check does not pass.
  */
 export async function checkUnitEgress(
@@ -78,20 +80,20 @@ export async function checkUnitEgress(
     result = await lab.verify(unitId, { command: [...decl.command], timeoutMs })
   } catch (error: unknown) {
     throw new EgressUnavailable(
-      `${where}: the unit's egress check could not be run (${printable}): `
+      `${where}: the egress check could not be run (${printable}): `
       + `${error instanceof Error ? error.message : String(error)}`,
     )
   }
   if (result.timedOut) {
     throw new EgressUnavailable(
-      `${where}: the unit's egress check (${printable}) exceeded ${timeoutMs}ms — the network this unit sits on`
+      `${where}: the egress check (${printable}) exceeded ${timeoutMs}ms — the network this unit sits on`
       + ' has no way out right now (on an --internal network that means the egress sidecar is down)',
     )
   }
   if (result.exitCode !== 0) {
     const detail = tail(result.stderr) || tail(result.stdout)
     throw new EgressUnavailable(
-      `${where}: the unit's egress check (${printable}) exited ${result.exitCode}`
+      `${where}: the egress check (${printable}) exited ${result.exitCode}`
       + `${detail === '' ? '' : `: ${detail}`}`
       + ' — the unit cannot reach its endpoints, so no cell of this run could produce an attributable result',
     )

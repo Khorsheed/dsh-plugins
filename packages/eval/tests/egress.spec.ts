@@ -38,10 +38,10 @@ describe('checkUnitEgress', () => {
 
   it('refuses on a non-zero exit, quoting the command and what it said', async () => {
     const lab = verifier({ exitCode: 7, stderr: 'curl: (56) CONNECT tunnel failed, response 503' })
-    const error = await checkUnitEgress(lab, 'unit-1', CHECK, 'readiness codex-exec').catch((e: unknown) => e)
+    const error = await checkUnitEgress(lab, 'unit-1', CHECK, 'the probe unit').catch((e: unknown) => e)
     expect(error).toBeInstanceOf(EgressUnavailable)
     expect((error as EgressUnavailable).code).toBe(EGRESS_UNAVAILABLE)
-    expect((error as Error).message).toContain('readiness codex-exec')
+    expect((error as Error).message).toContain('the probe unit')
     expect((error as Error).message).toContain('curl -sSf -m 10 "$HTTPS_PROXY"')
     expect((error as Error).message).toContain('CONNECT tunnel failed')
   })
