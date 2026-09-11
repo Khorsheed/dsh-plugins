@@ -50,6 +50,8 @@ struct HarnessWebView: UIViewRepresentable {
                   let type = body["type"] as? String else { return }
             if type == "ready" {
                 state.mobileAvailable = true
+                if let layout = body["layout"] as? [String: Any], let mode = layout["mode"] as? String,
+                   ["auto", "mobile", "desktop"].contains(mode) { state.displayMode = mode }
                 #if DEBUG
                 if let layout = body["layout"] as? [String: Any], let anchors = body["anchors"] as? [String: Any] {
                     let active = layout["active"] as? Bool ?? false
@@ -104,7 +106,18 @@ struct HarnessWebView: UIViewRepresentable {
             #if DEBUG
             Task { @MainActor [weak webView] in
                 try? await Task.sleep(for: .seconds(2))
-                webView?.evaluateJavaScript("JSON.stringify({ errors: Array.from(document.querySelectorAll('[data-slot-error]')).map(e => e.getAttribute('data-slot-error')), toolbar: document.querySelectorAll('[data-mobile-toolbar]').length, library: document.querySelectorAll('[data-mobile-library]').length, searchDock: document.querySelectorAll('[data-mobile-search-dock]').length, scan: document.querySelectorAll('[data-mobile-scan]').length })") { value, _ in
+                let probe = """
+                (() => {
+                  const q = s => document.querySelector(s);
+                  const rect = e => e ? {top:Math.round(e.getBoundingClientRect().top),bottom:Math.round(e.getBoundingClientRect().bottom),height:Math.round(e.getBoundingClientRect().height)} : null;
+                  return JSON.stringify({errors:Array.from(document.querySelectorAll('[data-slot-error]')).map(e=>e.getAttribute('data-slot-error')),
+                    toolbar:!!q('[data-mobile-toolbar]'),library:!!q('[data-mobile-library]'),welcome:!!q('[data-mobile-welcome]'),
+                    phase:q('[data-slot="main.conversation"] [data-phase]')?.dataset.phase,
+                    frame:rect(q('[data-mobile-frame]')),composer:rect(q('[data-composer-card]')),context:rect(q('[data-mobile-context-row]')),
+                    stats:rect(q('[data-composer-stats]')),viewport:Math.round(window.visualViewport?.height || innerHeight)});
+                })()
+                """
+                webView?.evaluateJavaScript(probe) { value, _ in
                     if let value { print("DSH rendered surface: \(value)") }
                 }
             }

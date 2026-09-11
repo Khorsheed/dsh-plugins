@@ -142,4 +142,27 @@ describe('mobile session navigation', () => {
     expect(editor.value).toBe('unsent draft')
   })
 
+  it('routes library settings to the native sheet and keeps chat back/new separate', () => {
+    const f = fixture(), navigation = new MobileNavigation(), postMessage = vi.fn(), startSession = vi.fn()
+    navigation.set({ ...f.navigation, workspace: { ...f.navigation.workspace, startSession } })
+    window.__DSH_MOBILE_SHELL__ = { bridgeVersion: 1, capabilities: ['settings'] }
+    window.webkit = { messageHandlers: { dshMobile: { postMessage } } }
+    const snapshot = { active: true, drawer: false, supported: true, mode: 'mobile' }
+    const props = {
+      navigation, toggleSidebar: vi.fn(),
+      presentation: { prepareNavigation: vi.fn(), getSnapshot: () => snapshot, subscribe: () => () => {} },
+      connection: { state: { getSnapshot: () => 'connected', subscribe: () => () => {} } },
+    } as unknown as MobileChromeInjected
+    render(<MobileChrome {...props} t={t}/>)
+    fireEvent.click(screen.getByRole('button', { name: en.settings }))
+    expect(postMessage).toHaveBeenCalledWith({ type: 'settings', bridgeVersion: 1 })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /First draft/ }))
+    expect(screen.queryByRole('button', { name: en.options })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.newSession }))
+    expect(startSession).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: en.menu, exact: true }))
+    expect(screen.getByRole('button', { name: en.settings })).toBeTruthy()
+  })
+
 })

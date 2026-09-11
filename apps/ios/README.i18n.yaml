@@ -1,4 +1,4 @@
 # Bilingual-pair consistency record. Both languages carry equal authority.
 # Native apps are outside the current repository recorder glob; update both hashes together.
-apps/ios/README.md: 7af626130714787941179b1b0852134ba98a0541
-apps/ios/README.zh.md: f1896c5cedbe34f1739dae18ebbc4ad48378a64c
+apps/ios/README.md: 9b656dd1bf28aed0c76df5b50e07c455d5b0d913
+apps/ios/README.zh.md: e8adcc19f6947593314e021268fbf8a965ea4354

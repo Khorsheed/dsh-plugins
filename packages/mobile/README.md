@@ -71,6 +71,8 @@ Keep the Mac awake and all three services running. Stop the tunnel process to cl
 
 Desktop mode keeps a “Return to mobile layout” button even after reload. Mobile entry suppresses automatic composer focus until an explicit input gesture; rc1 DOM-anchor changes fall back to official focus behavior. Ordinary session titles are deduplicated while ancestor/lineage controls remain visible. These Web-only fixes do not require reinstalling the native App.
 
+The polished mobile view retains composer statistics and official message actions, hides the unselected trajectory entry, and contributes its welcome through the public brand seat. Existing session workspace/preset labels are read-only on rc1; only new sessions offer the official pickers. The native settings page now controls layout through the validated `dsh-mobile-display` event. Unknown header geometry preserves the original header and ancestor navigation.
+
 ## Compatibility
 
 | Host line | Verdict |

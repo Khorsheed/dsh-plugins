@@ -1,4 +1,5 @@
 import { MOBILE_CSS } from './styles.ts'
+import { MobileSurface } from './surface.ts'
 import { ComposerFocus } from './composerFocus.ts'
 
 export type DisplayMode = 'auto' | 'mobile' | 'desktop'
@@ -16,6 +17,7 @@ export class MobilePresentation {
   private disposed = false
   private pending = 0
   private readonly composerFocus: ComposerFocus
+  private readonly surface: MobileSurface
 
   constructor(private readonly win: Window, private readonly shell: boolean) {
     const query = new URL(win.location.href).searchParams.get('mobile')
@@ -24,6 +26,7 @@ export class MobilePresentation {
     const mode = query === '1' ? 'mobile' : query === '0' ? 'desktop'
       : saved === 'mobile' || saved === 'desktop' ? saved : 'auto'
     this.snapshot = { mode, active: false, drawer: false, supported: false }
+    this.surface = new MobileSurface(win.document)
     this.composerFocus = new ComposerFocus(win.document, () => this.snapshot.active)
     this.media = win.matchMedia('(max-width: 760px) and (pointer: coarse)')
     this.style = win.document.createElement('style')
@@ -31,9 +34,12 @@ export class MobilePresentation {
     this.style.textContent = MOBILE_CSS
     win.document.head.append(this.style)
     this.observer = new MutationObserver(this.schedule)
-    this.observer.observe(win.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-sidebar-collapsed'] })
+    this.observer.observe(win.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-sidebar-collapsed', 'data-phase', 'aria-selected', 'src'], characterData: true })
     this.media.addEventListener('change', this.schedule)
     win.addEventListener('resize', this.schedule)
+    win.addEventListener('dsh-mobile-display', this.display)
+    win.document.addEventListener('pointerdown', this.pointer, true)
+    win.document.addEventListener('keydown', this.keyboard, true)
     win.visualViewport?.addEventListener('resize', this.schedule)
     this.reconcile()
   }
@@ -49,6 +55,13 @@ export class MobilePresentation {
     try { this.win.localStorage.setItem(STORAGE_KEY, mode) } catch { /* Private storage denial does not block the UI. */ }
     this.reconcile(true)
   }
+
+  private readonly display = (event: Event): void => {
+    const mode = (event as CustomEvent<{ mode?: unknown }>).detail?.mode
+    if (mode === 'auto' || mode === 'mobile' || mode === 'desktop') this.setMode(mode)
+  }
+  private readonly pointer = (): void => { if (this.snapshot.active) this.win.document.documentElement.dataset.mobileInput = 'pointer' }
+  private readonly keyboard = (event: KeyboardEvent): void => { if (this.snapshot.active && event.key === 'Tab') this.win.document.documentElement.dataset.mobileInput = 'keyboard' }
 
   private readonly schedule = (): void => {
     if (this.disposed || this.pending) return
@@ -69,6 +82,10 @@ export class MobilePresentation {
     frame?.toggleAttribute('data-mobile-frame', active)
     if (active) doc.documentElement.style.setProperty('--mobile-height', `${Math.round(this.win.visualViewport?.height ?? this.win.innerHeight)}px`)
     else doc.documentElement.style.removeProperty('--mobile-height')
+    doc.documentElement.toggleAttribute('data-mobile-native-insets', active && this.shell)
+    if (active && !doc.documentElement.dataset.mobileInput) doc.documentElement.dataset.mobileInput = 'pointer'
+    if (!active) doc.documentElement.removeAttribute('data-mobile-input')
+    this.surface.sync(active ? frame : undefined)
     const drawer = active && !frame?.hasAttribute('data-sidebar-collapsed')
     if (force || active !== this.snapshot.active || drawer !== this.snapshot.drawer || !!frame !== this.snapshot.supported) {
       this.snapshot = { ...this.snapshot, active, drawer, supported: !!frame }
@@ -81,6 +98,12 @@ export class MobilePresentation {
     this.disposed = true
     this.observer.disconnect()
     this.composerFocus.dispose()
+    this.surface.dispose()
+    this.win.removeEventListener('dsh-mobile-display', this.display)
+    this.win.document.removeEventListener('pointerdown', this.pointer, true)
+    this.win.document.removeEventListener('keydown', this.keyboard, true)
+    this.win.document.documentElement.removeAttribute('data-mobile-input')
+    this.win.document.documentElement.removeAttribute('data-mobile-native-insets')
     this.media.removeEventListener('change', this.schedule)
     this.win.removeEventListener('resize', this.schedule)
     this.win.visualViewport?.removeEventListener('resize', this.schedule)

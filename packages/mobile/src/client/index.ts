@@ -7,6 +7,7 @@ import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
 import { MobilePresentation } from './presentation.ts'
 import { DirectoryFlow } from './DirectoryFlow.tsx'
 import { MobileNavigation } from './navigation.ts'
+import { MobileWelcome, MobileWorkspaceContext } from './MobileSeats.tsx'
 import { MobileChrome } from './MobileChrome.tsx'
 import type { MobileChromeInjected } from './MobileChrome.tsx'
 import { NS, en, zh } from './locales.ts'
@@ -40,6 +41,25 @@ export function apply(ctx: Context): void {
     name: 'shell.overlay', id: 'mobile-navigation', locale: NS,
     inject: (): MobileChromeInjected => ({ presentation, connection, navigation, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
   }, MobileChrome))
+  // Contribute through existing seats; no foreign child-slot ownership is claimed.
+  ctx.slots.inject('conversation.hero.brand.mark', () => {
+    let remove: (() => void) | undefined
+    const sync = () => {
+      if (presentation.getSnapshot().active) remove ??= ctx.slots.register({ name: 'conversation.hero.brand.mark', priority: -100, locale: NS }, MobileWelcome)
+      else { remove?.(); remove = undefined }
+    }
+    sync(); const unsubscribe = presentation.subscribe(sync)
+    return () => { unsubscribe(); remove?.() }
+  })
+  ctx.slots.inject('conversation.input.dock', () => {
+    let remove: (() => void) | undefined
+    const sync = () => {
+      if (presentation.getSnapshot().active) remove ??= ctx.slots.register({ name: 'conversation.input.dock', id: 'mobile-workspace-context', order: -100 }, MobileWorkspaceContext)
+      else { remove?.(); remove = undefined }
+    }
+    sync(); const unsubscribe = presentation.subscribe(sync)
+    return () => { unsubscribe(); remove?.() }
+  })
   // Shadow only these public flow slots while this client is in mobile mode.
   for (const name of ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const) {
     ctx.slots.inject(name, () => {

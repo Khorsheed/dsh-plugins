@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { GROUPING_KEY, groupSessions, recentSessions } from './navigation.ts'
 import type { LibraryGrouping, NavigationCapabilities } from './navigation.ts'
+import { MobileIcon } from './MobileIcon.tsx'
 import { hasNativeAction, requestNativeAction } from './native.ts'
 
 type Props = PropsLocale<'mobile'> & { navigation: NavigationCapabilities; onOpen: () => void; onBeforeOpen?: () => void }
@@ -38,12 +39,12 @@ export function MobileLibrary({ navigation, onOpen, onBeforeOpen, t }: Props) {
         return <section key={group.key} data-mobile-session-group>
           {grouping === 'workspace' ? <button data-mobile-workspace-group aria-expanded={open} onClick={() => setCollapsed(previous => {
             const next = new Set(previous); next.has(group.key) ? next.delete(group.key) : next.add(group.key); return next
-          })}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 6h7l2 3h9v11H3V6Z"/></svg><strong>{group.label}</strong><small>{group.rows.length}</small><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d={open ? "m6 9 6 6 6-6" : "m9 6 6 6-6 6"}/></svg></button> : <h2>{group.label}</h2>}
+          })}><MobileIcon name="folder" size={18}/><strong>{group.label}</strong><small>{group.rows.length}</small><MobileIcon name={open ? "down" : "right"} size={18}/></button> : <h2>{group.label}</h2>}
           {open && <ul>{group.rows.map(row => <li key={row.id}>
             <button data-mobile-session aria-current={sessions.current === row.id ? 'page' : undefined} onClick={() => {
               try { onBeforeOpen?.(); navigation.workspace.openSession(row.id); setError(false); onOpen() } catch { setError(true) }
             }}>
-              <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><small>{grouping === 'time' ? row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) || t('unassignedWorkspace') : row.running ? t('running') : row.completed ? t('completed') : t('conversation')}</small></span>
+              <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><small>{grouping === 'time' ? row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) || t('unassignedWorkspace') : row.running ? t('running') : row.completed ? t('completed') : ''}</small></span>
               {row.running ? <span data-mobile-activity role="status">{t('running')}</span> : <time dateTime={new Date(row.updatedAt).toISOString()}>{new Date(row.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time>}
             </button>
           </li>)}</ul>}
@@ -51,8 +52,8 @@ export function MobileLibrary({ navigation, onOpen, onBeforeOpen, t }: Props) {
       })}
     </div>
     <footer data-mobile-search-dock>
-      <label data-mobile-search><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input ref={input} type="search" value={query} onFocus={() => setSearching(true)} onChange={e => setQuery(e.target.value)} placeholder={t('searchTitles')} aria-label={t('searchTitles')}/></label>
-      {searching ? <button data-mobile-search-cancel onClick={() => { setQuery(''); setSearching(false); input.current?.blur() }}>{t('cancel')}</button> : hasNativeAction('scan') && <button data-mobile-scan aria-label={t('scan')} onClick={() => requestNativeAction('scan')}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M8 4H5a1 1 0 0 0-1 1v3m12-4h3a1 1 0 0 1 1 1v3M4 16v3a1 1 0 0 0 1 1h3m8 0h3a1 1 0 0 0 1-1v-3M5 12h14"/></svg></button>}
+      <label data-mobile-search><MobileIcon name="search" size={20}/><input ref={input} type="search" enterKeyHint="search" autoComplete="off" value={query} onFocus={() => setSearching(true)} onChange={e => setQuery(e.target.value)} placeholder={t('searchTitles')} aria-label={t('searchTitles')}/></label>
+      {searching ? <button data-mobile-search-cancel aria-label={t('cancel')} onClick={() => { setQuery(''); setSearching(false); input.current?.blur() }}><MobileIcon name="close"/></button> : hasNativeAction('scan') && <button data-mobile-scan aria-label={t('scan')} onClick={() => requestNativeAction('scan')}><MobileIcon name="scan"/></button>}
     </footer>
   </section>
 }

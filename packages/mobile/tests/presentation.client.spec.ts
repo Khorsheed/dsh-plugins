@@ -102,7 +102,7 @@ describe('mobile presentation ownership', () => {
       t: (key: keyof typeof en) => en[key],
     } as MobileChromeInjected & { t: (key: keyof typeof en) => string }))
     const p = mount(true), page = mountChrome(p)
-    fireEvent.click(screen.getByRole('button', { name: en.options }))
+    fireEvent.click(screen.getByRole('button', { name: en.settings }))
     fireEvent.click(screen.getByRole('button', { name: en.desktop, exact: true }))
     fireEvent.click(screen.getByRole('button', { name: en.done }))
     expect(screen.getByRole('button', { name: en.restoreMobile })).toBeTruthy()
@@ -148,6 +148,23 @@ describe('mobile presentation ownership', () => {
     nav.insertAdjacentHTML('afterbegin', '<span><button>Parent</button></span>')
     expect(document.querySelector(ORDINARY_TITLE)).toBeNull()
     expect(main.querySelector('[role="tablist"]')!.textContent).toBe('Conversation / Trajectory')
+  })
+
+  it('accepts only known native display choices and cleans up modality and inset ownership', () => {
+    const p = mount(true)
+    expect(document.documentElement.hasAttribute('data-mobile-native-insets')).toBe(true)
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+    expect(document.documentElement.dataset.mobileInput).toBe('keyboard')
+    fireEvent.pointerDown(document.body)
+    expect(document.documentElement.dataset.mobileInput).toBe('pointer')
+    window.dispatchEvent(new CustomEvent('dsh-mobile-display', { detail: { mode: 'unknown' } }))
+    expect(p.getSnapshot().active).toBe(true)
+    window.dispatchEvent(new CustomEvent('dsh-mobile-display', { detail: { mode: 'desktop' } }))
+    expect(p.getSnapshot().active).toBe(false)
+    expect(document.documentElement.hasAttribute('data-mobile-native-insets')).toBe(false)
+    p.dispose()
+    window.dispatchEvent(new CustomEvent('dsh-mobile-display', { detail: { mode: 'mobile' } }))
+    expect(localStorage.getItem('dsh.mobile.display')).toBe('desktop')
   })
 
 })

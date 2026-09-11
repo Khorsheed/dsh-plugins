@@ -15,6 +15,7 @@ final class BrowserState: ObservableObject {
     @Published var chromeVisible = false
     @Published var sheet: MobileSheet?
     @Published var layoutDiagnostic = ""
+    @Published var displayMode = "auto"
     weak var webView: WKWebView?
 
     init() {
@@ -134,6 +135,17 @@ struct ConnectionView: View {
                 } header: { Text("连接") } footer: { Text("首次连接使用电脑提供的官方登录链接。仅保存主机地址，登录 token 不保存到设置中。") }
                 if let failure = browser.failure { Section { Text(failure).foregroundStyle(.red) } }
                 Section("此设备") {
+                    if browser.mobileAvailable {
+                        Picker("布局", selection: Binding(get: { browser.displayMode }, set: { mode in
+                            guard ["auto", "mobile", "desktop"].contains(mode) else { return }
+                            browser.displayMode = mode
+                            browser.webView?.evaluateJavaScript("window.dispatchEvent(new CustomEvent('dsh-mobile-display', {detail:{mode:'\(mode)'}}))", completionHandler: nil)
+                        })) {
+                            Text("跟随屏幕尺寸").tag("auto")
+                            Text("移动布局").tag("mobile")
+                            Text("桌面布局").tag("desktop")
+                        }
+                    }
                     Picker("外观", selection: $appearance) {
                         Text("跟随系统").tag("system")
                         Text("浅色").tag("light")

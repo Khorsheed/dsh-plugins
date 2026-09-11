@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { MobileIcon } from './MobileIcon.tsx'
 import { MobileLibrary } from './MobileLibrary.tsx'
 import type { MobileNavigation, NavigationCapabilities } from './navigation.ts'
 import type { MobilePresentation, DisplayMode } from './presentation.ts'
@@ -27,6 +28,13 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
   const wire = useSyncExternalStore(connection.state.subscribe, connection.state.getSnapshot)
   const available = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot)
   const [library, setLibrary] = useState(false), [settings, setSettings] = useState(false)
+  const [connectionExpanded, setConnectionExpanded] = useState(false)
+  useEffect(() => {
+    setConnectionExpanded(false)
+    if (wire === 'connected') return
+    const timer = window.setTimeout(() => setConnectionExpanded(true), 4000)
+    return () => window.clearTimeout(timer)
+  }, [wire])
   const activated = useRef(false), dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     if (!state.active) { activated.current = false; setLibrary(false); return }
@@ -74,19 +82,17 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     {state.active && <>
       {library && available && <MobileLibrary navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} />}
       {state.drawer && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
-      <nav data-mobile-toolbar aria-label={t('menu')}>
+      <nav data-mobile-toolbar data-library={library} aria-label={t('menu')}>
         <button aria-label={library ? t('settings') : t('menu')} onClick={library ? openSettings : openLibrary}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">{library ? <><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--dsw-alias-bg-base, white)"/><circle cx="15" cy="17" r="3" fill="var(--dsw-alias-bg-base, white)"/></> : <path d="m14 5-7 7 7 7"/>}</svg>
+          <MobileIcon name={library ? "settings" : "back"}/>
         </button>
-        <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}</div>
-        <button aria-label={library ? t('newSession') : t('options')} onClick={library ? startSession : () => setSettings(true)}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">{library ? <path d="M14 4H5v15h15v-9M10 14l2-5 6-6 3 3-6 6-5 2Z"/> : <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>}</svg>
-        </button>
+        <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
+        <button data-mobile-new={!!available} aria-label={available ? t('newSession') : t('settings')} onClick={available ? startSession : openSettings}><MobileIcon name={available ? "compose" : "settings"}/></button>
       </nav>
-      {wire !== 'connected' && <div data-mobile-connection-status role="status"><span>{t(wire ?? 'connecting')}</span><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></div>}
+      {wire !== 'connected' && connectionExpanded && <div data-mobile-connection-status role="status"><span>{t(wire ?? 'connecting')}</span><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></div>}
     </>}
-    <dialog ref={dialog} data-mobile-dialog onClose={() => setSettings(false)} aria-label={library ? t('settings') : t('options')}>
-      <h2>{library ? t('settings') : t('options')}</h2>
+    <dialog ref={dialog} data-mobile-dialog onClose={() => setSettings(false)} aria-label={t('settings')}>
+      <h2>{t('settings')}</h2>
       {available && <button data-mobile-option onClick={startSession}>{t('newSession')}</button>}
       <button data-mobile-option onClick={() => { setSettings(false); setLibrary(false); if (!state.drawer) toggleSidebar() }}>{t('workspaces')}</button>
       {hasNativeAction('settings') ? <button data-mobile-option onClick={() => { setSettings(false); requestNativeAction('settings') }}>{t('connectionSettings')}</button> : <><h3>{t('connection')}</h3><p>{window.location.host}</p><p>{t(wire ?? 'connecting')}</p><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></>}
