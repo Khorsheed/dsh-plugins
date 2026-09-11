@@ -83,12 +83,16 @@ export const DEFAULT_NEW_SESSION_PREFERENCE: BoundKey = { kind: 'key', modifiers
 export const DEFAULT_COMPACT_PREFERENCE: BoundKey = { kind: 'key', modifiers: ['primary', 'shift'], key: 'x' }
 
 /**
- * Default: Ctrl/Cmd+B toggles the sidebar — the editor-standard chord (VS
- * Code, Slack, Discord). The browser gesture it replaces (Firefox's Bookmarks
- * sidebar) is page-interceptable, and the same action is available on the
- * middle mouse button by rebinding.
+ * Default: the **middle mouse button** toggles the sidebar. The product owner
+ * chose the pointer gesture over the editor-standard `Ctrl/Cmd+B` chord: for
+ * this particular action (give the conversation room) the middle button sits
+ * under the hand already on the mouse. The cost is deliberate and documented
+ * in both READMEs — a `global` middle-click owns autoscroll (Windows),
+ * primary-selection paste (Linux), and the open-link-in-new-tab default on
+ * every link in the page — and a trackpad-only machine rebinds it to a chord
+ * in one click.
  */
-export const DEFAULT_TOGGLE_SIDEBAR_PREFERENCE: BoundKey = { kind: 'key', modifiers: ['primary'], key: 'b' }
+export const DEFAULT_TOGGLE_SIDEBAR_PREFERENCE: BoundMouse = { kind: 'mouse', modifiers: [], button: 1 }
 
 /** Default bindings of the plugin's built-in actions, keyed by action id. */
 export const DEFAULT_PREFERENCES: Record<string, ShortcutBinding> = {

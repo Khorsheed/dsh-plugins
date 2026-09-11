@@ -125,7 +125,8 @@ describe('ShortcutsRow', () => {
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+S' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+O' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+Shift+X' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Ctrl/Cmd+B' })).toBeDefined()
+    // The sidebar ships on the middle mouse button: a diagram plus the locale's word.
+    expect(screen.getByRole('button', { name: '中键' })).toBeDefined()
     // At the shipped defaults there is nothing to reset and no hint to show.
     expect(screen.queryByRole('button', { name: '恢复默认' })).toBeNull()
     expect(screen.queryByText(/默认：/)).toBeNull()
@@ -168,7 +169,7 @@ describe('ShortcutsRow', () => {
 
   it('records a mouse button, leaving the primary button to the recorder itself', () => {
     const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Ctrl/Cmd+B' }))
+    fireEvent.click(screen.getByRole('button', { name: '中键' }))
     // The primary button is not part of the vocabulary: it is how the recorder
     // is operated, so a plain left click neither binds nor claims anything.
     const primary = fireEvent.mouseDown(document, { button: 0 })

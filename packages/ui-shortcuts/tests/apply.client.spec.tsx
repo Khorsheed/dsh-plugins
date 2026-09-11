@@ -138,18 +138,18 @@ describe('ui-shortcuts apply', () => {
     await b.runtime.dispose()
   })
 
-  it('Ctrl/Cmd+B toggles the sidebar through the probed ctx.layout service, and degrades without it', async () => {
+  it('the shipped sidebar binding is a middle click; it toggles through the probed ctx.layout and degrades without it', async () => {
     const b = await bench()
-    const chord = new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true })
-    document.dispatchEvent(chord)
+    const down = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
+    document.dispatchEvent(down)
     expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
-    expect(chord.defaultPrevented).toBe(true)
+    expect(down.defaultPrevented).toBe(true)
     await b.runtime.dispose()
 
     // A composition without the shell keeps every other shortcut alive; the
-    // gated action never claims the chord either.
+    // gated action never claims the gesture either.
     const bare = await bench({ layout: false })
-    const orphan = new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true })
+    const orphan = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
     document.dispatchEvent(orphan)
     expect(orphan.defaultPrevented).toBe(false)
     await bare.runtime.dispose()
@@ -182,6 +182,23 @@ describe('ui-shortcuts apply', () => {
     document.dispatchEvent(menu)
     expect(menu.defaultPrevented).toBe(false) // button 2 is not the bound button
     expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    await b.runtime.dispose()
+  })
+
+  it('a right-button binding claims the system context menu instead', async () => {
+    const b = await bench()
+    const injected = await rowInjected(b)
+    injected.setPreference('toggleSidebar', { kind: 'mouse', modifiers: [], button: 2 })
+    // The down event runs the action, as with any mouse binding.
+    const down = new MouseEvent('mousedown', { button: 2, bubbles: true, cancelable: true })
+    document.dispatchEvent(down)
+    expect(b.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(down.defaultPrevented).toBe(true)
+    // The context menu is not a preventable default of the down event, so the
+    // claimed binding owns it on `contextmenu` too.
+    const menu = new MouseEvent('contextmenu', { button: 2, bubbles: true, cancelable: true })
+    document.dispatchEvent(menu)
+    expect(menu.defaultPrevented).toBe(true)
     await b.runtime.dispose()
   })
 
