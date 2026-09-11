@@ -172,7 +172,6 @@ html[data-dsh-mobile] [data-composer-card] { border-radius:25px; border:1px soli
 html[data-dsh-mobile] [data-composer-card] > div:last-child { gap:4px; }
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div { gap:3px; }
 html[data-dsh-mobile] [data-composer-card] > div:last-child button { min-height:40px; }
-html[data-dsh-mobile] [data-composer-card] button > svg { width:20px; height:20px; }
 /* rc1's two direct toolbar buttons precede the hidden attachment input.
    Scope narrowly so plugin buttons, permission menus and send retain their own states. */
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div:first-child > button:has(~ input[type=file][hidden]) { width:40px; height:40px; min-width:40px; padding:0; background:transparent; border-radius:50%; }
@@ -193,20 +192,34 @@ html[data-dsh-mobile] [data-phase=hero] span:has(> [data-slot="conversation.hero
 html[data-dsh-mobile]:has([data-phase=hero]) [data-mobile-toolbar][data-library=false] [data-mobile-new=true] { visibility:hidden; }
 html[data-dsh-mobile] [data-phase=hero] div:has(> [data-slot="conversation.hero.workspace"]) { gap:6px; padding:6px 18px; flex-wrap:wrap; }
 html[data-dsh-mobile] [data-phase=hero] div:has(> [data-slot="conversation.hero.workspace"]) > button, html[data-dsh-mobile] [data-slot="conversation.hero.agentPreset"] button[aria-haspopup] { border-radius:18px; min-height:40px; font-size:13px; background:var(--mobile-soft); }
-/* Existing-session context: retain the original preset/actions and place them beside the
-   read-only workspace seat. DOM ancestry, React ownership and callbacks remain unchanged. */
-[data-mobile-context-seat] { height:44px; display:flex; align-items:center; padding:0 18px; }
-[data-mobile-workspace-label] { display:flex; align-items:center; gap:6px; max-width:125px; min-width:0; font-size:12px; }
-[data-mobile-workspace-label] > span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-[data-mobile-workspace-label] svg { flex:none; }
-html[data-dsh-mobile] [data-mobile-context-layout] > [data-slot="conversation.session.header"] header { display:contents; }
-[data-mobile-context-row] { position:absolute; bottom:var(--mobile-context-bottom,0px); left:155px; right:18px; height:44px; z-index:8; gap:4px!important; }
-[data-mobile-context-row] > div:first-child { flex:1; min-width:0; gap:0; }
-[data-mobile-context-row] [data-slot="conversation.session.header.actions"] { min-width:0; }
-[data-mobile-context-row] [data-slot="conversation.session.header.actions"] span { font-size:12px; }
-[data-mobile-context-row] > div { margin-left:0!important; }
-[data-mobile-context-row] button { min-width:32px; min-height:40px; }
-[data-mobile-context-row] [data-slot="conversation.session.header.actions"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-[data-mobile-hidden-tab], [data-mobile-desktop-launch] { display:none!important; }
+/* Quiet, read-only metadata below the mobile title. */
+[data-mobile-subtitle] { display:flex; justify-content:center; align-items:center; gap:5px; margin-top:3px; font-size:11px; line-height:16px; color:var(--dsw-alias-label-secondary,#61666b); }
+[data-mobile-subtitle] > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+[data-mobile-subtitle] > span:last-child:not(:first-child) { flex-shrink:0; max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-dsh-mobile]:has([data-mobile-session-title]) [data-mobile-header-hidden], [data-mobile-hidden-tab] { display:none!important; }
+/* Fold only the identified official trigger buttons, not their menus or owners. */
+[data-mobile-folded-action] { display:none!important; }
+[data-mobile-tools-seat] { display:contents; }
+html[data-dsh-mobile] [data-mobile-tools-open] { display:grid; place-items:center; width:44px; height:44px; min-width:44px; padding:0; border:0; border-radius:50%; corner-shape:round; color:var(--dsw-alias-label-primary); background:var(--mobile-soft); }
+[data-mobile-tools-dialog] { box-sizing:border-box; margin:auto auto 0; width:min(100%,520px); max-width:100%; max-height:75dvh; overflow-y:auto; padding:16px 20px max(20px,env(safe-area-inset-bottom)); border:1px solid var(--mobile-line); border-bottom:0; border-radius:26px 26px 0 0; background:var(--mobile-face); color:var(--dsw-alias-label-primary); box-shadow:0 -8px 40px #0002; }
+[data-mobile-tools-dialog]::backdrop { background:#0005; }
+[data-mobile-tools-dialog] [data-mobile-tools-handle] { width:34px; height:4px; margin:0 auto 12px; border-radius:4px; background:var(--dsw-alias-label-tertiary); opacity:.5; }
+[data-mobile-tools-dialog] header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+[data-mobile-tools-dialog] strong { font-size:16px; font-weight:500; }
+[data-mobile-tools-dialog] button { font:inherit; color:inherit; cursor:pointer; border:0; background:transparent; -webkit-tap-highlight-color:transparent; }
+[data-mobile-tools-dialog] button:disabled { opacity:.45; cursor:default; }
+[data-mobile-tools-dialog] header button { width:44px; height:44px; display:grid; place-items:center; border-radius:50%; padding:0; }
+[data-mobile-tools-grid] { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+[data-mobile-tools-grid] button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:92px; padding:12px; border-radius:20px; background:var(--mobile-soft); font-size:14px; }
+[data-mobile-tools-permission] { display:flex; align-items:center; width:100%; gap:10px; margin-top:12px; min-height:64px; padding:12px 0; text-align:left; font-size:14px!important; }
+[data-mobile-tools-permission] > span { flex-shrink:0; }
+[data-mobile-tools-permission] > small { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--dsw-alias-label-secondary); }
+[data-mobile-tools-dialog] svg { flex:none; }
+html[data-mobile-input=pointer] [data-mobile-tools-dialog] button:focus { outline:none; }
+html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > button:has(>svg):not([aria-haspopup]) { width:44px; height:44px; min-width:44px; padding:0; border-radius:50%; corner-shape:round; transform:none; }
+html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > button:has(>svg):not([aria-haspopup]) > svg { width:20px; height:20px; flex:none; }
+html[data-dsh-mobile] [data-slot="conversation.input.model"] { max-width:min(56vw,260px); }
+[data-mobile-context-meter] { position:absolute!important; bottom:-35px; right:8px; }
+html[data-dsh-mobile] [data-composer-seat]:has([data-mobile-context-meter]) [data-composer-stats] { padding-right:48px; }
 @media (prefers-reduced-motion: reduce) { [data-mobile-frame] * { scroll-behavior:auto !important; } }
 `

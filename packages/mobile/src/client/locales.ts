@@ -1,6 +1,7 @@
 /** Copy for controls owned by mobile; all conversation copy stays with its owner. */
 export const NS = 'mobile'
 export const en = {
+  inputTools: 'Add and configure', closeTools: 'Close input tools', attachments: 'Add attachment', commands: 'Commands', permissions: 'Permissions',
   welcome: 'What would you like to do?', welcomeHint: 'Continue an idea, or start a new task.',
   menu: 'Conversations', close: 'Close navigation', title: 'Your workspace, with you',
   settings: 'Mobile settings', back: 'Back', display: 'Display',
@@ -16,6 +17,7 @@ export const en = {
   workspace: 'Open workspace', hostPath: 'Computer directory', hostPathHelp: 'Enter an existing absolute directory on your computer. This does not select a folder on your phone.', openWorkspace: 'Open', cancel: 'Cancel',
 } as const
 export const zh: Record<keyof typeof en, string> = {
+  inputTools: '添加与设置', closeTools: '关闭输入工具', attachments: '添加附件', commands: '指令', permissions: '会话权限',
   welcome: '今天想做点什么？', welcomeHint: '继续一个想法，或开始新的任务。',
   menu: '会话', close: '关闭会话导航', title: '工作空间，随身同行',
   settings: '移动端设置', back: '返回', display: '界面',

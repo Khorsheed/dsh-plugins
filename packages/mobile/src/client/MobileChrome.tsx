@@ -5,6 +5,7 @@ import { MobileIcon } from './MobileIcon.tsx'
 import { MobileLibrary } from './MobileLibrary.tsx'
 import type { MobileNavigation, NavigationCapabilities } from './navigation.ts'
 import type { MobilePresentation, DisplayMode } from './presentation.ts'
+import type { MobileSurface } from './surface.ts'
 import { hasNativeAction, reportChrome, requestNativeAction } from './native.ts'
 
 export interface MobileChromeInjected {
@@ -14,12 +15,16 @@ export interface MobileChromeInjected {
   connection: ConnectionHandle
 }
 
-function ConversationTitle({ navigation, fallback, prepareNavigation }: { navigation: NavigationCapabilities; fallback: string; prepareNavigation: () => void }) {
+const emptySubscribe = () => () => {}
+const emptyPreset = () => ''
+function ConversationTitle({ navigation, fallback, prepareNavigation, surface }: { navigation: NavigationCapabilities; fallback: string; prepareNavigation: () => void; surface?: MobileSurface }) {
   const feed = navigation.sessions.list
   const sessions = useSyncExternalStore(useCallback(listener => feed.subscribe(listener), [feed]), useCallback(() => feed.getSnapshot(), [feed]))
   useLayoutEffect(() => prepareNavigation(), [sessions.current, prepareNavigation])
   const row = sessions.current ? sessions.byId[sessions.current] : undefined
-  return <strong data-mobile-session-title={row && !row.blank ? '' : undefined}>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>
+  const preset = useSyncExternalStore(surface?.subscribe ?? emptySubscribe, surface?.getSnapshot ?? emptyPreset)
+  const cwd = row?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)
+  return <><strong data-mobile-session-title={row && !row.blank ? '' : undefined}>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>{row && !row.blank && (cwd || preset) && <span data-mobile-subtitle><span title={row.cwd}>{cwd}</span>{cwd && preset && <span aria-hidden>·</span>}{preset && <span>{preset}</span>}</span>}</>
 }
 
 /** One visible navigation bar, with native connection sheets when supported. */
@@ -86,7 +91,7 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
         <button aria-label={library ? t('settings') : t('menu')} onClick={library ? openSettings : openLibrary}>
           <MobileIcon name={library ? "settings" : "back"}/>
         </button>
-        <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
+        <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
         <button data-mobile-new={!!available} aria-label={available ? t('newSession') : t('settings')} onClick={available ? startSession : openSettings}><MobileIcon name={available ? "compose" : "settings"}/></button>
       </nav>
       {wire !== 'connected' && connectionExpanded && <div data-mobile-connection-status role="status"><span>{t(wire ?? 'connecting')}</span><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></div>}

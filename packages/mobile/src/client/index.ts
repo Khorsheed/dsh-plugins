@@ -7,7 +7,8 @@ import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
 import { MobilePresentation } from './presentation.ts'
 import { DirectoryFlow } from './DirectoryFlow.tsx'
 import { MobileNavigation } from './navigation.ts'
-import { MobileWelcome, MobileWorkspaceContext } from './MobileSeats.tsx'
+import { MobileWelcome } from './MobileSeats.tsx'
+import { MobileTools } from './MobileTools.tsx'
 import { MobileChrome } from './MobileChrome.tsx'
 import type { MobileChromeInjected } from './MobileChrome.tsx'
 import { NS, en, zh } from './locales.ts'
@@ -51,10 +52,10 @@ export function apply(ctx: Context): void {
     sync(); const unsubscribe = presentation.subscribe(sync)
     return () => { unsubscribe(); remove?.() }
   })
-  ctx.slots.inject('conversation.input.dock', () => {
+  ctx.slots.inject('conversation.input.left', () => {
     let remove: (() => void) | undefined
     const sync = () => {
-      if (presentation.getSnapshot().active) remove ??= ctx.slots.register({ name: 'conversation.input.dock', id: 'mobile-workspace-context', order: -100 }, MobileWorkspaceContext)
+      if (presentation.getSnapshot().active) remove ??= ctx.slots.register({ name: 'conversation.input.left', id: 'mobile-input-tools', order: -100, locale: NS }, MobileTools)
       else { remove?.(); remove = undefined }
     }
     sync(); const unsubscribe = presentation.subscribe(sync)

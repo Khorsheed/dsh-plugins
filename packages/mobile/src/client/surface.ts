@@ -1,16 +1,13 @@
-/** Last-resort rc1 geometry adapter. No nodes are moved, copied or unmounted.
- * Unknown structures keep their official presentation; dispose releases every mark. */
+/** Checked rc1 presentation anchors. No nodes move and no action callbacks change.
+ * Unknown header contributions retain their official presentation. */
 export class MobileSurface {
   private marks = new Map<HTMLElement, Set<string>>()
-  private root: HTMLElement | null | undefined
-  private seat: HTMLElement | null | undefined
-  private row: HTMLElement | null | undefined
-  private composer: HTMLElement | null | undefined
-  private resize?: ResizeObserver
-  constructor(private readonly doc: Document) {
-    if (typeof ResizeObserver !== 'undefined') this.resize = new ResizeObserver(this.measure)
-    doc.addEventListener('scroll', this.measure, true)
-  }
+  private preset = ''
+  private listeners = new Set<() => void>()
+  constructor(private readonly doc: Document) {}
+  readonly getSnapshot = () => this.preset
+  readonly subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
+  private publish(preset: string) { if (preset !== this.preset) { this.preset = preset; for (const listener of this.listeners) listener() } }
   private mark(el: HTMLElement, name: string) {
     el.setAttribute(name, '')
     const names = this.marks.get(el) ?? new Set<string>(); names.add(name); this.marks.set(el, names)
@@ -18,49 +15,40 @@ export class MobileSurface {
   sync(frame?: HTMLElement) {
     this.clearMarks()
     const root = frame?.querySelector<HTMLElement>('[data-slot="main.conversation"] > [data-phase]')
-    const seat = root?.querySelector<HTMLElement>('[data-mobile-context-seat]')
-    const composer = root?.querySelector<HTMLElement>('[data-composer-seat]')
     const row = root?.querySelector<HTMLElement>('header [data-conversation-header-corner]')?.parentElement
-    // Only an ordinary title can be compacted. Preserve ancestor/lineage navigation.
     const ordinary = row?.querySelector('nav > span:only-child > button:disabled + [data-slot="conversation.session.header.lineage"]:empty')
-    const dock = !!root && root.dataset.phase === 'active' && !!seat && !!row && !!ordinary
-    if (dock) {
-      this.mark(root, 'data-mobile-context-layout'); this.mark(row, 'data-mobile-context-row')
-      // Only the host-app launch split control is desktop-specific. Sibling utilities survive.
+    let preset = ''
+    if (root?.dataset.phase === 'active' && row && ordinary) {
+      const label = row.querySelector<HTMLElement>('[data-slot="conversation.session.header.actions"] > span[title]:has(svg mask[id^="mask0_agent_preset"])')
+      if (label) { preset = label.textContent?.trim() ?? ''; this.mark(label, 'data-mobile-header-hidden') }
       for (const img of row.querySelectorAll<HTMLImageElement>('img[src^="/open-in-app/icon/"]')) {
         const split = img.closest('button')?.parentElement
-        if (split && split.querySelectorAll('button').length === 2) this.mark(split, 'data-mobile-desktop-launch')
+        if (split && split.querySelectorAll('button').length === 2) this.mark(split, 'data-mobile-header-hidden')
       }
+      for (const button of row.querySelectorAll<HTMLElement>('[data-sidebar-right-expand], [data-slot="conversation.session.header.utilities"] > span > button[aria-haspopup="menu"][aria-busy]')) {
+        if (button.hasAttribute('data-sidebar-right-expand') || /^(更多操作|More actions)$/i.test(button.getAttribute('aria-label') ?? '')) this.mark(button, 'data-mobile-header-hidden')
+      }
+      // Collapse only a fully accounted-for row. Keep any plugin action or unknown text.
+      const content = row.cloneNode(true) as HTMLElement
+      content.querySelectorAll('[data-mobile-header-hidden], nav, svg').forEach(el => el.remove())
+      if (!content.textContent?.trim() && !content.querySelector('button, input, a, img, canvas, video, iframe, [role="button"]')) this.mark(row, 'data-mobile-header-hidden')
     }
+    this.publish(preset)
     if (root) {
       const tabs = root.querySelector<HTMLElement>('header [role="tablist"]')
       if (tabs) {
         const trajectory = Array.from(tabs.querySelectorAll<HTMLElement>('[role="tab"]')).find(el => /^(轨迹|Trajectory)$/i.test(el.textContent?.trim() ?? ''))
-        // A previously selected trajectory retains the official route back to chat.
         if (trajectory && trajectory.getAttribute('aria-selected') !== 'true') {
           this.mark(trajectory, 'data-mobile-hidden-tab')
           if (tabs.querySelectorAll('[role="tab"]').length === 2) this.mark(tabs, 'data-mobile-hidden-tab')
         }
       }
+      const header = row?.parentElement
+      if (header && Array.from(header.children).every(child => child.hasAttribute('data-mobile-header-hidden') || child.hasAttribute('data-mobile-hidden-tab'))) this.mark(header, 'data-mobile-header-hidden')
+      const meter = root.querySelector<HTMLElement>('[data-composer-card] > div:last-child > div:last-child > span:has(> button[aria-haspopup="dialog"] > svg > circle)')
+      if (meter && root.querySelector('[data-composer-stats]')) this.mark(meter, 'data-mobile-context-meter')
     }
-    if (this.root !== root || this.seat !== seat || this.row !== row || this.composer !== composer) {
-      this.root?.style.removeProperty('--mobile-context-bottom')
-      this.resize?.disconnect(); this.root = root; this.seat = seat; this.row = row; this.composer = composer
-      if (root) this.resize?.observe(root)
-      if (seat) this.resize?.observe(seat)
-      if (row) this.resize?.observe(row)
-      if (composer) this.resize?.observe(composer)
-    }
-    this.measure()
   }
-  private readonly measure = () => {
-    if (!this.root?.hasAttribute('data-mobile-context-layout') || !this.seat || !this.row) return
-    const value = `${Math.round(this.root.getBoundingClientRect().bottom - this.seat.getBoundingClientRect().bottom)}px`
-    if (this.root.style.getPropertyValue('--mobile-context-bottom') !== value) this.root.style.setProperty('--mobile-context-bottom', value)
-  }
-  private clearMarks() {
-    for (const [el, names] of this.marks) for (const name of names) el.removeAttribute(name)
-    this.marks.clear()
-  }
-  dispose() { this.clearMarks(); this.resize?.disconnect(); this.doc.removeEventListener('scroll', this.measure, true); this.root?.style.removeProperty('--mobile-context-bottom') }
+  private clearMarks() { for (const [el, names] of this.marks) for (const name of names) el.removeAttribute(name); this.marks.clear() }
+  dispose() { this.clearMarks(); this.publish(''); this.listeners.clear() }
 }

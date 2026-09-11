@@ -17,7 +17,7 @@ export class MobilePresentation {
   private disposed = false
   private pending = 0
   private readonly composerFocus: ComposerFocus
-  private readonly surface: MobileSurface
+  readonly surface: MobileSurface
 
   constructor(private readonly win: Window, private readonly shell: boolean) {
     const query = new URL(win.location.href).searchParams.get('mobile')

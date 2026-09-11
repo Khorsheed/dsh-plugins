@@ -73,6 +73,8 @@ Desktop mode keeps a “Return to mobile layout” button even after reload. Mob
 
 The polished mobile view retains composer statistics and official message actions, hides the unselected trajectory entry, and contributes its welcome through the public brand seat. Existing session workspace/preset labels are read-only on rc1; only new sessions offer the official pickers. The native settings page now controls layout through the validated `dsh-mobile-display` event. Unknown header geometry preserves the original header and ancestor navigation.
 
+The composer’s plus menu groups the existing attachment, command and permission triggers. The current permission name and available options remain official. Checked rc1 button anchors retain the original callbacks and confirmation flow, with original controls restored if the structure is unknown. Workspace/preset metadata sits below the mobile title; known desktop header controls are hidden, while unknown plugin contributions remain available.
+
 ## Compatibility
 
 | Host line | Verdict |
