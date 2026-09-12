@@ -19,10 +19,12 @@
     "@khorsheed/dsh-local-files": "^0.1.0",
     "@khorsheed/dsh-message-timeline": "^0.1.0",
     "@khorsheed/dsh-room": "^0.1.0",
+    "@khorsheed/dsh-room-tool": "^0.1.0",
     "@khorsheed/dsh-taskpilot": "^0.1.0",
     "@khorsheed/dsh-ui-shortcuts": "^0.1.0",
     "@khorsheed/dsh-whalesong": "^0.1.0",
-    "@khorsheed/dsh-worktrees": "^0.1.0"
+    "@khorsheed/dsh-worktrees": "^0.1.0",
+    "@khorsheed/dsh-worktrees-tool": "^0.1.0"
   },
   "dsh": {
     "profile": {
@@ -46,7 +48,6 @@
         "@khorsheed/dsh-local-agent-codex",
         "@khorsheed/dsh-local-agent-claude-code",
         "@khorsheed/dsh-local-agent-dsh",
-        "@khorsheed/dsh-local-agent-tool-subagent",
         "@khorsheed/dsh-worktrees",
         "@khorsheed/dsh-room",
         "@khorsheed/dsh-ankh-guard"

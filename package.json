@@ -17,6 +17,7 @@
     "check:hygiene": "tsx scripts/check-repo-hygiene.ts",
     "sync:profile": "tsx scripts/sync-profile-mirror.mts",
     "check:plugins": "tsx scripts/check-plugin-independence.ts",
+    "check:profiles": "tsx scripts/check-profile-bundles.ts",
     "check:workflows": "tsx scripts/check-workflow-refs.ts",
     "check:builds": "tsx scripts/check-build-scripts-declared.ts",
     "gate": "tsx scripts/gate.mts",

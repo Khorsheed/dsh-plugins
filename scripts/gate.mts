@@ -288,6 +288,7 @@ export function main(): void {
     { name: 'build scripts declared', run: () => sh('pnpm exec tsx scripts/check-build-scripts-declared.ts') },
     { name: 'repo hygiene (full tree)', run: () => sh('pnpm check:hygiene --all') },
     { name: 'plugin independence', run: () => sh('pnpm check:plugins') },
+    { name: 'profile composition', run: () => sh('pnpm check:profiles') },
     { name: 'doc gates', run: () => {
       sh('pnpm run verify-agent-note-format')
       sh('pnpm run verify-agent-note-classification')
