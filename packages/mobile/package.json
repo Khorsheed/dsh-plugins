@@ -61,7 +61,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "Mobile layout and iOS shell under validation; device pairing and push are not provided."
+      "notes": "Mobile layout and iOS shell under validation; Safari live-reply resume on Host 0.1.5-rc.1 requires the opt-in bundled ingress adapter. Device pairing and push are not provided."
     }
   },
   "peerDependencies": {

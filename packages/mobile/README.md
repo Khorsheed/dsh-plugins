@@ -89,6 +89,15 @@ The library preserves workspace identity and shows member counts for both room a
 
 Successful local message admission dismisses the same empty focused editor; rejected submissions and newer drafts retain focus. The context meter stays beside Send. Glass-like surfaces use host light/dark colors with opaque text and a reduced-transparency fallback. See [collaboration acceptance](../../docs/acceptance/mobile-collaboration-2026-09-12.md).
 
+
+## Safari live-stream compatibility adapter
+
+Host `0.1.5-rc.1` includes a JSON validator that rejects ordinary objects in Safari when restoring an in-progress reply. For this known defect, the bundled HTTPS ingress accepts `MOBILE_SAFARI_COMPAT=1`. Restart the ingress with that environment variable and have the client reload after the adapter is active. Existing dead reply subscriptions do not recover just by reconnecting the socket.
+
+This is opt-in delivery adaptation, not a Host source patch: only WebKit GET requests for `/plugins/` JavaScript are examined. A SHA-256 fingerprint of the complete known validator gates replacement; unknown code and already-fixed code pass unchanged. The adapter compares against the current engine's native constructor formatting without changing `Function.prototype.toString`. Authentication, RPC bodies, WebSocket frames and the Host's execution are preserved. A direct LAN connection or another ingress does not receive this adapter.
+
+Responses remain private/no-store; adapted assets have corrected byte lengths and no stale ETag/digest. Assets above 16 MiB, non-JS responses, authentication failures and upstream responses that ignore the requested identity encoding pass through unchanged. Inspect `x-dsh-mobile-compat` and the ingress's value-only compatibility log when qualifying a Host upgrade. Do not broaden the fingerprint automatically. Remove the flag after an upstream-fixed build passes real WebKit foreground/reconnect acceptance. Run the ingress from an installed tarball's `examples/`, not a development checkout, for a reproducible deployment.
+
 ## Compatibility
 
 | Host line | Verdict |

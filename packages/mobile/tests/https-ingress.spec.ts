@@ -2,6 +2,8 @@ import http from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 // Optional standalone deployment example, intentionally separate from Cordis.
 import { createIngress } from '../examples/https-ingress.mjs'
+import { validator } from './fixtures/safari-validator.ts'
+import { MAX_COMPAT_BYTES } from '../examples/safari-stream-compat.mjs'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -11,11 +13,11 @@ async function listen(server: http.Server) {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return (server.address() as { port: number }).port
 }
-async function setup(handler: http.RequestListener) {
+async function setup(handler: http.RequestListener, safariStreamCompat = false) {
   const target = http.createServer(handler)
   const targetPort = await listen(target)
   cleanup.push(() => new Promise<void>(resolve => { target.closeAllConnections(); target.close(() => resolve()) }))
-  const ingress = createIngress({ origin: `https://${host}`, targetPort })
+  const ingress = createIngress({ origin: `https://${host}`, targetPort, safariStreamCompat })
   const port = await listen(ingress.server)
   cleanup.push(ingress.close)
   return { port, target }
@@ -31,6 +33,49 @@ function request(port: number, extra: http.RequestOptions = {}) {
   })
 }
 describe('optional HTTPS tunnel ingress', () => {
+  const safariHeaders = { ...headers, 'user-agent': 'iPhone AppleWebKit/605.1.15 Mobile/15E148' }
+  it('adapts authenticated Safari JS and removes stale byte validators and cache conditions', async () => {
+    const { port } = await setup((req, res) => {
+      expect(req.headers.cookie).toBe('login=fixture')
+      expect(req.headers['accept-encoding']).toBe('identity')
+      for (const field of ['if-none-match', 'if-modified-since', 'range', 'if-range']) expect(req.headers[field]).toBeUndefined()
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'content-length': Buffer.byteLength(validator), etag: 'old', 'content-md5': 'old', 'accept-ranges': 'bytes' })
+      res.end(validator)
+    }, true)
+    const result = await request(port, { path: '/plugins/??bundle/client.js&rev=old', headers: { ...safariHeaders, cookie: 'login=fixture', 'accept-encoding': 'gzip', 'if-none-match': 'old', 'if-modified-since': 'yesterday', range: 'bytes=0-10', 'if-range': 'old' } })
+    expect(result.body).toContain('Function.prototype.toString.call(globalThis[name])')
+    expect(Number(result.headers['content-length'])).toBe(Buffer.byteLength(result.body))
+    expect(result.headers.etag).toBeUndefined()
+    expect(result.headers['content-md5']).toBeUndefined()
+    expect(result.headers['cache-control']).toBe('private, no-store')
+    expect(result.headers['x-dsh-mobile-compat']).toContain('patched; count=1')
+  })
+  it('does not transform auth failures, compressed responses, or non-JS resources', async () => {
+    for (const variant of [
+      { status: 401, type: 'text/javascript', encoding: 'identity' },
+      { status: 200, type: 'text/javascript', encoding: 'gzip' },
+      { status: 200, type: 'text/html', encoding: 'identity' },
+    ]) {
+      const { port } = await setup((_req, res) => { res.writeHead(variant.status, { 'content-type': variant.type, 'content-encoding': variant.encoding }); res.end(validator) }, true)
+      const result = await request(port, { path: '/plugins/', headers: safariHeaders })
+      expect(result.code).toBe(variant.status)
+      expect(result.body).toBe(validator)
+      expect(result.headers['x-dsh-mobile-compat']).toBeUndefined()
+    }
+  })
+  it('passes oversized JS through without truncation or a partial patch', async () => {
+    const body = validator + ' '.repeat(MAX_COMPAT_BYTES)
+    const { port } = await setup((_req, res) => { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(body) }, true)
+    const result = await request(port, { path: '/plugins/', headers: safariHeaders })
+    expect(result.body).toBe(body)
+    expect(result.headers['x-dsh-mobile-compat']).toBeUndefined()
+  })
+  it('is opt-in and leaves non-WebKit bundles byte-identical', async () => {
+    for (const [enabled, ua] of [[false, safariHeaders['user-agent']], [true, 'AppleWebKit/537.36 Chrome/140.0 Safari/537.36']] as const) {
+      const { port } = await setup((_req, res) => { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(validator) }, enabled)
+      expect((await request(port, { path: '/plugins/', headers: { ...headers, 'user-agent': ua } })).body).toBe(validator)
+    }
+  })
   it('preserves authority-bound login and adds Secure without changing the cookie value', async () => {
     const { port } = await setup((req, res) => {
       expect(req.headers.host).toBe(host)

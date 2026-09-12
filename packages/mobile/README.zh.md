@@ -89,6 +89,15 @@ Room 与 Local Agent 保留各自输入框。Room 排队面板使用官方会话
 
 本机消息确认提交后，收起同一个空白编辑器的键盘；提交失败和后续草稿保留焦点。上下文圆环留在发送按钮旁。玻璃质感表面跟随宿主浅暗色，文字保持不透明，并提供降低透明度时的回退。参见[协作验收](../../docs/acceptance/mobile-collaboration-2026-09-12.md)。
 
+
+## Safari 流式同步兼容层
+
+宿主 `0.1.5-rc.1` 的 JSON 校验会在 Safari 还原进行中回复时误拒绝普通对象。针对该已知缺陷，随包分发的 HTTPS ingress 支持 `MOBILE_SAFARI_COMPAT=1`。使用此环境变量重启 ingress，兼容层生效后重新加载客户端。已经停止的正文订阅不能仅靠重新连接 socket 恢复。
+
+这是默认关闭的交付层适配，不修改宿主源码：只检查 WebKit 对 `/plugins/` JavaScript 的 GET 请求。完整已知校验函数的 SHA-256 指纹决定是否替换；未知代码和已经修好的代码保持原样。补丁使用当前引擎的原生构造函数格式比较，不修改 `Function.prototype.toString`。认证、RPC 请求体、WebSocket 帧和宿主执行保持不变。直接连接局域网或使用其他 ingress 不会获得此兼容层。
+
+响应保持 private/no-store；修改后的脚本重算字节长度并移除旧 ETag/digest。超过 16 MiB、非 JS、认证失败、上游忽略 identity 编码要求而返回压缩内容的响应原样透传。升级宿主时检查 `x-dsh-mobile-compat` 与 ingress 不含请求内容的兼容日志，不自动扩大指纹范围。上游修复通过真实 WebKit 前后台和重连验收后移除开关。正式部署从已安装 tarball 的 `examples/` 启动 ingress，避免使用开发检出。
+
 ## Compatibility
 
 | 宿主线 | 结论 |

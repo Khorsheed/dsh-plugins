@@ -1,26 +1,32 @@
 /** Optional loopback ingress behind an HTTPS tunnel. Host authentication stays upstream. */
 import http from 'node:http'
 import { pathToFileURL } from 'node:url'
+import { isSafariBundleRequest, serveSafariBundle } from './safari-stream-compat.mjs'
 
-export function createIngress({ origin, targetPort }) {
+export function createIngress({ origin, targetPort, safariStreamCompat = false, onCompatibility }) {
   const url = new URL(origin)
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('Expected a clean HTTPS origin')
   if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535) throw new Error('Invalid upstream port')
   const allowed = req => req.headers.host?.toLowerCase() === url.host.toLowerCase()
     && (!req.headers.origin || req.headers.origin === url.origin)
     && req.headers['x-forwarded-proto'] === 'https'
-  const forward = req => http.request({
+  const forward = (req, compat = false) => http.request({
     hostname: '127.0.0.1', port: targetPort, method: req.method,
-    path: req.url, headers: req.headers,
+    path: req.url, headers: compat ? Object.fromEntries([
+      ...Object.entries(req.headers).filter(([name]) => !['accept-encoding', 'range', 'if-range', 'if-none-match', 'if-modified-since'].includes(name)),
+      ['accept-encoding', 'identity'],
+    ]) : req.headers,
   })
   const server = http.createServer((req, res) => {
     if (!allowed(req)) { res.writeHead(403); res.end('Forbidden'); return }
-    const upstream = forward(req)
+    const compat = safariStreamCompat && isSafariBundleRequest(req)
+    const upstream = forward(req, compat)
     upstream.on('response', response => {
       const headers = { ...response.headers, 'referrer-policy': 'no-referrer', 'cache-control': 'private, no-store' }
       if (headers['set-cookie']) headers['set-cookie'] = headers['set-cookie'].map(cookie => /;\s*Secure(?:;|$)/i.test(cookie) ? cookie : `${cookie}; Secure`)
-      res.writeHead(response.statusCode ?? 502, headers)
       response.on('error', () => { res.destroy() })
+      if (compat) { serveSafariBundle(response, res, headers, onCompatibility); return }
+      res.writeHead(response.statusCode ?? 502, headers)
       response.pipe(res)
     })
     upstream.on('error', () => {
@@ -65,7 +71,14 @@ export function createIngress({ origin, targetPort }) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.INGRESS_PORT ?? 3182)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid ingress port')
-  const ingress = createIngress({ origin: process.env.PUBLIC_ORIGIN, targetPort: Number(process.env.HOST_PORT ?? 3181) })
+  const reported = new Set()
+  const ingress = createIngress({ origin: process.env.PUBLIC_ORIGIN, targetPort: Number(process.env.HOST_PORT ?? 3181),
+    safariStreamCompat: process.env.MOBILE_SAFARI_COMPAT === '1',
+    onCompatibility: result => {
+      const label = `${result.status}; count=${result.patched}`
+      if (!reported.has(label)) { reported.add(label); console.log(`Mobile Safari compatibility: ${label}`) }
+    },
+  })
   ingress.server.listen(port, '127.0.0.1', () => { console.log(`HTTPS tunnel ingress ready on loopback port ${port}`) })
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { void ingress.close().then(() => process.exit(0)) })
 }
