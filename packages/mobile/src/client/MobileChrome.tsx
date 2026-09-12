@@ -105,7 +105,7 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
       {available && <aside data-mobile-library-pane hidden={!library && !wide}>
         <nav data-mobile-library-toolbar aria-label={t('menu')}><button aria-label={t('settings')} onClick={openSettings}><MobileIcon name="settings"/></button><button aria-label={t('newSession')} onClick={startSession}><MobileIcon name="compose"/></button></nav>
         <MobileLibrary {...(rooms ? { rooms } : {})} navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} /></aside>}
-      {library && available && <button data-mobile-peek-close aria-label={t('close')} onClick={() => setLibrary(false)} />}
+      {library && available && !wide && <button type="button" data-mobile-peek-close aria-label={t('returnToConversation')} onClick={() => { presentation.prepareNavigation(); setLibrary(false) }} />}
       {state.drawer && !available && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
       <nav data-mobile-toolbar data-library={false} aria-label={t('menu')}>
         <button aria-label={t('menu')} onClick={openLibrary}>

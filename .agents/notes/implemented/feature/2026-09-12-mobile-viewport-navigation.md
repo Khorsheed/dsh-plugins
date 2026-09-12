@@ -28,6 +28,8 @@ The native shell uses the webpage frame background for its safe areas, disables 
 
 ## Consequences
 
+The entire narrow-screen chat preview is one return target, including its header and composer area. A tap closes navigation without forwarding the tap to underlying chat actions, preserves the mounted editor and draft, and arms navigation focus suppression. Drawer transitions take 220 ms, track direct dragging without a transition, and honor reduced-motion preferences. Wide-screen split view does not mount this return target.
+
 Navigation, picker layout and scroll geometry improve without host or sibling-plugin source changes. DOM signatures remain compatibility seams and require browser acceptance after host upgrades. Narrow screens show a preview; only wide screens keep two usable columns. Native safe-area and keyboard behavior still require physical-device acceptance.
 
 ## Verification
