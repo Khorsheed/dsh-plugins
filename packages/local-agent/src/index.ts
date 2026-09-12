@@ -840,6 +840,20 @@ export class LocalAgentRegistry {
    */
   private readonly delegations = new Map<string, LocalAgentDelegationRecord>()
   /**
+   * Observation recency for {@link latestObservedModel}: a monotonically
+   * increasing stamp per child session, bumped every time a record carrying an
+   * `observedModel` lands in {@link delegations} (recordDelegation,
+   * recordRoundSettled's merge, and the boot-time `delegations.jsonl` load —
+   * file order stamps the load, so the log's own last-line-wins semantics carry
+   * over). In-memory only: the records themselves deliberately carry no
+   * timestamp, and the Map's insertion order cannot serve (a `set` on an
+   * existing key keeps its first position, so an old record re-observed by a
+   * fresh round would sort as old).
+   */
+  private readonly observedModelStamps = new Map<string, number>()
+  /** The stamp counter for {@link observedModelStamps}. */
+  private observedModelClock = 0
+  /**
    * Per-(parent session, provider) FIFO of delegation intents. The family
    * resume tool stages exactly one intent per call before awaiting
    * `ctx.subagents.start()`, and the owning provider consumes exactly one per
@@ -1282,6 +1296,7 @@ export class LocalAgentRegistry {
    */
   recordDelegation(record: LocalAgentDelegationRecord): void {
     this.delegations.set(record.childSessionId, record)
+    this.noteObservedModel(record)
     this.persistDelegation(record)
   }
 
@@ -1434,6 +1449,41 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Stamp a record's `observedModel` with the next recency tick, when the
+   * record carries a usable one. Called everywhere a record with an observed
+   * model lands in {@link delegations}; a blank value is no observation.
+   */
+  private noteObservedModel(record: LocalAgentDelegationRecord): void {
+    if (record.observedModel === undefined || record.observedModel.trim() === '') return
+    this.observedModelClock += 1
+    this.observedModelStamps.set(record.childSessionId, this.observedModelClock)
+  }
+
+  /**
+   * The most recent model one provider was OBSERVED running across all its
+   * recorded delegations — the display hint behind the cli-builtin layer
+   * (nothing names the CLI's compiled default, but "what ran last" is what a
+   * round with no model layer would run again). Recency is the observation
+   * stamp ({@link observedModelStamps}), not record insertion order: a round
+   * that re-observes an old delegation counts as the freshest. Records whose
+   * stream never yielded a model (absent or blank) are not candidates.
+   * @param provider - the `ctx.subagents` provider name to scan.
+   * @returns the newest observed model identifier, or undefined when this
+   *   provider was never observed running one.
+   */
+  latestObservedModel(provider: string): string | undefined {
+    let newest: { stamp: number; model: string } | undefined
+    for (const record of this.delegations.values()) {
+      if (record.provider !== provider) continue
+      const model = record.observedModel?.trim()
+      if (model === undefined || model === '') continue
+      const stamp = this.observedModelStamps.get(record.childSessionId) ?? 0
+      if (newest === undefined || stamp >= newest.stamp) newest = { stamp, model }
+    }
+    return newest?.model
+  }
+
+  /**
    * Record one delegation round's settled observation: merge `observedModel`
    * into the delegation record when present (in memory and `delegations.jsonl`,
    * same replace semantics as {@link recordDelegation}) and report the
@@ -1465,6 +1515,7 @@ export class LocalAgentRegistry {
           ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
         }
         this.delegations.set(childSessionId, updated)
+        this.noteObservedModel(updated)
         this.persistDelegation(updated)
       }
     }
@@ -2218,6 +2269,7 @@ export class LocalAgentRegistry {
       // directory it was found in rather than as a default-scope record.
       const record = parsed.scope === undefined && scope !== undefined ? { ...parsed, scope } : parsed
       this.delegations.set(record.childSessionId, record)
+      this.noteObservedModel(record)
       if (record.kimiMirroredLines !== undefined) {
         this.kimiMirrorOffsets.set(record.childSessionId, record.kimiMirroredLines)
       }

@@ -114,21 +114,32 @@ export default class LocalAgentGateway extends TypertRemoteService {
    * The model surface of one harness without a member — the settings card's
    * "what would a round run with" read. Null when the harness is unknown or
    * exposes no model broker: the card then keeps its free-text field exactly
-   * as before brokers existed.
+   * as before brokers existed. The core fills `lastObserved` from the
+   * delegation records (the harness's own provider) when the broker's answer
+   * carries none — display context for the cli-builtin layer, never a layer.
    * @param name - the harness name.
    * @returns the layer-by-layer surface, or null.
    */
   @Remote('harnessModel')
   async harnessModel(name: string): Promise<LocalAgentModelInfo | null> {
-    const broker = this.ctx.localAgent.get(name)?.modelBroker
-    if (broker === undefined) return null
-    return broker.modelInfo()
+    const harness = this.ctx.localAgent.get(name)
+    if (harness?.modelBroker === undefined) return null
+    const info = await harness.modelBroker.modelInfo()
+    // A harness without a delegation provider has no records to observe from.
+    const observed = harness.delegationProvider === undefined
+      ? undefined
+      : this.ctx.localAgent.latestObservedModel(harness.delegationProvider)
+    if (info.lastObserved !== undefined || observed === undefined) return info
+    return { ...info, lastObserved: observed }
   }
 
   /**
    * The model surface of one member — the composer's picker read. The
    * delegation record's requested model rides in from the core so the broker
-   * can rank it between the override and the settings layer. Null for a
+   * can rank it between the override and the settings layer; the record's
+   * OBSERVED model fills `lastObserved` when the broker's answer carries none
+   * (a broker that names one itself always wins — spread order: the broker's
+   * answer first, the core's fill only over an absent field). Null for a
    * non-member session or a brokerless harness.
    * @param childSessionId - the dsh child session id of the member.
    * @returns the layer-by-layer surface, or null.
@@ -140,7 +151,9 @@ export default class LocalAgentGateway extends TypertRemoteService {
     if (record === undefined) return null
     const broker = registry.harnessForProvider(record.provider)?.modelBroker
     if (broker === undefined) return null
-    return broker.modelInfo(childSessionId, record.model)
+    const info = await broker.modelInfo(childSessionId, record.model)
+    if (info.lastObserved !== undefined || record.observedModel === undefined) return info
+    return { ...info, lastObserved: record.observedModel }
   }
 
   /**

@@ -136,7 +136,10 @@ describe('LocalAgentGateway member channel', () => {
    * consumes the staged intent (like the real family providers) and returns a
    * controllable run, and one recorded delegation for CHILD.
    */
-  async function mountMember(): Promise<MemberHarness> {
+  async function mountMember(options: {
+    broker?: NonNullable<LocalAgentHarness['modelBroker']>
+    observedModel?: string
+  } = {}): Promise<MemberHarness> {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
@@ -164,8 +167,18 @@ describe('LocalAgentGateway member channel', () => {
     await ctx.plugin(localAgent, { homesRoot: tempHome('gw-member-') })
     h.gateway = ctx.get('localAgentGateway') as LocalAgentGateway
     h.registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
-    h.registry.register(harness({ name: 'fake', delegationProvider: PROVIDER }))
-    h.registry.recordDelegation({ childSessionId: CHILD, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-42' })
+    h.registry.register(harness({
+      name: 'fake',
+      delegationProvider: PROVIDER,
+      ...options.broker === undefined ? {} : { modelBroker: options.broker },
+    }))
+    h.registry.recordDelegation({
+      childSessionId: CHILD,
+      provider: PROVIDER,
+      parentSessionId: PARENT,
+      cliSessionId: 'cli-42',
+      ...options.observedModel === undefined ? {} : { observedModel: options.observedModel },
+    })
     // A live child session keeps resume off the reattach path (no persistence fake needed).
     ctx.sessions.create(SessionId(CHILD))
     return h
@@ -248,5 +261,69 @@ describe('LocalAgentGateway member channel', () => {
     expect(h.requests[0]?.signal.aborted).toBe(true)
 
     expect(h.gateway.stopMember('child-unknown')).toBe(false)
+  })
+
+  describe('model surface lastObserved merge', () => {
+    /** A broker answer with no lastObserved of its own, overridable. */
+    function broker(over: Record<string, unknown> = {}): NonNullable<LocalAgentHarness['modelBroker']> {
+      return {
+        modelInfo: () => ({
+          source: 'cli-builtin' as const,
+          choices: [],
+          live: false,
+          switchable: true,
+          ...over,
+        }),
+        setMemberModel: () => Promise.resolve(),
+      }
+    }
+
+    it('memberModel fills lastObserved from the delegation record when the broker names none', async () => {
+      const h = await mountMember({ broker: broker(), observedModel: 'gpt-5.6-sol' })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info).toMatchObject({ source: 'cli-builtin', lastObserved: 'gpt-5.6-sol' })
+    })
+
+    it('memberModel never overrides a broker-provided lastObserved', async () => {
+      const h = await mountMember({ broker: broker({ lastObserved: 'broker-model' }), observedModel: 'record-model' })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info?.lastObserved).toBe('broker-model')
+    })
+
+    it('memberModel carries no lastObserved when neither the broker nor the record observed one', async () => {
+      const h = await mountMember({ broker: broker() })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info?.lastObserved).toBeUndefined()
+    })
+
+    it('harnessModel fills lastObserved with the provider’s latest observed model', async () => {
+      const h = await mountMember({ broker: broker(), observedModel: 'model-old' })
+      h.registry.recordDelegation({
+        childSessionId: 'child-2',
+        provider: PROVIDER,
+        parentSessionId: PARENT,
+        cliSessionId: 'cli-43',
+        observedModel: 'model-new',
+      })
+
+      const info = await h.gateway.harnessModel('fake')
+
+      expect(info).toMatchObject({ source: 'cli-builtin', lastObserved: 'model-new' })
+    })
+
+    it('harnessModel skips the fill for a harness without a delegation provider', async () => {
+      const h = await mountMember({ broker: broker(), observedModel: 'model-old' })
+      h.registry.register(harness({ name: 'plain', modelBroker: broker() }))
+
+      const info = await h.gateway.harnessModel('plain')
+
+      expect(info?.lastObserved).toBeUndefined()
+    })
   })
 })

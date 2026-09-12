@@ -333,8 +333,14 @@ export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
  * resolution order (first match wins): the session-level override set through
  * the composer's model picker, then the delegation's own recorded model, then
  * the harness's plugin-config `model` (settings card / YAML), then the scoped
- * config file's own default, and last the CLI's built-in default — which
- * names nothing, exactly as it did before any of these layers existed.
+ * config file's own default, and last the CLI's built-in default — which by
+ * itself names nothing, exactly as it did before any of these layers existed.
+ * A harness MAY still name that compiled default through a side channel:
+ * codex's app-server `model/list` marks the account's built-in default with
+ * `isDefault`, so a broker that probed the catalog reports `cli-builtin` WITH
+ * `effective` set (the one case this source names a model). And even when
+ * nothing names it, the delegation records show what last actually ran —
+ * {@link LocalAgentModelInfo.lastObserved}.
  */
 export type LocalAgentModelSource = 'override' | 'delegation' | 'settings' | 'cli-config' | 'cli-builtin'
 
@@ -358,6 +364,16 @@ export interface LocalAgentModelInfo {
   settings?: string
   /** The scoped config file's own default model, when the file names one. */
   cliDefault?: string
+  /**
+   * The most recent model the provider was OBSERVED running (the delegation
+   * records' {@link LocalAgentDelegationRecord.observedModel}), filled by the
+   * core gateway when the broker itself names none. Display context for the
+   * cli-builtin layer: the CLI's compiled default names nothing, but "what
+   * ran last time" is exactly what a member still on that default would run
+   * again — so surfaces show it as the last-observed hint, never as
+   * {@link LocalAgentModelInfo.effective} (an observation is not a layer).
+   */
+  lastObserved?: string
   /** The pickable model identifiers (deduped; empty when nothing names a model). */
   choices: readonly string[]
   /** Whether the harness's live driver is on for the member's rounds. */

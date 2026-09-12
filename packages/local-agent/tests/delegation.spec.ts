@@ -154,31 +154,52 @@ describe('LocalAgentRegistry delegation registry', () => {
     expect(registry.listDelegations()).toHaveLength(1)
   })
 
-  describe('resume lock', () => {
-    it('serializes resumes of the same child session and releases on settle', async () => {
-      const registry = await mountRegistry()
-      expect(registry.acquireResumeLock('child-1')).toBe(true)
-      // A second resume of the same child is rejected while the first is held.
-      expect(registry.acquireResumeLock('child-1')).toBe(false)
-      registry.releaseResumeLock('child-1')
-      // After release the child is resumable again.
-      expect(registry.acquireResumeLock('child-1')).toBe(true)
-      registry.releaseResumeLock('child-1')
+  describe('latestObservedModel', () => {
+    const record = (
+      childSessionId: string,
+      provider: string,
+      observedModel?: string,
+    ): Parameters<localAgent.LocalAgentRegistry['recordDelegation']>[0] => ({
+      childSessionId,
+      provider,
+      parentSessionId: 'parent-1',
+      cliSessionId: `cli-${childSessionId}`,
+      ...observedModel === undefined ? {} : { observedModel },
     })
 
-    it('keeps different child sessions independent', async () => {
+    it('returns undefined when the provider has no observed model', async () => {
       const registry = await mountRegistry()
-      expect(registry.acquireResumeLock('child-1')).toBe(true)
-      expect(registry.acquireResumeLock('child-2')).toBe(true)
-      registry.releaseResumeLock('child-1')
-      registry.releaseResumeLock('child-2')
+      expect(registry.latestObservedModel('kimi-cli')).toBeUndefined()
+      registry.recordDelegation(record('child-1', 'kimi-cli'))
+      // A blank value is no observation either.
+      registry.recordDelegation(record('child-2', 'kimi-cli', '   '))
+      expect(registry.latestObservedModel('kimi-cli')).toBeUndefined()
     })
 
-    it('releasing an unheld lock is a no-op', async () => {
+    it('filters to the named provider and returns its observed model', async () => {
       const registry = await mountRegistry()
-      expect(() => registry.releaseResumeLock('child-missing')).not.toThrow()
-      expect(registry.acquireResumeLock('child-missing')).toBe(true)
-      registry.releaseResumeLock('child-missing')
+      registry.recordDelegation(record('child-1', 'kimi-cli', 'kimi-k2'))
+      registry.recordDelegation(record('child-2', 'claude-local', 'claude-opus-5'))
+      expect(registry.latestObservedModel('kimi-cli')).toBe('kimi-k2')
+      expect(registry.latestObservedModel('claude-local')).toBe('claude-opus-5')
+    })
+
+    it('returns the most recently observed record, not the most recently inserted one', async () => {
+      const registry = await mountRegistry()
+      registry.recordDelegation(record('child-old', 'kimi-cli', 'kimi-k1'))
+      registry.recordDelegation(record('child-new', 'kimi-cli', 'kimi-k2'))
+      expect(registry.latestObservedModel('kimi-cli')).toBe('kimi-k2')
+      // A fresh round re-observes the OLD delegation: insertion order would
+      // still sort child-new last, but observation recency must win.
+      registry.recordRoundSettled('child-old', { observedModel: 'kimi-k1.5' })
+      expect(registry.latestObservedModel('kimi-cli')).toBe('kimi-k1.5')
+    })
+
+    it('skips a newer record that observed nothing in favour of an older observation', async () => {
+      const registry = await mountRegistry()
+      registry.recordDelegation(record('child-1', 'kimi-cli', 'kimi-k2'))
+      registry.recordDelegation(record('child-2', 'kimi-cli'))
+      expect(registry.latestObservedModel('kimi-cli')).toBe('kimi-k2')
     })
   })
 })
