@@ -1,9 +1,10 @@
 /**
  * The codex model broker: the family's fixed resolution order (override →
  * delegation → settings → scoped config → CLI built-in), the suggestion
- * vocabulary (settings + cliDefault + config-discovered + recent, deduped,
- * never a catalog), the in-flight switch refusal, and retire-on-switch of a
- * live runtime bound to a different model.
+ * vocabulary (settings + cliDefault + config-discovered + the probed account
+ * catalog + recent, deduped, never a hardcoded catalog), the in-flight
+ * switch refusal, and retire-on-switch of a live runtime bound to a
+ * different model.
  */
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,6 +18,7 @@ function mount(options: {
   configToml?: string
   settingsModel?: string
   recentModels?: readonly string[]
+  catalog?: readonly string[]
   live?: boolean
   overrides?: Readonly<Record<string, string>>
   records?: Readonly<Record<string, { model?: string }>>
@@ -41,6 +43,7 @@ function mount(options: {
     ctx,
     settingsModel: () => options.settingsModel,
     recentModels: () => options.recentModels ?? [],
+    catalog: () => options.catalog ?? [],
     homeDir: () => homeDir,
     live: () => options.live ?? false,
     overrides,
@@ -102,6 +105,16 @@ describe('codex model broker resolution order', () => {
     const info = await broker.modelInfo()
     // The provider table names an endpoint, not a model — never a choice.
     expect(info.choices).toEqual(['config-model', 'gpt-5.2', 'gpt-5.1', 'recent-model'])
+  })
+
+  it('choices rank the probed account catalog ahead of recent models, deduped', async () => {
+    const { broker } = mount({
+      configToml: 'model = "gpt-5.2"\n',
+      catalog: ['gpt-5.6-sol', 'gpt-5.2'],
+      recentModels: ['recent-model', 'gpt-5.6-sol'],
+    })
+    const info = await broker.modelInfo()
+    expect(info.choices).toEqual(['gpt-5.2', 'gpt-5.6-sol', 'recent-model'])
   })
 })
 
