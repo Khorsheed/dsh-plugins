@@ -30,4 +30,5 @@
 
 - 首轮检查时 3080 仍有用户任务运行，因此未重启。后续只读会话列表检查确认 400 个会话没有运行项，后台作业为空。
 - 首轮 gate 的部署脚本自测遇到默认 5000ms 超时；独立 12 项测试通过。同步主分支已有的集成测试时限/扫描修复后，重新运行全部 11 项 scoped gate，通过（62 秒），mobile 19 文件 72 测试。Docker daemon 未启动，既有 Docker 集成套件明确跳过；未声称覆盖该环境。
-- 未完成生产 tarball、入口启用 `MOBILE_SAFARI_COMPAT=1` 和手机重载验收。这些需在用户任务和后台作业结束后与之前的移动端改动一同执行。
+- 已通过标准 `deploy:3080 --package packages/mobile --no-restart` 安装生产 tarball，构建、72 项测试和诊断 preflight 通过；安装后的 client 和两个 ingress 脚本与已验证构建 SHA-256 一致。手机已安装含前序布局修复的原生 App。
+- 原公网入口/临时隧道进程已停止，新隧道分配了新的 authority；入口已从安装 tarball 启动并启用 `MOBILE_SAFARI_COMPAT=1`。Host 仍运行原进程，尚未切换 trusted-host 启动配置，尚未验证生产 canary 与手机新地址。按 guard 协议，等待用户选择启动配置切换失败时的恢复策略后，再执行带 preflight 和浏览器交接的 reconfigure。
