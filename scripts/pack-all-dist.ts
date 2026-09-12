@@ -22,9 +22,13 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { familySpecsFor, formatFamilySpecs, loadWorkspaceVersions } from './pack-dist.ts'
 
 const outIdx = process.argv.indexOf('--out')
 const outDir = resolve(outIdx === -1 ? '/tmp/pack-all-dist' : process.argv[outIdx + 1]!)
+
+/** Every workspace package's own version — a family edge ranges on the target's. */
+const workspaceVersions = loadWorkspaceVersions(join(import.meta.dirname, '..', 'packages'))
 
 const onlyIdx = process.argv.indexOf('--only')
 /** Package directory names to pack; empty means every bundle package. */
@@ -39,12 +43,9 @@ for (const entry of readdirSync('packages', { withFileTypes: true })) {
   const pkg = JSON.parse(readFileSync(manifestPath, 'utf8'))
   if (pkg.private === true) continue
   if (pkg.dsh?.bundle?.patch === undefined) continue
-  const family = [...new Set([
-    ...Object.keys(pkg.dependencies ?? {}),
-    ...Object.keys(pkg.peerDependencies ?? {}),
-  ].filter(d => d.startsWith('@khorsheed/')))]
+  const family = familySpecsFor(pkg, workspaceVersions)
   const args = ['tsx', 'scripts/pack-dist.ts', '--package', join('packages', entry.name), '--scope', '@khorsheed', '--version', pkg.version, '--out', outDir]
-  if (family.length > 0) args.push('--family', family.join(','))
+  if (family.length > 0) args.push('--family', formatFamilySpecs(family))
   execFileSync('npx', args, { stdio: 'inherit' })
   packed++
   process.stdout.write(`pack-all-dist: ${pkg.name}@${pkg.version} ✓\n`)

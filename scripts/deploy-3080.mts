@@ -32,6 +32,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { checkDeploymentLinks } from './dependency-links.mts'
+import { familySpecsFor, formatFamilySpecs, loadWorkspaceVersions } from './pack-dist.ts'
+
+/** Every workspace package's own version — a family edge ranges on the target's. */
+const workspaceVersions = loadWorkspaceVersions(join(import.meta.dirname, '..', 'packages'))
 
 const HOME = homedir()
 const DSH_HOME = process.env.DSH_HOME ?? join(HOME, '.dsh-official')
@@ -138,12 +142,9 @@ try {
   const outDir = resolve('dist-publish')
   const buildStamp = new Date().toISOString().replace(/[-:T]/g, '').slice(2, 12) // yymmddhhmm
   for (const m of metas) {
-    const family = [...new Set([
-      ...Object.keys(m.pkg.dependencies ?? {}),
-      ...Object.keys(m.pkg.peerDependencies ?? {}),
-    ].filter(d => d.startsWith('@khorsheed/')))]
+    const family = familySpecsFor(m.pkg, workspaceVersions)
     const packArgs = ['scripts/pack-dist.ts', '--package', m.dir, '--scope', '@khorsheed', '--version', m.version, '--out', outDir]
-    if (family.length > 0) packArgs.push('--family', family.join(','))
+    if (family.length > 0) packArgs.push('--family', formatFamilySpecs(family))
     run('npx', ['tsx', ...packArgs])
     const canonical = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}.tgz`
     m.tgzName = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}+${buildStamp}.tgz`

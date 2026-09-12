@@ -12,9 +12,12 @@
  *     --scope @khorsheed --version 0.4.4 --out /tmp/mt-dist
  *
  * Family packages (siblings dist'ed under the same scope, e.g. a host package
- * a client package peers on) must be named via `--family <name,name,...>` so
- * peer/dev dependency names, patch rows, and text artifacts all point at the
- * dist scope instead of the unpublished source scope.
+ * a client package peers on) must be named via
+ * `--family <name[=version][,...]>` so peer/dev dependency names, patch rows,
+ * and text artifacts all point at the dist scope instead of the unpublished
+ * source scope. A member whose name appears in a manifest edge MUST carry its
+ * own version (`name=version`): the edge is ranged on the target's version, so
+ * a bare name there is an error rather than a silently unsatisfiable range.
  *
  * The package must be built first (lib/ present); the script fails loud on a
  * missing build or on stale lib/types files with no backing src file.
@@ -113,8 +116,12 @@ export interface PackDistOptions {
   readonly version: string
   /** Directory receiving the tarball. */
   readonly outDir: string
-  /** Source names of sibling packages dist'ed under the same scope (each becomes `<scope>/<basename>`). */
-  readonly family?: readonly string[]
+  /**
+   * Sibling packages in the same dist family: each becomes `<scope>/<basename>`.
+   * A spec needs its `targetVersion` whenever a manifest edge points at it —
+   * the edge is ranged on THAT version, never on this package's own.
+   */
+  readonly family?: readonly FamilySpec[]
 }
 
 /** A package.json record, loosely typed (the transform preserves every other field). */
@@ -124,8 +131,141 @@ export type PackageJson = Record<string, unknown> & {
   files?: string[]
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
+  peerDependenciesMeta?: Record<string, unknown>
   devDependencies?: Record<string, string>
   dsh?: { references?: string[] }
+}
+
+/**
+ * One sibling package in the same dist family: the workspace (source) name and,
+ * when the caller knows it, that sibling's own dist version.
+ *
+ * The version is what a family *manifest edge* must be ranged on. It is
+ * deliberately NOT the packed package's version: `pack-dist` used to range
+ * every family edge on `--version`, which produced ranges that could not
+ * resolve the sibling at all (`datasets-tool@0.1.0` declared
+ * `@khorsheed/dsh-datasets@^0.1.0` while the core is `0.1.0-rc.1`, and
+ * `worktrees-tool@0.1.0` declared `^0.1.0` while its core is `0.2.0`).
+ *
+ * A member without a version is still usable as a *rewrite-only* reference
+ * (patch rows, string artifacts). A manifest edge on such a member is an error.
+ */
+export interface FamilyMember {
+  readonly sourceName: string
+  readonly distName: string
+  readonly targetVersion?: string
+}
+
+/** `--family` entry: `name` (rewrite-only) or `name=version` (edge-capable). */
+export interface FamilySpec {
+  readonly sourceName: string
+  readonly targetVersion?: string
+}
+
+/** Semver, prerelease and build metadata included. */
+const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+
+/**
+ * Parse the `--family` argument: comma-separated `name` or `name=version`.
+ * @param raw - the flag value, or undefined when absent.
+ * @returns the parsed specs.
+ */
+export function parseFamilySpecs(raw: string | undefined): FamilySpec[] {
+  if (raw === undefined) return []
+  const specs: FamilySpec[] = []
+  const seen = new Map<string, string | undefined>()
+  for (const entry of raw.split(',').map(part => part.trim()).filter(part => part.length > 0)) {
+    const eq = entry.indexOf('=')
+    const sourceName = (eq === -1 ? entry : entry.slice(0, eq)).trim()
+    const version = eq === -1 ? undefined : entry.slice(eq + 1).trim()
+    if (sourceName.length === 0) throw new Error(`pack-dist: empty --family entry in ${JSON.stringify(raw)}`)
+    if (eq !== -1 && (version === undefined || version.length === 0)) {
+      throw new Error(`pack-dist: --family ${sourceName}= is missing a version (use ${sourceName}=<version> or drop the '=')`)
+    }
+    if (version !== undefined && !SEMVER.test(version)) {
+      throw new Error(`pack-dist: --family ${sourceName}=${version} is not a valid semver version`)
+    }
+    if (seen.has(sourceName) && seen.get(sourceName) !== version) {
+      throw new Error(`pack-dist: --family names ${sourceName} twice with conflicting versions`)
+    }
+    if (seen.has(sourceName)) continue
+    seen.set(sourceName, version)
+    specs.push({ sourceName, ...(version === undefined ? {} : { targetVersion: version }) })
+  }
+  return specs
+}
+
+/**
+ * Derive a workspace package's family specs from its manifests, resolving each
+ * sibling's own version through the workspace index. Every `@khorsheed/*` name
+ * in dependencies / peerDependencies / devDependencies is a member — an edge
+ * that survives into the dist manifest needs its target version.
+ * @param pkg - the source manifest.
+ * @param versions - workspace package name → that package's own version.
+ * @returns specs in stable declaration order.
+ */
+export function familySpecsFor(pkg: PackageJson, versions: ReadonlyMap<string, string>): FamilySpec[] {
+  const names = new Set<string>()
+  for (const section of ['dependencies', 'peerDependencies', 'devDependencies'] as const) {
+    for (const name of Object.keys(pkg[section] ?? {})) {
+      if (name.startsWith('@khorsheed/')) names.add(name)
+    }
+  }
+  return [...names].map(sourceName => {
+    const targetVersion = versions.get(sourceName)
+    return { sourceName, ...(targetVersion === undefined ? {} : { targetVersion }) }
+  })
+}
+
+/** Render specs back into the `--family` argument form. */
+export function formatFamilySpecs(specs: readonly FamilySpec[]): string {
+  return specs
+    .map(spec => (spec.targetVersion === undefined ? spec.sourceName : `${spec.sourceName}=${spec.targetVersion}`))
+    .join(',')
+}
+
+/**
+ * Index every workspace package's own version.
+ * @param packagesDir - the workspace `packages/` directory.
+ * @returns package name → version.
+ */
+export function loadWorkspaceVersions(packagesDir: string): Map<string, string> {
+  const versions = new Map<string, string>()
+  if (!existsSync(packagesDir)) return versions
+  for (const entry of readdirSync(packagesDir)) {
+    const manifestPath = join(packagesDir, entry, 'package.json')
+    if (!existsSync(manifestPath)) continue
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: string; version?: string }
+    if (manifest.name !== undefined && manifest.version !== undefined) versions.set(manifest.name, manifest.version)
+  }
+  return versions
+}
+
+/** Build the source-name keyed member map the rescoper consumes. */
+export function familyMemberMap(scope: string, specs: readonly FamilySpec[]): ReadonlyMap<string, FamilyMember> {
+  return new Map(specs.map(spec => [
+    spec.sourceName,
+    {
+      sourceName: spec.sourceName,
+      distName: `${scope}/${basename(spec.sourceName)}`,
+      ...(spec.targetVersion === undefined ? {} : { targetVersion: spec.targetVersion }),
+    },
+  ]))
+}
+
+/**
+ * The caret range a family manifest edge must carry. A member with no known
+ * version cannot be ranged honestly, so this fails instead of guessing the
+ * packed package's own version (the bug this exists to prevent).
+ */
+function familyEdgeRange(member: FamilyMember, dep: string, section: string): string {
+  if (member.targetVersion === undefined) {
+    throw new Error(
+      `pack-dist: ${section} entry ${dep} is a family edge but no version was given for it — `
+      + `pass --family ${dep}=<version> (a bare --family name is rewrite-only and cannot range an edge)`,
+    )
+  }
+  return `^${member.targetVersion}`
 }
 
 /**
@@ -136,21 +276,22 @@ export type PackageJson = Record<string, unknown> & {
  * or provided by the host composition — EXCEPT family edges, which carry the
  * family's runtime/module-resolution contract (keeping a provider's import of
  * its core resolvable): they survive, renamed to their dist names and ranged
- * on the DIST version, like every other family reference — a family name left
- * at the source scope is unresolvable for npm installers (the source scope is
- * not published). A surviving edge mounts nothing: `dsh plugin add` reconciles
- * only the profile's *direct* dependencies into its bundles layer.
+ * on the TARGET package's own version — a family name left at the source scope
+ * is unresolvable for npm installers (the source scope is not published), and
+ * a range built from the wrong version excludes the target entirely. A
+ * surviving edge mounts nothing: `dsh plugin add` reconciles only the
+ * profile's *direct* dependencies into its bundles layer.
  * @param pkg - the source manifest.
  * @param name - the dist package name.
- * @param version - the dist version.
- * @param family - source-name → dist-name map for sibling packages in the same dist family.
+ * @param version - the dist version of THIS package (self references only).
+ * @param family - source-name keyed family members, each with its own dist name and version.
  * @returns the transformed manifest.
  */
 export function rescopePackageJson(
   pkg: PackageJson,
   name: string,
   version: string,
-  family?: ReadonlyMap<string, string>,
+  family?: ReadonlyMap<string, FamilyMember>,
 ): PackageJson {
   const out: PackageJson = { ...pkg, name, version }
   delete out['publishConfig']
@@ -163,25 +304,35 @@ export function rescopePackageJson(
   // the section goes — EXCEPT family edges: a family companion's runtime
   // import and module resolution depend on them (and the family README's
   // explicit install pairs a core with its provider), so family entries
-  // survive, renamed to the dist scope and ranged on the dist version. They do
-  // NOT mount anything: `dsh plugin add` reconciles only the profile's *direct*
-  // dependencies into its bundles layer, so a transitive family edge keeps the
-  // module resolvable and leaves the row unmounted.
+  // survive, renamed to the dist scope and ranged on the TARGET's own version.
+  // They do NOT mount anything: `dsh plugin add` reconciles only the profile's
+  // *direct* dependencies into its bundles layer, so a transitive family edge
+  // keeps the module resolvable and leaves the row unmounted.
   const deps = Object.fromEntries(
     Object.entries(out.dependencies ?? {}).flatMap(([dep]) => {
-      const target = family?.get(dep)
-      return target !== undefined ? [[target, `^${version}`]] : []
+      const member = family?.get(dep)
+      return member === undefined ? [] : [[member.distName, familyEdgeRange(member, dep, 'dependencies')]]
     }),
   )
   if (Object.keys(deps).length > 0) out.dependencies = deps
   else delete out.dependencies
   for (const section of ['peerDependencies', 'devDependencies'] as const) {
-    const deps = out[section]
-    if (deps === undefined) continue
+    const sectionDeps = out[section]
+    if (sectionDeps === undefined) continue
     out[section] = Object.fromEntries(
-      Object.entries(deps).map(([dep, range]) => family?.has(dep)
-        ? [family.get(dep) as string, `^${version}`]
-        : [dep, range === 'workspace:^' ? `^${pkg.version}` : range]),
+      Object.entries(sectionDeps).map(([dep, range]) => {
+        const member = family?.get(dep)
+        if (member !== undefined) return [member.distName, familyEdgeRange(member, dep, section)]
+        return [dep, range === 'workspace:^' ? `^${pkg.version}` : range]
+      }),
+    )
+  }
+  // peerDependenciesMeta is keyed by package name: a rescoped peer whose meta
+  // key kept the source name would silently lose its `optional` flag.
+  const meta = out.peerDependenciesMeta
+  if (meta !== undefined) {
+    out.peerDependenciesMeta = Object.fromEntries(
+      Object.entries(meta).map(([dep, value]) => [family?.get(dep)?.distName ?? dep, value]),
     )
   }
   return out
@@ -248,8 +399,8 @@ export function packDist(options: PackDistOptions): string {
   const distName = `${options.scope}/${basename(pkg.name)}`
   // Self first, then family members: cross-references in manifests, patch
   // rows, and every text artifact (js AND d.ts — type consumers resolve them).
-  const family = new Map((options.family ?? []).map(source => [source, `${options.scope}/${basename(source)}`]))
-  const pairs: [string, string][] = [[pkg.name, distName], ...family]
+  const family = familyMemberMap(options.scope, options.family ?? [])
+  const pairs: [string, string][] = [[pkg.name, distName], ...[...family.values()].map(m => [m.sourceName, m.distName] as [string, string])]
 
   const staging = mkdtempSync(join(tmpdir(), 'pack-dist-'))
   try {
@@ -383,11 +534,19 @@ function main(argv: readonly string[]): void {
   const scope = args.get('scope')
   const version = args.get('version')
   const outDir = args.get('out')
-  const family = args.get('family')?.split(',').map(name => name.trim()).filter(name => name.length > 0)
+  const family = parseFamilySpecs(args.get('family'))
+  const usage = 'usage: pack-dist --package <dir> --scope <scope> --version <version> --out <dir> '
+    + '[--family <name[=version][,name[=version]...]>]'
   if (packageDir === undefined || scope === undefined || version === undefined || outDir === undefined) {
-    throw new Error('usage: pack-dist --package <dir> --scope <scope> --version <version> --out <dir> [--family <comma-separated source package names>]')
+    throw new Error(usage)
   }
-  const tarball = packDist({ packageDir, scope, version, outDir: resolve(outDir), ...(family === undefined ? {} : { family }) })
+  const tarball = packDist({
+    packageDir,
+    scope,
+    version,
+    outDir: resolve(outDir),
+    ...(family.length === 0 ? {} : { family }),
+  })
   process.stdout.write(`${tarball}\n`)
 }
 

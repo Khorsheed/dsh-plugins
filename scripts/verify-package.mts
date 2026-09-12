@@ -21,6 +21,10 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { familySpecsFor, formatFamilySpecs, loadWorkspaceVersions } from './pack-dist.ts'
+
+/** Every workspace package's own version — a family edge ranges on the target's. */
+const workspaceVersions = loadWorkspaceVersions(join(import.meta.dirname, '..', 'packages'))
 
 const HOME = homedir()
 const VANILLA_HOME = join(HOME, '.dsh-vanilla')
@@ -70,12 +74,9 @@ for (const dir of packages) {
   // 1. clean rebuild + pack (pack-dist verifies the artifact itself).
   rmSync(join(dir, 'lib'), { recursive: true, force: true })
   run('pnpm', ['--filter', name, 'build'], { env })
-  const family = [...new Set([
-    ...Object.keys(pkg.dependencies ?? {}),
-    ...Object.keys(pkg.peerDependencies ?? {}),
-  ].filter(d => d.startsWith('@khorsheed/')))]
+  const family = familySpecsFor(pkg, workspaceVersions)
   const packArgs = ['tsx', 'scripts/pack-dist.ts', '--package', dir, '--scope', '@khorsheed', '--version', version, '--out', PUB]
-  if (family.length > 0) packArgs.push('--family', family.join(','))
+  if (family.length > 0) packArgs.push('--family', formatFamilySpecs(family))
   run('npx', packArgs)
   const tgz = join(PUB, `${name.replace('@khorsheed/', 'khorsheed-')}-${version}.tgz`)
 
