@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-12-companion-edge-cycle-cold-build.md
+.agents/notes/implemented/process/2026-09-12-companion-edge-cycle-cold-build.md: 96c382486fe305b908d13b4eeb2c048490e97ca6
+.agents/notes/implemented/process/2026-09-12-companion-edge-cycle-cold-build.zh.md: 8e31b57a919c018d4eb84c58152cda2a82c8b8a5

@@ -7,8 +7,8 @@
     "node": "^22.19 || >=24"
   },
   "scripts": {
-    "build": "pnpm -r --if-present run build",
-    "test": "pnpm -r --if-present run test",
+    "build": "pnpm -r --workspace-concurrency=2 --if-present run build",
+    "test": "pnpm -r --workspace-concurrency=2 --if-present run test",
     "test:scripts": "vitest run --config vitest.scripts.config.ts",
     "typecheck": "pnpm -r --if-present run typecheck",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",

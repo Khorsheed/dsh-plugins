@@ -13,5 +13,8 @@ export default defineConfig({
     // default made both flap red on any loaded machine while passing
     // standalone; 30s covers the inner spawn timeout with headroom.
     testTimeout: 30_000,
+    // Same memory discipline as the package preset (build/vitest.ts): the
+    // subprocess-heavy specs already multiply node processes per worker.
+    maxWorkers: 4,
   },
 })

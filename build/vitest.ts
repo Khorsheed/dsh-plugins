@@ -13,7 +13,7 @@
  * plane and module-singleton identity holds across packages.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { availableParallelism, homedir, totalmem } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileURLToPath } from 'node:url'
@@ -153,11 +153,29 @@ export function dshTestConfig(): ReturnType<typeof defineConfig> {
     // flakily, and invisibly to CI whose runner is fast enough to stay under.
     // A larger budget costs a passing test nothing; it only changes how long a
     // genuinely hung test takes to report.
-    test: { testTimeout: 30_000 },
+    test: { testTimeout: 30_000, maxWorkers: defaultTestWorkers() },
     resolve: { dedupe: ['react', 'react-dom'], alias },
     plugins: [
       sourcePathsPlugin(harness, paths, /^@deepseek-ai\//),
       localPackagePlugin(),
     ],
   })
+}
+
+/**
+ * Per-package fork cap. Memory — not CPU — is the constraint on this repo:
+ * every fork transforms the harness source plane (hundreds of MB RSS), and a
+ * repo-wide `pnpm run test` runs several packages' vitest instances at once
+ * (workspace concurrency), so CPU-count workers × concurrent packages far
+ * exceeds a 16GB machine. Budget ~4GB of RAM per fork (a 16GB machine gets
+ * 4, an 8GB machine 2), floor at 2 so a suite can still overlap files, cap
+ * at the CPU count. vitest ≥4 honors VITEST_MAX_WORKERS over this value;
+ * DSH_TEST_MAX_WORKERS overrides on any version.
+ * @returns the fork ceiling for one vitest instance.
+ */
+export function defaultTestWorkers(): number {
+  const explicit = Number(process.env['DSH_TEST_MAX_WORKERS'] ?? '')
+  if (Number.isInteger(explicit) && explicit > 0) return explicit
+  const byMemory = Math.floor(totalmem() / 2 ** 30 / 4)
+  return Math.max(2, Math.min(availableParallelism(), byMemory))
 }

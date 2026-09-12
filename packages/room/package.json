@@ -52,6 +52,9 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "references": [
+      "@khorsheed/dsh-room-tool"
+    ],
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -100,8 +103,7 @@
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@khorsheed/dsh-local-agent": "workspace:*",
-    "react": "^18.2.0",
-    "@khorsheed/dsh-room-tool": "workspace:*"
+    "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-session-stats": {
@@ -114,9 +116,6 @@
       "optional": true
     },
     "@khorsheed/dsh-local-agent": {
-      "optional": true
-    },
-    "@khorsheed/dsh-room-tool": {
       "optional": true
     }
   },
@@ -150,8 +149,7 @@
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "@khorsheed/dsh-room-tool": "workspace:*"
+    "react-dom": "^18.2.0"
   },
   "files": [
     "lib/index.js",

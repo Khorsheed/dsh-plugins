@@ -27,6 +27,21 @@
  * yesterday's API surface — and removed when generation finishes. The
  * harness checkout itself is never modified.
  *
+ * Freshness cache: one full-mode run already regenerates every registered
+ * package's outputs, yet `pnpm -r build` invokes this script once per typert
+ * package (~45s of overlay + analysis each — the majority of a full-repo
+ * build). Full-mode runs therefore consult a stamp at
+ * $DSH_HOME/scratch/typert-cache.json: a key over the generator inputs (this
+ * script, every registered package's src/package.json/host configs, and the
+ * harness checkout's git HEAD + status) plus the sha256 of every output file
+ * the stamp claims. Any input change, any missing/modified output, or a
+ * dirty harness checkout misses and regenerates; GEN_TYPERT_FORCE=1 forces a
+ * miss. Scoped GEN_TYPERT_ONLY runs (the deploy path) never read or write the
+ * cache — a deploy always generates against live sources, and scoped output
+ * (siblings resolved from built lib/types) must not poison the full-mode
+ * stamp. Concurrent invocations serialize on a lock dir; the loser re-checks
+ * the stamp and usually finds it fresh.
+ *
  * Usage: tsx scripts/gen-typert.mts
  *
  * With no filter, generates the full known set in one analysis batch. A
@@ -36,10 +51,11 @@
  * type-declaration metadata depends on the analyzed set.
  */
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { dirname, join, relative } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /** The harness's own TypeScript (v5 API surface; this repo's typescript@7 differs). */
 interface JsoncParser {
@@ -286,15 +302,118 @@ async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
   writeFileSync(aggregatePath, `${JSON.stringify(aggregate, null, 2)}\n`)
 }
 
-async function main(): Promise<void> {
-  // GEN_TYPERT_ONLY=<name,name> restricts generation to a subset — one
-  // package's in-flight remote-surface breakage must not block every other
-  // package's build in a multi-agent repo (observed: mission WIP failing
-  // message-tools' gen-typert). Default: all registered typert packages.
-  const selected = selectTypertPackages(process.env['GEN_TYPERT_ONLY'])
+/* ---------------- freshness cache (full mode only, see module header) ---------------- */
+
+/** sha256 hex of one file's contents. */
+export function typertFileHash(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+/**
+ * Content hash of everything a generation batch reads from THIS repo: the
+ * script itself plus, per selected package, package.json, the host configs,
+ * and the src tree (exactly what `copyTypertPackageSources` overlays).
+ */
+export function typertInputHash(repoRoot: string, packages: readonly TypertPackage[], scriptFile: string): string {
+  const hash = createHash('sha256')
+  hash.update(readFileSync(scriptFile))
+  const walk = (dir: string, prefix: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) walk(path, `${prefix}${entry.name}/`)
+      else { hash.update(prefix + entry.name); hash.update(readFileSync(path)) }
+    }
+  }
+  for (const pkg of packages) {
+    hash.update(pkg.name)
+    hash.update(readFileSync(join(repoRoot, pkg.dir, 'package.json')))
+    for (const config of pkg.hostConfigs) hash.update(readFileSync(join(repoRoot, pkg.dir, config)))
+    walk(join(repoRoot, pkg.dir, 'src'), `${pkg.dir}/src/`)
+  }
+  return hash.digest('hex')
+}
+
+/**
+ * The harness checkout's git state (HEAD + `status --porcelain`), or null
+ * when unreadable — generation resolves harness sources, so any uncommitted
+ * harness change must miss the cache; null means "uncacheable".
+ */
+export function harnessGitState(harness: string): string | null {
+  try {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: harness, encoding: 'utf8' }).trim()
+    const status = execFileSync('git', ['status', '--porcelain'], { cwd: harness, encoding: 'utf8' })
+    return createHash('sha256').update(head).update(status).digest('hex')
+  } catch {
+    return null
+  }
+}
+
+interface TypertCache {
+  readonly key: string
+  /** Repo-relative output path → sha256 at generation time. */
+  readonly files: Record<string, string>
+}
+
+/** The stamp is fresh only when the key matches and every recorded output survives unchanged. */
+export function isTypertCacheFresh(cachePath: string, key: string, repoRoot: string): boolean {
+  if (!existsSync(cachePath)) return false
+  let stamp: TypertCache
+  try {
+    stamp = JSON.parse(readFileSync(cachePath, 'utf8')) as TypertCache
+  } catch {
+    return false
+  }
+  if (stamp.key !== key || typeof stamp.files !== 'object' || stamp.files === null) return false
+  for (const [rel, sha] of Object.entries(stamp.files)) {
+    const path = join(repoRoot, rel)
+    if (!existsSync(path) || typertFileHash(path) !== sha) return false
+  }
+  return true
+}
+
+export function writeTypertCache(cachePath: string, key: string, files: Record<string, string>): void {
+  mkdirSync(dirname(cachePath), { recursive: true })
+  writeFileSync(cachePath, `${JSON.stringify({ key, files } satisfies TypertCache, null, 2)}\n`)
+}
+
+const lockSleep = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Serialize concurrent full-mode generations; the loser re-reads the stamp. */
+function acquireTypertLock(lockDir: string): void {
+  let deadline = Date.now() + 900_000
+  for (;;) {
+    try {
+      mkdirSync(lockDir)
+      return
+    } catch {
+      if (Date.now() > deadline) {
+        // A crashed generator leaves the dir behind; break it and keep going —
+        // the worst case is a duplicate generation with identical outputs.
+        rmSync(lockDir, { recursive: true, force: true })
+        deadline = Date.now() + 60_000
+      }
+      lockSleep(1000)
+    }
+  }
+}
+
+function releaseTypertLock(lockDir: string): void {
+  rmSync(lockDir, { recursive: true, force: true })
+}
+
+/** Run one generation batch; returns the repo-relative outputs written, hashed. */
+async function generate(selected: readonly TypertPackage[]): Promise<Record<string, string>> {
   const generatorModule = join(harness, 'packages/typert/generator/src/workspace.ts')
   if (!existsSync(generatorModule)) {
     throw new Error(`gen-typert: harness checkout not found at ${harness} — set DSH_HARNESS to a deepseek-harness clone`)
+  }
+  const written: Record<string, string> = {}
+  const write = (out: string, name: string, content: string): void => {
+    const path = join(out, name)
+    writeFileSync(path, content)
+    written[relative(repoRoot, path)] = createHash('sha256').update(content).digest('hex')
   }
   await buildOverlay(selected)
   try {
@@ -309,18 +428,62 @@ async function main(): Promise<void> {
       const out = join(repoRoot, pkg.dir, 'lib')
       mkdirSync(out, { recursive: true })
       for (const artifact of own) {
-        writeFileSync(join(out, `typert.${artifact.face}.js`), artifact.js)
-        writeFileSync(join(out, `typert.${artifact.face}.d.ts`), artifact.dts)
+        write(out, `typert.${artifact.face}.js`, artifact.js)
+        write(out, `typert.${artifact.face}.d.ts`, artifact.dts)
         if (artifact.remote !== undefined) {
-          writeFileSync(join(out, 'typert.remote-client.js'), artifact.remote.js)
-          writeFileSync(join(out, 'typert.remote-client.d.ts'), artifact.remote.dts)
-          writeFileSync(join(out, 'typert.remote-client.d.ts.map'), artifact.remote.dtsMap)
+          write(out, 'typert.remote-client.js', artifact.remote.js)
+          write(out, 'typert.remote-client.d.ts', artifact.remote.dts)
+          write(out, 'typert.remote-client.d.ts.map', artifact.remote.dtsMap)
         }
       }
       console.log(`gen-typert: ${pkg.name} generated from overlay ${overlay}`)
     }
   } finally {
     rmSync(overlay, { recursive: true, force: true })
+  }
+  return written
+}
+
+async function main(): Promise<void> {
+  // GEN_TYPERT_ONLY=<name,name> restricts generation to a subset — one
+  // package's in-flight remote-surface breakage must not block every other
+  // package's build in a multi-agent repo (observed: mission WIP failing
+  // message-tools' gen-typert). Default: all registered typert packages.
+  const only = process.env['GEN_TYPERT_ONLY']
+  const selected = selectTypertPackages(only)
+  // Scoped runs (the deploy path) always generate live and never touch the
+  // stamp: a deploy's outputs must reflect the current sources, and scoped
+  // output (siblings resolved from built lib/types) differs from full mode.
+  if (only !== undefined) {
+    await generate(selected)
+    return
+  }
+  const forced = process.env['GEN_TYPERT_FORCE'] === '1'
+  const cachePath = join(dshHome, 'scratch', 'typert-cache.json')
+  const lockDir = join(dshHome, 'scratch', 'typert-gen.lock')
+  const state = harnessGitState(harness)
+  const key = state === null
+    ? null
+    : createHash('sha256')
+      .update(typertInputHash(repoRoot, selected, fileURLToPath(import.meta.url)))
+      .update(state)
+      .digest('hex')
+  const fresh = (): boolean => key !== null && isTypertCacheFresh(cachePath, key, repoRoot)
+  if (!forced && fresh()) {
+    console.log(`gen-typert: ${selected.length} packages fresh (key ${key!.slice(0, 12)}) — skipping (GEN_TYPERT_FORCE=1 to regenerate)`)
+    return
+  }
+  acquireTypertLock(lockDir)
+  try {
+    // The lock winner may have just refreshed every output this run needs.
+    if (!forced && fresh()) {
+      console.log(`gen-typert: ${selected.length} packages fresh after lock (key ${key!.slice(0, 12)}) — skipping`)
+      return
+    }
+    const written = await generate(selected)
+    if (key !== null) writeTypertCache(cachePath, key, written)
+  } finally {
+    releaseTypertLock(lockDir)
   }
 }
 
