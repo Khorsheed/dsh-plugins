@@ -43,6 +43,7 @@ import {
   containerScopedHome,
   delegationEnv,
   establishSubagentCatalogChild,
+  persistChildSession,
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
@@ -297,7 +298,11 @@ export class CodexCliProvider implements SubagentProvider {
       // the descriptor lands. A failure degrades to the warn below; a missing
       // row never blocks the delegation.
       establishSubagentCatalogChild(request.parent.session, childSession.header, label)
-      void this.ctx.get('sessionPersistence')?.create(childSession.header).catch(() => {})
+      // No persistence create here: the stored session is materialized by the
+      // first persistChildSession sync through the CORE's cached write handle.
+      // A fire-and-forget create from the provider used to hold (and leak) a
+      // second write handle, which blocks the core's claim with
+      // SessionAlreadyOwnedError.
     } catch (error) {
       this.ctx.logger.warn(`subagent-codex: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -977,6 +982,8 @@ export function startCodexCliRun(
   // Captured from the child's exit so the error turn/end can name the real
   // code without the settle chain re-deriving it.
   let exitCode: number | null = null
+  /** The flattened failure's own message, snapshotted for the diagnostic. */
+  let settleFailure: string | undefined
 
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: () => Promise.race([
@@ -1014,8 +1021,28 @@ export function startCodexCliRun(
       abortBranch,
     ]),
     collectOutput,
+    // The seam surfaces this as `SubagentResult.diagnostic` (bounded): the
+    // failure's own message, the stderr tail, and where the run's rollout
+    // file lands — "subagent run failed" alone sent every caller hunting.
+    collectDiagnostic: () => {
+      const detail: string[] = []
+      if (settleFailure !== undefined) detail.push(settleFailure)
+      const stderrTail = (child.collected.stderr?.readFrom(0).text || stderr).trim()
+      if (stderrTail !== '') detail.push(`stderr: ${stderrTail.slice(-500)}`)
+      const homeDir = spec.env['CODEX_HOME']
+      if (homeDir !== undefined && homeDir !== '') {
+        const threadId = parseCodexJsonStream(output).threadId
+        const when = new Date(startedAtMs)
+        const dir = `${homeDir}/sessions/${String(when.getFullYear())}/${String(when.getMonth() + 1).padStart(2, '0')}/${String(when.getDate()).padStart(2, '0')}`
+        detail.push(threadId === undefined ? `rollout 目录: ${dir}` : `rollout: ${dir}/rollout-*-${threadId}.jsonl`)
+      }
+      return detail.length === 0 ? undefined : detail.join('\n')
+    },
     cancelled: () => runAbort.signal.aborted,
-    onError: spec.onError,
+    onError: (error: unknown, stopReason) => {
+      settleFailure = error instanceof Error ? error.message : String(error)
+      spec.onError?.(error instanceof Error ? error : new Error(String(error)), stopReason)
+    },
     signal: request.signal,
     onAbort,
   }).then((settled) => {
@@ -1184,35 +1211,15 @@ export function codexLineText(line: CodexTranscriptLine): string {
 }
 
 /**
- * Persist the session's events ONLY when the session is standalone (tests,
- * ad-hoc mirrors). A live session's own write-behind pipeline already durably
- * stores every appended event; re-appending the full list here violates the
- * store's contiguous-seq contract ('append seq mismatch'), and the throw used
- * to kill the mirror pass BEFORE the offset advanced — every later pass then
- * re-folded the same lines (duplicated user messages, no usage, no offset on
- * the delegation record).
+ * Persist the child session's mirrored events. Thin wrapper over the core's
+ * {@link persistChildSession}: a live session syncs through the core's cached
+ * per-child write handle (host 0.1.5's live write-behind never checkpoints a
+ * mirror session — it has no agent loop — so production child logs stayed
+ * header-only until the explicit sync), a standalone one through a one-shot
+ * handle flow. Kept under the historical name for the live driver.
  */
 export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
-  const sessions = ctx.get('sessions')
-  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
-  const persistence = ctx.get('sessionPersistence')
-  if (persistence === undefined) return
-  // Host 0.1.5 handle-based persistence: claim the write handle (creating the
-  // stored session on first persist), append only the unstored suffix —
-  // re-appending the full snapshot violates the contiguous-seq contract —
-  // then flush and close.
-  const existing = await persistence.stat(childSession.id)
-  const handle = existing === undefined
-    ? await persistence.create(childSession.header)
-    : await persistence.open(childSession.id, 'write')
-  try {
-    const stored = await handle.read(0)
-    const suffix = childSession.snapshotEvents().slice(stored.events.length)
-    if (suffix.length > 0) await handle.append(suffix)
-    await handle.flush()
-  } finally {
-    await handle.close()
-  }
+  await persistChildSession(ctx, childSession)
 }
 
 /**
@@ -1287,7 +1294,7 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
           }
-          await persistIfStandalone(ctx, childSession)
+          await persistChildSession(ctx, childSession)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         } catch (error: unknown) {
           ctx.logger.warn(`subagent-codex: live mirror failed: ${thrown(error).message}`)
@@ -1354,7 +1361,7 @@ async function appendCodexResponse(
     // this race — log it instead of dropping it silently.
     spec.ctx?.logger.warn(`subagent-codex: round ${turn} usage arrived after its carrier line was mirrored; the accounting is dropped`)
   }
-  await persistIfStandalone(spec.ctx, childSession)
+  await persistChildSession(spec.ctx, childSession)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
 }
 

@@ -168,6 +168,67 @@ describe('codex-cli-provider run settlement', () => {
     await done
   })
 
+  it('persists a LIVE child session’s mirrored events through the core’s syncChildSession', async () => {
+    // The production wiring: the child reads as live in the sessions service,
+    // so the mirror must NOT touch sessionPersistence directly — it delegates
+    // to the core's syncChildSession, which writes through the core's cached
+    // per-child write handle. The stub emulates that flow against the fake so
+    // the landing content stays assertable.
+    const child = Session.create(SessionId('child-sync-codex'))
+    const ctx = new Context()
+    const persistence = fakeSessionPersistence()
+    ctx.provide('sessionPersistence', persistence)
+    ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-sync-codex') ? child : undefined) } as never)
+    const synced: string[] = []
+    ctx.provide('localAgent', {
+      reportRunProgress: () => {},
+      syncChildSession: async (session: Session) => {
+        synced.push(String(session.id))
+        const existing = await persistence.stat(session.id)
+        const handle = existing === undefined
+          ? await persistence.create(session.header as { id: string })
+          : await persistence.open(session.id, 'write')
+        try {
+          const stored = await handle.read(0)
+          const suffix = session.snapshotEvents().slice(stored.events.length)
+          if (suffix.length > 0) await handle.append(suffix)
+          await handle.flush()
+        } finally {
+          await handle.close()
+        }
+      },
+    } as never)
+    const { handle, done } = stubChild()
+
+    const request = {
+      prompt: [{ type: 'text', text: 'do the task' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startCodexCliRun(request, {
+      cwd: '/tmp',
+      env: { CODEX_HOME: '/tmp/codex-home' },
+      sandbox: 'workspace-write',
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      ctx,
+    })
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    // The sync path ran for this child, and the mirrored events landed in
+    // durable storage through the handle (never the one-shot fallback).
+    await vi.waitFor(() => {
+      expect(synced).toContain('child-sync-codex')
+      expect(persistence.append).toHaveBeenCalledWith(child.id, child.snapshotEvents())
+    })
+    const stored = persistence.stored.get(child.id) as { type: string }[]
+    expect(stored.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(stored.filter(event => event.type === 'user/message')).toHaveLength(1)
+    await done
+  })
+
   it('mirrors the NDJSON stream live during the run and settles without duplicates', async () => {
     const child = Session.create(SessionId('child-live-codex'))
     const ctx = new Context()
@@ -291,10 +352,13 @@ describe('codex-cli-provider run settlement', () => {
     }
     const run = await startCodexCliRun(
       { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
-      { cwd: '/tmp', env: {}, sandbox: 'workspace-write', disposeGraceMs: 3_000, spawn: () => handle, childSession: child },
+      { cwd: '/tmp', env: { CODEX_HOME: '/tmp/codex-home' }, sandbox: 'workspace-write', disposeGraceMs: 3_000, spawn: () => handle, childSession: child },
     )
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    // The seam diagnostic names the failure and where the rollout file lands.
+    expect(result.diagnostic).toContain('codex exec exited with code 1')
+    expect(result.diagnostic).toContain('rollout 目录: /tmp/codex-home/sessions/')
     // The timing window must close even on failure, with an error reason.
     const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined

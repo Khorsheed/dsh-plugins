@@ -37,14 +37,13 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendCodexTranscriptLine,
   codexAssistantEvent,
   codexLineText,
   DEFAULT_DISPOSE_GRACE_MS,
-  persistIfStandalone,
   registerCodexMemberRun,
   textTask,
   type CodexMirrorOptions,
@@ -762,7 +761,7 @@ export class CodexLiveDriver {
     const earlyNotifications: { method: string; params: JsonObject }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistIfStandalone(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
     }
 
     const requestCancel = (): void => {
