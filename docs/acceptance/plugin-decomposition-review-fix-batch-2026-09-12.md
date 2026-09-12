@@ -86,6 +86,36 @@ build ✓、test ✓、pack bundles(**25 包 packed and verified**)✓。`43d024
     经确认不是仓库工作项。
 
 
+## 生产切换(3080)
+
+三个运行时相关包在**同一次** `deploy:3080` 调用里一起上线,因此只有一次重启:
+
+```sh
+pnpm deploy:3080 --package packages/file-preview --package packages/inline-html-render --package packages/ui-file-preview
+```
+
+- 为什么必须同批:WP5 把 `3d-artifact` 的注册者从 file-preview 换成 inline-html-render(只上前者会让这个 skill 消失),
+  WP7 的新 client 要求 host 端有 `capabilities` 握手(只上新 client 会让所有 file-preview UI 面缺席)。
+  一次调用 = 所有指定包在同一份新 profile 里生效、只重启一次,两个窗口都被消掉。
+- **watchdog 证据链**:`starting instance (attempt=6)` → `instance ready`(303 exchange + cookie `/` = 200;
+  child 12438 / listener 12447 / retry 0)→ **`canary PASS`** → `recorded proven deployment eb7ef9eaa9b37325`
+  for harness HEAD `183f08e9`。
+- **profile 变更**:三个包都指向新时间戳 tarball `+2609121545`(file-preview `0.3.0`、inline-html-render `0.1.13`、
+  client `0.3.0`),文件均已落盘;profile 的 `node_modules` 重建后 `pnpm install` 成功(+45 包)。
+- **产物级复核**:装的 host `lib/index.js` 含 `capabilities` 且**不再含** `3d-artifact`;inline-html-render 含
+  `3d-artifact`;client bundle 含 `protocolVersion`/`capabilities`;tarball 里 inline-html-render 同时带
+  `skills/3d-artifact/SKILL.md` 与 `skills/inline-html-card/SKILL.md`,host 包不再带 `skills/`;
+  `boot-attempt.log` 无 error/warn。
+- 部署脚本自身以 exit 1 结束:它的 canary 等待循环(`sleep 5`)被**它自己触发的重启** SIGTERM 掉 —— 脚本注释里
+  就写明重启会杀掉发起进程。**重启本身按 watchdog 回执判定为成功**,不是部署失败。
+- 脚本用的 `--initiator zhuyudan`(其默认值)使重启回执路由到人类而不是发起会话,所以发起会话被中断、
+  需要事后核对日志。
+
+**未完成的验收**:浏览器级确认(打开一条会话看 file-preview tab/卡片是否渲染、console 是否零错误)需要
+带鉴权的浏览器会话,本会话没有浏览器工具,因此**未做**。另外文档里的
+`curl /plugins/<pkg>/client.js` 探针在本实例上对**任何**包(含早已在 prod 的 message-tools,带 `?rev=` 亦然)
+都返回 404,不是有效检查 —— 故本轮改用产物与 watchdog 证据,并在此记录该探针已过时。
+
 ## 未覆盖 / 遗留
 
 1. **Docker 不可达**,16 个容器集成测试在本批未复跑(按设计跳过)。
