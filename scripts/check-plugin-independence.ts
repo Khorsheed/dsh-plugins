@@ -51,6 +51,24 @@ export interface Finding {
 }
 
 /**
+ * How a package that deliberately does NOT self-mount is composed, declared in
+ * its own manifest as `dsh.composition.component`. The package map reads this
+ * instead of inferring intent, so a missing `dsh.bundle` is no longer ambiguous
+ * between "deliberate family-internal row" and "forgot the patch".
+ */
+export const COMPOSITION_COMPONENTS: ReadonlyArray<string> = [
+  'preset-composed-row',
+  'provider-mounted-row',
+  'sub-profile-patch',
+]
+
+/**
+ * The same set as `COMPOSITION_COMPONENTS`, keyed by directory, kept as a
+ * CROSS-CHECK rather than the source of truth: the manifest metadata decides,
+ * and this list must agree with it (the historical Agent Notes cite the list,
+ * so it is retired by removing entries as those notes stop being referenced,
+ * not by letting the two drift).
+ *
  * Packages deliberately NOT self-mounting: family-internal row packages whose
  * composition is mounted on their behalf — provider patches mount
  * config-bearing rows (tool-subagent), and the local-agent-dsh provisioner
@@ -158,6 +176,8 @@ interface Pkg {
       readonly client?: { readonly inject?: readonly string[] }
       /** Sibling names a package mentions as DATA (never as a dependency edge). */
       readonly references?: readonly string[]
+      /** How a package that does not self-mount is composed. */
+      readonly composition?: { readonly component?: string }
     }
     readonly dependencies?: Record<string, string>
     readonly devDependencies?: Record<string, string>
@@ -272,12 +292,18 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
     findings.push({ path: join(path, file), kind, detail })
   }
 
-  // 1. self-mounting
+  // 1. self-mounting. A package that does not self-mount must say HOW it is
+  // composed (`dsh.composition.component`) — that manifest field, not a central
+  // allowlist, is what the package map and this checker read, so a future
+  // companion row cannot be mistaken for a plugin someone forgot to give a patch.
   const patchRel = json.dsh?.bundle?.patch
+  const component = json.dsh?.composition?.component
   if (!patchRel) {
-    if (!NO_OWN_PATCH.includes(dir)) {
-      add('package.json', 'self-mounting', 'no dsh.bundle.patch — every installable plugin self-mounts (or is a documented family-internal row)')
+    if (component === undefined) {
+      add('package.json', 'self-mounting', 'no dsh.bundle.patch and no dsh.composition.component — declare how the package is composed')
     }
+  } else if (component !== undefined) {
+    add('package.json', 'composition component', 'declares dsh.composition.component and also self-mounts (dsh.bundle.patch) — pick one')
   } else {
     const patchPath = join(path, patchRel)
     if (!existsSync(patchPath)) {
@@ -483,6 +509,45 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
         path: `packages/${pkg.dir}/${patch}`,
         kind: 'patch row ownership',
         detail: `patch inserts a row for ${n.name}, which self-mounts — a package must not mount another self-mounting package's row (both installed mounts it twice)`,
+      })
+    }
+  }
+
+  // Composition metadata: the manifest is the source of truth for "this package
+  // deliberately does not self-mount", and NO_OWN_PATCH is kept as a
+  // cross-check so metadata and the historical list cannot drift apart while
+  // the list is retired.
+  const noOwn = new Set(NO_OWN_PATCH)
+  for (const pkg of pkgs) {
+    const component = pkg.json.dsh?.composition?.component
+    const selfMounts = pkg.json.dsh?.bundle?.patch !== undefined
+    const path = `packages/${pkg.dir}/package.json`
+    if (component !== undefined && !COMPOSITION_COMPONENTS.includes(component)) {
+      findings.push({
+        path,
+        kind: 'composition component',
+        detail: `dsh.composition.component "${component}" is not one of ${COMPOSITION_COMPONENTS.join(' / ')}`,
+      })
+    }
+    if (component === undefined && !selfMounts) {
+      findings.push({
+        path,
+        kind: 'composition component',
+        detail: 'neither self-mounts nor declares dsh.composition.component — the package map cannot tell a deliberate row from a missing patch',
+      })
+    }
+    if (component !== undefined && !noOwn.has(pkg.dir)) {
+      findings.push({
+        path,
+        kind: 'composition component',
+        detail: 'declares a composition component but is not listed in NO_OWN_PATCH — the metadata and the list must agree',
+      })
+    }
+    if (noOwn.has(pkg.dir) && component === undefined) {
+      findings.push({
+        path,
+        kind: 'composition component',
+        detail: 'listed in NO_OWN_PATCH but declares no dsh.composition.component — mirror the metadata, do not let the list lead',
       })
     }
   }

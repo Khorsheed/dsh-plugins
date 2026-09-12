@@ -39,6 +39,9 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "composition": {
+      "component": "sub-profile-patch"
+    },
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1"

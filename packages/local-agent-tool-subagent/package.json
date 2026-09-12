@@ -66,6 +66,9 @@
     "typecheck": "tsc -b tsconfig.json --noEmit"
   },
   "dsh": {
+    "composition": {
+      "component": "provider-mounted-row"
+    },
     "compat": {
       "minHost": "0.1.2-rc.1",
       "verifiedHost": "0.1.2-rc.1"

@@ -216,6 +216,83 @@ describe('scanPackage', () => {
       cleanup()
     }
   })
+
+  it('requires composition metadata when a package does not self-mount', () => {
+    const { pkg, cleanup } = fixture(
+      { name: '@khorsheed/dsh-demo', private: true, files: ['lib'] },
+      { 'src/index.ts': 'export const x = 1\n' },
+    )
+    try {
+      expect(scanPackage(pkg, ['@khorsheed/dsh-demo']).map((f) => f.kind)).toContain('self-mounting')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rejects a package that declares a composition component and self-mounts', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-demo',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: './cordis.patch.yml' }, composition: { component: 'preset-composed-row' } },
+      },
+      { 'cordis.patch.yml': `- insert:\n    - id: demo\n      name: '@khorsheed/dsh-demo'\n` },
+    )
+    try {
+      expect(scanPackage(pkg, ['@khorsheed/dsh-demo']).map((f) => f.kind)).toContain('composition component')
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+describe('composition metadata and the NO_OWN_PATCH cross-check', () => {
+  function packagesRoot(specs: Array<{ dir: string; json: Record<string, unknown> }>) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-comp-'))
+    for (const s of specs) {
+      const dir = join(root, s.dir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(s.json))
+    }
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  }
+
+  it('flags metadata that NO_OWN_PATCH does not mirror', () => {
+    const { root, cleanup } = packagesRoot([
+      { dir: 'demo', json: { name: '@khorsheed/dsh-demo', private: true, dsh: { composition: { component: 'preset-composed-row' } } } },
+    ])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'composition component')
+      expect(findings.some((f) => f.detail.includes('not listed in NO_OWN_PATCH'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a NO_OWN_PATCH entry that declares no metadata', () => {
+    const { root, cleanup } = packagesRoot([
+      { dir: 'worktrees-tool', json: { name: '@khorsheed/dsh-worktrees-tool', private: true } },
+    ])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'composition component')
+      expect(findings.some((f) => f.detail.includes('declares no dsh.composition.component'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rejects a component value outside the declared vocabulary', () => {
+    const { root, cleanup } = packagesRoot([
+      { dir: 'worktrees-tool', json: { name: '@khorsheed/dsh-worktrees-tool', private: true, dsh: { composition: { component: 'whatever' } } } },
+    ])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'composition component')
+      expect(findings.some((f) => f.detail.includes('is not one of'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
 })
 
 describe('repo tree', () => {
