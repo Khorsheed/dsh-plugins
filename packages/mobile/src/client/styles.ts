@@ -342,6 +342,7 @@ html[data-dsh-mobile] [data-phase=hero] [data-conversation-scroll] { overscroll-
 html[data-dsh-mobile] [data-mobile-frame] { --mobile-pane-width:min(84vw,380px); }
 [data-mobile-library-pane] { position:absolute; inset:0 auto 0 0; width:var(--mobile-pane-width,min(84vw,380px)); background:var(--dsw-alias-bg-base); pointer-events:auto; }
 [data-mobile-library-pane][hidden] { display:none; }
+html[data-dsh-mobile] [data-mobile-frame]:has([data-mobile-library-pane]) > div:has(> [data-slot="sidebar"]) { display:none; }
 [data-mobile-library-pane] [data-mobile-library] { inset:64px 0 0; }
 [data-mobile-library-toolbar] { height:64px; padding:8px 16px; display:flex; align-items:center; justify-content:space-between; box-sizing:border-box; }
 [data-mobile-library-toolbar] button { display:grid; place-items:center; width:44px; height:44px; padding:0; border-radius:50%; border:1px solid var(--mobile-edge); background:var(--mobile-glass); color:var(--dsw-alias-label-primary); box-shadow:var(--mobile-shadow); }
