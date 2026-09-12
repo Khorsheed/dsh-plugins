@@ -291,9 +291,15 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
 
   const busy = sending || running
   const dockLines = memberDockLines(projections, t)
-  /** The chip label: the effective model id, or the localized "Default" when
-      every layer names nothing (the CLI's built-in default names nothing). */
-  const modelLabel = (info: LocalAgentModelInfo): string => info.effective ?? t('member.model.default')
+  /** The chip label: the effective model id when any layer names one (codex's
+      catalog default counts — it names the CLI's own default); otherwise the
+      localized "Default", annotated with the last observed model when the
+      delegation records know what actually ran. */
+  const modelLabel = (info: LocalAgentModelInfo): string =>
+    info.effective
+    ?? (info.lastObserved === undefined
+      ? t('member.model.default')
+      : t('member.model.defaultLastObserved', { model: info.lastObserved }))
   // The surface stamped with another child (a session switch mid-fetch) never
   // flashes its model at this member.
   const modelInfo = modelSurface !== undefined && modelSurface.child === matched.childSessionId

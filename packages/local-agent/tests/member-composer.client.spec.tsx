@@ -368,6 +368,38 @@ describe('MemberComposer', () => {
       expect(chip.textContent).toBe(zh['member.model.default'])
     })
 
+    it('labels a cli-builtin chip with the model id when a layer names the default (codex catalog)', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo({
+        effective: 'gpt-5.6-sol', source: 'cli-builtin', settings: undefined, choices: ['gpt-5.6-sol'],
+      }))
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+      expect(chip.textContent).toBe('gpt-5.6-sol')
+    })
+
+    it('annotates the bare Default with the last observed model when the records know one', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo({
+        effective: undefined, source: 'cli-builtin', settings: undefined, choices: [], lastObserved: 'claude-opus-5',
+      }))
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+      expect(chip.textContent).toBe(zh['member.model.defaultLastObserved'].replace('{model}', 'claude-opus-5'))
+      // The title explains the layer: no layer names a model, the CLI's own
+      // default runs, last-observed is shown when known.
+      expect(chip.getAttribute('title')).toBe(
+        zh['member.model.title']
+          .replace('{model}', zh['member.model.defaultLastObserved'].replace('{model}', 'claude-opus-5'))
+          .replace('{source}', zh['member.model.source.cli-builtin']),
+      )
+    })
+
+    it('an effective model outranks the last-observed annotation on the chip', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo({ lastObserved: 'observed-model' }))
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+      expect(chip.textContent).toBe('m1')
+    })
+
     it('applies a choice through setMemberModel and re-reads the surface on success', async () => {
       const memberModel = vi.fn()
         .mockResolvedValueOnce(modelInfo())

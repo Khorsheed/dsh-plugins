@@ -170,11 +170,18 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
     }
     setModelMenuOpen(open => !open)
   }
-  // An empty field names the effective default it will follow, when the
-  // broker knows one — the placeholder answers "what does blank mean".
+  // An empty field names the default it will follow, down the chain the
+  // broker reports: the scoped config's model, then a cli-builtin source that
+  // still names its default (a harness catalog's isDefault entry), then the
+  // last observed model the records know, and last the generic copy. The
+  // placeholder answers "what does blank mean".
   const modelPlaceholder = modelSurface !== null && modelSurface.cliDefault !== undefined && modelSurface.cliDefault !== ''
     ? t('model.placeholderCliConfig', { model: modelSurface.cliDefault })
-    : t('model.placeholder')
+    : modelSurface !== null && modelSurface.source === 'cli-builtin' && modelSurface.effective !== undefined && modelSurface.effective !== ''
+      ? t('model.placeholderCliBuiltin', { model: modelSurface.effective })
+      : modelSurface !== null && modelSurface.lastObserved !== undefined && modelSurface.lastObserved !== ''
+        ? t('model.placeholderLastObserved', { model: modelSurface.lastObserved })
+        : t('model.placeholder')
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -289,11 +296,19 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
             </div>
             {modelSurface !== null && (
               <span className={css.hint}>
+                {/* The same chain the placeholder walks: a cli-builtin source
+                    with an effective model NAMES it (a catalog's isDefault
+                    layer); nothing naming a model falls back to the last
+                    observed one, then to the bare built-in copy. */}
                 {storedModel.trim() !== ''
                   ? t('model.effective', { model: storedModel.trim() })
                   : modelSurface.cliDefault !== undefined
                     ? t('model.followCliConfig', { model: modelSurface.cliDefault })
-                    : t('model.followCliBuiltin')}
+                    : modelSurface.source === 'cli-builtin' && modelSurface.effective !== undefined && modelSurface.effective !== ''
+                      ? t('model.followCliDefault', { model: modelSurface.effective })
+                      : modelSurface.lastObserved !== undefined && modelSurface.lastObserved !== ''
+                        ? t('model.followCliBuiltinLastObserved', { model: modelSurface.lastObserved })
+                        : t('model.followCliBuiltin')}
               </span>
             )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}

@@ -390,4 +390,34 @@ describe('KimiSettingsCard default-model block', () => {
     expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
       .toBe(zh['model.placeholder'])
   })
+
+  it('placeholder chain: cliDefault wins, then a named cli-builtin default, then last observed, then generic', async () => {
+    const input = (): HTMLInputElement => screen.getByLabelText(zh['model.title']) as HTMLInputElement
+
+    // Rung 2: a cli-builtin source that still names its default (a catalog's
+    // isDefault entry) beats the last-observed annotation.
+    renderCard({
+      modelInfo: { effective: 'catalog-default', source: 'cli-builtin', lastObserved: 'observed-model', choices: [], live: false, switchable: true },
+    })
+    await openCard()
+    expect(input().placeholder).toBe(zh['model.placeholder.cliBuiltin'].replace('{model}', 'catalog-default'))
+    cleanup()
+    document.body.innerHTML = ''
+
+    // Rung 3: nothing names a model, but the records observed one.
+    renderCard({
+      modelInfo: { source: 'cli-builtin', lastObserved: 'observed-model', choices: [], live: false, switchable: true },
+    })
+    await openCard()
+    expect(input().placeholder).toBe(zh['model.placeholder.lastObserved'].replace('{model}', 'observed-model'))
+    cleanup()
+    document.body.innerHTML = ''
+
+    // Rung 1: the scoped config's default outranks both.
+    renderCard({
+      modelInfo: { effective: 'cli-model', source: 'cli-config', cliDefault: 'cli-model', lastObserved: 'observed-model', choices: ['cli-model'], live: false, switchable: true },
+    })
+    await openCard()
+    expect(input().placeholder).toBe('留空 = 跟随 CLI 配置：cli-model')
+  })
 })
