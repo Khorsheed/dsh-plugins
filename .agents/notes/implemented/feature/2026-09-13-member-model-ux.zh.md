@@ -16,7 +16,7 @@ Status: implemented
 
 **房间邀请时选模型（`room`）。**`RoomInviteRequest.model?`（空白拒绝、裁剪、记进 `room/member-added` 日志、首次派发时作为 `facade.start` 的 model 选项传入）；邀请对话框的高级抽屉里放一个文本输入，datalist 由客户端从 `harnessModel(<harness>).choices` 喂入，gateway 缺席时降级为裸输入。
 
-**provider broker（四家同构）。**每个 provider 实现同一形态：内存态覆盖表（`Map<childSessionId, string>`，宿主重启即失）按引用共享给 exec provider（按轮解析）与 live 驱动（起进程绑定）；委派自带模型时记录成员的起始模型；`choices` = 设置 + cliDefault + 作用域配置发现 + 最近使用 的去重并集——绝不内置目录（kimi 解析 `[models."…"]` 表，codex 取顶层 `model` 加 `[profiles.*]` 的 model 键——`[model_providers.*]` 命名的是 provider 而非模型，绝不收录——，claude 读作用域 settings.json，dsh 取宿主 `agentDefaultModel` 当前选择拼作 `provider/model`，此外无发现因为宿主没有适配器枚举面——已在 README 记录的缺口）。`setMemberModel` 在成员有进行中轮次时抛错（`activeDelegations()`），同模型设置是无操作，新生效模型与 runtime 起进程时绑定的模型不同则回收该成员的 live runtime。
+**provider broker（四家同构）。**每个 provider 实现同一形态：内存态覆盖表（`Map<childSessionId, string>`，宿主重启即失）按引用共享给 exec provider（按轮解析）与 live 驱动（起进程绑定）；委派自带模型时记录成员的起始模型；`choices` = 设置 + cliDefault + 作用域配置发现 + 最近使用 的去重并集——绝不内置目录（kimi 解析 `[models."…"]` 表，codex 取顶层 `model` 加 `[profiles.*]` 的 model 键——`[model_providers.*]` 命名的是 provider 而非模型，绝不收录——，claude 读作用域 settings.json，dsh 通过公开的 `ctx.llm` 面枚举宿主适配器（`listProviders` × `listModels` 拼作 `provider/model`，随 `llm/adapters-updated` 刷新——宿主自己的模型选择器也建在这三个方法上，自 0.1.2 起公开稳定）。`setMemberModel` 在成员有进行中轮次时抛错（`activeDelegations()`），同模型设置是无操作，新生效模型与 runtime 起进程时绑定的模型不同则回收该成员的 live runtime。
 
 **成员感知的 live 驱动。**每次起进程绑定该成员的解析模型（kimi：重写作用域 `default_model`；codex：app-server 的 `-c model=…`；claude：刮写作用域 settings.json，并用内存态 `ClaudeScopedModelMemory` 保住用户配置值作为诚实的 cli-config 层，使一个成员的刮写绝不泄进另一个成员的 runtime；dsh：headless 启动的 `--model`，在 `--serve` 下对该进程托管的所有会话生效）。每个 runtime 记录 `boundModel`；`ensureRuntime` 在复用前发现绑定模型与本轮起始模型不同则先回收再重起——CLI 会话本身延续（thread/rollout/磁盘 resume）。
 
@@ -38,4 +38,4 @@ Status: implemented
 
 ## Consequences
 
-作曲器选择器、设置卡的生效行与邀请时选模型在四个 provider 上全部可用；委派在两种驱动下都能自带模型。代价：每个 provider 多一张共享可变表（broker 持有，provider 与驱动读取），以及 resident runtime 现在可能被一个 UI 手势回收——由进行中拒绝与同模型无操作兜住。dsh 的候选词汇在宿主长出适配器枚举之前较薄。覆盖是内存态：宿主重启后所有成员回到设置层。测试：核心客户端 244 绿（选择器 10 新），room 199 绿（邀请模型 5 新），kimi 219（broker 13、完整性约 +10），claude-code 195（broker 16、折叠完整性 7、control_request），codex 189（broker 12），dsh 171（同构）。
+作曲器选择器、设置卡的生效行与邀请时选模型在四个 provider 上全部可用；委派在两种驱动下都能自带模型。代价：每个 provider 多一张共享可变表（broker 持有，provider 与驱动读取），以及 resident runtime 现在可能被一个 UI 手势回收——由进行中拒绝与同模型无操作兜住。覆盖是内存态：宿主重启后所有成员回到设置层。测试：核心客户端 244 绿（选择器 10 新），room 199 绿（邀请模型 5 新），kimi 219（broker 13、完整性约 +10），claude-code 195（broker 16、折叠完整性 7、control_request），codex 189（broker 12），dsh 171（同构）。

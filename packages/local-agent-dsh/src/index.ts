@@ -177,6 +177,37 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       }
       return undefined
     }
+    // The host's own adapter enumeration — the pickable vocabulary for the
+    // sub-dsh, which routes through the same host adapters spelled
+    // `provider/model`. `ctx.llm` is the public LlmRuntime surface the host's
+    // model picker itself is built on (listProviders × listModels, refreshed
+    // on llm/adapters-updated); probed, never assumed, and a failed provider
+    // costs only its own group — the picker's other layers still answer.
+    const discoveredModels: string[] = []
+    const refreshDiscoveredModels = async (): Promise<void> => {
+      try {
+        const llm = ctx.get('llm') as
+          | {
+              listProviders?: () => readonly { id: string }[]
+              listModels?: (provider: string) => Promise<readonly { id: string }[]>
+            }
+          | undefined
+        if (typeof llm?.listProviders !== 'function' || typeof llm.listModels !== 'function') return
+        const listModels = llm.listModels.bind(llm)
+        const groups = await Promise.all(llm.listProviders().map(async (provider) => {
+          try {
+            return (await listModels(provider.id)).map(model => `${provider.id}/${model.id}`)
+          } catch {
+            return []
+          }
+        }))
+        discoveredModels.splice(0, discoveredModels.length, ...groups.flat())
+      } catch {
+        // Degrade: an unreadable enumeration leaves discovery empty.
+      }
+    }
+    void refreshDiscoveredModels()
+    ctx.on('llm/adapters-updated', () => { void refreshDiscoveredModels() })
     // The member-level model surface: the composer picker's session-level
     // overrides (in-memory, deliberately lost on a host restart), shared by
     // reference with the broker (which writes them), the exec provider (which
@@ -190,6 +221,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       ctx,
       settingsModel: resolveModel,
       cliDefault: hostDefaultModel,
+      discovered: () => discoveredModels,
       recentModels: () => scope.get().recentModels ?? [],
       live: () => scope.get().live,
       overrides: memberModelOverrides,

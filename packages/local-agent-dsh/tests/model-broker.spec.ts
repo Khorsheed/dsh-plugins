@@ -14,6 +14,7 @@ import { DshModelBroker, type DshModelBrokerDeps } from '../src/model-broker.ts'
 function mount(options: {
   settingsModel?: string
   cliDefault?: string
+  discovered?: readonly string[]
   recentModels?: readonly string[]
   live?: boolean
   overrides?: Readonly<Record<string, string>>
@@ -38,6 +39,7 @@ function mount(options: {
     settingsModel: () => options.settingsModel,
     cliDefault: () => options.cliDefault,
     recentModels: () => options.recentModels ?? [],
+    discovered: () => options.discovered ?? [],
     live: () => options.live ?? false,
     overrides,
     liveBoundModel: () => options.boundModel === undefined ? null : options.boundModel,
@@ -81,14 +83,15 @@ describe('dsh model broker resolution order', () => {
     expect(withoutOverride).toMatchObject({ source: 'delegation', effective: 'delegation/model' })
   })
 
-  it('choices dedupe settings + cliDefault + recent, in that order', async () => {
+  it('choices dedupe settings + cliDefault + discovered + recent, in that order', async () => {
     const { broker } = mount({
       settingsModel: 'config/model',
       cliDefault: 'deepseek-official/deepseek-chat',
+      discovered: ['deepseek-official/deepseek-flash', 'deepseek-official/deepseek-chat'],
       recentModels: ['recent/model', 'config/model'],
     })
     const info = await broker.modelInfo()
-    expect(info.choices).toEqual(['config/model', 'deepseek-official/deepseek-chat', 'recent/model'])
+    expect(info.choices).toEqual(['config/model', 'deepseek-official/deepseek-chat', 'deepseek-official/deepseek-flash', 'recent/model'])
   })
 })
 

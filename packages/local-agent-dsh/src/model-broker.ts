@@ -13,10 +13,10 @@
  * the host instance's default model selection spelled `provider/model`
  * (cliDefault — the selection a sub-dsh with no `--model` inherits) → the
  * CLI's built-in default, which names nothing. The pickable vocabulary is
- * settings + cliDefault + the card's recent-model memory: the host exposes no
- * adapter enumeration (`agentDefaultModel` answers only the CURRENT
- * selection), so there is nothing further to discover without inventing a
- * catalog — the gap is deliberate and documented in the README.
+ * settings + cliDefault + the host's own adapter enumeration (the public
+ * `ctx.llm` surface — `listProviders` × `listModels`, spelled `provider/model`
+ * exactly as the sub-dsh's `--model` expects; the same trio the host's model
+ * picker is built on) + the card's recent-model memory.
  * @module @khorsheed/dsh-local-agent-dsh/model-broker
  */
 
@@ -35,6 +35,13 @@ export interface DshModelBrokerDeps {
    * the selection is unreadable (absence is the honest answer, never a guess).
    */
   readonly cliDefault: () => string | undefined
+  /**
+   * The host's adapter enumeration spelled `provider/model` — discovered
+   * host-side via `ctx.llm` and cached by the caller (refreshed on
+   * `llm/adapters-updated`), so this read stays synchronous. Empty when the
+   * service is absent: the other choice layers still answer.
+   */
+  readonly discovered: () => readonly string[]
   /** The card's recent-model memory (the suggestion vocabulary's tail). */
   readonly recentModels: () => readonly string[]
   /** Whether the live driver is on (the member's rounds bind resident runtimes). */
@@ -107,7 +114,7 @@ export class DshModelBroker implements LocalAgentModelBroker {
       ...delegation === undefined ? {} : { delegation },
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
-      choices: dedupeChoices([settings, cliDefault, ...this.deps.recentModels()]),
+      choices: dedupeChoices([settings, cliDefault, ...this.deps.discovered(), ...this.deps.recentModels()]),
       live: this.deps.live(),
       switchable: !inFlight,
       ...inFlight ? { reason: '成员有进行中的委派轮次，等其完成后再切换模型' } : {},
