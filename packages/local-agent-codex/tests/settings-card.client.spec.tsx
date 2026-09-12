@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /**
  * The codex settings card in the plugin configuration tab: collapsible chrome,
- * the family core's shared ProviderAuthBlock embedded for the auth states, and
- * the resident-mode block (live switch, granularity radios)
- * writing through the bound settingsScope.
+ * the family core's shared ProviderAuthBlock embedded for the auth states, the
+ * resident-mode block (live switch) writing through the bound settingsScope,
+ * and the default-model block reading the harness's broker surface (effective
+ * line + suggestion vocabulary) with a bare-input degrade.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -11,7 +12,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
   CodexSettingsCard, type CodexLiveSettings, type CodexSettingsCardProps,
@@ -64,13 +65,14 @@ function renderCard(options: {
   authenticated?: boolean
   authStatus?: LocalAgentStatus | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
+  harnessModel?: () => Promise<LocalAgentModelInfo | null | undefined>
 }): CardHarness {
   let snapshot: SettingsScopeSnapshot<CodexLiveSettings> = options.snapshot
-    ?? makeSnapshot(options.value ?? { live: false, liveMirrorGranularity: 'event' }, options.user, options.base)
+    ?? makeSnapshot(options.value ?? { live: false }, options.user, options.base)
   const listeners = new Set<() => void>()
   const set = vi.fn(async (field: string, next: unknown) => {
     snapshot = makeSnapshot(
-      { live: false, liveMirrorGranularity: 'event', ...(snapshot.value ?? {}), [field]: next },
+      { live: false, ...(snapshot.value ?? {}), [field]: next },
       { ...(snapshot.user !== undefined && typeof snapshot.user === 'object' && snapshot.user !== null ? snapshot.user : {}), [field]: next },
       typeof snapshot.base === 'object' && snapshot.base !== null ? snapshot.base as Record<string, unknown> : undefined,
     )
@@ -81,7 +83,7 @@ function renderCard(options: {
     delete user[field]
     const baseValue = (typeof snapshot.base === 'object' && snapshot.base !== null ? snapshot.base : {}) as Partial<CodexLiveSettings>
     snapshot = makeSnapshot(
-      { live: false, liveMirrorGranularity: 'event', ...baseValue, ...(user as CodexLiveSettings) },
+      { live: false, ...baseValue, ...(user as CodexLiveSettings) },
       Object.keys(user).length === 0 ? undefined : user,
       typeof snapshot.base === 'object' && snapshot.base !== null ? snapshot.base as Record<string, unknown> : undefined,
     )
@@ -106,12 +108,14 @@ function renderCard(options: {
     'authStatus' in options ? options.authStatus : codexStatus(options.authenticated ?? false),
   )
   const runCommand = vi.fn(options.runCommand ?? (() => Promise.resolve('')))
+  const harnessModel = vi.fn(options.harnessModel ?? (() => Promise.resolve(null)))
   const props = {
     useSettings: <T,>(select: (value: SettingsScopeSnapshot<CodexLiveSettings>) => T): T => select(snapshot),
     useSessions,
     scope,
     auth: { status, runCommand },
     authT,
+    harnessModel,
     t,
   } as unknown as CodexSettingsCardProps
   render(<CodexSettingsCard {...props} />)
@@ -140,19 +144,16 @@ describe('CodexSettingsCard', () => {
     expect(screen.getByRole('button', { name: coreZh['settings.login'] })).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByRole('radio', { name: zh['live.granularity.event'] })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: zh['live.granularity.token'] })).toBeTruthy()
   })
 
   it('renders authenticated state and a live-on card', async () => {
-    renderCard({ authenticated: true, value: { live: true, liveMirrorGranularity: 'token' } })
+    renderCard({ authenticated: true, value: { live: true } })
     await openCard()
 
     expect(screen.getByText(coreZh['settings.authenticated'])).toBeTruthy()
     expect(screen.getByRole('button', { name: coreZh['settings.logout'] })).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('true')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
   })
 
   it('marks the auth block unavailable when the probe reports undefined (core absent)', async () => {
@@ -172,16 +173,6 @@ describe('CodexSettingsCard', () => {
     expect(screen.getByText(zh['live.applied'])).toBeTruthy()
   })
 
-  it('writes the granularity radio through the scope', async () => {
-    const { scope } = renderCard({})
-    await openCard()
-
-    fireEvent.click(screen.getByRole('radio', { name: zh['live.granularity.token'] }))
-    await act(async () => {})
-    expect(scope.set).toHaveBeenCalledWith('liveMirrorGranularity', 'token')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
-  })
-
   it('disables the live controls and explains while the namespace is unavailable', async () => {
     renderCard({
       snapshot: { status: 'unavailable', value: undefined, base: undefined, user: undefined, revision: undefined, writable: false, mode: 'memory' },
@@ -189,7 +180,7 @@ describe('CodexSettingsCard', () => {
     await openCard()
 
     expect((screen.getByRole('switch', { name: zh['live.title'] }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })
 
@@ -209,7 +200,7 @@ describe('CodexSettingsCard', () => {
 
 describe('CodexSettingsCard default-model block', () => {
   it('shows the stored model and saves an edited one as the model key', async () => {
-    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    const harness = renderCard({ value: { live: false, model: 'model-a' } })
     await openCard()
     const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
     expect(input.value).toBe('model-a')
@@ -228,7 +219,7 @@ describe('CodexSettingsCard default-model block', () => {
   })
 
   it('clearing the field UNSETS the key, so the YAML base decides again', async () => {
-    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    const harness = renderCard({ value: { live: false, model: 'model-a' } })
     await openCard()
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
@@ -239,7 +230,7 @@ describe('CodexSettingsCard default-model block', () => {
 
   it('a saved model joins the suggestions most-recent-first, deduplicated', async () => {
     const harness = renderCard({
-      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
+      value: { live: false, recentModels: ['model-a', 'model-b'] },
     })
     await openCard()
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
@@ -249,7 +240,7 @@ describe('CodexSettingsCard default-model block', () => {
 
   it('offers the saved suggestions without hardcoding any model catalog', async () => {
     renderCard({
-      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
+      value: { live: false, recentModels: ['model-a', 'model-b'] },
     })
     await openCard()
     const input = screen.getByLabelText(zh['model.title'])
@@ -259,11 +250,72 @@ describe('CodexSettingsCard default-model block', () => {
   })
 
   it('save stays disabled while the field still matches what is stored', async () => {
-    renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    renderCard({ value: { live: false, model: 'model-a' } })
     await openCard()
     const save = screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
     expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('CodexSettingsCard model surface (harness broker)', () => {
+  /** One broker answer, with every layer overridable. */
+  function info(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
+    return {
+      source: 'cli-builtin',
+      choices: [],
+      live: false,
+      switchable: true,
+      ...over,
+    }
+  }
+
+  it('shows the settings value as the effective line when one is set', async () => {
+    renderCard({
+      value: { live: false, model: 'model-a' },
+      harnessModel: () => Promise.resolve(info({ effective: 'model-a', source: 'settings', settings: 'model-a', choices: ['model-a'] })),
+    })
+    await openCard()
+    expect(screen.getByText('当前生效：model-a')).toBeTruthy()
+  })
+
+  it('with no settings value, follows the CLI config default the broker read', async () => {
+    renderCard({
+      harnessModel: () => Promise.resolve(info({ effective: 'gpt-5.2', source: 'cli-config', cliDefault: 'gpt-5.2', choices: ['gpt-5.2'] })),
+    })
+    await openCard()
+    expect(screen.getByText('跟随 CLI 配置：gpt-5.2')).toBeTruthy()
+  })
+
+  it('with neither layer naming a model, follows the CLI built-in default', async () => {
+    renderCard({ harnessModel: () => Promise.resolve(info()) })
+    await openCard()
+    expect(screen.getByText('跟随 CLI 内置默认')).toBeTruthy()
+  })
+
+  it('the datalist vocabulary is the broker choices, not only the recent memory', async () => {
+    renderCard({
+      value: { live: false, recentModels: ['model-a'] },
+      harnessModel: () => Promise.resolve(info({ choices: ['gpt-5.2', 'gpt-5.1', 'model-a'] })),
+    })
+    await openCard()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['gpt-5.2', 'gpt-5.1', 'model-a'])
+  })
+
+  it('degrades to the bare input when the gateway answers null (no effective line, recent models stay)', async () => {
+    renderCard({
+      value: { live: false, recentModels: ['model-a'] },
+      harnessModel: () => Promise.resolve(null),
+    })
+    await openCard()
+    expect(screen.queryByText('跟随 CLI 内置默认')).toBeNull()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['model-a'])
   })
 })

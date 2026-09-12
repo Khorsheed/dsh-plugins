@@ -3,8 +3,10 @@
  * The dsh settings card in the plugin configuration tab: collapsible chrome,
  * the family core's shared ProviderAuthBlock (status only — dsh authenticates
  * through the host credentials, so no login action renders), the DeepSeek
- * delegation switch, and the resident-mode block (live switch, granularity
- * radios) writing through the bound settingsScope.
+ * delegation switch, the resident-mode block (live switch) writing through
+ * the bound settingsScope, and the default-model block reading the harness's
+ * broker surface (effective line + suggestion vocabulary) with a bare-input
+ * degrade.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -12,7 +14,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
   DshSettingsCard, type DshCardSettings, type DshSettingsCardProps,
@@ -68,8 +70,9 @@ function renderCard(options: {
   snapshot?: SettingsScopeSnapshot<DshCardSettings>
   authenticated?: boolean
   authStatus?: LocalAgentStatus | undefined
+  harnessModel?: () => Promise<LocalAgentModelInfo | null | undefined>
 }): CardHarness {
-  const defaults: DshCardSettings = { enabled: false, live: false, liveMirrorGranularity: 'event' }
+  const defaults: DshCardSettings = { enabled: false, live: false }
   let snapshot: SettingsScopeSnapshot<DshCardSettings> = options.snapshot
     ?? makeSnapshot(options.value ?? defaults, options.user, options.base)
   const listeners = new Set<() => void>()
@@ -111,12 +114,14 @@ function renderCard(options: {
     'authStatus' in options ? options.authStatus : dshStatus(options.authenticated ?? false),
   )
   const runCommand = vi.fn(() => Promise.resolve(''))
+  const harnessModel = vi.fn(options.harnessModel ?? (() => Promise.resolve(null)))
   const props = {
     useSettings: <T,>(select: (value: SettingsScopeSnapshot<DshCardSettings>) => T): T => select(snapshot),
     useSessions,
     scope,
     auth: { status, runCommand },
     authT,
+    harnessModel,
     t,
   } as unknown as DshSettingsCardProps
   render(<DshSettingsCard {...props} />)
@@ -150,14 +155,12 @@ describe('DshSettingsCard', () => {
     expect(screen.getByText(zh['enable.off'])).toBeTruthy()
     const live = screen.getByRole('switch', { name: zh['live.title'] })
     expect(live.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByRole('radio', { name: zh['live.granularity.event'] })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: zh['live.granularity.token'] })).toBeTruthy()
   })
 
   it('renders authenticated state with delegation and live on, still without login actions', async () => {
     renderCard({
       authenticated: true,
-      value: { enabled: true, live: true, liveMirrorGranularity: 'token' },
+      value: { enabled: true, live: true },
     })
     await openCard()
 
@@ -167,7 +170,6 @@ describe('DshSettingsCard', () => {
     expect(screen.getByRole('switch', { name: zh['enable.switch.aria'] }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByText(zh['enable.on'])).toBeTruthy()
     expect(screen.getByRole('switch', { name: zh['live.title'] }).getAttribute('aria-checked')).toBe('true')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
   })
 
   it('marks the auth block unavailable when the probe reports undefined (core absent)', async () => {
@@ -198,16 +200,6 @@ describe('DshSettingsCard', () => {
     expect(screen.getByText(zh['live.applied'])).toBeTruthy()
   })
 
-  it('writes the granularity radio through the scope', async () => {
-    const { scope } = renderCard({})
-    await openCard()
-
-    fireEvent.click(screen.getByRole('radio', { name: zh['live.granularity.token'] }))
-    await act(async () => {})
-    expect(scope.set).toHaveBeenCalledWith('liveMirrorGranularity', 'token')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
-  })
-
   it('disables every control and explains while the namespace is unavailable', async () => {
     renderCard({
       snapshot: { status: 'unavailable', value: undefined, base: undefined, user: undefined, revision: undefined, writable: false, mode: 'memory' },
@@ -216,14 +208,14 @@ describe('DshSettingsCard', () => {
 
     expect((screen.getByRole('switch', { name: zh['enable.switch.aria'] }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('switch', { name: zh['live.title'] }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })
 })
 
 describe('DshSettingsCard default-model block', () => {
   it('shows the stored model and saves an edited one as the model key', async () => {
-    const harness = renderCard({ value: { enabled: true, live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    const harness = renderCard({ value: { enabled: true, live: false, model: 'model-a' } })
     await openCard()
     const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
     expect(input.value).toBe('model-a')
@@ -242,7 +234,7 @@ describe('DshSettingsCard default-model block', () => {
   })
 
   it('clearing the field UNSETS the key, so the YAML base decides again', async () => {
-    const harness = renderCard({ value: { enabled: true, live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    const harness = renderCard({ value: { enabled: true, live: false, model: 'model-a' } })
     await openCard()
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
@@ -253,7 +245,7 @@ describe('DshSettingsCard default-model block', () => {
 
   it('a saved model joins the suggestions most-recent-first, deduplicated', async () => {
     const harness = renderCard({
-      value: { enabled: true, live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
+      value: { enabled: true, live: false, recentModels: ['model-a', 'model-b'] },
     })
     await openCard()
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
@@ -263,7 +255,7 @@ describe('DshSettingsCard default-model block', () => {
 
   it('offers the saved suggestions without hardcoding any model catalog', async () => {
     renderCard({
-      value: { enabled: true, live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
+      value: { enabled: true, live: false, recentModels: ['model-a', 'model-b'] },
     })
     await openCard()
     const input = screen.getByLabelText(zh['model.title'])
@@ -273,11 +265,82 @@ describe('DshSettingsCard default-model block', () => {
   })
 
   it('save stays disabled while the field still matches what is stored', async () => {
-    renderCard({ value: { enabled: true, live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    renderCard({ value: { enabled: true, live: false, model: 'model-a' } })
     await openCard()
     const save = screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
     expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('DshSettingsCard model surface (harness broker)', () => {
+  /** One broker answer, with every layer overridable. */
+  function info(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
+    return {
+      source: 'cli-builtin',
+      choices: [],
+      live: false,
+      switchable: true,
+      ...over,
+    }
+  }
+
+  it('shows the settings value as the effective line when one is set', async () => {
+    renderCard({
+      value: { enabled: true, live: false, model: 'deepseek-official/deepseek-chat' },
+      harnessModel: () => Promise.resolve(info({
+        effective: 'deepseek-official/deepseek-chat',
+        source: 'settings',
+        settings: 'deepseek-official/deepseek-chat',
+        choices: ['deepseek-official/deepseek-chat'],
+      })),
+    })
+    await openCard()
+    expect(screen.getByText('当前生效：deepseek-official/deepseek-chat')).toBeTruthy()
+  })
+
+  it('with no settings value, follows the host default model the broker read', async () => {
+    renderCard({
+      harnessModel: () => Promise.resolve(info({
+        effective: 'deepseek-official/deepseek-chat',
+        source: 'cli-config',
+        cliDefault: 'deepseek-official/deepseek-chat',
+        choices: ['deepseek-official/deepseek-chat'],
+      })),
+    })
+    await openCard()
+    expect(screen.getByText('跟随宿主默认模型：deepseek-official/deepseek-chat')).toBeTruthy()
+  })
+
+  it('with neither layer naming a model, follows the host instance default', async () => {
+    renderCard({ harnessModel: () => Promise.resolve(info()) })
+    await openCard()
+    expect(screen.getByText('跟随宿主实例默认')).toBeTruthy()
+  })
+
+  it('the datalist vocabulary is the broker choices, not only the recent memory', async () => {
+    renderCard({
+      value: { enabled: true, live: false, recentModels: ['recent/model'] },
+      harnessModel: () => Promise.resolve(info({ choices: ['config/model', 'deepseek-official/deepseek-chat', 'recent/model'] })),
+    })
+    await openCard()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['config/model', 'deepseek-official/deepseek-chat', 'recent/model'])
+  })
+
+  it('degrades to the bare input when the gateway answers null (no effective line, recent models stay)', async () => {
+    renderCard({
+      value: { enabled: true, live: false, recentModels: ['model-a'] },
+      harnessModel: () => Promise.resolve(null),
+    })
+    await openCard()
+    expect(screen.queryByText('跟随宿主实例默认')).toBeNull()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['model-a'])
   })
 })

@@ -35,6 +35,7 @@ import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
 import { CONTAINER_NODE_OPTIONS, DshCliProvider, dshCliVersion } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
 
@@ -156,11 +157,51 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       const model = scope.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
+    // The host instance's default model selection spelled `provider/model` —
+    // what a sub-dsh with no `--model` inherits. Undefined when the service or
+    // the selection is unreadable: absence is the honest answer, never a guess.
+    const hostDefaultModel = (): string | undefined => {
+      try {
+        const defaultModel = ctx.get('agentDefaultModel') as
+          | { currentSelection?: () => { provider?: string; model?: string } }
+          | undefined
+        const selection = defaultModel?.currentSelection?.()
+        if (typeof selection?.model === 'string' && selection.model !== '') {
+          return typeof selection.provider === 'string' && selection.provider !== ''
+            ? `${selection.provider}/${selection.model}`
+            : selection.model
+        }
+      } catch {
+        // Degrade: an unreadable selection reports no model instead of
+        // breaking the status surface.
+      }
+      return undefined
+    }
+    // The member-level model surface: the composer picker's session-level
+    // overrides (in-memory, deliberately lost on a host restart), shared by
+    // reference with the broker (which writes them), the exec provider (which
+    // consults them per round), and the live driver (which binds them at
+    // runtime spawn). A switch on a member with a live runtime bound to a
+    // different model retires that runtime — the next round respawns onto the
+    // new model while the sub-dsh session itself resumes from disk.
+    const memberModelOverrides = new Map<string, string>()
+    let currentLiveSwitch: LiveDriverSwitch | undefined
+    const modelBroker = new DshModelBroker({
+      ctx,
+      settingsModel: resolveModel,
+      cliDefault: hostDefaultModel,
+      recentModels: () => scope.get().recentModels ?? [],
+      live: () => scope.get().live,
+      overrides: memberModelOverrides,
+      liveBoundModel: childSessionId => currentLiveSwitch?.boundModel(childSessionId) ?? null,
+      retireRuntime: childSessionId => currentLiveSwitch?.retireRuntime(childSessionId) ?? Promise.resolve(),
+    })
     const harness: LocalAgentHarness = {
       name: 'dsh',
       displayName: 'dsh',
       homeEnvVar: 'DSH_HOME',
       delegationProvider: 'dsh-cli',
+      modelBroker,
       records: { listSessions: homeDir => listDshSessions(homeDir) },
       // A NAMED scope's directory is provisioned through this hook when the
       // registry materializes it: the sub-profile the round launches from
@@ -192,26 +233,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
         // The family's fixed order: the plugin config key (it rides every
         // launch as `--model`) before the host selection the sub-dsh would
         // otherwise inherit.
-        let model: string | undefined = resolveModel()
-        // Only when the key named none: the host selection is what a round
-        // WITHOUT `--model` would inherit, so it is the second layer, not the
-        // first.
-        if (model === undefined) {
-          try {
-            const defaultModel = ctx.get('agentDefaultModel') as
-              | { currentSelection?: () => { provider?: string; model?: string } }
-              | undefined
-            const selection = defaultModel?.currentSelection?.()
-            if (typeof selection?.model === 'string' && selection.model !== '') {
-              model = typeof selection.provider === 'string' && selection.provider !== ''
-                ? `${selection.provider}/${selection.model}`
-                : selection.model
-            }
-          } catch {
-            // Degrade: an unreadable selection reports no model instead of
-            // breaking the status surface.
-          }
-        }
+        const model = resolveModel() ?? hostDefaultModel()
         return {
           drive: scope.get().live ? 'live' : 'exec',
           baseUrlSet: false,
@@ -252,11 +274,19 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // granularity change needs no new generation: the driver reads it per
       // round. Toggling ENABLED off keeps the historical hard semantics:
       // provider unregisters and the switch disposes (disposeAll).
-      const liveSwitch = new LiveDriverSwitch(ctx, scope, config)
-      disposers.push(ctx.subagents.registerProvider(new DshCliProvider(ctx, config, liveSwitch.resolve, resolveModel)))
+      const liveSwitch = new LiveDriverSwitch(ctx, scope, config, {
+        modelFor: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
+      })
+      currentLiveSwitch = liveSwitch
+      disposers.push(ctx.subagents.registerProvider(
+        new DshCliProvider(ctx, config, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
+      ))
       // The switch's disposal runs after the provider unregisters, so no
       // in-flight round can re-spawn a runtime the teardown already reclaimed.
-      disposers.push(() => { liveSwitch.dispose() })
+      disposers.push(() => {
+        if (currentLiveSwitch === liveSwitch) currentLiveSwitch = undefined
+        liveSwitch.dispose()
+      })
       // The family delegation tool is mounted dynamically so the toggle owns
       // its lifecycle — while OFF the model never sees `subagent_dsh`.
       void ctx.plugin(toolModule, { provider: 'dsh-cli', toolName: DSH_TOOL_NAME }).then(

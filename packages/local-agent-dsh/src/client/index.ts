@@ -6,11 +6,12 @@
  * credentials, so the block renders status only), the DeepSeek delegation
  * switch — migrated from the core section's `local-agent.settings.row-action`
  * seat, which this plugin no longer contributes to — and the resident-mode
- * block (live switch, mirror granularity, override badge with
- * restore-to-default), whose writes ride the bound settingsScope: the host
- * watcher hot-applies them, no reload. Every read degrades: an absent gateway
- * renders the auth block's 'unavailable' state, an unregistered namespace
- * disables the controls.
+ * block (live switch) plus the default-model block (free-text input, the
+ * broker's effective-model line and suggestion vocabulary), whose writes ride
+ * the bound settingsScope: the host watcher hot-applies them, no reload.
+ * Every read degrades: an absent gateway renders the auth block's
+ * 'unavailable' state and drops the model surface to the bare input, an
+ * unregistered namespace disables the controls.
  * @module @khorsheed/dsh-local-agent-dsh/client
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -76,6 +77,11 @@ export function apply(ctx: Context): void {
         scope,
         hooks: { settings: scope },
         authT,
+        // The harness's memberless model surface; absent gateway/broker
+        // degrades to the bare input with its recent-models suggestions.
+        harnessModel: () =>
+          gateway()?.harnessModel('dsh').then(result => (result.ok ? result.value : undefined))
+            ?? Promise.resolve(undefined),
         auth: {
           status: name =>
             // The Remote declares (name, scope?) and the client enforces exact arity:

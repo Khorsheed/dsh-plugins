@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge.
@@ -12,6 +12,7 @@ import {
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
 import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
 import { useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
+import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
 
@@ -24,8 +25,6 @@ export interface DshCardSettings {
   enabled?: boolean
   /** Resident (live) mode: one resident sub-dsh serve process per member. */
   live?: boolean
-  /** Live mirror granularity: folded events or per-chunk streaming. */
-  liveMirrorGranularity?: 'event' | 'token'
   /**
    * The model every delegation round starts the sub-dsh with, spelled
    * `provider/model`. Absent (the field cleared) means the plugin passes no
@@ -44,6 +43,13 @@ export interface DshSettingsCardInjected {
   auth: ProviderAuthInjected
   /** Translate bound to the family core's `local-agent` namespace (the auth block's copy lives there). */
   authT: ProviderAuthBlockProps['t']
+  /**
+   * The harness's memberless model surface (the core gateway's `harnessModel`
+   * Remote): the effective-model line and the datalist vocabulary. Undefined
+   * or null when the gateway or the broker is absent — the card then keeps the
+   * bare input exactly as before brokers existed.
+   */
+  harnessModel: () => Promise<LocalAgentModelInfo | null | undefined>
   hooks: {
     /** The same scope as a hooks source, so the card reacts to external writes. */
     settings: SettingsScope<DshCardSettings>
@@ -71,7 +77,7 @@ export type DshSettingsCardProps =
  * @param props - runtime slot currency, the injected scope/auth faces, and copy.
  * @returns the card.
  */
-export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, t }: DshSettingsCardProps) {
+export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel, useSessions, t }: DshSettingsCardProps) {
   const snapshot: SettingsScopeSnapshot<DshCardSettings> = useSettings(value => value)
   const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -79,7 +85,6 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
   const ready = snapshot.status === 'ready' && snapshot.writable
   const enabled = snapshot.value?.enabled ?? false
   const live = snapshot.value?.live ?? false
-  const granularity = snapshot.value?.liveMirrorGranularity ?? 'event'
   // The model input is a DRAFT until saved: `null` means "showing whatever the
   // scope holds", so an external write (another tab, a YAML reload) still
   // reaches the field while the user is not typing in it.
@@ -89,6 +94,19 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
   const [modelSaved, setModelSaved] = useState(false)
   const [modelError, setModelError] = useState(false)
   const modelValue = modelDraft ?? storedModel
+  // The harness's model surface, fetched while the card is open (and re-fetched
+  // after a save): undefined until the first answer, null when the gateway or
+  // the broker is absent — the card then keeps the bare input with its
+  // recent-models suggestions, exactly as before brokers existed.
+  const [modelInfo, setModelInfo] = useState<LocalAgentModelInfo | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) return
+    let stale = false
+    void harnessModel().then((info) => {
+      if (!stale) setModelInfo(info ?? null)
+    })
+    return () => { stale = true }
+  }, [open, harnessModel, modelSaved])
   /**
    * Commit the model field. A blank value UNSETS the key rather than storing
    * an empty string, so the field re-inherits the YAML composition base — and
@@ -117,6 +135,10 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
     setError(false)
     void scope.set(field, value).then(() => { setSaved(true) }, () => { setError(true) })
   }
+  // The suggestion vocabulary: the broker's deduped union (settings + host
+  // default selection + recent) when the surface answered, the card's own
+  // recent-models memory when it did not. Never a hardcoded catalog.
+  const choices = modelInfo?.choices ?? recentModels
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -196,7 +218,7 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
                 onChange={(event) => { setModelDraft(event.target.value) }}
               />
               <datalist id={`${NS}-recent-models`}>
-                {recentModels.map(value => <option key={value} value={value} />)}
+                {choices.map(value => <option key={value} value={value} />)}
               </datalist>
               <button
                 type="button"
@@ -207,6 +229,15 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
                 {t('model.save')}
               </button>
             </div>
+            {modelInfo != null && (
+              <span className={css.modelEffective}>
+                {modelInfo.settings !== undefined && modelInfo.settings !== ''
+                  ? t('model.effective.set', { model: modelInfo.settings })
+                  : modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
+                    ? t('model.effective.cli-config', { model: modelInfo.cliDefault })
+                    : t('model.effective.cli-builtin')}
+              </span>
+            )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
             {modelError && <span className={css.errorText}>{t('model.error')}</span>}
           </section>
@@ -229,34 +260,6 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, useSessions, 
               >
                 <span className={css.knob} />
               </button>
-            </div>
-            <div className={css.row}>
-              <span className={css.rowLabel}>
-                {t('live.granularity')}
-                <Tooltip label={t('live.granularity.info')} side="bottom" maxWidth={360}>
-                  <button type="button" className={css.info} aria-label={t('live.granularity.info.aria')}>ⓘ</button>
-                </Tooltip>
-              </span>
-              <label className={css.option}>
-                <input
-                  type="radio"
-                  name="local-agent-dsh-granularity"
-                  checked={granularity === 'event'}
-                  disabled={!ready}
-                  onChange={() => { write('liveMirrorGranularity', 'event') }}
-                />
-                {t('live.granularity.event')}
-              </label>
-              <label className={css.option}>
-                <input
-                  type="radio"
-                  name="local-agent-dsh-granularity"
-                  checked={granularity === 'token'}
-                  disabled={!ready}
-                  onChange={() => { write('liveMirrorGranularity', 'token') }}
-                />
-                {t('live.granularity.token')}
-              </label>
             </div>
             {snapshot.status === 'unavailable' && (
               <span className={css.hint}>{t('live.unavailable')}</span>

@@ -938,3 +938,74 @@ describe('codex live driver model key', () => {
     await run.dispose()
   })
 })
+
+describe('codex live driver member-aware model', () => {
+  it('a round start model binds the spawn argv, outranking the spawn resolver', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', model: () => 'gpt-5.2' } })
+    const child = Session.create(SessionId('child-start-model'))
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: '好', phase: 'final_answer' }] }) }))
+    const run = await m.driver.startRound(request() as never, {
+      ...roundSpec(m, child),
+      startModel: 'delegation-model',
+    })
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="delegation-model"', '--stdio'])
+    expect(m.driver.boundModelOf(String(child.id))).toBe('delegation-model')
+    await run.dispose()
+  })
+
+  it('a round naming the bound model keeps the resident runtime (no respawn)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-same-model'))
+    for (const answer of ['一', '二']) {
+      m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: answer, phase: 'final_answer' }] }) }))
+    }
+    const first = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-a' })
+    await first.result
+    await first.dispose()
+    const second = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-a' })
+    await second.result
+    await second.dispose()
+    // One spawn served both rounds.
+    expect(m.spawns).toHaveLength(1)
+  })
+
+  it('a round naming a DIFFERENT model retires the resident runtime and respawns onto it', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-switch-model'))
+    for (const answer of ['一', '二']) {
+      m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: answer, phase: 'final_answer' }] }) }))
+    }
+    const first = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-a' })
+    await first.result
+    await first.dispose()
+    const oldRuntime = m.spawns[0]!.fake!
+    const second = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-b' })
+    await second.result
+    await second.dispose()
+    // The old process is gone (EOF or terminate) and the respawn bound model-b.
+    expect(oldRuntime.stdinEnded || oldRuntime.terminated).toBe(true)
+    expect(m.spawns).toHaveLength(2)
+    expect(m.spawns[1]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="model-b"', '--stdio'])
+    expect(m.driver.boundModelOf(String(child.id))).toBe('model-b')
+  })
+
+  it('retireRuntime reclaims the member runtime so the next round respawns', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-retire'))
+    for (const answer of ['一', '二']) {
+      m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: answer, phase: 'final_answer' }] }) }))
+    }
+    const first = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-a' })
+    await first.result
+    await first.dispose()
+    expect(m.driver.boundModelOf(String(child.id))).toBe('model-a')
+    await m.driver.retireRuntime(String(child.id))
+    expect(m.driver.boundModelOf(String(child.id))).toBeNull()
+    const second = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-b' })
+    await second.result
+    await second.dispose()
+    expect(m.spawns).toHaveLength(2)
+    expect(m.spawns[1]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="model-b"', '--stdio'])
+  })
+})

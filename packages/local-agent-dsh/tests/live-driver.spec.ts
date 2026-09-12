@@ -923,3 +923,114 @@ describe('dsh-cli-provider live resolver', () => {
     await m.driver.disposeAll()
   })
 })
+
+describe('dsh live driver member-aware model', () => {
+  /** The value following `--model` on the spawned argv, or undefined when absent. */
+  function modelFlag(argv: readonly string[]): string | undefined {
+    const at = argv.indexOf('--model')
+    return at < 0 ? undefined : argv[at + 1]
+  }
+
+  it('unset: the serve argv carries no --model (the sub-dsh inherits the host default)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-model-off'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '完成') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.spawns[0]!.spec.argv).not.toContain('--model')
+    expect(m.driver.boundModelOf(String(child.id))).toBeUndefined()
+    await run.dispose()
+  })
+
+  it('the spawn resolver binds --model for the member (override → settings)', async () => {
+    const m = mount({ config: { modelFor: () => 'deepseek-official/deepseek-chat' } })
+    const child = Session.create(SessionId('child-dsh-model-cfg'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '完成') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(modelFlag(m.spawns[0]!.spec.argv)).toBe('deepseek-official/deepseek-chat')
+    expect(m.driver.boundModelOf(String(child.id))).toBe('deepseek-official/deepseek-chat')
+    await run.dispose()
+  })
+
+  it('a round start model binds the spawn argv, outranking the spawn resolver', async () => {
+    const m = mount({ config: { modelFor: () => 'config/model' } })
+    const child = Session.create(SessionId('child-dsh-start-model'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '完成') }) }))
+    const run = await m.driver.startRound(request() as never, {
+      ...roundSpec(m, child),
+      startModel: 'delegation/model',
+    })
+    await run.result
+    expect(modelFlag(m.spawns[0]!.spec.argv)).toBe('delegation/model')
+    expect(m.driver.boundModelOf(String(child.id))).toBe('delegation/model')
+    await run.dispose()
+  })
+
+  it('a round naming the bound model keeps the resident runtime (no respawn)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-same-model'))
+    m.queueChild(new FakeServeChild({
+      turn: params => params['resume'] === true
+        ? { events: answerEvents(2, '继续', '第二条') }
+        : { events: answerEvents(1, '建个文件', '第一条') },
+    }))
+    const first = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-a' })
+    await first.result
+    await first.dispose()
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, {
+      ...roundSpec(m, child, { resume: { turn: 2 } }),
+      startModel: 'model-a',
+    })
+    await second.result
+    await second.dispose()
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('a round naming a DIFFERENT model retires the resident runtime and respawns onto it', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-switch-model'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '第一条') }) }))
+    const first = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-a' })
+    await first.result
+    await first.dispose()
+    const oldRuntime = m.spawns[0]!.fake!
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(2, '继续', '第二条') }) }))
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, {
+      ...roundSpec(m, child, { resume: { turn: 2 } }),
+      startModel: 'model-b',
+    })
+    await second.result
+    await second.dispose()
+    // The old process answered the wire shutdown and exited; the respawn
+    // bound model-b.
+    await oldRuntime.done
+    expect(m.spawns).toHaveLength(2)
+    expect(modelFlag(m.spawns[1]!.spec.argv)).toBe('model-b')
+    expect(m.driver.boundModelOf(String(child.id))).toBe('model-b')
+    await m.driver.disposeAll()
+  })
+
+  it('retireRuntime reclaims the member runtime so the next round respawns', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-retire'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '第一条') }) }))
+    const first = await m.driver.startRound(request() as never, { ...roundSpec(m, child), startModel: 'model-a' })
+    await first.result
+    await first.dispose()
+    expect(m.driver.boundModelOf(String(child.id))).toBe('model-a')
+    await m.driver.retireRuntime(String(child.id))
+    expect(m.driver.boundModelOf(String(child.id))).toBeNull()
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(2, '继续', '第二条') }) }))
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, {
+      ...roundSpec(m, child, { resume: { turn: 2 } }),
+      startModel: 'model-b',
+    })
+    await second.result
+    await second.dispose()
+    expect(m.spawns).toHaveLength(2)
+    expect(modelFlag(m.spawns[1]!.spec.argv)).toBe('model-b')
+    await m.driver.disposeAll()
+  })
+})

@@ -143,6 +143,46 @@ async function readTopLevelConfigString(homeDir: string, key: string): Promise<s
 }
 
 /**
+ * Every model identifier the scoped config.toml itself names, deduped in file
+ * order: the top-level `model` key plus each `[profiles.<name>]` table's own
+ * `model` (a profile is how a codex config names a second model at all).
+ * `[model_providers.*]` tables are deliberately NOT collected — their keys
+ * name providers (endpoint definitions), not models, so offering one as a
+ * model choice would be a wrong suggestion, not a discovered one. Absent file
+ * or no model keys yields an empty list, never a hardcoded catalog entry.
+ * @param homeDir - the `codex` harness's scoped home.
+ * @returns the model identifiers the file carries.
+ */
+export async function listCodexConfigModels(homeDir: string): Promise<string[]> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return []
+  }
+  const found: string[] = []
+  const seen = new Set<string>()
+  const collect = (value: string | undefined): void => {
+    if (value === undefined || value.trim() === '' || seen.has(value)) return
+    seen.add(value)
+    found.push(value)
+  }
+  let section = ''
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    const header = /^\[+([^\]]+)\]+$/.exec(line)
+    if (header !== null) {
+      section = header[1]!
+      continue
+    }
+    const match = /^(\w+)\s*=\s*"([^"]*)"$/.exec(line)
+    if (match === null || match[1] !== 'model') continue
+    if (section === '' || section.startsWith('profiles.')) collect(match[2])
+  }
+  return found
+}
+
+/**
  * The credential file's modification stamp (epoch ms), undefined when absent.
  * A completed device-code login rewrites `auth.json`, so the stamp
  * distinguishes a fresh login from a leftover (possibly revoked) credential.

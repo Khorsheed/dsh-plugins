@@ -36,7 +36,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertModelExecOnly,
   assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
@@ -200,12 +199,19 @@ export class CodexCliProvider implements SubagentProvider {
    *   reload. Undefined (the resolver absent, or returning undefined) leaves
    *   the argv exactly as it was before the key existed — the scoped
    *   config.toml's own `model` then decides, as it always did.
+   * @param overrides - resolver for the member's session-level model override
+   *   (the composer picker, owned by the model broker). It outranks BOTH the
+   *   delegation's recorded model and the configured one: on the exec path it
+   *   re-points the next round's `-m`, and on the live path it is the member's
+   *   start model — a resident runtime bound to a different model is retired
+   *   so the round respawns onto the override.
    */
   constructor(
     private readonly ctx: Context,
     private readonly sandbox: CodexSandbox = 'workspace-write',
     private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
     private readonly model?: () => string | undefined,
+    private readonly overrides?: (childSessionId: string) => string | undefined,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -325,15 +331,18 @@ export class CodexCliProvider implements SubagentProvider {
       // from it would run the round under the wrong credentials. Refused
       // rather than silently downgraded — the caller asked for a scope.
       assertScopeExecOnly(scope, 'subagent-codex')
-      // …and so is a round that names its own model: the resident app-server
-      // binds one model at spawn and then serves every round of this member.
-      assertModelExecOnly(requestedModel, 'subagent-codex')
+      // A round that names its own model is NOT refused: it becomes the
+      // member's start model, bound at the runtime spawn (a runtime bound to
+      // a different model is retired first, so the fresh thread spawns onto
+      // the asked-for model). The session-level override outranks even this.
+      const startModel = this.overrides?.(runId) ?? requestedModel
       try {
         return await live.startRound(request, {
           cwd,
           homeDir,
           childSession,
           parentSessionId: request.parent.session.id,
+          ...startModel === undefined ? {} : { startModel },
           // The thread id arrives with thread/start (server-assigned), far
           // earlier than the exec path's settle-time parse.
           onThreadId: (threadId) => {
@@ -371,7 +380,7 @@ export class CodexCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
         sandbox: this.sandbox,
-        ...resolveRoundModel(requestedModel, this.model),
+        ...resolveRoundModel(this.overrides?.(runId) ?? requestedModel, this.model),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -456,7 +465,10 @@ export class CodexCliProvider implements SubagentProvider {
         // See the fresh path: a scoped round never goes to the resident
         // app-server, which binds the default scoped home.
         assertScopeExecOnly(scope, 'subagent-codex')
-        assertModelExecOnly(requestedModel, 'subagent-codex')
+        // The resume re-requests its recorded model as the member's start
+        // model (the session-level override outranks it): a runtime bound to
+        // a different model is retired so the thread respawns onto this one.
+        const startModel = this.overrides?.(intent.childSessionId) ?? requestedModel
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -464,6 +476,7 @@ export class CodexCliProvider implements SubagentProvider {
             childSession,
             parentSessionId: request.parent.session.id,
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+            ...startModel === undefined ? {} : { startModel },
           })
           void liveRun.result.then(
             () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
@@ -487,7 +500,7 @@ export class CodexCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
           sandbox: this.sandbox,
-          ...resolveRoundModel(requestedModel, this.model),
+          ...resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, this.model),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {
