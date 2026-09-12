@@ -22,8 +22,10 @@ describe('declaredBuilds', () => {
 })
 
 describe('packagesWithInstallScripts', () => {
+  // One real-tree scan shared by both cases: the walk is the expensive part.
+  const found = packagesWithInstallScripts()
+
   it('finds the real tree\'s install-script dependencies, and they are all declared', () => {
-    const found = packagesWithInstallScripts()
     // koffi is the one that broke CI on 2026-09-01; esbuild is tsdown's.
     expect(found).toContain('koffi')
     expect(found).toContain('esbuild')
@@ -31,6 +33,6 @@ describe('packagesWithInstallScripts', () => {
 
   it('would have flagged koffi before it was declared', () => {
     const before = declaredBuilds('allowBuilds:\n  esbuild: true\n')
-    expect(packagesWithInstallScripts().filter((n) => !before.has(n))).toEqual(['koffi'])
+    expect(found.filter((n) => !before.has(n))).toEqual(['koffi'])
   })
 })

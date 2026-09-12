@@ -1283,7 +1283,15 @@ export function assistantEvent(blocks: readonly ContentBlock[]) {
   })
 }
 
-/** Fold one transcript line into the child session as one assistant step. */
+/**
+ * Fold one transcript line into the child session as one assistant step,
+ * wrapped in the step/start–step/end boundary pair the live conversation
+ * assembler requires: without a boundary the step never enters the location
+ * index, the line's assistant message resolves to a turn-level location, and
+ * the real-time view renders nothing (only a full rebuild, which mints step
+ * drafts from the explicit coordinates, recovers it). Tool cards escape that
+ * fate only because their definition does not consult the step location.
+ */
 export function appendClaudeTranscriptLine(
   childSession: Session,
   turn: number,
@@ -1291,6 +1299,7 @@ export function appendClaudeTranscriptLine(
   line: ClaudeTranscriptLine,
   usage: TokenUsage | undefined,
 ): void {
+  childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
     // Native tool card: the call event now, the result event when the stream
     // already carries it. Tool lines never carry the round's usage — the
@@ -1313,6 +1322,7 @@ export function appendClaudeTranscriptLine(
         }),
       }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     }
+    childSession.append('step/end', { turn, step })
     return
   }
   const blocks = line.kind === 'think'
@@ -1325,6 +1335,7 @@ export function appendClaudeTranscriptLine(
     stream: [],
     ...usage === undefined ? {} : { usage },
   }, { surfaceOp: 'append' })
+  childSession.append('step/end', { turn, step })
 }
 
 /**

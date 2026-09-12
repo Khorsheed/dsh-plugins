@@ -320,6 +320,36 @@ function roundSpec(m: Mount, child: Session, over: { resume?: { cliSessionId: st
   }
 }
 
+/**
+ * Every mirrored content event sits inside a step/start–step/end pair at its
+ * own (turn, step) — the boundary the live conversation assembler needs to
+ * materialize the step (without it the real-time view renders nothing). The
+ * checks are existential (some start before, some end after) so a backfilled
+ * late result's second pair at the same coordinates also passes.
+ */
+function expectStepBoundaries(child: Session): void {
+  const events = child.snapshotEvents()
+  const boundaries = events.filter(event => event.type === 'step/start' || event.type === 'step/end')
+  const content = events.filter(event =>
+    event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+  expect(content.length).toBeGreaterThan(0)
+  for (const event of content) {
+    const { turn, step } = event.data as { turn: number; step: number }
+    const at = boundaries.filter(boundary => {
+      const data = boundary.data as { turn: number; step: number }
+      return data.turn === turn && data.step === step
+    })
+    expect(
+      at.some(boundary => boundary.type === 'step/start' && boundary.seq < event.seq),
+      `step/start for ${event.type} at ${turn}:${step}`,
+    ).toBe(true)
+    expect(
+      at.some(boundary => boundary.type === 'step/end' && boundary.seq > event.seq),
+      `step/end for ${event.type} at ${turn}:${step}`,
+    ).toBe(true)
+  }
+}
+
 describe('acpStopReasonToHarness', () => {
   it('maps the ACP stop reasons and never silently completes', () => {
     expect(acpStopReasonToHarness('end_turn')).toBe('completed')
@@ -376,6 +406,9 @@ describe('kimi live driver rounds', () => {
     const assistant = child.snapshotEvents().find(e => e.type === 'assistant/message')
     expect(assistant?.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
     expect(m.mirrorOffsets.get('child-kimi-2')).toBe(2)
+    // Event granularity: the settle fold wraps each mirrored step in its
+    // boundary pair, even landing after turn/end.
+    expectStepBoundaries(child)
     await m.driver.disposeAll()
   })
 
@@ -531,6 +564,14 @@ describe('kimi live driver rounds', () => {
       { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
+    // The combined final message lands INSIDE the turn window, wrapped in its
+    // step boundary pair — the live assembler drops anything else.
+    const events = child.snapshotEvents()
+    const turnEnd = events.find(e => e.type === 'turn/end')!
+    expect(final.seq).toBeLessThan(turnEnd.seq)
+    const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 1)
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
     await m.driver.disposeAll()
   })
 
@@ -586,6 +627,9 @@ describe('kimi live driver rounds', () => {
     expect((child.snapshotEvents().find(e => e.type === 'tool/call')!.data as { step: number }).step).toBe(1)
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect((final.data as { step: number }).step).toBe(2)
+    // Both the mid-run tool fold and the combined final carry their boundary
+    // pairs.
+    expectStepBoundaries(child)
     await m.driver.disposeAll()
   })
 

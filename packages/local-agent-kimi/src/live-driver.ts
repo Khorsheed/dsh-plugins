@@ -949,6 +949,30 @@ export class KimiAcpLiveDriver {
       return { output: collectOutput(), stopReason }
     })
 
+    /**
+     * Settle reconciliation: the kimi wire flushes asynchronously past the
+     * prompt response (prompt lines early, the answer by turn end), so the
+     * final mirror folds until consecutive reads see no growth — bounded, so
+     * a stuck flush cannot pin the round beyond the quiescence window.
+     */
+    const settleMirror = async (): Promise<void> => {
+      await mirrorQueue.catch(() => {})
+      const sessionId = runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)
+      let lastTotal = -1
+      let stableReads = 0
+      const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
+      for (;;) {
+        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(granularity))
+        if (delta.usage !== undefined) settleUsage = delta.usage
+        localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+        stableReads = delta.total === lastTotal ? stableReads + 1 : 0
+        lastTotal = delta.total
+        if (stableReads >= SETTLE_MIRROR_STABLE_READS) break
+        if (Date.now() >= deadline) break
+        await delay(SETTLE_MIRROR_POLL_MS)
+      }
+    }
+
     const result: Promise<SubagentResult> = settleRunResult({
       attempt: () => Promise.race([attempt, abortBranch]),
       collectOutput,
@@ -961,10 +985,45 @@ export class KimiAcpLiveDriver {
       },
       signal: request.signal,
       onAbort,
-    }).then((settled) => {
+    }).then(async (settled) => {
       roundSettled = true
       promptInFlight = false
       if (turnOpened) {
+        // Token granularity: settle the round with ONE combined final message
+        // at the SAME (turn, step) the deltas reserved, carrying the usage —
+        // INSIDE the turn window (before turn/end) and wrapped in the step
+        // boundary pair, so the live conversation assembler materializes it
+        // like every other step instead of dropping a turn-level append after
+        // the turn closed. The settle mirror runs first (bounded) so the
+        // message carries the round's usage; that quiescence wait is the
+        // price of the wire flush race, and a mirror failure never fails the
+        // round. A non-completed round is marked interrupted, so a cancelled
+        // turn reads 已停止 legitimately.
+        if (granularity === 'token') {
+          try {
+            await settleMirror()
+            const blocks: ContentBlock[] = []
+            if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
+            if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
+            if (blocks.length > 0) {
+              // The stream's reserved step; a stream-less round (no deltas)
+              // puts the fallback answer past every folded line instead.
+              const step = streamStep ?? nextKimiSessionStep(childSession, turn)
+              childSession.append('step/start', { turn, step })
+              childSession.append('assistant/message', {
+                turn,
+                step,
+                message: assistantEvent(blocks),
+                stream: [],
+                ...settleUsage !== undefined ? { usage: settleUsage } : {},
+                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
+              }, { surfaceOp: 'append' })
+              childSession.append('step/end', { turn, step })
+            }
+          } catch (error) {
+            this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
+          }
+        }
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
         } else if (settled.stopReason === 'aborted') {
@@ -981,49 +1040,15 @@ export class KimiAcpLiveDriver {
       return settled
     })
 
-    // Settle reconciliation: the kimi wire flushes asynchronously past the
-    // prompt response (prompt lines early, the answer by turn end), so the
-    // final mirror folds until two consecutive reads see no growth — bounded,
-    // so a stuck flush cannot pin the round. Then re-arm the reaper.
-    void result.then(async (settled) => {
+    // Settle reconciliation (event granularity): the fold runs AFTER the turn
+    // closes — the location index registers steps from their boundary pair
+    // whenever it lands, so a post-turn/end fold still materializes. Token
+    // granularity already reconciled inside the turn window above (its
+    // combined final had to precede turn/end). Then re-arm the reaper.
+    void result.then(async () => {
       try {
-        if (turnOpened) {
-          await mirrorQueue.catch(() => {})
-          const sessionId = runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)
-          let lastTotal = -1
-          let stableReads = 0
-          const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
-          for (;;) {
-            const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(granularity))
-            if (delta.usage !== undefined) settleUsage = delta.usage
-            localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
-            stableReads = delta.total === lastTotal ? stableReads + 1 : 0
-            lastTotal = delta.total
-            if (stableReads >= SETTLE_MIRROR_STABLE_READS) break
-            if (Date.now() >= deadline) break
-            await delay(SETTLE_MIRROR_POLL_MS)
-          }
-          // Token granularity: settle the round with ONE combined final
-          // message at the SAME (turn, step) the deltas reserved, carrying the
-          // usage. A non-completed round is
-          // marked interrupted, so a cancelled turn reads 已停止 legitimately.
-          if (granularity === 'token') {
-            const blocks: ContentBlock[] = []
-            if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
-            if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
-            if (blocks.length > 0) {
-              childSession.append('assistant/message', {
-                turn,
-                // The stream's reserved step; a stream-less round (no deltas)
-                // puts the fallback answer past every folded line instead.
-                step: streamStep ?? nextKimiSessionStep(childSession, turn),
-                message: assistantEvent(blocks),
-                stream: [],
-                ...settleUsage !== undefined ? { usage: settleUsage } : {},
-                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-              }, { surfaceOp: 'append' })
-            }
-          }
+        if (turnOpened && granularity !== 'token') {
+          await settleMirror()
         }
       } catch (error) {
         this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)

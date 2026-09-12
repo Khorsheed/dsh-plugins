@@ -45,11 +45,17 @@ export function declaredBuilds(yaml: string): Set<string> {
 /** Installed dependencies that carry an install hook. */
 export function packagesWithInstallScripts(): string[] {
   const names = new Set<string>()
-  for (const manifest of globSync('node_modules/.pnpm/*/node_modules/**/package.json', { cwd: root })) {
-    // Only a package's own manifest, never one nested in its dependencies:
-    // `node_modules/.pnpm/<key>/node_modules/<name>/package.json` splits into
-    // exactly two segments on `/node_modules/`.
-    if (manifest.split('/node_modules/').length !== 2) continue
+  // Segment-precise patterns only: each .pnpm/<key>/node_modules/ holds the
+  // package itself plus symlinks to its dependencies, and both are wanted —
+  // but a `**/package.json` walk descends into every package's own nested
+  // node_modules tree (thousands of manifests read and then discarded by the
+  // two-segment filter), which is what made this scan multi-second and
+  // timeout-flaky under load.
+  const manifests = [
+    ...globSync('node_modules/.pnpm/*/node_modules/*/package.json', { cwd: root }),
+    ...globSync('node_modules/.pnpm/*/node_modules/@*/*/package.json', { cwd: root }),
+  ]
+  for (const manifest of manifests) {
     let parsed: { name?: string; scripts?: Record<string, string> }
     try {
       parsed = JSON.parse(readFileSync(join(root, manifest), 'utf8')) as typeof parsed

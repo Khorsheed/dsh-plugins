@@ -47,6 +47,34 @@ function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
   return { handle, done }
 }
 
+/**
+ * Every mirrored content event (assistant/message, tool/call, tool/result)
+ * sits inside the step/start–step/end pair of its own (turn, step) — the
+ * boundary contract the live conversation assembler needs to materialize the
+ * step in real time (a boundary-less message resolves to a turn-level
+ * location and renders nothing until a full rebuild).
+ */
+function expectStepBoundaries(child: Session): void {
+  const events = child.snapshotEvents()
+  const boundaries = events.filter(event => event.type === 'step/start' || event.type === 'step/end')
+  const content = events.filter(event =>
+    event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+  expect(content.length).toBeGreaterThan(0)
+  for (const event of content) {
+    const { turn, step } = event.data as { turn: number; step: number }
+    const at = boundaries.filter(boundary => {
+      const data = boundary.data as { turn: number; step: number }
+      return data.turn === turn && data.step === step
+    })
+    const start = at.find(boundary => boundary.type === 'step/start')
+    const end = at.find(boundary => boundary.type === 'step/end')
+    expect(start, `step/start for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(end, `step/end for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(start!.seq).toBeLessThan(event.seq)
+    expect(end!.seq).toBeGreaterThan(event.seq)
+  }
+}
+
 describe('claudeVersionFromInit', () => {
   it('reads VERSION out of the build-info object claude 2.1.x sends', () => {
     expect(claudeVersionFromInit({ VERSION: '2.1.263', GIT_SHA: '37ae3f3' })).toBe('2.1.263')
@@ -151,6 +179,8 @@ describe('claude-cli-provider run settlement', () => {
     })
     const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
+    // Every mirrored step is wrapped in its step/start–step/end pair.
+    expectStepBoundaries(child)
     // The live mirror persists during the run; the settle mirror persists the
     // final event set (with turn/end) after exit — wait for that last write.
     await vi.waitFor(() => {
@@ -249,6 +279,7 @@ describe('claude-cli-provider run settlement', () => {
     expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     expect((assistant[0]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 5 })
+    expectStepBoundaries(child)
     await done
   })
 
@@ -678,6 +709,8 @@ describe('claude-cli-provider abort path', () => {
     expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(0)
     const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls[0]!.data).toMatchObject({ name: 'Bash', arguments: 'echo hi' })
+    // The preserved partial work carries its step boundaries too.
+    expectStepBoundaries(child)
     await hanging.done
   })
 })

@@ -47,6 +47,32 @@ function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
   return { handle, done }
 }
 
+/**
+ * The live conversation assembler only materializes an assistant/tool event
+ * whose step is opened by a step/start boundary — the mirror must wrap every
+ * folded line in the pair, or the real-time subsession view drops it.
+ */
+function expectStepBoundaries(child: Session): void {
+  const events = child.snapshotEvents()
+  const boundaries = events.filter(event => event.type === 'step/start' || event.type === 'step/end')
+  const content = events.filter(event =>
+    event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+  expect(content.length).toBeGreaterThan(0)
+  for (const event of content) {
+    const { turn, step } = event.data as { turn: number; step: number }
+    const at = boundaries.filter(boundary => {
+      const data = boundary.data as { turn: number; step: number }
+      return data.turn === turn && data.step === step
+    })
+    const start = at.find(boundary => boundary.type === 'step/start')
+    const end = at.find(boundary => boundary.type === 'step/end')
+    expect(start, `step/start for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(end, `step/end for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(start!.seq).toBeLessThan(event.seq)
+    expect(end!.seq).toBeGreaterThan(event.seq)
+  }
+}
+
 describe('codex json stream parsing', () => {
   it('extracts the final agent message and the turn usage with uncached input', () => {
     const parsed = parseCodexJsonStream(jsonStream)
@@ -132,6 +158,8 @@ describe('codex-cli-provider run settlement', () => {
     const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
     expect(turns[1]!.data).toEqual({ turn: 1, reason: { kind: 'completed' } })
+    // every mirrored event sits inside its step boundary pair (live-render contract)
+    expectStepBoundaries(child)
     // The live mirror persists during the run; the settle mirror persists the
     // final event set (with turn/end) after exit — wait for that last write.
     await vi.waitFor(() => {
@@ -240,6 +268,8 @@ describe('codex-cli-provider run settlement', () => {
     expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
+    // every mirrored event sits inside its step boundary pair (live-render contract)
+    expectStepBoundaries(child)
     await done
   })
 

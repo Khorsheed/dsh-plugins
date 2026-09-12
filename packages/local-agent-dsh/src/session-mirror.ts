@@ -16,8 +16,12 @@
  * `turn/start` with `turn === round` to the next `turn/start`. The sub-dsh's
  * own scaffolding user messages (agent-instructions, plugin, skill-catalog
  * sources) are filtered — only the caller task (`source.kind === 'user'`)
- * crosses. Turn boundaries are NOT copied: the parent's real-time
- * spawn→settle boundaries stay the authoritative timing.
+ * crosses. The sub-dsh's own `step/start`/`step/end` pairs cross verbatim
+ * (each carries its (turn, step) coordinates): the real-time conversation
+ * assembler only registers a step — and materializes its assistant message —
+ * at a boundary, so without them the live subsession view renders the prompt
+ * and tool cards but no replies. Turn boundaries are NOT copied: the parent's
+ * real-time spawn→settle boundaries stay the authoritative timing.
  *
  * `todo/write` passthrough: the sub-dsh's task list is a standing whole-list
  * snapshot (last-wins). Each pass appends the round's LATEST snapshot only
@@ -127,7 +131,7 @@ export async function readSubDshEvents(homeDir: string, sessionId: string): Prom
 
 /** The result of one dsh session-mirror pass. */
 export interface DshMirrorDelta {
-  /** Text of each event this pass newly mirrored (delta progress payloads). */
+  /** Text of each content event this pass newly mirrored (delta progress payloads); mirrored step boundaries carry no text. */
   texts: string[]
   /** Total round events mirrored into the child session after this pass. */
   total: number
@@ -305,6 +309,22 @@ function appendMirroredToolEvent(childSession: Session, event: SessionEvent): st
 }
 
 /**
+ * Append one mirrored `step/start` or `step/end` boundary verbatim — the event
+ * carries its own (turn, step) coordinates, so the child session's location
+ * index registers the same step the sub-dsh wrote. Shared by the file
+ * mirror's span loop and the live driver's per-event mirror. An interrupted
+ * step crosses as an OPEN pair (start without end): the location resolves to
+ * the step either way, and no boundary is ever synthesized.
+ */
+function appendMirroredStepBoundary(childSession: Session, event: SessionEvent): void {
+  if (event.type === 'step/start') {
+    childSession.append('step/start', event.data)
+  } else if (event.type === 'step/end') {
+    childSession.append('step/end', event.data)
+  }
+}
+
+/**
  * Append one appendable message event verbatim and report its delta text —
  * the single append path shared by the file mirror's span loop and the live
  * driver's per-event mirror, so both transports produce identical child
@@ -325,8 +345,9 @@ function appendMirroredMessageEvent(childSession: Session, event: SessionEvent):
  * Mirror ONE live-pushed sub-dsh session event (the serve mode's
  * `session/event` wire notification) into the child session. This is the
  * live driver's transport-side entry into the SAME fold the file mirror
- * owns: the filter (only the caller task's `user/message` and every
- * `assistant/message` cross; turn boundaries stay the parent's; scaffolding
+ * owns: the filter (only the caller task's `user/message`, every
+ * `assistant/message`, the tool events, and the `step/start`/`step/end`
+ * boundaries cross — verbatim; turn boundaries stay the parent's; scaffolding
  * stays behind) and the verbatim append are exactly `mirrorDshSession`'s
  * span-loop rules. The 0.1.5 sub-dsh emits no per-chunk events (the
  * `assistant/chunk` type is retired — an interrupted attempt settles as
@@ -340,7 +361,8 @@ function appendMirroredMessageEvent(childSession: Session, event: SessionEvent):
  * @param _options - granularity; retained for caller compatibility — the
  *   retirement of per-chunk events leaves the mirror granularity-invariant.
  * @returns the mirrored text for delta progress, or undefined when the event
- *   was filtered out (or carried no text, as non-text chunks do).
+ *   was filtered out or carries no progress text (a step boundary crosses but
+ *   is structure, not content).
  */
 export function mirrorDshLiveEvent(
   childSession: Session,
@@ -355,6 +377,10 @@ export function mirrorDshLiveEvent(
   }
   if (event.type === 'tool/call' || event.type === 'tool/result') {
     return appendMirroredToolEvent(childSession, event)
+  }
+  if (event.type === 'step/start' || event.type === 'step/end') {
+    appendMirroredStepBoundary(childSession, event)
+    return undefined
   }
   return undefined
 }
@@ -412,7 +438,10 @@ export async function mirrorDshSession(
     // the settle pass never duplicates what polling mirrored. The span is
     // filtered to APPENDABLE events first — scaffolding user messages
     // (non-'user' sources) never cross, so they must not occupy skip
-    // positions either.
+    // positions either. The two filter sets must stay IDENTICAL — step
+    // boundaries included on both sides — or a repeated pass misaligns the
+    // prefix and re-appends (a second step/start for the same (turn, step)
+    // makes the live assembler throw).
     let lastTurnStart = -1
     for (let index = 0; index < childSession.snapshotEvents().length; index += 1) {
       if (childSession.snapshotEvents()[index]?.type === 'turn/start') lastTurnStart = index
@@ -420,17 +449,28 @@ export async function mirrorDshSession(
     const mirrored = childSession.snapshotEvents().slice(lastTurnStart + 1)
       .filter(event =>
         event.type === 'user/message' || event.type === 'assistant/message'
-        || event.type === 'tool/call' || event.type === 'tool/result')
+        || event.type === 'tool/call' || event.type === 'tool/result'
+        || event.type === 'step/start' || event.type === 'step/end')
       .length
     const roundSpan = events.slice(start, end)
       .filter(event =>
         (event.type === 'user/message' && event.data.source.kind === 'user')
         || event.type === 'assistant/message'
         || event.type === 'tool/call'
-        || event.type === 'tool/result')
+        || event.type === 'tool/result'
+        || event.type === 'step/start'
+        || event.type === 'step/end')
     const span = roundSpan.slice(mirrored)
     const texts: string[] = []
+    let appended = 0
     for (const event of span) {
+      appended += 1
+      if (event.type === 'step/start' || event.type === 'step/end') {
+        // A boundary is structure, not content: it crosses verbatim (its own
+        // (turn, step) coordinates) but contributes no delta text.
+        appendMirroredStepBoundary(childSession, event)
+        continue
+      }
       texts.push(
         event.type === 'tool/call' || event.type === 'tool/result'
           ? appendMirroredToolEvent(childSession, event)
@@ -458,12 +498,12 @@ export async function mirrorDshSession(
         todosAppended = 1
       }
     }
-    if (texts.length > 0 || todosAppended > 0) {
+    if (appended > 0 || todosAppended > 0) {
       await persistIfStandalone(ctx, childSession)
     }
     return {
       texts,
-      total: mirrored + mirroredTodos.length + texts.length + todosAppended,
+      total: mirrored + mirroredTodos.length + appended + todosAppended,
       sessionLogFile: log.filename,
       ...observation,
     }

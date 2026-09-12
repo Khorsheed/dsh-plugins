@@ -250,6 +250,34 @@ function roundSpec(m: Mount, child: Session, over: { resume?: { cliSessionId: st
   }
 }
 
+/**
+ * Every mirrored content event (assistant/message, tool/call, tool/result)
+ * sits inside the step/start–step/end pair of its own (turn, step) — the
+ * boundary contract the live conversation assembler needs to materialize the
+ * step in real time (a boundary-less message resolves to a turn-level
+ * location and renders nothing until a full rebuild).
+ */
+function expectStepBoundaries(child: Session): void {
+  const events = child.snapshotEvents()
+  const boundaries = events.filter(event => event.type === 'step/start' || event.type === 'step/end')
+  const content = events.filter(event =>
+    event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+  expect(content.length).toBeGreaterThan(0)
+  for (const event of content) {
+    const { turn, step } = event.data as { turn: number; step: number }
+    const at = boundaries.filter(boundary => {
+      const data = boundary.data as { turn: number; step: number }
+      return data.turn === turn && data.step === step
+    })
+    const start = at.find(boundary => boundary.type === 'step/start')
+    const end = at.find(boundary => boundary.type === 'step/end')
+    expect(start, `step/start for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(end, `step/end for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(start!.seq).toBeLessThan(event.seq)
+    expect(end!.seq).toBeGreaterThan(event.seq)
+  }
+}
+
 describe('claude live driver rounds', () => {
   it('spawns the resident stream-json process, drives a turn, and folds the shared stream live', async () => {
     const m = mount()
@@ -283,6 +311,8 @@ describe('claude live driver rounds', () => {
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
+    // Event granularity: every folded step is wrapped in its boundary pair.
+    expectStepBoundaries(child)
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
   })
@@ -435,6 +465,15 @@ describe('claude live driver rounds', () => {
     ])
     // The fold skipped the think/text lines but the tool activity still folds.
     expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1)
+    expectStepBoundaries(child)
+    // The combined final message lands INSIDE the turn window, wrapped in its
+    // step boundary pair — the live assembler drops anything else.
+    const events = child.snapshotEvents()
+    const turnEnd = events.find(e => e.type === 'turn/end')!
+    expect(final.seq).toBeLessThan(turnEnd.seq)
+    const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 1)
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
     await m.driver.disposeAll()
   })
 
@@ -480,6 +519,8 @@ describe('claude live driver rounds', () => {
     expect(toolSteps).toEqual([1, 2, 4])
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
+    // The shifted tool steps carry their own boundary pairs too.
+    expectStepBoundaries(child)
     await m.driver.disposeAll()
   })
 

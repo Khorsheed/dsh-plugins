@@ -1046,6 +1046,43 @@ export class CodexLiveDriver {
         // hold-back line (and the usage already observed) would be lost —
         // flush it now (the exec settle-mirror's partial-work contract).
         if (mirrored < lines.length) mirrorUpTo(lines.length, true)
+        // Token granularity: settle the round with ONE combined final message
+        // at the reserved (turn, step), carrying the usage — INSIDE the turn
+        // window (before turn/end) and wrapped in the step boundary pair, so
+        // the live conversation assembler materializes it like every other
+        // step instead of dropping a turn-level append after the turn closed.
+        // A non-completed round is marked interrupted, so a cancelled turn
+        // reads 已停止 legitimately.
+        if (granularity === 'token') {
+          // Deltas are the stream's content; a server that completed items
+          // without streaming (no deltas observed) falls back to the folded
+          // lines, so the answer is never lost.
+          const think = roundThink.trim() !== ''
+            ? roundThink
+            : lines.filter(line => line.kind === 'think').map(line => line.text).join('\n')
+          const text = roundText.trim() !== ''
+            ? roundText
+            : lines.filter(line => line.kind === 'text').map(line => line.text).join('\n')
+          const blocks: ContentBlock[] = []
+          if (think.trim() !== '') blocks.push({ type: 'reasoning', text: think })
+          if (text.trim() !== '') blocks.push({ type: 'text', text })
+          if (blocks.length > 0) {
+            // The stream's reserved step; a stream-less round (no deltas)
+            // puts the fallback answer past every folded line instead.
+            const step = streamStep ?? lines.length + 1
+            childSession.append('step/start', { turn, step })
+            childSession.append('assistant/message', {
+              turn,
+              step,
+              message: codexAssistantEvent(blocks),
+              stream: [],
+              ...usage !== undefined ? { usage } : {},
+              ...settled.stopReason === 'completed' ? {} : { interrupted: true },
+            }, { surfaceOp: 'append' })
+            childSession.append('step/end', { turn, step })
+            persist()
+          }
+        }
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
         } else if (settled.stopReason === 'aborted') {
@@ -1068,41 +1105,10 @@ export class CodexLiveDriver {
 
     // Final mirror report + reaper re-arm, mirroring the exec settle pass's
     // progress contract. A round that never opened owns no span — skip it.
-    void result.then(async (settled) => {
+    void result.then(async () => {
       try {
         if (turnOpened) {
           await persistQueue.catch(() => {})
-          // Token granularity: settle the round with ONE combined final
-          // message at the reserved (turn, step), carrying the usage. A
-          // non-completed round is
-          // marked interrupted, so a cancelled turn reads 已停止 legitimately.
-          if (granularity === 'token') {
-            // Deltas are the stream's content; a server that completed items
-            // without streaming (no deltas observed) falls back to the folded
-            // lines, so the answer is never lost.
-            const think = roundThink.trim() !== ''
-              ? roundThink
-              : lines.filter(line => line.kind === 'think').map(line => line.text).join('\n')
-            const text = roundText.trim() !== ''
-              ? roundText
-              : lines.filter(line => line.kind === 'text').map(line => line.text).join('\n')
-            const blocks: ContentBlock[] = []
-            if (think.trim() !== '') blocks.push({ type: 'reasoning', text: think })
-            if (text.trim() !== '') blocks.push({ type: 'text', text })
-            if (blocks.length > 0) {
-              childSession.append('assistant/message', {
-                turn,
-                // The stream's reserved step; a stream-less round (no deltas)
-                // puts the fallback answer past every folded line instead.
-                step: streamStep ?? lines.length + 1,
-                message: codexAssistantEvent(blocks),
-                stream: [],
-                ...usage !== undefined ? { usage } : {},
-                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-              }, { surfaceOp: 'append' })
-              persist()
-            }
-          }
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         }
       } finally {
