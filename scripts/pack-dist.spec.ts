@@ -238,6 +238,20 @@ describe('verifyTarball', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('passes a family name declared as a data reference (dsh.references)', () => {
+    // A core mentions its companion row by name as DATA (a preset-visibility
+    // probe) — declared in `dsh.references`, never as a dependency edge.
+    const dir = stage({
+      'package.json': JSON.stringify({ name: '@khorsheed/dsh-x', dsh: { references: ['@khorsheed/dsh-x-tool'] } }),
+      'lib/index.js': "const TOOL_ROW = '@khorsheed/dsh-x-tool';",
+    })
+    try {
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x')).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('packDist end-to-end (independent of the self-checks)', () => {

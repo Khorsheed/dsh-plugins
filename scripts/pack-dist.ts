@@ -125,6 +125,7 @@ export type PackageJson = Record<string, unknown> & {
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   devDependencies?: Record<string, string>
+  dsh?: { references?: string[] }
 }
 
 /**
@@ -322,7 +323,12 @@ export function packDist(options: PackDistOptions): string {
  *      tsdown chunk no files entry covered)
  *   2. family edges — every `@khorsheed/*` name referenced by lib artifacts or
  *      the bundle patch must have a dependencies/peerDependencies entry in the
- *      staged manifest (the core/companion auto-mount contract)
+ *      staged manifest (the core/companion auto-mount contract), or be listed
+ *      in the manifest's `dsh.references` when the mention is DATA, not a
+ *      dependency (a preset-visibility probe naming its companion row). Data
+ *      mentions must never become manifest edges: a core↔companion pair
+ *      declared in both directions forms a cycle that pnpm's build sequencer
+ *      schedules into one concurrent chunk, which raced cold builds to death.
  */
 export function verifyTarball(tarball: string, staging: string, selfName: string): void {
   const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
@@ -337,6 +343,11 @@ export function verifyTarball(tarball: string, staging: string, selfName: string
 
   const manifest = JSON.parse(readFileSync(join(staging, 'package.json'), 'utf8')) as PackageJson
   const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})])
+  // Data mentions are not edges: `dsh.references` names a sibling the artifacts
+  // mention as data (a preset-visibility probe's companion row name) without
+  // depending on it — declared here, never in a dependency field (a core and
+  // its companion declared in both directions form a pnpm sequencing cycle).
+  for (const name of manifest.dsh?.references ?? []) declared.add(name)
   const referenced = new Set<string>()
   for (const file of walk(staging).filter(f => f.endsWith('.js') || f.endsWith('.d.ts') || f.endsWith('.yml'))) {
     const text = readFileSync(file, 'utf8')

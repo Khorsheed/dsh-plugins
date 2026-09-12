@@ -28,7 +28,7 @@ Worst case is now 2 instances × 4 forks ≈ 8 test forks instead of 32.
 - Measured on the same machine: peak node RSS ~5.1GB → ~3.9GB and average ~2.3GB → ~1.8GB across a run that additionally included two full cold builds; the test wall time is unchanged. The ceiling is now deterministic — 2 × 4 forks — rather than 4 × CPU-count.
 - Single-package runs (`pnpm --filter <pkg> test`, the documented inner loop) keep up to 4 forks on a 16GB machine; big-memory machines keep their CPU count.
 - Given up: some wall-time headroom on machines that could absorb 32 forks — they can reclaim it with `DSH_TEST_MAX_WORKERS` / `--workspace-concurrency`.
-- The cold-build companion-tool ordering race (`*-tool` tsc starting before its core's lib exists — pnpm ignores dev/peer edges for run ordering) is a separate pre-existing main problem this change does not touch; full-repo cold builds still trip it until the eval-family/mode-switcher owners pick a mechanism.
+- The cold-build companion-tool ordering race (`*-tool` tsc starting before its core's lib exists) was a separate pre-existing problem this change did not touch. It has since been diagnosed and fixed: the cause was NOT "pnpm ignores dev/peer edges for run ordering" as an earlier version of this bullet claimed — peer and dev edges DO count in pnpm's projects graph — but the core↔companion dependency cycle formed by the reverse manifest edges, which the sequencer schedules into one concurrent chunk. The shipped mechanism (one-direction edges + `dsh.references` for data mentions) is recorded in [the companion-edge-cycle Agent Note](../../implemented/process/2026-09-12-companion-edge-cycle-cold-build.md).
 
 ## Testing
 

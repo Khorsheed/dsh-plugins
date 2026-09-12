@@ -77,8 +77,7 @@
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "react": "^18.2.0",
-    "@khorsheed/dsh-mission-tool": "workspace:*"
+    "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-api-remotes": { "optional": true },
@@ -89,8 +88,7 @@
     "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
     "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
     "@deepseek-ai/dsh-invariants": { "optional": true },
-    "react": { "optional": true },
-    "@khorsheed/dsh-mission-tool": { "optional": true }
+    "react": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -116,7 +114,6 @@
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@khorsheed/dsh-mission-tool": "workspace:*",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
@@ -135,6 +132,9 @@
     "state-machine"
   ],
   "dsh": {
+    "references": [
+      "@khorsheed/dsh-mission-tool"
+    ],
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

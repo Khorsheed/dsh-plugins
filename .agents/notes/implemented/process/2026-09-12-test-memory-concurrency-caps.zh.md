@@ -28,7 +28,7 @@ Status: implemented
 - 同机实测：峰值 node RSS ~5.1GB → ~3.9GB，均值 ~2.3GB → ~1.8GB（修复后的采样还额外包含两次全仓冷构建）；test 墙钟不变。上限从此确定——2 × 4 fork——而不是 4 × CPU 数。
 - 单包运行（`pnpm --filter <pkg> test`，文档规定的内环）在 16GB 机器上保留至多 4 个 fork；大内存机器保留 CPU 数。
 - 放弃：能消化 32 fork 的机器上的墙钟余量——可以用 `DSH_TEST_MAX_WORKERS` / `--workspace-concurrency` 拿回。
-- 冷构建伴生工具排序竞态（`*-tool` 的 tsc 在其 core 的 lib 产出前起跑——pnpm 的 run 排序不认 dev/peer 边）是 main 上既有的独立问题，本次不碰；在它归主之前，全仓冷构建仍会踩。
+- 冷构建伴生工具排序竞态（`*-tool` 的 tsc 在其 core 的 lib 产出前起跑）是 main 上既有的独立问题，本次不碰。此后已诊断并修复：根因并非本条目早前所写的"pnpm 的 run 排序不认 dev/peer 边"——peer 与 dev 边在 pnpm 的项目图里都算数——而是反向清单边构成的 core↔companion 依赖环，排序器把环成员编进同一 chunk 并发执行。落地的机制（单向边 + 数据提及走 `dsh.references`）记在[伴生边环 Agent Note](../../implemented/process/2026-09-12-companion-edge-cycle-cold-build.md)。
 
 ## Testing
 
