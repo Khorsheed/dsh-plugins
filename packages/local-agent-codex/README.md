@@ -108,7 +108,7 @@ model_provider = "dsh-router"
 
 **回读与 cwd 覆盖。** 每轮 settle 后，provider 从本轮自己的 rollout 文件里回读三件事，随 `settled` 进度事件上报并合并进 `delegations.jsonl`：模型（`turn_context.payload.model`——codex 0.144.0 的 exec 流事件根本不带 model，rollout 是唯一权威；按本轮时间窗过滤，resume 线程里先前轮次的模型不会被误读）、CLI 版本（`session_meta.payload.cli_version`——服务本轮的那个 codex build 自己写下的，比事后探测可执行文件更准）、以及非正常结束时流里缺失的 token 用量（最后一条 `token_count`）。取不到即缺位，绝不猜测。
 
-**工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。计数只来自流解析**已经走过**的 `item.completed` 分支，不新增任何解析路径：`command_execution` 与 `web_search_call` 各记一次，`function_call_output` 是结果、不计。`byName` 的键是 **codex 自己的 item 类型**（`command_execution`），不是镜像卡片上的显示名（`Bash`）——记的是 CLI 怎么叫这件事。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。实测：一轮「列目录并统计文件数」回读 `{count: 1, byName: {command_execution: 1}}`，两条命令的一轮回读 `{count: 2}`。
+**工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。计数只来自流解析**已经走过**的 `item.completed` 分支，不新增任何解析路径：`command_execution`、`web_search_call`、`file_change`、`function_call` 各记一次，`function_call_output` 是结果、不计。`byName` 的键是 **codex 自己的 item 类型**（`command_execution`），不是镜像卡片上的显示名（`Bash`）——记的是 CLI 怎么叫这件事。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。实测：一轮「列目录并统计文件数」回读 `{count: 1, byName: {command_execution: 1}}`，两条命令的一轮回读 `{count: 2}`。
 
 定位与扫描两处都按并发校准过。`turn_context` 是 codex 在**回合开始**时写的，所以一轮里之后产生的事件一多就会把它挤出文件尾——只扫尾部会读回 null（一次真实评测跑就是这么丢的：38 KB 的 smoke 轮读得到，100–500 KB 的正式格读不到），因此尾部扫不到就再做一次有界的整文件读。定位则在 threadId 之外把**本轮 cwd** 也算进去：并发委派会让多个格的文件落进同一个时间窗，`session_meta.payload.cwd` 才是区分它们的字段；窗口里有候选却没有一个对得上本轮目录时，宁可什么都不报也不报邻居那一轮（窗口里只有一个候选除外——那是路径写法差异，不是歧义）。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
@@ -116,7 +116,7 @@ model_provider = "dsh-router"
 
 **续聊（resume）。** 家族工具（`@khorsheed/dsh-local-agent-tool-subagent`）在官方 `description`/`prompt` 子集上增加可选 `resume` 参数。首次委派的结果文本自述句柄（`追问请带 resume="<childSessionId>"`）；后续轮次传回它即在**同一个** dsh 子会话里继续**同一个** codex 线程（`codex exec --json resume <thread_id>`），按轮记账。句柄只从 `resume` 参数读取，localAgent registry 仅对记录该委派的同一 parent 会话与 provider 解析——伪造句柄在任何 CLI 进程启动前就被拒绝。
 
-**事件流镜像。** 子代理会话按顺序镜像 `codex exec --json` 事件流：`reasoning` → 推理块、`agent_message` → 回复文本、`command_execution`/`web_search_call`/`function_call_output` → 工具行（`[工具 Bash] <command> → output`）；最终 `agent_message` 作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。续聊轮各自追加自己的 turn，不会重复。中止会让工具结果立即 settle，并保留已收到的事件与用量。
+**事件流镜像。** 子代理会话按顺序镜像 `codex exec --json` 事件流：`reasoning` → 推理块、`agent_message` → 回复文本、`command_execution`/`web_search_call`/`function_call_output` → 工具行（`[工具 Bash] <command> → output`），`file_change` → `ApplyPatch` 卡（逐 change 列出 kind 与路径），`function_call`（如 multi-agent 的 `wait`）→ 同名工具卡、结果由 `function_call_output` 并入；最终 `agent_message` 作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。续聊轮各自追加自己的 turn，不会重复。中止会让工具结果立即 settle，并保留已收到的事件与用量。
 
 **模型体验。** 每次委派都是委派 Session 工作区内一个全新的一次性 `codex exec` 进程。父级只提交任务文本、只看到最终回答或精确错误——Codex 的评论、工具活动、工作区 diff 不会跨进父级会话，子会话 token 也永不进入父级上下文。
 

@@ -722,7 +722,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   let event: {
     type?: string
     model?: unknown
-    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string }
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string }
     usage?: unknown
     thread_id?: unknown
   }
@@ -772,6 +772,31 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       kind: 'tool',
       id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
       name: 'WebSearch',
+    })
+  } else if (item.type === 'file_change') {
+    // A patch application ({changes: [{path, kind}]}): without this case
+    // codex's file edits were invisible in the mirror.
+    countToolCall(state, 'file_change')
+    const args = (item.changes ?? [])
+      .map(change => `${change.kind ?? 'update'}: ${change.path ?? '?'}`)
+      .join('\n')
+    if (args !== '') {
+      state.lines.push({
+        kind: 'tool',
+        id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
+        name: 'ApplyPatch',
+        args,
+      })
+    }
+  } else if (item.type === 'function_call') {
+    // Non-shell calls (e.g. the multi-agent wait): the result rides the
+    // function_call_output item, which attaches to this pending line.
+    countToolCall(state, 'function_call')
+    state.lines.push({
+      kind: 'tool',
+      id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
+      name: item.name ?? 'function',
+      ...typeof item.arguments === 'string' && item.arguments !== '' ? { args: item.arguments } : {},
     })
   } else if (item.type === 'function_call_output') {
     // A function/command result; attach to the previous tool line when one

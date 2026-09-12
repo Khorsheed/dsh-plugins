@@ -182,6 +182,42 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
     }
     case 'webSearch':
       return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: 'WebSearch' }
+    case 'fileChange': {
+      // A patch application: {id, changes: [{path, kind, diff?}], status}.
+      // Without this case codex's file edits were invisible in the mirror.
+      const changes = Array.isArray(item['changes']) ? item['changes'] as JsonObject[] : []
+      const args = changes
+        .map(change => `${typeof change['kind'] === 'string' ? change['kind'] : 'update'}: ${typeof change['path'] === 'string' ? change['path'] : '?'}`)
+        .join('\n')
+      const diff = changes
+        .map(change => change['diff'])
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+        .join('\n')
+      return {
+        kind: 'tool',
+        id: itemId ?? `codex-live-${randomUUID()}`,
+        name: 'ApplyPatch',
+        ...args === '' ? {} : { args },
+        ...diff === '' ? {} : { result: diff },
+      }
+    }
+    case 'dynamicToolCall': {
+      // Non-shell tools (e.g. the multi-agent `wait`): {id, tool, arguments, status}.
+      const tool = typeof item['tool'] === 'string' ? item.tool : 'dynamic'
+      const args = item['arguments'] === undefined || item['arguments'] === null
+        ? undefined
+        : typeof item['arguments'] === 'string' ? item['arguments'] : JSON.stringify(item['arguments'])
+      return {
+        kind: 'tool',
+        id: itemId ?? `codex-live-${randomUUID()}`,
+        name: tool,
+        ...args === undefined || args === '' ? {} : { args },
+      }
+    }
+    case 'collabAgentToolCall': {
+      const tool = typeof item['tool'] === 'string' ? item.tool : 'collab'
+      return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: `collab/${tool}` }
+    }
     case 'mcpToolCall': {
       const server = typeof item['server'] === 'string' ? item.server : undefined
       const tool = typeof item['tool'] === 'string' ? item.tool : undefined
