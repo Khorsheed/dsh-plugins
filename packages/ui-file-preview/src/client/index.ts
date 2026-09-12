@@ -84,21 +84,48 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   try {
     disposers.push(await ctx.remote.$mount(filePreviewRemote))
   } catch (error) {
-    // A Remote already mounted by another composition fails loud at boot; the
-    // rest of the plugin still registers (the tab would answer an unmounted
-    // namespace with a typed RPC error, which the surfaces render).
+    // A duplicate descriptor is a composition error. The capability probe
+    // below still decides whether any visible surface may exist.
     /* v8 ignore next -- double-mount is a composition error, not a runtime path */
     ctx.logger.error(error)
   }
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-file-preview: dictionaries')
-  const t = ctx.locale.bind(NS)
   // The namespace is registered by $mount above; `ctx.remote.filePreview`
   // cannot see it (the property proxy walks the fiber chain, and the namespace
   // lives in the sibling fiber $mount spawned), so read it from the global
   // store once the mount has settled and hand the concrete handle to the
   // inject closures, so a lazy `ctx.remote.filePreview` read at call time
   // never trips the property proxy.
-  const remote = ctx.get('remote.filePreview') as FilePreviewRemote
+  const remote = ctx.get('remote.filePreview') as FilePreviewRemote | undefined
+  if (remote === undefined) {
+    return async () => { await Promise.all(disposers.map(dispose => dispose())) }
+  }
+  try {
+    const capabilities = await remote.capabilities()
+    if (!capabilities.ok || capabilities.value.protocolVersion !== 1) {
+      return async () => { await Promise.all(disposers.map(dispose => dispose())) }
+    }
+  } catch {
+    return async () => { await Promise.all(disposers.map(dispose => dispose())) }
+  }
+  const uninstall = installFilePreviewSurfaces(ctx, remote)
+  return async () => {
+    await uninstall()
+    await Promise.all(disposers.map(dispose => dispose()))
+  }
+}
+
+/**
+ * Install every visible file-preview client surface after a successful host
+ * handshake. Tests can drive this boundary directly; disposal removes the
+ * dictionaries, tab type/body, turn row, mention wrapper, and history face.
+ */
+export function installFilePreviewSurfaces(
+  ctx: Context,
+  remote: FilePreviewRemote,
+): () => Promise<void> {
+  const disposers: Array<() => void | Promise<void>> = []
+  disposers.push(ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-file-preview: dictionaries'))
+  const t = ctx.locale.bind(NS)
   // The turn card's host-fed loader: one RPC warms every turn rendered so far
   // (the host returns the whole per-turn map, cached by the log watermark).
   const turnFilesLoader = createTurnFilesLoader(remote)
@@ -112,7 +139,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // 'chatFileMentions' stays pending until the service appears (and re-runs on
   // HMR re-provide, re-wrapping); in compositions without ui-deliverables it
   // simply never activates, without blocking this plugin.
-  ctx.plugin({
+  const mentionsFiber = ctx.plugin({
     name: '@khorsheed/dsh-client-ui-file-preview/mentions-wrap',
     inject: ['chatFileMentions'],
     apply: (sub: Context) => {
@@ -131,6 +158,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       })
     },
   })
+  disposers.push(() => mentionsFiber.dispose())
 
   // Row gestures: copy always works (clipboard needs no host capability);
   // folder/IDE gestures key off the once-per-page open-in-app probe — a host
@@ -168,10 +196,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // PLUS address claims — `dsh-resource://file/**` for every session-scoped
   // path the preview stack renders; see definition.tsx). The default band is
   // 'extension', outranking the official document tab's 'fallback'.
-  ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t)), 'ui-file-preview: tab type')
+  disposers.push(ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t)), 'ui-file-preview: tab type'))
 
   // Stage two: the body under the type's id in the keyed pane seat.
-  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+  disposers.push(ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: FILE_PREVIEW_ID,
     locale: NS,
@@ -185,9 +213,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       loadOpenInApps: () => { void openInApps.load() },
       hooks: { openInApps: openInApps.apps },
     }),
-  }, FilePreviewTab)), 'ui-file-preview: tab body')
+  }, FilePreviewTab)), 'ui-file-preview: tab body'))
 
-  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+  disposers.push(ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
     // Priority -1: the chain elects the first non-null select in ASCENDING
     // priority order (ui-slots ChainSelect contract), and the official
@@ -203,7 +231,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (): FilePreviewTurnRowInjected => ({
       turnFiles: (sessionId: SessionId, turn: number) => turnFilesLoader(sessionId, turn),
     }),
-  }, TurnFileRow))
+  }, TurnFileRow)))
 
   // The change-history document renderer: metadata into the registry, the
   // body into the keyed document seat. `priority: 'builtin'` keeps the
@@ -213,7 +241,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // cordis only re-wakes fibers that declare a service in `inject` — so the
   // registrations live in a nested plugin pended on the service; in a
   // composition without document previews it simply never activates.
-  ctx.plugin({
+  const historyFiber = ctx.plugin({
     name: '@khorsheed/dsh-client-ui-file-preview/history-renderer',
     inject: ['documentPreviews'],
     apply: (sub: Context) => {
@@ -240,8 +268,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       )), 'ui-file-preview: history renderer body')
     },
   })
+  disposers.push(() => historyFiber.dispose())
 
   return async () => {
-    await Promise.all(disposers.map(dispose => dispose()))
+    for (const dispose of disposers.reverse()) await dispose()
   }
 }

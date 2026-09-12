@@ -18,6 +18,8 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { DocumentPreviewDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
+import type { FileSystem } from '@deepseek-ai/dsh-fs'
+import { FilePreviewService } from '@khorsheed/dsh-file-preview'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND } from '../src/client/definition.tsx'
 import { FILE_HISTORY_ID } from '../src/client/history-definition.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -26,7 +28,7 @@ import type { FilePreviewTabInjected, FilePreviewTurnRowInjected } from '../src/
 const sid = (k: string): SessionId => k as SessionId
 
 /** Boot the plugin over fake faces; the filePreview Remote records calls. */
-async function bench(opts: { documentPreviews?: boolean } = {}) {
+async function bench(opts: { documentPreviews?: boolean; host?: boolean } = {}) {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const list = vi.fn(async (...args: unknown[]) => {
@@ -57,7 +59,15 @@ async function bench(opts: { documentPreviews?: boolean } = {}) {
   // `ctx.get('remote.filePreview')` after the mount settles).
   const mount = vi.fn(async () => () => {})
   Object.assign(ctx.remote, { $mount: mount })
-  ctx.provide('remote.filePreview', { list, turnFiles, reveal, openExternal })
+  let host: FilePreviewService | undefined
+  if (opts.host !== false) {
+    Object.assign(ctx, { fs: {} as FileSystem })
+    host = new FilePreviewService(ctx, { captureBashWrites: false })
+    ctx.provide('remote.filePreview', {
+      capabilities: () => Promise.resolve({ ok: true, value: host!.capabilities() }),
+      list, turnFiles, reveal, openExternal,
+    })
+  }
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('sessions', {
     list: { getSnapshot: () => ({ current: sid('s1'), byId: { s1: { cwd: '/work' } } }) },
@@ -97,7 +107,7 @@ async function bench(opts: { documentPreviews?: boolean } = {}) {
   } as never, (() => null) as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, calls, list, turnFiles, reveal, openExternal, mount, registered, previews, openTab }
+  return { ctx, fiber, host, calls, list, turnFiles, reveal, openExternal, mount, registered, previews, openTab }
 }
 
 /** The tab body entry's inject factory, called the way the outlet would. */
@@ -122,6 +132,34 @@ function turnApi(b: Awaited<ReturnType<typeof bench>>) {
 }
 
 describe('ui-file-preview browser plugin', () => {
+  it('client only: a missing host handshake leaves every UI surface absent', async () => {
+    const b = await bench({ host: false })
+    expect(b.mount).toHaveBeenCalledTimes(1)
+    expect(b.registered).toHaveLength(0)
+    expect(b.previews).toHaveLength(0)
+    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
+    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(0)
+    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
+    await b.fiber.dispose()
+  })
+
+  it('host only: the real host service exposes a zero-session protocol handshake without UI', () => {
+    const ctx = new Context()
+    Object.assign(ctx, { fs: {} as FileSystem })
+    const host = new FilePreviewService(ctx, { captureBashWrites: false })
+    expect(host.capabilities()).toEqual({ protocolVersion: 1 })
+    expect(ctx.get('sidebarRightTabs')).toBeUndefined()
+  })
+
+  it('paired: the client probes the real host handler before installing all UI surfaces', async () => {
+    const b = await bench()
+    expect(b.host).toBeInstanceOf(FilePreviewService)
+    expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND)).toBe(true)
+    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(1)
+    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
+    await b.fiber.dispose()
+  })
+
   it('mounts the Remote and registers the tab type, the body, and the turn row', async () => {
     const b = await bench()
     expect(b.mount).toHaveBeenCalledTimes(1)
@@ -216,6 +254,7 @@ describe('ui-file-preview browser plugin', () => {
     new RemoteService2(ctx2)
     Object.assign(ctx2.remote, { $mount: vi.fn(async () => () => {}) })
     ctx2.provide('remote.filePreview', {
+      capabilities: vi.fn(async () => ({ ok: true, value: { protocolVersion: 1 } })),
       list: vi.fn(async () => ({ ok: true, value: { entries: [], asOfSeq: -1, truncated: false } })),
       turnFiles: vi.fn(), reveal: vi.fn(), openExternal: vi.fn(),
     })

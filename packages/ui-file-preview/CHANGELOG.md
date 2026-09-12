@@ -1,5 +1,15 @@
 # 变更记录
 
+## 未发布
+
+- 注册任何 UI 前探测宿主的零会话 `capabilities()` Remote；client-only 组合不再留下错误卡、renderer、locale 或空 tab。
+- 导出 `installFilePreviewSurfaces(ctx, remote)`，让握手、安装与卸载边界可直接测试。
+
+## 未发布
+
+- 注册任何 UI 前探测宿主的零会话 `capabilities()` Remote；client-only 组合不再留下错误卡、renderer、locale 或空 tab。
+- 导出 `installFilePreviewSurfaces(ctx, remote)`，让握手、安装与卸载边界可直接测试。
+
 ## 0.3.0（2026-09-11）
 
 迁入官方 0.1.5 右栏体系，退役绕行缝 S1。
