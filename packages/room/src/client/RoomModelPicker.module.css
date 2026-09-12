@@ -1,0 +1,220 @@
+/* The room composer's main-agent model seat: the official ModelSelect skin
+   (harness ui-model-selection ModelSelect.module.css) — same trigger metrics
+   and tokens, same two-level menu card — with the menu anchored absolutely
+   above the picker instead of portaled (the takeover card does not clip the
+   row's upward overflow). Every token reference carries a fallback chain,
+   matching the composer card's rule. */
+
+.root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Figma 313:14108 ToggleButton: 13/20 medium secondary label, 4px gap, 14px
+   caption chevron; 28px chip height. */
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border: none;
+  border-radius: 24px;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.8));
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+.trigger:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3, rgba(127, 127, 127, 0.4));
+}
+
+.trigger:disabled {
+  color: var(--dsw-alias-label-dimmed, rgba(127, 127, 127, 0.5));
+  cursor: default;
+}
+
+.triggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Effort value beside the model name (same 13/20/500, caption tone); it
+   ellipsizes away before the model name loses a pixel. */
+.triggerEffort {
+  flex-shrink: 1000;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+}
+
+.chevron,
+.chevronOpen {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+  transition: transform 120ms ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* The menu card (figma MenuDropdown 496:26454 / ui-primitives Menu): r20,
+   menu surface, prominent elevation, 4px inset padding, right edges aligned
+   with the trigger. */
+.menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: min(240px, calc(100vw - 32px));
+  max-width: min(420px, calc(100vw - 32px));
+  max-height: min(360px, calc(100vh - 96px));
+  overflow: hidden;
+  padding: 4px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  box-shadow: var(--dsw-elevation-prominent, var(--dsw-shadow-lv3, 0 12px 32px 0 rgba(0, 0, 0, 0.08)));
+  color: var(--dsw-alias-label-primary, #1f2329);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.28));
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2, rgba(127, 127, 127, 0.4));
+}
+
+.status {
+  padding: 10px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.groups {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.group + .group {
+  margin-top: 4px;
+}
+
+.groupTitle {
+  padding: 5px 8px 3px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+/* Option row: 38px, r10, trailing check as the selection marker (the Menu
+   primitive's selected treatment — never a fill). */
+.option {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-width: 100%;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 10px;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover:not(:disabled),
+.option:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+.option:disabled {
+  color: var(--dsw-alias-label-dimmed, rgba(127, 127, 127, 0.5));
+  cursor: default;
+}
+
+.modelName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 18px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+/* Two-level root cells (figma 496:26454 .Menu_cell): 40px row, 10px side
+   padding, 8px gap, 10px radius; 14/22 label in primary, value in tertiary,
+   right chevron drilling into the sub-list. */
+.cell {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cell:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+.cellLabel {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.cellValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.cellChevron {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}

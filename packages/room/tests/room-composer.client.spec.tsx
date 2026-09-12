@@ -11,7 +11,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { RoomComposer, selectRoomComposer } from '../src/client/RoomComposer.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
-import type { RoomComposerProps, RoomMutationOutcome } from '../src/client/slots.ts'
+import type {
+  RoomComposerProps, RoomModelDirectory, RoomModelDirectoryState, RoomModelSelection, RoomMutationOutcome,
+} from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
 
 afterEach(() => {
@@ -70,6 +72,7 @@ async function bench(
     t?: RoomComposerProps['t']
     session?: SessionSlice
     state?: RoomState
+    modelDirectory?: RoomModelDirectory
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -91,6 +94,7 @@ async function bench(
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
     browseDirectory: vi.fn(async () => null),
+    modelDirectory: options.modelDirectory,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -398,5 +402,103 @@ describe('RoomComposer inherited environment duties', () => {
     cleanup()
     await bench(vi.fn())
     expect(screen.queryByTestId('room-queue-strip')).toBeNull()
+  })
+})
+
+/** A stubbed official per-session directory: the shared store is real, select/load are spies. */
+function modelDirectory(over: Partial<RoomModelDirectoryState> = {}) {
+  const store = createSnapshotStore<RoomModelDirectoryState>({
+    current: { provider: 'p1', model: 'm1' },
+    groups: [
+      {
+        id: 'p1',
+        name: 'Provider One',
+        models: [
+          { id: 'm1', name: 'Model One' },
+          { id: 'm2', name: 'Model Two' },
+        ],
+      },
+    ],
+    status: 'ready',
+    error: null,
+    ...over,
+  })
+  return {
+    store,
+    load: vi.fn(async () => store.getSnapshot()),
+    select: vi.fn(async (selection: RoomModelSelection) => {
+      store.set({ ...store.getSnapshot(), current: selection })
+    }),
+  }
+}
+
+describe('RoomComposer main-agent model picker', () => {
+  it('renders no picker when the modelDirectories service is absent (silent degrade)', async () => {
+    await bench(vi.fn())
+    expect(screen.queryByRole('button', { name: 'composer.model.picker' })).toBeNull()
+  })
+
+  it('shows the current selection on the trigger, immediately before the send circle', async () => {
+    await bench(vi.fn(), { modelDirectory: modelDirectory() })
+    const trigger = screen.getByRole('button', { name: 'composer.model.picker' })
+    expect(trigger.textContent).toContain('Model One')
+    // The official composer's order: model seat → send, adjacent siblings.
+    expect(trigger.parentElement!.nextElementSibling).toBe(screen.getByRole('button', { name: 'composer.send' }))
+  })
+
+  it('lists the directory models in the drilled-in model pane', async () => {
+    await bench(vi.fn(), { modelDirectory: modelDirectory() })
+    fireEvent.click(screen.getByRole('button', { name: 'composer.model.picker' }))
+    // The root pane is the Model / Effort cell pair; drill into the model list.
+    fireEvent.click(screen.getByRole('menuitem', { name: /composer\.model\.menu\.model/ }))
+    const options = screen.getAllByRole('menuitemradio')
+    expect(options.map(option => option.textContent)).toEqual(['Model One', 'Model Two'])
+    // The current selection carries the checked radio.
+    expect(options[0]!.getAttribute('aria-checked')).toBe('true')
+    expect(options[1]!.getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('selects through directory.select and re-labels from the shared store', async () => {
+    const directory = modelDirectory()
+    await bench(vi.fn(), { modelDirectory: directory })
+    const trigger = screen.getByRole('button', { name: 'composer.model.picker' })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /composer\.model\.menu\.model/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Model Two' }))
+
+    await waitFor(() => { expect(trigger.textContent).toContain('Model Two') })
+    expect(directory.select).toHaveBeenCalledWith({ provider: 'p1', model: 'm2' })
+  })
+
+  it('shows the effort suffix in the trigger when the directory exposes reasoning metadata', async () => {
+    const directory = modelDirectory({
+      current: { provider: 'p1', model: 'm1', reasoningEffort: 'high' },
+      groups: [
+        {
+          id: 'p1',
+          name: 'Provider One',
+          models: [
+            {
+              id: 'm1',
+              name: 'Model One',
+              reasoning: { efforts: [{ id: 'high', name: 'High' }, { id: 'low', name: 'Low' }] },
+            },
+          ],
+        },
+      ],
+    })
+    await bench(vi.fn(), { modelDirectory: directory })
+    expect(screen.getByRole('button', { name: 'composer.model.picker' }).textContent).toContain('High')
+  })
+
+  it('surfaces a refused switch on the composer error line', async () => {
+    const directory = modelDirectory()
+    directory.select.mockRejectedValue(new Error('selectModel failed'))
+    await bench(vi.fn(), { modelDirectory: directory, t: makeTranslate(zh) as RoomComposerProps['t'] })
+    fireEvent.click(screen.getByRole('button', { name: zh['composer.model.picker'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(zh['composer.model.menu.model']) }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Model Two' }))
+    expect(await screen.findByRole('alert')).toBeDefined()
+    expect(screen.getByRole('alert').textContent).toBe(zh['composer.model.failed'])
   })
 })

@@ -44,7 +44,7 @@ import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
-  InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomMutationOutcome,
+  InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
   RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
@@ -114,6 +114,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
 
   const openSession = (sessionId: SessionId): void => { ctx.sessions.open(sessionId) }
+  // The official per-session model directories (ui-model-selection's public
+  // client service, augmented onto Context by that plugin): the composer's
+  // main-agent model picker resolves the SAME directory the official model
+  // seat renders, so its select() writes exactly the official seat's durable
+  // per-session selection. Probed once — a host without the plugin gets no
+  // picker (duck-type guard, never an inject: absence must not fail the boot).
+  const modelDirectories = (() => {
+    const candidate = ctx.get('modelDirectories') as { directoryFor?: unknown } | undefined
+    return candidate !== undefined && typeof candidate.directoryFor === 'function'
+      ? candidate as { directoryFor: (sessionId: SessionId) => RoomModelDirectory }
+      : undefined
+  })()
+  /** The room session's own directory; undefined degrades to no picker. */
+  const modelDirectoryFor = (sessionId: SessionId): RoomModelDirectory | undefined => {
+    if (modelDirectories === undefined) return undefined
+    // directoryFor fails loud on an unknown session — a resolving race must
+    // never break the composer inject.
+    try {
+      return modelDirectories.directoryFor(sessionId)
+    } catch {
+      return undefined
+    }
+  }
   const cancelMember = async (sessionId: SessionId, member: string): Promise<void> => {
     if (remote === undefined) return
     const carried = await remote.cancel({ sessionId, name: member })
@@ -307,6 +330,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...tasksFace(sessionId),
       ...inviteFace(sessionId),
       submit,
+      modelDirectory: modelDirectoryFor(sessionId),
       // The hidden official bar's Stop: the runtime session face's cancel
       // (the same verb ui-conversation's own Stop injects). A torn-down
       // binding degrades to a no-op.

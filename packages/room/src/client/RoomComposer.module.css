@@ -88,11 +88,13 @@
   user-select: none;
 }
 
-/* The room box has no left tools; the row only seats the send circle. */
+/* The room box has no left tools; the row seats the main-agent model seat and
+   the send circle, in the official composer's order (model seat → send). */
 .row {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 4px;
   padding: 0 8px 6px;
 }
 

@@ -323,6 +323,20 @@ describe('MemberComposer', () => {
   })
 
   describe('model picker', () => {
+    it('seats the picker in the row\'s right cluster, immediately before the send circle, with an always-visible chevron', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+      const send = screen.getByRole('button', { name: zh['member.send'] })
+
+      // The official composer's order: model seat → send, adjacent in the
+      // right cluster (the chip's picker wrapper is the send button's
+      // immediate previous sibling).
+      expect(chip.parentElement!.nextElementSibling).toBe(send)
+      // The chevron is part of the trigger, open or closed.
+      expect(chip.querySelector('svg')).not.toBeNull()
+    })
+
     it('renders no picker when the memberModel answer is null (brokerless harness)', async () => {
       const memberModel = vi.fn().mockResolvedValue(null)
       render(<MemberComposer {...props({ memberModel })} />)

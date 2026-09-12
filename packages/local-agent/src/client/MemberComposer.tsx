@@ -16,6 +16,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalAgentDelegationView, LocalAgentModelInfo, LocalAgentModelSource, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
@@ -364,6 +365,9 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           onKeyDown={onKeyDown}
         />
         <div className={css.row}>
+          {/* The model seat sits in the right cluster, immediately before the
+              Send/Stop circle — the official composer's order (model seat →
+              send, ui-model-selection's ModelSelect). */}
           {modelInfo !== null && (
             <div className={css.modelPicker} ref={modelPickerRef}>
               <button
@@ -378,7 +382,8 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
                 aria-expanded={modelMenuOpen}
                 onClick={() => { setModelMenuOpen(open => !open) }}
               >
-                {modelLabel(modelInfo)}
+                <span className={css.modelChipLabel}>{modelLabel(modelInfo)}</span>
+                <IconChevronDownOutline14 className={modelMenuOpen ? css.chevronOpen : css.chevron} />
               </button>
               {modelMenuOpen && (
                 <div className={css.modelMenu} role="menu" aria-label={t('member.model.picker')}>

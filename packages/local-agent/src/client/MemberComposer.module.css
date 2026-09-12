@@ -91,48 +91,76 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 4px;
   padding: 0 8px 6px;
 }
 
-/* The member model picker: a quiet chip on the send row's left edge, opening
-   a small upward menu (the composer sits at the conversation's bottom). */
+/* The member model picker: the official composer model seat's look (harness
+   ui-model-selection ModelSelect.module.css .trigger) in the send row's right
+   cluster, immediately before the Send/Stop circle, opening a small upward
+   menu (the composer sits at the conversation's bottom). */
 .modelPicker {
   position: relative;
   display: flex;
   align-items: center;
-  margin-right: auto;
+  min-width: 0;
 }
 
 .modelChip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   max-width: 220px;
-  padding: 3px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border: none;
+  border-radius: 24px;
+  outline: none;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
-  transition: background-color 100ms ease;
 }
 
 .modelChip:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
+}
+
+.modelChip:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
 .modelChip:disabled {
-  opacity: 0.5;
+  color: var(--dsw-alias-label-dimmed);
   cursor: default;
+}
+
+.modelChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron,
+.chevronOpen {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-caption);
+  transition: transform 120ms ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
 }
 
 .modelMenu {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  right: 0;
   z-index: 10;
   display: flex;
   flex-direction: column;

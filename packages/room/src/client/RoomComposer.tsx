@@ -26,8 +26,12 @@
  * re-homed INTO this component — the main agent's turn Stop (the send circle
  * swaps while `running`), the dock capsules (RoomDockCapsules), the main
  * agent's todo strip (RoomTodoStrip, the `todos` projection), the queued-
- * messages strip (RoomQueueStrip, the session snapshot's queue), and the
- * session stats row (RoomStatsLine below the card).
+ * messages strip (RoomQueueStrip, the session snapshot's queue), the session
+ * stats row (RoomStatsLine below the card), and the main agent's model seat
+ * (RoomModelPicker over the official per-session ModelDirectory — the seat
+ * itself is single-owner and cannot be re-hosted, so the picker is our own
+ * trigger on the same directory; a host without ui-model-selection gets no
+ * picker).
  */
 import {
   useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
@@ -41,6 +45,7 @@ import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomDockCapsules } from './RoomDockCapsules.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip } from './RoomQueueStrip.tsx'
+import { RoomModelPicker } from './RoomModelPicker.tsx'
 import css from './RoomComposer.module.css'
 
 interface ActiveMention {
@@ -89,7 +94,8 @@ export function selectRoomComposer(
 /** The room composer takeover component. */
 export function RoomComposer({
   sessionId, inputActions, roomStore, submit, stop, addTask, closeTask, setGoal,
-  roomCwd, invite, listProviders, listNames, browseDirectory, modelChoices, roomChrome, useSession, useProjection, t,
+  roomCwd, invite, listProviders, listNames, browseDirectory, modelChoices, roomChrome,
+  modelDirectory, useSession, useProjection, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
@@ -265,6 +271,15 @@ export function RoomComposer({
           onKeyDown={onKeyDown}
         />
         <div className={css.row}>
+          {/* The main agent's model seat: the official per-session directory's
+              own trigger, immediately before the Send/Stop circle (the
+              official composer's order: model seat → send). It writes the
+              SESSION selection only — an @-addressed member dispatch rides
+              room's own submit remote and is never touched. Absent service =
+              no picker. */}
+          {modelDirectory !== undefined && (
+            <RoomModelPicker directory={modelDirectory} onError={setError} t={t} />
+          )}
           {/* Send/Stop swap, the official InputBar's ordinary-session
               posture: while the room's own main-agent turn runs, the primary
               circle is Stop (the fallback bar's Stop hides with it), and a
