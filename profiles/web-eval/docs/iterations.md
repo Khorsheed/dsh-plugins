@@ -288,8 +288,10 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T32b ✅ | 代码 | eval：/eval conditions provision 在实例内接 capability-catalog 的 snapshotFor 填 ProvisionOptions.capabilities，preset 条件才能就绪；CLI 路径照旧拒绝 | T32 | 合入 main `376838f`（2026-09-12，四提交）；`instanceCapabilityProbe` 读回 scope 子 profile 实际 roster 的 preset、核对两边指向同一目录、再 `snapshotFor`；就绪检查再量一次，过期 lock 报「preset changed after provision」并指回 provision；探针拒测也进 CAPABILITIES_UNMEASURED（T32 遗留）；真机两 scope 两哈希、改技能正文旧 lock unready、重 provision 过；validate 离线仍报 ready（接受，见验收记录） |
 | T33a ✅ | 运维 | 3171 回到 ankh-guard 守着的健康态（启动器透传 stdout 给看门狗）、源码模式重装到 main `376838f`（T30d / T29d / T32b 与 eval 预设的 persona 修正落地）、capability-catalog 能量 `eval` 预设 | T30d T29d T32b | 2026-09-12 验收：启动器透传后看门狗 18 秒证到就绪（此前四次 60 秒超时）、canary PASS，attempt log 由看门狗就地脱敏、无明文 token；`install.sh --source --fresh` 从 `b7fb020` 打 27 个成员、零 npm；四项 pin 在位，三个 core 行不带 tools、tier 在 eval 预设三行上；四件核验齐：run.meta.orchestrator 带 capabilities（caps 面 37 工具 3 技能）、dsh 委派回读到模型 / 用量 / 工具调用、T29d 计划到 released、eval 预设 37 工具含三套机制工具而 standard 28 个一套没有；deployment proof 因缺 preflight 绑定 FAIL、credentialRepo 仍指 T29c worktree——放行方案见验收记录（专用 worktree，不指主检出）；re-adopt 已做：活 spec 指 `../dsh-plugins-wt-eval-guard`（guard/eval-3171 @ b7fb020）、profile web-eval、带 preflight 块，看门狗从稳定目录起，restart evidence 与 composition preflight 首次 PASS；deployment proof 仍 FAIL——ankh-guard 要求 harnessRoot 也是 git 检出而工具链目录是 npm 装的，归 ankh-guard 线；T29c worktree、两条旧分支、主检出的 .dsh-guard-state/ 已由协调者清掉 |
 | T33d | 代码 | eval / mission / datasets / lab 四个 CLI 的入口守卫拿 `process.argv[1]` 不 realpath 就与 `import.meta.url` 比——经 pnpm `.bin` 软链调用时永不相等，主体不执行、退出 0、零输出；lab 的 CLI 路径把 `dsh-mission is-releasable` 的退出码当释放闸，空跑的 0 会被读成放行 | 无 | 四处守卫 realpath 后比对；软链调用有输出、直连不变 |
-| T33b | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型——P0 先证机制与配对形状，真题预算先报 | T33a | 两份 P0 配对结果 + 真题预算 |
-| T33c | 运维 | pilot D：sub-dsh × 两 preset（同工具、不同技能）——两 scope 各 provision、两 caps 哈希、P0 一轮 | T33a | P0 配对结果 + 真题预算 |
+| T33e | 环境 | 题集镜像 `eval-env:pinned` 上 0.1.5 线：dsh 闭包从 rc-0.1.5-rc.1 工具链打、headless 包从主检出源码打 tarball 喂进镜像（不从 npm）、三家 CLI 版本与宿主对齐；四家容器就绪各过一次（只到就绪） | T33a | 新 digest 落 lock；dsh / claude 容器就绪 ready；claude 根因结论 |
+| T33f | 代码 | local-agent-dsh：sub-dsh 的 scoped home 在宿主与单元两侧都成立——宿主的 profiles/node_modules 愈合「补缺不换错」，同一 scope 先被哪侧碰过另一侧就坏；先出方案再改 | T29 T20c | 方案（2–3 候选 + 推荐）→ 同一 scope 宿主 provision 后容器委派 ready、反向亦然 |
+| T33b ⏸ | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型——P0 先证机制与配对形状，真题预算先报 | T33a T33e T33f | 2026-09-12 停在缺陷报告：判官在宿主轮就绪、按次模型证据到手；两家选手容器轮就绪全败（dsh：scoped home 的 profiles/node_modules 被宿主侧与容器侧的 dsh 各自「愈合」成两套绝对路径混在一起；claude：未定根因）。不改走宿主路径——报告只在四条不变量全 ok 时开比较节，宿主轮的环境指纹是 unverifiable，配对报告交不出来。上游根因是镜像仍在旧宿主线（→ T33e），两侧路径混用是第二层（→ T33f）；条件、计划、预算先交，容器轮待两者后重跑 |
+| T33c | 运维 | pilot D：sub-dsh × 两 preset（同工具、不同技能）——两 scope 各 provision、两 caps 哈希、P0 一轮 | T33a T33e T33f | P0 配对结果 + 真题预算 |
 
 T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个条件今天共用一份作用域目录（T20c 记的边界），模型之外的因子——登录身份、作用域配置——没法按条件分开；T30b、T31 都压在它上面。
 
@@ -318,6 +320,8 @@ T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个
 **T33a re-adopt（2026-09-12）**：活 spec 已指专用锚点 worktree、profile web-eval、带 preflight 块（surface built + runner sha + install anchor）；换 supervisor 走的是第三条路——`reconfigure` 被拒（隔离 home 快照对悬空软链 fail closed，~/.dsh-lab 的 dsh scope 里有一条 `@types/react` 还指容器侧路径，实施者没动它，对）、`supervise --takeover-from` 被拒（独立路径上没有 start token），于是 SIGTERM 旧看门狗、从 ~/.dsh-lab 起新的，停机 33 秒，cwd 问题随之根除。restart evidence 与 composition preflight 首次真跑并 PASS；deployment proof 仍 FAIL，报错换成「harness root 要是 git 仓库」——ankh-guard 的 `captureDeploymentFingerprint` 对 harnessRoot 也取 git HEAD，工具链目录是 npm 装的，这条线上证不出来，代价是每次重启前重录 10 分钟保鲜的绿色凭据（与改前相同，不是回归），归 ankh-guard 线。协调者清掉了 T29c 的 worktree 与分支、事故回滚留的 guard-backup 分支、主检出里写错地方的 `.dsh-guard-state/`。
 
 **交 ankh-guard 线（2026-09-12，3171 上实测）**：① deployment proof 对 harnessRoot 也要求干净 git 检出，npm 装的工具链永远证不出来——建议非 git 的 harness root 按已装 dsh 的 package.json 版本 + 安装锚点 sha 取指纹；② reconfigure 的隔离 home 快照对每条软链 statSync 目标，悬空一条整体 fail closed——评测家族的 scoped home 里有宿主与容器两边各自成立的绝对软链，建议跳过并记一行；③ `supervise --takeover-from` 在脱离 cutover 的独立路径上没有 start token，只能拒，换 supervisor 只剩停机重起；④ CLI 没带 DSH_HOME / --state-dir 时退到 `<cwd>/.dsh-guard-state`，在 git 检出里跑就悄悄写进仓库根，建议非 app layout 下无显式 state dir 即拒或至少打印落点；⑤ 看门狗对 credentialRepo 的回滚是 `git reset --hard`，文档应明说它必须是专用检出、不能是开发工作区。
+
+**T33b 中止（2026-09-12）**：pilot B / C 的判官在宿主轮就绪、按次模型证据到手，两家选手在容器轮就绪全败。实施者把 dsh 的根因坐实到 scoped home：profiles/node_modules 里 260 条链指宿主工具链（9/11 宿主侧 dsh 愈合的）、232 条指容器里的 harness 检出（9/12 容器侧愈合的），宿主的愈合是补缺不换错，同一个 scope 先被哪侧碰过另一侧就坏——而 provision / effectiveSettings / 就绪探针必在宿主侧碰、委派在容器侧跑。claude 未定根因。协调者核了两件事后定下花钱的方式：一、**不改走宿主路径**——report.ts 的 `comparisonAllowed` 要四条不变量全 ok，宿主轮的环境指纹是 `unverifiable`（本 run 无指纹），比较节开不了，I2 的 pilot A 就是这样被拒的，四格委派换不到判据；二、**上游根因是镜像**——`eval-env:pinned` 是 9/8 建的，dsh 闭包从当时的 harness 检出打（0.1.1-rc.2 线）、headless 包 ARG 是 0.1.0-rc.6，宿主 9/11 切到 0.1.5 后镜像没跟着动；T29c 回归第 5 项与 T29d 都只用 codex 验容器轮，codex 不用镜像里的 dsh，所以三天没暴露——**回归清单的缺口**：容器轮的验证必须覆盖用镜像内 harness 的那一家。于是：一次 codex 的 t29d 计划定性容器轮没因 T33a 整体回归（约 4 分钟），然后停，交缺陷报告与预算；镜像重建立 T33e，两侧路径混用立 T33f（先方案）；T33b / T33c 的容器轮待两者后重跑。
 
 T32（2026-09-10 定）：pilot D 的口径是「sub-dsh × 两 preset」——preset 只管得到我们自己组的子实例，三家外部 CLI 的技能包留 I6 单独做。
 
@@ -1790,6 +1794,17 @@ I4 的目标是「同 harness 两条件的配对结果」。机制已齐：条�
 题库分支与 commit；两份计划与新条件的路径；两份报告的比较节与不变量原文；预算表；发现的缺陷清单。
 ```
 
+**补充（2026-09-12，选手容器轮就绪全败之后）**：
+
+```text
+# T33b 补充：这轮的钱怎么花——一次 codex 定性，然后停，出缺陷报告
+
+1. 先跑一次 plans/t29d-container-egress.json（codex × P0 × 1 rep，约 4 分钟）：只为证明 T33a 换 supervisor 之后容器轮没有整体回归。通过记一行；失败就停下把原文发来，那是比 pilot 更优先的事故。
+2. 不走宿主路径拿配对报告：报告只在四条不变量全 ok 时才开比较节（report.ts 的 comparisonAllowed），宿主轮没有环境指纹、那条是 unverifiable，比较节开不了，「两份配对报告 + 四条不变量」交不出来，多花四格委派换不到判据。
+3. 不再在容器轮试 dsh / claude：根因在你查到的上一层——eval-env:pinned 是 9/8 建的，dsh 闭包是旧线、headless 包 ARG 是 0.1.0-rc.6，宿主 9/11 切到 0.1.5 后镜像没跟着动（T29c 第 5 项与 T29d 只用 codex 验容器轮，codex 不用镜像里的 dsh）。镜像重建立了 T33e；你查到的 scoped home 两侧路径混用是第二层，立了 T33f（先方案）。
+4. 然后停，交缺陷报告（你选项 4 的清单）：题库 worktree / 分支、四条新条件、两份计划（validate 0 error）、判官侧按次模型证据、dsh 根因（两套链的计数与日期写进去）、claude 的就绪原文与已排除项、基于历史用量的预算表。日志写 docs/i4-pilots-log.md，标「容器轮待 T33e / T33f 后重跑」。judge-dsh-v4-pro 的 model.declared 改正照旧。
+```
+
 ### T33c · 运维：pilot D（sub-dsh × 两 preset，同工具不同技能）（可发，依赖 T33a；与 T33b 不并行）
 
 ```text
@@ -1820,6 +1835,61 @@ T32 与 T32b 的 Agent Note（哈希的规范形、量的是哪张面、守卫�
 
 ## 回报
 题库分支与 commit；两份 lock（脱敏）与 conditions diff 原文；报告比较节与不变量；就绪拒绝原文；预算；缺陷清单。
+```
+
+### T33e · 环境：题集镜像上 0.1.5 线——dsh 闭包与 headless 包随宿主切换重建，四家容器就绪各过一次（可发）
+
+```text
+# 任务 T33e：eval-env:pinned 上 0.1.5 线
+
+## 背景
+eval-env:pinned 是 2026-09-08（I3·T16）建的：dsh 闭包由 env/mk-dsh-closure.mjs 从当时的 harness 检出打出（0.1.1-rc.2 线），headless 包 ARG DSH_HEADLESS_VERSION=0.1.0-rc.6 从本地包镜像装。9/11 宿主切到 0.1.5-rc.1 后镜像没跟着动——T29c 回归第 5 项与 T29d 只用 codex 验容器轮，codex 不用镜像里的 dsh，所以没暴露。T33b 起 pilot B/C 时 dsh 与 claude 在容器轮就绪全败：dsh 的 scoped home 由 0.1.5 线的 local-agent-dsh 写，容器里跑的却是旧线 dsh + 旧 headless；claude 未定根因。镜像不上新线，pilot B/C/D 的容器轮都起不来。
+
+## 先读
+题库 env/README.md、env/Dockerfile、env/build.sh、env/mk-dsh-closure.mjs、env/net/*（本地包镜像 eval-registry 与代理）、docs/i3-env-log.md（G1 基础镜像 digest、G6 非 root 下包镜像被绕过、G7 dsh 在 Linux 上的路、G10 两个 codex、G12 可复现性）；profiles/web-eval/cordis.patch.yml 里 headlessBundleDir 与 cliLaunch 两段注释；T33b 的缺陷报告；T29c 的 Agent Note（宿主线与 npm 风控）。
+
+## 分支
+题库从 i1-walk 开 worktree，分支 i4-env-0.1.5；改 env/ 与 docs/i4-pilots-log.md（新一节）。dsh-plugins 不改代码。
+
+## 已定决定
+- dsh 闭包从 ~/.dsh-toolchains/rc-0.1.5-rc.1 打（npm 装的 @deepseek-ai/dsh@0.1.5-rc.1），不再从 harness 源码检出打；闭包脚本若只认源码布局就改脚本，改动进题库。
+- headless 包不从 npm 拉（风控，且 0.1.5 对齐版本未发）：从主检出 main 源码模式打 tarball（install.sh 已会打，取它产出的 dsh-local-agent-dsh-headless tgz）喂给镜像的 COPY dsh-headless.tgz；ARG DSH_HEADLESS_VERSION 改为记 tarball 的 sha。
+- 三家 CLI 版本 ARG 与宿主上的一致（宿主 /codex /claude /kimi status 报的 cliVersion），差了就一起提到宿主的版本——两边同版本是容器轮公平的前提。
+- 镜像仍推 eval-registry / 本地 docker，tag eval-env:pinned 不变，digest 写进 env/versions.lock 与日志；基础镜像三个 digest 不动。
+- 验：t29c-four-harness-readiness.json 在容器轮跑一次就绪（只到就绪，不委派整格；四家各一次探针委派）。dsh 与 claude 必须 ready，kimi 配额不可用就记原文。dsh 的就绪用一个只在容器里用的新命名 scope（c-probe，device-auth 登录），不用宿主用过的默认 scope（T33f 落地前两侧共用一个 scope 必混）。claude 若仍不就绪，把就绪原文与容器内 credentialState 贴出来，不猜。
+
+## 约束
+不碰 ~/.dsh-official 与 3080；凭据不复制、不进镜像、不进日志；构建期的包镜像与代理是共享边车，要动先报；不从 npm 拉任何 @khorsheed 包；只跑就绪，不跑整格。
+
+## 完成判据
+新 digest 落 lock 与日志；四家（或三家 + kimi 原文）容器就绪 ready；镜像里 dsh --version 报 0.1.5-rc.1；validate 0 error。
+
+## 回报
+题库分支与 commit；docker build 关键行（脱敏）；四家就绪原文；镜像内 dsh / codex / claude / kimi 版本表；claude 结论。
+```
+
+### T33f · 代码：local-agent-dsh——sub-dsh 的 scoped home 在宿主与单元两侧都成立（先方案后改，可发第一步）
+
+```text
+# 任务 T33f：sub-dsh 的 scoped home 两侧都成立——先方案，后改
+
+## 背景
+T33b 实测：dsh 的 scoped home 里 profiles/node_modules 有 260 条链指宿主工具链（9/11 宿主侧 dsh 愈合出来的）、232 条指容器里的 harness 检出（9/12 容器侧 dsh 愈合出来的），两套绝对路径混在一个目录里，哪一侧起 dsh 都有一半悬空。宿主自身对 profiles/node_modules 的愈合是「补缺不换错」：先被哪一侧碰过，另一侧就坏。而 provision / effectiveSettings / 就绪探针在宿主侧碰，委派在容器侧跑，同一个 scope 必然两侧都碰。profile 的 headlessBundleDir / cliLaunch 注释早写了这是同一个结构性问题（「scoped home 该不该自足，交回 local-agent 定」）。
+
+## 先读
+packages/local-agent-dsh/src/provision.ts（子 profile 与 bundle 链）、container.ts / index.ts 的 exec 挂载；profiles/web-eval/cordis.patch.yml 的 headlessBundleDir 与 cliLaunch 两段；T17 / T20c / T29 / T32 的 Agent Note；宿主对 profiles/node_modules 愈合的规则（工具链里 @deepseek-ai/dsh 的 profile loader）。
+
+## 第一步：只出方案，不动代码
+两页以内，给出 2–3 个候选并推荐一个，例如：(a) 子 profile 的行只经 bundle 链解析、不依赖愈合出来的 node_modules；(b) 宿主侧与容器侧各自一份 profiles 目录（同一个 scope，profile 路径按侧切换）；(c) 两侧把工具链挂到同一个中性绝对路径（镜像与宿主约定）。每个候选写清：改哪个包、对 T20c 的挂载面与 T32 的能力哈希有没有影响、两侧同版本怎么保证。协调者定了再做第二步。
+
+## 分支（第二步）
+从 main 开 worktree ../dsh-plugins-wt-dsh-scoped-home-sides，分支 fix/local-agent-dsh-scoped-home-sides，只改 local-agent-dsh（必要时 local-agent），README 双语 + sidecar，Agent Note。
+
+## 完成判据（第二步）
+同一个 scope 先在宿主侧 provision + 就绪探针、再在容器里委派一轮，两侧都 ready、容器轮回读到模型；反过来先容器后宿主也成立；pilot-a-round1 复算相同。
+
+## 回报
+第一步：方案文档路径与推荐。第二步：分支与 commit、Agent Note、gate、两个顺序的真机原文。
 ```
 
 ## 四、验收规程
