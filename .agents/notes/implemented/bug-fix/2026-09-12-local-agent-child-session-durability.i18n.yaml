@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-12-local-agent-child-session-durability.md
+.agents/notes/implemented/bug-fix/2026-09-12-local-agent-child-session-durability.md: 8519a5a7956764a20556b37fe15122ae9464227c
+.agents/notes/implemented/bug-fix/2026-09-12-local-agent-child-session-durability.zh.md: fbe04c8c2fb98138cc7f801fd3aa0ab1a1b67fcd
