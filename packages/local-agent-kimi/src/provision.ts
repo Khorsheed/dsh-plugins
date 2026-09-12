@@ -180,6 +180,33 @@ export async function readKimiDefaultModel(homeDir: string): Promise<string | un
 }
 
 /**
+ * List the model identifiers the scoped config DEFINES: every
+ * `[models."…"]` table key (bare `[models.x]` keys included). This is the
+ * pickable vocabulary a model surface can offer without hardcoding a catalog —
+ * the same table `-m` resolves against. A missing or malformed config yields
+ * an empty list. Read-only: the config is authoritative.
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @returns the defined model identifiers, in file order, deduplicated.
+ */
+export async function listKimiConfigModels(homeDir: string): Promise<string[]> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return []
+  }
+  const models: string[] = []
+  for (const rawLine of text.split('\n')) {
+    const header = /^\[+([^\]]+)\]+$/.exec(rawLine.trim())
+    if (header === null) continue
+    const table = /^models\.(?:"([^"]+)"|([\w-]+))$/.exec(header[1]!)
+    const name = table?.[1] ?? table?.[2]
+    if (name !== undefined && name !== '' && !models.includes(name)) models.push(name)
+  }
+  return models
+}
+
+/**
  * Rewrite the scoped config's top-level `default_model` to `model`, so the
  * NEXT process started under this home runs that model. This is the resident
  * path's only lever: `kimi acp` takes no model flag (verified against kimi

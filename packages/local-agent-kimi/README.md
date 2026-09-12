@@ -55,7 +55,6 @@ base_url = "https://your-router.example/v1"
     thinkingEffort: high       # 推理强度;写入"全新"作用域 config.toml 的 [thinking] effort 与模型 default_effort(low/high/max,默认 high)。仅预置期生效——已存在的 config 永不覆盖
     live: false                # 长驻驱动:每成员常驻一个 kimi acp 进程,按轮发 session/prompt(runtime 级优雅取消 session/cancel、推送触发的镜像);关闭或通道不可用即回一次性 kimi -p
     liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
-    liveMirrorGranularity: event  # live 镜像粒度;两档都把每个子项全量折叠进会话日志,token 档额外把流式增量按节流(默认 ≥300ms 且 ≥200 字符)以快照实时写入,UI 合并为一条持续增长的消息
 ```
 
 ### 默认模型（`model`）
@@ -73,9 +72,11 @@ base_url = "https://your-router.example/v1"
 
 也就是说：一次性驱动不碰你的 `config.toml`，常驻驱动会改写其中的 `default_model` 一行。
 
-设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录）加上此前存过的值作为候选，保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键。
+设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录），保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键。输入框下方显示**生效模型及其来源**：键已设置就显示该值；未设置而作用域 config 有 `default_model` 就显示「跟随 CLI 配置：<模型>」；都没有就是「跟随 CLI 内置默认」。候选列表来自 model broker 的去重并集（本键、作用域默认、config 的 `[models."…"]` 表、最近存过的值）；宿主核心没有 broker 时卡片退回纯输入框加最近存值。
 
-**委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（顺序见家族核心 README 的四层）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。带委派级 model 的轮次是 exec-only：常驻 `kimi acp` 的模型是靠改写作用域配置绑定的进程事实，一次委派改不动它。
+**委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（顺序见家族核心 README）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。常驻模式下它成为该成员的**起始模型**：起进程前改写作用域 `default_model` 绑定；已有常驻 runtime 绑着别的模型时先退役，以新模型重起并 `session/load` 续上同一个 CLI 会话。
+
+**成员级切换（composer）。**成员会话的 composer 可以为该成员切换模型：一个**会话级 override**，排在所有层（含委派记录）之前；只存内存，宿主重启即失效。成员有进行中的轮次时切换被拒绝。常驻模式下，切换让绑定模型不同的常驻 runtime 退役——下一轮以新模型重起、`session/load` 续上同一个 CLI 会话，对话本身不断；一次性模式下下一轮 `-m` 直接带新值。
 
 **这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。
 
@@ -99,6 +100,8 @@ base_url = "https://your-router.example/v1"
 <summary>内部结构(点击展开)</summary>
 
 **模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把 wire.jsonl 里 `usage.record`（次选 `llm.request`）事件 `model` 字段的实际模型（最后一个为准——resume 会话后续轮次追加在文件尾部）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
+
+**Model broker。** 本 harness 向注册表声明 `modelBroker`：设置卡读无成员的 `modelInfo`（生效层 + 候选），成员 composer 经 gateway 读写成员级 override。解析顺序固定：override → 委派记录模型 → 插件 `model` 键 → 作用域 `default_model` → CLI 内置默认（不指名任何模型）。候选 = 本键 + 作用域默认 + config 的 `[models."…"]` 表 + 最近存值，去重。override 与起始模型账本都在内存（重启即清）；`setMemberModel` 在成员有进行中轮次时抛错，否则在常驻 runtime 绑定模型 ≠ 新生效值时将其退役（同模型是 no-op），下一轮懒重起。
 
 **工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。数的是 transcript 里**本轮 turn** 的 `tool.call` 行——刻意不按镜像窗口数：长驻模式下 settle 那一遍的 delta 可能已被 live 轮询清空，而 resume 轮也不该把前几轮的调用算进来。`byName` 的键是 wire 给出的工具名，原样保留。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。
 

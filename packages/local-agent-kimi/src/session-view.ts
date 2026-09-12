@@ -101,18 +101,74 @@ function textOf(content: unknown[]): string {
     .join('')
 }
 
-/** Render a tool call's arguments into a compact query line. */
-function argsOf(args: unknown): string | undefined {
+/**
+ * Render a file-editing tool call's arguments apply-patch style: the path
+ * plus the old/new content. Without this a delegation's edits collapsed to
+ * the bare path (or nothing) and the transcript hid what the member actually
+ * changed — the kimi twin of codex's fileChange → ApplyPatch fold.
+ * @param name - the tool name the wire recorded.
+ * @param record - the call's argument object.
+ * @returns the patch-style summary, or undefined when the tool is not a
+ *   known file-editing shape.
+ */
+function editArgsOf(name: string, record: Record<string, unknown>): string | undefined {
+  const path = typeof record['path'] === 'string' ? record['path'] : undefined
+  if (name === 'Edit' || name === 'MultiEdit') {
+    if (path === undefined || path.trim() === '') return undefined
+    const edits = Array.isArray(record['edits']) ? record['edits'] as Record<string, unknown>[] : [record]
+    const hunks: string[] = []
+    for (const edit of edits) {
+      const oldText = typeof edit['old_string'] === 'string' ? edit['old_string'] : ''
+      const newText = typeof edit['new_string'] === 'string' ? edit['new_string'] : ''
+      if (oldText === '' && newText === '') continue
+      hunks.push(
+        '@@',
+        ...oldText.split('\n').map(line => `-${line}`),
+        ...newText.split('\n').map(line => `+${line}`),
+      )
+    }
+    // An edit call whose content the wire did not carry keeps the scalar path.
+    if (hunks.length === 0) return undefined
+    return [`update: ${path}`, ...hunks].join('\n')
+  }
+  if (name === 'Write') {
+    if (path === undefined || path.trim() === '') return undefined
+    const content = typeof record['content'] === 'string' ? record['content'] : ''
+    // A Write whose content the wire did not carry keeps the scalar path.
+    if (content === '') return undefined
+    return [`add: ${path}`, ...content.split('\n').map(line => `+${line}`)].join('\n')
+  }
+  // Patch-style tools (ApplyPatch and friends): the patch text IS the argument.
+  const patch = record['patch'] ?? record['diff']
+  if (typeof patch === 'string' && patch.trim() !== '') return patch
+  return undefined
+}
+
+/** Render a tool call's arguments into a compact summary. */
+function argsOf(name: string, args: unknown): string | undefined {
   if (args === undefined) return undefined
   if (typeof args === 'string') return args.trim() === '' ? undefined : args
   if (typeof args !== 'object' || args === null || Array.isArray(args)) return undefined
   const record = args as Record<string, unknown>
+  // File-editing tools first: their edit content outranks the bare path the
+  // scalar preference below would otherwise reduce them to.
+  const edit = editArgsOf(name, record)
+  if (edit !== undefined) return edit
   // WebSearch/FetchURL expose a query/url; prefer the most meaningful scalar.
   for (const key of ['query', 'url', 'path', 'command']) {
     const value = record[key]
     if (typeof value === 'string' && value.trim() !== '') return value.trim()
   }
-  return undefined
+  // A tool whose meaningful arg is none of the four (Agent's prompt, Grep's
+  // pattern, …): a short key=value summary beats dropping the call entirely.
+  const pairs: string[] = []
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === 'string' && value.trim() !== '') pairs.push(`${key}=${value.trim()}`)
+    else if (typeof value === 'number' || typeof value === 'boolean') pairs.push(`${key}=${String(value)}`)
+  }
+  if (pairs.length === 0) return undefined
+  const summary = pairs.join(' ')
+  return summary.length > 200 ? `${summary.slice(0, 200)}…` : summary
 }
 
 /**
@@ -185,7 +241,10 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         // A user append_message that duplicates the current turn.prompt (the
         // ACP server replays the prompt into the context) must not open a new
         // turn; when no turn.prompt preceded it, treat it as the round start.
-        if (turnSeen && lines.length > 0 && lines[lines.length - 1]?.kind === 'user') {
+        // The dedupe compares TEXT, not just kind: a second DISTINCT user
+        // message in a row (a mid-round injection) is real content.
+        const last = lines[lines.length - 1]
+        if (turnSeen && last?.kind === 'user' && last.text === textContent) {
           // Duplicate of the prompt; skip.
           continue
         }
@@ -220,7 +279,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
           toolCallId?: string
         }
         const name = call.toolCall?.name ?? call.name ?? 'tool'
-        const args = argsOf(call.toolCall?.args ?? call.args)
+        const args = argsOf(name, call.toolCall?.args ?? call.args)
         const lineIndex = lines.length
         lines.push({
           kind: 'tool',
@@ -262,6 +321,16 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
             lines[target] = { ...current, result: output }
           }
         }
+      } else if (
+        loop.type === 'content.part'
+        && part?.type !== undefined
+        && part.type !== 'text'
+        && part.type !== 'think'
+      ) {
+        // A content part type this fold does not know (image, audio, a future
+        // plan part, …): keep a visible marker instead of the content
+        // vanishing from the transcript.
+        lines.push({ kind: 'assistant', text: `[未支持的内容类型 ${part.type}]`, turn: lineTurn })
       }
     }
   }

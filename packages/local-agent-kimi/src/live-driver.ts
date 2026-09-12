@@ -339,6 +339,13 @@ class KimiLiveRuntime {
   readonly peer: AcpWirePeer
   /** The member's ACP session; assigned by the first round's session/new or session/load. */
   sessionId: string | undefined
+  /**
+   * The model this process was spawned with (the scoped `default_model` value
+   * rewritten just before spawn; undefined means the config decided). A round
+   * resolving a different model for the member retires this runtime so the
+   * respawn binds the new one.
+   */
+  boundModel: string | undefined
   /** Serializes session/prompt per member (converge-before-next-turn). */
   turnChain: Promise<unknown> = Promise.resolve()
   /** The active round's notification sink; installed per round, cleared at settle. */
@@ -413,6 +420,8 @@ class KimiLiveRuntime {
 export class KimiAcpLiveDriver {
   private readonly runtimes = new Map<string, KimiLiveRuntime>()
   private readonly ensuring = new Map<string, Promise<KimiLiveRuntime>>()
+  /** The model each in-flight spawn is binding (a stale-model spawn never serves a switched member). */
+  private readonly ensuringModel = new Map<string, string | undefined>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
   /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
   private readonly roundChains = new Map<string, Promise<unknown>>()
@@ -436,12 +445,14 @@ export class KimiAcpLiveDriver {
       snapshotMinIntervalMs?: number
       snapshotMinChars?: number
       /**
-       * Resolver for the configured model, read at each RUNTIME SPAWN. `kimi
-       * acp` takes no model flag, so this path pins the scoped config's
-       * `default_model` instead of extending the argv. Absent, or resolving
-       * to nothing, writes nothing at all.
+       * Resolver for the member's effective model, read at each RUNTIME
+       * SPAWN. `kimi acp` takes no model flag, so this path pins the scoped
+       * config's `default_model` instead of extending the argv. Absent, or
+       * resolving to nothing for the member, writes nothing at all. A runtime
+       * whose bound model no longer matches the member's resolved model is
+       * retired and respawned onto the new one.
        */
-      model?: () => string | undefined
+      model?: (childSessionId: string) => string | undefined
     } = {},
     private readonly timeouts: KimiLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -524,20 +535,73 @@ export class KimiAcpLiveDriver {
     }))
   }
 
+  /** The model a runtime spawned for this member right now would bind. */
+  private resolveBoundModel(key: string): string | undefined {
+    const model = this.config.model?.(key)?.trim()
+    return model === undefined || model === '' ? undefined : model
+  }
+
   private ensureRuntime(spec: KimiLiveRoundSpec, signal: AbortSignal): Promise<KimiLiveRuntime> {
     const key = String(spec.childSession.id)
+    const model = this.resolveBoundModel(key)
     const existing = this.runtimes.get(key)
-    if (existing !== undefined && !existing.dead) {
+    if (existing !== undefined && !existing.dead && existing.boundModel === model) {
       this.clearIdleTimer(key)
       return Promise.resolve(existing)
     }
-    if (existing !== undefined) this.runtimes.delete(key)
+    // A model switch retires the member's runtime: the resident process bound
+    // its model at spawn, so the next round respawns onto the new model and
+    // session/loads the SAME CLI session (the conversation carries over).
+    if (existing !== undefined) {
+      this.runtimes.delete(key)
+      this.clearIdleTimer(key)
+      if (!existing.dead) void existing.reclaim()
+    }
     const pending = this.ensuring.get(key)
-    if (pending !== undefined) return pending
-    const spawn = this.spawnRuntime(spec, signal)
-      .finally(() => { this.ensuring.delete(key) })
+    if (pending !== undefined && this.ensuringModel.get(key) === model) return pending
+    // A stale-model spawn in flight: chain behind it, then spawn onto the new
+    // model (the chained spawn reclaims the stale runtime via the mismatch
+    // path on its own ensure).
+    const spawn = (pending ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async (stale) => {
+        if (stale !== undefined && !stale.dead) {
+          if (this.runtimes.get(key) === stale) this.runtimes.delete(key)
+          await stale.reclaim()
+        }
+        return this.spawnRuntime(spec, signal, model)
+      })
+      .finally(() => {
+        if (this.ensuring.get(key) === spawn) {
+          this.ensuring.delete(key)
+          this.ensuringModel.delete(key)
+        }
+      })
     this.ensuring.set(key, spawn)
+    this.ensuringModel.set(key, model)
     return spawn
+  }
+
+  /**
+   * Retire one member's resident runtime (a composer-driven model switch):
+   * the process is reclaimed and the member's next round respawns onto the
+   * new model, resuming the same CLI session. A member with no runtime (or
+   * only a dead one) is a no-op. Lazy: nothing spawns here.
+   */
+  async retireRuntime(childSessionId: string): Promise<void> {
+    const pending = this.ensuring.get(childSessionId)
+    if (pending !== undefined) await pending.catch(() => undefined)
+    await this.reclaim(childSessionId)
+  }
+
+  /**
+   * The model the member's live runtime is bound to, or undefined when the
+   * member has no live runtime (or it bound none). The broker compares this
+   * against the post-switch effective model to make a same-model set a no-op.
+   */
+  runtimeModel(childSessionId: string): string | undefined {
+    const runtime = this.runtimes.get(childSessionId)
+    return runtime === undefined || runtime.dead ? undefined : runtime.boundModel
   }
 
   /**
@@ -546,7 +610,7 @@ export class KimiAcpLiveDriver {
    * channel is not live-capable and the breaker trips). A cancellation
    * mid-spawn reclaims the half-started process without touching the breaker.
    */
-  private async spawnRuntime(spec: KimiLiveRoundSpec, signal: AbortSignal): Promise<KimiLiveRuntime> {
+  private async spawnRuntime(spec: KimiLiveRoundSpec, signal: AbortSignal, boundModel: string | undefined): Promise<KimiLiveRuntime> {
     const key = String(spec.childSession.id)
     if (this.disposed) {
       throw new LiveChannelUnavailableError('the live driver is disposed')
@@ -563,9 +627,8 @@ export class KimiAcpLiveDriver {
     // nothing. Best-effort: a home whose config cannot be written still gets
     // its runtime, running whatever the config already named, and the round's
     // model read-back is what catches the mismatch.
-    const model = this.config.model?.()?.trim()
-    if (model !== undefined && model !== '') {
-      await writeKimiDefaultModel(spec.homeDir, model).catch((error: unknown) => {
+    if (boundModel !== undefined) {
+      await writeKimiDefaultModel(spec.homeDir, boundModel).catch((error: unknown) => {
         this.ctx.logger.warn(`local-agent-kimi: pinning default_model for the resident runtime failed: ${thrown(error).message}`)
         return false
       })
@@ -636,6 +699,7 @@ export class KimiAcpLiveDriver {
       throw new LiveChannelUnavailableError('the live driver was disposed during spawn')
     }
     this.channelBrokenAt = undefined
+    runtime.boundModel = boundModel
     this.runtimes.set(key, runtime)
     // Stash the member handle for the session declarations.
     runtimeMember.set(runtime, member)
@@ -810,6 +874,14 @@ export class KimiAcpLiveDriver {
     /** The stream the latest delta accumulated into (a kind switch force-snapshots it). */
     let activeStream: string | undefined
     /**
+     * The latest ACP plan snapshot, rendered (event granularity only — the
+     * token granularity folds plans through their own stream). The wire.jsonl
+     * fold never carries plans (kimi records text/think parts only — surveyed
+     * against production wires), so the settle fold below appends it once;
+     * there is no wire copy to dedupe against.
+     */
+    let roundPlan = ''
+    /**
      * The round's usage NOT carried by a folded line, summed across mirror
      * passes (each pass's window is disjoint). The settle's final snapshot
      * carries the remainder when no folded message did — host 0.1.5 has no
@@ -825,6 +897,62 @@ export class KimiAcpLiveDriver {
 
     /** A stream's synthetic key: kimi's ACP deltas carry no item id, so kind + turn pairs them. */
     const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}`
+    /** The plan stream's key: a snapshot stream beside the think/text delta streams. */
+    const planKey = `kimi-stream-plan-${turn}`
+
+    /**
+     * Fold one non-text chunk as a placeholder: image/resource_link content
+     * has no text channel, so the transcript keeps a visible marker (and the
+     * run output notes the drop) instead of the chunk vanishing. Flows exactly
+     * like a text delta from here.
+     */
+    const foldDelta = (text: string): void => {
+      roundText += text
+      if (granularity === 'token') {
+        const key = streamKey('text')
+        reserveStream(key, 'text')
+        const stream = streams.get(key)
+        if (stream !== undefined) {
+          stream.text += text
+          appendStreamSnapshot(stream, false, false)
+        }
+        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
+      }
+    }
+
+    /**
+     * Render one ACP plan snapshot ({entries: [{content, status}]}) as
+     * think-style lines. Each update carries the WHOLE plan, so the fold
+     * replaces rather than appends.
+     */
+    const renderPlan = (update: JsonObject): string => {
+      const entries = Array.isArray(update['entries']) ? update['entries'] as JsonObject[] : []
+      const lines = entries.map((entry) => {
+        const content = typeof entry['content'] === 'string' ? entry['content'] : ''
+        const status = entry['status']
+        const mark = status === 'completed' ? '☑' : status === 'in_progress' ? '▶' : '☐'
+        return `${mark} ${content}`
+      }).filter(line => line.trim() !== '☐' && line !== '')
+      return lines.join('\n')
+    }
+    const foldPlan = (update: JsonObject): void => {
+      const plan = renderPlan(update)
+      if (plan === '') return
+      if (granularity === 'token') {
+        // The plan's own snapshot stream (think-styled): every update replaces
+        // the text and lands a snapshot at the reserved (turn, step); the
+        // stream force-finalizes at settle (the wire carries no plan line
+        // that could complete it).
+        reserveStream(planKey, 'think')
+        const stream = streams.get(planKey)
+        if (stream !== undefined && stream.text !== plan) {
+          stream.text = plan
+          appendStreamSnapshot(stream, true, false)
+        }
+      } else {
+        roundPlan = plan
+      }
+    }
 
     /**
      * Append one snapshot of a streaming item at its reserved (turn, step).
@@ -965,23 +1093,15 @@ export class KimiAcpLiveDriver {
       const kind = update['sessionUpdate']
       if (kind === 'agent_message_chunk') {
         const content = update['content'] as { type?: string; text?: string } | undefined
-        const text = content?.type === 'text' ? content.text ?? '' : ''
-        if (text !== '') {
-          roundText += text
-          if (granularity === 'token') {
-            // The delta accumulates into the round's text stream; throttled
-            // snapshots land in the session log at the stream's reserved
-            // (turn, step), and the delta rides the run-progress channel too.
-            const key = streamKey('text')
-            reserveStream(key, 'text')
-            const stream = streams.get(key)
-            if (stream !== undefined) {
-              stream.text += text
-              appendStreamSnapshot(stream, false, false)
-            }
-            localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
-          }
+        if (content !== undefined && content.type !== undefined && content.type !== 'text') {
+          // A non-text chunk (image, resource_link, …): no text channel exists,
+          // so fold a visible placeholder instead of dropping it silently.
+          foldDelta(`[未支持的内容类型 ${content.type}]`)
+          triggerMirror()
+          return
         }
+        const text = content?.text ?? ''
+        if (text !== '') foldDelta(text)
       } else if (kind === 'agent_thought_chunk' && granularity === 'token') {
         const content = update['content'] as { type?: string; text?: string } | undefined
         const text = content?.text ?? ''
@@ -994,6 +1114,12 @@ export class KimiAcpLiveDriver {
             appendStreamSnapshot(stream, false, false)
           }
         }
+      } else if (kind === 'plan') {
+        // ACP plan updates are full-plan snapshots; the wire.jsonl fold never
+        // carries them (kimi records text/think parts only), so the driver
+        // itself folds them — a snapshot stream in the token granularity, one
+        // settle-time fold otherwise.
+        foldPlan(update)
       }
       // Every update (chunks, tool calls, plans) triggers a throttled mirror
       // pass; the wire.jsonl fold owns the transcript content.
@@ -1186,6 +1312,22 @@ export class KimiAcpLiveDriver {
       try {
         if (turnOpened && granularity !== 'token') {
           await settleMirror()
+          // The round's plan snapshot: the wire fold has no plan line, so the
+          // driver folds the latest ACP plan update once, think-styled, at the
+          // turn's next free step (after the mirror, so the step is past
+          // every fold the settle pass landed).
+          if (roundPlan !== '') {
+            const step = nextKimiSessionStep(childSession, turn)
+            childSession.append('step/start', { turn, step })
+            childSession.append('assistant/message', {
+              turn,
+              step,
+              message: assistantEvent([{ type: 'reasoning' as const, text: roundPlan }]),
+              stream: [],
+            }, { surfaceOp: 'append' })
+            childSession.append('step/end', { turn, step })
+            persist()
+          }
         }
       } catch (error) {
         this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)

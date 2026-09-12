@@ -38,8 +38,11 @@ export class LiveDriverSwitch {
     private readonly ctx: Context,
     scope: SettingsScope<KimiLiveSettings>,
     private readonly liveIdleMs: number | undefined,
-    /** Per-spawn model resolver, handed to every driver generation. */
-    private readonly model?: () => string | undefined,
+    /**
+     * Per-spawn model resolver, handed to every driver generation. Member-aware:
+     * the driver's runtime binds whatever the member's layers resolve to.
+     */
+    private readonly model?: (childSessionId: string) => string | undefined,
   ) {
     this.apply(scope.get())
     this.unwatch = scope.watch((next) => { this.apply(next) })
@@ -84,6 +87,34 @@ export class LiveDriverSwitch {
         },
       )
     }
+  }
+
+  /**
+   * Retire one member's runtime on the ACTIVE generation (a composer-driven
+   * model switch): the next round respawns onto the new model. A member still
+   * hosted by a draining generation is left alone — its rounds already gate
+   * to exec, and the drain reclaims the process.
+   */
+  async retireMemberRuntime(childSessionId: string): Promise<void> {
+    await this.active?.retireRuntime(childSessionId)
+  }
+
+  /**
+   * The model the member's active-generation runtime is bound to, or
+   * undefined when no live runtime serves the member (the broker's
+   * same-model no-op check).
+   */
+  memberRuntimeModel(childSessionId: string): string | undefined {
+    return this.active?.runtimeModel(childSessionId)
+  }
+
+  /**
+   * Whether the active generation hosts (or is spawning) the member's
+   * runtime — the broker's retire decision needs this apart from the bound
+   * model, since a runtime that bound NO model reports undefined either way.
+   */
+  memberHasRuntime(childSessionId: string): boolean {
+    return this.active?.hasRuntime(childSessionId) ?? false
   }
 
   /** Plugin unload: interrupt whatever survives (disposeAll, not drain). */

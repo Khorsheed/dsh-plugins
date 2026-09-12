@@ -1,9 +1,10 @@
 /**
  * T30b — the DELEGATION's own model on a kimi round. What is pinned
- * here is the four-layer order (delegation → plugin config → scoped file → CLI
- * default), that the delegation's value is RECORDED so every resume round
- * re-requests it, and that a round naming a model never goes to the resident
- * runtime — which binds one model at spawn and serves many rounds.
+ * here is the resolution order (override → delegation → plugin config →
+ * scoped file → CLI default), that the delegation's value is RECORDED so
+ * every resume round re-requests it, and that a round naming a model now
+ * goes LIVE: the model becomes the member's start model, bound at spawn
+ * (a mismatched resident runtime is retired and respawned onto it).
  */
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -52,7 +53,7 @@ function request(): SubagentStartRequest {
   } as unknown as SubagentStartRequest
 }
 
-function mount(intent: unknown, options: { record?: unknown; live?: unknown; configModel?: () => string | undefined } = {}): {
+function mount(intent: unknown, options: { record?: unknown; live?: unknown; configModel?: () => string | undefined; memberModels?: unknown } = {}): {
   provider: KimiCliProvider
   specs: SubprocessSpawnSpec[]
   memberRuns: ReturnType<typeof vi.fn>
@@ -93,7 +94,7 @@ function mount(intent: unknown, options: { record?: unknown; live?: unknown; con
     },
   } as never)
   ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
-  return { provider: new KimiCliProvider(ctx, options.live as never, options.configModel), specs, memberRuns, recorded }
+  return { provider: new KimiCliProvider(ctx, options.live as never, options.configModel, options.memberModels as never), specs, memberRuns, recorded }
 }
 
 /** The provider name and CLI-session id the recorded fixtures carry. */
@@ -202,18 +203,56 @@ describe('kimi delegation model', () => {
     await run.dispose()
   })
 
-  it('refuses a round with a model that the live driver would serve', async () => {
-    const live = { disabled: false, startRound: vi.fn() }
-    const { provider, specs } = mount({ kind: 'fresh', model: 'model-a' }, { live })
-    await expect(provider.start(request())).rejects.toThrow(/exec-only/)
-    expect(live.startRound).not.toHaveBeenCalled()
+  it('a fresh round naming a model goes LIVE — the model becomes the member start model', async () => {
+    // The old exec-only refusal is gone: the live driver's spawn resolver
+    // binds the delegation's model (rewriting the scoped default_model before
+    // spawn, retiring a mismatched runtime), so the member keeps its resident
+    // runtime AND its model.
+    const live = {
+      disabled: false,
+      startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })),
+    }
+    const memberModels = { noteStartModel: vi.fn(), overrideFor: () => undefined }
+    const { provider, specs } = mount({ kind: 'fresh', model: 'model-a' }, { live, memberModels })
+    await expect(provider.start(request())).resolves.toBeDefined()
+    expect(live.startRound).toHaveBeenCalled()
+    expect(memberModels.noteStartModel).toHaveBeenCalledWith(expect.any(String), 'model-a')
     expect(specs).toHaveLength(0)
   })
 
-  it('the plugin-config key is NOT exec-only — only a delegation model is', async () => {
+  it('a resume round with a recorded model goes LIVE too (start model re-noted)', async () => {
+    const live = {
+      disabled: false,
+      startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })),
+    }
+    const memberModels = { noteStartModel: vi.fn(), overrideFor: () => undefined }
+    const { provider } = mount(
+      { kind: 'resume', childSessionId: CHILD, cliSessionId: CLI_SESSION },
+      { record: { ...MODEL_RECORD, model: 'model-a' }, live, memberModels },
+    )
+    await expect(provider.start(request())).resolves.toBeDefined()
+    expect(live.startRound).toHaveBeenCalled()
+    expect(memberModels.noteStartModel).toHaveBeenCalledWith(CHILD, 'model-a')
+  })
+
+  it('the session-level override outranks the recorded model on the exec path', async () => {
+    // The composer picker's write is the family order's top layer: the very
+    // next resume round runs it, ahead of what the delegation recorded.
+    const memberModels = { noteStartModel: vi.fn(), overrideFor: () => 'picked-model' }
+    const { provider, specs } = mount(
+      { kind: 'resume', childSessionId: CHILD, cliSessionId: CLI_SESSION },
+      { record: { ...MODEL_RECORD, model: 'model-a' }, memberModels },
+    )
+    const run = await provider.start(request())
+    await run.result
+    expect(modelFlag(specs[0]?.argv ?? [])).toBe('picked-model')
+    await run.dispose()
+  })
+
+  it('the plugin-config key rides the live driver as the settings layer', async () => {
     // The key is harness-wide, so a resident runtime bound to it is running
-    // what the instance asked for; only a per-delegation model conflicts with
-    // one runtime serving many rounds.
+    // what the instance asked for — no conflict with one runtime serving
+    // many rounds.
     const live = { disabled: false, startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })) }
     const { provider } = mount({ kind: 'fresh' }, { live, configModel: () => 'config-model' })
     await expect(provider.start(request())).resolves.toBeDefined()

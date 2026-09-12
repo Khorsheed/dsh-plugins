@@ -3,12 +3,13 @@
  * card (keyed to the `local-agent-claude-code` settings namespace the host
  * half registers) in the official Plugins → 可配置插件 tab. The card carries
  * the family core's shared ProviderAuthBlock (login/logout/manual-handoff,
- * backed by the core's localAgentGateway Remote and the commands channel)
- * plus the resident-mode block (live switch, mirror granularity, override
- * badge with restore-to-default), whose writes ride the bound settingsScope —
- * the host watcher hot-applies them, no reload. Every read degrades: an
- * absent gateway renders the auth block's 'unavailable' state, an
- * unregistered namespace disables the live controls.
+ * backed by the core's localAgentGateway Remote and the commands channel),
+ * the default-model block (free-text write plus the gateway's model surface:
+ * the effective-model line and the suggestion vocabulary), and the
+ * resident-mode switch, whose writes ride the bound settingsScope — the host
+ * watcher hot-applies them, no reload. Every read degrades: an absent gateway
+ * renders the auth block's 'unavailable' state and drops the model surface,
+ * an unregistered namespace disables the live controls.
  * @module @khorsheed/dsh-local-agent-claude-code/client
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -74,6 +75,15 @@ export function apply(ctx: Context): void {
         scope,
         hooks: { settings: scope },
         authT,
+        // The model surface read behind the default-model block's effective
+        // line and suggestions. 'claude-code' is the harness name the host
+        // half registers; a core predating the model broker (or an absent
+        // gateway) degrades to the bare free-text input.
+        modelInfo: () => {
+          const gw = gateway()
+          if (gw === undefined || typeof gw.harnessModel !== 'function') return Promise.resolve(undefined)
+          return gw.harnessModel('claude-code').then(result => (result.ok ? result.value : undefined))
+        },
         auth: {
           status: name =>
             // The Remote declares (name, scope?) and the client enforces exact arity:

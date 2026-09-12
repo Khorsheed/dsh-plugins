@@ -143,16 +143,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
 /* The live switch: same capsule the family dsh toggle uses. */
 .switch {
   flex: none;

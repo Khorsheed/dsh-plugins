@@ -48,6 +48,8 @@ class FakeClaude {
   readonly handle: SubprocessHandle
   readonly userMessages: string[] = []
   readonly controlRequests: Record<string, unknown>[] = []
+  /** control_response frames the DRIVER wrote to stdin (its request answers). */
+  readonly controlResponses: Record<string, unknown>[] = []
   terminated = false
   stdinEnded = false
   private buffer = ''
@@ -106,6 +108,10 @@ class FakeClaude {
       this.controlRequests.push(message)
       const requestId = message['request_id']
       this.emit({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { still_queued: [] } } })
+      return
+    }
+    if (message['type'] === 'control_response') {
+      this.controlResponses.push(message)
       return
     }
     if (message['type'] !== 'user') return
@@ -778,5 +784,137 @@ describe('claude live driver model key', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     await run.result
     expect(m.spawns[0]!.spec.argv).not.toContain('--model')
+  })
+})
+
+describe('claude live driver member-aware model', () => {
+  it('the round spec model (the delegation layer) binds at spawn through the resolver', async () => {
+    const m = mount({ config: { permissionMode: 'skip', model: (_child, delegation) => delegation ?? 'settings-model' } })
+    const child = Session.create(SessionId('child-claude-delegation-model'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('好') }) }))
+    const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), model: 'delegation-model' })
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toContain('--model')
+    expect(m.spawns[0]!.spec.argv[m.spawns[0]!.spec.argv.indexOf('--model') + 1]).toBe('delegation-model')
+    await m.driver.disposeAll()
+  })
+
+  it('the member-aware resolver receives the member (the override layer keys on it)', async () => {
+    const seen: string[] = []
+    const m = mount({
+      config: {
+        permissionMode: 'skip',
+        model: (child: string) => {
+          seen.push(child)
+          return child === 'child-claude-member-key' ? 'override-model' : undefined
+        },
+      },
+    })
+    const child = Session.create(SessionId('child-claude-member-key'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('好') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(seen).toEqual(['child-claude-member-key'])
+    expect(m.spawns[0]!.spec.argv).toContain('override-model')
+    await m.driver.disposeAll()
+  })
+
+  it('scratches the effective model into the scoped settings.json before spawn', async () => {
+    const provisionModel = vi.fn(async () => {})
+    const m = mount({ config: { permissionMode: 'skip', model: () => 'claude-opus-5', provisionModel } })
+    const child = Session.create(SessionId('child-claude-provision'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('好') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(provisionModel).toHaveBeenCalledWith(m.homeDir, 'claude-opus-5')
+    await m.driver.disposeAll()
+  })
+
+  it('retireRuntime reclaims the member runtime so the next round respawns', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-retire'))
+    const first = new FakeClaude({ turn: () => ({ events: answerEvents('第一条') }) })
+    m.queueChild(first)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.driver.runtimeModel('child-claude-retire')).toBeUndefined()
+    expect(m.driver.liveCount).toBe(1)
+    await m.driver.retireRuntime('child-claude-retire')
+    expect(m.driver.liveCount).toBe(0)
+    expect(first.stdinEnded).toBe(true)
+    const second = new FakeClaude({ turn: () => ({ events: answerEvents('第二条') }) })
+    m.queueChild(second)
+    const resumed = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
+    expect((await resumed.result).stopReason).toBe('completed')
+    expect(m.spawns).toHaveLength(2)
+    expect(m.spawns[1]!.spec.argv).toContain('--resume')
+    await m.driver.disposeAll()
+  })
+
+  it('a round retires a runtime whose bound model no longer matches, then respawns', async () => {
+    const config: { permissionMode: 'skip'; model: () => string } = { permissionMode: 'skip', model: () => 'model-a' }
+    const m = mount({ config })
+    const child = Session.create(SessionId('child-claude-stale-model'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('第一条') }) }))
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await first.result
+    expect(m.driver.runtimeModel('child-claude-stale-model')).toBe('model-a')
+    expect(m.spawns[0]!.spec.argv).toContain('model-a')
+    // The effective model changes underneath the resident runtime: the NEXT
+    // round retires it (the broker's eager retire is the primary path; this
+    // is the driver's own safety net) and respawns onto the new model.
+    config.model = () => 'model-b'
+    const second = new FakeClaude({ turn: () => ({ events: answerEvents('第二条') }) })
+    m.queueChild(second)
+    const resumed = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
+    expect((await resumed.result).stopReason).toBe('completed')
+    expect(m.spawns).toHaveLength(2)
+    expect(m.spawns[1]!.spec.argv).toContain('model-b')
+    expect(m.spawns[1]!.spec.argv).toContain('--resume')
+    expect(m.driver.runtimeModel('child-claude-stale-model')).toBe('model-b')
+    await m.driver.disposeAll()
+  })
+})
+
+describe('claude live driver control requests', () => {
+  it('auto-allows can_use_tool — a permissionMode:normal spawn never hangs on its approval surface', async () => {
+    const m = mount({ config: { permissionMode: 'normal' } })
+    const child = Session.create(SessionId('child-claude-control'))
+    const fake = new FakeClaude({ turn: () => ({ events: answerEvents('好') }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // The server asks before its first tool call; the driver must answer.
+    fake.emit({
+      type: 'control_request',
+      request_id: 'cr-1',
+      request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' } },
+    })
+    await vi.waitFor(() => { expect(fake.controlResponses).toHaveLength(1) })
+    expect(fake.controlResponses[0]).toEqual({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: 'cr-1',
+        response: { behavior: 'allow', updatedInput: { command: 'ls' } },
+      },
+    })
+    expect((await run.result).stopReason).toBe('completed')
+    await m.driver.disposeAll()
+  })
+
+  it('answers an unknown control request subtype with an error instead of silence', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-control-unknown'))
+    const fake = new FakeClaude({ turn: () => ({ events: answerEvents('好') }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    fake.emit({ type: 'control_request', request_id: 'cr-9', request: { subtype: 'mcp_message' } })
+    await vi.waitFor(() => { expect(fake.controlResponses).toHaveLength(1) })
+    expect(fake.controlResponses[0]).toMatchObject({
+      type: 'control_response',
+      response: { subtype: 'error', request_id: 'cr-9' },
+    })
+    expect((await run.result).stopReason).toBe('completed')
+    await m.driver.disposeAll()
   })
 })

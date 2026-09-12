@@ -2,8 +2,9 @@
  * T30b — the DELEGATION's own model on a claude round. What is pinned
  * here is the four-layer order (delegation → plugin config → scoped file → CLI
  * default), that the delegation's value is RECORDED so every resume round
- * re-requests it, and that a round naming a model never goes to the resident
- * runtime — which binds one model at spawn and serves many rounds.
+ * re-requests it, and that a round naming a model goes LIVE with it bound as
+ * the member's start model at the runtime's spawn — a resident runtime bound
+ * to a different model retires and the same CLI session resumes.
  */
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -53,7 +54,7 @@ function request(): SubagentStartRequest {
   } as unknown as SubagentStartRequest
 }
 
-function mount(intent: unknown, options: { record?: unknown; live?: unknown; configModel?: () => string | undefined } = {}): {
+function mount(intent: unknown, options: { record?: unknown; live?: unknown; configModel?: (childSessionId: string, delegationModel?: string) => string | undefined } = {}): {
   provider: ClaudeCliProvider
   specs: SubprocessSpawnSpec[]
   recorded: Array<Record<string, unknown>>
@@ -126,7 +127,9 @@ describe('claude delegation model', () => {
   it('the delegation outranks the plugin-config key', async () => {
     const { provider, specs } = mount(
       { kind: 'fresh', model: 'model-a' },
-      { configModel: () => 'config-model' },
+      // The member-aware resolver answers in the family order: with no
+      // session-level override, the delegation model it is handed wins.
+      { configModel: (_child: string, delegation?: string) => delegation ?? 'config-model' },
     )
     const run = await provider.start(request())
     await run.result
@@ -188,10 +191,10 @@ describe('claude delegation model', () => {
   it('the recorded model outranks the plugin-config key on a resume too', async () => {
     // A delegation keeps the model it started with even after the harness's
     // own key changes underneath it — the conversation does not switch models
-    // half way through.
+    // half way through (no session-level override set here).
     const { provider, specs } = mount(
       { kind: 'resume', childSessionId: CHILD, cliSessionId: CLI_SESSION },
-      { record: { ...MODEL_RECORD, model: 'model-a' }, configModel: () => 'config-model' },
+      { record: { ...MODEL_RECORD, model: 'model-a' }, configModel: (_child: string, delegation?: string) => delegation ?? 'config-model' },
     )
     const run = await provider.start(request())
     await run.result
@@ -199,18 +202,49 @@ describe('claude delegation model', () => {
     await run.dispose()
   })
 
-  it('refuses a round with a model that the live driver would serve', async () => {
-    const live = { disabled: false, startRound: vi.fn() }
+  it('the session-level override outranks the delegation model', async () => {
+    // The composer picker's switch is the family's top layer: a member whose
+    // delegation recorded one model runs the override on the next round.
+    const { provider, specs } = mount(
+      { kind: 'resume', childSessionId: CHILD, cliSessionId: CLI_SESSION },
+      {
+        record: { ...MODEL_RECORD, model: 'model-a' },
+        configModel: (child: string, delegation?: string) => child === CHILD ? 'override-model' : delegation,
+      },
+    )
+    const run = await provider.start(request())
+    await run.result
+    expect(modelFlag(specs[0]?.argv ?? [])).toBe('override-model')
+    await run.dispose()
+  })
+
+  it('a fresh round naming a model goes LIVE with it bound as the member start model', async () => {
+    // No longer exec-only: the delegation's model rides the round spec and
+    // binds at the resident runtime's spawn; a runtime bound to a different
+    // model retires first (the driver's ensureRuntime).
+    const live = { disabled: false, startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })) }
     const { provider, specs } = mount({ kind: 'fresh', model: 'model-a' }, { live })
-    await expect(provider.start(request())).rejects.toThrow(/exec-only/)
-    expect(live.startRound).not.toHaveBeenCalled()
+    await expect(provider.start(request())).resolves.toBeDefined()
+    expect(live.startRound).toHaveBeenCalledTimes(1)
+    expect(live.startRound.mock.calls[0]?.[1]).toMatchObject({ model: 'model-a' })
     expect(specs).toHaveLength(0)
   })
 
-  it('the plugin-config key is NOT exec-only — only a delegation model is', async () => {
+  it('a resume round hands the recorded model to the live runtime too', async () => {
+    const live = { disabled: false, startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })) }
+    const { provider } = mount(
+      { kind: 'resume', childSessionId: CHILD, cliSessionId: CLI_SESSION },
+      { record: { ...MODEL_RECORD, model: 'model-a' }, live },
+    )
+    await expect(provider.start(request())).resolves.toBeDefined()
+    expect(live.startRound).toHaveBeenCalledTimes(1)
+    expect(live.startRound.mock.calls[0]?.[1]).toMatchObject({ model: 'model-a' })
+  })
+
+  it('the plugin-config key is NOT exec-only — only a scoped round is', async () => {
     // The key is harness-wide, so a resident runtime bound to it is running
-    // what the instance asked for; only a per-delegation model conflicts with
-    // one runtime serving many rounds.
+    // what the instance asked for; a scoped round still never goes live (the
+    // runtime binds the default scoped home).
     const live = { disabled: false, startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })) }
     const { provider } = mount({ kind: 'fresh' }, { live, configModel: () => 'config-model' })
     await expect(provider.start(request())).resolves.toBeDefined()

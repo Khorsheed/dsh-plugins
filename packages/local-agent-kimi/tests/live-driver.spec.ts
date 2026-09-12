@@ -1045,3 +1045,144 @@ describe('kimi live driver model key', () => {
     expect((await run.result).stopReason).toBe('completed')
   })
 })
+
+describe('kimi live driver member model', () => {
+  it('a model switch retires the member runtime; the next round respawns onto the new model', async () => {
+    let current: string | undefined = 'model-a'
+    const m = mount({ config: { model: () => current } })
+    writeFileSync(join(m.homeDir, 'config.toml'), 'default_model = "scoped-model"\n')
+    const child = Session.create(SessionId('child-kimi-switch'))
+    const first = new FakeAcpServer({ turn: () => ({ chunks: ['一'] }) })
+    m.queueChild(first)
+    const run1 = await m.driver.startRound(request() as never, roundSpec(m, child, { onCliSessionId: () => {} }))
+    await run1.result
+    await expect(readKimiDefaultModel(m.homeDir)).resolves.toBe('model-a')
+    expect(m.driver.runtimeModel('child-kimi-switch')).toBe('model-a')
+    // The switch: the member's next round finds the runtime bound to the old
+    // model, retires it, and respawns bound to the new one — session/load-ing
+    // the SAME CLI session (the conversation carries over).
+    current = 'model-b'
+    const second = new FakeAcpServer({ turn: () => ({ chunks: ['二'] }) })
+    m.queueChild(second)
+    const run2 = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
+    expect((await run2.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(first.stdinEnded || first.terminated).toBe(true) })
+    expect(m.spawns).toHaveLength(2)
+    await expect(readKimiDefaultModel(m.homeDir)).resolves.toBe('model-b')
+    expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    expect(m.driver.runtimeModel('child-kimi-switch')).toBe('model-b')
+    await m.driver.disposeAll()
+  })
+
+  it('a runtime bound to the resolved model is reused untouched', async () => {
+    const m = mount({ config: { model: () => 'model-a' } })
+    writeFileSync(join(m.homeDir, 'config.toml'), 'default_model = "scoped-model"\n')
+    const child = Session.create(SessionId('child-kimi-same-model'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) }))
+    const run1 = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run1.result
+    const run2 = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
+    expect((await run2.result).stopReason).toBe('completed')
+    // Same model → same runtime: one spawn, and no session/load on reuse.
+    expect(m.spawns).toHaveLength(1)
+    expect(m.spawns[0]!.fake!.requests.map(r => r.method)).toEqual(['initialize', 'session/new', 'session/prompt', 'session/prompt'])
+    await m.driver.disposeAll()
+  })
+
+  it('retireRuntime reclaims only that member\'s runtime; the next round respawns lazily', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-retire'))
+    const first = new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) })
+    m.queueChild(first)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.driver.liveCount).toBe(1)
+    await m.driver.retireRuntime('child-kimi-retire')
+    expect(m.driver.liveCount).toBe(0)
+    await vi.waitFor(() => { expect(first.stdinEnded || first.terminated).toBe(true) })
+    // Nothing respawned yet (lazy): the member's NEXT round spawns fresh and
+    // session/loads the recorded session.
+    expect(m.spawns).toHaveLength(1)
+    const second = new FakeAcpServer({ turn: () => ({ chunks: ['back'] }) })
+    m.queueChild(second)
+    const run2 = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
+    expect((await run2.result).stopReason).toBe('completed')
+    expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    await m.driver.disposeAll()
+  })
+})
+
+describe('kimi live driver transcript completeness', () => {
+  /** Every reasoning block the child session carries. */
+  function reasoningTexts(child: Session): string[] {
+    return child.snapshotEvents()
+      .filter(e => e.type === 'assistant/message')
+      .flatMap(e => ((e.data as { message?: { content?: { type: string; text?: string }[] } }).message?.content ?? []))
+      .filter(block => block.type === 'reasoning')
+      .map(block => block.text ?? '')
+  }
+
+  it('a non-text agent_message_chunk folds a visible placeholder instead of vanishing', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-nontext'))
+    const fake = new FakeAcpServer({
+      turn: () => {
+        queueMicrotask(() => {
+          fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'image', data: 'iVBOR…' } })
+          fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '见图' } })
+        })
+        return { chunks: [] }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(result.output).toEqual([{ type: 'text', text: '[未支持的内容类型 image]见图' }])
+    await m.driver.disposeAll()
+  })
+
+  it('token granularity folds ACP plan updates as a think-style snapshot stream', async () => {
+    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const child = Session.create(SessionId('child-kimi-plan-token'))
+    const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    fake.update('session_acp-session-1', {
+      sessionUpdate: 'plan',
+      entries: [
+        { content: '第一步', status: 'completed' },
+        { content: '第二步', status: 'in_progress' },
+      ],
+    })
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '建好了' } })
+    writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', '建好了')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(reasoningTexts(child).some(text => text.includes('☑ 第一步') && text.includes('▶ 第二步'))).toBe(true)
+    }, { timeout: 5_000 })
+    await m.driver.disposeAll()
+  })
+
+  it('event granularity folds the round\'s plan once at settle (the wire carries none)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-plan-event'))
+    const fake = new FakeAcpServer({
+      turn: (params) => {
+        queueMicrotask(() => {
+          fake.update('session_acp-session-1', { sessionUpdate: 'plan', entries: [{ content: '唯一步骤', status: 'in_progress' }] })
+        })
+        writeKimiWire(m.homeDir, 'acp-session-1', String((params['prompt'] as { text: string }[])[0]!.text), 'done')
+        return { chunks: ['done'] }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(reasoningTexts(child).filter(text => text.includes('▶ 唯一步骤'))).toHaveLength(1)
+    }, { timeout: 5_000 })
+    await m.driver.disposeAll()
+  })
+})

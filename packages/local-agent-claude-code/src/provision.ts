@@ -77,6 +77,35 @@ export async function readClaudeConfiguredModel(homeDir: string): Promise<string
 }
 
 /**
+ * Write (or, with undefined, remove) the scoped settings.json `model` key,
+ * merging the rest of the file exactly as {@link provisionClaudeHome} merges
+ * its env block. Only the live driver calls this: a resident runtime needs
+ * its member's effective model IN THE FILE, because a `--resume` respawn
+ * restores the session's own stored model over the `--model` flag. The exec
+ * path never calls it — its `--model` flag always applies, and the file
+ * stays exactly as the person edited it.
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @param model - the model to scratch in, or undefined to remove the key.
+ */
+export async function writeClaudeScopedModel(homeDir: string, model: string | undefined): Promise<void> {
+  const path = join(homeDir, SCOPED_SETTINGS)
+  let settings: Record<string, unknown> = {}
+  try {
+    settings = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+  } catch {
+    // Absent or malformed: start fresh (a malformed file is replaced, not merged).
+  }
+  if (model === undefined) {
+    if (!('model' in settings)) return
+    delete settings['model']
+  } else {
+    if (settings['model'] === model) return
+    settings['model'] = model
+  }
+  await writeFile(path, JSON.stringify(settings, undefined, 2) + '\n')
+}
+
+/**
  * Sign out of the scoped account: remove the scoped config file, so
  * `/<name> status` reports not authenticated and the next login authorizes
  * a fresh account. The macOS keychain entry (a hashed

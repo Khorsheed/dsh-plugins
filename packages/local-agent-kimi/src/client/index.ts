@@ -3,12 +3,13 @@
  * (keyed to the `local-agent-kimi` settings namespace the host half
  * registers) in the official Plugins → 可配置插件 tab. The card carries the
  * family core's shared ProviderAuthBlock (login/logout/device-code, backed by
- * the core's localAgentGateway Remote and the commands channel) plus the
- * resident-mode block (live switch, mirror granularity, override badge with
- * restore-to-default), whose writes ride the bound settingsScope — the host
- * watcher hot-applies them, no reload. Every read degrades: an absent gateway
- * renders the auth block's 'unavailable' state, an unregistered namespace
- * disables the live controls.
+ * the core's localAgentGateway Remote and the commands channel), the
+ * default-model block (free-text field, the broker-fed effective-model line
+ * and choices), and the resident-mode switch, whose writes ride the bound
+ * settingsScope — the host watcher hot-applies them, no reload. Every read
+ * degrades: an absent gateway renders the auth block's 'unavailable' state
+ * and drops the effective-model line, an unregistered namespace disables the
+ * live controls.
  * @module @khorsheed/dsh-local-agent-kimi/client
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -74,6 +75,12 @@ export function apply(ctx: Context): void {
         scope,
         hooks: { settings: scope },
         authT,
+        // The broker's memberless surface (effective model + pickable
+        // vocabulary). Null — a core without a model broker — degrades to the
+        // pre-broker card: the free-text field alone, no effective-model line.
+        harnessModel: () =>
+          gateway()?.harnessModel('kimi').then(result => (result.ok ? result.value ?? undefined : undefined))
+            ?? Promise.resolve(undefined),
         auth: {
           status: name =>
             // The Remote declares (name, scope?) and the client enforces exact arity:

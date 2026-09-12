@@ -135,8 +135,75 @@ describe('session-view', () => {
     expect(transcript.usageRecords).toEqual([])
   })
 
-  it('parses the real two-round resume wire fixture with correct turns and summed usage', async () => {
-    const fixtureWire = readFileSync(
+  it('surfaces an edit tool call as an apply-patch-style card (path plus old/new content)', async () => {
+    const home = tempHome('kimi-session-edit-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_edit')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', name: 'Edit', args: { path: 'src/a.ts', old_string: 'const a = 1', new_string: 'const a = 2' }, uuid: 'e1', toolCallId: 'te1' } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.result', parentUuid: 'e1', result: { output: 'ok' } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', name: 'Write', args: { path: 'src/b.ts', content: 'line one\nline two' }, uuid: 'e2', toolCallId: 'te2' } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', name: 'MultiEdit', args: { path: 'src/c.ts', edits: [{ old_string: 'x', new_string: 'y' }, { old_string: 'p', new_string: 'q' }] }, uuid: 'e3', toolCallId: 'te3' } }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.lines).toEqual([
+      { kind: 'tool', id: 'te1', name: 'Edit', args: 'update: src/a.ts\n@@\n-const a = 1\n+const a = 2', result: 'ok', turn: 1 },
+      { kind: 'tool', id: 'te2', name: 'Write', args: 'add: src/b.ts\n+line one\n+line two', turn: 1 },
+      { kind: 'tool', id: 'te3', name: 'MultiEdit', args: 'update: src/c.ts\n@@\n-x\n+y\n@@\n-p\n+q', turn: 1 },
+    ])
+  })
+
+  it('falls back to a key=value summary for tools outside the preferred scalars', async () => {
+    const home = tempHome('kimi-session-kv-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_kv')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', name: 'Agent', args: { prompt: '调查这个目录' }, uuid: 'k1', toolCallId: 'tk1' } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', name: 'Grep', args: { pattern: 'TODO', glob: '*.ts' }, uuid: 'k2', toolCallId: 'tk2' } }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.lines).toEqual([
+      { kind: 'tool', id: 'tk1', name: 'Agent', args: 'prompt=调查这个目录', turn: 1 },
+      { kind: 'tool', id: 'tk2', name: 'Grep', args: 'pattern=TODO glob=*.ts', turn: 1 },
+    ])
+  })
+
+  it('dedupes the replayed prompt by TEXT — a distinct consecutive user message survives', async () => {
+    const home = tempHome('kimi-session-dedup-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_dedup')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '第一个任务' }] }),
+      // The ACP replay of the same prompt: dropped.
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '第一个任务' }] } }),
+      // A DIFFERENT user message right after: real content, never a dupe.
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '补充一句' }] } }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.lines).toEqual([
+      { kind: 'user', text: '第一个任务', turn: 1 },
+      { kind: 'user', text: '补充一句', turn: 2 },
+    ])
+  })
+
+  it('folds an unknown content.part type into a visible placeholder line', async () => {
+    const home = tempHome('kimi-session-unknown-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_unknown')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'image', url: 'data:image/png;base64,xx' } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: '见图。' } } }),
+      // An empty text part still folds to nothing (no phantom placeholder).
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: '  ' } } }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.lines).toEqual([
+      { kind: 'assistant', text: '[未支持的内容类型 image]', turn: 1 },
+      { kind: 'assistant', text: '见图。', turn: 1 },
+    ])
+  })
+
+  it('parses the real two-round resume wire fixture with correct turns and summed usage', async () => {    const fixtureWire = readFileSync(
       fileURLToPath(new URL('./fixtures/two-round-resume.wire.jsonl', import.meta.url)),
       'utf8',
     )

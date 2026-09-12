@@ -7,7 +7,7 @@ import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
-import { claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
+import { claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
 
 /** The stream a real `claude -p --verbose --output-format stream-json` emits. */
 const streamJson = [
@@ -126,6 +126,109 @@ describe('claude stream-json parsing', () => {
     }
     expect(parsed.text).toBe('done')
     expect(parsed.usage?.inputTokens).toBeGreaterThan(0)
+  })
+})
+
+describe('claude stream fold content completeness', () => {
+  it('folds an Edit tool_use into an ApplyPatch card with the path and the old/new strings', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'e1', name: 'Edit', input: { file_path: '/w/a.ts', old_string: 'const a = 1', new_string: 'const a = 2' } }] } }),
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'e1', content: 'The file has been updated.' }] } }),
+    ].join('\n'))
+    // The apply-patch-style card: the path rides the args, the actual edit is
+    // the body; a successful edit's status text adds nothing to it.
+    expect(parsed.lines).toEqual([
+      { kind: 'tool', id: 'e1', name: 'ApplyPatch', args: 'update: /w/a.ts', result: '- const a = 1\n+ const a = 2' },
+    ])
+    // The accounting still counts the CLI's own tool name, verbatim.
+    expect(parsed.toolCalls).toEqual({ count: 1, byName: { Edit: 1 } })
+  })
+
+  it('a failed edit appends the error text to the patch', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'e1', name: 'Edit', input: { file_path: '/w/a.ts', old_string: 'x', new_string: 'y' } }] } }),
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'e1', content: 'String to replace not found in file.', is_error: true }] } }),
+    ].join('\n'))
+    expect(parsed.lines[0]).toMatchObject({
+      kind: 'tool', name: 'ApplyPatch', result: '- x\n+ y\nString to replace not found in file.',
+    })
+  })
+
+  it('folds Write, MultiEdit, and NotebookEdit with their whole bodies', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [
+        { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '/w/new.ts', content: 'line one\nline two' } },
+        { type: 'tool_use', id: 'm1', name: 'MultiEdit', input: { file_path: '/w/b.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd' }] } },
+        { type: 'tool_use', id: 'n1', name: 'NotebookEdit', input: { notebook_path: '/w/nb.ipynb', new_source: 'print(1)' } },
+      ] } }),
+    ].join('\n'))
+    expect(parsed.lines).toEqual([
+      { kind: 'tool', id: 'w1', name: 'ApplyPatch', args: 'update: /w/new.ts', result: 'line one\nline two' },
+      { kind: 'tool', id: 'm1', name: 'ApplyPatch', args: 'update: /w/b.ts', result: '- a\n+ b\n\n- c\n+ d' },
+      { kind: 'tool', id: 'n1', name: 'ApplyPatch', args: 'update: /w/nb.ipynb', result: 'print(1)' },
+    ])
+    expect(parsed.toolCalls).toEqual({ count: 3, byName: { Write: 1, MultiEdit: 1, NotebookEdit: 1 } })
+  })
+
+  it('keeps the one-scalar summary for other tools, with a compact JSON fallback rather than dropping', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [
+        { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls -la' } },
+        { type: 'tool_use', id: 't2', name: 'Task', input: { description: '跑腿', prompt: '把 a 改成 b' } },
+      ] } }),
+    ].join('\n'))
+    expect(parsed.lines[0]).toMatchObject({ kind: 'tool', name: 'Bash', args: 'ls -la' })
+    expect(parsed.lines[1]).toMatchObject({
+      kind: 'tool', name: 'Task', args: '{"description":"跑腿","prompt":"把 a 改成 b"}',
+    })
+  })
+
+  it('folds a server-side web search into a paired WebSearch card', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [
+        { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: { query: 'dsh harness' } },
+      ] } }),
+      JSON.stringify({ type: 'user', message: { content: [
+        { type: 'web_search_tool_result', tool_use_id: 'srv1', content: [
+          { type: 'web_search_result', title: 'deepseek-harness', url: 'https://example.com/harness' },
+          { type: 'web_search_result', url: 'https://example.com/other' },
+        ] },
+      ] } }),
+    ].join('\n'))
+    expect(parsed.lines).toEqual([
+      {
+        kind: 'tool', id: 'srv1', name: 'WebSearch', args: 'dsh harness',
+        result: 'deepseek-harness — https://example.com/harness\nhttps://example.com/other',
+      },
+    ])
+    expect(parsed.toolCalls).toEqual({ count: 1, byName: { web_search: 1 } })
+  })
+
+  it('folds a server-side web fetch into a paired WebFetch card (error and text alike)', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [
+        { type: 'server_tool_use', id: 'srv2', name: 'web_fetch', input: { url: 'https://example.com/doc' } },
+      ] } }),
+      JSON.stringify({ type: 'user', message: { content: [
+        { type: 'web_fetch_tool_result', tool_use_id: 'srv2', content: { type: 'web_fetch_result', url: 'https://example.com/doc', content: 'the page body' } },
+      ] } }),
+    ].join('\n'))
+    expect(parsed.lines).toEqual([
+      { kind: 'tool', id: 'srv2', name: 'WebFetch', args: 'https://example.com/doc', result: 'https://example.com/doc\nthe page body' },
+    ])
+  })
+
+  it('a redacted_thinking block folds to a visible placeholder think line', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [
+        { type: 'redacted_thinking', data: 'EhoBCkYICxgCKkA' },
+        { type: 'text', text: '想好了' },
+      ] } }),
+    ].join('\n'))
+    expect(parsed.lines).toEqual([
+      { kind: 'think', text: REDACTED_THINKING_TEXT },
+      { kind: 'text', text: '想好了' },
+    ])
   })
 })
 

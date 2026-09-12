@@ -21,6 +21,7 @@ import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
 import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, syncClaudeCredentialFile } from './records.ts'
 import { claudeLogout, provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
 
@@ -154,13 +155,43 @@ export function apply(ctx: Context, config: Config): void {
       const model = scope.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
+    // The member model layers above the settings key: the session-level
+    // override map (the composer's picker writes it through the broker; both
+    // round paths and the live spawn read it) and the scoped-settings.json
+    // scratch memory (a live spawn writes the member's effective model into
+    // the file because a --resume respawn honors it over the --model flag;
+    // the memory keeps the person's own configured value straight across
+    // those writes).
+    const overrides = new Map<string, string>()
+    const scopedModelMemory = new ClaudeScopedModelMemory()
+    // The member's effective model in the family's fixed order: override,
+    // then the round's delegation model, then the settings key. The scoped
+    // file and the CLI's built-in default decide below that, as they always
+    // did — they need no argv representation.
+    const effectiveModel = (childSessionId: string, delegationModel?: string): string | undefined => {
+      const own = overrides.get(childSessionId)?.trim()
+      if (own !== undefined && own !== '') return own
+      const named = delegationModel?.trim()
+      if (named !== undefined && named !== '') return named
+      return resolveModel()
+    }
     const liveSwitch = new LiveDriverSwitch(ctx, scope, {
       ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
       ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
-      model: resolveModel,
+      model: effectiveModel,
+      provisionModel: (home, model) => scopedModelMemory.provision(home, model),
     })
-    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve, resolveModel))
+    const modelBroker = new ClaudeModelBroker({
+      localAgent: ctx.localAgent,
+      settingsModel: resolveModel,
+      cliDefault: () => scopedModelMemory.cliDefault(homeDir),
+      recentModels: () => scope.get().recentModels ?? [],
+      live: () => scope.get().live,
+      overrides,
+      liveSwitch,
+    })
+    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve, effectiveModel))
     const disposeHarness = ctx.localAgent.register({
       name: 'claude-code',
       displayName: 'Claude Code',
@@ -197,6 +228,10 @@ export function apply(ctx: Context, config: Config): void {
       isAuthenticated: claudeAuthenticated,
       credentialStamp: claudeCredentialStamp,
       logout: claudeLogout,
+      // The model surface: the settings card reads the memberless info ("what
+      // would a round run with"), the member composer reads and switches a
+      // member's session-level override through the same broker.
+      modelBroker,
       // The eval snapshot: the permission mode is the plugin config resolved
       // at apply (it selects the spawn flags); the endpoint mirrors the
       // provider's own resolution order — the config item wins over the host
