@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-13-mobile-shared-header-and-gestures.md
-.agents/notes/implemented/bug-fix/2026-09-13-mobile-shared-header-and-gestures.md: c2972985e6a3aa2dccfcdf3f5a3b0d8422c70cee
-.agents/notes/implemented/bug-fix/2026-09-13-mobile-shared-header-and-gestures.zh.md: a588706c3a93d93a317f06675bc4d0f66da14b16
+.agents/notes/implemented/bug-fix/2026-09-13-mobile-shared-header-and-gestures.md: 257d155bfab3ba6553bf245b7faf0dadb190db32
+.agents/notes/implemented/bug-fix/2026-09-13-mobile-shared-header-and-gestures.zh.md: d90330bf3b8b63192952216f748b3952670f6d04

@@ -69,9 +69,9 @@ html[data-dsh-mobile] [data-slot="conversation.input.right"] { max-width: 100%; 
 [data-mobile-dialog] button[aria-pressed="true"] { color: #4d6bfe; background: #4d6bfe12; }
 [data-mobile-dialog] [data-mobile-done] { display: block; width: 100%; margin-top: 24px; background: #4d6bfe; color: white; border-radius: 100px; }
 
-/* Only the checked rc1 single, ordinary breadcrumb is redundant with our title.
-   Keep child lineage, ancestor navigation, actions, utilities and tabs untouched. */
+/* Hide an empty ordinary breadcrumb; populated catalogs keep their Host trigger. */
 html[data-dsh-mobile]:has([data-mobile-session-title]) ${ORDINARY_TITLE} { display:none; }
+html[data-dsh-mobile] [data-mobile-lineage-count] { flex-shrink:0; white-space:nowrap; }
 [data-mobile-restore] { position:fixed; right:16px; bottom:max(16px,env(safe-area-inset-bottom)); z-index:1200; pointer-events:auto; min-height:44px; padding:10px 18px; border:1px solid #4d6bfe40; border-radius:24px; background:var(--dsw-alias-bg-base,white); color:#4d6bfe; font:inherit; box-shadow:0 3px 18px #15244318; }
 
 /* Mobile-owned library: scrolling content and a separate keyboard-aware search dock. */

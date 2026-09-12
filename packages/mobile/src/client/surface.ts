@@ -24,6 +24,18 @@ export class MobileSurface {
       }
     }
     if (root?.dataset.phase === 'active' && row) {
+      // The ordinary current title duplicates the mobile title. Compact only the
+      // checked count dropdown; preserve ancestor links and subagent switchers.
+      for (const title of row.querySelectorAll<HTMLElement>('nav > span > button:disabled')) {
+        const slot = title.nextElementSibling
+        if (slot?.getAttribute('data-slot') !== 'conversation.session.header.lineage') continue
+        const count = slot.querySelector<HTMLElement>(':scope > div:only-child > button[aria-haspopup="tree"]')
+        const separator = count?.previousElementSibling
+        if (!count || separator?.tagName !== 'SPAN' || separator.textContent !== '/') continue
+        this.mark(title, 'data-mobile-header-hidden')
+        this.mark(separator as HTMLElement, 'data-mobile-header-hidden')
+        this.mark(count, 'data-mobile-lineage-count')
+      }
       const label = row.querySelector<HTMLElement>('[data-slot="conversation.session.header.actions"] > span[title]:has(svg mask[id^="mask0_agent_preset"])')
       if (label) { preset = label.textContent?.trim() ?? ''; this.mark(label, 'data-mobile-header-hidden') }
       for (const img of row.querySelectorAll<HTMLImageElement>('img[src^="/open-in-app/icon/"]')) {

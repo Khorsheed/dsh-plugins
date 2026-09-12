@@ -14,6 +14,8 @@ Use a mobile modal for the title draft and the same sessions.binding(id).session
 
 Allow horizontal gestures on mobile conversation rows, workspace groups and the exposed conversation preview. Claim only intentional horizontal movement, cancel on vertical or multi-touch motion, and consume the following synthetic tap. Editors, selections, unrelated controls and horizontally scrolling content remain untouched. Keep wide pinned layouts stable. The Host workspace sidebar closes left through its existing toggle. An already-open right sidebar can slide right to close through its existing owner toggle; unknown panels retain their controls. Respect reduced motion for settling animations. Add subtle separators between preset options without changing their selection callbacks.
 
+For an ordinary current session with a checked child-count dropdown, hide the redundant disabled title and its count separator. Retain the original live count, activity indicator and catalog trigger across providers, along with real ancestor links and child-session switchers. Unknown lineage shapes keep their original presentation.
+
 ## Alternatives considered
 
 Separate Rooms toolbar code would grow the maintenance split. Hiding all header slots would erase plugin actions and child navigation. Styling the inline input alone would retain its keyboard/layout interference. A second rename API would duplicate Host normalization and title-pinning behavior. Letting all buttons accept navigation swipes would interfere with unrelated controls.

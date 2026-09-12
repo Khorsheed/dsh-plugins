@@ -67,3 +67,33 @@ it('uses the same header adaptation for Rooms while preserving membership and pl
   expect(document.querySelector('[aria-label="More actions"]')!.hasAttribute('data-mobile-header-hidden')).toBe(true)
   for (const selector of ['[data-room-members]', '[data-git-branch]', 'nav']) expect(document.querySelector(selector)!.closest('[data-mobile-header-hidden]')).toBeNull()
 })
+
+it('compacts the current title without replacing the live catalog or ancestor navigation', () => {
+  const { frame, surface } = fixture()
+  const nav = document.querySelector('nav')!
+  nav.insertAdjacentHTML('afterbegin', '<span><button data-parent>Parent</button></span>')
+  const slot = document.querySelector('[data-slot="conversation.session.header.lineage"]')!
+  slot.innerHTML = '<div><span>/</span><button aria-haspopup="tree" aria-expanded="false"><span>1 个子代理</span></button></div>'
+  const original = frame.innerHTML
+  const count = slot.querySelector('button')!, parent = nav.querySelector<HTMLButtonElement>('[data-parent]')!
+  const open = vi.fn(), back = vi.fn()
+  count.addEventListener('click', open); parent.addEventListener('click', back)
+  surface.sync(frame)
+  expect(nav.querySelector('button:disabled')!.hasAttribute('data-mobile-header-hidden')).toBe(true)
+  expect(count.previousElementSibling!.hasAttribute('data-mobile-header-hidden')).toBe(true)
+  expect(count.hasAttribute('data-mobile-lineage-count')).toBe(true)
+  expect(parent.closest('[data-mobile-header-hidden]')).toBeNull()
+  count.querySelector('span')!.textContent = '12 个子代理'; surface.sync(frame)
+  expect(count.textContent).toBe('12 个子代理')
+  count.click(); parent.click(); expect(open).toHaveBeenCalledOnce(); expect(back).toHaveBeenCalledOnce()
+  count.querySelector('span')!.textContent = '1 个子代理'
+  surface.dispose(); expect(frame.innerHTML).toBe(original)
+})
+it('leaves unknown lineage shapes and interactive subagent switchers unchanged', () => {
+  const { frame, surface } = fixture()
+  const slot = document.querySelector('[data-slot="conversation.session.header.lineage"]')!
+  slot.innerHTML = '<div><button aria-haspopup="tree">Child title</button></div>'
+  surface.sync(frame)
+  expect(document.querySelector('nav [data-mobile-header-hidden]')).toBeNull()
+  expect(document.querySelector('[data-mobile-lineage-count]')).toBeNull()
+})
