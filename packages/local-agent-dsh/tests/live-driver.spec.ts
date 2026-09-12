@@ -197,9 +197,38 @@ function answerEvents(turn: number, task: string, answer: string): Partial<Sessi
   return [
     { type: 'turn/start', data: { turn } },
     { type: 'user/message', data: { content: [{ type: 'text', text: task }], source: { kind: 'user' }, role: 'user' } },
+    { type: 'step/start', data: { turn, step: 1 } },
     { type: 'assistant/message', data: { turn, step: 1, message: { content: [{ type: 'text', text: answer }], source: { provider: 'deepseek-official', model: 'm' } } } },
+    { type: 'step/end', data: { turn, step: 1 } },
     { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } },
   ]
+}
+
+/**
+ * Assert every mirrored content event sits inside its `step/start`–`step/end`
+ * pair: the real-time subsession view only materializes an assistant message
+ * whose step is opened by a step/start boundary — the live push mirror must
+ * copy the sub-dsh's pairs verbatim, or the live view drops the message.
+ */
+function expectStepBoundaries(child: Session): void {
+  const events = child.snapshotEvents()
+  const boundaries = events.filter(event => event.type === 'step/start' || event.type === 'step/end')
+  const content = events.filter(event =>
+    event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+  expect(content.length).toBeGreaterThan(0)
+  for (const event of content) {
+    const { turn, step } = event.data as { turn: number; step: number }
+    const at = boundaries.filter(boundary => {
+      const data = boundary.data as { turn: number; step: number }
+      return data.turn === turn && data.step === step
+    })
+    const start = at.find(boundary => boundary.type === 'step/start')
+    const end = at.find(boundary => boundary.type === 'step/end')
+    expect(start, `step/start for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(end, `step/end for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(start!.seq).toBeLessThan(event.seq)
+    expect(end!.seq).toBeGreaterThan(event.seq)
+  }
 }
 
 interface Mount {
@@ -319,6 +348,9 @@ describe('dsh live driver rounds', () => {
     // Push mirror: the exchange landed in the child session event-by-event.
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    // The sub-dsh's step boundary pair crossed verbatim around the reply —
+    // without it the real-time subsession view would not render the message.
+    expectStepBoundaries(child)
     // Turn boundaries are the parent's own (opened after the accept ack, closed at settle).
     expect(child.snapshotEvents().filter(e => e.type === 'turn/start')).toHaveLength(1)
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })

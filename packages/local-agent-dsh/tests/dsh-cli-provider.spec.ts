@@ -254,7 +254,9 @@ describe('dsh-cli-provider fresh run', () => {
       JSON.stringify({ type: 'session', version: 0, id: 'sub-live-1' }),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       JSON.stringify({ type: 'user/message', seq: 1, time: 2, data: { content: [{ type: 'text', text: '建个文件' }], source: { kind: 'user' }, role: 'user' } }),
-      JSON.stringify({ type: 'assistant/message', seq: 2, time: 3, data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '第一条回复' }], source: { provider: 'deepseek-official', model: 'm' } } } }),
+      JSON.stringify({ type: 'step/start', seq: 2, time: 3, data: { turn: 1, step: 1 } }),
+      JSON.stringify({ type: 'assistant/message', seq: 3, time: 4, data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '第一条回复' }], source: { provider: 'deepseek-official', model: 'm' } } } }),
+      JSON.stringify({ type: 'step/end', seq: 4, time: 5, data: { turn: 1, step: 1 } }),
     ].join('\n') + '\n')
 
     // A live poll mirrors it while the process is STILL running.
@@ -273,6 +275,10 @@ describe('dsh-cli-provider fresh run', () => {
     })
     expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
+    // The boundary pair crossed exactly once — the prefix skip counted it on
+    // both sides, so the settle pass did not re-append it.
+    expect(child.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'step/end')).toHaveLength(1)
     await done
   })
 

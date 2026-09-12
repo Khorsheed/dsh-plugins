@@ -41,20 +41,52 @@ function userLine(text: string, kind: string): object {
 }
 
 /** One assistant/message event line with usage, as the sub-dsh records it. */
-function assistantLine(turn: number, text: string): object {
+function assistantLine(turn: number, text: string, step = 1): object {
   return {
     type: 'assistant/message',
     seq: 0,
     time: 1,
     data: {
       turn,
-      step: 1,
+      step,
       message: createAssistantMessage({
         content: [{ type: 'reasoning', text: `thinking ${turn}` }, { type: 'text', text }],
         source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       }),
       usage: { inputTokens: 100 * turn, outputTokens: 10 * turn },
     },
+  }
+}
+
+/** One step boundary event line, as the sub-dsh's real agent loop writes it. */
+function stepLine(kind: 'step/start' | 'step/end', turn: number, step: number): object {
+  return { type: kind, seq: 0, time: 1, data: { turn, step } }
+}
+
+/**
+ * Assert every mirrored content event sits inside its `step/start`–`step/end`
+ * pair: the real-time subsession view only materializes an assistant message
+ * whose step is opened by a step/start boundary — the mirror must copy the
+ * sub-dsh's pairs verbatim, or the live view drops the message.
+ */
+function expectStepBoundaries(child: Session): void {
+  const events = child.snapshotEvents()
+  const boundaries = events.filter(event => event.type === 'step/start' || event.type === 'step/end')
+  const content = events.filter(event =>
+    event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+  expect(content.length).toBeGreaterThan(0)
+  for (const event of content) {
+    const { turn, step } = event.data as { turn: number; step: number }
+    const at = boundaries.filter(boundary => {
+      const data = boundary.data as { turn: number; step: number }
+      return data.turn === turn && data.step === step
+    })
+    const start = at.find(boundary => boundary.type === 'step/start')
+    const end = at.find(boundary => boundary.type === 'step/end')
+    expect(start, `step/start for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(end, `step/end for ${event.type} at ${turn}:${step}`).toBeDefined()
+    expect(start!.seq).toBeLessThan(event.seq)
+    expect(end!.seq).toBeGreaterThan(event.seq)
   }
 }
 
@@ -66,11 +98,15 @@ function twoRoundLines(): object[] {
     userLine('第一轮任务', 'user'),
     userLine('<system-reminder> workspace</system-reminder>', 'agent-instructions'),
     userLine('Current runtime context…', '@deepseek-ai/dsh-system-prompt'),
+    stepLine('step/start', 1, 1),
     assistantLine(1, '第一轮回答'),
+    stepLine('step/end', 1, 1),
     { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     { type: 'turn/start', seq: 0, time: 1, data: { turn: 2 } },
     userLine('第二轮任务', 'user'),
+    stepLine('step/start', 2, 1),
     assistantLine(2, '第二轮回答'),
+    stepLine('step/end', 2, 1),
     { type: 'turn/end', seq: 0, time: 1, data: { turn: 2, reason: { kind: 'completed' } } },
   ]
 }
@@ -146,6 +182,8 @@ describe('mirrorDshSession', () => {
     // Scaffolding (agent-instructions / plugin context) never crosses.
     expect(JSON.stringify(child.snapshotEvents())).not.toContain('agent-instructions')
     expect(JSON.stringify(child.snapshotEvents())).not.toContain('runtime context')
+    // The sub-dsh's own step boundary pair crossed verbatim around the reply.
+    expectStepBoundaries(child)
   })
 
   it('mirrors only the resumed round incrementally on a later round', async () => {
@@ -165,6 +203,7 @@ describe('mirrorDshSession', () => {
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
       userLine('干活', 'user'),
+      stepLine('step/start', 1, 1),
       {
         type: 'tool/call',
         seq: 3,
@@ -186,7 +225,10 @@ describe('mirrorDshSession', () => {
           },
         },
       },
-      assistantLine(1, '做完了'),
+      stepLine('step/end', 1, 1),
+      stepLine('step/start', 1, 2),
+      assistantLine(1, '做完了', 2),
+      stepLine('step/end', 1, 2),
       { type: 'turn/end', seq: 6, time: 4, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const child = childWithRounds('child-tools', 1)
@@ -201,6 +243,8 @@ describe('mirrorDshSession', () => {
     // (the source event's own sourceEventSeqs referenced the sub-dsh log's
     // numbering, which the remap drops).
     expect(results[0]?.sourceEventSeqs).toEqual([calls[0]!.seq])
+    // Both steps crossed with their boundary pairs intact.
+    expectStepBoundaries(child)
   })
 
   it('reports the round\'s tool-call accounting off the round window', async () => {
@@ -215,10 +259,18 @@ describe('mirrorDshSession', () => {
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
       userLine('干活', 'user'),
+      stepLine('step/start', 1, 3),
       call(3, 'Bash', 'c1'),
+      stepLine('step/end', 1, 3),
+      stepLine('step/start', 1, 4),
       call(4, 'Bash', 'c2'),
+      stepLine('step/end', 1, 4),
+      stepLine('step/start', 1, 5),
       call(5, 'Read', 'c3'),
-      assistantLine(1, '做完了'),
+      stepLine('step/end', 1, 5),
+      stepLine('step/start', 1, 6),
+      assistantLine(1, '做完了', 6),
+      stepLine('step/end', 1, 6),
       { type: 'turn/end', seq: 7, time: 7, data: { turn: 1, reason: { kind: 'completed' } } },
       // A SECOND round's calls must not leak into the first round's count.
       { type: 'turn/start', seq: 8, time: 8, data: { turn: 2 } },
@@ -229,6 +281,7 @@ describe('mirrorDshSession', () => {
     const child = childWithRounds('child-tool-count', 1)
     const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-tool-count')
     expect(delta.toolCalls).toEqual({ count: 3, byName: { Bash: 2, Read: 1 } })
+    expectStepBoundaries(child)
   })
 
   it('a settle pass a live poll already drained still reports the round count', async () => {
@@ -237,18 +290,24 @@ describe('mirrorDshSession', () => {
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
       userLine('干活', 'user'),
+      stepLine('step/start', 1, 1),
       { type: 'tool/call', seq: 3, time: 3, data: { turn: 1, step: 1, callId: 'c1', name: 'Bash', arguments: '{}' } },
-      assistantLine(1, '做完了'),
+      stepLine('step/end', 1, 1),
+      stepLine('step/start', 1, 2),
+      assistantLine(1, '做完了', 2),
+      stepLine('step/end', 1, 2),
       { type: 'turn/end', seq: 5, time: 5, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const child = childWithRounds('child-tool-drained', 1)
     const first = await mirrorDshSession(fakeCtx(), child, home, 'child-tool-drained')
     expect(first.toolCalls).toEqual({ count: 1, byName: { Bash: 1 } })
-    // Second pass: the prefix skip leaves nothing new to mirror, but the
-    // accounting is read off the round window, so it still comes back.
+    // Second pass: the prefix skip (step boundaries counted on BOTH sides)
+    // leaves nothing new to mirror, but the accounting is read off the round
+    // window, so it still comes back.
     const second = await mirrorDshSession(fakeCtx(), child, home, 'child-tool-drained')
     expect(second.texts).toEqual([])
     expect(second.toolCalls).toEqual({ count: 1, byName: { Bash: 1 } })
+    expectStepBoundaries(child)
   })
 
   it('a round that called no tool reports no accounting at all', async () => {
@@ -273,13 +332,17 @@ describe('mirrorDshSession', () => {
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
       userLine('第一轮任务', 'user'),
+      stepLine('step/start', 1, 1),
       assistantLine(1, '第一条回复'),
+      stepLine('step/end', 1, 1),
     ])
     const child = childWithRounds('child-4', 1)
     const first = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
     expect(first).toEqual({
       texts: ['第一轮任务', 'thinking 1第一条回复'],
-      total: 2,
+      // Four events crossed (task, boundary pair, reply); the boundaries
+      // count in the total but carry no delta text.
+      total: 4,
       // The round's own span names the model and sums the assistant usage.
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
@@ -293,14 +356,18 @@ describe('mirrorDshSession', () => {
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
       userLine('第一轮任务', 'user'),
+      stepLine('step/start', 1, 1),
       assistantLine(1, '第一条回复'),
-      assistantLine(1, '第二条回复'),
+      stepLine('step/end', 1, 1),
+      stepLine('step/start', 1, 2),
+      assistantLine(1, '第二条回复', 2),
+      stepLine('step/end', 1, 2),
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const second = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
     expect(second).toEqual({
       texts: ['thinking 1第二条回复'],
-      total: 3,
+      total: 7,
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 200, outputTokens: 20 },
@@ -308,7 +375,7 @@ describe('mirrorDshSession', () => {
     const third = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
     expect(third).toEqual({
       texts: [],
-      total: 3,
+      total: 7,
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 200, outputTokens: 20 },
@@ -318,6 +385,9 @@ describe('mirrorDshSession', () => {
     expect(assistant).toHaveLength(2)
     const texts = assistant.map(event => JSON.stringify(event.data))
     expect(new Set(texts).size).toBe(texts.length)
+    // Each mirrored reply kept its own verbatim boundary pair — no duplicated
+    // step/start for a repeated (turn, step).
+    expectStepBoundaries(child)
   })
 
   it('passes todo/write through as the standing snapshot, idempotent across passes', async () => {
@@ -331,7 +401,9 @@ describe('mirrorDshSession', () => {
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
       userLine('任务', 'user'),
       { type: 'todo/write', seq: 0, time: 1, data: todos1 },
+      stepLine('step/start', 1, 1),
       assistantLine(1, '回复'),
+      stepLine('step/end', 1, 1),
     ])
     const child = childWithRounds('child-todo', 1)
 
@@ -340,7 +412,7 @@ describe('mirrorDshSession', () => {
     const writes = child.snapshotEvents().filter(event => event.type === 'todo/write')
     expect(writes).toHaveLength(1)
     expect(writes[0]?.data).toEqual(todos1)
-    expect(first.total).toBe(3)
+    expect(first.total).toBe(5)
     expect(first.texts).toEqual(['任务', 'thinking 1回复'])
 
     // A repeat pass over an unchanged log is a pure no-op — no duplicate
@@ -348,7 +420,7 @@ describe('mirrorDshSession', () => {
     const repeat = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
     expect(repeat).toEqual({
       texts: [],
-      total: 3,
+      total: 5,
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 100, outputTokens: 10 },
@@ -366,14 +438,16 @@ describe('mirrorDshSession', () => {
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
       userLine('任务', 'user'),
       { type: 'todo/write', seq: 0, time: 1, data: todos1 },
+      stepLine('step/start', 1, 1),
       assistantLine(1, '回复'),
+      stepLine('step/end', 1, 1),
       { type: 'todo/write', seq: 0, time: 1, data: todos2 },
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const second = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
     expect(second).toEqual({
       texts: [],
-      total: 4,
+      total: 6,
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 100, outputTokens: 10 },
@@ -390,15 +464,34 @@ describe('mirrorDshLiveEvent', () => {
     // The caller task crosses; scaffolding user messages stay behind.
     expect(mirrorDshLiveEvent(child, userLine('实时任务', 'user') as never)).toBe('实时任务')
     expect(mirrorDshLiveEvent(child, userLine('脚手架', 'plugin') as never)).toBeUndefined()
+    // Step boundaries cross verbatim (their own coordinates) but carry no
+    // delta text — structure, not content.
+    expect(mirrorDshLiveEvent(child, stepLine('step/start', 1, 1) as never)).toBeUndefined()
     // Assistant messages cross verbatim, usage included, same as the span loop.
     const text = mirrorDshLiveEvent(child, assistantLine(1, '实时回复') as never)
     expect(text).toBe('thinking 1实时回复')
+    expect(mirrorDshLiveEvent(child, stepLine('step/end', 1, 1) as never)).toBeUndefined()
     const assistant = child.snapshotEvents().find(event => event.type === 'assistant/message')
     expect(assistant?.data).toMatchObject({ usage: { inputTokens: 100, outputTokens: 10 } })
+    const starts = child.snapshotEvents().filter(event => event.type === 'step/start')
+    expect(starts).toHaveLength(1)
+    expect(starts[0]?.data).toEqual({ turn: 1, step: 1 })
+    expectStepBoundaries(child)
     // Turn boundaries never cross (the parent's own stay authoritative).
     expect(mirrorDshLiveEvent(child, { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } } as never)).toBeUndefined()
     expect(mirrorDshLiveEvent(child, { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } } as never)).toBeUndefined()
     expect(child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toHaveLength(0)
+  })
+
+  it('mirrors an interrupted step as an OPEN pair (start without end — nothing synthesized)', () => {
+    const child = Session.create(SessionId('child-live-open-step'))
+    mirrorDshLiveEvent(child, stepLine('step/start', 1, 1) as never)
+    mirrorDshLiveEvent(child, assistantLine(1, '被打断的回复') as never)
+    // The sub-dsh was interrupted before step/end: the open step crosses
+    // as-is (its location still resolves to the step, so the reply renders)
+    // and no closing boundary is invented.
+    expect(child.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'step/end')).toHaveLength(0)
   })
 
   it('never crosses an assistant/attempt (no surface content — host 0.1.5 retired per-chunk events)', () => {
@@ -417,28 +510,40 @@ describe('mirrorDshLiveEvent', () => {
     const home = tempHome()
     const child = Session.create(SessionId('child-live-parity'))
     child.append('turn/start', { turn: 1 })
-    // The live transport mirrored the task and the first reply event-by-event.
+    // The live transport mirrored the task, the first reply, AND the step
+    // boundary pair event-by-event.
     mirrorDshLiveEvent(child, userLine('第一轮任务', 'user') as never)
+    mirrorDshLiveEvent(child, stepLine('step/start', 1, 1) as never)
     mirrorDshLiveEvent(child, assistantLine(1, '第一条回复') as never)
+    mirrorDshLiveEvent(child, stepLine('step/end', 1, 1) as never)
     // The settle reconciliation pass over the on-disk log (which additionally
-    // holds a second reply the wire had not pushed) mirrors exactly the delta.
+    // holds a second reply the wire had not pushed) mirrors exactly the delta —
+    // the boundaries occupy skip positions on both sides, so nothing re-crosses.
     writeSubDshSession(home, 'child-live-parity', [
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
       userLine('第一轮任务', 'user'),
+      stepLine('step/start', 1, 1),
       assistantLine(1, '第一条回复'),
-      assistantLine(1, '第二条回复'),
+      stepLine('step/end', 1, 1),
+      stepLine('step/start', 1, 2),
+      assistantLine(1, '第二条回复', 2),
+      stepLine('step/end', 1, 2),
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-live-parity')
     expect(delta).toEqual({
       texts: ['thinking 1第二条回复'],
-      total: 3,
+      total: 7,
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 200, outputTokens: 20 },
     })
     expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    // Live-pushed and file-mirrored steps both hold their boundary pairs —
+    // no duplicated step/start for the same (turn, step).
+    expectStepBoundaries(child)
+    expect(child.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(2)
   })
 })
 
@@ -449,7 +554,9 @@ describe('mirrorDshSession persistence', () => {
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
       userLine('任务', 'user'),
+      stepLine('step/start', 1, 1),
       assistantLine(1, '回复'),
+      stepLine('step/end', 1, 1),
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const persistence = fakeSessionPersistence()
