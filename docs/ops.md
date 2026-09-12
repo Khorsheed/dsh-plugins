@@ -44,7 +44,11 @@
 **自服务流程就是一条命令**——任何 agent 都可运行,无需通知守护者:
 
 ```sh
-pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个包>] [--initiator <你的id>]
+pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个包>]
+# --initiator <会话id> 只用于"代某个会话调度重启"的罕见场景;默认不要传——
+# 不传时 ankh-guard 把重启报告路由给它的调用方会话($DSH_SESSION_ID)。
+# 传一个非会话 id(用户名、分支名)会把报告投进永不存在的会话:记录一直
+# pending 直到被下次重启覆盖,报告静默丢失(2026-09-12 实踩)。
 ```
 
 `scripts/deploy-3080.mts` 按顺序执行全部六道闸,任何一步不过即中止、不重启:① build+test(typert 生成用 `GEN_TYPERT_ONLY` 限定到本包,邻居的在制品红色状态不会拖死你)② pack-dist 出包并复制到 profile 的 tarball 目录(上一份 known-good 留在 `dist-legacy/`,回滚 = 换 tgz + 重跑本命令)③ 刷新 profile 清单与家族 overrides 并全新安装 ④ 录制绿色凭证 ⑤ preflight(**FAIL 即停,永不绕过**)⑥ `schedule-exit` 按闸重启 + 监听 canary PASS。收尾会打印一段粘贴即用的通报文本。`--no-restart` 完成安装/更新和诊断 preflight，但不请求重启；通报明确写“未重启、运行实例尚未验证加载本次构建、未验证 canary”，不能当作上线验收。失败路径不打印成功通报，旧 tarball 保留到整条请求流程成功后才清理。
@@ -91,6 +95,14 @@ pnpm deploy:check-links
 1. **会话里能列出 skill,并且真调用一次**:在 3080 开一个会话,确认插件注册的 skill(如 `dsh-self-restart-guard`)在技能目录可见——还要**真的触发一次调用**:宿主在 load 时才校验注册载荷(`source` 等字段),只看目录会漏掉"列出即正常、调用即炸"这一类(0.1.0 的教训)
 2. **check-env 读数正常**:`dsh-ankh-guard check-env --port 3080` 的监督/启动读数无异常(缺能力、降级项要出声,不允许静默)
 3. **跑一次门禁重启**:`deploy:3080` 或 `schedule-exit` 走一遍完整闸,canary PASS 才算闭环
+4. **改了 client bundle 的,加验"HTTP 层确实在服务它"**:宿主只服务组合 URL(`/plugins/??<id>/client.js&rev=<rev>`),rev 是每进程 nonce,静态 `/plugins/<pkg>/client.js` 永远 404、不是探针。从 graph 快照取当前 URL 再访问(无需鉴权):
+
+   ```sh
+   URL=$(curl --noproxy '*' -gsNm3 http://127.0.0.1:3080/plugins/events | sed -n 's/^data: //p' | head -1 | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const e=JSON.parse(s).graph.entries.find(e=>e.id===process.argv[1]);if(!e)process.exit(1);console.log(e.url)})" '<pkg>') \
+     && curl --noproxy '*' -gs -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3080$URL"   # 应为 200
+   ```
+
+   boot 的 activation 阶段已读取每个 client bundle 的字节(缺失即 ClientPackageCompositionError、boot 失败),所以"ready + canary PASS"证明的是"被读取并组合";这条探针补 HTTP 层的直接证据,"浏览器里真跑起来"仍靠浏览器验收兜底。
 
 打包产物层面的验证已由工具接管(pack-dist 打包即校验、CI 全包 pack 门禁、`check:plugins` 的 files 覆盖不变量),迁移方不需要手工 `tar -tzf` 抽查——但验收清单这三步是部署后信号,替代不了。
 

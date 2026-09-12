@@ -33,8 +33,8 @@ if(cmd==='node'&&args[1]==='schedule-exit')fs.appendFileSync(path.join(home,'sta
 if(cmd==='curl'){const marker=path.join(home,'curl-once');const first=process.env.FAILURE==='http-once'&&!fs.existsSync(marker);fs.writeFileSync(marker,'1');process.stdout.write(first?'500':'401');}
 `
   for (const command of ['node', 'pnpm', 'npx', 'git', 'sleep', 'curl']) { const p = join(bin, command); writeFileSync(p, stub); chmodSync(p, 0o755) }
-  return { root, home, harness, old, profile, run(noRestart = true) {
-    const result = spawnSync(process.execPath, ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href, join(repo, 'scripts/deploy-3080.mts'), '--package', 'packages/demo', ...(noRestart ? ['--no-restart'] : [])], {
+  return { root, home, harness, old, profile, run(noRestart = true, extra: string[] = []) {
+    const result = spawnSync(process.execPath, ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href, join(repo, 'scripts/deploy-3080.mts'), '--package', 'packages/demo', ...(noRestart ? ['--no-restart'] : []), ...extra], {
       cwd: root, env: { ...process.env, DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls'), FAILURE: failure }, encoding: 'utf8', timeout: 15000,
     })
     const calls = existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8').trim().split('\n').map(x => JSON.parse(x) as string[]) : []
@@ -90,4 +90,18 @@ describe('deploy 3080 flow', () => {
     const f = fixture(), lock = join(f.home, 'state/deploy-3080.pid'); writeFileSync(lock, String(process.pid))
     const r = f.run(); expect(r.status).not.toBe(0); expect(r.calls).toEqual([]); expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
   })
+  it('omits --initiator by default (the guard routes to the caller session) and passes an explicit session id through', () => {
+    // The old default ($USER) routed every restart report to a session that
+    // never exists — the report stayed pending until the next restart
+    // overwrote it (silently lost). The flag must only appear on demand.
+    const dflt = fixture().run(false)
+    expect(dflt.status, dflt.output).toBe(0)
+    const scheduleExit = dflt.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')
+    expect(scheduleExit, dflt.calls.map(c => c.join(' ')).join('\n')).toBeDefined()
+    expect(scheduleExit).not.toContain('--initiator')
+    const named = fixture().run(false, ['--initiator', 'session-abc'])
+    expect(named.status, named.output).toBe(0)
+    const namedExit = named.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')!
+    expect(namedExit.slice(namedExit.indexOf('--initiator'))).toEqual(['--initiator', 'session-abc'])
+  }, 30000)
 })
