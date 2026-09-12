@@ -16,6 +16,7 @@ final class BrowserState: ObservableObject {
     @Published var sheet: MobileSheet?
     @Published var layoutDiagnostic = ""
     @Published var displayMode = "auto"
+    @Published var pageBackground = UIColor.systemBackground
     weak var webView: WKWebView?
 
     init() {
@@ -90,6 +91,7 @@ struct ContentView: View {
                 }
             } else { ConnectionView(browser: browser) }
         }
+        .background(Color(uiColor: browser.pageBackground).ignoresSafeArea())
         .tint(Color(red: 0.30, green: 0.42, blue: 1))
         .preferredColorScheme(appearance == "system" ? nil : appearance == "dark" ? .dark : .light)
         .sheet(item: $browser.sheet) { page in

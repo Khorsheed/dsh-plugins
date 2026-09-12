@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { installNavigationGestures } from './gestures.ts'
 import { MobileRoomNavigation } from './MobileRooms.tsx'
 import type { MobileRooms } from './rooms.ts'
 import { MobileIcon } from './MobileIcon.tsx'
@@ -20,14 +21,14 @@ export interface MobileChromeInjected {
 
 const emptySubscribe = () => () => {}
 const emptyPreset = () => ''
-function ConversationTitle({ navigation, fallback, prepareNavigation, surface }: { navigation: NavigationCapabilities; fallback: string; prepareNavigation: () => void; surface?: MobileSurface }) {
+function ConversationTitle({ navigation, fallback, prepareNavigation, surface, renameLabel }: { navigation: NavigationCapabilities; fallback: string; prepareNavigation: () => void; surface?: MobileSurface; renameLabel: string }) {
   const feed = navigation.sessions.list
   const sessions = useSyncExternalStore(useCallback(listener => feed.subscribe(listener), [feed]), useCallback(() => feed.getSnapshot(), [feed]))
   useLayoutEffect(() => prepareNavigation(), [sessions.current, prepareNavigation])
   const row = sessions.current ? sessions.byId[sessions.current] : undefined
   const preset = useSyncExternalStore(surface?.subscribe ?? emptySubscribe, surface?.getSnapshot ?? emptyPreset)
   const cwd = row?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)
-  return <><strong data-mobile-session-title={row && !row.blank ? '' : undefined}>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>{row && !row.blank && (cwd || preset) && <span data-mobile-subtitle><span title={row.cwd}>{cwd}</span>{cwd && preset && <span aria-hidden>·</span>}{preset && <span>{preset}</span>}</span>}</>
+  return <><span data-mobile-title-line><strong data-mobile-session-title={row && !row.blank ? '' : undefined}>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>{row && !row.blank && <button data-mobile-rename aria-label={renameLabel} onClick={() => document.querySelector<HTMLButtonElement>('[data-mobile-original-rename]')?.click()}><MobileIcon name="edit" size={16}/></button>}</span>{row && !row.blank && (cwd || preset) && <span data-mobile-subtitle><span title={row.cwd}>{cwd}</span>{cwd && preset && <span aria-hidden>·</span>}{preset && <span>{preset}</span>}</span>}</>
 }
 
 /** One visible navigation bar, with native connection sheets when supported. */
@@ -36,6 +37,8 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
   const wire = useSyncExternalStore(connection.state.subscribe, connection.state.getSnapshot)
   const available = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot)
   const [library, setLibrary] = useState(false), [settings, setSettings] = useState(false)
+  const [wide, setWide] = useState(window.innerWidth >= 960)
+  useEffect(() => { const resize = () => setWide(window.innerWidth >= 960); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize) }, [])
   const [connectionExpanded, setConnectionExpanded] = useState(false)
   useEffect(() => {
     setConnectionExpanded(false)
@@ -43,6 +46,9 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     const timer = window.setTimeout(() => setConnectionExpanded(true), 4000)
     return () => window.clearTimeout(timer)
   }, [wire])
+  useEffect(() => {
+    if (state.active && wire === 'connected' && available?.sessions.list.getSnapshot().phase === 'pending') void available.sessions.refresh().catch(() => {})
+  }, [state.active, wire, available])
   const activated = useRef(false), dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     if (!state.active) { activated.current = false; setLibrary(false); return }
@@ -53,12 +59,20 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
   }, [state.active, state.drawer, available, toggleSidebar])
   useEffect(() => { reportChrome(state.active); return () => reportChrome(false) }, [state.active])
   useEffect(() => {
-    if (!state.active || !library || !available) return
+    if (!state.active || !library || !available || wide) return
     const main = document.querySelector<HTMLElement>('[data-mobile-frame] > div:has(> [data-slot="main"])')
     if (!main) return
     const previous = main.inert; main.inert = true
     return () => { main.inert = previous }
+  }, [state.active, library, available, wide])
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-mobile-library-open', state.active && library && !!available)
+    return () => document.documentElement.removeAttribute('data-mobile-library-open')
   }, [state.active, library, available])
+  useEffect(() => {
+    if (!state.active || !available || settings) return
+    return installNavigationGestures(document, setLibrary)
+  }, [state.active, available, settings])
   const openLibrary = () => {
     if (!available) { toggleSidebar(); return }
     if (state.drawer) toggleSidebar()
@@ -88,15 +102,18 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
   return <>
     {!state.active && state.mode === 'desktop' && <button data-mobile-restore onClick={() => presentation.setMode('mobile')}>{t('restoreMobile')}</button>}
     {state.active && <>
-      {library && available && <MobileLibrary {...(rooms ? { rooms } : {})} navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} />}
-      {state.drawer && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
-      <nav data-mobile-toolbar data-library={library} aria-label={t('menu')}>
-        <button aria-label={library ? t('settings') : t('menu')} onClick={library ? openSettings : openLibrary}>
-          <MobileIcon name={library ? "settings" : "back"}/>
+      {available && <aside data-mobile-library-pane hidden={!library && !wide}>
+        <nav data-mobile-library-toolbar aria-label={t('menu')}><button aria-label={t('settings')} onClick={openSettings}><MobileIcon name="settings"/></button><button aria-label={t('newSession')} onClick={startSession}><MobileIcon name="compose"/></button></nav>
+        <MobileLibrary {...(rooms ? { rooms } : {})} navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} /></aside>}
+      {library && available && <button data-mobile-peek-close aria-label={t('close')} onClick={() => setLibrary(false)} />}
+      {state.drawer && !available && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
+      <nav data-mobile-toolbar data-library={false} aria-label={t('menu')}>
+        <button aria-label={t('menu')} onClick={openLibrary}>
+          <MobileIcon name="back"/>
         </button>
-        <div data-mobile-nav-title>{!library && (available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
+        <div data-mobile-nav-title>{(available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} renameLabel={t('renameSession')} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
         <button data-mobile-new={!!available} aria-label={available ? t('newSession') : t('settings')} onClick={available ? startSession : openSettings}><MobileIcon name={available ? "compose" : "settings"}/></button>
-        {!library && available && rooms && <MobileRoomNavigation rooms={rooms} navigation={available} prepareNavigation={presentation.prepareNavigation} t={t}/>}
+        {available && rooms && <MobileRoomNavigation rooms={rooms} navigation={available} prepareNavigation={presentation.prepareNavigation} t={t}/>}
       </nav>
       {wire !== 'connected' && connectionExpanded && <div data-mobile-connection-status role="status"><span>{t(wire ?? 'connecting')}</span><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></div>}
     </>}

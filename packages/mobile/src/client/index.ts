@@ -15,6 +15,7 @@ import type { MobileChromeInjected } from './MobileChrome.tsx'
 import { MobileQueue } from './MobileQueue.tsx'
 import { MobileRooms, type RoomRemoteFace } from './rooms.ts'
 import { MessageMenu } from './messageMenu.ts'
+import { installForegroundRecovery } from './foreground.ts'
 import { NS, en, zh } from './locales.ts'
 
 declare global {
@@ -30,11 +31,6 @@ export const inject = ['slots', 'locale', 'layout', 'connection']
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'mobile: dictionaries')
   const connection = ctx.get('connection') as ConnectionHandle
-  ctx.effect(() => {
-    const reconnect = () => { connection.reconnect() }
-    window.addEventListener('dsh-mobile-foreground', reconnect)
-    return () => { window.removeEventListener('dsh-mobile-foreground', reconnect) }
-  }, 'mobile: foreground reconnect')
   const rooms = new MobileRooms(() => ctx.get('remote.room' as never) as unknown as RoomRemoteFace | undefined)
   ctx.effect(() => () => rooms.dispose(), 'mobile: room presentation')
   const messages = new MessageMenu(document)
@@ -46,6 +42,16 @@ export function apply(ctx: Context): void {
   })
   const presentation = new MobilePresentation(window, window.__DSH_MOBILE_SHELL__?.bridgeVersion === BRIDGE_VERSION)
   ctx.effect(() => () => { presentation.dispose() }, 'mobile: presentation')
+  ctx.effect(() => {
+    let remove: (() => void) | undefined
+    const sync = () => {
+      if (presentation.getSnapshot().active) remove ??= installForegroundRecovery(window, () => connection.reconnect())
+      else { remove?.(); remove = undefined }
+    }
+    sync()
+    const unsubscribe = presentation.subscribe(sync)
+    return () => { unsubscribe(); remove?.() }
+  }, 'mobile: foreground reconnect')
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay', id: 'mobile-navigation', locale: NS,
     inject: (): MobileChromeInjected => ({ presentation, connection, navigation, rooms, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
