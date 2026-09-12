@@ -235,7 +235,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
     },
     listNames: () => roomStore.getCached(sessionId)?.members.map(member => member.name) ?? [],
-    modelChoices: async (harness) => {
+    modelSurface: async (harness) => {
       // The localAgentGateway namespace belongs to the local-agent family's
       // client half: a composition without it (or a brokerless harness)
       // answers undefined and the invite dialog keeps a plain text input.
@@ -245,7 +245,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         (name: string) => Promise<{ readonly ok: true; readonly value: LocalAgentModelInfo | null } | { readonly ok: false }>
       try {
         const carried = await harnessModel(harness)
-        return carried.ok && carried.value !== null ? carried.value.choices : undefined
+        return carried.ok && carried.value !== null ? carried.value : undefined
       } catch {
         return undefined
       }

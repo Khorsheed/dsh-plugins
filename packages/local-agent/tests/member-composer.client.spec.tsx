@@ -478,6 +478,33 @@ describe('MemberComposer', () => {
       expect(screen.getByRole('menuitemradio', { name: 'm1' })).toBeTruthy()
       expect(screen.queryByRole('menuitem', { name: zh['member.model.followSettings'] })).toBeNull()
     })
+
+    it('marks the effective model with a trailing check', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+
+      fireEvent.click(chip)
+      const current = screen.getByRole('menuitemradio', { name: 'm1' })
+      expect(current.getAttribute('aria-checked')).toBe('true')
+      expect(current.textContent).toBe('m1✓')
+      expect(screen.getByRole('menuitemradio', { name: 'm2' }).textContent).toBe('m2')
+    })
+
+    it('shows one disabled hint row instead of an empty popup when nothing is pickable', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo({
+        effective: undefined, source: 'cli-builtin', settings: undefined, choices: [],
+      }))
+      render(<MemberComposer {...props({ memberModel })} />)
+      // The chip stays enabled so the user can open the popup and see the hint.
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] }) as HTMLButtonElement
+      expect(chip.disabled).toBe(false)
+
+      fireEvent.click(chip)
+      expect(screen.queryByRole('menuitemradio')).toBeNull()
+      const hint = screen.getByRole('menuitem', { name: zh['member.model.empty'] })
+      expect(hint.getAttribute('aria-disabled')).toBe('true')
+    })
   })
 
   describe('stats line', () => {

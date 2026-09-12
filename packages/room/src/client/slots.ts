@@ -74,13 +74,14 @@ export interface RoomInviteInjected {
    */
   readonly listNames: () => readonly string[]
   /**
-   * The pickable model identifiers of one harness (the localAgentGateway
-   * `harnessModel` read), feeding the invite dialog's model datalist.
-   * Undefined = no datalist (a composition without the local-agent family's
-   * client half, or a brokerless harness): the field stays a plain text
-   * input, blank following the harness default.
+   * The pickable model surface of one harness (the localAgentGateway
+   * `harnessModel` read), feeding the invite dialog's model row: choices for
+   * the menu, the effective default the unset field displays. Undefined = no
+   * surface (a composition without the local-agent family's client half, or a
+   * brokerless harness): the field stays a plain text input, blank following
+   * the harness default.
    */
-  readonly modelChoices: (harness: string) => Promise<readonly string[] | undefined>
+  readonly modelSurface: (harness: string) => Promise<LocalAgentModelInfo | undefined>
   /**
    * The preset-composition visibility of room's session chrome (M3'
    * self-hide): the invite chip returns null when this says no, and the

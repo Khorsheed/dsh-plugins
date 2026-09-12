@@ -164,18 +164,29 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, harnessModel
     }
     setModelMenuOpen(open => !open)
   }
-  // An empty field names the default it will follow, down the chain the
-  // broker reports: the scoped config's model, then a cli-builtin source that
-  // still names its default (a harness catalog's isDefault entry), then the
-  // last observed model the records know, and last the generic copy. The
-  // placeholder answers "what does blank mean".
-  const modelPlaceholder = modelInfo?.cliDefault !== undefined && modelInfo.cliDefault !== ''
-    ? t('model.placeholder.cliConfig', { model: modelInfo.cliDefault })
+  // An unset field DISPLAYS the default it follows (dimmed, as the input's
+  // placeholder — inherited, never pinned), down the chain the broker
+  // reports: the scoped config's model, then a cli-builtin source that still
+  // names its default (a harness catalog's isDefault entry), then the last
+  // observed model the records know, and last the generic copy.
+  const inheritedModel = modelInfo?.cliDefault !== undefined && modelInfo.cliDefault !== ''
+    ? modelInfo.cliDefault
     : modelInfo?.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
-      ? t('model.placeholder.cliBuiltin', { model: modelInfo.effective })
+      ? modelInfo.effective
       : modelInfo?.lastObserved !== undefined && modelInfo.lastObserved !== ''
-        ? t('model.placeholder.lastObserved', { model: modelInfo.lastObserved })
-        : t('model.placeholder')
+        ? modelInfo.lastObserved
+        : undefined
+  const modelPlaceholder = inheritedModel ?? t('model.placeholder')
+  // The menu's leading item: the same chain, spelled as the follow-default
+  // choice. It reads checked while the field is unset, and picking it clears
+  // the draft back to follow-default (a save then unsets the key).
+  const modelDefaultItem = modelInfo?.cliDefault !== undefined && modelInfo.cliDefault !== ''
+    ? t('model.menuDefault.cliConfig', { model: modelInfo.cliDefault })
+    : modelInfo?.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
+      ? t('model.menuDefault.cliBuiltin', { model: modelInfo.effective })
+      : modelInfo?.lastObserved !== undefined && modelInfo.lastObserved !== ''
+        ? t('model.menuDefault.lastObserved', { model: modelInfo.lastObserved })
+        : t('model.menuDefault')
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -189,12 +200,12 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, harnessModel
   )
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
-  // field), or inside the select-like field next to its chevron.
+  // field), or inside the select-like field next to its chevron. No datalist:
+  // the chevron menu is the single choice list.
   const modelInputElement = (
     <input
       type="text"
       className={css.modelInput}
-      list={`${NS}-recent-models`}
       value={modelValue}
       placeholder={modelPlaceholder}
       aria-label={t('model.title')}
@@ -260,6 +271,19 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, harnessModel
                       role="menu"
                       aria-label={t('model.menu')}
                     >
+                      {/* The leading follow-default item: checked while the
+                          field is unset; picking it clears the draft back to
+                          follow-default (a save then unsets the key). */}
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={modelValue.trim() === ''}
+                        className={modelValue.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
+                        onClick={() => { setModelDraft(''); setModelMenuOpen(false) }}
+                      >
+                        <span className={css.modelItemLabel}>{modelDefaultItem}</span>
+                        <span className={css.modelItemCheck} aria-hidden>{modelValue.trim() === '' ? '✓' : ''}</span>
+                      </button>
                       {choices.map(choice => (
                         <button
                           key={choice}
@@ -269,16 +293,14 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, harnessModel
                           className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
                           onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
                         >
-                          {choice}
+                          <span className={css.modelItemLabel}>{choice}</span>
+                          <span className={css.modelItemCheck} aria-hidden>{choice === modelValue ? '✓' : ''}</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
               ) : modelInputElement}
-              <datalist id={`${NS}-recent-models`}>
-                {choices.map(value => <option key={value} value={value} />)}
-              </datalist>
               <button
                 type="button"
                 className={css.modelSave}
@@ -288,23 +310,6 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, harnessModel
                 {t('model.save')}
               </button>
             </div>
-            {modelInfo !== undefined && (
-              <span className={css.modelEffective}>
-                {/* The same chain the placeholder walks: a cli-builtin source
-                    with an effective model NAMES it (a catalog's isDefault
-                    layer); nothing naming a model falls back to the last
-                    observed one, then to the bare built-in copy. */}
-                {modelInfo.settings !== undefined
-                  ? modelInfo.effective ?? modelInfo.settings
-                  : modelInfo.cliDefault !== undefined
-                    ? t('model.effective.cliConfig', { model: modelInfo.cliDefault })
-                    : modelInfo.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
-                      ? t('model.effective.cliBuiltinNamed', { model: modelInfo.effective })
-                      : modelInfo.lastObserved !== undefined && modelInfo.lastObserved !== ''
-                        ? t('model.effective.lastObserved', { model: modelInfo.lastObserved })
-                        : t('model.effective.cliBuiltin')}
-              </span>
-            )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
             {modelError && <span className={css.errorText}>{t('model.error')}</span>}
           </section>

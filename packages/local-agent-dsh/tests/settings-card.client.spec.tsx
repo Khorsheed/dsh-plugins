@@ -5,8 +5,9 @@
  * through the host credentials, so no login action renders), the DeepSeek
  * delegation switch, the resident-mode block (live switch) writing through
  * the bound settingsScope, and the default-model block reading the harness's
- * broker surface (effective line + suggestion vocabulary) with a bare-input
- * degrade.
+ * broker surface (an unset field DISPLAYS the followed default dimmed; the
+ * chevron menu leads with a follow-default item over the full unfiltered
+ * vocabulary) with a bare-input degrade.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -253,15 +254,16 @@ describe('DshSettingsCard default-model block', () => {
     expect(harness.scope.set).toHaveBeenCalledWith('recentModels', ['model-b', 'model-a'])
   })
 
-  it('offers the saved suggestions without hardcoding any model catalog', async () => {
+  it('offers the saved suggestions through the menu without hardcoding any model catalog', async () => {
     renderCard({
       value: { enabled: true, live: false, recentModels: ['model-a', 'model-b'] },
     })
     await openCard()
-    const input = screen.getByLabelText(zh['model.title'])
-    const list = document.getElementById(input.getAttribute('list') ?? '')
-    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
-      .toEqual(['model-a', 'model-b'])
+    // No datalist anywhere: the chevron menu is the single choice list.
+    expect(document.body.querySelector('datalist')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
+    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
+      .toEqual([zh['model.menuDefault'] + '✓', 'model-a', 'model-b'])
   })
 
   it('save stays disabled while the field still matches what is stored', async () => {
@@ -286,7 +288,7 @@ describe('DshSettingsCard model surface (harness broker)', () => {
     }
   }
 
-  it('shows the settings value as the effective line when one is set', async () => {
+  it('a set field shows the stored model as a real value, not a placeholder', async () => {
     renderCard({
       value: { enabled: true, live: false, model: 'deepseek-official/deepseek-chat' },
       harnessModel: () => Promise.resolve(info({
@@ -297,10 +299,10 @@ describe('DshSettingsCard model surface (harness broker)', () => {
       })),
     })
     await openCard()
-    expect(screen.getByText('当前生效：deepseek-official/deepseek-chat')).toBeTruthy()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('deepseek-official/deepseek-chat')
   })
 
-  it('with no settings value, follows the host default model the broker read', async () => {
+  it('an unset field displays the host default model dimmed (placeholder), never as a pinned value', async () => {
     renderCard({
       harnessModel: () => Promise.resolve(info({
         effective: 'deepseek-official/deepseek-chat',
@@ -310,38 +312,53 @@ describe('DshSettingsCard model surface (harness broker)', () => {
       })),
     })
     await openCard()
-    expect(screen.getByText('跟随宿主默认模型：deepseek-official/deepseek-chat')).toBeTruthy()
+    const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
+    expect(input.value).toBe('')
+    expect(input.placeholder).toBe('deepseek-official/deepseek-chat')
   })
 
-  it('with neither layer naming a model, follows the host instance default', async () => {
+  it('keeps the generic placeholder when the broker knows no default', async () => {
     renderCard({ harnessModel: () => Promise.resolve(info()) })
     await openCard()
-    expect(screen.getByText('跟随宿主实例默认')).toBeTruthy()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
+      .toBe(zh['model.placeholder'])
   })
 
-  it('the datalist vocabulary is the broker choices, not only the recent memory', async () => {
+  it('renders no separate effective-model line — the information lives inside the control', async () => {
+    renderCard({
+      harnessModel: () => Promise.resolve(info({
+        effective: 'deepseek-official/deepseek-chat',
+        source: 'cli-config',
+        cliDefault: 'deepseek-official/deepseek-chat',
+        choices: ['deepseek-official/deepseek-chat'],
+      })),
+    })
+    await openCard()
+    expect(screen.queryByText(/跟随宿主/)).toBeNull()
+    expect(screen.queryByText(/当前生效/)).toBeNull()
+  })
+
+  it('the menu vocabulary is the broker choices, not only the recent memory', async () => {
     renderCard({
       value: { enabled: true, live: false, recentModels: ['recent/model'] },
       harnessModel: () => Promise.resolve(info({ choices: ['config/model', 'deepseek-official/deepseek-chat', 'recent/model'] })),
     })
     await openCard()
-    const input = screen.getByLabelText(zh['model.title'])
-    const list = document.getElementById(input.getAttribute('list') ?? '')
-    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
-      .toEqual(['config/model', 'deepseek-official/deepseek-chat', 'recent/model'])
+    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
+    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
+      .toEqual([zh['model.menuDefault'] + '✓', 'config/model', 'deepseek-official/deepseek-chat', 'recent/model'])
   })
 
-  it('degrades to the bare input when the gateway answers null (no effective line, recent models stay)', async () => {
+  it('degrades to the bare input when the gateway answers null (recent models stay)', async () => {
     renderCard({
       value: { enabled: true, live: false, recentModels: ['model-a'] },
       harnessModel: () => Promise.resolve(null),
     })
     await openCard()
-    expect(screen.queryByText('跟随宿主实例默认')).toBeNull()
-    const input = screen.getByLabelText(zh['model.title'])
-    const list = document.getElementById(input.getAttribute('list') ?? '')
-    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
-      .toEqual(['model-a'])
+    expect(screen.queryByText(/跟随/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
+    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
+      .toEqual([zh['model.menuDefault'] + '✓', 'model-a'])
   })
 
   it('shows an always-visible chevron that opens a menu; a pick fills the input as a draft', async () => {
@@ -356,14 +373,77 @@ describe('DshSettingsCard model surface (harness broker)', () => {
     const menuButton = screen.getByRole('button', { name: zh['model.menu'] })
     fireEvent.click(menuButton)
     const items = screen.getAllByRole('menuitemradio')
-    expect(items.map(item => item.textContent)).toEqual(['deepseek-official/deepseek-chat', 'config/model'])
-    // The current input value reads as the checked item.
-    expect(items[0].getAttribute('aria-checked')).toBe('false')
+    // The leading item is the follow-default choice, checked while unset.
+    expect(items[0].textContent).toBe('默认（跟随宿主默认模型：deepseek-official/deepseek-chat）✓')
+    expect(items[0].getAttribute('aria-checked')).toBe('true')
+    expect(items.slice(1).map(item => item.textContent)).toEqual(['deepseek-official/deepseek-chat', 'config/model'])
+    expect(items[1].getAttribute('aria-checked')).toBe('false')
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'config/model' }))
     // A pick is exactly a typed value: the menu closes, the draft waits for 保存.
     expect(screen.queryByRole('menu')).toBeNull()
     expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('config/model')
     expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('the default item clears the draft back to follow-default; a save then unsets the key', async () => {
+    const harness = renderCard({
+      value: { enabled: true, live: false, model: 'config/model' },
+      harnessModel: () => Promise.resolve(info({
+        effective: 'config/model', source: 'settings', settings: 'config/model',
+        cliDefault: 'deepseek-official/deepseek-chat',
+        choices: ['deepseek-official/deepseek-chat', 'config/model'],
+      })),
+    })
+    await openCard()
+    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
+    // The stored model reads checked, the default item does not.
+    expect(screen.getByRole('menuitemradio', { name: 'config/model' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '默认（跟随宿主默认模型：deepseek-official/deepseek-chat）' }))
+    // The field goes blank (displaying the inherited default again) and 保存 arms.
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
+    expect(harness.scope.unset).toHaveBeenCalledWith('model')
+  })
+
+  it('the menu default item walks the same chain the old placeholder did', async () => {
+    const openMenu = async (): Promise<void> => {
+      await openCard()
+      fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
+    }
+
+    // Rung 2: a cli-builtin source that still names its default beats the
+    // last-observed annotation.
+    renderCard({
+      harnessModel: () => Promise.resolve(info({ effective: 'catalog/model', lastObserved: 'observed/model', choices: ['x'] })),
+    })
+    await openMenu()
+    expect(screen.getByRole('menuitemradio', { name: /默认（跟随宿主默认：catalog\/model）/ })).toBeTruthy()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder).toBe('catalog/model')
+    cleanup()
+    document.body.innerHTML = ''
+
+    // Rung 3: nothing names a model, but the records observed one.
+    renderCard({
+      harnessModel: () => Promise.resolve(info({ lastObserved: 'observed/model', choices: ['x'] })),
+    })
+    await openMenu()
+    expect(screen.getByRole('menuitemradio', { name: /默认（跟随宿主实例默认（最近：observed\/model））/ })).toBeTruthy()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder).toBe('observed/model')
+    cleanup()
+    document.body.innerHTML = ''
+
+    // Rung 1: the host's default-model selection outranks both.
+    renderCard({
+      harnessModel: () => Promise.resolve(info({
+        effective: 'deepseek-official/deepseek-chat', source: 'cli-config',
+        cliDefault: 'deepseek-official/deepseek-chat', lastObserved: 'observed/model',
+        choices: ['deepseek-official/deepseek-chat'],
+      })),
+    })
+    await openMenu()
+    expect(screen.getByRole('menuitemradio', { name: /默认（跟随宿主默认模型：deepseek-official\/deepseek-chat）/ })).toBeTruthy()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder).toBe('deepseek-official/deepseek-chat')
   })
 
   it('closes the menu on Esc', async () => {
@@ -384,32 +464,13 @@ describe('DshSettingsCard model surface (harness broker)', () => {
     })
     await openCard()
     fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['model-a', 'model-b'])
+    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
+      .toEqual([zh['model.menuDefault'] + '✓', 'model-a', 'model-b'])
   })
 
   it('renders no menu affordance when nothing names a model (a fresh install)', async () => {
     renderCard({ harnessModel: () => Promise.resolve(info()) })
     await openCard()
     expect(screen.queryByRole('button', { name: zh['model.menu'] })).toBeNull()
-  })
-
-  it('the empty field\'s placeholder names the host default model the broker read', async () => {
-    renderCard({
-      harnessModel: () => Promise.resolve(info({
-        effective: 'deepseek-official/deepseek-chat', source: 'cli-config',
-        cliDefault: 'deepseek-official/deepseek-chat',
-        choices: ['deepseek-official/deepseek-chat'],
-      })),
-    })
-    await openCard()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
-      .toBe('留空 = 跟随宿主默认模型：deepseek-official/deepseek-chat')
-  })
-
-  it('keeps the generic placeholder when the broker knows no default', async () => {
-    renderCard({ harnessModel: () => Promise.resolve(info()) })
-    await openCard()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
-      .toBe(zh['model.placeholder'])
   })
 })

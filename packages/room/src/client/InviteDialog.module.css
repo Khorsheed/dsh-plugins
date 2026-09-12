@@ -139,6 +139,145 @@
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
+/* The 默认模型 row: the same select-like control the provider settings cards
+   use — the border/background live on the container, the input inside goes
+   bare, and the always-visible chevron opens the full choice vocabulary as a
+   menu whose leading item is the 默认 (follow-default) choice. An unset field
+   displays the inherited default as the dimmed placeholder, never pinned. */
+.modelField {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+}
+
+.modelField:focus-within {
+  border-color: var(--dsw-alias-border-l4, rgba(127, 127, 127, 0.4));
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l4, rgba(127, 127, 127, 0.4));
+}
+
+.modelInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  background: transparent;
+  outline: none;
+}
+
+.modelInput::placeholder {
+  color: var(--dsw-alias-label-caption, rgba(173, 178, 184, 1));
+}
+
+.modelMenuButton {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-caption, rgba(173, 178, 184, 1));
+  cursor: pointer;
+}
+
+.modelMenuButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.modelMenuChevron {
+  transition: transform 0.16s;
+}
+
+.modelMenuChevronOpen {
+  transform: rotate(180deg);
+}
+
+/* The picker menu: the official Menu surface (--dsw-specific-menu, r12,
+   prominent elevation) with the settings cards' item language — a leading
+   默认 item, a trailing check on the current one. */
+.modelMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24)));
+  border-radius: 12px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  box-shadow: var(--dsw-elevation-prominent, var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24)));
+}
+
+.modelItem,
+.modelItemCurrent,
+.modelItemDefault {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.modelItem:hover,
+.modelItemCurrent:hover,
+.modelItemDefault:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.modelItemCurrent {
+  font-weight: 560;
+}
+
+.modelItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The trailing check seat: fixed width so a row's text never shifts when the
+   check appears. */
+.modelItemCheck {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+}
+
+/* The leading 默认 item: the menu's follow-default row, caption-colored and
+   separated from the model vocabulary by a hairline. */
+.modelItemDefault {
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 1px 0 var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  margin-bottom: 2px;
+  padding-bottom: 7px;
+}
+
 /* The 称呼 row: the name input plus the 🎲 dice (a random game-flavored name
    from the pool, never a roster duplicate). */
 .nameRow {

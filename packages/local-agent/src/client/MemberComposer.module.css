@@ -157,6 +157,10 @@
   transform: rotate(180deg);
 }
 
+/* The picker's dropdown popup: the official ModelSelect menu surface
+   (--dsw-specific-menu, r20, prominent elevation) with 38px option rows and
+   the trailing check on the selected item. Opens upward — the composer sits
+   at the conversation's bottom. */
 .modelMenu {
   position: absolute;
   bottom: calc(100% + 6px);
@@ -164,26 +168,31 @@
   z-index: 10;
   display: flex;
   flex-direction: column;
-  min-width: 160px;
+  min-width: 180px;
   max-height: 240px;
   overflow-y: auto;
   padding: 4px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: var(--dsw-shadow-lv2);
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2));
+  border-radius: 20px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  box-shadow: var(--dsw-elevation-prominent, var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08)));
 }
 
 .modelItem,
 .modelItemCurrent,
 .modelItemReset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
   padding: 6px 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -195,12 +204,43 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.modelItemCurrent {
-  font-weight: 560;
+.modelItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* The trailing check seat: fixed width so a row's text never shifts when the
+   check appears. */
+.modelItemCheck {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The 跟随设置 reset row: caption-colored and separated from the model
+   vocabulary by a hairline. */
 .modelItemReset {
   color: var(--dsw-alias-label-tertiary);
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 -1px 0 var(--dsw-alias-border-l2);
+  margin-top: 2px;
+  padding-top: 7px;
+}
+
+/* The empty-choices hint row (never an empty popup). */
+.modelItemHint {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 6px 10px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* The member dock: the projection-row stack below the card, replacing the

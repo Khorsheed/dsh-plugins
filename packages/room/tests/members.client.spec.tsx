@@ -52,7 +52,7 @@ interface Bench {
     invite: ReturnType<typeof vi.fn>
     listProviders: ReturnType<typeof vi.fn>
     browseDirectory: ReturnType<typeof vi.fn>
-    modelChoices: ReturnType<typeof vi.fn>
+    modelSurface: ReturnType<typeof vi.fn>
     memberModel: ReturnType<typeof vi.fn>
     setMemberModel: ReturnType<typeof vi.fn>
   }
@@ -102,7 +102,7 @@ function editModelInput(): HTMLInputElement {
 async function bench(options: {
   room?: boolean
   providers?: RoomProviderList
-  modelChoices?: readonly string[]
+  modelSurface?: LocalAgentModelInfo
   memberModel?: (child: string) => Promise<LocalAgentModelInfo | null | undefined>
   setMemberModel?: (child: string, model?: string) => Promise<{ ok: true } | { ok: false; error: string }>
   modelDirectory?: RoomModelDirectory
@@ -126,7 +126,7 @@ async function bench(options: {
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => options.providers ?? PROVIDERS),
     browseDirectory: vi.fn(async () => '/home/user/web' as string | null),
-    modelChoices: vi.fn(async () => options.modelChoices),
+    modelSurface: vi.fn(async () => options.modelSurface),
     memberModel: vi.fn(options.memberModel ?? (async () => undefined)),
     setMemberModel: vi.fn(options.setMemberModel ?? (async () => ({ ok: true as const }))),
     modelDirectory: options.modelDirectory,
@@ -235,8 +235,9 @@ describe('MembersView', () => {
     const adaCard = cardOf('ada')
     fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
     const dialog = await screen.findByRole('dialog')
-    // Name and cwd are prefilled from the member record.
-    const nameInput = dialog.querySelector('input[class*="_input"]') as HTMLInputElement
+    // Name and cwd are prefilled from the member record (the name input is
+    // the one with the dice's placeholder).
+    const nameInput = screen.getByPlaceholderText('ada') as HTMLInputElement
     expect(nameInput.value).toBe('ada')
     fireEvent.change(nameInput, { target: { value: 'K酱' } })
     // Empty the instructions: a clear, not a rejection.
@@ -294,36 +295,86 @@ describe('MembersView', () => {
     })
   })
 
-  it('the model field offers the harness choices as a datalist and submits a chosen model', async () => {
-    const { face } = await bench({ modelChoices: ['kimi-k2', 'kimi-k1'] })
+  it('the model field sits in the main form (out of the advanced drawer), right after the provider row', async () => {
+    await bench()
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
-    const modelInput = screen.getByPlaceholderText(/留空 = 跟随该 provider 的默认模型/) as HTMLInputElement
-    // The datalist lands once the harnessModel read resolves, keyed by the
-    // provider's roster harness name.
-    await waitFor(() => { expect(face.modelChoices).toHaveBeenCalledWith('kimi') })
-    await waitFor(() => { expect(modelInput.getAttribute('list')).toBe('room-invite-model-choices') })
-    const datalist = dialog.querySelector('datalist')!
-    expect([...datalist.querySelectorAll('option')].map(option => option.getAttribute('value')))
-      .toEqual(['kimi-k2', 'kimi-k1'])
+    // Promoted: the 默认模型 label lives outside the folded advanced drawer.
+    const details = dialog.querySelector('details') as HTMLDetailsElement
+    expect(details.textContent).not.toContain('默认模型')
+    const labels = [...dialog.querySelectorAll('[class*="label"]')].map(node => node.textContent)
+    expect(labels.indexOf('默认模型')).toBeGreaterThan(labels.indexOf('Provider'))
+    expect(labels.indexOf('默认模型')).toBeLessThan(labels.indexOf('称呼（@ 寻址名）'))
+  })
+
+  it('the model menu offers the harness choices; an unset field displays the provider default dimmed', async () => {
+    const { face } = await bench({ modelSurface: modelInfo() })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    const modelInput = screen.getByLabelText('默认模型') as HTMLInputElement
+    // The surface lands once the harnessModel read resolves, keyed by the
+    // provider's roster harness name; the unset field shows the effective
+    // default as its placeholder (display, never a pinned value).
+    await waitFor(() => { expect(face.modelSurface).toHaveBeenCalledWith('kimi') })
+    await waitFor(() => { expect(modelInput.placeholder).toBe('跟随该 provider 默认：kimi-k2') })
+    expect(modelInput.value).toBe('')
+    expect(dialog.querySelector('datalist')).toBeNull()
+
+    // The chevron menu leads with the checked 默认 item over the full vocabulary.
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
+    const items = screen.getAllByRole('menuitemradio')
+    expect(items[0].textContent).toBe('默认（跟随该 provider 默认：kimi-k2）✓')
+    expect(items[0].getAttribute('aria-checked')).toBe('true')
+    expect(items.slice(1).map(item => item.textContent)).toEqual(['kimi-k2', 'kimi-k1'])
+  })
+
+  it('picking a menu model fills the field and the invite submits it', async () => {
+    const { face } = await bench({ modelSurface: modelInfo() })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    await waitFor(() => { expect(face.modelSurface).toHaveBeenCalledWith('kimi') })
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'kimi-k2' }))
+    expect((screen.getByLabelText('默认模型') as HTMLInputElement).value).toBe('kimi-k2')
 
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
-    fireEvent.change(modelInput, { target: { value: 'kimi-k2' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', model: 'kimi-k2' })
     })
   })
 
-  it('keeps the model field a plain input when the harness serves no choices (family absent or brokerless)', async () => {
-    const { face } = await bench({ modelChoices: undefined })
+  it('the 默认 item clears the field back to follow-default; the invite then omits the model', async () => {
+    const { face } = await bench({ modelSurface: modelInfo() })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    await waitFor(() => { expect(face.modelSurface).toHaveBeenCalledWith('kimi') })
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'kimi-k1' }))
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '默认（跟随该 provider 默认：kimi-k2）' }))
+    expect((screen.getByLabelText('默认模型') as HTMLInputElement).value).toBe('')
+
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
+    await waitFor(() => {
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
+    })
+  })
+
+  it('keeps the model field a plain input when the harness serves no surface (family absent or brokerless)', async () => {
+    const { face } = await bench({ modelSurface: undefined })
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
-    const modelInput = screen.getByPlaceholderText(/留空 = 跟随该 provider 的默认模型/) as HTMLInputElement
-    await waitFor(() => { expect(face.modelChoices).toHaveBeenCalledWith('kimi') })
-    expect(modelInput.getAttribute('list')).toBeNull()
+    const modelInput = screen.getByLabelText('默认模型') as HTMLInputElement
+    await waitFor(() => { expect(face.modelSurface).toHaveBeenCalledWith('kimi') })
+    expect(modelInput.placeholder).toBe('留空 = 跟随该 provider 的默认模型')
+    expect(screen.queryByRole('button', { name: '选择模型' })).toBeNull()
     expect(dialog.querySelector('datalist')).toBeNull()
   })
 
@@ -480,10 +531,15 @@ describe('MembersView', () => {
     const input = editModelInput()
     await waitFor(() => { expect(input.value).toBe('kimi-k2') })
     expect(face.memberModel).toHaveBeenCalledWith('child-1')
-    // The datalist rides the member's own choices (memberModel, not harnessModel).
-    await waitFor(() => { expect(input.getAttribute('list')).toBe('room-invite-model-choices') })
-    expect([...dialog.querySelectorAll('datalist option')].map(option => option.getAttribute('value')))
-      .toEqual(['kimi-k2', 'kimi-k1'])
+    // The menu rides the member's own choices (memberModel, not harnessModel).
+    await waitFor(() => { expect(screen.getByRole('button', { name: '选择模型' })).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
+    const items = screen.getAllByRole('menuitemradio')
+    // The leading 默认 item means "clear the override, follow settings" here;
+    // the prefilled effective model reads checked.
+    expect(items[0].textContent).toBe('默认（清除覆盖，跟随设置）')
+    expect(items.slice(1).map(item => item.textContent)).toEqual(['kimi-k2✓', 'kimi-k1'])
+    expect(dialog.querySelector('datalist')).toBeNull()
   })
 
   it('the edit save switches the live member through setMemberModel and journals the model', async () => {

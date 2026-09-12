@@ -270,7 +270,7 @@ export class RoomService extends TypertRemoteService {
         provider: status.delegationProvider,
         displayName: row.displayName,
         // The roster name is the localAgentGateway harnessModel lookup key
-        // (the invite dialog's model datalist).
+        // (the invite dialog's model picker).
         harness: row.name,
         authenticated: status.authenticated,
       })

@@ -42,7 +42,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 /** The members tab. */
 export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory,
-  modelChoices, memberModel, setMemberModel, modelDirectory, t,
+  modelSurface, memberModel, setMemberModel, modelDirectory, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -160,7 +160,7 @@ export function MembersView({
       inheritedCwd={roomCwd}
       existingNames={(state?.members ?? []).map(entry => entry.name)}
       browseDirectory={browseDirectory}
-      modelChoices={modelChoices}
+      modelSurface={modelSurface}
       memberModel={memberModel}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}

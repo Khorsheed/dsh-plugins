@@ -634,7 +634,7 @@ export interface RoomProviderInfo {
   readonly displayName: string
   /**
    * The roster harness name — the lookup key for the localAgentGateway
-   * `harnessModel` read (the invite dialog's model datalist). Absent only on
+   * `harnessModel` read (the invite dialog's model picker). Absent only on
    * a pre-model-broker family core; the dialog then serves a plain text input.
    */
   readonly harness?: string

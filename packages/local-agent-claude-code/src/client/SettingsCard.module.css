@@ -197,11 +197,13 @@
 }
 
 /* The default-model row: a free-text identifier plus its own save action. It
-   commits on save rather than on every keystroke; the values saved before
-   ride a datalist as suggestions. When the model broker (or the recent-models
-   memory) knows a vocabulary, the field reads as a select: the input and an
-   always-visible chevron share one bordered container, and the chevron opens
-   the same vocabulary as a menu (the member composer's picker pattern). */
+   commits on save rather than on every keystroke. An unset field displays the
+   default it follows as the dimmed placeholder (inherited, never pinned).
+   When the model broker (or the recent-models memory) knows a vocabulary, the
+   field reads as a select: the input and an always-visible chevron share one
+   bordered container, and the chevron opens the vocabulary as a menu whose
+   leading item is the follow-default choice (the member composer's picker
+   pattern). */
 .modelInput {
   flex: 1;
   min-width: 0;
@@ -213,6 +215,12 @@
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
+}
+
+/* The inherited default reads dimmed (caption), never as a pinned value. */
+.modelInput::placeholder {
+  color: var(--dsw-alias-label-caption);
+  opacity: 1;
 }
 
 .modelInput:focus-visible {
@@ -311,7 +319,11 @@
 }
 
 .modelItem,
-.modelItemCurrent {
+.modelItemCurrent,
+.modelItemDefault {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   border: none;
   border-radius: 8px;
@@ -322,17 +334,43 @@
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
 
 .modelItem:hover,
-.modelItemCurrent:hover {
+.modelItemCurrent:hover,
+.modelItemDefault:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .modelItemCurrent {
   font-weight: 560;
+}
+
+.modelItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The trailing check seat: fixed width so a row's text never shifts when the
+   check appears. */
+.modelItemCheck {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The leading follow-default item: the menu's reset row, caption-colored and
+   separated from the model vocabulary by a hairline. */
+.modelItemDefault {
+  color: var(--dsw-alias-label-secondary);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 1px 0 var(--dsw-alias-border-l2);
+  margin-bottom: 2px;
+  padding-bottom: 7px;
 }
 
 .modelSave {

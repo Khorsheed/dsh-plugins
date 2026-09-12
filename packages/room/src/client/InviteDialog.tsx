@@ -9,14 +9,16 @@
  * button-primary-fill capsule is the one filled action, and no blue accent
  * appears (see InviteDialog.module.css).
  *
- * Field order is primary-first: provider → 称呼(+🎲) → 首个任务 → ▸ 高级设置
- * (role instructions + the member-level cwd, collapsed on invite — editing
- * opens it, since editing IS changing those; the drawer also carries the
- * model field — invite-time a text input whose datalist rides the
- * localAgentGateway `harnessModel` read, blank following the harness default;
- * edit-time prefilled from the member's own `memberModel` surface — effective
- * as the value, choices as the datalist — with the journaled intent as the
- * fallback baseline). The rest of the original
+ * Field order is primary-first: provider → 默认模型 → 称呼(+🎲) → 首个任务 →
+ * ▸ 高级设置 (role instructions + the member-level cwd, collapsed on invite —
+ * editing opens it, since editing IS changing those). The model field sits in
+ * the main form (promoted out of the drawer): the same control the provider
+ * settings cards use — an unset field DISPLAYS the provider's current default
+ * dimmed (inherited, never pinned), the chevron menu leads with a 默认 item
+ * over the harness's full choice vocabulary (invite-time riding the
+ * localAgentGateway `harnessModel` read; edit-time prefilled from the member's
+ * own `memberModel` surface — effective as the value, choices as the menu —
+ * with the journaled intent as the fallback baseline). The rest of the original
  * contract is unchanged: logged-out providers grey with login guidance (an
  * absent facade degrades the whole section to a hint), the name precheck
  * plus the host's structured duplicate/invalid errors ride the inline error
@@ -26,12 +28,13 @@
  * empty = inherit the room session's cwd, shown as the placeholder), and
  * edit mode diffs name/cwd/instructions/model.
  */
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type {
   MembersViewProps, RoomInviteOutcome, RoomMutationOutcome,
 } from './slots.ts'
 import type { RoomMember, RoomProviderInfo } from '../types.ts'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { MemberCard } from './MemberCard.tsx'
 import { rollName } from './name-pool.ts'
 import css from './InviteDialog.module.css'
@@ -72,14 +75,14 @@ export interface InviteDialogProps {
    */
   readonly browseDirectory: () => Promise<string | null>
   /**
-   * The pickable model identifiers of one harness (the localAgentGateway
-   * `harnessModel` read); absent, the model field is a plain text input with
-   * no datalist.
+   * The pickable model surface of one harness (the localAgentGateway
+   * `harnessModel` read): the model row's menu vocabulary plus the default an
+   * unset field displays. Absent, the model field is a plain text input.
    */
-  readonly modelChoices?: ((harness: string) => Promise<readonly string[] | undefined>) | undefined
+  readonly modelSurface?: ((harness: string) => Promise<LocalAgentModelInfo | undefined>) | undefined
   /**
    * A member's own model surface (the localAgentGateway `memberModel` read):
-   * the edit dialog's prefill and datalist source — preferred over
+   * the edit dialog's prefill and menu source — preferred over
    * `harnessModel` for an existing member, since it carries that member's
    * effective/source/choices. null/undefined answers keep the journaled
    * intent as the baseline.
@@ -95,13 +98,10 @@ function validName(name: string): boolean {
   return name !== '' && !/\s/.test(name) && !name.includes('@')
 }
 
-/** The model datalist's id (one dialog at a time, so a constant suffices). */
-const MODEL_DATALIST_ID = 'room-invite-model-choices'
-
 /** The invite/edit modal card. */
 export function InviteDialog({
   mode, member, providers, localAgentAvailable, inheritedCwd, existingNames,
-  browseDirectory, modelChoices, memberModel, onSubmit, onClose, t,
+  browseDirectory, modelSurface, memberModel, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
   const [name, setName] = useState(member?.name ?? '')
@@ -112,7 +112,10 @@ export function InviteDialog({
   // replaces it when the memberModel read below answers.
   const [model, setModel] = useState(mode === 'edit' ? member?.model ?? '' : '')
   const [modelBaseline, setModelBaseline] = useState(mode === 'edit' ? member?.model ?? '' : '')
-  const [choices, setChoices] = useState<readonly string[] | undefined>(undefined)
+  /** The model row's surface: menu vocabulary + the default an unset field displays. */
+  const [surface, setSurface] = useState<LocalAgentModelInfo | undefined>(undefined)
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const modelFieldRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [browsing, setBrowsing] = useState(false)
@@ -122,11 +125,28 @@ export function InviteDialog({
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Escape') return
+      // An open model menu eats the first Esc; the next one closes the dialog.
+      if (modelMenuOpen) {
+        setModelMenuOpen(false)
+        return
+      }
+      onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('keydown', onKey) }
-  }, [onClose])
+  }, [onClose, modelMenuOpen])
+
+  // Click-outside closes the model menu (the settings cards' pattern).
+  useEffect(() => {
+    if (!modelMenuOpen) return
+    const onPointerDown = (event: MouseEvent): void => {
+      if (modelFieldRef.current?.contains(event.target as Node) === true) return
+      setModelMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => { document.removeEventListener('mousedown', onPointerDown) }
+  }, [modelMenuOpen])
 
   const authenticated = (providers ?? []).filter(entry => entry.authenticated)
   const chosen = provider === '' ? (authenticated[0]?.provider ?? '') : provider
@@ -134,21 +154,21 @@ export function InviteDialog({
   /** The chosen provider's roster harness name (the harnessModel lookup key). */
   const chosenHarness = (providers ?? []).find(entry => entry.provider === chosen)?.harness
 
-  // The model datalist follows the chosen provider: a harness without a
+  // The model surface follows the chosen provider: a harness without a
   // broker read (or a composition without the family's client half) leaves
   // the field a plain text input — blank still follows the harness default.
   useEffect(() => {
-    setChoices(undefined)
-    if (mode !== 'invite' || modelChoices === undefined || chosenHarness === undefined) return
+    setSurface(undefined)
+    if (mode !== 'invite' || modelSurface === undefined || chosenHarness === undefined) return
     let cancelled = false
-    void modelChoices(chosenHarness).then((result) => {
-      if (!cancelled) setChoices(result)
+    void modelSurface(chosenHarness).then((result) => {
+      if (!cancelled) setSurface(result)
     }, () => {})
     return () => { cancelled = true }
-  }, [mode, modelChoices, chosenHarness])
+  }, [mode, modelSurface, chosenHarness])
 
   // Edit mode: the member's own model surface prefills the field (effective)
-  // and serves the datalist (choices). null (no delegation record yet — a
+  // and serves the menu (choices). null (no delegation record yet — a
   // never-started member — or a brokerless harness) and undefined (RPC
   // failure) answers keep the journaled intent as the baseline.
   const editChild = mode === 'edit' ? member?.childSessionId : undefined
@@ -159,7 +179,7 @@ export function InviteDialog({
       if (cancelled || info === null || info === undefined) return
       setModel(info.effective ?? '')
       setModelBaseline(info.effective ?? '')
-      if (info.choices.length > 0) setChoices(info.choices)
+      setSurface(info)
     }, () => {})
     return () => { cancelled = true }
   }, [mode, memberModel, editChild])
@@ -168,6 +188,87 @@ export function InviteDialog({
   const canSubmit = mode === 'edit'
     ? validName(name)
     : localAgentAvailable && chosen !== '' && validName(name)
+
+  // The model row: the same control the provider settings cards use. An unset
+  // field DISPLAYS the provider's current default dimmed (inherited, never
+  // pinned); the chevron menu leads with the 默认 item (picking it clears the
+  // field back to follow-default) over the full unfiltered vocabulary.
+  const modelChoices = surface?.choices ?? []
+  const surfaceDefault = surface?.effective ?? surface?.cliDefault
+  const modelPlaceholder = mode === 'edit'
+    ? t('invite.modelPlaceholderEdit')
+    : surfaceDefault !== undefined && surfaceDefault !== ''
+      ? t('invite.modelPlaceholderDefault', { model: surfaceDefault })
+      : t('invite.modelPlaceholder')
+  const modelDefaultItem = mode === 'edit'
+    ? t('invite.modelDefaultItemEdit')
+    : surfaceDefault !== undefined && surfaceDefault !== ''
+      ? t('invite.modelDefaultItemNamed', { model: surfaceDefault })
+      : t('invite.modelDefaultItem')
+  const modelField = (
+    <label className={css.field}>
+      <span className={css.label}>{t('invite.model')}</span>
+      {modelChoices.length > 0 ? (
+        <div className={css.modelField} ref={modelFieldRef}>
+          <input
+            className={css.modelInput}
+            value={model}
+            placeholder={modelPlaceholder}
+            aria-label={t('invite.model')}
+            onChange={event => { setModel(event.target.value) }}
+          />
+          <button
+            type="button"
+            className={css.modelMenuButton}
+            aria-label={t('invite.modelMenu')}
+            aria-haspopup="menu"
+            aria-expanded={modelMenuOpen}
+            onClick={() => { setModelMenuOpen(open => !open) }}
+          >
+            <IconChevronDownOutline14 className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
+          </button>
+          {modelMenuOpen && (
+            <div className={css.modelMenu} role="menu" aria-label={t('invite.modelMenu')}>
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={model.trim() === ''}
+                className={model.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
+                onClick={() => { setModel(''); setModelMenuOpen(false) }}
+              >
+                <span className={css.modelItemLabel}>{modelDefaultItem}</span>
+                <span className={css.modelItemCheck} aria-hidden>{model.trim() === '' ? '✓' : ''}</span>
+              </button>
+              {modelChoices.map(choice => (
+                <button
+                  key={choice}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={choice === model.trim()}
+                  className={choice === model.trim() ? css.modelItemCurrent : css.modelItem}
+                  onClick={() => { setModel(choice); setModelMenuOpen(false) }}
+                >
+                  <span className={css.modelItemLabel}>{choice}</span>
+                  <span className={css.modelItemCheck} aria-hidden>{choice === model.trim() ? '✓' : ''}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <input
+          className={css.input}
+          value={model}
+          placeholder={modelPlaceholder}
+          aria-label={t('invite.model')}
+          onChange={event => { setModel(event.target.value) }}
+        />
+      )}
+      <span className={css.hint}>
+        {mode === 'edit' ? t('invite.modelHintEdit') : t('invite.modelHint')}
+      </span>
+    </label>
+  )
 
   // The live preview: the form values as a roster card, always idle.
   const previewName = name.trim() === '' ? t('invite.previewName') : name.trim()
@@ -265,6 +366,7 @@ export function InviteDialog({
                 </label>
               )
             )}
+            {modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>
@@ -351,24 +453,6 @@ export function InviteDialog({
                     )}
                   </span>
                   <span className={css.hint}>{t('invite.cwdHint')}</span>
-                </label>
-                <label className={css.field}>
-                  <span className={css.label}>{t('invite.model')}</span>
-                  <input
-                    className={css.input}
-                    value={model}
-                    placeholder={mode === 'edit' ? t('invite.modelPlaceholderEdit') : t('invite.modelPlaceholder')}
-                    list={choices !== undefined && choices.length > 0 ? MODEL_DATALIST_ID : undefined}
-                    onChange={event => { setModel(event.target.value) }}
-                  />
-                  {choices !== undefined && choices.length > 0 && (
-                    <datalist id={MODEL_DATALIST_ID}>
-                      {choices.map(choice => <option key={choice} value={choice} />)}
-                    </datalist>
-                  )}
-                  <span className={css.hint}>
-                    {mode === 'edit' ? t('invite.modelHintEdit') : t('invite.modelHint')}
-                  </span>
                 </label>
               </div>
             </details>

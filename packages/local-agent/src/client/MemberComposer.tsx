@@ -393,27 +393,39 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
               </button>
               {modelMenuOpen && (
                 <div className={css.modelMenu} role="menu" aria-label={t('member.model.picker')}>
-                  {modelInfo.choices.map(choice => (
-                    <button
-                      key={choice}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={choice === modelInfo.effective}
-                      className={choice === modelInfo.effective ? css.modelItemCurrent : css.modelItem}
-                      onClick={() => { chooseModel(choice) }}
-                    >
-                      {choice}
-                    </button>
-                  ))}
-                  {modelInfo.override !== undefined && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={css.modelItemReset}
-                      onClick={() => { chooseModel(undefined) }}
-                    >
-                      {t('member.model.followSettings')}
-                    </button>
+                  {modelInfo.choices.length === 0 && modelInfo.override === undefined ? (
+                    // The empty-choices guard: never an empty popup — one
+                    // disabled hint row instead (the chip stays enabled so
+                    // the user sees it).
+                    <span className={css.modelItemHint} role="menuitem" aria-disabled="true">
+                      {t('member.model.empty')}
+                    </span>
+                  ) : (
+                    <>
+                      {modelInfo.choices.map(choice => (
+                        <button
+                          key={choice}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={choice === modelInfo.effective}
+                          className={choice === modelInfo.effective ? css.modelItemCurrent : css.modelItem}
+                          onClick={() => { chooseModel(choice) }}
+                        >
+                          <span className={css.modelItemLabel}>{choice}</span>
+                          <span className={css.modelItemCheck} aria-hidden>{choice === modelInfo.effective ? '✓' : ''}</span>
+                        </button>
+                      ))}
+                      {modelInfo.override !== undefined && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={css.modelItemReset}
+                          onClick={() => { chooseModel(undefined) }}
+                        >
+                          {t('member.model.followSettings')}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}

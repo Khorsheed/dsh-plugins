@@ -45,10 +45,10 @@ export interface ClaudeCodeSettingsCardInjected {
   authT: ProviderAuthBlockProps['t']
   /**
    * The harness's memberless model surface (the family gateway's
-   * `harnessModel` Remote): the effective-model line under the default-model
-   * input and the input's suggestion vocabulary. Absent on a core that
-   * predates the model broker — the card then keeps the bare free-text input
-   * exactly as before brokers existed.
+   * `harnessModel` Remote): the inherited default the unset field displays
+   * and the menu's choice vocabulary. Absent on a core that predates the
+   * model broker — the card then keeps the bare free-text input exactly as
+   * before brokers existed.
    */
   modelInfo?: () => Promise<LocalAgentModelInfo | null | undefined>
   hooks: {
@@ -170,18 +170,29 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
     }
     setModelMenuOpen(open => !open)
   }
-  // An empty field names the default it will follow, down the chain the
-  // broker reports: the scoped config's model, then a cli-builtin source that
-  // still names its default (a harness catalog's isDefault entry), then the
-  // last observed model the records know, and last the generic copy. The
-  // placeholder answers "what does blank mean".
-  const modelPlaceholder = modelSurface !== null && modelSurface.cliDefault !== undefined && modelSurface.cliDefault !== ''
-    ? t('model.placeholderCliConfig', { model: modelSurface.cliDefault })
+  // An unset field DISPLAYS the default it follows (dimmed, as the input's
+  // placeholder — inherited, never pinned), down the chain the broker
+  // reports: the scoped config's model, then a cli-builtin source that still
+  // names its default (a harness catalog's isDefault entry), then the last
+  // observed model the records know, and last the generic copy.
+  const inheritedModel = modelSurface !== null && modelSurface.cliDefault !== undefined && modelSurface.cliDefault !== ''
+    ? modelSurface.cliDefault
     : modelSurface !== null && modelSurface.source === 'cli-builtin' && modelSurface.effective !== undefined && modelSurface.effective !== ''
-      ? t('model.placeholderCliBuiltin', { model: modelSurface.effective })
+      ? modelSurface.effective
       : modelSurface !== null && modelSurface.lastObserved !== undefined && modelSurface.lastObserved !== ''
-        ? t('model.placeholderLastObserved', { model: modelSurface.lastObserved })
-        : t('model.placeholder')
+        ? modelSurface.lastObserved
+        : undefined
+  const modelPlaceholder = inheritedModel ?? t('model.placeholder')
+  // The menu's leading item: the same chain, spelled as the follow-default
+  // choice. It reads checked while the field is unset, and picking it clears
+  // the draft back to follow-default (a save then unsets the key).
+  const modelDefaultItem = modelSurface !== null && modelSurface.cliDefault !== undefined && modelSurface.cliDefault !== ''
+    ? t('model.menuDefaultCliConfig', { model: modelSurface.cliDefault })
+    : modelSurface !== null && modelSurface.source === 'cli-builtin' && modelSurface.effective !== undefined && modelSurface.effective !== ''
+      ? t('model.menuDefaultCliBuiltin', { model: modelSurface.effective })
+      : modelSurface !== null && modelSurface.lastObserved !== undefined && modelSurface.lastObserved !== ''
+        ? t('model.menuDefaultLastObserved', { model: modelSurface.lastObserved })
+        : t('model.menuDefault')
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -195,12 +206,12 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
   )
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
-  // field), or inside the select-like field next to its chevron.
+  // field), or inside the select-like field next to its chevron. No datalist:
+  // the chevron menu is the single choice list.
   const modelInputElement = (
     <input
       type="text"
       className={css.modelInput}
-      list={`${NS}-recent-models`}
       value={modelValue}
       placeholder={modelPlaceholder}
       aria-label={t('model.title')}
@@ -266,6 +277,19 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
                       role="menu"
                       aria-label={t('model.menu')}
                     >
+                      {/* The leading follow-default item: checked while the
+                          field is unset; picking it clears the draft back to
+                          follow-default (a save then unsets the key). */}
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={modelValue.trim() === ''}
+                        className={modelValue.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
+                        onClick={() => { setModelDraft(''); setModelMenuOpen(false) }}
+                      >
+                        <span className={css.modelItemLabel}>{modelDefaultItem}</span>
+                        <span className={css.modelItemCheck} aria-hidden>{modelValue.trim() === '' ? '✓' : ''}</span>
+                      </button>
                       {choices.map(choice => (
                         <button
                           key={choice}
@@ -275,16 +299,14 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
                           className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
                           onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
                         >
-                          {choice}
+                          <span className={css.modelItemLabel}>{choice}</span>
+                          <span className={css.modelItemCheck} aria-hidden>{choice === modelValue ? '✓' : ''}</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
               ) : modelInputElement}
-              <datalist id={`${NS}-recent-models`}>
-                {choices.map(value => <option key={value} value={value} />)}
-              </datalist>
               <button
                 type="button"
                 className={css.modelSave}
@@ -294,23 +316,6 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
                 {t('model.save')}
               </button>
             </div>
-            {modelSurface !== null && (
-              <span className={css.hint}>
-                {/* The same chain the placeholder walks: a cli-builtin source
-                    with an effective model NAMES it (a catalog's isDefault
-                    layer); nothing naming a model falls back to the last
-                    observed one, then to the bare built-in copy. */}
-                {storedModel.trim() !== ''
-                  ? t('model.effective', { model: storedModel.trim() })
-                  : modelSurface.cliDefault !== undefined
-                    ? t('model.followCliConfig', { model: modelSurface.cliDefault })
-                    : modelSurface.source === 'cli-builtin' && modelSurface.effective !== undefined && modelSurface.effective !== ''
-                      ? t('model.followCliDefault', { model: modelSurface.effective })
-                      : modelSurface.lastObserved !== undefined && modelSurface.lastObserved !== ''
-                        ? t('model.followCliBuiltinLastObserved', { model: modelSurface.lastObserved })
-                        : t('model.followCliBuiltin')}
-              </span>
-            )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
             {modelError && <span className={css.errorText}>{t('model.error')}</span>}
           </section>

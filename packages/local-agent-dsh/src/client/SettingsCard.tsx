@@ -45,9 +45,10 @@ export interface DshSettingsCardInjected {
   authT: ProviderAuthBlockProps['t']
   /**
    * The harness's memberless model surface (the core gateway's `harnessModel`
-   * Remote): the effective-model line and the datalist vocabulary. Undefined
-   * or null when the gateway or the broker is absent — the card then keeps the
-   * bare input exactly as before brokers existed.
+   * Remote): the inherited default an unset field displays and the menu's
+   * choice vocabulary. Undefined or null when the gateway or the broker is
+   * absent — the card then keeps the bare input exactly as before brokers
+   * existed.
    */
   harnessModel: () => Promise<LocalAgentModelInfo | null | undefined>
   hooks: {
@@ -172,18 +173,29 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
     }
     setModelMenuOpen(open => !open)
   }
-  // An empty field names the default it will follow, down the chain the
-  // broker reports: the host's default-model selection, then a cli-builtin
-  // source that still names its default (a harness catalog's isDefault
-  // entry), then the last observed model the records know, and last the
-  // generic copy. The placeholder answers "what does blank mean".
-  const modelPlaceholder = modelInfo != null && modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
-    ? t('model.placeholder.cli-config', { model: modelInfo.cliDefault })
+  // An unset field DISPLAYS the default it follows (dimmed, as the input's
+  // placeholder — inherited, never pinned), down the chain the broker
+  // reports: the host's default-model selection, then a cli-builtin source
+  // that still names its default (a harness catalog's isDefault entry), then
+  // the last observed model the records know, and last the generic copy.
+  const inheritedModel = modelInfo != null && modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
+    ? modelInfo.cliDefault
     : modelInfo != null && modelInfo.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
-      ? t('model.placeholder.cli-builtin', { model: modelInfo.effective })
+      ? modelInfo.effective
       : modelInfo != null && modelInfo.lastObserved !== undefined && modelInfo.lastObserved !== ''
-        ? t('model.placeholder.last-observed', { model: modelInfo.lastObserved })
-        : t('model.placeholder')
+        ? modelInfo.lastObserved
+        : undefined
+  const modelPlaceholder = inheritedModel ?? t('model.placeholder')
+  // The menu's leading item: the same chain, spelled as the follow-default
+  // choice. It reads checked while the field is unset, and picking it clears
+  // the draft back to follow-default (a save then unsets the key).
+  const modelDefaultItem = modelInfo != null && modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
+    ? t('model.menuDefault.cli-config', { model: modelInfo.cliDefault })
+    : modelInfo != null && modelInfo.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
+      ? t('model.menuDefault.cli-builtin', { model: modelInfo.effective })
+      : modelInfo != null && modelInfo.lastObserved !== undefined && modelInfo.lastObserved !== ''
+        ? t('model.menuDefault.last-observed', { model: modelInfo.lastObserved })
+        : t('model.menuDefault')
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -197,12 +209,12 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
   )
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
-  // field), or inside the select-like field next to its chevron.
+  // field), or inside the select-like field next to its chevron. No datalist:
+  // the chevron menu is the single choice list.
   const modelInputElement = (
     <input
       type="text"
       className={css.modelInput}
-      list={`${NS}-recent-models`}
       value={modelValue}
       placeholder={modelPlaceholder}
       aria-label={t('model.title')}
@@ -287,6 +299,19 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
                       role="menu"
                       aria-label={t('model.menu')}
                     >
+                      {/* The leading follow-default item: checked while the
+                          field is unset; picking it clears the draft back to
+                          follow-default (a save then unsets the key). */}
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={modelValue.trim() === ''}
+                        className={modelValue.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
+                        onClick={() => { setModelDraft(''); setModelMenuOpen(false) }}
+                      >
+                        <span className={css.modelItemLabel}>{modelDefaultItem}</span>
+                        <span className={css.modelItemCheck} aria-hidden>{modelValue.trim() === '' ? '✓' : ''}</span>
+                      </button>
                       {choices.map(choice => (
                         <button
                           key={choice}
@@ -296,16 +321,14 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
                           className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
                           onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
                         >
-                          {choice}
+                          <span className={css.modelItemLabel}>{choice}</span>
+                          <span className={css.modelItemCheck} aria-hidden>{choice === modelValue ? '✓' : ''}</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
               ) : modelInputElement}
-              <datalist id={`${NS}-recent-models`}>
-                {choices.map(value => <option key={value} value={value} />)}
-              </datalist>
               <button
                 type="button"
                 className={css.modelSave}
@@ -315,23 +338,6 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
                 {t('model.save')}
               </button>
             </div>
-            {modelInfo != null && (
-              <span className={css.modelEffective}>
-                {/* The same chain the placeholder walks: a cli-builtin source
-                    with an effective model NAMES it (a catalog's isDefault
-                    layer); nothing naming a model falls back to the last
-                    observed one, then to the bare built-in copy. */}
-                {modelInfo.settings !== undefined && modelInfo.settings !== ''
-                  ? t('model.effective.set', { model: modelInfo.settings })
-                  : modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
-                    ? t('model.effective.cli-config', { model: modelInfo.cliDefault })
-                    : modelInfo.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
-                      ? t('model.effective.cli-builtin.named', { model: modelInfo.effective })
-                      : modelInfo.lastObserved !== undefined && modelInfo.lastObserved !== ''
-                        ? t('model.effective.last-observed', { model: modelInfo.lastObserved })
-                        : t('model.effective.cli-builtin')}
-              </span>
-            )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
             {modelError && <span className={css.errorText}>{t('model.error')}</span>}
           </section>

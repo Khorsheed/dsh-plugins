@@ -55,6 +55,7 @@ export const zh = {
   'member.model.source.cli-config': 'CLI 配置文件',
   'member.model.source.cli-builtin': 'CLI 内置默认：没有任何层级指定模型，运行 CLI 自己的默认；已知时显示最近实际运行的模型',
   'member.model.followSettings': '跟随设置',
+  'member.model.empty': '暂无候选模型',
   'member.model.failed': '切换模型失败，请重试',
 } as const
 
@@ -110,6 +111,7 @@ export const en: Record<LocalAgentKey, string> = {
   'member.model.source.cli-config': 'CLI config file',
   'member.model.source.cli-builtin': "CLI built-in default: no layer names a model, so the CLI's own default runs; the last observed model is shown when known",
   'member.model.followSettings': 'Follow settings',
+  'member.model.empty': 'No models to pick',
   'member.model.failed': 'Could not switch the model; try again',
 }
 
