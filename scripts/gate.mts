@@ -238,7 +238,10 @@ function testStep(scope: Scope): void {
   const filter = packageFilter(scope.filter)
   let succeeded = false
   try {
-    sh(`set -o pipefail; pnpm ${filter} --if-present run test 2>&1 | tee "${log}"`)
+    // Workspace concurrency 2 (pnpm's default is 4): each package's vitest
+    // instance forks several hundred-MB workers, so 4 instances in flight
+    // OOMed 16GB machines. The per-package fork cap lives in build/vitest.ts.
+    sh(`set -o pipefail; pnpm ${filter} --workspace-concurrency=2 --if-present run test 2>&1 | tee "${log}"`)
     succeeded = true
   } finally {
     const byPackage = new Map<string, number[]>()
@@ -294,7 +297,7 @@ export function main(): void {
   ]
   if (!skipPackages) {
     steps.push(
-      { name: 'build', run: () => sh(`pnpm ${filter} --if-present run build`) },
+      { name: 'build', run: () => sh(`pnpm ${filter} --workspace-concurrency=2 --if-present run build`) },
       { name: 'test', run: () => testStep(scope) },
       { name: 'pack bundles', run: () => sh(
         scope.dirs.length === 0
