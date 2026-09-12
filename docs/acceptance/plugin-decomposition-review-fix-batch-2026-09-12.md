@@ -47,19 +47,24 @@
 |---|---|---|
 | A(rebase 前) | `a0fa7c6` | **PASSED — 12 步 / 532s**;25 包 build+test+pack 通过 |
 | B(rebase 后,main 基线) | `f15f1a3b` | **PASSED — 14 步 / 241s** |
-| **终局认证**(docs 修正后) | **`43d024b4`** | **PASSED — 14 步 / 265s**(同样 14 步、25 包 verify;test 196s、pack 24s、脚本 spec 19s、build 11s) |
+| 终局认证(docs 修正后) | `43d024b4` | **PASSED — 14 步 / 265s**(25 包 verify;test 196s、pack 24s、脚本 spec 19s、build 11s) |
+| **合并前认证**(rebase 到 main `ab17b902` 之后) | **`f02c78aa`** | **PASSED — 14 步 / 248s**(test 173s、pack 24s、脚本 spec 19s、build 19s、doc gates 8s) |
 
-gate B 的分步证据:install freshness ✓、harness ref `dsh-v0.1.5-rc.1`(advisory)✓、workflow refs(1 workflow / 0 finding)✓、
+gate 的分步证据:install freshness ✓、harness ref `dsh-v0.1.5-rc.1`(advisory)✓、workflow refs(1 workflow / 0 finding)✓、
 build scripts declared(2 个有 install script 的依赖、0 未声明)✓、repo hygiene 全树(**2148 文件 / 0 finding**)✓、
 plugin independence(**32 包 / 0 finding**)✓、profile composition(compose cleanly)✓、
 release groups(7 条已知 rc.5/rc.6 告警,`--release` 下致命)✓、**package map(current:32 包 / 25 自挂载)**✓、
 doc gates(251 份 Agent Note 格式与分类、284 对翻译配对)✓、脚本 spec(**17 文件 / 164 测试**)✓、
-build ✓、test ✓、pack bundles(**25 包 packed and verified**)✓。终局认证在 `43d024b4` 上复跑同一套 14 步全绿。
+build ✓、test ✓、pack bundles(**25 包 packed and verified**)✓。`43d024b4` 与 `f02c78aa` 都完整跑过这 14 步。
 
 时长:gate B — test 171s、pack 25s、脚本 spec 18s、build 12s(热 lib)、doc gates 9s、hygiene 1s;
-终局认证 — test 196s、pack 24s、脚本 spec 19s、build 11s、doc gates 9s、hygiene 1s。
+`43d024b4` — test 196s、pack 24s、脚本 spec 19s、build 11s、doc gates 9s、hygiene 1s;
+`f02c78aa` — test 173s、pack 24s、脚本 spec 19s、build 19s、doc gates 8s、hygiene 1s。
 
-**认证范围是提交 `43d024b4`。**本文件自身的最后这处"认证提交"记录是该提交之后唯一的改动(纯文档,不含代码或生成物)。
+**认证范围是本分支合并进 main 时的最终代码提交 `f02c78aa`(基于 main `ab17b902`)。**
+本文件自身的最后这处"认证提交"记录是该提交之后唯一的改动(纯文档,不含代码或生成物)。
+合并进 main 用 fast-forward,未 push(推送按仓库纪律由人协调)。
+
 
 
 ## 复审回执
