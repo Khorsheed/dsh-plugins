@@ -6,6 +6,7 @@ export class MobilePickers {
   private chrome: HTMLElement | undefined
   private shade: HTMLElement | undefined
   private hidden: HTMLElement[] = []
+  private separators: HTMLElement[] = []
   constructor(private readonly doc: Document) { doc.addEventListener('click', this.click, true) }
   private readonly click = (event: Event) => {
     if (!this.doc.documentElement.hasAttribute('data-dsh-mobile')) return
@@ -26,6 +27,9 @@ export class MobilePickers {
     if (!menu) return
     this.pending = undefined; this.menu = menu
     menu.dataset.mobilePicker = pending.kind
+    if (pending.kind === 'preset') for (const item of Array.from(menu.querySelectorAll<HTMLElement>('[role=menuitem]')).slice(1)) {
+      if (!item.hasAttribute('data-mobile-picker-divider')) { item.setAttribute('data-mobile-picker-divider',''); this.separators.push(item) }
+    }
     const zh = /^zh/i.test(this.doc.documentElement.lang || navigator.language)
     const header = this.doc.createElement('div'); header.dataset.mobilePickerChrome = ''
     const title = this.doc.createElement('strong'); title.textContent = pending.kind === 'workspace' ? (zh ? '选择工作区' : 'Choose workspace') : (zh ? '选择模式' : 'Choose mode')
@@ -52,6 +56,8 @@ export class MobilePickers {
   private clear() {
     this.menu?.removeAttribute('data-mobile-picker'); this.chrome?.remove(); this.shade?.remove()
     for (const el of this.hidden) el.hidden = false
+    for (const el of this.separators) el.removeAttribute('data-mobile-picker-divider')
+    this.separators = []
     this.hidden = []; this.menu = undefined; this.chrome = undefined; this.shade = undefined; this.pending = undefined
   }
   dispose() { this.doc.removeEventListener('click', this.click, true); this.clear() }

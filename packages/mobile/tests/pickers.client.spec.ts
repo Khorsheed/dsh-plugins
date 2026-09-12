@@ -29,3 +29,16 @@ it('does not capture unrelated menus or a menu opened on desktop', () => {
   pickers = new MobilePickers(document); document.querySelector('button')!.click(); pickers.sync(false)
   expect(document.querySelector('[data-mobile-picker]')).toBeNull()
 })
+it('separates nested preset options without depending on menu wrappers or changing actions', () => {
+  document.documentElement.setAttribute('data-dsh-mobile','')
+  document.body.innerHTML = '<div data-slot="conversation.hero.agentPreset"><button aria-haspopup="menu">Mode</button></div>'
+  const trigger = document.querySelector('button')!, action = vi.fn()
+  pickers = new MobilePickers(document); trigger.click()
+  document.body.insertAdjacentHTML('beforeend','<div role="menu"><div><div role="menuitem">One</div></div><div><div role="menuitem">Two</div></div></div>')
+  const second = document.querySelectorAll<HTMLElement>('[role=menuitem]')[1]!
+  second.addEventListener('click',action); pickers.sync(true)
+  expect(second.hasAttribute('data-mobile-picker-divider')).toBe(true)
+  expect(document.querySelector('[role=menuitem]')!.hasAttribute('data-mobile-picker-divider')).toBe(false)
+  second.click(); expect(action).toHaveBeenCalledOnce()
+  pickers.sync(false); expect(second.hasAttribute('data-mobile-picker-divider')).toBe(false)
+})

@@ -1,7 +1,7 @@
 /** Copy for controls owned by mobile; all conversation copy stays with its owner. */
 export const NS = 'mobile'
 export const en = {
-  renameSession: 'Rename session',
+  renameSession: 'Rename session', sessionTitle: 'Session title', renameUnavailable: 'Could not rename this conversation. Please try again.',
   roomActionUnavailable: 'Open Members to manage this room; its shortcut is unavailable.', memberFailed: 'Task failed',
   currentConversation: 'Current conversation',
   loadingAgents: 'Checking available agents…', noAgents: 'No local agents are available on this host.', loginAgents: 'Sign in to an agent on the computer before inviting it.',
@@ -23,7 +23,7 @@ export const en = {
   workspace: 'Open workspace', hostPath: 'Computer directory', hostPathHelp: 'Enter an existing absolute directory on your computer. This does not select a folder on your phone.', openWorkspace: 'Open', cancel: 'Cancel',
 } as const
 export const zh: Record<keyof typeof en, string> = {
-  renameSession: '重命名会话',
+  renameSession: '重命名会话', sessionTitle: '会话标题', renameUnavailable: '暂时无法修改标题，请重试。',
   roomActionUnavailable: '快捷入口暂不可用，请进入成员页管理。', memberFailed: '任务失败',
   currentConversation: '当前会话',
   loadingAgents: '正在检查可用代理…', noAgents: '这台电脑暂时没有可用的本地代理。', loginAgents: '请先在电脑上登录代理，再邀请加入。',

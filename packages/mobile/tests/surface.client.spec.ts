@@ -31,8 +31,9 @@ it('retains unknown plugin controls, callback ownership and ancestor navigation'
   expect(button.hasAttribute('data-mobile-header-hidden')).toBe(false)
   expect(button.parentElement).toBe(owner); button.click(); expect(action).toHaveBeenCalledOnce()
   document.querySelector('nav')!.insertAdjacentHTML('afterbegin', '<span><button>Parent</button></span>')
-  surface.sync(frame); expect(surface.getSnapshot()).toBe('')
-  expect(document.querySelector('[data-mobile-header-hidden]')).toBeNull()
+  surface.sync(frame); expect(surface.getSnapshot()).toBe('Standard')
+  expect(document.querySelector('nav')!.hasAttribute('data-mobile-header-hidden')).toBe(false)
+  expect(document.querySelector('[data-test-row]')!.hasAttribute('data-mobile-header-hidden')).toBe(false)
   surface.sync(undefined); expect(document.querySelector('[data-mobile-hidden-tab]')).toBeNull()
   expect(document.querySelector('textarea')!.value).toBe('Unsent draft')
 })
@@ -54,4 +55,15 @@ it('restyles only the checked Room form and restores its original nodes on deskt
   expect(frame.querySelectorAll('[data-mobile-room-form]')).toHaveLength(1)
   expect(frame.querySelectorAll('[data-mobile-room-overlay]')).toHaveLength(1)
   surface.dispose(); expect(frame.innerHTML).toBe(original)
+})
+
+it('uses the same header adaptation for Rooms while preserving membership and plugin actions', () => {
+  const { frame, surface } = fixture()
+  document.querySelector('[data-slot="conversation.session.header.lineage"]')!.innerHTML = '<button>Room parent</button>'
+  document.querySelector('[data-slot="conversation.session.header.actions"]')!.insertAdjacentHTML('beforeend', '<button data-room-members>Agent Team</button><button data-git-branch>main</button>')
+  surface.sync(frame)
+  expect(surface.getSnapshot()).toBe('Standard')
+  expect(document.querySelector('img')!.closest('[data-mobile-header-hidden]')).not.toBeNull()
+  expect(document.querySelector('[aria-label="More actions"]')!.hasAttribute('data-mobile-header-hidden')).toBe(true)
+  for (const selector of ['[data-room-members]', '[data-git-branch]', 'nav']) expect(document.querySelector(selector)!.closest('[data-mobile-header-hidden]')).toBeNull()
 })

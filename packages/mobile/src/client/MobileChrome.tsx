@@ -4,6 +4,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { installNavigationGestures } from './gestures.ts'
 import { MobileRoomNavigation } from './MobileRooms.tsx'
 import type { MobileRooms } from './rooms.ts'
+import { SessionRename } from './SessionRename.tsx'
 import { MobileIcon } from './MobileIcon.tsx'
 import { MobileLibrary } from './MobileLibrary.tsx'
 import type { MobileNavigation, NavigationCapabilities } from './navigation.ts'
@@ -21,14 +22,16 @@ export interface MobileChromeInjected {
 
 const emptySubscribe = () => () => {}
 const emptyPreset = () => ''
-function ConversationTitle({ navigation, fallback, prepareNavigation, surface, renameLabel }: { navigation: NavigationCapabilities; fallback: string; prepareNavigation: () => void; surface?: MobileSurface; renameLabel: string }) {
+function ConversationTitle({ navigation, fallback, prepareNavigation, surface, t }: { navigation: NavigationCapabilities; fallback: string; prepareNavigation: () => void; surface?: MobileSurface } & PropsLocale<'mobile'>) {
   const feed = navigation.sessions.list
   const sessions = useSyncExternalStore(useCallback(listener => feed.subscribe(listener), [feed]), useCallback(() => feed.getSnapshot(), [feed]))
   useLayoutEffect(() => prepareNavigation(), [sessions.current, prepareNavigation])
   const row = sessions.current ? sessions.byId[sessions.current] : undefined
   const preset = useSyncExternalStore(surface?.subscribe ?? emptySubscribe, surface?.getSnapshot ?? emptyPreset)
+  const [renaming, setRenaming] = useState(false)
+  useLayoutEffect(() => setRenaming(false), [sessions.current])
   const cwd = row?.cwd?.split(/[\\/]/).filter(Boolean).at(-1)
-  return <><span data-mobile-title-line><strong data-mobile-session-title={row && !row.blank ? '' : undefined}>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>{row && !row.blank && <button data-mobile-rename aria-label={renameLabel} onClick={() => document.querySelector<HTMLButtonElement>('[data-mobile-original-rename]')?.click()}><MobileIcon name="edit" size={16}/></button>}</span>{row && !row.blank && (cwd || preset) && <span data-mobile-subtitle><span title={row.cwd}>{cwd}</span>{cwd && preset && <span aria-hidden>·</span>}{preset && <span>{preset}</span>}</span>}</>
+  return <><span data-mobile-title-line><strong data-mobile-session-title={row && !row.blank ? '' : undefined}>{row && !row.blank ? row.title || row.displayTitle : fallback}</strong>{row && !row.blank && <button data-mobile-rename aria-label={t('renameSession')} onClick={() => { prepareNavigation(); setRenaming(true) }}><MobileIcon name="edit" size={16}/></button>}</span>{row && !row.blank && (cwd || preset) && <span data-mobile-subtitle><span title={row.cwd}>{cwd}</span>{cwd && preset && <span aria-hidden>·</span>}{preset && <span>{preset}</span>}</span>}{renaming && row && !row.blank && <SessionRename key={row.id} navigation={navigation} sessionId={row.id} title={row.title || row.displayTitle} close={() => { prepareNavigation(); setRenaming(false) }} t={t}/>}</>
 }
 
 /** One visible navigation bar, with native connection sheets when supported. */
@@ -70,9 +73,9 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     return () => document.documentElement.removeAttribute('data-mobile-library-open')
   }, [state.active, library, available])
   useEffect(() => {
-    if (!state.active || !available || settings) return
-    return installNavigationGestures(document, setLibrary)
-  }, [state.active, available, settings])
+    if (!state.active || settings) return
+    return installNavigationGestures(document, open => { if (available) setLibrary(open); else if (open !== state.drawer) toggleSidebar() }, toggleSidebar)
+  }, [state.active, available, settings, state.drawer, toggleSidebar])
   const openLibrary = () => {
     if (!available) { toggleSidebar(); return }
     if (state.drawer) toggleSidebar()
@@ -106,12 +109,12 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
         <nav data-mobile-library-toolbar aria-label={t('menu')}><button aria-label={t('settings')} onClick={openSettings}><MobileIcon name="settings"/></button><button aria-label={t('newSession')} onClick={startSession}><MobileIcon name="compose"/></button></nav>
         <MobileLibrary {...(rooms ? { rooms } : {})} navigation={available} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} /></aside>}
       {library && available && !wide && <button type="button" data-mobile-peek-close aria-label={t('returnToConversation')} onClick={() => { presentation.prepareNavigation(); setLibrary(false) }} />}
-      {state.drawer && !available && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
+      {state.drawer && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
       <nav data-mobile-toolbar data-library={false} aria-label={t('menu')}>
         <button aria-label={t('menu')} onClick={openLibrary}>
           <MobileIcon name="back"/>
         </button>
-        <div data-mobile-nav-title>{(available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} renameLabel={t('renameSession')} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
+        <div data-mobile-nav-title>{(available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} t={t} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
         <button data-mobile-new={!!available} aria-label={available ? t('newSession') : t('settings')} onClick={available ? startSession : openSettings}><MobileIcon name={available ? "compose" : "settings"}/></button>
         {available && rooms && <MobileRoomNavigation rooms={rooms} navigation={available} prepareNavigation={presentation.prepareNavigation} t={t}/>}
       </nav>
