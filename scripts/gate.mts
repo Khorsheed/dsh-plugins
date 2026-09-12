@@ -289,6 +289,7 @@ export function main(): void {
     { name: 'repo hygiene (full tree)', run: () => sh('pnpm check:hygiene --all') },
     { name: 'plugin independence', run: () => sh('pnpm check:plugins') },
     { name: 'profile composition', run: () => sh('pnpm check:profiles') },
+    { name: 'release groups', run: () => sh('pnpm check:release-groups') },
     { name: 'doc gates', run: () => {
       sh('pnpm run verify-agent-note-format')
       sh('pnpm run verify-agent-note-classification')
