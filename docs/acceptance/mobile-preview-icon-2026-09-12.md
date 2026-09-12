@@ -15,4 +15,4 @@ Prepared for the next maintenance window; no Host restart, profile reinstall or 
 
 ## Pending
 
-Final maintenance-window installation. The icon changes only after installing the new native app; refreshing the Host page cannot install an iOS icon. Physical touch/animation acceptance remains for the user after installation. Current production connectivity is still awaiting the separately prepared HTTP/2 cutover.
+The subsequent [September 13 maintenance](mobile-http2-cutover-2026-09-13.md) installed the signed native app and deployed this mobile bundle with the HTTP/2 ingress cutover. The icon changes only after installing the new native app; refreshing the Host page cannot install an iOS icon. Physical touch/animation acceptance remains for the user after unlocking the phone.
