@@ -792,6 +792,34 @@ export class ClaudeLiveDriver {
       roundSettled = true
       turnInFlight = false
       if (turnOpened) {
+        // Token granularity: settle the round with ONE combined final message
+        // at the reserved (turn, step), carrying the usage — INSIDE the turn
+        // window (before turn/end) and wrapped in the step boundary pair, so
+        // the live conversation assembler materializes it like every other
+        // step instead of dropping a turn-level append after the turn closed.
+        // A non-completed round is marked interrupted, so a cancelled turn
+        // reads 已停止 legitimately.
+        if (granularity === 'token') {
+          const blocks: ContentBlock[] = []
+          if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
+          if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
+          if (blocks.length > 0) {
+            // The stream's reserved step (set whenever content exists —
+            // content implies at least one delta arrived).
+            const step = streamStep ?? 1
+            childSession.append('step/start', { turn, step })
+            childSession.append('assistant/message', {
+              turn,
+              step,
+              message: assistantEvent(blocks),
+              stream: [],
+              ...settleUsage !== undefined ? { usage: settleUsage } : {},
+              ...settled.stopReason === 'completed' ? {} : { interrupted: true },
+            }, { surfaceOp: 'append' })
+            childSession.append('step/end', { turn, step })
+            persist()
+          }
+        }
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
         } else if (settled.stopReason === 'aborted') {
@@ -812,34 +840,11 @@ export class ClaudeLiveDriver {
       return settled
     })
 
-    // Settle: the turn's result already flushed the fold (the result event IS
-    // the reconciliation — the fold consumed every streamed line); report the
-    // authoritative mirror count and re-arm the reaper. Token granularity:
-    // settle the round with ONE combined final message at the reserved
-    // (turn, step), carrying the usage. A
-    // non-completed round is marked interrupted, so a cancelled turn reads
-    // 已停止 legitimately.
-    void result.then(async (settled) => {
+    // Final mirror report + reaper re-arm, mirroring the exec settle pass's
+    // progress contract. A round that never opened owns no span — skip it.
+    void result.then(async () => {
       try {
         if (turnOpened) {
-          if (granularity === 'token') {
-            const blocks: ContentBlock[] = []
-            if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
-            if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
-            if (blocks.length > 0) {
-              childSession.append('assistant/message', {
-                turn,
-                // The stream's reserved step (set whenever content exists —
-                // content implies at least one delta arrived).
-                step: streamStep ?? 1,
-                message: assistantEvent(blocks),
-                stream: [],
-                ...settleUsage !== undefined ? { usage: settleUsage } : {},
-                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-              }, { surfaceOp: 'append' })
-              persist()
-            }
-          }
           await persistQueue.catch(() => {})
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         }

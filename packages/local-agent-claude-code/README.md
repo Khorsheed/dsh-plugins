@@ -97,7 +97,7 @@ bundle patch 把 `claude-code` harness 注册进家族 core(`@khorsheed/dsh-loca
 
 **续聊安全。** 句柄绝不进 prompt:它只从 `resume` 参数读取,localAgent registry 只对记录该委派的同一 parent 会话与 provider 解析句柄——伪造的句柄(未知子会话、他人 parent 的会话、或错误的 provider)在任何 CLI 进程启动前就被拒绝。
 
-**流镜像与记账。** `thinking` 块折叠为 `reasoning` 块、`tool_use`/`tool_result` 为工具行(`[工具 Bash] <command> → output`)、回复 `text` 为 assistant 文本;续聊轮各自追加自己的 turn,不会重复。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败与被取消同样关闭——因此 `subagentTiming` 时长等于实际 CLI 运行时长,不会留下未闭合窗口;最终 `assistant/message` 携带从 JSON 结果解析的 token 用量(`input_tokens`、`output_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`——Anthropic 各桶独立上报)。
+**流镜像与记账。** `thinking` 块折叠为 `reasoning` 块、`tool_use`/`tool_result` 为工具行(`[工具 Bash] <command> → output`)、回复 `text` 为 assistant 文本;续聊轮各自追加自己的 turn,不会重复。每个镜像 step 都包在同 (turn, step) 的 `step/start`–`step/end` 边界对内——宿主实时会话视图只在边界上登记 step,缺了边界 assistant 消息要等整页重建才渲染。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败与被取消同样关闭——因此 `subagentTiming` 时长等于实际 CLI 运行时长,不会留下未闭合窗口;最终 `assistant/message` 携带从 JSON 结果解析的 token 用量(`input_tokens`、`output_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`——Anthropic 各桶独立上报)。
 
 **模型体验。** 子会话是委派会话工作区内一个全新的一次性 `claude -p`;父级只提交独立的任务文本,只看到最终回答或精确错误,以及首次委派时的续聊自述——Claude 的评论、工具活动、工作区 diff 不会复制进父级。子会话 token 永不进入父级上下文;子会话为独立的 Claude 上下文与回合付费(缓存复用只取决于作用域安装自身的 provider、模型与历史);父级 KV cache 不受影响。
 
