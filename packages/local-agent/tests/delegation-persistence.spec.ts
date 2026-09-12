@@ -223,4 +223,20 @@ describe('LocalAgentRegistry delegation persistence', () => {
     second.registry.register(harness('fake-cli'))
     expect(second.registry.delegationOf('child-1')).toMatchObject({ observedModel: 'claude-opus-5[1m]' })
   })
+
+  it('persists a settle that beat the record, merged at recordDelegation', async () => {
+    // The inverted order (settle first, record later) must persist exactly
+    // like the in-order merge: a host restart still rebuilds the observation.
+    const homesRoot = mkdtempSync(join(tmpdir(), 'delegation-persist-'))
+    const first = await mountRegistry(homesRoot)
+    first.registry.register(harness('fake-cli'))
+    first.registry.recordRoundSettled('child-1', { observedModel: 'kimi-k2', cliVersion: '1.2.3' })
+    first.registry.recordDelegation({
+      childSessionId: 'child-1', provider: 'fake-cli', parentSessionId: 'parent-1', cliSessionId: 'session_42',
+    })
+
+    const second = await mountRegistry(homesRoot)
+    second.registry.register(harness('fake-cli'))
+    expect(second.registry.delegationOf('child-1')).toMatchObject({ observedModel: 'kimi-k2', cliVersion: '1.2.3' })
+  })
 })

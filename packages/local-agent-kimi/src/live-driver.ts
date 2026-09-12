@@ -888,6 +888,13 @@ export class KimiAcpLiveDriver {
      * usage-backfill event.
      */
     let roundUsage: TokenUsage | undefined
+    /**
+     * The model identifier the wire named this round (a mirror pass's
+     * `usage.record` / `llm.request` `model`, last one seen), reported as the
+     * round's settled observation — the live drive's half of the exec path's
+     * settle-mirror read-back.
+     */
+    let roundModel: string | undefined
     let lastMirrorAt = 0
     let mirrorQueue: Promise<unknown> = Promise.resolve()
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -1044,14 +1051,17 @@ export class KimiAcpLiveDriver {
       granularity === 'token' ? { streams: mirrorStreams } : undefined
 
     /**
-     * Usage accounting across mirror passes: a pass whose window attached its
-     * usage to a folded message is already carried; anything else sums into
-     * the round's uncarried remainder (the final snapshot's payload).
+     * Observation accounting across mirror passes: a pass whose window
+     * attached its usage to a folded message is already carried; anything else
+     * sums into the round's uncarried remainder (the final snapshot's payload).
+     * The wire's model rides every pass that saw one — the settle report reads
+     * the latest.
      */
     const noteMirrorUsage = (delta: KimiMirrorDelta): void => {
       if (delta.usage !== undefined && delta.usageAttached !== true) {
         roundUsage = addTokenUsage(roundUsage, delta.usage)
       }
+      if (delta.model !== undefined) roundModel = delta.model
     }
 
     /** Throttled push-triggered mirror pass; the file fold stays the only transcript source. */
@@ -1332,6 +1342,19 @@ export class KimiAcpLiveDriver {
       } catch (error) {
         this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
       } finally {
+        // Every settled round reports its observed model through the
+        // registry's observation channel (record merge + `settled` event) —
+        // the live drive's half of the exec path's onRoundSettled. A mirror
+        // failure never drops an observation an earlier pass already saw, and
+        // a round that never opened owns no span to observe. Degrades
+        // silently on a core predating recordRoundSettled.
+        if (turnOpened) {
+          const round = {
+            ...roundModel === undefined ? {} : { observedModel: roundModel },
+          }
+          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
+          registry?.recordRoundSettled?.(childSession.id, round)
+        }
         this.armIdleTimer(String(childSession.id))
       }
     })

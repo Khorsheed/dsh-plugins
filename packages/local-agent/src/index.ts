@@ -609,6 +609,7 @@ function parseDelegationLine(
   if (typeof cliSessionId !== 'string' || cliSessionId === '') return undefined
   const kimiMirroredLines = record['kimiMirroredLines']
   const observedModel = record['observedModel']
+  const cliVersion = record['cliVersion']
   const cwd = record['cwd']
   const scope = record['scope']
   const model = record['model']
@@ -623,6 +624,7 @@ function parseDelegationLine(
     // Optional observations: records written before the fields existed (and
     // lines that never observed them) load unchanged — absence stays absence.
     ...typeof observedModel === 'string' && observedModel !== '' ? { observedModel } : {},
+    ...typeof cliVersion === 'string' && cliVersion !== '' ? { cliVersion } : {},
     ...typeof cwd === 'string' && cwd !== '' ? { cwd } : {},
     // The scoped home the delegation belongs to. A line without one is a
     // DEFAULT-scope record — which is what every line written before the
@@ -853,6 +855,18 @@ export class LocalAgentRegistry {
   private readonly observedModelStamps = new Map<string, number>()
   /** The stamp counter for {@link observedModelStamps}. */
   private observedModelClock = 0
+  /**
+   * A settled round's observation that arrived BEFORE the delegation record
+   * existed ({@link recordRoundSettled} has nothing to merge into yet), held
+   * until {@link recordDelegation} lands and consumed there. A settle and the
+   * first-round record are ordered on every provider path today, but the
+   * record point is the provider's (a live round records at session/new, an
+   * exec round at the settle-time output parse), so the channel tolerates the
+   * inversion instead of dropping the observation. In-memory only and never
+   * persisted on its own: an observation whose record never arrives stays
+   * unrecorded, exactly as before.
+   */
+  private readonly pendingRoundObservations = new Map<string, { observedModel?: string; cliVersion?: string }>()
   /**
    * Per-(parent session, provider) FIFO of delegation intents. The family
    * resume tool stages exactly one intent per call before awaiting
@@ -1290,14 +1304,31 @@ export class LocalAgentRegistry {
    * so recording happens post-settle. A duplicate child session id replaces
    * the earlier record: a resumed child keeps one mapping. The record is also
    * appended to the owning harness's `delegations.jsonl` (last line per child
-   * session wins), so a host restart keeps the mapping resolvable.
+   * session wins), so a host restart keeps the mapping resolvable. A settled
+   * round's observation that arrived before this record (the provider's
+   * record point is its own) is merged in from the pending stash — see
+   * {@link recordRoundSettled}.
    * @param record - the delegation's dsh child session id, provider, owning
    *   parent session id, and CLI session id.
    */
   recordDelegation(record: LocalAgentDelegationRecord): void {
-    this.delegations.set(record.childSessionId, record)
-    this.noteObservedModel(record)
-    this.persistDelegation(record)
+    // A settle that beat the record (see pendingRoundObservations) fills only
+    // the fields the record itself does not carry — the record's own values
+    // win.
+    const pending = this.pendingRoundObservations.get(record.childSessionId)
+    this.pendingRoundObservations.delete(record.childSessionId)
+    const merged = pending === undefined ? record : {
+      ...record,
+      ...record.observedModel === undefined && pending.observedModel !== undefined
+        ? { observedModel: pending.observedModel }
+        : {},
+      ...record.cliVersion === undefined && pending.cliVersion !== undefined
+        ? { cliVersion: pending.cliVersion }
+        : {},
+    }
+    this.delegations.set(record.childSessionId, merged)
+    this.noteObservedModel(merged)
+    this.persistDelegation(merged)
   }
 
   /**
@@ -1491,8 +1522,10 @@ export class LocalAgentRegistry {
    * Providers call it once per settled round, at the point their output
    * stream has been fully parsed; fields the stream did not yield stay absent
    * — absence is recorded, never guessed. A record that does not exist yet
-   * (the round failed before the CLI session was learned) is skipped for the
-   * merge; the event still reports.
+   * (the round's settle beat the provider's record point — e.g. a round whose
+   * CLI session id only parses post-settle) does not lose the observation: it
+   * is stashed and merged by the later {@link recordDelegation}; the event
+   * still reports either way.
    * @param childSessionId - the dsh child session id of the settled round.
    * @param round - the round's observed model, version, usage and tool-call
    *   accounting, each optional.
@@ -1517,6 +1550,16 @@ export class LocalAgentRegistry {
         this.delegations.set(childSessionId, updated)
         this.noteObservedModel(updated)
         this.persistDelegation(updated)
+      } else {
+        const pending = this.pendingRoundObservations.get(childSessionId) ?? {}
+        this.pendingRoundObservations.set(childSessionId, {
+          ...(round.observedModel ?? pending.observedModel) === undefined
+            ? {}
+            : { observedModel: (round.observedModel ?? pending.observedModel) as string },
+          ...(round.cliVersion ?? pending.cliVersion) === undefined
+            ? {}
+            : { cliVersion: (round.cliVersion ?? pending.cliVersion) as string },
+        })
       }
     }
     // `toolCalls` rides the EVENT only, never the record: the record carries a

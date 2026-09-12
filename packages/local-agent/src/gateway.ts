@@ -24,6 +24,20 @@ import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
  * Remote-only projection of the local-agent registry, exposed to the browser
  * through Typert Gateway under the `localAgentGateway` service key.
  */
+
+/**
+ * Fold a model surface's `lastObserved` into its pick list: a member (or
+ * harness) whose only named model is what it was observed running still gets
+ * a one-item menu instead of an empty one. The observation appends LAST —
+ * the broker's own choices keep their ranking — and an already-listed value
+ * leaves the list untouched (choices arrive deduped from the broker).
+ */
+function withObservedChoice(info: LocalAgentModelInfo): LocalAgentModelInfo {
+  const observed = info.lastObserved
+  if (observed === undefined || info.choices.includes(observed)) return info
+  return { ...info, choices: [...info.choices, observed] }
+}
+
 export default class LocalAgentGateway extends TypertRemoteService {
   static inject = ['localAgent', 'sessions']
 
@@ -116,7 +130,9 @@ export default class LocalAgentGateway extends TypertRemoteService {
    * exposes no model broker: the card then keeps its free-text field exactly
    * as before brokers existed. The core fills `lastObserved` from the
    * delegation records (the harness's own provider) when the broker's answer
-   * carries none — display context for the cli-builtin layer, never a layer.
+   * carries none — display context for the cli-builtin layer, never a layer —
+   * and appends it to `choices` when no broker choice lists it, so the card's
+   * menu offers what last ran instead of staying empty.
    * @param name - the harness name.
    * @returns the layer-by-layer surface, or null.
    */
@@ -129,8 +145,9 @@ export default class LocalAgentGateway extends TypertRemoteService {
     const observed = harness.delegationProvider === undefined
       ? undefined
       : this.ctx.localAgent.latestObservedModel(harness.delegationProvider)
-    if (info.lastObserved !== undefined || observed === undefined) return info
-    return { ...info, lastObserved: observed }
+    return withObservedChoice(info.lastObserved !== undefined || observed === undefined
+      ? info
+      : { ...info, lastObserved: observed })
   }
 
   /**
@@ -139,7 +156,9 @@ export default class LocalAgentGateway extends TypertRemoteService {
    * can rank it between the override and the settings layer; the record's
    * OBSERVED model fills `lastObserved` when the broker's answer carries none
    * (a broker that names one itself always wins — spread order: the broker's
-   * answer first, the core's fill only over an absent field). Null for a
+   * answer first, the core's fill only over an absent field) and joins
+   * `choices` as the last entry when no broker choice lists it, so a member
+   * that ran once has a one-item pick list instead of an empty menu. Null for a
    * non-member session or a brokerless harness.
    * @param childSessionId - the dsh child session id of the member.
    * @returns the layer-by-layer surface, or null.
@@ -152,8 +171,9 @@ export default class LocalAgentGateway extends TypertRemoteService {
     const broker = registry.harnessForProvider(record.provider)?.modelBroker
     if (broker === undefined) return null
     const info = await broker.modelInfo(childSessionId, record.model)
-    if (info.lastObserved !== undefined || record.observedModel === undefined) return info
-    return { ...info, lastObserved: record.observedModel }
+    return withObservedChoice(info.lastObserved !== undefined || record.observedModel === undefined
+      ? info
+      : { ...info, lastObserved: record.observedModel })
   }
 
   /**

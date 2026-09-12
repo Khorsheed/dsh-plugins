@@ -48,6 +48,7 @@ import {
   textTask,
   type CodexTranscriptLine,
 } from './codex-cli-provider.ts'
+import { codexRolloutRoundFacts } from './records.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -829,6 +830,8 @@ export class CodexLiveDriver {
     const childSession = spec.childSession
     const granularity: CodexLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
+    /** The round's start moment, anchoring the settle read-back's rollout time window. */
+    const startedAtMs = Date.now()
 
     const runAbort = new AbortController()
     let roundSettled = false
@@ -1298,7 +1301,30 @@ export class CodexLiveDriver {
         if (turnOpened) {
           await persistQueue.catch(() => {})
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
+          // Every settled round reports its observation through the registry's
+          // channel (record merge + `settled` event) — the live drive's half
+          // of the exec path's onRoundSettled. The app-server wire names no
+          // model (codex 0.144.0), so the round's own rollout file answers,
+          // exactly as in the exec settle mirror; a non-completed turn's
+          // unstreamed spend comes back from the same read. Best-effort: a
+          // missing rollout leaves the fields absent, never guessed.
+          const facts = await codexRolloutRoundFacts(spec.homeDir, {
+            threadId: runtime?.threadId,
+            windowStart: startedAtMs,
+            cwd: spec.cwd,
+          })
+          const settledUsage = usage ?? facts.usage
+          const round = {
+            ...facts.model === undefined ? {} : { observedModel: facts.model },
+            ...facts.cliVersion === undefined ? {} : { cliVersion: facts.cliVersion },
+            ...settledUsage === undefined ? {} : { usage: settledUsage },
+          }
+          // Degrades silently on a core predating recordRoundSettled.
+          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
+          registry?.recordRoundSettled?.(childSession.id, round)
         }
+      } catch (error) {
+        this.ctx.logger.warn(`subagent-codex: live settle observation failed: ${thrown(error).message}`)
       } finally {
         this.armIdleTimer(String(childSession.id))
       }

@@ -7,7 +7,7 @@
  * provider's exec fallback.
  */
 
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -224,6 +224,7 @@ interface Mount {
   spawns: { spec: SubprocessSpawnSpec; fake?: FakeAppServer; execHandle?: SubprocessHandle }[]
   reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[]
   records: ReturnType<typeof vi.fn>
+  settles: { id: string; round: Record<string, unknown> }[]
   queueChild(child: FakeAppServer): void
   driver: CodexLiveDriver
 }
@@ -238,6 +239,7 @@ function mount(options: {
   const spawns: Mount['spawns'] = []
   const queue: FakeAppServer[] = []
   const records = vi.fn()
+  const settles: Mount['settles'] = []
   const ctx = new Context()
   ctx.provide('localAgent', {
     homeDir: () => homeDir,
@@ -246,6 +248,7 @@ function mount(options: {
     get: () => undefined,
     acquireResumeLock: () => true,
     releaseResumeLock: () => {},
+    recordRoundSettled: (id: string, round: Record<string, unknown>) => { settles.push({ id, round }) },
     reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
       reports.push({ id, progress })
     },
@@ -298,6 +301,7 @@ function mount(options: {
     spawns,
     reports,
     records,
+    settles,
     queueChild: child => { queue.push(child) },
     driver,
   }
@@ -390,6 +394,60 @@ describe('codex live driver rounds', () => {
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('reports the settled round’s observation read back from its rollout file', async () => {
+    // The live drive's half of the exec path's onRoundSettled: the app-server
+    // wire names no model, so the settle reads the round's own rollout file —
+    // the same read-back the exec settle mirror does. The gap left prod's
+    // live-driven delegations without observedModel.
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-obs'))
+    m.queueChild(new FakeAppServer({
+      turn: () => {
+        // The resident runtime wrote its rollout by turn end (codex writes
+        // session_meta at thread start and turn_context when the turn starts).
+        const now = new Date()
+        const dir = join(
+          m.homeDir, 'sessions',
+          String(now.getFullYear()),
+          String(now.getMonth() + 1).padStart(2, '0'),
+          String(now.getDate()).padStart(2, '0'),
+        )
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, `rollout-${now.toISOString().replace(/[:.]/g, '-')}-thread-1.jsonl`), [
+          JSON.stringify({
+            type: 'session_meta',
+            payload: { id: 'thread-1', timestamp: now.toISOString(), cwd: '/tmp', cli_version: '0.144.0' },
+          }),
+          JSON.stringify({ type: 'turn_context', timestamp: now.toISOString(), payload: { turn_id: 'turn-1', cwd: '/tmp', model: 'gpt-5.6-sol' } }),
+          '',
+        ].join('\n'))
+        return { items: answerItems('第一条回复'), usage: { inputTokens: 10, cachedInputTokens: 6, outputTokens: 4 } }
+      },
+    }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.id).toBe('child-codex-obs')
+    expect(m.settles[0]?.round).toMatchObject({
+      observedModel: 'gpt-5.6-sol',
+      cliVersion: '0.144.0',
+      usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 },
+    })
+    await m.driver.disposeAll()
+  })
+
+  it('a settled round whose rollout named no model still reports, with the observation absent', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-no-obs'))
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('第一条回复') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.id).toBe('child-codex-no-obs')
+    expect(m.settles[0]?.round['observedModel']).toBeUndefined()
+    await m.driver.disposeAll()
   })
 
   it('reuses the resident runtime and thread for the resume round', async () => {

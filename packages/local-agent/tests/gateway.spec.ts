@@ -325,5 +325,53 @@ describe('LocalAgentGateway member channel', () => {
 
       expect(info?.lastObserved).toBeUndefined()
     })
+
+    it('memberModel appends lastObserved to an empty pick list (a member that ran once has a one-item menu)', async () => {
+      const h = await mountMember({ broker: broker(), observedModel: 'gpt-5.6-sol' })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info?.choices).toEqual(['gpt-5.6-sol'])
+    })
+
+    it('memberModel appends lastObserved LAST, after the broker’s own choices', async () => {
+      const h = await mountMember({ broker: broker({ choices: ['model-a', 'model-b'] }), observedModel: 'gpt-5.6-sol' })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info?.choices).toEqual(['model-a', 'model-b', 'gpt-5.6-sol'])
+    })
+
+    it('memberModel never duplicates a lastObserved the broker already lists', async () => {
+      const h = await mountMember({ broker: broker({ choices: ['model-a', 'gpt-5.6-sol'] }), observedModel: 'gpt-5.6-sol' })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info?.choices).toEqual(['model-a', 'gpt-5.6-sol'])
+    })
+
+    it('memberModel appends a broker-provided lastObserved too', async () => {
+      const h = await mountMember({ broker: broker({ lastObserved: 'broker-model' }) })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info?.choices).toEqual(['broker-model'])
+    })
+
+    it('harnessModel appends lastObserved to the pick list as well', async () => {
+      const h = await mountMember({ broker: broker(), observedModel: 'model-old' })
+
+      const info = await h.gateway.harnessModel('fake')
+
+      expect(info?.choices).toEqual(['model-old'])
+    })
+
+    it('the pick list stays empty when nothing observed a model', async () => {
+      const h = await mountMember({ broker: broker() })
+
+      const info = await h.gateway.memberModel(CHILD)
+
+      expect(info?.choices).toEqual([])
+    })
   })
 })

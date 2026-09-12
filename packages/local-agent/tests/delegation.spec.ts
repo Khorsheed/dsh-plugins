@@ -202,4 +202,71 @@ describe('LocalAgentRegistry delegation registry', () => {
       expect(registry.latestObservedModel('kimi-cli')).toBe('kimi-k2')
     })
   })
+
+  describe('recordRoundSettled before the record exists', () => {
+    it('stashes the observation and merges it at recordDelegation', async () => {
+      // The provider's record point is its own (a live round records at
+      // session/new, an exec round at the settle-time output parse): a settle
+      // that beats the record must not lose its observation.
+      const registry = await mountRegistry()
+      registry.recordRoundSettled('child-1', { observedModel: 'kimi-k2', cliVersion: '1.2.3' })
+      expect(registry.getDelegation('child-1')).toBeUndefined()
+
+      registry.recordDelegation({
+        childSessionId: 'child-1',
+        provider: 'kimi-cli',
+        parentSessionId: 'parent-1',
+        cliSessionId: 'session_42',
+      })
+      expect(registry.delegationOf('child-1')).toMatchObject({ observedModel: 'kimi-k2', cliVersion: '1.2.3' })
+      expect(registry.latestObservedModel('kimi-cli')).toBe('kimi-k2')
+    })
+
+    it('keeps the latest stashed observation when several settles precede the record', async () => {
+      const registry = await mountRegistry()
+      registry.recordRoundSettled('child-1', { observedModel: 'kimi-k1' })
+      registry.recordRoundSettled('child-1', { observedModel: 'kimi-k2' })
+      registry.recordDelegation({
+        childSessionId: 'child-1',
+        provider: 'kimi-cli',
+        parentSessionId: 'parent-1',
+        cliSessionId: 'session_42',
+      })
+      expect(registry.delegationOf('child-1')).toMatchObject({ observedModel: 'kimi-k2' })
+    })
+
+    it('the record\u2019s own observation wins over the stash, and the stash is consumed once', async () => {
+      const registry = await mountRegistry()
+      registry.recordRoundSettled('child-1', { observedModel: 'kimi-k1' })
+      registry.recordDelegation({
+        childSessionId: 'child-1',
+        provider: 'kimi-cli',
+        parentSessionId: 'parent-1',
+        cliSessionId: 'session_42',
+        observedModel: 'kimi-k2',
+      })
+      expect(registry.delegationOf('child-1')).toMatchObject({ observedModel: 'kimi-k2' })
+      // Consumed: a re-record (replace semantics) does not resurrect the stash.
+      registry.recordDelegation({
+        childSessionId: 'child-1',
+        provider: 'kimi-cli',
+        parentSessionId: 'parent-1',
+        cliSessionId: 'session_99',
+      })
+      expect(registry.getDelegation('child-1')).toMatchObject({ cliSessionId: 'session_99' })
+      expect(registry.delegationOf('child-1')?.observedModel).toBeUndefined()
+    })
+
+    it('a settle after the record merges directly, never touching the stash path', async () => {
+      const registry = await mountRegistry()
+      registry.recordDelegation({
+        childSessionId: 'child-1',
+        provider: 'kimi-cli',
+        parentSessionId: 'parent-1',
+        cliSessionId: 'session_42',
+      })
+      registry.recordRoundSettled('child-1', { observedModel: 'kimi-k2' })
+      expect(registry.delegationOf('child-1')).toMatchObject({ observedModel: 'kimi-k2' })
+    })
+  })
 })

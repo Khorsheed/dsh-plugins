@@ -121,7 +121,7 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 
 `toolCalls` 只从 provider **已经解析过**的转录事件里数出来——不新开解析路径、不再走一遍流。`byName` 的键是各家 CLI 自己的工具词汇（codex 的 `command_execution`、claude 的 `Bash`/`Read`、kimi 与 dsh 各自事件里的工具名），原样保留、**不跨家归一**：因此横比只比 `count`，`byName` 是给人读的。归一化会凭空造出一份 CLI 之间从未约定过的等价关系。
 
-`observedModel` 与 `cliVersion` 会并进委派记录（记录讲的是这次委派的最新状态），`toolCalls` **只走事件**：它属于某一轮，合并进记录等于用最新一轮悄悄盖掉上一轮的计数。
+`observedModel` 与 `cliVersion` 会并进委派记录（记录讲的是这次委派的最新状态），`toolCalls` **只走事件**：它属于某一轮，合并进记录等于用最新一轮悄悄盖掉上一轮的计数。settle 先于记录到达（记录点在各 provider 自己手里：live 轮在 session/new 时记录，exec 轮在 settle 后解析输出时记录）也不丢观测——家族先暂存，`recordDelegation` 落地时并入；exec 与 live 两条驱动路径都会上报。
 
 **模型的五层取值顺序。** 一轮 CLI 用哪个模型，按固定顺序取第一个有值的：
 
@@ -135,7 +135,7 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 
 **为什么 resume 不接受 model。** 模型属于这次**委派**，不属于它的某一轮：首轮请求什么就记什么，之后每轮照发。中途换模型 CLI 会照办，而转录里看不出来——所以那是调用方的错误，fail loud，而不是被悄悄忽略的字段。要换模型走成员 composer 的切换器（下面的会话级覆盖），它在转录里是有迹可循的一层。
 
-**成员 composer 的模型切换器（会话级覆盖）。** 成员会话的 composer 在发送钮旁边带一个模型切换器（harness 没注册 model broker 就不渲染，保持 broker 出现之前的行为）：chip 显示当前生效模型（五层都没有时显示「默认」；委派记录里最近实际跑过的模型已知时，显示「默认（最近 <model>）」——codex 的目录默认这一层有名，chip 会直接显示那个 slug），下拉列出该家的可选词表，选中即写该成员的**会话级覆盖**——存内存、刻意不随宿主重启存活、优先级高于委派记录与设置层；「跟随设置」一项清除覆盖。live 驱动下换一个**不同的**模型会退役该成员的长驻 runtime，下一轮以新模型重 spawn（同一条 CLI 会话照常 resume，rollout 延续）；换成同一个模型是 no-op。成员有一轮在飞时切换被拒绝（结构化错误内联显示，切换器同时禁用并给出原因）——退役 runtime 会杀掉正在跑的轮。读取走 `localAgentGateway.memberModel`，写入走 `setMemberModel`；设置卡片的「下一轮会跑什么」读的是同一个 broker 的无成员面（`harnessModel`）。
+**成员 composer 的模型切换器（会话级覆盖）。** 成员会话的 composer 在发送钮旁边带一个模型切换器（harness 没注册 model broker 就不渲染，保持 broker 出现之前的行为）：chip 显示当前生效模型（五层都没有时显示「默认」；委派记录里最近实际跑过的模型已知时，显示「默认（最近 <model>）」——codex 的目录默认这一层有名，chip 会直接显示那个 slug），下拉列出该家的可选词表（最近实际跑过的模型不在词表里时由网关追加为最后一项——只跑过一轮的成员也有一项可选，而不是空菜单），选中即写该成员的**会话级覆盖**——存内存、刻意不随宿主重启存活、优先级高于委派记录与设置层；「跟随设置」一项清除覆盖。live 驱动下换一个**不同的**模型会退役该成员的长驻 runtime，下一轮以新模型重 spawn（同一条 CLI 会话照常 resume，rollout 延续）；换成同一个模型是 no-op。成员有一轮在飞时切换被拒绝（结构化错误内联显示，切换器同时禁用并给出原因）——退役 runtime 会杀掉正在跑的轮。读取走 `localAgentGateway.memberModel`，写入走 `setMemberModel`；设置卡片的「下一轮会跑什么」读的是同一个 broker 的无成员面（`harnessModel`）。
 
 `effectiveSettings.model` 报的仍是**设置层往下**的答案——「一轮没有自带模型时会跑什么」，也就是条件快照要问的那个 harness 级设置；委派记录与会话覆盖不进快照。
 

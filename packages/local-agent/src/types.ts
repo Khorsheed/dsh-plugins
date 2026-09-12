@@ -374,7 +374,12 @@ export interface LocalAgentModelInfo {
    * {@link LocalAgentModelInfo.effective} (an observation is not a layer).
    */
   lastObserved?: string
-  /** The pickable model identifiers (deduped; empty when nothing names a model). */
+  /**
+   * The pickable model identifiers (deduped; empty when nothing names a
+   * model). The core gateway appends {@link LocalAgentModelInfo.lastObserved}
+   * as the final entry when no broker choice already lists it, so a member
+   * that only ever ran its CLI default still has a one-item menu.
+   */
   choices: readonly string[]
   /** Whether the harness's live driver is on for the member's rounds. */
   live: boolean

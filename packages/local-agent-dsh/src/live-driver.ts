@@ -841,6 +841,19 @@ export class DshLiveDriver {
               localAgent.reportRunProgress(childSession.id, { kind: 'delta', text })
             }
             localAgent.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+            // Every settled round reports its observation through the
+            // registry's channel (record merge + `settled` event) — the live
+            // drive's half of the exec path's settle-mirror report: the
+            // sub-dsh session's own model attribution, the round's usage and
+            // tool-call accounting, each absent when the round's events name
+            // none. Degrades silently on a core predating recordRoundSettled.
+            const round = {
+              ...delta.observedModel === undefined ? {} : { observedModel: delta.observedModel },
+              ...delta.usage === undefined ? {} : { usage: delta.usage },
+              ...delta.toolCalls === undefined ? {} : { toolCalls: delta.toolCalls },
+            }
+            const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
+            registry?.recordRoundSettled?.(childSession.id, round)
           }
         }
       } catch (error) {

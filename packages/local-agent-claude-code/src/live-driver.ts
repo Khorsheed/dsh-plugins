@@ -82,9 +82,11 @@ import {
   assistantEvent,
   claudeLineText,
   ClaudeStreamParser,
+  claudeVersionFromInit,
   DEFAULT_DISPOSE_GRACE_MS,
   registerClaudeMemberRun,
   textTask,
+  toolCallsOf,
 } from './claude-cli-provider.ts'
 import { syncClaudeCredentialFile } from './records.ts'
 
@@ -660,6 +662,14 @@ export class ClaudeLiveDriver {
     /** This turn's fold (the exec live mirror's exact parser). */
     const parser = new ClaudeStreamParser()
     let mirrored = 0
+    /**
+     * The model and CLI build this turn's system/init named — the live
+     * drive's half of the exec settle parse's read-back, reported as the
+     * round's settled observation. EVERY turn re-emits its init, so a round
+     * always observes its own.
+     */
+    let roundModel: string | undefined
+    let roundCliVersion: string | undefined
     /** Whether a folded line already carries the round's usage (no backfill event exists). */
     let usageCarried = false
     /**
@@ -864,10 +874,14 @@ export class ClaudeLiveDriver {
       const type = event['type']
       if (type === 'system' && typeof event['session_id'] === 'string') {
         // EVERY turn emits an init; the first one mints the delegation id.
+        // Its model/build fields are this round's settled observation (the
+        // exec settle parse reads the same fields off the same event).
         if (runtime !== undefined && runtime.sessionId === undefined) {
           runtime.sessionId = event['session_id']
           resolveInit(runtime.sessionId)
         }
+        if (typeof event['model'] === 'string' && event['model'] !== '') roundModel = event['model']
+        roundCliVersion = claudeVersionFromInit(event['claude_code_version']) ?? roundCliVersion
         return
       }
       if (type === 'result') {
@@ -1061,6 +1075,23 @@ export class ClaudeLiveDriver {
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         }
       } finally {
+        // Every settled round reports its observation through the registry's
+        // channel (record merge + `settled` event) — the live drive's half of
+        // the exec path's onRoundSettled: the init event's model and build,
+        // the result event's usage, and the round's tool-call accounting, each
+        // absent when the stream never yielded it. Degrades silently on a
+        // core predating recordRoundSettled (the round still settles).
+        if (turnOpened) {
+          const toolCalls = toolCallsOf(parser.toolCalls)
+          const round = {
+            ...roundModel === undefined ? {} : { observedModel: roundModel },
+            ...roundCliVersion === undefined ? {} : { cliVersion: roundCliVersion },
+            ...parser.usage === undefined ? {} : { usage: parser.usage },
+            ...toolCalls === undefined ? {} : { toolCalls },
+          }
+          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
+          registry?.recordRoundSettled?.(childSession.id, round)
+        }
         this.armIdleTimer(String(childSession.id))
       }
     })

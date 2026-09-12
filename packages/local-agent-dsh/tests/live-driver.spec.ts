@@ -6,7 +6,7 @@
  * channel cannot come up.
  */
 
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -237,6 +237,7 @@ interface Mount {
   spawns: { spec: SubprocessSpawnSpec; handle: SubprocessHandle; fake?: FakeServeChild }[]
   reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[]
   records: ReturnType<typeof vi.fn>
+  settles: { id: string; round: Record<string, unknown> }[]
   /** Queue a fake serve process for the next spawn. */
   queueChild(child: FakeServeChild): void
   driver: DshLiveDriver
@@ -260,13 +261,14 @@ function mount(options: {
   const spawns: Mount['spawns'] = []
   const queue: FakeServeChild[] = []
   const records = vi.fn()
+  const settles: Mount['settles'] = []
   const ctx = new Context()
   ctx.provide('localAgent', {
     homeDir: () => homeDir,
     takeDelegationIntent: () => options.intent,
     recordDelegation: records,
     getDelegation: () => undefined,
-    recordRoundSettled: () => {},
+    recordRoundSettled: (id: string, round: Record<string, unknown>) => { settles.push({ id, round }) },
     get: () => undefined,
     acquireResumeLock: () => true,
     releaseResumeLock: () => {},
@@ -311,6 +313,7 @@ function mount(options: {
     spawns,
     reports,
     records,
+    settles,
     queueChild: child => { queue.push(child) },
     driver,
   }
@@ -369,6 +372,65 @@ describe('dsh live driver rounds', () => {
     await run.dispose()
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('reports the settled round’s observation read off the sub-dsh session log', async () => {
+    // The live drive's half of the exec path's settle-mirror report: the
+    // settle pass's mirrorDshSession delta carries the round's model
+    // attribution and usage, and the round reports them through the
+    // registry's observation channel — the gap that left prod's live-driven
+    // delegations without observedModel.
+    const m = mount()
+    const child = Session.create(SessionId('child-live-obs'))
+    m.queueChild(new FakeServeChild({
+      turn: () => {
+        // The serve side flushed its session log before the idle
+        // notification; the settle mirror reads it back.
+        const dir = join(m.homeDir, 'sessions', 'wd_test', 'child-live-obs')
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, 'session.jsonl'), [
+          JSON.stringify({ type: 'session', version: 0, id: 'child-live-obs' }),
+          JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
+          JSON.stringify({
+            type: 'user/message', seq: 0, time: 1,
+            data: { content: [{ type: 'text', text: '建个文件' }], source: { kind: 'user' }, role: 'user' },
+          }),
+          JSON.stringify({ type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } }),
+          JSON.stringify({
+            type: 'assistant/message', seq: 0, time: 1,
+            data: {
+              turn: 1, step: 1,
+              message: { content: [{ type: 'text', text: '第一条回复' }], source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } },
+              usage: { inputTokens: 100, outputTokens: 10 },
+            },
+          }),
+          JSON.stringify({ type: 'step/end', seq: 0, time: 1, data: { turn: 1, step: 1 } }),
+          JSON.stringify({ type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } }),
+        ].join('\n') + '\n')
+        return { events: answerEvents(1, '建个文件', '第一条回复') }
+      },
+    }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.id).toBe('child-live-obs')
+    expect(m.settles[0]?.round).toMatchObject({
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 100, outputTokens: 10 },
+    })
+    await m.driver.disposeAll()
+  })
+
+  it('a settled round whose session log named no model still reports, with the observation absent', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-live-no-obs'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '第一条回复') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.id).toBe('child-live-no-obs')
+    expect(m.settles[0]?.round['observedModel']).toBeUndefined()
+    await m.driver.disposeAll()
   })
 
   it('keeps the parent turn/start ahead of events even when the ack and events arrive in one chunk', async () => {

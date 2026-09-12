@@ -186,13 +186,13 @@ class FakeAcpServer {
 }
 
 /** Write one wire.jsonl for the ACP session so the file mirror has content. */
-function writeKimiWire(homeDir: string, sessionId: string, task: string, answer: string): void {
+function writeKimiWire(homeDir: string, sessionId: string, task: string, answer: string, model?: string): void {
   const dir = join(homeDir, 'sessions', 'wd_test', `session_${sessionId}`, 'agents', 'main')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'wire.jsonl'), [
     JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: task }] }),
     JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: answer } } }),
-    JSON.stringify({ type: 'usage.record', usage: { inputOther: 10, output: 4 } }),
+    JSON.stringify({ type: 'usage.record', usage: { inputOther: 10, output: 4 }, ...model === undefined ? {} : { model } }),
   ].join('\n') + '\n')
 }
 
@@ -202,6 +202,7 @@ interface Mount {
   spawns: { spec: SubprocessSpawnSpec; fake?: FakeAcpServer; execHandle?: SubprocessHandle }[]
   reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[]
   records: ReturnType<typeof vi.fn>
+  settles: { id: string; round: Record<string, unknown> }[]
   mirrorOffsets: Map<string, number>
   queueChild(child: FakeAcpServer): void
   driver: KimiAcpLiveDriver
@@ -225,6 +226,7 @@ function mount(options: {
   const spawns: Mount['spawns'] = []
   const queue: FakeAcpServer[] = []
   const records = vi.fn()
+  const settles: Mount['settles'] = []
   const mirrorOffsets = new Map<string, number>()
   const ctx = new Context()
   ctx.provide('localAgent', {
@@ -232,7 +234,7 @@ function mount(options: {
     takeDelegationIntent: () => options.intent,
     recordDelegation: records,
     getDelegation: () => undefined,
-    recordRoundSettled: () => {},
+    recordRoundSettled: (id: string, round: Record<string, unknown>) => { settles.push({ id, round }) },
     get: () => undefined,
     acquireResumeLock: () => true,
     releaseResumeLock: () => {},
@@ -301,6 +303,7 @@ function mount(options: {
     spawns,
     reports,
     records,
+    settles,
     mirrorOffsets,
     queueChild: child => { queue.push(child) },
     driver,
@@ -416,6 +419,41 @@ describe('kimi live driver rounds', () => {
     // Event granularity: the settle fold wraps each mirrored step in its
     // boundary pair, even landing after turn/end.
     expectStepBoundaries(child)
+    await m.driver.disposeAll()
+  })
+
+  it('reports the settled round’s observed model from the wire (the registry’s observation channel)', async () => {
+    // The live drive's half of the exec path's onRoundSettled: every settled
+    // round reports the model its wire named, so the delegation record's
+    // observedModel merge (and the `settled` event) fires on prod's live path
+    // too — the gap that left delegations.jsonl without observedModel.
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-obs'))
+    const fake = new FakeAcpServer({
+      turn: (params) => {
+        writeKimiWire(m.homeDir, 'acp-session-1', String((params['prompt'] as { text: string }[])[0]!.text), '文件建好了', 'kimi-k2-thinking')
+        return { chunks: ['文件建好了'] }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]).toEqual({ id: 'child-kimi-obs', round: { observedModel: 'kimi-k2-thinking' } })
+    await m.driver.disposeAll()
+  })
+
+  it('a settled round whose wire named no model still reports, with the observation absent', async () => {
+    // Absence is recorded, never guessed: the `settled` event fires (the
+    // parked progress route closes on it) without an observedModel field.
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-no-obs'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.id).toBe('child-kimi-no-obs')
+    expect(m.settles[0]?.round).toEqual({})
     await m.driver.disposeAll()
   })
 

@@ -38,6 +38,8 @@ interface FakeClaudeScript {
   turn?: (params: { text: string }) => FakeTurn
   /** Exit immediately on spawn (channel-broken simulation). */
   silentInit?: boolean
+  /** Extra fields on the per-turn system/init (the model/build the CLI names). */
+  init?: Record<string, unknown>
 }
 
 /** A fake resident `claude --input-format stream-json` process. */
@@ -121,7 +123,7 @@ class FakeClaude {
     if (this.script.silentInit === true) return
     const turn = this.script.turn?.({ text }) ?? {}
     queueMicrotask(() => {
-      this.emit({ type: 'system', subtype: 'init', session_id: this.sessionId })
+      this.emit({ type: 'system', subtype: 'init', session_id: this.sessionId, ...this.script.init })
       for (const delta of turn.thinkingDeltas ?? []) {
         this.emit({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: delta } } })
       }
@@ -157,6 +159,7 @@ interface Mount {
   spawns: { spec: SubprocessSpawnSpec; fake?: FakeClaude; execHandle?: SubprocessHandle }[]
   reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[]
   records: ReturnType<typeof vi.fn>
+  settles: { id: string; round: Record<string, unknown> }[]
   queueChild(child: FakeClaude): void
   driver: ClaudeLiveDriver
 }
@@ -171,6 +174,7 @@ function mount(options: {
   const spawns: Mount['spawns'] = []
   const queue: FakeClaude[] = []
   const records = vi.fn()
+  const settles: Mount['settles'] = []
   const ctx = new Context()
   ctx.provide('localAgent', {
     homeDir: () => homeDir,
@@ -179,6 +183,7 @@ function mount(options: {
     get: () => undefined,
     acquireResumeLock: () => true,
     releaseResumeLock: () => {},
+    recordRoundSettled: (id: string, round: Record<string, unknown>) => { settles.push({ id, round }) },
     reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
       reports.push({ id, progress })
     },
@@ -231,6 +236,7 @@ function mount(options: {
     spawns,
     reports,
     records,
+    settles,
     queueChild: child => { queue.push(child) },
     driver,
   }
@@ -321,6 +327,42 @@ describe('claude live driver rounds', () => {
     expectStepBoundaries(child)
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('reports the settled round’s observation from the turn’s init and result (the registry’s channel)', async () => {
+    // The live drive's half of the exec path's onRoundSettled: the init
+    // event's model and build, the result's usage, and the round's tool-call
+    // accounting ride the observation channel — the gap that left prod's
+    // live-driven delegations without observedModel.
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-obs'))
+    m.queueChild(new FakeClaude({
+      init: { model: 'claude-opus-4-6[1m]', claude_code_version: '2.1.236' },
+      turn: () => ({ events: answerEvents('第一条回复'), usage: { input_tokens: 10, cache_read_input_tokens: 6, output_tokens: 4 } }),
+    }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.id).toBe('child-claude-obs')
+    expect(m.settles[0]?.round).toMatchObject({
+      observedModel: 'claude-opus-4-6[1m]',
+      cliVersion: '2.1.236',
+      usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 6 },
+      toolCalls: { count: 1, byName: { Bash: 1 } },
+    })
+    await m.driver.disposeAll()
+  })
+
+  it('a settled round whose init named no model still reports, with the observation absent', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-no-obs'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('第一条回复') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.id).toBe('child-claude-no-obs')
+    expect(m.settles[0]?.round['observedModel']).toBeUndefined()
+    await m.driver.disposeAll()
   })
 
   it('reuses the resident runtime and session for the resume round (no --resume respawn)', async () => {
