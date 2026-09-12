@@ -2,6 +2,7 @@
 
 - **分类**：plugin
 - **状态**：planned（协议 v1-rev1 已经评估 agent 评审修订并获方向确认）
+- **分发状态**：`dataset-authoring` skill 仍在计划中，尚未随 `@khorsheed/dsh-datasets` 包分发；包内协议片段的归属/组装器与 skill 本体均明确延后。
 - **最后更新**：2026-08-23
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）；skill 作生成侧告知有先例（`2026-08-21-file-view-html-rendering` 的 `3d-artifact` skill），无同意图提案
 - **官方依赖**：纯插件（skill 发行走 `dsh-skill-filesystem` 的 `customSkillDirs`/`bundledSkillDir` config，可经 cordis.patch.yml 注入；若发现更干净的声明式 seam 缺席，记 upstream 候选）
@@ -13,7 +14,7 @@
 打通「跟 dsh（或任何 agent）聊天出数据集 → datasets tab 展示 → mission 开评」的闭环：
 
 1. **数据集作者协议（Dataset Authoring Protocol）**——独立的、agent 无关的文档（附录 v1 修订稿）。核心心智：**用户不用管自己的文件怎么命名、怎么摆**——写一个统一的注册文件（dataset.json），声明哪些是题目、哪些是验收、哪些是评分、哪些模型可见；布局约定只是零配置的退化形态。
-2. **skill（`dataset-authoring`）**——定位是**注册引导**：教 agent 把用户已有的文件按协议注册进数据集（多写一个 descriptor 文件）；数据集内容怎么写，是用户和模型之间的事，skill 不管。公开发行，其他 agent 工具链读同一份协议。
+2. **skill（`dataset-authoring`，计划中，尚未分发）**——定位是**注册引导**：教 agent 把用户已有的文件按协议注册进数据集（多写一个 descriptor 文件）；数据集内容怎么写，是用户和模型之间的事，skill 不管。完成分发门槛后再随 datasets 包公开发行，供其他 agent 工具链读取同一份协议。
 3. **绑定确认流**——认出注册文件 → 预填 → 用户确认；**默认只勾 modelFacing:true 的层，敏感层手动加**（默认安全）；无 card → L1 目录推断预填 → 确认；推断不出 → 手动配。
 
 ## 现状
@@ -27,7 +28,7 @@
 
 ### 协议（附录 v1 修订稿）
 
-独立文档，落本仓库 `docs/` 并随 datasets 包发行。**单一事实源纪律**：校验器、skill、绑定表单预填逻辑都从协议派生；协议里的每个 JSON 示例进测试夹具直接喂校验器。
+独立文档已经落在本仓库 `docs/`；校验器与绑定表单预填已从协议派生。skill 从协议派生并随 datasets 包发行仍是计划目标，尚未分发。**单一事实源纪律**：协议里的每个 JSON 示例进测试夹具直接喂校验器；未来的 skill 不复制完整规格。
 
 v1 修订稿相比初稿的变化（评估 agent 五条全部合入 + 命名自由）：① item.json 与透传区同级的措辞硬化；② 注册文件新增可选 `register` 显式映射（任意路径 → item/层角色），布局约定退化为零配置默认；③ §3 给正例；④ 默认安全落入确认流（见下）；⑤ validate 加字段名启发式。
 
@@ -37,8 +38,10 @@ v1 修订稿相比初稿的变化（评估 agent 五条全部合入 + 命名自�
 
 ### 发行形态
 
-- dsh 内：datasets 包携带 `skills/dataset-authoring/SKILL.md`，patch 层注入 skill 目录；
-- 公开：`SKILL.md` + 协议文档在本仓库公开位置；README 写清其他 agent 工具链的取用方式。
+- **当前事实**：协议文档已公开；`@khorsheed/dsh-datasets` 尚未携带 `skills/dataset-authoring/SKILL.md`，也没有 skill 目录注入，因此该 skill 尚未分发。
+- **计划中的 dsh 内形态**：datasets 包携带 `skills/dataset-authoring/SKILL.md`，patch 层注入 skill 目录。
+- **计划中的公开形态**：`SKILL.md` + 协议文档在本仓库公开位置；README 写清其他 agent 工具链的取用方式。
+- **分发门槛与验收人**：只有在 M2 的 skill 本体、包内协议片段归属与组装器、dsh 内发行接线、外部工具链取用文档全部完成，并满足下方验收标准 1、2、4、6 后，才可改称“已随包分发”。datasets/eval 线 owner 先完成自验并提供证据，由本工作包 Lead 复核验收；在 Lead 明确认可前状态保持 planned。
 
 ### 绑定确认流增强
 
@@ -50,7 +53,7 @@ v1 修订稿相比初稿的变化（评估 agent 五条全部合入 + 命名自�
 ## 里程碑
 
 - M1：协议 v1 定稿（本轮评审修订已合入，方向确认后定稿）+ 落 `docs/` + 校验器一致性测试（协议示例当夹具）+ `dsh-datasets validate` 动词（CLI + 工具：形状 + 混合敏感度 warn + **字段名启发式 warn** + 退出码）
-- M2：`dataset-authoring` skill（注册引导）+ dsh 内发行接线 + 外部工具链取用文档
+- M2（明确延后）：`dataset-authoring` skill（注册引导）+ 包内协议片段归属与组装器 + dsh 内发行接线 + 外部工具链取用文档；完成并经上述验收前不随包分发
 - M3：绑定确认流的默认安全（默认只勾可见层 + 敏感层提示行）与「认出 card」呈现
 
 优先级说明（评估 agent 建议，采纳）：M1 是刚需（协议文档本身就解决「布局要读源码注释才知道」）；skill 的价值随数据集作者增多兑现，M2 时机看流程实测体验再定——除非 datasets 公开发行路线提前，届时 skill 是必要投入。

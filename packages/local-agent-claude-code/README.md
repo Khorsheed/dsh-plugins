@@ -37,7 +37,7 @@ bundle 行接受这些可选字段:
 - `baseUrl`——为子 CLI 设置 `ANTHROPIC_BASE_URL`(例如自部署路由器或代理);缺省继承宿主进程环境。配置优先于环境。
 - `live`——长驻驱动:每成员常驻一个 stream-json 进程(`--input-format stream-json`),按轮发 stdin 消息(runtime 级优雅中断 control interrupt、同形推送流);关闭或通道不可用即回一次性 `claude -p`。
 - `liveIdleMs`——长驻 runtime 空闲回收时限(默认 30 分钟)。
-- `liveMirrorGranularity`——live 镜像粒度(默认 `event`);`token` 仍以 `--include-partial-messages` 拉起并经运行进度通道实时上报增量,但宿主 0.1.5 移除了逐 chunk 会话事件,增量不再写入子会话日志,轮次以一条合并消息落定(最终文本不变)。
+- `liveMirrorGranularity`——live 镜像粒度(默认 `event`);两档都把每个输出项 1:1 完整折叠进子会话日志。`token` 再以 `--include-partial-messages` 拉起,把流式增量按节流(默认 ≥300ms 且 ≥200 字符,driver config `snapshotMinIntervalMs`/`snapshotMinChars` 可覆盖)以增量快照写入该项预留的 (turn, step)——宿主对同一坐标的重复 assistant/message 整体替换并立即发布,UI 呈现为一条持续增长的消息,该项完成时在同一坐标收尾。
 
 ### 默认模型（`model`）
 
@@ -59,7 +59,7 @@ bundle 行接受这些可选字段:
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 不再逐字写入子会话日志（宿主移除逐 chunk 事件），增量改走运行进度通道、轮次以一条合并消息落定（最终文本不变）；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——`liveMirrorGranularity: token` 的流式快照落在输出项预留的 (turn, step)，宿主 ui-chat 对同一坐标重复 assistant/message 的整体替换（0.1.5-rc.1 起自带）把它合并为一条持续增长的消息，两档均全量折叠、一字不丢；适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制

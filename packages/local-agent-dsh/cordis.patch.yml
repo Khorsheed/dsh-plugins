@@ -11,6 +11,13 @@
 # The sub-dsh half lives in the sibling bundle
 # @khorsheed/dsh-local-agent-dsh-headless (its own profile under the scoped
 # home), which this package resolves and provisions.
+#
+# This patch inserts only its own row: the family core row (`local-agent`,
+# shared scoped-homes root) belongs to @khorsheed/dsh-local-agent's patch and
+# is NOT mounted by this bundle. Depending on the core package makes its module
+# resolvable, not its row active — `dsh plugin add` reconciles only the
+# profile's direct dependencies, so install the core explicitly alongside this
+# bundle.
 
 - insert:
     - id: local-agent-dsh

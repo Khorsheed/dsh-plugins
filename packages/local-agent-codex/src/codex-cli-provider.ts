@@ -643,8 +643,13 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 
 /** One ordered transcript line from a `codex exec --json` event stream. */
 export type CodexTranscriptLine =
-  | { kind: 'think'; text: string }
-  | { kind: 'text'; text: string }
+  /**
+   * Reasoning or reply text. `itemId` (live app-server rounds only) pairs the
+   * line with its delta stream, so the completed item folds at the step its
+   * snapshots reserved.
+   */
+  | { kind: 'think'; text: string; itemId?: string }
+  | { kind: 'text'; text: string; itemId?: string }
   /**
    * Tool activity: one call with its (possibly absent) result. `id` is the
    * stream item's id when present, else a synthesized position-based id —
@@ -717,7 +722,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   let event: {
     type?: string
     model?: unknown
-    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string }
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string }
     usage?: unknown
     thread_id?: unknown
   }
@@ -767,6 +772,31 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       kind: 'tool',
       id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
       name: 'WebSearch',
+    })
+  } else if (item.type === 'file_change') {
+    // A patch application ({changes: [{path, kind}]}): without this case
+    // codex's file edits were invisible in the mirror.
+    countToolCall(state, 'file_change')
+    const args = (item.changes ?? [])
+      .map(change => `${change.kind ?? 'update'}: ${change.path ?? '?'}`)
+      .join('\n')
+    if (args !== '') {
+      state.lines.push({
+        kind: 'tool',
+        id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
+        name: 'ApplyPatch',
+        args,
+      })
+    }
+  } else if (item.type === 'function_call') {
+    // Non-shell calls (e.g. the multi-agent wait): the result rides the
+    // function_call_output item, which attaches to this pending line.
+    countToolCall(state, 'function_call')
+    state.lines.push({
+      kind: 'tool',
+      id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
+      name: item.name ?? 'function',
+      ...typeof item.arguments === 'string' && item.arguments !== '' ? { args: item.arguments } : {},
     })
   } else if (item.type === 'function_call_output') {
     // A function/command result; attach to the previous tool line when one
@@ -1114,19 +1144,6 @@ export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
   })
 }
 
-/** Mirror behavior switches shared by the exec and live paths. */
-export interface CodexMirrorOptions {
-  /**
-   * Do not fold think/text lines into `assistant/message` events (the
-   * token-granularity live mode accumulates that content outside the log —
-   * host 0.1.5 removed the per-chunk session event — and the driver settles
-   * the round with one combined final
-   * message). Tool lines still fold, and the round's usage is left to the
-   * caller — it rides the combined final message, not a folded line.
-   */
-  skipAssistantContent?: boolean
-}
-
 /**
  * Fold one transcript line into the child session as one assistant step,
  * wrapped in the step/start–step/end boundary pair the live conversation
@@ -1143,13 +1160,7 @@ export function appendCodexTranscriptLine(
   step: number,
   line: CodexTranscriptLine,
   usage: TokenUsage | undefined,
-  options?: CodexMirrorOptions,
 ): boolean {
-  // Token-granularity live mode accumulates think/text outside the log (host
-  // 0.1.5 removed the per-chunk event); the
-  // driver settles the round with one combined final message, so the fold
-  // leaves these lines out (their usage rides that final message).
-  if (options?.skipAssistantContent === true && line.kind !== 'tool') return false
   childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
     // Native tool card: the call event now, the result event when the stream

@@ -51,7 +51,6 @@
         "@khorsheed/dsh-local-agent-codex",
         "@khorsheed/dsh-local-agent-claude-code",
         "@khorsheed/dsh-local-agent-dsh",
-        "@khorsheed/dsh-local-agent-tool-subagent",
         "@khorsheed/dsh-datasets",
         "@khorsheed/dsh-mission",
         "@khorsheed/dsh-lab",

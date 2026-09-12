@@ -32,7 +32,7 @@ dsh plugin --profile web add @khorsheed/dsh-file-preview
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 ```
 
-卸载；残留的客户端半降级为空态而非报错：
+卸载；如果只残留客户端半，它的零会话握手会失败，全部 UI 面均缺席（不留错误卡或空 tab）：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-file-preview
@@ -68,7 +68,9 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 <details>
 <summary>内部结构（点击展开）</summary>
 
-`ctx.filePreview`（wire 命名空间 `filePreview`）暴露五个生成的 Remote 方法：
+`ctx.filePreview`（wire 命名空间 `filePreview`）暴露六个生成的 Remote 方法：
+
+- `capabilities()`——零会话可用性握手，返回 `{ protocolVersion: 1 }`；配套客户端只在握手成功后安装 UI 面。
 
 - `list(agent)`——对 `agent.session.events` 的纯折叠：`read`/`write`/`edit` 的 `tool/call` 贡献展示路径，这些工具的已完结嵌套 PTC `tool/ptc-dispatch` 同样计入（失败的派发不记录；条目借用根调用的 turn/step）。携带 `diffs` 元数据的 `write`/`edit` `tool/result` 把每次改动按事件序追加进条目，`lastDiff` 保留为最后一次。响应携带条目、最后扫描的 seq，以及是否触达 `maxFiles`。折叠本身不访问文件系统；`captureBashWrites` 开启时并入采集器验证过的 bash 写入路径。返回前按会话 cwd 解析每条路径并 `stat`，只保留当前仍存在的常规文件——日志折叠是历史，产物列表只看磁盘现状（某回合写后又清理的临时脚本不再是产物）；存在性每次调用都现查（不随日志折叠缓存）。
 - `read(agent, path, signal)`——以会话 cwd 为基准解析 `path`，返回 `kind: 'text'`（超过 `maxReadBytes` 截断并标记 `truncated`）；web 宿主上图片返回 `kind: 'image'` 及浏览器可加载 URL——字节走专门的 `/file-preview-image/<sessionId>/<path>` 路由，仅当组合了可选的 `webServer` 与 `agents` 服务时注册；无 web 宿主返回 `binary`——否则返回分类提示：`binary`（二进制扩展名或 NUL 字节；绝不读取）、`missing`、`too-large`、`error`（含消息）。

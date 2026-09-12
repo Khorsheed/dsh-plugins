@@ -55,7 +55,7 @@ base_url = "https://your-router.example/v1"
     thinkingEffort: high       # 推理强度;写入"全新"作用域 config.toml 的 [thinking] effort 与模型 default_effort(low/high/max,默认 high)。仅预置期生效——已存在的 config 永不覆盖
     live: false                # 长驻驱动:每成员常驻一个 kimi acp 进程,按轮发 session/prompt(runtime 级优雅取消 session/cancel、推送触发的镜像);关闭或通道不可用即回一次性 kimi -p
     liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
-    liveMirrorGranularity: event  # live 镜像粒度;token 的增量经运行进度通道上报(宿主 0.1.5 起不再逐字写入会话日志)
+    liveMirrorGranularity: event  # live 镜像粒度;两档都把每个子项全量折叠进会话日志,token 档额外把流式增量按节流(默认 ≥300ms 且 ≥200 字符)以快照实时写入,UI 合并为一条持续增长的消息
 ```
 
 ### 默认模型（`model`）
@@ -83,7 +83,7 @@ base_url = "https://your-router.example/v1"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 不再逐字写入子会话日志（宿主移除逐 chunk 事件），增量改走运行进度通道、轮次以一条合并消息落定（最终文本不变）；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 无法逐字写入子会话日志（宿主移除逐 chunk 事件），改为流式增量按节流快照写入会话日志（同 (turn, step) 的重复 assistant/message 由宿主整体替换、即时发布，UI 呈现为一条持续增长的消息），子项完成在同一坐标收尾；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制
@@ -114,9 +114,9 @@ base_url = "https://your-router.example/v1"
 
 **续聊(resume)。** 首次委派的结果文本自述句柄(`追问请带 resume="<childSessionId>"`);把它作为工具的可选 `resume` 参数传回,即在同一个 dsh 子会话里继续同一个 kimi 会话(`kimi -S session_<id> -p`)。句柄绝不进 prompt:它只经 `localAgent` 委派 registry 对记录该委派的同一 parent 会话与 provider 解析——伪造的句柄在任何 CLI 进程启动前就被拒绝。
 
-**隔离与记账。** 子会话是委派会话工作区内一个全新会话;父级只收到最终回答或精确错误——子会话的上下文、评论、工具活动与 diff 永不跨入父级会话。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`,失败或被中止也会关(reason `error`/`aborted`),因此耗时等于真实 CLI 运行时长。每个镜像 step(assistant 消息、工具调用/结果)都包在同 (turn, step) 的 `step/start`–`step/end` 边界对里——宿主会话的实时装配只在边界上登记 step,缺了边界 assistant 消息在实时视图里不渲染(整页刷新重建时才补回);token 粒度的合并最终消息也在 `turn/end` 之前落地并带边界。用量是该轮 delta 内所有 `usage.record` 之和(每条是一次 LLM 请求的口径、非累计),挂在当轮最后一条镜像的 assistant 消息上;镜像过滤 kimi 自动权限模式的 `<system-reminder>` 消息、工具调用带参数渲染、结果按调用配对,并增量推进,早期消息绝不重复。中止会让工具结果立即 settle(SIGTERM→grace→SIGKILL),并保留已镜像的部分成果。
+**隔离与记账。** 子会话是委派会话工作区内一个全新会话;父级只收到最终回答或精确错误——子会话的上下文、评论、工具活动与 diff 永不跨入父级会话。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`,失败或被中止也会关(reason `error`/`aborted`),因此耗时等于真实 CLI 运行时长。每个镜像 step(assistant 消息、工具调用/结果)都包在同 (turn, step) 的 `step/start`–`step/end` 边界对里——宿主会话的实时装配只在边界上登记 step,缺了边界 assistant 消息在实时视图里不渲染(整页刷新重建时才补回);token 粒度的流式快照与收尾折叠也在 `turn/end` 之前落地并带边界。用量是该轮 delta 内所有 `usage.record` 之和(每条是一次 LLM 请求的口径、非累计),挂在当轮最后一条镜像的 assistant 消息上;镜像过滤 kimi 自动权限模式的 `<system-reminder>` 消息、工具调用带参数渲染、结果按调用配对,并增量推进,早期消息绝不重复。中止会让工具结果立即 settle(SIGTERM→grace→SIGKILL),并保留已镜像的部分成果。
 
-**长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 `kimi acp` 进程(ACP over stdio;握手要求 `loadSession` 能力,否则熔断回退),`session/new` 建会话(server 分配 id,即委派记录的 `cliSessionId`),之后每轮 = `session/prompt`;`cancel` 落地为 `session/cancel`——进程不死、会话可续。成员桥经 ACP `mcpServers` 内联声明(不写 mcp.json)。`session/request_permission` 按无人值守策略自动应答(选第一个 allow,无则 cancelled,与 `kimi -p` 的自动批准一致)。**镜像刻意仍是文件折叠**:ACP 推送的是 token 级 chunk,与 wire.jsonl 行折叠不同构,所以推送只触发节流的 `mirrorKimiDelta` 过一遍,settle 对账仍是权威——单一折叠、单一 offset,两条驱动路径不可能漂移。runtime 空闲超时回收(stdin EOF → SIGTERM 阶梯),崩溃后下一轮自动重连并 `session/load` 盘上的会话。
+**长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 `kimi acp` 进程(ACP over stdio;握手要求 `loadSession` 能力,否则熔断回退),`session/new` 建会话(server 分配 id,即委派记录的 `cliSessionId`),之后每轮 = `session/prompt`;`cancel` 落地为 `session/cancel`——进程不死、会话可续。成员桥经 ACP `mcpServers` 内联声明(不写 mcp.json)。`session/request_permission` 按无人值守策略自动应答(选第一个 allow,无则 cancelled,与 `kimi -p` 的自动批准一致)。**完成项的镜像刻意仍是文件折叠**:ACP 推送的是 token 级 chunk,与 wire.jsonl 行折叠不同构,所以推送只触发节流的 `mirrorKimiDelta` 过一遍,settle 对账仍是权威——单一折叠、单一 offset,两条驱动路径不可能漂移;两档粒度都把每个子项 1:1 全量折叠,token 档额外把在流子项的增量按节流(默认 ≥300ms 且 ≥200 字符,driver config `snapshotMinIntervalMs`/`snapshotMinChars` 可覆盖)以快照写到该子项预留的 (turn, step),完成行的折叠落在同一坐标收尾,中止的流以带 interrupted 的最终快照收尾。runtime 空闲超时回收(stdin EOF → SIGTERM 阶梯),崩溃后下一轮自动重连并 `session/load` 盘上的会话。
 
 </details>
 

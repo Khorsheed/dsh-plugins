@@ -410,7 +410,7 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('token granularity streams deltas over run progress, never into the session log (host 0.1.5)', async () => {
+  it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
     const deltas = ['hel', 'lo']
     const off = mount()
     const offChild = Session.create(SessionId('child-claude-7a'))
@@ -420,60 +420,70 @@ describe('claude live driver rounds', () => {
     expect(off.spawns[0]!.spec.argv).not.toContain('--include-partial-messages')
     await off.driver.disposeAll()
 
-    // Host 0.1.5 retired the per-chunk session event: token granularity keeps
-    // the partial-message spawn flag and reports deltas over the run-progress
-    // channel, and the round settles as ONE combined final message.
-    const on = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    // Zero thresholds: every delta lands a snapshot immediately. Token
+    // granularity keeps the partial-message spawn flag, reports deltas over
+    // the run-progress channel, AND mirrors them into the session log as
+    // snapshots at the stream's reserved (turn, step).
+    const on = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const onChild = Session.create(SessionId('child-claude-7b'))
     on.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
     expect(on.spawns[0]!.spec.argv).toContain('--include-partial-messages')
-    await vi.waitFor(() => {
-      expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
-    }, { timeout: 5_000 })
-    const final = onChild.snapshotEvents().find(e => e.type === 'assistant/message')!
-    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: 'hello' }])
+    // The stream reserved step 1 (deltas arrived before any event): snapshots
+    // grew the message live, and the completion fold landed last at the same
+    // (turn, step) — the host's repeated-settle merge keeps the newest.
+    const atStep = onChild.snapshotEvents().filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 1)
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
+    const texts = atStep.filter(e => e.type === 'assistant/message')
+      .map(e => (e.data as { message: { content: { text: string }[] } }).message.content[0]?.text)
+    expect(texts).toEqual(['hel', 'hello', 'hello'])
+    // The delta still rides the run-progress channel.
     const progress = on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)
     expect(progress).toContain('hel')
     expect(progress).toContain('lo')
     await on.driver.disposeAll()
   })
 
-  it('token granularity: the settle completes the stream with ONE combined final message (no duplicate fold)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+  it('token granularity: each streamed kind finalizes at its own reserved step (no duplicate fold)', async () => {
+    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-claude-token-final'))
     m.queueChild(new FakeClaude({
       turn: () => ({
         thinkingDeltas: ['想一下'],
         deltas: ['文件', '建好了'],
-        events: answerEvents('文件建好了'),
+        events: [
+          { type: 'assistant', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '想一下' }] } },
+          { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '文件建好了' }] } },
+        ],
         usage: { input_tokens: 10, cache_read_input_tokens: 6, output_tokens: 4 },
       }),
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
-    // One final at the stream's own (turn, step) — no duplicated content, no
-    // dangling interrupted badge.
-    expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThanOrEqual(2) }, { timeout: 5_000 })
+    const events = child.snapshotEvents()
+    const assistant = events.filter(e => e.type === 'assistant/message')
+    // The thinking stream finalizes at its reserved step 1 (one snapshot +
+    // the completion fold; no duplicated content).
+    const atThink = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 1)
+    expect(atThink.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'step/end'])
+    // The answer stream finalizes at its reserved step 2, the fold carrying
+    // the usage and no dangling interrupted badge — inside the turn window.
+    const final = assistant.at(-1)!
+    expect(final.data).toMatchObject({ turn: 1, step: 2, usage: { inputTokens: 10, outputTokens: 4 } })
     expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
-      { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
-    // The fold skipped the think/text lines but the tool activity still folds.
-    expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1)
-    expectStepBoundaries(child)
-    // The combined final message lands INSIDE the turn window, wrapped in its
-    // step boundary pair — the live assembler drops anything else.
-    const events = child.snapshotEvents()
     const turnEnd = events.find(e => e.type === 'turn/end')!
     expect(final.seq).toBeLessThan(turnEnd.seq)
     const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
-      && (e.data as { turn?: number; step?: number }).step === 1)
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
+      && (e.data as { turn?: number; step?: number }).step === 2)
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
+    expectStepBoundaries(child)
     await m.driver.disposeAll()
   })
 
@@ -520,6 +530,29 @@ describe('claude live driver rounds', () => {
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     // The shifted tool steps carry their own boundary pairs too.
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+  })
+
+  it('token granularity: a stream-less round folds every line (no reservation, no snapshots)', async () => {
+    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-claude-token-nostream'))
+    // Events only, no deltas: thinking + tool + final answer.
+    m.queueChild(new FakeClaude({
+      turn: () => ({ events: answerEvents('静默答案'), usage: { input_tokens: 5, cache_read_input_tokens: 0, output_tokens: 2 } }),
+    }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2) }, { timeout: 5_000 })
+
+    // Faithful per-line fold: thinking at step 1, the tool card at step 2,
+    // the answer at step 3 — nothing withheld for a combined message.
+    const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
+    expect(toolSteps).toEqual([2])
+    const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    expect(assistant.map(e => (e.data as { step: number }).step)).toEqual([1, 3])
+    expect((assistant[1]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+    expect(assistant[1]?.data).toMatchObject({ usage: { inputTokens: 5, outputTokens: 2 } })
     expectStepBoundaries(child)
     await m.driver.disposeAll()
   })
@@ -675,7 +708,7 @@ describe('claude live driver drain (settings handoff)', () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-drain4'))
     child.append('turn/start', { turn: 1 })
-    m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['一', '二'], events: answerEvents('done') }) }))
+    m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['do', 'ne'], events: answerEvents('done') }) }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
     // Event granularity folds the stream lines into per-line messages.
@@ -684,13 +717,14 @@ describe('claude live driver drain (settings handoff)', () => {
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
     await second.result
-    // Token granularity settles the round as ONE combined final message
-    // (host 0.1.5 retired per-chunk events).
+    // Token granularity folds every line too; the streamed answer finalizes
+    // at its stream's reserved step 1 (its deltas arrived before any line).
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)).toHaveLength(1)
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)).toHaveLength(2)
     }, { timeout: 5_000 })
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)!
-    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '一二' }])
+    const final = child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)
+      .find(e => (e.data as { step?: number }).step === 1)!
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: 'done' }])
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

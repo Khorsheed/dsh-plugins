@@ -46,7 +46,6 @@ import {
   DEFAULT_DISPOSE_GRACE_MS,
   registerCodexMemberRun,
   textTask,
-  type CodexMirrorOptions,
   type CodexTranscriptLine,
 } from './codex-cli-provider.ts'
 
@@ -67,6 +66,12 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 
 /** Grace between stdin EOF and SIGTERM when reclaiming an app-server. */
 const RECLAIM_EOF_GRACE_MS = 1_000
+
+/** Default minimum interval between one streaming item's snapshot messages. */
+export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = 300
+
+/** Default minimum text growth between one streaming item's snapshot messages. */
+export const DEFAULT_SNAPSHOT_MIN_CHARS = 200
 
 /**
  * The app-server channel could not come up (spawn failure or handshake
@@ -97,11 +102,6 @@ const DEFAULT_TIMEOUTS: CodexLiveDriverTimeouts = {
 
 /** How much of the live event stream crosses into the child session. */
 export type CodexLiveMirrorGranularity = 'event' | 'token'
-
-/** The fold options for one granularity: token mode accumulates think/text outside the log (no per-chunk event in host 0.1.5), so the fold skips it. */
-function mirrorOptions(granularity: CodexLiveMirrorGranularity): CodexMirrorOptions | undefined {
-  return granularity === 'token' ? { skipAssistantContent: true } : undefined
-}
 
 /** Fully resolved inputs for one live round. */
 export interface CodexLiveRoundSpec {
@@ -158,10 +158,14 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
         .filter(Array.isArray)
         .flat()
         .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
-      return parts.length === 0 ? undefined : { kind: 'think', text: parts.join('\n') }
+      return parts.length === 0
+        ? undefined
+        : { kind: 'think', text: parts.join('\n'), ...itemId === undefined ? {} : { itemId } }
     }
     case 'agentMessage':
-      return typeof item['text'] === 'string' ? { kind: 'text', text: item['text'] } : undefined
+      return typeof item['text'] === 'string'
+        ? { kind: 'text', text: item['text'], ...itemId === undefined ? {} : { itemId } }
+        : undefined
     case 'commandExecution': {
       const command = typeof item['command'] === 'string' ? item.command : undefined
       const output = typeof item['aggregatedOutput'] === 'string' && item['aggregatedOutput'].trim() !== ''
@@ -178,6 +182,42 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
     }
     case 'webSearch':
       return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: 'WebSearch' }
+    case 'fileChange': {
+      // A patch application: {id, changes: [{path, kind, diff?}], status}.
+      // Without this case codex's file edits were invisible in the mirror.
+      const changes = Array.isArray(item['changes']) ? item['changes'] as JsonObject[] : []
+      const args = changes
+        .map(change => `${typeof change['kind'] === 'string' ? change['kind'] : 'update'}: ${typeof change['path'] === 'string' ? change['path'] : '?'}`)
+        .join('\n')
+      const diff = changes
+        .map(change => change['diff'])
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+        .join('\n')
+      return {
+        kind: 'tool',
+        id: itemId ?? `codex-live-${randomUUID()}`,
+        name: 'ApplyPatch',
+        ...args === '' ? {} : { args },
+        ...diff === '' ? {} : { result: diff },
+      }
+    }
+    case 'dynamicToolCall': {
+      // Non-shell tools (e.g. the multi-agent `wait`): {id, tool, arguments, status}.
+      const tool = typeof item['tool'] === 'string' ? item.tool : 'dynamic'
+      const args = item['arguments'] === undefined || item['arguments'] === null
+        ? undefined
+        : typeof item['arguments'] === 'string' ? item['arguments'] : JSON.stringify(item['arguments'])
+      return {
+        kind: 'tool',
+        id: itemId ?? `codex-live-${randomUUID()}`,
+        name: tool,
+        ...args === undefined || args === '' ? {} : { args },
+      }
+    }
+    case 'collabAgentToolCall': {
+      const tool = typeof item['tool'] === 'string' ? item.tool : 'collab'
+      return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: `collab/${tool}` }
+    }
     case 'mcpToolCall': {
       const server = typeof item['server'] === 'string' ? item.server : undefined
       const tool = typeof item['tool'] === 'string' ? item.tool : undefined
@@ -441,6 +481,9 @@ export class CodexLiveDriver {
     private readonly config: Pick<Config, 'sandbox'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: CodexLiveMirrorGranularity
+      /** Snapshot throttle for the token granularity's streaming messages. */
+      snapshotMinIntervalMs?: number
+      snapshotMinChars?: number
       /**
        * Resolver for the configured model, read at each RUNTIME SPAWN (the
        * app-server is where a live round's CLI starts). Absent, or resolving
@@ -745,18 +788,38 @@ export class CodexLiveDriver {
     const lines: CodexTranscriptLine[] = []
     let mirrored = 0
     let usage: TokenUsage | undefined
-    /** The round's accumulated reply-text deltas (token granularity; the final message's text block). */
-    let roundText = ''
-    /** The round's accumulated reasoning deltas (token granularity; the final message's reasoning block). */
-    let roundThink = ''
+    /** Whether a folded line already carries the round's usage (no backfill event exists). */
+    let usageCarried = false
     /**
-     * The stream's (turn, step) merge key, reserved LAZILY at the first
-     * think/text delta: every item completed before that moment folds below
-     * it, everything after folds above it — the projection renders the
-     * round's chronological order. (Pinning the stream to step 1 put the
-     * whole answer above every tool card in a tool-first round.)
+     * The step ledger: `reservedSteps` holds every step a stream reservation
+     * consumed (in increasing order — permanently, whether the stream later
+     * completes or stays an orphan snapshot), and a sequential line folds at
+     * its index shifted past every reservation before it. A tool completed
+     * mid-stream therefore folds ABOVE the stream's step and the projection
+     * renders the round's chronological order.
      */
-    let streamStep: number | undefined
+    const reservedSteps: number[] = []
+    /**
+     * The streaming items seen this round (token granularity), by item id:
+     * deltas accumulate into throttled snapshot assistant/messages appended
+     * at the item's reserved (turn, step) — the host folds repeated settles
+     * at one coordinate into one live-updating chat node, which is the only
+     * streaming channel left after 0.1.5 retired the durable per-chunk event.
+     * The item's completion folds at the same step and finalizes it; an entry
+     * whose completion never arrives is force-finalized at settle.
+     */
+    const streams = new Map<string, {
+      readonly itemId: string
+      readonly kind: 'think' | 'text'
+      readonly step: number
+      text: string
+      lastSnapshotAt: number
+      lastSnapshotLen: number
+      /** step/start already emitted for this reservation. */
+      opened: boolean
+    }>()
+    /** The item deltas currently accumulate into (items stream sequentially). */
+    let activeStream: string | undefined
     /** Items/completions that arrived before the turn id was known. */
     const earlyNotifications: { method: string; params: JsonObject }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -788,23 +851,97 @@ export class CodexLiveDriver {
     })
 
     const collectOutput = (): ContentBlock[] => {
-      const selected = lastFinalAnswer ?? lastUnphasedAnswer ?? (lastText === '' ? undefined : lastText)
+      const partial = activeStream === undefined ? '' : streams.get(activeStream)?.text ?? ''
+      const selected = lastFinalAnswer ?? lastUnphasedAnswer ?? (lastText !== '' ? lastText : partial === '' ? undefined : partial)
       return selected === undefined || selected.trim() === '' ? [] : [{ type: 'text', text: selected }]
+    }
+
+    /**
+     * Append one snapshot of a streaming item at its reserved (turn, step).
+     * Throttled per item by interval and growth unless `force`; the forced
+     * final snapshot carries `interrupted` (a cancelled turn reads 已停止
+     * legitimately) and, when `withUsage` and no folded line carried it, the
+     * round's usage.
+     */
+    const appendStreamSnapshot = (
+      stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
+      force: boolean,
+      interrupted: boolean,
+      withUsage = false,
+    ): void => {
+      if (stream.text.trim() === '') return
+      const now = Date.now()
+      const minInterval = this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS
+      const minChars = this.config.snapshotMinChars ?? DEFAULT_SNAPSHOT_MIN_CHARS
+      if (!force && now - stream.lastSnapshotAt < minInterval) return
+      if (!force && stream.text.length - stream.lastSnapshotLen < minChars) return
+      if (!stream.opened) {
+        childSession.append('step/start', { turn, step: stream.step })
+        stream.opened = true
+      }
+      const attachUsage = withUsage && !usageCarried && usage !== undefined
+      childSession.append('assistant/message', {
+        turn,
+        step: stream.step,
+        message: codexAssistantEvent([
+          stream.kind === 'think'
+            ? { type: 'reasoning' as const, text: stream.text }
+            : { type: 'text' as const, text: stream.text },
+        ]),
+        stream: [],
+        ...withUsage && !usageCarried && usage !== undefined ? { usage } : {},
+        ...interrupted ? { interrupted: true } : {},
+      }, { surfaceOp: 'append' })
+      if (attachUsage) usageCarried = true
+      stream.lastSnapshotAt = now
+      stream.lastSnapshotLen = stream.text.length
+      persist()
+    }
+
+    /**
+     * Reserve the step one new streaming item will occupy — past every
+     * completed line (folded or held back) and every earlier reservation. A
+     * different item's deltas force one final snapshot of the current stream
+     * (its completion still folds at its own reserved step when it lands).
+     */
+    const reserveStream = (itemId: string, kind: 'think' | 'text'): void => {
+      if (activeStream !== undefined && activeStream !== itemId) {
+        const previous = streams.get(activeStream)
+        // A freshness snapshot on the item switch, skipped when the text has
+        // not grown since the last one (the settle force always lands).
+        if (previous !== undefined && previous.text.length !== previous.lastSnapshotLen) {
+          appendStreamSnapshot(previous, true, false)
+        }
+        activeStream = undefined
+      }
+      let stream = streams.get(itemId)
+      if (stream === undefined) {
+        const step = lines.length + reservedSteps.length + 1
+        reservedSteps.push(step)
+        stream = { itemId, kind, step, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        streams.set(itemId, stream)
+      }
+      activeStream = itemId
+    }
+
+    /** The sequential fold step for `lines[index]`: its position shifted past every reservation before it. */
+    const foldStep = (index: number): number => {
+      let step = index + 1
+      for (const reserved of reservedSteps) {
+        if (reserved <= step) step += 1
+        else break
+      }
+      return step
     }
 
     /** Mirror folded lines [mirrored, upto); the last line is held back until completion. */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
-      const options = mirrorOptions(granularity)
-      // Token mode leaves think/text to the stream, and the round's usage
-      // rides the combined final message — never a folded line (no carrier,
-      // no after-the-fact usage chunk).
-      const attachUsage = withUsage && options?.skipAssistantContent !== true
       // The usage rides the last NON-tool line (tool events carry no usage
       // slot, and a kill mid-command ends the transcript with a tool line).
       // A carrier mirrored in an earlier flush (before the usage was knowable)
       // loses the accounting — host 0.1.5 has no usage-backfill event.
       let usageIndex = -1
-      if (attachUsage) {
+      if (withUsage) {
         for (let index = 0; index < lines.length; index += 1) {
           if (lines[index]?.kind !== 'tool') usageIndex = index
         }
@@ -812,16 +949,33 @@ export class CodexLiveDriver {
       for (let index = mirrored; index < upto; index += 1) {
         const line = lines[index]
         if (line === undefined) continue
-        const lineUsage = attachUsage && index === usageIndex ? usage : undefined
-        // Token mode: a fold at or past the reserved stream step shifts one
-        // slot up, so tool cards keep their chronological side of the stream
-        // and never take its merge key.
-        const step = index + 1 + (
-          options?.skipAssistantContent === true && streamStep !== undefined && index + 1 >= streamStep ? 1 : 0
-        )
-        const folded = appendCodexTranscriptLine(childSession, turn, step, line, lineUsage, options)
+        const lineUsage = withUsage && index === usageIndex ? usage : undefined
+        if (lineUsage !== undefined) usageCarried = true
+        const itemId = line.kind === 'tool' ? undefined : line.itemId
+        const stream = itemId === undefined ? undefined : streams.get(itemId)
+        if (itemId !== undefined && stream !== undefined) {
+          // A streamed item folds at its reserved step, finalizing the
+          // snapshots: the step opens only if no snapshot ever landed (a
+          // fast item that stayed under the throttle), and closes here.
+          streams.delete(itemId)
+          if (activeStream === itemId) activeStream = undefined
+          if (!stream.opened) childSession.append('step/start', { turn, step: stream.step })
+          const blocks = stream.kind === 'think'
+            ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
+            : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
+          childSession.append('assistant/message', {
+            turn,
+            step: stream.step,
+            message: codexAssistantEvent(blocks),
+            stream: [],
+            ...lineUsage === undefined ? {} : { usage: lineUsage },
+          }, { surfaceOp: 'append' })
+          childSession.append('step/end', { turn, step: stream.step })
+        } else {
+          appendCodexTranscriptLine(childSession, turn, foldStep(index), line, lineUsage)
+        }
         mirrored = index + 1
-        if (folded) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
+        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
       }
       if (upto > 0) persist()
     }
@@ -867,19 +1021,19 @@ export class CodexLiveDriver {
         if (granularity !== 'token' || typeof params['delta'] !== 'string') return
         const text = params['delta']
         if (text === '') return
-        // The stream's block layout matches the combined final message:
-        // reasoning at index 0, reply text at index 1.
         const reasoning = method === 'item/reasoning/textDelta'
-        if (reasoning) roundThink += text
-        else roundText += text
-        // Reserve the stream's step past every item completed so far
-        // (including the held-back carrier line), so a tool-first round
-        // renders the answer after its tool cards, not above them.
-        // Host 0.1.5 removed the per-chunk session event, so token
-        // granularity no longer writes deltas to the child log; the delta
-        // rides the run progress channel and the round settles as one
-        // combined final message.
-        if (streamStep === undefined) streamStep = lines.length + 1
+        // The item id pairs the stream with its completion (the fold then
+        // lands at the reserved step); a delta without one shares a
+        // per-kind stream, matching the pre-item-id behavior.
+        const itemId = typeof params['itemId'] === 'string'
+          ? params['itemId']
+          : `codex-stream-${reasoning ? 'think' : 'text'}-${turn}`
+        reserveStream(itemId, reasoning ? 'think' : 'text')
+        const stream = activeStream === undefined ? undefined : streams.get(activeStream)
+        if (stream !== undefined) {
+          stream.text += text
+          appendStreamSnapshot(stream, false, false)
+        }
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
         return
       }
@@ -1045,42 +1199,19 @@ export class CodexLiveDriver {
         // hold-back line (and the usage already observed) would be lost —
         // flush it now (the exec settle-mirror's partial-work contract).
         if (mirrored < lines.length) mirrorUpTo(lines.length, true)
-        // Token granularity: settle the round with ONE combined final message
-        // at the reserved (turn, step), carrying the usage — INSIDE the turn
-        // window (before turn/end) and wrapped in the step boundary pair, so
-        // the live conversation assembler materializes it like every other
-        // step instead of dropping a turn-level append after the turn closed.
-        // A non-completed round is marked interrupted, so a cancelled turn
-        // reads 已停止 legitimately.
-        if (granularity === 'token') {
-          // Deltas are the stream's content; a server that completed items
-          // without streaming (no deltas observed) falls back to the folded
-          // lines, so the answer is never lost.
-          const think = roundThink.trim() !== ''
-            ? roundThink
-            : lines.filter(line => line.kind === 'think').map(line => line.text).join('\n')
-          const text = roundText.trim() !== ''
-            ? roundText
-            : lines.filter(line => line.kind === 'text').map(line => line.text).join('\n')
-          const blocks: ContentBlock[] = []
-          if (think.trim() !== '') blocks.push({ type: 'reasoning', text: think })
-          if (text.trim() !== '') blocks.push({ type: 'text', text })
-          if (blocks.length > 0) {
-            // The stream's reserved step; a stream-less round (no deltas)
-            // puts the fallback answer past every folded line instead.
-            const step = streamStep ?? lines.length + 1
-            childSession.append('step/start', { turn, step })
-            childSession.append('assistant/message', {
-              turn,
-              step,
-              message: codexAssistantEvent(blocks),
-              stream: [],
-              ...usage !== undefined ? { usage } : {},
-              ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-            }, { surfaceOp: 'append' })
-            childSession.append('step/end', { turn, step })
-            persist()
+        // Streams whose item/completed never arrived (abort, or the server
+        // ended the turn mid-item) still finalize INSIDE the turn window:
+        // one forced snapshot each — interrupted on a non-completed round,
+        // the LAST one carrying the usage when no folded line did — then
+        // step/end.
+        if (streams.size > 0) {
+          const remaining = [...streams.values()]
+          for (const [position, stream] of remaining.entries()) {
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+            if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
           }
+          streams.clear()
+          activeStream = undefined
         }
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })

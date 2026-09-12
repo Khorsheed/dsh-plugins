@@ -2,11 +2,11 @@
 
 English | [中文](README.md)
 
-Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **26 packages** that extend the official web GUI. 24 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The other two (the local-agent family's delegation tool and the local-agent-dsh headless sub-bundle) ride the harnesses and uninstall with them. 21 of the 26 (including the WIP `@khorsheed/dsh-room`) already run together on the production profile, and nothing about the official UI is patched or replaced.
+Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **32 purely additive packages**. 25 declare `dsh.bundle.patch` and self-mount their own loader row; the other 7 deliberately have no patch because they are internal composition components, not omissions. Every package uses official extension points (slots, commands, Remote services, session mirrors); none modifies an official package, replaces an official UI slot, or hacks a core service. The generated [authoritative package map](docs/packages.md) is the source of truth for package counts, self-mounting/component shape, and composition metadata.
 
 **Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (**0.2.0**, the 2026-09-10 wave aligned with host 0.1.2-rc.1). The local-agent family (the last 5 rows) is feature-complete (member-channel M1–M3 across all four providers) and publishes as one wave two once accepted. The datasets / lab / mission / eval packages in this repo are incubating work-in-progress and not on any release line. **Version lines**: 0.2.0 and up require a host ≥ 0.1.2-rc.1; hosts ≤ 0.1.1-rc.2 stay on the 0.1.x release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
 
-This README is the catalog: what each plugin does, how to load it, and exactly how to unload it. The repo is also a developer workspace — see [Development](#development).
+This README introduces the main plugins, how to load them, and exactly how to unload them. It does not duplicate the complete inventory; use the [authoritative package map](docs/packages.md) for that. The repo is also a developer workspace — see [Development](#development).
 
 ## What's in the box
 
@@ -46,7 +46,17 @@ One exception to know: host images that already mount an `ankh-guard` row (histo
 
 ## Install
 
-Prerequisites: a dsh host ≥ `0.1.2-rc.1` (every bundle declares `minHost`), any profile (`web` / `headless` / custom). Every bundle declares `dsh.bundle`, so one command installs it **and** mounts its loader row — no hand-edited `cordis.yml`. Restart the web instance afterwards.
+Prerequisite: a dsh host ≥ `0.1.2-rc.1`. The default installation unit is a complete profile: its `dependencies` select the installed packages, while `dsh.profile.bundles` selects the self-mounting bundles activated at the profile root. Choose by use case:
+
+- [`profiles/web-basic`](profiles/web-basic): everyday web use—message controls, file preview, task status, shortcuts, and operations guard.
+- [`profiles/web-dev`](profiles/web-dev): development collaboration—the basic experience plus local coding agents, worktree and room capabilities, and a development preset.
+- [`profiles/web-eval`](profiles/web-eval): evaluation work—the basic and local-agent capabilities plus datasets, mission, lab, eval, and an evaluation preset.
+
+See each profile directory's README for installation, update, and startup instructions. Installing one package is an advanced path for custom composition or debugging: the 25 self-mounting packages can be installed with `dsh plugin add`, which mounts that package's own loader row with **no hand-edited `cordis.yml`**. Restart the corresponding web instance afterwards.
+
+Each of the 7 patchless packages has an explicit composition owner. The five `*-tool` packages (`worktrees-tool`, `room-tool`, `mission-tool`, `datasets-tool`, and `eval-tool`) are **direct dependencies of the profile that installs them** (side by side with their core), and each declares the core as its own dependency (companion → core, which only makes the module resolvable); the corresponding agent preset's `agent.cordis.yml` then names their row. They never appear in `dsh.profile.bundles` and must not self-mount. `local-agent-tool-subagent` is a shared local-agent-family tool row referenced by provider patches, while `local-agent-dsh-headless` is a headless child profile provisioned by local-agent-dsh. See the [authoritative package map](docs/packages.md) for the complete relationships.
+
+Advanced-path examples:
 
 ```sh
 # one plugin, by npm name

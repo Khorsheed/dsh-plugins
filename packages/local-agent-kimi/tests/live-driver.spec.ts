@@ -525,60 +525,79 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('token granularity streams deltas over run progress, never into the session log (host 0.1.5)', async () => {
-    // Host 0.1.5 retired the per-chunk session event: token granularity keeps
-    // reporting per-token deltas over the run-progress channel, and the round
-    // settles as ONE combined final message.
-    const on = mount({ config: { liveMirrorGranularity: 'token' } })
+  it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
+    // Zero thresholds: every delta lands a snapshot immediately.
+    const on = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const onChild = Session.create(SessionId('child-kimi-8b'))
-    on.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['hel', 'lo'] }) }))
+    const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
+    on.queueChild(fake)
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
-    await onRun.result
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hel' } })
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'lo' } })
+    writeKimiWire(on.homeDir, 'acp-session-1', '建个文件', 'hello')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await onRun.result).stopReason).toBe('completed')
     await vi.waitFor(() => {
-      expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+      expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThanOrEqual(3)
     }, { timeout: 5_000 })
-    const final = onChild.snapshotEvents().find(e => e.type === 'assistant/message')!
-    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: 'hello' }])
+    // The stream reserved step 1 (deltas arrived before any fold): snapshots
+    // grew the message live, and the completion fold landed last at the same
+    // (turn, step) — the host's repeated-settle merge keeps the newest.
+    const atStep = onChild.snapshotEvents().filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 1)
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
+    const texts = atStep.filter(e => e.type === 'assistant/message')
+      .map(e => (e.data as { message: { content: { text: string }[] } }).message.content[0]?.text)
+    expect(texts).toEqual(['hel', 'hello', 'hello'])
+    // The delta still rides the run-progress channel.
     const deltas = on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)
     expect(deltas).toContain('hel')
     expect(deltas).toContain('lo')
     await on.driver.disposeAll()
   })
 
-  it('token granularity: the settle completes the stream with ONE combined final message (no duplicate fold)', async () => {
-    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+  it('token granularity: each streamed item finalizes at its own reserved step (no duplicate fold)', async () => {
+    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-kimi-token-final'))
-    const fake = new FakeAcpServer({
-      turn: () => {
-        writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', '文件建好了')
-        return { hang: true }
-      },
-    })
+    const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '想一下' } })
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件' } })
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '建好了' } })
+    // The wire flushes the round's items by turn end (the usage record first,
+    // in kimi's own order).
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] }),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 10, output: 4 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'think', think: '想一下' } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: '文件建好了' } } }),
+    ].join('\n') + '\n')
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
-    // One final at the stream's own (turn, step) — no duplicated content, no
-    // dangling interrupted badge.
-    expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThanOrEqual(5) }, { timeout: 5_000 })
+    const events = child.snapshotEvents()
+    const assistant = events.filter(e => e.type === 'assistant/message')
+    // The thought stream finalizes at its reserved step 1 (one snapshot + the
+    // completion fold; no duplicated content).
+    const atThink = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 1)
+    expect(atThink.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'step/end'])
+    // The answer stream finalizes at its reserved step 2, the fold carrying
+    // the usage and no dangling interrupted badge — inside the turn window.
+    const final = assistant.at(-1)!
+    expect(final.data).toMatchObject({ turn: 1, step: 2, usage: { inputTokens: 10, outputTokens: 4 } })
     expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
-      { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
-    // The combined final message lands INSIDE the turn window, wrapped in its
-    // step boundary pair — the live assembler drops anything else.
-    const events = child.snapshotEvents()
     const turnEnd = events.find(e => e.type === 'turn/end')!
     expect(final.seq).toBeLessThan(turnEnd.seq)
     const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
-      && (e.data as { turn?: number; step?: number }).step === 1)
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
+      && (e.data as { turn?: number; step?: number }).step === 2)
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
     await m.driver.disposeAll()
   })
 
@@ -624,18 +643,65 @@ describe('kimi live driver rounds', () => {
     // A mid-run update triggers a mirror pass that folds the tool card FIRST.
     fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', content: {} })
     await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1) })
-    // Text streams after the tool card folded.
+    // Text streams after the tool card folded; the wire gains the completed
+    // answer (and the round's usage) by turn end.
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件建好了' } })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }], origin: { kind: 'user' } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, toolCallId: 'call-1', toolCall: { name: 'Bash', args: { command: 'ls' } } } }),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 5, output: 2 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: '文件建好了' } } }),
+    ].join('\n') + '\n')
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
 
-    // The tool card folded at step 1; the stream reserved the step after it.
+    // The tool card folded at step 1; the stream reserved the step after it,
+    // and the answer's completion fold landed at that same step, carrying the
+    // round's usage (the chunk stayed under the default throttle, so no
+    // snapshot ever landed).
     expect((child.snapshotEvents().find(e => e.type === 'tool/call')!.data as { step: number }).step).toBe(1)
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
-    expect((final.data as { step: number }).step).toBe(2)
-    // Both the mid-run tool fold and the combined final carry their boundary
-    // pairs.
+    expect(final.data).toMatchObject({ turn: 1, step: 2, usage: { inputTokens: 5, outputTokens: 2 } })
+    // Both the mid-run tool fold and the stream's completion fold carry their
+    // boundary pairs.
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+  })
+
+  it('token granularity: a round whose stream stayed under the throttle still folds every wire item 1:1', async () => {
+    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-kimi-token-nostream'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const fake = new FakeAcpServer({
+      turn: () => {
+        writeFileSync(join(wireDir, 'wire.jsonl'), [
+          JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] }),
+          JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'think', think: '想一下' } } }),
+          JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, toolCallId: 'call-1', toolCall: { name: 'Bash', args: { command: 'ls' } } } }),
+          JSON.stringify({ type: 'usage.record', usage: { inputOther: 7, output: 3 } }),
+          JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: '静默答案' } } }),
+        ].join('\n') + '\n')
+        return { chunks: ['静默答案'] }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2) }, { timeout: 5_000 })
+
+    // Faithful per-item fold: exactly one message per content item, nothing
+    // withheld for a combined message — the think line folds sequentially
+    // (no thought chunks streamed), the answer completes its stream at the
+    // reserved step (no snapshot ever landed under the default throttle).
+    const events = child.snapshotEvents()
+    const assistant = events.filter(e => e.type === 'assistant/message')
+    expect(assistant.map(e => (e.data as { message: { content: { type: string }[] } }).message.content[0]?.type))
+      .toEqual(['reasoning', 'text'])
+    expect(assistant[1]!.data).toMatchObject({ usage: { inputTokens: 7, outputTokens: 3 } })
+    expect((assistant[1]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+    expect(events.filter(e => e.type === 'tool/call')).toHaveLength(1)
     expectStepBoundaries(child)
     await m.driver.disposeAll()
   })
@@ -907,8 +973,8 @@ describe('kimi live driver drain (settings handoff)', () => {
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
     await second.result
-    // Token granularity settles the round as ONE combined final message
-    // (host 0.1.5 retired per-chunk events).
+    // Token granularity: no wire lines folded, so the unfinished stream
+    // finalizes at settle with one forced snapshot at its reserved step.
     await vi.waitFor(() => {
       expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     }, { timeout: 5_000 })

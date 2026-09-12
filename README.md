@@ -2,11 +2,11 @@
 
 [English](README.en.md) | 中文
 
-**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**26 个纯增量插件包**。其中 24 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;另外 2 个(local-agent 家族的委派工具、local-agent-dsh 的 headless 子包)随 harness 挂载、随 harness 卸载。26 个包中的 21 个(含 WIP 的 `@khorsheed/dsh-room`)已经同时跑在生产 profile 上,卸载即精确还原。
+**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**32 个纯增量插件包**。其中 25 个声明 `dsh.bundle.patch`,会自挂载自己的 loader 行;另外 7 个刻意没有 patch,是组合内部组件,不是遗漏。所有包都走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务。包总数、自挂载/组件形态及组合元数据以机器生成的[权威包地图](docs/packages.md)为准。
 
 **发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),已上架 npm(**0.2.0**,2026-09-10 发布波,对齐宿主 0.1.2-rc.1);local-agent 家族(后 5 行)功能已完整(member-channel M1–M3 四 provider 全通),待验收后作为第二波整体发布。仓库里的 datasets / lab / mission / eval 等是孵化中的在途工作,不计入发布线。**版本线对照**:0.2.0 起要求宿主 ≥ 0.1.2-rc.1;宿主 ≤ 0.1.1-rc.2 的用户请停留在 0.1.x 发布线。各包的发布版本与宿主兼容性矩阵见 [docs/release-status.md](docs/release-status.md)(每次发版后重新生成)。
 
-本文档即插件目录:每个插件能做什么、怎么装、怎么卸。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
+本文档介绍主要插件能做什么、怎么装、怎么卸;完整清单不在这里重复维护,请查[权威包地图](docs/packages.md)。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
 ## 全家桶速览
 
@@ -46,7 +46,17 @@
 
 ## 安装
 
-前置:dsh 宿主 ≥ `0.1.2-rc.1`(每个 bundle 声明 `minHost`),任意 profile(`web` / `headless` / 自定义)。每个 bundle 都声明 `dsh.bundle`:`dsh plugin add` 一条命令完成安装并自动挂载 loader 行,**无需手改 cordis.yml**。装完**重启 web 实例**生效。
+前置:dsh 宿主 ≥ `0.1.2-rc.1`。默认安装单元是一个完整 profile:它的 `dependencies` 决定安装哪些包,`dsh.profile.bundles` 决定在 profile 根激活哪些自挂载 bundle。按用途选择一个:
+
+- [`profiles/web-basic`](profiles/web-basic):日常 web 使用;消息控制、文件预览、任务状态、快捷键与运维守护。
+- [`profiles/web-dev`](profiles/web-dev):开发协作;包含 basic 体验,再加本地编码 agent、worktree 与 room 能力及开发 preset。
+- [`profiles/web-eval`](profiles/web-eval):评测工作;包含基础与本地 agent 能力,再加 datasets、mission、lab、eval 及评测 preset。
+
+profile 的安装、更新与启动方法见各目录 README。单包安装是高级用户按需裁剪或调试的路径:25 个自挂载包可用 `dsh plugin add` 安装并自动挂载自身 loader 行,**无需手改 cordis.yml**。装完重启对应 web 实例生效。
+
+7 个无 patch 包各有明确的组合归属。五个 `*-tool` 包(`worktrees-tool`、`room-tool`、`mission-tool`、`datasets-tool`、`eval-tool`)由**安装它们的 profile 作为直接依赖**引入(与各自 core 并列),它们自己对 core 声明依赖(companion → core,只保证模块可解析),再由对应 agent preset 的 `agent.cordis.yml` 按名引用一行;它们不出现在 `dsh.profile.bundles` 里,也不应自挂载。`local-agent-tool-subagent` 是 local-agent 家族内部、由 provider patch 引用的共享工具行;`local-agent-dsh-headless` 则是由 local-agent-dsh 预先 provision 的 headless 子 profile。完整关系见[权威包地图](docs/packages.md)。
+
+高级路径示例:
 
 ```sh
 # 按 npm 名装单个

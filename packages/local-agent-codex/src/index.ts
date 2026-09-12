@@ -52,10 +52,10 @@ export interface Config {
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
   /**
-   * Live mirror granularity: `event` mirrors completed items. `token` still
-   * reports per-token deltas over the run-progress channel, but host 0.1.5
-   * removed the per-chunk session event, so deltas no longer land in the
-   * child session log (the round settles as one combined final message).
+   * Live mirror granularity: both fold every completed item into the child
+   * session. `token` additionally lands streaming deltas as throttled
+   * incremental snapshots at the item's reserved (turn, step) — the host's
+   * repeated-settle merge renders them as one continuously growing message.
    */
   liveMirrorGranularity?: 'event' | 'token'
 }

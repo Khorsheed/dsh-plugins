@@ -87,6 +87,24 @@ describe('codex json stream parsing', () => {
     expect(parseCodexJsonStream('not-json\n{"type":"other"}')).toEqual({ lines: [] })
   })
 
+  it('mirrors file edits and non-shell function calls instead of dropping them', () => {
+    const stream = [
+      { type: 'thread.started', thread_id: 't1' },
+      { type: 'item.completed', item: { id: 'item_1', type: 'file_change', changes: [{ path: '/work/hello.txt', kind: 'update' }], status: 'completed' } },
+      { type: 'item.completed', item: { id: 'item_2', type: 'function_call', name: 'wait', arguments: '{"cell_id":"5"}' } },
+      { type: 'item.completed', item: { id: 'item_2o', type: 'function_call_output', output: 'done waiting' } },
+      { type: 'item.completed', item: { id: 'item_3', type: 'agent_message', text: 'done' } },
+      { type: 'turn.completed', usage: { input_tokens: 5, cached_input_tokens: 0, output_tokens: 1 } },
+    ].map(event => JSON.stringify(event)).join('\n')
+    const parsed = parseCodexJsonStream(stream)
+    expect(parsed.lines).toEqual([
+      { kind: 'tool', id: 'item_1', name: 'ApplyPatch', args: 'update: /work/hello.txt' },
+      { kind: 'tool', id: 'item_2', name: 'wait', args: '{"cell_id":"5"}', result: 'done waiting' },
+      { kind: 'text', text: 'done' },
+    ])
+    expect(parsed.toolCalls).toMatchObject({ count: 2, byName: { file_change: 1, function_call: 1 } })
+  })
+
   it('mirrors reasoning, agent text, and command execution from the real fixture', () => {
     const fixture = readFileSync(
       fileURLToPath(new URL('./fixtures/command-execution.sample.ndjson', import.meta.url)),

@@ -53,7 +53,9 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
+    "lib/*.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
     "lib/typert.host.d.ts",
     "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",

@@ -48,6 +48,14 @@ T=$(mktemp -d) && cd "$T" && npm install <包名>@<新版本> \
 
 每波发布后运行 `pnpm release:status` 重新生成 [release-status.md](release-status.md)(各包 npm 已发布版本 / 仓内版本 / minHost / verifiedHost / 整合包成员一览)并提交——发布状态以此为准,不手维护。
 
+### 家族发布:同版、按依赖序、可恢复
+
+local-agent 家族七包(core → tool-subagent / dsh-headless → 各 provider)以**同一版本**成一波发布,顺序按依赖。理由不是洁癖:`pack-dist` 会把每条家族边按其**目标包自己的版本**改写成 `^<目标版本>`(发版时七包同版,结果才等价于"按同一个 dist 版本改写"),拆开就会发布出一个自己都满足不了的 range。
+
+发版前跑 **`pnpm check:release-groups --release`**。gate 里的同名检查只对版本线**告警**(版本治理只发生在发版时,worktree 不动版本号),但 core/companion 的 range 必须能解析到 core 这一条**始终是硬错误**——`^0.1.0` 排除 `0.1.0-rc.1`、`^0.1.0` 排除 `0.2.0` 这两个真实事故就冻在那条规则里(见 `scripts/check-release-groups.ts`)。
+
+**部分发布怎么收**:npm 没有多包原子发布,"整波回滚"不存在(已发版本不可覆盖)。一波中途失败时,补齐缺失的包、**版本号保持不变**,逐个 `npm view` 确认后再跑一次 `--release`,然后才进整合包。顺序永远先 core 后 companion/provider——反过来会让干净机器在窗口期里装不上。
+
 **ankh-guard 镜像同步**:每次 ankh-guard 发版(或其代码进 main 的关键节点)运行 `npx tsx scripts/sync-ankh-guard-mirror.mts`,把 `packages/ankh-guard` 同步到公开的单插件仓 Khorsheed/dsh-ankh-guard。镜像面向"只装这一个插件"的受众:issue 开在镜像仓,PR 回流 monorepo。
 
 ## README 图片

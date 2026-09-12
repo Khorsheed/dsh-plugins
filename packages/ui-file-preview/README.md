@@ -4,7 +4,7 @@
 
 agent 写过、改过的文件，收进右栏一个「产物」页：文件清单 + 每一次改动的 diff 步进。
 
-agent 干了半天活，到底动了哪些文件、改成了什么样？装了这个插件，右栏向导页会多出「会话产物」入口：这个会话碰过的文件按最近活动倒序列出；点一个进入详情页——面包屑路径 + 复制路径 / 在文件夹打开 / 在 IDE 打开，下方「内容 / 改动记录」切换：内容是文档形态预览（Markdown 渲染成文档、JSON 检查树、CSV 表格、HTML 沙箱渲染、代码高亮、内容搜索），改动记录逐次步进回看每一次 write/edit 的 diff。官方文档预览页的工具栏下拉里也有同一个「改动记录」实现可切。所有打开入口——正文 mention、官方产物卡片、文件树——对可渲染的会话文件都落到我们的详情页（tab 类型以 `dsh-resource://file/**` + 可渲染后缀认领，纯静态判定无冷启动窗口；pdf 等我们渲染不了的类型自动回落官方 document tab）。每个回合结束，对话里也会出现一张小卡片，汇总这一轮改了哪几个文件、各增删了多少行。数据由配套的宿主半 `@khorsheed/dsh-file-preview` 提供（含官方数据覆盖不到的 bash 写入捕获），两边一起装才有界面可看；宿主半不在时它只是空态，不会报错。
+agent 干了半天活，到底动了哪些文件、改成了什么样？装了这个插件，右栏向导页会多出「会话产物」入口：这个会话碰过的文件按最近活动倒序列出；点一个进入详情页——面包屑路径 + 复制路径 / 在文件夹打开 / 在 IDE 打开，下方「内容 / 改动记录」切换：内容是文档形态预览（Markdown 渲染成文档、JSON 检查树、CSV 表格、HTML 沙箱渲染、代码高亮、内容搜索），改动记录逐次步进回看每一次 write/edit 的 diff。官方文档预览页的工具栏下拉里也有同一个「改动记录」实现可切。所有打开入口——正文 mention、官方产物卡片、文件树——对可渲染的会话文件都落到我们的详情页（tab 类型以 `dsh-resource://file/**` + 可渲染后缀认领，纯静态判定无冷启动窗口；pdf 等我们渲染不了的类型自动回落官方 document tab）。每个回合结束，对话里也会出现一张小卡片，汇总这一轮改了哪几个文件、各增删了多少行。数据由配套的宿主半 `@khorsheed/dsh-file-preview` 提供（含官方数据覆盖不到的 bash 写入捕获），两边一起装才有界面可看；宿主半不在时全部 UI 面缺席——不留错误卡或空 tab。
 
 ## 特性
 
@@ -49,7 +49,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 <details>
 <summary>内部结构（点击展开）</summary>
 
-- `src/client/index.ts` —— apply：注册 tab 类型 / tab body / 改动记录渲染器 / 回合行并挂载 `filePreview` Remote
+- `src/client/index.ts` —— apply：挂载 `filePreview` Remote 并执行零会话 `capabilities()` 握手；成功后由 `installFilePreviewSurfaces` 注册所有 UI 面并统一卸载
 - `src/client/definition.tsx` —— page-type tab 的注册表定义（guide 入口，不认领地址）
 - `src/client/history-definition.ts` —— 改动记录渲染器的 id 与后缀清单
 - `src/client/FilePreviewTab.tsx` —— 右栏「产物」页（列表 + 详情视图）
@@ -61,7 +61,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 - `src/client/open-in-app.ts` —— 官方 open-in-app 探测（行动作可见性）
 - `src/client/TurnFileRow.tsx` —— 每回合的「N 个文件已修改」卡片
 
-纯增量插件：注册一个右栏 tab 类型（`ctx.sidebarRightTabs` + keyed `sidebar.right.pane.tab` seat）、一个文档渲染器实现（`ctx.documentPreviews` + keyed `sidebar.right.tab.document` seat，`priority: 'builtin'`——出现在预览页工具栏下拉里但不抢官方默认渲染）与一个回合文件行（`conversation.chat.turnTail`，默认优先级——官方产物行先选举，本卡片只出现在官方数据覆盖不到的回合），并通过 `ctx.remote.$mount` 自挂载 `filePreview` Remote——原版 dsh 核心零改动即可运行。该命名空间不声明为 inject（自挂载会让加载器死锁）；挂载被 await 之后用 `ctx.get('remote.filePreview')` 读回。文件列表由 `@khorsheed/dsh-file-preview` 在宿主侧折叠（含嵌套 Code Mode 派发与 bash 写入捕获）。回合卡片经按会话的客户端缓存读同一个宿主 `filePreview.turnFiles` RPC——卡片与 tab 同一事实源。
+纯增量插件：注册一个右栏 tab 类型（`ctx.sidebarRightTabs` + keyed `sidebar.right.pane.tab` seat）、一个文档渲染器实现（`ctx.documentPreviews` + keyed `sidebar.right.tab.document` seat，`priority: 'builtin'`——出现在预览页工具栏下拉里但不抢官方默认渲染）与一个回合文件行（`conversation.chat.turnTail`，默认优先级——官方产物行先选举，本卡片只出现在官方数据覆盖不到的回合），并通过 `ctx.remote.$mount` 自挂载 `filePreview` Remote——原版 dsh 核心零改动即可运行。该命名空间不声明为 inject（自挂载会让加载器死锁）；挂载被 await 后用 `ctx.get('remote.filePreview')` 读回，并先执行零会话 `capabilities()`；只有 `{ protocolVersion: 1 }` 成功返回才安装这些 UI 面，宿主缺席时全部缺席。文件列表由 `@khorsheed/dsh-file-preview` 在宿主侧折叠（含嵌套 Code Mode 派发与 bash 写入捕获）。回合卡片经按会话的客户端缓存读同一个宿主 `filePreview.turnFiles` RPC——卡片与 tab 同一事实源。
 
 0.1.5-rc.1 迁移退役了四处绕行（上游缝 S1 已落地）：`conversation.view` 的「产物」tab、`shell.overlay` 预览抽屉、正文 mention 的捕获阶段 DOM 拦截、turnTail 的 `priority: -1` 抢占——产物行 / 正文 mention / 工具结果行的打开入口官方已统一收敛到 `ctx.sidebarRight.openResource()`。内容预览整体交给官方 document tab（`dsh-resource://file/**` 由官方 `text` 类型认领）；改动记录官方无对应物，长期自留。
 

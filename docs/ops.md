@@ -80,7 +80,7 @@ pnpm deploy:check-links
 ## 版本与发布节奏
 
 - **独立线,不齐步走。** 每个插件按自己的成熟度验收、发布(semver 独立);四段式(`0.1.0-rc.8.x`)是线内补丁的既有记法。唯一硬约束:新版本必须超过 npm 已发布版本。
-- **家族同发,按依赖序。** local-agent 家族(core → tool-subagent → 各 provider)作为一批发布,版本线先对齐;pack-dist 会把 `workspace:*` 改写成 `^<version>` 家族依赖,顺序错了干净机器装不上。
+- **家族同发,按依赖序。** local-agent 家族(core → tool-subagent → 各 provider)作为一批发布,版本线先对齐;pack-dist 会把 `workspace:*` 改写成 **`^<目标包自己的版本>`**(`--family name=version`,不是被打包者的版本——否则 `0.1.0` 的伴生包会声明出 `^0.1.0`,而 core 是 `0.1.0-rc.1`,干净机器直接解析失败),顺序错了干净机器装不上。
 - **整合包**：当前 CLI 的 `reconcilePlugins` 只调和 profile 的**直接依赖**,npm 薄元包的子插件是传递依赖、不会被挂载——所以薄元包需要上游 seam(见提案 `proposals/active/2026-08-21-package-management.md` 的形态 C 与 upstream-meta-pack-reconcile)。今天可交付的整合形态是**形态 A(add 清单)与形态 B(profile 目录模板)**,成员都是 profile 直接依赖,任一 bundle 单独装卸互不影响。整合包版本只在成员增删或跨大版本线时 bump(caret 范围下子包 patch 发布不需要动 pack)。
 - **首发包没有顺序问题**(除家族外),npm 上都不存在,无 403/409 风险。
 

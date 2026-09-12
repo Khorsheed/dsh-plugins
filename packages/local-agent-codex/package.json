@@ -54,7 +54,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "liveMirrorGranularity token: host 0.1.5 retired the per-chunk session event, so token-mode deltas no longer land in the child session log — they ride the run-progress channel and the round settles as one combined assistant/message (identical final text); a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists)",
+      "notes": "liveMirrorGranularity token streams deltas as throttled incremental snapshots at the item's reserved (turn, step) — the host ui-chat repeated-settle merge renders them as one growing message; a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists)",
       "verifiedHost": "0.1.5-rc.1"
     }
   },

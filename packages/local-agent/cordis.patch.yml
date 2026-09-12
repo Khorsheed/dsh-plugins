@@ -1,10 +1,17 @@
 # The dsh-local-agent framework bundle patch: the family core row. Every
-# harness bundle (@khorsheed/dsh-local-agent-kimi, -codex, future claude)
-# declares this package as a dependency, so `dsh plugin add` reconciles it
-# into the profile's bundles layer automatically (apps/cli plugin.ts
-# reconcilePlugins) — a harness bundle installs standalone and still gets the
-# core. The core row must NOT be re-inserted by any harness bundle's patch:
-# two top-level `insert` rows with the same id would mount the core twice.
+# harness bundle (@khorsheed/dsh-local-agent-kimi, -codex, -claude-code, -dsh)
+# declares this package as an npm dependency, which guarantees the core's
+# module resolves in the profile — it does NOT mount this row. `dsh plugin add`
+# reconciles only the profile's *direct* dependencies into the bundles layer
+# (apps/cli plugin.ts reconcilePlugins), so the core must be installed
+# explicitly alongside a harness bundle: `dsh plugin add .../dsh-local-agent`
+# and then `dsh plugin add .../dsh-local-agent-<harness>`. Installing a harness
+# bundle alone leaves this row unmounted and that provider pending (it never
+# crashes) — see the family README's install section.
+#
+# The core row must NOT be re-inserted by any harness bundle's patch: two
+# top-level `insert` rows with the same id would mount the core twice as soon
+# as two providers are installed.
 
 - insert:
     - id: local-agent

@@ -22,7 +22,9 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "keywords": [
@@ -56,6 +58,9 @@
     "typecheck": "tsc -b tsconfig.json --noEmit"
   },
   "dsh": {
+    "composition": {
+      "component": "preset-composed-row"
+    },
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1",

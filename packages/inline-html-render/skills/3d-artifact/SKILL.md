@@ -7,7 +7,7 @@ description: Generate sandbox-runnable interactive 3D / digital-twin single-file
 
 ## When to load
 
-Load this skill when the task asks to produce a **self-contained HTML page that renders 3D content** — visualizations, simulations, digital twins, WebGL scenes (three.js, etc.) — that must run inside a sandboxed preview iframe under a strict CSP (e.g. the dsh file-view / deliverables preview).
+Load this skill when the task asks to produce a **self-contained HTML page that renders 3D content** — visualizations, simulations, digital twins, WebGL scenes (three.js, etc.) — that must run inside a sandboxed preview iframe under a strict CSP (for example, the dsh file-preview or deliverables preview).
 
 ## The hard contract — violations fail silently in the sandbox; this is the #1 cause of "dead" artifacts
 

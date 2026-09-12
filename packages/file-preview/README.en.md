@@ -32,7 +32,7 @@ Host half only — the visible surface (Produced tab, preview drawer, per-turn c
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 ```
 
-Uninstall; a leftover client half degrades to an empty state rather than an error:
+Uninstall; if the client half is left behind, its zero-session handshake fails and every UI surface is absent (no error card or empty tab remains):
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-file-preview
@@ -68,7 +68,9 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 <details>
 <summary>Internals (click to expand)</summary>
 
-`ctx.filePreview` (wire namespace `filePreview`) exposes five generated Remote methods:
+`ctx.filePreview` (wire namespace `filePreview`) exposes six generated Remote methods:
+
+- `capabilities()` — a zero-session availability handshake returning `{ protocolVersion: 1 }`; the companion client installs UI surfaces only after it succeeds.
 
 - `list(agent)` — a pure fold over `agent.session.events`: `read`/`write`/`edit` `tool/call`s contribute display paths, as do settled nested PTC `tool/ptc-dispatch`es for those tools (failed dispatches record nothing; entries borrow the root call's turn/step). A `write`/`edit` `tool/result` carrying `diffs` meta appends each change to the entry in event order, `lastDiff` kept as the final one. The response carries the entries, the last scanned seq, and whether `maxFiles` was hit. No filesystem access in the fold; with `captureBashWrites` on, entries merge with the collector's verified bash-written paths. Before returning, each path is resolved against the session cwd and `stat`-ed, keeping only those that still exist as a regular file — the log fold is history, the product list reflects disk state (a temp script a turn wrote then cleaned up is no longer a product); existence is probed fresh per call (not cached with the log fold).
 - `read(agent, path, signal)` — resolves `path` against the session cwd and serves `kind: 'text'` (capped at `maxReadBytes`, flagged `truncated`), or `kind: 'image'` with a browser-loadable URL on web hosts — bytes ride a dedicated `/file-preview-image/<sessionId>/<path>` route, registered only when the optional `webServer` and `agents` services are composed; headless hosts answer `binary` — or a classified notice: `binary` (binary extension or NUL bytes; never read), `missing`, `too-large`, or `error` (message included).

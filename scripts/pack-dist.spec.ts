@@ -3,7 +3,68 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertDeclaredPayloadsExist, assertNoStaleTypes, filesDeclaredExtras, packDist, rescopePackageJson, rewriteNames, verifyTarball } from './pack-dist.ts'
+import { assertDeclaredPayloadsExist, assertNoStaleTypes, familyMemberMap, familySpecsFor, filesDeclaredExtras, formatFamilySpecs, loadWorkspaceVersions, packDist, parseFamilySpecs, prunePublishArtifacts, rescopePackageJson, rewriteNames, verifyTarball } from './pack-dist.ts'
+
+/**
+ * Caret-range satisfaction, implementing npm's documented rule including the
+ * caveat that decides the bug being fixed: a **prerelease** target matches a
+ * range only when that range carries a prerelease for the same
+ * `[major, minor, patch]` tuple. So `0.1.0-rc.1` does NOT satisfy `^0.1.0`,
+ * and `0.2.0` does not satisfy `^0.1.0` at all.
+ * @param version - the concrete version to test.
+ * @param range - a caret range.
+ * @returns whether npm would accept the version for that range.
+ */
+function satisfies(version: string, range: string): boolean {
+  const caret = /^\^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(range)
+  if (caret === null) throw new Error(`spec helper: unsupported range ${range}`)
+  const target = /^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(version)
+  if (target === null) throw new Error(`spec helper: unsupported version ${version}`)
+  const lower = [Number(caret[1]), Number(caret[2]), Number(caret[3])]
+  const actual = [Number(target[1]), Number(target[2]), Number(target[3])]
+  // Caret upper bound: ^1.2.3 < 2.0.0, ^0.2.3 < 0.3.0, ^0.0.3 < 0.0.4.
+  const upper = lower[0]! > 0
+    ? [lower[0]! + 1, 0, 0]
+    : lower[1]! > 0
+      ? [0, lower[1]! + 1, 0]
+      : [0, 0, lower[2]! + 1]
+  const targetPre = target[4]
+  if (targetPre !== undefined) {
+    // A prerelease is admitted only by a range carrying a prerelease for the
+    // SAME tuple, and then only at or above that prerelease.
+    if (caret[4] === undefined) return false
+    if (compareTuples(actual, lower) !== 0) return false
+    return comparePrerelease(targetPre, caret[4]) >= 0
+  }
+  return compareTuples(actual, lower) >= 0 && compareTuples(actual, upper) < 0
+}
+
+/** Compare [major, minor, patch] tuples. */
+function compareTuples(a: readonly number[], b: readonly number[]): number {
+  for (let index = 0; index < 3; index++) {
+    if (a[index] !== b[index]) return (a[index] as number) - (b[index] as number)
+  }
+  return 0
+}
+
+/** Compare two prerelease identifier chains (numeric identifiers sort first). */
+function comparePrerelease(a: string, b: string): number {
+  const left = a.split('.')
+  const right = b.split('.')
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const l = left[index]
+    const r = right[index]
+    if (l === undefined) return -1
+    if (r === undefined) return 1
+    if (l === r) continue
+    const lNum = /^\d+$/.test(l)
+    const rNum = /^\d+$/.test(r)
+    if (lNum && rNum) return Number(l) - Number(r)
+    if (lNum !== rNum) return lNum ? -1 : 1
+    return l > r ? 1 : -1
+  }
+  return 0
+}
 
 /** Recursively list a directory's files as relative paths. */
 function walkDir(dir: string, prefix = ''): string[] {
@@ -46,8 +107,17 @@ describe('rescopePackageJson', () => {
     expect(out.scripts).toBeUndefined()
   })
 
-  it('renames family peers to the dist scope and ranges them on the dist version', () => {
-    const family = new Map([['@deepseek-ai/dsh-file-preview', '@khorsheed/dsh-file-preview']])
+  it('renames family peers to the dist scope and ranges them on the TARGET version', () => {
+    // The packed package is 0.1.0; its family peer is 0.3.0. The edge must
+    // follow the target, not the packer — this is the datasets-tool/worktrees-tool
+    // bug: the old code emitted `^<packer version>`, which could not resolve.
+    const family = new Map([
+      ['@deepseek-ai/dsh-file-preview', {
+        sourceName: '@deepseek-ai/dsh-file-preview',
+        distName: '@khorsheed/dsh-file-preview',
+        targetVersion: '0.3.0',
+      }],
+    ])
     const out = rescopePackageJson({
       name: '@deepseek-ai/dsh-client-ui-file-preview',
       version: '0.1.0-rc.5',
@@ -58,16 +128,49 @@ describe('rescopePackageJson', () => {
       devDependencies: { '@deepseek-ai/dsh-file-preview': 'workspace:^' },
     }, '@khorsheed/dsh-client-ui-file-preview', '0.1.0', family)
     expect(out.peerDependencies).toEqual({
-      '@khorsheed/dsh-file-preview': '^0.1.0',
+      '@khorsheed/dsh-file-preview': '^0.3.0',
       '@deepseek-ai/dsh-client-runtime': '^0.1.0-rc.5',
     })
-    expect(out.devDependencies).toEqual({ '@khorsheed/dsh-file-preview': '^0.1.0' })
+    // A devDependency edge is ranged on the target too — the same section rule.
+    expect(out.devDependencies).toEqual({ '@khorsheed/dsh-file-preview': '^0.3.0' })
   })
 
-  it('keeps family edges in dependencies (the core/companion contract), drops bundled/host-provided deps', () => {
+  it('rescopes peerDependenciesMeta keys alongside their peers', () => {
     const family = new Map([
-      ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-local-agent'],
-      ['@khorsheed/dsh-local-agent-tool-subagent', '@khorsheed/dsh-local-agent-tool-subagent'],
+      ['@deepseek-ai/dsh-file-preview', {
+        sourceName: '@deepseek-ai/dsh-file-preview',
+        distName: '@khorsheed/dsh-file-preview',
+        targetVersion: '0.3.0',
+      }],
+    ])
+    const out = rescopePackageJson({
+      name: '@deepseek-ai/dsh-client-ui-file-preview',
+      version: '0.1.0',
+      peerDependencies: { '@deepseek-ai/dsh-file-preview': 'workspace:*' },
+      peerDependenciesMeta: {
+        '@deepseek-ai/dsh-file-preview': { optional: true },
+        '@deepseek-ai/cordis': { optional: true },
+      },
+    }, '@khorsheed/dsh-client-ui-file-preview', '0.1.0', family)
+    // A stale meta key would silently drop `optional` from the renamed peer.
+    expect(out.peerDependenciesMeta).toEqual({
+      '@khorsheed/dsh-file-preview': { optional: true },
+      '@deepseek-ai/cordis': { optional: true },
+    })
+  })
+
+  it('keeps family edges in dependencies for module resolution, drops bundled/host-provided deps', () => {
+    const family = new Map([
+      ['@khorsheed/dsh-local-agent', {
+        sourceName: '@khorsheed/dsh-local-agent',
+        distName: '@khorsheed/dsh-local-agent',
+        targetVersion: '0.1.0-rc.6',
+      }],
+      ['@khorsheed/dsh-local-agent-tool-subagent', {
+        sourceName: '@khorsheed/dsh-local-agent-tool-subagent',
+        distName: '@khorsheed/dsh-local-agent-tool-subagent',
+        targetVersion: '0.1.0-rc.6',
+      }],
     ])
     const out = rescopePackageJson({
       name: '@khorsheed/dsh-local-agent-kimi',
@@ -83,6 +186,86 @@ describe('rescopePackageJson', () => {
       '@khorsheed/dsh-local-agent-tool-subagent': '^0.1.0-rc.6',
     })
   })
+
+  it('fails loud when a manifest edge names a rewrite-only family member', () => {
+    // A bare `--family name` cannot honestly range an edge; guessing the
+    // packer's own version is exactly the bug being fixed.
+    const family = new Map([
+      ['@khorsheed/dsh-datasets', {
+        sourceName: '@khorsheed/dsh-datasets',
+        distName: '@khorsheed/dsh-datasets',
+      }],
+    ])
+    expect(() => rescopePackageJson({
+      name: '@khorsheed/dsh-datasets-tool',
+      version: '0.1.0',
+      peerDependencies: { '@khorsheed/dsh-datasets': 'workspace:*' },
+    }, '@khorsheed/dsh-datasets-tool', '0.1.0', family)).toThrow(/no version was given/)
+  })
+})
+
+describe('parseFamilySpecs', () => {
+  it('parses bare names and name=version pairs', () => {
+    expect(parseFamilySpecs('@khorsheed/dsh-a,@khorsheed/dsh-b=0.2.0'))
+      .toEqual([
+        { sourceName: '@khorsheed/dsh-a' },
+        { sourceName: '@khorsheed/dsh-b', targetVersion: '0.2.0' },
+      ])
+    expect(parseFamilySpecs(undefined)).toEqual([])
+    expect(parseFamilySpecs('')).toEqual([])
+  })
+
+  it('rejects a missing, empty, malformed, or non-semver version', () => {
+    expect(() => parseFamilySpecs('@khorsheed/dsh-a=')).toThrow(/missing a version/)
+    expect(() => parseFamilySpecs('@khorsheed/dsh-a=')).toThrow(/@khorsheed\/dsh-a/)
+    expect(() => parseFamilySpecs('@khorsheed/dsh-a=^0.1.0')).toThrow(/not a valid semver/)
+    expect(() => parseFamilySpecs('@khorsheed/dsh-a=0.1')).toThrow(/not a valid semver/)
+  })
+
+  it('rejects the same family member twice with conflicting versions', () => {
+    expect(() => parseFamilySpecs('@khorsheed/dsh-a=0.1.0,@khorsheed/dsh-a=0.2.0'))
+      .toThrow(/conflicting versions/)
+    // A repeated identical entry is harmless.
+    expect(parseFamilySpecs('@khorsheed/dsh-a=0.1.0,@khorsheed/dsh-a=0.1.0'))
+      .toEqual([{ sourceName: '@khorsheed/dsh-a', targetVersion: '0.1.0' }])
+  })
+
+  it('round-trips through formatFamilySpecs', () => {
+    const specs = parseFamilySpecs('@khorsheed/dsh-a,@khorsheed/dsh-b=0.2.0')
+    expect(formatFamilySpecs(specs)).toBe('@khorsheed/dsh-a,@khorsheed/dsh-b=0.2.0')
+  })
+})
+
+describe('familyEdgeRange satisfiability', () => {
+  // The four companion/core tuples that shipped with an unsatisfiable range.
+  // `^0.1.0` excludes `0.1.0-rc.1` (npm only admits a prerelease when the
+  // range carries one for the same tuple) and excludes `0.2.0` outright.
+  const cases: readonly (readonly [string, string, string, boolean])[] = [
+    ['@khorsheed/dsh-datasets-tool', '0.1.0', '0.1.0-rc.1', false],
+    ['@khorsheed/dsh-eval-tool', '0.1.0', '0.1.0-rc.1', false],
+    ['@khorsheed/dsh-mission-tool', '0.1.0', '0.1.0-rc.1', false],
+    ['@khorsheed/dsh-worktrees-tool', '0.1.0', '0.2.0', false],
+    ['@khorsheed/dsh-room-tool', '0.1.0', '0.1.0', true],
+    ['@khorsheed/dsh-local-agent-tool-subagent', '0.1.0-rc.6', '0.1.0-rc.6', true],
+  ]
+
+  for (const [tool, toolVersion, coreVersion, previousWorked] of cases) {
+    it(`${tool}@${toolVersion} ranges on the core's ${coreVersion}`, () => {
+      const family = familyMemberMap('@khorsheed', [{ sourceName: '@khorsheed/dsh-core', targetVersion: coreVersion }])
+      const out = rescopePackageJson({
+        name: tool,
+        version: toolVersion,
+        peerDependencies: { '@khorsheed/dsh-core': 'workspace:*' },
+      }, tool, toolVersion, family)
+      // The emitted range must be the target's caret, and the target must
+      // satisfy it.
+      expect(out.peerDependencies).toEqual({ '@khorsheed/dsh-core': `^${coreVersion}` })
+      expect(satisfies(coreVersion, `^${coreVersion}`)).toBe(true)
+      // …whereas the old rule (the packer's own version) did not.
+      const oldRange = `^${toolVersion}`
+      expect(satisfies(coreVersion, oldRange)).toBe(previousWorked)
+    })
+  }
 })
 
 describe('filesDeclaredExtras', () => {
@@ -252,6 +435,52 @@ describe('verifyTarball', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('fails on a tarball carrying sourcemaps or tsbuildinfo', () => {
+    // packDist prunes staging; this is the artifact-level backstop for a glob
+    // or a late build writing them back in.
+    const dir = stage({ 'package.json': '{}', 'lib/index.js': '' })
+    try {
+      writeFileSync(join(dir, 'lib/index.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x'))
+        .toThrow(/non-publishable build artifacts.*index\.js\.map/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('prunePublishArtifacts', () => {
+  it('removes maps and tsbuildinfo recursively, leaving real payload intact', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-prune-'))
+    try {
+      mkdirSync(join(dir, 'lib/types/client'), { recursive: true })
+      writeFileSync(join(dir, 'lib/index.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/index.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/client.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/client.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
+      writeFileSync(join(dir, 'lib/types/index.d.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/types/index.d.ts.map'), '{}')
+      // A file whose name merely ends in "map" but is real payload survives.
+      writeFileSync(join(dir, 'lib/bitmap.js'), 'export {}\n')
+      expect(prunePublishArtifacts(dir)).toEqual([
+        'lib/client.js.map',
+        'lib/index.js.map',
+        'lib/tsconfig.tsbuildinfo',
+        'lib/types/index.d.ts.map',
+      ])
+      expect(walkDir(dir).sort()).toEqual([
+        'lib/bitmap.js',
+        'lib/client.js',
+        'lib/index.js',
+        'lib/types/index.d.ts',
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('packDist end-to-end (independent of the self-checks)', () => {
@@ -278,6 +507,56 @@ describe('packDist end-to-end (independent of the self-checks)', () => {
       const tarball = packDist({ packageDir: dir, scope: '@khorsheed', version: '0.1.0-rc.1', outDir: dir })
       const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
       expect(listing).toContain('package/skills/demo/SKILL.md')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('a real pack drops maps/tsbuildinfo but keeps hashed chunks, css and declarations', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-payload-'))
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true })
+      mkdirSync(join(dir, 'lib/types'), { recursive: true })
+      writeFileSync(join(dir, 'src/index.ts'), 'export {}\n')
+      // Real payload: an entry, a hashed tsdown chunk, css, declarations, and
+      // the typert face artifacts the generator contract requires.
+      writeFileSync(join(dir, 'lib/index.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/client.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/chunk-ABC123.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/index.css'), '.a{}\n')
+      writeFileSync(join(dir, 'lib/types/index.d.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/typert.host.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/typert.remote-client.js'), 'export {}\n')
+      // Build state that must not ship.
+      writeFileSync(join(dir, 'lib/client.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/types/index.d.ts.map'), '{}')
+      writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({
+        name: '@khorsheed/dsh-e2e-payload',
+        version: '0.1.0',
+        files: [
+          'lib',
+          'lib/typert.host.d.ts',
+          'lib/typert.host.js',
+          'lib/typert.remote-client.d.ts',
+          'lib/typert.remote-client.js',
+        ],
+      }))
+      const tarball = packDist({ packageDir: dir, scope: '@khorsheed', version: '0.1.0', outDir: dir })
+      const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
+      for (const shipped of [
+        'package/lib/index.js',
+        'package/lib/client.js',
+        'package/lib/chunk-ABC123.js',
+        'package/lib/index.css',
+        'package/lib/types/index.d.ts',
+        'package/lib/typert.host.js',
+        'package/lib/typert.remote-client.js',
+      ]) {
+        expect(listing).toContain(shipped)
+      }
+      expect(listing).not.toMatch(/\.map$/m)
+      expect(listing).not.toContain('.tsbuildinfo')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

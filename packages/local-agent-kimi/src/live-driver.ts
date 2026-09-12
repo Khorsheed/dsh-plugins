@@ -12,13 +12,15 @@
  *
  * Mirroring contract (the kimi-specific call): kimi's ACP updates are
  * token-level chunks, NOT the wire.jsonl line fold the exec mirror owns — so
- * the live transport mirrors NOTHING directly (host 0.1.5 removed the
- * per-chunk session event, so token-mode deltas only ride the run-progress
- * channel).
- * The kimi ACP runtime writes the same wire.jsonl in the same scoped home
- * (session-view.ts documents this), so push events merely TRIGGER throttled
- * `mirrorKimiDelta` passes and the settle pass stays authoritative: one fold,
- * one offset, zero divergence between the two drivers.
+ * completed items always fold from the file: push events merely TRIGGER
+ * throttled `mirrorKimiDelta` passes and the settle pass stays authoritative
+ * (one fold, one offset, zero divergence between the two drivers). BOTH
+ * granularities fold every transcript item 1:1 into the child session log.
+ * The token granularity additionally mirrors the in-flight item live: chunk
+ * deltas accumulate per streaming item and append throttled snapshot
+ * assistant/messages at the item's reserved (turn, step) — the host folds
+ * repeated settles at one coordinate into one live-updating chat node — and
+ * the wire line completing the item folds at the same step, finalizing it.
  *
  * Lifecycle mirrors the dsh/codex live drivers' discipline: lazy spawn with an
  * initialize handshake (loadSession capability required — crash recovery is
@@ -47,7 +49,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import {
   DEFAULT_DISPOSE_GRACE_MS,
@@ -55,7 +57,8 @@ import {
   textTask,
 } from './kimi-cli-provider.ts'
 import { assistantEvent, nextKimiSessionStep } from './session-mirror.ts'
-import type { KimiMirrorOptions } from './session-mirror.ts'
+import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
+import { addTokenUsage } from './session-view.ts'
 import { guardKimiCredential } from './credential-guard.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 
@@ -76,6 +79,12 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 
 /** Minimum gap between push-triggered mirror passes. */
 export const DEFAULT_LIVE_MIRROR_THROTTLE_MS = 500
+
+/** Default minimum interval between one streaming item's snapshot messages. */
+export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = 300
+
+/** Default minimum text growth between one streaming item's snapshot messages. */
+export const DEFAULT_SNAPSHOT_MIN_CHARS = 200
 
 /** Grace between stdin EOF and SIGTERM when reclaiming an ACP server. */
 const RECLAIM_EOF_GRACE_MS = 1_000
@@ -168,11 +177,6 @@ export function bareKimiSessionId(acpSessionId: string): string {
 /** The ACP-native form of a recorded kimi session id (idempotent). */
 export function acpKimiSessionId(recordedId: string): string {
   return recordedId.startsWith('session_') ? recordedId : `session_${recordedId}`
-}
-
-/** The fold options for one granularity: token mode streams think/text as chunks, so the fold skips it. */
-function mirrorOptions(granularity: KimiLiveMirrorGranularity): KimiMirrorOptions | undefined {
-  return granularity === 'token' ? { skipAssistantContent: true } : undefined
 }
 
 function delay(ms: number): Promise<void> {
@@ -428,6 +432,9 @@ export class KimiAcpLiveDriver {
     private readonly config: {
       liveIdleMs?: number
       liveMirrorGranularity?: KimiLiveMirrorGranularity
+      /** Snapshot throttle for the token granularity's streaming messages. */
+      snapshotMinIntervalMs?: number
+      snapshotMinChars?: number
       /**
        * Resolver for the configured model, read at each RUNTIME SPAWN. `kimi
        * acp` takes no model flag, so this path pins the scoped config's
@@ -771,21 +778,153 @@ export class KimiAcpLiveDriver {
     let turnOpened = false
     /** The round's accumulated assistant text (the run output — chunks are the only source). */
     let roundText = ''
-    /** The round's accumulated thinking (token granularity; settles as the combined final message). */
-    let roundThink = ''
     /**
-     * The stream's (turn, step) merge key, reserved LAZILY at the first
-     * think/text delta from the session's step ledger: every line folded
-     * before that moment stays below it, everything after folds above it —
-     * the projection renders the round's chronological order. (Pinning the
-     * stream to step 1 put the whole answer above every tool card in a
-     * tool-first round — or collided with a tool already at step 1.)
+     * The step ledger: every step a stream reservation consumed this round
+     * (in increasing order — permanently, whether the stream later completes
+     * or stays an orphan snapshot). The file fold skips these steps for its
+     * sequential folds, so a tool card folded mid-stream lands ABOVE the
+     * stream's step and the projection renders the round's chronological
+     * order.
      */
-    let streamStep: number | undefined
-    /** The usage the settle fold computed for this round (rides the combined final in token mode). */
-    let settleUsage: TokenUsage | undefined
+    const reservedSteps: number[] = []
+    /**
+     * The streaming items seen this round (token granularity). kimi's ACP
+     * chunks carry no item id, so the stream key is synthetic per kind per
+     * round (the codex live driver's fallback shape): thought chunks share
+     * one stream, message chunks another. Deltas accumulate into throttled
+     * snapshot assistant/messages appended at the stream's reserved
+     * (turn, step) — the host folds repeated settles at one coordinate into
+     * one live-updating chat node. The wire line that completes the stream's
+     * kind folds at the same step and finalizes it; an entry whose completion
+     * never folds is force-finalized at settle.
+     */
+    const streams = new Map<string, {
+      readonly kind: 'think' | 'text'
+      readonly step: number
+      text: string
+      lastSnapshotAt: number
+      lastSnapshotLen: number
+      /** step/start already emitted for this reservation. */
+      opened: boolean
+    }>()
+    /** The stream the latest delta accumulated into (a kind switch force-snapshots it). */
+    let activeStream: string | undefined
+    /**
+     * The round's usage NOT carried by a folded line, summed across mirror
+     * passes (each pass's window is disjoint). The settle's final snapshot
+     * carries the remainder when no folded message did — host 0.1.5 has no
+     * usage-backfill event.
+     */
+    let roundUsage: TokenUsage | undefined
     let lastMirrorAt = 0
     let mirrorQueue: Promise<unknown> = Promise.resolve()
+    let persistQueue: Promise<unknown> = Promise.resolve()
+    const persist = (): void => {
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+    }
+
+    /** A stream's synthetic key: kimi's ACP deltas carry no item id, so kind + turn pairs them. */
+    const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}`
+
+    /**
+     * Append one snapshot of a streaming item at its reserved (turn, step).
+     * Throttled per stream by interval and growth unless `force`; the forced
+     * final snapshot carries `interrupted` (a cancelled turn reads 已停止
+     * legitimately) and, when `withUsage`, the round's uncarried usage. An
+     * empty stream leaves no boundary at all.
+     */
+    const appendStreamSnapshot = (
+      stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
+      force: boolean,
+      interrupted: boolean,
+      withUsage = false,
+    ): void => {
+      if (stream.text.trim() === '') return
+      const now = Date.now()
+      const minInterval = this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS
+      const minChars = this.config.snapshotMinChars ?? DEFAULT_SNAPSHOT_MIN_CHARS
+      if (!force && now - stream.lastSnapshotAt < minInterval) return
+      if (!force && stream.text.length - stream.lastSnapshotLen < minChars) return
+      if (!stream.opened) {
+        childSession.append('step/start', { turn, step: stream.step })
+        stream.opened = true
+      }
+      childSession.append('assistant/message', {
+        turn,
+        step: stream.step,
+        message: assistantEvent([
+          stream.kind === 'think'
+            ? { type: 'reasoning' as const, text: stream.text }
+            : { type: 'text' as const, text: stream.text },
+        ]),
+        stream: [],
+        ...withUsage && roundUsage !== undefined ? { usage: roundUsage } : {},
+        ...interrupted ? { interrupted: true } : {},
+      }, { surfaceOp: 'append' })
+      if (withUsage) roundUsage = undefined
+      stream.lastSnapshotAt = now
+      stream.lastSnapshotLen = stream.text.length
+      persist()
+    }
+
+    /**
+     * Reserve the step one streaming item will occupy — past every folded
+     * line (the session's own event ledger: the file fold writes events
+     * synchronously) and every earlier reservation. A kind switch forces one
+     * freshness snapshot of the current stream (skipped when its text has not
+     * grown since the last one); its completion still folds at its own
+     * reserved step when the wire line lands.
+     */
+    const reserveStream = (key: string, kind: 'think' | 'text'): void => {
+      if (activeStream !== undefined && activeStream !== key) {
+        const previous = streams.get(activeStream)
+        if (previous !== undefined && previous.text.length !== previous.lastSnapshotLen) {
+          appendStreamSnapshot(previous, true, false)
+        }
+        activeStream = undefined
+      }
+      let stream = streams.get(key)
+      if (stream === undefined) {
+        let step = nextKimiSessionStep(childSession, turn)
+        for (const reserved of reservedSteps) step = Math.max(step, reserved + 1)
+        reservedSteps.push(step)
+        stream = { kind, step, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        streams.set(key, stream)
+      }
+      activeStream = key
+    }
+
+    /**
+     * The fold-pass coordination surface (token granularity only): the file
+     * fold skips reserved steps for sequential folds and pairs a completed
+     * think/assistant line with its stream — scoped to THIS round's turn, so
+     * an earlier round's leftover lines never consume this round's stream.
+     */
+    const mirrorStreams: KimiMirrorStreams = {
+      reservedSteps: t => t === turn ? reservedSteps : [],
+      completeStream: (line) => {
+        if (line.turn !== turn) return undefined
+        const key = streamKey(line.kind === 'think' ? 'think' : 'text')
+        const stream = streams.get(key)
+        if (stream === undefined) return undefined
+        streams.delete(key)
+        if (activeStream === key) activeStream = undefined
+        return { step: stream.step, opened: stream.opened }
+      },
+    }
+    const mirrorOptions = (): KimiMirrorOptions | undefined =>
+      granularity === 'token' ? { streams: mirrorStreams } : undefined
+
+    /**
+     * Usage accounting across mirror passes: a pass whose window attached its
+     * usage to a folded message is already carried; anything else sums into
+     * the round's uncarried remainder (the final snapshot's payload).
+     */
+    const noteMirrorUsage = (delta: KimiMirrorDelta): void => {
+      if (delta.usage !== undefined && delta.usageAttached !== true) {
+        roundUsage = addTokenUsage(roundUsage, delta.usage)
+      }
+    }
 
     /** Throttled push-triggered mirror pass; the file fold stays the only transcript source. */
     const triggerMirror = (): void => {
@@ -793,7 +932,9 @@ export class KimiAcpLiveDriver {
       if (now - lastMirrorAt < this.timeouts.mirrorThrottleMs) return
       lastMirrorAt = now
       mirrorQueue = mirrorQueue.then(() =>
-        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId), mirrorOptions(granularity)).catch((error: unknown) => {
+        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId), mirrorOptions()).then((delta) => {
+          noteMirrorUsage(delta)
+        }).catch((error: unknown) => {
           this.ctx.logger.warn(`subagent-kimi: live mirror pass failed: ${thrown(error).message}`)
         }))
     }
@@ -828,16 +969,16 @@ export class KimiAcpLiveDriver {
         if (text !== '') {
           roundText += text
           if (granularity === 'token') {
-            // Host 0.1.5 removed the per-chunk session event, so token
-            // granularity no longer writes deltas to the child log; the round
-            // settles as ONE combined final message (the mirror skips
-            // assistant content meanwhile), and the delta rides the run
-            // progress channel only. The stream's block layout matches the
-            // combined final message: reasoning at index 0, reply text at
-            // index 1. The merge key is reserved past everything folded so
-            // far, so a tool-first round renders the answer after its tool
-            // cards, not above them.
-            if (streamStep === undefined) streamStep = nextKimiSessionStep(childSession, turn)
+            // The delta accumulates into the round's text stream; throttled
+            // snapshots land in the session log at the stream's reserved
+            // (turn, step), and the delta rides the run-progress channel too.
+            const key = streamKey('text')
+            reserveStream(key, 'text')
+            const stream = streams.get(key)
+            if (stream !== undefined) {
+              stream.text += text
+              appendStreamSnapshot(stream, false, false)
+            }
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
           }
         }
@@ -845,8 +986,13 @@ export class KimiAcpLiveDriver {
         const content = update['content'] as { type?: string; text?: string } | undefined
         const text = content?.text ?? ''
         if (text !== '') {
-          roundThink += text
-          if (streamStep === undefined) streamStep = nextKimiSessionStep(childSession, turn)
+          const key = streamKey('think')
+          reserveStream(key, 'think')
+          const stream = streams.get(key)
+          if (stream !== undefined) {
+            stream.text += text
+            appendStreamSnapshot(stream, false, false)
+          }
         }
       }
       // Every update (chunks, tool calls, plans) triggers a throttled mirror
@@ -962,8 +1108,8 @@ export class KimiAcpLiveDriver {
       let stableReads = 0
       const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
       for (;;) {
-        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(granularity))
-        if (delta.usage !== undefined) settleUsage = delta.usage
+        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions())
+        noteMirrorUsage(delta)
         localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
         stableReads = delta.total === lastTotal ? stableReads + 1 : 0
         lastTotal = delta.total
@@ -989,39 +1135,29 @@ export class KimiAcpLiveDriver {
       roundSettled = true
       promptInFlight = false
       if (turnOpened) {
-        // Token granularity: settle the round with ONE combined final message
-        // at the SAME (turn, step) the deltas reserved, carrying the usage —
-        // INSIDE the turn window (before turn/end) and wrapped in the step
-        // boundary pair, so the live conversation assembler materializes it
-        // like every other step instead of dropping a turn-level append after
-        // the turn closed. The settle mirror runs first (bounded) so the
-        // message carries the round's usage; that quiescence wait is the
-        // price of the wire flush race, and a mirror failure never fails the
-        // round. A non-completed round is marked interrupted, so a cancelled
-        // turn reads 已停止 legitimately.
+        // Token granularity: reconcile the file fold INSIDE the turn window
+        // (bounded quiescence — the price of the wire flush race; a mirror
+        // failure never fails the round), so every streamed item's completion
+        // fold lands at its reserved step before turn/end. Streams whose
+        // completing wire line never folded (abort, or a flush outlasting the
+        // quiescence window) then finalize in place: one forced snapshot each
+        // — interrupted on a non-completed round, the LAST one carrying the
+        // round's uncarried usage — then step/end.
         if (granularity === 'token') {
           try {
             await settleMirror()
-            const blocks: ContentBlock[] = []
-            if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
-            if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
-            if (blocks.length > 0) {
-              // The stream's reserved step; a stream-less round (no deltas)
-              // puts the fallback answer past every folded line instead.
-              const step = streamStep ?? nextKimiSessionStep(childSession, turn)
-              childSession.append('step/start', { turn, step })
-              childSession.append('assistant/message', {
-                turn,
-                step,
-                message: assistantEvent(blocks),
-                stream: [],
-                ...settleUsage !== undefined ? { usage: settleUsage } : {},
-                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-              }, { surfaceOp: 'append' })
-              childSession.append('step/end', { turn, step })
-            }
           } catch (error) {
             this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
+          }
+          if (streams.size > 0) {
+            const remaining = [...streams.values()]
+            for (const [position, stream] of remaining.entries()) {
+              appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+              if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
+            }
+            streams.clear()
+            activeStream = undefined
+            persist()
           }
         }
         if (settled.stopReason === 'completed') {
@@ -1044,7 +1180,8 @@ export class KimiAcpLiveDriver {
     // closes — the location index registers steps from their boundary pair
     // whenever it lands, so a post-turn/end fold still materializes. Token
     // granularity already reconciled inside the turn window above (its
-    // combined final had to precede turn/end). Then re-arm the reaper.
+    // completion folds and final stream snapshots had to precede turn/end).
+    // Then re-arm the reaper.
     void result.then(async () => {
       try {
         if (turnOpened && granularity !== 'token') {
