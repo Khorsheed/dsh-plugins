@@ -23,7 +23,7 @@
  * Options:
  *   --version X     override the tarball version (default: package.json)
  *   --initiator ID  restart attribution (default: $USER)
- *   --no-restart    stop after the profile refresh
+ *   --no-restart    install/refresh + diagnostic preflight; do not restart
  * @module scripts/deploy-3080
  */
 
@@ -31,6 +31,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { checkDeploymentLinks } from './dependency-links.mts'
 
 const HOME = homedir()
 const DSH_HOME = process.env.DSH_HOME ?? join(HOME, '.dsh-official')
@@ -42,7 +43,7 @@ const PORT = '3080'
 
 function usage(message) {
   process.stderr.write(`deploy-3080: ${message}\n`)
-  process.exit(2)
+  throw new Error(`invalid deployment request: ${message}`)
 }
 
 const args = process.argv.slice(2)
@@ -70,6 +71,9 @@ function runGuard(verbArgs) {
   run(GUARD[0], [...GUARD[1], ...verbArgs], { env: { ...process.env, DSH_HOME } })
 }
 
+// Diagnose existing damage before build work or any deployment writes.
+checkDeploymentLinks(DSH_HOME, HARNESS)
+
 // Multi-agent deploy lock: two concurrent deploys would race the profile and
 // the restart. A live pidfile holder wins; stale locks are reclaimed.
 const lockPath = join(DSH_HOME, 'state', 'deploy-3080.pid')
@@ -77,10 +81,12 @@ mkdirSync(join(DSH_HOME, 'state'), { recursive: true })
 if (existsSync(lockPath)) {
   const holder = Number(readFileSync(lockPath, 'utf8'))
   if (Number.isInteger(holder) && holder > 0) {
-    try {
-      process.kill(holder, 0)
-      usage(`another deploy is running (pid ${holder}) — wait for it or remove ${lockPath} if stale`)
-    } catch { /* stale — reclaim */ }
+    let alive = true
+    try { process.kill(holder, 0) } catch (error) {
+      if (error.code === 'ESRCH') alive = false
+      else throw error
+    }
+    if (alive) usage(`another deploy is running (pid ${holder}) — wait for it or remove ${lockPath} if stale`)
   }
 }
 writeFileSync(lockPath, String(process.pid))
@@ -93,6 +99,18 @@ try {
     const pkg = JSON.parse(readFileSync(manifestPath, 'utf8'))
     return { dir, pkg, name: pkg.name, version: versionOverride ?? pkg.version }
   })
+
+  const manifestPath = join(PROFILE, 'package.json')
+  const initial = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const needsRegistration = metas.filter(m => {
+    if (!m.pkg.dsh?.bundle?.patch) {
+      if (!initial.dependencies?.[m.name]) usage(`${m.name} has no self-mounting bundle; install internal companions through their owning plugin`)
+      return false
+    }
+    return !initial.dependencies?.[m.name] || !initial.dsh?.profile?.bundles?.includes(m.name)
+  })
+  const hostCli = join(HARNESS, 'apps', 'cli', 'lib', 'bin.js')
+  if (needsRegistration.length && !existsSync(hostCli)) usage(`first installation needs the built official CLI: ${hostCli}`)
 
   // 1. build + test (typert generation scoped to these packages so a broken
   // neighbor cannot fail this deploy).
@@ -130,25 +148,15 @@ try {
     const canonical = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}.tgz`
     m.tgzName = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}+${buildStamp}.tgz`
     copyFileSync(join(outDir, canonical), join(TARBALLS, m.tgzName))
-    // Prune older timestamped copies of the same package — they exist only to
-    // bust the install cache of the moment they were deployed. The name prefix
-    // must end at a VERSION digit: `khorsheed-dsh-local-agent-` is a prefix of
-    // `khorsheed-dsh-local-agent-codex-…`, and a bare startsWith pruned the
-    // family's tarballs alive in the profile (ENOENT at profile install).
-    const base = m.name.replace('@khorsheed/', 'khorsheed-')
-    const prunePattern = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d.*\\+.*\\.tgz$`)
-    for (const f of readdirSync(TARBALLS)) {
-      if (f !== m.tgzName && prunePattern.test(f)) rmSync(join(TARBALLS, f), { force: true })
-    }
     m.tgzPath = join(TARBALLS, m.tgzName)
   }
 
   // 3. profile manifest + family overrides + clean install.
-  const manifestPath = join(PROFILE, 'package.json')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   for (const m of metas) {
-    if (manifest.dependencies?.[m.name] === undefined) usage(`${m.name} is not a profile dependency — add it deliberately, not via deploy-3080`)
-    manifest.dependencies[m.name] = `file:${m.tgzPath}`
+    // Existing dependencies move together before official add resolves the family.
+    // New names and bundle registration remain owned by the official CLI.
+    if (manifest.dependencies?.[m.name] !== undefined) manifest.dependencies[m.name] = `file:${m.tgzPath}`
   }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
   const wsPath = join(PROFILE, 'pnpm-workspace.yaml')
@@ -170,9 +178,28 @@ try {
     }
   }
   writeFileSync(wsPath, ws)
+  if (needsRegistration.length) {
+    process.stdout.write(`\n=== official first-install / bundle registration: ${needsRegistration.map(m => m.name).join(', ')} ===\n`)
+    run('node', [hostCli, 'plugin', 'add', ...needsRegistration.map(m => m.tgzPath), '--profile', 'web'], {
+      env: { ...process.env, DSH_HOME, DSH_HARNESS: HARNESS },
+    })
+  }
   rmSync(join(PROFILE, 'node_modules'), { recursive: true, force: true })
   rmSync(join(PROFILE, 'pnpm-lock.yaml'), { force: true })
   run('pnpm', ['install'], { cwd: PROFILE })
+
+  const installed = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  for (const m of metas) {
+    if (!installed.dependencies?.[m.name]) throw new Error(`${m.name}: official install did not register the dependency`)
+    const packageDir = join(PROFILE, 'node_modules', m.name)
+    const actual = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
+    if (actual.name !== m.name || actual.version !== m.version) throw new Error(`${m.name}: installed artifact identity/version mismatch`)
+    if (m.pkg.dsh?.bundle?.patch && (!installed.dsh?.profile?.bundles?.includes(m.name) || !actual.dsh?.bundle?.patch || !existsSync(join(packageDir, actual.dsh.bundle.patch)))) {
+      throw new Error(`${m.name}: installed bundle/patch missing; refusing credential and restart`)
+    }
+  }
+  // Recheck links introduced by install, before recording proof or requesting a restart.
+  checkDeploymentLinks(DSH_HOME, HARNESS)
 
   // 4. credential for the harness checkout HEAD.
   // This orchestrator has already observed every package build/test above;
@@ -198,7 +225,8 @@ try {
       const appended = existsSync(logPath) ? readFileSync(logPath, 'utf8').slice(logOffset) : ''
       if (appended.includes('canary PASS')) {
         try {
-          execFileSync('curl', ['-s', '--noproxy', '*', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '3', `http://127.0.0.1:${PORT}/`], { stdio: 'pipe' })
+          const status = execFileSync('curl', ['-s', '--noproxy', '*', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '3', `http://127.0.0.1:${PORT}/`], { stdio: 'pipe', encoding: 'utf8' }).trim()
+          if (status !== '200' && status !== '401') continue
           ok = true
           break
         } catch { /* not yet */ }
@@ -206,13 +234,30 @@ try {
     }
     if (!ok) {
       process.stderr.write('\ndeploy-3080: instance did not come back clean within 180s — check the watchdog log before touching anything else\n')
-      process.exit(1)
+      throw new Error('restart/canary verification failed')
+    }
+  }
+
+  // Preserve previous artifacts until the entire requested deployment succeeds.
+  for (const m of metas) {
+    // Prune older timestamped copies of the same package — they exist only to
+    // bust the install cache of the moment they were deployed. The name prefix
+    // must end at a VERSION digit: `khorsheed-dsh-local-agent-` is a prefix of
+    // `khorsheed-dsh-local-agent-codex-…`, and a bare startsWith pruned the
+    // family's tarballs alive in the profile (ENOENT at profile install).
+    const base = m.name.replace('@khorsheed/', 'khorsheed-')
+    const prunePattern = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d.*\\+.*\\.tgz$`)
+    for (const f of readdirSync(TARBALLS)) {
+      if (f !== m.tgzName && prunePattern.test(f)) rmSync(join(TARBALLS, f), { force: true })
     }
   }
 
   const names = metas.map(m => `${m.name}@${m.version}`).join(', ')
   process.stdout.write(`\ndeploy-3080 OK (${Math.round((Date.now() - startedAt) / 1000)}s)\n`)
-  process.stdout.write(`\n--- 通报(粘贴给群里)---\n[deploy-3080] ${names} 已上线:构建/测试/preflight 全绿,按闸重启 canary PASS。操作者:${initiator}\n`)
+  const outcome = noRestart
+    ? '已安装/更新并通过构建、测试及诊断 preflight；未重启，运行实例尚未验证加载本次构建，未验证 canary。'
+    : '已上线：构建/测试/preflight 全绿，按闸重启 canary PASS。'
+  process.stdout.write(`\n--- 通报(粘贴给群里)---\n[deploy-3080] ${names} ${outcome}操作者:${initiator}\n`)
 } finally {
   rmSync(lockPath, { force: true })
 }

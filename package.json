@@ -22,6 +22,7 @@
     "gate": "tsx scripts/gate.mts",
     "hooks:install": "node scripts/setup-hooks.mjs",
     "deploy:3080": "tsx scripts/deploy-3080.mts",
+    "deploy:check-links": "tsx scripts/check-deployment-links.mts",
     "compat:report": "tsx scripts/compat-report.ts",
     "verify:package": "tsx scripts/verify-package.mts",
     "release:status": "tsx scripts/release-status.ts"

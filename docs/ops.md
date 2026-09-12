@@ -49,9 +49,20 @@
 pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个包>] [--initiator <你的id>]
 ```
 
-`scripts/deploy-3080.mts` 按顺序执行全部六道闸,任何一步不过即中止、不重启:① build+test(typert 生成用 `GEN_TYPERT_ONLY` 限定到本包,邻居的在制品红色状态不会拖死你)② pack-dist 出包并复制到 profile 的 tarball 目录(上一份 known-good 留在 `dist-legacy/`,回滚 = 换 tgz + 重跑本命令)③ 刷新 profile 清单与家族 overrides 并全新安装 ④ 录制绿色凭证 ⑤ preflight(**FAIL 即停,永不绕过**)⑥ `schedule-exit` 按闸重启 + 监听 canary PASS。收尾会打印一段粘贴即用的通报文本。`--no-restart` 只打包+刷新不重启。
+`scripts/deploy-3080.mts` 按顺序执行全部六道闸,任何一步不过即中止、不重启:① build+test(typert 生成用 `GEN_TYPERT_ONLY` 限定到本包,邻居的在制品红色状态不会拖死你)② pack-dist 出包并复制到 profile 的 tarball 目录(上一份 known-good 留在 `dist-legacy/`,回滚 = 换 tgz + 重跑本命令)③ 刷新 profile 清单与家族 overrides 并全新安装 ④ 录制绿色凭证 ⑤ preflight(**FAIL 即停,永不绕过**)⑥ `schedule-exit` 按闸重启 + 监听 canary PASS。收尾会打印一段粘贴即用的通报文本。`--no-restart` 完成安装/更新和诊断 preflight，但不请求重启；通报明确写“未重启、运行实例尚未验证加载本次构建、未验证 canary”，不能当作上线验收。失败路径不打印成功通报，旧 tarball 保留到整条请求流程成功后才清理。
 
-**deploy:3080 是"再部署"工具,不是首次安装工具。** 它只刷新 `dsh.profile.bundles` 里已在册插件的 tarball;一个从未装过的新包,deploy 会把依赖写进 deps/overrides、preflight 和 canary 也都会绿,但因为不在 bundles 清单里,组合时根本不会加载(症状:client.js 404、插件静默缺席)。**新包首次上线必须先 `dsh plugin add <tarball> --profile web`**(自挂载入口,理清 deps+bundles),**然后再跑一次 deploy:3080** 让凭证/preflight/canary 闭环。(2026-08-29 capability-catalog 首装踩过:deploy 全绿但插件未加载。)
+**首次安装与更新统一走 `deploy:3080`。** 对明确用 `--package` 指定、声明了 `dsh.bundle.patch` 的插件，脚本检查 dependency 与 `dsh.profile.bundles`：任一缺失，就调用当前 `DSH_HARNESS` 的已构建官方 CLI 执行 `plugin add <tarball> --profile web`，由宿主登记 bundle；已完整登记的插件直接更新。安装后验证实际包名、版本、bundle 登记和 patch 文件，再进入凭证/守护预检。首次安装需要宿主 `apps/cli/lib/bin.js` 已构建；无 bundle 的新内部 companion 不会被自动挂载，应通过其所属插件安装。
+
+**部署依赖诊断**：脚本在构建/部署写入前，以及安装后录制凭证前，各检查一次失效链接。也可以单独运行只读诊断：
+
+```sh
+pnpm deploy:check-links
+# 非默认环境：DSH_HOME=<实例目录> DSH_HARNESS=<宿主检出> pnpm deploy:check-links
+```
+
+诊断遍历实际 home 与 harness 目录，排除 `.git` 和 home 顶层 `scratch/`；检查符号链接目标是否可解析，但不递归追踪目录别名。报告完整路径、原链接目标与系统错误码；缺失目录、权限错误或无法解析的链接均返回非零。不会删除链接或修改配置，也不替代 ankh-guard 对外部依赖图、隔离快照及组合的完整验证。
+
+发现失效链接后，先确认所属包与目标：有效依赖缺失应重建或重装；只有确认属于废弃生成文件，且已备份链接路径和目标后，才考虑清理。不要删除会话、认证文件或为了过检移除有效依赖。修复后重新运行诊断及部署流程。
 
 手动分步只在脚本本身出问题时兜底(即脚本注释里的六步)。profile 的 `cordis.patch.yml` 只允许经审查的显式编辑。脚本踩过的坑(已内建处理,手排时有用):
    - profile 引用的 tarball 放在 **workspace 之外**(`~/.dsh-official/tarballs/`)——放在本仓库里的 tarball 会被 pnpm 按"名+版本匹配 workspace 包"转成 `link:` 软链,tarball 化形同虚设
