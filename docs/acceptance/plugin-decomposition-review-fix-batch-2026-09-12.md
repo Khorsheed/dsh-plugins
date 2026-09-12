@@ -57,14 +57,26 @@ build ✓、test ✓、pack bundles(**25 包 packed and verified**)✓。
 
 时长:test 171s、pack 25s、脚本 spec 18s、build 12s(热 lib)、doc gates 9s、hygiene 1s。
 
-**本文件是 gate B 之后的纯文档追加**,认证范围是提交 `f15f1a3b`。
+**本文件与其后的一处文档修正都在 gate B 之后**;gate B 的认证范围是提交 `f15f1a3b`。
 
 ## 复审回执
 
 - `scratch-ds-design-review/05-review-A-round2.md`:WP1/WP2/WP4a/WP6/WP10 行为成立;唯一阻塞项(provider patch 负约束无测试)已在 `bcb1dc5` 修复。
 - `scratch-ds-design-review/05-review-C-round2.md`:WP3/WP4a/WP4b 成立;两个阻塞项(`check-plugin-independence` 漏配、
   WP8 最小交付集)已分别在 `678ba77` 与三个 WP8 提交修复。
-- 最终的"修复是否成立"回执由 A / C 在 WP12 给出(见 `STATUS.md`)。
+- **第三轮(修复验证)**
+  - `06-review-A-round3.md`:**阻塞项 A 解除**。审查者自己构造了一次真实违规(给 provider patch 注入 core 行),
+    专项 spec 与通用 `patch row ownership` checker 均退出 1,证明断言有牙齿;合法 `-tool` 行与官方包行不被误伤;
+    验证后工作树恢复干净。
+  - `06-review-C-round3.md`:**阻塞项 1 解除**(实测删掉 `datasets` 的 `dsh.references` → 检查器退出码 1,
+    且规则从源码与 manifest 推导、不依赖任何 core/companion 名单);**阻塞项 2 只差一处文档修正并被采纳**:
+    README 与包地图此前把 `*-tool` 写成"由各自 core 作为直接依赖安装",而事实是
+    **`-tool` 是安装它的 profile 的直接依赖(与 core 并列),并由它自己声明 core 边(companion → core)**。
+    两份 README 与该句所在的生成模板已改正,`docs/packages.md` 已重新生成。
+  - 非阻塞建议状态:C 的第 3 条(`satisfiesCaret` 数字 prerelease)与本批第 4 条(`pack-all-dist` 硬编码包数)已修;
+    第 1 条(staging 按 `files` allowlist 裁剪)维持不改并记录了理由;第 2 条(`/tmp` 下的历史 tgz)
+    经确认不是仓库工作项。
+
 
 ## 未覆盖 / 遗留
 

@@ -54,7 +54,7 @@
 
 profile 的安装、更新与启动方法见各目录 README。单包安装是高级用户按需裁剪或调试的路径:25 个自挂载包可用 `dsh plugin add` 安装并自动挂载自身 loader 行,**无需手改 cordis.yml**。装完重启对应 web 实例生效。
 
-7 个无 patch 包各有明确的组合归属。五个 `*-tool` 包(`worktrees-tool`、`room-tool`、`mission-tool`、`datasets-tool`、`eval-tool`)由各自 core 作为**直接依赖**安装,再由对应 agent preset 的 `agent.cordis.yml` 按名引用一行;它们不是 profile 根的 bundle,也不应自挂载。`local-agent-tool-subagent` 是 local-agent 家族内部、由 provider patch 引用的共享工具行;`local-agent-dsh-headless` 则是由 local-agent-dsh 预先 provision 的 headless 子 profile。完整关系见[权威包地图](docs/packages.md)。
+7 个无 patch 包各有明确的组合归属。五个 `*-tool` 包(`worktrees-tool`、`room-tool`、`mission-tool`、`datasets-tool`、`eval-tool`)由**安装它们的 profile 作为直接依赖**引入(与各自 core 并列),它们自己对 core 声明依赖(companion → core,只保证模块可解析),再由对应 agent preset 的 `agent.cordis.yml` 按名引用一行;它们不出现在 `dsh.profile.bundles` 里,也不应自挂载。`local-agent-tool-subagent` 是 local-agent 家族内部、由 provider patch 引用的共享工具行;`local-agent-dsh-headless` 则是由 local-agent-dsh 预先 provision 的 headless 子 profile。完整关系见[权威包地图](docs/packages.md)。
 
 高级路径示例:
 
