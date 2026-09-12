@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertDeclaredPayloadsExist, assertNoStaleTypes, familyMemberMap, familySpecsFor, filesDeclaredExtras, formatFamilySpecs, loadWorkspaceVersions, packDist, parseFamilySpecs, rescopePackageJson, rewriteNames, verifyTarball } from './pack-dist.ts'
+import { assertDeclaredPayloadsExist, assertNoStaleTypes, familyMemberMap, familySpecsFor, filesDeclaredExtras, formatFamilySpecs, loadWorkspaceVersions, packDist, parseFamilySpecs, prunePublishArtifacts, rescopePackageJson, rewriteNames, verifyTarball } from './pack-dist.ts'
 
 /**
  * Caret-range satisfaction, implementing npm's documented rule including the
@@ -435,6 +435,52 @@ describe('verifyTarball', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('fails on a tarball carrying sourcemaps or tsbuildinfo', () => {
+    // packDist prunes staging; this is the artifact-level backstop for a glob
+    // or a late build writing them back in.
+    const dir = stage({ 'package.json': '{}', 'lib/index.js': '' })
+    try {
+      writeFileSync(join(dir, 'lib/index.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x'))
+        .toThrow(/non-publishable build artifacts.*index\.js\.map/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('prunePublishArtifacts', () => {
+  it('removes maps and tsbuildinfo recursively, leaving real payload intact', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-prune-'))
+    try {
+      mkdirSync(join(dir, 'lib/types/client'), { recursive: true })
+      writeFileSync(join(dir, 'lib/index.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/index.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/client.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/client.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
+      writeFileSync(join(dir, 'lib/types/index.d.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/types/index.d.ts.map'), '{}')
+      // A file whose name merely ends in "map" but is real payload survives.
+      writeFileSync(join(dir, 'lib/bitmap.js'), 'export {}\n')
+      expect(prunePublishArtifacts(dir)).toEqual([
+        'lib/client.js.map',
+        'lib/index.js.map',
+        'lib/tsconfig.tsbuildinfo',
+        'lib/types/index.d.ts.map',
+      ])
+      expect(walkDir(dir).sort()).toEqual([
+        'lib/bitmap.js',
+        'lib/client.js',
+        'lib/index.js',
+        'lib/types/index.d.ts',
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('packDist end-to-end (independent of the self-checks)', () => {
@@ -461,6 +507,56 @@ describe('packDist end-to-end (independent of the self-checks)', () => {
       const tarball = packDist({ packageDir: dir, scope: '@khorsheed', version: '0.1.0-rc.1', outDir: dir })
       const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
       expect(listing).toContain('package/skills/demo/SKILL.md')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('a real pack drops maps/tsbuildinfo but keeps hashed chunks, css and declarations', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-payload-'))
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true })
+      mkdirSync(join(dir, 'lib/types'), { recursive: true })
+      writeFileSync(join(dir, 'src/index.ts'), 'export {}\n')
+      // Real payload: an entry, a hashed tsdown chunk, css, declarations, and
+      // the typert face artifacts the generator contract requires.
+      writeFileSync(join(dir, 'lib/index.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/client.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/chunk-ABC123.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/index.css'), '.a{}\n')
+      writeFileSync(join(dir, 'lib/types/index.d.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/typert.host.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/typert.remote-client.js'), 'export {}\n')
+      // Build state that must not ship.
+      writeFileSync(join(dir, 'lib/client.js.map'), '{}')
+      writeFileSync(join(dir, 'lib/types/index.d.ts.map'), '{}')
+      writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({
+        name: '@khorsheed/dsh-e2e-payload',
+        version: '0.1.0',
+        files: [
+          'lib',
+          'lib/typert.host.d.ts',
+          'lib/typert.host.js',
+          'lib/typert.remote-client.d.ts',
+          'lib/typert.remote-client.js',
+        ],
+      }))
+      const tarball = packDist({ packageDir: dir, scope: '@khorsheed', version: '0.1.0', outDir: dir })
+      const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
+      for (const shipped of [
+        'package/lib/index.js',
+        'package/lib/client.js',
+        'package/lib/chunk-ABC123.js',
+        'package/lib/index.css',
+        'package/lib/types/index.d.ts',
+        'package/lib/typert.host.js',
+        'package/lib/typert.remote-client.js',
+      ]) {
+        expect(listing).toContain(shipped)
+      }
+      expect(listing).not.toMatch(/\.map$/m)
+      expect(listing).not.toContain('.tsbuildinfo')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

@@ -363,6 +363,29 @@ function walk(dir: string): string[] {
 }
 
 /**
+ * Strip build artifacts that are never publishable payload — sourcemaps and
+ * TypeScript incremental state — from a staging tree, recursively.
+ *
+ * Both are emitted next to the code they describe, so a `files: ["lib"]`
+ * enumeration ships them by default. They are large, useless to consumers, and
+ * the repo's hygiene rule already treats `*.tsbuildinfo` as non-committable
+ * state. Pruning here fixes every package at once, and does it at the artifact
+ * boundary instead of asking ~25 manifests to enumerate their own payload.
+ * @param dir - the staging directory to prune in place.
+ * @returns the pruned paths, staging-relative, for logging and assertions.
+ */
+export function prunePublishArtifacts(dir: string): string[] {
+  const pruned: string[] = []
+  for (const file of walk(dir)) {
+    if (file.endsWith('.map') || file.endsWith('.tsbuildinfo')) {
+      rmSync(file, { force: true })
+      pruned.push(relative(dir, file))
+    }
+  }
+  return pruned.sort()
+}
+
+/**
  * Fail loud on stale build artifacts: every `lib/types/**.js` must trace to a
  * current `src/**` module (a deleted source whose emit lingers would ship in
  * the tarball otherwise — the edit-resend.js incident).
@@ -418,6 +441,10 @@ export function packDist(options: PackDistOptions): string {
       mkdirSync(dirname(dest), { recursive: true })
       cpSync(source, dest, { recursive: true })
     }
+    // Non-publishable build state leaves staging before anything is packed:
+    // sourcemaps and tsbuildinfo are emitted beside every package's output and
+    // would otherwise ride a `files: ["lib"]` enumeration into the tarball.
+    prunePublishArtifacts(staging)
     const manifest = rescopePackageJson(pkg, distName, options.version, family)
     // pnpm pack filters staging to `files` plus its always-include set
     // (README*, LICENSE, package.json); CHANGELOG.md is not in that set, so
@@ -471,11 +498,14 @@ export function packDist(options: PackDistOptions): string {
  * Post-pack verification. The tarball — not the staging dir — is what consumers
  * boot, so the artifact itself is checked:
  *
- *   1. completeness — every staged file must be in the tarball (files-field
+ *   1. payload hygiene — no sourcemap or tsbuildinfo may reach the tarball
+ *      (prunePublishArtifacts strips them from staging; this re-checks the
+ *      artifact, so a files-field glob or a late build cannot smuggle them in)
+ *   2. completeness — every staged file must be in the tarball (files-field
  *      enumerations, glob gaps, and hashed-chunk misses all surface here;
  *      learned when `skills/**` globs were silently dropped and when a hashed
  *      tsdown chunk no files entry covered)
- *   2. family edges — every `@khorsheed/*` name referenced by lib artifacts or
+ *   3. family edges — every `@khorsheed/*` name referenced by lib artifacts or
  *      the bundle patch must have a dependencies/peerDependencies entry in the
  *      staged manifest (the family's runtime/module-resolution contract — not
  *      an activation contract: only a profile's direct dependencies mount), or
@@ -488,10 +518,19 @@ export function packDist(options: PackDistOptions): string {
 export function verifyTarball(tarball: string, staging: string, selfName: string): void {
   const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
   const packed = new Set(listing.split('\n').map(line => line.replace(/^package\//, '').trim()).filter(Boolean))
-  // Sourcemaps and incremental state are optional artifacts — not shipping
-  // them is correct, so they are outside the must-ship set.
-  const optional = (file: string): boolean => file.endsWith('.map') || file.endsWith('.tsbuildinfo')
-  const missing = walk(staging).filter(file => !optional(file) && !packed.has(relative(staging, file)))
+  // 1. payload hygiene — sourcemaps and incremental build state are never
+  // publishable, so their presence means something re-added them after the
+  // prune (a files-field glob or a build that writes into staging).
+  const forbidden = [...packed].filter(file => file.endsWith('.map') || file.endsWith('.tsbuildinfo'))
+  if (forbidden.length > 0) {
+    throw new Error(`pack-dist: tarball carries non-publishable build artifacts: ${forbidden.join(', ')}`)
+  }
+  // 2. completeness — every staged file must be in the tarball (files-field
+  // enumerations, glob gaps, and hashed-chunk misses all surface here; learned
+  // when `skills/**` globs were silently dropped and when a hashed tsdown chunk
+  // no files entry covered). Staging was already pruned, so this compares like
+  // for like: anything left in staging is intended payload.
+  const missing = walk(staging).filter(file => !packed.has(relative(staging, file)))
   if (missing.length > 0) {
     throw new Error(`pack-dist: staged files missing from the tarball: ${missing.join(', ')}`)
   }
