@@ -7,5 +7,11 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['scripts/*.spec.ts'],
+    // These are integration specs, not unit tests: deploy-3080.spec.ts
+    // spawnSyncs the real orchestrator with an inner 15s process timeout, and
+    // the tree-scanning checkers walk the installed .pnpm store. The 5s
+    // default made both flap red on any loaded machine while passing
+    // standalone; 30s covers the inner spawn timeout with headroom.
+    testTimeout: 30_000,
   },
 })
