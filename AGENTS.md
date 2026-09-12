@@ -18,6 +18,7 @@ Several agents work this repo at once. The rules below exist because of real inc
 ## Build contract
 
 - Host face before client face, always: `gen-typert` (packages with `./typert`/`./remote` exports) → `tsc` → `tsdown`. The client face's tsc consumes generated remote types.
+- Full-build gen-typert runs are freshness-cached (`$DSH_HOME/scratch/typert-cache.json`) — one full run regenerates ALL typert packages, so the other nine invocations in a repo build hit the stamp. A hit requires byte-identical inputs (the script, every typert package's src/manifest/host configs, the harness checkout's git HEAD+status) plus hash-verified outputs on disk, so a stale hit is impossible by construction. `GEN_TYPERT_FORCE=1` regenerates; scoped `GEN_TYPERT_ONLY` runs (deploys) never read or write the cache.
 - Browser bundles go through the shared helper `build/tsdown.client.ts` (`clientBundle`). Never hand-roll a `client.js` or copy the helper into a package.
 - Tests run through `pnpm run test` / `pnpm --filter <pkg> test` only. Bare `vitest run` bypasses the source-plane alias preset (`build/vitest.ts`) and fails with misleading errors.
 - `DSH_HARNESS` (default `~/code/deepseek-harness`) seeds dev-time type/test resolution and typert generation. CI: clone the harness first, set the variable, and keep it current — a stale checkout tests yesterday's API surface.

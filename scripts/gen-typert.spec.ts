@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { copyTypertPackageSources, copyTypertSiblingTypes, selectTypertPackages, typertSiblingTypePaths, TYPERT_PACKAGES } from './gen-typert.mts'
+import { copyTypertPackageSources, copyTypertSiblingTypes, harnessGitState, isTypertCacheFresh, selectTypertPackages, typertFileHash, typertInputHash, typertSiblingTypePaths, TYPERT_PACKAGES, writeTypertCache } from './gen-typert.mts'
 
 const temporaryRoots: string[] = []
 
@@ -79,5 +79,57 @@ describe('unselected sibling type resolution', () => {
     copyTypertSiblingTypes(selectTypertPackages('@khorsheed/dsh-room'), source, overlay2)
     expect(existsSync(join(overlay2, 'packages', 'local-agent', 'lib', 'types', 'index.d.ts'))).toBe(true)
     expect(existsSync(join(overlay2, 'packages', 'local-agent', 'src'))).toBe(false)
+  })
+})
+
+describe('typert freshness cache', () => {
+  /** A fake repo root with one minimal typert package and a script file. */
+  function fakeRepo(): { root: string, script: string } {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-typert-cache-'))
+    temporaryRoots.push(root)
+    const pkg = TYPERT_PACKAGES.find(pkg => pkg.dir === 'packages/mission')!
+    mkdirSync(join(root, pkg.dir, 'src'), { recursive: true })
+    writeFileSync(join(root, pkg.dir, 'src', 'index.ts'), 'export const v = 1\n')
+    writeFileSync(join(root, pkg.dir, 'package.json'), JSON.stringify({ name: pkg.name }))
+    for (const config of pkg.hostConfigs) writeFileSync(join(root, pkg.dir, config), '{}\n')
+    const script = join(root, 'gen-typert.mts')
+    writeFileSync(script, '// generator\n')
+    return { root, script }
+  }
+  const mission = TYPERT_PACKAGES.find(pkg => pkg.dir === 'packages/mission')!
+
+  it('hashes every generator input: src edits move the key, unrelated files do not matter', () => {
+    const { root, script } = fakeRepo()
+    const before = typertInputHash(root, [mission], script)
+    expect(typertInputHash(root, [mission], script)).toBe(before)
+    writeFileSync(join(root, mission.dir, 'src', 'index.ts'), 'export const v = 2\n')
+    expect(typertInputHash(root, [mission], script)).not.toBe(before)
+  })
+
+  it('accepts a stamp whose key and recorded outputs are intact, rejects any drift', () => {
+    const { root } = fakeRepo()
+    const cachePath = join(root, 'scratch', 'typert-cache.json')
+    const outRel = join(mission.dir, 'lib', 'typert.host.d.ts')
+    mkdirSync(join(root, mission.dir, 'lib'), { recursive: true })
+    writeFileSync(join(root, outRel), 'declare const face: 1\n')
+    writeTypertCache(cachePath, 'key-1', { [outRel]: typertFileHash(join(root, outRel)) })
+
+    expect(isTypertCacheFresh(cachePath, 'key-1', root)).toBe(true)
+    expect(isTypertCacheFresh(cachePath, 'key-2', root)).toBe(false)
+    // An output rewritten behind the stamp's back is a miss, not a silent pass.
+    writeFileSync(join(root, outRel), 'declare const face: 2\n')
+    expect(isTypertCacheFresh(cachePath, 'key-1', root)).toBe(false)
+    // A deleted output (a cold lib) is a miss.
+    writeTypertCache(cachePath, 'key-1', { [outRel]: typertFileHash(join(root, outRel)) })
+    rmSync(join(root, outRel))
+    expect(isTypertCacheFresh(cachePath, 'key-1', root)).toBe(false)
+    // No stamp at all is a miss.
+    expect(isTypertCacheFresh(join(root, 'scratch', 'absent.json'), 'key-1', root)).toBe(false)
+  })
+
+  it('treats a non-git harness checkout as uncacheable rather than crashing', () => {
+    const notGit = mkdtempSync(join(tmpdir(), 'dsh-typert-harness-'))
+    temporaryRoots.push(notGit)
+    expect(harnessGitState(notGit)).toBeNull()
   })
 })
