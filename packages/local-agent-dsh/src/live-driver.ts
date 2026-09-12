@@ -32,7 +32,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
 import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_PROTOCOL_VERSION,
@@ -49,7 +49,7 @@ import {
   resolveApiKey,
 } from './dsh-cli-provider.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
-import { mirrorDshLiveEvent, mirrorDshSession, persistIfStandalone, type DshLiveMirrorGranularity } from './session-mirror.ts'
+import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -581,7 +581,7 @@ export class DshLiveDriver {
     const bufferedEvents: SessionEvent[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistIfStandalone(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
     }
 
     const requestCancel = (): void => {

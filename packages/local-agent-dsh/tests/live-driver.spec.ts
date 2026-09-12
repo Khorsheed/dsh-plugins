@@ -247,9 +247,11 @@ function mount(options: {
   timeouts?: ConstructorParameters<typeof DshLiveDriver>[2]
   intent?: unknown
   /**
-   * Emulate the production wiring: every session reads as live (write-behind
-   * owns durability) and the redundant full-list persistence append throws
-   * like the real coordinator's contiguous-seq contract.
+   * Emulate the production wiring: every session reads as live, so the mirror
+   * persists through the core's syncChildSession (never the one-shot handle
+   * flow), and the strict persistence double rejects any append that does
+   * fire — the redundant full-list append that violates the real
+   * coordinator's contiguous-seq contract.
    */
   strictPersistence?: boolean
 } = {}): Mount {
@@ -268,6 +270,9 @@ function mount(options: {
     get: () => undefined,
     acquireResumeLock: () => true,
     releaseResumeLock: () => {},
+    // The core's live-session durability entry: the mirror delegates to it
+    // instead of touching sessionPersistence itself.
+    syncChildSession: () => Promise.resolve(),
     reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
       reports.push({ id, progress })
     },
@@ -283,14 +288,16 @@ function mount(options: {
   ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
   ctx.provide('sessions', {
     create: (id: string) => Session.create(SessionId(id)),
-    // strictPersistence: any session reads as live (write-behind owns its
-    // durability), like the production wiring.
+    // strictPersistence: any session reads as live, like the production
+    // wiring — the mirror must persist through the core sync, never the
+    // one-shot handle flow below.
     get: options.strictPersistence === true ? () => ({}) : () => undefined,
   })
   if (options.strictPersistence === true) {
-    // The production coordinator's contiguous-seq contract: the mirror's
-    // redundant full-list append always fails. The mirror must never call it
-    // for a live session — and must not die when it does fire.
+    // The production coordinator's contiguous-seq contract: a redundant
+    // full-list append always fails. With the child live, the mirror must
+    // reach persistence ONLY through the core's syncChildSession — the
+    // one-shot fallback firing here would throw on the missing stat/open.
     ctx.provide('sessionPersistence', {
       append: () => Promise.reject(new Error('append seq mismatch (strict test double)')),
       create: async () => {},
@@ -784,16 +791,16 @@ describe('follow-up hardening (S1–S6)', () => {
   })
 })
 
-describe('dsh live driver persistence (write-behind owns durability)', () => {
-  it('a live-backed child folds each event once even when the coordinator rejects the redundant persistence append', async () => {
+describe('dsh live driver persistence (live sessions sync through the core)', () => {
+  it('a live-backed child folds each event once, persisting only through the core sync (never the redundant full-list append)', async () => {
     const m = mount({ strictPersistence: true })
     const child = Session.create(SessionId('child-dsh-livepersist'))
     m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '文件建好了') }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
     // The strict double's rejection would have killed the settle pass BEFORE
-    // the mirror report; with the live session's write-behind owning
-    // durability, the redundant full-list append never fires and the
+    // the mirror report; with the live session persisting through the core's
+    // syncChildSession, the redundant full-list append never fires and the
     // authoritative report lands.
     await vi.waitFor(() => {
       expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true)

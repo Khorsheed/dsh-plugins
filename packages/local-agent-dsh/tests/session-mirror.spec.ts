@@ -548,7 +548,7 @@ describe('mirrorDshLiveEvent', () => {
 })
 
 describe('mirrorDshSession persistence', () => {
-  it('persists only a standalone child session (a live session’s write-behind owns durability)', async () => {
+  it('persists a standalone child through a one-shot handle and a live one through the core sync', async () => {
     const home = tempHome()
     writeSubDshSession(home, 'child-persist', [
       { type: 'session', version: 0, id: 'x' },
@@ -569,13 +569,20 @@ describe('mirrorDshSession persistence', () => {
     // The mirror's events reached durable storage through the write handle.
     expect(persistence.stored.get('child-persist')).toHaveLength(standalone.snapshotEvents().length)
 
-    // A session live in the sessions service must NOT get the redundant
-    // persist: its own write handle routing is durable, and re-appending
-    // stored events would violate the contiguous-seq contract.
+    // A session live in the sessions service persists through the core's
+    // syncChildSession (the cached per-child write handle), never through the
+    // one-shot handle flow — so the fake's store stays untouched here and the
+    // sync receives exactly the mirrored session.
     const storedBefore = persistence.stored.get('child-persist')!.length
+    const synced: string[] = []
     const liveCtx = {
       get: (name: string) => {
         if (name === 'sessions') return { get: () => ({}) }
+        if (name === 'localAgent') {
+          return {
+            syncChildSession: async (session: { id: string }) => { synced.push(String(session.id)) },
+          }
+        }
         if (name === 'sessionPersistence') return persistence
         return undefined
       },
@@ -585,6 +592,7 @@ describe('mirrorDshSession persistence', () => {
     const delta = await mirrorDshSession(liveCtx, live, home, 'child-persist')
     expect(delta.texts.length).toBeGreaterThan(0)
     expect(live.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(synced).toEqual(['child-persist'])
     expect(persistence.stored.get('child-persist')).toHaveLength(storedBefore)
   })
 })

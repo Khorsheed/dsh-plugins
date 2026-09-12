@@ -212,9 +212,11 @@ function mount(options: {
   timeouts?: ConstructorParameters<typeof KimiAcpLiveDriver>[2]
   intent?: unknown
   /**
-   * Emulate the production wiring: every session reads as live (write-behind
-   * owns durability) and the redundant full-list persistence append throws
-   * like the real coordinator's contiguous-seq contract.
+   * Emulate the production wiring: every session reads as live, so the mirror
+   * persists through the core's syncChildSession (never the one-shot handle
+   * flow), and the strict persistence double rejects any append that does
+   * fire — the redundant full-list append that violates the real
+   * coordinator's contiguous-seq contract.
    */
   strictPersistence?: boolean
 } = {}): Mount {
@@ -234,6 +236,9 @@ function mount(options: {
     get: () => undefined,
     acquireResumeLock: () => true,
     releaseResumeLock: () => {},
+    // The core's live-session durability entry: the mirror delegates to it
+    // instead of touching sessionPersistence itself.
+    syncChildSession: () => Promise.resolve(),
     kimiMirroredLines: (id: string) => mirrorOffsets.get(id) ?? 0,
     setKimiMirroredLines: (id: string, n: number) => { mirrorOffsets.set(id, n) },
     reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
@@ -273,14 +278,16 @@ function mount(options: {
   })
   ctx.provide('sessions', {
     create: (id: string) => Session.create(SessionId(id)),
-    // strictPersistence: any session reads as live (write-behind owns its
-    // durability), like the production wiring.
+    // strictPersistence: any session reads as live, like the production
+    // wiring — the mirror must persist through the core sync, never the
+    // one-shot handle flow below.
     get: options.strictPersistence === true ? () => ({}) : () => undefined,
   })
   if (options.strictPersistence === true) {
-    // The production coordinator's contiguous-seq contract: the mirror's
-    // redundant full-list append always fails. The mirror must never call it
-    // for a live session — and must not die when it does fire.
+    // The production coordinator's contiguous-seq contract: a redundant
+    // full-list append always fails. With the child live, the mirror must
+    // reach persistence ONLY through the core's syncChildSession — the
+    // one-shot fallback firing here would throw on the missing stat/open.
     ctx.provide('sessionPersistence', {
       append: () => Promise.reject(new Error('append seq mismatch (strict test double)')),
       create: async () => {},
@@ -755,7 +762,7 @@ describe('kimi live driver review fixes', () => {
     await m.driver.disposeAll()
   })
 
-  it('a live-backed child folds each line once even when the coordinator rejects the redundant persistence append', async () => {
+  it('a live-backed child folds each line once, persisting only through the core sync (never the redundant full-list append)', async () => {
     const m = mount({
       strictPersistence: true,
       timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0 },
@@ -790,9 +797,10 @@ describe('kimi live driver review fixes', () => {
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) })
-    // The offset advanced past the strict persistence double's rejection, so
-    // the settle pass did NOT re-fold the user line; the usage record on the
-    // delta boundary still attached to the answer it accounts for.
+    // The offset advanced with persistence flowing only through the core sync
+    // (the strict double never fired), so the settle pass did NOT re-fold the
+    // user line; the usage record on the delta boundary still attached to the
+    // answer it accounts for.
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')[0]?.data).toMatchObject({
       usage: { inputTokens: 10, outputTokens: 4 },

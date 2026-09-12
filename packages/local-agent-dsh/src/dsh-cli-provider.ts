@@ -263,7 +263,11 @@ export class DshCliProvider implements SubagentProvider {
       // the descriptor lands. A failure degrades to the warn below; a missing
       // row never blocks the delegation.
       establishSubagentCatalogChild(request.parent.session, childSession.header, label)
-      void this.ctx.get('sessionPersistence')?.create(childSession.header).catch(() => {})
+      // No persistence create here: the stored session is materialized by the
+      // first persistChildSession sync through the CORE's cached write handle.
+      // A fire-and-forget create from the provider used to hold (and leak) a
+      // second write handle, which blocks the core's claim with
+      // SessionAlreadyOwnedError.
     } catch (error) {
       this.ctx.logger.warn(`subagent-dsh: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }

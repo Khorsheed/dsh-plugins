@@ -64,7 +64,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
@@ -72,7 +72,6 @@ import {
   claudeLineText,
   ClaudeStreamParser,
   DEFAULT_DISPOSE_GRACE_MS,
-  persistIfStandalone,
   registerClaudeMemberRun,
   textTask,
 } from './claude-cli-provider.ts'
@@ -552,10 +551,10 @@ export class ClaudeLiveDriver {
     let settleUsage: TokenUsage | undefined
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      // Standalone sessions only: a live session's own write-behind already
-      // stores every appended event; a full-list append here violates the
-      // store's contiguous-seq contract (the kimi session-mirror root cause).
-      persistQueue = persistQueue.then(() => persistIfStandalone(this.ctx, childSession))
+      // Live sessions sync through the core's cached write handle, standalone
+      // ones through a one-shot handle — the suffix append is idempotent on
+      // both paths (the kimi session-mirror root cause).
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
     }
 
     const requestCancel = (): void => {

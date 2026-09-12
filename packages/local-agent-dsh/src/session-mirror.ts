@@ -44,6 +44,7 @@ import type { Session, SessionEvent, SessionEventMap, SessionSeq } from '@deepse
 // Type-only: the 'todo/write' SessionEventMap merge (the passthrough mirror).
 import type {} from '@deepseek-ai/dsh-tool-todo'
 import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
+import { persistChildSession } from '@khorsheed/dsh-local-agent'
 
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
 const decompressZstd = promisify(zstdDecompress)
@@ -387,8 +388,9 @@ export function mirrorDshLiveEvent(
 
 /**
  * Mirror the current round's events from the sub-dsh session into the child
- * session, then persist (standalone sessions only — a live session's own
- * write-behind owns durability; see {@link persistIfStandalone}). Runs both
+ * session, then persist (a live session syncs through the core's cached write
+ * handle, a standalone one through a one-shot handle; see
+ * {@link persistIfStandalone}). Runs both
  * from the provider's live poll (while the
  * sub-dsh writes its log in batches — a torn final zstd frame is skipped
  * until the next pass) and after the child process exits (the settle pass);
@@ -499,7 +501,7 @@ export async function mirrorDshSession(
       }
     }
     if (appended > 0 || todosAppended > 0) {
-      await persistIfStandalone(ctx, childSession)
+      await persistChildSession(ctx, childSession)
     }
     return {
       texts,
@@ -514,32 +516,13 @@ export async function mirrorDshSession(
 }
 
 /**
- * Persist the session's events ONLY when the session is standalone (tests,
- * ad-hoc mirrors). A live session's own write-behind pipeline already durably
- * stores every appended event; re-appending the full list here violates the
- * store's contiguous-seq contract ('append seq mismatch'), and the throw used
- * to kill the mirror pass BEFORE the offset advanced — every later pass then
- * re-folded the same events (duplicated messages, no usage on the record).
+ * Persist the child session's mirrored events. Thin wrapper over the core's
+ * {@link persistChildSession}: a live session syncs through the core's cached
+ * per-child write handle (host 0.1.5's live write-behind never checkpoints a
+ * mirror session — it has no agent loop — so production child logs stayed
+ * header-only until the explicit sync), a standalone one through a one-shot
+ * handle flow. Kept under the historical name for the live driver.
  */
 export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
-  const sessions = ctx.get('sessions')
-  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
-  const persistence = ctx.get('sessionPersistence')
-  if (persistence === undefined) return
-  // Host 0.1.5 handle-based persistence: claim the write handle (creating the
-  // stored session on first persist), append only the unstored suffix —
-  // re-appending the full snapshot violates the contiguous-seq contract —
-  // then flush and close.
-  const existing = await persistence.stat(childSession.id)
-  const handle = existing === undefined
-    ? await persistence.create(childSession.header)
-    : await persistence.open(childSession.id, 'write')
-  try {
-    const stored = await handle.read(0)
-    const suffix = childSession.snapshotEvents().slice(stored.events.length)
-    if (suffix.length > 0) await handle.append(suffix)
-    await handle.flush()
-  } finally {
-    await handle.close()
-  }
+  await persistChildSession(ctx, childSession)
 }

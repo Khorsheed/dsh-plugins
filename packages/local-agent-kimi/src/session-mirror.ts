@@ -14,6 +14,7 @@ import { createAssistantMessage, createToolResultMessage, createUserMessage } fr
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
+import { persistChildSession } from '@khorsheed/dsh-local-agent'
 import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
@@ -318,7 +319,7 @@ export async function mirrorKimiSessionDelta(
     // No new lines this pass: only the late-result backfill above could have
     // produced events. Persist those and skip the empty delta loop.
     if (texts.length > 0) {
-      await persistIfStandalone(ctx, childSession)
+      await persistChildSession(ctx, childSession)
     }
     return {
       total: newTotal,
@@ -390,7 +391,7 @@ export async function mirrorKimiSessionDelta(
       texts.push(kimiLineProgressText(line))
     }
   }
-  await persistIfStandalone(ctx, childSession)
+  await persistChildSession(ctx, childSession)
   return {
     total: newTotal,
     texts,
@@ -422,38 +423,6 @@ export function roundToolCalls(
     byName[line.name] = (byName[line.name] ?? 0) + 1
   }
   return count === 0 ? undefined : { count, byName }
-}
-
-/**
- * Persist the session's events ONLY when the session is standalone (tests,
- * ad-hoc mirrors). A live session's own write-behind pipeline already durably
- * stores every appended event; re-appending the full list here violates the
- * store's contiguous-seq contract ('append seq mismatch'), and the throw used
- * to kill the mirror pass BEFORE the offset advanced — every later pass then
- * re-folded the same lines (duplicated user messages, no usage, no offset on
- * the delegation record).
- */
-async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
-  const sessions = ctx.get('sessions')
-  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
-  const persistence = ctx.get('sessionPersistence')
-  if (persistence === undefined) return
-  // Host 0.1.5 handle-based persistence: claim the write handle (creating the
-  // stored session on first persist), append only the unstored suffix —
-  // re-appending the full snapshot violates the contiguous-seq contract —
-  // then flush and close.
-  const existing = await persistence.stat(childSession.id)
-  const handle = existing === undefined
-    ? await persistence.create(childSession.header)
-    : await persistence.open(childSession.id, 'write')
-  try {
-    const stored = await handle.read(0)
-    const suffix = childSession.snapshotEvents().slice(stored.events.length)
-    if (suffix.length > 0) await handle.append(suffix)
-    await handle.flush()
-  } finally {
-    await handle.close()
-  }
 }
 
 /**
