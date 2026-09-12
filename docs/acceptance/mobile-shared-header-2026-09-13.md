@@ -16,3 +16,12 @@ Candidate mobile client substituted only in the test browser, with the official 
 ## Limits
 
 Browser-dispatched touch events verify gesture ownership and resulting geometry; physical finger inertia and native keyboard animation still need user/device confirmation. The new UI does not include a speculative gateway repair. The error text originates from the gateway's stream-frame receive/parse/dispatch catch and alone cannot identify which payload, parser or client condition failed.
+
+## Production receipt
+
+- Implementation commit: `f261e98d`; integrated with current main in `4007236a`. Scoped pre-merge gate passed all 14 steps. Docker integration remained skipped because no Docker daemon was available.
+- A fresh task appeared after the first idle check; deployment was deferred until a second authenticated check reported zero running sessions and zero jobs.
+- `pnpm deploy:3080 --package packages/mobile` completed successfully: package build/tests, composition preflight, guarded restart and authenticated canary all passed.
+- The unmodified public WebKit page then repeated the header, rename, library gesture, preset divider and Host workspace-sidebar checks successfully, with no page errors. Preset dividers measured 0/1/1/1/1 px; the workspace sidebar opened visibly and closed through its owner callback.
+- The Host's internal-test notice appeared again when entering a new conversation; acceptance used its normal Continue action before checking the picker. This was not a mobile picker failure.
+- No native reinstall or Host source edit was required for this batch. Physical finger feel remains a device acceptance item.
