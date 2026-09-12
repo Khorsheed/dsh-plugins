@@ -35,7 +35,7 @@ dsh plugin --profile <p> remove @khorsheed/dsh-inline-html-render   # uninstall
 
 ## Authoring for the agent
 
-The host half registers the `inline-html-card` skill. Whenever the user wants a **visible result** ("show me", "preview", "make me a card", "compare these visual options", a clickable widget) rather than a paragraph of text, the agent picks up this protocol. Core constraints (see the skill):
+The host half registers the two HTML-authoring protocols, `inline-html-card` and `3d-artifact` (both with provider `inline-html-render`). Whenever the user wants a **visible result** ("show me", "preview", "make me a card", "compare these visual options", a clickable widget) rather than a paragraph of text, the agent picks up this protocol. Core constraints (see the skills):
 
 - Exactly one fenced block whose info string is exactly `dsh-card`; use **three** backticks ( ``` ), never four — four backticks or a nested fence make the parser read it as an outer block and the card never renders.
 - Self-contained content: inline CSS/JS, `data:` URIs for images, zero external network.
@@ -57,7 +57,7 @@ The host half registers the `inline-html-card` skill. Whenever the user wants a 
 <details>
 <summary>Internal structure (expand)</summary>
 
-- `src/index.ts` (node half) — registers the `inline-html-card` skill (`skills` service optional; degrades silently when absent).
+- `src/index.ts` (node half) — registers the `inline-html-card` and `3d-artifact` skills (`skills` service optional; stays pending when absent).
 - `src/client/` (browser half, `/plugins/inline-html-render/client.js`):
 
 | Module | Responsibility |

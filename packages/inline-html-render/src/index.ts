@@ -1,5 +1,6 @@
 /**
- * Inline HTML render host half. Registers the `inline-html-card` skill, which
+ * Inline HTML render host half. Registers the `inline-html-card` and
+ * `3d-artifact` skills, which
  * documents the fenced-block protocol the browser half consumes: the agent
  * writes a ` ```dsh-card ```` fenced block (or a `dsh-card <spec>` inline
  * fence) whose body is a fully self-contained HTML document, and the client
@@ -9,7 +10,7 @@
  * This half owns no DOM and no Remote — it only advertises the contract so
  * the agent knows how to author a card. It degrades silently when the
  * `skills` capability is absent (a minimal composition may lack it), exactly
- * like file-preview's 3d-artifact registration.
+ * without widening the read-only file-preview host's responsibility.
  * @module @khorsheed/dsh-inline-html-render
  */
 
@@ -30,7 +31,8 @@ interface SkillRegistrySlice {
 }
 
 /**
- * Read and parse the shipped `inline-html-card` SKILL.md into a registration.
+ * Read and parse one shipped SKILL.md (`inline-html-card` / `3d-artifact`) into
+ * a registration.
  *
  * This skill is content-only — it ships a single self-contained SKILL.md with
  * no sibling scripts/assets/references. Per the capability-catalog registration
@@ -42,8 +44,9 @@ interface SkillRegistrySlice {
  * @returns the parsed skill, or undefined when the file is missing/malformed
  *   (a discovery aid must never take a boot down, so each failure warns).
  */
-function readCardSkill(
+function readSkill(
   ctx: Context,
+  skillName: 'inline-html-card' | '3d-artifact',
 ): {
   name: string
   description: string
@@ -52,7 +55,7 @@ function readCardSkill(
   provider: string
 } | undefined {
   try {
-    const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'inline-html-card')
+    const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', skillName)
     const skillFile = join(skillDir, 'SKILL.md')
     const raw = readFileSync(skillFile, 'utf8')
     const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
@@ -60,7 +63,7 @@ function readCardSkill(
     const description = /^description: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
     const content = match?.[2]
     if (match === null || name === undefined || description === undefined || content === undefined) {
-      ctx.logger.warn('inline-html-render: shipped SKILL.md is malformed — the inline-html-card skill is not registered')
+      ctx.logger.warn(`inline-html-render: shipped SKILL.md is malformed — the ${skillName} skill is not registered`)
       return undefined
     }
     return {
@@ -71,7 +74,7 @@ function readCardSkill(
       provider: 'inline-html-render',
     }
   } catch (error) {
-    ctx.logger.warn(`inline-html-render: shipped SKILL.md unreadable (${String(error)}) — the inline-html-card skill is not registered`)
+    ctx.logger.warn(`inline-html-render: shipped SKILL.md unreadable (${String(error)}) — the ${skillName} skill is not registered`)
     return undefined
   }
 }
@@ -97,11 +100,12 @@ export function apply(ctx: Context): () => void {
   // fiber stays pending rather than throwing — a discovery aid must not take a
   // boot down. The injected ctx is scope-addressed, so ctx.get('skills') is set.
   ctx.inject(['skills'], (scoped) => {
-    const skill = readCardSkill(scoped)
-    if (skill === undefined) return
     const registry = scoped.get('skills') as SkillRegistrySlice | undefined
     if (registry === undefined) return
-    disposers.push(scoped.effect(() => registry.register(skill)))
+    for (const skillName of ['inline-html-card', '3d-artifact'] as const) {
+      const skill = readSkill(scoped, skillName)
+      if (skill !== undefined) disposers.push(scoped.effect(() => registry.register(skill)))
+    }
   })
   return () => { for (const disposer of disposers.reverse()) disposer() }
 }

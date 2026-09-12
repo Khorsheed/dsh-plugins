@@ -1,5 +1,15 @@
 # 变更记录
 
+## 未发布
+
+- 从只读宿主包移除 `3d-artifact` 作者 skill；现在由 `@khorsheed/dsh-inline-html-render` 分发并注册。
+- 新增零会话 `capabilities()` Remote 握手（`protocolVersion: 1`），供客户端在宿主缺席时抑制全部 UI。
+
+## 未发布
+
+- 从只读宿主包移除 `3d-artifact` 作者 skill；现在由 `@khorsheed/dsh-inline-html-render` 分发并注册。
+- 新增零会话 `capabilities()` Remote 握手（`protocolVersion: 1`），供客户端在宿主缺席时抑制全部 UI。
+
 ## 0.3.0（2026-09-11）
 
 （以 minor 发布：openExternal 是新增能力；pair 包 ui-file-preview 的 peer 边由 pack-dist 按本包版本重写，两包版本线须一致。）

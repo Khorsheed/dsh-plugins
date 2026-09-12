@@ -6,6 +6,10 @@
 // catalog while 3d-artifact did). The description is the model's ONLY trigger
 // signal, so it is asserted to carry plain user-facing intent words.
 
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { apply } from '../src/index.ts'
@@ -19,8 +23,8 @@ interface Registered {
   resourceBase?: { kind: 'directory'; path: string }
 }
 
-describe('inline-html-card skill registration', () => {
-  it('registers the skill into a real SkillRegistry catalog once the service is ready', async () => {
+describe('inline HTML authoring skill registration', () => {
+  it('registers both owned skills into a real SkillRegistry catalog once the service is ready', async () => {
     const ctx = new Context()
     const { SkillRegistry } = await import('@deepseek-ai/dsh-skill')
     // Build the registry on the ctx so ctx.skills / ctx.get('skills') resolves,
@@ -31,6 +35,7 @@ describe('inline-html-card skill registration', () => {
     await new Promise(r => setTimeout(r, 0))
     const names = (await registry.list({ cwd: '/' })).map(s => s.name)
     expect(names).toContain('inline-html-card')
+    expect(names).toContain('3d-artifact')
   })
 
   it('the registered skill body carries the hard rules + user-intent description', async () => {
@@ -42,8 +47,8 @@ describe('inline-html-card skill registration', () => {
     } as never)
     apply(ctx)
     await new Promise(r => setTimeout(r, 0))
-    expect(registrations.map(skill => skill.name)).toEqual(['inline-html-card'])
-    const reg = registrations[0]
+    expect(registrations.map(skill => skill.name)).toEqual(['inline-html-card', '3d-artifact'])
+    const reg = registrations.find(skill => skill.name === 'inline-html-card')
     // The description is the pull-based trigger: user intent, not jargon.
     expect(reg?.description).toMatch(/show me|see|preview/i)
     expect(reg?.description).toContain('inline')
@@ -83,6 +88,14 @@ describe('inline-html-card skill registration', () => {
     // reported so the catalog labels the card.
     expect(reg?.provider).toBe('inline-html-render')
     expect(reg?.resourceBase).toBeUndefined()
+    const artifact = registrations.find(skill => skill.name === '3d-artifact')
+    expect(artifact?.description).toContain('3D')
+    expect(artifact?.content).toContain('GLB')
+    expect(artifact?.content).toContain('connect-src')
+    expect(artifact?.content).not.toContain('/Users/')
+    expect(artifact?.source).toBe('runtime')
+    expect(artifact?.provider).toBe('inline-html-render')
+    expect(artifact?.resourceBase).toBeUndefined()
   })
 
   it('does not crash when the skills service is absent — it stays pending, no warning', () => {
@@ -90,4 +103,19 @@ describe('inline-html-card skill registration', () => {
     expect(() => apply(ctx)).not.toThrow()
     // No skill is registered (the inject fiber just waits); apply returns cleanly.
   })
+})
+
+describe('inline HTML authoring skill pack smoke', () => {
+  it('ships both owned SKILL.md payloads', () => {
+    const pkgDir = process.cwd()
+    const packed = mkdtempSync(join(tmpdir(), 'inline-html-render-pack-'))
+    execFileSync('pnpm', ['pack', '--pack-destination', packed], { cwd: pkgDir, stdio: 'pipe' })
+    const tgz = readdirSync(packed).find(name => name.endsWith('.tgz'))
+    expect(tgz, 'pnpm pack produced a tarball').toBeDefined()
+    const unpack = join(packed, 'unpack')
+    mkdirSync(unpack)
+    execFileSync('tar', ['-xzf', join(packed, tgz!), '-C', unpack], { stdio: 'pipe' })
+    expect(existsSync(join(unpack, 'package', 'skills', 'inline-html-card', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(unpack, 'package', 'skills', '3d-artifact', 'SKILL.md'))).toBe(true)
+  }, 30_000)
 })
