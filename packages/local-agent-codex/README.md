@@ -43,7 +43,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
     model: gpt-5.2             # 可选:每轮委派以它起 CLI;不写就一个模型参数都不传(见下)
     live: false                # 长驻驱动:每成员常驻一个 codex app-server 进程,按轮发 turn(runtime 级优雅中断、事件推送镜像);关闭或通道不可用即回一次性 exec
     liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
-    liveMirrorGranularity: event  # live 镜像粒度;token 的增量经运行进度通道上报(宿主 0.1.5 起不再逐字写入会话日志)
+    liveMirrorGranularity: event  # live 镜像粒度;两档都全量折叠,token 额外把流式增量按节流快照实时写入会话日志(UI 合并为持续增长的一条)
 ```
 
 ### 默认模型（`model`）
@@ -84,7 +84,7 @@ model_provider = "dsh-router"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 不再逐字写入子会话日志（宿主移除逐 chunk 事件），增量改走运行进度通道、轮次以一条合并消息落定（最终文本不变）；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整（`liveMirrorGranularity: token` 的流式以增量快照落在同一 (turn,step)，npm 线 ui-chat 的 `settleMessage` 本就是整体替换语义；适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制

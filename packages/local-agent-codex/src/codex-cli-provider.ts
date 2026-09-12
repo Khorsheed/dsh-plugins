@@ -643,8 +643,13 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 
 /** One ordered transcript line from a `codex exec --json` event stream. */
 export type CodexTranscriptLine =
-  | { kind: 'think'; text: string }
-  | { kind: 'text'; text: string }
+  /**
+   * Reasoning or reply text. `itemId` (live app-server rounds only) pairs the
+   * line with its delta stream, so the completed item folds at the step its
+   * snapshots reserved.
+   */
+  | { kind: 'think'; text: string; itemId?: string }
+  | { kind: 'text'; text: string; itemId?: string }
   /**
    * Tool activity: one call with its (possibly absent) result. `id` is the
    * stream item's id when present, else a synthesized position-based id —
@@ -1114,19 +1119,6 @@ export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
   })
 }
 
-/** Mirror behavior switches shared by the exec and live paths. */
-export interface CodexMirrorOptions {
-  /**
-   * Do not fold think/text lines into `assistant/message` events (the
-   * token-granularity live mode accumulates that content outside the log —
-   * host 0.1.5 removed the per-chunk session event — and the driver settles
-   * the round with one combined final
-   * message). Tool lines still fold, and the round's usage is left to the
-   * caller — it rides the combined final message, not a folded line.
-   */
-  skipAssistantContent?: boolean
-}
-
 /**
  * Fold one transcript line into the child session as one assistant step,
  * wrapped in the step/start–step/end boundary pair the live conversation
@@ -1143,13 +1135,7 @@ export function appendCodexTranscriptLine(
   step: number,
   line: CodexTranscriptLine,
   usage: TokenUsage | undefined,
-  options?: CodexMirrorOptions,
 ): boolean {
-  // Token-granularity live mode accumulates think/text outside the log (host
-  // 0.1.5 removed the per-chunk event); the
-  // driver settles the round with one combined final message, so the fold
-  // leaves these lines out (their usage rides that final message).
-  if (options?.skipAssistantContent === true && line.kind !== 'tool') return false
   childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
     // Native tool card: the call event now, the result event when the stream
