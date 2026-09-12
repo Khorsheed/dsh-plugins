@@ -54,10 +54,15 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
       + 'into a room: the multi-agent group conversation surface wakes up on it). '
       + 'The member becomes @-addressable by the human and by other members: pick a short unique '
       + 'name (no whitespace, no "@", e.g. ada/bill/cathy) — it is the addressing name, decoupled '
-      + 'from the provider so two instances of one provider can coexist. The instructions are the '
+      + 'from the provider so two instances of one provider can coexist; prefer a function-style '
+      + 'name (e.g. design-review / restart-test) when the member has a standing role, so the human '
+      + 'and the other members can tell what it is for. The instructions are the '
       + 'member\'s role briefing, prepended to its first dispatch and persisted in its own CLI '
       + 'session from then on. Give a firstTask to put the member to work immediately, or omit it '
-      + 'to have the member join idle. The provider must be a registered delegation provider id — '
+      + 'to have the member join idle. A member keeps its own CLI session and accumulates context '
+      + 'across rounds, so prefer inviting over a one-shot subagent_* delegation whenever the work '
+      + 'expects follow-ups with the same agent — reserve one-shot delegations for self-contained '
+      + 'tasks with no continuation. The provider must be a registered delegation provider id — '
       + 'an unknown one is rejected with the list of available ids, so retry with one of those.',
     parameters: {
       provider: {

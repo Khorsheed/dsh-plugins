@@ -193,7 +193,12 @@ function familyWording(): { description: string; promptDescription: string; resu
       + 'so it does not consume this conversation\'s context. The subagent returns its result, not its '
       + 'intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. '
       + 'To continue the same CLI conversation in a later round, pass the child session id returned by '
-      + 'the first result as `resume`.',
+      + 'the first result as `resume`. '
+      + 'This is the one-shot path — it fits a task you will not revisit. When you expect to work with '
+      + 'the SAME agent over several rounds (review → fix → re-review style iteration) and the '
+      + '`room_invite` tool is available, prefer inviting it as a named room member instead: name it by '
+      + 'its function (e.g. "design-review", "restart-test") so later rounds can address it by role and '
+      + 'reuse the context it has accumulated.',
     promptDescription:
       'The complete, self-contained task for the subagent. It does not share this conversation\'s '
       + 'context, so include everything it needs. Never embed a resume handle inside this text.',
