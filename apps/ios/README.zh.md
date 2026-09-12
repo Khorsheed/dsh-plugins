@@ -25,6 +25,10 @@ apps/ios/.build/host-address-tests
 
 Debug 连接设置展示 mobile 插件的布局状态及不含内容的 DOM 锚点数量，用于定位插件已加载却仍显示桌面布局的问题。诊断不包含登录 token 或会话正文；Release 不展示这些诊断。
 
+## App 图标
+
+内置 `DSHMobile/Assets.xcassets/AppIcon.appiconset` 在 Debug 和 Release 中提供不透明的 1024px 蓝白 D／对话气泡图标。Xcode 生成设备所需尺寸，iOS 应用外部圆角。这是静态玻璃风格图片，不依赖网络，也不跟随 Host 主题改变。成品 PNG 作为 App 构建输入明确纳入版本管理。
+
 ## 连接
 
 在 Host 安装插件后，输入使用可达 HTTPS authority 的官方登录链接。WebKit 通过官方浏览器认证交换 token。UserDefaults 只保存干净的 origin。App 在本地保存浏览器 Cookie，未实现设备配对、Keychain 设备凭据或服务端撤销。
@@ -39,7 +43,7 @@ Debug 连接设置展示 mobile 插件的布局状态及不含内容的 DOM 锚�
 
 ## 当前限制
 
-已验证模拟器构建/安装/启动，以及 iPhone Air（iOS 26.5.2）上的签名安装/启动；原生画面自动化被 macOS 电脑控制权限阻挡。真机键盘/安全区、附件、后台/切网恢复、文件导出/分享与社区插件组合仍待验收。没有 APNs 或后台长连接保证。Xcode 工程未配置发布图标和发行签名，是开发构建，尚不能直接作为 App Store 成品。
+已验证模拟器构建/安装/启动，以及 iPhone Air（iOS 26.5.2）上的签名安装/启动；原生画面自动化被 macOS 电脑控制权限阻挡。真机键盘/安全区、附件、后台/切网恢复、文件导出/分享与社区插件组合仍待验收。没有 APNs 或后台长连接保证。Xcode 工程已配置 App 图标，但未配置发行签名，是开发构建，尚不能直接作为 App Store 成品。
 
 [真机记录](../../docs/acceptance/mobile-device-2026-09-11.md)与[初始验收记录](../../docs/acceptance/mobile-rc1-2026-09-11.md)区分浏览器证据、原生构建证据与未验证流程。
 

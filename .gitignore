@@ -34,6 +34,9 @@ scratch-*
 *.gif
 *.webp
 
+# Shipped iOS app artwork is a build input, not a debug screenshot.
+!apps/ios/DSHMobile/Assets.xcassets/AppIcon.appiconset/*.png
+
 # Work-in-progress skill (integration/dsh-self-upgrade-rc1-next); kept out of the
 # published tree until it is ready — the branch re-adds it on merge.
 skills/self-upgrade/

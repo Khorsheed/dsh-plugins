@@ -25,6 +25,10 @@ If iOS reports that the free development-profile app limit has been reached, the
 
 Debug connection settings display the mobile plugin's layout status and non-content DOM anchor counts to diagnose a loaded plugin that retains desktop layout. Diagnostic output contains no login token or conversation content. Release does not display these diagnostics.
 
+## App icon
+
+The bundled `DSHMobile/Assets.xcassets/AppIcon.appiconset` supplies an opaque 1024px blue-and-white D/chat-bubble icon in Debug and Release. Xcode generates device sizes and iOS applies the outer mask. This is static glass-style artwork; it does not require a network connection or change with the Host theme. The production PNG is deliberately tracked as an app build input.
+
 ## Connect
 
 Install the plugin on your Host, then enter an official login URL using the reachable HTTPS authority. WebKit exchanges the token through official browser authentication. Only the clean origin is stored in UserDefaults. The App keeps browser cookies locally; it does not implement device pairing, Keychain device credentials or server-side revocation.
@@ -39,7 +43,7 @@ Native grouped settings contain the current host, connection actions and a devic
 
 ## Current limits
 
-Simulator build/install/launch and signed installation/launch on iPhone Air (iOS 26.5.2) are verified; native visual automation was blocked by macOS computer-use permissions. Real-device keyboard/safe-area, attachments, background/network recovery, file export/share and community plugin combinations remain pending. There is no APNs or guaranteed background socket. The Xcode project has no release App icon or distribution signing; it is a development build, not App Store-ready.
+Simulator build/install/launch and signed installation/launch on iPhone Air (iOS 26.5.2) are verified; native visual automation was blocked by macOS computer-use permissions. Real-device keyboard/safe-area, attachments, background/network recovery, file export/share and community plugin combinations remain pending. There is no APNs or guaranteed background socket. The Xcode project has an App icon but no distribution signing; it is a development build, not App Store-ready.
 
 The [physical-device record](../../docs/acceptance/mobile-device-2026-09-11.md) and [initial acceptance record](../../docs/acceptance/mobile-rc1-2026-09-11.md) distinguish browser evidence, native build evidence and unverified flows.
 
