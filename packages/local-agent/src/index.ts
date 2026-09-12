@@ -31,6 +31,7 @@ import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
+import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
 import type { SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
   DelegationCallOptions,
@@ -155,6 +156,54 @@ export function establishSubagentCatalogChild(
     mode: 'one-shot',
     ...label === undefined ? {} : { label },
   })
+}
+
+/**
+ * Persist a delegated child session's events, the family providers' one entry
+ * point after every mirror pass. Two paths:
+ *
+ * - **live session + a core with {@link LocalAgentRegistry.syncChildSession}**
+ *   (the production wiring): delegate to the registry, which syncs through
+ *   its cached per-child write handle — the same handle the reattach recipe
+ *   holds, so live write routing and the explicit suffix sync share one
+ *   owner and never collide on SessionAlreadyOwnedError. The registry
+ *   downgrades a sync failure to a warn, so this path never throws.
+ * - **anything else** (standalone tests, ad-hoc mirrors, a core predating
+ *   syncChildSession): a one-shot handle flow — claim the write handle
+ *   (creating the stored session on first persist), append only the unstored
+ *   suffix (re-appending the full snapshot violates the contiguous-seq
+ *   contract), flush, close. There is deliberately NO live-session skip:
+ *   reading the stored prefix first makes the suffix append idempotent, so
+ *   on a host line whose write-behind does store live appends the suffix is
+ *   simply empty — while on host 0.1.5, where a mirror session without an
+ *   agent loop never checkpoints, this flow is what lands the events at all.
+ *
+ * @param ctx - host context carrying the sessions/localAgent/sessionPersistence services.
+ * @param childSession - the dsh child session the provider mirrored into.
+ */
+export async function persistChildSession(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) {
+    const registry = ctx.get('localAgent') as unknown as { syncChildSession?: (session: Session) => Promise<void> } | undefined
+    if (registry?.syncChildSession !== undefined) {
+      await registry.syncChildSession(childSession)
+      return
+    }
+  }
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined) return
+  const existing = await persistence.stat(childSession.id)
+  const handle = existing === undefined
+    ? await persistence.create(childSession.header)
+    : await persistence.open(childSession.id, 'write')
+  try {
+    const stored = await handle.read(0)
+    const suffix = childSession.snapshotEvents().slice(stored.events.length)
+    if (suffix.length > 0) await handle.append(suffix)
+    await handle.flush()
+  } finally {
+    await handle.close()
+  }
 }
 
 /**
@@ -872,9 +921,22 @@ export class LocalAgentRegistry {
    * Detach disposers for child sessions the facade reattached into the live
    * store (see {@link LocalAgentRegistry.resume} step 5). Held for the plugin
    * lifetime — the same lifecycle a provider-created child session has — and
-   * released together on plugin dispose.
+   * released together on plugin dispose. The reattach's WRITE handle is NOT
+   * here: it lives in {@link childWriteHandles}, shared with
+   * {@link syncChildSession}, and closes with the cache on dispose.
    */
   private readonly reattachDisposers = new Map<string, () => void>()
+  /**
+   * The registry-owned WRITE handle per child session id (a resolved-value
+   * cache: the PROMISE is stored so concurrent acquirers share one open).
+   * Host 0.1.5 routes a live session's `session/event` appends into the
+   * per-id writer only while a write handle is open, so exactly one handle
+   * must exist per child — a second open fails SessionAlreadyOwnedError.
+   * Both owners of a child session's durability share this cache: the
+   * reattach recipe ({@link reattachChildSession}) and the explicit suffix
+   * sync ({@link syncChildSession}). Every handle closes on plugin dispose.
+   */
+  private readonly childWriteHandles = new Map<string, Promise<SessionHandle>>()
 
   /**
    * @param ctx - context carrying the command registry.
@@ -886,8 +948,9 @@ export class LocalAgentRegistry {
     private readonly homesRoot: string,
     private readonly loginPromptTimeoutMs: number,
   ) {
-    // Reattached child sessions leave the live store, and in-flight run
-    // heartbeats stop, when the plugin unloads.
+    // Reattached child sessions leave the live store, in-flight run
+    // heartbeats stop, and every cached child-session write handle closes,
+    // when the plugin unloads.
     ctx.effect(() => () => {
       for (const entry of this.runs.values()) {
         if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
@@ -896,6 +959,12 @@ export class LocalAgentRegistry {
       this.settledRuns.clear()
       for (const detach of this.reattachDisposers.values()) detach()
       this.reattachDisposers.clear()
+      for (const [childSessionId, cached] of this.childWriteHandles) {
+        this.childWriteHandles.delete(childSessionId)
+        void cached.then(handle => handle.close()).catch((error: unknown) => {
+          this.ctx.logger.warn(`localAgent: closing the child session ${childSessionId} write handle failed: ${String(error)}`)
+        })
+      }
     })
   }
 
@@ -1843,10 +1912,27 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Ensure a delegated child session is live in this process, reattaching it
+   * from persistence when it is not — a host restart evicts every child from
+   * the live store. This is the public entry of the facade resume's reattach
+   * recipe for callers that start resume rounds WITHOUT the facade (the
+   * family subagent tool starts runs directly through `ctx.subagents.start`;
+   * without this call the provider refuses the resume as "not live").
+   * Idempotent; a child that was never persisted fails through the
+   * persistence layer's own not-found error.
+   * @param childSessionId - the dsh child session id (the resume handle).
+   */
+  async ensureChildLive(childSessionId: string): Promise<void> {
+    await this.reattachChildSession(childSessionId)
+  }
+
+  /**
    * Restore a persisted child session into the live store when it is absent —
    * the reattach recipe documented on {@link resume}. Enter-only on purpose;
-   * the detach disposer and the write handle's close are held in
-   * {@link reattachDisposers} until plugin dispose.
+   * the detach disposer is held in {@link reattachDisposers} until plugin
+   * dispose, and the write handle comes from the shared
+   * {@link childWriteHandles} cache so a later {@link syncChildSession}
+   * reuses it instead of failing SessionAlreadyOwnedError on a second open.
    */
   private async reattachChildSession(childSessionId: string): Promise<void> {
     const sessions = this.ctx.get('sessions')
@@ -1855,15 +1941,14 @@ export class LocalAgentRegistry {
     }
     if (sessions.get(SessionId(childSessionId)) !== undefined) return
     if (this.reattachDisposers.has(childSessionId)) return
-    const persistence = this.ctx.get('sessionPersistence')
-    if (persistence === undefined) {
+    if (this.ctx.get('sessionPersistence') === undefined) {
       throw new Error(`localAgent: child session ${childSessionId} is not live and the sessionPersistence service is not mounted to reattach it`)
     }
     // Host 0.1.5 handle-based persistence: the backend routes live
     // session/event appends into the per-id writer only while a WRITE handle
-    // is open, so the reattach claims the write handle first and holds it for
-    // the reattached lifetime (closed on dispose, together with the detach).
-    const handle = await persistence.open(SessionId(childSessionId), 'write')
+    // is open, so the reattach claims the write handle first and the cache
+    // holds it for the child's lifetime (closed on dispose).
+    const handle = await this.acquireChildWriteHandle(childSessionId)
     try {
       const cold = await handle.read(0)
       const session = sessions.prepare(SessionId(childSessionId), {
@@ -1882,14 +1967,91 @@ export class LocalAgentRegistry {
       const detach = sessions.enter(session)
       this.reattachDisposers.set(childSessionId, () => {
         detach()
-        handle.close().catch((error: unknown) => {
-          this.ctx.logger.warn(`localAgent: closing the reattached child session ${childSessionId} write handle failed: ${String(error)}`)
-        })
       })
     } catch (error) {
-      await handle.close().catch(() => {})
+      // A failed reattach keeps no ownership: the cached handle would hold
+      // write ownership of a session that never went live.
+      await this.releaseChildWriteHandle(childSessionId)
       throw error
     }
+  }
+
+  /**
+   * Sync a live delegated child session's events into durable storage through
+   * the registry-cached write handle, creating the stored session on first
+   * sync. The host's live write-behind routes `session/event` appends into
+   * the per-id writer only while a write handle is open AND a checkpoint
+   * drains it — a delegated mirror session has no agent loop, so nothing ever
+   * checkpoints it and production child logs stayed header-only. This explicit
+   * suffix sync is the mirror's durability path: read the stored prefix,
+   * append only what is missing (idempotent under repetition and under a
+   * working write-behind), then flush. A failure downgrades to a warn and the
+   * handle stays cached for the next sync — a persistence hiccup must never
+   * fail the delegation round.
+   * @param session - the live child session to sync.
+   */
+  async syncChildSession(session: Session): Promise<void> {
+    try {
+      const handle = await this.acquireChildWriteHandle(String(session.id), session.header)
+      const stored = await handle.read(0)
+      const suffix = session.snapshotEvents().slice(stored.events.length)
+      if (suffix.length > 0) await handle.append(suffix)
+      await handle.flush()
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`localAgent: syncing child session ${String(session.id)} to persistence failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Get or open the child session's registry-owned WRITE handle (the
+   * {@link childWriteHandles} cache). When the caller carries the session
+   * header (a sync), a missing stored session is created from it; a create
+   * that loses a stat/create race adopts the winner's stored session. A
+   * failed acquisition is evicted so the next call retries from scratch.
+   */
+  private acquireChildWriteHandle(childSessionId: string, header?: SessionHeader): Promise<SessionHandle> {
+    const cached = this.childWriteHandles.get(childSessionId)
+    if (cached !== undefined) return cached
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) {
+      throw new Error('localAgent: the sessionPersistence service is not mounted')
+    }
+    const id = SessionId(childSessionId)
+    const acquired = (async (): Promise<SessionHandle> => {
+      if (header !== undefined && (await persistence.stat(id)) === undefined) {
+        try {
+          return await persistence.create(header)
+        } catch (error: unknown) {
+          // Another writer stored the session between the stat and the
+          // create: adopt it instead of failing the sync.
+          if ((error as { name?: string }).name !== 'SessionAlreadyExistsError') throw error
+          return persistence.open(id, 'write')
+        }
+      }
+      return persistence.open(id, 'write')
+    })()
+    this.childWriteHandles.set(childSessionId, acquired)
+    acquired.catch(() => {
+      if (this.childWriteHandles.get(childSessionId) === acquired) {
+        this.childWriteHandles.delete(childSessionId)
+      }
+    })
+    return acquired
+  }
+
+  /**
+   * Evict one child session's cached write handle and close it. Used when an
+   * owner gives the session up (a failed reattach); normal lifetimes close
+   * with the cache on plugin dispose.
+   */
+  private async releaseChildWriteHandle(childSessionId: string): Promise<void> {
+    const cached = this.childWriteHandles.get(childSessionId)
+    if (cached === undefined) return
+    this.childWriteHandles.delete(childSessionId)
+    const handle = await cached.catch(() => undefined)
+    await handle?.close().catch((error: unknown) => {
+      this.ctx.logger.warn(`localAgent: closing the child session ${childSessionId} write handle failed: ${String(error)}`)
+    })
   }
 
   /**
