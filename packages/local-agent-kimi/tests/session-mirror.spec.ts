@@ -13,6 +13,39 @@ function tempHome(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
+/**
+ * Every mirrored content event sits inside a step/start–step/end pair at its
+ * own (turn, step) — the boundary the live conversation assembler needs to
+ * materialize the step (without it the real-time view renders nothing). The
+ * one sanctioned exception is a backfilled late tool/result: it reuses its
+ * call's already-closed coordinates BARE, because a second step/start for the
+ * same context throws in the live assembler.
+ */
+function expectStepBoundaries(child: Session): void {
+  const events = child.snapshotEvents()
+  const boundaries = events.filter(event => event.type === 'step/start' || event.type === 'step/end')
+  const content = events.filter(event =>
+    event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+  expect(content.length).toBeGreaterThan(0)
+  for (const event of content) {
+    const { turn, step } = event.data as { turn: number; step: number }
+    const at = boundaries.filter(boundary => {
+      const data = boundary.data as { turn: number; step: number }
+      return data.turn === turn && data.step === step
+    })
+    expect(
+      at.some(boundary => boundary.type === 'step/start' && boundary.seq < event.seq),
+      `step/start for ${event.type} at ${turn}:${step}`,
+    ).toBe(true)
+    const closedBefore = at.some(boundary => boundary.type === 'step/end' && boundary.seq < event.seq)
+    if (closedBefore && event.type === 'tool/result') continue // bare backfill, by design
+    expect(
+      at.some(boundary => boundary.type === 'step/end' && boundary.seq > event.seq),
+      `step/end for ${event.type} at ${turn}:${step}`,
+    ).toBe(true)
+  }
+}
+
 /** A kimi scoped home with one session directory carrying a wire log. */
 function wireHome(sessionId: string, wireLines: unknown[]): { home: string; dir: string } {
   const home = tempHome('kimi-mirror-')
@@ -68,6 +101,8 @@ describe('session-mirror', () => {
     expect(results[0]!.sourceEventSeqs).toEqual([calls[0]!.seq])
     // assistant events attribute the kimi route
     expect(assistant[0]!.data.message.source).toEqual({ kind: 'model', provider: 'kimi-cli', model: 'k3' })
+    // every folded step carries its step/start–step/end boundary pair
+    expectStepBoundaries(child)
     // the mirrored batch reaches persistence
     expect(append).toHaveBeenCalledWith(child.id, events)
   })
@@ -100,6 +135,12 @@ describe('session-mirror', () => {
       toolCallId: 'tc1',
       content: [{ type: 'text', text: 'Wrote 10 bytes' }],
     })
+    // The backfilled result reuses its call's coordinates BARE — no second
+    // step/start at the same (turn, step), which the live assembler rejects
+    // as a duplicate start match.
+    const starts = child.snapshotEvents().filter(event => event.type === 'step/start')
+    expect(starts).toHaveLength(1)
+    expectStepBoundaries(child)
     // A third pass is a no-op (no duplicate result).
     await mirrorKimiSession(ctx, child, home, 's1', total)
     expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)

@@ -149,6 +149,13 @@ export interface KimiMirrorOptions {
  * already in the child session, so a round mirrored across several live polls
  * does not restart step 1 per poll.
  *
+ * Every folded step is wrapped in the `step/start`–`step/end` boundary pair
+ * the live conversation assembler requires: without a boundary the step never
+ * enters the location index, the assistant message resolves to a turn-level
+ * location, and the real-time view renders nothing (only a full rebuild,
+ * which mints step drafts from the explicit coordinates, recovers it). A
+ * line the options skip folds nothing and writes no boundary.
+ *
  * Usage accounting is exactly-once ACROSS passes: each `usage.record` is
  * tagged with the transcript position it occurred at, and a pass attaches the
  * records in the half-open range `(fromLines, newTotal]` — the records that
@@ -291,6 +298,11 @@ export async function mirrorKimiSessionDelta(
     if (call === undefined) continue
     openCalls.delete(line.id)
     settledCalls.add(line.id)
+    // No second boundary pair here: the call's fold already opened AND closed
+    // this (turn, step), and the live assembler throws on a duplicate start
+    // match for the same context. The step stays registered in the location
+    // index, so the bare result still resolves to the step location — and the
+    // tool definition never consults it anyway.
     childSession.append('tool/result', {
       turn: call.turn,
       step: call.step,
@@ -337,6 +349,7 @@ export async function mirrorKimiSessionDelta(
       // already carries it (else the backfill above pairs it in a later pass).
       const step = steps.get(turn) ?? 1
       steps.set(turn, step + 1)
+      childSession.append('step/start', { turn, step })
       const call = childSession.append('tool/call', {
         turn,
         step,
@@ -356,6 +369,7 @@ export async function mirrorKimiSessionDelta(
           }),
         }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
       }
+      childSession.append('step/end', { turn, step })
     } else {
       // Token-granularity live mode accumulates think/text outside the log
       // (host 0.1.5 removed the per-chunk event); the driver settles the round
@@ -364,6 +378,7 @@ export async function mirrorKimiSessionDelta(
       if (options?.skipAssistantContent === true) continue
       const step = steps.get(turn) ?? 1
       steps.set(turn, step + 1)
+      childSession.append('step/start', { turn, step })
       childSession.append('assistant/message', {
         turn,
         step,
@@ -371,6 +386,7 @@ export async function mirrorKimiSessionDelta(
         stream: [],
         ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
       }, { surfaceOp: 'append' })
+      childSession.append('step/end', { turn, step })
       texts.push(kimiLineProgressText(line))
     }
   }
