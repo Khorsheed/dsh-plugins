@@ -18,6 +18,9 @@ struct HarnessWebView: UIViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.scrollView.contentInsetAdjustmentBehavior = .never
+        view.scrollView.bounces = false
+        view.isOpaque = false
+        view.backgroundColor = state.pageBackground
         view.allowsBackForwardNavigationGestures = true
         #if DEBUG
         view.isInspectable = true
@@ -64,9 +67,18 @@ struct HarnessWebView: UIViewRepresentable {
             }
             if type == "chrome" {
                 state.chromeVisible = body["visible"] as? Bool ?? false
+                state.webView?.allowsBackForwardNavigationGestures = !state.chromeVisible
                 #if DEBUG
                 print("DSH chrome visible: \(state.chromeVisible)")
                 #endif
+            }
+            if type == "appearance", let rgb = body["background"] as? [Double], rgb.count == 3,
+               rgb.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 255 }) {
+                let color = UIColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: 1)
+                state.pageBackground = color
+                state.webView?.backgroundColor = color
+                state.webView?.scrollView.backgroundColor = color
+                state.webView?.underPageBackgroundColor = color
             }
             if type == "settings" { state.sheet = .settings }
             if type == "scan" { state.sheet = .scan }

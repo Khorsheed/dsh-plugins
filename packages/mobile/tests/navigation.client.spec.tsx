@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { MobileChrome } from '../src/client/MobileChrome.tsx'
@@ -9,6 +9,8 @@ import { GROUPING_KEY, groupSessions, MobileNavigation, recentSessions } from '.
 import type { NavigationCapabilities } from '../src/client/navigation.ts'
 import { en } from '../src/client/locales.ts'
 
+beforeEach(() => { vi.stubGlobal('innerWidth', 393) })
+afterEach(() => { vi.unstubAllGlobals() })
 afterEach(() => { cleanup(); localStorage.clear(); delete window.__DSH_MOBILE_SHELL__; delete window.webkit })
 const t = (key: keyof typeof en) => en[key]
 function row(id: string, more: Partial<SessionSummary> = {}): SessionSummary {

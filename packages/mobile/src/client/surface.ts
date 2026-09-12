@@ -18,6 +18,14 @@ export class MobileSurface {
     const row = root?.querySelector<HTMLElement>('header [data-conversation-header-corner]')?.parentElement
     const ordinary = row?.querySelector('nav > span:only-child > button:disabled + [data-slot="conversation.session.header.lineage"]:empty')
     let preset = ''
+    if (row) {
+      for (const button of row.querySelectorAll<HTMLElement>('[data-slot="conversation.session.header.actions"] button[aria-label]')) {
+        if (/^(重命名会话|Rename session)$/.test(button.getAttribute('aria-label') ?? '')) this.mark(button, 'data-mobile-original-rename')
+      }
+      for (const input of row.querySelectorAll<HTMLElement>('input[aria-label]')) {
+        if (/^(会话标题|Session title)$/.test(input.getAttribute('aria-label') ?? '')) this.mark(input, 'data-mobile-rename-editor')
+      }
+    }
     if (root?.dataset.phase === 'active' && row && ordinary) {
       const label = row.querySelector<HTMLElement>('[data-slot="conversation.session.header.actions"] > span[title]:has(svg mask[id^="mask0_agent_preset"])')
       if (label) { preset = label.textContent?.trim() ?? ''; this.mark(label, 'data-mobile-header-hidden') }
@@ -35,7 +43,7 @@ export class MobileSurface {
       }
       // Collapse only a fully accounted-for row. Keep any plugin action or unknown text.
       const content = row.cloneNode(true) as HTMLElement
-      content.querySelectorAll('[data-mobile-header-hidden], nav, svg').forEach(el => el.remove())
+      content.querySelectorAll('[data-mobile-header-hidden], [data-mobile-original-rename], nav, svg').forEach(el => el.remove())
       if (!content.textContent?.trim() && !content.querySelector('button, input, a, img, canvas, video, iframe, [role="button"]')) this.mark(row, 'data-mobile-header-hidden')
     }
     this.publish(preset)
