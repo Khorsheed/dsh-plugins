@@ -37,7 +37,7 @@ Optional fields on the bundle row:
 - `baseUrl` — sets `ANTHROPIC_BASE_URL` for the child CLI (e.g. a self-hosted router or proxy); absent, the child inherits the host process environment. Config wins over environment.
 - `live` — live driver: one resident stream-json process per member (`--input-format stream-json`), one stdin message per round (runtime-level graceful control interrupt, same-shape push stream); off — or a channel that cannot come up — means the one-shot `claude -p` path.
 - `liveIdleMs` — idle lifetime of a resident runtime before reclaim (default 30 min).
-- `liveMirrorGranularity` — live mirror granularity (default `event`); `token` still spawns with `--include-partial-messages` and reports deltas over the run-progress channel, but host 0.1.5 retired the per-chunk session event, so deltas no longer land in the child session log — the round settles as one combined message (identical final text).
+- `liveMirrorGranularity` — live mirror granularity (default `event`); both levels fold every output item 1:1 into the child session log. `token` additionally spawns with `--include-partial-messages` and writes streaming deltas as throttled incremental snapshots (default ≥300ms and ≥200 chars, overridable via the driver config's `snapshotMinIntervalMs`/`snapshotMinChars`) at the item's reserved (turn, step) — the host replaces a repeated assistant/message at one coordinate wholesale and publishes immediately, so the UI renders one continuously growing message, finalized at the same coordinate when the item completes.
 
 ### Default model (`model`)
 
@@ -59,7 +59,7 @@ The settings card's "Default model" writes the same key: a free-text input (no m
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ one degradation — `liveMirrorGranularity: token` no longer writes per-token deltas into the child session log (the host retired the per-chunk event); deltas ride the run-progress channel and the round settles as one combined message (identical final text). Everything else is full (adapted to format v2/v3 and handle-based sessionPersistence; build+test green); minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — `liveMirrorGranularity: token` writes its streaming snapshots at the item's reserved (turn, step), and the host ui-chat's wholesale replace of a repeated assistant/message at one coordinate (shipped since 0.1.5-rc.1) merges them into one continuously growing message; both granularities fold every item in full. Adapted to format v2/v3 and handle-based sessionPersistence; build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations

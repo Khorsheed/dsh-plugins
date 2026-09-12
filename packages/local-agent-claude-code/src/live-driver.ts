@@ -30,16 +30,19 @@
  * (`system`/`assistant`/`user`/`result`), so each turn folds through the
  * shared `ClaudeStreamParser` with the exec live mirror's hold-back rule (the
  * volatile last line waits for `result`, which carries the round's usage).
- * Token granularity (`--include-partial-messages` at spawn) observes
- * `stream_event` partials at the stream's (turn, step) merge key (reasoning
- * index 0, text index 1) — host 0.1.5 removed the per-chunk session event, so
- * the partials accumulate outside the log and only ride the run-progress
- * channel live; the fold then skips
- * think/text lines (tool lines still fold, offset past the reserved step), and
- * the settle writes ONE combined `assistant/message` at the
- * same (turn, step) carrying the round's usage — so no duplicated
- * content and no dangling
- * '已停止' badge (a non-completed round's final carries `interrupted`).
+ * BOTH granularities fold every line 1:1 — nothing is withheld. Token
+ * granularity (`--include-partial-messages` at spawn) adds the streaming
+ * channel on top: each `stream_event` partial accumulates into its kind's
+ * stream (claude's deltas carry no item id, so thinking and text each share
+ * one per-turn stream), which reserves a (turn, step) at its first delta and
+ * appends throttled snapshot `assistant/message`s there — the host folds
+ * repeated settles at one coordinate into one live-updating chat node, the
+ * only streaming channel left after 0.1.5 retired the durable per-chunk
+ * event. A streamed line's completion folds at its stream's reserved step and
+ * finalizes it (no duplicated content); a stream whose completion never
+ * arrives is force-finalized at settle (interrupted on a non-completed round,
+ * so a cancelled turn reads 已停止 legitimately), the last one carrying the
+ * round's usage when no folded line did.
  *
  * Lifecycle mirrors M1–M3's discipline: lazy spawn, one in-flight spawn per
  * member, idle-timeout reclaim (stdin EOF → grace → SIGTERM ladder), crash
@@ -53,7 +56,6 @@ import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -91,6 +93,12 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 
 /** Grace between stdin EOF and SIGTERM when reclaiming a stream-json process. */
 const RECLAIM_EOF_GRACE_MS = 1_000
+
+/** Default minimum interval between one streaming kind's snapshot messages. */
+export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = 300
+
+/** Default minimum text growth between one streaming kind's snapshot messages. */
+export const DEFAULT_SNAPSHOT_MIN_CHARS = 200
 
 /**
  * The stream-json channel could not come up (spawn failure or the first
@@ -295,6 +303,9 @@ export class ClaudeLiveDriver {
     private readonly config: Pick<Config, 'permissionMode' | 'baseUrl'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: ClaudeLiveMirrorGranularity
+      /** Snapshot throttle for the token granularity's streaming messages. */
+      snapshotMinIntervalMs?: number
+      snapshotMinChars?: number
       /**
        * Resolver for the configured model, read at each RUNTIME SPAWN (the
        * resident process is where a live round's CLI starts). Absent, or
@@ -535,20 +546,38 @@ export class ClaudeLiveDriver {
     /** This turn's fold (the exec live mirror's exact parser). */
     const parser = new ClaudeStreamParser()
     let mirrored = 0
-    /** The round's accumulated streamed text (token granularity; settles as the combined final message). */
-    let roundText = ''
-    /** The round's accumulated streamed thinking (token granularity; settles as the combined final message). */
-    let roundThink = ''
+    /** Whether a folded line already carries the round's usage (no backfill event exists). */
+    let usageCarried = false
     /**
-     * The stream's (turn, step) merge key, reserved LAZILY at the first
-     * think/text delta: every line completed before that moment folds below
-     * it, everything after folds above it — the projection renders the
-     * round's chronological order. (Pinning the stream to step 1 put the
-     * whole answer above every tool card in a tool-first round.)
+     * The step ledger: `reservedSteps` holds every step a stream reservation
+     * consumed (in increasing order — permanently, whether the stream later
+     * completes or stays an orphan snapshot), and a sequential line folds at
+     * its index shifted past every reservation before it. A tool completed
+     * mid-stream therefore folds ABOVE the stream's step and the projection
+     * renders the round's chronological order.
      */
-    let streamStep: number | undefined
-    /** The usage the settle fold computed for this round (rides the combined final in token mode). */
-    let settleUsage: TokenUsage | undefined
+    const reservedSteps: number[] = []
+    /**
+     * The streaming kinds seen this round (token granularity), by stream key:
+     * deltas accumulate into throttled snapshot assistant/messages appended
+     * at the kind's reserved (turn, step) — the host folds repeated settles
+     * at one coordinate into one live-updating chat node, which is the only
+     * streaming channel left after 0.1.5 retired the durable per-chunk event.
+     * The kind's completed line folds at the same step and finalizes it; an
+     * entry whose completion never arrives is force-finalized at settle.
+     */
+    const streams = new Map<string, {
+      readonly itemId: string
+      readonly kind: 'think' | 'text'
+      readonly step: number
+      text: string
+      lastSnapshotAt: number
+      lastSnapshotLen: number
+      /** step/start already emitted for this reservation. */
+      opened: boolean
+    }>()
+    /** The stream deltas currently accumulate into (kinds stream sequentially). */
+    let activeStream: string | undefined
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
       // Live sessions sync through the core's cached write handle, standalone
@@ -578,44 +607,134 @@ export class ClaudeLiveDriver {
       return text === undefined || text === '' ? [] : [{ type: 'text', text: parser.text as string }]
     }
 
+    /**
+     * The stream key one delta/completion pairs by. Claude's `stream_event`
+     * partials carry no item id, so thinking and text each share one per-turn
+     * stream — the codex driver's per-kind fallback for id-less deltas.
+     */
+    const streamKey = (kind: 'think' | 'text'): string => `claude-stream-${kind}-${turn}`
+
+    /**
+     * Append one snapshot of a streaming kind at its reserved (turn, step).
+     * Throttled per stream by interval and growth unless `force`; the forced
+     * final snapshot carries `interrupted` (a cancelled turn reads 已停止
+     * legitimately) and, when `withUsage` and no folded line carried it, the
+     * round's usage.
+     */
+    const appendStreamSnapshot = (
+      stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
+      force: boolean,
+      interrupted: boolean,
+      withUsage = false,
+    ): void => {
+      if (stream.text.trim() === '') return
+      const now = Date.now()
+      const minInterval = this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS
+      const minChars = this.config.snapshotMinChars ?? DEFAULT_SNAPSHOT_MIN_CHARS
+      if (!force && now - stream.lastSnapshotAt < minInterval) return
+      if (!force && stream.text.length - stream.lastSnapshotLen < minChars) return
+      if (!stream.opened) {
+        childSession.append('step/start', { turn, step: stream.step })
+        stream.opened = true
+      }
+      const usage = parser.usage
+      childSession.append('assistant/message', {
+        turn,
+        step: stream.step,
+        message: assistantEvent([
+          stream.kind === 'think'
+            ? { type: 'reasoning' as const, text: stream.text }
+            : { type: 'text' as const, text: stream.text },
+        ]),
+        stream: [],
+        ...withUsage && !usageCarried && usage !== undefined ? { usage } : {},
+        ...interrupted ? { interrupted: true } : {},
+      }, { surfaceOp: 'append' })
+      if (withUsage && !usageCarried && usage !== undefined) usageCarried = true
+      stream.lastSnapshotAt = now
+      stream.lastSnapshotLen = stream.text.length
+      persist()
+    }
+
+    /**
+     * Reserve the step one streaming kind will occupy — past every completed
+     * line (folded or held back) and every earlier reservation. A different
+     * kind's deltas force one final snapshot of the current stream (its
+     * completion still folds at its own reserved step when it lands).
+     */
+    const reserveStream = (itemId: string, kind: 'think' | 'text'): void => {
+      if (activeStream !== undefined && activeStream !== itemId) {
+        const previous = streams.get(activeStream)
+        // A freshness snapshot on the kind switch, skipped when the text has
+        // not grown since the last one (the settle force always lands).
+        if (previous !== undefined && previous.text.length !== previous.lastSnapshotLen) {
+          appendStreamSnapshot(previous, true, false)
+        }
+        activeStream = undefined
+      }
+      let stream = streams.get(itemId)
+      if (stream === undefined) {
+        const step = parser.lines.length + reservedSteps.length + 1
+        reservedSteps.push(step)
+        stream = { itemId, kind, step, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        streams.set(itemId, stream)
+      }
+      activeStream = itemId
+    }
+
+    /** The sequential fold step for `parser.lines[index]`: its position shifted past every reservation before it. */
+    const foldStep = (index: number): number => {
+      let step = index + 1
+      for (const reserved of reservedSteps) {
+        if (reserved <= step) step += 1
+        else break
+      }
+      return step
+    }
+
     /** Mirror folded lines [mirrored, upto); the last line is held back until `result`. */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
-      // Token granularity accumulates think/text outside the log (host 0.1.5
-      // removed the per-chunk event); the settle writes one combined final
-      // message, so the fold leaves those lines out (their usage rides
-      // `settleUsage`). Tool lines
-      // still fold — a fold at or past the reserved stream step shifts one
-      // slot up, so tool cards keep their chronological side of the stream
-      // and never take its merge key.
-      const skipContent = granularity === 'token'
       // The usage rides the last NON-tool line (tool events carry no usage
-      // slot); a carrier mirrored in an earlier flush gets the accounting
-      // only in token mode, where the settle message still goes out (in event
-      // mode the carrier is already immutable in the log — 0.1.5 has no
-      // usage-backfill event).
+      // slot, and a kill mid-command ends the transcript with a tool line).
+      // A carrier mirrored in an earlier flush (before the usage was knowable)
+      // loses the accounting to the settle's final snapshot — host 0.1.5 has
+      // no usage-backfill event.
       let usageIndex = -1
       if (withUsage) {
         for (let index = 0; index < parser.lines.length; index += 1) {
           if (parser.lines[index]?.kind !== 'tool') usageIndex = index
         }
       }
-      const carrierMirrored = withUsage && usageIndex !== -1 && usageIndex < mirrored
       for (let index = mirrored; index < upto; index += 1) {
         const line = parser.lines[index]
         if (line === undefined) continue
         const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
-        if (skipContent && line.kind !== 'tool') {
-          if (lineUsage !== undefined) settleUsage = lineUsage
-          mirrored = index + 1
-          continue
+        if (lineUsage !== undefined) usageCarried = true
+        const itemId = line.kind === 'tool' ? undefined : streamKey(line.kind)
+        const stream = itemId === undefined ? undefined : streams.get(itemId)
+        if (itemId !== undefined && stream !== undefined) {
+          // A streamed line folds at its reserved step, finalizing the
+          // snapshots: the step opens only if no snapshot ever landed (a
+          // fast stream that stayed under the throttle), and closes here.
+          streams.delete(itemId)
+          if (activeStream === itemId) activeStream = undefined
+          if (!stream.opened) childSession.append('step/start', { turn, step: stream.step })
+          const blocks = stream.kind === 'think'
+            ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
+            : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
+          childSession.append('assistant/message', {
+            turn,
+            step: stream.step,
+            message: assistantEvent(blocks),
+            stream: [],
+            ...lineUsage === undefined ? {} : { usage: lineUsage },
+          }, { surfaceOp: 'append' })
+          childSession.append('step/end', { turn, step: stream.step })
+        } else {
+          appendClaudeTranscriptLine(childSession, turn, foldStep(index), line, lineUsage)
         }
-        const step = skipContent && streamStep !== undefined && index + 1 >= streamStep ? index + 2 : index + 1
-        appendClaudeTranscriptLine(childSession, turn, step, line, lineUsage)
         mirrored = index + 1
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
-      }
-      if (carrierMirrored && parser.usage !== undefined && skipContent) {
-        settleUsage = parser.usage
       }
       if (upto > 0) persist()
     }
@@ -638,13 +757,11 @@ export class ClaudeLiveDriver {
         return
       }
       if (type === 'result') {
-        // The turn closes: flush the held-back last line WITH the round's usage.
+        // The turn closes: fold the result event itself (it carries the
+        // round's usage — the fold's usage carrier rule needs it in both
+        // granularities), then flush the held-back last line WITH the usage.
         awaitingResult = false
-        // Token granularity folds the result event itself (the usage carrier
-        // line is skipped, so the round's usage — the fold's own computation —
-        // rides `settleUsage` onto the combined final message). Event
-        // granularity keeps the historical flush verbatim.
-        parser.push(granularity === 'token' ? JSON.stringify(event) + '\n' : '')
+        parser.push(JSON.stringify(event) + '\n')
         mirrorUpTo(parser.lines.length, true)
         resolveResult(event)
         return
@@ -656,21 +773,14 @@ export class ClaudeLiveDriver {
         const deltaType = delta?.['type']
         const text = delta?.['text'] ?? delta?.['thinking']
         if ((deltaType === 'text_delta' || deltaType === 'thinking_delta') && typeof text === 'string' && text !== '') {
-          if (deltaType === 'text_delta') {
-            roundText += text
-          } else {
-            roundThink += text
+          const kind = deltaType === 'thinking_delta' ? 'think' as const : 'text' as const
+          reserveStream(streamKey(kind), kind)
+          const stream = activeStream === undefined ? undefined : streams.get(activeStream)
+          if (stream !== undefined) {
+            stream.text += text
+            appendStreamSnapshot(stream, false, false)
           }
-          // The stream's block layout matches the combined final message:
-          // reasoning at index 0, reply text at index 1.
-          // Reserve the stream's step past every line completed so far
-          // (including the held-back carrier line), so a tool-first round
-          // renders the answer after its tool cards, not above them.
-          // Host 0.1.5 removed the per-chunk session event, so token
-          // granularity no longer writes deltas to the child log; the delta
-          // rides the run progress channel and the round settles as one
-          // combined final message.
-          if (streamStep === undefined) streamStep = parser.lines.length + 1
+          // The delta still rides the run-progress channel live.
           localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
         }
         return
@@ -791,33 +901,22 @@ export class ClaudeLiveDriver {
       roundSettled = true
       turnInFlight = false
       if (turnOpened) {
-        // Token granularity: settle the round with ONE combined final message
-        // at the reserved (turn, step), carrying the usage — INSIDE the turn
-        // window (before turn/end) and wrapped in the step boundary pair, so
-        // the live conversation assembler materializes it like every other
-        // step instead of dropping a turn-level append after the turn closed.
-        // A non-completed round is marked interrupted, so a cancelled turn
-        // reads 已停止 legitimately.
-        if (granularity === 'token') {
-          const blocks: ContentBlock[] = []
-          if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
-          if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
-          if (blocks.length > 0) {
-            // The stream's reserved step (set whenever content exists —
-            // content implies at least one delta arrived).
-            const step = streamStep ?? 1
-            childSession.append('step/start', { turn, step })
-            childSession.append('assistant/message', {
-              turn,
-              step,
-              message: assistantEvent(blocks),
-              stream: [],
-              ...settleUsage !== undefined ? { usage: settleUsage } : {},
-              ...settled.stopReason === 'completed' ? {} : { interrupted: true },
-            }, { surfaceOp: 'append' })
-            childSession.append('step/end', { turn, step })
-            persist()
+        // An aborted or failed turn never sees the result event, so its
+        // held-back line (and the usage already observed) would be lost —
+        // flush it now (the exec settle-mirror's partial-work contract).
+        if (mirrored < parser.lines.length) mirrorUpTo(parser.lines.length, true)
+        // Streams whose completion never arrived (abort, or the turn ended
+        // mid-message) still finalize INSIDE the turn window: one forced
+        // snapshot each — interrupted on a non-completed round, the LAST one
+        // carrying the usage when no folded line did — then step/end.
+        if (streams.size > 0) {
+          const remaining = [...streams.values()]
+          for (const [position, stream] of remaining.entries()) {
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+            if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
           }
+          streams.clear()
+          activeStream = undefined
         }
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
