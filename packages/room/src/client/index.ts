@@ -30,7 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import roomRemote from '@khorsheed/dsh-room/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
-import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
@@ -44,7 +44,7 @@ import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
-  InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomMutationOutcome,
+  InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
   RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
@@ -114,6 +114,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
 
   const openSession = (sessionId: SessionId): void => { ctx.sessions.open(sessionId) }
+  // The official per-session model directories (ui-model-selection's public
+  // client service, augmented onto Context by that plugin): the composer's
+  // main-agent model picker resolves the SAME directory the official model
+  // seat renders, so its select() writes exactly the official seat's durable
+  // per-session selection. Probed once — a host without the plugin gets no
+  // picker (duck-type guard, never an inject: absence must not fail the boot).
+  const modelDirectories = (() => {
+    const candidate = ctx.get('modelDirectories') as { directoryFor?: unknown } | undefined
+    return candidate !== undefined && typeof candidate.directoryFor === 'function'
+      ? candidate as { directoryFor: (sessionId: SessionId) => RoomModelDirectory }
+      : undefined
+  })()
+  /** The room session's own directory; undefined degrades to no picker. */
+  const modelDirectoryFor = (sessionId: SessionId): RoomModelDirectory | undefined => {
+    if (modelDirectories === undefined) return undefined
+    // directoryFor fails loud on an unknown session — a resolving race must
+    // never break the composer inject.
+    try {
+      return modelDirectories.directoryFor(sessionId)
+    } catch {
+      return undefined
+    }
+  }
   const cancelMember = async (sessionId: SessionId, member: string): Promise<void> => {
     if (remote === undefined) return
     const carried = await remote.cancel({ sessionId, name: member })
@@ -232,6 +255,33 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
     ...inviteFace(sessionId),
+    // The localAgentGateway member model surface (the family client half's
+    // namespace, probed lazily like the invite dialog's harnessModel read):
+    // the member cards' model hints and the edit dialog's model field. A
+    // composition without it answers undefined — no hints, no broker call.
+    memberModel: async (childSessionId) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['memberModel'] !== 'function') return undefined
+      try {
+        const carried = await (gateway['memberModel'] as
+          (child: string) => Promise<{ readonly ok: true; readonly value: LocalAgentModelInfo | null } | { readonly ok: false }>)(childSessionId)
+        return carried.ok ? carried.value : undefined
+      } catch {
+        return undefined
+      }
+    },
+    setMemberModel: async (childSessionId, model) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['setMemberModel'] !== 'function') return undefined
+      try {
+        const carried = await (gateway['setMemberModel'] as
+          (child: string, value?: string) => Promise<{ readonly ok: true; readonly value: LocalAgentPromptResult } | { readonly ok: false }>)(childSessionId, model)
+        return carried.ok ? carried.value : undefined
+      } catch {
+        return undefined
+      }
+    },
+    modelDirectory: modelDirectoryFor(sessionId),
     openSession,
     removeMember: async (member) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
@@ -249,6 +299,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         ...patch.rename === undefined ? {} : { rename: patch.rename },
         ...patch.instructions === undefined ? {} : { instructions: patch.instructions },
         ...patch.cwd === undefined ? {} : { cwd: patch.cwd },
+        ...patch.model === undefined ? {} : { model: patch.model },
       })
       if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
       if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
@@ -307,6 +358,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...tasksFace(sessionId),
       ...inviteFace(sessionId),
       submit,
+      modelDirectory: modelDirectoryFor(sessionId),
       // The hidden official bar's Stop: the runtime session face's cancel
       // (the same verb ui-conversation's own Stop injects). A torn-down
       // binding degrades to a no-op.

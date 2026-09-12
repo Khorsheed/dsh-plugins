@@ -21,6 +21,7 @@ import { CodexCliProvider, codexCliVersion } from './codex-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { CodexModelBroker } from './model-broker.ts'
+import { CodexModelCatalog } from './model-catalog.ts'
 import { codexAuthenticated, listCodexSessions } from './records.ts'
 import { codexCredentialStamp, codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from './provision.ts'
 
@@ -140,6 +141,10 @@ export function apply(ctx: Context, config: Config): void {
     // different model retires that runtime — the next round respawns onto the
     // new model while the codex thread itself resumes.
     const memberModelOverrides = new Map<string, string>()
+    const modelCatalog = new CodexModelCatalog({
+      spawn: spec => ctx.subprocess.spawn(spec),
+      warn: message => ctx.logger.warn(message),
+    })
     const liveSwitch = new LiveDriverSwitch(ctx, scope, {
       sandbox,
       model: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
@@ -154,6 +159,10 @@ export function apply(ctx: Context, config: Config): void {
       overrides: memberModelOverrides,
       liveBoundModel: childSessionId => liveSwitch.boundModel(childSessionId),
       retireRuntime: childSessionId => liveSwitch.retireRuntime(childSessionId),
+      // The account catalog probe is LAZY: read() serves the cache and only
+      // the first read (a settings-card/composer modelInfo, never plugin
+      // apply) spawns the one-shot app-server probe in the background.
+      catalog: scopedHome => modelCatalog.read(scopedHome),
     })
     const disposeProvider = ctx.subagents.registerProvider(
       new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),

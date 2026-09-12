@@ -76,6 +76,14 @@ export interface RoomMemberUpdatedEvent {
    */
   readonly cwd?: string | null
   /**
+   * The member's intended model, edited through the members tab's edit dialog.
+   * Roster-recorded intent: consumed as the facade `start` call's `model`
+   * option while the member was never dispatched (the live member's immediate
+   * switch rides the localAgentGateway `setMemberModel` — the client calls
+   * both). null CLEARS it — the member follows the harness default again.
+   */
+  readonly model?: string | null
+  /**
    * The CLI member's delegation handle, journaled when the member's first
    * run starts (invite predates the handle; the dispatch engine appends this
    * update so a reload reattaches the member to its child session).
@@ -251,7 +259,7 @@ export interface RoomMember {
   readonly invitedBy: 'human' | 'agent'
   /** Member-level working directory (roster record; not yet passed to the facade). */
   readonly cwd?: string
-  /** The delegation's invite-time model (roster record; the facade start's `model` option). */
+  /** The member's intended model (roster record; the facade start's `model` option on the first dispatch). */
   readonly model?: string
   readonly childSessionId?: SessionId
 }
@@ -422,7 +430,7 @@ export type RoomInviteResult =
   | { readonly ok: true; readonly value: RoomInvitation }
   | { readonly ok: false; readonly error: RoomFailure }
 
-/** updateMember request: edit a member's name, role instructions, or cwd. */
+/** updateMember request: edit a member's name, role instructions, cwd, or model. */
 export interface RoomUpdateMemberRequest {
   /** Room session. */
   readonly sessionId: SessionId
@@ -434,6 +442,12 @@ export interface RoomUpdateMemberRequest {
   readonly instructions?: string | null
   /** New member-level cwd; null (or a blank string) CLEARS the override back to inheriting the room cwd. */
   readonly cwd?: string | null
+  /**
+   * New intended model (roster-recorded; the first dispatch binds it as the
+   * facade start's `model` option); null (or a blank string) CLEARS it back
+   * to following the harness default.
+   */
+  readonly model?: string | null
 }
 
 /** updateMember outcome. */

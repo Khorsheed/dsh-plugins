@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type { RoomProviderList } from '../types.ts'
+import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
 
@@ -90,6 +91,73 @@ export interface RoomInviteInjected {
 }
 
 /**
+ * The main agent's durable per-session model selection (the host's
+ * session-controller vocabulary, duck-typed so room never imports
+ * ui-model-selection — the service is probed through `ctx.get`).
+ */
+export interface RoomModelSelection {
+  readonly provider: string
+  readonly model: string
+  readonly reasoningEffort?: string
+}
+
+/** One adapter-owned reasoning effort of an exact model route. */
+export interface RoomModelEffort {
+  readonly id: string
+  readonly name: string
+}
+
+/** One catalog model inside its provider group. */
+export interface RoomCatalogModel {
+  readonly id: string
+  readonly name: string
+  readonly reasoning?: {
+    readonly efforts: readonly RoomModelEffort[]
+    readonly defaultEffort?: string
+  }
+}
+
+/** One provider and its successfully loaded model catalog. */
+export interface RoomModelGroup {
+  readonly id: string
+  readonly name: string
+  readonly models: readonly RoomCatalogModel[]
+}
+
+/** The directory snapshot the room's main-agent model picker renders from. */
+export interface RoomModelDirectoryState {
+  /** Effective selection: the durable next-request projection, then the host default. */
+  readonly current: RoomModelSelection | null
+  /** Successfully loaded provider groups (last good load). */
+  readonly groups: readonly RoomModelGroup[]
+  /** Lifecycle of the in-flight operation. */
+  readonly status: 'idle' | 'loading' | 'ready' | 'selecting' | 'error'
+  /** Whole-request or selection failure text; null when none. */
+  readonly error: string | null
+}
+
+/**
+ * The duck-typed slice of ui-model-selection's per-session ModelDirectory
+ * (`ctx.modelDirectories.directoryFor(sessionId)`) the composer's main-agent
+ * model picker consumes — the SAME directory the official composer seat
+ * (`conversation.input.model`) renders, so a switch here is exactly the
+ * official seat's switch: `select()` writes the durable per-session selection
+ * through the session controller's selectModel remote and the shared store
+ * notifies every reader. Absent service = no picker (degrade, never throw).
+ */
+export interface RoomModelDirectory {
+  /** The shared snapshot store (useSyncExternalStore-safe). */
+  readonly store: {
+    readonly subscribe: (listener: () => void) => () => void
+    readonly getSnapshot: () => RoomModelDirectoryState
+  }
+  /** Ensure the shared advisory catalog is loaded (errors land on the store). */
+  readonly load: () => Promise<unknown>
+  /** Select the complete provider/model/reasoning selection; rejects on a refused switch. */
+  readonly select: (selection: RoomModelSelection) => Promise<void>
+}
+
+/**
  * Injected face of the composer takeover entry: the dispatch submit plus the
  * task-board actions (sessionId binds at inject time), because the takeover
  * renders the task board itself — the `conversation.input.dock` seat rides
@@ -97,6 +165,9 @@ export interface RoomInviteInjected {
  * Stop duty: the fallback's Stop button hides with it, so `stop` re-homes the
  * main agent's turn cancel (the runtime session face's `cancel()`). The
  * invite share rides along for the fresh-room dock's invite capsule.
+ * `modelDirectory` is the official per-session model directory for the room's
+ * own main agent (bare messages ARE its turns); undefined on a host without
+ * ui-model-selection — the picker simply does not render.
  */
 export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjected {
   /**
@@ -109,6 +180,13 @@ export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjec
   readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[]) => Promise<RoomMutationOutcome>
   /** Interrupt the room's own main-agent turn (the hidden official bar's Stop). */
   readonly stop: () => void
+  /**
+   * The official per-session model directory of the room's main agent (the
+   * session's root agent). The picker writes the SESSION selection only — an
+   * @-addressed member dispatch rides room's own submit remote and is never
+   * touched by it. undefined = host without ui-model-selection: no picker.
+   */
+  readonly modelDirectory?: RoomModelDirectory | undefined
 }
 
 /** The composer takeover match: the session is a cached room. */
@@ -156,10 +234,31 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
   /**
    * Edit the named member: rename, cwd override (null clears back to
-   * inheriting the room cwd), role instructions (null clears them). Only the
-   * present fields change.
+   * inheriting the room cwd), role instructions (null clears them), intended
+   * model (null clears it back to the harness default). Only the present
+   * fields change.
    */
   readonly updateMember: (member: string, patch: RoomMemberPatch) => Promise<RoomMutationOutcome>
+  /**
+   * A CLI member's model surface (the localAgentGateway `memberModel` read,
+   * duck-typed): null = no broker (no model hint, pre-broker behavior),
+   * undefined = gateway absent or RPC failure. Absent = no model hints at all.
+   */
+  readonly memberModel?: ((childSessionId: string) => Promise<LocalAgentModelInfo | null | undefined>) | undefined
+  /**
+   * Switch (undefined = clear the override → follow settings) a live member's
+   * session-level model (the localAgentGateway `setMemberModel` write): the
+   * edit dialog's immediate-effect half; its structured refusal (a round in
+   * flight) rides the dialog's error line. undefined = RPC failure (the
+   * journaled persist still proceeds).
+   */
+  readonly setMemberModel?: ((childSessionId: string, model?: string) => Promise<LocalAgentPromptResult | undefined>) | undefined
+  /**
+   * The room session's official model directory (the same instance
+   * RoomModelPicker renders): the main-agent card's model hint. undefined =
+   * host without ui-model-selection.
+   */
+  readonly modelDirectory?: RoomModelDirectory | undefined
 }
 
 /** One member edit (every field optional; null clears the field). */
@@ -170,6 +269,8 @@ export interface RoomMemberPatch {
   readonly instructions?: string | null
   /** New cwd override; null clears back to inheriting the room cwd. */
   readonly cwd?: string | null
+  /** New intended model; null clears back to the harness default. */
+  readonly model?: string | null
 }
 
 /** Injected face of the member-speech chat node. */

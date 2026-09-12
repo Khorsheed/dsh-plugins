@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge.
@@ -137,8 +137,46 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
   }
   // The suggestion vocabulary: the broker's deduped union (settings + host
   // default selection + recent) when the surface answered, the card's own
-  // recent-models memory when it did not. Never a hardcoded catalog.
+  // recent-models memory when it did not. Never a hardcoded catalog. A
+  // non-empty list turns the field into a select-like control: the
+  // always-visible chevron opens the same vocabulary as a menu.
   const choices = modelInfo?.choices ?? recentModels
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [modelMenuUp, setModelMenuUp] = useState(false)
+  const modelFieldRef = useRef<HTMLDivElement | null>(null)
+  // Click-outside and Esc close the model menu (the member composer's picker
+  // pattern); the upward flip is measured when the menu opens.
+  useEffect(() => {
+    if (!modelMenuOpen) return
+    const onPointerDown = (event: MouseEvent): void => {
+      if (modelFieldRef.current?.contains(event.target as Node) === true) return
+      setModelMenuOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setModelMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [modelMenuOpen])
+  const toggleModelMenu = (): void => {
+    if (!modelMenuOpen) {
+      const rect = modelFieldRef.current?.getBoundingClientRect()
+      if (rect !== undefined) {
+        const spaceBelow = window.innerHeight - rect.bottom
+        setModelMenuUp(spaceBelow < 260 && rect.top > spaceBelow)
+      }
+    }
+    setModelMenuOpen(open => !open)
+  }
+  // An empty field names the effective default it will follow, when the
+  // broker knows one — the placeholder answers "what does blank mean".
+  const modelPlaceholder = modelInfo != null && modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
+    ? t('model.placeholder.cli-config', { model: modelInfo.cliDefault })
+    : t('model.placeholder')
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -149,6 +187,21 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
     authStatus === 'authenticated' ? 'settings.authenticated'
       : authStatus === 'anonymous' ? 'settings.notAuthenticated'
         : authStatus === 'checking' ? 'loading' : 'error',
+  )
+  // The free-text input, single-sourced for both presentations: bare when no
+  // vocabulary exists (a fresh install degrades to exactly the pre-picker
+  // field), or inside the select-like field next to its chevron.
+  const modelInputElement = (
+    <input
+      type="text"
+      className={css.modelInput}
+      list={`${NS}-recent-models`}
+      value={modelValue}
+      placeholder={modelPlaceholder}
+      aria-label={t('model.title')}
+      disabled={!ready}
+      onChange={(event) => { setModelDraft(event.target.value) }}
+    />
   )
   return (
     <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
@@ -207,16 +260,42 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
               </Tooltip>
             </h3>
             <div className={css.row}>
-              <input
-                type="text"
-                className={css.modelInput}
-                list={`${NS}-recent-models`}
-                value={modelValue}
-                placeholder={t('model.placeholder')}
-                aria-label={t('model.title')}
-                disabled={!ready}
-                onChange={(event) => { setModelDraft(event.target.value) }}
-              />
+              {choices.length > 0 ? (
+                <div className={css.modelField} ref={modelFieldRef}>
+                  {modelInputElement}
+                  <button
+                    type="button"
+                    className={css.modelMenuButton}
+                    aria-label={t('model.menu')}
+                    aria-haspopup="menu"
+                    aria-expanded={modelMenuOpen}
+                    disabled={!ready}
+                    onClick={() => { toggleModelMenu() }}
+                  >
+                    <IconChevronDownOutline14 className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
+                  </button>
+                  {modelMenuOpen && (
+                    <div
+                      className={modelMenuUp ? `${css.modelMenu} ${css.modelMenuUp}` : css.modelMenu}
+                      role="menu"
+                      aria-label={t('model.menu')}
+                    >
+                      {choices.map(choice => (
+                        <button
+                          key={choice}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={choice === modelValue}
+                          className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
+                          onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
+                        >
+                          {choice}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : modelInputElement}
               <datalist id={`${NS}-recent-models`}>
                 {choices.map(value => <option key={value} value={value} />)}
               </datalist>

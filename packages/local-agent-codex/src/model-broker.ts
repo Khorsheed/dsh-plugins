@@ -13,8 +13,9 @@
  * the scoped config.toml's own `model` (cliDefault) → the CLI's built-in
  * default, which names nothing. The pickable vocabulary is what the instance
  * actually knows — settings + cliDefault + the identifiers the scoped config
- * itself carries (profiles) + the card's recent-model memory — never a
- * hardcoded catalog.
+ * itself carries (profiles) + the app-server `model/list` account catalog
+ * (probed, cached, best-effort — see model-catalog.ts) + the card's
+ * recent-model memory — never a hardcoded catalog.
  * @module @khorsheed/dsh-local-agent-codex/model-broker
  */
 
@@ -30,6 +31,13 @@ export interface CodexModelBrokerDeps {
   readonly settingsModel: () => string | undefined
   /** The card's recent-model memory (the suggestion vocabulary's tail). */
   readonly recentModels: () => readonly string[]
+  /**
+   * The account catalog cache's SYNC read of the scoped home (see
+   * model-catalog.ts): the last completed `model/list` probe's slugs, empty
+   * on a cold cache, re-probing in the background when stale. Sits ahead of
+   * the recent-model memory in the choice vocabulary.
+   */
+  readonly catalog: (homeDir: string) => readonly string[]
   /** The default scope's scoped home; config discovery reads it live. */
   readonly homeDir: () => string
   /** Whether the live driver is on (the member's rounds bind resident runtimes). */
@@ -87,12 +95,16 @@ export class CodexModelBroker implements LocalAgentModelBroker {
    * Read the model surface. The cliDefault and the discovered identifiers come
    * from the scoped config.toml LIVE (a person-edited file is authoritative);
    * a read failure degrades that layer to absent, never to a guessed value.
+   * The account catalog comes from the probe cache SYNCHRONOUSLY (a cold
+   * cache reads empty and re-probes in the background — the settings card
+   * re-fetches on open, so it never blocks on a CLI boot).
    */
   async modelInfo(childSessionId?: string, delegationModel?: string): Promise<LocalAgentModelInfo> {
     const settings = this.deps.settingsModel()
+    const homeDir = this.deps.homeDir()
     const [cliDefault, discovered] = await Promise.all([
-      readCodexModel(this.deps.homeDir()).catch(() => undefined),
-      listCodexConfigModels(this.deps.homeDir()).catch(() => [] as string[]),
+      readCodexModel(homeDir).catch(() => undefined),
+      listCodexConfigModels(homeDir).catch(() => [] as string[]),
     ])
     const override = childSessionId === undefined ? undefined : this.deps.overrides.get(childSessionId)
     const delegation = delegationModel?.trim() === '' ? undefined : delegationModel
@@ -109,7 +121,7 @@ export class CodexModelBroker implements LocalAgentModelBroker {
       ...delegation === undefined ? {} : { delegation },
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
-      choices: dedupeChoices([settings, cliDefault, ...discovered, ...this.deps.recentModels()]),
+      choices: dedupeChoices([settings, cliDefault, ...discovered, ...this.deps.catalog(homeDir), ...this.deps.recentModels()]),
       live: this.deps.live(),
       switchable: !inFlight,
       ...inFlight ? { reason: '成员有进行中的委派轮次，等其完成后再切换模型' } : {},

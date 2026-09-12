@@ -10,7 +10,10 @@ import { MembersView } from '../src/client/MembersView.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
 import { NAME_POOL, rollName } from '../src/client/name-pool.ts'
-import type { MembersViewProps, RoomMembersInjected } from '../src/client/slots.ts'
+import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import type {
+  MembersViewProps, RoomMembersInjected, RoomModelDirectory, RoomModelDirectoryState,
+} from '../src/client/slots.ts'
 import type { RoomProviderList, RoomState } from '../src/types.ts'
 
 afterEach(() => {
@@ -50,6 +53,38 @@ interface Bench {
     listProviders: ReturnType<typeof vi.fn>
     browseDirectory: ReturnType<typeof vi.fn>
     modelChoices: ReturnType<typeof vi.fn>
+    memberModel: ReturnType<typeof vi.fn>
+    setMemberModel: ReturnType<typeof vi.fn>
+  }
+}
+
+/** A pickable model surface (settings layer effective, two choices). */
+function modelInfo(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
+  return {
+    effective: 'kimi-k2',
+    source: 'settings',
+    settings: 'kimi-k2',
+    choices: ['kimi-k2', 'kimi-k1'],
+    live: false,
+    switchable: true,
+    ...over,
+  }
+}
+
+/** A stubbed official per-session directory (the main-agent card's hint source). */
+function modelDirectory(): RoomModelDirectory {
+  const store = createSnapshotStore<RoomModelDirectoryState>({
+    current: { provider: 'p1', model: 'm1' },
+    groups: [
+      { id: 'p1', name: 'Provider One', models: [{ id: 'm1', name: 'Model One' }] },
+    ],
+    status: 'ready',
+    error: null,
+  })
+  return {
+    store,
+    load: vi.fn(async () => store.getSnapshot()),
+    select: vi.fn(async () => {}),
   }
 }
 
@@ -58,8 +93,20 @@ function cardOf(name: string): HTMLElement {
   return screen.getByText(name, { selector: 'span' }).closest('[data-member]') as HTMLElement
 }
 
+/** The edit dialog's model input (the edit-mode placeholder). */
+function editModelInput(): HTMLInputElement {
+  return screen.getByPlaceholderText(zh['invite.modelPlaceholderEdit']) as HTMLInputElement
+}
+
 /** Render the tab against a primed store and a vi.fn inject face. */
-async function bench(options: { room?: boolean; providers?: RoomProviderList; modelChoices?: readonly string[] } = {}): Promise<Bench> {
+async function bench(options: {
+  room?: boolean
+  providers?: RoomProviderList
+  modelChoices?: readonly string[]
+  memberModel?: (child: string) => Promise<LocalAgentModelInfo | null | undefined>
+  setMemberModel?: (child: string, model?: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  modelDirectory?: RoomModelDirectory
+} = {}): Promise<Bench> {
   const isRoom = options.room !== false
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
   const gateway: RoomGateway = {
@@ -80,6 +127,9 @@ async function bench(options: { room?: boolean; providers?: RoomProviderList; mo
     listProviders: vi.fn(async () => options.providers ?? PROVIDERS),
     browseDirectory: vi.fn(async () => '/home/user/web' as string | null),
     modelChoices: vi.fn(async () => options.modelChoices),
+    memberModel: vi.fn(options.memberModel ?? (async () => undefined)),
+    setMemberModel: vi.fn(options.setMemberModel ?? (async () => ({ ok: true as const }))),
+    modelDirectory: options.modelDirectory,
   }
   const props = { sessionId: SESSION, ...face, t } as unknown as MembersViewProps
   render(<MembersView {...props} />)
@@ -386,6 +436,117 @@ describe('MembersView', () => {
     fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
     const editDialog = await screen.findByRole('dialog')
     expect((editDialog.querySelector('details') as HTMLDetailsElement).open).toBe(true)
+  })
+
+  it('the member card shows the effective model from memberModel, appended to the provider line', async () => {
+    await bench({
+      memberModel: async (child) => child === 'child-1' ? modelInfo() : null,
+    })
+    // ada (child-1): the broker's effective model joins the provider line.
+    const adaCard = cardOf('ada')
+    await waitFor(() => { expect(adaCard.textContent).toContain('kimi · kimi-k2') })
+    // bill (child-2): a null answer (brokerless harness) renders no hint —
+    // the pre-broker card exactly. cathy (never dispatched) and main take none.
+    const billCard = cardOf('bill')
+    expect(billCard.textContent).not.toContain('kimi-k2')
+    expect(billCard.textContent).toContain('codex')
+    expect(cardOf('cathy').textContent).not.toContain('kimi-k2')
+    expect(cardOf('main').textContent).toContain('主 agent')
+  })
+
+  it('renders no model hint when the gateway answer never comes (RPC failure stays invisible)', async () => {
+    await bench() // default memberModel: undefined on every call
+    const adaCard = cardOf('ada')
+    await waitFor(() => { expect(adaCard.textContent).toContain('空闲') })
+    expect(adaCard.textContent).toContain('kimi')
+    expect(adaCard.textContent).not.toContain(' · ')
+  })
+
+  it('the main-agent card shows the session model from the official directory', async () => {
+    await bench({ modelDirectory: modelDirectory() })
+    const mainCard = cardOf('main')
+    await waitFor(() => { expect(mainCard.textContent).toContain('主 agent · Model One') })
+    // CLI members stay on their own memberModel surface (default: no hint).
+    expect(cardOf('ada').textContent).not.toContain('Model One')
+  })
+
+  it('the edit dialog prefills the member\'s effective model and serves the broker choices', async () => {
+    const { face } = await bench({
+      memberModel: async (child) => child === 'child-1' ? modelInfo() : null,
+    })
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    const dialog = await screen.findByRole('dialog')
+    const input = editModelInput()
+    await waitFor(() => { expect(input.value).toBe('kimi-k2') })
+    expect(face.memberModel).toHaveBeenCalledWith('child-1')
+    // The datalist rides the member's own choices (memberModel, not harnessModel).
+    await waitFor(() => { expect(input.getAttribute('list')).toBe('room-invite-model-choices') })
+    expect([...dialog.querySelectorAll('datalist option')].map(option => option.getAttribute('value')))
+      .toEqual(['kimi-k2', 'kimi-k1'])
+  })
+
+  it('the edit save switches the live member through setMemberModel and journals the model', async () => {
+    const { face } = await bench({
+      memberModel: async (child) => child === 'child-1' ? modelInfo() : null,
+    })
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    await screen.findByRole('dialog')
+    const input = editModelInput()
+    await waitFor(() => { expect(input.value).toBe('kimi-k2') })
+    fireEvent.change(input, { target: { value: 'kimi-k1' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => { expect(face.setMemberModel).toHaveBeenCalledWith('child-1', 'kimi-k1') })
+    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('ada', { model: 'kimi-k1' }) })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('clearing the model field clears the override (undefined to the broker, null to the journal)', async () => {
+    const { face } = await bench({
+      memberModel: async (child) => child === 'child-1' ? modelInfo({ source: 'override', override: 'kimi-k2' }) : null,
+    })
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    await screen.findByRole('dialog')
+    const input = editModelInput()
+    await waitFor(() => { expect(input.value).toBe('kimi-k2') })
+    fireEvent.change(input, { target: { value: ' ' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => { expect(face.setMemberModel).toHaveBeenCalledWith('child-1', undefined) })
+    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('ada', { model: null }) })
+  })
+
+  it('a broker refusal rides the dialog error line and aborts the save (no journal write, no close)', async () => {
+    const { face } = await bench({
+      memberModel: async (child) => child === 'child-1' ? modelInfo() : null,
+      setMemberModel: async () => ({ ok: false as const, error: 'localAgent: a round is in flight' }),
+    })
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    await screen.findByRole('dialog')
+    const input = editModelInput()
+    await waitFor(() => { expect(input.value).toBe('kimi-k2') })
+    fireEvent.change(input, { target: { value: 'kimi-k1' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByRole('alert')).toBeDefined()
+    expect(screen.getByRole('alert').textContent).toBe('localAgent: a round is in flight')
+    expect(face.updateMember).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeDefined()
+  })
+
+  it('a never-started member persists the model through updateMember alone (no broker call)', async () => {
+    const { face } = await bench()
+    const cathyCard = cardOf('cathy')
+    fireEvent.click(Array.from(cathyCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    await screen.findByRole('dialog')
+    // No child session yet: the field opens on the journaled intent (empty).
+    const input = editModelInput()
+    expect(input.value).toBe('')
+    fireEvent.change(input, { target: { value: 'kimi-k2' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('cathy', { model: 'kimi-k2' }) })
+    expect(face.setMemberModel).not.toHaveBeenCalled()
   })
 })
 

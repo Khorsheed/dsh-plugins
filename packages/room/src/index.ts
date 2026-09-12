@@ -384,10 +384,14 @@ export class RoomService extends TypertRemoteService {
    * Update a member's editable fields: rename (validated like an invite name —
    * unique, parseable; the main agent is the room itself and cannot be
    * renamed), role instructions (null or a blank text CLEARS them — later
-   * dispatches inject none), and the member-level cwd override (null or a
+   * dispatches inject none), the member-level cwd override (null or a
    * blank text clears back to inheriting the room cwd; still roster-recorded
    * only — the delegation facade's per-call cwd override is the family's open
-   * R2). An instructions edit rides the member's next dispatch as a context
+   * R2), and the intended model (null or a blank text clears it back to the
+   * harness default; roster-recorded intent — the first dispatch binds it as
+   * the facade start's `model` option, and the live member's immediate switch
+   * is the client's localAgentGateway `setMemberModel` call, not this one).
+   * An instructions edit rides the member's next dispatch as a context
    * update (the CLI session itself is never rewritten); a rename migrates
    * every name-keyed projection at replay (the journal fold moves the roster
    * key, tasks' member/blockedBy, relays' from/to, and the runs key).
@@ -402,7 +406,8 @@ export class RoomService extends TypertRemoteService {
     if (member === undefined) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
-    if (request.rename === undefined && request.instructions === undefined && request.cwd === undefined) {
+    if (request.rename === undefined && request.instructions === undefined
+      && request.cwd === undefined && request.model === undefined) {
       return { ok: false, error: { code: 'nothing-to-update' } }
     }
     if (request.rename !== undefined && request.rename !== request.name) {
@@ -420,11 +425,15 @@ export class RoomService extends TypertRemoteService {
     const cwd = typeof request.cwd === 'string'
       ? (request.cwd.trim() === '' ? null : request.cwd.trim())
       : request.cwd
+    const model = typeof request.model === 'string'
+      ? (request.model.trim() === '' ? null : request.model.trim())
+      : request.model
     loaded.session.append('room/member-updated', {
       name: request.name,
       ...request.rename === undefined ? {} : { rename: request.rename },
       ...instructions === undefined ? {} : { instructions },
       ...cwd === undefined ? {} : { cwd },
+      ...model === undefined ? {} : { model },
     })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { name: request.name } }

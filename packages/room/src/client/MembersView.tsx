@@ -16,15 +16,33 @@ import { Button, IconAgentPresetOutline16 } from '@deepseek-ai/dsh-client-ui-pri
 import type { RoomMember } from '../types.ts'
 import { MemberCard } from './MemberCard.tsx'
 import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
-import type { MembersViewProps } from './slots.ts'
+import type { MembersViewProps, RoomModelDirectory } from './slots.ts'
 import type { RoomProviderList } from '../types.ts'
 import css from './MembersView.module.css'
 
 type DialogState = { readonly mode: 'invite' } | { readonly mode: 'edit'; readonly member: RoomMember } | null
 
+/**
+ * The main-agent card's model hint: the session's current selection from the
+ * official per-session directory (the same instance the composer's model seat
+ * reads), null before the first load resolves.
+ */
+function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirectory }): ReactNode {
+  const state = useSyncExternalStore(
+    fn => directory.store.subscribe(fn),
+    () => directory.store.getSnapshot(),
+  )
+  if (state.current === null) return null
+  const choice = state.groups
+    .flatMap(group => group.models.map(model => ({ group, model })))
+    .find(entry => entry.group.id === state.current?.provider && entry.model.id === state.current.model)
+  return <>{choice?.model.name ?? `${state.current.provider}/${state.current.model}`}</>
+}
+
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory, modelChoices, t,
+  sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory,
+  modelChoices, memberModel, setMemberModel, modelDirectory, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -33,6 +51,8 @@ export function MembersView({
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** The CLI members' effective models, keyed by member name (the cards' hints). */
+  const [memberModels, setMemberModels] = useState<ReadonlyMap<string, string>>(new Map())
   const anyRunning = state?.runs.some(run => run.state === 'running') ?? false
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -40,6 +60,29 @@ export function MembersView({
     const timer = setInterval(() => { setTick(value => value + 1) }, 1000)
     return () => { clearInterval(timer) }
   }, [anyRunning])
+
+  // The cards' model hints: one memberModel read per dispatched CLI member,
+  // refetched with the store (a switch through the member composer or the
+  // edit dialog lands on the next refresh). Null/absent answers render no
+  // hint — the pre-broker behavior exactly.
+  useEffect(() => {
+    if (memberModel === undefined) return
+    const fetchable = (state?.members ?? [])
+      .filter(member => member.kind === 'cli' && member.childSessionId !== undefined)
+    let cancelled = false
+    void Promise.all(fetchable.map(async member =>
+      [member.name, await memberModel(member.childSessionId as string)] as const,
+    )).then((results) => {
+      if (cancelled) return
+      const next = new Map<string, string>()
+      for (const [name, info] of results) {
+        if (info === null || info === undefined) continue
+        next.set(name, info.effective ?? t('members.model.default'))
+      }
+      setMemberModels(next)
+    })
+    return () => { cancelled = true }
+  }, [memberModel, state?.members, t])
 
   const flash = (message: string): void => {
     setNotice(message)
@@ -62,12 +105,26 @@ export function MembersView({
       const name = values.name.trim()
       const cwd = values.cwd.trim()
       const instructions = values.instructions.trim()
+      const model = values.model.trim()
+      const modelChanged = model !== values.modelBaseline.trim()
+      if (modelChanged && member.childSessionId !== undefined && setMemberModel !== undefined) {
+        // The live member switches FIRST: a structured refusal (a round in
+        // flight) aborts the whole save and rides the dialog's error line —
+        // no success close, no journaled persist. An undefined answer (RPC
+        // failure / vanished gateway) degrades to the persist alone.
+        const result = await setMemberModel(member.childSessionId, model === '' ? undefined : model)
+        if (result !== undefined && !result.ok) return { ok: false as const, message: result.error }
+      }
       return updateMember(member.name, {
         ...name !== member.name ? { rename: name } : {},
         ...cwd !== (member.cwd ?? '') ? { cwd: cwd === '' ? null : cwd } : {},
         ...instructions !== (member.instructions ?? '')
           ? { instructions: instructions === '' ? null : instructions }
           : {},
+        // The journaled intent: the first dispatch binds it for a never-
+        // started member (the broker call above is a no-op there — no
+        // delegation record — so this value alone carries the edit).
+        ...modelChanged ? { model: model === '' ? null : model } : {},
       })
     }
     const outcome = await invite({
@@ -104,6 +161,7 @@ export function MembersView({
       existingNames={(state?.members ?? []).map(entry => entry.name)}
       browseDirectory={browseDirectory}
       modelChoices={modelChoices}
+      memberModel={memberModel}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
       t={t}
@@ -146,6 +204,9 @@ export function MembersView({
               openSession={openSession}
               onEdit={() => { setDialog({ mode: 'edit', member }) }}
               onRemove={() => { void remove(member) }}
+              modelHint={member.kind === 'main-agent'
+                ? (modelDirectory !== undefined ? <MainAgentModelHint directory={modelDirectory} /> : undefined)
+                : memberModels.get(member.name)}
               t={t}
             />
           )

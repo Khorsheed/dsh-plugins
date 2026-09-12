@@ -325,4 +325,69 @@ describe('KimiSettingsCard default-model block', () => {
     const list = document.getElementById(input.getAttribute('list') ?? '')
     expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value'))).toEqual(['model-a'])
   })
+
+  it('shows an always-visible chevron that opens a menu; a pick fills the input as a draft', async () => {
+    renderCard({
+      modelInfo: { effective: 'cli-model', source: 'cli-config', cliDefault: 'cli-model', choices: ['cli-model', 'discovered/x'], live: false, switchable: true },
+    })
+    await openCard()
+    const menuButton = screen.getByRole('button', { name: zh['model.menu'] })
+    fireEvent.click(menuButton)
+    const items = screen.getAllByRole('menuitemradio')
+    expect(items.map(item => item.textContent)).toEqual(['cli-model', 'discovered/x'])
+    // The current input value reads as the checked item.
+    expect(items[0].getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'discovered/x' }))
+    // A pick is exactly a typed value: the menu closes, the draft waits for 保存.
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('discovered/x')
+    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('closes the menu on Esc', async () => {
+    renderCard({
+      modelInfo: { effective: 'cli-model', source: 'cli-config', cliDefault: 'cli-model', choices: ['cli-model'], live: false, switchable: true },
+    })
+    await openCard()
+    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('opens the menu from the recent-models memory too (no broker surface)', async () => {
+    renderCard({
+      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
+      modelInfo: undefined,
+    })
+    await openCard()
+    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
+    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['model-a', 'model-b'])
+  })
+
+  it('renders no menu affordance when nothing names a model (a fresh install)', async () => {
+    renderCard({
+      modelInfo: { source: 'cli-builtin', choices: [], live: false, switchable: true },
+    })
+    await openCard()
+    expect(screen.queryByRole('button', { name: zh['model.menu'] })).toBeNull()
+  })
+
+  it('the empty field\'s placeholder names the CLI config default the broker read', async () => {
+    renderCard({
+      modelInfo: { effective: 'cli-model', source: 'cli-config', cliDefault: 'cli-model', choices: ['cli-model'], live: false, switchable: true },
+    })
+    await openCard()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
+      .toBe('留空 = 跟随 CLI 配置：cli-model')
+  })
+
+  it('keeps the generic placeholder when the broker knows no default', async () => {
+    renderCard({
+      modelInfo: { source: 'cli-builtin', choices: [], live: false, switchable: true },
+    })
+    await openCard()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
+      .toBe(zh['model.placeholder'])
+  })
 })

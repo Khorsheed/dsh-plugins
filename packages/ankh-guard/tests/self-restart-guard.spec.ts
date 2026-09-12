@@ -4203,7 +4203,7 @@ describe('restart context injection', () => {
     await fiber.dispose()
   })
 
-  it('queues the restart report as a followup turn on root-agent creation (autonomous)', async () => {
+  it('settles a bare ownerless planned outcome without waking any session', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-ctx-')
     writeFileSync(join(stateDir, 'last-restart.json'), JSON.stringify({ exitAt: 1_700_000_000_000, pid: 9 }))
@@ -4214,13 +4214,41 @@ describe('restart context injection', () => {
     ctx.provide('agents', { roots: () => [agent] } as never)
     const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
     await fiber.await()
+    // No initiator, nothing worth reporting in-host (the operator's terminal
+    // has the announcement): the record settles on the first delivery pass
+    // and NO session is woken — a mounted ended session must stay ended.
     ctx.emit('agent/created', { agent })
-    expect(followup).toHaveBeenCalledTimes(1)
-    // Acknowledged: a second creation does not re-followup.
-    ctx.emit('agent/created', { agent })
-    expect(followup).toHaveBeenCalledTimes(1)
+    expect(followup).not.toHaveBeenCalled()
     expect(pendingRestartRecord(stateDir)).toBeNull()
+    // Settled for good: a later creation stays silent too.
+    ctx.emit('agent/created', { agent })
+    expect(followup).not.toHaveBeenCalled()
     await fiber.dispose()
+  })
+
+  it('an ownerless recovery record (unexpected / composition rollback / error) is claimed by the first root agent created', async () => {
+    for (const record of [
+      { exitAt: 1_700_000_000_000, unexpected: true },
+      { exitAt: 1_700_000_000_000, compositionRecovered: true, detail: 'unmounted demo' },
+      { exitAt: 1_700_000_000_000, error: 'listener died' },
+    ]) {
+      const repo = makeRepo()
+      const stateDir = tmpDir('guard-ctx-')
+      writeFileSync(join(stateDir, 'last-restart.json'), JSON.stringify(record))
+      const followup = vi.fn()
+      const agent = { followup } as never
+      const ctx = new Context()
+      await ctx.plugin(Loader)
+      ctx.provide('agents', { roots: () => [agent] } as never)
+      const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+      await fiber.await()
+      ctx.emit('agent/created', { agent })
+      // Diagnostics someone must hear about: the first root agent reports,
+      // exactly once.
+      expect(followup).toHaveBeenCalledTimes(1)
+      expect(pendingRestartRecord(stateDir)).toBeNull()
+      await fiber.dispose()
+    }
   })
 
   it('does not followup for a non-root (subagent) agent', async () => {
