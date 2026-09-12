@@ -49,7 +49,7 @@ Use an isolated Host profile with the mobile tarball installed. Install `cloudfl
 cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
 ```
 
-The latest isolated preview uses `--protocol quic` after HTTP/2 edge connections timed out. Protocol choice depends on the local network; a registered tunnel alone is not enough evidence. Verify public login and a full WebSocket reply before sharing the preview. Keep these processes running independently of short-lived automation sessions.
+Protocol choice depends on the local network. If the registered QUIC tunnel stalls on real requests, try `--protocol http2`; HTTP/2 can also fail on another network, so neither protocol is a universal default. A registered tunnel or a healthy loopback origin alone is not enough evidence. Verify public login, the session list and a full WebSocket reply before sharing the preview. A new Quick Tunnel allocates another hostname: update both the ingress origin and the Host trusted-host through the guarded launch cutover, then reconnect the app. Keep these processes running independently of short-lived automation sessions.
 
 Copy its generated hostname in place of `YOUR-HOST.trycloudflare.com` below. Start the standalone example in a second terminal:
 

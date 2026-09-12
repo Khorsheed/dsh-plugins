@@ -49,7 +49,7 @@ App 接受配置的 HTTPS 主机地址或官方启动 token 登录链接，只�
 cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
 ```
 
-最新隔离预览在 HTTP/2 边缘连接超时后改用 `--protocol quic`。协议选择取决于本地网络；仅看到隧道注册成功还不够，分享预览前需验证公网登录和完整 WebSocket 回复。测试进程应独立运行，避免依赖短生命周期的自动化会话。
+协议选择取决于本地网络。已注册的 QUIC 隧道若在实际请求上卡住，可以尝试 `--protocol http2`；其他网络上的 HTTP/2 也可能失败，两者都不是普遍适用的默认选择。仅看到隧道注册成功或本地入口健康还不够，分享预览前需验证公网登录、会话列表和完整 WebSocket 回复。新建 Quick Tunnel 会分配另一个域名：通过受保护的启动切换同步更新 ingress origin 与 Host trusted-host，再让 App 重新连接。测试进程应独立运行，避免依赖短生命周期的自动化会话。
 
 将生成的主机名替换下方的 `YOUR-HOST.trycloudflare.com`，在第二个终端启动独立示例：
 

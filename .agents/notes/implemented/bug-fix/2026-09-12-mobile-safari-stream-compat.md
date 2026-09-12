@@ -23,6 +23,10 @@ Only successful identity-encoded JavaScript is buffered, with a 16 MiB bound. Re
 
 ## Consequences
 
+The drawer library now reserves the same expanded connection-status height as the conversation frame; the banner stays within the visible library pane on narrow screens so it does not cover its title or extend into the conversation peek.
+
+A production tarball reinstall invalidated the running Host's retained client asset paths; new pages stalled until the guarded restart. Treat `deploy:3080 --no-restart` as staged maintenance, not a live hot update, even when only ingress examples changed.
+
 The adapter only covers clients traversing this ingress; direct LAN access and other reverse proxies remain unaffected. A page whose subscription already died must reload after the adapter is activated. Unknown/minified builds, encoded upstream assets and oversized bundles pass through unmodified and require qualification; code fingerprints must not be broadened automatically.
 
 This removes the known trigger but does not implement upstream Session failure-state hardening. Upstream still needs error publication, cleanup/retry and coherent cursor publication. Remove the opt-in flag after an upstream-fixed release passes actual WebKit reconnect and in-progress reply checks. Chromium mobile emulation alone is insufficient. Unit coverage includes exact/mixed fingerprints, cross-realm prototype checks, byte lengths, cache conditions, auth failures, oversized assets and streaming preservation.
