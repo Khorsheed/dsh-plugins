@@ -14,7 +14,7 @@ import css from './MembersView.module.css'
 
 /** One roster card: identity, avatar block, role, status chip, actions. */
 export function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t, preview = false,
+  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, preview = false,
 }: {
   readonly member: RoomMember
   readonly run: RoomMemberRun | undefined
@@ -24,6 +24,13 @@ export function MemberCard({
   readonly onEdit: () => void
   readonly onRemove: () => void
   readonly t: MembersViewProps['t']
+  /**
+   * The effective-model hint, appended to the provider/kind line (`kimi-cli ·
+   * kimi-code/k3`): the member's memberModel read (CLI) or the session's
+   * official directory selection (main agent). Absent = no hint (pre-broker
+   * behavior).
+   */
+  readonly modelHint?: ReactNode
   /** True = the dialog's live preview: no action foot. */
   readonly preview?: boolean
 }): ReactNode {
@@ -56,6 +63,7 @@ export function MemberCard({
           <span className={css.name}>{member.name}</span>
           <span className={css.hint}>
             {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
+            {modelHint !== undefined && modelHint !== '' && <>{' · '}{modelHint}</>}
           </span>
         </span>
         {running ? (

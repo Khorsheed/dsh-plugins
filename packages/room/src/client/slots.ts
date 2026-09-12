@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type { RoomProviderList } from '../types.ts'
+import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
 
@@ -233,10 +234,31 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
   /**
    * Edit the named member: rename, cwd override (null clears back to
-   * inheriting the room cwd), role instructions (null clears them). Only the
-   * present fields change.
+   * inheriting the room cwd), role instructions (null clears them), intended
+   * model (null clears it back to the harness default). Only the present
+   * fields change.
    */
   readonly updateMember: (member: string, patch: RoomMemberPatch) => Promise<RoomMutationOutcome>
+  /**
+   * A CLI member's model surface (the localAgentGateway `memberModel` read,
+   * duck-typed): null = no broker (no model hint, pre-broker behavior),
+   * undefined = gateway absent or RPC failure. Absent = no model hints at all.
+   */
+  readonly memberModel?: ((childSessionId: string) => Promise<LocalAgentModelInfo | null | undefined>) | undefined
+  /**
+   * Switch (undefined = clear the override → follow settings) a live member's
+   * session-level model (the localAgentGateway `setMemberModel` write): the
+   * edit dialog's immediate-effect half; its structured refusal (a round in
+   * flight) rides the dialog's error line. undefined = RPC failure (the
+   * journaled persist still proceeds).
+   */
+  readonly setMemberModel?: ((childSessionId: string, model?: string) => Promise<LocalAgentPromptResult | undefined>) | undefined
+  /**
+   * The room session's official model directory (the same instance
+   * RoomModelPicker renders): the main-agent card's model hint. undefined =
+   * host without ui-model-selection.
+   */
+  readonly modelDirectory?: RoomModelDirectory | undefined
 }
 
 /** One member edit (every field optional; null clears the field). */
@@ -247,6 +269,8 @@ export interface RoomMemberPatch {
   readonly instructions?: string | null
   /** New cwd override; null clears back to inheriting the room cwd. */
   readonly cwd?: string | null
+  /** New intended model; null clears back to the harness default. */
+  readonly model?: string | null
 }
 
 /** Injected face of the member-speech chat node. */

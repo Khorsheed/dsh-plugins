@@ -11,10 +11,12 @@
  *
  * Field order is primary-first: provider → 称呼(+🎲) → 首个任务 → ▸ 高级设置
  * (role instructions + the member-level cwd, collapsed on invite — editing
- * opens it, since editing IS changing those; invite also carries the
- * optional delegation model there, a text input whose datalist rides the
- * localAgentGateway `harnessModel` read when the family's client half is
- * around, blank following the harness default). The rest of the original
+ * opens it, since editing IS changing those; the drawer also carries the
+ * model field — invite-time a text input whose datalist rides the
+ * localAgentGateway `harnessModel` read, blank following the harness default;
+ * edit-time prefilled from the member's own `memberModel` surface — effective
+ * as the value, choices as the datalist — with the journaled intent as the
+ * fallback baseline). The rest of the original
  * contract is unchanged: logged-out providers grey with login guidance (an
  * absent facade degrades the whole section to a hint), the name precheck
  * plus the host's structured duplicate/invalid errors ride the inline error
@@ -22,18 +24,19 @@
  * (never a system-prompt channel), the cwd is a read-only display filled by
  * the 浏览… button (the official `uiWorkspace.pickDirectory` call;
  * empty = inherit the room session's cwd, shown as the placeholder), and
- * edit mode diffs name/cwd/instructions only.
+ * edit mode diffs name/cwd/instructions/model.
  */
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type {
   MembersViewProps, RoomInviteOutcome, RoomMutationOutcome,
 } from './slots.ts'
 import type { RoomMember, RoomProviderInfo } from '../types.ts'
+import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { MemberCard } from './MemberCard.tsx'
 import { rollName } from './name-pool.ts'
 import css from './InviteDialog.module.css'
 
-/** The dialog's submit values (edit mode carries name/cwd/instructions only). */
+/** The dialog's submit values (edit mode carries name/cwd/instructions/model). */
 export interface InviteDialogSubmit {
   readonly provider: string
   readonly name: string
@@ -42,6 +45,12 @@ export interface InviteDialogSubmit {
   readonly firstTask: string
   /** The delegation's invite-time model ('' = follow the harness default). */
   readonly model: string
+  /**
+   * The model value the edit field opened with (the member's effective model
+   * when the broker answered, else the journaled intent): the edit-mode diff
+   * baseline — a save only touches the broker/journal when the value moved.
+   */
+  readonly modelBaseline: string
 }
 
 export interface InviteDialogProps {
@@ -68,6 +77,14 @@ export interface InviteDialogProps {
    * no datalist.
    */
   readonly modelChoices?: ((harness: string) => Promise<readonly string[] | undefined>) | undefined
+  /**
+   * A member's own model surface (the localAgentGateway `memberModel` read):
+   * the edit dialog's prefill and datalist source — preferred over
+   * `harnessModel` for an existing member, since it carries that member's
+   * effective/source/choices. null/undefined answers keep the journaled
+   * intent as the baseline.
+   */
+  readonly memberModel?: ((childSessionId: string) => Promise<LocalAgentModelInfo | null | undefined>) | undefined
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -84,14 +101,17 @@ const MODEL_DATALIST_ID = 'room-invite-model-choices'
 /** The invite/edit modal card. */
 export function InviteDialog({
   mode, member, providers, localAgentAvailable, inheritedCwd, existingNames,
-  browseDirectory, modelChoices, onSubmit, onClose, t,
+  browseDirectory, modelChoices, memberModel, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
   const [name, setName] = useState(member?.name ?? '')
   const [instructions, setInstructions] = useState(member?.instructions ?? '')
   const [cwd, setCwd] = useState(member?.cwd ?? '')
   const [firstTask, setFirstTask] = useState('')
-  const [model, setModel] = useState('')
+  // Edit mode opens on the journaled intent; the broker's effective model
+  // replaces it when the memberModel read below answers.
+  const [model, setModel] = useState(mode === 'edit' ? member?.model ?? '' : '')
+  const [modelBaseline, setModelBaseline] = useState(mode === 'edit' ? member?.model ?? '' : '')
   const [choices, setChoices] = useState<readonly string[] | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -126,6 +146,23 @@ export function InviteDialog({
     }, () => {})
     return () => { cancelled = true }
   }, [mode, modelChoices, chosenHarness])
+
+  // Edit mode: the member's own model surface prefills the field (effective)
+  // and serves the datalist (choices). null (no delegation record yet — a
+  // never-started member — or a brokerless harness) and undefined (RPC
+  // failure) answers keep the journaled intent as the baseline.
+  const editChild = mode === 'edit' ? member?.childSessionId : undefined
+  useEffect(() => {
+    if (mode !== 'edit' || memberModel === undefined || editChild === undefined) return
+    let cancelled = false
+    void memberModel(editChild).then((info) => {
+      if (cancelled || info === null || info === undefined) return
+      setModel(info.effective ?? '')
+      setModelBaseline(info.effective ?? '')
+      if (info.choices.length > 0) setChoices(info.choices)
+    }, () => {})
+    return () => { cancelled = true }
+  }, [mode, memberModel, editChild])
   // Edit mode: instructions may clear (empty = no preset injected); the name
   // is the only hard requirement.
   const canSubmit = mode === 'edit'
@@ -177,7 +214,7 @@ export function InviteDialog({
     try {
       const outcome = await onSubmit({
         provider: chosen, name, instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
-        model: model.trim(),
+        model: model.trim(), modelBaseline,
       })
       if (!outcome.ok) {
         setError(outcome.message)
@@ -315,24 +352,24 @@ export function InviteDialog({
                   </span>
                   <span className={css.hint}>{t('invite.cwdHint')}</span>
                 </label>
-                {mode === 'invite' && (
-                  <label className={css.field}>
-                    <span className={css.label}>{t('invite.model')}</span>
-                    <input
-                      className={css.input}
-                      value={model}
-                      placeholder={t('invite.modelPlaceholder')}
-                      list={choices !== undefined && choices.length > 0 ? MODEL_DATALIST_ID : undefined}
-                      onChange={event => { setModel(event.target.value) }}
-                    />
-                    {choices !== undefined && choices.length > 0 && (
-                      <datalist id={MODEL_DATALIST_ID}>
-                        {choices.map(choice => <option key={choice} value={choice} />)}
-                      </datalist>
-                    )}
-                    <span className={css.hint}>{t('invite.modelHint')}</span>
-                  </label>
-                )}
+                <label className={css.field}>
+                  <span className={css.label}>{t('invite.model')}</span>
+                  <input
+                    className={css.input}
+                    value={model}
+                    placeholder={mode === 'edit' ? t('invite.modelPlaceholderEdit') : t('invite.modelPlaceholder')}
+                    list={choices !== undefined && choices.length > 0 ? MODEL_DATALIST_ID : undefined}
+                    onChange={event => { setModel(event.target.value) }}
+                  />
+                  {choices !== undefined && choices.length > 0 && (
+                    <datalist id={MODEL_DATALIST_ID}>
+                      {choices.map(choice => <option key={choice} value={choice} />)}
+                    </datalist>
+                  )}
+                  <span className={css.hint}>
+                    {mode === 'edit' ? t('invite.modelHintEdit') : t('invite.modelHint')}
+                  </span>
+                </label>
               </div>
             </details>
           </div>

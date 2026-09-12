@@ -147,8 +147,11 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const withoutCwd: RoomMember = event.data.cwd === null
           ? (({ cwd: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutInstructions)
           : { ...withoutInstructions, ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd } }
+        const withoutModel: RoomMember = event.data.model === null
+          ? (({ model: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutCwd)
+          : { ...withoutCwd, ...event.data.model === undefined ? {} : { model: event.data.model } }
         const patched: RoomMember = {
-          ...withoutCwd,
+          ...withoutModel,
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
         }
         // A rename migrates every name-keyed projection: the roster key, the
@@ -327,9 +330,10 @@ export function previousCursor(
  * change with a seq past their dispatch cursor — a member-added or
  * member-removed, or a member-updated that touches what the roster section
  * shows (instructions = the one-line role, rename = the addressing name). A
- * childSessionId/cwd-only update is NOT roster-visible (the delegation handle
- * is journaled right after a first run; counting it would re-send the roster
- * on every member's next dispatch for nothing). A member with no cursor has
+ * childSessionId/cwd/model-only update is NOT roster-visible (the delegation
+ * handle is journaled right after a first run; counting it would re-send the
+ * roster on every member's next dispatch for nothing — the model intent never
+ * enters any prompt either). A member with no cursor has
  * never seen the roster, so their first dispatch always counts as stale.
  * @param events - the session's event log.
  * @param cursor - the member's pre-dispatch cursor ({@link previousCursor}).

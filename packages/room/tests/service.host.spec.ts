@@ -293,6 +293,25 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'main-member' } })
   })
 
+  it('updateMember journals the intended model — set, trim, and null/blank clears', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada', model: 'kimi-k2' })
+    // A model-only edit is a legal update (not nothing-to-update).
+    expect(await service.updateMember({ sessionId, name: 'ada', model: ' kimi-k1 ' }))
+      .toEqual({ ok: true, value: { name: 'ada' } })
+    const updated = await service.getState({ sessionId })
+    expect(updated).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER, { name: 'ada', model: 'kimi-k1' }] } })
+
+    // null (or a blank string) CLEARS the intent — the member follows the
+    // harness default again.
+    expect(await service.updateMember({ sessionId, name: 'ada', model: ' ' }))
+      .toEqual({ ok: true, value: { name: 'ada' } })
+    const cleared = await service.getState({ sessionId })
+    if (cleared.ok) expect(cleared.value.members[1]).not.toHaveProperty('model')
+    expect(await service.updateMember({ sessionId, name: 'ada', model: null }))
+      .toEqual({ ok: true, value: { name: 'ada' } })
+  })
+
   it('removeMember drops the member from the roster and validates its inputs', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
