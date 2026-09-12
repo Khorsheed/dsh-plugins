@@ -133,12 +133,13 @@ export type PackageJson = Record<string, unknown> & {
  * dependency ranges become caret ranges on the SOURCE version (the workspace
  * releases in lockstep); repo-only fields (publishConfig, repository) are
  * dropped. `dependencies` is dropped too — runtime deps are bundled into lib
- * or provided by the host composition — EXCEPT family edges, which are the
- * loader-level core/companion contract (`dsh plugin add` reconciles direct
- * dependencies into the profile's bundles layer): they survive, renamed to
- * their dist names and ranged on the DIST version, like every other family
- * reference — a family name left at the source scope is unresolvable for npm
- * installers (the source scope is not published).
+ * or provided by the host composition — EXCEPT family edges, which carry the
+ * family's runtime/module-resolution contract (keeping a provider's import of
+ * its core resolvable): they survive, renamed to their dist names and ranged
+ * on the DIST version, like every other family reference — a family name left
+ * at the source scope is unresolvable for npm installers (the source scope is
+ * not published). A surviving edge mounts nothing: `dsh plugin add` reconciles
+ * only the profile's *direct* dependencies into its bundles layer.
  * @param pkg - the source manifest.
  * @param name - the dist package name.
  * @param version - the dist version.
@@ -159,11 +160,13 @@ export function rescopePackageJson(
   // consumers' machines — dist manifests carry no scripts.
   delete out.scripts
   // Runtime deps are bundled into lib or provided by the host composition, so
-  // the section goes — EXCEPT family edges: they are the loader-level
-  // core/companion contract (`dsh plugin add` reconciles *direct* dependencies
-  // into the profile's bundles layer, which is how installing a provider
-  // auto-mounts the core), so family entries survive, renamed to the dist
-  // scope and ranged on the dist version.
+  // the section goes — EXCEPT family edges: a family companion's runtime
+  // import and module resolution depend on them (and the family README's
+  // explicit install pairs a core with its provider), so family entries
+  // survive, renamed to the dist scope and ranged on the dist version. They do
+  // NOT mount anything: `dsh plugin add` reconciles only the profile's *direct*
+  // dependencies into its bundles layer, so a transitive family edge keeps the
+  // module resolvable and leaves the row unmounted.
   const deps = Object.fromEntries(
     Object.entries(out.dependencies ?? {}).flatMap(([dep]) => {
       const target = family?.get(dep)
@@ -323,10 +326,11 @@ export function packDist(options: PackDistOptions): string {
  *      tsdown chunk no files entry covered)
  *   2. family edges — every `@khorsheed/*` name referenced by lib artifacts or
  *      the bundle patch must have a dependencies/peerDependencies entry in the
- *      staged manifest (the core/companion auto-mount contract), or be listed
- *      in the manifest's `dsh.references` when the mention is DATA, not a
- *      dependency (a preset-visibility probe naming its companion row). Data
- *      mentions must never become manifest edges: a core↔companion pair
+ *      staged manifest (the family's runtime/module-resolution contract — not
+ *      an activation contract: only a profile's direct dependencies mount), or
+ *      be listed in the manifest's `dsh.references` when the mention is DATA,
+ *      not a dependency (a preset-visibility probe naming its companion row).
+ *      Data mentions must never become manifest edges: a core↔companion pair
  *      declared in both directions forms a cycle that pnpm's build sequencer
  *      schedules into one concurrent chunk, which raced cold builds to death.
  */

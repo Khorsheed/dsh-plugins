@@ -1,10 +1,12 @@
 # The dsh-local-agent-claude-code bundle patch: delegate dsh agents to the
 # local Claude Code CLI under a scoped CLAUDE_CONFIG_DIR, and surface its
 # session records. The family core row (`local-agent`, shared scoped-homes
-# root) ships in the framework bundle @khorsheed/dsh-local-agent's own
-# patch, which this bundle declares as a dependency — so installing this
-# bundle alone still mounts the core, and no two patches insert the same row
-# id.
+# root) lives in the framework bundle @khorsheed/dsh-local-agent's own patch.
+# This bundle declares that package as an npm dependency, which makes the
+# core's module resolvable — it does NOT mount the core row: `dsh plugin add`
+# reconciles only the profile's direct dependencies, so the core must be
+# installed explicitly alongside this bundle, or this provider stays pending.
+# No other patch inserts the core row id.
 #
 # Two rows are inserted:
 #   - local-agent-claude-code: this bundle's plugin registers the

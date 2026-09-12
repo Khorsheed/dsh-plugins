@@ -6,10 +6,11 @@ const patch = readFileSync(fileURLToPath(new URL('../cordis.patch.yml', import.m
 
 describe('dsh-local-agent framework bundle patch', () => {
   it('mounts the local-agent core row at the profile root', () => {
-    // The core row ships in this package's own patch (dsh.bundle), so any
-    // profile that installs a harness bundle — which declares this package
-    // as a dependency — reconciles the core into its bundles layer
-    // automatically (apps/cli plugin.ts reconcilePlugins).
+    // The core row ships in this package's own patch (dsh.bundle), so a
+    // profile that installs THIS package as a direct dependency reconciles the
+    // core into its bundles layer (apps/cli plugin.ts reconcilePlugins). A
+    // harness bundle depending on this package is not enough: the reconciler
+    // only ever sees direct profile dependencies.
     expect(patch).toContain('- id: local-agent')
     expect(patch).toContain("name: '@khorsheed/dsh-local-agent'")
     expect(patch).toContain("homesRoot: !!js dshHomePath('local-agent')")
