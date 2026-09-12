@@ -196,10 +196,12 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The default-model row: a free-text identifier plus its own save action. The
-   field is deliberately not a menu — no model catalog is hardcoded anywhere in
-   this plugin — so it commits on save rather than on every keystroke, and the
-   values saved before ride a datalist as suggestions. */
+/* The default-model row: a free-text identifier plus its own save action. It
+   commits on save rather than on every keystroke; the values saved before
+   ride a datalist as suggestions. When the model broker (or the recent-models
+   memory) knows a vocabulary, the field reads as a select: the input and an
+   always-visible chevron share one bordered container, and the chevron opens
+   the same vocabulary as a menu (the member composer's picker pattern). */
 .modelInput {
   flex: 1;
   min-width: 0;
@@ -220,6 +222,117 @@
 
 .modelInput:disabled {
   opacity: 0.5;
+}
+
+/* The select-like container: the border/background live here, the input
+   inside goes bare. Only rendered when there is a vocabulary to pick from. */
+.modelField {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.modelField:focus-within {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.modelField .modelInput {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.modelField .modelInput:focus-visible {
+  outline: none;
+}
+
+.modelMenuButton {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-caption);
+  cursor: pointer;
+}
+
+.modelMenuButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.modelMenuButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.modelMenuChevron {
+  transition: transform 0.16s;
+}
+
+.modelMenuChevronOpen {
+  transform: rotate(180deg);
+}
+
+/* The picker menu: the official Menu surface (--dsw-specific-menu, r12,
+   prominent elevation) with the member composer's item language. Opens
+   downward, flipping upward when the viewport bottom does not fit it. */
+.modelMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2));
+  border-radius: 12px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  box-shadow: var(--dsw-elevation-prominent, var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08)));
+}
+
+.modelMenuUp {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.modelItem,
+.modelItemCurrent {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.modelItem:hover,
+.modelItemCurrent:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.modelItemCurrent {
+  font-weight: 560;
 }
 
 .modelSave {
