@@ -464,7 +464,19 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       if (cutoverBlocksWake(stateDir)) return
       const id = agent.id as string
       const exitAt = pendingContinue.get(id)
-      const record = followupReport ? pendingRestartRecord(stateDir) : null
+      let record = followupReport ? pendingRestartRecord(stateDir) : null
+      // A bare PLANNED outcome with no initiating session (the restart was
+      // driven from outside the host — the operator's terminal already has
+      // the announcement) has no in-host owner: settle the record instead of
+      // waking whichever root session happens to mount first. Records
+      // carrying diagnostics someone must hear about — an unplanned
+      // recovery, a composition rollback, a failed restart — keep the
+      // first-created claim.
+      if (record !== null && record.initiator === undefined
+        && record.unexpected !== true && record.compositionRecovered !== true && record.error === undefined) {
+        acknowledgeRestartRecord(stateDir, record, Date.now())
+        record = null
+      }
       const owesReport = record !== null && (record.initiator === undefined || id === record.initiator)
       if (exitAt !== undefined) {
         void (async () => {
