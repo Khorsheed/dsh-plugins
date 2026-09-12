@@ -562,6 +562,14 @@ describe('codex live driver rounds', () => {
       { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
+    // The combined final message lands INSIDE the turn window, wrapped in its
+    // step boundary pair — the live assembler drops anything else.
+    const events = child.snapshotEvents()
+    const turnEnd = events.find(e => e.type === 'turn/end')!
+    expect(final.seq).toBeLessThan(turnEnd.seq)
+    const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 1)
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
     await m.driver.disposeAll()
   })
 

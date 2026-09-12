@@ -1101,7 +1101,13 @@ export interface CodexMirrorOptions {
 }
 
 /**
- * Fold one transcript line into the child session as one assistant step.
+ * Fold one transcript line into the child session as one assistant step,
+ * wrapped in the step/start–step/end boundary pair the live conversation
+ * assembler requires: without a boundary the step never enters the location
+ * index, the line's assistant message resolves to a turn-level location, and
+ * the real-time view renders nothing (only a full rebuild, which mints step
+ * drafts from the explicit coordinates, recovers it). Tool cards escape that
+ * fate only because their definition does not consult the step location.
  * @returns whether the line folded (false when the options skipped it).
  */
 export function appendCodexTranscriptLine(
@@ -1117,6 +1123,7 @@ export function appendCodexTranscriptLine(
   // driver settles the round with one combined final message, so the fold
   // leaves these lines out (their usage rides that final message).
   if (options?.skipAssistantContent === true && line.kind !== 'tool') return false
+  childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
     // Native tool card: the call event now, the result event when the stream
     // already carries it. Tool lines never carry the round's usage — the
@@ -1140,6 +1147,7 @@ export function appendCodexTranscriptLine(
         }),
       }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     }
+    childSession.append('step/end', { turn, step })
     return true
   }
   const blocks = line.kind === 'think'
@@ -1152,6 +1160,7 @@ export function appendCodexTranscriptLine(
     stream: [],
     ...usage === undefined ? {} : { usage },
   }, { surfaceOp: 'append' })
+  childSession.append('step/end', { turn, step })
   return true
 }
 
