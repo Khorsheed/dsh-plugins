@@ -97,7 +97,9 @@ describe('TodoWrite interception in the fold', () => {
     const parsed = parseClaudeStreamJson(skewed)
     expect(parsed.todos).toBeUndefined()
     expect(parsed.todoSkew).toBe(true)
-    expect(parsed.lines).toEqual([{ kind: 'tool', id: 'tu1', name: 'TodoWrite' }])
+    // The degraded fold carries the raw input as its compact-JSON summary
+    // rather than dropping it.
+    expect(parsed.lines).toEqual([{ kind: 'tool', id: 'tu1', name: 'TodoWrite', args: '{"todos":"nope"}' }])
   })
 })
 

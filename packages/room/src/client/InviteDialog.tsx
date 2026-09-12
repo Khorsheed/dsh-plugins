@@ -11,7 +11,10 @@
  *
  * Field order is primary-first: provider → 称呼(+🎲) → 首个任务 → ▸ 高级设置
  * (role instructions + the member-level cwd, collapsed on invite — editing
- * opens it, since editing IS changing those). The rest of the original
+ * opens it, since editing IS changing those; invite also carries the
+ * optional delegation model there, a text input whose datalist rides the
+ * localAgentGateway `harnessModel` read when the family's client half is
+ * around, blank following the harness default). The rest of the original
  * contract is unchanged: logged-out providers grey with login guidance (an
  * absent facade degrades the whole section to a hint), the name precheck
  * plus the host's structured duplicate/invalid errors ride the inline error
@@ -37,6 +40,8 @@ export interface InviteDialogSubmit {
   readonly instructions: string
   readonly cwd: string
   readonly firstTask: string
+  /** The delegation's invite-time model ('' = follow the harness default). */
+  readonly model: string
 }
 
 export interface InviteDialogProps {
@@ -57,6 +62,12 @@ export interface InviteDialogProps {
    * host serves no native picking capability.
    */
   readonly browseDirectory: () => Promise<string | null>
+  /**
+   * The pickable model identifiers of one harness (the localAgentGateway
+   * `harnessModel` read); absent, the model field is a plain text input with
+   * no datalist.
+   */
+  readonly modelChoices?: ((harness: string) => Promise<readonly string[] | undefined>) | undefined
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -67,16 +78,21 @@ function validName(name: string): boolean {
   return name !== '' && !/\s/.test(name) && !name.includes('@')
 }
 
+/** The model datalist's id (one dialog at a time, so a constant suffices). */
+const MODEL_DATALIST_ID = 'room-invite-model-choices'
+
 /** The invite/edit modal card. */
 export function InviteDialog({
   mode, member, providers, localAgentAvailable, inheritedCwd, existingNames,
-  browseDirectory, onSubmit, onClose, t,
+  browseDirectory, modelChoices, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
   const [name, setName] = useState(member?.name ?? '')
   const [instructions, setInstructions] = useState(member?.instructions ?? '')
   const [cwd, setCwd] = useState(member?.cwd ?? '')
   const [firstTask, setFirstTask] = useState('')
+  const [model, setModel] = useState('')
+  const [choices, setChoices] = useState<readonly string[] | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [browsing, setBrowsing] = useState(false)
@@ -95,6 +111,21 @@ export function InviteDialog({
   const authenticated = (providers ?? []).filter(entry => entry.authenticated)
   const chosen = provider === '' ? (authenticated[0]?.provider ?? '') : provider
   const someLoggedOut = (providers ?? []).some(entry => !entry.authenticated)
+  /** The chosen provider's roster harness name (the harnessModel lookup key). */
+  const chosenHarness = (providers ?? []).find(entry => entry.provider === chosen)?.harness
+
+  // The model datalist follows the chosen provider: a harness without a
+  // broker read (or a composition without the family's client half) leaves
+  // the field a plain text input — blank still follows the harness default.
+  useEffect(() => {
+    setChoices(undefined)
+    if (mode !== 'invite' || modelChoices === undefined || chosenHarness === undefined) return
+    let cancelled = false
+    void modelChoices(chosenHarness).then((result) => {
+      if (!cancelled) setChoices(result)
+    }, () => {})
+    return () => { cancelled = true }
+  }, [mode, modelChoices, chosenHarness])
   // Edit mode: instructions may clear (empty = no preset injected); the name
   // is the only hard requirement.
   const canSubmit = mode === 'edit'
@@ -146,6 +177,7 @@ export function InviteDialog({
     try {
       const outcome = await onSubmit({
         provider: chosen, name, instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
+        model: model.trim(),
       })
       if (!outcome.ok) {
         setError(outcome.message)
@@ -283,6 +315,24 @@ export function InviteDialog({
                   </span>
                   <span className={css.hint}>{t('invite.cwdHint')}</span>
                 </label>
+                {mode === 'invite' && (
+                  <label className={css.field}>
+                    <span className={css.label}>{t('invite.model')}</span>
+                    <input
+                      className={css.input}
+                      value={model}
+                      placeholder={t('invite.modelPlaceholder')}
+                      list={choices !== undefined && choices.length > 0 ? MODEL_DATALIST_ID : undefined}
+                      onChange={event => { setModel(event.target.value) }}
+                    />
+                    {choices !== undefined && choices.length > 0 && (
+                      <datalist id={MODEL_DATALIST_ID}>
+                        {choices.map(choice => <option key={choice} value={choice} />)}
+                      </datalist>
+                    )}
+                    <span className={css.hint}>{t('invite.modelHint')}</span>
+                  </label>
+                )}
               </div>
             </details>
           </div>

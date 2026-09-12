@@ -33,7 +33,6 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertModelExecOnly,
   assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
@@ -158,12 +157,19 @@ export class DshCliProvider implements SubagentProvider {
    * @param model - resolver for the harness's `model` plugin-config key, read
    *   PER ROUND so a settings-card write reaches the next delegation without a
    *   reload. A delegation that names its own model outranks it.
+   * @param overrides - resolver for the member's session-level model override
+   *   (the composer picker, owned by the model broker). It outranks BOTH the
+   *   delegation's recorded model and the configured one: on the exec path it
+   *   re-points the next round's `--model`, and on the live path it is the
+   *   member's start model — a resident runtime bound to a different model is
+   *   retired so the round respawns onto the override.
    */
   constructor(
     private readonly ctx: Context,
     private readonly config: LocalAgentDshConfig,
     private readonly live?: DshLiveDriver | ((childSessionId: string) => DshLiveDriver | undefined),
     private readonly model?: () => string | undefined,
+    private readonly overrides?: (childSessionId: string) => string | undefined,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -302,10 +308,12 @@ export class DshCliProvider implements SubagentProvider {
       // A scoped round is exec-only: the resident `serve` process is started
       // per member against the DEFAULT scoped home and its sub-profile.
       assertScopeExecOnly(scope, 'subagent-dsh')
-      // …and so is a round that names its own model: the resident sub-dsh
-      // `serve` process binds its model at spawn (`--model`) and then hosts
-      // every session it is handed.
-      assertModelExecOnly(requestedModel, 'subagent-dsh')
+      // A round that names its own model is NOT refused: it becomes the
+      // member's start model, bound at the serve spawn (`--model`; a runtime
+      // bound to a different model is retired first, so the fresh session
+      // spawns onto the asked-for model). The session-level override outranks
+      // even this.
+      const startModel = this.overrides?.(runId) ?? requestedModel
       try {
         return await live.startRound(request, {
           cwd,
@@ -313,6 +321,7 @@ export class DshCliProvider implements SubagentProvider {
           childSession,
           sessionId: runId,
           parentSessionId: request.parent.session.id,
+          ...startModel === undefined ? {} : { startModel },
         })
       } catch (error) {
         if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
@@ -332,7 +341,7 @@ export class DshCliProvider implements SubagentProvider {
         homeDir,
         childSession,
         sessionId: runId,
-        ...resolveRoundModel(requestedModel, this.model),
+        ...resolveRoundModel(this.overrides?.(runId) ?? requestedModel, this.model),
         resume: undefined,
         config: this.config,
         ctx: this.ctx,
@@ -388,7 +397,10 @@ export class DshCliProvider implements SubagentProvider {
         // See the fresh path: a scoped round never goes to the resident
         // process, which binds the default scoped home.
         assertScopeExecOnly(scope, 'subagent-dsh')
-        assertModelExecOnly(requestedModel, 'subagent-dsh')
+        // The resume re-requests its recorded model as the member's start
+        // model (the session-level override outranks it): a runtime bound to
+        // a different model is retired so the session respawns onto this one.
+        const startModel = this.overrides?.(intent.childSessionId) ?? requestedModel
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -397,6 +409,7 @@ export class DshCliProvider implements SubagentProvider {
             sessionId: intent.cliSessionId,
             parentSessionId: request.parent.session.id,
             resume: { turn: nextTurn },
+            ...startModel === undefined ? {} : { startModel },
           })
           void liveRun.result.then(
             () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
@@ -418,7 +431,7 @@ export class DshCliProvider implements SubagentProvider {
           homeDir,
           childSession,
           sessionId: intent.cliSessionId,
-          ...resolveRoundModel(requestedModel, this.model),
+          ...resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, this.model),
           resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
           config: this.config,
           ctx: this.ctx,

@@ -45,6 +45,14 @@ export class LiveDriverSwitch {
     private readonly ctx: Context,
     scope: SettingsScope<DshLiveSettings>,
     private readonly config: LocalAgentDshConfig,
+    private readonly extras: {
+      /**
+       * Per-spawn model resolver, handed to every driver generation. Receives
+       * the member's child session id so the session-level override can
+       * outrank the settings value.
+       */
+      modelFor?: (childSessionId: string) => string | undefined
+    } = {},
   ) {
     this.apply(scope.get())
     this.unwatch = scope.watch((next) => { this.apply(next) })
@@ -64,6 +72,26 @@ export class LiveDriverSwitch {
     return this.active
   }
 
+  /**
+   * The model the member's live runtime bound at spawn (the broker's switch
+   * check): the identifier, undefined for "bound to no model", null for "no
+   * live runtime". Consults only the ACTIVE generation — a draining one is on
+   * its way out anyway.
+   */
+  boundModel(childSessionId: string): string | undefined | null {
+    return this.active?.boundModelOf(childSessionId) ?? null
+  }
+
+  /**
+   * Retire the member's resident runtime in the active generation so the next
+   * round respawns onto the member's new effective model (the composer's
+   * model switch path; the sub-dsh session itself carries over via the
+   * on-disk resume).
+   */
+  async retireRuntime(childSessionId: string): Promise<void> {
+    await this.active?.retireRuntime(childSessionId)
+  }
+
   /** Mirror the resolved settings into the driver generation. */
   private apply(next: DshLiveSettings): void {
     if (next.live === this.liveOn) {
@@ -73,7 +101,11 @@ export class LiveDriverSwitch {
     this.liveOn = next.live
     const retiring = this.active
     this.active = next.live
-      ? new DshLiveDriver(this.ctx, { ...this.config, liveMirrorGranularity: next.liveMirrorGranularity })
+      ? new DshLiveDriver(this.ctx, {
+        ...this.config,
+        liveMirrorGranularity: next.liveMirrorGranularity,
+        ...this.extras.modelFor === undefined ? {} : { modelFor: this.extras.modelFor },
+      })
       : undefined
     if (retiring !== undefined) {
       this.draining.add(retiring)

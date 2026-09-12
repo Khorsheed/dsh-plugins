@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { IconChevronDownOutline14, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
 // the block carries no runtime identity to share.
@@ -42,6 +43,14 @@ export interface ClaudeCodeSettingsCardInjected {
   auth: ProviderAuthInjected
   /** Translate bound to the family core's `local-agent` namespace (the auth block's copy lives there). */
   authT: ProviderAuthBlockProps['t']
+  /**
+   * The harness's memberless model surface (the family gateway's
+   * `harnessModel` Remote): the effective-model line under the default-model
+   * input and the input's suggestion vocabulary. Absent on a core that
+   * predates the model broker — the card then keeps the bare free-text input
+   * exactly as before brokers existed.
+   */
+  modelInfo?: () => Promise<LocalAgentModelInfo | null | undefined>
   hooks: {
     /** The same scope as a hooks source, so the card reacts to external writes. */
     settings: SettingsScope<ClaudeLiveSettings>
@@ -66,14 +75,13 @@ export type ClaudeCodeSettingsCardProps =
  * @param props - runtime slot currency, the injected scope/auth faces, and copy.
  * @returns the card.
  */
-export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, useSessions, t }: ClaudeCodeSettingsCardProps) {
+export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelInfo, useSessions, t }: ClaudeCodeSettingsCardProps) {
   const snapshot: SettingsScopeSnapshot<ClaudeLiveSettings> = useSettings(value => value)
   const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
   const live = snapshot.value?.live ?? false
-  const granularity = snapshot.value?.liveMirrorGranularity ?? 'event'
   // The model input is a DRAFT until saved: `null` means "showing whatever the
   // scope holds", so an external write (another tab, a YAML reload) still
   // reaches the field while the user is not typing in it.
@@ -83,6 +91,21 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, useSes
   const [modelSaved, setModelSaved] = useState(false)
   const [modelError, setModelError] = useState(false)
   const modelValue = modelDraft ?? storedModel
+  // The broker's model surface: fetched when the card opens and after every
+  // save (the save changes the settings layer the surface reports). `null`
+  // means the gateway answered null (a brokerless core) or the read was
+  // never wired — the card then degrades to the bare input, no effective
+  // line, the recent-models suggestions.
+  const [modelSurface, setModelSurface] = useState<LocalAgentModelInfo | null>(null)
+  useEffect(() => {
+    if (!open || modelInfo === undefined) return
+    let stale = false
+    void modelInfo().then(
+      (info) => { if (!stale) setModelSurface(info ?? null) },
+      () => { if (!stale) setModelSurface(null) },
+    )
+    return () => { stale = true }
+  }, [open, modelSaved, modelInfo])
   /**
    * Commit the model field. A blank value UNSETS the key rather than storing
    * an empty string, so the field re-inherits the YAML composition base — and
@@ -171,7 +194,7 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, useSes
                 onChange={(event) => { setModelDraft(event.target.value) }}
               />
               <datalist id={`${NS}-recent-models`}>
-                {recentModels.map(value => <option key={value} value={value} />)}
+                {(modelSurface !== null ? modelSurface.choices : recentModels).map(value => <option key={value} value={value} />)}
               </datalist>
               <button
                 type="button"
@@ -182,6 +205,15 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, useSes
                 {t('model.save')}
               </button>
             </div>
+            {modelSurface !== null && (
+              <span className={css.hint}>
+                {storedModel.trim() !== ''
+                  ? t('model.effective', { model: storedModel.trim() })
+                  : modelSurface.cliDefault !== undefined
+                    ? t('model.followCliConfig', { model: modelSurface.cliDefault })
+                    : t('model.followCliBuiltin')}
+              </span>
+            )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
             {modelError && <span className={css.errorText}>{t('model.error')}</span>}
           </section>
@@ -204,34 +236,6 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, useSes
               >
                 <span className={css.knob} />
               </button>
-            </div>
-            <div className={css.row}>
-              <span className={css.rowLabel}>
-                {t('live.granularity')}
-                <Tooltip label={t('live.granularity.info')} side="bottom" maxWidth={360}>
-                  <button type="button" className={css.info} aria-label={t('live.granularity.info.aria')}>ⓘ</button>
-                </Tooltip>
-              </span>
-              <label className={css.option}>
-                <input
-                  type="radio"
-                  name="local-agent-claude-code-granularity"
-                  checked={granularity === 'event'}
-                  disabled={!ready}
-                  onChange={() => { write('liveMirrorGranularity', 'event') }}
-                />
-                {t('live.granularity.event')}
-              </label>
-              <label className={css.option}>
-                <input
-                  type="radio"
-                  name="local-agent-claude-code-granularity"
-                  checked={granularity === 'token'}
-                  disabled={!ready}
-                  onChange={() => { write('liveMirrorGranularity', 'token') }}
-                />
-                {t('live.granularity.token')}
-              </label>
             </div>
             {saved && <span className={css.saved}>{t('live.applied')}</span>}
             {error && <span className={css.errorText}>{t('live.error')}</span>}

@@ -36,8 +36,8 @@ const STATE: RoomState = {
 const PROVIDERS: RoomProviderList = {
   localAgentAvailable: true,
   providers: [
-    { provider: 'kimi', displayName: 'Kimi Code', authenticated: true },
-    { provider: 'codex', displayName: 'Codex', authenticated: false },
+    { provider: 'kimi', displayName: 'Kimi Code', harness: 'kimi', authenticated: true },
+    { provider: 'codex', displayName: 'Codex', harness: 'codex', authenticated: false },
   ],
 }
 
@@ -49,6 +49,7 @@ interface Bench {
     invite: ReturnType<typeof vi.fn>
     listProviders: ReturnType<typeof vi.fn>
     browseDirectory: ReturnType<typeof vi.fn>
+    modelChoices: ReturnType<typeof vi.fn>
   }
 }
 
@@ -58,7 +59,7 @@ function cardOf(name: string): HTMLElement {
 }
 
 /** Render the tab against a primed store and a vi.fn inject face. */
-async function bench(options: { room?: boolean; providers?: RoomProviderList } = {}): Promise<Bench> {
+async function bench(options: { room?: boolean; providers?: RoomProviderList; modelChoices?: readonly string[] } = {}): Promise<Bench> {
   const isRoom = options.room !== false
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
   const gateway: RoomGateway = {
@@ -78,6 +79,7 @@ async function bench(options: { room?: boolean; providers?: RoomProviderList } =
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => options.providers ?? PROVIDERS),
     browseDirectory: vi.fn(async () => '/home/user/web' as string | null),
+    modelChoices: vi.fn(async () => options.modelChoices),
   }
   const props = { sessionId: SESSION, ...face, t } as unknown as MembersViewProps
   render(<MembersView {...props} />)
@@ -240,6 +242,39 @@ describe('MembersView', () => {
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', instructions: '前端' })
     })
+  })
+
+  it('the model field offers the harness choices as a datalist and submits a chosen model', async () => {
+    const { face } = await bench({ modelChoices: ['kimi-k2', 'kimi-k1'] })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    const modelInput = screen.getByPlaceholderText(/留空 = 跟随该 provider 的默认模型/) as HTMLInputElement
+    // The datalist lands once the harnessModel read resolves, keyed by the
+    // provider's roster harness name.
+    await waitFor(() => { expect(face.modelChoices).toHaveBeenCalledWith('kimi') })
+    await waitFor(() => { expect(modelInput.getAttribute('list')).toBe('room-invite-model-choices') })
+    const datalist = dialog.querySelector('datalist')!
+    expect([...datalist.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['kimi-k2', 'kimi-k1'])
+
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(modelInput, { target: { value: 'kimi-k2' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
+    await waitFor(() => {
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', model: 'kimi-k2' })
+    })
+  })
+
+  it('keeps the model field a plain input when the harness serves no choices (family absent or brokerless)', async () => {
+    const { face } = await bench({ modelChoices: undefined })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    const modelInput = screen.getByPlaceholderText(/留空 = 跟随该 provider 的默认模型/) as HTMLInputElement
+    await waitFor(() => { expect(face.modelChoices).toHaveBeenCalledWith('kimi') })
+    expect(modelInput.getAttribute('list')).toBeNull()
+    expect(dialog.querySelector('datalist')).toBeNull()
   })
 
   it('shows the host rejection inside the dialog and keeps it open', async () => {

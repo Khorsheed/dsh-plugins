@@ -45,7 +45,7 @@ interface Mount {
   /** The resolver the provider was constructed with (private face). */
   resolveLive: (childSessionId: string) => ClaudeLiveDriver | undefined
   /** The model resolver the provider was constructed with (private face). */
-  resolveModel: () => string | undefined
+  resolveModel: (childSessionId?: string, delegationModel?: string) => string | undefined
 }
 
 function mount(initial: Partial<ClaudeLiveSettings> = {}, config: Record<string, unknown> = {}): Mount {
@@ -54,6 +54,8 @@ function mount(initial: Partial<ClaudeLiveSettings> = {}, config: Record<string,
   const home = mkdtempSync(join(tmpdir(), 'claude-apply-home-'))
   const registry = {
     homeDir: () => home,
+    isDelegationActive: () => false,
+    getDelegation: () => undefined,
     register: (harness: LocalAgentHarness) => {
       registered.push(harness)
       return () => {}
@@ -79,7 +81,7 @@ function mount(initial: Partial<ClaudeLiveSettings> = {}, config: Record<string,
     home,
     settings,
     resolveLive: id => resolveLive(id),
-    resolveModel: () => resolveModel(),
+    resolveModel: (child, delegation) => resolveModel(child, delegation),
   }
 }
 
@@ -288,5 +290,45 @@ describe('local-agent-claude-code model key', () => {
     const { home, registered } = mount()
     const snapshot = await registered[0]!.effectiveSettings!(home)
     expect('model' in snapshot).toBe(false)
+  })
+})
+
+describe('local-agent-claude-code model broker', () => {
+  it('registers a broker whose memberless surface answers the settings layer', async () => {
+    const { registered } = mount({ model: 'claude-opus-5' })
+    const broker = registered[0]!.modelBroker
+    expect(broker).toBeDefined()
+    await expect(broker!.modelInfo()).resolves.toMatchObject({
+      effective: 'claude-opus-5',
+      source: 'settings',
+      settings: 'claude-opus-5',
+      live: false,
+      switchable: true,
+      choices: ['claude-opus-5'],
+    })
+  })
+
+  it('reads the scoped settings.json model as the cli-config layer', async () => {
+    const { home, registered } = mount()
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'scoped-model' }))
+    await expect(registered[0]!.modelBroker!.modelInfo()).resolves.toMatchObject({
+      effective: 'scoped-model',
+      source: 'cli-config',
+    })
+  })
+
+  it('a member switch stores the override, and the round resolver answers it first', async () => {
+    const { registered, resolveModel } = mount({ model: 'settings-model' })
+    const broker = registered[0]!.modelBroker!
+    await broker.setMemberModel('child-x', 'model-b')
+    // The same override map feeds the provider/live resolvers: the next
+    // round of this member runs the override, ahead of the delegation model.
+    expect(resolveModel('child-x', 'delegation-model')).toBe('model-b')
+    expect(resolveModel('child-y', 'delegation-model')).toBe('delegation-model')
+    expect(resolveModel('child-y')).toBe('settings-model')
+    await expect(broker.modelInfo('child-x', 'delegation-model')).resolves.toMatchObject({
+      effective: 'model-b',
+      source: 'override',
+    })
   })
 })

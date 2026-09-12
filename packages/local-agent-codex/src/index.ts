@@ -20,6 +20,7 @@ import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { CodexCliProvider, codexCliVersion } from './codex-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { CodexModelBroker } from './model-broker.ts'
 import { codexAuthenticated, listCodexSessions } from './records.ts'
 import { codexCredentialStamp, codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from './provision.ts'
 
@@ -131,17 +132,38 @@ export function apply(ctx: Context, config: Config): void {
       const model = scope.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
+    // The member-level model surface: the composer picker's session-level
+    // overrides (in-memory, deliberately lost on a host restart), shared by
+    // reference with the broker (which writes them), the exec provider (which
+    // consults them per round), and the live driver (which binds them at
+    // runtime spawn). A switch on a member with a live runtime bound to a
+    // different model retires that runtime — the next round respawns onto the
+    // new model while the codex thread itself resumes.
+    const memberModelOverrides = new Map<string, string>()
     const liveSwitch = new LiveDriverSwitch(ctx, scope, {
       sandbox,
-      model: resolveModel,
+      model: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
     })
-    const disposeProvider = ctx.subagents.registerProvider(new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel))
+    const modelBroker = new CodexModelBroker({
+      ctx,
+      settingsModel: resolveModel,
+      recentModels: () => scope.get().recentModels ?? [],
+      homeDir: () => ctx.localAgent.homeDir('codex'),
+      live: () => scope.get().live,
+      overrides: memberModelOverrides,
+      liveBoundModel: childSessionId => liveSwitch.boundModel(childSessionId),
+      retireRuntime: childSessionId => liveSwitch.retireRuntime(childSessionId),
+    })
+    const disposeProvider = ctx.subagents.registerProvider(
+      new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
+    )
     const disposeHarness = ctx.localAgent.register({
       name: 'codex',
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',
       delegationProvider: 'codex-local',
+      modelBroker,
       // A PTY run of plain `codex login` starts a localhost callback server
       // (no device code, no paste) and opens the browser itself — the
       // first-class flow. `--device-auth` remains the documented headless

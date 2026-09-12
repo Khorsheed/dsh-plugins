@@ -111,6 +111,15 @@ export interface DshLiveRoundSpec {
   readonly parentSessionId: string
   /** Resume round: continue the session, appending under this turn number. */
   readonly resume?: { readonly turn: number } | undefined
+  /**
+   * The member's START model — the delegation's own requested model, or the
+   * composer's session-level override, as resolved by the provider. When it
+   * names one, a resident runtime bound to a DIFFERENT model is retired
+   * before the spawn so the round respawns onto it (the sub-dsh session
+   * resumes from disk — only the process is replaced). Absent means the
+   * spawn resolver decides (override → settings).
+   */
+  readonly startModel?: string | undefined
 }
 
 function delay(ms: number): Promise<void> {
@@ -129,6 +138,12 @@ function thrown(value: unknown): Error {
 class LiveRuntime {
   /** Set once the process exited or was reclaimed; a dead runtime never serves again. */
   dead = false
+  /**
+   * The model this process bound at spawn (`--model`), or undefined when it
+   * spawned with no model flag at all. A round whose start model differs
+   * retires the runtime instead of silently running the old one.
+   */
+  boundModel: string | undefined
   private reclaimed = false
   private readonly pending = new Map<number, {
     resolve: (result: unknown) => void
@@ -306,7 +321,17 @@ export class DshLiveDriver {
 
   constructor(
     private readonly ctx: Context,
-    private readonly config: LocalAgentDshConfig,
+    private readonly config: LocalAgentDshConfig & {
+      /**
+       * Resolver for the member's configured model, read at each RUNTIME
+       * SPAWN (the serve process is where a live round's model binds, through
+       * its `--model` flag). Receives the member's child session id so the
+       * session-level override can outrank the settings value; absent, or
+       * resolving to nothing, the spawn carries no `--model` and the sub-dsh
+       * inherits the host instance's default selection.
+       */
+      modelFor?: (childSessionId: string) => string | undefined
+    },
     private readonly timeouts: DshLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
 
@@ -398,17 +423,49 @@ export class DshLiveDriver {
   }
 
   /**
+   * The model the member's live runtime bound at spawn: the identifier, or
+   * undefined when the runtime spawned with no `--model`. Null when the
+   * member has no live runtime in this generation — the broker's switch check
+   * distinguishes "no runtime to retire" from "runtime bound to no model".
+   */
+  boundModelOf(key: string): string | undefined | null {
+    const runtime = this.runtimes.get(key)
+    if (runtime === undefined || runtime.dead) return null
+    return runtime.boundModel
+  }
+
+  /**
+   * Retire the member's resident runtime so the NEXT round respawns (the
+   * sub-dsh session itself carries over via the on-disk resume). The
+   * composer's model switch calls this after storing the new override; the
+   * caller guarantees no round is in flight for the member.
+   */
+  async retireRuntime(key: string): Promise<void> {
+    await this.reclaim(key)
+  }
+
+  /**
    * The member's live runtime, spawning it (once per member at a time) when
    * absent or dead. `signal` abandons the spawn on cancellation.
    */
-  private ensureRuntime(spec: DshLiveRoundSpec, apiKey: string, signal: AbortSignal): Promise<LiveRuntime> {
+  private async ensureRuntime(spec: DshLiveRoundSpec, apiKey: string, signal: AbortSignal): Promise<LiveRuntime> {
     const key = spec.sessionId
+    const startModel = spec.startModel?.trim()
     const existing = this.runtimes.get(key)
     if (existing !== undefined && !existing.dead) {
-      this.clearIdleTimer(key)
-      return Promise.resolve(existing)
+      // A round that names its own start model never runs on a runtime bound
+      // to a different one: retire so the respawn binds the asked-for model
+      // (the sub-dsh session resumes from disk — only the process is
+      // replaced).
+      if (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel) {
+        await this.reclaim(key)
+      } else {
+        this.clearIdleTimer(key)
+        return existing
+      }
+    } else if (existing !== undefined) {
+      this.runtimes.delete(key)
     }
-    if (existing !== undefined) this.runtimes.delete(key)
     const pending = this.ensuring.get(key)
     if (pending !== undefined) return pending
     const spawn = this.spawnRuntime(spec, apiKey, signal)
@@ -435,8 +492,24 @@ export class DshLiveDriver {
     // carries them for its whole lifetime, so the token is registered with the
     // process (released on reclaim/crash), not per round like the exec path.
     const member = registerMemberRun(this.ctx, 'dsh-cli', spec.sessionId, spec.parentSessionId)
+    // The model binds at spawn through the headless launch's `--model`, which
+    // under `--serve` applies to every session the resident process hosts —
+    // one process carries one member, so this IS the member's model. The
+    // member's START model (a delegation-level request or the session-level
+    // override, resolved by the provider) wins; otherwise the spawn resolver
+    // reads the member's configured model (override → settings). A later
+    // switch reaches the runtime by retiring it first.
+    const startModel = spec.startModel?.trim()
+    const model = startModel !== undefined && startModel !== ''
+      ? startModel
+      : this.config.modelFor?.(key)?.trim()
     const spawnSpec: SubprocessSpawnSpec = {
-      argv: [...dshLaunchArgv(this.config), '--profile', profileName, '--serve'],
+      argv: [
+        ...dshLaunchArgv(this.config),
+        '--profile', profileName,
+        '--serve',
+        ...model === undefined || model === '' ? [] : ['--model', model],
+      ],
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -461,6 +534,9 @@ export class DshLiveDriver {
       throw new LiveChannelUnavailableError(`the serve process failed to spawn: ${thrown(error).message}`)
     }
     const runtime = new LiveRuntime(child, this.timeouts, message => { this.ctx.logger.warn(message) })
+    // A blank resolution binds no model at all — record exactly what the argv
+    // carries so a later start-model comparison never retires needlessly.
+    runtime.boundModel = model === undefined || model === '' ? undefined : model
     runtime.onDead = () => {
       // Delete only OUR registration: a crash-then-respawn can interleave so
       // the dead runtime's late onDead would otherwise evict the NEW

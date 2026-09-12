@@ -49,6 +49,15 @@
  * re-spawn with `--resume`, a channel breaker with cooldown, `disposeAll` on
  * unload, and cancellation honored in every window (abort listener before
  * any await; the init wait races the abort signal).
+ *
+ * Two member-aware additions on top: the spawn binds the member's EFFECTIVE
+ * model (session-level override, then the round's delegation model, then the
+ * settings key — resolved by the config callback per spawn, scratched into
+ * the scoped settings.json because a `--resume` respawn honors the file over
+ * the flag), and a runtime whose bound model no longer matches is retired so
+ * the round respawns onto the right one; and server→client control requests
+ * (a `permissionMode: 'normal'` spawn's `can_use_tool` approval surface) are
+ * auto-answered so an unattended runtime never hangs on a permission prompt.
  * @module @khorsheed/dsh-local-agent-claude-code/live-driver
  */
 
@@ -143,6 +152,14 @@ export interface ClaudeLiveRoundSpec {
    * reattach path after a runtime crash — the respawn passes `--resume`).
    */
   readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
+  /**
+   * The delegation layer's model: the model this DELEGATION requested on its
+   * first round, re-requested by every resume round from the record. The
+   * spawn binds it when no session-level override outranks it — a delegation
+   * naming a model is no longer exec-only; its model binds at spawn like any
+   * other layer.
+   */
+  readonly model?: string | undefined
   /** Fresh round: called with the session id from the turn's system/init. */
   readonly onSessionId?: ((sessionId: string) => void) | undefined
 }
@@ -169,6 +186,8 @@ class ClaudeLiveRuntime {
   private reclaimed = false
   /** The member's claude session id (first turn's system/init). */
   sessionId: string | undefined
+  /** The model this runtime's process was spawned with (undefined = no flag). */
+  model: string | undefined
   /** Serializes turns per member (converge-before-next-message). */
   turnChain: Promise<unknown> = Promise.resolve()
   /** The active round's event sink; installed per round, cleared at settle. */
@@ -233,7 +252,52 @@ class ClaudeLiveRuntime {
       }
       return
     }
+    if (event['type'] === 'control_request') {
+      this.answerControlRequest(event)
+      return
+    }
     this.onEvent?.(event)
+  }
+
+  /**
+   * Answer a server→client control request so the runtime never hangs on
+   * one. A `permissionMode: 'normal'` spawn omits
+   * `--dangerously-skip-permissions`, so the CLI routes its approval surface
+   * (`can_use_tool`) here — and a subagent has no human to approve. The
+   * auto-allow mirrors the exec path's effective behavior (its one-shot
+   * spawns pre-allow the member bridge tool and otherwise run the same
+   * unattended policy) and the kimi live driver's auto-allow of
+   * `session/request_permission`. Any other subtype answers with an error so
+   * the CLI's own fallback path runs instead of waiting forever.
+   */
+  private answerControlRequest(event: JsonObject): void {
+    const requestId = event['request_id']
+    if (typeof requestId !== 'string') return
+    const request = event['request'] as JsonObject | undefined
+    const subtype = request?.['subtype']
+    if (subtype === 'can_use_tool') {
+      const input = request?.['input']
+      this.send({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: requestId,
+          response: {
+            behavior: 'allow',
+            updatedInput: typeof input === 'object' && input !== null ? input : {},
+          },
+        },
+      })
+      return
+    }
+    this.send({
+      type: 'control_response',
+      response: {
+        subtype: 'error',
+        request_id: requestId,
+        error: `subagent-claude live: unsupported control request ${String(subtype)}`,
+      },
+    })
   }
 
   /** Write one stdin frame. */
@@ -307,11 +371,21 @@ export class ClaudeLiveDriver {
       snapshotMinIntervalMs?: number
       snapshotMinChars?: number
       /**
-       * Resolver for the configured model, read at each RUNTIME SPAWN (the
-       * resident process is where a live round's CLI starts). Absent, or
-       * resolving to nothing, leaves the spawn argv unchanged.
+       * Resolver for the member's effective model, read at each RUNTIME SPAWN
+       * (the resident process is where a live round's CLI starts). Receives
+       * the member and the round's delegation-layer model (the delegation's
+       * own request, re-requested on resume from the record) and answers in
+       * the family's order — session-level override, delegation, settings.
+       * Absent, or resolving to nothing, leaves the spawn argv unchanged.
        */
-      model?: () => string | undefined
+      model?: (childSessionId: string, delegationModel?: string) => string | undefined
+      /**
+       * Scratch the spawn's effective model into the scoped settings.json
+       * before the process starts (a `--resume` respawn restores the
+       * session's stored model over the `--model` flag). index.ts wires the
+       * shared {@link ClaudeScopedModelMemory}; absent, the file is untouched.
+       */
+      provisionModel?: (homeDir: string, model: string | undefined) => Promise<void>
     },
     private readonly timeouts: ClaudeLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -397,17 +471,49 @@ export class ClaudeLiveDriver {
   private ensureRuntime(spec: ClaudeLiveRoundSpec, signal: AbortSignal): Promise<ClaudeLiveRuntime> {
     const key = String(spec.childSession.id)
     const existing = this.runtimes.get(key)
-    if (existing !== undefined && !existing.dead) {
+    if (existing !== undefined && !existing.dead && existing.model === this.spawnModel(key, spec)) {
       this.clearIdleTimer(key)
       return Promise.resolve(existing)
     }
     if (existing !== undefined) this.runtimes.delete(key)
     const pending = this.ensuring.get(key)
     if (pending !== undefined) return pending
-    const spawn = this.spawnRuntime(spec, signal)
+    // A live runtime bound to a DIFFERENT model than this round would spawn
+    // with (a composer switch the broker did not retire eagerly, or a
+    // delegation naming its own model) is retired first — the respawn resumes
+    // the same CLI session from disk, so the conversation carries over.
+    const retire = existing !== undefined && !existing.dead ? existing.reclaim() : Promise.resolve()
+    const spawn = retire
+      .then(() => this.spawnRuntime(spec, signal))
       .finally(() => { this.ensuring.delete(key) })
     this.ensuring.set(key, spawn)
     return spawn
+  }
+
+  /** The model a spawn for this round would bind (the argv `--model` value). */
+  private spawnModel(key: string, spec: ClaudeLiveRoundSpec): string | undefined {
+    const model = this.config.model?.(key, spec.model)?.trim()
+    return model === undefined || model === '' ? undefined : model
+  }
+
+  /**
+   * The model the member's resident runtime was spawned with, or undefined
+   * when the member has no live runtime (or it binds none). The model broker
+   * compares this against a switch's new effective model.
+   */
+  runtimeModel(childSessionId: string): string | undefined {
+    return this.runtimes.get(childSessionId)?.model
+  }
+
+  /**
+   * Retire the member's resident runtime so the next round respawns with its
+   * new effective model (the model broker's switch path). The caller refuses
+   * switches while a round is in flight, so the reclaim never kills a run;
+   * the CLI session survives on disk and the respawn resumes it.
+   */
+  async retireRuntime(childSessionId: string): Promise<void> {
+    await (this.ensuring.get(childSessionId) ?? Promise.resolve()).catch(() => undefined)
+    await this.reclaim(childSessionId)
   }
 
   /**
@@ -436,11 +542,18 @@ export class ClaudeLiveDriver {
     const granularity = this.config.liveMirrorGranularity ?? 'event'
     // The resident process serves one member, so the model resolved here binds
     // that member's runtime; a later change reaches it when the runtime is next
-    // respawned (idle reclaim, crash, or a live toggle).
-    const model = this.config.model?.()?.trim()
+    // respawned (idle reclaim, crash, a broker-initiated retire, or the
+    // model-aware retire in ensureRuntime above).
+    const model = this.spawnModel(key, spec)
+    // The settings.json scratch: a --resume respawn restores the session's
+    // stored model over the --model flag, so the effective model also goes
+    // into the scoped file (best-effort — the argv flag still applies).
+    if (this.config.provisionModel !== undefined) {
+      await this.config.provisionModel(spec.homeDir, model).catch(() => undefined)
+    }
     const argv = [
       'claude', '-p', '--verbose',
-      ...model === undefined || model === '' ? [] : ['--model', model],
+      ...model === undefined ? [] : ['--model', model],
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       ...(this.config.permissionMode ?? 'skip') === 'skip' ? ['--dangerously-skip-permissions'] : [],
@@ -471,6 +584,7 @@ export class ClaudeLiveDriver {
       throw new LiveChannelUnavailableError(`the stream-json process failed to spawn: ${thrown(error).message}`)
     }
     const runtime = new ClaudeLiveRuntime(child, message => { this.ctx.logger.warn(message) })
+    runtime.model = model
     runtime.onDead = () => {
       // Delete only OUR registration (crash-then-respawn interleave safety).
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)

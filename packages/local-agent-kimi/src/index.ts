@@ -19,6 +19,7 @@ import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { KimiModelBroker } from './model-broker.ts'
 import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
 import {
@@ -193,8 +194,21 @@ export function apply(ctx: Context, config: Config): void {
       const model = scope.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
-    const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs, resolveModel)
-    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel))
+    // The model broker owns the per-member state (session-level overrides,
+    // start models) and the gateway-facing surface. The live driver's spawn
+    // resolver defers to it through a closure because the broker itself needs
+    // the switch (a switch retires runtimes through it) — the circularity is
+    // construction-order only, and no round can run before both exist.
+    let broker: KimiModelBroker
+    const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs, child => broker.spawnModel(child))
+    broker = new KimiModelBroker(ctx, {
+      homeDir: () => ctx.localAgent.homeDir('kimi'),
+      settingsModel: resolveModel,
+      recentModels: () => scope.get().recentModels ?? [],
+      isLive: () => scope.get().live,
+      liveSwitch,
+    })
+    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel, broker))
     const disposeHarness = ctx.localAgent.register({
       name: 'kimi',
       displayName: 'Kimi Code',
@@ -214,6 +228,10 @@ export function apply(ctx: Context, config: Config): void {
       credentialStamp: kimiCredentialStamp,
       logout: kimiLogout,
       subcommand: handleSubcommand,
+      // The model surface: the settings card reads the memberless info, the
+      // member composer reads/switches per member. Registered unconditionally —
+      // the gateway answers null only for harnesses WITHOUT one.
+      modelBroker: broker,
       // The eval snapshot reads the scoped config as-is — it is authoritative
       // once provisioned, so a person-edited (or user-mirrored) effort and
       // endpoint report what actually applies, not what the config item

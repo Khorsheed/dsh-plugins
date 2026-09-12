@@ -41,8 +41,12 @@ export class LiveDriverSwitch {
     private readonly options: {
       sandbox: Config['sandbox']
       liveIdleMs?: number
-      /** Per-spawn model resolver, handed to every driver generation. */
-      model?: () => string | undefined
+      /**
+       * Per-spawn model resolver, handed to every driver generation. Receives
+       * the member's child session id so the session-level override can
+       * outrank the settings value.
+       */
+      model?: (childSessionId: string) => string | undefined
     },
   ) {
     this.apply(scope.get())
@@ -61,6 +65,25 @@ export class LiveDriverSwitch {
       if (retiring.hasRuntime(childSessionId)) return undefined
     }
     return this.active
+  }
+
+  /**
+   * The model the member's live runtime bound at spawn (the broker's switch
+   * check): the identifier, undefined for "bound to no model", null for "no
+   * live runtime". Consults only the ACTIVE generation — a draining one is on
+   * its way out anyway.
+   */
+  boundModel(childSessionId: string): string | undefined | null {
+    return this.active?.boundModelOf(childSessionId) ?? null
+  }
+
+  /**
+   * Retire the member's resident runtime in the active generation so the next
+   * round respawns onto the member's new effective model (the composer's
+   * model switch path; the CLI session itself carries over via thread/resume).
+   */
+  async retireRuntime(childSessionId: string): Promise<void> {
+    await this.active?.retireRuntime(childSessionId)
   }
 
   /** Mirror the resolved settings into the driver generation. */

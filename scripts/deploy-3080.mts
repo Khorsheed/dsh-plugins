@@ -22,7 +22,12 @@
  *
  * Options:
  *   --version X     override the tarball version (default: package.json)
- *   --initiator ID  restart attribution (default: $USER)
+ *   --initiator ID  session id the restart report is routed to. DEFAULT IS TO
+ *      OMIT THE FLAG: the guard then routes the report to its caller's
+ *      $DSH_SESSION_ID — the session that ran this deploy gets woken with the
+ *      receipt. Passing a non-session id (a username, a branch slug) routes
+ *      the report to a session that will never exist: it stays pending until
+ *      the next restart overwrites it (silently lost).
  *   --no-restart    install/refresh + diagnostic preflight; do not restart
  * @module scripts/deploy-3080
  */
@@ -53,7 +58,13 @@ function usage(message) {
 const args = process.argv.slice(2)
 const packages = []
 let versionOverride
-let initiator = process.env.USER ?? 'unknown'
+// The restart report's routing session. Deliberately undefined by default:
+// the --initiator flag is only passed when the operator names a session
+// explicitly — otherwise ankh-guard routes the report to its caller's
+// $DSH_SESSION_ID, which is the session that actually ran this deploy. The
+// old default ($USER) routed every report to a session that never exists,
+// orphaning it until the next restart overwrote the record.
+let initiator
 let noRestart = false
 for (let i = 0; i < args.length; i++) {
   const a = args[i]
@@ -218,7 +229,7 @@ try {
     // part of an ordinary 3080 restart without strengthening the gate.
     const logPath = join(DSH_HOME, 'state', 'watchdog.log')
     const logOffset = existsSync(logPath) ? readFileSync(logPath, 'utf8').length : 0
-    runGuard(['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, '--initiator', initiator])
+    runGuard(['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, ...(initiator === undefined ? [] : ['--initiator', initiator])])
     const deadline = Date.now() + 180_000
     let ok = false
     while (Date.now() < deadline) {
@@ -258,7 +269,7 @@ try {
   const outcome = noRestart
     ? '已安装/更新并通过构建、测试及诊断 preflight；未重启，运行实例尚未验证加载本次构建，未验证 canary。'
     : '已上线：构建/测试/preflight 全绿，按闸重启 canary PASS。'
-  process.stdout.write(`\n--- 通报(粘贴给群里)---\n[deploy-3080] ${names} ${outcome}操作者:${initiator}\n`)
+  process.stdout.write(`\n--- 通报(粘贴给群里)---\n[deploy-3080] ${names} ${outcome}操作者:${process.env.USER ?? 'unknown'}\n`)
 } finally {
   rmSync(lockPath, { force: true })
 }

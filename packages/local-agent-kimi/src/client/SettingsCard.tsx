@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { IconChevronDownOutline14, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
 // the block carries no runtime identity to share.
@@ -42,6 +43,13 @@ export interface KimiSettingsCardInjected {
   auth: ProviderAuthInjected
   /** Translate bound to the family core's `local-agent` namespace (the auth block's copy lives there). */
   authT: ProviderAuthBlockProps['t']
+  /**
+   * The harness's memberless model surface (the gateway's `harnessModel`
+   * Remote). Undefined means the broker is absent (a core without one): the
+   * card then renders exactly the pre-broker free-text field, with no
+   * effective-model line and the recent-models suggestions.
+   */
+  harnessModel: () => Promise<LocalAgentModelInfo | undefined>
   hooks: {
     /** The same scope as a hooks source, so the card reacts to external writes. */
     settings: SettingsScope<KimiLiveSettings>
@@ -66,14 +74,13 @@ export type KimiSettingsCardProps =
  * @param props - runtime slot currency, the injected scope/auth faces, and copy.
  * @returns the card.
  */
-export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions, t }: KimiSettingsCardProps) {
+export function KimiSettingsCard({ useSettings, scope, auth, authT, harnessModel, useSessions, t }: KimiSettingsCardProps) {
   const snapshot: SettingsScopeSnapshot<KimiLiveSettings> = useSettings(value => value)
   const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
   const live = snapshot.value?.live ?? false
-  const granularity = snapshot.value?.liveMirrorGranularity ?? 'event'
   // The model input is a DRAFT until saved: `null` means "showing whatever the
   // scope holds", so an external write (another tab, a YAML reload) still
   // reaches the field while the user is not typing in it.
@@ -83,6 +90,15 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
   const [modelSaved, setModelSaved] = useState(false)
   const [modelError, setModelError] = useState(false)
   const modelValue = modelDraft ?? storedModel
+  // The memberless model surface (effective model + its source + the pickable
+  // vocabulary), re-read whenever the stored model changes — a save can move
+  // the effective layer between settings and the CLI's own default.
+  const [modelInfo, setModelInfo] = useState<LocalAgentModelInfo | undefined>(undefined)
+  useEffect(() => {
+    let stale = false
+    void harnessModel().then((info) => { if (!stale) setModelInfo(info) })
+    return () => { stale = true }
+  }, [harnessModel, storedModel])
   /**
    * Commit the model field. A blank value UNSETS the key rather than storing
    * an empty string, so the field re-inherits the YAML composition base — and
@@ -172,7 +188,7 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
                 onChange={(event) => { setModelDraft(event.target.value) }}
               />
               <datalist id={`${NS}-recent-models`}>
-                {recentModels.map(value => <option key={value} value={value} />)}
+                {(modelInfo?.choices ?? recentModels).map(value => <option key={value} value={value} />)}
               </datalist>
               <button
                 type="button"
@@ -183,6 +199,15 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
                 {t('model.save')}
               </button>
             </div>
+            {modelInfo !== undefined && (
+              <span className={css.modelEffective}>
+                {modelInfo.settings !== undefined
+                  ? modelInfo.effective ?? modelInfo.settings
+                  : modelInfo.cliDefault !== undefined
+                    ? t('model.effective.cliConfig', { model: modelInfo.cliDefault })
+                    : t('model.effective.cliBuiltin')}
+              </span>
+            )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
             {modelError && <span className={css.errorText}>{t('model.error')}</span>}
           </section>
@@ -205,34 +230,6 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
               >
                 <span className={css.knob} />
               </button>
-            </div>
-            <div className={css.row}>
-              <span className={css.rowLabel}>
-                {t('live.granularity')}
-                <Tooltip label={t('live.granularity.info')} side="bottom" maxWidth={360}>
-                  <button type="button" className={css.info} aria-label={t('live.granularity.info.aria')}>ⓘ</button>
-                </Tooltip>
-              </span>
-              <label className={css.option}>
-                <input
-                  type="radio"
-                  name="local-agent-kimi-granularity"
-                  checked={granularity === 'event'}
-                  disabled={!ready}
-                  onChange={() => { write('liveMirrorGranularity', 'event') }}
-                />
-                {t('live.granularity.event')}
-              </label>
-              <label className={css.option}>
-                <input
-                  type="radio"
-                  name="local-agent-kimi-granularity"
-                  checked={granularity === 'token'}
-                  disabled={!ready}
-                  onChange={() => { write('liveMirrorGranularity', 'token') }}
-                />
-                {t('live.granularity.token')}
-              </label>
             </div>
             {saved && <span className={css.saved}>{t('live.applied')}</span>}
             {error && <span className={css.errorText}>{t('live.error')}</span>}

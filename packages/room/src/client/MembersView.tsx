@@ -24,7 +24,7 @@ type DialogState = { readonly mode: 'invite' } | { readonly mode: 'edit'; readon
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory, t,
+  sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory, modelChoices, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -78,6 +78,7 @@ export function MembersView({
       ...values.instructions === '' ? {} : { instructions: values.instructions },
       ...values.cwd === '' ? {} : { cwd: values.cwd },
       ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
+      ...values.model === '' ? {} : { model: values.model },
     })
     if (outcome.ok) {
       flash(outcome.pendingFirstTask
@@ -102,6 +103,7 @@ export function MembersView({
       inheritedCwd={roomCwd}
       existingNames={(state?.members ?? []).map(entry => entry.name)}
       browseDirectory={browseDirectory}
+      modelChoices={modelChoices}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
       t={t}

@@ -73,6 +73,14 @@ export interface RoomInviteInjected {
    */
   readonly listNames: () => readonly string[]
   /**
+   * The pickable model identifiers of one harness (the localAgentGateway
+   * `harnessModel` read), feeding the invite dialog's model datalist.
+   * Undefined = no datalist (a composition without the local-agent family's
+   * client half, or a brokerless harness): the field stays a plain text
+   * input, blank following the harness default.
+   */
+  readonly modelChoices: (harness: string) => Promise<readonly string[] | undefined>
+  /**
    * The preset-composition visibility of room's session chrome (M3'
    * self-hide): the invite chip returns null when this says no, and the
    * members tab's registration toggle reads it. Every unreadable path fails
@@ -129,6 +137,8 @@ export interface RoomInviteValues {
   /** Member-level working directory (omitted = inherits the room session's cwd). */
   readonly cwd?: string
   readonly firstTask?: string
+  /** The delegation's invite-time model (omitted = follow the harness default). */
+  readonly model?: string
 }
 
 /** The invite outcome: the receipt's pendingFirstTask picks the success copy. */

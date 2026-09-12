@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /**
  * The kimi settings card in the plugin configuration tab: collapsible chrome,
- * the family core's shared ProviderAuthBlock embedded for the auth states, and
- * the resident-mode block (live switch, granularity radios)
- * writing through the bound settingsScope.
+ * the family core's shared ProviderAuthBlock embedded for the auth states, the
+ * default-model block (free-text field, effective-model line, suggestions from
+ * the broker's choices), and the resident-mode switch writing through the
+ * bound settingsScope.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -11,7 +12,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import { resetAuthStatuses } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import {
@@ -65,6 +66,7 @@ function renderCard(options: {
   snapshot?: SettingsScopeSnapshot<KimiLiveSettings>
   authenticated?: boolean
   authStatus?: LocalAgentStatus | undefined
+  modelInfo?: LocalAgentModelInfo | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
 }): CardHarness {
   let snapshot: SettingsScopeSnapshot<KimiLiveSettings> = options.snapshot
@@ -108,12 +110,14 @@ function renderCard(options: {
     'authStatus' in options ? options.authStatus : kimiStatus(options.authenticated ?? false),
   )
   const runCommand = vi.fn(options.runCommand ?? (() => Promise.resolve('')))
+  const harnessModel = vi.fn(async () => options.modelInfo)
   const props = {
     useSettings: <T,>(select: (value: SettingsScopeSnapshot<KimiLiveSettings>) => T): T => select(snapshot),
     useSessions,
     scope,
     auth: { status, runCommand },
     authT,
+    harnessModel,
     t,
   } as unknown as KimiSettingsCardProps
   render(<KimiSettingsCard {...props} />)
@@ -142,8 +146,6 @@ describe('KimiSettingsCard', () => {
     expect(screen.getByRole('button', { name: coreZh['settings.login'] })).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByRole('radio', { name: zh['live.granularity.event'] })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: zh['live.granularity.token'] })).toBeTruthy()
   })
 
   it('renders authenticated state and a live-on card', async () => {
@@ -154,7 +156,6 @@ describe('KimiSettingsCard', () => {
     expect(screen.getByRole('button', { name: coreZh['settings.logout'] })).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('true')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
   })
 
   it('shows the credential dot in the collapsed header, fed by the status bus', async () => {
@@ -191,16 +192,6 @@ describe('KimiSettingsCard', () => {
     expect(screen.getByText(zh['live.applied'])).toBeTruthy()
   })
 
-  it('writes the granularity radio through the scope', async () => {
-    const { scope } = renderCard({})
-    await openCard()
-
-    fireEvent.click(screen.getByRole('radio', { name: zh['live.granularity.token'] }))
-    await act(async () => {})
-    expect(scope.set).toHaveBeenCalledWith('liveMirrorGranularity', 'token')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
-  })
-
   it('disables the live controls and explains while the namespace is unavailable', async () => {
     renderCard({
       snapshot: { status: 'unavailable', value: undefined, base: undefined, user: undefined, revision: undefined, writable: false, mode: 'memory' },
@@ -208,7 +199,6 @@ describe('KimiSettingsCard', () => {
     await openCard()
 
     expect((screen.getByRole('switch', { name: zh['live.title'] }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })
 
@@ -284,5 +274,55 @@ describe('KimiSettingsCard default-model block', () => {
     expect(save.disabled).toBe(true)
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
     expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('shows the effective model line: the settings value when the key is set', async () => {
+    renderCard({
+      value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' },
+      modelInfo: { effective: 'model-a', source: 'settings', settings: 'model-a', cliDefault: 'cli-model', choices: ['model-a', 'cli-model'], live: false, switchable: true },
+    })
+    await openCard()
+    expect(screen.getByText('model-a', { selector: 'span' })).toBeTruthy()
+    expect(screen.queryByText(zh['model.effective.cliBuiltin'])).toBeNull()
+  })
+
+  it('shows 跟随 CLI 配置 with the scoped default when no settings model is set', async () => {
+    renderCard({
+      modelInfo: { effective: 'cli-model', source: 'cli-config', cliDefault: 'cli-model', choices: ['cli-model'], live: false, switchable: true },
+    })
+    await openCard()
+    expect(screen.getByText('跟随 CLI 配置：cli-model')).toBeTruthy()
+  })
+
+  it('shows 跟随 CLI 内置默认 when no layer names a model', async () => {
+    renderCard({
+      modelInfo: { source: 'cli-builtin', choices: [], live: false, switchable: true },
+    })
+    await openCard()
+    expect(screen.getByText(zh['model.effective.cliBuiltin'])).toBeTruthy()
+  })
+
+  it('suggests the broker choices instead of only the recent saves', async () => {
+    renderCard({
+      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['recent-one'] },
+      modelInfo: { effective: 'cli-model', source: 'cli-config', cliDefault: 'cli-model', choices: ['cli-model', 'discovered/x', 'recent-one'], live: false, switchable: true },
+    })
+    await openCard()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['cli-model', 'discovered/x', 'recent-one'])
+  })
+
+  it('degrades to the bare field when the broker answers null (no line, recent suggestions)', async () => {
+    renderCard({
+      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a'] },
+      modelInfo: undefined,
+    })
+    await openCard()
+    expect(screen.queryByText(zh['model.effective.cliBuiltin'])).toBeNull()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value'))).toEqual(['model-a'])
   })
 })

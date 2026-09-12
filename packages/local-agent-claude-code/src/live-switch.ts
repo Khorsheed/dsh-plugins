@@ -31,8 +31,14 @@ export interface ClaudeLiveSettings {
 /** The Cordis-config inputs every driver generation shares. */
 type DriverBase = Pick<Config, 'permissionMode' | 'baseUrl'> & {
   liveIdleMs?: number
-  /** Per-spawn model resolver, handed to every driver generation. */
-  model?: () => string | undefined
+  /**
+   * Per-spawn member model resolver, handed to every driver generation:
+   * answers the member's effective model from its session-level override, the
+   * round's delegation model, and the settings key, in that order.
+   */
+  model?: (childSessionId: string, delegationModel?: string) => string | undefined
+  /** Pre-spawn scoped-settings.json model scratch (the shared memory). */
+  provisionModel?: (homeDir: string, model: string | undefined) => Promise<void>
 }
 
 export class LiveDriverSwitch {
@@ -63,6 +69,19 @@ export class LiveDriverSwitch {
       if (retiring.hasRuntime(childSessionId)) return undefined
     }
     return this.active
+  }
+
+  /**
+   * The generation currently hosting the member's runtime — the active one,
+   * or a retiring generation still draining it (the model broker retires the
+   * member's runtime through whichever generation owns it on a model switch).
+   */
+  hostingDriver(childSessionId: string): ClaudeLiveDriver | undefined {
+    if (this.active?.hasRuntime(childSessionId) === true) return this.active
+    for (const retiring of this.draining) {
+      if (retiring.hasRuntime(childSessionId)) return retiring
+    }
+    return undefined
   }
 
   /** Mirror the resolved settings into the driver generation. */

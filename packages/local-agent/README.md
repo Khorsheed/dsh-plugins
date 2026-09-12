@@ -114,7 +114,7 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 | `reattach` | 仅 `resume`：子会话不在线时从持久化恢复（默认 true），传 `false` 则 fail loud |
 | `cwd` | 本轮 CLI 的工作目录；resume 轮必须与首轮记录一致，否则进程启动前 fail loud |
 | `exec` | 本轮在**已取得的容器里**跑：`{ container, workdir, env? }` |
-| `model` | 本**次委派**跑哪个模型：只在 `start` 上接受，`resume` 传了即 fail loud——首轮请求的值记进委派记录，之后每轮照它重发（首轮没写就一直不写）。带 model 的轮次是 exec-only（长驻 runtime 在起进程时就绑定了模型）。取值顺序见下 |
+| `model` | 本**次委派**跑哪个模型：只在 `start` 上接受，`resume` 传了即 fail loud——首轮请求的值记进委派记录，之后每轮照它重发（首轮没写就一直不写）。exec 与 live 都接受（provider 在起进程/runtime 时绑定它）。取值顺序见下 |
 | `scope` | 本轮跑该家的**命名作用域目录**（`<homesRoot>/<家名>@<scope>`）；resume 轮必须与首轮记录的 scope 一致（含"都没有"），否则 fail loud |
 
 **每轮的 settle 观测。** provider 在一轮的输出流解析完之后调用 `recordRoundSettled`，家族把它转成一条 `settled` 进度事件：本轮的 `observedModel`、`cliVersion`、`usage`，以及本轮的 `toolCalls`（`{ count, byName }`）。每个字段取不到就缺位，绝不猜、绝不补零。
@@ -123,20 +123,21 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 
 `observedModel` 与 `cliVersion` 会并进委派记录（记录讲的是这次委派的最新状态），`toolCalls` **只走事件**：它属于某一轮，合并进记录等于用最新一轮悄悄盖掉上一轮的计数。
 
-**模型的四层取值顺序。** 一轮 CLI 用哪个模型，按固定顺序取第一个有值的：
+**模型的五层取值顺序。** 一轮 CLI 用哪个模型，按固定顺序取第一个有值的：
 
-1. **本次委派的 `model`**（`start` 的调用选项；resume 轮从委派记录里读回同一个值）
-2. **该家插件配置的 `model` 键**（T30a，按 provider 全局生效）
-3. **该家作用域配置文件**（codex 的 `model`、claude 的 `settings.json`、kimi 的 `default_model`、dsh 继承宿主实例的默认模型选择）
-4. **CLI 自己的默认**
+1. **会话级覆盖**（成员 composer 的模型切换器设置；存内存，宿主重启即失效）
+2. **本次委派的 `model`**（`start` 的调用选项；resume 轮从委派记录里读回同一个值）
+3. **该家插件配置的 `model` 键**（T30a，按 provider 全局生效）
+4. **该家作用域配置文件**（codex 的 `model`、claude 的 `settings.json`、kimi 的 `default_model`、dsh 继承宿主实例的默认模型选择）
+5. **CLI 自己的默认**
 
-四层都没有 = argv 上一个模型参数都不加，与这两个键出现之前逐字节相同。空白算没写。
+五层都没有 = argv 上一个模型参数都不加，与这些键出现之前逐字节相同。空白算没写。
 
-**为什么 resume 不接受 model。** 模型属于这次**委派**，不属于它的某一轮：首轮请求什么就记什么，之后每轮照发。中途换模型 CLI 会照办，而转录里看不出来——所以那是调用方的错误，fail loud，而不是被悄悄忽略的字段。要换模型就另起一次委派。
+**为什么 resume 不接受 model。** 模型属于这次**委派**，不属于它的某一轮：首轮请求什么就记什么，之后每轮照发。中途换模型 CLI 会照办，而转录里看不出来——所以那是调用方的错误，fail loud，而不是被悄悄忽略的字段。要换模型走成员 composer 的切换器（下面的会话级覆盖），它在转录里是有迹可循的一层。
 
-**为什么带 model 的轮次是 exec-only。** 长驻 runtime（codex 的 `app-server`、claude 与 kimi 的 ACP、子 dsh 的 `serve`）在**起进程时**就绑定了模型，然后为这个成员的很多轮服务。按委派给模型要么被忽略、要么会悄悄改掉那个 runtime 上其他轮次跑的模型，所以直接拒绝——与命名作用域同一条理由。插件配置的 `model` 键不受此限：它是全家统一的，长驻 runtime 绑定它正是实例要的。
+**成员 composer 的模型切换器（会话级覆盖）。** 成员会话的 composer 在发送钮旁边带一个模型切换器（harness 没注册 model broker 就不渲染，保持 broker 出现之前的行为）：chip 显示当前生效模型（五层都没有时显示「默认」），下拉列出该家的可选词表，选中即写该成员的**会话级覆盖**——存内存、刻意不随宿主重启存活、优先级高于委派记录与设置层；「跟随设置」一项清除覆盖。live 驱动下换一个**不同的**模型会退役该成员的长驻 runtime，下一轮以新模型重 spawn（同一条 CLI 会话照常 resume，rollout 延续）；换成同一个模型是 no-op。成员有一轮在飞时切换被拒绝（结构化错误内联显示，切换器同时禁用并给出原因）——退役 runtime 会杀掉正在跑的轮。读取走 `localAgentGateway.memberModel`，写入走 `setMemberModel`；设置卡片的「下一轮会跑什么」读的是同一个 broker 的无成员面（`harnessModel`）。
 
-`effectiveSettings.model` 报的仍是**第 2 层往下**的答案——「一轮没有自带模型时会跑什么」，也就是条件快照要问的那个harness 级设置。
+`effectiveSettings.model` 报的仍是**设置层往下**的答案——「一轮没有自带模型时会跑什么」，也就是条件快照要问的那个 harness 级设置；委派记录与会话覆盖不进快照。
 
 **容器内委派（`exec` 目标）。** 给了它，provider 把 argv 换成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`；stdio 仍是 pipe，流解析、settle、回读、`delegations.jsonl` 记录全部与宿主路径逐字节相同。家族只用 `exec` 这一个 docker 动词——取得、挂载、销毁容器是调用方（lab）的事。
 

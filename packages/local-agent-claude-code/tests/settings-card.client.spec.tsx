@@ -2,8 +2,10 @@
 /**
  * The claude-code settings card in the plugin configuration tab: collapsible
  * chrome, the family core's shared ProviderAuthBlock embedded for the auth
- * states, and the resident-mode block (live switch, granularity radios)
- * writing through the bound settingsScope.
+ * states, the resident-mode switch writing through the bound settingsScope,
+ * and the default-model block — free-text write plus the gateway's model
+ * surface (effective-model line, suggestion vocabulary), degrading to the
+ * bare input when the surface is absent.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -11,7 +13,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
   ClaudeCodeSettingsCard, type ClaudeLiveSettings, type ClaudeCodeSettingsCardProps,
@@ -64,6 +66,7 @@ function renderCard(options: {
   authenticated?: boolean
   authStatus?: LocalAgentStatus | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
+  modelInfo?: () => Promise<LocalAgentModelInfo | null | undefined>
 }): CardHarness {
   let snapshot: SettingsScopeSnapshot<ClaudeLiveSettings> = options.snapshot
     ?? makeSnapshot(options.value ?? { live: false, liveMirrorGranularity: 'event' }, options.user, options.base)
@@ -111,6 +114,7 @@ function renderCard(options: {
     useSessions,
     scope,
     auth: { status, runCommand },
+    ...options.modelInfo === undefined ? {} : { modelInfo: options.modelInfo },
     authT,
     t,
   } as unknown as ClaudeCodeSettingsCardProps
@@ -140,19 +144,16 @@ describe('ClaudeCodeSettingsCard', () => {
     expect(screen.getByRole('button', { name: coreZh['settings.login'] })).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByRole('radio', { name: zh['live.granularity.event'] })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: zh['live.granularity.token'] })).toBeTruthy()
   })
 
   it('renders authenticated state and a live-on card', async () => {
-    renderCard({ authenticated: true, value: { live: true, liveMirrorGranularity: 'token' } })
+    renderCard({ authenticated: true, value: { live: true } })
     await openCard()
 
     expect(screen.getByText(coreZh['settings.authenticated'])).toBeTruthy()
     expect(screen.getByRole('button', { name: coreZh['settings.logout'] })).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('true')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
   })
 
   it('marks the auth block unavailable when the probe reports undefined (core absent)', async () => {
@@ -172,16 +173,6 @@ describe('ClaudeCodeSettingsCard', () => {
     expect(screen.getByText(zh['live.applied'])).toBeTruthy()
   })
 
-  it('writes the granularity radio through the scope', async () => {
-    const { scope } = renderCard({})
-    await openCard()
-
-    fireEvent.click(screen.getByRole('radio', { name: zh['live.granularity.token'] }))
-    await act(async () => {})
-    expect(scope.set).toHaveBeenCalledWith('liveMirrorGranularity', 'token')
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
-  })
-
   it('disables the live controls and explains while the namespace is unavailable', async () => {
     renderCard({
       snapshot: { status: 'unavailable', value: undefined, base: undefined, user: undefined, revision: undefined, writable: false, mode: 'memory' },
@@ -189,7 +180,6 @@ describe('ClaudeCodeSettingsCard', () => {
     await openCard()
 
     expect((screen.getByRole('switch', { name: zh['live.title'] }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })
 
@@ -266,5 +256,78 @@ describe('ClaudeCodeSettingsCard default-model block', () => {
     expect(save.disabled).toBe(true)
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
     expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+/** A memberless model surface, as the gateway's harnessModel answers it. */
+function modelSurface(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
+  return { source: 'cli-builtin', choices: [], live: false, switchable: true, ...over }
+}
+
+describe('ClaudeCodeSettingsCard model surface', () => {
+  it('names the settings value as the effective model when one is stored', async () => {
+    renderCard({
+      value: { live: false, model: 'model-a' },
+      modelInfo: () => Promise.resolve(modelSurface({ source: 'settings', effective: 'model-a', settings: 'model-a', choices: ['model-a'] })),
+    })
+    await openCard()
+    expect(screen.getByText('当前生效：model-a')).toBeTruthy()
+  })
+
+  it('falls to 跟随 CLI 配置 with the scoped-file model when the field is blank', async () => {
+    renderCard({
+      modelInfo: () => Promise.resolve(modelSurface({ source: 'cli-config', effective: 'scoped-model', cliDefault: 'scoped-model', choices: ['scoped-model'] })),
+    })
+    await openCard()
+    expect(screen.getByText('跟随 CLI 配置：scoped-model')).toBeTruthy()
+  })
+
+  it('falls to 跟随 CLI 内置默认 when no layer names a model', async () => {
+    renderCard({ modelInfo: () => Promise.resolve(modelSurface()) })
+    await openCard()
+    expect(screen.getByText(zh['model.followCliBuiltin'])).toBeTruthy()
+  })
+
+  it('the surface choices become the input suggestions, ahead of the recent-models memory', async () => {
+    renderCard({
+      value: { live: false, recentModels: ['recent-a'] },
+      modelInfo: () => Promise.resolve(modelSurface({ choices: ['model-a', 'scoped-model'] })),
+    })
+    await openCard()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['model-a', 'scoped-model'])
+  })
+
+  it('degrades to the bare input when the remote answers null (a brokerless core)', async () => {
+    renderCard({
+      value: { live: false, recentModels: ['recent-a'] },
+      modelInfo: () => Promise.resolve(null),
+    })
+    await openCard()
+    expect(screen.queryByText(zh['model.followCliBuiltin'])).toBeNull()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['recent-a'])
+  })
+
+  it('keeps the bare input when no model surface was injected at all', async () => {
+    renderCard({})
+    await openCard()
+    expect(screen.queryByText(zh['model.followCliBuiltin'])).toBeNull()
+    expect(screen.getByLabelText(zh['model.title'])).toBeTruthy()
+  })
+
+  it('refetches the surface after a save (the settings layer changed)', async () => {
+    const modelInfo = vi.fn(() => Promise.resolve(modelSurface()))
+    const harness = renderCard({ modelInfo })
+    await openCard()
+    expect(modelInfo).toHaveBeenCalledTimes(1)
+    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
+    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
+    expect(modelInfo).toHaveBeenCalledTimes(2)
   })
 })

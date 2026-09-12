@@ -1,9 +1,9 @@
 /**
  * T30b — the DELEGATION's own model on a dsh round. What is pinned
- * here is the four-layer order (delegation → plugin config → scoped file → CLI
- * default), that the delegation's value is RECORDED so every resume round
- * re-requests it, and that a round naming a model never goes to the resident
- * runtime — which binds one model at spawn and serves many rounds.
+ * here is the layered order (session override → delegation → plugin config →
+ * host default selection), that the delegation's value is RECORDED so every
+ * resume round re-requests it, and that a live-mode round naming a model binds
+ * it as the member's start model at the serve spawn instead of being refused.
  */
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -52,7 +52,7 @@ function request(): never {
   } as never
 }
 
-function mount(intent: unknown, options: { record?: unknown; live?: unknown; configModel?: () => string | undefined } = {}): {
+function mount(intent: unknown, options: { record?: unknown; live?: unknown; configModel?: () => string | undefined; overrides?: (childSessionId: string) => string | undefined } = {}): {
   provider: DshCliProvider
   specs: Array<{ argv: readonly string[]; env: Readonly<Record<string, string>> }>
   recorded: Array<Record<string, unknown>>
@@ -99,7 +99,7 @@ function mount(intent: unknown, options: { record?: unknown; live?: unknown; con
   })
   ctx.provide('logger', { warn: () => {}, info: () => {} })
   // `cliLaunch` keeps the round from replicating the test process.
-  return { provider: new DshCliProvider(ctx, { cliLaunch: ['dsh'] } as never, options.live as never, options.configModel), specs, recorded, homes }
+  return { provider: new DshCliProvider(ctx, { cliLaunch: ['dsh'] } as never, options.live as never, options.configModel, options.overrides), specs, recorded, homes }
 }
 
 /** The provider name and CLI-session id the recorded fixtures carry. */
@@ -140,6 +140,20 @@ describe('dsh delegation model', () => {
     const run = await provider.start(request())
     await run.result
     expect(modelFlag(specs[0]?.argv ?? [])).toBe('model-a')
+    await run.dispose()
+  })
+
+  it('the session-level override outranks the delegation model on the exec path', async () => {
+    // The composer picker's override is the FIRST layer of the family's fixed
+    // order: a member switched mid-conversation runs the next round — exec or
+    // live — on the override, not on what its first round recorded.
+    const { provider, specs } = mount(
+      { kind: 'resume', childSessionId: CHILD, cliSessionId: CLI_SESSION },
+      { record: { ...MODEL_RECORD, model: 'model-a' }, overrides: () => 'override-model' },
+    )
+    const run = await provider.start(request())
+    await run.result
+    expect(modelFlag(specs[0]?.argv ?? [])).toBe('override-model')
     await run.dispose()
   })
 
@@ -208,12 +222,24 @@ describe('dsh delegation model', () => {
     await run.dispose()
   })
 
-  it('refuses a round with a model that the live driver would serve', async () => {
-    const live = { disabled: false, startRound: vi.fn() }
+  it('a live-mode round naming a model binds it as the member start model, not refused', async () => {
+    const live = { disabled: false, startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })) }
     const { provider, specs } = mount({ kind: 'fresh', model: 'model-a' }, { live })
-    await expect(provider.start(request())).rejects.toThrow(/exec-only/)
-    expect(live.startRound).not.toHaveBeenCalled()
+    await expect(provider.start(request())).resolves.toBeDefined()
+    expect(live.startRound).toHaveBeenCalled()
+    expect(live.startRound.mock.calls[0]?.[1]).toMatchObject({ startModel: 'model-a' })
+    // The exec fallback never spawned: the live driver owns the round.
     expect(specs).toHaveLength(0)
+  })
+
+  it('the session-level override outranks even the delegation model on the live path', async () => {
+    const live = { disabled: false, startRound: vi.fn(async () => ({ result: Promise.resolve({ stopReason: 'completed' }), dispose: async () => {} })) }
+    const { provider } = mount(
+      { kind: 'fresh', model: 'model-a' },
+      { live, overrides: () => 'override-model' },
+    )
+    await expect(provider.start(request())).resolves.toBeDefined()
+    expect(live.startRound.mock.calls[0]?.[1]).toMatchObject({ startModel: 'override-model' })
   })
 
   it('the plugin-config key is NOT exec-only — only a delegation model is', async () => {

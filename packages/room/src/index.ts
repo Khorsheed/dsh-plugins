@@ -269,6 +269,9 @@ export class RoomService extends TypertRemoteService {
       providers.push({
         provider: status.delegationProvider,
         displayName: row.displayName,
+        // The roster name is the localAgentGateway harnessModel lookup key
+        // (the invite dialog's model datalist).
+        harness: row.name,
         authenticated: status.authenticated,
       })
     }
@@ -322,6 +325,9 @@ export class RoomService extends TypertRemoteService {
     if (request.firstTask !== undefined && request.firstTask.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
+    if (request.model !== undefined && request.model.trim() === '') {
+      return { ok: false, error: { code: 'empty-text' } }
+    }
     if (probeLocalAgent(this.ctx) === undefined) {
       return { ok: false, error: { code: 'local-agent-unavailable' } }
     }
@@ -346,6 +352,7 @@ export class RoomService extends TypertRemoteService {
       invitedBy,
       ...request.instructions === undefined ? {} : { instructions: request.instructions },
       ...request.cwd === undefined || request.cwd.trim() === '' ? {} : { cwd: request.cwd.trim() },
+      ...request.model === undefined || request.model.trim() === '' ? {} : { model: request.model.trim() },
     })
     let firstTaskSeq: number | undefined
     if (request.firstTask !== undefined) {

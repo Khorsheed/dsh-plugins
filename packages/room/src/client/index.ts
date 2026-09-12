@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import roomRemote from '@khorsheed/dsh-room/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
+import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
@@ -211,6 +212,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
     },
     listNames: () => roomStore.getCached(sessionId)?.members.map(member => member.name) ?? [],
+    modelChoices: async (harness) => {
+      // The localAgentGateway namespace belongs to the local-agent family's
+      // client half: a composition without it (or a brokerless harness)
+      // answers undefined and the invite dialog keeps a plain text input.
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['harnessModel'] !== 'function') return undefined
+      const harnessModel = gateway['harnessModel'] as
+        (name: string) => Promise<{ readonly ok: true; readonly value: LocalAgentModelInfo | null } | { readonly ok: false }>
+      try {
+        const carried = await harnessModel(harness)
+        return carried.ok && carried.value !== null ? carried.value.choices : undefined
+      } catch {
+        return undefined
+      }
+    },
     roomChrome,
   })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({

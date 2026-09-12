@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { LocalAgentDelegationView, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentDelegationView, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import {
   MemberComposer, resetMembershipCache, selectCliMember, type MemberComposerProps,
 } from '../src/client/MemberComposer.tsx'
@@ -28,6 +28,19 @@ const MEMBER: LocalAgentDelegationView = {
   provider: 'fake-cli',
   parentSessionId: 'parent-1',
   harnessDisplayName: 'Fake Agent',
+}
+
+/** A pickable model surface (settings layer effective, two choices). */
+function modelInfo(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
+  return {
+    effective: 'm1',
+    source: 'settings',
+    settings: 'm1',
+    choices: ['m1', 'm2'],
+    live: false,
+    switchable: true,
+    ...over,
+  }
 }
 
 /** Chain owner currency around a session snapshot fragment. */
@@ -67,6 +80,8 @@ function props(
     promptMember: () => Promise.resolve({ ok: true } satisfies LocalAgentPromptResult),
     stopMember: () => Promise.resolve(true),
     activeDelegations: () => Promise.resolve([]),
+    memberModel: () => Promise.resolve(null),
+    setMemberModel: () => Promise.resolve({ ok: true } satisfies LocalAgentPromptResult),
     t,
     ...over,
   } as unknown as MemberComposerProps
@@ -305,6 +320,118 @@ describe('MemberComposer', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } })
     expect(send.disabled).toBe(true)
     expect(promptMember).not.toHaveBeenCalled()
+  })
+
+  describe('model picker', () => {
+    it('renders no picker when the memberModel answer is null (brokerless harness)', async () => {
+      const memberModel = vi.fn().mockResolvedValue(null)
+      render(<MemberComposer {...props({ memberModel })} />)
+      await screen.findByRole('textbox')
+      await act(async () => {})
+
+      expect(memberModel).toHaveBeenCalledWith(CHILD)
+      expect(screen.queryByRole('button', { name: zh['member.model.picker'] })).toBeNull()
+    })
+
+    it('shows the effective model on the chip, and the localized Default when no layer names one', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+      expect(chip.textContent).toBe('m1')
+      expect(chip.getAttribute('title')).toBe(
+        zh['member.model.title']
+          .replace('{model}', 'm1')
+          .replace('{source}', zh['member.model.source.settings']),
+      )
+    })
+
+    it('labels the chip Default for the cli-builtin source (the CLI names nothing)', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo({
+        effective: undefined, source: 'cli-builtin', settings: undefined, choices: [],
+      }))
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+      expect(chip.textContent).toBe(zh['member.model.default'])
+    })
+
+    it('applies a choice through setMemberModel and re-reads the surface on success', async () => {
+      const memberModel = vi.fn()
+        .mockResolvedValueOnce(modelInfo())
+        .mockResolvedValue(modelInfo({ effective: 'm2', source: 'override', override: 'm2' }))
+      const setMemberModel = vi.fn().mockResolvedValue({ ok: true } satisfies LocalAgentPromptResult)
+      render(<MemberComposer {...props({ memberModel, setMemberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+
+      fireEvent.click(chip)
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'm2' }))
+      await waitFor(() => { expect(chip.textContent).toBe('m2') })
+      expect(setMemberModel).toHaveBeenCalledWith(CHILD, 'm2')
+    })
+
+    it('renders the structured error inline and keeps the displayed value on a refused switch', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      const setMemberModel = vi.fn().mockResolvedValue({ ok: false, error: 'localAgent: a round is in flight' } satisfies LocalAgentPromptResult)
+      render(<MemberComposer {...props({ memberModel, setMemberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+
+      fireEvent.click(chip)
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'm2' }))
+      expect(await screen.findByText('localAgent: a round is in flight')).toBeTruthy()
+      expect(chip.textContent).toBe('m1')
+    })
+
+    it('falls back to its own copy when the setMemberModel RPC itself fails', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      const setMemberModel = vi.fn().mockResolvedValue(undefined)
+      render(<MemberComposer {...props({ memberModel, setMemberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+
+      fireEvent.click(chip)
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'm2' }))
+      expect(await screen.findByText(zh['member.model.failed'])).toBeTruthy()
+      expect(chip.textContent).toBe('m1')
+    })
+
+    it('disables the picker with the reason in the title when switchable is false', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo({
+        switchable: false, reason: '成员有一轮正在运行',
+      }))
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] }) as HTMLButtonElement
+      expect(chip.disabled).toBe(true)
+      expect(chip.getAttribute('title')).toBe('成员有一轮正在运行')
+    })
+
+    it('disables the picker while the member run is in flight', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      render(<MemberComposer {...props({ memberModel }, true)} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] }) as HTMLButtonElement
+      expect(chip.disabled).toBe(true)
+    })
+
+    it('offers the follow-settings reset only while an override is active, clearing it with undefined', async () => {
+      const memberModel = vi.fn()
+        .mockResolvedValueOnce(modelInfo({ effective: 'm2', source: 'override', override: 'm2' }))
+        .mockResolvedValue(modelInfo())
+      const setMemberModel = vi.fn().mockResolvedValue({ ok: true } satisfies LocalAgentPromptResult)
+      render(<MemberComposer {...props({ memberModel, setMemberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+
+      fireEvent.click(chip)
+      fireEvent.click(screen.getByRole('menuitem', { name: zh['member.model.followSettings'] }))
+      await waitFor(() => { expect(chip.textContent).toBe('m1') })
+      expect(setMemberModel).toHaveBeenCalledWith(CHILD, undefined)
+    })
+
+    it('hides the follow-settings reset when no override is active', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      render(<MemberComposer {...props({ memberModel })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+
+      fireEvent.click(chip)
+      expect(screen.getByRole('menuitemradio', { name: 'm1' })).toBeTruthy()
+      expect(screen.queryByRole('menuitem', { name: zh['member.model.followSettings'] })).toBeNull()
+    })
   })
 
   describe('stats line', () => {

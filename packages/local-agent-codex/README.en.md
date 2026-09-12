@@ -43,7 +43,6 @@ Optional, in the profile patch layer:
     model: gpt-5.2             # optional: every delegation round starts the CLI with it; absent passes no model flag at all (below)
     live: false                # live driver: one resident codex app-server process per member, one turn per round (runtime-level graceful interrupt, push-mode mirroring); off — or a channel that cannot come up — means the one-shot exec path
     liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
-    liveMirrorGranularity: event  # live mirror granularity; both levels fold every item, token additionally lands streaming deltas as throttled snapshots in the session log (the UI merges them into one growing message)
 ```
 
 ### Default model (`model`)
@@ -59,9 +58,11 @@ Optional, in the profile patch layer:
 
 The scoped `config.toml` is never rewritten: `-m` overrules it per round and the file stays exactly as you edited it.
 
-The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in) plus previously saved values as suggestions. Saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key, which falls back to the YAML composition base and from there to "absent" above.
+The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in). Saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key, which falls back to the YAML composition base and from there to "absent" above. Below the input the card shows the **effective model**: the key's value when set, otherwise "following the CLI config: <scoped config `model`>", otherwise "following the CLI's built-in default". The suggestions are no longer only the recently saved values — they are the model broker's deduped union (this key + the config's top-level `model` + the `model` keys its `[profiles.*]` tables carry + recently used), everything the instance itself knows, never a hardcoded catalog. When the core or the broker is absent the card degrades to the old bare input (recent-models suggestions only, no effective line).
 
-**A delegation's own model outranks this key.** An orchestrator may name the model for ONE delegation through the facade's `DelegationCallOptions.model`, which sits above this key (the four layers are in the family core README). The first round's request is recorded and every resume round re-requests it — `resume` takes no model of its own. A round carrying a delegation model is exec-only; this plugin-config key is not.
+**A delegation's own model outranks this key.** An orchestrator may name the model for ONE delegation through the facade's `DelegationCallOptions.model` (the fixed order: session override > delegation record > this key > scoped config > CLI built-in). The first round's request is recorded and every resume round re-requests it — `resume` takes no model of its own. In live mode such a round is no longer refused: the model becomes the member's **start model**, bound at the app-server spawn; a resident runtime bound to a different model is retired first (the same codex thread resumes via thread/resume) so the round respawns onto the asked-for model.
+
+**Member-level switching (the composer model picker).** A member session can switch its model per session: an in-memory session-level override, the highest-priority layer, deliberately lost on a host restart. A switch is refused while a round is in flight; when idle and the member has a resident runtime bound to a different model, the switch retires that runtime — the next round respawns onto the new model while the CLI session (rollout) itself carries over. On the one-shot (exec) drive there is no resident process, so the override simply decides the next round's `-m`.
 
 **This is not an evaluation gap.** A run freezes its condition at setup: change the key mid-run and the next round's model read-back sees declared ≠ observed and fails the run as misattributed (frozen decision 5). "A new run follows the new value, a running one is never switched underneath you" is the design, not an oversight.
 

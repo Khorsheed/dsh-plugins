@@ -30,7 +30,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertModelExecOnly,
   assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
@@ -45,6 +44,7 @@ import type { DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-l
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
+import type { KimiModelBroker } from './model-broker.ts'
 import { guardKimiCredential } from './credential-guard.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
@@ -125,11 +125,16 @@ export class KimiCliProvider implements SubagentProvider {
    *   reload. Undefined (the resolver absent, or returning undefined) leaves
    *   the argv exactly as it was before the key rode every round — the scoped
    *   config.toml's `default_model` then decides, as it always did.
+   * @param memberModels - the broker's member-model ledger: the provider
+   *   records each delegation's start model here (the live driver's spawn
+   *   resolver binds it) and reads the session-level override as the exec
+   *   path's top layer. Absent (older wiring), both drop out.
    */
   constructor(
     private readonly ctx: Context,
     private readonly live?: KimiAcpLiveDriver | ((childSessionId: string) => KimiAcpLiveDriver | undefined),
     private readonly model?: () => string | undefined,
+    private readonly memberModels?: KimiModelBroker,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -293,9 +298,11 @@ export class KimiCliProvider implements SubagentProvider {
       // A scoped round is exec-only: the resident `kimi acp` process is
       // started per member against the DEFAULT scoped home.
       assertScopeExecOnly(scope, 'subagent-kimi')
-      // …and so is a round that names its own model: a resident runtime binds
-      // one model at spawn and then serves every round of this member.
-      assertModelExecOnly(requestedModel, 'subagent-kimi')
+      // A delegation naming its own model is NOT refused anymore: the model
+      // becomes the member's start model, which the live driver's spawn
+      // resolver binds (rewriting the scoped `default_model` before spawn; a
+      // runtime already bound to another model is retired and respawned).
+      if (requestedModel !== undefined) this.memberModels?.noteStartModel(runId, requestedModel)
       try {
         return await live.startRound(request, {
           cwd,
@@ -345,7 +352,9 @@ export class KimiCliProvider implements SubagentProvider {
         env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
-        ...resolveRoundModel(requestedModel, this.model),
+        // The session-level override (the composer picker) outranks even the
+        // delegation's own model — the family order puts it first.
+        ...resolveRoundModel(this.memberModels?.overrideFor(runId) ?? requestedModel, this.model),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -433,7 +442,9 @@ export class KimiCliProvider implements SubagentProvider {
         // See the fresh path: a scoped round never goes to the resident
         // process, which binds the default scoped home.
         assertScopeExecOnly(scope, 'subagent-kimi')
-        assertModelExecOnly(requestedModel, 'subagent-kimi')
+        // See the fresh path: the recorded model is the member's start model,
+        // which the spawn resolver binds (retiring a mismatched runtime).
+        if (requestedModel !== undefined) this.memberModels?.noteStartModel(intent.childSessionId, requestedModel)
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -468,7 +479,9 @@ export class KimiCliProvider implements SubagentProvider {
           env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
-          ...resolveRoundModel(requestedModel, this.model),
+          // See the fresh path: the session-level override outranks the
+          // delegation's recorded model on the exec path too.
+          ...resolveRoundModel(this.memberModels?.overrideFor(intent.childSessionId) ?? requestedModel, this.model),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {

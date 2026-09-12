@@ -114,7 +114,7 @@ The `options` argument of `registry.start(parent, provider, prompt, options)` an
 | `reattach` | `resume` only: restore a non-live child session from persistence (default true); `false` fails loud instead |
 | `cwd` | The round's CLI working directory; a resume round must repeat the first round's, or it fails loud before any spawn |
 | `exec` | Run this round inside an **already-acquired container**: `{ container, workdir, env? }` |
-| `model` | The model THIS DELEGATION runs: accepted on `start` only — passing it to `resume` fails loud, because the first round's request is recorded and every later round re-requests it (none, when the first named none). A round with a model is exec-only (a resident runtime binds its model at spawn). Order below |
+| `model` | The model THIS DELEGATION runs: accepted on `start` only — passing it to `resume` fails loud, because the first round's request is recorded and every later round re-requests it (none, when the first named none). Accepted for exec and live alike (the provider binds it when spawning the process/runtime). Order below |
 | `scope` | Run this round against the harness's **named scoped home** (`<homesRoot>/<harness>@<scope>`); a resume round must repeat the first round's scope, absence included, or it fails loud |
 
 **One settled observation per round.** A provider calls `recordRoundSettled` once its round's output stream is fully parsed, and the family turns it into one `settled` progress event: the round's `observedModel`, `cliVersion`, `usage`, and its `toolCalls` (`{ count, byName }`). Every field stays absent when the round did not yield it — never guessed, never zero-filled.
@@ -123,20 +123,21 @@ The `options` argument of `registry.start(parent, provider, prompt, options)` an
 
 `observedModel` and `cliVersion` merge into the delegation record (which states the delegation's latest state); `toolCalls` rides the EVENT only — it belongs to one round, and merging it would silently overwrite the previous round's count with the newest one.
 
-**The model's four layers.** Which model a round starts its CLI with is the first of these that names one:
+**The model's five layers.** Which model a round starts its CLI with is the first of these that names one:
 
-1. **the delegation's own `model`** (the `start` call option; a resume round reads the same value back off the delegation record)
-2. **the harness's `model` plugin-config key** (T30a, harness-wide)
-3. **the harness's scoped configuration file** (codex's `model`, claude's `settings.json`, kimi's `default_model`; dsh inherits the host instance's default model selection)
-4. **the CLI's own default**
+1. **the session-level override** (set through the member composer's model picker; in-memory, gone with a host restart)
+2. **the delegation's own `model`** (the `start` call option; a resume round reads the same value back off the delegation record)
+3. **the harness's `model` plugin-config key** (T30a, harness-wide)
+4. **the harness's scoped configuration file** (codex's `model`, claude's `settings.json`, kimi's `default_model`; dsh inherits the host instance's default model selection)
+5. **the CLI's own default**
 
-All four absent means no model flag on the argv at all — byte for byte the behavior before either key existed. Blank counts as absent.
+All five absent means no model flag on the argv at all — byte for byte the behavior before any of these keys existed. Blank counts as absent.
 
-**Why `resume` does not take a model.** A model belongs to the DELEGATION, not to one of its rounds: the first round records what it requested and every later round re-requests it. Switching mid-conversation is something the CLI would honour and the transcript would not show, so it is a caller error that fails loud rather than a silently ignored field. To run another model, start another delegation.
+**Why `resume` does not take a model.** A model belongs to the DELEGATION, not to one of its rounds: the first round records what it requested and every later round re-requests it. Switching mid-conversation is something the CLI would honour and the transcript would not show, so it is a caller error that fails loud rather than a silently ignored field. To switch models, use the member composer's picker (the session-level override below) — a layer the transcript can account for.
 
-**Why a round with a model is exec-only.** A resident runtime (codex's `app-server`, claude's and kimi's ACP servers, the sub-dsh `serve`) binds its model when the PROCESS starts and then serves many rounds of one member. A per-delegation model would either be ignored or would silently change what every other round of that runtime runs — the same reason a named scope is refused there. The plugin-config key is not restricted this way: it is harness-wide, so a runtime bound to it is running what the instance asked for.
+**The member composer's model picker (the session-level override).** A member session's composer carries a compact model picker beside the send button (a harness without a model broker renders no picker, keeping the pre-broker behavior exactly): the chip shows the effective model (「Default」when every layer names nothing), the dropdown lists the harness's pickable vocabulary, and a selection writes the member's **session-level override** — in-memory, deliberately not surviving a host restart, outranking the delegation record and the settings layer; a "Follow settings" item clears it. With the live driver on, switching to a DIFFERENT model retires the member's resident runtime so the next round respawns onto the new model (the same CLI session resumes; its rollout carries over); switching to the same model is a no-op. While a round is in flight the switch is refused (a structured error renders inline, and the picker is disabled with the reason in its tooltip) — retiring a runtime mid-round would kill the run. The read rides `localAgentGateway.memberModel`, the write `setMemberModel`; the settings card's "what would a round run" line reads the same broker's memberless face (`harnessModel`).
 
-`effectiveSettings.model` still reports the answer from **layer 2 down** — "what would a round with no model of its own run", which is the harness-wide setting the condition snapshot is asking about.
+`effectiveSettings.model` still reports the answer from **the settings layer down** — "what would a round with no model of its own run", which is the harness-wide setting the condition snapshot is asking about; delegation records and session overrides never enter the snapshot.
 
 **Container delegation (the `exec` target).** Given one, the provider spawns `docker exec -w <workdir> [-e NAME…] <container> <the same argv>`; stdio stays piped, and the stream parse, settle, readback and `delegations.jsonl` record are byte-for-byte the host path's. The family owns exactly one docker verb, `exec` — acquiring, mounting and destroying a container belong to the caller (lab).
 

@@ -37,7 +37,6 @@ bundle 行接受这些可选字段:
 - `baseUrl`——为子 CLI 设置 `ANTHROPIC_BASE_URL`(例如自部署路由器或代理);缺省继承宿主进程环境。配置优先于环境。
 - `live`——长驻驱动:每成员常驻一个 stream-json 进程(`--input-format stream-json`),按轮发 stdin 消息(runtime 级优雅中断 control interrupt、同形推送流);关闭或通道不可用即回一次性 `claude -p`。
 - `liveIdleMs`——长驻 runtime 空闲回收时限(默认 30 分钟)。
-- `liveMirrorGranularity`——live 镜像粒度(默认 `event`);两档都把每个输出项 1:1 完整折叠进子会话日志。`token` 再以 `--include-partial-messages` 拉起,把流式增量按节流(默认 ≥300ms 且 ≥200 字符,driver config `snapshotMinIntervalMs`/`snapshotMinChars` 可覆盖)以增量快照写入该项预留的 (turn, step)——宿主对同一坐标的重复 assistant/message 整体替换并立即发布,UI 呈现为一条持续增长的消息,该项完成时在同一坐标收尾。
 
 ### 默认模型（`model`）
 
@@ -45,11 +44,13 @@ bundle 行接受这些可选字段:
 
 **写了 = 每轮委派以它起 CLI。**新起一轮与续接（resume）、一次性与常驻（`live: true`）四种 argv 都带上 `--model <模型>`，位置在成员通道的 `--allowedTools …--` 之前——那个旗标是变长的，`--` 之后就是任务文本。
 
-作用域 `settings.json` 不会被改写——`--model` 每轮覆盖它，文件仍是你编辑的样子。
+一次性（exec）轮不改写作用域 `settings.json`——`--model` 每轮覆盖它，文件仍是你编辑的样子。常驻（live）spawn 会把成员的生效模型暂写进该文件（`--resume` 重挂时 CLI 认文件里的模型而不认 `--model` 旗标），绑定空模型的 spawn 前再还原；状态页与设置卡读到的「CLI 配置」层永远是你自己配的值，不会读到某个成员留下的暂写。
 
-设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录）加上此前存过的值作为候选，保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键，回到 YAML 组合基线、进而回到上面的「不写」。
+设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录），保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键，回到 YAML 组合基线、进而回到上面的「不写」。输入框下方显示**当前生效**的一行：设置值已填就是它；否则显示 `跟随 CLI 配置：<作用域 settings.json 的 model>`；再否则 `跟随 CLI 内置默认`。候选列表来自家族网关的模型面（设置值、作用域文件默认、最近存过的值，去重），网关缺位（旧 core）时退回「此前存过的值」与裸输入框。
 
-**委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（顺序见家族核心 README 的四层）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。带委派级 model 的轮次是 exec-only；这个插件配置键不受此限。
+**委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（顺序见家族核心 README 的层序）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。常驻模式下，首轮点名的模型作为该成员的起始模型在 runtime spawn 时绑定：已绑定不同模型的 runtime 先退役，同一个 CLI 会话经 `--resume` 在新进程上续起。
+
+**成员会话级切换。**成员会话的 composer 模型选择器经家族网关 `setMemberModel` 写入一个**会话级覆盖**——它排在委派模型与这个键之前，只存内存、刻意不跨宿主重启、也不写进设置。切换进行中轮次的成员会被拒绝；live 下换到不同模型会退役该成员的常驻 runtime，下一轮以新模型重挂**同一个** CLI 会话（对话不丢），换成相同模型则什么都不发生。
 
 **这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。「切了新 run 照新走、进行中的 run 不被悄悄换掉」是设计出来的，不是漏掉的。
 
@@ -59,7 +60,7 @@ bundle 行接受这些可选字段:
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——`liveMirrorGranularity: token` 的流式快照落在输出项预留的 (turn, step)，宿主 ui-chat 对同一坐标重复 assistant/message 的整体替换（0.1.5-rc.1 起自带）把它合并为一条持续增长的消息，两档均全量折叠、一字不丢；适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——live 镜像把每个输出项 1:1 完整折叠进子会话日志，宿主 ui-chat 对同一坐标重复 assistant/message 的整体替换（0.1.5-rc.1 起自带）提供实时增量呈现；适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制
@@ -97,11 +98,11 @@ bundle patch 把 `claude-code` harness 注册进家族 core(`@khorsheed/dsh-loca
 
 **续聊安全。** 句柄绝不进 prompt:它只从 `resume` 参数读取,localAgent registry 只对记录该委派的同一 parent 会话与 provider 解析句柄——伪造的句柄(未知子会话、他人 parent 的会话、或错误的 provider)在任何 CLI 进程启动前就被拒绝。
 
-**流镜像与记账。** `thinking` 块折叠为 `reasoning` 块、`tool_use`/`tool_result` 为工具行(`[工具 Bash] <command> → output`)、回复 `text` 为 assistant 文本;续聊轮各自追加自己的 turn,不会重复。每个镜像 step 都包在同 (turn, step) 的 `step/start`–`step/end` 边界对内——宿主实时会话视图只在边界上登记 step,缺了边界 assistant 消息要等整页重建才渲染。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败与被取消同样关闭——因此 `subagentTiming` 时长等于实际 CLI 运行时长,不会留下未闭合窗口;最终 `assistant/message` 携带从 JSON 结果解析的 token 用量(`input_tokens`、`output_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`——Anthropic 各桶独立上报)。
+**流镜像与记账。** `thinking` 块折叠为 `reasoning` 块、`tool_use`/`tool_result` 为工具行(`[工具 Bash] <command> → output`)、回复 `text` 为 assistant 文本;续聊轮各自追加自己的 turn,不会重复。编辑类调用(Edit/Write/MultiEdit/NotebookEdit)折叠为 ApplyPatch 式卡片——路径在参数行,真正的改动(旧/新串或整个文件体)在卡身,与 codex 的 fileChange 镜像同一形态;服务端工具(`server_tool_use` 的 web_search/web_fetch)与其结果按 id 配对成可见的 WebSearch/WebFetch 卡;`redacted_thinking` 折叠为一行可见的占位思考(内容按设计由服务端加密,不可见——行内注明);其余工具的输入取单一标量摘要,取不到就给一份截断的 JSON 摘要而不是丢空。每个镜像 step 都包在同 (turn, step) 的 `step/start`–`step/end` 边界对内——宿主实时会话视图只在边界上登记 step,缺了边界 assistant 消息要等整页重建才渲染。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败与被取消同样关闭——因此 `subagentTiming` 时长等于实际 CLI 运行时长,不会留下未闭合窗口;最终 `assistant/message` 携带从 JSON 结果解析的 token 用量(`input_tokens`、`output_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`——Anthropic 各桶独立上报)。
 
 **模型体验。** 子会话是委派会话工作区内一个全新的一次性 `claude -p`;父级只提交独立的任务文本,只看到最终回答或精确错误,以及首次委派时的续聊自述——Claude 的评论、工具活动、工作区 diff 不会复制进父级。子会话 token 永不进入父级上下文;子会话为独立的 Claude 上下文与回合付费(缓存复用只取决于作用域安装自身的 provider、模型与历史);父级 KV cache 不受影响。
 
-**长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 stream-json 进程(`claude -p --verbose --input-format stream-json --output-format stream-json`),第一条 stdin `user` 消息触发 `system/init`(server 分配 session id,即委派记录的 `cliSessionId`),之后每轮 = 一条 stdin 消息;事件流与 exec 的 stream-json **完全同形**,逐轮过同一个 `ClaudeStreamParser` 折叠(末行留置到 `result` 挂用量,与 exec 一致),`cancel` 落地为 `control_request interrupt`——进程不死、会话可续。回收阶梯是 stdin EOF → SIGTERM;崩溃后下一轮以 `--resume <session_id>` 重挂盘上会话。授权纪律与 exec 逐字一致:只注入作用域 `CLAUDE_CONFIG_DIR`(与可选的 `baseUrl` 覆盖),绝不碰全局 `~/.claude`,绝不执行任何 `auth` 命令。
+**长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 stream-json 进程(`claude -p --verbose --input-format stream-json --output-format stream-json`),第一条 stdin `user` 消息触发 `system/init`(server 分配 session id,即委派记录的 `cliSessionId`),之后每轮 = 一条 stdin 消息;事件流与 exec 的 stream-json **完全同形**,逐轮过同一个 `ClaudeStreamParser` 折叠(末行留置到 `result` 挂用量,与 exec 一致),`cancel` 落地为 `control_request interrupt`——进程不死、会话可续。回收阶梯是 stdin EOF → SIGTERM;崩溃后下一轮以 `--resume <session_id>` 重挂盘上会话。runtime 在 spawn 时绑定成员的生效模型(会话级覆盖 → 委派模型 → 设置键),并把它暂写进作用域 `settings.json`(`--resume` 重挂认文件不认旗标);绑定模型与新一轮解析不一致的 runtime 先退役再重挂。`permissionMode: normal` 的 spawn 不带 `--dangerously-skip-permissions`,CLI 的 server→client 控制请求(`can_use_tool` 审批面)由驱动自动应答 allow——子代理没有审批面,与 exec 在 skip 下的有效行为一致;其余子类型应答 error 而不是沉默挂起。授权纪律与 exec 逐字一致:只注入作用域 `CLAUDE_CONFIG_DIR`(与可选的 `baseUrl` 覆盖),绝不碰全局 `~/.claude`,绝不执行任何 `auth` 命令。
 
 **配置注意。** 宿主环境是启动时的快照——之后在别的 shell 里 `export ANTHROPIC_BASE_URL` 对运行中的进程无效,除非重启宿主;排查路由异常时检查宿主的实际环境而非你当前的 shell。每次委派在 info 级别记录有效端点(`subagent-claude: delegating via <endpoint>`),失败运行的报错文本会点名它。`skip` 作为默认是因为一次性 CLI 子代理没有审批面;委派需要被限制时,给宿主自身套沙箱(例如在沙箱化工作区内运行 dsh 宿主)。
 

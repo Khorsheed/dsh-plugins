@@ -244,6 +244,18 @@ describe('local-agent-kimi apply', () => {
 })
 
 describe('local-agent-kimi model key', () => {
+  it('registers the model broker (settings card + member composer surface)', async () => {
+    const { registered } = mount({ model: 'card-model' })
+    const broker = registered[0]?.modelBroker
+    expect(broker).toBeDefined()
+    await expect(broker!.modelInfo()).resolves.toMatchObject({
+      effective: 'card-model',
+      source: 'settings',
+      live: false,
+      switchable: true,
+    })
+  })
+
   it('carries the YAML model into the composition base', () => {
     const { settings } = mount({}, { model: 'kimi-code/k3' })
     const registration = settings.registrations[0] as { options?: { base?: object } }

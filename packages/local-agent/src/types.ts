@@ -329,6 +329,79 @@ export interface LocalAgentDelegationView {
 export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
 
 /**
+ * Where a member's effective model comes from, in the family's fixed
+ * resolution order (first match wins): the session-level override set through
+ * the composer's model picker, then the delegation's own recorded model, then
+ * the harness's plugin-config `model` (settings card / YAML), then the scoped
+ * config file's own default, and last the CLI's built-in default — which
+ * names nothing, exactly as it did before any of these layers existed.
+ */
+export type LocalAgentModelSource = 'override' | 'delegation' | 'settings' | 'cli-config' | 'cli-builtin'
+
+/**
+ * The model surface for one member — or, without a member, for a harness's
+ * next round (the settings card's "what would run" line). Every layer reports
+ * its own value so a UI can explain WHY the effective model is what it is;
+ * `choices` is the pickable vocabulary (settings + scoped-config default +
+ * config-discovered + recently used, deduped), never a hardcoded catalog.
+ */
+export interface LocalAgentModelInfo {
+  /** The model the next round would actually run with, when any layer names one. */
+  effective?: string
+  /** Which layer {@link LocalAgentModelInfo.effective} came from. */
+  source: LocalAgentModelSource
+  /** The session-level override, when one is active for the member. */
+  override?: string
+  /** The delegation's recorded model, when the delegation named one. */
+  delegation?: string
+  /** The harness's plugin-config `model`, when the settings layer sets one. */
+  settings?: string
+  /** The scoped config file's own default model, when the file names one. */
+  cliDefault?: string
+  /** The pickable model identifiers (deduped; empty when nothing names a model). */
+  choices: readonly string[]
+  /** Whether the harness's live driver is on for the member's rounds. */
+  live: boolean
+  /**
+   * False while a round is in flight for the member: a model switch retires
+   * the member's resident runtime so the NEXT round respawns with the new
+   * model, and retiring a runtime mid-round would kill the run.
+   */
+  switchable: boolean
+  /** Why a switch is currently refused, when {@link LocalAgentModelInfo.switchable} is false. */
+  reason?: string
+}
+
+/**
+ * A harness's model knob, registered with the harness and routed by the
+ * gateway: the settings card reads the memberless info, the member composer
+ * reads and switches per member. A harness without a broker keeps its old
+ * faces exactly (the card's free-text model input still writes plugin config).
+ */
+export interface LocalAgentModelBroker {
+  /**
+   * Read the model surface. With a member, `delegationModel` carries the
+   * delegation record's requested model (the record lives in the core; the
+   * broker ranks it between override and settings).
+   * @param childSessionId - the member to read, absent for the harness default.
+   * @param delegationModel - the delegation's recorded model, when it named one.
+   * @returns the layer-by-layer surface.
+   */
+  modelInfo(childSessionId?: string, delegationModel?: string): LocalAgentModelInfo | Promise<LocalAgentModelInfo>
+  /**
+   * Set (or clear, with undefined) a member's session-level model override.
+   * The override outranks the delegation's recorded model and the settings
+   * layer; it is in-memory and deliberately does not survive a host restart.
+   * When the member has a live runtime, setting a DIFFERENT model retires the
+   * runtime so the next round respawns with the new model; the same model is
+   * a no-op. Throws when a round is in flight for the member.
+   * @param childSessionId - the member to switch.
+   * @param model - the model identifier, or undefined to clear the override.
+   */
+  setMemberModel(childSessionId: string, model: string | undefined): Promise<void>
+}
+
+/**
  * One member-to-member notification handed to the room gate — the frozen
  * contract (`proposals/active/2026-08-19-local-agent-member-channel.md` §3):
  * `{ from, to, content, parentSessionId, provenance }`. The bridge cannot

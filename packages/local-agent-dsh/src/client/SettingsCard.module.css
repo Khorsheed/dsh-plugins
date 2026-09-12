@@ -143,16 +143,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
 /* The live switch: same capsule the family dsh toggle uses. */
 .switch {
   flex: none;
@@ -253,4 +243,12 @@
 .modelSave:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* The effective-model line under the default-model input: which layer the
+   next round's model comes from, answered by the harness's model broker. */
+.modelEffective {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
 }

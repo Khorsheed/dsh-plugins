@@ -94,6 +94,87 @@
   padding: 0 8px 6px;
 }
 
+/* The member model picker: a quiet chip on the send row's left edge, opening
+   a small upward menu (the composer sits at the conversation's bottom). */
+.modelPicker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-right: auto;
+}
+
+.modelChip {
+  max-width: 220px;
+  padding: 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+
+.modelChip:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.modelChip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.modelMenu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.modelItem,
+.modelItemCurrent,
+.modelItemReset {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.modelItem:hover,
+.modelItemCurrent:hover,
+.modelItemReset:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.modelItemCurrent {
+  font-weight: 560;
+}
+
+.modelItemReset {
+  color: var(--dsw-alias-label-tertiary);
+}
+
 /* The member dock: the projection-row stack below the card, replacing the
    official dock rows the elected fallback hides. */
 .dock {

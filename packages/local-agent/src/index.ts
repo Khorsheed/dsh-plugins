@@ -41,6 +41,7 @@ import type {
   LocalAgentDelegationRecord,
   LocalAgentEffectiveSettings,
   LocalAgentMemberRun,
+  LocalAgentModelBroker,
   LocalAgentRosterRow,
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
@@ -364,6 +365,14 @@ export interface LocalAgentHarness {
    *   directory of the scope being asked about.
    */
   effectiveSettings?: (homeDir: string) => LocalAgentEffectiveSettings | Promise<LocalAgentEffectiveSettings>
+  /**
+   * The harness's model knob: the settings card reads the memberless surface
+   * ("what would a round run with"), the member composer reads and switches a
+   * member's session-level override. Absent means the harness exposes no
+   * model surface beyond its free-text settings field — the gateway answers
+   * null and both UIs keep their pre-broker behavior.
+   */
+  modelBroker?: LocalAgentModelBroker
 }
 
 /** Plugin config: the shared scoped-homes root and the login prompt wait. */
@@ -1072,6 +1081,19 @@ export class LocalAgentRegistry {
    */
   get(name: string): LocalAgentHarness | undefined {
     return this.harnesses.get(name)
+  }
+
+  /**
+   * Resolve the harness that claims one delegation provider — the inverse of
+   * {@link LocalAgentHarness.delegationProvider}, for surfaces handed a
+   * provider name (a delegation record's) that need the owning harness's
+   * knobs (its model broker).
+   * @param provider - the `ctx.subagents` provider name.
+   * @returns the claiming harness, or undefined when none claims it.
+   */
+  harnessForProvider(provider: string): LocalAgentHarness | undefined {
+    return [...this.harnesses.values()]
+      .find(candidate => candidate.delegationProvider === provider)
   }
 
   /**

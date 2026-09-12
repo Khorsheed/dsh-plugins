@@ -120,6 +120,15 @@ export interface CodexLiveRoundSpec {
   readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
   /** Fresh round: called with the server-assigned thread id (delegation record). */
   readonly onThreadId?: ((threadId: string) => void) | undefined
+  /**
+   * The member's START model — the delegation's own requested model, or the
+   * composer's session-level override, as resolved by the provider. When it
+   * names one, a resident runtime bound to a DIFFERENT model is retired
+   * before the spawn so the round respawns onto it (the same CLI session
+   * resumes — the rollout carries over). Absent means the spawn resolver
+   * decides (override → recorded → settings).
+   */
+  readonly startModel?: string | undefined
 }
 
 type JsonObject = Record<string, unknown>
@@ -381,6 +390,12 @@ class CodexLiveRuntime {
   readonly peer: CodexWirePeer
   /** The member's loaded thread; assigned by the first round's thread/start or thread/resume. */
   threadId: string | undefined
+  /**
+   * The model this process bound at spawn (the `-c model=…` override), or
+   * undefined when it spawned with no model flag at all. A round whose start
+   * model differs retires the runtime instead of silently running the old one.
+   */
+  boundModel: string | undefined
   /** Turn ids of settled/interrupted rounds — their late notifications are tagged out. */
   readonly retiredTurnIds = new Set<string>()
   /** The active round's notification sink; installed per round, cleared at settle. */
@@ -485,11 +500,13 @@ export class CodexLiveDriver {
       snapshotMinIntervalMs?: number
       snapshotMinChars?: number
       /**
-       * Resolver for the configured model, read at each RUNTIME SPAWN (the
-       * app-server is where a live round's CLI starts). Absent, or resolving
-       * to nothing, leaves the spawn argv unchanged.
+       * Resolver for the member's configured model, read at each RUNTIME SPAWN
+       * (the app-server is where a live round's CLI starts). Receives the
+       * member's child session id so the session-level override can outrank
+       * the settings value; absent, or resolving to nothing, leaves the spawn
+       * argv unchanged.
        */
-      model?: () => string | undefined
+      model?: (childSessionId: string) => string | undefined
     },
     private readonly timeouts: CodexLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -572,15 +589,46 @@ export class CodexLiveDriver {
     }))
   }
 
+  /**
+   * The model the member's live runtime bound at spawn: the identifier, or
+   * undefined when the runtime spawned with no model flag. Null when the
+   * member has no live runtime in this generation — the broker's switch check
+   * distinguishes "no runtime to retire" from "runtime bound to no model".
+   */
+  boundModelOf(key: string): string | undefined | null {
+    const runtime = this.runtimes.get(key)
+    if (runtime === undefined || runtime.dead) return null
+    return runtime.boundModel
+  }
+
+  /**
+   * Retire the member's resident runtime so the NEXT round respawns (the CLI
+   * session itself carries over via thread/resume). The composer's model
+   * switch calls this after storing the new override; the caller guarantees
+   * no round is in flight for the member.
+   */
+  async retireRuntime(key: string): Promise<void> {
+    await this.reclaim(key)
+  }
+
   /** The member's runtime, spawning it (once per member at a time) when absent or dead. */
-  private ensureRuntime(spec: CodexLiveRoundSpec, signal: AbortSignal): Promise<CodexLiveRuntime> {
+  private async ensureRuntime(spec: CodexLiveRoundSpec, signal: AbortSignal): Promise<CodexLiveRuntime> {
     const key = String(spec.childSession.id)
+    const startModel = spec.startModel?.trim()
     const existing = this.runtimes.get(key)
     if (existing !== undefined && !existing.dead) {
-      this.clearIdleTimer(key)
-      return Promise.resolve(existing)
+      // A round that names its own start model never runs on a runtime bound
+      // to a different one: retire so the respawn binds the asked-for model
+      // (the codex thread resumes — only the process is replaced).
+      if (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel) {
+        await this.reclaim(key)
+      } else {
+        this.clearIdleTimer(key)
+        return existing
+      }
+    } else if (existing !== undefined) {
+      this.runtimes.delete(key)
     }
-    if (existing !== undefined) this.runtimes.delete(key)
     const pending = this.ensuring.get(key)
     if (pending !== undefined) return pending
     const spawn = this.spawnRuntime(spec, signal)
@@ -606,10 +654,17 @@ export class CodexLiveDriver {
     // `codex app-server` has no `-m` (verified against codex-cli 0.144.0), so
     // the model rides the process-level `-c` override the CLI documents for
     // exactly this — the same mechanism the member bridge already uses. The
-    // resident process carries one member, so reading the resolver here binds
-    // the model for that member's runtime; a later change reaches it when the
-    // runtime is next respawned (idle reclaim, crash, or a live toggle).
-    const model = this.config.model?.()?.trim()
+    // member's START model (a delegation-level request or the session-level
+    // override, resolved by the provider) wins; otherwise the spawn resolver
+    // reads the member's configured model (override → settings). The resident
+    // process carries one member, so reading here binds the model for that
+    // member's runtime; a later switch reaches it by retiring the runtime
+    // first (idle reclaim, crash, a live toggle, or the composer's model
+    // picker).
+    const startModel = spec.startModel?.trim()
+    const model = startModel !== undefined && startModel !== ''
+      ? startModel
+      : this.config.model?.(key)?.trim()
     const spawnSpec: SubprocessSpawnSpec = {
       argv: [
         'codex', 'app-server',
@@ -636,6 +691,9 @@ export class CodexLiveDriver {
       message => { this.ctx.logger.warn(message) },
       this.timeouts.requestMs,
     )
+    // A blank resolution binds no model at all — record exactly what the argv
+    // carries so a later start-model comparison never retires needlessly.
+    runtime.boundModel = model === undefined || model === '' ? undefined : model
     runtime.onDead = () => {
       // Delete only OUR registration (crash-then-respawn interleave safety).
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)

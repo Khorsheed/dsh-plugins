@@ -45,6 +45,16 @@ export const zh = {
   'member.stats.tokens': '输入 {input} tok · 输出 {output} tok',
   'member.tasks.summary': '任务 {done}/{total}',
   'member.tasks.active': ' · 进行中：{title}',
+  'member.model.picker': '成员模型',
+  'member.model.default': '默认',
+  'member.model.title': '模型：{model}（{source}）',
+  'member.model.source.override': '会话级覆盖',
+  'member.model.source.delegation': '委派时指定',
+  'member.model.source.settings': '插件设置',
+  'member.model.source.cli-config': 'CLI 配置文件',
+  'member.model.source.cli-builtin': 'CLI 内置默认',
+  'member.model.followSettings': '跟随设置',
+  'member.model.failed': '切换模型失败，请重试',
 } as const
 
 /** English dictionary, key-identical to the Chinese source of truth. */
@@ -89,6 +99,16 @@ export const en: Record<LocalAgentKey, string> = {
   'member.stats.tokens': 'Input {input} tok · Output {output} tok',
   'member.tasks.summary': 'Tasks {done}/{total}',
   'member.tasks.active': ' · Active: {title}',
+  'member.model.picker': 'Member model',
+  'member.model.default': 'Default',
+  'member.model.title': 'Model: {model} ({source})',
+  'member.model.source.override': 'session override',
+  'member.model.source.delegation': 'set at delegation',
+  'member.model.source.settings': 'plugin settings',
+  'member.model.source.cli-config': 'CLI config file',
+  'member.model.source.cli-builtin': 'CLI built-in default',
+  'member.model.followSettings': 'Follow settings',
+  'member.model.failed': 'Could not switch the model; try again',
 }
 
 /** Key domain of the `local-agent` namespace (zh is the source of truth). */

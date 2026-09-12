@@ -38,7 +38,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertModelExecOnly,
   assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
@@ -192,18 +191,20 @@ export class ClaudeCliProvider implements SubagentProvider {
    *   generation's driver per member (the settings toggle swaps generations;
    *   a resolver may return undefined to steer one member's round to exec
    *   while a retiring generation still hosts it).
-   * @param model - resolver for the configured model, read PER ROUND so a
-   *   settings-card write takes effect on the next delegation without a
-   *   reload. Undefined (the resolver absent, or returning undefined) leaves
-   *   the argv exactly as it was before the key existed — the scoped
-   *   `settings.json`'s own `model` then decides, as it always did.
+   * @param model - resolver for the member's effective model, read PER ROUND
+   *   so a settings-card write or a composer switch takes effect on the next
+   *   delegation without a reload. Receives the member (the child session id)
+   *   and the round's delegation-layer model, and answers in the family's
+   *   order — session-level override, delegation, settings. Absent (the
+   *   resolver not passed), the delegation's own model still rides, exactly
+   *   as before the key existed.
    */
   constructor(
     private readonly ctx: Context,
     private readonly permissionMode: 'skip' | 'normal' = 'skip',
     private readonly baseUrl?: string,
     private readonly live?: ClaudeLiveDriver | ((childSessionId: string) => ClaudeLiveDriver | undefined),
-    private readonly model?: () => string | undefined,
+    private readonly model?: (childSessionId: string, delegationModel?: string) => string | undefined,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -211,6 +212,11 @@ export class ClaudeCliProvider implements SubagentProvider {
     const live = this.live
     if (live === undefined) return undefined
     return typeof live === 'function' ? live(childSessionId) : live
+  }
+
+  /** The round's model fragment for the exec spawn spec (see {@link resolveRoundModel}). */
+  private roundModel(childSessionId: string, requestedModel: string | undefined): { model?: string } {
+    return resolveRoundModel(this.model === undefined ? requestedModel : this.model(childSessionId, requestedModel))
   }
 
   /** Per-round member-channel registration for the exec path (see {@link registerClaudeMemberRun}). */
@@ -328,15 +334,17 @@ export class ClaudeCliProvider implements SubagentProvider {
       // started per member against the DEFAULT scoped home, so serving a
       // scoped round from it would run it under the wrong credentials.
       assertScopeExecOnly(scope, 'subagent-claude')
-      // …and so is a round that names its own model: a resident runtime binds
-      // one model at spawn and then serves every round of this member.
-      assertModelExecOnly(requestedModel, 'subagent-claude')
       try {
         return await live.startRound(request, {
           cwd,
           homeDir,
           childSession,
           parentSessionId: request.parent.session.id,
+          // A fresh delegation naming a model is NOT exec-only: the model
+          // binds as the member's start model at the runtime's spawn (a
+          // runtime already bound to a different model is retired first, and
+          // the same CLI session resumes on the respawn).
+          ...requestedModel === undefined ? {} : { model: requestedModel },
           // The stream-json session id arrives with the turn's system/init
           // (server-assigned), far earlier than the exec path's settle parse.
           onSessionId: (sessionId) => {
@@ -377,7 +385,7 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: effectiveBaseUrl,
         permissionMode: this.permissionMode,
-        ...resolveRoundModel(requestedModel, this.model),
+        ...this.roundModel(runId, requestedModel),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -459,7 +467,6 @@ export class ClaudeCliProvider implements SubagentProvider {
         // See the fresh path: a scoped round never goes to the resident
         // process, which binds the default scoped home.
         assertScopeExecOnly(scope, 'subagent-claude')
-        assertModelExecOnly(requestedModel, 'subagent-claude')
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -467,6 +474,10 @@ export class ClaudeCliProvider implements SubagentProvider {
             childSession,
             parentSessionId: request.parent.session.id,
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+            // The delegation's recorded model re-requests through the spawn
+            // binding too (see the fresh path): a runtime bound to a
+            // different model retires, and the session resumes on the respawn.
+            ...requestedModel === undefined ? {} : { model: requestedModel },
           })
           void liveRun.result.then(
             () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
@@ -495,7 +506,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           endpointLabel: effectiveBaseUrl,
           permissionMode: this.permissionMode,
-          ...resolveRoundModel(requestedModel, this.model),
+          ...this.roundModel(intent.childSessionId, requestedModel),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {
@@ -844,7 +855,12 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
       if (event.type === 'assistant') state.text = record['text'] as string
     } else if (kind === 'thinking' && typeof record['thinking'] === 'string' && (record['thinking'] as string).trim() !== '') {
       state.lines.push({ kind: 'think', text: record['thinking'] as string })
-    } else if (kind === 'tool_use') {
+    } else if (kind === 'redacted_thinking') {
+      // The model reasoned, but the content is opaque by design (encrypted on
+      // the server): a visible placeholder line says so instead of dropping
+      // the block and misreporting the round as reasoning-free.
+      state.lines.push({ kind: 'think', text: REDACTED_THINKING_TEXT })
+    } else if (kind === 'tool_use' || kind === 'server_tool_use') {
       const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
       // Counted here, ahead of the TodoWrite intercept below: that intercept
       // diverts the block out of the transcript, but the CLI still called the
@@ -859,40 +875,72 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
         // Shape skew: degrade to the plain text fold; the mirror paths warn.
         state.todoSkew = true
       }
-      const detail = inputDetail(record['input'])
       const id = typeof record['id'] === 'string' ? record['id'] : undefined
       if (id !== undefined) state.callsById.set(id, state.lines.length)
-      state.lines.push({
-        kind: 'tool',
-        id: id ?? `claude-tool-${state.lines.length}`,
-        name,
-        ...detail === undefined ? {} : { args: detail },
-      })
+      const edit = kind === 'tool_use' ? editToolDetail(name, record['input']) : undefined
+      if (edit !== undefined) {
+        // The apply-patch-style card (codex's fileChange idiom): the path as
+        // the args, the actual edit — old/new strings or the file body — as
+        // the card body. Without this an implementation round's edits were
+        // reduced to a bare path.
+        state.lines.push({
+          kind: 'tool',
+          id: id ?? `claude-tool-${state.lines.length}`,
+          name: 'ApplyPatch',
+          args: edit.args,
+          ...edit.patch === undefined ? {} : { result: edit.patch },
+        })
+      } else {
+        const detail = inputDetail(record['input'])
+        state.lines.push({
+          kind: 'tool',
+          id: id ?? `claude-tool-${state.lines.length}`,
+          // The server-side tools surface under the local tools' card names
+          // (web_search is the same activity the local WebSearch tool runs).
+          name: kind === 'server_tool_use' ? SERVER_TOOL_CARD_NAMES[name] ?? name : name,
+          ...detail === undefined ? {} : { args: detail },
+        })
+      }
     } else if (kind === 'tool_result') {
-      const content = record['content']
-      const resultText = toolResultText(content)
+      const resultText = toolResultText(record['content'])
       if (resultText !== undefined && resultText.trim() !== '') {
-        // Pair by tool_use_id when the stream carries it; fall back to the
-        // most recent tool line so an id-less stream still lands the result
-        // on its call.
-        const useId = typeof record['tool_use_id'] === 'string' ? record['tool_use_id'] : undefined
-        let target = useId === undefined ? undefined : state.callsById.get(useId)
-        if (target === undefined) {
-          for (let index = state.lines.length - 1; index >= 0; index -= 1) {
-            if (state.lines[index]?.kind === 'tool') {
-              target = index
-              break
-            }
-          }
-        }
-        if (target !== undefined) {
-          const last = state.lines[target]
-          if (last !== undefined && last.kind === 'tool') {
-            state.lines[target] = { ...last, result: resultText }
-          }
-        }
+        attachToolResult(state, record['tool_use_id'], resultText, record['is_error'] === true)
+      }
+    } else if (kind === 'web_search_tool_result' || kind === 'web_fetch_tool_result') {
+      // The result half of a server_tool_use: pairs to its call by id like a
+      // local tool_result, so server-side web activity stays visible.
+      const resultText = serverToolResultText(record)
+      if (resultText !== undefined && resultText.trim() !== '') {
+        attachToolResult(state, record['tool_use_id'], resultText, false)
       }
     }
+  }
+}
+
+/**
+ * Merge a tool result into its call line: pair by tool_use_id when the stream
+ * carries it, else the most recent tool line so an id-less stream still lands
+ * the result on its call. A line already carrying a body (an edit tool's
+ * patch) keeps it — the status text adds nothing to a successful edit — but
+ * an error result always appends, since a failed edit's message is the point.
+ */
+function attachToolResult(state: ClaudeStreamFoldState, useId: unknown, resultText: string, isError: boolean): void {
+  let target = typeof useId !== 'string' ? undefined : state.callsById.get(useId)
+  if (target === undefined) {
+    for (let index = state.lines.length - 1; index >= 0; index -= 1) {
+      if (state.lines[index]?.kind === 'tool') {
+        target = index
+        break
+      }
+    }
+  }
+  if (target === undefined) return
+  const last = state.lines[target]
+  if (last === undefined || last.kind !== 'tool') return
+  if (last.result === undefined) {
+    state.lines[target] = { ...last, result: resultText }
+  } else if (isError) {
+    state.lines[target] = { ...last, result: `${last.result}\n${resultText}` }
   }
 }
 
@@ -987,6 +1035,15 @@ export function parseClaudeStreamJson(output: string): {
   }
 }
 
+/** The placeholder think line for a `redacted_thinking` block (content is server-encrypted by design). */
+export const REDACTED_THINKING_TEXT = '（思考内容已由服务端隐藏：redacted_thinking，内容按设计不可见，此行仅标示它存在）'
+
+/** Server-side tool_use names map to the card names of their local-tool twins. */
+const SERVER_TOOL_CARD_NAMES: Readonly<Record<string, string>> = {
+  web_search: 'WebSearch',
+  web_fetch: 'WebFetch',
+}
+
 /** Render a tool_use input payload as a compact command/query line. */
 function inputDetail(input: unknown): string | undefined {
   if (input === undefined) return undefined
@@ -996,6 +1053,120 @@ function inputDetail(input: unknown): string | undefined {
   for (const key of ['command', 'query', 'url', 'path']) {
     const value = record[key]
     if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  }
+  // No single scalar names the call: a compact JSON summary beats dropping
+  // the input entirely (the pre-fallback behavior hid e.g. a Task prompt).
+  const json = JSON.stringify(record)
+  if (json === '{}') return undefined
+  return json.length <= 160 ? json : `${json.slice(0, 160)}…`
+}
+
+/**
+ * The actual edit behind an Edit/Write/MultiEdit/NotebookEdit tool_use, for
+ * the apply-patch-style card (codex's fileChange idiom: `kind: path` args,
+ * the patch as the body). Edit and MultiEdit synthesize `-`-/`+`-prefixed
+ * old/new lines; Write and NotebookEdit carry the whole new body verbatim.
+ * Undefined for any other tool or a shape-skewed input (the caller then
+ * keeps the one-scalar summary).
+ * @param name - the tool_use block's `name`.
+ * @param input - the tool_use block's `input` payload.
+ * @returns the card args and patch body, or undefined.
+ */
+function editToolDetail(name: string, input: unknown): { args: string; patch?: string } | undefined {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return undefined
+  const record = input as Record<string, unknown>
+  const pathOf = (key: string): string | undefined => {
+    const value = record[key]
+    return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+  }
+  const hunk = (oldString: unknown, newString: unknown): string | undefined => {
+    if (typeof oldString !== 'string' || typeof newString !== 'string') return undefined
+    return [
+      ...oldString.split('\n').map(line => `- ${line}`),
+      ...newString.split('\n').map(line => `+ ${line}`),
+    ].join('\n')
+  }
+  if (name === 'Edit') {
+    const path = pathOf('file_path')
+    if (path === undefined) return undefined
+    const patch = hunk(record['old_string'], record['new_string'])
+    return { args: `update: ${path}`, ...patch === undefined ? {} : { patch } }
+  }
+  if (name === 'MultiEdit') {
+    const path = pathOf('file_path')
+    if (path === undefined) return undefined
+    const edits = Array.isArray(record['edits']) ? record['edits'] as Record<string, unknown>[] : []
+    const patch = edits
+      .map(edit => hunk(edit['old_string'], edit['new_string']))
+      .filter((entry): entry is string => entry !== undefined)
+      .join('\n\n')
+    return { args: `update: ${path}`, ...patch === '' ? {} : { patch } }
+  }
+  if (name === 'Write') {
+    const path = pathOf('file_path')
+    if (path === undefined) return undefined
+    const content = record['content']
+    return {
+      args: `update: ${path}`,
+      ...typeof content === 'string' && content !== '' ? { patch: content } : {},
+    }
+  }
+  if (name === 'NotebookEdit') {
+    const path = pathOf('notebook_path')
+    if (path === undefined) return undefined
+    const source = record['new_source']
+    return {
+      args: `update: ${path}`,
+      ...typeof source === 'string' && source !== '' ? { patch: source } : {},
+    }
+  }
+  return undefined
+}
+
+/** Cap for a fetched page's text on a WebFetch card — the log stays a log. */
+const WEB_FETCH_TEXT_LIMIT = 4_000
+
+/**
+ * Flatten a server-side web tool result block to card text. A search folds
+ * its hits as `title — url` lines (an error block as `error: <code>`); a
+ * fetch folds the page text capped at {@link WEB_FETCH_TEXT_LIMIT}. Undefined
+ * when the block carries nothing readable — the pending call line then simply
+ * stays result-less, never dropped.
+ * @param record - the `web_search_tool_result` / `web_fetch_tool_result` block.
+ * @returns the card text, or undefined.
+ */
+function serverToolResultText(record: Record<string, unknown>): string | undefined {
+  const content = record['content']
+  if (Array.isArray(content)) {
+    // web_search_tool_result: a hit list, or one error block.
+    const lines = content.map((item): string | undefined => {
+      if (typeof item !== 'object' || item === null) return undefined
+      const entry = item as Record<string, unknown>
+      if (entry['type'] === 'web_search_tool_result_error') {
+        return `error: ${typeof entry['error_code'] === 'string' ? entry['error_code'] : 'unknown'}`
+      }
+      if (entry['type'] === 'web_search_result') {
+        const title = typeof entry['title'] === 'string' ? entry['title'] : ''
+        const url = typeof entry['url'] === 'string' ? entry['url'] : ''
+        if (title === '' && url === '') return undefined
+        return title === '' ? url : `${title} — ${url}`
+      }
+      return undefined
+    }).filter((line): line is string => line !== undefined)
+    return lines.length === 0 ? undefined : lines.join('\n')
+  }
+  if (typeof content === 'object' && content !== null) {
+    // web_fetch_tool_result: one result object, or one error object.
+    const entry = content as Record<string, unknown>
+    if (entry['type'] === 'web_fetch_tool_result_error') {
+      return `error: ${typeof entry['error_code'] === 'string' ? entry['error_code'] : 'unknown'}`
+    }
+    const url = typeof entry['url'] === 'string' ? entry['url'] : undefined
+    const body = typeof entry['content'] === 'string' ? entry['content'] : undefined
+    const text = body === undefined
+      ? undefined
+      : body.length <= WEB_FETCH_TEXT_LIMIT ? body : `${body.slice(0, WEB_FETCH_TEXT_LIMIT)}\n…`
+    return [url, text].filter((part): part is string => part !== undefined && part !== '').join('\n') || undefined
   }
   return undefined
 }

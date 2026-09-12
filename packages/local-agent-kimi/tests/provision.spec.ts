@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { readKimiAutoApprove, readKimiBaseUrl, readKimiReasoningEffort } from '../src/provision.ts'
+import { listKimiConfigModels, readKimiAutoApprove, readKimiBaseUrl, readKimiReasoningEffort } from '../src/provision.ts'
 
 function tempHome(): string {
   return mkdtempSync(join(tmpdir(), 'kimi-provision-'))
@@ -120,5 +120,37 @@ describe('readKimiAutoApprove', () => {
     const home = tempHome()
     writeFileSync(join(home, 'config.toml'), 'default_model = "kimi-code/k3"\n')
     await expect(readKimiAutoApprove(home)).resolves.toBe(false)
+  })
+})
+
+describe('listKimiConfigModels', () => {
+  it('is empty when the config is absent', async () => {
+    await expect(listKimiConfigModels(tempHome())).resolves.toEqual([])
+  })
+
+  it('lists every [models."…"] table key in file order, deduplicated', async () => {
+    const home = tempHome()
+    writeFileSync(join(home, 'config.toml'), [
+      'default_model = "kimi-code/k3"',
+      '',
+      '[models."kimi-code/k3"]',
+      'provider = "managed:kimi-code"',
+      '',
+      '[models."custom/x1"]',
+      'provider = "managed:kimi-code"',
+      '',
+      // A bare (unquoted) table key is the same model table.
+      '[models.plain]',
+      'provider = "managed:kimi-code"',
+      '',
+      // Provider tables are NOT models; a repeated table lists once.
+      '[providers."managed:kimi-code"]',
+      'type = "kimi"',
+      '',
+      '[models."kimi-code/k3"]',
+      'provider = "managed:kimi-code"',
+      '',
+    ].join('\n'))
+    await expect(listKimiConfigModels(home)).resolves.toEqual(['kimi-code/k3', 'custom/x1', 'plain'])
   })
 })
