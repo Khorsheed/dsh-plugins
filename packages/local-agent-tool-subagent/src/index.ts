@@ -103,7 +103,10 @@ function stopReasonError(result: SubagentResult): string | undefined {
     case 'aborted':
       return 'subagent run was cancelled'
     case 'error':
-      return 'subagent run failed'
+      // The seam carries provider-authored failure detail in `diagnostic`
+      // (bounded, content-free); without it the parent only ever saw the
+      // generic line and every CLI failure looked identical.
+      return result.diagnostic === undefined ? 'subagent run failed' : `subagent run failed: ${result.diagnostic}`
     case 'max-tokens':
       return 'subagent run hit its token limit before finishing'
     case 'refusal':
@@ -283,6 +286,12 @@ export function apply(ctx: Context, config: Config): void {
         if (resumeHandle === undefined) {
           ctx.localAgent.stageDelegationIntent(parentSessionId, config.provider, { kind: 'fresh' })
         } else if (resume !== undefined) {
+          // A host restart evicts the child session from the live store, and
+          // the tool starts runs directly (no facade) — reattach it here or
+          // the provider refuses the resume as "not live". Duck-typed: a core
+          // predating ensureChildLive keeps the old loud refusal.
+          const live = ctx.localAgent as unknown as { ensureChildLive?: (childSessionId: string) => Promise<void> }
+          await live.ensureChildLive?.(resumeHandle)
           ctx.localAgent.stageDelegationIntent(parentSessionId, config.provider, {
             kind: 'resume',
             childSessionId: resumeHandle,

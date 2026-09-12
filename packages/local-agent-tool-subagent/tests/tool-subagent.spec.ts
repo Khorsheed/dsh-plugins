@@ -41,9 +41,22 @@ async function setup(
   })
   const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
   ctx.provide(LOCAL_AGENT_SERVICE, registry)
+  // Every recorded child reads as already-live: resume-intent staging never
+  // hits the reattach path (covered separately below). Tests flip the stub's
+  // bits instead of re-providing the service (cordis provides are final).
+  const sessionsStub = {
+    liveIds: undefined as readonly string[] | undefined,
+    entered: [] as string[],
+    get(id: string) {
+      return this.liveIds === undefined || this.liveIds.includes(id) ? { id } : undefined
+    },
+    prepare: () => ({ id: 'child-1', snapshotEvents: () => [] }),
+    enter(session: { id: string }) { this.entered.push(session.id); return () => {} },
+  }
+  ctx.provide('sessions', sessionsStub as never)
   ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
   await ctx.plugin(tool, toolConfig)
-  return { ctx, started, taken, registry }
+  return { ctx, started, taken, registry, sessionsStub }
 }
 
 let callCounter = 0
@@ -124,6 +137,68 @@ describe('dsh-local-agent-tool-subagent', () => {
       childSessionId: 'child-1',
       cliSessionId: 'session_42',
     }])
+  })
+
+  it('reattaches a non-live child session before staging the resume intent', async () => {
+    const { ctx, taken, sessionsStub } = await setup({ provider: 'mock', toolName: 'subagent_test' })
+    ctx.localAgent.recordDelegation({
+      childSessionId: 'child-1',
+      provider: 'mock',
+      parentSessionId: 'parent-1',
+      cliSessionId: 'session_42',
+    })
+    // child-1 is NOT live (the post-restart case), so the tool must run the
+    // reattach recipe before staging the resume intent.
+    sessionsStub.liveIds = []
+    const opened: string[] = []
+    ctx.provide('sessionPersistence', {
+      open: async (id: string, access: string) => {
+        opened.push(`${id}:${access}`)
+        return {
+          read: async () => ({ events: [] }),
+          header: {},
+          inheritedEventCount: 0,
+          append: async () => {},
+          flush: async () => {},
+          close: async () => {},
+        }
+      },
+    } as never)
+
+    const agent = fakeAgent()
+    const result = await callTool(ctx, {
+      description: '继续',
+      prompt: '接着做',
+      resume: 'child-1',
+    }, agent)
+
+    expect(text(result)).toContain('done: 接着做')
+    expect(opened).toEqual(['child-1:write'])
+    expect(sessionsStub.entered).toEqual(['child-1'])
+    expect(taken).toEqual([{
+      kind: 'resume',
+      childSessionId: 'child-1',
+      cliSessionId: 'session_42',
+    }])
+  })
+
+  it('surfaces the provider diagnostic on an error result instead of the generic line', async () => {
+    const deferred: Array<(result: SubagentResult) => void> = []
+    const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test' }, { deferred })
+    const agent = fakeAgent()
+    const pending = callTool(ctx, { description: 'x', prompt: 'y' }, agent)
+    // The provider start (which registers the resolver) runs inside the
+    // tool's async execution, after the call returns its promise.
+    await vi.waitFor(() => { expect(deferred).toHaveLength(1) })
+    deferred[0]!({
+      output: [],
+      diagnostic: 'codex exec exited 0 but produced no answer\nrollout: /home/user/.dsh/local-agent/codex/sessions/2026/09/12/rollout-*-t1.jsonl',
+      stopReason: 'error',
+    })
+    const result = await pending
+    expect(result).toMatchObject({ isError: true })
+    expect(text(result)).toContain('subagent run failed: codex exec exited 0 but produced no answer')
+    expect(text(result)).toContain('rollout:')
   })
 
   it('rejects a forged resume handle naming an unknown child session', async () => {
