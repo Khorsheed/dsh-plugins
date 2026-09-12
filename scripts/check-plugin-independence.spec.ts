@@ -11,6 +11,7 @@ import {
   parsePatchNames,
   scanPackage,
   scanTree,
+  stripCodeComments,
 } from './check-plugin-independence.ts'
 
 describe('parsePatchNames', () => {
@@ -222,5 +223,162 @@ describe('repo tree', () => {
     const { count, findings } = scanTree(join(import.meta.dirname!, '..', 'packages'))
     expect(count).toBeGreaterThan(0)
     expect(findings).toEqual([])
+  })
+})
+
+describe('family data references', () => {
+  function fixture(pkg: Record<string, unknown>, files: Record<string, string>) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-ref-'))
+    const dir = join(root, 'demo')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg))
+    for (const [rel, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true })
+      writeFileSync(join(dir, rel), text)
+    }
+    return {
+      pkg: { dir: 'demo', path: dir, json: pkg as never },
+      cleanup: () => rmSync(root, { recursive: true, force: true }),
+    }
+  }
+
+  const PATCH = `- insert:\n    - id: demo\n      name: '@khorsheed/dsh-demo'\n`
+  const CLIENT = `export const TOOL_ROW_MODULE = '@khorsheed/dsh-demo-tool'\n`
+  const NAMES = ['@khorsheed/dsh-demo', '@khorsheed/dsh-demo-tool']
+
+  it('flags a sibling the code names as data with neither an edge nor dsh.references', () => {
+    // The regression this rule exists for: delete a core's `dsh.references`
+    // while its client bundle still carries the companion row name — the pack
+    // gate would catch it, `pnpm check:plugins` must too.
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-demo',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      },
+      { 'cordis.patch.yml': PATCH, 'src/client/Badge.tsx': CLIENT },
+    )
+    try {
+      const findings = scanPackage(pkg, NAMES)
+      expect(findings.map((f) => f.kind)).toContain('data reference')
+      expect(findings.some((f) => f.detail.includes('@khorsheed/dsh-demo-tool'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('passes when the same data mention is declared in dsh.references', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-demo',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: './cordis.patch.yml' }, references: ['@khorsheed/dsh-demo-tool'] },
+      },
+      { 'cordis.patch.yml': PATCH, 'src/client/Badge.tsx': CLIENT },
+    )
+    try {
+      expect(scanPackage(pkg, NAMES).filter((f) => f.kind === 'data reference')).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('passes when the code mentions the sibling as prose only (comments are not references)', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-demo',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      },
+      { 'cordis.patch.yml': PATCH, 'src/index.ts': `// moved to @khorsheed/dsh-demo-tool\n/* see @khorsheed/dsh-demo-tool */\nexport const x = 1\n` },
+    )
+    try {
+      expect(scanPackage(pkg, NAMES).filter((f) => f.kind === 'data reference')).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a reference that is not a repo package or that duplicates an edge', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-demo',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dependencies: { '@khorsheed/dsh-demo-tool': 'workspace:*' },
+        dsh: { bundle: { patch: './cordis.patch.yml' }, references: ['@khorsheed/dsh-ghost', '@khorsheed/dsh-demo-tool'] },
+      },
+      { 'cordis.patch.yml': PATCH },
+    )
+    try {
+      const refs = scanPackage(pkg, NAMES).filter((f) => f.kind === 'data reference')
+      expect(refs.some((f) => f.detail.includes('not a package in this repo'))).toBe(true)
+      expect(refs.some((f) => f.detail.includes('also a dependency edge'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('stripCodeComments leaves string literals alone', () => {
+    expect(stripCodeComments(`const u = 'https://x/@khorsheed/dsh-demo-tool'\n// @khorsheed/dsh-gone\n`))
+      .toContain("@khorsheed/dsh-demo-tool")
+    expect(stripCodeComments(`const u = 'https://x'\n// @khorsheed/dsh-gone\n`))
+      .not.toContain('@khorsheed/dsh-gone')
+  })
+})
+
+describe('patch row ownership', () => {
+  function packagesRoot(specs: Array<{ dir: string; json: Record<string, unknown>; files: Record<string, string> }>) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-tree-'))
+    for (const s of specs) {
+      const dir = join(root, s.dir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(s.json))
+      for (const [rel, text] of Object.entries(s.files)) {
+        mkdirSync(dirname(join(dir, rel)), { recursive: true })
+        writeFileSync(join(dir, rel), text)
+      }
+    }
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  }
+
+  const core = {
+    dir: 'core',
+    json: { name: '@khorsheed/dsh-core', private: true, files: ['lib', 'cordis.patch.yml'], dsh: { bundle: { patch: './cordis.patch.yml' } } },
+    files: { 'cordis.patch.yml': `- insert:\n    - id: core\n      name: '@khorsheed/dsh-core'\n` },
+  }
+
+  it('flags a patch that inserts another self-mounting package row', () => {
+    // The local-agent incident, generically frozen: a provider patch must never
+    // re-insert the core row (both installed → the core row mounts twice).
+    const { root, cleanup } = packagesRoot([core, {
+      dir: 'provider',
+      json: { name: '@khorsheed/dsh-provider', private: true, files: ['lib', 'cordis.patch.yml'], dsh: { bundle: { patch: './cordis.patch.yml' } } },
+      files: { 'cordis.patch.yml': `- insert:\n    - id: provider\n      name: '@khorsheed/dsh-provider'\n    - id: core\n      name: '@khorsheed/dsh-core'\n` },
+    }])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'patch row ownership')
+      expect(findings).toHaveLength(1)
+      expect(findings[0]!.path).toContain('provider')
+      expect(findings[0]!.detail).toContain('@khorsheed/dsh-core')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('allows a patch to insert a companion row that does not self-mount', () => {
+    const { root, cleanup } = packagesRoot([core, {
+      dir: 'companion',
+      json: { name: '@khorsheed/dsh-companion', private: true, files: ['lib', 'cordis.patch.yml'], dsh: { bundle: { patch: './cordis.patch.yml' } } },
+      files: { 'cordis.patch.yml': `- insert:\n    - id: companion\n      name: '@khorsheed/dsh-companion'\n    - id: companion-tool\n      name: '@khorsheed/dsh-companion-tool'\n` },
+    }])
+    try {
+      expect(scanTree(root).findings.filter((f) => f.kind === 'patch row ownership')).toEqual([])
+    } finally {
+      cleanup()
+    }
   })
 })

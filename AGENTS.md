@@ -40,7 +40,7 @@ A second whole-tree checker, `pnpm check:plugins` (`scripts/check-plugin-indepen
 ## Package conventions
 
 - **Identity**: one package = one name = one loader entry id. The id goes in `cordis.patch.yml` (`name:` value must be quoted — `@` is YAML-reserved), the tsdown `clientBundle(id)`, and `src/invariant.ts`'s `PACKAGE_NAME`. All three move together on any rename.
-- **Self-mounting**: every installable plugin declares `dsh.bundle.patch` → `cordis.patch.yml` and lists that file in `files`. `dsh plugin add` must suffice; hand-edited profile YAML is a bug.
+- **Self-mounting**: every installable plugin declares `dsh.bundle.patch` → `cordis.patch.yml` and lists that file in `files`, so `dsh plugin add <pkg>` mounts **that package's own row**; hand-edited profile YAML is a bug. A row that must coexist with another package's row is a composition closure, not an exception to this rule: the local-agent providers below need the core installed alongside them, and no package's patch may mount another self-mounting package's row (see `pnpm check:plugins`).
 - **Client discovery**: browser halves declare `dsh.client` (`platform`, `inject`, `immediately`) in package.json.
 - **Dependencies**: official packages are peerDependencies with wide ranges (`@deepseek-ai/cordis ^4.0.1`, `@deepseek-ai/dsh-* ^0.1.0-rc.6`) plus `peerDependenciesMeta.optional` where loadable without; intra-repo deps use `workspace:*`. Never `workspace:^` across repos.
 - **Degrade, don't explode**: probe optional host capabilities at apply time (`ctx.get`, `ctx.slots.spec`) and degrade silently or to an empty state. A plugin that throws on a missing capability fails the whole boot.

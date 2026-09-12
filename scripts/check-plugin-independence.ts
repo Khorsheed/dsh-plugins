@@ -156,6 +156,8 @@ interface Pkg {
     readonly dsh?: {
       readonly bundle?: { readonly patch?: string }
       readonly client?: { readonly inject?: readonly string[] }
+      /** Sibling names a package mentions as DATA (never as a dependency edge). */
+      readonly references?: readonly string[]
     }
     readonly dependencies?: Record<string, string>
     readonly devDependencies?: Record<string, string>
@@ -197,6 +199,14 @@ export function findCrossImports(source: string): string[] {
     out.add(m[1])
   }
   return [...out]
+}
+
+/**
+ * Source text with comments removed. A sibling name in prose is documentation,
+ * not a data reference the shipped artifact carries.
+ */
+export function stripCodeComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1')
 }
 
 /** Service/package names listed in `export const inject = [...]` blocks. */
@@ -355,7 +365,43 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
     }
   }
 
-  // 6. publish metadata (private packages are deliberately not published)
+  // 6. family data references. A package may mention a sibling by name as DATA
+  // — the preset-visibility probe whose companion-row constant rides the client
+  // bundle — without depending on it. That mention still looks like an edge to
+  // npm and to pack-dist's family-edge gate, so it must be declared in
+  // `dsh.references`; the alternative (a reverse dependency edge) closes a
+  // core↔companion cycle that pnpm's sequencer schedules into one concurrent
+  // chunk, which raced cold builds. Both directions are checked so neither can
+  // drift: every declared reference must name a real sibling and must not
+  // duplicate an edge, and every sibling name the code carries must be declared
+  // (an edge or a reference). No central list of "packages that must declare
+  // something" — the package's own sources are the evidence, so a core that
+  // drops its declaration fails here instead of only at pack time.
+  const references = json.dsh?.references ?? []
+  const edgeNames = new Set([
+    ...Object.keys(json.dependencies ?? {}),
+    ...Object.keys(json.peerDependencies ?? {}),
+    ...Object.keys(json.devDependencies ?? {}),
+  ])
+  for (const ref of references) {
+    if (!allNames.includes(ref)) {
+      add('package.json', 'data reference', `dsh.references names ${ref}, which is not a package in this repo`)
+    }
+    if (edgeNames.has(ref)) {
+      add('package.json', 'data reference', `dsh.references names ${ref}, which is also a dependency edge — a sibling is an edge or data, never both`)
+    }
+  }
+  for (const src of listSources(path)) {
+    const text = stripCodeComments(readFileSync(src, 'utf8'))
+    for (const m of text.matchAll(/@khorsheed\/[a-z0-9-]+/g)) {
+      const target = m[0]
+      if (target === json.name || !allNames.includes(target)) continue
+      if (edgeNames.has(target) || references.includes(target)) continue
+      add(src.slice(path.length + 1), 'data reference', `names ${target} in code but declares neither a dependency edge nor dsh.references — a sibling named as data belongs in dsh.references`)
+    }
+  }
+
+  // 7. publish metadata (private packages are deliberately not published)
   if (!json.private) {
     if (json.repository?.url !== MONOREPO_URL || json.repository?.directory !== `packages/${dir}`) {
       add('package.json', 'publish metadata', `repository must point at this monorepo with directory packages/${dir}`)
@@ -410,6 +456,33 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
         path: 'packages/*/cordis.patch.yml',
         kind: 'loader row id',
         detail: `row id "${id}" is mounted by ${owners.join(' and ')} — a duplicate loader entry id fails boot`,
+      })
+    }
+  }
+
+  // Patch row ownership: one package's bundle patch may insert its own row plus
+  // rows for packages that do NOT self-mount (the companion `-tool` rows, which
+  // have no patch of their own), but never a row for another self-mounting
+  // package — install both and that package's row is mounted twice, which
+  // either fails boot on the duplicate loader id or silently shadows a config.
+  // Mechanically covers the whole tree, so a future provider cannot re-insert
+  // the core row that its own package name resolves to (the incident the
+  // local-agent family documented but nothing froze).
+  const selfMounting = new Set(
+    pkgs.filter((p) => p.json.dsh?.bundle?.patch !== undefined).map((p) => p.json.name),
+  )
+  for (const pkg of pkgs) {
+    const patch = pkg.json.dsh?.bundle?.patch
+      ?? (existsSync(join(pkg.path, 'cordis.patch.yml')) ? 'cordis.patch.yml' : undefined)
+    if (patch === undefined) continue
+    const file = join(pkg.path, patch)
+    if (!existsSync(file)) continue
+    for (const n of parsePatchNames(readFileSync(file, 'utf8'))) {
+      if (n.name === pkg.json.name || !selfMounting.has(n.name)) continue
+      findings.push({
+        path: `packages/${pkg.dir}/${patch}`,
+        kind: 'patch row ownership',
+        detail: `patch inserts a row for ${n.name}, which self-mounts — a package must not mount another self-mounting package's row (both installed mounts it twice)`,
       })
     }
   }
