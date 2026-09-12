@@ -27,10 +27,11 @@ function mount(options: {
   model?: string
   recent?: string[]
   live?: boolean
-  record?: { model?: string }
+  record?: { model?: string; cliSessionId?: string; observedModel?: string }
   active?: string[]
   hosting?: boolean
   boundModel?: string
+  transcriptModel?: (cliSessionId?: string) => Promise<string | undefined>
 } = {}): Mount {
   const homeDir = mkdtempSync(join(tmpdir(), 'claude-broker-'))
   const overrides = new Map<string, string>()
@@ -52,6 +53,7 @@ function mount(options: {
       hostingDriver: () =>
         options.hosting === true ? { runtimeModel, retireRuntime: retire } as never : undefined,
     },
+    transcriptModel: options.transcriptModel ?? (async () => undefined),
   }
   return { broker: new ClaudeModelBroker(deps), overrides, homeDir, active, retire, runtimeModel, settings }
 }
@@ -107,6 +109,74 @@ describe('claude model broker resolution', () => {
     expect(info.reason).toContain('进行中的委派轮次')
     // The memberless read (the settings card) is never gated.
     expect((await broker.modelInfo()).switchable).toBe(true)
+  })
+})
+
+describe('claude model broker lastObserved', () => {
+  it('the record’s observedModel is primary — the transcript is never read', async () => {
+    const transcriptModel = vi.fn(async () => 'transcript-model')
+    const { broker } = mount({
+      record: { cliSessionId: 'cli-1', observedModel: 'settled-model' },
+      transcriptModel,
+    })
+    const info = await broker.modelInfo('child-1')
+    expect(info.lastObserved).toBe('settled-model')
+    expect(transcriptModel).not.toHaveBeenCalled()
+  })
+
+  it('member level: the member’s own transcript answers by its recorded cliSessionId', async () => {
+    const transcriptModel = vi.fn(async (id?: string) => (id === 'cli-1' ? 'history-model' : undefined))
+    const { broker } = mount({ record: { cliSessionId: 'cli-1' }, transcriptModel })
+    const info = await broker.modelInfo('child-1')
+    expect(info.lastObserved).toBe('history-model')
+    expect(transcriptModel).toHaveBeenCalledWith('cli-1')
+  })
+
+  it('harness level: the newest transcript in the tree answers (no session id)', async () => {
+    const transcriptModel = vi.fn(async () => 'harness-history-model')
+    const { broker } = mount({ transcriptModel })
+    const info = await broker.modelInfo()
+    expect(info.lastObserved).toBe('harness-history-model')
+    expect(transcriptModel).toHaveBeenCalledWith(undefined)
+  })
+
+  it('a transcript read failure degrades to no lastObserved, never a throw', async () => {
+    const { broker } = mount({
+      record: { cliSessionId: 'cli-1' },
+      transcriptModel: () => Promise.reject(new Error('disk gone')),
+    })
+    const info = await broker.modelInfo('child-1')
+    expect(info.lastObserved).toBeUndefined()
+  })
+
+  it('the answer is TTL-cached per member (and for the harness read)', async () => {
+    const transcriptModel = vi.fn(async () => 'history-model')
+    const { broker } = mount({ record: { cliSessionId: 'cli-1' }, transcriptModel })
+    await broker.modelInfo('child-1')
+    await broker.modelInfo('child-1')
+    await broker.modelInfo()
+    await broker.modelInfo()
+    expect(transcriptModel).toHaveBeenCalledTimes(2)
+    // The miss is cached too: a member with no transcript pays no rescan.
+    const missing = vi.fn(async () => undefined)
+    const bare = mount({ record: { cliSessionId: 'cli-9' }, transcriptModel: missing })
+    await bare.broker.modelInfo('child-9')
+    await bare.broker.modelInfo('child-9')
+    expect(missing).toHaveBeenCalledTimes(1)
+  })
+
+  it('the cache expires after the TTL and re-reads', async () => {
+    vi.useFakeTimers()
+    try {
+      const transcriptModel = vi.fn(async () => 'history-model')
+      const { broker } = mount({ record: { cliSessionId: 'cli-1' }, transcriptModel })
+      await broker.modelInfo('child-1')
+      vi.advanceTimersByTime(120_000)
+      await broker.modelInfo('child-1')
+      expect(transcriptModel).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

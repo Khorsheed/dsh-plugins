@@ -15,6 +15,12 @@
  * the conversation carries over. A switch while a round is in flight is
  * refused: retiring a runtime mid-round would kill the run.
  *
+ * `lastObserved` (the cli-builtin layer's display hint): the delegation
+ * record's `observedModel` answers when the live-settle channel reported
+ * one; the member's own CLI transcript (`transcriptModel`, a bounded read of
+ * the projects tree) is the history backstop for rounds that predate that
+ * channel — read-only, TTL-cached, never a write into `delegations.jsonl`.
+ *
  * @module @khorsheed/dsh-local-agent-claude-code/model-broker — internal, unit-tested directly.
  */
 
@@ -111,10 +117,44 @@ export interface ClaudeModelBrokerDeps {
   readonly overrides: Map<string, string>
   /** The live-driver switch, for the hosting generation's retire on a switch. */
   readonly liveSwitch: Pick<LiveDriverSwitch, 'hostingDriver'>
+  /**
+   * The transcript backstop for `lastObserved`: read the model the member's
+   * own CLI transcript names (its recorded cliSessionId), or — absent, the
+   * settings card's memberless read — the newest transcript in the scoped
+   * home's projects tree. Read-only history; never throws.
+   */
+  readonly transcriptModel: (cliSessionId?: string) => Promise<string | undefined>
 }
+
+/** How long one transcript read-back answer is reused (repeated card opens). */
+export const OBSERVED_MODEL_CACHE_TTL_MS = 60_000
 
 export class ClaudeModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: ClaudeModelBrokerDeps) {}
+
+  /**
+   * The `lastObserved` cache: childSessionId (empty key = the memberless
+   * harness read) → the answer and when it was read. A miss is cached too —
+   * a member with no transcript yet should not pay a rescan per card open.
+   */
+  private readonly observedCache = new Map<string, { at: number; model: string | undefined }>()
+
+  /**
+   * The last model the member (or the harness) was observed running. The
+   * live-settle channel is primary — a record whose latest round reported
+   * `observedModel` answers without touching disk; the CLI's own transcripts
+   * are the history backstop for every round that predates it.
+   */
+  private async lastObserved(childSessionId?: string): Promise<string | undefined> {
+    const record = childSessionId === undefined ? undefined : this.deps.localAgent.getDelegation(childSessionId)
+    if (record?.observedModel !== undefined && record.observedModel.trim() !== '') return record.observedModel
+    const key = childSessionId ?? ''
+    const hit = this.observedCache.get(key)
+    if (hit !== undefined && Date.now() - hit.at < OBSERVED_MODEL_CACHE_TTL_MS) return hit.model
+    const model = await this.deps.transcriptModel(record?.cliSessionId).catch(() => undefined)
+    this.observedCache.set(key, { at: Date.now(), model })
+    return model
+  }
 
   /**
    * Read the model surface in the family's fixed order. Without a member the
@@ -140,6 +180,7 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
     // config names no further models, so discovery ends at the scoped file.
     const choices = [...new Set([settings, cliDefault, ...this.deps.recentModels()]
       .filter((value): value is string => value !== undefined))]
+    const lastObserved = await this.lastObserved(childSessionId)
     const active = childSessionId !== undefined && this.deps.localAgent.isDelegationActive(childSessionId)
     return {
       ...effective === undefined ? {} : { effective },
@@ -148,6 +189,7 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
       ...delegation === undefined ? {} : { delegation },
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
+      ...lastObserved === undefined ? {} : { lastObserved },
       choices,
       live: this.deps.live(),
       switchable: !active,

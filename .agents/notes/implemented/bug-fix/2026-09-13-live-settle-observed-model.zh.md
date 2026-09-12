@@ -16,12 +16,16 @@ Status: implemented
 
 **网关追加可选词表。** `memberModel` 与 `harnessModel` 在 broker 词表未列出合并后的 `lastObserved` 时把它追加为 `choices` 最后一项（去重，broker 排序不动）——只跑过一轮的成员也有一项可选，而不是空菜单。
 
+**claude 转录历史兜底（后续）。** settle 只给**新**轮次填 `observedModel`，而 claude 没有作用域配置/目录/宿主默认可兜底，修复前的成员仍旧是空面。claude broker 的 `lastObserved` 因此读历史：先取记录的 `observedModel`（settle 通道仍是主通道），再读 `readClaudeTranscriptModel(home, cliSessionId)`——成员自己的转录 `projects/<slug>/<cliSessionId>.jsonl`，按**文件名**跨 project 目录定位（cwd slug 是有损编码，绝不反算）；退化到头部带有该 session id 的 sidechain `agent-*.jsonl`；模型从有界的文件**尾部**按行从新到旧取（init 形状的顶层 `model` 或 assistant 行的嵌套 `message.model`）；无成员面读全树最新的一份。TTL 缓存约 60 秒（miss 也缓存），一切失败都是 `undefined`，且严格只读——绝不回写 `delegations.jsonl`。
+
 ## 考虑过的替代方案
 
 **让 provider 保证先记录后 settle。** 否决：记录点按驱动不同是设计使然（live 轮在 session/new 时记录，exec 轮在 settle 后解析输出时记录），因此由通道 centrally 容忍乱序，而不是约束每条 provider 路径。
 
 **kimi live settle 上报轮总用量。** 否决：live 驱动把用量挂在各条折叠消息上、只跟踪未承载的余量，所谓「总量」只能是猜；kimi 的 live 上报只带模型——缺位是诚实的。
 
+**把转录里的模型回填进 `delegations.jsonl`。** 否决：记录 schema 与写入方一概不动；转录读取是 broker 里的读时层，历史答案绝不伪装成 settle 上报的事实，一次错误的历史猜测也不会被持久化。
+
 ## 后果
 
-live 驱动的轮次（生产路径）现在把 `observedModel` 落进内存与 `delegations.jsonl`，重启后 `lastObserved` 层保持有值；`settled` 事件同时让驻留的进度路由及时关闭，而不是等宽限超时。测试：core 委派乱序与持久化（新增 5）、网关词表（新增 6）、每家 provider live-driver 规格各一对「观测到/缺位」。各家 README 本就按「每轮 settle 后回读」记载；本修复让 live 驱动与文档一致。
+live 驱动的轮次（生产路径）现在把 `observedModel` 落进内存与 `delegations.jsonl`，重启后 `lastObserved` 层保持有值；`settled` 事件同时让驻留的进度路由及时关闭，而不是等宽限超时。settle 通道之前的 claude 成员也从自己的转录拿到同一个面，仅读时。测试：core 委派乱序与持久化（新增 5）、网关词表（新增 6）、每家 provider live-driver 规格各一对「观测到/缺位」；claude 转录读取（新增 9）与 broker `lastObserved`/TTL（新增 6）。各家 README 本就按「每轮 settle 后回读」记载；本修复让 live 驱动与文档一致。

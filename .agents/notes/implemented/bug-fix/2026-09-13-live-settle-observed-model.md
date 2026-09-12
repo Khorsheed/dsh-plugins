@@ -16,12 +16,16 @@ Production `delegations.jsonl` tails showed recent kimi and claude records with 
 
 **Gateway choice appending.** `memberModel` and `harnessModel` append the merged `lastObserved` to `choices` as the final entry when no broker choice lists it (deduped, broker ranking untouched) — a member that ran once has a one-item menu instead of an empty one.
 
+**claude transcript backstop (follow-up).** Settles only populate `observedModel` for NEW rounds, and claude has no scoped-config/catalog/host default to fall back on, so pre-fix members still showed an empty surface. The claude broker's `lastObserved` therefore reads history: the record's `observedModel` first (the settle channel stays primary), then `readClaudeTranscriptModel(home, cliSessionId)` — the member's own transcript `projects/<slug>/<cliSessionId>.jsonl` located by NAME across the project dirs (the cwd slug is lossy and never computed), a sidechain `agent-*.jsonl` whose head names the session id as fallback, the model taken from the bounded tail newest-line-first (top-level `model` of the init shape or nested `message.model` of assistant lines); the memberless card reads the newest transcript in the tree. TTL-cached (~60 s, misses cached), every failure `undefined`, and strictly read-only — nothing is backfilled into `delegations.jsonl`.
+
 ## Alternatives considered
 
 **Ask providers to order record-before-settle.** Rejected: the record point differs per drive by design (a live round records at session/new, an exec round at the post-settle output parse), so the channel tolerates the inversion centrally instead of constraining every provider path.
 
 **Report round-total usage on the kimi live settle.** Rejected: the live drive attaches usage per folded message and tracks only the uncarried remainder, so a "total" would be a guess; kimi's live report carries the model alone — absence is honest.
 
+**Backfill `observedModel` into `delegations.jsonl` from the transcripts.** Rejected: the record schema and its writers stay untouched; the transcript read is a read-time layer in the broker, so a history answer never masquerades as a settle-reported fact, and a wrong historical guess cannot persist.
+
 ## Consequences
 
-Live-driven rounds (production's path) now land `observedModel` in memory and `delegations.jsonl`, so restarts keep the `lastObserved` layer populated; the `settled` event also closes the parked progress route promptly instead of at the grace timeout. Tests: core delegation ordering + persistence (5 new), gateway choices (6 new), one observed/absent pair per provider's live-driver spec. The provider READMEs already documented per-settled-round read-back; the fix makes the live drive match the docs.
+Live-driven rounds (production's path) now land `observedModel` in memory and `delegations.jsonl`, so restarts keep the `lastObserved` layer populated; the `settled` event also closes the parked progress route promptly instead of at the grace timeout. claude members whose rounds predate the channel get the same surface from their own transcripts, read-time only. Tests: core delegation ordering + persistence (5 new), gateway choices (6 new), one observed/absent pair per provider's live-driver spec; claude transcript reader (9) and broker `lastObserved`/TTL (6). The provider READMEs already documented per-settled-round read-back; the fix makes the live drive match the docs.

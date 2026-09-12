@@ -22,7 +22,7 @@ import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
-import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, syncClaudeCredentialFile } from './records.ts'
+import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, readClaudeTranscriptModel, syncClaudeCredentialFile } from './records.ts'
 import { claudeLogout, provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -190,6 +190,10 @@ export function apply(ctx: Context, config: Config): void {
       live: () => scope.get().live,
       overrides,
       liveSwitch,
+      // The lastObserved backstop: the member's own transcript (or the
+      // tree's newest) answers for every round that predates the
+      // live-settle report.
+      transcriptModel: cliSessionId => readClaudeTranscriptModel(homeDir, cliSessionId),
     })
     const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve, effectiveModel))
     const disposeHarness = ctx.localAgent.register({

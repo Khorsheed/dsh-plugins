@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-13-live-settle-observed-model.md
-.agents/notes/implemented/bug-fix/2026-09-13-live-settle-observed-model.md: 9b94268f4a8a341556461b40844457bab191c2da
-.agents/notes/implemented/bug-fix/2026-09-13-live-settle-observed-model.zh.md: 6367d78cceec63147a2e2fba0fdc5634570883ad
+.agents/notes/implemented/bug-fix/2026-09-13-live-settle-observed-model.md: 4febb587a9e6bee9336e0cccdd7272815ca08cfa
+.agents/notes/implemented/bug-fix/2026-09-13-live-settle-observed-model.zh.md: 864da010f2560569714dbe333386faef49015e51
