@@ -141,6 +141,28 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(idle).toEqual({ ok: true, value: { name: 'bill', pendingFirstTask: false } })
   })
 
+  it('invite records the optional model on the roster (trimmed; absent when omitted)', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada', model: ' kimi-k2 ' })
+    await service.invite({ sessionId, provider: 'codex', name: 'bill' })
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: {
+        members: [
+          MAIN_MEMBER,
+          { name: 'ada', kind: 'cli', provider: 'kimi', model: 'kimi-k2' },
+          { name: 'bill', kind: 'cli', provider: 'codex' },
+        ],
+      },
+    })
+    // The omitted case records NO model key at all.
+    const bill = state.ok
+      ? state.value.members.find(member => member.name === 'bill')
+      : undefined
+    expect(bill !== undefined && 'model' in bill).toBe(false)
+  })
+
   it('invite rejects bad names, duplicates, blank providers, and blank texts', async () => {
     const { service, sessionId } = await bootRoom()
     expect(await service.invite({ sessionId, provider: 'kimi', name: 'a b' }))
@@ -154,6 +176,8 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.invite({ sessionId, provider: 'kimi', name: 'ada', instructions: ' ' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
     expect(await service.invite({ sessionId, provider: 'kimi', name: 'ada', firstTask: '' }))
+      .toEqual({ ok: false, error: { code: 'empty-text' } })
+    expect(await service.invite({ sessionId, provider: 'kimi', name: 'ada', model: '  ' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
 
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
@@ -563,8 +587,9 @@ describe('RoomService Remote surface (real composition)', () => {
     const { service } = await boot({ localAgent })
     expect(await service.listProviders({})).toEqual({
       localAgentAvailable: true,
-      // The record-only harness (no delegationProvider) is not invitable.
-      providers: [{ provider: 'kimi', displayName: 'Kimi Code', authenticated: true }],
+      // The record-only harness (no delegationProvider) is not invitable;
+      // the roster name rides as the harnessModel lookup key.
+      providers: [{ provider: 'kimi', displayName: 'Kimi Code', harness: 'kimi', authenticated: true }],
     })
   })
 

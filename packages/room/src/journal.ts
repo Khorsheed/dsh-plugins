@@ -129,6 +129,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           ...event.data.provider === undefined ? {} : { provider: event.data.provider },
           ...event.data.instructions === undefined ? {} : { instructions: event.data.instructions },
           ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd },
+          ...event.data.model === undefined ? {} : { model: event.data.model },
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
         }
         byName.set(added.name, added)

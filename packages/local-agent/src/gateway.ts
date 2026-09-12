@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-session'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   LocalAgentDelegationView,
+  LocalAgentModelInfo,
   LocalAgentPromptResult,
   LocalAgentSessionRecord,
 } from './types.ts'
@@ -100,15 +101,76 @@ export default class LocalAgentGateway extends TypertRemoteService {
     const registry = this.ctx.localAgent
     const record = registry.getDelegation(childSessionId)
     if (record === undefined) return null
-    const harness = registry.list()
-      .map(harnessName => registry.get(harnessName))
-      .find(candidate => candidate?.delegationProvider === record.provider)
+    const harness = registry.harnessForProvider(record.provider)
     return {
       childSessionId: record.childSessionId,
       provider: record.provider,
       parentSessionId: record.parentSessionId,
       ...harness === undefined ? {} : { harnessDisplayName: harness.displayName },
     }
+  }
+
+  /**
+   * The model surface of one harness without a member — the settings card's
+   * "what would a round run with" read. Null when the harness is unknown or
+   * exposes no model broker: the card then keeps its free-text field exactly
+   * as before brokers existed.
+   * @param name - the harness name.
+   * @returns the layer-by-layer surface, or null.
+   */
+  @Remote('harnessModel')
+  async harnessModel(name: string): Promise<LocalAgentModelInfo | null> {
+    const broker = this.ctx.localAgent.get(name)?.modelBroker
+    if (broker === undefined) return null
+    return broker.modelInfo()
+  }
+
+  /**
+   * The model surface of one member — the composer's picker read. The
+   * delegation record's requested model rides in from the core so the broker
+   * can rank it between the override and the settings layer. Null for a
+   * non-member session or a brokerless harness.
+   * @param childSessionId - the dsh child session id of the member.
+   * @returns the layer-by-layer surface, or null.
+   */
+  @Remote('memberModel')
+  async memberModel(childSessionId: string): Promise<LocalAgentModelInfo | null> {
+    const registry = this.ctx.localAgent
+    const record = registry.getDelegation(childSessionId)
+    if (record === undefined) return null
+    const broker = registry.harnessForProvider(record.provider)?.modelBroker
+    if (broker === undefined) return null
+    return broker.modelInfo(childSessionId, record.model)
+  }
+
+  /**
+   * Switch a member's session-level model (the composer's picker write). The
+   * override outranks the delegation's recorded model and the settings
+   * layer; with the live driver on it retires the member's resident runtime
+   * so the NEXT round respawns onto the new model — the CLI session itself
+   * (its rollout) carries over. Failures arrive structured, never raw.
+   * @param childSessionId - the dsh child session id of the member.
+   * @param model - the model identifier, or undefined to clear the override
+   *   (the member then follows the settings layer again).
+   * @returns `{ ok: true }` once applied, or a structured error.
+   */
+  @Remote('setMemberModel')
+  async setMemberModel(childSessionId: string, model?: string): Promise<LocalAgentPromptResult> {
+    const registry = this.ctx.localAgent
+    const record = registry.getDelegation(childSessionId)
+    if (record === undefined) {
+      return { ok: false, error: `localAgent: no delegation recorded for child session ${childSessionId}` }
+    }
+    const broker = registry.harnessForProvider(record.provider)?.modelBroker
+    if (broker === undefined) {
+      return { ok: false, error: `localAgent: ${record.provider} exposes no model broker` }
+    }
+    try {
+      await broker.setMemberModel(childSessionId, model)
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    return { ok: true }
   }
 
   /**

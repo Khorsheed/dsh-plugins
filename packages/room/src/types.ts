@@ -45,6 +45,14 @@ export interface RoomMemberAddedEvent {
    * (family need R2) has not landed, so the adapter does NOT pass it down yet.
    */
   readonly cwd?: string
+  /**
+   * The delegation's model (invite-time only, local-agent harness providers):
+   * recorded on the roster and passed to the facade as the `start` call's
+   * `model` option on the member's first dispatch — providers bind it at
+   * spawn for both exec and live rounds. Blank/omitted = follow the harness
+   * default.
+   */
+  readonly model?: string
   /** The CLI member's dsh child session, once delegation has started. */
   readonly childSessionId?: SessionId
 }
@@ -243,6 +251,8 @@ export interface RoomMember {
   readonly invitedBy: 'human' | 'agent'
   /** Member-level working directory (roster record; not yet passed to the facade). */
   readonly cwd?: string
+  /** The delegation's invite-time model (roster record; the facade start's `model` option). */
+  readonly model?: string
   readonly childSessionId?: SessionId
 }
 
@@ -391,6 +401,12 @@ export interface RoomInviteRequest {
   readonly cwd?: string
   /** Optional first task, dispatched to the member as soon as it joins. */
   readonly firstTask?: string
+  /**
+   * The delegation's model (blank/omitted = follow the harness default).
+   * Applies to local-agent harness providers only: it lands as the facade
+   * `start` call's `model` option, bound at spawn for exec and live alike.
+   */
+  readonly model?: string
 }
 
 /** invite receipt. */
@@ -602,6 +618,12 @@ export interface RoomProviderInfo {
   /** The provider id invite/dispatch uses (the harness's delegationProvider). */
   readonly provider: string
   readonly displayName: string
+  /**
+   * The roster harness name — the lookup key for the localAgentGateway
+   * `harnessModel` read (the invite dialog's model datalist). Absent only on
+   * a pre-model-broker family core; the dialog then serves a plain text input.
+   */
+  readonly harness?: string
   /** Whether the harness's scoped home holds usable credentials. */
   readonly authenticated: boolean
 }

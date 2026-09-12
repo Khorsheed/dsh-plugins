@@ -92,6 +92,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         promptMember: (childSessionId, text) => gateway.promptMember(childSessionId, text).then(result => (result.ok ? result.value : undefined)),
         stopMember: childSessionId => gateway.stopMember(childSessionId).then(result => (result.ok ? result.value : undefined)),
         activeDelegations: () => gateway.activeDelegations().then(result => (result.ok ? result.value : undefined)),
+        memberModel: childSessionId => gateway.memberModel(childSessionId).then(result => (result.ok ? result.value : undefined)),
+        setMemberModel: (childSessionId, model) => gateway.setMemberModel(childSessionId, model).then(result => (result.ok ? result.value : undefined)),
       }),
     }, MemberComposer),
   )

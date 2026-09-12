@@ -18,9 +18,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { LocalAgentDelegationView, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentDelegationView, LocalAgentModelInfo, LocalAgentModelSource, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { memberDockLines, type MemberDockProjections } from './member-dock.ts'
-import { NS } from './locales.ts'
+import { NS, type LocalAgentKey } from './locales.ts'
 import css from './MemberComposer.module.css'
 
 /** What the chain selector hands the elected component. */
@@ -80,6 +80,17 @@ export interface MemberComposerInjected {
    * failure; the component keeps the last known bit rather than flapping.
    */
   activeDelegations: () => Promise<readonly string[] | undefined>
+  /**
+   * The member's model surface; null = no picker (a brokerless harness keeps
+   * its pre-broker behavior exactly), undefined = RPC failure (keep the last
+   * known surface rather than flapping the picker off).
+   */
+  memberModel: (childSessionId: string) => Promise<LocalAgentModelInfo | null | undefined>
+  /**
+   * Set (undefined = clear) the member's session-level model override; the
+   * structured error renders inline like a promptMember failure.
+   */
+  setMemberModel: (childSessionId: string, model?: string) => Promise<LocalAgentPromptResult | undefined>
 }
 
 /** Full chain props after the member selector accepts the owner currency. */
@@ -95,6 +106,21 @@ const MEMBER_PROBE_RETRIES = 2
 const MEMBER_PROBE_RETRY_MS = 300
 /** In-flight delegation poll cadence (the taskpilot dock's proven cadence). */
 const ACTIVE_DELEGATIONS_POLL_MS = 1_500
+
+/** The locale key of each model-source layer's label (the chip's title). */
+const MODEL_SOURCE_KEYS: Record<LocalAgentModelSource, LocalAgentKey> = {
+  'override': 'member.model.source.override',
+  'delegation': 'member.model.source.delegation',
+  'settings': 'member.model.source.settings',
+  'cli-config': 'member.model.source.cli-config',
+  'cli-builtin': 'member.model.source.cli-builtin',
+}
+
+/** The fetched model surface, stamped with the child it belongs to. */
+interface ModelSurface {
+  readonly child: string
+  readonly info: LocalAgentModelInfo | null
+}
 
 /**
  * Session-level positive membership cache: a recorded delegation is immutable
@@ -125,7 +151,7 @@ export function resetMembershipCache(): void {
  * @returns the composer, the neutral checking state while probing, or the
  *   read-only panel when not a member.
  */
-export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, t }: MemberComposerProps) {
+export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, t }: MemberComposerProps) {
   const [membership, setMembership] = useState<Membership>(() => membershipCache.get(matched.childSessionId))
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -134,6 +160,12 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   const sessionRunning = useSession(snapshot => snapshot.running) ?? false
   /** The polled in-flight bit for this child (second running source). */
   const [memberActive, setMemberActive] = useState(false)
+  /** The member's model surface; undefined = not fetched yet, null = no picker. */
+  const [modelSurface, setModelSurface] = useState<ModelSurface | undefined>(undefined)
+  /** The picker's dropdown open bit. */
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  /** The picker's root node (click-outside closes the dropdown). */
+  const modelPickerRef = useRef<HTMLDivElement | null>(null)
   /** The child the current membership answer belongs to (re-probes on switch). */
   const membershipFor = useRef<string | null>(null)
   /** Mirror of `membership` for the probe effect (kept out of its deps: a null answer must not self-trigger). */
@@ -214,6 +246,33 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
     }
   }, [memberOf, matched.childSessionId, running])
 
+  // The model surface: fetched once membership resolves, and re-fetched on
+  // every running flip — a switch is refused while a round is in flight and a
+  // live runtime respawns on the next round, so run edges are exactly when
+  // `switchable`/`effective` can move. Undefined answers (RPC failure) keep
+  // the last known surface, mirroring the activeDelegations poll's rule.
+  useEffect(() => {
+    if (membership === undefined || membership === null) return
+    const childId = matched.childSessionId
+    let cancelled = false
+    void memberModel(childId).then((info) => {
+      if (cancelled || info === undefined) return
+      setModelSurface({ child: childId, info })
+    }, () => {})
+    return () => { cancelled = true }
+  }, [memberModel, matched.childSessionId, membership, running])
+
+  // Click-outside closes the model dropdown (the dock capsules' pattern).
+  useEffect(() => {
+    if (!modelMenuOpen) return
+    const onPointerDown = (event: MouseEvent): void => {
+      if (modelPickerRef.current?.contains(event.target as Node) === true) return
+      setModelMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => { document.removeEventListener('mousedown', onPointerDown) }
+  }, [modelMenuOpen])
+
   if (membership === undefined) {
     return <div className={css.frame} role="status"><span>{t('member.checking')}</span></div>
   }
@@ -231,6 +290,14 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
 
   const busy = sending || running
   const dockLines = memberDockLines(projections, t)
+  /** The chip label: the effective model id, or the localized "Default" when
+      every layer names nothing (the CLI's built-in default names nothing). */
+  const modelLabel = (info: LocalAgentModelInfo): string => info.effective ?? t('member.model.default')
+  // The surface stamped with another child (a session switch mid-fetch) never
+  // flashes its model at this member.
+  const modelInfo = modelSurface !== undefined && modelSurface.child === matched.childSessionId
+    ? modelSurface.info
+    : null
   const send = (): void => {
     const text = draft.trim()
     if (text === '' || busy) return
@@ -247,6 +314,26 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   }
   const stop = (): void => {
     void stopMember(matched.childSessionId)
+  }
+  /**
+   * Apply a picker choice (undefined = clear the override). The displayed
+   * value only ever moves on an authoritative re-read after `{ ok: true }`,
+   * so a refused switch leaves the chip on the real model — the structured
+   * error rides the same inline line a promptMember failure uses.
+   */
+  const chooseModel = (model: string | undefined): void => {
+    setModelMenuOpen(false)
+    setError(null)
+    const childId = matched.childSessionId
+    void setMemberModel(childId, model).then((result) => {
+      if (result !== undefined && result.ok) {
+        void memberModel(childId).then((info) => {
+          if (info !== undefined) setModelSurface({ child: childId, info })
+        }, () => {})
+      } else {
+        setError(result !== undefined && !result.ok ? result.error : t('member.model.failed'))
+      }
+    })
   }
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>): void => {
     setDraft(event.target.value)
@@ -277,6 +364,50 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           onKeyDown={onKeyDown}
         />
         <div className={css.row}>
+          {modelInfo !== null && (
+            <div className={css.modelPicker} ref={modelPickerRef}>
+              <button
+                type="button"
+                className={css.modelChip}
+                disabled={busy || !modelInfo.switchable}
+                title={!modelInfo.switchable && modelInfo.reason !== undefined
+                  ? modelInfo.reason
+                  : t('member.model.title', { model: modelLabel(modelInfo), source: t(MODEL_SOURCE_KEYS[modelInfo.source]) })}
+                aria-label={t('member.model.picker')}
+                aria-haspopup="menu"
+                aria-expanded={modelMenuOpen}
+                onClick={() => { setModelMenuOpen(open => !open) }}
+              >
+                {modelLabel(modelInfo)}
+              </button>
+              {modelMenuOpen && (
+                <div className={css.modelMenu} role="menu" aria-label={t('member.model.picker')}>
+                  {modelInfo.choices.map(choice => (
+                    <button
+                      key={choice}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={choice === modelInfo.effective}
+                      className={choice === modelInfo.effective ? css.modelItemCurrent : css.modelItem}
+                      onClick={() => { chooseModel(choice) }}
+                    >
+                      {choice}
+                    </button>
+                  ))}
+                  {modelInfo.override !== undefined && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={css.modelItemReset}
+                      onClick={() => { chooseModel(undefined) }}
+                    >
+                      {t('member.model.followSettings')}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {running ? (
             <button type="button" className={css.primary} aria-label={t('member.stop')} onClick={stop}>
               <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>

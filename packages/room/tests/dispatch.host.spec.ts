@@ -114,6 +114,22 @@ describe('DispatchEngine (real composition)', () => {
     })
   })
 
+  it('the invite-time model lands as the delegation start call option (absent without one)', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
+    await bench.service.invite({
+      sessionId: bench.sessionId, provider: 'kimi', name: 'ada', model: 'kimi-k2', firstTask: '搭骨架',
+    })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '搭页面' })
+    await bench.service.engine.idle()
+
+    expect(bench.facade.start).toHaveBeenCalledTimes(2)
+    // ada invited with a model: the facade start's `model` call option.
+    expect(bench.facade.start.mock.calls[0]![3]).toEqual({ model: 'kimi-k2' })
+    // bill invited without one: no options argument at all (harness default).
+    expect(bench.facade.start.mock.calls[1]![3]).toBeUndefined()
+  })
+
   it('the roster lists the other members with one-line roles; the prompt carries NO running log', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案 A'))

@@ -229,7 +229,11 @@ export class DispatchEngine {
     // intent, the provider still runs in the parent session's cwd.
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
     const run = member.childSessionId === undefined
-      ? await facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }])
+      // The invite-time model lands as the delegation's own model: the facade
+      // records it with the first start and every later resume re-requests it
+      // (providers bind it at spawn for exec and live alike).
+      ? await facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
+          member.model === undefined ? undefined : { model: member.model })
       : await facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }])
     if (member.childSessionId === undefined) {
       // Persist the delegation handle: the run id IS the child session id,
