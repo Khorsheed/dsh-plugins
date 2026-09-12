@@ -17,6 +17,17 @@ describe('satisfiesCaret', () => {
     expect(satisfiesCaret('0.1.0-rc.6', '^0.1.0-rc.5')).toBe(true)
   })
 
+  it('compares numeric prerelease identifiers numerically, not lexically', () => {
+    // `rc.10` is newer than `rc.6`; a locale string compare says the opposite,
+    // which would reject a perfectly resolvable companion edge at rc.10+.
+    expect(satisfiesCaret('0.1.0-rc.10', '^0.1.0-rc.6')).toBe(true)
+    expect(satisfiesCaret('0.1.0-rc.6', '^0.1.0-rc.10')).toBe(false)
+    // Numeric identifiers sort below alphanumeric ones (semver §11.4.3).
+    expect(satisfiesCaret('0.1.0-1', '^0.1.0-alpha')).toBe(false)
+    expect(satisfiesCaret('0.1.0-beta', '^0.1.0-alpha')).toBe(true)
+    expect(satisfiesCaret('0.1.0-alpha', '^0.1.0-beta')).toBe(false)
+  })
+
   it('applies the caret upper bound, including the 0.x rules', () => {
     expect(satisfiesCaret('0.2.0', '^0.1.0')).toBe(false)
     expect(satisfiesCaret('0.2.0', '^0.2.0')).toBe(true)

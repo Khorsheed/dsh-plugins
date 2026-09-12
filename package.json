@@ -19,6 +19,8 @@
     "check:plugins": "tsx scripts/check-plugin-independence.ts",
     "check:profiles": "tsx scripts/check-profile-bundles.ts",
     "check:release-groups": "tsx scripts/check-release-groups.ts",
+    "map:packages": "tsx scripts/generate-package-map.ts",
+    "check:packages": "tsx scripts/generate-package-map.ts --check",
     "check:workflows": "tsx scripts/check-workflow-refs.ts",
     "check:builds": "tsx scripts/check-build-scripts-declared.ts",
     "gate": "tsx scripts/gate.mts",

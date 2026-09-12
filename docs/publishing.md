@@ -50,7 +50,7 @@ T=$(mktemp -d) && cd "$T" && npm install <包名>@<新版本> \
 
 ### 家族发布:同版、按依赖序、可恢复
 
-local-agent 家族七包(core → tool-subagent / dsh-headless → 各 provider)以**同一版本**成一波发布,顺序按依赖。理由不是洁癖:`pack-dist` 会把家族边按同一个 dist 版本改写,拆开就会发布出一个自己都满足不了的 range。
+local-agent 家族七包(core → tool-subagent / dsh-headless → 各 provider)以**同一版本**成一波发布,顺序按依赖。理由不是洁癖:`pack-dist` 会把每条家族边按其**目标包自己的版本**改写成 `^<目标版本>`(发版时七包同版,结果才等价于"按同一个 dist 版本改写"),拆开就会发布出一个自己都满足不了的 range。
 
 发版前跑 **`pnpm check:release-groups --release`**。gate 里的同名检查只对版本线**告警**(版本治理只发生在发版时,worktree 不动版本号),但 core/companion 的 range 必须能解析到 core 这一条**始终是硬错误**——`^0.1.0` 排除 `0.1.0-rc.1`、`^0.1.0` 排除 `0.2.0` 这两个真实事故就冻在那条规则里(见 `scripts/check-release-groups.ts`)。
 

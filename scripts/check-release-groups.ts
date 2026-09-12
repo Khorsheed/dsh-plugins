@@ -5,12 +5,14 @@
  * The repo publishes independent semver lines, with two exceptions that are
  * about *resolvability* rather than process taste:
  *
- *   1. **equal-version groups** — the local-agent family hard-depends on itself
- *      in every direction (providers → core, providers → the shared tool). A
- *      provider at one rc and the core at another is a compatibility matrix
- *      nobody tests, and `pack-dist` already rewrites the family edges as if a
- *      single release governed them. These packages must share one version and
- *      be published in dependency order (core → tool → providers).
+ *   1. **equal-version groups** — the local-agent family is a coordinated
+ *      release closure: several hard dependency edges run provider → core and
+ *      provider → the shared tool (the core never depends back on its
+ *      providers). A provider at one rc and the core at another is a
+ *      compatibility matrix nobody tests, and `pack-dist` rewrites each family
+ *      edge on its TARGET package's version — at release time the seven must
+ *      therefore share one version and be published in dependency order
+ *      (core → tool → providers).
  *
  *   2. **companion pairs** — a `-tool` companion is preset-composed and holds a
  *      one-way edge to its core. The pair may evolve independently (worktrees
@@ -66,9 +68,9 @@ export interface ReleaseGroup {
 
 /**
  * The local-agent family: core, the shared delegation tool, the sub-dsh
- * headless bundle, and the four harness providers. `pack-dist` ranges the
- * family edges on a single dist version, so shipping them apart would publish
- * a range the released set cannot satisfy.
+ * headless bundle, and the four harness providers. `pack-dist` ranges each
+ * family edge on that edge's target version, so a release must ship the seven
+ * at one version or the published set cannot satisfy its own ranges.
  */
 export const RELEASE_GROUPS: readonly ReleaseGroup[] = [
   {
@@ -107,6 +109,33 @@ function readPackage(packagesRoot: string, dir: string): Loaded | undefined {
   return { name: json.name, version: json.version, json }
 }
 
+/**
+ * Semver prerelease precedence, as npm implements it: dot-separated
+ * identifiers, numeric ones compared numerically (rc.10 > rc.6 — a locale
+ * string compare gets this backwards), numeric below alphanumeric, and a
+ * shorter identifier list below a longer one when all preceding parts match.
+ */
+function comparePrerelease(a: string, b: string): number {
+  const left = a.split('.')
+  const right = b.split('.')
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const l = left[i]
+    const r = right[i]
+    if (l === undefined) return -1
+    if (r === undefined) return 1
+    const lNumeric = /^\d+$/.test(l)
+    const rNumeric = /^\d+$/.test(r)
+    if (lNumeric && rNumeric) {
+      const diff = Number(l) - Number(r)
+      if (diff !== 0) return diff < 0 ? -1 : 1
+      continue
+    }
+    if (lNumeric !== rNumeric) return lNumeric ? -1 : 1
+    if (l !== r) return l < r ? -1 : 1
+  }
+  return 0
+}
+
 /** Semver satisfaction for the caret ranges this repo emits. */
 export function satisfiesCaret(version: string, range: string): boolean {
   const caret = /^\^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(range)
@@ -124,7 +153,7 @@ export function satisfiesCaret(version: string, range: string): boolean {
     // npm admits a prerelease only when the range carries one for the same tuple.
     if (caret[4] === undefined) return false
     if (actual.join('.') !== lower.join('.')) return false
-    return prerelease.localeCompare(caret[4]!) >= 0
+    return comparePrerelease(prerelease, caret[4]!) >= 0
   }
   const compare = (a: readonly number[], b: readonly number[]): number =>
     (a[0]! - b[0]!) || (a[1]! - b[1]!) || (a[2]! - b[2]!)

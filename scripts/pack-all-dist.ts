@@ -14,7 +14,8 @@
  *   pnpm exec tsx scripts/pack-all-dist.ts --only a,b    # only these package dirs
  *
  * `--only` exists for the scoped local gate, which packs the packages a change
- * touched instead of all 26. CI and release waves pass no filter and keep the
+ * touched instead of every self-mounting bundle (the current count lives in the
+ * generated `docs/packages.md`). CI and release waves pass no filter and keep the
  * whole-repo guarantee — a subset never becomes the default for either.
  * @module scripts/pack-all-dist
  */
