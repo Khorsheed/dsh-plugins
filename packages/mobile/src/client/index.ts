@@ -5,7 +5,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
 import { MobilePresentation } from './presentation.ts'
-import { DirectoryFlow } from './DirectoryFlow.tsx'
+import { DirectoryFlow, MobileDirectoryOverlay } from './DirectoryFlow.tsx'
+import { MobileDirectory, installMobileDirectoryPicker } from './directory.ts'
 import { MobileNavigation } from './navigation.ts'
 import { MobileWelcome } from './MobileSeats.tsx'
 import { MobileSubmissionFocus } from './SubmissionFocus.tsx'
@@ -36,11 +37,16 @@ export function apply(ctx: Context): void {
   const messages = new MessageMenu(document)
   ctx.effect(() => () => messages.dispose(), 'mobile: message actions')
   const navigation = new MobileNavigation()
+  const directory = new MobileDirectory()
+  const presentation = new MobilePresentation(window, window.__DSH_MOBILE_SHELL__?.bridgeVersion === BRIDGE_VERSION)
   ctx.inject(['sessions', 'workspaces', 'uiWorkspace'], scoped => {
     navigation.set({ sessions: scoped.sessions, workspaces: scoped.workspaces, workspace: scoped.uiWorkspace })
+    scoped.effect(() => installMobileDirectoryPicker(scoped.uiWorkspace, directory, () => presentation.getSnapshot().active), 'mobile: path picker')
     scoped.effect(() => () => { navigation.set(undefined) }, 'mobile: optional navigation')
   })
-  const presentation = new MobilePresentation(window, window.__DSH_MOBILE_SHELL__?.bridgeVersion === BRIDGE_VERSION)
+
+  ctx.effect(() => { const off = presentation.subscribe(() => { if (!presentation.getSnapshot().active) directory.finish(null) }); return () => { off(); directory.finish(null) } }, 'mobile: pending directory')
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'mobile-directory', locale: NS, inject: () => ({ directory, navigation }) }, MobileDirectoryOverlay))
   ctx.effect(() => () => { presentation.dispose() }, 'mobile: presentation')
   ctx.effect(() => {
     let remove: (() => void) | undefined
@@ -109,7 +115,7 @@ export function apply(ctx: Context): void {
       let remove: (() => void) | undefined
       const sync = () => {
         if (presentation.getSnapshot().active) {
-          remove ??= ctx.slots.register({ name, priority: -100, locale: NS }, DirectoryFlow)
+          remove ??= ctx.slots.register({ name, priority: -100, locale: NS, inject: () => ({ directory, navigation }) }, DirectoryFlow)
         } else { remove?.(); remove = undefined }
       }
       sync()

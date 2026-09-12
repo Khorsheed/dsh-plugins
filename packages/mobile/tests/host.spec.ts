@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection/src/rpc-host'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth'
 import * as mobile from '../src/index.ts'
-import { HANDSHAKE_PATH } from '../src/protocol.ts'
+import { DIRECTORY_PATH, HANDSHAKE_PATH } from '../src/protocol.ts'
 
 describe('mobile plugin on the official Connection registry', () => {
   it('unloads only its route and can reinstall without a duplicate registration', async () => {
@@ -21,7 +21,10 @@ describe('mobile plugin on the official Connection registry', () => {
     expect(answer.status).toBe(200)
     expect(answer.headers.get('cache-control')).toBe('no-store')
     expect(await answer.json()).toMatchObject({ bridgeVersion: 1, devicePairing: false, pushNotifications: false })
+    const invalid = await carrier.fetch(new Request(`http://localhost${DIRECTORY_PATH}?path=relative`))
+    expect(invalid.status).toBe(400)
     await fiber.dispose()
+    expect((await carrier.fetch(new Request(`http://localhost${DIRECTORY_PATH}`))).status).toBe(404)
     expect((await carrier.fetch(new Request(`http://localhost${HANDSHAKE_PATH}`))).status).toBe(404)
     expect(await (await carrier.fetch(new Request('http://localhost/api/other'))).text()).toBe('other')
     const again = ctx.plugin(mobile)

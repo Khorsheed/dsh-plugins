@@ -14,3 +14,11 @@ export function mobileHandshake() {
     pushNotifications: false,
   } as const
 }
+
+export const DIRECTORY_PATH = '/api/mobile/directories'
+export interface MobileDirectoryListing {
+  path: string
+  parent: string | null
+  entries: { name: string; path: string; hidden: boolean }[]
+  truncated: boolean
+}

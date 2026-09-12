@@ -1,6 +1,7 @@
 /** Copy for controls owned by mobile; all conversation copy stays with its owner. */
 export const NS = 'mobile'
 export const en = {
+  directoryManual: 'Enter a path', directoryTitle: 'Choose working directory', directoryHint: 'Select a folder on your computer.', directoryComputer: 'Browse computer', directoryNoSaved: 'No saved workspaces yet. Browse your computer to choose one.', directoryGo: 'Go', directoryParent: 'Parent folder', directoryHidden: 'Hidden folders', directoryLoading: 'Loading folders…', directoryError: 'Could not read this folder. Check the path, permissions and connection.', directoryRetry: 'Retry', directorySearch: 'Filter folders', directoryEmpty: 'No subfolders.', directoryTruncated: 'This listing is limited. Enter a full path to open another folder.', directorySelect: 'Use this directory',
   renameSession: 'Rename session', sessionTitle: 'Session title', renameUnavailable: 'Could not rename this conversation. Please try again.',
   roomActionUnavailable: 'Open Members to manage this room; its shortcut is unavailable.', memberFailed: 'Task failed',
   currentConversation: 'Current conversation',
@@ -23,6 +24,7 @@ export const en = {
   workspace: 'Open workspace', hostPath: 'Computer directory', hostPathHelp: 'Enter an existing absolute directory on your computer. This does not select a folder on your phone.', openWorkspace: 'Open', cancel: 'Cancel',
 } as const
 export const zh: Record<keyof typeof en, string> = {
+  directoryManual: '输入路径', directoryTitle: '选择工作目录', directoryHint: '选择电脑上的文件夹。', directoryComputer: '浏览电脑', directoryNoSaved: '暂无工作区，可以浏览电脑选择文件夹。', directoryGo: '前往', directoryParent: '上一级', directoryHidden: '隐藏目录', directoryLoading: '正在读取目录…', directoryError: '暂时无法读取此目录，请检查路径、权限和连接。', directoryRetry: '重试', directorySearch: '筛选文件夹', directoryEmpty: '没有子目录。', directoryTruncated: '目录较多，仅显示部分内容；可输入完整路径前往。', directorySelect: '使用此目录',
   renameSession: '重命名会话', sessionTitle: '会话标题', renameUnavailable: '暂时无法修改标题，请重试。',
   roomActionUnavailable: '快捷入口暂不可用，请进入成员页管理。', memberFailed: '任务失败',
   currentConversation: '当前会话',
