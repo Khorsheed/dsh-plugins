@@ -26,6 +26,10 @@ struct HarnessWebView: UIViewRepresentable {
         view.isInspectable = true
         #endif
         state.webView = view
+        context.coordinator.watchNavigation(view)
+        #if DEBUG
+        print("DSH initial navigation requested")
+        #endif
         view.load(URLRequest(url: host.loginURL))
         return view
     }
@@ -33,6 +37,7 @@ struct HarnessWebView: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {}
 
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+        coordinator.navigationWatch?.cancel()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "dshMobile")
         view.configuration.userContentController.removeAllUserScripts()
         view.navigationDelegate = nil
@@ -44,7 +49,21 @@ struct HarnessWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let host: HostAddress
         let state: BrowserState
+        var navigationWatch: Task<Void, Never>?
+        var authenticationRejected = false
         init(host: HostAddress, state: BrowserState) { self.host = host; self.state = state }
+
+        func watchNavigation(_ webView: WKWebView) {
+            navigationWatch?.cancel()
+            navigationWatch = Task { @MainActor [weak self, weak webView] in
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                guard let self, let webView, !Task.isCancelled else { return }
+                self.state.loading = false
+                self.state.chromeVisible = false
+                self.state.failure = String(localized: "页面加载超时，请重新载入，或检查连接设置。")
+                webView.stopLoading()
+            }
+        }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame,
@@ -87,6 +106,9 @@ struct HarnessWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard let url = action.request.url else { decisionHandler(.cancel); return }
+            #if DEBUG
+            print("DSH navigation policy: sameOrigin=\(host.contains(url)) scheme=\(url.scheme ?? "none") kind=\(action.navigationType.rawValue)")
+            #endif
             if action.targetFrame?.isMainFrame == false { decisionHandler(.allow); return }
             if host.contains(url) { decisionHandler(.allow); return }
             // An explicit external link opens outside the privileged host view.
@@ -97,13 +119,23 @@ struct HarnessWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            authenticationRejected = false
+            watchNavigation(webView)
+            #if DEBUG
+            print("DSH navigation started")
+            #endif
             state.loading = true
             state.mobileAvailable = false
             state.chromeVisible = false
             state.layoutDiagnostic = ""
         }
         func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            #if DEBUG
+            if response.isForMainFrame { print("DSH main response: \((response.response as? HTTPURLResponse)?.statusCode ?? 0)") }
+            #endif
             if response.isForMainFrame, let http = response.response as? HTTPURLResponse, http.statusCode == 401 {
+                authenticationRejected = true
+                navigationWatch?.cancel()
                 state.loading = false
                 state.chromeVisible = false
                 state.mobileAvailable = false
@@ -114,7 +146,12 @@ struct HarnessWebView: UIViewRepresentable {
             decisionHandler(.allow)
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            navigationWatch?.cancel()
             state.loading = false
+            if !authenticationRejected, let url = webView.url, host.contains(url) { state.failure = nil }
+            #if DEBUG
+            print("DSH navigation finished")
+            #endif
             #if DEBUG
             Task { @MainActor [weak webView] in
                 try? await Task.sleep(for: .seconds(2))
@@ -138,13 +175,20 @@ struct HarnessWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { fail(error) }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { fail(error) }
         private func fail(_ error: Error) {
-            if (error as NSError).code == NSURLErrorCancelled { return }
+            #if DEBUG
+            print("DSH navigation failed: code=\((error as NSError).code)")
+            #endif
+            // Rejecting a 401 generates a subsequent policy-cancellation error.
+            // Preserve the actionable login explanation instead of replacing it.
+            if authenticationRejected || (error as NSError).code == NSURLErrorCancelled { return }
+            navigationWatch?.cancel()
             state.loading = false
             state.chromeVisible = false
             // Network errors may embed an authenticated URL; display no raw error text.
             state.failure = String(localized: "连接暂时不可用。请检查电脑和网络后重试。")
         }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            navigationWatch?.cancel()
             state.chromeVisible = false
             state.mobileAvailable = false
             state.failure = String(localized: "页面已暂停，请重新载入以恢复会话。")

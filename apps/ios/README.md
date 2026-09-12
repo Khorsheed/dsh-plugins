@@ -37,13 +37,15 @@ The connection sheet can change hosts, disconnect or clear this App's cookies/ca
 
 For cellular access, provision HTTPS/WSS forwarding separately and retain upstream Host/Origin checks. The Mac must stay awake and online. Network provisioning, cookie Secure hardening at ingress, device signing and cellular acceptance are not performed by this project.
 
+Native navigation has a 30-second load deadline with Reload and Connection Settings recovery. Reloading an uncommitted or blank WebView explicitly requests the configured login URL; reloading a committed same-origin page keeps its current navigation. A rejected HTTP 401 retains the login-expired explanation when WebKit subsequently reports its policy cancellation. Debug navigation diagnostics contain only lifecycle events, origin-match flags and numeric status/error codes, never authenticated URLs or cookies.
+
 ## QR login and native settings
 
 Native grouped settings contain the current host, connection actions and a device-only appearance preference. QR scanning uses VisionKit with camera permission, stops when the view closes or the App backgrounds, validates the same HTTPS root/login URL contract, and previews the clean authority before an explicit Connect. The scanned login URL stays in memory; it is never saved to preferences or printed. Invalid codes, denied/unavailable cameras and unsupported devices retain manual entry. Main-frame HTTP 401 opens a recoverable login error. This consumes an existing official login link; it does not issue pairing credentials or configure a tunnel. Physical camera/permission and scan-to-login acceptance remains pending.
 
 ## Current limits
 
-Simulator build/install/launch and signed installation/launch on iPhone Air (iOS 26.5.2) are verified; native visual automation was blocked by macOS computer-use permissions. Real-device keyboard/safe-area, attachments, background/network recovery, file export/share and community plugin combinations remain pending. There is no APNs or guaranteed background socket. The Xcode project has an App icon but no distribution signing; it is a development build, not App Store-ready.
+Simulator build/install/launch and signed installation/launch on iPhone Air (iOS 26.5.2) are verified; physical navigation and read-only screenshots are also verified through device developer services; full touch automation remains unverified. Real-device keyboard/safe-area, attachments, background/network recovery, file export/share and community plugin combinations remain pending. There is no APNs or guaranteed background socket. The Xcode project has an App icon but no distribution signing; it is a development build, not App Store-ready.
 
 The [physical-device record](../../docs/acceptance/mobile-device-2026-09-11.md) and [initial acceptance record](../../docs/acceptance/mobile-rc1-2026-09-11.md) distinguish browser evidence, native build evidence and unverified flows.
 

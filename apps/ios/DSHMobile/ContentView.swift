@@ -53,6 +53,14 @@ final class BrowserState: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "hostOrigin")
     }
 
+    func reload() {
+        guard let host, let webView else { return }
+        failure = nil
+        // WKWebView.reload() cannot recover an initial, uncommitted about:blank.
+        if let current = webView.url, host.contains(current) { webView.reload() }
+        else { webView.load(URLRequest(url: host.loginURL)) }
+    }
+
     func clearLogin() async {
         // The App owns this website data store. This clears local cookies, not
         // server-side authorization or other browsers' sessions.
@@ -75,7 +83,7 @@ struct ContentView: View {
                     if let failure = browser.failure {
                         VStack(spacing: 12) {
                             Text(failure).font(.callout)
-                            Button("重新载入") { browser.failure = nil; browser.webView?.reload() }
+                            Button("重新载入") { browser.reload() }
                             Button("连接设置") { browser.sheet = .settings }
                         }.padding(24).frame(maxWidth: .infinity).background(.regularMaterial)
                     }
@@ -123,7 +131,7 @@ struct ConnectionView: View {
                         Label(host.origin.host ?? "Harness", systemImage: "laptopcomputer")
                         Text(host.origin.absoluteString).font(.footnote).foregroundStyle(.secondary)
                         Text(browser.mobileAvailable ? "移动插件已连接" : "尚未检测到移动插件").font(.footnote)
-                        Button("重新载入") { browser.failure = nil; browser.webView?.reload(); dismiss() }
+                        Button("重新载入") { browser.reload(); dismiss() }
                     }
                 }
                 Section {
