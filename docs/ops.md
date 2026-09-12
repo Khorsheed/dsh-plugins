@@ -14,14 +14,12 @@
 |---|---|---|
 | `~/code/dsh-plugins` | 主仓(mainline) | 多 agent 共享,worktree 开发、合并回 main |
 | `~/code/deepseek-harness` | **部署检出**:prod 3080 从这里启动,guard 凭证绑定它的 HEAD | 只准 `reset --hard` 到官方 tag + guard checkpoint 提交;禁止任何其他本地改动 |
-| `~/code/deepseek-harness-alpha` | 0.1.2-alpha 源码检出(3091 的宿主) | 只读使用,停在 tag |
 | `~/.dsh-official`(3080) | **prod 专用**:稳定线宿主的常驻环境,3080 是我们的稳定部署(非社区 prod) | 只有 `profiles/web`;**测试 profile 一律不许建在这里**——`settings.yaml` 是全 HOME 共享的,测试 profile 改插件配置会漏进 3080 |
 | `~/.dsh-lab` | 稳定线(rc 线)的全部测试 | 所有 `<主题>-test` profile + `web-candidate`(3083,原 3082 验收实例,已迁移);凭据软链回 official(注意:并发刷新 token 有写竞争,凭据刷新失败先怀疑这里),settings/state/sessions 与 official 隔离 |
-| `~/.dsh-alpha-check`(3091) | 0.1.2 线的提前兼容验收 | 宿主用 `deepseek-harness-alpha` 检出启动;跑的是分支 tarball,合并后换回正式产物 |
 | `~/.dsh-toolchains/stable` | 官方 npm 宿主的缓存工具链(**无状态**) | 测"社区同款体验"的基座;由 mainline 在官方发新版时主动刷新( playbook 第 4 步)。用法:`DSH_HOME=$(mktemp -d) ~/.dsh-toolchains/stable/node_modules/.bin/dsh web --port <port>` |
 | `$(mktemp -d)` | 一次性 HOME:纯净安装测试、历史兼容测试 | "纯净"是会衰减的性质,只配一次性;历史兼容用 `npx @deepseek-ai/dsh@<minHost>` 起对应版本 |
 
-已退役:`~/.dsh-vanilla`(3081)——常驻纯净 HOME 与"纯净即一次性"矛盾,由工具链缓存 + mktemp HOME 取代;`~/.dsh-acceptance`(3082)——并入 lab 的 `web-candidate`。
+已退役:`~/.dsh-vanilla`(3081)——常驻纯净 HOME 与"纯净即一次性"矛盾,由工具链缓存 + mktemp HOME 取代;`~/.dsh-acceptance`(3082)——并入 lab 的 `web-candidate`;`~/code/deepseek-harness-alpha` 与 `~/.dsh-alpha-check`(3091)——0.1.2-alpha 线的提前兼容验收环境,0.1.5 波次落地后退役(alpha 检出已删除)。
 
 配套约定:
 

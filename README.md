@@ -262,7 +262,7 @@ pnpm run typecheck  # pnpm -r --if-present run typecheck
 
 **开发期对 harness checkout 的依赖。** 两条机制解析到本地 deepseek-harness clone(env `DSH_HARNESS`,默认 `~/code/deepseek-harness`),发布的 npm 产物单独无法满足:
 
-- `scripts/gen-typert.mts` 对 harness checkout 重新生成 `lib/typert.*` 产物(message-tools、file-preview、local-agent),再把 `@khorsheed` 自名重写后拷回。
+- `scripts/gen-typert.mts` 对 harness checkout 重新生成 `lib/typert.*` 产物(10 个带 `./typert`/`./remote` 导出的包);全量构建有保鲜缓存,输入或产物有变才会真生成(`GEN_TYPERT_FORCE=1` 强制)。
 - `build/vitest.ts`(共享 vitest 预设)把平台 import 映射到 harness 的 `tsconfig.base.json` 路径——发布的包不携带 `src/`,其 `/client` 入口是 loader 包裹的浏览器 bundle,裸 import 会炸。
 
 CI 注意:先在本仓库旁 clone deepseek-harness 并设 `DSH_HARNESS` 再 `pnpm test`;harness checkout 过期意味着被测 API 面可能落后于生产宿主。发布走 `scripts/pack-dist.ts`(`--family` 重写 peer 依赖的 scope),`npm publish` 前先验证 tarball。完整仓库纪律见 [AGENTS.md](AGENTS.md)。

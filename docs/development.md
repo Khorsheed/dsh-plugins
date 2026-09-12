@@ -26,7 +26,7 @@ mainline 不是审批者:开发者自己跑流程上线,mainline 不逐包审批
 ### 1) 开发路径(默认):worktree → main → 3080
 
 1. **worktree-only 开发**:功能代码只允许在各自 worktree(worktree/分支)里写;主工作区不做功能开发。mainline 维护者同样遵守——基线/发布类工作可以在 main 直接做(那本就是 mainline 的职责),插件功能绝不在主工作区写。
-2. worktree 内自测:包级 build+test 全绿(邻居的在制品红色状态不影响你:`GEN_TYPERT_ONLY=<你的包>`)。
+2. worktree 内自测:包级 build+test 全绿(邻居的在制品红色状态不影响你:`GEN_TYPERT_ONLY=<你的包>`)。全量构建的 gen-typert 有保鲜缓存,输入或产物有变才会真生成(强制重生成:`GEN_TYPERT_FORCE=1`)。
 3. 合并回 main:**先在 worktree 里 `pnpm gate` 全绿**,再合。gate 跑的是 CI 里本地可复现的那一部分,外加两个专门补盲区的检查器(见下)。
 4. 上 3080:`pnpm deploy:3080 --package packages/<你的包>` 自助完成(构建→打包→刷新→凭证→preflight→按闸重启→canary)。**只有这条流程能写 profile。**
 5. 验收观察期(默认 3 天无相关事故)后进入 npm 波次。
@@ -72,12 +72,12 @@ pnpm gate --full   # 额外用 act 在 Docker 里跑真实 workflow(覆盖冷装
 
 | job | 宿主线 | 阻断吗 | 覆盖什么 |
 |---|---|---|---|
-| `gates` | **稳定线**(钉 tag,当前 `dsh-v0.1.1-rc.2`) | **是** | 全部 14 步 |
-| `alpha-compat` | **正在适配的线**(动态跟随 npm 的 `alpha` 分发标签) | **否** | 只跑 install + build + test |
+| `gates` | **稳定线**(钉 tag,当前 `dsh-v0.1.5-rc.1`) | **是** | 全部 13 步 |
+| `next-compat` | **前瞻线**(动态跟随 npm 的 `next` 分发标签) | **否** | 只跑 install + build + test |
 
-`alpha-compat` 刻意不阻断:alpha 线一周内出了 alpha.1 到 alpha.4,上游随时可以让它变红,而**一道别人能随手弄红的必需检查,大家很快就学会无视它**——被无视的门禁保护不了任何东西。它的作用是报告:哪个包只在一条线上能跑,在基线迁移**之前**就看得见,而不是迁移当天才发现。
+`next-compat` 刻意不阻断:前瞻线随时可能被上游变红,而**一道别人能随手弄红的必需检查,大家很快就学会无视它**——被无视的门禁保护不了任何东西。它的作用是报告:哪个包只在一条线上能跑,在基线迁移**之前**就看得见,而不是迁移当天才发现。
 
-它动态跟随 `alpha` 分发标签而不是钉版本,因为钉住的 alpha 几天就腐烂,一个测试着没人再适配的宿主的 job 会悄悄失去意义。
+它动态跟随 `next` 分发标签而不是钉版本,因为钉住的预发布几天就腐烂(0.1.5 那波 `alpha` 标签停在 alpha.2,rc.1/rc.2 走的是 next/latest),一个测试着没人再适配的宿主的 job 会悄悄失去意义。
 
 **镜像 `--check` 故意不在 gate 里**:镜像漂移归 mainline 修(同步需要镜像仓的推送权),不该挡住包 owner 合并。CI 保留这道门禁。
 
@@ -98,4 +98,3 @@ pnpm gate --full   # 额外用 act 在 Docker 里跑真实 workflow(覆盖冷装
 3. **repo 级安装收敛**:主工作区的 repo 根 `pnpm install` 容易因并发把官方包解析出多个 peer 变体(模块增强身份错位,报 `constraint 'never'`)。遇到先 `pnpm dedupe`,不行删 lockfile+node_modules 重装;频发时由 mainline 统一收敛一次并提交。
 4. **deploy 互斥**:`deploy:3080` 自带 pid 锁,两个部署不会撞车;profile/凭证/preflight 状态由 mainline 定期巡检。
 5. **基线变更的通知义务**:基线迁移导致某插件源码被改(如 rc.8 的 4 个包)时,mainline 必须在 Agent Note 里点名该包,owner 拉取后确认并基于新基线开发;未触及源码的包由 mainline 用全量 build+test 机械证明,不逐个打扰。
-6. **0.1.2 过渡期的热区清单**:0.1.2 适配在 compat 分支(`feat/host-0.1.2-alpha1-compat`)进行,main 保持 rc.2 基线直到 0.1.2 rc 上 npm(届时按 note 里的 checklist 合并)。过渡期内在 main 上开发新功能**不需要**全面兼容两套——两线 API 面绝大多数一致——只有以下已实测的断裂面是"热区",新代码碰到时必须按探测手法写(特性探测,不判版本;产物双线可跑),或先知会 mainline:store 引擎值导入(`dsh-client-runtime/client`)、chat 快照读法(rc:`useSession().chat`;0.1.2:`useChat` prop)、`sessions.currentProvideInfo`、`conversationEvents` 服务、`Connection.hostDescription`、composer owner 的 `interactions` 字段、宿主侧 `CallId`。手法与证据见 `.agents/notes/proposed/architecture/2026-08-28-host-0.1.2-alpha1-assessment.md`;合并时 main 上新增的热区代码由 mainline 按同一清单机械重适配,并以活体实例验收兜底。

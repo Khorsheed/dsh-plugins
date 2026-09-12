@@ -262,7 +262,7 @@ Tests must run through the root `pnpm test` or `pnpm --filter <pkg> test` — a 
 
 **Dev-time dependency on a harness checkout.** Two mechanisms resolve into a local deepseek-harness clone (env `DSH_HARNESS`, default `~/code/deepseek-harness`); the published npm artifacts alone cannot serve them:
 
-- `scripts/gen-typert.mts` regenerates the `lib/typert.*` artifacts (message-tools, file-preview, local-agent) against the harness checkout, then copies them back with the `@khorsheed` self-name rewritten in.
+- `scripts/gen-typert.mts` regenerates the `lib/typert.*` artifacts (the ten packages with `./typert`/`./remote` exports) against the harness checkout; full builds are freshness-cached and regenerate only when inputs or outputs change (`GEN_TYPERT_FORCE=1` to force).
 - `build/vitest.ts` (the shared vitest preset) maps platform imports onto the harness's `tsconfig.base.json` paths — published packages ship no `src/` and their `/client` entries are loader-wrapped browser bundles that explode on a plain test import.
 
 CI note: clone deepseek-harness next to this repo and point `DSH_HARNESS` at it before `pnpm test`; a stale harness checkout means the tested API surface may lag the production host. Publish via `scripts/pack-dist.ts` (`--family` rewrites scopes in peer deps) and verify the tarball before `npm publish`. Full repo conventions live in [AGENTS.md](AGENTS.md).
