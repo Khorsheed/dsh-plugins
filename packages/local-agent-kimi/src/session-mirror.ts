@@ -92,13 +92,17 @@ export interface KimiMirrorDelta {
    */
   texts: string[]
   /**
-   * The usage this pass computed for its window. When assistant content is
-   * folded it is attached to the last folded message (and repeated here for
-   * convenience); with `skipAssistantContent` there is no folded message, so
-   * the caller (the token-granularity live driver) attaches it to the
-   * combined final message that completes the stream.
+   * The usage this pass computed for its window. Attached to the window's
+   * last folded assistant message when one exists (see `usageAttached`);
+   * otherwise returned unattached, so the caller (the token-granularity live
+   * driver) can carry it on the stream's final snapshot instead.
    */
   usage?: TokenUsage
+  /**
+   * True when this pass's usage rode a folded assistant message — the caller
+   * must never attach that accounting a second time.
+   */
+  usageAttached?: boolean
   /**
    * The model identifier the wire named (a `usage.record` or `llm.request`
    * `model` field, last one seen) — the delegation's observed-model source.
@@ -114,17 +118,34 @@ export interface KimiMirrorDelta {
   toolCalls?: LocalAgentToolCalls
 }
 
+/**
+ * The live token-granularity stream ledger a fold pass coordinates with.
+ * Absent on the exec path (no streams exist there) and in the event
+ * granularity (deltas never reserve steps).
+ */
+export interface KimiMirrorStreams {
+  /**
+   * Steps in-flight streams reserved for this turn (their snapshot messages
+   * append there). Sequential folds must skip them, so a tool card folded
+   * mid-stream lands ABOVE the stream's step and the projection renders the
+   * round's chronological order.
+   */
+  reservedSteps(turn: number): readonly number[]
+  /**
+   * Pair one completed think/assistant transcript line with its in-flight
+   * stream. Returns the reservation — consuming it — when this line finalizes
+   * a stream: the caller folds the line's message at the reserved step,
+   * opening the step boundary only when `opened` is false (no snapshot ever
+   * landed), and closes it. Undefined folds the line sequentially. A
+   * (turn, step) NEVER takes a second step/start.
+   */
+  completeStream(
+    line: KimiTranscriptLine & { kind: 'assistant' | 'think' },
+  ): { readonly step: number; readonly opened: boolean } | undefined
+}
+
 /** Mirror behavior switches shared by the exec and live paths. */
 export interface KimiMirrorOptions {
-  /**
-   * Do not fold think/assistant lines into `assistant/message` events (the
-   * token-granularity live mode accumulates that content outside the log —
-   * host 0.1.5 removed the per-chunk session event — and the driver settles
-   * the round with one combined final message). User and tool lines still
-   * fold, and the window's usage is returned on the delta instead of being
-   * attached.
-   */
-  skipAssistantContent?: boolean
   /**
    * The round this pass belongs to (the wire's 1-based turn, which matches
    * the provider's own turn numbering). Given, the delta reports that ROUND's
@@ -134,6 +155,11 @@ export interface KimiMirrorOptions {
    * accounting is reported.
    */
   turn?: number
+  /**
+   * The token-granularity live round's stream ledger: folds pair completed
+   * think/assistant lines with their streams and skip reserved steps.
+   */
+  streams?: KimiMirrorStreams
 }
 
 /**
@@ -155,7 +181,9 @@ export interface KimiMirrorOptions {
  * enters the location index, the assistant message resolves to a turn-level
  * location, and the real-time view renders nothing (only a full rebuild,
  * which mints step drafts from the explicit coordinates, recovers it). A
- * line the options skip folds nothing and writes no boundary.
+ * think/assistant line that completes an in-flight stream folds at the
+ * stream's reserved step instead (see {@link KimiMirrorStreams}), and a
+ * sequential fold never takes a step a stream reserved.
  *
  * Usage accounting is exactly-once ACROSS passes: each `usage.record` is
  * tagged with the transcript position it occurred at, and a pass attaches the
@@ -287,6 +315,25 @@ export async function mirrorKimiSessionDelta(
       }
     }
   }
+  /**
+   * The next sequential fold step in one turn: the running counter, shifted
+   * past every step an in-flight stream reserved (a stream's snapshots and
+   * its completion fold live at the reserved coordinate — a sequential fold
+   * landing there would write a second step/start, which the assembler
+   * rejects).
+   */
+  const nextFoldStep = (turn: number): number => {
+    let step = steps.get(turn) ?? 1
+    const reserved = options?.streams?.reservedSteps(turn)
+    if (reserved !== undefined && reserved.length > 0) {
+      const skip = new Set(reserved)
+      while (skip.has(step)) step += 1
+    }
+    steps.set(turn, step + 1)
+    return step
+  }
+  /** Whether this pass attached its window's usage to a folded message. */
+  let usageAttached = false
   const texts: string[] = []
   // Backfill results that landed after their call was mirrored in an earlier
   // pass: the delta window never revisits those lines, so a result that
@@ -325,6 +372,7 @@ export async function mirrorKimiSessionDelta(
       total: newTotal,
       texts,
       ...deltaUsage !== undefined ? { usage: deltaUsage } : {},
+      ...usageAttached ? { usageAttached: true } : {},
       ...observedModel !== undefined ? { model: observedModel } : {},
       ...toolCalls !== undefined ? { toolCalls } : {},
     }
@@ -348,8 +396,7 @@ export async function mirrorKimiSessionDelta(
     } else if (line.kind === 'tool') {
       // Native tool card: the call event now, the result event when the wire
       // already carries it (else the backfill above pairs it in a later pass).
-      const step = steps.get(turn) ?? 1
-      steps.set(turn, step + 1)
+      const step = nextFoldStep(turn)
       childSession.append('step/start', { turn, step })
       const call = childSession.append('tool/call', {
         turn,
@@ -372,14 +419,31 @@ export async function mirrorKimiSessionDelta(
       }
       childSession.append('step/end', { turn, step })
     } else {
-      // Token-granularity live mode accumulates think/text outside the log
-      // (host 0.1.5 removed the per-chunk event); the driver settles the round
-      // with one combined final message, so the fold leaves these lines out
-      // (their usage rides the delta).
-      if (options?.skipAssistantContent === true) continue
-      const step = steps.get(turn) ?? 1
-      steps.set(turn, step + 1)
+      // A completed think/assistant line pairs with its in-flight stream when
+      // one is live (the token granularity's per-kind stream): the fold lands
+      // at the stream's reserved step, finalizing the snapshots — the step
+      // opens only when no snapshot ever landed (a fast item that stayed
+      // under the throttle), and closes here. A (turn, step) never takes a
+      // second step/start.
+      const completion = options?.streams?.completeStream(line)
+      if (completion !== undefined) {
+        steps.set(turn, Math.max(steps.get(turn) ?? 1, completion.step + 1))
+        if (!completion.opened) childSession.append('step/start', { turn, step: completion.step })
+        if (index === lastAssistant && deltaUsage !== undefined) usageAttached = true
+        childSession.append('assistant/message', {
+          turn,
+          step: completion.step,
+          message: assistantEvent(lineBlocks(line)),
+          stream: [],
+          ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
+        }, { surfaceOp: 'append' })
+        childSession.append('step/end', { turn, step: completion.step })
+        texts.push(kimiLineProgressText(line))
+        continue
+      }
+      const step = nextFoldStep(turn)
       childSession.append('step/start', { turn, step })
+      if (index === lastAssistant && deltaUsage !== undefined) usageAttached = true
       childSession.append('assistant/message', {
         turn,
         step,
@@ -396,6 +460,7 @@ export async function mirrorKimiSessionDelta(
     total: newTotal,
     texts,
     ...deltaUsage !== undefined ? { usage: deltaUsage } : {},
+    ...usageAttached ? { usageAttached: true } : {},
     ...observedModel !== undefined ? { model: observedModel } : {},
     ...toolCalls !== undefined ? { toolCalls } : {},
   }
