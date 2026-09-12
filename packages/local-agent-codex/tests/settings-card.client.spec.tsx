@@ -294,6 +294,31 @@ describe('CodexSettingsCard model surface (harness broker)', () => {
     expect(screen.getByText('跟随 CLI 内置默认')).toBeTruthy()
   })
 
+  it('names the catalog default on the effective line when cli-builtin carries an effective model', async () => {
+    renderCard({
+      harnessModel: () => Promise.resolve(info({
+        effective: 'gpt-5.6-sol', source: 'cli-builtin', choices: ['gpt-5.6-sol'],
+      })),
+    })
+    await openCard()
+    expect(screen.getByText('跟随 CLI 默认：gpt-5.6-sol')).toBeTruthy()
+    expect(screen.queryByText('跟随 CLI 内置默认')).toBeNull()
+  })
+
+  it('annotates the effective line with the last observed model when nothing names one', async () => {
+    renderCard({
+      harnessModel: () => Promise.resolve(info({ lastObserved: 'gpt-5.5' })),
+    })
+    await openCard()
+    expect(screen.getByText('跟随 CLI 内置默认（最近：gpt-5.5）')).toBeTruthy()
+  })
+
+  it('keeps the bare built-in line when cli-builtin names nothing and nothing was observed', async () => {
+    renderCard({ harnessModel: () => Promise.resolve(info({ lastObserved: '' })) })
+    await openCard()
+    expect(screen.getByText('跟随 CLI 内置默认')).toBeTruthy()
+  })
+
   it('the datalist vocabulary is the broker choices, not only the recent memory', async () => {
     renderCard({
       value: { live: false, recentModels: ['model-a'] },
@@ -378,5 +403,25 @@ describe('CodexSettingsCard model surface (harness broker)', () => {
     await openCard()
     expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
       .toBe(zh['model.placeholder'])
+  })
+
+  it('the empty field\'s placeholder names the catalog default when cli-builtin carries an effective model', async () => {
+    renderCard({
+      harnessModel: () => Promise.resolve(info({
+        effective: 'gpt-5.6-sol', source: 'cli-builtin', choices: ['gpt-5.6-sol'],
+      })),
+    })
+    await openCard()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
+      .toBe('留空 = 跟随 CLI 默认：gpt-5.6-sol')
+  })
+
+  it('the empty field\'s placeholder falls back to the last observed model when nothing names one', async () => {
+    renderCard({
+      harnessModel: () => Promise.resolve(info({ lastObserved: 'gpt-5.5' })),
+    })
+    await openCard()
+    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
+      .toBe('留空 = 跟随 CLI 内置默认（最近：gpt-5.5）')
   })
 })

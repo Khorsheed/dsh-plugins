@@ -1,10 +1,10 @@
 /**
  * The codex model broker: the family's fixed resolution order (override →
- * delegation → settings → scoped config → CLI built-in), the suggestion
- * vocabulary (settings + cliDefault + config-discovered + the probed account
- * catalog + recent, deduped, never a hardcoded catalog), the in-flight
- * switch refusal, and retire-on-switch of a live runtime bound to a
- * different model.
+ * delegation → settings → scoped config → the catalog's isDefault slug → CLI
+ * built-in), the suggestion vocabulary (settings + cliDefault +
+ * config-discovered + the probed account catalog + recent, deduped, never a
+ * hardcoded catalog), the in-flight switch refusal, and retire-on-switch of a
+ * live runtime bound to a different model.
  */
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -19,6 +19,7 @@ function mount(options: {
   settingsModel?: string
   recentModels?: readonly string[]
   catalog?: readonly string[]
+  catalogDefault?: string
   live?: boolean
   overrides?: Readonly<Record<string, string>>
   records?: Readonly<Record<string, { model?: string }>>
@@ -44,6 +45,7 @@ function mount(options: {
     settingsModel: () => options.settingsModel,
     recentModels: () => options.recentModels ?? [],
     catalog: () => options.catalog ?? [],
+    catalogDefault: () => options.catalogDefault,
     homeDir: () => homeDir,
     live: () => options.live ?? false,
     overrides,
@@ -82,6 +84,28 @@ describe('codex model broker resolution order', () => {
     expect(delegated).toMatchObject({ source: 'override', effective: 'override-model', override: 'override-model', delegation: 'delegation-model' })
     const withoutOverride = await broker.modelInfo('child-2', 'delegation-model')
     expect(withoutOverride).toMatchObject({ source: 'delegation', effective: 'delegation-model' })
+  })
+
+  it('the catalog default names the built-in: source cli-builtin WITH an effective model', async () => {
+    const { broker } = mount({ catalogDefault: 'gpt-5.6-sol' })
+    const info = await broker.modelInfo()
+    expect(info).toMatchObject({ source: 'cli-builtin', effective: 'gpt-5.6-sol' })
+    // The catalog layer is NOT the scoped-config layer: cliDefault stays absent.
+    expect(info.cliDefault).toBeUndefined()
+  })
+
+  it('the scoped config outranks the catalog default; settings outrank both', async () => {
+    const scoped = mount({ configToml: 'model = "gpt-5.2"\n', catalogDefault: 'gpt-5.6-sol' })
+    await expect(scoped.broker.modelInfo()).resolves.toMatchObject({ source: 'cli-config', effective: 'gpt-5.2', cliDefault: 'gpt-5.2' })
+    const settings = mount({ settingsModel: 'config-model', catalogDefault: 'gpt-5.6-sol' })
+    await expect(settings.broker.modelInfo()).resolves.toMatchObject({ source: 'settings', effective: 'config-model' })
+  })
+
+  it('a blank catalog default is no layer at all', async () => {
+    const { broker } = mount({ catalogDefault: '   ' })
+    const info = await broker.modelInfo()
+    expect(info.source).toBe('cli-builtin')
+    expect(info.effective).toBeUndefined()
   })
 
   it('choices dedupe settings + cliDefault + config-discovered + recent, in that order', async () => {

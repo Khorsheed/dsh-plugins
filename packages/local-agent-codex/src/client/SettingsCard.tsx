@@ -166,11 +166,19 @@ export function CodexSettingsCard({ useSettings, scope, auth, authT, harnessMode
     }
     setModelMenuOpen(open => !open)
   }
-  // An empty field names the effective default it will follow, when the
-  // broker knows one — the placeholder answers "what does blank mean".
+  // An empty field names the default it will follow, down the chain the
+  // broker reports: the scoped config's model, then the account catalog's
+  // built-in default (source cli-builtin WITH an effective model — the one
+  // case cli-builtin names one), then the last observed model the records
+  // know, and last the generic copy. The placeholder answers "what does
+  // blank mean".
   const modelPlaceholder = modelInfo != null && modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
     ? t('model.placeholder.cli-config', { model: modelInfo.cliDefault })
-    : t('model.placeholder')
+    : modelInfo != null && modelInfo.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
+      ? t('model.placeholder.cli-builtin', { model: modelInfo.effective })
+      : modelInfo != null && modelInfo.lastObserved !== undefined && modelInfo.lastObserved !== ''
+        ? t('model.placeholder.last-observed', { model: modelInfo.lastObserved })
+        : t('model.placeholder')
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -285,11 +293,19 @@ export function CodexSettingsCard({ useSettings, scope, auth, authT, harnessMode
             </div>
             {modelInfo != null && (
               <span className={css.modelEffective}>
+                {/* The same chain the placeholder walks: a cli-builtin source
+                    with an effective model NAMES it (the catalog's isDefault
+                    layer); nothing naming a model falls back to the last
+                    observed one, then to the bare built-in copy. */}
                 {modelInfo.settings !== undefined && modelInfo.settings !== ''
                   ? t('model.effective.set', { model: modelInfo.settings })
                   : modelInfo.cliDefault !== undefined && modelInfo.cliDefault !== ''
                     ? t('model.effective.cli-config', { model: modelInfo.cliDefault })
-                    : t('model.effective.cli-builtin')}
+                    : modelInfo.source === 'cli-builtin' && modelInfo.effective !== undefined && modelInfo.effective !== ''
+                      ? t('model.effective.cli-builtin.named', { model: modelInfo.effective })
+                      : modelInfo.lastObserved !== undefined && modelInfo.lastObserved !== ''
+                        ? t('model.effective.last-observed', { model: modelInfo.lastObserved })
+                        : t('model.effective.cli-builtin')}
               </span>
             )}
             {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}

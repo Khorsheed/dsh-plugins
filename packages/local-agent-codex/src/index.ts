@@ -28,6 +28,16 @@ import { codexCredentialStamp, codexLogout, provisionCodexConfig, readCodexBaseU
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-codex'
 
+/**
+ * Boot delay before the model catalog's eager warmup probe fires. The probe
+ * spawns a `codex app-server` — cheap, but not free — so it waits out the
+ * boot storm instead of competing with it, and the FIRST settings-card open
+ * usually hits a warm cache. A card opened before the timer fires simply
+ * triggers the probe itself (the read path's lazy kick), so the delay never
+ * costs correctness. Kept short: a setting visible within seconds of boot.
+ */
+export const CATALOG_WARMUP_DELAY_MS = 1_500
+
 /** Services required before the harness can register. */
 export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
@@ -145,6 +155,18 @@ export function apply(ctx: Context, config: Config): void {
       spawn: spec => ctx.subprocess.spawn(spec),
       warn: message => ctx.logger.warn(message),
     })
+    // Eager warmup: kick one background probe of the DEFAULT scoped home
+    // shortly after apply completes (never blocking it — read() is the
+    // synchronous cache read whose only side effect is the background
+    // re-probe), so the first settings-card open usually serves the warm
+    // cache instead of reading an empty one and waiting a TTL window. Named
+    // scopes keep the lazy path: their first modelInfo read probes on demand.
+    // The timer is unref'd (it must not hold the host process open) and
+    // cleared on dispose (an unloaded plugin spawns nothing).
+    const warmup = setTimeout(() => {
+      void modelCatalog.read(homeDir)
+    }, CATALOG_WARMUP_DELAY_MS)
+    warmup.unref()
     const liveSwitch = new LiveDriverSwitch(ctx, scope, {
       sandbox,
       model: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
@@ -159,10 +181,14 @@ export function apply(ctx: Context, config: Config): void {
       overrides: memberModelOverrides,
       liveBoundModel: childSessionId => liveSwitch.boundModel(childSessionId),
       retireRuntime: childSessionId => liveSwitch.retireRuntime(childSessionId),
-      // The account catalog probe is LAZY: read() serves the cache and only
-      // the first read (a settings-card/composer modelInfo, never plugin
-      // apply) spawns the one-shot app-server probe in the background.
+      // The account catalog probe is LAZY per read: read() serves the cache
+      // and kicks a background probe when stale; the apply above warms the
+      // default scope's cache so the first card open usually hits it.
       catalog: scopedHome => modelCatalog.read(scopedHome),
+      // The account's built-in default slug (the probe's isDefault entry) —
+      // the layer that names the CLI's compiled default, read off the same
+      // cache.
+      catalogDefault: scopedHome => modelCatalog.readDefault(scopedHome),
     })
     const disposeProvider = ctx.subagents.registerProvider(
       new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
@@ -232,6 +258,7 @@ export function apply(ctx: Context, config: Config): void {
       },
     })
     return () => {
+      clearTimeout(warmup)
       disposeProvider()
       disposeHarness()
       liveSwitch.dispose()

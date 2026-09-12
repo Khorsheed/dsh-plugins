@@ -1,8 +1,9 @@
 /**
  * The codex account model catalog: the one-shot `model/list` probe against a
  * fake app-server (a real node child speaking NDJSON JSON-RPC over stdio),
- * the hidden-entry filter and slug extraction, the per-home TTL cache with
- * one shared in-flight probe, and the degrade-on-any-failure contract.
+ * the hidden-entry filter and slug extraction, the `isDefault` built-in
+ * default capture, the per-home TTL cache with one shared in-flight probe,
+ * and the degrade-on-any-failure contract.
  */
 import { spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
@@ -75,6 +76,34 @@ describe('codex model catalog probe', () => {
     const m = mount()
     const models = await m.catalog.refresh(m.homeDir)
     expect(models).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'only-model-field'])
+  })
+
+  it('captures the account’s built-in default from the first isDefault marker', async () => {
+    const m = mount()
+    // Cold cache: no default is known yet.
+    expect(m.catalog.readDefault(m.homeDir)).toBeUndefined()
+    await m.catalog.refresh(m.homeDir)
+    // The visible gpt-5.6-sol carries the first marker; the hidden legacy
+    // entry's later marker never wins.
+    expect(m.catalog.readDefault(m.homeDir)).toBe('gpt-5.6-sol')
+  })
+
+  it('readDefault shares the cached probe with read — one process serves both', async () => {
+    const m = mount()
+    // Both cold reads kick the same background probe.
+    expect(m.catalog.read(m.homeDir)).toEqual([])
+    expect(m.catalog.readDefault(m.homeDir)).toBeUndefined()
+    await m.catalog.refresh(m.homeDir)
+    expect(m.spawns).toHaveLength(1)
+    expect(m.catalog.read(m.homeDir)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'only-model-field'])
+    expect(m.catalog.readDefault(m.homeDir)).toBe('gpt-5.6-sol')
+    expect(m.spawns).toHaveLength(1)
+  })
+
+  it('degrades to no default on a malformed answer', async () => {
+    const m = mount({ mode: 'garbage' })
+    await m.catalog.refresh(m.homeDir)
+    expect(m.catalog.readDefault(m.homeDir)).toBeUndefined()
   })
 
   it('serves read() from the cache and spawns no second process within the TTL', async () => {

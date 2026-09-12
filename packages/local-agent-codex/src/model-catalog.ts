@@ -8,7 +8,11 @@
  * capability) suffices, and the answer is `result.data[]` of
  * `{ id, model, displayName, hidden, supportedReasoningEfforts, ... }` where
  * `id` and `model` both carry the slug the CLI binds via `-m` / `-c model=…`
- * (the probe reads `id`, falling back to `model`).
+ * (the probe reads `id`, falling back to `model`). The entry the account has
+ * as its built-in default carries `isDefault: true` (verified live:
+ * gpt-5.6-sol) — the ONE side channel that names the CLI's compiled default,
+ * which is why the probe captures it alongside the slugs and the broker can
+ * report source `cli-builtin` WITH an effective model.
  *
  * The probe reuses the live driver's spawn discipline — the same
  * `codex app-server --stdio` argv, the same `delegationEnv({ CODEX_HOME })`
@@ -59,27 +63,36 @@ export interface CodexModelCatalogDeps {
 }
 
 /**
- * Extract the runnable slugs from a `model/list` result: entries with
- * `hidden === true` are dropped, each remaining entry contributes its `id`
- * (the schema-stable slug field; `model`, which mirrors it on 0.144.0, is the
- * fallback), and the list is deduped order-preserving. Anything that is not
- * the expected shape yields an empty list.
+ * Extract the runnable slugs and the account's built-in default from a
+ * `model/list` result: entries with `hidden === true` are dropped from the
+ * slug list, each remaining entry contributes its `id` (the schema-stable
+ * slug field; `model`, which mirrors it on 0.144.0, is the fallback), and the
+ * list is deduped order-preserving. The entry carrying `isDefault === true`
+ * names the account's compiled default; the marker is honored even on a
+ * hidden entry (hidden means unlisted, not unrunnable) and the first marker
+ * wins. Anything that is not the expected shape yields an empty list and no
+ * default.
  */
-function catalogSlugs(result: unknown): string[] {
+function catalogEntries(result: unknown): { models: string[]; defaultModel?: string } {
   const data = (result as { data?: unknown } | null)?.data
-  if (!Array.isArray(data)) return []
+  if (!Array.isArray(data)) return { models: [] }
   const seen = new Set<string>()
-  const slugs: string[] = []
+  const models: string[] = []
+  let defaultModel: string | undefined
   for (const entry of data) {
-    const record = entry as { id?: unknown; model?: unknown; hidden?: unknown } | null
-    if (record === null || record.hidden === true) continue
+    const record = entry as { id?: unknown; model?: unknown; hidden?: unknown; isDefault?: unknown } | null
+    if (record === null) continue
     const raw = typeof record.id === 'string' ? record.id : typeof record.model === 'string' ? record.model : undefined
     const slug = raw?.trim()
+    if (record.isDefault === true && defaultModel === undefined && slug !== undefined && slug !== '') {
+      defaultModel = slug
+    }
+    if (record.hidden === true) continue
     if (slug === undefined || slug === '' || seen.has(slug)) continue
     seen.add(slug)
-    slugs.push(slug)
+    models.push(slug)
   }
-  return slugs
+  return defaultModel === undefined ? { models } : { models, defaultModel }
 }
 
 /**
@@ -95,7 +108,7 @@ export class CodexModelCatalog {
   private readonly timeoutMs: number
   private readonly ttlMs: number
   private readonly now: () => number
-  private readonly entries = new Map<string, { at: number; models: readonly string[] }>()
+  private readonly entries = new Map<string, { at: number; models: readonly string[]; defaultModel?: string }>()
   private readonly inflight = new Map<string, Promise<readonly string[]>>()
 
   constructor(private readonly deps: CodexModelCatalogDeps) {
@@ -106,11 +119,25 @@ export class CodexModelCatalog {
 
   /** The cached slugs for the scoped home; re-probes in the background when stale. */
   read(homeDir: string): readonly string[] {
+    return this.cached(homeDir)?.models ?? []
+  }
+
+  /**
+   * The cached built-in default slug (`isDefault: true` on the last completed
+   * probe), or undefined when no probe named one. Same cache, same background
+   * re-probe as {@link read} — the two reads share one in-flight probe.
+   */
+  readDefault(homeDir: string): string | undefined {
+    return this.cached(homeDir)?.defaultModel
+  }
+
+  /** The fresh-enough cache entry for the home, kicking a background re-probe when absent or stale. */
+  private cached(homeDir: string): { at: number; models: readonly string[]; defaultModel?: string } | undefined {
     const cached = this.entries.get(homeDir)
     if (cached === undefined || this.now() - cached.at >= this.ttlMs) {
       void this.refresh(homeDir).catch(() => {})
     }
-    return cached?.models ?? []
+    return cached
   }
 
   /**
@@ -122,9 +149,9 @@ export class CodexModelCatalog {
     const pending = this.inflight.get(homeDir)
     if (pending !== undefined) return pending
     const probe = this.probe(homeDir).then(
-      models => {
-        this.entries.set(homeDir, { at: this.now(), models })
-        return models
+      result => {
+        this.entries.set(homeDir, { at: this.now(), ...result })
+        return result.models
       },
       () => {
         // probe() never throws by contract; this guard keeps the cache write
@@ -147,7 +174,7 @@ export class CodexModelCatalog {
    * terminate). The overall timeout kills the process on expiry. Every
    * failure path resolves to an empty list.
    */
-  private async probe(homeDir: string): Promise<readonly string[]> {
+  private async probe(homeDir: string): Promise<{ models: string[]; defaultModel?: string }> {
     const spec: SubprocessSpawnSpec = {
       argv: ['codex', 'app-server', '--stdio'],
       cwd: homeDir,
@@ -160,7 +187,7 @@ export class CodexModelCatalog {
       child = this.deps.spawn(spec)
     } catch (error) {
       this.deps.warn?.(`local-agent-codex: the model catalog probe failed to spawn: ${error instanceof Error ? error.message : String(error)}`)
-      return []
+      return { models: [] }
     }
     const decoder = new StringDecoder('utf8')
     let buffer = ''
@@ -229,7 +256,7 @@ export class CodexModelCatalog {
             capabilities: { experimentalApi: false, requestAttestation: false },
           })
           child.stdin?.write(JSON.stringify({ jsonrpc: '2.0', method: 'initialized' }) + '\n')
-          return catalogSlugs(await request('model/list', {}))
+          return catalogEntries(await request('model/list', {}))
         })(),
         new Promise<never>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('the model catalog probe timed out')), this.timeoutMs)
@@ -238,7 +265,7 @@ export class CodexModelCatalog {
       ])
     } catch (error) {
       this.deps.warn?.(`local-agent-codex: the model catalog probe degraded: ${error instanceof Error ? error.message : String(error)}`)
-      return []
+      return { models: [] }
     } finally {
       await teardown()
     }

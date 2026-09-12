@@ -2,8 +2,10 @@
  * A fake `codex app-server --stdio` for the model-catalog specs: NDJSON
  * JSON-RPC over stdio. Answers `initialize`, ignores the `initialized`
  * notification, and answers `model/list` with a fixture carrying a hidden
- * entry, a duplicate, a `model`-only entry, and a non-string id. Behavior
- * switches on FAKE_CODEX_MODE:
+ * entry, a duplicate, a `model`-only entry, a non-string id, and TWO
+ * `isDefault` markers (the visible gpt-5.6-sol first, the hidden legacy
+ * second — the probe takes the first marker). Behavior switches on
+ * FAKE_CODEX_MODE:
  *   (unset)   — the well-formed fixture below;
  *   "garbage" — a malformed wire line, then a wrong-shaped model/list result;
  *   "silent"  — answers initialize, then never answers model/list.
@@ -11,9 +13,9 @@
  */
 
 const MODELS = [
-  { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', description: 'fixture', hidden: false, supportedReasoningEfforts: [] },
+  { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', description: 'fixture', hidden: false, supportedReasoningEfforts: [], isDefault: true },
   { id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', hidden: false },
-  { id: 'gpt-5-legacy', model: 'gpt-5-legacy', displayName: 'legacy', hidden: true },
+  { id: 'gpt-5-legacy', model: 'gpt-5-legacy', displayName: 'legacy', hidden: true, isDefault: true },
   { id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5 dup', hidden: false },
   { model: 'only-model-field', hidden: false },
   { id: 42, hidden: false },

@@ -10,12 +10,18 @@
  *
  * Resolution order is the family's fixed one (first match wins): override →
  * the delegation's recorded model → the plugin-config `model` (settings) →
- * the scoped config.toml's own `model` (cliDefault) → the CLI's built-in
- * default, which names nothing. The pickable vocabulary is what the instance
- * actually knows — settings + cliDefault + the identifiers the scoped config
- * itself carries (profiles) + the app-server `model/list` account catalog
- * (probed, cached, best-effort — see model-catalog.ts) + the card's
- * recent-model memory — never a hardcoded catalog.
+ * the scoped config.toml's own `model` (cliDefault) → the account catalog's
+ * `isDefault` slug (catalogDefault) → the CLI's built-in default, which names
+ * nothing. The catalogDefault layer is the ONE case source `cli-builtin`
+ * carries an `effective` model: the app-server probe marks the account's
+ * compiled default with `isDefault`, so "follow the CLI default" finally has
+ * a name. The `cliDefault` FIELD stays scoped-config-only — the two layers
+ * must stay distinguishable (the file is user-editable, the catalog answer is
+ * the account's). The pickable vocabulary is what the instance actually
+ * knows — settings + cliDefault + the identifiers the scoped config itself
+ * carries (profiles) + the app-server `model/list` account catalog (probed,
+ * cached, best-effort — see model-catalog.ts) + the card's recent-model
+ * memory — never a hardcoded catalog.
  * @module @khorsheed/dsh-local-agent-codex/model-broker
  */
 
@@ -38,6 +44,14 @@ export interface CodexModelBrokerDeps {
    * the recent-model memory in the choice vocabulary.
    */
   readonly catalog: (homeDir: string) => readonly string[]
+  /**
+   * The catalog cache's SYNC read of the account's built-in default slug (the
+   * `isDefault` entry of the same probe {@link catalog} serves): the layer
+   * between the scoped config's `model` and the CLI's unnamed default. When
+   * this layer supplies the effective model the source stays `cli-builtin` —
+   * it names the CLI's OWN default, not a configured one.
+   */
+  readonly catalogDefault: (homeDir: string) => string | undefined
   /** The default scope's scoped home; config discovery reads it live. */
   readonly homeDir: () => string
   /** Whether the live driver is on (the member's rounds bind resident runtimes). */
@@ -108,7 +122,13 @@ export class CodexModelBroker implements LocalAgentModelBroker {
     ])
     const override = childSessionId === undefined ? undefined : this.deps.overrides.get(childSessionId)
     const delegation = delegationModel?.trim() === '' ? undefined : delegationModel
-    const effective = override ?? delegation ?? settings ?? cliDefault
+    const catalogDefaultRaw = this.deps.catalogDefault(homeDir)?.trim()
+    const catalogDefault = catalogDefaultRaw === undefined || catalogDefaultRaw === '' ? undefined : catalogDefaultRaw
+    const effective = override ?? delegation ?? settings ?? cliDefault ?? catalogDefault
+    // The catalogDefault layer keeps source `cli-builtin`: it names the CLI's
+    // OWN compiled default (the account's `isDefault` slug), the one case
+    // cli-builtin names a model. `cliDefault` stays scoped-config-only, so
+    // the two layers stay distinguishable downstream.
     const source = override !== undefined ? 'override'
       : delegation !== undefined ? 'delegation'
         : settings !== undefined ? 'settings'

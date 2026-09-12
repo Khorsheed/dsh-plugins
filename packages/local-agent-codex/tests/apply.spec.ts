@@ -1,10 +1,11 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { LocalAgentHarness, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
-import { apply } from '../src/index.ts'
+import { apply, CATALOG_WARMUP_DELAY_MS } from '../src/index.ts'
 import { CodexLiveDriver } from '../src/live-driver.ts'
 import type { CodexLiveSettings } from '../src/live-switch.ts'
 
@@ -42,6 +43,8 @@ interface Mount {
   home: string
   registered: LocalAgentHarness[]
   settings: ReturnType<typeof fakeSettings>
+  /** The managed-spawn specs the catalog warmup attempted (spawn itself fails here). */
+  spawns: SubprocessSpawnSpec[]
   /** The resolver the provider was constructed with (private face). */
   resolveLive: (childSessionId: string) => CodexLiveDriver | undefined
   /** The model resolver the provider was constructed with (private face). */
@@ -70,7 +73,13 @@ function mount(initial: Partial<CodexLiveSettings> = {}, config: Record<string, 
       resolveModel = (provider as { model?: Mount['resolveModel'] }).model ?? (() => undefined)
     },
   })
-  ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in apply test') } })
+  const spawns: SubprocessSpawnSpec[] = []
+  ctx.provide('subprocess', {
+    spawn: (spec: SubprocessSpawnSpec) => {
+      spawns.push(spec)
+      throw new Error('not spawned in apply test')
+    },
+  })
   ctx.provide('settings', settings.service)
   apply(ctx, config as never)
   return {
@@ -78,6 +87,7 @@ function mount(initial: Partial<CodexLiveSettings> = {}, config: Record<string, 
     home,
     registered,
     settings,
+    spawns,
     resolveLive: id => resolveLive(id),
     resolveModel: () => resolveModel(),
   }
@@ -224,6 +234,29 @@ describe('local-agent-codex apply', () => {
     const snapshot = await harness.effectiveSettings!(home)
     expect(snapshot).toMatchObject({ drive: 'exec', sandbox: 'workspace-write', reasoningEffort: 'high' })
     expect('model' in snapshot).toBe(false)
+  })
+})
+
+describe('local-agent-codex model catalog warmup', () => {
+  it('kicks exactly one background probe of the default scoped home after boot, with no modelInfo call', async () => {
+    vi.useFakeTimers()
+    try {
+      const { registered, spawns } = mount()
+      // Apply itself spawns nothing: the warmup is a post-boot timer, and the
+      // broker's read path (the only other probe trigger) was never called.
+      expect(registered[0]?.modelBroker).toBeDefined()
+      expect(spawns).toHaveLength(0)
+
+      await vi.advanceTimersByTimeAsync(CATALOG_WARMUP_DELAY_MS)
+      expect(spawns).toHaveLength(1)
+      expect(spawns[0]?.argv).toEqual(['codex', 'app-server', '--stdio'])
+
+      // One warmup per boot: idling past further timers probes nothing again.
+      await vi.advanceTimersByTimeAsync(CATALOG_WARMUP_DELAY_MS * 4)
+      expect(spawns).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
