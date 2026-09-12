@@ -176,6 +176,54 @@ export function copyTypertPackageSources(
   }
 }
 
+/**
+ * Copy the BUILT declaration files of registered packages OUTSIDE the
+ * selected set into the overlay. A selected package may hold a TYPE-only
+ * import of a family sibling (e.g. room reading the local-agent facade's
+ * types); in scoped generation the sibling's source is deliberately absent
+ * (its in-flight breakage must not fail this batch), so the import resolves
+ * from the sibling's built `lib/types` instead. A sibling without a built
+ * `lib/types` is skipped — an actual import of it fails with the plain
+ * TS2307, which then means "build the sibling first".
+ * @param selected - the packages whose sources ARE overlaid.
+ * @param sourceRoot - this repo's root.
+ * @param targetRoot - the overlay root.
+ */
+export function copyTypertSiblingTypes(
+  selected: readonly TypertPackage[],
+  sourceRoot: string,
+  targetRoot: string,
+): void {
+  for (const pkg of TYPERT_PACKAGES) {
+    if (selected.includes(pkg)) continue
+    const types = join(sourceRoot, pkg.dir, 'lib', 'types')
+    if (!existsSync(join(types, 'index.d.ts'))) continue
+    cpSync(types, join(targetRoot, pkg.dir, 'lib', 'types'), { recursive: true })
+  }
+}
+
+/**
+ * The overlay tsconfig `paths` entries resolving unselected siblings to their
+ * copied `lib/types` (see `copyTypertSiblingTypes`). Selected packages keep
+ * their source-plane mapping and are never listed here.
+ * @param selected - the packages whose sources ARE overlaid.
+ * @param sourceRoot - this repo's root.
+ * @returns `paths` entries for unselected siblings with a built `lib/types`.
+ */
+export function typertSiblingTypePaths(
+  selected: readonly TypertPackage[],
+  sourceRoot: string,
+): Record<string, string[]> {
+  const paths: Record<string, string[]> = {}
+  for (const pkg of TYPERT_PACKAGES) {
+    if (selected.includes(pkg)) continue
+    if (!existsSync(join(sourceRoot, pkg.dir, 'lib', 'types', 'index.d.ts'))) continue
+    paths[pkg.name] = [`./${pkg.dir}/lib/types/index.d.ts`]
+    paths[`${pkg.name}/*`] = [`./${pkg.dir}/lib/types/*`]
+  }
+  return paths
+}
+
 /** Rebuild the overlay from the harness checkout, selected plugin packages overlaid. */
 async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
   const ts = await import(pathToFileURL(join(harness, 'node_modules/typescript/lib/typescript.js')).href) as JsoncParser
@@ -192,10 +240,13 @@ async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
     }
   }
   copyTypertPackageSources(packages, repoRoot, overlay)
+  copyTypertSiblingTypes(packages, repoRoot, overlay)
   // The harness tsconfig.base.json maps only @deepseek-ai/*; overlaid packages
   // must also resolve each other's @khorsheed/* specifiers (cross-package
   // TYPE-only imports, e.g. room reading the local-agent facade's types).
-  // The overlay is scratch, so patching the copied base is safe.
+  // Selected packages resolve from SOURCE; unselected siblings resolve from
+  // their built lib/types, so a sibling's in-flight source state cannot fail
+  // a scoped batch. The overlay is scratch, so patching the copied base is safe.
   const basePath = join(overlay, 'tsconfig.base.json')
   const baseParsed = ts.parseConfigFileTextToJson(basePath, readFileSync(basePath, 'utf8'))
   if (baseParsed.error !== undefined) {
@@ -207,6 +258,7 @@ async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
     paths[pkg.name] = [`./${pkg.dir}/src/index.ts`]
     paths[`${pkg.name}/*`] = [`./${pkg.dir}/src/*`]
   }
+  Object.assign(paths, typertSiblingTypePaths(packages, repoRoot))
   // Plugins may import a harness package's source files directly through the
   // package's `./src/*` export (e.g. room registering the persistence
   // vocabulary via '@deepseek-ai/dsh-session/src/known-event-types.ts' so the
