@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { gunzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 // Optional standalone deployment example, intentionally separate from Cordis.
 import { createIngress } from '../examples/https-ingress.mjs'
@@ -23,17 +24,40 @@ async function setup(handler: http.RequestListener, safariStreamCompat = false) 
   return { port, target }
 }
 function request(port: number, extra: http.RequestOptions = {}) {
-  return new Promise<{ code: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+  return new Promise<{ code: number; headers: http.IncomingHttpHeaders; body: string; bytes: Buffer }>((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port, path: '/', headers, ...extra }, response => {
-      let body = ''
-      response.on('data', chunk => { body += chunk })
-      response.on('end', () => resolve({ code: response.statusCode!, headers: response.headers, body }))
+      const chunks: Buffer[] = []
+      response.on('data', chunk => { chunks.push(chunk) })
+      response.on('end', () => { const bytes = Buffer.concat(chunks); resolve({ code: response.statusCode!, headers: response.headers, body: bytes.toString(), bytes }) })
     })
     req.on('error', reject); req.end()
   })
 }
 describe('optional HTTPS tunnel ingress', () => {
   const safariHeaders = { ...headers, 'user-agent': 'iPhone AppleWebKit/605.1.15 Mobile/15E148' }
+  it('compresses both adapted and untouched bundles without changing decoded script bytes', async () => {
+    for (const source of [validator, '/* unchanged bundle */']) {
+      const body = source + '\n/*' + 'large UI source '.repeat(4000) + '*/'
+      const { port } = await setup((_req, res) => { res.writeHead(200, { 'content-type': 'text/javascript', vary: 'Origin', etag: 'old', digest: 'old' }); res.end(body) }, true)
+      const result = await request(port, { path: '/plugins/', headers: { ...safariHeaders, 'accept-encoding': 'br, gzip;q=0.8' } })
+      expect(result.headers['content-encoding']).toBe('gzip')
+      expect(result.bytes.length).toBeLessThan(Buffer.byteLength(body) / 4)
+      expect(Number(result.headers['content-length'])).toBe(result.bytes.length)
+      expect(gunzipSync(result.bytes).toString()).toBe(body.replace('`function ${name}() { [native code] }`', 'Function.prototype.toString.call(globalThis[name])'))
+      expect(result.headers.vary).toBe('Origin, Accept-Encoding')
+      expect(result.headers.etag).toBeUndefined()
+      expect(result.headers.digest).toBeUndefined()
+    }
+  })
+  it('honors gzip exclusions and preserves identity when gzip is not accepted', async () => {
+    const body = '/*' + 'unchanged source '.repeat(200) + '*/'
+    const { port } = await setup((_req, res) => { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(body) }, true)
+    for (const encoding of ['', 'br', 'gzip;q=0, *;q=1', '*;q=0', 'gzip;q=invalid']) {
+      const result = await request(port, { path: '/plugins/', headers: { ...safariHeaders, 'accept-encoding': encoding } })
+      expect(result.headers['content-encoding']).toBeUndefined()
+      expect(result.body).toBe(body)
+    }
+  })
   it('adapts authenticated Safari JS and removes stale byte validators and cache conditions', async () => {
     const { port } = await setup((req, res) => {
       expect(req.headers.cookie).toBe('login=fixture')

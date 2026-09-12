@@ -1,5 +1,6 @@
 /** Temporary delivery-only adapter for the 0.1.5-rc.1 Safari JSON validator defect. */
 import { createHash } from 'node:crypto'
+import { gzip } from 'node:zlib'
 
 export const MAX_COMPAT_BYTES = 16 * 1024 * 1024
 const KNOWN_FUNCTION = '32fbc1fc74b60872560e2eac834fa77d3cd3df3ce4a842827df0d2e1fafe7fcd'
@@ -33,7 +34,17 @@ export function adaptSafariBundle(source) {
 }
 
 /** Buffer only bounded, successful JS assets; all application streams bypass this path. */
-export function serveSafariBundle(response, res, headers, report = () => {}) {
+function acceptsGzip(value = '') {
+  const encodings = new Map(String(value).split(',').map(part => {
+    const [name, ...parameters] = part.trim().toLowerCase().split(';')
+    const q = parameters.map(p => p.trim()).find(p => p.startsWith('q='))
+    const quality = q === undefined ? 1 : Number(q.slice(2))
+    return [name, Number.isFinite(quality) && quality > 0 && quality <= 1]
+  }))
+  return encodings.get('gzip') ?? encodings.get('*') ?? false
+}
+
+export function serveSafariBundle(response, res, headers, report = () => {}, acceptEncoding = '') {
   const encoding = response.headers['content-encoding']
   if (response.statusCode !== 200
     || !/^(?:text|application)\/javascript\b/i.test(String(response.headers['content-type'] ?? ''))
@@ -60,13 +71,28 @@ export function serveSafariBundle(response, res, headers, report = () => {}) {
     const original = Buffer.concat(chunks)
     const result = adaptSafariBundle(original.toString('utf8'))
     const body = result.patched ? Buffer.from(result.source) : original
-    const outgoing = { ...headers, 'x-dsh-mobile-compat': `safari-json-v1; ${result.status}; count=${result.patched}` }
-    if (result.patched) {
-      for (const name of ['etag', 'content-md5', 'digest', 'content-digest', 'repr-digest', 'transfer-encoding', 'accept-ranges']) delete outgoing[name]
-      outgoing['content-length'] = String(body.length)
+    const send = (wire, compressed) => {
+      if (res.destroyed) return
+      const outgoing = { ...headers, 'x-dsh-mobile-compat': `safari-json-v1; ${result.status}; count=${result.patched}` }
+      const vary = String(outgoing.vary ?? '').split(',').map(v => v.trim()).filter(Boolean)
+      if (!vary.some(v => v === '*' || v.toLowerCase() === 'accept-encoding')) vary.push('Accept-Encoding')
+      outgoing.vary = vary.join(', ')
+      if (result.patched || compressed) {
+        for (const name of ['etag', 'content-md5', 'digest', 'content-digest', 'repr-digest', 'transfer-encoding', 'accept-ranges']) delete outgoing[name]
+        outgoing['content-length'] = String(wire.length)
+      }
+      if (compressed) outgoing['content-encoding'] = 'gzip'
+      report({ status: result.status, patched: result.patched })
+      res.writeHead(200, outgoing)
+      res.end(wire)
     }
-    report({ status: result.status, patched: result.patched })
-    res.writeHead(200, outgoing)
-    res.end(body)
+    // Identity is needed for inspection, not for the slow phone/tunnel hop.
+    // Compress untouched bundles too; the main UI bundle can exceed 12 MB.
+    if (body.length >= 1024 && acceptsGzip(acceptEncoding)) {
+      gzip(body, { level: 6 }, (error, zipped) => {
+        const smaller = !error && zipped.length < body.length
+        send(smaller ? zipped : body, smaller)
+      })
+    } else send(body, false)
   })
 }

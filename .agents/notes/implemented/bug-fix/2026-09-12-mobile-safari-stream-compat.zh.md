@@ -12,7 +12,7 @@ iPhone 会话在重连后停止发布正文事件，统计却持续变化。宿�
 
 组合 bundle 中的已知副本全部适配；存在变化的候选时整次适配原样透传，已修复代码不处理。生产代码不引入广泛替换、全局 monkey patch、Session 私有字段访问或第二套会话协议。ingress 默认不启用兼容，应从已安装 tarball 运行，避免使用可变开发检出。
 
-只缓冲成功且 identity 编码的 JavaScript，限制为 16 MiB。向上游请求 identity 编码，抑制脚本的范围/条件请求；修改后重算内容长度并去掉过期校验头。响应保持 private/no-store。认证失败、应用数据流与 WebSocket 保持原有透传。响应头和有界纯元数据日志提供兼容状态，不记录 token 或会话内容。
+只缓冲成功且 identity 编码的 JavaScript，限制为 16 MiB。向上游请求 identity 编码，抑制脚本的范围/条件请求；修改后重算内容长度并去掉过期校验头。响应保持 private/no-store。上线验收发现未修改的 UI bundle 达 12 MB，在公网隧道中加载缓慢：检查后对接受 gzip 的响应压缩输出（包括未修改 bundle），正确协商编码、重算字节长度、补 Vary 并去掉旧表示校验头。不接受 gzip 时保持 identity；认证和应用流不进入压缩路径。认证失败、应用数据流与 WebSocket 保持原有透传。响应头和有界纯元数据日志提供兼容状态，不记录 token 或会话内容。
 
 ## Alternatives considered
 

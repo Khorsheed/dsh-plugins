@@ -25,7 +25,7 @@ export function createIngress({ origin, targetPort, safariStreamCompat = false, 
       const headers = { ...response.headers, 'referrer-policy': 'no-referrer', 'cache-control': 'private, no-store' }
       if (headers['set-cookie']) headers['set-cookie'] = headers['set-cookie'].map(cookie => /;\s*Secure(?:;|$)/i.test(cookie) ? cookie : `${cookie}; Secure`)
       response.on('error', () => { res.destroy() })
-      if (compat) { serveSafariBundle(response, res, headers, onCompatibility); return }
+      if (compat) { serveSafariBundle(response, res, headers, onCompatibility, req.headers['accept-encoding']); return }
       res.writeHead(response.statusCode ?? 502, headers)
       response.pipe(res)
     })

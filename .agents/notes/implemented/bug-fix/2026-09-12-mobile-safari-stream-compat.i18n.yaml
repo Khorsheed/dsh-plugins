@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-12-mobile-safari-stream-compat.md
-.agents/notes/implemented/bug-fix/2026-09-12-mobile-safari-stream-compat.md: 595a2cff1f92f36e8b27468ce39c76a5c9389db5
-.agents/notes/implemented/bug-fix/2026-09-12-mobile-safari-stream-compat.zh.md: b04e3abb9a82472c978ac52664d27acd02ad695a
+.agents/notes/implemented/bug-fix/2026-09-12-mobile-safari-stream-compat.md: b515f36855faf5665bf21387a431bd871301f139
+.agents/notes/implemented/bug-fix/2026-09-12-mobile-safari-stream-compat.zh.md: 27afdaca222c6ce6f0b3c1df0400d204a4ea389c

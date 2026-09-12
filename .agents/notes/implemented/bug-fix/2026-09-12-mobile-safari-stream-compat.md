@@ -12,7 +12,7 @@ The user authorized a temporary compatibility layer owned by mobile. Keep the Ho
 
 Known copies in combined bundles are all adapted. A changed candidate makes the adaptation pass through unchanged; already-fixed code is a no-op. No broad search/replace, runtime global monkey patch, Session-private access or separate conversation protocol enters production. The ingress is opt-in and should run from its installed tarball, not a mutable checkout.
 
-Only successful identity-encoded JavaScript is buffered, with a 16 MiB bound. Request identity encoding and suppress range/conditional asset requests; correct changed content lengths and remove stale validators. Keep private/no-store responses. Auth failures, application streams and WebSockets retain their existing forwarding. Compatibility status is observable through a response header and bounded metadata-only logs, never through tokens or conversation contents.
+Only successful identity-encoded JavaScript is buffered, with a 16 MiB bound. Request identity encoding and suppress range/conditional asset requests; correct changed content lengths and remove stale validators. Keep private/no-store responses. Delivery verification found a 12 MB unchanged UI bundle slow on the public tunnel: gzip accepted responses after inspection, including unchanged bundles, with negotiated encoding, corrected byte lengths, Vary and removed stale representation validators. Gzip refusal keeps identity; auth and application streams bypass compression. Auth failures, application streams and WebSockets retain their existing forwarding. Compatibility status is observable through a response header and bounded metadata-only logs, never through tokens or conversation contents.
 
 ## Alternatives considered
 

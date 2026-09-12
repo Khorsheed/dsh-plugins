@@ -96,7 +96,7 @@ Room 与 Local Agent 保留各自输入框。Room 排队面板使用官方会话
 
 这是默认关闭的交付层适配，不修改宿主源码：只检查 WebKit 对 `/plugins/` JavaScript 的 GET 请求。完整已知校验函数的 SHA-256 指纹决定是否替换；未知代码和已经修好的代码保持原样。补丁使用当前引擎的原生构造函数格式比较，不修改 `Function.prototype.toString`。认证、RPC 请求体、WebSocket 帧和宿主执行保持不变。直接连接局域网或使用其他 ingress 不会获得此兼容层。
 
-响应保持 private/no-store；修改后的脚本重算字节长度并移除旧 ETag/digest。超过 16 MiB、非 JS、认证失败、上游忽略 identity 编码要求而返回压缩内容的响应原样透传。升级宿主时检查 `x-dsh-mobile-compat` 与 ingress 不含请求内容的兼容日志，不自动扩大指纹范围。上游修复通过真实 WebKit 前后台和重连验收后移除开关。正式部署从已安装 tarball 的 `examples/` 启动 ingress，避免使用开发检出。
+有界 JavaScript 完成检查后，向支持 gzip 的客户端压缩输出，包括未修改的 bundle，避免多兆字节的未压缩脚本拖慢手机隧道加载。响应保持 private/no-store；修改后的脚本重算字节长度并移除旧 ETag/digest。超过 16 MiB、非 JS、认证失败、上游忽略 identity 编码要求而返回压缩内容的响应原样透传。升级宿主时检查 `x-dsh-mobile-compat` 与 ingress 不含请求内容的兼容日志，不自动扩大指纹范围。上游修复通过真实 WebKit 前后台和重连验收后移除开关。正式部署从已安装 tarball 的 `examples/` 启动 ingress，避免使用开发检出。
 
 ## Compatibility
 
