@@ -20,7 +20,7 @@
 | Public conversation | Pass | Existing large conversation opened, rendering 28,819 normalized characters. Reload rendered 28,820 characters with the same normalized tail hash. No page errors, window scroll offset 0, editor unfocused. |
 | Installed Safari compatibility | Pass | Public JS response reported `safari-json-v1; patched; count=2`. Patched response and large UI response used gzip (416,103 and 4,200,814 bytes respectively). No local asset routing was used for this public check. |
 | Native installation | Pass | Signed iOS app with the AppIcon asset catalog installed successfully through devicectl. Native builds and 26 HostAddress checks were recorded in the preceding acceptance. |
-| Physical launch | Pending unlock | iOS rejected launch because the device was locked. An unlock request was sent; the authenticated retry link remained only in the helper process memory. |
+| Physical launch | Pass | After the user unlocked the device, devicectl launched the installed app with the new public entry successfully (exit 0, locked false). The authenticated retry link remained only in helper process memory. This confirms process launch, not visual or live-stream acceptance. |
 
 Guard artifact fingerprints:
 
