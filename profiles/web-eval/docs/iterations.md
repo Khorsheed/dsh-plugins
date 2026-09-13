@@ -339,16 +339,22 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 ### I5 · agent 配实验 + 界面
 
+**UI 先行（2026-09-13 定）**：I4 的机制齐了但环境活（T33e / T33f）还在修，而目标里差得最多的是界面。决定 I5 提前、与 I4 收尾并行：先把界面与流程按走查稿定稿（[ui-spec.md](ui-spec.md)），再按切片建，每片用真实数据（题库 i1-walk、已跑完的 run、pilot 的 bundle）在宿主路径联调；容器版的端到端等 T33e。走查稿里定下的形状：评测模式两个 tab（题集、实验室），都是列表 + 新建 + 详情；missions tab 隐藏，mission 保留为账本与释放闸，词留给以后的定时任务；eval 预设摘掉 mission-tool，eval-tool 自己补按格子读的工具；题集的槽位按通行词汇（题干 / 验收标准 / 参考答案 / 评估标准 / 检查脚本 / 其他文件）标「谁看得到」，界面不做题目正文编辑器，新建即骨架加导入；实验状态叫草稿 / 待批准 / 运行中 / 评估中 / 已完成；矩阵放在实验详情里，由人选哪个因子当列。前端结构照 mission 客户端：`conversation.view` slot、React、同一个 Typert Remote 读写、按伴生工具行自隐；eval 今天没有 client 半边，T35a 先搭骨架。切片顺序：T46 与 T48 先（小），T35a → T36 → T35b → T38 → T37 → T34 → T39；T47 与 T35 并行；T45 模式化排在 I5 末尾。
+
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
-| T34 | 代码 | `eval-planning` skill：起草 condition 与 plan，跑 validate，向人提交 | T14 T31 | |
-| T35 | 代码 | eval client 半：实验台 tab | T14 | |
-| T36 | 代码 | eval client 半：计划审阅（批准是人的动作） | T34 | |
-| T37 | 代码 | eval client 半：判官台（human-final 唯一入口） | T9 | |
-| T38 | 代码 | eval client 半：报告视图（Pareto、配对表、导出走既有闸） | T10 | |
-| T39 | 运维 | 端到端：一句话到报告，记录人介入的次数与位置 | T34–T38 | |
+| T46 | 代码 + profile | eval 预设摘掉 `mission-tool` 行（任务 tab 随之自隐）；eval-tool 加 `eval_cells`（按 run 读格子投影，收编原四个 mission 读工具的用途） | 无 | agent 工具清单少四个多一个；eval 预设会话看不到任务 tab |
+| T48 | 文档 | 按 [ui-spec.md](ui-spec.md) 改写 README「最终 UI」与「工具按域开放」；修十处口径不一致（清单见 §三 T48） | 无 | 双语 README + sidecar；题库两处修正 |
+| T35a | 代码 | eval client 半骨架 + 实验室 tab 列表与详情壳：tsconfig / tsdown / package 的 client 出口，`conversation.view` 注册（order 40，自隐按 eval-tool 行），Remote 会话态读面 `runs / run`，状态推导，六个子页路由（先只有概览） | T46 | 实验室 tab 在 3171 上出现，列表能列草稿与 run |
+| T36 | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 第 3、4、5 步在界面上完成 |
+| T35b | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 第 6 步在界面上完成；missions tab 的三个动作有了新家 |
+| T38 | 代码 | 实验室 › 报告页：读 bundle 出四条不变量、配对、效率、一致性；finalize 与导出按钮 | T35b | 第 7 步在界面上完成 |
+| T37 | 代码 | 实验室 › 判官台：盲评队列、去指纹产物、llm-draft 与 human-final 并排；human-final 唯一写入口 | T38 | 第 8 步在界面上完成 |
+| T47 | 代码 | 题集 tab 改造：列表页（槽位与层的对应、canary、validate、用于的实验）、详情的槽位标签与筛选、「选手将看到」、可判性、作答记录投影、题目骨架 / 导入题集 / 导入题目 | 无（与 T35 并行） | 题集 tab 按 ui-spec §四 |
+| T34 | 代码 | `eval-planning` skill + `eval_plan_draft` 工具：把「写 plan / condition + validate」并成一个动作，草稿落实验室列表 | T36 | 第 2 步一句话起草 |
+| T39 | 运维 | 端到端走查：一句话到报告，记录人介入的次数与位置；先宿主路径，T33e 后再跑容器版拿 I4 的配对报告 | T34–T38 T47 | 一份走查记录 + 缺口清单 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -1890,6 +1896,101 @@ packages/local-agent-dsh/src/provision.ts（子 profile 与 bundle 链）、cont
 
 ## 回报
 第一步：方案文档路径与推荐。第二步：分支与 commit、Agent Note、gate、两个顺序的真机原文。
+```
+
+### I5 的文案
+
+### T46 · eval 预设摘掉 mission-tool；eval-tool 加 eval_cells（可发）
+
+```text
+# 任务 T46：eval 预设不再挂 mission-tool；eval-tool 补一个按格子读的工具
+
+## 背景
+界面规格（profiles/web-eval/docs/ui-spec.md）定了 R6：评测模式下 mission 这个词不出现，agent 看进度只用 eval-tool。今天 eval 预设挂着 mission-tool: read（四个只读工具），任务 tab 也因这一行显示。摘掉这一行，任务 tab 按 M4'③ 的规则自隐（packages/mission/src/client/preset-visibility.ts 判的是预设里有没有 @khorsheed/dsh-mission-tool 行）；agent 少四个工具，用 eval-tool 新加的 eval_cells 顶上。
+
+## 先读
+profiles/web-eval/presets/eval/agent.cordis.yml 末段三条伴生行；packages/eval-tool/src（三个读工具的注册与 tools: all | none 开关）；packages/eval/src/tool.ts 与 service.ts（eval_run_status 读的是什么、runStatus 的形状）；packages/mission/src/client/preset-visibility.ts；M4'③ 的 Agent Note；ui-spec §六。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-cells，分支 feat/eval-cells-tool；改 profiles/web-eval（预设 + README 双语 + sidecar + CHANGELOG）、packages/eval-tool、packages/eval（服务面加一个读投影）。不改 mission。
+
+## 已定决定
+- 预设删掉 mission-tool 那一行；datasets-tool: authoring 与 eval-tool: all 不动。
+- eval 服务面加 cells(runId)：按 run 列格子投影——missionId、labels（task / condition / rep）、桶、当前阶段、attempt 数、时长、refs（resource / fingerprint）、检查点名、注解各命名空间计数、childSessionId（有就给）。数据经 hosts.get('mission') 的结构面算，前端与工具都不碰 mission。
+- eval-tool 加 eval_cells 工具（只读，参数 runId，可选 bucket / task / condition 过滤），描述里说明它替代了 mission 的四个读工具；tools: all 现在是四个读工具。
+- README「工具按域开放」表的 mission 行改成「eval 预设不挂；账本与释放闸仍由 mission 提供」；CHANGELOG 记一条。
+
+## 完成判据
+eval / eval-tool 测试全绿，gate 绿；本机 eval 预设会话：工具卡里没有 mission_*、有 eval_cells，任务 tab 不出现；standard 预设会话不受影响（任务 tab 仍在）。真机 3171 按 T33a 的方式重装后同样两条原文。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；两个预设会话的工具清单与 tab 环原文。
+```
+
+### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（可发）
+
+```text
+# 任务 T48：README「最终 UI」按 ui-spec 改写；修走查时对出来的十处不一致
+
+## 背景
+走查稿（profiles/web-eval/docs/ui-spec.md）定了新的界面形状，README「最终 UI」一节还是七个面的老口径；两次扫描还对出十处文档与代码不一致，走查前要修完，不然走查稿和代码各说各的。
+
+## 分支
+dsh-plugins：从 main 开 worktree ../dsh-plugins-wt-docs-ui-spec，分支 docs/web-eval-ui-spec；改 profiles/web-eval/README 双语 + sidecar、docs/architecture.md、packages/eval/README 双语 + sidecar、packages/mission/README 双语 + sidecar。题库：从 i1-walk 开 worktree，分支 i5-docs，改两处。
+
+## 要改的
+1. README「最终 UI」：换成两个 tab（题集、实验室）各列表 + 新建 + 详情，实验详情六个子页，missions 隐藏；ASCII 示意图换成实验室详情的矩阵页；「七个面，四个已有」那张表按 ui-spec §四 §五 重写，状态列照旧用 ✅ 🔶 ⬜。
+2. README「工具按域开放」表：mission 行改「eval 预设不挂 mission-tool；账本与释放闸仍由 mission 提供」（与 T46 同步，先改文档）；eval 行加 eval_cells。
+3. README 理想架构图：「判定探针 · 宿主侧」改成在单元内（I3 起）。
+4. docs/architecture.md：local-agent 的 agent 工具列不再写 subagent_<harness>，与 README 的三行 tools: none 一致。
+5. packages/eval/README 开头：「四个上游服务」改为列全四个并注明 lab 只在 plan 带 unit 段时才要；容器路径编号重复的两个「7」修正。
+6. packages/mission/README 第 7 行 M1 清单：十二个模型工具已搬到伴生行，改口径。
+7. README「依赖插件」：「23 个成员，四组」改为实际成员数与三组（数一遍 package.json）。
+8. 题库 items/P0-placeholder/item.json：scoring.definedBy 与 verify.checklist 的路径改成实际文件位置（answers/rubric.yml、checks/checklist.yml）。
+9. 题库 CONFORMANCE.md：协议版本改 v1-rev11，三条「前端预期表现」改成已落地的陈述。
+10. 题库 dataset.json：加 canary（作者自造的全局唯一串，按协议 §2），并把它逐字放进每个可见层文本文件；validate 0 error。
+
+## 约束
+只改文档与题库那三个文件；不改代码；README 双语同步、sidecar 重录；题库共享检出不 checkout，走 worktree。
+
+## 完成判据
+gate 绿（docs-only 8 步）；题库 validate 0 error 且不再报 CANARY_MISSING；README「最终 UI」与 ui-spec 逐条对得上。
+
+## 回报
+两条分支与 commit；十条各一句「改在哪」；validate 原文。
+```
+
+### T35a · eval client 半骨架 + 实验室 tab 的列表与详情壳（可发，依赖 T46）
+
+```text
+# 任务 T35a：eval 的 client 半边从零搭，实验室 tab 先有列表与详情壳
+
+## 背景
+eval 今天是纯宿主侧包（tsdown 的 Client pass 不产出，package.json 没有 ./client 出口）。界面规格（profiles/web-eval/docs/ui-spec.md §五 §八）要一个「实验室」tab：列表 + 新建 + 详情六个子页。本任务只做骨架、列表、详情壳与概览页，后面的子页（计划审阅、矩阵、格子、报告、判官台）各自成任务。
+
+## 先读
+packages/mission/src/client/{index.ts, contract.ts, store.ts, locales.ts, MissionsView.tsx, preset-visibility.ts}（tab 注册、四份合成 props、transient store、自隐门）；packages/mission/{tsconfig.json, tsconfig.client.json, tsdown.config.ts, package.json}（client 出口与构建）；build/tsdown.client.ts 的 clientBundle；packages/mission/src/remote.ts（带 agent 参数的 Remote verb 写法）；packages/eval/src/remote.ts（现有四个不带 agent 的 verb，不动）；packages/eval/src/service.ts（runStatus / conditions / report）；packages/mission/tests/apply.client.spec.ts 与 MissionsView.client.spec.tsx（测试写法）；ui-spec §五（列表列、状态定义）与 §八。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-client，分支 feat/eval-client-lab；只改 packages/eval（README 双语 + sidecar）。不改 mission / datasets / lab。
+
+## 已定决定
+- 脚手架照 mission：src/client/{index.ts, contract.ts, store.ts, locales.ts, LabView.tsx, LabView.module.css, preset-visibility.ts}；tsconfig 拆 host / client 两份；tsdown 换 clientBundle；package.json 加 ./client 出口与 dsh.client 块；cordis 行不用改（同一行的 dsh.client 声明驱动）。remote.ts 用了装饰器，client 配置里复核 experimentalDecorators 与 verbatimModuleSyntax。
+- tab：conversation.view slot，id lab，order 40，locale 词典 zh「实验室」/ en「Experiments」；注册包在 ctx.slots.inject('conversation.view', …) 的 arm 里；自隐照 mission 的 preset-visibility，判据换成预设里有没有 @khorsheed/dsh-eval-tool 行，四个 fail-open 分支照抄。
+- Remote：在 EvalRemoteService（namespace dshEval）上新增带 agent 参数的读 verb：runs(agent, request) 与 run(agent, { runId })；客户端 $mount 后经 ctx.get 回读，不进 inject。现有 runStart / runStatus / runOutput / runCancel 一个字不动（CI 门）。
+- runs 的投影：一行一个实验。run 来自 mission 的 run 列表里 run.meta 带 evalVersion 的那些（经 hosts.get('mission') 结构面）；草稿来自会话绑定的题库工作树里 plans/*.json 中还没有对应 run 的（经 hosts.get('datasets') 取绑定与工作树路径，与 service.conditions 同一取法）。列：名称、题库快照、条件数（+ 判官）、题数、rep、因子（用 conditions diff 的结果）、状态、进度、开始时间。
+- 状态推导写成一个纯函数并单测：草稿 = 有 plan 文件、validate 未过或未跑；待批准 = validate ok 且无 run；运行中 = run 的 job 未结束或桶里 active > 0；评估中 = 选手格全部 ≥ judged 且 run 未 finalize；已完成 = run 已 finalize；被拒 = 就绪检查拒绝（job 输出里的 refused）；已取消 = job 取消。边界情况回报里点名，别猜。
+- 详情壳：六个子页的路由与标题（概览 · 计划审阅 · 条件 · 矩阵 · 格子 · 报告 · 判官台，按 ui-spec §五），本任务只填概览页（快照、矩阵形状、因子、判官、环境、就绪检查原文、run.meta 摘要）；其余子页放占位说明「归 T36 / T35b / T38 / T37」。
+- 「新建实验」按钮本任务只占位（归 T36）。
+
+## 测试
+tests/apply.client.spec.ts（首行 @vitest-environment jsdom；真 cordis Context；三个门态：预设有 eval-tool 行则注册、没有则归零、无 pluginInventory 则 fail-open；teardown 归零）；tests/LabView.client.spec.tsx（列表渲染、状态 chip、点行进详情、概览页字段）；状态推导函数的单测覆盖七个状态。
+
+## 完成判据
+eval 测试全绿，gate 绿；本机 eval 预设会话的 tab 环出现「实验室」，standard 预设不出现；列表能列出本机的草稿与至少一个已跑完的 run（用 pilot-a-round1 或本机任一 run），概览页字段有值；真机 3171 重装后同样。
+
+## 回报
+分支名与 commit；Agent Note 路径（feature）；gate 输出；tab 环截图或原文；列表与概览的原文；状态推导的边界情况清单。
 ```
 
 ## 四、验收规程
