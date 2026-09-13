@@ -32,6 +32,7 @@ Restart the host afterwards. Uninstalling does **not** delete the `灵感画布/
 - Source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 - **A web-surface plugin**: a headless profile has no browser consumer and this package contributes nothing there.
 - The host half registers no model-facing tool and injects nothing into the prompt (the v1 contract is copy-the-path-by-hand).
+- **Writes are fenced by the session that started the gesture.** All three write paths (new / save / archive) resolve the calling session's sandbox policy first, so the fence hangs on that session's own workspace rather than on the host process's directory. A read-only session therefore gets an explicit refusal (`that location is not writable`) instead of a silent write.
 
 ## Known Limitations
 

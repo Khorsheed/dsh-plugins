@@ -6,8 +6,14 @@
  * every receipt carries the resolved absolute and workspace-relative
  * spellings back).
  *
+ * The MUTATING methods take the calling `agent` first (the wire's lookup
+ * convention): the pad writes are fenced by the caller's own file policy and
+ * workspace, which only the session knows. Reads take no agent — a fence is a
+ * write fence, so a pad stays browsable for a session that is only being read.
+ *
  * @module @khorsheed/dsh-canvas
  */
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasService } from './service.ts'
@@ -57,22 +63,37 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
     return this.store.read(request)
   }
 
-  /** Create one item; an existing title is refused rather than overwritten. */
+  /**
+   * Create one item; an existing title is refused rather than overwritten.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - workspace root, kind, title, and initial body.
+   * @returns the new item's receipt, or the failure code.
+   */
   @Remote('create')
-  create(request: CanvasCreateRequest): Promise<CanvasWriteResult> {
-    return this.store.create(request)
+  create(agent: Agent, request: CanvasCreateRequest): Promise<CanvasWriteResult> {
+    return this.store.create(request, agent.session)
   }
 
-  /** Overwrite one item under the version guard from the last read. */
+  /**
+   * Overwrite one item under the version guard from the last read.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - workspace root, name, body, and the version last read.
+   * @returns the write receipt, or the failure code.
+   */
   @Remote('write')
-  write(request: CanvasWriteRequest): Promise<CanvasWriteResult> {
-    return this.store.write(request)
+  write(agent: Agent, request: CanvasWriteRequest): Promise<CanvasWriteResult> {
+    return this.store.write(request, agent.session)
   }
 
-  /** Hide one item from the list, or restore it — the file is never touched. */
+  /**
+   * Hide one item from the list, or restore it — the file is never touched.
+   * @param agent - the calling session's agent; its session fences the index write.
+   * @param request - workspace root, name, and the target archived state.
+   * @returns the receipt, or the failure code.
+   */
   @Remote('setArchived')
-  setArchived(request: CanvasArchiveRequest): Promise<CanvasArchiveResult> {
-    return this.store.setArchived(request)
+  setArchived(agent: Agent, request: CanvasArchiveRequest): Promise<CanvasArchiveResult> {
+    return this.store.setArchived(request, agent.session)
   }
 }
 

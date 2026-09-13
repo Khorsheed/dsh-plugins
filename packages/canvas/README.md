@@ -32,6 +32,7 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 - **web 面插件**：headless profile 没有浏览器消费者，本插件在那里不贡献任何东西。
 - 宿主半边不注册模型可见工具、不向提示词注入任何内容（v1 的约定是「自己复制路径」）。
+- **写入按「发起这次点击的会话」围栏**。三个写接口（新建/保存/归档）都先取调用会话的沙箱策略再写：围栏挂在会话自己的工作区上，不是宿主的进程目录。所以会话是只读模式时，画布会明确拒绝写入（`这个位置不可写`），而不是悄悄写进去。
 
 ## Known Limitations
 

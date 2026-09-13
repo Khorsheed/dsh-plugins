@@ -30,18 +30,22 @@ import type {} from './locales.ts'
 /** The canvas Remote namespace, as mounted by this plugin. */
 export type CanvasRemote = TypertRemoteNamespaceMap['canvas']
 
-/** Business face injected into the canvas view. */
+/**
+ * Business face injected into the canvas view. The mutating calls name their
+ * session first because the host resolves that session's file policy and
+ * workspace boundary onto the write; the reads need neither.
+ */
 export interface CanvasViewInjected {
   /** List one workspace's pad (active items + archive set). */
   list: (request: CanvasListRequest) => Promise<RemoteResult<CanvasListResult>>
   /** Read one item's text with the freshness token a later write must present. */
   read: (request: CanvasReadRequest) => Promise<RemoteResult<CanvasReadOutcome>>
   /** Create one item; an existing title is refused rather than overwritten. */
-  create: (request: CanvasCreateRequest) => Promise<RemoteResult<CanvasWriteResult>>
+  create: (sessionId: SessionId, request: CanvasCreateRequest) => Promise<RemoteResult<CanvasWriteResult>>
   /** Overwrite one item under the version guard from the last read. */
-  write: (request: CanvasWriteRequest) => Promise<RemoteResult<CanvasWriteResult>>
+  write: (sessionId: SessionId, request: CanvasWriteRequest) => Promise<RemoteResult<CanvasWriteResult>>
   /** Hide one item from the list, or restore it — the file is never touched. */
-  setArchived: (request: CanvasArchiveRequest) => Promise<RemoteResult<CanvasArchiveResult>>
+  setArchived: (sessionId: SessionId, request: CanvasArchiveRequest) => Promise<RemoteResult<CanvasArchiveResult>>
 }
 
 /** Full props of the canvas view. */

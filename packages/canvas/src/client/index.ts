@@ -66,9 +66,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const browserFace = (): CanvasViewInjected => ({
     list: request => requireRemote().list(request),
     read: request => requireRemote().read(request),
-    create: request => requireRemote().create(request),
-    write: request => requireRemote().write(request),
-    setArchived: request => requireRemote().setArchived(request),
+    // The mutating calls hand the session to the host: it resolves that
+    // session's file policy and workspace onto the write.
+    create: (sessionId, request) => requireRemote().create(sessionId, request),
+    write: (sessionId, request) => requireRemote().write(sessionId, request),
+    setArchived: (sessionId, request) => requireRemote().setArchived(sessionId, request),
   })
 
   ctx.effect(() => ctx.sidebarRightTabs.register(canvasDefinition(t)), 'canvas: tab type')

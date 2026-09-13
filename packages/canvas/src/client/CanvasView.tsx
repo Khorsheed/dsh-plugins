@@ -196,7 +196,7 @@ export function CanvasView({
   const flushSave = useCallback(async () => {
     const editor = editorRef.current
     const current = openRef.current
-    if (editor === null || current === null || workspaceRoot === undefined) return
+    if (editor === null || current === null || workspaceRoot === undefined || sessionId === undefined) return
     // An IME is mid-word: defer, never write half a candidate.
     if (composingRef.current) return
     const content = editor.value
@@ -205,7 +205,7 @@ export function CanvasView({
       return
     }
     setSaveState('saving')
-    const value = await run(() => write({
+    const value = await run(() => write(sessionId, {
       dir: workspaceRoot, name: current.name, content, version: current.version,
     }))
     if (value === null) {
@@ -220,7 +220,7 @@ export function CanvasView({
     const next: OpenItem = { ...current, saved: content, version: value.version }
     rememberOpen(next)
     setSaveState('saved')
-  }, [workspaceRoot, write, run, rememberOpen, showToast, t, errorText])
+  }, [workspaceRoot, sessionId, write, run, rememberOpen, showToast, t, errorText])
 
   const scheduleSave = useCallback(() => {
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
@@ -323,8 +323,8 @@ export function CanvasView({
   }, [showToast, t])
 
   const setArchivedState = useCallback(async (item: CanvasListItem, archived: boolean) => {
-    if (workspaceRoot === undefined) return
-    const value = await run(() => setArchived({ dir: workspaceRoot, name: item.name, archived }))
+    if (workspaceRoot === undefined || sessionId === undefined) return
+    const value = await run(() => setArchived(sessionId, { dir: workspaceRoot, name: item.name, archived }))
     if (value === null) return
     if (!value.ok) {
       showToast(errorText(value.error))
@@ -336,17 +336,17 @@ export function CanvasView({
       setPreview('')
     }
     setRev(current => current + 1)
-  }, [workspaceRoot, setArchived, run, showToast, t, errorText, rememberOpen])
+  }, [workspaceRoot, sessionId, setArchived, run, showToast, t, errorText, rememberOpen])
 
   const submitNew = useCallback(async (event: FormEvent) => {
     event.preventDefault()
-    if (workspaceRoot === undefined || newKind === null) return
+    if (workspaceRoot === undefined || sessionId === undefined || newKind === null) return
     const title = newTitle.trim()
     if (title.length === 0) {
       showToast(t('toast.needTitle'))
       return
     }
-    const value = await run(() => create({ dir: workspaceRoot, kind: newKind, title, content: '' }))
+    const value = await run(() => create(sessionId, { dir: workspaceRoot, kind: newKind, title, content: '' }))
     if (value === null) return
     if (!value.ok) {
       showToast(errorText(value.error))
@@ -359,7 +359,7 @@ export function CanvasView({
     await loadItem(value.name)
     setRev(current => current + 1)
     window.setTimeout(() => { editorRef.current?.focus() }, 0)
-  }, [workspaceRoot, newKind, newTitle, create, run, showToast, t, errorText, rememberOpen, loadItem])
+  }, [workspaceRoot, sessionId, newKind, newTitle, create, run, showToast, t, errorText, rememberOpen, loadItem])
 
   /* --------------------------------------------------------------- rendering */
 

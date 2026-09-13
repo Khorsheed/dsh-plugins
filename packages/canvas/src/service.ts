@@ -4,7 +4,11 @@
  * browser half never touches the filesystem itself.
  *
  * Every path goes through the mounted `ctx.fs`, so the deployment's sandbox
- * mode fences each write and the observation policy sees every mutation. The
+ * mode fences each write and the observation policy sees every mutation. A
+ * mutation also stamps the CALLING SESSION's resolved policy onto the write:
+ * a fenced backend given no per-call policy falls back to the deployment's own
+ * workspace root (`process.cwd()` of the host process), which is not the
+ * caller's workspace, so `workspace-write` would deny every pad file. The
  * service never deletes: the archive set lives in the pad's own `.index.json`
  * (the same shape the official workspace registry uses to hide an archived
  * session) and leaves the file — the pad's items are the operator's documents
@@ -15,6 +19,9 @@
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { FsError, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
+import type { Session } from '@deepseek-ai/dsh-session'
 import {
   CANVAS_KINDS, EMPTY_INDEX, INDEX_FILE_NAME, PAD_DIR_NAME,
   kindDirectoryName, kindOfItemName, normalizeIndex, orderItemNames,
@@ -53,16 +60,40 @@ export function canvasErrorOf(error: unknown): CanvasError {
 
 /**
  * The inspiration pad's service core. Stateless apart from the context it
- * borrows for `ctx.fs`.
+ * borrows for `ctx.fs` and the policy home it resolves each caller's fence
+ * through.
  */
 export class CanvasService {
   static inject = ['fs']
 
+  /**
+   * The per-session policy home, captured only when the mounted filesystem
+   * actually confines: the bare local backend has no policy to resolve, and
+   * every write there is unfenced by construction. The read is lazy, so a
+   * composition that mounts the confining backend without the policy home
+   * (which no graded deployment does) still loads and simply writes unfenced
+   * by policy — the backend's own fallback then decides.
+   */
+  private readonly sandboxPolicy: SandboxPolicyService | undefined
+
   /** @param ctx - host context carrying the mounted filesystem. */
-  constructor(private readonly ctx: Context) {}
+  constructor(private readonly ctx: Context) {
+    this.sandboxPolicy = ctx.fs.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy')
+  }
 
   private get fs(): Context['fs'] {
     return this.ctx.fs
+  }
+
+  /**
+   * The policy one mutation must carry: the caller's own session resolves the
+   * mode and the workspace boundary (the pad lives inside that workspace), and
+   * `undefined` means the mounted backend does not confine.
+   * @param session - the session that owns the gesture.
+   * @returns the policy to stamp onto the call.
+   */
+  private policyOf(session: Session): SandboxExecutionPolicy | undefined {
+    return this.sandboxPolicy?.resolve({ session })
   }
 
   /** The pad directory for one workspace root. */
@@ -97,21 +128,30 @@ export class CanvasService {
     }
   }
 
-  /** Write the pad index; `writeText` creates the pad directory on the way. */
-  private async writeIndex(dir: string, index: CanvasIndex): Promise<void> {
+  /**
+   * Write the pad index; `writeText` creates the pad directory on the way.
+   * @param dir - workspace root.
+   * @param index - the index to persist.
+   * @param policy - the fence this caller resolves to, already resolved once.
+   */
+  private async writeIndex(dir: string, index: CanvasIndex, policy: SandboxExecutionPolicy | undefined): Promise<void> {
     const target = await this.fs.resolve(INDEX_FILE_NAME, { cwd: this.padRoot(dir) })
-    await this.fs.writeText(target, `${JSON.stringify(index, null, 2)}\n`)
+    // `expected` and `signal` are positional: the policy is the fifth argument.
+    await this.fs.writeText(target, `${JSON.stringify(index, null, 2)}\n`, undefined, undefined, policy)
   }
 
   /**
    * Record a freshly created name at the head of the display order. Editing an
    * item already in the order changes nothing, so an edit never reorders the
    * pad — and unarchiving restores the position the index already holds.
+   * @param dir - workspace root.
+   * @param name - the pad-relative item name just created.
+   * @param policy - the fence this caller resolves to, already resolved once.
    */
-  private async remember(dir: string, name: string): Promise<void> {
+  private async remember(dir: string, name: string, policy: SandboxExecutionPolicy | undefined): Promise<void> {
     const index = await this.readIndex(dir)
     if (index.order.includes(name)) return
-    await this.writeIndex(dir, { order: [name, ...index.order], archivedIds: index.archivedIds })
+    await this.writeIndex(dir, { order: [name, ...index.order], archivedIds: index.archivedIds }, policy)
   }
 
   /**
@@ -186,22 +226,24 @@ export class CanvasService {
    * rather than silently overwritten — that is the whole of the name-collision
    * rule.
    * @param request - workspace root, kind, title, and initial body.
+   * @param session - the session that owns the gesture; supplies the fence.
    * @returns the new item's receipt, or the failure code.
    */
-  async create(request: CanvasCreateRequest): Promise<CanvasWriteResult> {
+  async create(request: CanvasCreateRequest, session: Session): Promise<CanvasWriteResult> {
     const title = sanitizeItemTitle(request.title)
     if (title === undefined) return { ok: false, error: 'invalid-name' }
-    return this.writeGuarded(request.dir, itemNameOf(request.kind, title), request.content, undefined)
+    return this.writeGuarded(request.dir, itemNameOf(request.kind, title), request.content, undefined, session)
   }
 
   /**
    * Overwrite one item under a version guard. A stale version is refused —
    * never overwritten unconditionally.
    * @param request - workspace root, name, body, and the version last read.
+   * @param session - the session that owns the gesture; supplies the fence.
    * @returns the write receipt, or the failure code.
    */
-  async write(request: CanvasWriteRequest): Promise<CanvasWriteResult> {
-    return this.writeGuarded(request.dir, request.name, request.content, request.version)
+  async write(request: CanvasWriteRequest, session: Session): Promise<CanvasWriteResult> {
+    return this.writeGuarded(request.dir, request.name, request.content, request.version, session)
   }
 
   /** The one place a pad file is written; `version` absent means create. */
@@ -210,19 +252,21 @@ export class CanvasService {
     name: string,
     content: string,
     version: string | undefined,
+    session: Session,
   ): Promise<CanvasWriteResult> {
     const target = await this.itemTarget(dir, name)
     if (target === undefined) return { ok: false, error: 'invalid-name' }
+    const policy = this.policyOf(session)
     try {
       // The token crossed the wire as a string; re-branding it is the only way
       // to hand it back to `writeText`, and it still came from a real stat.
       const expected = version === undefined
         ? { kind: 'createIfAbsent' as const }
         : { kind: 'replaceIfVersion' as const, version: FsVersion(version) }
-      const outcome = await this.fs.writeText(target, content, expected)
+      const outcome = await this.fs.writeText(target, content, expected, undefined, policy)
       if (outcome.operation === 'create') {
         try {
-          await this.remember(dir, name)
+          await this.remember(dir, name, policy)
         } catch {
           // The body landed; a failed index write only costs display order.
         }
@@ -246,10 +290,12 @@ export class CanvasService {
    * is the official session-archive semantics ("hide from grouping surfaces"),
    * applied to a pad item.
    * @param request - workspace root, name, and the target archived state.
+   * @param session - the session that owns the gesture; supplies the fence.
    * @returns the receipt, or the failure code.
    */
-  async setArchived(request: CanvasArchiveRequest): Promise<CanvasArchiveResult> {
+  async setArchived(request: CanvasArchiveRequest, session: Session): Promise<CanvasArchiveResult> {
     if (kindOfItemName(request.name) === undefined) return { ok: false, error: 'invalid-name' }
+    const policy = this.policyOf(session)
     try {
       const index = await this.readIndex(request.dir)
       const already = index.archivedIds.includes(request.name)
@@ -260,7 +306,7 @@ export class CanvasService {
       const order = index.order.includes(request.name)
         ? index.order
         : [request.name, ...index.order]
-      await this.writeIndex(request.dir, { order, archivedIds })
+      await this.writeIndex(request.dir, { order, archivedIds }, policy)
       return { ok: true }
     } catch (error) {
       return { ok: false, error: canvasErrorOf(error) }

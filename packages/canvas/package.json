@@ -55,12 +55,16 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-sandbox-policy": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-util-workspace-path": "^0.1.0-rc.6",
     "react": "^18.2.0"
@@ -90,6 +94,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
@@ -98,6 +103,8 @@
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-fs": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox-policy": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-util-workspace-path": "^0.1.5-rc.1",
@@ -139,7 +146,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "灵感画布 is a page-type right-Sidebar tab (0.1.5's sidebar.right.pane.tab + sidebarRightTabs registry, the local-files precedent) — hosts before 0.1.5 have no right Sidebar seat, so minHost moved up with it. It is a web surface: a headless profile has no browser consumer and the plugin contributes nothing there. The host half writes through the mounted `ctx.fs`, so the deployment's sandbox mode fences every write; it registers no model-facing tool and injects nothing into the prompt (the v1 contract is copy-the-path-by-hand).",
+      "notes": "灵感画布 is a page-type right-Sidebar tab (0.1.5's sidebar.right.pane.tab + sidebarRightTabs registry, the local-files precedent) — hosts before 0.1.5 have no right Sidebar seat, so minHost moved up with it. It is a web surface: a headless profile has no browser consumer and the plugin contributes nothing there. The host half writes through the mounted `ctx.fs` with the CALLING SESSION's resolved sandbox policy stamped on every mutation (`ctx.sandboxPolicy` + the wire's agent-first convention, on 0.1.5 the shape dsh-datasets already uses), so the fence hangs on that session's own workspace; a deployment whose policy home is missing degrades to the backend's own fallback rather than failing to load. It registers no model-facing tool and injects nothing into the prompt (the v1 contract is copy-the-path-by-hand).",
       "verifiedHost": "0.1.5-rc.1"
     }
   }
