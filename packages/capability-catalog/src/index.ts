@@ -32,9 +32,11 @@ import type {
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
+  CatalogPresetScopeStatus,
 } from './types.ts'
 import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogPickDirectory } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
+import { ScopedSkillDelivery, scopedSkillsRoot, type ScopedDeliveryRegistry } from './scoped-delivery.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
 import { McpStore } from './mcpStore.ts'
 import type { PersistedMcpState } from './mcpStore.ts'
@@ -67,11 +69,23 @@ export type {
   CatalogAddSkillResult,
   CatalogDeleteSkillResult,
   CatalogCredentialSetRequest,
+  CatalogPresetScopeStatus,
+  CatalogScopedSkillRow,
+  CatalogScopedPresetRow,
 } from './types.ts'
 
 export { resolveSkillNameFromContent } from './import.ts'
 export { resolvePresetScope } from './preset-scope.ts'
 export type { PresetRosterSlice, ResolvedPresetScope } from './preset-scope.ts'
+export {
+  ScopedSkillDelivery, scopedSkillsRoot, scanManagedSkills, managedSkillFrom,
+  parsePresetScopeFrontmatter, defaultSkillRoots, detectConflicts,
+  SCOPED_PROVIDER_NAME, MANAGED_SKILL_RANK,
+} from './scoped-delivery.ts'
+export type {
+  ManagedSkill, ScopedDeliveryDeps, ScopedDeliveryRegistry,
+  ScopedDeliveryStatus, ScopedPresetStatus, ScopedSkillStatus,
+} from './scoped-delivery.ts'
 
 // The capability fingerprint: the canonical form, its digest, and the tag.
 // Exported from the package root so a host reader can hash a snapshot it
@@ -128,6 +142,10 @@ export class CapabilityCatalogService extends TypertRemoteService {
   private mcpToolsRegistry: McpToolRegistry | undefined
   /** Registered MCP tool disposers, keyed by model-facing public name. */
   private readonly mcpToolDisposers = new Map<string, () => void>()
+  /** Preset-scoped delivery of the plugin's own managed skill root. */
+  private scoped: ScopedSkillDelivery | undefined
+  /** The workspace the catalog was last asked about, for project-root conflict checks. */
+  private observedWorkdir: string | undefined
 
   constructor(ctx: Context) {
     super(ctx, 'capabilityCatalog')
@@ -190,6 +208,44 @@ export class CapabilityCatalogService extends TypertRemoteService {
     // tell the model the configured credential env mappings so it uses the
     // DSH_<KEY> alias without the skill being modified.
     installSkillEnvHint(ctx, () => this.catalogScope())
+    // Preset-scoped delivery: the plugin's own managed root holds skills whose
+    // frontmatter names the presets they belong to, and each of those presets
+    // gets a provider registered into ITS scope layer. Deferred via inject so
+    // the registry is present, and owned by an effect so the delivery scopes
+    // (and the filesystem watcher) unwind with the plugin.
+    ctx.inject(['skills'], (skillsCtx) => {
+      const delivery = new ScopedSkillDelivery(skillsCtx, {
+        dshHome: () => this.dshHome(),
+        roster: () => this.agentPresets(),
+        registry: () => this.ctx.get?.('skills') as ScopedDeliveryRegistry | undefined,
+        workdir: () => this.observedWorkdir,
+        log: (message) => this.ctx.logger.warn(message),
+      })
+      this.scoped = delivery
+      skillsCtx.effect(() => {
+        void delivery.start().catch((error: unknown) => {
+          this.ctx.logger.warn(`capability-catalog: preset-scoped delivery failed to start: ${error instanceof Error ? error.message : String(error)}`)
+        })
+        return () => { void delivery.dispose() }
+      }, 'capability-catalog: preset-scoped skills')
+    })
+  }
+
+  /** The preset-scoped delivery's current state, for the settings surface. */
+  @Remote('presetScopeStatus')
+  async presetScopeStatus(): Promise<CatalogPresetScopeStatus> {
+    const status = this.scoped?.status()
+    return status === undefined
+      ? {
+          enabled: false,
+          reason: 'preset-scoped delivery is not composed',
+          root: scopedSkillsRoot(this.dshHome()),
+          watching: false,
+          skills: [],
+          presets: [],
+          customRootsUnverifiable: true,
+        }
+      : status
   }
 
   /** Record tools that appeared after the apply-time baseline (reads the live
@@ -316,6 +372,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
    */
   private async collect(presetId: string | undefined, workdir: string | undefined, fingerprint: boolean): Promise<CapabilityCatalogSnapshot> {
     const { registry } = resolveServicesHelper(this.ctx)
+    if (workdir !== undefined && workdir !== '') this.observedWorkdir = workdir
     const { scope, preset } = await resolvePresetScope(this.agentPresets(), presetId, fingerprint)
     if (registry === undefined) {
       const empty: CapabilityCatalogSnapshot = {
