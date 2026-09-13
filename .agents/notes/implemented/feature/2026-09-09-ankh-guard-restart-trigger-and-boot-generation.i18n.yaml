@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-09-ankh-guard-restart-trigger-and-boot-generation.md
-.agents/notes/implemented/feature/2026-09-09-ankh-guard-restart-trigger-and-boot-generation.md: 212dff5b9f965f9a2ba8e108fb1ec81a5140620c
-.agents/notes/implemented/feature/2026-09-09-ankh-guard-restart-trigger-and-boot-generation.zh.md: 055b002dae90a792778885c8bfaffec582045d70
+.agents/notes/implemented/feature/2026-09-09-ankh-guard-restart-trigger-and-boot-generation.md: 4ebadb02bc4ae19da47d742e13e17bb2914f8a8c
+.agents/notes/implemented/feature/2026-09-09-ankh-guard-restart-trigger-and-boot-generation.zh.md: 5c8495cb7dccc49edfe369ffe07116331168ce9a

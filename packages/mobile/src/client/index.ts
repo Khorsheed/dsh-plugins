@@ -51,7 +51,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     let remove: (() => void) | undefined
     const sync = () => {
-      if (presentation.getSnapshot().active) remove ??= installForegroundRecovery(window, () => connection.reconnect())
+      if (presentation.getSnapshot().active) remove ??= installForegroundRecovery(window, () => connection.reconnect(), () => connection.state.getSnapshot())
       else { remove?.(); remove = undefined }
     }
     sync()

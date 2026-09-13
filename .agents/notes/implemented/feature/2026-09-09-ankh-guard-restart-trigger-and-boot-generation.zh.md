@@ -16,6 +16,8 @@
 
 **boot 代际浏览器通道。** 普通重启不写 cutover receipt,handoff handler 因此增加第二条 readiness 信号:服务进程自己的 pid + start token 就是 boot id,挂在每一个 200 poll 响应上。标签页把上次见到的 id 存进 sessionStorage,作为 `knownBootId` 随 poll 带上;id 陈旧且无 active cutover → 回 `ready/reload`——它认识的那个进程已经没了。一次性语义成立,因为标签页在 reload 前就从 ready 响应里学到了继任者的 id;不需要 capability 注册与 ack(那是为 cutover 的双监听器窗口和 token 颁发准备的)。active cutover 永远优先:cutover 期间旧标签页的 known id 本就陈旧,代际分支若应答会与 receipt 协议的 pacing 赛跑。进程身份不可用(ps 被拒)时降级为代际前的流程,与旧客户端逐字一致。客户端另在持续失败约 5 秒后挂中性「连接已断开」遮罩——按时长而非重试次数,因为指数退避已把重试拉到秒级,按次数会在瞬时抖动时闪屏;文案不承诺自动恢复(裸退出可能永不回来)。受监督的模式切换继续走 receipt handoff;代际通道覆盖无监督重启与崩溃救回——那正是静默 WS 重连拿不到新 bundle 的场景。
 
+持续失败遮罩部分由[回前台恢复](../bug-fix/2026-09-13-mobile-foreground-connection-recovery.zh.md)细化：普通前台失败现使用带重试按钮的轻量提示，后台挂起时间不计入失败时长。重启与 boot 代际协议仍保持上述设计。
+
 ## 放弃的替代方案
 
 **把 caller 侧闸门序列抽成共享模块,CLI 与服务共同 import。** 放弃:restart/reconfigure 两臂刚被三拨独立工作加固过(事务化 cutover、执行绑定 preflight、重启证据),移动这些代码换来的是更纯的分层,代价却是全包最安全关键路径上的 churn 与合并风险。
@@ -34,3 +36,4 @@
 - 受监督的 `requestRestart` 要求 durable launch spec(`configure-launch` / `supervise` 状态);缺失时拒绝文本指明缺的前置条件,而不是半截行动。
 - 崩溃循环期间每次 respawn 都会刷新标签页,直到 watchdog give-up 停泊;give-up 路径兜住它。
 - mode-switcher(M1)消费 `requestRestart` 与两条刷新通道;本改动不需要任何宿主/harness 改动。
+
