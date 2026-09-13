@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**32**
-- 自挂载 bundle(`dsh.bundle.patch`):**25**
+- 包总数:**33**
+- 自挂载 bundle(`dsh.bundle.patch`):**26**
 - 组合组件(不自挂载,`dsh.composition.component`):**7** — `preset-composed-row` 5、`provider-mounted-row` 1、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**22**
+- 带浏览器半边(`dsh.client`):**23**
 - 整合 profile(默认安装单元):**3** — `web-basic`、`web-dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -18,6 +18,7 @@
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-canvas` | `packages/canvas` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.95 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |

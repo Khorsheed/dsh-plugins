@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/client/contract.ts",
+    "src/client/definition.ts",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/paste-table.ts",
+    "src/client/CanvasView.tsx"
+  ]
+}
