@@ -29,13 +29,15 @@
 
 /* -------------------------------------------------------------------- list */
 
+/* The list shares the pane's own surface — the divider is what separates it,
+   not a fill. Painting it a layer token seams against the tab strip's own
+   background (the dark theme's layer-1 is not the pane's base). */
 .list {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   border-right: 1px solid var(--dsw-alias-border-l1);
-  background: var(--dsw-alias-bg-layer-1);
 }
 
 .newbar {
