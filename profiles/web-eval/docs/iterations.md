@@ -345,7 +345,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
-| T46 | 代码 + profile | eval 预设摘掉 `mission-tool` 行（任务 tab 随之自隐）；eval-tool 加 `eval_cells`（按 run 读格子投影，收编原四个 mission 读工具的用途） | 无 | agent 工具清单少四个多一个；eval 预设会话看不到任务 tab |
+| T46 ✅ | 代码 + profile | eval 预设摘掉 `mission-tool` 行（任务 tab 随之自隐）；eval-tool 加 `eval_cells`（按 run 读格子投影，收编原四个 mission 读工具的用途） | 无 | 合入 main `42ab0ae3`（2026-09-13，`39273ed4`）；`cells(runId, query)` 一格一行（坐标、桶、阶段、在态时长、attempt、refs、检查点、各 ns 注解数、childSessionId），投影算在服务端；eval-tool 四个读工具；用预设文件喂 mission 的 preset-visibility 证得任务 tab 在 eval 会话不注册；活实例原文并入 T35a 的真机步骤；「不给 run_id 就列评测 run」留给 T35a 的 runs 读面 |
 | T48 | 文档 | 按 [ui-spec.md](ui-spec.md) 改写 README「最终 UI」与「工具按域开放」；修十处口径不一致（清单见 §三 T48） | 无 | 双语 README + sidecar；题库两处修正 |
 | T35a | 代码 | eval client 半骨架 + 实验室 tab 列表与详情壳：tsconfig / tsdown / package 的 client 出口，`conversation.view` 注册（order 40，自隐按 eval-tool 行），Remote 会话态读面 `runs / run`，状态推导，六个子页路由（先只有概览） | T46 | 实验室 tab 在 3171 上出现，列表能列草稿与 run |
 | T36 | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 第 3、4、5 步在界面上完成 |
@@ -1900,7 +1900,7 @@ packages/local-agent-dsh/src/provision.ts（子 profile 与 bundle 链）、cont
 
 ### I5 的文案
 
-### T46 · eval 预设摘掉 mission-tool；eval-tool 加 eval_cells（可发）
+### T46 · eval 预设摘掉 mission-tool；eval-tool 加 eval_cells（已完成，2026-09-13 验收）
 
 ```text
 # 任务 T46：eval 预设不再挂 mission-tool；eval-tool 补一个按格子读的工具
@@ -1926,6 +1926,8 @@ eval / eval-tool 测试全绿，gate 绿；本机 eval 预设会话：工具卡�
 ## 回报
 分支名与 commit；Agent Note 路径；gate 输出；两个预设会话的工具清单与 tab 环原文。
 ```
+
+**验收（2026-09-13）**：`feat/eval-cells-tool`（`39273ed4`，单提交，无 checkpoint 混入，锁文件未动）合入 main `42ab0ae3`，无冲突；合并态 eval 468、eval-tool 3 全绿，300 对双语同步，独立性 33 包 0 违规。实施者的一处更正接受：web-eval 里 standard 预设的会话自 M4'③ 起就没有 mission 工具与任务 tab（判据就是那一行），T46 对 standard 会话是零变化，文案里写的「任务 tab 仍在」不成立。两件没做的裁决：一、活实例的两条原文不单独补，并入 T35a 的真机步骤——T35a 本来就要在实例上看 tab 环；UI 切片的真机验证一律用**独立 DSH_HOME + 空闲端口的临时实例**（源码模式装 web-eval，不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh），3171 只在切片合入后按 T33a 第 3 步重装。二、「不给 run_id 就列 run」不就地扩参数，等 T35a 的 runs 读面落地后给 eval_cells 加这一模式，列出来的只是评测的 run。顺带：3171 的看门狗在 9/12 03:40 之后收到 SIGTERM 退出（watchdog.log 末行 `Terminated: 15`），现在没人守也没实例，重起归下一个要用它的任务。Agent Note：`.agents/notes/implemented/feature/2026-09-13-eval-cells-tool.md`。
 
 ### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（可发）
 
@@ -1982,12 +1984,14 @@ packages/mission/src/client/{index.ts, contract.ts, store.ts, locales.ts, Missio
 - 状态推导写成一个纯函数并单测：草稿 = 有 plan 文件、validate 未过或未跑；待批准 = validate ok 且无 run；运行中 = run 的 job 未结束或桶里 active > 0；评估中 = 选手格全部 ≥ judged 且 run 未 finalize；已完成 = run 已 finalize；被拒 = 就绪检查拒绝（job 输出里的 refused）；已取消 = job 取消。边界情况回报里点名，别猜。
 - 详情壳：六个子页的路由与标题（概览 · 计划审阅 · 条件 · 矩阵 · 格子 · 报告 · 判官台，按 ui-spec §五），本任务只填概览页（快照、矩阵形状、因子、判官、环境、就绪检查原文、run.meta 摘要）；其余子页放占位说明「归 T36 / T35b / T38 / T37」。
 - 「新建实验」按钮本任务只占位（归 T36）。
+- runs 读面落地后，给 eval-tool 的 eval_cells 加「不给 run_id 就列评测 run」的模式（列表列与 runs 投影同源），补一条用例；T46 留下的缺口在这里收。
+- 真机验证用独立 DSH_HOME + 空闲端口的临时实例：源码模式装 web-eval（install.sh --source <主检出> --fresh），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；临时实例用完停掉。3171 现在没人守也没实例（看门狗 9/12 收到 SIGTERM 退出），本任务不碰它。
 
 ## 测试
 tests/apply.client.spec.ts（首行 @vitest-environment jsdom；真 cordis Context；三个门态：预设有 eval-tool 行则注册、没有则归零、无 pluginInventory 则 fail-open；teardown 归零）；tests/LabView.client.spec.tsx（列表渲染、状态 chip、点行进详情、概览页字段）；状态推导函数的单测覆盖七个状态。
 
 ## 完成判据
-eval 测试全绿，gate 绿；本机 eval 预设会话的 tab 环出现「实验室」，standard 预设不出现；列表能列出本机的草稿与至少一个已跑完的 run（用 pilot-a-round1 或本机任一 run），概览页字段有值；真机 3171 重装后同样。
+eval 测试全绿，gate 绿；临时实例上 eval 预设会话的 tab 环出现「实验室」且没有任务 tab，standard 预设两个都不出现；列表能列出草稿与至少一个已跑完的 run（用 pilot-a-round1 或本机任一 run），概览页字段有值；eval 会话的工具卡里有 eval_cells、没有 mission_*（T46 的活实例原文在这里补）。
 
 ## 回报
 分支名与 commit；Agent Note 路径（feature）；gate 输出；tab 环截图或原文；列表与概览的原文；状态推导的边界情况清单。
