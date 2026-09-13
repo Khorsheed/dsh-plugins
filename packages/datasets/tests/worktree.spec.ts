@@ -88,8 +88,14 @@ describe('ensureWorktree', () => {
     const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
     const tsx = fileURLToPath(new URL('../../../node_modules/tsx/dist/esm/index.mjs', import.meta.url))
     const run = (): Promise<{ code: number | null; out: string; err: string }> => new Promise((resolvePromise) => {
+      // The child is judged by its stderr being EMPTY (no lock-contention
+      // noise). Node's own process warnings are not the CLI's output: with
+      // NODE_USE_ENV_PROXY set in the parent shell, Node prints an
+      // "EnvHttpProxyAgent is experimental" warning at the start of every
+      // process, which failed this assertion in that environment only.
       const child = spawn(process.execPath, ['--import', tsx, cli,
-        'worktree', 'path', '--dataset', 'alpha', '--repo', repo?.dir ?? '', '--worktree-root', managedRoot()], {})
+        'worktree', 'path', '--dataset', 'alpha', '--repo', repo?.dir ?? '', '--worktree-root', managedRoot()],
+        { env: { ...process.env, NODE_NO_WARNINGS: '1' } })
       let out = ''
       let err = ''
       child.stdout.on('data', chunk => { out += String(chunk) })
