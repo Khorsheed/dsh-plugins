@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-09-13-capability-catalog-preset-scoped-skills.md
-.agents/notes/proposed/feature/2026-09-13-capability-catalog-preset-scoped-skills.md: 160b4a220bef90968f67863d4338d7a47e8af998
-.agents/notes/proposed/feature/2026-09-13-capability-catalog-preset-scoped-skills.zh.md: 397cce0fd317ba13752eb656ceab6a0cdf0c4b9e
+.agents/notes/proposed/feature/2026-09-13-capability-catalog-preset-scoped-skills.md: bb8f6944fff77b952ebf473fac43289d4c06f94b
+.agents/notes/proposed/feature/2026-09-13-capability-catalog-preset-scoped-skills.zh.md: 533a65410ef20449011f2a6e9b8573639b037be8

@@ -250,6 +250,27 @@ scanning for `SKILL.md`, and uninstall never deletes managed files.
   provider-registered array is cached as complete. If either changes, the canary
   fails loudly instead of the feature silently changing meaning.
 
+### First stage: what shipped
+
+The first stage of Track 3B is implemented in `packages/capability-catalog`:
+`src/scoped-delivery.ts` (managed-root scan, frontmatter policy, per-preset
+scoped registration, generation reconciliation through `livePresetMounts`, a
+debounced filesystem watcher with `control.invalidate`, default-root conflict
+refusal, and the status surface) and `src/scoped-edits.ts` (line-preserving
+`presetScope` rewrite, adopt, release), beside the `presetScopeStatus` /
+`presetScopeRoster` / `presetScopeSet` / `presetScopeAdopt` /
+`presetScopeRelease` Remotes and the detail-modal editor.
+
+One implementation detail is load-bearing and belongs in this record: a
+scope-minted context carries no dependency access of its own, so the provider is
+registered through an **injected child** of it — the scope tag survives the extra
+level, while registering through the scope context directly fails with "cannot
+get property skills without inject".
+
+Still deferred, and therefore still proposal scope: the host-contract canary, the
+recovery manifest and `RECOVERY.md`, the `dsh.compat` + README Compatibility
+record, and the invariant checks.
+
 ## Alternatives considered
 
 **Keep the files in `$DSH_HOME/skills` and add configuration only.** Impossible: a

@@ -197,6 +197,22 @@ missing/broken 与 active 区分开），以及重名诊断。浏览器面需要
   `createScope(ctx, existingKey)` 产出的 context 其注册会落进该 key 的层，以及 provider 注册
   返回的数组会被当作 complete 缓存。任何一处变了，canary 立刻红，而不是功能静默改变含义。
 
+### First stage: what shipped
+
+Track 3B 的第一阶段已在 `packages/capability-catalog` 落地：`src/scoped-delivery.ts`
+（受管根扫描、frontmatter 策略、按 preset 的 scoped 注册、经 `livePresetMounts` 的
+generation 对账、带 `control.invalidate` 的防抖文件 watcher、默认根重名时拒绝投递、
+以及状态面）与 `src/scoped-edits.ts`（按行改写 `presetScope`、adopt、release），
+外加 `presetScopeStatus` / `presetScopeRoster` / `presetScopeSet` /
+`presetScopeAdopt` / `presetScopeRelease` 五个 Remote 与详情弹窗里的编辑器。
+
+有一处实现细节是承重的，值得记录：scope 铸出的 context 本身没有依赖访问权，所以
+provider 必须经由它的**inject 子 context** 注册——scope tag 会继承到那一层，而直接
+用 scope context 注册会以 "cannot get property skills without inject" 失败。
+
+仍然后置、因此仍在提案范围内的：host-contract canary、恢复 manifest 与
+`RECOVERY.md`、`dsh.compat` 与两个 README 的 Compatibility 记录，以及 invariant 检查。
+
 ## Alternatives considered
 
 **把文件留在 `$DSH_HOME/skills`，只加配置。** 不可能：消费者无法从注册表里减项，而
