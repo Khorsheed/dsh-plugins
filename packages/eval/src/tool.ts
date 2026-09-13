@@ -13,7 +13,10 @@
  * the mission tool row, so the four mission read tools it used to carry for
  * per-cell detail are gone from that preset; this tool answers the same
  * question through eval's own projection, and the model side of an
- * evaluation never names mission again.
+ * evaluation never names mission again. Since I5·T35a it also answers WITHOUT
+ * a run id, listing the experiments themselves — the gap `mission_run_list`
+ * used to fill, now through the same projection the 实验室 tab reads, so the
+ * two surfaces cannot disagree about what exists.
  *
  * Every tool is a thin adapter over {@link EvalService} — the service is the
  * body, the adapters only translate (the mission precedent). This module is
@@ -150,27 +153,43 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'cell is in and how long it has been there, the attempt number, the unit the attempt holds (resource and '
       + 'environment fingerprint), the checkpoint names it reached, how many annotations each namespace carries, '
       + 'and the child session the delegation ran in when it started one — open that session to READ the player\'s '
-      + 'transcript, never to steer it mid-run. Narrow with bucket / task / condition (exact matches). This is the '
-      + 'whole per-cell view: an evaluation session grants no mission tools, so there is no mission_list or '
-      + 'mission_get to look for — cells are read here, the run digest by eval_run_status. Read-only: nothing here '
-      + 'reruns, releases, annotates, or advances a cell.',
+      + 'transcript, never to steer it mid-run. Narrow with bucket / task / condition (exact matches). '
+      + 'WITHOUT run_id it answers the other question instead: WHICH experiments exist — every evaluation run this '
+      + 'instance holds plus every plan nobody has started yet, each with its dataset snapshot, condition count, '
+      + 'matrix size, the factors a condition diff derived, status and progress. That is the same listing the '
+      + '实验室 tab shows, so the two can never disagree; call it with no arguments to find a run id, then call it '
+      + 'again with one. This is the whole per-cell view: an evaluation session grants no mission tools, so there is '
+      + 'no mission_run_list, mission_list or mission_get to look for — the experiments are listed here, the run '
+      + 'digest is eval_run_status, and the cells are here too. Read-only: nothing here starts, reruns, releases, '
+      + 'annotates, or advances anything.',
     parameters: {
-      run_id: { type: 'string', required: true, description: 'The run id — the /eval run reply names it, and so does the run bundle\'s run.json.' },
+      run_id: {
+        type: 'string',
+        description: 'The run id — the /eval run reply names it, and so does the run bundle\'s run.json. '
+          + 'Omit it to list the experiments instead of one run\'s cells.',
+      },
       bucket: {
         type: 'string',
-        description: 'Keep only cells in this projection bucket: ready / scheduled / blocked / active / done.',
+        description: 'Keep only cells in this projection bucket: ready / scheduled / blocked / active / done. Ignored without run_id.',
       },
-      task: { type: 'string', description: 'Keep only cells of this task (the dataset item id, e.g. P0).' },
-      condition: { type: 'string', description: 'Keep only cells of this condition id.' },
+      task: { type: 'string', description: 'Keep only cells of this task (the dataset item id, e.g. P0). Ignored without run_id.' },
+      condition: { type: 'string', description: 'Keep only cells of this condition id. Ignored without run_id.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => true,
-    execute(args) {
-      return Promise.resolve(service.cells(args.run_id, {
+    async execute(args, exec) {
+      if (args.run_id === undefined) {
+        // The listing mode reads the SAME projection the lab tab's `runs`
+        // Remote verb does — one implementation, so the tab and the model can
+        // never report different experiments.
+        const session = sessionOf(exec)
+        return (await service.experiments(session === undefined ? {} : { session })) as unknown as JsonValue
+      }
+      return service.cells(args.run_id, {
         ...(args.bucket !== undefined ? { bucket: args.bucket } : {}),
         ...(args.task !== undefined ? { task: args.task } : {}),
         ...(args.condition !== undefined ? { condition: args.condition } : {}),
-      }) as unknown as JsonValue)
+      }) as unknown as JsonValue
     },
   }))
 

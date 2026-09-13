@@ -17,7 +17,7 @@ import { statSync, type Dirent } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
-import { hashConditionDocument } from './hash.ts'
+import { canonicalJson, hashConditionDocument } from './hash.ts'
 import { CONDITION_ID_RE, jsonEquals } from './schema.ts'
 import {
   conditionDiagnostics,
@@ -254,6 +254,41 @@ export function diffConditionDocuments(a: unknown, b: unknown): { differences: C
     identical: substantive.length === 0,
     notesOnly: substantive.length === 0 && differences.length > 0,
   }
+}
+
+/**
+ * The condition fields a SET of declarations does not agree on, as dotted
+ * paths — the lab list's factor column. {@link diffConditionDocuments} answers
+ * about two; a run with three conditions needs the question asked of the whole
+ * matrix, and "which fields vary across these" is exactly that. `notes` never
+ * counts, for the same reason the hash excludes it: a comment edit is not a
+ * factor. A field ABSENT from one declaration and present in another is a
+ * difference like any other.
+ *
+ * SHOWS, never chooses — like the pairwise diff, this reports facts and makes
+ * no claim that the varying fields are the experiment's intended factor.
+ * @param documents - the condition declarations, verbatim.
+ * @returns the differing paths, sorted; empty for fewer than two documents.
+ */
+export function conditionFactors(documents: readonly unknown[]): string[] {
+  if (documents.length < 2) return []
+  const maps = documents.map((document) => {
+    const sink = new Map<string, unknown>()
+    leaves(document, '', sink)
+    return sink
+  })
+  const paths = new Set<string>()
+  for (const map of maps) for (const path of map.keys()) paths.add(path)
+  const factors: string[] = []
+  for (const path of [...paths].sort()) {
+    if (path === 'notes') continue
+    // An absence marker no JSON value can collide with, so "absent here,
+    // present there" reads as the difference it is.
+    const cell = (map: Map<string, unknown>): string => (map.has(path) ? canonicalJson(map.get(path)) : '\u0000absent')
+    const first = cell(maps[0] as Map<string, unknown>)
+    if (maps.some(map => cell(map) !== first)) factors.push(path)
+  }
+  return factors
 }
 
 /** Whether a diff argument is a path rather than a bare condition id. */

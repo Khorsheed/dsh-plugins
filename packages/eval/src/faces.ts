@@ -468,6 +468,17 @@ export interface MissionReadFace {
 }
 
 /**
+ * The mission verb the LAB LIST needs on top of {@link MissionReadFace}: every
+ * run the ledger holds, so the listing can pick out the ones eval started
+ * (their `meta.evalVersion`). OPTIONAL on the face for the same reason every
+ * widening here is — a ledger that cannot list runs degrades to "drafts only"
+ * with a note saying so, never a throw.
+ */
+export interface MissionRunListFace extends MissionReadFace {
+  runList?(): ReadonlyArray<{ id: string }>
+}
+
+/**
  * The mission slice `finalize` drives: the run projection it walks, and the
  * two writes it makes. Structural and narrower than {@link MissionFace} on
  * purpose — the in-host `ctx.mission` satisfies it, and so does a face backed
