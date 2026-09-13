@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The companion tool row of `@khorsheed/dsh-eval`: the three **read-only** model-facing tools (`eval_conditions` / `eval_plan_validate` / `eval_run_status`) and the `tool:eval` prompt section, **granted per session** — present only in sessions whose agent preset composition names it. The service face (`ctx.dshEval`), the CLI, and the `/eval` slash command stay in the core; this row lives in presets, never at the profile root. The third core/companion pair of the tool-row decoupling (M4'③, proposal 2026-08-26).
+The companion tool row of `@khorsheed/dsh-eval`: the four **read-only** model-facing tools (`eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`) and the `tool:eval` prompt section, **granted per session** — present only in sessions whose agent preset composition names it. The service face (`ctx.dshEval`), the CLI, and the `/eval` slash command stay in the core; this row lives in presets, never at the profile root. The third core/companion pair of the tool-row decoupling (M4'③, proposal 2026-08-26).
 
 ## Shape: a companion package that never self-mounts
 
@@ -16,14 +16,14 @@ The companion tool row of `@khorsheed/dsh-eval`: the three **read-only** model-f
       tools: all           # optional; defaults to all
   ```
 
-- **Runs on the core's global service**: what it probes at apply time is **`ctx.dshEval`, never `ctx.eval`** — a `ctx` property named `eval` shadows the global `eval` inside the loader's `with (ctx) { return eval(expr) }`, so any composition mounting such a package blows up on the first `!!js` expression (a real 3171 instance paid for this). When the core (`@khorsheed/dsh-eval`) is not mounted it **silently skips registration** and leaves one log line (degrade: the preset mount never breaks and the composition still mounts, the model simply does not see these three tools); the tools register through deferred `ctx.inject(['tools'])` (the mount-order race lesson), so compositions without a tools registry are equally safe.
-- The tool-definition factory is exported by the core's `./tool` subpath (`evalToolDefinitions(service)` from `@khorsheed/dsh-eval/tool`) — zero copied business logic; the origin tag's owner is THIS package (attribution follows the mounting package). All three tools are reads: a run is started by a person with `/eval run`, and the write verbs (materialize / submit / transition / annotate / archive / export) belong to the orchestrator's service face and the human's CLI.
+- **Runs on the core's global service**: what it probes at apply time is **`ctx.dshEval`, never `ctx.eval`** — a `ctx` property named `eval` shadows the global `eval` inside the loader's `with (ctx) { return eval(expr) }`, so any composition mounting such a package blows up on the first `!!js` expression (a real 3171 instance paid for this). When the core (`@khorsheed/dsh-eval`) is not mounted it **silently skips registration** and leaves one log line (degrade: the preset mount never breaks and the composition still mounts, the model simply does not see these four tools); the tools register through deferred `ctx.inject(['tools'])` (the mount-order race lesson), so compositions without a tools registry are equally safe.
+- The tool-definition factory is exported by the core's `./tool` subpath (`evalToolDefinitions(service)` from `@khorsheed/dsh-eval/tool`) — zero copied business logic; the origin tag's owner is THIS package (attribution follows the mounting package). All four tools are reads: a run is started by a person with `/eval run`, and the write verbs (materialize / submit / transition / annotate / archive / export) belong to the orchestrator's service face and the human's CLI.
 
 **Config** (optional): `tools` picks the group this row grants. The grouping MOVED here from the core: the core no longer registers any model tool and no longer contributes a prompt section.
 
 | `tools` | Registered |
 |---|---|
-| `all` (default) | the three read-only tools |
+| `all` (default) | the four read-only tools |
 | `none` | nothing — not even the `tool:eval` prompt section |
 
 There is no finer grouping because there is nothing to group: this row registers no write tool at all.
@@ -38,7 +38,9 @@ dsh plugin --profile web add @khorsheed/dsh-eval-tool
 # Then add the row above to the target preset's agent.cordis.yml
 ```
 
-The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carries this row (default `all`); the eval pack's `eval` preset (`profiles/web-eval`) names it with `tools: all` too — every tier of the three mechanism rows follows its granting point, so no other preset's sessions in that profile get the tools.
+The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carries this row (default `all`); the eval pack's `eval` preset (`profiles/web-eval`) names it with `tools: all` too — every mechanism row's tier follows its granting point, so no other preset's sessions in that profile get the tools.
+
+**The fourth tool, `eval_cells`, arrived with I5 · T46** (a pure tool-face change — nothing host-side moved): the evaluation preset stopped composing mission's companion row (UI spec R6), and `eval_cells` answers per cell what used to need `mission_list` / `mission_get` — bucket, stage and time in it, attempt, the unit's refs, checkpoint names, annotation counts per namespace, and the delegation's child session id, filterable by `bucket` / `task` / `condition`. The projection is computed in the core's service face (`ctx.dshEval.cells`); this row only adapts it. The `tool:eval` prompt section says so too: there are no mission tools on this line, so do not look for them.
 
 ## Compatibility
 

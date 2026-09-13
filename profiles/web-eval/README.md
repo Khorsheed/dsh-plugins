@@ -146,12 +146,12 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 | 插件 | agent 工具（eval 域） | 编排器服务面 | 人 |
 |---|---|---|---|
 | datasets | 读类全开（含 snapshot，它只解析当前 commit）；`put_item` 留给出题 | worktree_path、read（显式层） | bind、tab、validate |
-| mission | 只开 `run_list` `run_status` `list` `get` | 全部写方法 | export、retry、human-final |
+| mission | **eval 预设不挂**（I5·T46）；账本与释放闸仍由 mission 提供 | 全部写方法 | export、retry、human-final |
 | lab | 不开 | 全部 | status、release |
-| eval | `eval_conditions` `eval_plan_validate` `eval_run_status`；不开 run | 内核 | 批准、run、report |
+| eval | `eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells`；不开 run | 内核 | 批准、run、report |
 | tool-subagent（四家委派工具） | 不开——三行 `tools: none`，第四家默认不挂（I3·T27 落地） | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
-**M4'③ 起这三个机制插件拆成 core + companion**：profile 根只挂 core（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归 companion，所以上表的按域 tier 由 pack 的 `eval` 预设的三行授予——`mission-tool: read`、`datasets-tool: authoring`、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这三套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。三个伴生包随 pack 安装：`package.json` 的成员清单加依赖，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
+**M4'③ 起这三个机制插件拆成 core + companion**：profile 根只挂 core（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归 companion，所以上表的按域 tier 由 pack 的 `eval` 预设的伴生行授予——`datasets-tool: authoring`、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）；同一条自隐规则的另一半随之生效——任务 tab 判的就是预设里有没有这一行，所以它一走，评测会话的任务 tab 自己就不见了。包照装，谁要在自己的覆盖层预设里加回这一行都还在。三个伴生包随 pack 安装：`package.json` 的成员清单加依赖，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 
@@ -183,13 +183,13 @@ dsh --profile web-eval --dump-config \
   | grep -c 'tools: none'                                              # → 3
 ```
 
-会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **36 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
+会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **33 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后是 33——最后这次是按增删算的，等 3171 重装后按实际清单复核），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
 
 **这条钉的是默认值，不是可达集。** 随发行版的 标准 / 代码 / 极简 / cordis 四个预设仍在名册上：apps/cli 的 `composeProfile` 把随发行版的预设根作为最后一层 overlay 无条件写进 `roots`，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
 
 **这个预设够不到的执行类工具，已在插件层关上**（I3·T27）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` 由各 provider 的 bundle patch 装在 **profile 根**上，预设只能挑掉自己挂的行，所以够不到它们——而它们正是在宿主上起各家 CLI 的那批，沙箱按[冻结决策](#冻结决策) 3 放开。T21 记下的三条路径取了第一条：`@khorsheed/dsh-local-agent-tool-subagent` 加了 `tools: all | none` 注册开关，`cordis.patch.yml` 把 codex / claude-code / kimi 三行设成 `none`（取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)）。关掉的只是模型可见的工具：provider 行照挂，编排器经 local-agent 门面委派选手，`/codex login` 这类动词也照常。
 
-**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有配置行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时用写死的配置动态挂载，profile 层够不着。默认状态下它一个工具都不注册（所以上面那份 36 个工具的清单里没有它），但**人在「设置 → 本地 Agent」里打开那个开关，`subagent_dsh` 就会带默认 `tools: all` 出现**。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
+**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有配置行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时用写死的配置动态挂载，profile 层够不着。默认状态下它一个工具都不注册（所以上面那份 33 个工具的清单里没有它），但**人在「设置 → 本地 Agent」里打开那个开关，`subagent_dsh` 就会带默认 `tools: all` 出现**。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
 
 ## 理想流程
 
@@ -336,7 +336,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 同理由**归 pack** 的还有 agent 预设：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。它落在 profile 目录**之外**（预设名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它——见[卸载](#更新切换装卸单个成员卸载)。
 
-当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起前三条的授予点在 pack 的 `eval` 预设的三行上）：`mission-tool: read`、`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
+当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起这几条的授予点在 pack 的 `eval` 预设的伴生行上，I5·T46 起 `mission-tool` 那一行不再挂）：`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 

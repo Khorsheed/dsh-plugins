@@ -1,9 +1,9 @@
 /**
  * The READ half of the orchestrator's model surface: what conditions a
- * dataset repository declares and how ready each one is, and where a run
- * stands. Both answers are assembled from data other packages own — the
- * dataset repo's `conditions/` tree and mission's run ledger — and nothing
- * here writes anything.
+ * dataset repository declares and how ready each one is, where a run stands,
+ * and what each of its cells is doing. Every answer is assembled from data
+ * other packages own — the dataset repo's `conditions/` tree and mission's
+ * run ledger — and nothing here writes anything.
  *
  * The split from the tool adapters is deliberate: this module is the body
  * (pure functions over a directory and over a structural mission face), the
@@ -16,7 +16,7 @@
 import { statSync, type Dirent } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
-import type { MissionReadFace } from './faces.ts'
+import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
 import { hashConditionDocument } from './hash.ts'
 import { CONDITION_ID_RE, jsonEquals } from './schema.ts'
 import {
@@ -477,6 +477,187 @@ export function runStatus(mission: MissionReadFace, runId: string): RunStatusRep
     },
     buckets: status.buckets,
     unreleased: status.unreleased,
+    cells,
+  }
+}
+
+// ── cells ───────────────────────────────────────────────────────────────────
+
+/** The unit one attempt holds, as mission's refs carry it. */
+export interface RunCellRefs {
+  /** Container name, worktree path — opaque to mission and to eval alike. */
+  resource: string | null
+  /** The environment class the orchestrator wrote beside it (`lab-env:<hex>`). */
+  fingerprint: string | null
+}
+
+/**
+ * One cell of a run with everything a reader needs about THIS cell — the
+ * detail `eval_run_status` deliberately leaves out because it answers about
+ * the run. Every field is nullable for the same reason: this is a projection
+ * of another package's ledger, and a ledger that does not say is reported as
+ * silent, never filled in.
+ */
+export interface RunCellDetail {
+  missionId: string
+  /** The matrix coordinates, from mission's labels. */
+  task: string | null
+  condition: string | null
+  rep: number | null
+  /** Every label the cell carries, verbatim — the three above are the ones the matrix uses. */
+  labels: Record<string, string>
+  /** The stage the cell is in (the state machine's own vocabulary). */
+  state: string
+  /** mission's five-bucket projection: ready / scheduled / blocked / active / done. */
+  bucket: string
+  /** The attempt this detail describes — a retry opens a new one. */
+  attempt: number
+  /** Epoch ms the current state was entered; null when the ledger does not say. */
+  enteredCurrentAt: number | null
+  /**
+   * How long the cell has been in its current state, at `now`. This is the
+   * duration column of mission's own queue, and it keeps counting on a
+   * settled cell for the same reason: it answers "how long since anything
+   * happened here", which is exactly the question a stuck cell fails.
+   */
+  inStateMs: number | null
+  refs: RunCellRefs
+  /** Checkpoint NAMES of this attempt, in the order they were reached. */
+  checkpoints: string[]
+  /** ns → how many annotations the cell carries, across every attempt. */
+  annotations: Record<string, number>
+  /**
+   * The delegation's child session, when the attempt started one: mission's
+   * `refs.sessions` names it, and the orchestrator's own annotations are the
+   * fallback for a round that failed before refs were written. Opening it
+   * reads the player's transcript; it is not a handle for intervening.
+   */
+  childSessionId: string | null
+}
+
+/** The `eval_cells` answer: the run's shape, then the cells that passed the filter. */
+export interface RunCellsReport {
+  runId: string
+  /** The RUN's state (`active` / `closed`), not a cell's. */
+  state: string
+  /** The filter that was applied, echoed — absent keys were not filtered on. */
+  filter: { bucket?: string; task?: string; condition?: string }
+  /** Cells in the run, before the filter. */
+  total: number
+  /** Cells the filter kept — `cells.length`, named so a narrowed list is obvious. */
+  matched: number
+  /** bucket → how many cells of the WHOLE run sit in it (the run's shape at a glance). */
+  buckets: Record<string, number>
+  cells: RunCellDetail[]
+}
+
+/** What narrows a cell listing; every filter is an exact match. */
+export interface RunCellsQuery {
+  bucket?: string
+  task?: string
+  condition?: string
+  /** The clock the durations are taken against (tests pin it). */
+  now?: number
+}
+
+/** The current attempt of a mission record, structurally. */
+function currentAttemptOf(record: {
+  currentAttempt?: number
+  attempts?: readonly MissionAttemptFace[]
+} | undefined, fallbackAttempt: number): MissionAttemptFace | undefined {
+  const attempts = record?.attempts
+  if (attempts === undefined || attempts.length === 0) return undefined
+  const wanted = record?.currentAttempt ?? fallbackAttempt
+  return attempts.find(attempt => attempt.attempt === wanted) ?? attempts[attempts.length - 1]
+}
+
+/**
+ * Project one run cell by cell: the matrix coordinates, where the cell stands
+ * and for how long, the unit it holds, the checkpoints it reached, how much
+ * each annotation namespace has to say, and the child session its delegation
+ * ran in. Read through the structural mission face like every other read here
+ * — eval imports nothing from mission, and the caller (the tool, the Remote)
+ * never touches mission either.
+ * @param mission - the mission read face (`ctx.mission`).
+ * @param runId - the run to project.
+ * @param query - exact-match filters, and the clock for the durations.
+ */
+export function runCells(mission: MissionReadFace, runId: string, query: RunCellsQuery = {}): RunCellsReport {
+  const status = mission.runStatus(runId)
+  const now = query.now ?? Date.now()
+  const buckets: Record<string, number> = {}
+  for (const row of status.rows) buckets[row.bucket] = (buckets[row.bucket] ?? 0) + 1
+
+  const matches = (row: { labels: Record<string, string>; bucket: string }): boolean => (
+    (query.bucket === undefined || row.bucket === query.bucket)
+    && (query.task === undefined || row.labels['task'] === query.task)
+    && (query.condition === undefined || row.labels['condition'] === query.condition)
+  )
+
+  const cells = status.rows.filter(matches).map((row): RunCellDetail => {
+    // Same degrade as `runStatus`: a mission the ledger cannot resolve reads
+    // as no detail rather than failing the whole listing.
+    let record: {
+      currentAttempt?: number
+      attempts?: readonly MissionAttemptFace[]
+      annotations: ReadonlyArray<{ ns: string; attempt: number; payload: unknown; createdAt: number }>
+    } | undefined
+    try {
+      record = mission.get(row.id, runId).mission
+    } catch {
+      record = undefined
+    }
+    const attempt = currentAttemptOf(record, row.currentAttempt)
+    const annotations: Record<string, number> = {}
+    // The delegation's session is refs' to report; the annotations are only
+    // the fallback, walked newest-first so a resumed cell names its latest.
+    let annotatedSession: string | null = null
+    for (const annotation of record?.annotations ?? []) {
+      annotations[annotation.ns] = (annotations[annotation.ns] ?? 0) + 1
+      const child = isPlainObject(annotation.payload) ? annotation.payload['childSessionId'] : undefined
+      if (typeof child === 'string') annotatedSession = child
+    }
+    const sessions = attempt?.refs?.sessions
+    const enteredCurrentAt = typeof row.enteredCurrentAt === 'number'
+      ? row.enteredCurrentAt
+      : numberOrNull(attempt?.enteredAt?.[row.state])
+    const rep = Number(row.labels['rep'])
+    return {
+      missionId: row.id,
+      task: row.labels['task'] ?? null,
+      condition: row.labels['condition'] ?? null,
+      rep: Number.isFinite(rep) ? rep : null,
+      labels: { ...row.labels },
+      state: row.state,
+      bucket: row.bucket,
+      attempt: row.currentAttempt,
+      enteredCurrentAt,
+      // A clock that ran backwards between the two reads is not a negative
+      // duration; it is zero and a puzzle for whoever set the clock.
+      inStateMs: enteredCurrentAt === null ? null : Math.max(0, now - enteredCurrentAt),
+      refs: {
+        resource: attempt?.refs?.resource ?? null,
+        fingerprint: attempt?.refs?.fingerprint ?? null,
+      },
+      checkpoints: (attempt?.checkpoints ?? []).map(checkpoint => checkpoint.name),
+      annotations,
+      childSessionId: sessions !== undefined && sessions.length > 0
+        ? (sessions[sessions.length - 1] as string)
+        : annotatedSession,
+    }
+  })
+
+  return {
+    runId: status.run.id,
+    state: status.run.state,
+    filter: {
+      ...(query.bucket !== undefined ? { bucket: query.bucket } : {}),
+      ...(query.task !== undefined ? { task: query.task } : {}),
+      ...(query.condition !== undefined ? { condition: query.condition } : {}),
+    },
+    total: status.rows.length,
+    matched: cells.length,
+    buckets,
     cells,
   }
 }

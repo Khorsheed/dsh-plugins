@@ -417,13 +417,38 @@ export interface MissionStatusRow {
   state: string
   bucket: string
   currentAttempt: number
+  /**
+   * Epoch ms the current state was entered — the duration column of the cell
+   * list. OPTIONAL on the face: a projection predating it leaves the duration
+   * null, and the cell projection then falls back to the attempt's own
+   * `enteredAt` map before giving up. Absence is reported, never guessed.
+   */
+  enteredCurrentAt?: number
 }
 
 /**
- * The mission READ verbs `eval_run_status` projects a run through. Separate
- * from {@link MissionFace} because the run loop and the read tools need
- * different slices: the loop needs the current attempt's state, the reader
- * needs the annotations the loop wrote.
+ * One attempt of a mission as the CELL projection reads it (mission's
+ * `AttemptRecord`, structurally). Every field past the attempt number is
+ * optional: the face this widened already existed for annotations only, and
+ * a ledger that answers less must degrade to nulls rather than throw.
+ */
+export interface MissionAttemptFace {
+  attempt: number
+  state?: string
+  /** The unit this attempt holds: container name and environment fingerprint. */
+  refs?: { resource?: string; fingerprint?: string; sessions?: readonly string[] }
+  /** state → first entry timestamp (epoch ms), the duration fallback. */
+  enteredAt?: Record<string, number>
+  /** Progress points inside the attempt, in the order they were reached. */
+  checkpoints?: ReadonlyArray<{ name: string; at?: number }>
+}
+
+/**
+ * The mission READ verbs the two read projections go through —
+ * `eval_run_status` (the run's digest) and `eval_cells` (a row per cell).
+ * Separate from {@link MissionFace} because the run loop and the read tools
+ * need different slices: the loop needs the current attempt's state, the
+ * readers need the annotations, refs and checkpoints the loop wrote.
  */
 export interface MissionReadFace {
   runStatus(runId: string): {
@@ -434,6 +459,9 @@ export interface MissionReadFace {
   }
   get(missionId: string, runId?: string): {
     mission: {
+      /** The attempt every per-attempt field below is read from. */
+      currentAttempt?: number
+      attempts?: readonly MissionAttemptFace[]
       annotations: ReadonlyArray<{ ns: string; attempt: number; payload: unknown; createdAt: number }>
     }
   }

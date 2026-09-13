@@ -25,9 +25,12 @@ import {
   EvalReadRefused,
   diffConditions,
   listConditions,
+  runCells,
   runStatus,
   type ConditionDiff,
   type ConditionsReport,
+  type RunCellsQuery,
+  type RunCellsReport,
   type RunStatusReport,
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
@@ -240,6 +243,36 @@ export class EvalService {
       )
     }
     return runStatus(mission, runId)
+  }
+
+  /**
+   * Project one run CELL BY CELL: the matrix coordinates, the bucket and
+   * stage each cell sits in and for how long, the unit its attempt holds,
+   * the checkpoints it reached, how many annotations each namespace carries,
+   * and the delegation's child session when it has one.
+   *
+   * The companion of {@link EvalService.runStatus}, not a replacement: that
+   * one answers about the RUN (the run.meta digest, the buckets, the leak
+   * warning), this one about its cells. Both read mission's ledger through
+   * the structural face, so the callers — the `eval_cells` tool and the lab
+   * tab's Remote — never touch mission themselves.
+   * @param runId - the run to project.
+   * @param query - exact-match `bucket` / `task` / `condition` filters, and
+   *   the clock the durations are taken against.
+   * @throws {@link EvalReadRefused} when the composition mounts no mission
+   *   service — the run ledger lives there, so there is nothing to read.
+   */
+  cells(runId: string, query: RunCellsQuery = {}): RunCellsReport {
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    if (mission === undefined) {
+      // Named without its scope for the same reason as in `runStatus`: this
+      // is a sentence for a human, not a dependency edge.
+      throw new EvalReadRefused(
+        'no mission service: run records live in the mission ledger, so this composition cannot list a run\'s '
+        + 'cells — mount the dsh-mission plugin',
+      )
+    }
+    return runCells(mission, runId, query)
   }
 
   /**
