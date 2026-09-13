@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { CatalogMcpSnapshot, CatalogPresetOption, CatalogPresetScopeStatus, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CatalogMcpSnapshot, CatalogPresetOption, CatalogPresetScopeStatus, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import type { CapabilityCatalogKey } from './locales.ts'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import { SkillPreviewCard, DeleteSkillConfirm } from './SkillCards.tsx'
@@ -61,6 +61,24 @@ export function CapabilityCatalogCard({
   const [presetOptions, setPresetOptions] = useState<readonly CatalogPresetOption[]>([])
 
   const skills = snapshot?.skills ?? []
+  // A managed skill scoped to another preset is deliberately absent from the
+  // default preset's snapshot; the delivery status still knows it, and the
+  // management grid must keep it reachable (to change its scope or release it).
+  const managedRows = useMemo<CatalogSkillRow[]>(() => {
+    if (scopeStatus === null) return []
+    const known = new Set(skills.map((s) => s.name))
+    return scopeStatus.skills
+      .filter((row) => !known.has(row.name))
+      .map((row) => ({
+        name: row.name,
+        description: row.description,
+        source: MANAGED_SOURCE,
+        provider: 'capability-catalog',
+        modelInvocable: row.modelInvocable,
+        userInvocable: row.userInvocable,
+      }))
+  }, [scopeStatus, skills])
+  const allSkills = useMemo(() => [...skills, ...managedRows], [skills, managedRows])
   const tools = snapshot?.tools ?? []
   const loading = snapshot == null
 
@@ -86,19 +104,19 @@ export function CapabilityCatalogCard({
 
   const visibleSkills = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const matched = skills.filter((s) =>
+    const matched = allSkills.filter((s) =>
       (q === '' || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
       && (skillSegment === 'all' || skillBucket(s.source) === skillSegment))
     const sorted = [...matched]
     if (sortBy === 'updated') sorted.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     else sorted.sort((a, b) => a.name.localeCompare(b.name))
     return sorted
-  }, [skills, query, skillSegment, sortBy])
+  }, [allSkills, query, skillSegment, sortBy])
 
   /** Per-segment counts for the skills grid. */
-  const skillBuiltinCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'builtin').length, [skills])
-  const skillPluginCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'plugin').length, [skills])
-  const skillOtherCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'other').length, [skills])
+  const skillBuiltinCount = useMemo(() => allSkills.filter((s) => skillBucket(s.source) === 'builtin').length, [allSkills])
+  const skillPluginCount = useMemo(() => allSkills.filter((s) => skillBucket(s.source) === 'plugin').length, [allSkills])
+  const skillOtherCount = useMemo(() => allSkills.filter((s) => skillBucket(s.source) === 'other').length, [allSkills])
 
   /** Per-segment counts for the three grid filters. */
   const builtinCount = useMemo(() => tools.filter((tool) => tool.channel === 'builtin').length, [tools])
@@ -321,7 +339,7 @@ export function CapabilityCatalogCard({
           setCredential={setCredential}
           readSkillFile={readSkillFile}
           t={t}
-          scope={scopeEditorFor(selectedName, skills, scopeStatus, presetOptions, {
+          scope={scopeEditorFor(selectedName, allSkills, scopeStatus, presetOptions, {
             save: async (presets) => {
               const result = await presetScopeSet(selectedName, presets)
               await Promise.all([refreshScope(), refresh()])
@@ -419,6 +437,11 @@ function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: Ca
     </ModalShell>
   )
 }
+
+/** Sources the catalog may move out of a default root into the managed root. */
+/** Source label for a managed skill rendered outside the scope that delivers it.
+ * Not a member of the deletable set: removal goes through `release`. */
+const MANAGED_SOURCE = 'capability-catalog'
 
 /** Sources the catalog may move out of a default root into the managed root. */
 const ADOPTABLE_SOURCES: ReadonlySet<string> = new Set([

@@ -83,6 +83,11 @@ export function scopedSkillsRoot(dshHome: string): string {
 /** One skill's delivery state, as the settings surface reads it. */
 export interface ScopedSkillStatus {
   readonly name: string
+  readonly description: string
+  readonly modelInvocable: boolean
+  readonly userInvocable: boolean
+  /** The managed `SKILL.md` path. */
+  readonly path: string
   readonly presets: readonly string[]
   /** Whether a delivery provider currently serves this skill. */
   readonly delivered: boolean
@@ -462,6 +467,10 @@ export class ScopedSkillDelivery {
       const conflict = this.conflicts.get(skill.name)
       return {
         name: skill.name,
+        description: skill.description,
+        modelInvocable: skill.modelInvocable,
+        userInvocable: skill.userInvocable,
+        path: skill.path,
         presets: [...(skill.presetScope ?? [])],
         delivered: delivered.has(skill.name),
         ...conflict === undefined ? {} : { conflict: join(conflict, skill.name) },

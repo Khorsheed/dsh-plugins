@@ -39,8 +39,10 @@ import type {
   CatalogPresetScopeEditResult,
 } from './types.ts'
 import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogPickDirectory } from './remote.ts'
-import { resolveServices, type RegistrySlice } from './skills.ts'
-import { ScopedSkillDelivery, scopedSkillsRoot, type ScopedDeliveryRegistry } from './scoped-delivery.ts'
+import { resolveServices, type RegistrySlice, type SkillDefinitionLike } from './skills.ts'
+import {
+  definitionFor, scanManagedSkills, ScopedSkillDelivery, scopedSkillsRoot, type ScopedDeliveryRegistry,
+} from './scoped-delivery.ts'
 import {
   adoptManagedSkill, releaseManagedSkill, setManagedPresetScope,
 } from './scoped-edits.ts'
@@ -467,14 +469,22 @@ export class CapabilityCatalogService extends TypertRemoteService {
   async detail(name: string, workdir?: string): Promise<CatalogSkillDetail | undefined> {
     const { registry } = resolveServicesHelper(this.ctx)
     if (registry === undefined) return undefined
-    return catalogDetail(this.ctx, registry, name, workdir, await this.catalogScope())
+    // A managed skill scoped to another preset is absent from the default
+    // preset's scope; the plugin's own copy keeps it visible and editable here.
+    return catalogDetail(this.ctx, registry, name, workdir, await this.catalogScope(), await this.managedDefinition(name))
   }
 
   @Remote('readSkillFile')
   async readSkillFile(name: string, filePath: string, workdir?: string): Promise<CatalogSkillFileRead | undefined> {
     const { registry } = resolveServicesHelper(this.ctx)
     if (registry === undefined) return undefined
-    return catalogReadSkillFile(registry, name, filePath, workdir, await this.catalogScope())
+    return catalogReadSkillFile(registry, name, filePath, workdir, await this.catalogScope(), await this.managedDefinition(name))
+  }
+
+  /** One managed skill's definition, for management reads outside its scope. */
+  private async managedDefinition(name: string): Promise<SkillDefinitionLike | undefined> {
+    const skill = (await scanManagedSkills(scopedSkillsRoot(this.dshHome()))).find(entry => entry.name === name)
+    return skill === undefined ? undefined : definitionFor(skill)
   }
 
   @Remote('listDirSkills')

@@ -6,6 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import {
+  definitionFor,
   detectConflicts,
   managedSkillFrom,
   parsePresetScopeFrontmatter,
@@ -15,6 +16,7 @@ import {
   type ScopedDeliveryRegistry,
 } from '../src/scoped-delivery.ts'
 import type { PresetRosterSlice } from '../src/preset-scope.ts'
+import { loadSkillDetail } from '../src/skills.ts'
 
 /** One managed SKILL.md with an optional preset scope. */
 function skillText(name: string, scope?: string, extra = ''): string {
@@ -241,6 +243,36 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     const { ctx, keys, delivery } = await boot('[dsh-writing]')
     await delivery.dispose()
     expect(await namesIn(ctx, keys.get('dsh-writing'))).not.toContain('md-to-wechat')
+  })
+
+  it('carries enough of each managed row for the management grid', async () => {
+    const { delivery } = await boot('[dsh-writing]')
+    expect(delivery.status().skills[0]).toMatchObject({
+      name: 'md-to-wechat',
+      description: 'The md-to-wechat skill',
+      modelInvocable: true,
+      userInvocable: true,
+      presets: ['dsh-writing'],
+      delivered: true,
+    })
+    expect(delivery.status().skills[0]?.path.endsWith('md-to-wechat/SKILL.md')).toBe(true)
+  })
+
+  it('loads a scoped-away managed skill through the scope-limited detail read fallback', async () => {
+    const { ctx, keys } = await boot('[dsh-writing]')
+    const managed = managedSkillFrom(
+      skillText('md-to-wechat', '[dsh-writing]'),
+      '/managed/md-to-wechat',
+      '/managed/md-to-wechat/SKILL.md',
+    )!
+    // The default preset's scope does not carry this skill at all.
+    const { registry } = { registry: ctx.get('skills') as unknown as Parameters<typeof loadSkillDetail>[1] }
+    expect(await registry.get('md-to-wechat', { scope: keys.get('standard') })).toBeUndefined()
+    const detail = await loadSkillDetail(
+      ctx, registry, 'md-to-wechat', undefined, keys.get('standard'), definitionFor(managed),
+    )
+    expect(detail?.content).toContain('# md-to-wechat')
+    expect(detail?.provider).toBe('capability-catalog')
   })
 
   it('degrades without a roster rather than failing', async () => {

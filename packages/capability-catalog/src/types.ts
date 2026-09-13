@@ -196,6 +196,11 @@ export interface CatalogDirSkillInfo {
 /** One managed skill's preset-scoped delivery state. */
 export interface CatalogScopedSkillRow {
   readonly name: string
+  readonly description: string
+  readonly modelInvocable: boolean
+  readonly userInvocable: boolean
+  /** The managed `SKILL.md` path. */
+  readonly path: string
   /** The preset ids its frontmatter declares; empty means "every preset". */
   readonly presets: readonly string[]
   /** Whether a delivery provider currently serves it in at least one preset. */
