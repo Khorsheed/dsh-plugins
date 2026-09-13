@@ -5,14 +5,14 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { CatalogMcpSnapshot, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CatalogMcpSnapshot, CatalogPresetOption, CatalogPresetScopeStatus, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import type { CapabilityCatalogKey } from './locales.ts'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import { SkillPreviewCard, DeleteSkillConfirm } from './SkillCards.tsx'
 import { ToolCards, type ToolSegment } from './ToolCards.tsx'
 import { ToolDetailModal } from './ToolDetailModal.tsx'
 import { ModalShell } from './ModalShell.tsx'
-import { SkillDetailModal, type DetailClaim } from './SkillDetailModal.tsx'
+import { SkillDetailModal, type DetailClaim, type ScopeEditor } from './SkillDetailModal.tsx'
 import { AddSkillModal } from './AddSkillModal.tsx'
 import { McpServerManageModal } from './McpServerManageModal.tsx'
 import { AddMcpDialog } from './AddMcpDialog.tsx'
@@ -30,6 +30,7 @@ const skillBucket = (source: string): SkillSegment =>
 export function CapabilityCatalogCard({
   useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh,
   mcpSnapshot, mcpAdd, mcpRemove, mcpSetEnabled, mcpSetCredential, mcpSetToolEnabled, mcpDiscover,
+  presetScopeStatus, presetScopeRoster, presetScopeSet, presetScopeAdopt, presetScopeRelease,
   t,
 }: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
@@ -55,6 +56,9 @@ export function CapabilityCatalogCard({
   const [discoveringMcp, setDiscoveringMcp] = useState<ReadonlySet<string>>(() => new Set())
   // Tool-origin guidance modal ("why is my plugin tool not here").
   const [toolOriginHelp, setToolOriginHelp] = useState(false)
+  // Preset-scoped delivery: the managed-root status and the roster the picker shows.
+  const [scopeStatus, setScopeStatus] = useState<CatalogPresetScopeStatus | null>(null)
+  const [presetOptions, setPresetOptions] = useState<readonly CatalogPresetOption[]>([])
 
   const skills = snapshot?.skills ?? []
   const tools = snapshot?.tools ?? []
@@ -70,7 +74,15 @@ export function CapabilityCatalogCard({
       mcpSnapshot().then(setMcps),
     ])
   }
+  /** Re-read the preset-scope status and roster after any scope write. */
+  const refreshScope = async (): Promise<void> => {
+    const [status, roster] = await Promise.all([presetScopeStatus(), presetScopeRoster()])
+    setScopeStatus(status ?? null)
+    setPresetOptions(roster)
+  }
+
   useEffect(() => { void refreshMcp() }, [])
+  useEffect(() => { void refreshScope() }, [])
 
   const visibleSkills = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -309,6 +321,23 @@ export function CapabilityCatalogCard({
           setCredential={setCredential}
           readSkillFile={readSkillFile}
           t={t}
+          scope={scopeEditorFor(selectedName, skills, scopeStatus, presetOptions, {
+            save: async (presets) => {
+              const result = await presetScopeSet(selectedName, presets)
+              await Promise.all([refreshScope(), refresh()])
+              return result
+            },
+            adopt: async (presets) => {
+              const result = await presetScopeAdopt(selectedName, presets)
+              await Promise.all([refreshScope(), refresh()])
+              return result
+            },
+            release: async () => {
+              const result = await presetScopeRelease(selectedName)
+              await Promise.all([refreshScope(), refresh()])
+              return result
+            },
+          })}
         />
       ) : null}
 
@@ -389,4 +418,46 @@ function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: Ca
       </div>
     </ModalShell>
   )
+}
+
+/** Sources the catalog may move out of a default root into the managed root. */
+const ADOPTABLE_SOURCES: ReadonlySet<string> = new Set([
+  'user-dsh', 'user-agents', 'project-dsh', 'project-agents', 'custom',
+])
+
+/**
+ * The scope editor for one skill, or undefined when the deployment has no
+ * delivery surface at all (no roster, no managed root).
+ * @param name - the skill whose detail modal is open.
+ * @param skills - the catalog rows, for the skill's own source.
+ * @param status - the delivery status, or null before it first resolved.
+ * @param options - the roster the picker offers.
+ * @param actions - the three write paths, already bound to this skill.
+ * @returns the editor face, or undefined when there is nothing to edit.
+ */
+export function scopeEditorFor(
+  name: string,
+  skills: readonly { readonly name: string; readonly source: string }[],
+  status: CatalogPresetScopeStatus | null,
+  options: readonly CatalogPresetOption[],
+  actions: {
+    readonly save: (presets: readonly string[]) => Promise<{ ok: boolean; error?: string }>
+    readonly adopt: (presets: readonly string[]) => Promise<{ ok: boolean; error?: string }>
+    readonly release: () => Promise<{ ok: boolean; error?: string }>
+  },
+): ScopeEditor | undefined {
+  if (status === null) return undefined
+  const managedRow = status.skills.find(row => row.name === name)
+  const catalogRow = skills.find(row => row.name === name)
+  if (managedRow === undefined && catalogRow === undefined) return undefined
+  return {
+    managed: managedRow !== undefined,
+    declared: managedRow?.presets ?? [],
+    ...managedRow?.conflict === undefined ? {} : { conflict: managedRow.conflict },
+    adoptable: managedRow === undefined && catalogRow !== undefined && ADOPTABLE_SOURCES.has(catalogRow.source),
+    options,
+    save: actions.save,
+    adopt: actions.adopt,
+    release: actions.release,
+  }
 }

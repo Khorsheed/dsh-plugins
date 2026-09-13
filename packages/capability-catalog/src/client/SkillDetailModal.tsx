@@ -1,6 +1,6 @@
 import { useState } from 'react'
   import { IconChevronDownOutline14, IconChevronRightOutline14, IconCopyOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-  import type { CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
+  import type { CatalogPresetOption, CatalogPresetScopeEditResult, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { BundleFileTree } from './BundleFileTree.tsx'
   import { CredentialField, type CredentialSaveState } from './CredentialField.tsx'
@@ -10,14 +10,32 @@ import { useState } from 'react'
 
   export type DetailClaim = { status: 'idle' | 'loading' | 'done'; data: CatalogSkillDetail | undefined }
 
+  /** The preset-scope editor's data face for one skill, when the deployment has one. */
+  export interface ScopeEditor {
+    /** Whether the skill lives in the plugin's managed root. */
+    managed: boolean
+    /** The presets its frontmatter currently declares (empty = every preset). */
+    declared: readonly string[]
+    /** A default root still supplying this name, when delivery is refused. */
+    conflict?: string
+    /** Whether the skill can be adopted out of a default root. */
+    adoptable: boolean
+    /** Every preset the roster supplies. */
+    options: readonly CatalogPresetOption[]
+    save: (presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
+    adopt: (presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
+    release: () => Promise<CatalogPresetScopeEditResult>
+  }
+
 /** Centered modal with a skill's full detail, source browser, metadata and credential config. */
-export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, t }: {
+export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, t, scope }: {
   name: string
   claim: DetailClaim
   onClose: () => void
   setCredential: (key: string, value: string) => Promise<boolean>
   readSkillFile: (name: string, path: string) => Promise<CatalogSkillFileRead | undefined>
   t: (key: CapabilityCatalogKey) => string
+  scope?: ScopeEditor | undefined
 }) {
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, CredentialSaveState>>({})
@@ -28,6 +46,10 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
   const [srcFile, setSrcFile] = useState('')
   const [srcContent, setSrcContent] = useState<string | undefined>(undefined)
   const [srcLoading, setSrcLoading] = useState(false)
+  // Preset-scope editor: the pending selection, the busy flag, and the last message.
+  const [scopePick, setScopePick] = useState<readonly string[] | null>(null)
+  const [scopeBusy, setScopeBusy] = useState(false)
+  const [scopeMsg, setScopeMsg] = useState<string | null>(null)
 
   const saveCred = async (key: string): Promise<void> => {
     const value = credValues[key] ?? ''
@@ -45,6 +67,25 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
       setCopied(true)
       setTimeout(() => setCopied(false), 1200)
     } catch { /* clipboard may be blocked */ }
+  }
+
+  const pickedScope = scopePick ?? scope?.declared ?? []
+
+  /** Run one scope mutation, then report its outcome in place. */
+  const runScope = async (action: () => Promise<CatalogPresetScopeEditResult>): Promise<void> => {
+    setScopeBusy(true)
+    setScopeMsg(null)
+    try {
+      const result = await action()
+      setScopeMsg(result.ok ? t('scopeSaved') : `${t('scopeError')}: ${result.error ?? ''}`)
+      if (result.ok) setScopePick(null)
+    } finally {
+      setScopeBusy(false)
+    }
+  }
+
+  const toggleScope = (id: string): void => {
+    setScopePick(pickedScope.includes(id) ? pickedScope.filter(value => value !== id) : [...pickedScope, id])
   }
 
   // Select a bundle file for the source pane. SKILL.md's body is already in the
@@ -78,6 +119,67 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
             ...(data.whenToUse !== undefined ? [{ label: t('whenToUse'), value: data.whenToUse }] : []),
           ]} />
           <p className={css.detailDesc}>{data.description}</p>
+
+          {scope !== undefined ? (
+            <section className={css.scopeBox}>
+              <div className={css.scopeTitle}>{t('scopeSection')}</div>
+              {scope.options.length === 0 ? (
+                <div className={css.scopeHint}>{t('scopeUnavailable')}</div>
+              ) : (
+                <>
+                  <div className={css.scopeHint}>{t('scopeHint')}</div>
+                  <div className={css.scopeGrid}>
+                    {scope.options.map((option) => (
+                      <label className={css.scopeItem} key={option.id} title={option.description}>
+                        <input
+                          type="checkbox"
+                          checked={pickedScope.includes(option.id)}
+                          disabled={scopeBusy}
+                          onChange={() => toggleScope(option.id)}
+                        />
+                        <span>{option.name ?? option.id}</span>
+                        {option.broken !== undefined ? <span className={css.scopeBadge}>{t('scopeBroken')}</span> : null}
+                      </label>
+                    ))}
+                  </div>
+                  <div className={css.scopeActions}>
+                    <button
+                      type="button"
+                      className={css.addBtn}
+                      disabled={scopeBusy}
+                      onClick={() => void runScope(() => scope.save(pickedScope))}
+                    >
+                      {scopeBusy ? t('scopeSaving') : t('scopeSave')}
+                    </button>
+                    {scope.managed ? (
+                      <button
+                        type="button"
+                        className={css.addBtn}
+                        disabled={scopeBusy}
+                        onClick={() => void runScope(() => scope.release())}
+                      >
+                        {t('scopeRelease')}
+                      </button>
+                    ) : scope.adoptable ? (
+                      <button
+                        type="button"
+                        className={css.addBtn}
+                        disabled={scopeBusy}
+                        onClick={() => void runScope(() => scope.adopt(pickedScope))}
+                      >
+                        {t('scopeAdopt')}
+                      </button>
+                    ) : null}
+                    {scopeMsg !== null ? <span className={css.scopeHint}>{scopeMsg}</span> : null}
+                  </div>
+                  {scope.conflict !== undefined ? (
+                    <div className={css.scopeConflict}>{t('scopeConflict')}: {scope.conflict}</div>
+                  ) : null}
+                  <div className={css.scopeHint}>{t('scopeProbe')}</div>
+                </>
+              )}
+            </section>
+          ) : null}
 
           {data.credentials !== undefined && data.credentials.length > 0 ? (
             <details className={css.conf} open>

@@ -135,6 +135,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       const carried = await remote?.mcpDiscover(serverName)
       return carried !== undefined && carried.ok ? carried.value : []
     },
+    presetScopeStatus: async () => {
+      const carried = await remote?.presetScopeStatus()
+      return carried !== undefined && carried.ok ? carried.value : undefined
+    },
+    presetScopeRoster: async () => {
+      const carried = await remote?.presetScopeRoster()
+      return carried !== undefined && carried.ok ? carried.value : []
+    },
+    presetScopeSet: async (name, presets) => {
+      const carried = await remote?.presetScopeSet({ name, presets })
+      return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
+    },
+    presetScopeAdopt: async (name, presets) => {
+      const carried = await remote?.presetScopeAdopt({ name, presets })
+      return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
+    },
+    presetScopeRelease: async (name) => {
+      const carried = await remote?.presetScopeRelease(name)
+      return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
+    },
   }
 
   void refresh()
