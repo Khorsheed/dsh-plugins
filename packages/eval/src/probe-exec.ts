@@ -75,7 +75,16 @@ function quote(literal: string): string {
 /** Spawn one probe on the host and capture its exit code (never throws). */
 function spawnProbe(command: string, args: readonly string[], cwd: string, timeoutMs: number): Promise<ProbeExecResult> {
   return new Promise((resolvePromise) => {
-    execFile(command, [...args], { cwd, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (error, _stdout, stderr) => {
+    // The probe's stderr IS judged output: its first line becomes a skipped
+    // probe's reason and the failure detail of a failed one (judge.ts). Node's
+    // own process warnings are not the probe's output — with NODE_USE_ENV_PROXY
+    // set in the host shell, every Node process prints an "EnvHttpProxyAgent is
+    // experimental" warning at startup, and that warning became the recorded
+    // reason instead of the probe's message. Node process warnings are
+    // suppressed in the child; the probe's own console.warn/console.error
+    // output is untouched (they are not process warnings).
+    const env = { ...process.env, NODE_NO_WARNINGS: '1' }
+    execFile(command, [...args], { cwd, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env }, (error, _stdout, stderr) => {
       if (error === null) return resolvePromise({ code: 0, stderr: String(stderr) })
       const code = typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : null
       resolvePromise({
