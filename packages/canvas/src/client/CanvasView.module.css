@@ -367,6 +367,15 @@
 
 .editor {
   display: block;
+  /* Chromium's UA sheet leaves a `textarea` content-box while buttons are
+     border-box, and this app ships no global box-sizing reset (the harness
+     base.css has none; its components declare it where they need it). Without
+     the line below, `width/height: 100%` plus this padding is 36px wider and
+     32px taller than the pane, `.editorPane`'s `overflow: hidden` eats the
+     right padding, and the tail of every full-width line is clipped (measured
+     in Chromium: 435px in a 400px pane, 35px hidden). The menu rules pair
+     `width: 100%` with padding too, but a button is border-box already. */
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   padding: 16px 18px;
