@@ -34,10 +34,13 @@ import {
   type RunStatusReport,
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
+import { experimentDetail, listExperiments } from './experiments.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace,
+  MissionRunListFace,
 } from './faces.ts'
+import type { EvalExperimentDetail, EvalExperimentsResult } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
@@ -276,6 +279,60 @@ export class EvalService {
   }
 
   /**
+   * The LAB LIST: one row per experiment — every run this ledger holds that
+   * eval started, plus every plan in the session's dataset repository that
+   * nobody has started yet. Drafts and runs share one table because to the
+   * person planning the next comparison they are the same kind of thing
+   * (ui-spec §五).
+   *
+   * Read-only, and degrading rather than refusing: a composition without
+   * mission lists drafts only, a session without a datasets binding lists runs
+   * only, and each gap comes back as a sentence in `notes`. That is deliberate
+   * — an empty list with no explanation is the one answer a planning view must
+   * never give.
+   * @param options - `repo` wins; otherwise the calling session's datasets
+   *   binding decides, and its dataset whitelist is honoured — exactly the
+   *   resolution {@link EvalService.conditions} uses.
+   * @returns the rows, newest run first, then the drafts by name.
+   */
+  experiments(options: { repo?: string; dataset?: string; session?: { id: string } } = {}): Promise<EvalExperimentsResult> {
+    const mission = this.hosts?.get('mission') as MissionRunListFace | undefined
+    const scope = this.resolveRepoScope(options)
+    const resolved = scope instanceof EvalReadRefused ? undefined : scope
+    return listExperiments({
+      ...(mission === undefined ? {} : { mission }),
+      ...(resolved === undefined ? {} : { repo: resolved.repo }),
+      ...(resolved?.datasets === undefined ? {} : { datasets: resolved.datasets }),
+      jobs: this.jobs.list(),
+    })
+  }
+
+  /**
+   * One started experiment's OVERVIEW: the list row, the run.meta digest, the
+   * readiness records verbatim, the bucket and stage histograms, the leak
+   * warning, and this instance's job record for the run.
+   *
+   * A DRAFT has no run and therefore no detail here — its overview is the list
+   * row, which already carries the plan digest. The plan-review page (T36) is
+   * where a draft gets a page of its own.
+   * @param runId - the run to project.
+   * @throws {@link EvalReadRefused} when the composition mounts no mission
+   *   service — the run ledger lives there, so there is nothing to read.
+   */
+  experiment(runId: string): EvalExperimentDetail {
+    const mission = this.hosts?.get('mission') as MissionRunListFace | undefined
+    if (mission === undefined) {
+      // Named without its scope like the two read verbs above: a sentence for
+      // a human, not a dependency edge.
+      throw new EvalReadRefused(
+        'no mission service: run records live in the mission ledger, so this composition cannot open an experiment '
+        + '— mount the dsh-mission plugin',
+      )
+    }
+    return experimentDetail(mission, runId, this.jobs.list())
+  }
+
+  /**
    * Generate a run template from a dataset-suite manifest (deterministic —
    * the same function `dsh-eval template` prints and the run loop writes
    * beside the plan).
@@ -350,7 +407,7 @@ export class EvalService {
     const plan = expandHome(planPath)
     return this.jobs.start(
       runOptions => this.run(plan, runOptions),
-      { ...options, label: options.label ?? `eval run ${plan}` },
+      { ...options, plan, label: options.label ?? `eval run ${plan}` },
     )
   }
 
@@ -423,6 +480,8 @@ export { EvalFinalizeRefused } from './finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
 export { EvalReadRefused } from './read.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
+export { deriveExperimentStatus, experimentDetail, listExperiments } from './experiments.ts'
+export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'

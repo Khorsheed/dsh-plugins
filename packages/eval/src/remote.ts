@@ -11,14 +11,26 @@
  * layer: start, status, output, cancel. No second run implementation, and no
  * verb here that the human path does not also have.
  *
- * Nothing on this face takes an agent parameter: a CI caller has no agent,
- * and requiring one would put the door back where it was.
+ * None of those four takes an agent parameter: a CI caller has no agent, and
+ * requiring one would put the door back where it was.
+ *
+ * The LAB TAB's read verbs (`runs`, `run` — I5·T35a) are the other half of
+ * this face and do take one, for the opposite reason: which experiments a
+ * browser may see follows the calling session's dataset binding, and a
+ * session-less read would either see everything or nothing. They add no
+ * write: starting a run is still `runStart`, and approving one is still a
+ * human's act.
  * @module @khorsheed/dsh-eval/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { EvalService } from './service.ts'
 import type {
+  EvalExperimentDetail,
+  EvalExperimentRequest,
+  EvalExperimentsRequest,
+  EvalExperimentsResult,
   EvalRunJobView,
   EvalRunOutputView,
   EvalRunRequest,
@@ -113,5 +125,42 @@ export class EvalRemoteService extends TypertRemoteService<never> {
     const outcome = this.service.runJobCancel(jobId)
     if (outcome === 'unknown-job') throw UNKNOWN_JOB(jobId)
     return outcome
+  }
+
+  /**
+   * The lab tab's LIST: every experiment this instance can see — the runs eval
+   * started, and the plans in the calling session's dataset repository nobody
+   * has started yet.
+   *
+   * The agent is here for its session: the dataset binding is a human's
+   * decision about what this session may see, and honouring it is the whole
+   * reason a browser read is not the CI read. Every optional selector rides in
+   * the request object — the gateway's client proxy enforces exact positional
+   * arity.
+   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param request - repository / dataset overrides.
+   * @returns the rows, plus a sentence per degraded source.
+   */
+  @Remote('runs')
+  runs(agent: Agent, request: EvalExperimentsRequest): Promise<EvalExperimentsResult> {
+    return this.service.experiments({
+      session: { id: String(agent.session.id) },
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
+    })
+  }
+
+  /**
+   * One started experiment's overview: the row, the run.meta digest, the
+   * readiness records verbatim, the histograms, and the job.
+   * @param agent - owning live agent.
+   * @param request - the run to open.
+   * @returns the detail payload.
+   * @throws when the composition mounts no mission service.
+   */
+  @Remote('run')
+  run(agent: Agent, request: EvalExperimentRequest): EvalExperimentDetail {
+    void agent
+    return this.service.experiment(request.runId)
   }
 }

@@ -195,6 +195,9 @@ function missionFace(): {
     'p0-dsh-exec-rep2': [{ attempt: 1, state: 'pending', refs: {}, enteredAt: { pending: 6 }, checkpoints: [] }],
   }
   return {
+    // The ledger's run index — what the experiment LISTING walks before it
+    // picks out the runs eval's own meta claims.
+    runList: () => [{ id: 'run-1' }],
     runStatus: (runId: string) => {
       if (runId !== 'run-1') throw new Error(`unknown run: ${runId}`)
       return {
@@ -396,14 +399,49 @@ describe('eval_cells', () => {
     await expect(tool.execute({ run_id: 'run-1' }, {})).rejects.toThrow(/no mission service/)
   })
 
-  it('requires a run id and passes an unknown one through as the ledger\'s own error', async () => {
+  it('passes an unknown run id through as the ledger\'s own error', async () => {
     const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
-    expect(tool.parameters.required).toEqual(['run_id'])
     await expect(tool.execute({ run_id: 'run-9' }, {})).rejects.toThrow(/unknown run/)
   })
 
   it('tells the model the mission read tools are not there to look for', () => {
     const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
-    expect((tool as unknown as { description: string }).description).toMatch(/no mission tools/)
+    expect((tool as unknown as { description: string }).description).toMatch(/no mission_run_list/)
+  })
+
+  /**
+   * I5·T35a — the listing mode. Without `run_id` the tool answers WHICH
+   * experiments exist, from the same projection the 实验室 tab's `runs` Remote
+   * verb reads, so the model and the tab can never disagree. This is the gap
+   * T46 left open when the evaluation preset dropped `mission_run_list`.
+   */
+  it('without a run id it lists the evaluation runs instead of one run\'s cells', async () => {
+    const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
+    // `run_id` is no longer required — the two modes share one tool.
+    expect(tool.parameters.required ?? []).not.toContain('run_id')
+    const listing = await tool.execute({}, {}) as {
+      repo: string | null
+      rows: Array<Record<string, unknown>>
+      notes: string[]
+    }
+    // The fake ledger holds exactly one eval run; its row carries the list
+    // columns the tab shows, sourced from run.meta and the cells.
+    expect(listing.rows).toHaveLength(1)
+    expect(listing.rows[0]).toMatchObject({
+      id: 'run-1',
+      runId: 'run-1',
+      name: 'p',
+      status: 'running',
+      conditions: ['dsh-exec'],
+      items: 1,
+      reps: 2,
+      progress: { done: 0, total: 2 },
+      startedAt: 5,
+    })
+    expect(listing.rows[0]?.['snapshot']).toEqual({ repo: null, datasetId: 'harness-comparison', commit: 'c'.repeat(40) })
+    // No session binding in this fake exec, so drafts are not listed — and
+    // the listing says so rather than looking empty.
+    expect(listing.repo).toBeNull()
+    expect(listing.notes.some(note => note.includes('no dataset repository'))).toBe(true)
   })
 })

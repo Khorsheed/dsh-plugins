@@ -42,6 +42,8 @@ web-dev 场景包的开发模式 preset（`profiles/web-dev/presets/dev`）已�
 
 **第四个工具 `eval_cells` 是 I5·T46 加的**（宿主面无关，纯工具面）：评测预设自那以后不挂 mission 的伴生行（界面规格 R6），`eval_cells` 按 run 逐格答原先要 `mission_list` / `mission_get` 才答得了的问题——桶、阶段与停留时长、attempt、单元 refs、检查点名、各注解命名空间条数、委派子会话 id，可按 `bucket` / `task` / `condition` 过滤。投影算在 core 的服务面（`ctx.dshEval.cells`），本行只做适配。`tool:eval` 提示词段也随之点名：这条线上没有 mission 工具，不要去找。
 
+**I5·T35a 给它加了第二种模式**：不给 `run_id` 就改答「有哪些实验」——每个评测 run 与每份还没启动的 plan 各一行，带题库快照、条件数、矩阵大小、因子、状态与进度。列与实验室 tab 完全同源（core 的 `experiments` 投影，一份实现），两个面不可能各说各话；这是 T46 摘掉 `mission_run_list` 之后留下的缺口。先这么问拿到 run id，再带着它问逐格。
+
 ## Compatibility
 
 - **npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）**：✅ 完整——工具注册进宿主 tools 注册表并贡献提示词段；0.1.5 官方插件列表的「会话插件」组按 preset 组合呈现本行（短名标题、状态徽标、活挂载相位点）。core 缺席时行照常挂载，只是不注册工具（记一行日志）。

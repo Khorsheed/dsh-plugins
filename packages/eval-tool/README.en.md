@@ -42,6 +42,8 @@ The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carr
 
 **The fourth tool, `eval_cells`, arrived with I5 · T46** (a pure tool-face change — nothing host-side moved): the evaluation preset stopped composing mission's companion row (UI spec R6), and `eval_cells` answers per cell what used to need `mission_list` / `mission_get` — bucket, stage and time in it, attempt, the unit's refs, checkpoint names, annotation counts per namespace, and the delegation's child session id, filterable by `bucket` / `task` / `condition`. The projection is computed in the core's service face (`ctx.dshEval.cells`); this row only adapts it. The `tool:eval` prompt section says so too: there are no mission tools on this line, so do not look for them.
 
+**I5 · T35a gave it a second mode**: called with no `run_id` it answers which experiments exist instead — one row per evaluation run and per unstarted plan, with the dataset snapshot, condition count, matrix size, factors, status and progress. The columns come from the very same source the Experiments tab reads (the core's `experiments` projection, one implementation), so the two surfaces cannot disagree; this closes the gap T46 left when `mission_run_list` went away. Ask this way to find a run id, then ask again with one for the cells.
+
 ## Compatibility
 
 - **npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`)**: ✅ full — the tools register into the host tools registry and the prompt section is contributed; the 0.1.5 plugin list renders this row in its "session plugins" group (short-name title, state badge, live-mount phase dot). With the core absent the row still mounts, it just registers no tool (one log line).

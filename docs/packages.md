@@ -7,7 +7,7 @@
 - 包总数:**33**
 - 自挂载 bundle(`dsh.bundle.patch`):**26**
 - 组合组件(不自挂载,`dsh.composition.component`):**7** — `preset-composed-row` 5、`provider-mounted-row` 1、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**23**
+- 带浏览器半边(`dsh.client`):**24**
 - 整合 profile(默认安装单元):**3** — `web-basic`、`web-dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -23,7 +23,7 @@
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-datasets-tool` | `packages/datasets-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | — | 0.1.5-rc.1 | web-eval |
+| `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.3.0 | bundle | — | — | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.13 | bundle | — | web | 0.1.2-rc.1 | web-dev, web-eval |

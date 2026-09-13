@@ -85,6 +85,14 @@ export interface EvalRunStatus {
   finishedAt?: number
   /** Lines emitted so far — the cursor a fresh reader can start from. */
   lines: number
+  /**
+   * The plan this job was started from, as the caller spelled it. The link
+   * back to the experiment: a run refused by the readiness gate never reaches
+   * `runCreate`, so the mission ledger holds nothing for it and its plan is
+   * the ONLY thing that identifies which experiment was refused. Absent when
+   * the caller named no plan (the registry itself never invents one).
+   */
+  plan?: string
 }
 
 /**
@@ -142,6 +150,8 @@ interface RunRecord {
   settled?: { status: string; detail?: string; finishedAt: number }
   /** Disposes the session this run opened for itself, when it opened one. */
   releaseParent?: () => Promise<void>
+  /** The plan the run was started from, when the caller named one. */
+  plan?: string
 }
 
 /** The run id shape mission would have minted, minted here so the caller gets it up front. */
@@ -218,7 +228,7 @@ export class EvalRunJobs {
    */
   async start(
     execute: (options: RunOptions) => Promise<RunReport>,
-    options: RunOptions & { cwd?: string; label?: string },
+    options: RunOptions & { cwd?: string; label?: string; plan?: string },
   ): Promise<EvalRunHandle> {
     const jobs = this.jobs()
     if (jobs === undefined) {
@@ -250,6 +260,7 @@ export class EvalRunJobs {
       consumed: 0,
       controller,
       ...(parent.release === undefined ? {} : { releaseParent: parent.release }),
+      ...(options.plan === undefined ? {} : { plan: options.plan }),
     }
     const runOptions: RunOptions = {
       ...options,
@@ -353,6 +364,7 @@ export class EvalRunJobs {
         ? (record.settled === undefined ? {} : { finishedAt: record.settled.finishedAt })
         : { finishedAt: snapshot.finishedAt },
       lines: record.lines.length,
+      ...(record.plan === undefined ? {} : { plan: record.plan }),
     }
   }
 

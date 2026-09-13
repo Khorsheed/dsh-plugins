@@ -1,19 +1,8 @@
 /**
- * Package-local tsdown config: host-side package (no client half). The
- * Client pass emits nothing for this package.
+ * Package-local tsdown config via the shared helper: the host lib half
+ * (index/invariant/cli/tool entries) plus the browser client bundle
+ * (lib/client.js, the 实验室 tab) through clientBundle — never hand-rolled.
  */
-import { defineConfig } from 'tsdown'
+import { clientBundle } from '../../build/tsdown.client.ts'
 
-export default defineConfig(({ env }) => {
-  const client = env?.DSH_BUILD_FACE === 'client'
-  return {
-    entry: client ? '' : ['lib/types/{index,invariant,cli,tool}.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-  }
-})
+export default clientBundle('@khorsheed/dsh-eval', ['lib/types/index.js', 'lib/types/invariant.js', 'lib/types/cli.js', 'lib/types/tool.js'])

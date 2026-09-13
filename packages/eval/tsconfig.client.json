@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "verbatimModuleSyntax": false,
+    "experimentalDecorators": false,
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/client/index.ts",
+    "src/client/contract.ts",
+    "src/client/store.ts",
+    "src/client/locales.ts",
+    "src/client/LabView.tsx",
+    "src/client/preset-visibility.ts"
+  ]
+}
