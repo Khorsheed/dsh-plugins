@@ -30,7 +30,7 @@ import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { createScope, type Scope, type ScopeKey } from '@deepseek-ai/dsh-scope'
+import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { livePresetMounts } from '@deepseek-ai/dsh-agent-presets'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
@@ -337,11 +337,17 @@ export async function scanManagedSkills(root: string): Promise<readonly ManagedS
   return found.sort((left, right) => left.name.localeCompare(right.name))
 }
 
+/** The sentinel preset id of the delivery that serves every preset. */
+const GLOBAL_PRESET = '*'
+
 /** One live delivery registration. */
 interface DeliveryEntry {
+  /** The preset this provider was registered for, or {@link GLOBAL_PRESET}. */
   readonly presetId: string
-  readonly key: ScopeKey
-  readonly scope: Scope
+  /** The standing key, absent for the global registration. */
+  readonly key?: ScopeKey
+  /** Tear this registration down. */
+  readonly dispose: () => void | Promise<void>
   /** The registry's invalidation hook for this registration. */
   readonly invalidate: () => void
 }
@@ -419,6 +425,11 @@ export class ScopedSkillDelivery {
       }
     }
 
+    // A managed skill with no declared scope is delivered to EVERY preset —
+    // through one provider in the global layer, because the managed root is
+    // scanned by no host provider.
+    const unscoped = this.managed.filter(skill => !this.conflicts.has(skill.name) && !isScoped(skill))
+
     this.presetErrors = new Map()
     const live = this.liveKeys()
     // Resolve each named preset once: the roster's `standingKeyFor` ensures the
@@ -430,6 +441,7 @@ export class ScopedSkillDelivery {
 
     // Drop registrations that no longer have work, or whose generation is gone.
     for (const entry of [...this.entries]) {
+      if (entry.presetId === GLOBAL_PRESET) continue
       if (!byPreset.has(entry.presetId)) {
         await this.dropEntry(entry)
         continue
@@ -438,7 +450,7 @@ export class ScopedSkillDelivery {
       if (wantedKey === entry.key) continue
       // A newer generation of the same preset: keep serving sessions that are
       // still joined to the old key, and let the new key get its own entry.
-      if (wantedKey !== undefined && live.has(entry.key)) continue
+      if (wantedKey !== undefined && entry.key !== undefined && live.has(entry.key)) continue
       await this.dropEntry(entry)
     }
 
@@ -449,6 +461,13 @@ export class ScopedSkillDelivery {
       await this.register(presetId, key)
     }
 
+    const globalEntry = this.entries.find(entry => entry.presetId === GLOBAL_PRESET)
+    if (unscoped.length > 0) {
+      if (globalEntry === undefined) await this.registerGlobal()
+    } else if (globalEntry !== undefined) {
+      await this.dropEntry(globalEntry)
+    }
+
     this.failure = undefined
     this.invalidateAll()
   }
@@ -457,11 +476,7 @@ export class ScopedSkillDelivery {
   status(): ScopedDeliveryStatus {
     const delivered = new Set<string>()
     for (const entry of this.entries) {
-      for (const skill of this.managed) {
-        if (!this.conflicts.has(skill.name) && (skill.presetScope ?? []).includes(entry.presetId)) {
-          delivered.add(skill.name)
-        }
-      }
+      for (const skill of this.skillsFor(entry.presetId)) delivered.add(skill.name)
     }
     const skills: ScopedSkillStatus[] = this.managed.map(skill => {
       const conflict = this.conflicts.get(skill.name)
@@ -598,10 +613,38 @@ export class ScopedSkillDelivery {
         invalidate = control.invalidate
         return this.providerFor(presetId, control)
       })
-      this.entries.push({ presetId, key, scope, invalidate: () => invalidate?.() })
+      this.entries.push({
+        presetId,
+        key,
+        dispose: () => scope.dispose(),
+        invalidate: () => invalidate?.(),
+      })
     } catch (error) {
       await scope.dispose().catch(() => {})
       this.presetErrors.set(presetId, `delivery scope could not be created: ${describeError(error)}`)
+    }
+  }
+
+  /** Register the provider that serves every preset (the unscoped skills). */
+  private async registerGlobal(): Promise<void> {
+    try {
+      const injected = await injectableScope(this.ctx)
+      if (injected === undefined) {
+        this.failure = `the ${SKILLS_SERVICE} service was not injectable for the global delivery`
+        return
+      }
+      let invalidate: (() => void) | undefined
+      const dispose = injected.skills.registerProvider((control: SkillProviderControl) => {
+        invalidate = control.invalidate
+        return this.providerFor(GLOBAL_PRESET, control)
+      })
+      this.entries.push({
+        presetId: GLOBAL_PRESET,
+        dispose: () => { dispose() },
+        invalidate: () => invalidate?.(),
+      })
+    } catch (error) {
+      this.failure = `the global delivery scope could not be created: ${describeError(error)}`
     }
   }
 
@@ -622,10 +665,13 @@ export class ScopedSkillDelivery {
     }
   }
 
-  /** The managed skills one preset currently serves. */
+  /** The managed skills one delivery currently serves. */
   private skillsFor(presetId: string): readonly ManagedSkill[] {
     return this.managed.filter(skill =>
-      !this.conflicts.has(skill.name) && (skill.presetScope ?? []).includes(presetId))
+      !this.conflicts.has(skill.name)
+      && (presetId === GLOBAL_PRESET
+        ? !isScoped(skill)
+        : (skill.presetScope ?? []).includes(presetId)))
   }
 
   /** Invalidate every registration's completed catalogs. */
@@ -638,7 +684,7 @@ export class ScopedSkillDelivery {
     const entries = this.entries.splice(0, this.entries.length)
     for (const entry of entries) {
       try {
-        await entry.scope.dispose()
+        await entry.dispose()
       } catch (error) {
         this.deps.log(`capability-catalog: delivery scope disposal failed: ${describeError(error)}`)
       }
@@ -650,7 +696,7 @@ export class ScopedSkillDelivery {
     const index = this.entries.indexOf(entry)
     if (index >= 0) this.entries.splice(index, 1)
     try {
-      await entry.scope.dispose()
+      await entry.dispose()
     } catch (error) {
       this.deps.log(`capability-catalog: delivery scope disposal failed: ${describeError(error)}`)
     }

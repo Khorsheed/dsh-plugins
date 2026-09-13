@@ -206,11 +206,23 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     expect(await namesIn(ctx, keys.get('dev'))).toContain('md-to-wechat')
   })
 
-  it('leaves an unscoped skill global (no delivery at all)', async () => {
-    const { ctx, delivery } = await boot('')
-    expect((await ctx.skills.snapshot({})).skills).toEqual([])
-    expect(delivery.status().enabled).toBe(false)
-    expect(delivery.status().skills[0]).toMatchObject({ name: 'md-to-wechat', delivered: false, presets: [] })
+  it('delivers an unscoped managed skill to every preset and the global layer', async () => {
+    const { ctx, keys, delivery } = await boot('')
+    expect(await namesIn(ctx, undefined)).toContain('md-to-wechat')
+    expect(await namesIn(ctx, keys.get('standard'))).toContain('md-to-wechat')
+    expect(await namesIn(ctx, keys.get('dsh-writing'))).toContain('md-to-wechat')
+    expect(delivery.status().enabled).toBe(true)
+    expect(delivery.status().skills[0]).toMatchObject({ name: 'md-to-wechat', delivered: true, presets: [] })
+  })
+
+  it('withdraws the global delivery once a scope is declared', async () => {
+    const { ctx, keys, delivery, home } = await boot('')
+    expect(await namesIn(ctx, undefined)).toContain('md-to-wechat')
+    await writeFile(join(scopedSkillsRoot(home), 'md-to-wechat', 'SKILL.md'), skillText('md-to-wechat', '[dsh-writing]'))
+    await delivery.reconcile()
+    expect(await namesIn(ctx, undefined)).not.toContain('md-to-wechat')
+    expect(await namesIn(ctx, keys.get('dsh-writing'))).toContain('md-to-wechat')
+    expect(await namesIn(ctx, keys.get('standard'))).not.toContain('md-to-wechat')
   })
 
   it('refuses delivery for a name a default root already supplies', async () => {
@@ -230,13 +242,14 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     expect(definition?.resourceBase).toEqual({ kind: 'directory', path: dirname(definition?.path ?? '') })
   })
 
-  it('withdraws a registration when the policy stops naming the preset', async () => {
+  it('moves a registration when the policy names a different preset', async () => {
     const { ctx, keys, delivery, home } = await boot('[dsh-writing]')
     expect(await namesIn(ctx, keys.get('dsh-writing'))).toContain('md-to-wechat')
-    await writeFile(join(scopedSkillsRoot(home), 'md-to-wechat', 'SKILL.md'), skillText('md-to-wechat'))
+    await writeFile(join(scopedSkillsRoot(home), 'md-to-wechat', 'SKILL.md'), skillText('md-to-wechat', '[dev]'))
     await delivery.reconcile()
     expect(await namesIn(ctx, keys.get('dsh-writing'))).not.toContain('md-to-wechat')
-    expect(delivery.status().presets).toEqual([])
+    expect(await namesIn(ctx, keys.get('dev'))).toContain('md-to-wechat')
+    expect(delivery.status().presets.map(row => row.presetId)).toEqual(['dev'])
   })
 
   it('drops every registration on dispose', async () => {
