@@ -2,7 +2,7 @@
  * The session-granted eval read tools — the companion row of
  * `@khorsheed/dsh-eval` for agent-preset compositions. The row provides NO
  * service (the preset-mount isolate-realm rule forbids service rows), it only
- * registers the three read-only model tools into the host tools registry and
+ * registers the four read-only model tools into the host tools registry and
  * contributes their guidance section, delegating to the global `ctx.dshEval`
  * service core the main plugin provides at the profile root — the official
  * tool-row shape (the shipped `tool-bash` rows work the same way). Granting is
@@ -39,11 +39,15 @@ const definePluginTool = <T extends object>(def: T): T =>
 /** Plugin configuration. */
 export interface EvalToolConfig {
   /**
-   * Whether this row grants the three read tools: `all` (the default) or
+   * Whether this row grants the four read tools: `all` (the default) or
    * `none` (no tools and no guidance section — a deployment where the model
    * must not even read conditions and runs). The eval service, the
    * `/eval` slash face, and the CLI are the core's own and stay mounted
    * either way.
+   *
+   * `all` became FOUR tools with T46: an evaluation preset no longer
+   * composes the mission tool row, and `eval_cells` is where the per-cell
+   * detail its four read tools used to answer now comes from.
    */
   tools?: 'all' | 'none'
 }
@@ -71,11 +75,11 @@ interface PromptSections {
 }
 
 /** Cross-call guidance, registered beside the tools it describes. */
-const EVAL_PROMPT = `The eval_* tools are READ ONLY, all three of them. eval_conditions lists the conditions (subjects under test) a dataset repository declares, each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null. eval_plan_validate checks a dataseek.plan/1 document and reports errors (the plan cannot run) and warnings (not resolved yet). eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it. Starting a run is a HUMAN act: the person runs /eval run <plan.json> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Your part is drafting and reading: propose conditions and plans as data files (copy an existing condition and change exactly ONE field), validate them, and hand them to the human for approval; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
+const EVAL_PROMPT = `The eval_* tools are READ ONLY, all four of them. eval_conditions lists the conditions (subjects under test) a dataset repository declares, each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null. eval_plan_validate checks a dataseek.plan/1 document and reports errors (the plan cannot run) and warnings (not resolved yet). eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it. eval_cells goes cell by cell instead — bucket, stage and time in it, attempt, the unit's resource and environment fingerprint, checkpoint names, annotation counts per namespace, and the delegation's child session — filterable by bucket / task / condition. Those four are the whole read surface of an evaluation: this session grants no mission tools, so do not look for mission_run_list / mission_run_status / mission_list / mission_get — the run digest is eval_run_status and the cells are eval_cells. Starting a run is a HUMAN act: the person runs /eval run <plan.json> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Your part is drafting and reading: propose conditions and plans as data files (copy an existing condition and change exactly ONE field), validate them, and hand them to the human for approval; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
 
 
 /**
- * Plugin body: register the three read tools and their guidance section when
+ * Plugin body: register the four read tools and their guidance section when
  * the service core is present, degrade to a no-op when it is not.
  * @param ctx - Cordis context (the preset's agent-plane mount).
  * @param config - validated plugin config.

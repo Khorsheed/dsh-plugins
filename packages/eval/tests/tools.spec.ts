@@ -1,8 +1,8 @@
 /**
- * The three READ tools the companion row registers: the definition factory's
+ * The four READ tools the companion row registers: the definition factory's
  * names and each adapter's `execute` against fake service faces — a temp
- * dataset tree for the two contract tools, a fake mission ledger for the run
- * projection. Registration, origin tagging, and the `tools: 'none'` switch
+ * dataset tree for the two contract tools, a fake mission ledger for the two
+ * run projections. Registration, origin tagging, and the `tools: 'none'` switch
  * belong to `@khorsheed/dsh-eval-tool` and are pinned in its own spec.
  */
 import { join } from 'node:path'
@@ -61,7 +61,7 @@ function writeRepo(): string {
   return repo
 }
 
-/** Build the three tools over one service and index them by name. */
+/** Build the four tools over one service and index them by name. */
 function toolsOver(service: EvalService): Map<string, RegisteredTool> {
   const definitions = evalToolDefinitions(service) as unknown as RegisteredTool[]
   return new Map(definitions.map(tool => [tool.name, tool]))
@@ -172,6 +172,28 @@ function missionFace(): {
     ],
     'p0-dsh-exec-rep2': [],
   }
+  // The attempt records `eval_cells` reads: the unit each attempt held, where
+  // it got to, and when it entered each state.
+  const attempts: Record<string, Array<Record<string, unknown>>> = {
+    'p0-dsh-exec-rep1': [
+      {
+        attempt: 1,
+        state: 'halted',
+        refs: { resource: 'eval-run-1-rep1-a', fingerprint: 'lab-env:aaa', sessions: ['child-a'] },
+        enteredAt: { pending: 6, 'stage-1': 8, halted: 30 },
+        checkpoints: [{ name: 'stage1', at: 12 }],
+      },
+      {
+        attempt: 2,
+        state: 'stage-2',
+        refs: { resource: 'eval-run-1-rep1-b', fingerprint: 'lab-env:bbb', sessions: ['child-b', 'child-c'] },
+        enteredAt: { pending: 32, 'stage-1': 35, 'stage-2': 40 },
+        checkpoints: [{ name: 'stage1', at: 38 }],
+      },
+    ],
+    // No refs and no checkpoints yet — a cell nothing has touched.
+    'p0-dsh-exec-rep2': [{ attempt: 1, state: 'pending', refs: {}, enteredAt: { pending: 6 }, checkpoints: [] }],
+  }
   return {
     runStatus: (runId: string) => {
       if (runId !== 'run-1') throw new Error(`unknown run: ${runId}`)
@@ -196,14 +218,22 @@ function missionFace(): {
           },
         },
         rows: [
-          { id: 'p0-dsh-exec-rep1', labels: { task: 'P0', condition: 'dsh-exec', rep: '1' }, state: 'stage-2', bucket: 'active', currentAttempt: 2 },
+          // rep1 carries the projection's own duration column; rep2 leaves it
+          // out, so the cell projection falls back to `enteredAt[state]`.
+          { id: 'p0-dsh-exec-rep1', labels: { task: 'P0', condition: 'dsh-exec', rep: '1' }, state: 'stage-2', bucket: 'active', currentAttempt: 2, enteredCurrentAt: 40 },
           { id: 'p0-dsh-exec-rep2', labels: { task: 'P0', condition: 'dsh-exec', rep: '2' }, state: 'pending', bucket: 'ready', currentAttempt: 1 },
         ],
         buckets: { ready: ['p0-dsh-exec-rep2'], scheduled: [], blocked: [], active: ['p0-dsh-exec-rep1'], done: [] },
         unreleased: ['p0-dsh-exec-rep1'],
       }
     },
-    get: (missionId: string) => ({ mission: { annotations: annotations[missionId] ?? [] } }),
+    get: (missionId: string) => ({
+      mission: {
+        currentAttempt: attempts[missionId]?.length ?? 1,
+        attempts: attempts[missionId] ?? [],
+        annotations: annotations[missionId] ?? [],
+      },
+    }),
   }
 }
 
@@ -254,5 +284,126 @@ describe('eval_run_status', () => {
     const mission = missionFace()
     const tool = toolsOver(new EvalService({ get: (name) => (name === 'mission' ? mission : undefined) })).get('eval_run_status') as RegisteredTool
     await expect(tool.execute({ run_id: 'run-9' }, {})).rejects.toThrow(/unknown run/)
+  })
+})
+
+describe('eval_cells', () => {
+  /** The service behind the tool, over the two-cell ledger above. */
+  function service(): EvalService {
+    const mission = missionFace()
+    return new EvalService({ get: (name) => (name === 'mission' ? mission : undefined) })
+  }
+
+  it('projects every cell with its unit, checkpoints, annotation counts, and child session', async () => {
+    const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
+    const report = await tool.execute({ run_id: 'run-1' }, {}) as {
+      runId: string; state: string; filter: Record<string, string>; total: number; matched: number
+      buckets: Record<string, number>
+      cells: Array<Record<string, unknown>>
+    }
+    expect(report).toMatchObject({ runId: 'run-1', state: 'active', total: 2, matched: 2, filter: {} })
+    expect(report.buckets).toEqual({ active: 1, ready: 1 })
+    expect(report.cells[0]).toMatchObject({
+      missionId: 'p0-dsh-exec-rep1',
+      task: 'P0', condition: 'dsh-exec', rep: 1,
+      labels: { task: 'P0', condition: 'dsh-exec', rep: '1' },
+      state: 'stage-2', bucket: 'active', attempt: 2,
+      // The CURRENT attempt's unit and checkpoints, not attempt 1's.
+      refs: { resource: 'eval-run-1-rep1-b', fingerprint: 'lab-env:bbb' },
+      checkpoints: ['stage1'],
+      // Counted per namespace, across attempts — llm-draft is not orchestrator.
+      annotations: { orchestrator: 4, 'llm-draft': 1 },
+      // The latest session of the current attempt's refs.
+      childSessionId: 'child-c',
+      enteredCurrentAt: 40,
+    })
+    expect(report.cells[1]).toMatchObject({
+      missionId: 'p0-dsh-exec-rep2',
+      state: 'pending', bucket: 'ready', attempt: 1,
+      refs: { resource: null, fingerprint: null },
+      checkpoints: [],
+      annotations: {},
+      childSessionId: null,
+      // No `enteredCurrentAt` on the row: the attempt's own map answered.
+      enteredCurrentAt: 6,
+    })
+    expect(report.cells[0]?.['inStateMs']).toBeTypeOf('number')
+  })
+
+  it('measures the current stage against the clock it is given', () => {
+    const report = service().cells('run-1', { now: 1_000 })
+    expect(report.cells.map(cell => cell.inStateMs)).toEqual([960, 994])
+    // A clock that ran backwards is zero, never a negative duration.
+    expect(service().cells('run-1', { now: 5 }).cells.map(cell => cell.inStateMs)).toEqual([0, 0])
+  })
+
+  it('narrows by bucket, task, and condition, and echoes the filter it applied', async () => {
+    const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
+    const active = await tool.execute({ run_id: 'run-1', bucket: 'active' }, {}) as {
+      filter: Record<string, string>; total: number; matched: number; buckets: Record<string, number>
+      cells: Array<{ missionId: string }>
+    }
+    expect(active.filter).toEqual({ bucket: 'active' })
+    expect(active.cells.map(cell => cell.missionId)).toEqual(['p0-dsh-exec-rep1'])
+    // `total` and `buckets` stay the whole run's — the filter narrows the list,
+    // not the reader's sense of how big the run is.
+    expect(active).toMatchObject({ total: 2, matched: 1, buckets: { active: 1, ready: 1 } })
+
+    const byTask = await tool.execute({ run_id: 'run-1', task: 'P0', condition: 'dsh-exec' }, {}) as { matched: number }
+    expect(byTask.matched).toBe(2)
+    const missing = await tool.execute({ run_id: 'run-1', condition: 'kimi-exec' }, {}) as { matched: number; cells: unknown[] }
+    expect(missing).toMatchObject({ matched: 0, cells: [] })
+  })
+
+  it('falls back to the orchestrator annotation for the child session, and degrades on an unreadable cell', () => {
+    const mission = {
+      runStatus: () => ({
+        run: { id: 'run-2', state: 'active', createdAt: 1, meta: {} },
+        rows: [
+          { id: 'a', labels: { task: 'P0', condition: 'c', rep: '1' }, state: 'stage-1', bucket: 'active', currentAttempt: 1, enteredCurrentAt: 9 },
+          { id: 'b', labels: { task: 'P0', condition: 'c', rep: '2' }, state: 'pending', bucket: 'ready', currentAttempt: 1 },
+        ],
+        buckets: {},
+        unreleased: [],
+      }),
+      get: (missionId: string) => {
+        // A cell the ledger cannot resolve must not fail the whole listing.
+        if (missionId === 'b') throw new Error('no such mission')
+        return {
+          mission: {
+            currentAttempt: 1,
+            // refs never got written (the round failed to start), so the
+            // orchestrator's own annotation is the only witness.
+            attempts: [{ attempt: 1, state: 'stage-1', refs: {}, enteredAt: {}, checkpoints: [] }],
+            annotations: [
+              { ns: 'orchestrator', attempt: 1, createdAt: 2, payload: { kind: 'delegation', childSessionId: 'child-x' } },
+              { ns: 'orchestrator', attempt: 1, createdAt: 3, payload: { kind: 'delegation-failed', childSessionId: 'child-y' } },
+            ],
+          },
+        }
+      },
+    }
+    const report = new EvalService({ get: (name) => (name === 'mission' ? mission : undefined) }).cells('run-2', { now: 9 })
+    expect(report.cells[0]).toMatchObject({ missionId: 'a', childSessionId: 'child-y', annotations: { orchestrator: 2 }, inStateMs: 0 })
+    expect(report.cells[1]).toMatchObject({
+      missionId: 'b', childSessionId: null, annotations: {}, checkpoints: [],
+      refs: { resource: null, fingerprint: null }, enteredCurrentAt: null, inStateMs: null,
+    })
+  })
+
+  it('says so in words when the composition mounts no mission service', async () => {
+    const tool = toolsOver(new EvalService({ get: () => undefined })).get('eval_cells') as RegisteredTool
+    await expect(tool.execute({ run_id: 'run-1' }, {})).rejects.toThrow(/no mission service/)
+  })
+
+  it('requires a run id and passes an unknown one through as the ledger\'s own error', async () => {
+    const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
+    expect(tool.parameters.required).toEqual(['run_id'])
+    await expect(tool.execute({ run_id: 'run-9' }, {})).rejects.toThrow(/unknown run/)
+  })
+
+  it('tells the model the mission read tools are not there to look for', () => {
+    const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
+    expect((tool as unknown as { description: string }).description).toMatch(/no mission tools/)
   })
 })

@@ -84,8 +84,10 @@ export type {
   PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness, LockedCapabilities,
 } from './validate.ts'
 export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './validate.ts'
-export { listConditions, runStatus } from './read.ts'
-export type { ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
+export { listConditions, runCells, runStatus } from './read.ts'
+export type {
+  ConditionsReport, ConditionSummary, RunCellDetail, RunCellRefs, RunCellsQuery, RunCellsReport, RunCellStatus, RunStatusReport,
+} from './read.ts'
 export { evalToolDefinitions, EVAL_TOOL_NAMES } from './tool.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'

@@ -171,14 +171,19 @@
     searchTimeoutMs: 60000
 
 # ── 工具按域开放（M4'③：companion 行按域授予）──────────────────────────────
-# 这三个行原先挂在 profile 根并带 tools 配置（profiles/web-eval/cordis.patch.yml）。
+# 这两行原先挂在 profile 根并带 tools 配置（profiles/web-eval/cordis.patch.yml）。
 # 拆包后工具行不再全局：授予点移到这里，tier 原样跟随——eval 预设的会话拿到
-# 按域裁剪过的三个工具集，同 profile 里其它预设的会话一个都拿不到。
-- id: mission-tool
-  name: '@khorsheed/dsh-mission-tool'
-  config:
-    tools: read           # run_list / run_status / list / get 四个读工具
-
+# 按域裁剪过的两个工具集，同 profile 里其它预设的会话一个都拿不到。
+#
+# `mission-tool` 曾是这里的第三行（`tools: read`，四个只读工具）。T46 摘掉：
+# 界面规格的 R6 定了「评测模式下 mission 这个词不出现」——mission 仍是这条线的
+# 账本与释放闸，但那是编排器服务面的事，模型侧读进度走 eval 自己的投影
+# （`eval_cells`，见下一行的 eval-tool）。摘掉这一行还有第二个效果，是同一条
+# 规则的另一半：宿主的任务 tab 按「当前会话的预设组合里有没有
+# @khorsheed/dsh-mission-tool 行」自隐（mission 的 preset-visibility），所以
+# 这一行一走，评测会话的任务 tab 自己就不见了，不必再关一次。
+# 包本身仍随 pack 安装（package.json 的成员清单里），谁要在自己的覆盖层预设里
+# 加回这一行都还装得上——钉的是默认值，不是可达集。
 - id: datasets-tool
   name: '@khorsheed/dsh-datasets-tool'
   config:
@@ -187,4 +192,4 @@
 - id: eval-tool
   name: '@khorsheed/dsh-eval-tool'
   config:
-    tools: all            # 本包只注册三个读工具，all 即三个读工具
+    tools: all            # 本包只注册四个读工具，all 即四个读工具

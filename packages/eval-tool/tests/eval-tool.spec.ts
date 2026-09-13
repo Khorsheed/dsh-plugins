@@ -1,11 +1,11 @@
-/** The companion row: the three read tools, the origin tag (this package, not
+/** The companion row: the four read tools, the origin tag (this package, not
  * the core), the `tool:eval` guidance section, the `none` grant, and the
  * silent degrade when the core service is absent. */
 import { describe, expect, it } from 'vitest'
 import { apply, type EvalToolConfig } from '../src/index.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
-const EVAL_TOOLS = ['eval_conditions', 'eval_plan_validate', 'eval_run_status']
+const EVAL_TOOLS = ['eval_conditions', 'eval_plan_validate', 'eval_run_status', 'eval_cells']
 
 interface RegisteredTool {
   name: string
@@ -49,7 +49,7 @@ function mount(service: unknown, config?: EvalToolConfig): {
 }
 
 describe('eval-tool companion row', () => {
-  it('grants the three read tools, tags them by this package, and adds the guidance section', () => {
+  it('grants the four read tools, tags them by this package, and adds the guidance section', () => {
     const { tools, sections } = mount({})
     expect(tools.map(tool => tool.name).sort()).toEqual([...EVAL_TOOLS].sort())
     for (const tool of tools) {
@@ -58,7 +58,11 @@ describe('eval-tool companion row', () => {
     expect(sections.map(section => section.name)).toEqual(['tool:eval'])
     expect(sections[0]?.order).toBe(114)
     expect(sections[0]?.text).toContain('eval_conditions')
+    expect(sections[0]?.text).toContain('eval_cells')
     expect(sections[0]?.text).toContain('/eval run')
+    // R6: an evaluation session composes no mission row, so the guidance
+    // names the four mission read tools only to say not to look for them.
+    expect(sections[0]?.text).toContain('do not look for mission_run_list')
   })
 
   it('grants neither tools nor a section under `none`', () => {
