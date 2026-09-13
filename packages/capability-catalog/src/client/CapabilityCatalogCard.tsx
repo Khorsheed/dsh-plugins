@@ -3,7 +3,7 @@
  * Owns the section state and Remote wiring; visual cards and dialogs live in
  * focused client modules alongside this shell.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CatalogMcpSnapshot, CatalogPresetOption, CatalogPresetScopeStatus, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import type { CapabilityCatalogKey } from './locales.ts'
@@ -79,6 +79,18 @@ export function CapabilityCatalogCard({
       }))
   }, [scopeStatus, skills])
   const allSkills = useMemo(() => [...skills, ...managedRows], [skills, managedRows])
+  /** Display name per preset id, for the managed cards' badge. */
+  const presetNames = useMemo(
+    () => new Map(presetOptions.map(option => [option.id, option.name ?? option.id])),
+    [presetOptions],
+  )
+  /** A managed skill's card badge names its effective presets — not its source. */
+  const scopeTagOf = useCallback((name: string): string | undefined => {
+    const row = scopeStatus?.skills.find(entry => entry.name === name)
+    if (row === undefined) return undefined
+    const names = row.presets.map(id => presetNames.get(id) ?? id)
+    return `${t('scopePresetTag')} · ${names.length === 0 ? t('scopeAllPresets') : names.join('、')}`
+  }, [scopeStatus, presetNames, t])
   const tools = snapshot?.tools ?? []
   const loading = snapshot == null
 
@@ -290,6 +302,7 @@ export function CapabilityCatalogCard({
                 <SkillPreviewCard
                   key={skill.name}
                   skill={skill}
+                  tag={scopeTagOf(skill.name)}
                   onOpen={() => void openDetail(skill.name)}
                   onDelete={() => setDeleteTarget(skill.name)}
                   t={t}

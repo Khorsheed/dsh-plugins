@@ -1874,3 +1874,32 @@
   line-height: 1.5;
   color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-primary));
 }
+
+.scopeHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scopeInfo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+}
+
+.scopeInfo:hover,
+.scopeInfo:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-tertiary);
+}

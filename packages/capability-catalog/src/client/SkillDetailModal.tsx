@@ -122,12 +122,21 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
 
           {scope !== undefined ? (
             <section className={css.scopeBox}>
-              <div className={css.scopeTitle}>{t('scopeSection')}</div>
+              <div className={css.scopeHead}>
+                <span className={css.scopeTitle}>{t('scopeSection')}</span>
+                <button
+                  type="button"
+                  className={css.scopeInfo}
+                  title={`${t('scopeHint')}\n\n${t('scopeProbe')}`}
+                  aria-label={t('scopeInfoLabel')}
+                >
+                  i
+                </button>
+              </div>
               {scope.options.length === 0 ? (
                 <div className={css.scopeHint}>{t('scopeUnavailable')}</div>
               ) : (
                 <>
-                  <div className={css.scopeHint}>{t('scopeHint')}</div>
                   <div className={css.scopeGrid}>
                     {scope.options.map((option) => (
                       <label className={css.scopeItem} key={option.id} title={option.description}>
@@ -175,7 +184,6 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                   {scope.conflict !== undefined ? (
                     <div className={css.scopeConflict}>{t('scopeConflict')}: {scope.conflict}</div>
                   ) : null}
-                  <div className={css.scopeHint}>{t('scopeProbe')}</div>
                 </>
               )}
             </section>
@@ -268,7 +276,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
             )
           })()}
 
-          {data.metadataText !== undefined ? (
+          {data.metadataText !== undefined && hasUnrenderedMetadata(data.metadataText) ? (
             <details className={css.source}>
               <summary className={css.sourceTitle}>{t('metadata')}</summary>
               <pre className={css.codeBlk}>{formatMetadata(data.metadataText)}</pre>
@@ -278,6 +286,25 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
       ) : null}
     </ModalShell>
   )
+}
+
+/**
+ * Whether a skill's metadata holds anything the modal does not already render.
+ *
+ * `presetScope` is edited by the scope section above and visible in the source
+ * pane, so repeating it as raw JSON would be noise — but a skill declaring
+ * credentials or any other key still gets its metadata block.
+ * @param metadataText - the serialized metadata object.
+ * @returns whether the block is worth showing.
+ */
+function hasUnrenderedMetadata(metadataText: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(metadataText)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return true
+    return Object.keys(parsed).some(key => key !== 'presetScope')
+  } catch {
+    return true
+  }
 }
 
 /** Pretty-print a JSON metadata string for display. */
