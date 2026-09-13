@@ -341,13 +341,16 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **UI 先行（2026-09-13 定）**：I4 的机制齐了但环境活（T33e / T33f）还在修，而目标里差得最多的是界面。决定 I5 提前、与 I4 收尾并行：先把界面与流程按走查稿定稿（[ui-spec.md](ui-spec.md)），再按切片建，每片用真实数据（题库 i1-walk、已跑完的 run、pilot 的 bundle）在宿主路径联调；容器版的端到端等 T33e。走查稿里定下的形状：评测模式两个 tab（题集、实验室），都是列表 + 新建 + 详情；missions tab 隐藏，mission 保留为账本与释放闸，词留给以后的定时任务；eval 预设摘掉 mission-tool，eval-tool 自己补按格子读的工具；题集的槽位按通行词汇（题干 / 验收标准 / 参考答案 / 评估标准 / 检查脚本 / 其他文件）标「谁看得到」，界面不做题目正文编辑器，新建即骨架加导入；实验状态叫草稿 / 待批准 / 运行中 / 评估中 / 已完成；矩阵放在实验详情里，由人选哪个因子当列。前端结构照 mission 客户端：`conversation.view` slot、React、同一个 Typert Remote 读写、按伴生工具行自隐；eval 今天没有 client 半边，T35a 先搭骨架。切片顺序：T46 与 T48 先（小），T35a → T36 → T35b → T38 → T37 → T34 → T39；T47 与 T35 并行；T45 模式化排在 I5 末尾。
 
+**T46 / T35a 验收（2026-09-13）**：两条都单提交、无 checkpoint、锁文件按需动；T35a 合并态 eval 510、eval-tool 3，整仓 gate 14 步绿。T35a 三处点名的裁决：一、`install.sh --source` 在 main 上已坏，与本任务无关——pack-dist 9/12 起要 family 边带版本，install.sh 还传光名字；立 T49，未修前临时实例按 T35a 的绕法（一次性副本把 `--family` 改成 `name=version`）。二、改 `scripts/gen-typert.mts`（eval 的聚合 tsconfig 拆成 references 后生成器要指向 host 配置）接受，与 mission / datasets 同形。三、worktree 里跑 gate 撞 pnpm 的依赖状态检查——不用改 pnpm-workspace.yaml，用 `pnpm --config.verify-deps-before-run=false gate` 即可，写进通用提醒。状态推导的五条边界都接受（job 层把就绪拒绝与中途抛错都记成 failed，「被拒」的口径就是 job failed；半路停下与空账本读作运行中；没有 job 记录时只按格子读；run 与 plan 按解析路径或 planSha 配对，改过的 plan 如实变回草稿）。本机 `~/.local/bin/dsh` 是死链（指向不存在的 ~/.dsh/source/current），是机器上的事，实施者用临时 shim 绕过。
+
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
 | T46 ✅ | 代码 + profile | eval 预设摘掉 `mission-tool` 行（任务 tab 随之自隐）；eval-tool 加 `eval_cells`（按 run 读格子投影，收编原四个 mission 读工具的用途） | 无 | 合入 main `42ab0ae3`（2026-09-13，`39273ed4`）；`cells(runId, query)` 一格一行（坐标、桶、阶段、在态时长、attempt、refs、检查点、各 ns 注解数、childSessionId），投影算在服务端；eval-tool 四个读工具；用预设文件喂 mission 的 preset-visibility 证得任务 tab 在 eval 会话不注册；活实例原文并入 T35a 的真机步骤；「不给 run_id 就列评测 run」留给 T35a 的 runs 读面 |
 | T48 | 文档 | 按 [ui-spec.md](ui-spec.md) 改写 README「最终 UI」与「工具按域开放」；修十处口径不一致（清单见 §三 T48） | 无 | 双语 README + sidecar；题库两处修正 |
-| T35a | 代码 | eval client 半骨架 + 实验室 tab 列表与详情壳：tsconfig / tsdown / package 的 client 出口，`conversation.view` 注册（order 40，自隐按 eval-tool 行），Remote 会话态读面 `runs / run`，状态推导，六个子页路由（先只有概览） | T46 | 实验室 tab 在 3171 上出现，列表能列草稿与 run |
+| T35a ✅ | 代码 | eval client 半骨架 + 实验室 tab 列表与详情壳：tsconfig / tsdown / package 的 client 出口，`conversation.view` 注册（order 40，自隐按 eval-tool 行），Remote 会话态读面 `runs / run`，状态推导，六个子页路由（先只有概览） | T46 | 合入 main `7fff2efb`（2026-09-13，`78f76b86`）；临时实例 3199 上 eval 会话 tab 环「对话 · 轨迹 · 数据集 · 实验室」、无任务 tab，standard 会话两个都无；工具卡 33 个含 eval_cells 无 mission_*（T46 欠的原文补齐）；列表 11 行（3 run + 8 草稿）、run 与 plan 按解析路径或 planSha 配对；概览页字段齐；eval_cells 不给 run_id 即列评测 run（T46 的缺口收了）；状态推导五条边界写在注释与测试里；顺带改了 scripts/gen-typert.mts（eval 指向 tsconfig.host.json）与 docs/packages.md |
+| T49 | 代码（脚本） | `install.sh --source` 自 pack-dist 的 family-edge 规则（`3406a471`）起坏了：`--family` 传的是光名字，打到 local-agent-tool-subagent 报 `is a family edge but no version was given`；改成 `name=version`，用临时 DSH_HOME 全量装一遍验证 | 无 | 源码模式重装恢复；T33e / T36 / T35b / T47 的临时实例都靠它 |
 | T36 | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 第 3、4、5 步在界面上完成 |
 | T35b | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 第 6 步在界面上完成；missions tab 的三个动作有了新家 |
 | T38 | 代码 | 实验室 › 报告页：读 bundle 出四条不变量、配对、效率、一致性；finalize 与导出按钮 | T35b | 第 7 步在界面上完成 |
@@ -384,7 +387,8 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - npm 账号风控期间不从 npm 安装任何 @khorsheed 包：装 profile 用源码模式打 tarball 或本地已有 tarball（web-eval 的 install.sh 已按此处理）。
 - 从 main 开 worktree，分支只改文案指明的目录；题库仓库是多 agent 共享检出，写操作一律 `git worktree add` 后再动，从 i1-walk 开，不在共享检出上 checkout。
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
-- Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。
+- Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
+- UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。
 ```
 
 ### I1 的文案（已全部完成）
@@ -1929,6 +1933,123 @@ eval / eval-tool 测试全绿，gate 绿；本机 eval 预设会话：工具卡�
 
 **验收（2026-09-13）**：`feat/eval-cells-tool`（`39273ed4`，单提交，无 checkpoint 混入，锁文件未动）合入 main `42ab0ae3`，无冲突；合并态 eval 468、eval-tool 3 全绿，300 对双语同步，独立性 33 包 0 违规。实施者的一处更正接受：web-eval 里 standard 预设的会话自 M4'③ 起就没有 mission 工具与任务 tab（判据就是那一行），T46 对 standard 会话是零变化，文案里写的「任务 tab 仍在」不成立。两件没做的裁决：一、活实例的两条原文不单独补，并入 T35a 的真机步骤——T35a 本来就要在实例上看 tab 环；UI 切片的真机验证一律用**独立 DSH_HOME + 空闲端口的临时实例**（源码模式装 web-eval，不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh），3171 只在切片合入后按 T33a 第 3 步重装。二、「不给 run_id 就列 run」不就地扩参数，等 T35a 的 runs 读面落地后给 eval_cells 加这一模式，列出来的只是评测的 run。顺带：3171 的看门狗在 9/12 03:40 之后收到 SIGTERM 退出（watchdog.log 末行 `Terminated: 15`），现在没人守也没实例，重起归下一个要用它的任务。Agent Note：`.agents/notes/implemented/feature/2026-09-13-eval-cells-tool.md`。
 
+**验收（2026-09-13）**：`feat/eval-client-lab`（`78f76b86`）合入 main `7fff2efb`；判据全部有原文（临时实例 3199 的 tab 环、工具卡、列表 11 行、run 与草稿的概览页）。裁决见 §二「T46 / T35a 验收」。Agent Note：`.agents/notes/implemented/feature/2026-09-13-eval-client-lab.md`。
+
+### T49 · 脚本：install.sh 的 family 边带版本（可发，小）
+
+```text
+# 任务 T49：install.sh --source 适配 pack-dist 的 family-edge 规则
+
+## 背景
+scripts/pack-dist.ts 自 3406a471（9/12）起，--family 里作为 peer / dev 依赖边的成员必须写成 name=version（边按目标包的版本定范围），光名字只做改写。profiles/web-eval/scripts/install.sh 第 251 行仍把 @khorsheed 依赖名拼成光名字传过去，打到 local-agent-tool-subagent 时报 peerDependencies entry @khorsheed/dsh-local-agent is a family edge but no version was given for it，源码模式安装在 main 上就此不通。T35a 用一次性副本绕过验证了改法可行。
+
+## 先读
+scripts/pack-dist.ts 头注释与 parseFamilySpecs（--family 的两种写法）；profiles/web-eval/scripts/install.sh 第 236–258 行（NAMES / GEN_TYPERT_ONLY / 逐包 pack 的循环）与头注释；T29c 的 Agent Note（源码模式与 npm 风控）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-install-family，分支 fix/web-eval-install-family-version；只改 profiles/web-eval/scripts/install.sh（必要时 update.sh 同款）、CHANGELOG、README 安装节若提到 --family 的写法。
+
+## 已定决定
+- family 的每个 @khorsheed 成员都写成 name=version，版本从 $SOURCE/packages/*/package.json 扫出来（name → version 一张表，一次算好，循环里查）；没找到版本的名字保持光名字并打一行 warn。
+- 不改 pack-dist；不改 UNPUBLISHED_DIRS 语义。
+
+## 完成判据
+用临时 DSH_HOME（不是 ~/.dsh / ~/.dsh-lab / ~/.dsh-official）跑 install.sh --source <主检出> --fresh 全程通过：27 个 tarball 打出、实例能起、--dump-config 成员 27；gate 绿（脚本改动会触发整仓）。
+
+## 回报
+分支与 commit；install.sh 的关键输出（打包那几行）；--dump-config 成员数；临时 DSH_HOME 已清。
+```
+
+### T36 · 实验室 › 计划审阅 + 条件页 + 「批准并启动」（可发，依赖 T35a；T49 未合入前临时实例按 T35a 的绕法装）
+
+```text
+# 任务 T36：实验室详情的计划审阅页、条件页，和人的「批准并启动」
+
+## 背景
+T35a 搭好了实验室 tab 的列表、详情壳与概览页，六个子页里计划审阅与条件页归本任务。界面规格（profiles/web-eval/docs/ui-spec.md §五）：计划审阅 = 快照 · 条件 · 题 · rep · 顺序 + validate 结果逐条 + 「批准并启动」与「退回修改」；条件页 = 条件列表与两条件 diff（只高亮不同项）、lock 与就绪状态；「选模型即新建条件」回到新建实验（T34，本任务占位）。R1：批准是人的动作，启动动词只给界面，不给模型工具。
+
+## 先读
+packages/eval/src/client/{LabView.tsx, store.ts, contract.ts}（T35a 的路由与 store）；packages/eval/src/remote.ts（runs / run 两个带 agent 的读 verb，runStart 不带 agent）；packages/eval/src/service.ts 的 validatePlan、conditions、provision；packages/eval/src/read.ts 与 cli-core.ts 里 conditions list / diff 的实现；packages/eval/src/slash.ts 的 /eval run 怎么把会话变成 initiator（cwd、parentSessionId）；T29b / T31 的 Agent Note；ui-spec §五、§七第 3–5 步。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-client-review，分支 feat/eval-client-review；只改 packages/eval（README 双语 + sidecar）。
+
+## 已定决定
+- Remote 新增带 agent 的 verb：plan(agent, { planPath })——plan 摘要 + validate 结果逐条（ok / warn / error，与 CLI 同一函数）；conditions(agent, { repo?, dataset? })——列表 + 每条的 lock 摘要与就绪态；conditionDiff(agent, { a, b })——只返回不同的键；approve(agent, { planPath })——先 validate，有 error 即拒绝不启动，否则以本会话为 initiator 调既有 runStart（cwd 取会话工作区，与 /eval run 同一取法），返回 job 与 run id。approve 不做模型工具。
+- 计划审阅页：kv（快照、矩阵形状、因子、判官与采样数、环境）+ validate 列表 + 两个按钮；「退回修改」只在页面上记一段备注并把状态显示为草稿（不改文件）；批准成功后跳到该 run 的概览页，列表行从待批准变运行中。
+- 条件页：表（条件、harness、model.declared、scope、preset、lock、就绪），选两条出 diff，不同项高亮；「新建条件」按钮占位归 T34。
+- 就绪检查失败的原文（job 输出里 refused 段）在概览页已有，本任务在计划审阅页批准失败时也原样显示。
+
+## 测试
+Remote spec：approve 在 validate 有 error 时拒绝且不调 runStart；conditionDiff 只报不同键；client spec：计划审阅渲染、按钮调 approve、条件页 diff 高亮。
+
+## 完成判据
+eval 测试全绿，gate 绿；临时实例上从列表点一个草稿 → 计划审阅 → 批准并启动 → 概览页出现 job 与 run id、就绪检查原文；条件页对 dsh-exec 与 codex-exec 出 diff 只报不同项。第 3、4（看）、5 步在界面上走通。
+
+## 回报
+分支与 commit；Agent Note；gate；临时实例上的三段原文（计划审阅、批准后的概览、条件 diff）。
+```
+
+### T35b · 实验室 › 矩阵 + 格子 + 格子详情（可发，依赖 T35a；可与 T36 并行）
+
+```text
+# 任务 T35b：矩阵页、格子页与格子详情抽屉，mission 账本的投影与三个动作转发
+
+## 背景
+ui-spec §五：矩阵页行永远是题、列是人选的因子、格内四样（rep 圆点、阶段或桶、卡格告警、哈希是否一致）、底部 run 级汇总；格子页是原 missions 队列按本 run 过滤，右侧抽屉是格子详情（refs、检查点、子会话、verify 原样输出、产物、注解计数），动作是带原因重跑、释放检查、导出 bundle。R2：全部经 eval 自己的 Remote，前端零 mission 依赖；动作在服务端转发给 mission 的服务面。T46 已有服务面 cells(runId, query)。
+
+## 先读
+packages/eval/src/service.ts 的 cells 与 read.ts 的 runCells；packages/eval/src/faces.ts 的 MissionFace / MissionReadFace（看缺哪些动词）；packages/mission/src/remote.ts 的 queue / get / retry / isReleasable / exportPlan / exportRun（签名与泄题闸的语义，照抄语义不 import）；packages/mission/src/client/MissionsView.tsx 的详情面板与导出对话框（看它展示什么，本任务自己实现同等的最小对话框）；packages/taskpilot/src/client/index.ts 里 sessions.open 的用法；packages/eval/src/report.ts 的 materialization / fingerprint 检查（矩阵格的「哈希是否一致」用同一口径）；ui-spec §五。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-client-cells，分支 feat/eval-client-cells；只改 packages/eval（README 双语 + sidecar）。faces.ts 需要加宽的结构面（retry / isReleasable / exportPlan / exportRun / get 的详情形状）在 eval 侧声明，mission 不改。
+
+## 已定决定
+- Remote 新增带 agent 的 verb：cells(agent, { runId, query })；cell(agent, { runId, missionId })——attempts、检查点、各 ns 注解（orchestrator / lab / script / llm-draft / human-final 的条数与最近一条摘要，lab 的 verify 原样输出全文）、产物、refs、childSessionId；retry(agent, { runId, missionId, reason, category })；releaseCheck(agent, { runId, missionId })；exportPlan / exportRun(agent, …) 转发 mission 同名语义（guarded 层 fail-closed 由 mission 侧保证，eval 只转发不放宽）；runsForItem(agent, { datasetId, itemId })——按 label task 列各 run 的格子与判定摘要，给题集 tab 的「作答记录」用（T47 消费，缺席时那边隐藏）。
+- 矩阵页：因子集合 = run.meta.conditions 两两 diff 的键并集；「列」选一个因子，其余因子「分组」或「筛选」，单因子时默认就是那一列；格 = 同 task × condition 的 rep 集合，圆点实心 ≥ judged、半心进行中、空心未起；阶段或桶文字；卡格告警 = 在态时长超过阈值（缺省 30 分钟，可配）；哈希不一致 = 同题各格 materialization ref 不同则该格红边；底部一行：物化哈希、环境指纹、未释放单元数、判官一致性（报告未出前显示「待报告」）、卡格数。点格子打开抽屉。
+- 格子页：表（题 × 条件 × rep、桶、阶段、attempt、时长）+ 抽屉；抽屉动作三枚；「打开子会话」用宿主 sessions.open(childSessionId)，缺 childSessionId 时按钮禁用并说明。
+- 导出对话框：先 exportPlan 展示要收录与被拦的层，再 exportRun；不复制 mission 客户端的组件，自己写最小版。
+
+## 测试
+矩阵透视函数（因子并集、列 / 分组 / 筛选、圆点态、哈希一致性）单测；Remote spec：retry 需要 reason 与类别、exportRun 前必 exportPlan；client spec：矩阵渲染、点格子开抽屉、三个动作调 Remote、sessions.open 被调。
+
+## 完成判据
+eval 测试全绿，gate 绿；临时实例上对本机一个多格 run（pilot-a-round1 的 bundle 或 t29-two-scopes）矩阵按 harness 与按 scope 两种列各出一次；格子页抽屉三个动作各调通一次（重跑用 infrastructure 类别、释放检查回答 releasable 与否、导出对话框走到 plan）；打开子会话切到成员 composer。第 6 步在界面上走通。
+
+## 回报
+分支与 commit；Agent Note；gate；矩阵两种列的原文；抽屉与导出对话框的原文。
+```
+
+### T47 · 题集 tab 改造：列表、槽位、选手将看到、骨架与导入（可发，与 T35 并行）
+
+```text
+# 任务 T47：datasets 的 tab 按 ui-spec §四 改成「题集」：列表 · 骨架 / 导入 · 详情
+
+## 背景
+今天的 datasets tab 是绑定条 + 树 + 预览，标签用层名，用户看不懂。ui-spec §三 §四 定了：按「谁看得到」标注，槽位显示为题干 / 验收标准 / 参考答案 / 评估标准 / 检查脚本 / 其他文件；列表页一行一个题集；详情是树 + 预览 + 槽位筛选 + 「选手将看到」+ 可判性 + 作答记录；新建是骨架加导入，界面不做正文编辑器。
+
+## 先读
+packages/datasets/src/client/{index.ts, DatasetsView.tsx, BindForm.tsx, preview.tsx, store.ts, locales.ts, preset-visibility.ts}；packages/datasets/src/{remote.ts, service.ts, dataset.ts, rubric.ts, worktree.ts}（binding / bind / list / show / read / readPassthrough / putItem / validate）；docs/dataset-authoring-protocol.md §2 §3（层、register、透传区、canary）；packages/eval/src/manifest.ts 与 unit.ts 里「选手拿到哪些字节」的规则（visible 层 + prompts）；packages/eval/src/judge.ts 的 rubric kind；ui-spec §三 §四；T35b 文案里 runsForItem 的形状。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-datasets-tab，分支 feat/datasets-tab-slots；只改 packages/datasets（README 双语 + sidecar）与 packages/datasets-tool 的 README（put_item 的措辞若变）。不改 eval / mission；作答记录经 ctx.get 探测 remote.dshEval，缺席即隐藏那一区。
+
+## 已定决定
+- 角色是权威，槽位名是显示层：每个文件按 dataset.json 的 layers + register 恰好落一个角色——选手看得到（modelFacing 层）、只有判官（grading）、只有探针（verify）、所有人可读（透传区）；五个槽位名由基名启发式给出（task.md 与 prompts/ → 题干；standards* → 验收标准；rubric* 与 standards-notes* → 评估标准；oracle/ → 参考答案；checks/ 与 probes/ → 检查脚本），启发式写在一处并单测；不改协议、不加契约字段，题集要自定义槽位名留作后话。
+- 列表页：题集、快照（绑定的 repo @ commit）、题目数、槽位 ← 层对应、canary 是否设置、validate 结果、用于的实验（从 remote.dshEval 的 runs 按题集过滤，缺席隐藏）；动作：新建题集（服务面 scaffoldDataset：写 dataset.json 骨架、prompts/、schemas/、items/），导入题集（就是现在的绑定表单，换个标题）。
+- 详情页：树（每文件标槽位 + 谁看得到，三种颜色）、槽位筛选 chip、预览沿用；「选手将看到」= 该题 visible 层文件 + 题集级 prompts 的清单与字节数；可判性 = rubric 各 kind 的条数、探针数、阶段 schema 数（读 grading / verify 层用显式单层 scope）；作答记录 = runsForItem 的投影，缺席隐藏；动作：题目骨架（putItem 写占位的 task.md / standards.yml / answers/rubric.yml / checks/ 目录，位置按该题集的层与 register 规则落）、导入题目（putItem 从一个已有目录拷入）、validate。
+- 标签改「题集 / Datasets」；自隐规则不变。commit 仍是人的，界面不 commit。
+
+## 测试
+槽位启发式与角色计算的单测（含 register 形态、无 register 的层目录形态、透传）；Remote spec：scaffoldDataset 与骨架 putItem 的落位；client spec：列表渲染、槽位筛选、「选手将看到」、作答记录缺席隐藏。
+
+## 完成判据
+datasets 测试全绿，gate 绿；临时实例上绑定 harness-comparison：列表一行字段齐、P0 详情树上每个文件的槽位与「谁看得到」正确、「选手将看到」只列 task.md / standards.yml / prompts、可判性数对；新建一个题目骨架后 validate 有 error 指向占位文件（预期）；作答记录在有 eval 时按题列出。
+
+## 回报
+分支与 commit；Agent Note；gate；临时实例上的列表与 P0 详情原文；骨架落位后的 validate 原文。
+```
+
 ### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（可发）
 
 ```text
@@ -1962,7 +2083,7 @@ gate 绿（docs-only 8 步）；题库 validate 0 error 且不再报 CANARY_MISS
 两条分支与 commit；十条各一句「改在哪」；validate 原文。
 ```
 
-### T35a · eval client 半骨架 + 实验室 tab 的列表与详情壳（可发，依赖 T46）
+### T35a · eval client 半骨架 + 实验室 tab 的列表与详情壳（已完成，2026-09-13 验收）
 
 ```text
 # 任务 T35a：eval 的 client 半边从零搭，实验室 tab 先有列表与详情壳
