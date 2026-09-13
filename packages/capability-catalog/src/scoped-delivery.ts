@@ -180,6 +180,11 @@ function presetIdsOf(values: readonly string[]): readonly string[] {
   return ids
 }
 
+/** Whether a string is a usable skill / preset id. */
+export function isKebabId(value: string): boolean {
+  return KEBAB_ID.test(value)
+}
+
 /** Split a SKILL.md into its frontmatter block and body. */
 export function splitFrontmatter(content: string): { front: string; body: string } | undefined {
   const match = FRONTMATTER.exec(content)

@@ -33,10 +33,17 @@ import type {
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
   CatalogPresetScopeStatus,
+  CatalogPresetOption,
+  CatalogPresetScopeSetRequest,
+  CatalogPresetScopeAdoptRequest,
+  CatalogPresetScopeEditResult,
 } from './types.ts'
 import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogPickDirectory } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
 import { ScopedSkillDelivery, scopedSkillsRoot, type ScopedDeliveryRegistry } from './scoped-delivery.ts'
+import {
+  adoptManagedSkill, releaseManagedSkill, setManagedPresetScope,
+} from './scoped-edits.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
 import { McpStore } from './mcpStore.ts'
 import type { PersistedMcpState } from './mcpStore.ts'
@@ -72,6 +79,10 @@ export type {
   CatalogPresetScopeStatus,
   CatalogScopedSkillRow,
   CatalogScopedPresetRow,
+  CatalogPresetOption,
+  CatalogPresetScopeSetRequest,
+  CatalogPresetScopeAdoptRequest,
+  CatalogPresetScopeEditResult,
 } from './types.ts'
 
 export { resolveSkillNameFromContent } from './import.ts'
@@ -82,6 +93,11 @@ export {
   parsePresetScopeFrontmatter, defaultSkillRoots, detectConflicts,
   SCOPED_PROVIDER_NAME, MANAGED_SKILL_RANK,
 } from './scoped-delivery.ts'
+export {
+  adoptManagedSkill, releaseManagedSkill, setManagedPresetScope, withPresetScope,
+  findSkillSource, managedLocation, isDirectory,
+} from './scoped-edits.ts'
+export type { ScopedEditResult, SkillSource, ManagedSkillLocation } from './scoped-edits.ts'
 export type {
   ManagedSkill, ScopedDeliveryDeps, ScopedDeliveryRegistry,
   ScopedDeliveryStatus, ScopedPresetStatus, ScopedSkillStatus,
@@ -246,6 +262,60 @@ export class CapabilityCatalogService extends TypertRemoteService {
           customRootsUnverifiable: true,
         }
       : status
+  }
+
+  /** Every preset the roster supplies, for the settings surface's scope picker. */
+  @Remote('presetScopeRoster')
+  async presetScopeRoster(): Promise<readonly CatalogPresetOption[]> {
+    const roster = this.agentPresets()
+    if (roster?.list === undefined) return []
+    try {
+      const rows = await roster.list()
+      return rows.map(row => ({
+        id: row.id,
+        ...row.name === undefined ? {} : { name: row.name },
+        ...row.description === undefined ? {} : { description: row.description },
+        ...row.broken === undefined ? {} : { broken: row.broken },
+      }))
+    } catch (error) {
+      this.ctx.logger.warn(`capability-catalog: the preset roster could not be listed: ${error instanceof Error ? error.message : String(error)}`)
+      return []
+    }
+  }
+
+  /** Declare which presets one managed skill is delivered to. */
+  @Remote('presetScopeSet')
+  async presetScopeSet(request: CatalogPresetScopeSetRequest): Promise<CatalogPresetScopeEditResult> {
+    const result = await setManagedPresetScope(this.dshHome(), request.name, request.presets)
+    await this.reconcileScoped()
+    return result
+  }
+
+  /** Move an installed skill into the managed root with a preset scope. */
+  @Remote('presetScopeAdopt')
+  async presetScopeAdopt(request: CatalogPresetScopeAdoptRequest): Promise<CatalogPresetScopeEditResult> {
+    const result = await adoptManagedSkill(
+      this.dshHome(), request.name, request.presets, request.workdir ?? this.observedWorkdir,
+    )
+    await this.reconcileScoped()
+    return result
+  }
+
+  /** Move a managed skill back to the user skill root (the recovery direction). */
+  @Remote('presetScopeRelease')
+  async presetScopeRelease(name: string): Promise<CatalogPresetScopeEditResult> {
+    const result = await releaseManagedSkill(this.dshHome(), name)
+    await this.reconcileScoped()
+    return result
+  }
+
+  /** Re-deliver after a write; a delivery that is absent is not an error. */
+  private async reconcileScoped(): Promise<void> {
+    try {
+      await this.scoped?.reconcile()
+    } catch (error) {
+      this.ctx.logger.warn(`capability-catalog: scoped skill reconcile failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /** Record tools that appeared after the apply-time baseline (reads the live

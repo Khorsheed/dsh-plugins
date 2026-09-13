@@ -230,6 +230,34 @@ export interface CatalogPresetScopeStatus {
   readonly customRootsUnverifiable: boolean
 }
 
+/** One preset a scope picker may choose. */
+export interface CatalogPresetOption {
+  readonly id: string
+  readonly name?: string
+  readonly description?: string
+  /** Why this preset cannot compose a session, when it cannot. */
+  readonly broken?: string
+}
+
+/** Request to declare which presets one skill is delivered to. */
+export interface CatalogPresetScopeSetRequest {
+  readonly name: string
+  readonly presets: readonly string[]
+}
+
+/** Request to adopt an installed skill into the managed, preset-scoped root. */
+export interface CatalogPresetScopeAdoptRequest {
+  readonly name: string
+  readonly presets: readonly string[]
+  readonly workdir?: string
+}
+
+/** Outcome of one preset-scope write; `error` is present exactly when it failed. */
+export interface CatalogPresetScopeEditResult {
+  readonly ok: boolean
+  readonly error?: string
+}
+
 /** Add-skill channel. */
 export type AddSkillChannel = 'zip' | 'github' | 'command'
 
