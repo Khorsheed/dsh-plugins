@@ -21,6 +21,9 @@
     "src/client/store.ts",
     "src/client/locales.ts",
     "src/client/LabView.tsx",
+    "src/client/PlanReviewPage.tsx",
+    "src/client/ConditionsPage.tsx",
+    "src/client/parts.tsx",
     "src/client/preset-visibility.ts"
   ]
 }

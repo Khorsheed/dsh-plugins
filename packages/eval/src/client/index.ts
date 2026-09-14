@@ -30,7 +30,10 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
-import type { EvalExperimentRequest, EvalExperimentsRequest } from '../types.ts'
+import type {
+  EvalApproveRequest, EvalConditionDiffRequest, EvalConditionsRequest, EvalExperimentRequest,
+  EvalExperimentsRequest, EvalPlanRequest,
+} from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
 import { en, NS, zh } from './locales.ts'
@@ -91,6 +94,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (_sessionId: SessionId): LabViewInjected => ({
         fetchExperiments: (sid: SessionId, request: EvalExperimentsRequest) => remote.runs(sid, request),
         fetchExperiment: (sid: SessionId, request: EvalExperimentRequest) => remote.run(sid, request),
+        fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
+        fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
+        fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
+        approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
+        // The cursor is passed EXPLICITLY even though the verb defaults it:
+        // the gateway's client proxy enforces exact positional arity, so a
+        // call that leaves an optional parameter off throws
+        // "expected 2 argument(s), got 1" before it reaches the wire.
+        fetchRunOutput: (jobId: string) => remote.runOutput(jobId, 0),
       }),
     }, LabView),
     () => chrome.show(ctx.sessions.list.getSnapshot().current),

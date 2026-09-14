@@ -14,12 +14,17 @@
  * None of those four takes an agent parameter: a CI caller has no agent, and
  * requiring one would put the door back where it was.
  *
- * The LAB TAB's read verbs (`runs`, `run` — I5·T35a) are the other half of
- * this face and do take one, for the opposite reason: which experiments a
+ * The LAB TAB's verbs (`runs`, `run` — I5·T35a; `plan`, `conditions`,
+ * `conditionDiff`, `approve` — I5·T36) are the other half of this face and DO
+ * take one, for the opposite reason: which experiments and conditions a
  * browser may see follows the calling session's dataset binding, and a
- * session-less read would either see everything or nothing. They add no
- * write: starting a run is still `runStart`, and approving one is still a
- * human's act.
+ * session-less read would either see everything or nothing.
+ *
+ * `approve` is the one WRITE among them, and it is a human's click reaching
+ * the same `runStart` the slash command reaches — with the approving session
+ * as the run's parent, exactly as `/eval run` resolves it. There is no
+ * approve-class MODEL tool and there will not be one (ui-spec R1): the
+ * starting verb belongs to the interface, never to the toolset.
  * @module @khorsheed/dsh-eval/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -27,10 +32,18 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { EvalService } from './service.ts'
 import type {
+  EvalApproveRequest,
+  EvalApproveResult,
+  EvalConditionDiffRequest,
+  EvalConditionDiffView,
+  EvalConditionsRequest,
+  EvalConditionsView,
   EvalExperimentDetail,
   EvalExperimentRequest,
   EvalExperimentsRequest,
   EvalExperimentsResult,
+  EvalPlanRequest,
+  EvalPlanReview,
   EvalRunJobView,
   EvalRunOutputView,
   EvalRunRequest,
@@ -162,5 +175,70 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   run(agent: Agent, request: EvalExperimentRequest): EvalExperimentDetail {
     void agent
     return this.service.experiment(request.runId)
+  }
+
+  /**
+   * The PLAN-REVIEW page: the plan's own fields plus `validatePlan`'s verdict
+   * as a flat `ok / warn / error` list (ui-spec §五, step 3).
+   * @param agent - owning live agent.
+   * @param request - the plan document to review.
+   * @returns the digest, the check list, and every condition the plan names.
+   */
+  @Remote('plan')
+  plan(agent: Agent, request: EvalPlanRequest): Promise<EvalPlanReview> {
+    void agent
+    return this.service.planReview(request.planPath)
+  }
+
+  /**
+   * The CONDITIONS page: every condition the session's repository declares,
+   * with its lock and its readiness (ui-spec §五, step 4).
+   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param request - repository / dataset overrides.
+   * @returns the table rows.
+   */
+  @Remote('conditions')
+  conditions(agent: Agent, request: EvalConditionsRequest): Promise<EvalConditionsView> {
+    return this.service.conditionsPage({
+      session: { id: String(agent.session.id) },
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
+    })
+  }
+
+  /**
+   * Two conditions, field by field — ONLY what differs.
+   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param request - the two references (a condition id, or a path).
+   * @returns the differing paths and each side's value as canonical JSON text.
+   */
+  @Remote('conditionDiff')
+  conditionDiff(agent: Agent, request: EvalConditionDiffRequest): Promise<EvalConditionDiffView> {
+    return this.service.conditionDiffPage({
+      a: request.a,
+      b: request.b,
+      session: { id: String(agent.session.id) },
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
+    })
+  }
+
+  /**
+   * APPROVE a plan and start it — ui-spec step 5, the button on the
+   * plan-review page and nothing else. Validate runs first and an error
+   * refuses without starting anything; the approving session becomes the run's
+   * parent and its workspace the run's cwd, exactly as `/eval run` resolves
+   * them.
+   * @param agent - the approving session's live agent (the run's parent).
+   * @param request - the plan document to approve.
+   * @returns the check list, and — when it started — the job and run ids.
+   */
+  @Remote('approve')
+  approve(agent: Agent, request: EvalApproveRequest): Promise<EvalApproveResult> {
+    const cwd = agent.session.header?.cwd
+    return this.service.approve(request.planPath, {
+      parentSessionId: String(agent.session.id),
+      ...(cwd === undefined ? {} : { cwd }),
+    })
   }
 }
