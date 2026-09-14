@@ -102,7 +102,7 @@ pnpm deploy:check-links
      && curl --noproxy '*' -gs -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3080$URL"   # 应为 200
    ```
 
-   boot 的 activation 阶段已读取每个 client bundle 的字节(缺失即 ClientPackageCompositionError、boot 失败),所以"ready + canary PASS"证明的是"被读取并组合";这条探针补 HTTP 层的直接证据,"浏览器里真跑起来"仍靠浏览器验收兜底。
+   boot 的 activation 阶段已读取每个 client bundle 的字节(缺失即 ClientPackageCompositionError、boot 失败),所以"ready + canary PASS"证明的是"被读取并组合";这条探针补 HTTP 层的直接证据,"浏览器里真跑起来"仍靠浏览器验收兜底:开一条有用户消息的会话,确认功能渲染且 console 零错误。
 
 打包产物层面的验证已由工具接管(pack-dist 打包即校验、CI 全包 pack 门禁、`check:plugins` 的 files 覆盖不变量),迁移方不需要手工 `tar -tzf` 抽查——但验收清单这三步是部署后信号,替代不了。
 
