@@ -12,6 +12,8 @@ Status: implemented
 
 模板 package.json 保留 npm 范围：它是 I6 交付物的声明，且绝不引用一个不存在的文件。`install.sh` 增加源码模式（`--source <dsh-plugins 检出>`）：在检出内构建全部未上架成员（逐包 `pnpm --filter <name> build`，`GEN_TYPERT_ONLY` 限定到该集合——deploy-3080 的做法，邻居的在制品不会拖死安装），用 `pack-dist --family` 逐个打 tarball 进安装后 profile 的 `tarballs/`，改写**安装副本**的清单（未上架的直接依赖 → `file:tarballs/…`，相对 profile 目录），追加 pnpm `overrides:` 块钉住全部未上架名字——包括 `@khorsheed/dsh-local-agent-dsh-headless`（profile 从不直接依赖它，它是 local-agent-dsh 自带的依赖）——然后走标准 `dsh plugin --profile web-eval install`。npm 模式（无参数）不变：同样的拷贝与安装，最后一个成员上架当天即可用，模板零改动。
 
+`--family` 的每个成员都写成 `name=version`。pack-dist 给家族清单边定范围时用的是**目标包自己的版本**，所以光写名字只做改写，一旦这个名字落在某条依赖边上就是错误而不是一个悄悄解析不出来的范围——安装脚本原来拼的光名字打到 `local-agent-tool-subagent` 就停住（`peerDependencies entry @khorsheed/dsh-local-agent is a family edge but no version was given for it`）。install.sh 先把检出的 `packages/*/package.json` 扫成一张「包名 → 自身版本」表，打包循环里逐个成员查表；检出里查不到版本的保持光名字并打一行 warn——只需要改写的成员本就不必带版本，而它若真带着一条边，pack-dist 仍会当场报错。
+
 未上架集合在 install.sh 里是一份显式目录清单，按拓扑序排列（local-agent → tool-subagent → headless → providers → 独立包；集合内没有任何成员依赖已上架的 @khorsheed 兄弟——已上架成员因此可以继续走 npm），并声明以 release-status.md 为权威：成员上架，它的目录就从清单移除。
 
 headless 的处理让 G3 在这条路径上不会发生：宿主的 reconcilePlugins 只遍历 profile 清单的直接依赖，headless 只以 override 钉住的传递依赖进入（prod 模式——3080 profile 的 package.json 同样没有 headless 行），因此永远不会被追加进 `dsh.profile.bundles`。T6 修 reconcile 本身。
