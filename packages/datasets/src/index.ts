@@ -79,6 +79,16 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     description:
       'Session dataset binding and browsing: /datasets list [dataset] | show <dataset> [item] | '
       + 'bind <repoPath> [--datasets a,b] [--layers x,y] | unbind',
+    // WITHOUT this descriptor a capable composer has no reason to believe the
+    // command takes anything: picking `/datasets` from the completion strip
+    // submits a bare invocation and leaves everything the human typed after it
+    // in the MESSAGE body, so `bind <path>` arrived here as an empty argument
+    // list and answered with the usage line (found during T36's live pass).
+    // Declaring the free-form input is what makes the composer forward the
+    // rest of the line; `rawInput` below is unchanged either way.
+    input: {
+      hint: 'list [dataset] | show <dataset> [item] | bind <repoPath> [--datasets a,b] [--layers x,y] | unbind',
+    },
     handler: async (invocation) => {
       const session = invocation.agent.session
       const parts = invocation.rawInput.trim().split(/\s+/).filter(part => part !== '')

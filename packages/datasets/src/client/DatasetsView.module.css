@@ -381,3 +381,256 @@
 .previewContent > *:first-child {
   margin-top: 4px;
 }
+
+/* ── The list page (ui-spec §四) ───────────────────────────────────────── */
+
+.listScroll {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 12px calc(12px + var(--dsh-datasets-bottom-clearance, 0px));
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.table th {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  vertical-align: top;
+}
+
+.tableRow:hover td {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The dataset id doubles as the row's open affordance. */
+.rowOpen {
+  padding: 0;
+  font-weight: 500;
+}
+
+.cellQuiet {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.cellWarn {
+  color: var(--dsw-alias-label-warning, #b8600a);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.cellError {
+  color: var(--dsw-alias-label-danger, #b3261e);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.cellMono {
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  white-space: nowrap;
+}
+
+.cellNumber {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A multi-line cell (slot ← layer, the experiment list): one quiet line each. */
+.slotCell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.slotCellLine {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* ── The detail page ───────────────────────────────────────────────────── */
+
+/* The slot filter chips sit above the tree, inside its scroll column. */
+.filterRow {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l3);
+  margin-bottom: 4px;
+}
+
+/* Every file leaf carries its slot and who sees it; the colour is the role's. */
+.slotMark {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.exposureVisible {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.exposureWithheld {
+  color: var(--dsw-alias-label-warning, #b8600a);
+}
+
+.exposureUnprotected {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The open item's header above the right pane. */
+.itemHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* One block of the right pane: 选手将看到 / 可判性 / 作答记录 / the preview. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  max-width: 760px;
+}
+
+.panelTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.panelCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.panelHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.panelLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.panelWarn {
+  color: var(--dsw-alias-label-warning, #b8600a);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.panelList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.panelRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.panelPath {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelTag {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.panelNumber {
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* One run inside 作答记录. */
+.runBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+  border-top: 1px solid var(--dsw-alias-border-l3);
+}
+
+/* The skeleton forms' standing reminder that the commit is the human's. */
+.skeletonHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* A notice that carries errors rather than information. */
+.noticeError {
+  composes: notice;
+  color: var(--dsw-alias-label-danger, #b3261e);
+}
+
+.noticeLine {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}

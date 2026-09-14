@@ -64,7 +64,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1",
-      "notes": "Host-plane companion row: provides no service, registers the dataset model tools into the host tools registry and contributes the `datasets:tools` prompt section, so agent presets may compose it bare (the official tool-row shape). Probes the global `ctx.datasets` service at apply time and silently skips registration when the core plugin is absent — a preset naming this row still mounts cleanly. No browser half: the 数据集 tab UI lives in the core package."
+      "notes": "Host-plane companion row: provides no service, registers the dataset model tools into the host tools registry and contributes the `datasets:tools` prompt section, so agent presets may compose it bare (the official tool-row shape). Probes the global `ctx.datasets` service at apply time and silently skips registration when the core plugin is absent — a preset naming this row still mounts cleanly. No browser half: the 题集 tab UI lives in the core package."
     }
   }
 }

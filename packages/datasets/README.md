@@ -137,20 +137,30 @@ dsh-datasets binding --session ID [--state-root DIR]
 /datasets unbind
 ```
 
-## 会话 tab（web）
+命令声明了 free-form input（`input.hint`）。这不是装饰：不声明的话，能力较强的 composer 没有理由认为 `/datasets` 收参数——从补全条选中命令会提交一个空参调用，人敲的 `bind <path>` 留在消息体里，命令以 usage 行作答（T36 真机撞到的）。
+
+## 题集 tab（web）
 
 <!-- 截图占位：docs/screenshots/…-datasets-tab.png（待补） -->
 
-web profile 下插件向会话的视图环贡献 **`datasets` tab**（与 chat、trajectory 并列）——本会话数据集的绑定与浏览。tab 只做导航：顶部绑定条（当前绑定及其数据集/layers 白名单，加绑定 / 改白名单 / 解绑——绑定写入在这里同样只是人的操作，与 slash 路径一致），左侧数据集 →（共享层 →）item → 层 → 文件树（题集级层在 item 列表之前、归于一个安静的「共享」分组），右侧内容预览。预览交给官方阅读器 primitives——markdown 经官方 `MarkdownText` 管线渲染（与 chat 同一个渲染器），其余文件经官方 `CodeBlock` 语法高亮；本包没有任何自研渲染器。
+web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「题集 / Datasets」，与 chat、trajectory 并列）。两页一壳，形状按 [web-eval 界面规格](../../profiles/web-eval/docs/ui-spec.md) §三 §四。
 
-tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read`。读取方法是 operator 视图——绑定只提供仓库路径，白名单与 modelFacing 底线约束的是 agent 边界（工具 + worktree），不是看自己仓库的人。树按角色渲染（register 注册的文件归位到声明的层），空层不显示，透传区单列成组（「透传 · N 个文件 · 不受白名单保护」），敏感层带「· 敏感」标记照常可读。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace。
+**槽位词汇**。文件按**谁看得到**标注，不按层名——层名是一个题集内部的作者约定，看 tab 的人要判断的是可见性。每个文件恰好落一个**角色**（由 `dataset.json` 的 `layers` + `register` 算出，是机制事实）：选手看得到（`modelFacing` 层）、只有判官（`grading`）、只有探针（`verify`）、不发给选手（其他敏感层）、所有人可读（透传区）。角色之上再给一个**槽位**显示名（题干 / 验收标准 / 参考答案 / 评估标准 / 检查脚本 / 其他文件），由基名启发式给出：`oracle/` 下的一律是参考答案，`task.md` 与 `prompts/` 下的是题干，`rubric*` 与 `standards-notes*` 是评估标准，`standards*` 是验收标准，`checks/` 与 `probes/` 下的是检查脚本，都不匹配时按角色兜底（verify 层归检查脚本，grading 层归评估标准）。协议的两种布局因此得到同一个答案：register 形态的 `answers/rubric.yml` 与约定形态的 `rubric.yml` 都是「评估标准 · 只有判官」。启发式与角色计算都在 `src/slots.ts` 一处，宿主与浏览器共用同一个函数——协议没有槽位字段，为一个显示名分叉 descriptor 格式不值得；题集自定义槽位名是后话。
+
+**列表页**：一行一个题集——id 与显示名、快照（仓库 @ commit）、题目数、槽位 ← 层的对应、canary 是否声明（只报有无，永不带出串本身）、`validate` 结果、用于哪些实验。动作是**新建题集**（写 `dataset.json` 骨架、`visible/prompts/`、`schemas/`、`items/`）与**导入题集**（就是绑定一个已按协议组织的仓库）。整页一个 RPC（`overview`）：投影在宿主算好再下发。「用于的实验」一列取自 eval 插件的 Remote，**实例上没有 eval 就整列不渲染**——一列破折号会承诺一个没装的功能。
+
+**详情页**（题集 › 题目）：左边文件树，每个叶子带槽位与「谁看得到」（三种颜色：选手可见 / 不发给选手 / 不受保护），上方是槽位筛选 chip；右边四块——**选手将看到**（这道题可见层的文件 + 题集级题干的清单与字节数，题集级的单独标注；答案键漂进可见层会先出现在这张表里，这就是它的用途）、**可判性**（评估标准几条、各 kind 各几条、探针几个、题集级探针几个、阶段 schema 几个）、**作答记录**（各实验里这道题的格子；eval 缺席时整区隐藏）、以及选中文件的预览。预览交给官方阅读器 primitives——markdown 经官方 `MarkdownText` 管线（与 chat 同一个渲染器），JSON 经官方 `JsonTree`，其余经 `CodeBlock`；本包没有任何自研渲染器。动作是**题目骨架**、**导入题目**、**validate**。
+
+**写入都只进工作区，commit 仍是人的**（插件从不提交）。题目骨架按**这个题集自己的形状**落位：descriptor 的 `register` 已经为这个 item 说过话就落在注册路径上（`task.md` / `answers/rubric.yml` / `checks/probes/…`），没说过就走约定布局（`<层>/rubric.yml`）；已存在的文件一律不覆盖。占位的 `rubric.yml` 故意留空 `items: []`——`validate` 因此报 `RUBRIC_NO_ITEMS` 并指到那个文件，这是预期的下一步而不是缺陷。导入题目是**原样拷贝**一个已有题目目录，不重新归位任何文件：该题集的 `layers` 与 `register` 决定每个文件成为什么，落在层外的由 `validate` 如实报出。三个写动作都要求 operator 视图（tab 的按钮），agent 的起草路径仍是 `datasets_put_item`，受会话绑定约束。
+
+tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`。读取方法是 operator 视图——绑定只提供仓库路径，白名单与 modelFacing 底线约束的是 agent 边界（工具 + worktree），不是看自己仓库的人；敏感层带「· 敏感」标记照常可读，真正没保护的透传区与 `item.json` 则显眼标出。唯一的例外是 `itemBrief` 背后那两次判定层读取：它们**显式指名单层**（`layers: ['grading']` / `['verify']`）而不是走 operator 旁路——页面要的是答案键的形状（几条、什么 kind），字节从不上线。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace；eval 的 namespace 在**每次调用时**用 `ctx.get` 探测，不在挂载时探一次——两个插件各自 `$mount`，谁先落地没有保证。
 
 ## Compatibility
 
 - npm release 线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
 - source 线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）。
 - 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力，两条线表现一致；`tools` 分组随模型工具面搬到伴生行 `@khorsheed/dsh-datasets-tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
-- ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由伴生行提供）。数据集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets-tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
+- ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由伴生行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets-tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
 本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
 
@@ -162,5 +172,6 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - **fork 出的会话以未绑定开始**——绑定按会话 id 归档在插件自管存储里，不随 fork 继承；删除会话会留下其绑定记录（无害，一个小 JSON 文件）。
 - **金丝雀与可判性检查逐文件读内容**——`validate` 对每个可见层文本文件跑一次 `git show`（金丝雀），对每个带 rubric 的 item 再跑一到两次（rubric 与它的 `rubric.md`）；这是插件里仅有的两处读文件内容的校验，因此都只在 `validate` 上跑，`list`/`show` 的摘要警告仍然只有形状级的那条。
 - **可判性检查认死 `grading` / `verify` 两个层名**——判定约定（作者协议 §6.7/§6.8）就是按这两个名字写的，编排器挂载的也是它们。层名本身在本插件里是自由的，所以一个把 rubric 放进别的层名的题库不会被检查（也不会误报）。把层名做成 descriptor 可声明的，是协议侧的改动，不在本包单方面能定的范围。
+- **写进工作区的文件在提交前看不见**——树、`list`/`show`/`validate` 都从 HEAD 的 git 对象读，而 `put_item` 与 tab 的三个写动作都只写工作区。骨架刚落位时树上没有它、`validate` 也还不报它，提交之后才会出现；tab 在每个写表单和每次写入结果上都说了这一句。让读路径兼看工作区会让「快照」失去意义（一次 run 钉的是 commit），所以这是选择而不是疏漏。
 - **被消费方写脏的 worktree 由 `worktree prune` 重建**——只读契约由消费方的挂载（`:ro`）强制，插件不强制。
 - **`worktree prune` 需要 `--repo`**——注册表是 `git worktree list`，按仓库管理；已删除仓库残留的托管根手工清理。

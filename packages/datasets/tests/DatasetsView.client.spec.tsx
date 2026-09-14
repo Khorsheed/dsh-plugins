@@ -1,16 +1,24 @@
 // @vitest-environment jsdom
 /**
- * DatasetsView spec under the four-share props form: a real store instance
- * (createDatasetsViewStore().create()) and injected Remote mocks. Asserts the
- * unbound state, the bound tree (dataset → item → layer → file), the bind
- * form's submit, and the selection-driven preview through the official reader.
+ * The 题集 tab under the four-share props form: a real store instance
+ * (createDatasetsViewStore().create()) and injected Remote mocks.
+ *
+ * What the assertions are about, page by page: the LIST row carries every cell
+ * ui-spec §四 asks for; the DETAIL tree marks each file with its slot AND who
+ * sees it, and the slot filter narrows by that marking; «选手将看到» lists the
+ * player's bytes and nothing else; «作答记录» is ABSENT — not empty — on an
+ * instance with no eval plugin, because an empty section promises a feature
+ * that is not installed.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { DatasetBinding, ListDatasetsResult, ListItemsResult, PreviewRepoResult, ReadResult } from '../src/types.ts'
-import type { DatasetsViewProps } from '../src/client/contract.ts'
+import type {
+  DatasetBinding, DatasetOverview, ItemBrief, ListDatasetsResult, ListItemsResult,
+  PreviewRepoResult, ReadResult, SkeletonResult, ValidateResult,
+} from '../src/types.ts'
+import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
 import { createDatasetsViewStore } from '../src/client/store.ts'
 
@@ -37,24 +45,97 @@ interface Harness {
   readPassthroughFile: ReturnType<typeof vi.fn>
   pickDirectory: ReturnType<typeof vi.fn>
   previewRepo: ReturnType<typeof vi.fn>
+  overview: ReturnType<typeof vi.fn>
+  itemBrief: ReturnType<typeof vi.fn>
+  validateDataset: ReturnType<typeof vi.fn>
+  scaffoldDataset: ReturnType<typeof vi.fn>
+  scaffoldItem: ReturnType<typeof vi.fn>
+  importItem: ReturnType<typeof vi.fn>
+  itemRuns: ReturnType<typeof vi.fn>
+  datasetExperiments: ReturnType<typeof vi.fn>
 }
 
 const BINDING: DatasetBinding = { repoPath: '/repo', layers: ['visible'] }
 
-const DATASETS: ListDatasetsResult = {
-  kind: 'datasets',
+/** The list page's answer: one dataset shaped like harness-comparison. */
+const OVERVIEW: DatasetOverview = {
+  repo: '/work/dataseek-eval',
+  commit: 'a4f9c2e00000000',
   datasets: [{
-    id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1,
-    warnings: [{ code: 'MODELFACING_UNDECLARED', layer: 'visible', message: 'visible undeclared' }],
+    id: 'bench',
+    name: 'Bench set',
+    itemCount: 2,
+    layers: ['visible', 'verify', 'grading'],
+    nonModelFacingLayers: ['verify', 'grading'],
+    slotLayers: {
+      prompt: ['visible'],
+      standards: ['visible'],
+      oracle: ['grading'],
+      rubric: ['grading'],
+      checks: ['verify'],
+      other: ['-'],
+    },
+    canary: true,
+    warnings: [],
+    validate: { errors: 0, warnings: 3, firstError: null },
   }],
 }
 
-const SENSITIVE_DATASETS: ListDatasetsResult = {
-  kind: 'datasets',
-  datasets: [{
-    id: 'alpha', name: 'Alpha', layers: ['visible', 'grading'], nonModelFacingLayers: ['grading'],
-    itemCount: 1, warnings: [],
+const ITEMS: ListItemsResult = {
+  kind: 'items',
+  dataset: {
+    id: 'bench', name: 'Bench set', layers: ['visible', 'verify', 'grading'],
+    nonModelFacingLayers: ['verify', 'grading'], itemCount: 2, warnings: [],
+  },
+  datasetLayers: { visible: ['prompts/stage1.md'] },
+  passthrough: ['manifest.yml'],
+  items: [{
+    id: 'R1',
+    metadata: { difficulty: 'hard' },
+    layers: {
+      visible: ['task.md', 'standards.yml'],
+      grading: ['answers/rubric.yml', 'answers/oracle/notes.md'],
+      verify: ['checks/probes/link-check.mjs'],
+    },
   }],
+}
+
+const BRIEF: ItemBrief = {
+  dataset: 'bench',
+  item: 'R1',
+  commit: 'a4f9c2e00000000',
+  player: {
+    layers: ['visible'],
+    totalBytes: 300,
+    files: [
+      { path: 'task.md', layer: 'visible', source: 'item', bytes: 100 },
+      { path: 'standards.yml', layer: 'visible', source: 'item', bytes: 100 },
+      { path: 'prompts/stage1.md', layer: 'visible', source: 'dataset', bytes: 100 },
+    ],
+  },
+  judgeability: {
+    rubricPath: 'answers/rubric.yml',
+    leaves: 2,
+    kinds: { 'objective': 1, 'llm-draft': 1 },
+    probes: ['checks/probes/link-check.mjs'],
+    sharedProbes: [],
+    stageSchemas: ['schemas/stage1.json'],
+    notes: [],
+  },
+}
+
+const RUNS: ItemRunsView = {
+  runs: [{
+    runId: 'run-1',
+    name: 'pilot-a',
+    startedAt: 1_757_000_000_000,
+    commit: 'bbbbbbb0000',
+    cells: [{
+      missionId: 'm1', condition: 'dsh-exec', rep: 1, state: 'archived', bucket: 'done',
+      verdicts: { 'llm-draft': 2 },
+    }],
+  }],
+  notes: [],
 }
 
 const PREVIEW: PreviewRepoResult = {
@@ -65,15 +146,17 @@ const PREVIEW: PreviewRepoResult = {
   ],
 }
 
-const ITEMS: ListItemsResult = {
-  kind: 'items',
-  dataset: DATASETS.datasets[0]!,
-  datasetLayers: { visible: ['guide.md'] },
-  passthrough: ['manifest.yml'],
-  items: [{
-    id: 'i1',
-    metadata: { difficulty: 'hard' },
-    layers: { visible: ['task.md'] },
+const SKELETON: SkeletonResult = {
+  written: ['datasets/bench/items/C2/visible/task.md'],
+  skipped: [],
+  notes: [],
+}
+
+const VALIDATED: ValidateResult = {
+  datasets: [{
+    id: 'bench',
+    errors: [{ code: 'RUBRIC_NO_ITEMS', message: 'items/C2/grading/rubric.yml: declares no leaf criteria' }],
+    warnings: [],
   }],
 }
 
@@ -85,15 +168,25 @@ function makeHarness(binding: DatasetBinding | null = BINDING): Harness {
     fetchBinding: vi.fn(async (): Promise<Result<DatasetBinding | null>> => ({ ok: true, value: binding })),
     bindSession: vi.fn(async (_sid: string, next: DatasetBinding): Promise<Result<DatasetBinding>> => ({ ok: true, value: next })),
     unbindSession: vi.fn(async (): Promise<Result<DatasetBinding | null>> => ({ ok: true, value: null })),
-    listDatasets: vi.fn(async (_sid: string, dataset?: string): Promise<Result<ListDatasetsResult | ListItemsResult>> => (
-      { ok: true, value: dataset === undefined ? DATASETS : ITEMS }
-    )),
+    listDatasets: vi.fn(async (): Promise<Result<ListDatasetsResult | ListItemsResult>> => ({ ok: true, value: ITEMS })),
     readFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Task\n\nbody\n', commit: 'a4f9c2e0000' } })),
     readPassthroughFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Passthrough content\n', commit: 'a4f9c2e0000' } })),
     pickDirectory: vi.fn(async () => '/picked-repo'),
     previewRepo: vi.fn(async (): Promise<Result<PreviewRepoResult>> => ({ ok: true, value: PREVIEW })),
+    overview: vi.fn(async (): Promise<Result<DatasetOverview>> => ({ ok: true, value: OVERVIEW })),
+    itemBrief: vi.fn(async (): Promise<Result<ItemBrief>> => ({ ok: true, value: BRIEF })),
+    validateDataset: vi.fn(async (): Promise<Result<ValidateResult>> => ({ ok: true, value: VALIDATED })),
+    scaffoldDataset: vi.fn(async (): Promise<Result<SkeletonResult>> => ({ ok: true, value: SKELETON })),
+    scaffoldItem: vi.fn(async (): Promise<Result<SkeletonResult>> => ({ ok: true, value: SKELETON })),
+    importItem: vi.fn(async (): Promise<Result<SkeletonResult>> => ({ ok: true, value: SKELETON })),
+    // The default instance carries NO eval plugin: null is «not installed».
+    itemRuns: vi.fn(async (): Promise<ItemRunsOrNull> => null),
+    datasetExperiments: vi.fn(async () => null),
   }
 }
+
+/** The answer shape of the degrading eval probe. */
+type ItemRunsOrNull = ItemRunsView | null
 
 function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
   const canPick = opts.canPick ?? true
@@ -116,6 +209,14 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     listDatasets: h.listDatasets,
     readFile: h.readFile,
     readPassthroughFile: h.readPassthroughFile,
+    overview: h.overview,
+    itemBrief: h.itemBrief,
+    validateDataset: h.validateDataset,
+    scaffoldDataset: h.scaffoldDataset,
+    scaffoldItem: h.scaffoldItem,
+    importItem: h.importItem,
+    itemRuns: h.itemRuns,
+    datasetExperiments: h.datasetExperiments,
     isLoopback: canPick,
     useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canPick })) as never,
     pickDirectory: h.pickDirectory,
@@ -127,99 +228,65 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
   return render(<DatasetsView {...props} />)
 }
 
+/** Open the detail page of the only dataset, and its only item. */
+async function openItem(h: Harness): Promise<void> {
+  renderView(h)
+  fireEvent.click(await screen.findByText('bench'))
+  fireEvent.click(await screen.findByText('R1'))
+}
+
 afterEach(() => { cleanup() })
 
-describe('DatasetsView', () => {
-  it('sensitive layers stay visible to the human with a quiet marker (operator view)', async () => {
+describe('the list page', () => {
+  it('carries every cell the spec asks for, in one RPC', async () => {
     const h = makeHarness()
-    h.listDatasets.mockImplementation(async (_sid: string, dataset?: string) => ({
-      ok: true as const,
-      value: dataset === undefined ? SENSITIVE_DATASETS : {
-        kind: 'items' as const,
-        dataset: SENSITIVE_DATASETS.datasets[0]!,
-        datasetLayers: {},
-        passthrough: [],
-        items: [{ id: 'i1', layers: { visible: ['task.md'], grading: ['rubric.yml'] } }],
-      },
-    }))
     renderView(h)
-    fireEvent.click(await screen.findByText('alpha'))
-    fireEvent.click(await screen.findByText('i1'))
-    // The sensitive layer lists with its marker — the operator view never hides it.
-    const grading = await screen.findByText(/grading/)
-    expect(grading.parentElement?.textContent).toContain('tree.sensitive')
-    expect(grading.parentElement?.textContent).not.toContain('tree.agentReadable')
-    // …while the whitelisted visible layer carries the readable marker.
-    expect(screen.getByText(/tree\.agentReadable/)).toBeTruthy()
+    expect(await screen.findByText('bench')).toBeTruthy()
+    expect(h.overview).toHaveBeenCalledWith('s1')
+    // The list never fires the per-dataset item read: the rows are one call.
+    expect(h.listDatasets).not.toHaveBeenCalled()
+    expect(screen.getByText('Bench set')).toBeTruthy()
+    // 快照: the repository's own last segment, at the short commit.
+    expect(screen.getByText('dataseek-eval @ a4f9c2e')).toBeTruthy()
+    expect(screen.getByText(/list\.itemCount .*"count":2/)).toBeTruthy()
+    // 槽位 ← 层: the vocabulary is the slot word, the layer is the right side.
+    expect(screen.getByText(/list\.slotLayer .*slot\.prompt.*visible/)).toBeTruthy()
+    expect(screen.getByText(/list\.slotLayer .*slot\.rubric.*grading/)).toBeTruthy()
+    // The passthrough zone reports as a zone, never as a layer named '-'.
+    expect(screen.getByText(/list\.slotLayer .*slot\.other.*list\.passthroughLayer/)).toBeTruthy()
+    expect(screen.getByText('list.canaryOn')).toBeTruthy()
+    expect(screen.getByText(/list\.validateOk/)).toBeTruthy()
   })
 
-  it('unbound: shows the empty binding state and never lists', async () => {
+  it('drops the 用于的实验 column entirely when no eval plugin answers', async () => {
+    const h = makeHarness()
+    renderView(h)
+    expect(await screen.findByText('bench')).toBeTruthy()
+    // Not an empty column of em dashes: the header is absent, because an
+    // instance without the orchestrator has no notion of an experiment.
+    expect(screen.queryByText('list.colExperiments')).toBeNull()
+  })
+
+  it('shows the experiments that used a dataset when one does', async () => {
+    const h = makeHarness()
+    h.datasetExperiments.mockResolvedValue([
+      { id: 'run-1', name: 'pilot-a', status: 'done', datasetId: 'bench' },
+      { id: 'run-2', name: 'other-set-run', status: 'done', datasetId: 'elsewhere' },
+    ])
+    renderView(h)
+    expect(await screen.findByText('list.colExperiments')).toBeTruthy()
+    expect(await screen.findByText('pilot-a')).toBeTruthy()
+    // Filtered by dataset: another set's run never leaks into this row.
+    expect(screen.queryByText('other-set-run')).toBeNull()
+  })
+
+  it('unbound: offers the import gesture and never lists', async () => {
     const h = makeHarness(null)
     renderView(h)
     expect(await screen.findByText('binding.none')).toBeTruthy()
-    expect(h.listDatasets).not.toHaveBeenCalled()
+    expect(h.overview).not.toHaveBeenCalled()
     expect(screen.getByText('list.unbound')).toBeTruthy()
-  })
-
-  it('bound: lists datasets, expands items, and previews a selected file', async () => {
-    const h = makeHarness()
-    renderView(h)
-    // The binding summary and the dataset row land after the two RPCs.
-    expect(await screen.findByText(/binding\.repo/)).toBeTruthy()
-    const row = await screen.findByText('alpha')
-    expect(h.listDatasets).toHaveBeenCalledWith('s1')
-    // The descriptor name renders on its own quiet line, not crammed into the row.
-    expect(screen.getByText('Alpha')).toBeTruthy()
-    // A mixed-sensitivity dataset's undeclared layer surfaces as a quiet warning line.
-    expect(screen.getByText(/tree\.warnModelFacing/)).toBeTruthy()
-
-    fireEvent.click(row)
-    expect(await screen.findByText('i1')).toBeTruthy()
-    expect(h.listDatasets).toHaveBeenCalledWith('s1', 'alpha')
-    // An explorer carries no chips: the item row is the bare id.
-    expect(screen.queryByText('difficulty: hard')).toBeNull()
-
-    fireEvent.click(screen.getByText('i1'))
-    // item.json is flagged as unprotected at the passthrough zone's footing —
-    // and it reads like any other file (marker = warning, not a gate).
-    fireEvent.click(await screen.findByText(/item\.json · tree\.unprotected/))
-    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'alpha', path: 'items/i1/item.json' })
-    // The agent-readable marker follows the binding's layers whitelist (the
-    // shared layer and the item's own visible layer both carry it).
-    expect((await screen.findAllByText(/tree\.agentReadable/)).length).toBeGreaterThan(0)
-    // The layer header is one quiet phrase: name, middot, count — never a right-floated count
-    // (it appears once per layer group: the shared group and the item's own).
-    expect((await screen.findAllByText(/· tree\.fileCount/)).length).toBeGreaterThan(0)
-    // Dataset-level (shared) layers group under the quiet label, ahead of the items.
-    expect(screen.getByText('tree.shared')).toBeTruthy()
-    const file = await screen.findByText('task.md')
-    fireEvent.click(file)
-    expect(h.readFile).toHaveBeenCalledWith('s1', {
-      dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md',
-    })
-    // The markdown content renders through the official MarkdownText pipeline.
-    expect(await screen.findByText('Task')).toBeTruthy()
-    expect(screen.getByText('@a4f9c2e')).toBeTruthy()
-    // The item's metadata surfaces in the preview header as quiet chips,
-    // never the raw JSON string.
-    expect(await screen.findByText('difficulty: hard')).toBeTruthy()
-    expect(screen.queryByText('{\"difficulty\":\"hard\"}')).toBeNull()
-    // A shared (dataset-level) file reads WITHOUT an item selector.
-    fireEvent.click(screen.getByText('guide.md'))
-    expect(h.readFile).toHaveBeenCalledWith('s1', {
-      dataset: 'alpha', layer: 'visible', path: 'guide.md',
-    })
-    // The passthrough zone's files list AND read (the operator view blocks no
-    // human) — the unprotected marker is a warning, not a gate.
-    fireEvent.click(screen.getByText(/tree\.passthrough/))
-    fireEvent.click(await screen.findByText('manifest.yml'))
-    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'alpha', path: 'manifest.yml' })
-    // The preview renders through the same pipeline as layer files (the header
-    // names the passthrough selection; content highlighting splits tokens, so
-    // assert on the aggregated text instead of one node).
-    await waitFor(() => {
-      expect(document.querySelector('[class*="preview"]')?.textContent).toContain('Passthrough content')
-    })
+    expect(screen.getByText('binding.bind')).toBeTruthy()
   })
 
   it('a failed binding fetch settles the bar instead of loading forever', async () => {
@@ -229,20 +296,202 @@ describe('DatasetsView', () => {
     expect(await screen.findByText('binding.none')).toBeTruthy()
     expect(await screen.findByText(/list\.error/)).toBeTruthy()
   })
+})
 
+describe('the detail page', () => {
+  it('marks every file with its slot AND who sees it', async () => {
+    const h = makeHarness()
+    await openItem(h)
+    expect(h.listDatasets).toHaveBeenCalledWith('s1', 'bench')
+    // The register layout's display paths, each carrying the right pair.
+    expect(await screen.findByText('task.md')).toBeTruthy()
+    const marks = screen.getAllByText(/slot\.\w+ · role\.\w+/).map(node => node.textContent)
+    expect(marks).toContain('slot.prompt · role.player')
+    expect(marks).toContain('slot.standards · role.player')
+    expect(marks).toContain('slot.rubric · role.judge')
+    expect(marks).toContain('slot.oracle · role.judge')
+    expect(marks).toContain('slot.checks · role.probe')
+    // item.json is in no layer: readable by everyone, and it says so.
+    expect(marks).toContain('slot.other · role.passthrough')
+  })
+
+  it('the slot filter narrows the tree by the marking', async () => {
+    const h = makeHarness()
+    await openItem(h)
+    expect(await screen.findByText('answers/rubric.yml')).toBeTruthy()
+    // Scoped to the tree: «选手将看到» lists the player's files too, and it is
+    // a projection of the ITEM, not of the filter.
+    const tree = (): HTMLElement => screen.getByRole('navigation')
+    fireEvent.click(screen.getByText('slot.prompt'))
+    // Only the 题干 survives — the grading and verify files are gone, and so
+    // are the layer groups that held them.
+    await waitFor(() => { expect(tree().textContent).not.toContain('answers/rubric.yml') })
+    expect(tree().textContent).toContain('task.md')
+    expect(tree().textContent).not.toContain('standards.yml')
+    expect(tree().textContent).not.toContain('grading')
+    // Back to everything.
+    fireEvent.click(screen.getByText('detail.filterAll'))
+    await waitFor(() => { expect(tree().textContent).toContain('answers/rubric.yml') })
+  })
+
+  it('«选手将看到» lists the player’s bytes and marks the dataset-level ones', async () => {
+    const h = makeHarness()
+    await openItem(h)
+    expect(await screen.findByText('detail.player')).toBeTruthy()
+    expect(h.itemBrief).toHaveBeenCalledWith('s1', 'bench', 'R1')
+    expect(screen.getByText(/detail\.playerSummary .*"count":3.*"bytes":300/)).toBeTruthy()
+    // The shared stage prompt is marked as dataset-level, so a reader can tell
+    // what is this item's and what every item carries.
+    expect(screen.getByText('detail.playerShared')).toBeTruthy()
+    // The answer key is NOT in the list — that is what this panel is for.
+    const panel = screen.getByText('detail.player').closest('section')
+    expect(panel?.textContent).toContain('task.md')
+    expect(panel?.textContent).not.toContain('rubric')
+  })
+
+  it('«可判性» counts the rubric’s leaves per kind, the probes and the schemas', async () => {
+    const h = makeHarness()
+    await openItem(h)
+    expect(await screen.findByText('detail.judge')).toBeTruthy()
+    const line = screen.getByText('detail.judge').parentElement?.textContent ?? ''
+    expect(line).toContain('"leaves":2')
+    expect(line).toContain('"kind":"objective","count":1')
+    expect(line).toContain('"kind":"llm-draft","count":1')
+    expect(line).toContain('detail.judgeProbes {"count":1}')
+    expect(line).toContain('detail.judgeSchemas {"count":1}')
+  })
+
+  it('«作答记录» is absent without an eval plugin, and present with one', async () => {
+    const withoutEval = makeHarness()
+    await openItem(withoutEval)
+    expect(await screen.findByText('detail.player')).toBeTruthy()
+    // Absent, not an empty section: the orchestrator is not installed.
+    expect(screen.queryByText('detail.runs')).toBeNull()
+    cleanup()
+
+    const withEval = makeHarness()
+    withEval.itemRuns.mockResolvedValue(RUNS)
+    await openItem(withEval)
+    expect(await screen.findByText('detail.runs')).toBeTruthy()
+    expect(screen.getByText('pilot-a')).toBeTruthy()
+    expect(screen.getByText(/detail\.runsCell .*dsh-exec.*"rep":1.*done/)).toBeTruthy()
+    expect(screen.getByText('llm-draft 2')).toBeTruthy()
+  })
+
+  it('an eval that answers nothing keeps the area, carrying its own reason', async () => {
+    const h = makeHarness()
+    h.itemRuns.mockResolvedValue({ runs: [], notes: ['no mission service: run records live in the mission ledger'] })
+    await openItem(h)
+    expect(await screen.findByText('detail.runs')).toBeTruthy()
+    expect(screen.getByText('detail.runsEmpty')).toBeTruthy()
+    expect(screen.getByText(/no mission service/)).toBeTruthy()
+  })
+
+  it('previews a selected file through the official reader', async () => {
+    const h = makeHarness()
+    await openItem(h)
+    fireEvent.click(await screen.findByText('task.md'))
+    expect(h.readFile).toHaveBeenCalledWith('s1', {
+      dataset: 'bench', item: 'R1', layer: 'visible', path: 'task.md',
+    })
+    expect(await screen.findByText('Task')).toBeTruthy()
+    expect(screen.getByText('@a4f9c2e')).toBeTruthy()
+  })
+
+  it('reads item.json and the passthrough zone through the operator channel', async () => {
+    const h = makeHarness()
+    await openItem(h)
+    fireEvent.click(await screen.findByText('item.json'))
+    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'bench', path: 'items/R1/item.json' })
+    fireEvent.click(screen.getByText(/tree\.passthrough /))
+    fireEvent.click(await screen.findByText('manifest.yml'))
+    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'bench', path: 'manifest.yml' })
+  })
+
+  it('going back returns to the list', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('bench'))
+    expect(await screen.findByText('detail.itemsLabel')).toBeTruthy()
+    fireEvent.click(screen.getByText('detail.back'))
+    expect(await screen.findByText('list.colDataset')).toBeTruthy()
+  })
+})
+
+describe('the write gestures', () => {
+  it('the item skeleton writes into the working tree and says the commit is the human’s', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('bench'))
+    fireEvent.click(await screen.findByText('detail.newItem'))
+    fireEvent.change(screen.getByLabelText('form.itemId'), { target: { value: 'C2' } })
+    fireEvent.click(screen.getByText('form.submit'))
+    await waitFor(() => {
+      expect(h.scaffoldItem).toHaveBeenCalledWith('s1', { dataset: 'bench', item: 'C2' })
+    })
+    // The result names every path it wrote, and the standing reminder that the
+    // tree and validate read HEAD — so nothing looks broken when the new file
+    // does not appear in the tree.
+    expect(await screen.findByText('datasets/bench/items/C2/visible/task.md')).toBeTruthy()
+    expect(screen.getByText('skeleton.commitHint')).toBeTruthy()
+  })
+
+  it('the dataset skeleton takes an id and an optional name', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('list.newDataset'))
+    // The submit stays disabled until the required id is typed.
+    expect((screen.getByText('form.submit') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('form.datasetId'), { target: { value: 'fresh' } })
+    fireEvent.click(screen.getByText('form.submit'))
+    await waitFor(() => { expect(h.scaffoldDataset).toHaveBeenCalledWith('s1', { id: 'fresh' }) })
+  })
+
+  it('importing an item asks for the source directory', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('bench'))
+    fireEvent.click(await screen.findByText('detail.importItem'))
+    fireEvent.change(screen.getByLabelText('form.itemId'), { target: { value: 'IM1' } })
+    fireEvent.change(screen.getByLabelText('form.sourceDir'), { target: { value: '/tmp/item' } })
+    fireEvent.click(screen.getByText('form.submit'))
+    await waitFor(() => {
+      expect(h.importItem).toHaveBeenCalledWith('s1', { dataset: 'bench', item: 'IM1', sourceDir: '/tmp/item' })
+    })
+  })
+
+  it('validate reports what it found, error codes included', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('bench'))
+    fireEvent.click(await screen.findByText('detail.validate'))
+    await waitFor(() => { expect(h.validateDataset).toHaveBeenCalledWith('s1', 'bench') })
+    expect(await screen.findByText(/detail\.validateFound .*"errors":1/)).toBeTruthy()
+    expect(screen.getByText(/RUBRIC_NO_ITEMS/)).toBeTruthy()
+  })
+
+  it('a refused write surfaces the host’s message instead of a silent no-op', async () => {
+    const h = makeHarness()
+    h.scaffoldDataset.mockResolvedValue({ ok: false, error: { code: 'SHAPE_INVALID', message: 'dataset "fresh" already exists' } })
+    renderView(h)
+    fireEvent.click(await screen.findByText('list.newDataset'))
+    fireEvent.change(screen.getByLabelText('form.datasetId'), { target: { value: 'fresh' } })
+    fireEvent.click(screen.getByText('form.submit'))
+    expect(await screen.findByText('dataset "fresh" already exists')).toBeTruthy()
+  })
+})
+
+describe('the binding bar', () => {
   it('bind form: the live preview drives the chips; confirm submits the picked subsets', async () => {
     const h = makeHarness(null)
     renderView(h)
     fireEvent.click(await screen.findByText('binding.bind'))
     fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: '/repo/' } })
-    // Live validation verdict (debounced) — and nothing submits on typing.
     expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
     expect(h.bindSession).not.toHaveBeenCalled()
-    // The fold feeds its chips from the preview: nobody types ids or layer names.
     fireEvent.click(screen.getByText('binding.form.restrict'))
     expect(await screen.findByText('beta · 3')).toBeTruthy()
     expect(screen.getByText('grading · binding.form.sensitive')).toBeTruthy()
-    // The task-facing shortcut keeps only the model-facing layers.
     fireEvent.click(screen.getByText('binding.form.taskFacingOnly'))
     fireEvent.click(screen.getByText('binding.form.submit'))
     await waitFor(() => {
@@ -252,102 +501,12 @@ describe('DatasetsView', () => {
     await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
   })
 
-  it('bind form: the fold opens on the modelFacing floor; unchecking everything disables confirm', async () => {
-    const h = makeHarness(null)
-    renderView(h)
-    fireEvent.click(await screen.findByText('binding.bind'))
-    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: '/repo' } })
-    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
-    fireEvent.click(screen.getByText('binding.form.restrict'))
-    // The floor: only modelFacing:true layers start checked ('grading' is sensitive).
-    expect((await screen.findByText('visible')).className).toContain('_active_')
-    expect(screen.getByText('grading · binding.form.sensitive').className).not.toContain('_active_')
-    // Unchecking the last picked layer forbids the submit ([] would mean "nothing").
-    fireEvent.click(screen.getByText('visible'))
-    expect(await screen.findByText('binding.form.keepOne')).toBeTruthy()
-    expect((screen.getByText('binding.form.submit') as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  it('bind form: a bad path shows the preview error inline and blocks confirm', async () => {
-    const h = makeHarness(null)
-    h.previewRepo.mockResolvedValue({ ok: false, error: { code: 'NOT_A_REPO', message: 'not-a-repo is not a git repository' } })
-    renderView(h)
-    fireEvent.click(await screen.findByText('binding.bind'))
-    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: 'not-a-repo' } })
-    expect(await screen.findByText('not-a-repo is not a git repository')).toBeTruthy()
-    expect((screen.getByText('binding.form.submit') as HTMLButtonElement).disabled).toBe(true)
-    expect(h.bindSession).not.toHaveBeenCalled()
-  })
-
-  it('edit mode backfills the current whitelists into the fold', async () => {
-    const h = makeHarness({ repoPath: '/repo', layers: ['visible'] })
-    renderView(h)
-    fireEvent.click(await screen.findByText('binding.edit'))
-    // The fold opens on its own; after the preview the current whitelist holds.
-    expect(await screen.findByText('binding.form.titleEdit')).toBeTruthy()
-    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
-    fireEvent.click(screen.getByText('binding.form.submit'))
-    await waitFor(() => {
-      expect(h.bindSession).toHaveBeenCalledWith('s1', { repoPath: '/repo', layers: ['visible'] })
-    })
-  })
-
   it('unbind clears the binding through the Remote', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('binding.unbind'))
-    await waitFor(() => {
-      expect(h.unbindSession).toHaveBeenCalledWith('s1')
-    })
-    await waitFor(() => {
-      expect(h.instance.getSnapshot().refreshRev).toBe(1)
-    })
-  })
-
-  it('a JSON file previews through the official JsonTree inside the block chrome', async () => {
-    const h = makeHarness()
-    h.listDatasets.mockImplementation(async (_sid: string, dataset?: string) => ({
-      ok: true as const,
-      value: dataset === undefined ? DATASETS : {
-        kind: 'items' as const,
-        dataset: DATASETS.datasets[0]!,
-        datasetLayers: {},
-        passthrough: [],
-        items: [{ id: 'i1', layers: { visible: ['meta.json'] } }],
-      },
-    }))
-    h.readFile.mockResolvedValue({
-      ok: true,
-      value: { content: '{\"difficulty\":\"hard\",\"tags\":[\"a\"]}\n', commit: 'a4f9c2e0000' },
-    })
-    renderView(h)
-    fireEvent.click(await screen.findByText('alpha'))
-    fireEvent.click(await screen.findByText('i1'))
-    fireEvent.click(await screen.findByText('meta.json'))
-    // The document view carries the official block chrome's format banner.
-    expect(await screen.findByText('json')).toBeTruthy()
-    // The JsonTree inspector renders the parsed keys, not the source text.
-    expect(await screen.findByText('difficulty:')).toBeTruthy()
-    expect(screen.queryByText('\"tags\"')).toBeNull()
-  })
-
-  it('the use-workspace shortcut fills the repo field with the session cwd', async () => {
-    const h = makeHarness(null)
-    renderView(h)
-    fireEvent.click(await screen.findByText('binding.bind'))
-    fireEvent.click(screen.getByText('binding.form.useWorkspace'))
-    expect((screen.getByLabelText('binding.form.repo') as HTMLInputElement).value).toBe('/work')
-  })
-
-  it('browse fills the repo field through the native chooser, and hides without the capability', async () => {
-    const h = makeHarness(null)
-    renderView(h)
-    fireEvent.click(await screen.findByText('binding.bind'))
-    fireEvent.click(screen.getByText('binding.form.browse'))
-    await waitFor(() => {
-      expect((screen.getByLabelText('binding.form.repo') as HTMLInputElement).value).toBe('/picked-repo')
-    })
-    expect(h.pickDirectory).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(h.unbindSession).toHaveBeenCalledWith('s1') })
+    await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
   })
 
   it('the browse button hides when the host cannot show a native chooser', async () => {
@@ -357,15 +516,5 @@ describe('DatasetsView', () => {
     expect(screen.queryByText('binding.form.browse')).toBeNull()
     // The workspace shortcut stays — it needs no native capability.
     expect(screen.getByText('binding.form.useWorkspace')).toBeTruthy()
-  })
-
-  it('a failed read surfaces the error message', async () => {
-    const h = makeHarness()
-    h.readFile.mockResolvedValue({ ok: false, error: { code: 'LAYER_NOT_ALLOWED', message: 'denied' } })
-    renderView(h)
-    fireEvent.click(await screen.findByText('alpha'))
-    fireEvent.click(await screen.findByText('i1'))
-    fireEvent.click(await screen.findByText('task.md'))
-    expect(await screen.findByText(/preview\.error/)).toBeTruthy()
   })
 })

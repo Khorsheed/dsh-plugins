@@ -7,6 +7,7 @@
   },
   "files": [
     "src/binding.ts",
+    "src/brief.ts",
     "src/cli.ts",
     "src/dataset.ts",
     "src/defaults.ts",
@@ -16,7 +17,9 @@
     "src/invariant.ts",
     "src/remote.ts",
     "src/rubric.ts",
+    "src/scaffold.ts",
     "src/service.ts",
+    "src/slots.ts",
     "src/tool.ts",
     "src/types.ts",
     "src/worktree.ts"

@@ -6,8 +6,17 @@
  */
 
 export type { DatasetBinding } from './binding.ts'
-export type { DatasetSummary, ItemRecord, JsonObject } from './dataset.ts'
 export type {
+  DatasetOverview, DatasetOverviewRow, ItemBrief, Judgeability, PlayerFile, PlayerView,
+} from './brief.ts'
+export type { DatasetSummary, DescriptorWarning, ItemRecord, JsonObject } from './dataset.ts'
+export type { SkeletonResult } from './scaffold.ts'
+export type {
+  ImportItemInput, ItemBriefRequest,
   ListDatasetsResult, ListItemsResult, ListRequest, PreviewRepoRequest, PreviewRepoResult,
-  ReadPassthroughRequest, ReadQuery, ReadResult, ShowRequest, ShowResult,
+  ReadPassthroughRequest, ReadQuery, ReadResult, ScaffoldDatasetInput, ScaffoldItemInput,
+  ShowRequest, ShowResult, ValidateDatasetResult, ValidateError, ValidateRequest, ValidateResult,
 } from './service.ts'
+export type {
+  DatasetExposure, DatasetRole, DatasetSlot, FileClassification,
+} from './slots.ts'

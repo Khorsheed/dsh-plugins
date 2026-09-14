@@ -4,7 +4,7 @@
  * core as the tools), and bind/unbind writes landing in the plugin-owned
  * binding store.
  */
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { BindingSession } from '../src/binding.ts'
 import { DatasetsRemoteService } from '../src/remote.ts'
 import { createDatasetsService, resolveScope, type DatasetsService } from '../src/service.ts'
-import { cleanup, makeFixtureRepo, type FixtureRepo } from './helpers.ts'
+import { cleanup, commitAll, makeFixtureRepo, makeJudgingRepo, type FixtureRepo } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
 let worktreeRoot: string | undefined
@@ -175,6 +175,221 @@ describe('DatasetsRemoteService', () => {
     if (result.kind !== 'datasets') throw new Error('expected datasets result')
     expect(result.datasets.map(summary => summary.id)).toEqual(['alpha', 'beta'])
     await withDefault.fiber.dispose()
+  })
+
+  it('overview answers the list page in one call: slot ← layer, canary, validate', async () => {
+    repo = makeJudgingRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+
+    const overview = await remote.overview(agent)
+    expect(overview.repo).toBe(realpathSync(repo.dir))
+    expect(overview.commit).toBe(repo.commit)
+    const row = overview.datasets[0]
+    expect(row?.id).toBe('bench')
+    expect(row?.itemCount).toBe(2)
+    // The «槽位 ← 层» cell: both layouts fold into the same six words, and the
+    // passthrough zone reports under the reserved name.
+    expect(row?.slotLayers).toEqual({
+      prompt: ['visible'],
+      standards: ['visible'],
+      oracle: ['grading'],
+      rubric: ['grading'],
+      checks: ['verify'],
+      other: ['-'],
+    })
+    // This fixture declares no canary; the row says so without ever carrying
+    // the string itself (a canary in a payload is a canary in a log).
+    expect(row?.canary).toBe(false)
+    expect(JSON.stringify(row)).not.toContain('dsh-canary')
+    // validate ran: this fixture is clean apart from its passthrough zone.
+    expect(row?.validate?.errors).toBe(0)
+    expect(row?.validate?.warnings).toBeGreaterThan(0)
+    await fiber.dispose()
+  })
+
+  it('itemBrief lists exactly what the player receives, in both layouts', async () => {
+    repo = makeJudgingRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+
+    const registered = await remote.itemBrief(agent, { dataset: 'bench', item: 'R1' })
+    // The item's own modelFacing files, then the dataset-level stage prompt —
+    // and NOTHING from grading or verify. This list IS the leak self-check.
+    expect(registered.player.files.map(file => [file.source, file.path])).toEqual([
+      ['item', 'standards.yml'],
+      ['item', 'task.md'],
+      ['dataset', 'prompts/stage1.md'],
+    ])
+    expect(registered.player.files.every(file => file.layer === 'visible')).toBe(true)
+    expect(registered.player.totalBytes).toBe(
+      registered.player.files.reduce((sum, file) => sum + file.bytes, 0),
+    )
+    expect(registered.player.totalBytes).toBeGreaterThan(0)
+
+    // The convention layout shows the same three files under the same slot.
+    const conventional = await remote.itemBrief(agent, { dataset: 'bench', item: 'C1' })
+    expect(conventional.player.files.map(file => file.path).sort())
+      .toEqual(['prompts/stage1.md', 'standards.yml', 'task.md'])
+    await fiber.dispose()
+  })
+
+  it('itemBrief counts the rubric’s shape without ever shipping its text', async () => {
+    repo = makeJudgingRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+
+    const brief = await remote.itemBrief(agent, { dataset: 'bench', item: 'R1' })
+    expect(brief.judgeability.rubricPath).toBe('answers/rubric.yml')
+    expect(brief.judgeability.leaves).toBe(2)
+    expect(brief.judgeability.kinds).toEqual({ 'objective': 1, 'llm-draft': 1 })
+    expect(brief.judgeability.probes).toEqual(['checks/probes/link-check.mjs'])
+    expect(brief.judgeability.stageSchemas).toEqual(['schemas/stage1.json'])
+    expect(brief.judgeability.notes).toEqual([])
+    // The criteria are counted, never carried: the page shows the SHAPE.
+    expect(JSON.stringify(brief)).not.toContain('every link in the write-up resolves')
+    await fiber.dispose()
+  })
+
+  it('itemBrief says why a number is missing instead of reporting a bare zero', async () => {
+    repo = makeFixtureRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+    // `alpha` declares no grading layer at all — a dataset outside the judging
+    // convention, which is not the same thing as an unjudgeable one.
+    const brief = await remote.itemBrief(agent, { dataset: 'alpha', item: 'i1' })
+    expect(brief.judgeability.rubricPath).toBeNull()
+    expect(brief.judgeability.leaves).toBe(0)
+    expect(brief.judgeability.notes.join('\n')).toContain('declares no grading layer')
+    await fiber.dispose()
+  })
+
+  it('scaffoldDataset writes a descriptor skeleton and refuses to overwrite one', async () => {
+    repo = makeJudgingRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+
+    const result = await remote.scaffoldDataset(agent, { id: 'fresh', name: 'Fresh set' })
+    expect(result.written).toEqual([
+      'datasets/fresh/dataset.json',
+      'datasets/fresh/visible/prompts/stage1.md',
+      'datasets/fresh/schemas/stage1.json',
+      'datasets/fresh/items/.gitkeep',
+    ])
+    expect(JSON.parse(readFileSync(join(repo.dir, 'datasets/fresh/dataset.json'), 'utf8')).id).toBe('fresh')
+    // A second call on the same id is a loud refusal, never a silent overwrite.
+    await expect(remote.scaffoldDataset(agent, { id: 'fresh' })).rejects.toMatchObject({ code: 'SHAPE_INVALID' })
+    await fiber.dispose()
+  })
+
+  it('scaffoldItem homes the placeholders by the dataset’s own register, and skips what exists', async () => {
+    repo = makeJudgingRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+
+    // R1 is register-homed and already ships three of the four: only the probe
+    // README is missing, and it lands under the probes/ segment that is what
+    // makes a probe a probe (protocol §6.7).
+    const registered = await remote.scaffoldItem(agent, { dataset: 'bench', item: 'R1' })
+    expect(registered.written).toEqual(['datasets/bench/items/R1/checks/probes/README.md'])
+    expect(registered.skipped).toEqual([
+      'datasets/bench/items/R1/task.md',
+      'datasets/bench/items/R1/standards.yml',
+      'datasets/bench/items/R1/answers/rubric.yml',
+    ])
+
+    // A new item the register does not name gets the convention layout.
+    const fresh = await remote.scaffoldItem(agent, { dataset: 'bench', item: 'C2' })
+    expect(fresh.written).toEqual([
+      'datasets/bench/items/C2/visible/task.md',
+      'datasets/bench/items/C2/visible/standards.yml',
+      'datasets/bench/items/C2/grading/rubric.yml',
+      'datasets/bench/items/C2/verify/probes/README.md',
+    ])
+    await fiber.dispose()
+  })
+
+  it('validate names the placeholder a skeleton just wrote — the expected next step', async () => {
+    repo = makeJudgingRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+    await remote.scaffoldItem(agent, { dataset: 'bench', item: 'C2' })
+    // validate reads the WORKING TREE's HEAD, so the uncommitted skeleton is
+    // invisible until the human commits it — which is the honest answer, and
+    // the reason the page says the commit is theirs.
+    const beforeCommit = await remote.validate(agent, { dataset: 'bench' })
+    expect(beforeCommit.datasets[0]?.errors).toEqual([])
+    commitAll(repo.dir, 'skeleton')
+    const afterCommit = await remote.validate(agent, { dataset: 'bench' })
+    expect(afterCommit.datasets[0]?.errors.map(error => error.code)).toContain('RUBRIC_NO_ITEMS')
+    expect(afterCommit.datasets[0]?.errors.some(error => error.message.includes('C2'))).toBe(true)
+    await fiber.dispose()
+  })
+
+  it('importItem copies an item directory in verbatim and leaves the roles to the dataset', async () => {
+    repo = makeJudgingRepo()
+    const source = mkdtempSync(join(tmpdir(), 'dsh-datasets-import-'))
+    try {
+      mkdirSync(join(source, 'visible'), { recursive: true })
+      mkdirSync(join(source, 'grading'), { recursive: true })
+      writeFileSync(join(source, 'item.json'), '{"id":"IM1","title":"imported"}\n')
+      writeFileSync(join(source, 'visible', 'task.md'), 'imported task\n')
+      writeFileSync(join(source, 'grading', 'rubric.yml'), 'items: []\n')
+      const { fiber, remote } = await bench()
+      const agent = agentOf(fakeSession())
+      await remote.bind(agent, { repoPath: repo.dir })
+
+      const result = await remote.importItem(agent, { dataset: 'bench', item: 'IM1', sourceDir: source })
+      expect(result.written).toEqual([
+        'datasets/bench/items/IM1/grading/rubric.yml',
+        'datasets/bench/items/IM1/item.json',
+        'datasets/bench/items/IM1/visible/task.md',
+      ])
+      // Verbatim: the copy re-homes nothing, so the dataset's own layers decide
+      // what each file became — and the item reads back through the normal face.
+      commitAll(repo.dir, 'imported')
+      const shown = await remote.show(agent, { dataset: 'bench', item: 'IM1' })
+      expect(shown.items[0]?.layers).toEqual({ visible: ['task.md'], grading: ['rubric.yml'] })
+      await fiber.dispose()
+    } finally {
+      rmSync(source, { recursive: true, force: true })
+    }
+  })
+
+  it('importItem fails loud on a path that is not a directory', async () => {
+    repo = makeJudgingRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+    await expect(remote.importItem(agent, {
+      dataset: 'bench', item: 'IM2', sourceDir: join(repo.dir, 'datasets/bench/dataset.json'),
+    })).rejects.toMatchObject({ code: 'INVALID_NAME' })
+    await fiber.dispose()
+  })
+
+  it('the skeleton gestures are the human’s: an agent-scoped call is refused', async () => {
+    repo = makeJudgingRepo()
+    const { ctx, fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir })
+    // The Remote is the operator face, so its calls pass; the same service
+    // reached with a TOOL scope (no operator flag) is refused — an agent's
+    // authoring path is datasets_put_item, inside the session binding.
+    const service = ctx.get('datasets') as DatasetsService
+    const scope = resolveScope({}, service.binding({ id: 's1' }), '')
+    await expect(service.scaffoldDataset(scope, { id: 'agent-made' })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
+    await expect(service.scaffoldItem(scope, { dataset: 'bench', item: 'X1' })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
+    await expect(service.importItem(scope, { dataset: 'bench', item: 'X1', sourceDir: repo.dir }))
+      .rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
+    expect(existsSync(join(repo.dir, 'datasets/agent-made'))).toBe(false)
+    await fiber.dispose()
   })
 
   it('the datasets whitelist narrows the agent boundary but never the operator view', async () => {

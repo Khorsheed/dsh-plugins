@@ -36,11 +36,12 @@ import {
   type DatasetRegistry, type DescriptorWarning, type ItemRecord,
 } from './dataset.ts'
 import { showFile } from './git.ts'
+import { GRADING_LAYER, VERIFY_LAYER } from './slots.ts'
 
-/** The layer a rubric is read from (authoring protocol §6.8). */
-export const GRADING_LAYER = 'grading'
-/** The layer probes are read from (authoring protocol §6.7). */
-export const VERIFY_LAYER = 'verify'
+// The two judging layer names live in `./slots.ts` — the browser half labels
+// its tree with them and must not pull this module's yaml/git dependencies in.
+// Re-exported here because this is where every consumer already looks for them.
+export { GRADING_LAYER, VERIFY_LAYER }
 
 /**
  * The three judgement sources a leaf may be routed to: `objective` → a probe

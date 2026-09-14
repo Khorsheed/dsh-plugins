@@ -116,7 +116,7 @@ export class DatasetsPresetVisibility implements DatasetsChromeVisibility {
 }
 
 /**
- * The 任务 tab's registration toggle: the `conversation.view` tab strip's
+ * The 题集 tab's registration toggle: the `conversation.view` tab strip's
  * BUTTONS enumerate the slot's registrations (ui-conversation's `viewTabs()`
  * has no per-session predicate), so a hidden tab means NO registration — a
  * component returning null would leave the button with an empty body. The

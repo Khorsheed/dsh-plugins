@@ -1,9 +1,9 @@
-/** `datasets` namespace dictionaries (the session tab copy). */
+/** `datasets` namespace dictionaries (the 题集 tab copy). */
 
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'datasets'
 
-/** The datasets tab dictionary key set (the source of truth for both locales). */
+/** The 题集 tab dictionary key set (the source of truth for both locales). */
 export type DatasetsKey =
   | 'open'
   | 'binding.none'
@@ -30,11 +30,79 @@ export type DatasetsKey =
   | 'binding.form.keepOne'
   | 'binding.form.submit'
   | 'binding.form.cancel'
+  | 'slot.prompt'
+  | 'slot.standards'
+  | 'slot.oracle'
+  | 'slot.rubric'
+  | 'slot.checks'
+  | 'slot.other'
+  | 'role.player'
+  | 'role.judge'
+  | 'role.probe'
+  | 'role.withheld'
+  | 'role.passthrough'
   | 'list.loading'
   | 'list.error'
   | 'list.empty'
   | 'list.itemCount'
   | 'list.unbound'
+  | 'list.colDataset'
+  | 'list.colSnapshot'
+  | 'list.colItems'
+  | 'list.colSlots'
+  | 'list.colCanary'
+  | 'list.colValidate'
+  | 'list.colExperiments'
+  | 'list.canaryOn'
+  | 'list.canaryOff'
+  | 'list.validateOk'
+  | 'list.validateErrors'
+  | 'list.validateWarnings'
+  | 'list.validateUnknown'
+  | 'list.experimentsNone'
+  | 'list.newDataset'
+  | 'list.slotLayer'
+  | 'list.passthroughLayer'
+  | 'detail.back'
+  | 'detail.filterAll'
+  | 'detail.filterEmpty'
+  | 'detail.itemsLabel'
+  | 'detail.newItem'
+  | 'detail.importItem'
+  | 'detail.validate'
+  | 'detail.validating'
+  | 'detail.validateOk'
+  | 'detail.validateFound'
+  | 'detail.itemEmpty'
+  | 'detail.player'
+  | 'detail.playerHint'
+  | 'detail.playerSummary'
+  | 'detail.playerShared'
+  | 'detail.playerEmpty'
+  | 'detail.judge'
+  | 'detail.judgeRubric'
+  | 'detail.judgeKind'
+  | 'detail.judgeProbes'
+  | 'detail.judgeShared'
+  | 'detail.judgeSchemas'
+  | 'detail.runs'
+  | 'detail.runsEmpty'
+  | 'detail.runsCell'
+  | 'detail.briefLoading'
+  | 'detail.briefError'
+  | 'form.newDatasetTitle'
+  | 'form.datasetId'
+  | 'form.datasetName'
+  | 'form.newItemTitle'
+  | 'form.itemId'
+  | 'form.importItemTitle'
+  | 'form.sourceDir'
+  | 'form.submit'
+  | 'form.cancel'
+  | 'skeleton.written'
+  | 'skeleton.skipped'
+  | 'skeleton.commitHint'
+  | 'skeleton.dismiss'
   | 'preview.empty'
   | 'preview.loading'
   | 'preview.error'
@@ -64,43 +132,111 @@ export type DatasetsKey =
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The datasets session-tab copy. */
+    /** The 题集 session-tab copy. */
     'datasets': DatasetsKey
   }
 }
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<DatasetsKey, string> = {
-  'open': '数据集',
-  'binding.none': '本会话未绑定数据集仓库',
-  'binding.repo': '本会话绑定: {repo}',
-  'binding.allDatasets': '全部数据集',
+  'open': '题集',
+  'binding.none': '本会话未绑定题库仓库',
+  'binding.repo': '题库: {repo}',
+  'binding.allDatasets': '全部题集',
   'binding.agentVisible': 'agent 可见：{layers}',
   'binding.agentVisibleFloor': 'agent 可见：可见层（敏感层默认拦截）',
-  'binding.bind': '绑定',
+  'binding.bind': '导入题集',
   'binding.edit': '改白名单',
   'binding.unbind': '解绑',
-  'binding.form.title': '绑定数据集仓库',
-  'binding.form.titleEdit': '修改绑定与白名单',
+  'binding.form.title': '导入题集（指一个已按协议组织的仓库）',
+  'binding.form.titleEdit': '修改题库与白名单',
   'binding.form.repo': '仓库路径（git 仓库）',
   'binding.form.useWorkspace': '使用当前工作区',
   'binding.form.browse': '浏览…',
   'binding.form.restrict': 'agent 可见范围',
-  'binding.form.restrictDatasets': 'agent 可见的数据集',
+  'binding.form.restrictDatasets': 'agent 可见的题集',
   'binding.form.restrictLayers': 'agent 可见的层',
   'binding.form.sensitive': '敏感',
   'binding.form.taskFacingOnly': '仅题面',
   'binding.form.preview.loading': '检查仓库…',
-  'binding.form.preview.ok': '✓ 有效仓库 · {count} 个数据集',
-  'binding.form.preview.empty': 'git 仓库有效，但没有数据集（datasets/ 为空）',
+  'binding.form.preview.ok': '✓ 有效仓库 · {count} 个题集',
+  'binding.form.preview.empty': 'git 仓库有效，但没有题集（datasets/ 为空）',
   'binding.form.keepOne': '每组至少保留一项；要全部可见请折叠此区',
   'binding.form.submit': '确认',
   'binding.form.cancel': '取消',
+  'slot.prompt': '题干',
+  'slot.standards': '验收标准',
+  'slot.oracle': '参考答案',
+  'slot.rubric': '评估标准',
+  'slot.checks': '检查脚本',
+  'slot.other': '其他文件',
+  'role.player': '选手看得到',
+  'role.judge': '只有判官',
+  'role.probe': '只有探针',
+  'role.withheld': '不发给选手',
+  'role.passthrough': '所有人可读',
   'list.loading': '加载中…',
-  'list.error': '数据集列表加载失败',
-  'list.empty': '绑定范围内没有数据集',
-  'list.itemCount': '{count} 个 item',
-  'list.unbound': '先在上方绑定一个数据集仓库',
+  'list.error': '题集列表加载失败',
+  'list.empty': '这个仓库里没有题集（datasets/ 为空）',
+  'list.itemCount': '{count} 道题',
+  'list.unbound': '先导入一个题库仓库，或新建一个题集',
+  'list.colDataset': '题集',
+  'list.colSnapshot': '快照',
+  'list.colItems': '题目数',
+  'list.colSlots': '槽位 ← 层',
+  'list.colCanary': 'canary',
+  'list.colValidate': 'validate',
+  'list.colExperiments': '用于的实验',
+  'list.canaryOn': '已设置',
+  'list.canaryOff': '未设置',
+  'list.validateOk': '通过',
+  'list.validateErrors': '{count} 个错误',
+  'list.validateWarnings': '{count} 个提示',
+  'list.validateUnknown': '未能校验',
+  'list.experimentsNone': '尚未用于任何实验',
+  'list.newDataset': '新建题集',
+  'list.slotLayer': '{slot} ← {layers}',
+  'list.passthroughLayer': '透传区',
+  'detail.back': '← 题集列表',
+  'detail.filterAll': '全部',
+  'detail.filterEmpty': '这个筛选下没有文件',
+  'detail.itemsLabel': '题目',
+  'detail.newItem': '题目骨架',
+  'detail.importItem': '导入题目',
+  'detail.validate': 'validate',
+  'detail.validating': '校验中…',
+  'detail.validateOk': 'validate 通过（{warnings} 个提示）',
+  'detail.validateFound': 'validate: {errors} 个错误 · {warnings} 个提示',
+  'detail.itemEmpty': '在左侧选一道题，看它的题面与可判性',
+  'detail.player': '选手将看到',
+  'detail.playerHint': '这道题在单元里的样子：可见层文件 + 题集级题干。其他槽位的字节不会进选手格子。',
+  'detail.playerSummary': '{count} 个文件 · {bytes} 字节',
+  'detail.playerShared': '题集级',
+  'detail.playerEmpty': '这道题没有任何可见层文件——选手会拿到一个空工作区',
+  'detail.judge': '可判性',
+  'detail.judgeRubric': '评估标准 {leaves} 条',
+  'detail.judgeKind': '{kind} {count}',
+  'detail.judgeProbes': '探针 {count} 个',
+  'detail.judgeShared': '题集级探针 {count} 个',
+  'detail.judgeSchemas': '阶段 schema {count} 个',
+  'detail.runs': '作答记录',
+  'detail.runsEmpty': '这道题还没有在任何实验里作答过',
+  'detail.runsCell': '{condition} · rep {rep} · {bucket}',
+  'detail.briefLoading': '读取题面与可判性…',
+  'detail.briefError': '读取失败',
+  'form.newDatasetTitle': '新建题集（写 dataset.json 骨架、prompts/、schemas/、items/）',
+  'form.datasetId': '题集 id（也是目录名）',
+  'form.datasetName': '显示名（可选）',
+  'form.newItemTitle': '题目骨架（按本题集的层与 register 落位）',
+  'form.itemId': '题目 id（也是目录名）',
+  'form.importItemTitle': '导入题目（把一个已有的题目目录原样拷入）',
+  'form.sourceDir': '源目录的绝对路径',
+  'form.submit': '写入工作区',
+  'form.cancel': '取消',
+  'skeleton.written': '已写入 {count} 个文件',
+  'skeleton.skipped': '{count} 个文件已存在，未覆盖',
+  'skeleton.commitHint': '文件只写进工作区。commit 仍是你的——树与 validate 读的是 HEAD，提交后才会看到它们。',
+  'skeleton.dismiss': '知道了',
   'preview.empty': '在左侧选择一个文件查看内容',
   'preview.loading': '加载中…',
   'preview.error': '读取失败',
@@ -112,10 +248,10 @@ export const zh: Record<DatasetsKey, string> = {
   'tree.shared': '题集级共享',
   'tree.unprotected': '不受白名单保护',
   'tree.agentReadable': 'agent 可读',
-  'tree.passthrough': '透传 · {count} 个文件 · 不受白名单保护',
-  'tree.passthroughShort': '透传',
+  'tree.passthrough': '其他文件 · {count} 个 · 所有人可读',
+  'tree.passthroughShort': '其他文件',
   'tree.sensitive': '敏感',
-  'tree.warnModelFacing': '层 {layer} 未显式声明 modelFacing，按默认 true 处理；混合敏感度数据集建议逐层表态',
+  'tree.warnModelFacing': '层 {layer} 未显式声明 modelFacing，按默认 true 处理；混合敏感度题集建议逐层表态',
   'tree.moreMeta': '+{count}',
   'json.copyValue': '复制值',
   'json.copyJson': '复制 JSON',
@@ -133,15 +269,15 @@ export const zh: Record<DatasetsKey, string> = {
 export const en: Record<DatasetsKey, string> = {
   'open': 'Datasets',
   'binding.none': 'No dataset repository bound to this session',
-  'binding.repo': 'Bound: {repo}',
+  'binding.repo': 'Repository: {repo}',
   'binding.allDatasets': 'all datasets',
   'binding.agentVisible': 'agent-visible: {layers}',
   'binding.agentVisibleFloor': 'agent-visible: model-facing layers (sensitive blocked by default)',
-  'binding.bind': 'Bind',
+  'binding.bind': 'Import a dataset',
   'binding.edit': 'Edit whitelist',
   'binding.unbind': 'Unbind',
-  'binding.form.title': 'Bind a dataset repository',
-  'binding.form.titleEdit': 'Edit binding & whitelist',
+  'binding.form.title': 'Import a dataset (point at a repository laid out by the protocol)',
+  'binding.form.titleEdit': 'Edit repository & whitelist',
   'binding.form.repo': 'Repository path (a git repository)',
   'binding.form.useWorkspace': 'Use current workspace',
   'binding.form.browse': 'Browse…',
@@ -156,11 +292,79 @@ export const en: Record<DatasetsKey, string> = {
   'binding.form.keepOne': 'Keep at least one per group; collapse the section to keep everything visible',
   'binding.form.submit': 'Confirm',
   'binding.form.cancel': 'Cancel',
+  'slot.prompt': 'Task statement',
+  'slot.standards': 'Acceptance standards',
+  'slot.oracle': 'Reference answer',
+  'slot.rubric': 'Grading rubric',
+  'slot.checks': 'Check scripts',
+  'slot.other': 'Other files',
+  'role.player': 'the player sees it',
+  'role.judge': 'the judge only',
+  'role.probe': 'the probes only',
+  'role.withheld': 'withheld from the player',
+  'role.passthrough': 'readable by everyone',
   'list.loading': 'Loading…',
   'list.error': 'Failed to load the dataset list',
-  'list.empty': 'No datasets in the bound scope',
+  'list.empty': 'This repository holds no dataset (empty datasets/)',
   'list.itemCount': '{count} items',
-  'list.unbound': 'Bind a dataset repository above first',
+  'list.unbound': 'Import a dataset repository first, or create a new dataset',
+  'list.colDataset': 'Dataset',
+  'list.colSnapshot': 'Snapshot',
+  'list.colItems': 'Items',
+  'list.colSlots': 'Slot ← layer',
+  'list.colCanary': 'Canary',
+  'list.colValidate': 'Validate',
+  'list.colExperiments': 'Used by',
+  'list.canaryOn': 'declared',
+  'list.canaryOff': 'not declared',
+  'list.validateOk': 'passes',
+  'list.validateErrors': '{count} errors',
+  'list.validateWarnings': '{count} warnings',
+  'list.validateUnknown': 'could not validate',
+  'list.experimentsNone': 'no experiment yet',
+  'list.newDataset': 'New dataset',
+  'list.slotLayer': '{slot} ← {layers}',
+  'list.passthroughLayer': 'passthrough',
+  'detail.back': '← All datasets',
+  'detail.filterAll': 'All',
+  'detail.filterEmpty': 'No file under this filter',
+  'detail.itemsLabel': 'Items',
+  'detail.newItem': 'Item skeleton',
+  'detail.importItem': 'Import an item',
+  'detail.validate': 'Validate',
+  'detail.validating': 'Validating…',
+  'detail.validateOk': 'validate passes ({warnings} warnings)',
+  'detail.validateFound': 'validate: {errors} errors · {warnings} warnings',
+  'detail.itemEmpty': 'Pick an item on the left to see its task face and judgeability',
+  'detail.player': 'What the player will see',
+  'detail.playerHint': 'This item as it looks inside the unit: the model-facing layer files plus the dataset-level task prompts. No other slot’s bytes reach the player’s cell.',
+  'detail.playerSummary': '{count} files · {bytes} bytes',
+  'detail.playerShared': 'dataset-level',
+  'detail.playerEmpty': 'This item has no model-facing file — the player would get an empty workspace',
+  'detail.judge': 'Judgeability',
+  'detail.judgeRubric': '{leaves} rubric leaves',
+  'detail.judgeKind': '{kind} {count}',
+  'detail.judgeProbes': '{count} probes',
+  'detail.judgeShared': '{count} dataset-level probes',
+  'detail.judgeSchemas': '{count} stage schemas',
+  'detail.runs': 'Answer record',
+  'detail.runsEmpty': 'This item has not been answered in any experiment yet',
+  'detail.runsCell': '{condition} · rep {rep} · {bucket}',
+  'detail.briefLoading': 'Reading the task face and judgeability…',
+  'detail.briefError': 'Failed to read',
+  'form.newDatasetTitle': 'New dataset (writes the dataset.json skeleton, prompts/, schemas/, items/)',
+  'form.datasetId': 'Dataset id (also its directory name)',
+  'form.datasetName': 'Display name (optional)',
+  'form.newItemTitle': 'Item skeleton (homed by this dataset’s layers and register)',
+  'form.itemId': 'Item id (also its directory name)',
+  'form.importItemTitle': 'Import an item (copies an existing item directory in verbatim)',
+  'form.sourceDir': 'Absolute path of the source directory',
+  'form.submit': 'Write into the working tree',
+  'form.cancel': 'Cancel',
+  'skeleton.written': '{count} files written',
+  'skeleton.skipped': '{count} files already existed and were left alone',
+  'skeleton.commitHint': 'The files land in the working tree only. The commit stays yours — the tree and validate read HEAD, so they appear once you commit.',
+  'skeleton.dismiss': 'Got it',
   'preview.empty': 'Select a file on the left to preview it',
   'preview.loading': 'Loading…',
   'preview.error': 'Failed to read',
@@ -172,8 +376,8 @@ export const en: Record<DatasetsKey, string> = {
   'tree.shared': 'Dataset-level shared',
   'tree.unprotected': 'not whitelist-protected',
   'tree.agentReadable': 'agent-readable',
-  'tree.passthrough': 'Passthrough · {count} files · not whitelist-protected',
-  'tree.passthroughShort': 'Passthrough',
+  'tree.passthrough': 'Other files · {count} · readable by everyone',
+  'tree.passthroughShort': 'Other files',
   'tree.sensitive': 'sensitive',
   'tree.warnModelFacing': 'Layer {layer} does not declare modelFacing and defaults to true; declare it explicitly in a mixed-sensitivity dataset',
   'tree.moreMeta': '+{count}',
