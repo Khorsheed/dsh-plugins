@@ -88,6 +88,22 @@ export function porcelainPaths(porcelain: string): string[] {
  * not have. Checked before pnpm is consulted at all. */
 export const GLOBAL_PATHS = ['build/', 'scripts/', 'tsconfig.base.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'package.json', '.github/']
 
+/** The same, for a layer whose path carries a variable segment.
+ *
+ * `profiles/` as a whole is NOT global — a profile's template, patch and docs
+ * are that profile's own business. Its `scripts/` are not: install.sh builds
+ * and packs every unpublished member from the checkout, so an edit there
+ * changes how the whole repo ships while touching no package directory, which
+ * is exactly the case GLOBAL_PATHS exists for. Observed 2026-09-14 (T49): a
+ * change to profiles/web-eval/scripts/install.sh scoped to nothing and the
+ * gate ran 11 steps, skipping build, test and pack entirely. */
+export const GLOBAL_PATH_PATTERNS = [/^profiles\/[^/]+\/scripts\//]
+
+/** Whether one repo-relative path belongs to a shared layer. */
+export function isGlobalPath(path: string): boolean {
+  return GLOBAL_PATHS.some((g) => path.startsWith(g)) || GLOBAL_PATH_PATTERNS.some((re) => re.test(path))
+}
+
 export interface Scope { readonly filter: string | undefined; readonly dirs: string[]; readonly why: string }
 
 /** Exclude the root orchestrator from execution as well as the displayed list:
@@ -120,7 +136,7 @@ export function resolveScope(run: Runner, opts: { all: boolean; since?: string }
   if (!diff.ok || !status.ok) return { filter: undefined, dirs: [], why: `whole repo — could not read changes against ${base}` }
 
   const touched = [...new Set([...diff.out.split('\n').filter((p) => p !== ''), ...porcelainPaths(status.out)])]
-  const global = touched.filter((p) => GLOBAL_PATHS.some((g) => p.startsWith(g)))
+  const global = touched.filter(isGlobalPath)
   if (global.length > 0) {
     const shown = global.slice(0, 3).join(', ')
     return { filter: undefined, dirs: [], why: `whole repo — shared-layer paths changed (${shown}${global.length > 3 ? ', …' : ''})` }

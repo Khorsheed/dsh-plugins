@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GLOBAL_PATHS, packageFilter, porcelainPaths, resolveScope, type Outcome, type Runner } from './gate.mts'
+import { GLOBAL_PATHS, isGlobalPath, packageFilter, porcelainPaths, resolveScope, type Outcome, type Runner } from './gate.mts'
 
 /** A runner driven by a table, so every branch — including the ones that only
  * happen when a command fails — is reachable without a git repository. */
@@ -75,6 +75,20 @@ describe('resolveScope', () => {
       const scope = resolveScope(stub({ 'git diff --name-only': ok(`${path}probe`), 'git status --porcelain': ok('') }), base)
       expect(scope.filter, `${path} must force a whole-repo run`).toBeUndefined()
     }
+  })
+
+  it("refuses to scope when a profile's scripts change — they build and pack every member", () => {
+    for (const path of ['profiles/web-eval/scripts/install.sh', 'profiles/web-basic/scripts/update.sh']) {
+      const scope = resolveScope(stub({ 'git diff --name-only': ok(path), 'git status --porcelain': ok('') }), base)
+      expect(scope.filter, `${path} must force a whole-repo run`).toBeUndefined()
+      expect(scope.why).toContain(path)
+    }
+    // The rest of a profile is that profile's own business and still scopes.
+    expect(isGlobalPath('profiles/web-eval/cordis.patch.yml')).toBe(false)
+    expect(isGlobalPath('profiles/web-eval/docs/README.md')).toBe(false)
+    // And the pattern is anchored: a package path that merely mentions the
+    // segments is not a profile script.
+    expect(isGlobalPath('packages/eval/profiles/x/scripts/a.sh')).toBe(false)
   })
 
   it('refuses to scope when a file is RENAMED into a shared layer', () => {
