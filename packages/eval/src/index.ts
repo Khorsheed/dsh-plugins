@@ -90,6 +90,7 @@ export type {
 } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, listExperiments } from './experiments.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
+export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 export { evalToolDefinitions, EVAL_TOOL_NAMES } from './tool.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'

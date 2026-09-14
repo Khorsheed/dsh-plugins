@@ -229,7 +229,11 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 | `conditionDiff({a, b, repo?, dataset?, session?})` | 两份条件声明的逐字段差异（规范化深比较；`notes` 进差异清单但不影响 `identical`）。两侧各可以是条件 id 或路径。**只展示，不推荐**：哪些字段不同、各自取值，就这些——这对条件值不值得跑，取决于文件里没有的东西 |
 | `provision(conditionPath, {repo})` | 把声明变成实物并写 `conditions/<id>.lock.json`，见下节。**lock 的唯一写入者**；只写 `repo` 指的那份工作副本，不 commit |
 | `experiments({repo?, dataset?, session?})` | 实验室列表的投影：一行一个实验，**草稿与 run 同列**。run 取账本里 `run.meta.evalVersion` 有值的那些；草稿取题库 `datasets/<题集>/plans/*.json` 里还没有对应 run 的（按解析后路径或 planSha 配对）。每行带题库快照、条件与判官 id、题数、rep、因子（条件两两 diff 推出）、状态、进度、开始时间。降级不拒绝：没挂 mission 只列草稿、会话没绑题库只列 run，缺哪块就在 `notes` 里写一句 |
-| `experiment(runId)` | 一次已启动实验的概览：上面那一行，加只有 run 才有的部分——run.meta 摘要、就绪检查记录**原文**、桶与阶段两张直方图、未释放清单、本实例还留着的 job。草稿没有 run，它的概览就是列表那一行（计划审阅页归 T36）|
+| `experiment(runId)` | 一次已启动实验的概览：上面那一行，加只有 run 才有的部分——run.meta 摘要、就绪检查记录**原文**、桶与阶段两张直方图、未释放清单、本实例还留着的 job。草稿没有 run，它的概览就是列表那一行；草稿自己的那一页是 `planReview` |
+| `planReview(planPath)` | 计划审阅页的载荷：plan 自己的字段（快照、题目、条件、判官与采样、rep、阶段、顺序种子、预算、期望 ns、重试、导出目录、环境、作者备注）+ `validatePlan` 的结论摊平成 `ok / warn / error` 逐条。**同一个函数**——页面和 `dsh-eval validate` 不可能对「这份计划能不能批」给出两种答案。`ok` 那几条是已解析的条件：只报问题的审阅页，会把一份干净的计划渲染成空白 |
+| `conditionsPage({repo?, dataset?, session?})` | 条件页的表：`conditions` 的投影，一行一条——harness 与 drive、声明模型、scope、preset、lock（在不在、还对不对、home 有没有哈希、provision 记了什么）、就绪词 |
+| `conditionDiffPage({a, b, repo?, dataset?, session?})` | 条件页的 diff：`conditionDiff` 的投影，**只带不同的字段**，每侧的值是规范化 JSON 文本（`null` = 这一侧没有这个字段，本身就是一种不同）|
+| `approve(planPath, {parentSessionId, cwd?})` | **人的动作**（界面规格 R1、第 5 步）：先 validate，有 error 就拒绝、`runStart` 一次都不碰——条件都解析不出来的计划一旦起跑，就要用真委派去发现一个离线检查早就知道的事实。warning 不拦（`dataset.commit: null` 是「快照在启动时钉」的正常形状）。通过则以批准的这个会话为父会话、它的工作区为 cwd 调既有 `runStart`。**拒绝是返回值不是异常**：页面两种情况渲染同一张 check 列表，理由就该贴在解释它的那张表旁边；接线失败（没有 job 注册表、没有活着的父 agent）同理原样进 `refusal` |
 | `runStatus(runId)` | 投影一次 run：run.meta 摘要（planSha、快照 commit、条件、随机顺序与种子、启动时间）+ 逐格一行（题、条件、rep、attempt、状态、桶、编排器最近一条注解、submission-rejected 次数）。缺 mission 服务即拒绝并说明原因 |
 | `finalize(runId, options?)` | 把 run 内每个 `archived` 的格子走一遍 `archived → releasable → released`（与 `--finalize` 同一条闸），非 archived 的格子逐格列出状态。闸拒绝按格记录，不 force。组合里没有 mission 服务即拒绝并说明原因 |
 | `report(bundleDir, {out?})` | 把 mission export 的自包含 bundle 变成 `results.jsonl` + `summary.md`（见下节）。只读 bundle，写入缺省 `<bundleDir>/report/`，重复运行覆盖（报告是派生态，bundle 本身只增不改） |
@@ -323,15 +327,18 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 
 数据走 stdout JSON，诊断走 stderr；退出码 0 ok / 1 失败 / 2 用法错误（与 `dsh-lab` 一致）。CLI 直连内核，不需要宿主在跑——脚本场景与已挂载插件行为完全一致。进程外没有活的父 Agent、也没有 datasets/mission/localAgent 三个服务，所以**不带 `--instance` 的 `run` 只做 `--dry-run`**；`--instance` 时 CLI 不再假装自己是编排器，而是做 CI 真正需要的那件事：当调用方。它走的是实例普通的 Remote RPC（`POST <base>/api/dshEval/<method>`，`{args:{…}}` 进、`{ok,value}` 出，token 走 `?token=`），四个动词与 slash 用的是同一套 job 层。`finalize` 不需要父 Agent、只需要 ledger，所以它在进程外以子进程调 `dsh-mission` CLI 照常工作；任一格闸拒绝即退出码 1。
 
-## 实验室 tab（浏览器半边，I5·T35a）
+## 实验室 tab（浏览器半边，I5·T35a、T36）
 
 本包自此有 client 半边：会话的 `conversation.view` tab 环里多一个**实验室 / Experiments**（order 40）。插件 id 仍是 `eval`——仓库里的 `lab` 是容器单元插件，两个名字不撞（界面规格 R5）。
 
 - **自隐**：当前会话的 preset 组合里点了 `@khorsheed/dsh-eval-tool` 行才注册这个 tab，没点就**不注册**——tab 条的按钮是按注册枚举的，返回 null 的组件只会在条上留一个空壳按钮。判据读官方 `pluginInventory` Remote，**每条读不到的路都失败开放**（可见）：宿主没有这个命名空间、RPC 还没回来或失败、preset 组不存在或标了 `broken`、会话根本没有 preset。判据是那一行**在不在**，不另设逃生口：隐掉一个只读视图不会弄坏任何已有的 run。
 - **列表**：一行一个实验，**草稿与 run 同列**——对着手要规划下一次比较的人来说它们是同一类东西（界面规格 §五）。列：名称、题库快照、条件数（+ 判官）、题数、rep、因子、状态、进度、开始时间。动作只有「新建实验」，本轮是占位（归 T36）。
 - **状态**七个词，由纯函数 `deriveExperimentStatus` 从三处推出——plan 的 validate 结果、账本里每格的阶段、后台 job 的结局：草稿（validate 没过或没跑）→ 待批准（过了，没人起）→ 运行中（job 还活着，或还有格子在动）→ 评估中（所有格子到了 `judged` 或更后，且还没 finalize）→ 已完成（全格 `released`）；另有被拒（job 以 failed 落地）与已取消（job 被 kill）。三处**粗糙的边**是写在函数注释里的，不是抹平的：job 层把「就绪检查拒绝」和「跑到一半抛错」记成同一种 `failed`（是哪种看状态详情那句话）；job 跑完但格子停在中途读作运行中，因为账本里确实还有没跑完的格子，而第八个词不存在；一格都没有的 run 同理；实例重启后 job 记录没了，那条 run 就只按格子读，被拒与已取消于是够不着。
-- **详情**是七个子页的壳（概览 · 计划审阅 · 条件 · 矩阵 · 格子 · 报告 · 判官台，按界面规格 §五）。本轮只填**概览**：快照、矩阵形状、因子、判官与采样数、环境（镜像 / 网络 / 用户，宿主路径就直说）、就绪检查原文、run.meta 摘要，外加桶与阶段直方图、未释放清单、后台 job。其余六页各留一句点名归哪个任务（T36 / T35b / T38 / T37）——一个假装自己是空的 tab 比一个说明谁在建它的 tab 更糟。草稿的概览直接由列表那一行渲染，不多花一次 RPC：它没有 run 可读。
-- **前端零兄弟包依赖**：mission 与 datasets 的投影都在服务端算好再下发，浏览器只读 eval 自己的 Remote（界面规格 R2 与 §八）。Remote 上为此新增两个**带会话参数**的读动词 `runs` / `run`——会话决定了这个浏览器能看见哪个题库（datasets 绑定是人的决定），而 CI 的四个动词 `runStart` / `runStatus` / `runOutput` / `runCancel` 一个字没动，它们不带 agent 正是因为 CI 没有。
+- **详情**是七个子页的壳（概览 · 计划审阅 · 条件 · 矩阵 · 格子 · 报告 · 判官台，按界面规格 §五），已填三页。**概览**：快照、矩阵形状、因子、判官与采样数、环境（镜像 / 网络 / 用户，宿主路径就直说）、就绪检查原文、run.meta 摘要，外加桶与阶段直方图、未释放清单、后台 job。草稿的概览直接由列表那一行渲染，不多花一次 RPC：它没有 run 可读。其余四页各留一句点名归哪个任务（T35b / T38 / T37）——一个假装自己是空的 tab 比一个说明谁在建它的 tab 更糟。
+- **计划审阅页**（T36）：上面那套 kv（快照 · 矩阵形状 · 因子 · 判官与采样 · 题目 · 顺序种子 · 阶段 · 环境 · 预算 · 期望 ns · 重试 · 导出目录 · 计划文件 · 作者备注）+ validate 逐条（`ok / warn / error`，各带稳定 code）+ 每个条件的就绪与 lock，然后是人的两个按钮。**「批准并启动」**是 `approve`；**「退回修改」**只在本页记一段备注、把状态按草稿显示——**计划文件一个字节都不动**：退回是给作者的一句话，一个会改写文档的按钮等于让审阅者变成作者。计划审阅**按需拉取**（打开这一页才发一次 RPC）：validate 要走一遍题集树，让概览替它付账不合理。
+- **条件页**（T36）：一行一条条件——条件 · harness · model.declared · scope · preset · lock · 就绪；点两行出 diff，**只列不同的字段**，缺一侧就写「无此字段」（那也是一种不同）。点第三行顶掉先选的那条，再点已选的取消选。「新建条件」是占位：**选模型即新建条件**（界面规格 §五），所以它回到新建实验那张表，归 T34。
+- **批准之后看什么**：`runCreate` 之前账本里没有这个 run，而就绪检查拒绝**恰好发生在那之前**——被拒的 run 在账本里一行都不会有。所以批准返回的 job 与 run id 会留在页面上，并按 job id 拉一次 `runOutput`，把**运行日志原样**贴出来：`readiness <条件>: NOT READY — <原因>` 就写在那里，别处没有。概览页与计划审阅页共用这一块。
+- **前端零兄弟包依赖**：mission 与 datasets 的投影都在服务端算好再下发，浏览器只读 eval 自己的 Remote（界面规格 R2 与 §八）。Remote 上为此新增**带会话参数**的动词：读的 `runs` / `run` / `plan` / `conditions` / `conditionDiff`，写的只有 `approve` 一个——会话决定了这个浏览器能看见哪个题库（datasets 绑定是人的决定）。CI 的四个动词 `runStart` / `runStatus` / `runOutput` / `runCancel` 一个字没动，它们不带 agent 正是因为 CI 没有；`runOutput` 现在也是浏览器读运行日志的那一个，同一个动词，没有第二份实现。**没有 approve 类模型工具，也不会有**（界面规格 R1）：启动动词只给界面。
 
 ## 哈希规则
 
@@ -355,7 +362,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 
 ## 状态
 
-I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的伴生行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式。计划审阅与条件页归 T36，矩阵与格子归 T35b，报告归 T38，判官台归 T37。
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的伴生行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具。矩阵与格子归 T35b，报告归 T38，判官台归 T37。
 
 ## 许可
 
