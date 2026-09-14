@@ -15,7 +15,8 @@ import type {
   EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView, EvalExperimentDetail,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
-  EvalPlanRequest, EvalPlanReview, EvalRunOutputView,
+  EvalFinalizeRequest, EvalFinalizeView, EvalPlanRequest, EvalPlanReview, EvalReportRequest,
+  EvalRunOutputView, EvalRunReportView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
 
@@ -27,10 +28,11 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
  * experiment's overview, the plan review, the condition registry and its diff,
  * the matrix, the cell list and one cell in full.
  *
- * Four of them WRITE, and every one is a human's click. `approvePlan` is
+ * Five of them WRITE, and every one is a human's click. `approvePlan` is
  * ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
- * two-step bundle export. The remaining sub-pages (report, judging desk)
- * arrive with T38 and T37.
+ * two-step bundle export. `finalizeRun` is the report page's — the same
+ * release gate, walked over every archived cell of the run. The judging desk
+ * arrives with T37.
  */
 export interface LabViewInjected {
   /** Every experiment: the runs eval started, plus the unstarted plans (one RPC). */
@@ -66,6 +68,15 @@ export interface LabViewInjected {
   planExport: (sessionId: SessionId, request: EvalExportPlanRequest) => Promise<RemoteResult<EvalExportPlanView>>
   /** The export dialog's confirm step; mission re-checks against a fresh plan. */
   exportRun: (sessionId: SessionId, request: EvalExportRunRequest) => Promise<RemoteResult<EvalExportResultView>>
+  /**
+   * The report page: the four invariants, the paired differences, the
+   * efficiency table and the judge numbers, read from the run's exported
+   * bundle. A run nobody exported answers with `bundleDir: null` rather than
+   * an error — "not exported yet" is a state with a button.
+   */
+  fetchReport: (sessionId: SessionId, request: EvalReportRequest) => Promise<RemoteResult<EvalRunReportView>>
+  /** Walk every archived cell of the run through the release gate (a human's click). */
+  finalizeRun: (sessionId: SessionId, request: EvalFinalizeRequest) => Promise<RemoteResult<EvalFinalizeView>>
   /**
    * Open the delegation's child session in the host's own session controller.
    * READ the player's transcript — the member composer and dock are

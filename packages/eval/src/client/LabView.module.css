@@ -759,3 +759,128 @@
   font-size: 12px;
   line-height: 18px;
 }
+
+/* ── the report page ────────────────────────────────────────────────────── */
+
+.reportPage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+  min-width: 0;
+}
+
+.reportBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.reportSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.sectionTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+/* One invariant: the verdict word, its title, and the facts under both — a
+   status that carried no facts would be an opinion. */
+.invariantRow {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.invariantTitle {
+  color: var(--dsw-alias-label-primary);
+}
+
+.invariantDetail {
+  grid-column: 2;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+}
+
+/* The comparison section's stand-in when an invariant closed it. Bordered
+   like a section, because the absence IS the section. */
+.blocked {
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-label-warning, #b8600a);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-warning, #b8600a);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.reportTable {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.reportHead,
+.reportRowHead,
+.reportTd {
+  border: 1px solid var(--dsw-alias-border-l2);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.reportHead {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.reportRowHead {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.reportTd {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.judgeTag {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-right: 8px;
+}
+
+/* 决策 9: a judge may be a player, and the report DISCLOSES it per cell
+   rather than dropping the verdict. The mark has to be visible at a glance,
+   because it is the reason a delta may not mean what it looks like. */
+.selfJudged {
+  color: var(--dsw-alias-label-warning, #b8600a);
+  font-weight: 600;
+}
+
+.rankReason {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}

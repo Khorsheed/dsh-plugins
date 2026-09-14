@@ -798,3 +798,178 @@ export interface EvalCellsResult {
   buckets: Record<string, number>
   rows: EvalCellRow[]
 }
+
+// --- the report page (I5·T38) ------------------------------------------------
+
+/** Which run's report is wanted, and where to look for its bundle. */
+export interface EvalReportRequest {
+  runId: string
+  /**
+   * The export directory to look in FIRST — the one a human just typed into
+   * the export dialog. Absent falls back to the plan's own `exports` and then
+   * to `<dataset repo>/exports` (decision 11), which is where a run the
+   * orchestrator exported for itself put its bundle.
+   */
+  outDir?: string
+}
+
+/** One of the four architecture-§5 invariants, as the report page shows it. */
+export interface EvalReportInvariant {
+  id: string
+  title: string
+  status: 'ok' | 'violated' | 'unverifiable'
+  /** The facts behind the verdict, verbatim — never summarized into the word. */
+  details: string[]
+}
+
+/**
+ * One judge that judged a cell behind a paired row. `selfJudged` is the whole
+ * reason this rides the comparison table at all: decision 9 (relaxed
+ * 2026-09-10) lets a judge be a player and DISCLOSES it per cell instead of
+ * excluding it, so a reader weighing a delta sees whose opinion it is.
+ */
+export interface EvalReportJudgeTag {
+  condition: string
+  model: string | null
+  selfJudged: boolean
+}
+
+/** One task's row of a pair's difference table (rep-matched, current attempts). */
+export interface EvalReportPairRow {
+  task: string
+  /** Mean scored-criterion count per side; a negative criterion scores when it does NOT hold. */
+  aMean: number
+  bMean: number
+  delta: number
+  /** Weighted score per side, and its difference; null when the rubric declares no weights. */
+  aWeighted: number | null
+  bWeighted: number | null
+  weightedDelta: number | null
+  /** Per-rep deltas — the resampling unit, shown so the spread is visible. */
+  deltas: number[]
+  /** Rep pairs available for this task. */
+  n: number
+  /** Who judged this task's cells on either side; empty when the bundle recorded no identity. */
+  judges: EvalReportJudgeTag[]
+}
+
+/** One condition pair's comparison block. */
+export interface EvalReportPair {
+  a: string
+  b: string
+  /** The derived factor: one differing field, several (多因子), or unknown. */
+  factor: { factor: string | null; multi: string[] | null; known: boolean; detail: string }
+  rows: EvalReportPairRow[]
+  /** Smallest per-task rep-pair count — the rank gate (n < 3 refuses to rank). */
+  n: number
+  ci: { mean: number; lo: number; hi: number; samples: number; seed: number } | null
+  rank: 'a' | 'b' | null
+  /** Why it ranked, or why it would not — verbatim from the report. */
+  rankReason: string
+}
+
+/** One condition's efficiency row. Parallel columns, never summed into a score. */
+export interface EvalReportEfficiencyRow {
+  condition: string
+  model: string | null
+  /** Delegation time over COMPLETED cells only — active time, not wall clock. */
+  activeMs: number | null
+  rounds: number | null
+  outputTokens: number | null
+  inputTokens: number | null
+  cacheReadTokens: number | null
+  /** Null when no round reported an accounting — a dash, never a zero nobody observed. */
+  toolCalls: number | null
+  price: number | null
+}
+
+/** Cells one condition's efficiency row deliberately left out, by state. */
+export interface EvalReportExcluded {
+  condition: string
+  state: string
+  count: number
+}
+
+/** Judge consistency for the whole run — one judge sampled twice, and the panel. */
+export interface EvalReportJudgeConsistency {
+  /** Criteria (per cell) with ≥2 llm-draft samples. */
+  multiSampled: number
+  llmAgreement: { agreed: number; total: number } | null
+  /** Cohen κ over ONE judge's repeated samples; null when no criterion had two. */
+  llmKappa: number | null
+  humanAgreement: { agreed: number; total: number } | null
+  /** Criteria judged by two or more DIFFERENT judge conditions — the panel's number. */
+  crossJudged: number
+  crossAgreement: { agreed: number; total: number } | null
+  crossKappa: number | null
+  /** Criteria whose llm-draft verdicts include at least one self-judged sample. */
+  selfJudgedCriteria: number
+  /** The report's own sentences, verbatim. */
+  details: string[]
+}
+
+/**
+ * The report page's payload: the four invariants, the comparison (only when
+ * all four are established), the efficiency table and the judge numbers.
+ *
+ * Every number here is {@link EvalReport}'s — this is a PROJECTION, not a
+ * second analysis. The page cannot open a comparison the bundle's invariants
+ * closed, because `comparisonAllowed` and `pairs` are decided before the wire.
+ */
+export interface EvalRunReportView {
+  runId: string
+  /** The bundle the numbers came from; null when nothing has been exported yet. */
+  bundleDir: string | null
+  /** The directories that were looked in, in order — the honest "export first" answer. */
+  searched: string[]
+  /** Why there is no report; null when there is one. */
+  refusal: string | null
+  /** The `dsh-eval report` command that writes results.jsonl / summary.md to disk. */
+  cliHint: string | null
+  invariants: EvalReportInvariant[]
+  /** True only when all four invariants are established. */
+  comparisonAllowed: boolean
+  /** A single-condition run: nothing to pair, which is not a failure. */
+  singleCondition: boolean
+  /** Empty when comparison is not allowed — the page never renders a closed section. */
+  pairs: EvalReportPair[]
+  efficiency: EvalReportEfficiencyRow[]
+  efficiencyExcluded: EvalReportExcluded[]
+  judge: EvalReportJudgeConsistency
+  /** expectedNs namespaces whose verdicts are ALL `tool:`-written — the top red flag. */
+  toolOnlyNs: string[]
+  /** Verdict rows, missions and attempts the bundle carries. */
+  counts: { rows: number; missions: number; attempts: number; retries: number }
+  /** The report's own reservations, verbatim. */
+  notes: string[]
+}
+
+/** Which run to walk through the release gate. */
+export interface EvalFinalizeRequest {
+  runId: string
+}
+
+/** What finalize did to one cell. */
+export interface EvalFinalizeCell {
+  missionId: string
+  /** The state the cell was in when finalize looked at it. */
+  state: string
+  action: 'released' | 'refused' | 'skipped'
+  /** Where it ended up — unchanged for a skip, the last state a refused gate allowed. */
+  finalState: string
+  /** The gate's refusal, or why the cell was skipped. */
+  reason: string | null
+}
+
+/** The finalize answer: what moved, what the gate refused, and what was left alone. */
+export interface EvalFinalizeView {
+  runId: string
+  released: number
+  refused: number
+  skipped: number
+  /** Skipped cells per raw state — the operator's one-line summary. */
+  skippedByState: Record<string, number>
+  cells: EvalFinalizeCell[]
+  /** The walk's own log lines, verbatim. */
+  log: string[]
+}

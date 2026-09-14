@@ -69,8 +69,65 @@ export type EvalKey =
   | 'overview.validationFailed'
   | 'ready.ok'
   | 'ready.failed'
-  | 'placeholder.report'
   | 'placeholder.judging'
+  | 'report.loading'
+  | 'report.error'
+  | 'report.noBundle'
+  | 'report.searched'
+  | 'report.exportNow'
+  | 'report.lookInDir'
+  | 'report.lookInGo'
+  | 'report.counts'
+  | 'report.cliHint'
+  | 'report.toolOnlyNs'
+  | 'report.invariants'
+  | 'report.comparisonClosed'
+  | 'report.singleCondition'
+  | 'report.noPairs'
+  | 'report.pairTitle'
+  | 'report.pairNoTasks'
+  | 'report.factorSingle'
+  | 'report.factorMulti'
+  | 'report.factorUnknown'
+  | 'report.ci'
+  | 'report.rank'
+  | 'report.selfJudged'
+  | 'report.col.task'
+  | 'report.col.delta'
+  | 'report.col.weightedDelta'
+  | 'report.col.deltas'
+  | 'report.col.n'
+  | 'report.col.judges'
+  | 'report.col.condition'
+  | 'report.col.model'
+  | 'report.col.activeMs'
+  | 'report.col.rounds'
+  | 'report.col.toolCalls'
+  | 'report.col.outputTokens'
+  | 'report.col.inputTokens'
+  | 'report.col.cacheRead'
+  | 'report.efficiency'
+  | 'report.efficiencyScope'
+  | 'report.efficiencyNone'
+  | 'report.tokensCrossModel'
+  | 'report.tokensSameModel'
+  | 'report.excluded'
+  | 'report.excludedNone'
+  | 'report.judge'
+  | 'report.judgeSame'
+  | 'report.judgeSameValue'
+  | 'report.judgeCross'
+  | 'report.judgeCrossValue'
+  | 'report.judgeHuman'
+  | 'report.judgeSelf'
+  | 'report.notes'
+  | 'report.finalize'
+  | 'report.finalizeConfirm'
+  | 'report.finalizeConfirmAsk'
+  | 'report.finalizeCancel'
+  | 'report.finalizeResult'
+  | 'report.finalizeCounts'
+  | 'notice.finalized'
   | 'placeholder.new'
   | 'matrix.loading'
   | 'matrix.error'
@@ -286,7 +343,6 @@ export const en: Record<EvalKey, string> = {
   'overview.validationFailed': '{errors} error(s), {warnings} warning(s)',
   'ready.ok': 'ok',
   'ready.failed': 'failed',
-  'placeholder.report': 'The report page belongs to T38.',
   'placeholder.judging': 'The judging desk belongs to T37.',
   'placeholder.new': 'The new-experiment form belongs to T36. Until then a plan is drafted as a file: <repo>/datasets/<set>/plans/<name>.json.',
   'matrix.loading': 'Arranging the matrix…',
@@ -366,6 +422,64 @@ export const en: Record<EvalKey, string> = {
   'export.close': 'Close',
   'export.done': 'exported {dir} ({count} files)',
   'export.error': 'Export failed',
+  'report.loading': 'Reading the bundle…',
+  'report.error': 'Failed to build the report',
+  'report.noBundle': 'No bundle exported yet',
+  'report.searched': 'Looked in',
+  'report.exportNow': 'Export the bundle',
+  'report.lookInDir': 'Export directory to look in (a run started with --out)',
+  'report.lookInGo': 'Look here',
+  'report.counts': '{rows} verdict row(s) · {missions} cell(s) · {attempts} attempt(s) · {retries} infrastructure retry/retries (aggregation uses each cell\'s current attempt)',
+  'report.cliHint': 'Write it to disk',
+  'report.toolOnlyNs': 'RED FLAG: every verdict in the expectedNs namespace `{ns}` was written by a `tool:` caller — the source disagrees with that namespace\'s contract, and conclusions resting on it are in doubt.',
+  'report.invariants': 'The four invariants',
+  'report.comparisonClosed': 'Comparison is CLOSED: {invariants}. Facts only below — no deltas, no ranking (architecture §5).',
+  'report.singleCondition': 'Single-condition run — there is no second condition to pair with, so there is nothing to compare. The facts are below.',
+  'report.noPairs': 'No condition pair produced a comparison.',
+  'report.pairTitle': '{a} vs {b}',
+  'report.pairNoTasks': 'No paired item (the two conditions ran disjoint item sets).',
+  'report.factorSingle': 'single factor `{factor}` ({detail})',
+  'report.factorMulti': 'several factors: {fields} ({detail}) — descriptive only',
+  'report.factorUnknown': 'factor unknown — {detail}',
+  'report.ci': 'mean Δ = {mean}, 95% CI [{lo}, {hi}] (bootstrap over reps × {samples}, seed {seed})',
+  'report.rank': 'Ranking',
+  'report.selfJudged': 'self-judged',
+  'report.col.task': 'Item',
+  'report.col.delta': 'Δ score',
+  'report.col.weightedDelta': 'Δ weighted',
+  'report.col.deltas': 'Δ per rep',
+  'report.col.n': 'n',
+  'report.col.judges': 'Judges',
+  'report.col.condition': 'Condition',
+  'report.col.model': 'Model',
+  'report.col.activeMs': 'Active time',
+  'report.col.rounds': 'Rounds',
+  'report.col.toolCalls': 'Tool calls',
+  'report.col.outputTokens': 'Output tokens',
+  'report.col.inputTokens': 'Input tokens',
+  'report.col.cacheRead': 'cacheRead',
+  'report.efficiency': 'Efficiency (parallel columns, never one score)',
+  'report.efficiencyScope': 'Completed cells only (judged / archived / releasable / released): an unfinished cell bought an unknown amount of work, and pooling it makes two columns look comparable when they are not.',
+  'report.efficiencyNone': 'No delegation record (durationMs / usage absent) — every efficiency column is blank.',
+  'report.tokensCrossModel': 'Tokens do NOT compare across models: the rows are recorded faithfully, but only same-model conditions may be read against each other (frozen decision 10).',
+  'report.tokensSameModel': 'Every condition ran the same model ({model}), so the token columns are comparable.',
+  'report.excluded': 'Unfinished cells left out of the table ({total}): {detail} — their delegation time exists in the annotations, it just does not enter the efficiency numbers.',
+  'report.excludedNone': 'Nothing was left out — every current cell finished.',
+  'report.judge': 'Judge consistency',
+  'report.judgeSame': 'One judge, resampled',
+  'report.judgeSameValue': '{criteria} criteria with ≥2 samples · agreed {agreement} · κ {kappa}',
+  'report.judgeCross': 'Across judges',
+  'report.judgeCrossValue': '{criteria} criteria judged by ≥2 judges · all agreed {agreement} · κ {kappa}',
+  'report.judgeHuman': 'llm-draft vs human-final',
+  'report.judgeSelf': 'Self-judged criteria',
+  'report.notes': 'Notes and reservations',
+  'report.finalize': 'finalize',
+  'report.finalizeConfirm': 'Yes, walk the gate',
+  'report.finalizeConfirmAsk': 'finalize walks EVERY archived cell of this run through the release gate (archived → releasable → released). A refused gate is recorded, never forced.',
+  'report.finalizeCancel': 'Cancel',
+  'report.finalizeResult': 'finalize',
+  'report.finalizeCounts': '{released} released · {refused} gate-refused · {skipped} skipped ({skips})',
+  'notice.finalized': 'finalize: {released} released, {refused} gate-refused, {skipped} skipped',
   'review.loading': 'Validating the plan…',
   'review.error': 'Failed to review the plan',
   'review.noPlan': 'This run records no plan document, so there is nothing to review — its run.meta is on the overview.',
@@ -497,7 +611,6 @@ export const zh: Record<EvalKey, string> = {
   'overview.validationFailed': '{errors} 个错误，{warnings} 条警告',
   'ready.ok': '通过',
   'ready.failed': '未通过',
-  'placeholder.report': '报告页归 T38。',
   'placeholder.judging': '判官台归 T37。',
   'placeholder.new': '新建实验表单归 T36。在那之前，实验用文件起草：<题库>/datasets/<题集>/plans/<名称>.json。',
   'matrix.loading': '排矩阵…',
@@ -577,6 +690,64 @@ export const zh: Record<EvalKey, string> = {
   'export.close': '关闭',
   'export.done': '已导出 {dir}（{count} 个文件）',
   'export.error': '导出失败',
+  'report.loading': '正在读 bundle…',
+  'report.error': '报告生成失败',
+  'report.noBundle': '还没有 bundle',
+  'report.searched': '找过',
+  'report.exportNow': '导出 bundle',
+  'report.lookInDir': '换一个导出目录找（run 是带 --out 跑的就填这里）',
+  'report.lookInGo': '在这里找',
+  'report.counts': '判定行 {rows} · 格子 {missions} · attempt {attempts} · 基础设施重试 {retries}（聚合只用各格最新 attempt）',
+  'report.cliHint': '用 CLI 落盘',
+  'report.toolOnlyNs': '红字警告：expectedNs 中的 `{ns}` 的判定全部由 `tool:` 写入——判定来源与该 ns 的契约作者不符，相关结论效力存疑。',
+  'report.invariants': '四条不变量',
+  'report.comparisonClosed': '比较节未开：{invariants}。下面只有事实表，没有差值与名次（architecture §5）。',
+  'report.singleCondition': '单条件 run——没有第二个条件可配对，无可比较。事实见下。',
+  'report.noPairs': '没有任何条件对给出比较。',
+  'report.pairTitle': '{a} vs {b}',
+  'report.pairNoTasks': '无配对题（两条件的题集不相交）。',
+  'report.factorSingle': '单因子 `{factor}`（{detail}）',
+  'report.factorMulti': '多因子：{fields}（{detail}）——只作描述',
+  'report.factorUnknown': '因子未知——{detail}',
+  'report.ci': '平均 Δ = {mean}，95% 置信区间 [{lo}, {hi}]（bootstrap 重采样 rep × {samples}，seed {seed}）',
+  'report.rank': '名次判定',
+  'report.selfJudged': '自评',
+  'report.col.task': '题',
+  'report.col.delta': 'Δ 得分',
+  'report.col.weightedDelta': 'Δ 加权',
+  'report.col.deltas': '逐 rep Δ',
+  'report.col.n': 'n',
+  'report.col.judges': '判官',
+  'report.col.condition': '条件',
+  'report.col.model': '模型',
+  'report.col.activeMs': '活跃时长',
+  'report.col.rounds': '委派轮次',
+  'report.col.toolCalls': '工具调用',
+  'report.col.outputTokens': '输出 token',
+  'report.col.inputTokens': '输入 token',
+  'report.col.cacheRead': 'cacheRead',
+  'report.efficiency': '效率（并列，不合成）',
+  'report.efficiencyScope': '只统计已完成的格子（judged / archived / releasable / released）：未完成格子的耗时买到的工作量未知，混进来会让两列看着可比而其实不可比。',
+  'report.efficiencyNone': '无 orchestrator 委派记录（durationMs / usage 缺失）——效率列全部留空。',
+  'report.tokensCrossModel': 'token 跨模型不适用：上表按条件如实记录，但只在同模型条件之间比较（冻结决策 10）。',
+  'report.tokensSameModel': '各条件同模型（{model}），token 列可比。',
+  'report.excluded': '未计入上表的未完成格子（{total} 格）：{detail}——它们的委派时长如实存在于注解里，只是不进效率口径。',
+  'report.excludedNone': '未计入上表的未完成格子：无——所有当前格子都已完成。',
+  'report.judge': '判官一致性',
+  'report.judgeSame': '同判官重采样',
+  'report.judgeSameValue': '{criteria} 条判据有 ≥2 个样本 · 一致 {agreement} · κ {kappa}',
+  'report.judgeCross': '跨判官',
+  'report.judgeCrossValue': '{criteria} 条判据由 ≥2 个判官判过 · 全体一致 {agreement} · κ {kappa}',
+  'report.judgeHuman': 'llm-draft 与 human-final',
+  'report.judgeSelf': '自评判据数',
+  'report.notes': '附注与保留条款',
+  'report.finalize': 'finalize',
+  'report.finalizeConfirm': '确认走闸',
+  'report.finalizeConfirmAsk': 'finalize 会把本 run 每一个 archived 格子走一遍释放闸（archived → releasable → released）。闸拒了就记下来，不强推。',
+  'report.finalizeCancel': '取消',
+  'report.finalizeResult': 'finalize 结果',
+  'report.finalizeCounts': '{released} 已释放 · {refused} 被闸拒 · {skipped} 跳过（{skips}）',
+  'notice.finalized': 'finalize：{released} 释放、{refused} 被闸拒、{skipped} 跳过',
   'review.loading': '正在校验计划…',
   'review.error': '计划审阅加载失败',
   'review.noPlan': '这个 run 没有记录计划文件，无从审阅——它的 run.meta 在概览页。',

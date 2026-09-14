@@ -60,14 +60,18 @@ import type {
   EvalExportPlanView,
   EvalExportResultView,
   EvalExportRunRequest,
+  EvalFinalizeRequest,
+  EvalFinalizeView,
   EvalItemRunsRequest,
   EvalItemRunsResult,
   EvalMatrixRequest,
   EvalMatrixView,
   EvalPlanRequest,
   EvalPlanReview,
+  EvalReportRequest,
   EvalRunJobView,
   EvalRunOutputView,
+  EvalRunReportView,
   EvalRunRequest,
   EvalRunStarted,
 } from './types.ts'
@@ -361,6 +365,42 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   @Remote('exportRun')
   exportRun(agent: Agent, request: EvalExportRunRequest): Promise<EvalExportResultView> {
     return this.service.exportRun(agent, request)
+  }
+
+  /**
+   * The REPORT page (ui-spec step 7): the four invariants, the paired
+   * differences, the efficiency table and the judge numbers, read from the
+   * run's exported bundle.
+   *
+   * A READ, and one that writes nothing. The numbers are `analyzeBundle`'s and
+   * arrive already gated — a bundle whose invariants did not all hold sends no
+   * comparison at all, so the page cannot render one. A run nobody has
+   * exported answers with `bundleDir: null` and the directories that were
+   * looked in, which is what lets the page offer the export button instead of
+   * a blank section.
+   * @param agent - owning live agent (the tab's session).
+   * @param request - the run, and the export directory to try first.
+   * @returns the page payload.
+   */
+  @Remote('report')
+  report(agent: Agent, request: EvalReportRequest): Promise<EvalRunReportView> {
+    void agent
+    return this.service.runReport(request.runId, request.outDir === undefined ? {} : { outDir: request.outDir })
+  }
+
+  /**
+   * FINALIZE the run — the report page's button, and a human's click like the
+   * drawer's three. Every `archived` cell walks `archived → releasable →
+   * released` through the SAME release gate, and a refusal is recorded against
+   * that cell rather than forced: the gate is why the archive means anything,
+   * and a button that could bypass it would make the bundle worthless.
+   * @param agent - owning live agent; recorded as `tab:<sessionId>`.
+   * @param request - the run to finalize.
+   * @returns the counts, every cell's outcome, and the walk's log verbatim.
+   */
+  @Remote('finalize')
+  finalize(agent: Agent, request: EvalFinalizeRequest): Promise<EvalFinalizeView> {
+    return this.service.finalizeView(request.runId, `tab:${String(agent.session.id)}`)
   }
 
   /**
