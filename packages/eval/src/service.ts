@@ -37,15 +37,20 @@ import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from '
 import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
+import { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionActionFace, MissionExportRemoteFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
 import type {
-  EvalCellDetail, EvalCellsResult, EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest,
-  EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalItemRunsResult, EvalMatrixView,
+  EvalApproveResult, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView,
+  EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
+  EvalExportRunRequest, EvalItemRunsResult, EvalMatrixView, EvalPlanReview,
 } from './types.ts'
+
+/** Thrown when a verb is handed a document that violates its contract. */
+export class EvalContractError extends Error {}
 
 /**
  * The export verbs' refusal. mission's Remote is where the leak gate lives, so
@@ -56,9 +61,6 @@ const MISSION_EXPORT_ABSENT = new EvalReadRefused(
   'no mission Remote face: the bundle export and its guarded-layer gate live there, so this composition cannot export '
   + '— mount the dsh-mission plugin on a host with the Typert gateway, or export with the dsh-mission CLI',
 )
-
-/** Thrown when a verb is handed a document that violates its contract. */
-export class EvalContractError extends Error {}
 
 /**
  * The run's PLAYER condition declarations, as `run.meta.conditions` carries
@@ -362,6 +364,92 @@ export class EvalService {
     }
     return experimentDetail(mission, runId, this.jobs.list())
   }
+
+  /**
+   * The PLAN-REVIEW page (ui-spec §五, step 3): the plan's own fields, and
+   * `validatePlan`'s verdict as a flat `ok / warn / error` list. The same
+   * function `dsh-eval validate` runs, rearranged for reading — the page and
+   * the CLI cannot disagree about whether a plan is approvable.
+   * @param planPath - path to a `dataseek.plan/1` document (`~` expanded).
+   */
+  planReview(planPath: string): Promise<EvalPlanReview> {
+    return reviewPlan(planPath)
+  }
+
+  /**
+   * The CONDITIONS page (ui-spec §五, step 4): {@link EvalService.conditions}
+   * projected onto the table the page draws — harness, declared model, scope,
+   * preset, the lock and the readiness word.
+   * @param options - the same repo / dataset / session resolution the listing uses.
+   */
+  async conditionsPage(options: { repo?: string; dataset?: string; session?: { id: string } } = {}): Promise<EvalConditionsView> {
+    return conditionsView(await this.conditions(options))
+  }
+
+  /**
+   * The CONDITIONS page's diff: {@link EvalService.conditionDiff} with each
+   * side's value as canonical JSON text, and ONLY the fields that differ.
+   * @param options - the two references, plus the usual repo / dataset / session resolution.
+   */
+  async conditionDiffPage(options: { a: string; b: string; repo?: string; dataset?: string; session?: { id: string } }): Promise<EvalConditionDiffView> {
+    return conditionDiffView(await this.conditionDiff(options))
+  }
+
+  /**
+   * APPROVE a plan and start it — the human act of ui-spec step 5, and the one
+   * verb in this package that a human's click reaches and a model's tool call
+   * never does (R1).
+   *
+   * Validate runs FIRST and an error refuses the whole thing: a run started
+   * over a plan whose conditions do not resolve burns real delegations to
+   * discover what an offline check already knew. Warnings do not refuse —
+   * `dataset.commit: null` is the normal shape of a plan whose snapshot pins
+   * at run start.
+   *
+   * The refusal is a RESULT, not a throw: the caller renders the same check
+   * list either way, and the reason belongs beside the list that explains it.
+   * Wiring failures (no job registry, no live parent agent) are caught here
+   * for the same reason and arrive verbatim in `refusal`.
+   * @param planPath - path to a `dataseek.plan/1` document (`~` expanded).
+   * @param options - the approving session (the run's parent) and its workspace.
+   * @returns what validate said, and — when it started — the job and run ids.
+   */
+  async approve(planPath: string, options: { parentSessionId: string; cwd?: string }): Promise<EvalApproveResult> {
+    const review = await this.planReview(planPath)
+    const refused = (refusal: string): EvalApproveResult => ({
+      started: false,
+      checks: review.checks,
+      refusal,
+      jobId: null,
+      runId: null,
+      parentSessionId: null,
+    })
+    if (!review.ok) {
+      const errors = review.checks.filter(check => check.severity === 'error')
+      return refused(
+        `validate refuses this plan (${errors.length} error(s)) — nothing was started:\n`
+        + errors.map(check => `  [${check.code}] ${check.message}`).join('\n'),
+      )
+    }
+    try {
+      const handle = await this.runStart(planPath, {
+        parentSessionId: options.parentSessionId,
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        label: `eval run ${planPath} (approved)`,
+      })
+      return {
+        started: true,
+        checks: review.checks,
+        refusal: null,
+        jobId: handle.jobId,
+        runId: handle.runId,
+        parentSessionId: handle.parentSessionId,
+      }
+    } catch (error) {
+      return refused(`the run could not start: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
 
   /**
    * The MATRIX page: this run's cells arranged rows-are-tasks, one factor on
@@ -738,10 +826,11 @@ export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkip
 export { EvalReadRefused } from './read.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
-export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
+export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 export { materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
+export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'

@@ -238,6 +238,26 @@ if [ -n "$SOURCE" ]; then
   done
   GEN_TYPERT_ONLY="$(printf '%s' "$NAMES" | sed 's/^ //' | tr -s ' ' ',')"
   export GEN_TYPERT_ONLY
+
+  # pack-dist ranges every family manifest edge on the TARGET member's own
+  # version, so a bare `--family <name>` is rewrite-only and is an error the
+  # moment that name appears in a dependency / peerDependency edge ("is a
+  # family edge but no version was given for it"). Index the checkout once —
+  # package name → that package's own version — and pass every member as
+  # `name=version` in the pack loop below.
+  PKG_VERSIONS=$(SOURCE_CHECKOUT="$SOURCE" node <<'NODE'
+const fs = require('node:fs')
+const root = `${process.env.SOURCE_CHECKOUT}/packages`
+const rows = []
+for (const dir of fs.readdirSync(root).sort()) {
+  const path = `${root}/${dir}/package.json`
+  if (!fs.existsSync(path)) continue
+  const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))
+  if (typeof pkg.name === 'string' && typeof pkg.version === 'string') rows.push(`${pkg.name}=${pkg.version}`)
+}
+process.stdout.write(rows.join('\n'))
+NODE
+)
   (
     cd "$SOURCE"
     for d in $UNPUBLISHED_DIRS; do
@@ -248,8 +268,19 @@ if [ -n "$SOURCE" ]; then
     for d in $UNPUBLISHED_DIRS; do
       name=$(node -p "require('$SOURCE/packages/$d/package.json').name")
       version=$(node -p "require('$SOURCE/packages/$d/package.json').version")
-      family=$(node -p "const p=require('$SOURCE/packages/$d/package.json'); [...new Set([...Object.keys(p.dependencies??{}),...Object.keys(p.peerDependencies??{})])].filter(n=>n.startsWith('@khorsheed/')).join(',')")
-      echo "dsh-web-eval: packing $name@$version"
+      members=$(node -p "const p=require('$SOURCE/packages/$d/package.json'); [...new Set([...Object.keys(p.dependencies??{}),...Object.keys(p.peerDependencies??{})])].filter(n=>n.startsWith('@khorsheed/')).join(' ')")
+      # Each member as name=version, looked up in the index built above. A name
+      # the checkout holds no version for goes in bare — correct for a member
+      # that only needs rewriting, and pack-dist still fails loudly if that
+      # name turns out to carry an edge.
+      family=""
+      for n in $members; do
+        v=$(printf '%s\n' "$PKG_VERSIONS" | sed -n "s|^$n=||p")
+        [ -n "$v" ] || echo "dsh-web-eval: warn — no version for family member $n under $SOURCE/packages; passing it bare" >&2
+        family="$family,$n${v:+=$v}"
+      done
+      family="${family#,}"
+      echo "dsh-web-eval: packing $name@$version${family:+ (family $family)}"
       if [ -n "$family" ]; then
         npx tsx scripts/pack-dist.ts --package "packages/$d" --scope @khorsheed --version "$version" --out "$TARBALLS" --family "$family"
       else

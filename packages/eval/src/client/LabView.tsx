@@ -1,75 +1,44 @@
 /**
  * The lab conversation view (the '实验室 / Experiments' tab beside chat and
- * trajectory): the experiment list, and the shell of one experiment's detail.
+ * trajectory): the experiment list, and one experiment's detail.
  *
  * The list is one row per experiment — drafts and runs in the same table,
  * because to the person planning the next comparison they are the same kind
  * of thing (ui-spec §五): name, dataset snapshot, condition count (+ judges),
  * items, reps, the factors a condition diff derived, status, progress, start
- * time. The detail is the seven-tab shell the spec fixes; this slice fills
- * the OVERVIEW page (snapshot, matrix shape, factors, judge, environment, the
- * readiness records verbatim, and the run.meta digest) and leaves each other
- * tab a placeholder naming the task that owns it — a tab that lies about
- * being empty is worse than one that says who is building it.
+ * time. The detail is the seven-tab shell the spec fixes; three of the seven
+ * are built — OVERVIEW (snapshot, matrix shape, factors, judge, environment,
+ * the readiness records verbatim, the run.meta digest), PLAN REVIEW (validate
+ * line by line and the two human buttons) and CONDITIONS (the registry and
+ * the two-condition diff) — and each of the rest carries a placeholder naming
+ * the task that owns it: a tab that lies about being empty is worse than one
+ * that says who is building it.
  *
  * A DRAFT's overview is rendered from the list row: there is no run to fetch,
  * and the row already carries the plan digest. Only a started experiment
- * spends an RPC.
+ * spends an RPC. The plan review and the conditions registry are fetched
+ * LAZILY, when their tab is opened: a validate walks the dataset tree, and
+ * spending one on every visit to the overview would make the cheap page pay
+ * for the expensive one.
  *
  * Visual language follows the missions and datasets tabs: compact rows,
  * hairline separators, tokenized colors, official primitives throughout.
  */
 
-import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalExperimentDetail, EvalExperimentRow, EvalExperimentStatus } from '../types.ts'
+import type { EvalExperimentDetail, EvalExperimentRow } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
-import { LAB_PAGES, type LabPage } from './store.ts'
+import { ConditionsPage } from './ConditionsPage.tsx'
+import { Field, StartedRun, factorCell, snapshotCell, stamp, statusKey } from './parts.tsx'
+import { PlanReviewPage } from './PlanReviewPage.tsx'
+import { LAB_PAGES } from './store.ts'
 import { CellsPage } from './CellsPage.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { MatrixPage } from './MatrixPage.tsx'
 import css from './LabView.module.css'
-
-/** The dictionary key of one status word — the union keeps the copy exhaustive. */
-function statusKey(status: EvalExperimentStatus): `status.${EvalExperimentStatus}` {
-  return `status.${status}`
-}
-
-/** `2026-09-13 14:02`, in the reader's own zone; em dash for a draft. */
-function stamp(at: number | null): string {
-  if (at === null) return '—'
-  const date = new Date(at)
-  const pad = (value: number): string => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-/** `dataset @ abcdef1`; whichever half is missing simply does not print. */
-function snapshotCell(row: EvalExperimentRow): string {
-  const { datasetId, commit } = row.snapshot
-  if (datasetId === null && commit === null) return '—'
-  const short = commit === null ? null : commit.slice(0, 7)
-  if (datasetId === null) return short as string
-  return short === null ? datasetId : `${datasetId} @ ${short}`
-}
-
-/** The factor cell: the differing paths, or why there are none. */
-function factorCell(row: EvalExperimentRow, t: LabViewProps['t']): string {
-  if (row.conditions.length < 2) return t('factors.single')
-  return row.factors.length === 0 ? t('factors.none') : row.factors.join(', ')
-}
-
-/** One labelled block of the overview. */
-function Field(props: { label: string; children: ReactNode }) {
-  return (
-    <div className={css.field}>
-      <div className={css.fieldLabel}>{props.label}</div>
-      <div className={css.fieldValue}>{props.children}</div>
-    </div>
-  )
-}
 
 /** name → count, rendered as a single compact line (`ready 2 · done 10`). */
 function histogram(counts: Record<string, number>): string {
@@ -80,10 +49,19 @@ function histogram(counts: Record<string, number>): string {
 /**
  * The overview page. Everything it shows about the PLAN comes from the list
  * row (a draft has nothing else); everything about the RUN comes from the
- * detail payload, which a draft simply does not have.
+ * detail payload, which a draft simply does not have — until an approval in
+ * this visit starts one, and then the job's ids and its log are all there is
+ * until the mission ledger catches up.
  */
-function Overview(props: { row: EvalExperimentRow; detail: EvalExperimentDetail | null; t: LabViewProps['t'] }) {
-  const { row, detail, t } = props
+function Overview(props: {
+  row: EvalExperimentRow
+  detail: EvalExperimentDetail | null
+  started: Parameters<typeof StartedRun>[0]['started'] | null
+  output: Parameters<typeof StartedRun>[0]['output']
+  outputError: string | null
+  t: LabViewProps['t']
+}) {
+  const { row, detail, started, output, outputError, t } = props
   // A STARTED experiment knows how many cells it really has; the product is
   // only the shape a plan implies, and a subset run (`--only` / `--max-cells`)
   // legitimately has fewer. Prefer the fact over the arithmetic.
@@ -92,7 +70,7 @@ function Overview(props: { row: EvalExperimentRow; detail: EvalExperimentDetail 
   const judgeSamples = meta?.judge.samples ?? null
   return (
     <div className={css.overview}>
-      {detail === null && row.runId === null && (
+      {detail === null && row.runId === null && started === null && (
         <div className={css.notice}>{t('overview.draftNotice')}</div>
       )}
       <Field label={t('overview.snapshot')}>
@@ -127,6 +105,7 @@ function Overview(props: { row: EvalExperimentRow; detail: EvalExperimentDetail 
             : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
         </Field>
       )}
+      {started !== null && <StartedRun started={started} output={output} outputError={outputError} t={t} />}
       {detail !== null && (
         <>
           <Field label={t('overview.buckets')}>{histogram(detail.buckets)}</Field>
@@ -170,17 +149,10 @@ function Overview(props: { row: EvalExperimentRow; detail: EvalExperimentDetail 
   )
 }
 
-/** The sub-pages this slice still does not build, and who owns each. */
-const PAGE_PLACEHOLDER: Readonly<Record<'plan' | 'conditions' | 'report' | 'judging', EvalKey>> = {
-  plan: 'placeholder.plan',
-  conditions: 'placeholder.conditions',
+/** The placeholder body of a sub-page nobody has built yet, and who owns it. */
+const PAGE_PLACEHOLDER: Readonly<Record<'report' | 'judging', EvalKey>> = {
   report: 'placeholder.report',
   judging: 'placeholder.judging',
-}
-
-/** Whether a sub-page is one of the four still waiting on its task. */
-function isPlaceholderPage(page: LabPage): page is 'plan' | 'conditions' | 'report' | 'judging' {
-  return page === 'plan' || page === 'conditions' || page === 'report' || page === 'judging'
 }
 
 /**
@@ -190,8 +162,8 @@ function isPlaceholderPage(page: LabPage): page is 'plan' | 'conditions' | 'repo
 export function LabView(props: LabViewProps) {
   const {
     sessionId, useStore, actions, t,
-    fetchExperiments, fetchExperiment, fetchMatrix, fetchCells, fetchCell,
-    retryCell, releaseCheck, planExport, exportRun, openSession,
+    fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
+    fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -202,6 +174,21 @@ export function LabView(props: LabViewProps) {
   const detail = useStore(s => s.detail)
   const detailLoading = useStore(s => s.detailLoading)
   const detailError = useStore(s => s.detailError)
+  const review = useStore(s => s.review)
+  const reviewLoading = useStore(s => s.reviewLoading)
+  const reviewError = useStore(s => s.reviewError)
+  const sentBack = useStore(s => s.sentBack)
+  const approving = useStore(s => s.approving)
+  const approveRefusal = useStore(s => s.approveRefusal)
+  const started = useStore(s => s.started)
+  const output = useStore(s => s.output)
+  const outputError = useStore(s => s.outputError)
+  const conditions = useStore(s => s.conditions)
+  const conditionsLoading = useStore(s => s.conditionsLoading)
+  const conditionsError = useStore(s => s.conditionsError)
+  const diffPair = useStore(s => s.diffPair)
+  const diff = useStore(s => s.diff)
+  const diffError = useStore(s => s.diffError)
   const matrixColumn = useStore(s => s.matrixColumn)
   const matrixGroupBy = useStore(s => s.matrixGroupBy)
   const matrixFilter = useStore(s => s.matrixFilter)
@@ -234,8 +221,17 @@ export function LabView(props: LabViewProps) {
   }, [sessionId, refreshRev, actions, fetchExperiments])
 
   const rows = list?.rows ?? []
-  const openRow = selection === null ? undefined : rows.find(row => row.id === selection)
+  // The row id changes under the selection exactly once: a plan approved in
+  // this visit is `plan:<path>` until the orchestrator calls `runCreate`, and
+  // its run id afterwards. Re-finding it by the plan that was approved keeps
+  // the detail open across that switch instead of dropping the reviewer back
+  // to the list mid-run.
+  const openRow = selection === null
+    ? undefined
+    : rows.find(row => row.id === selection)
+      ?? (started === null ? undefined : rows.find(row => row.planPath === started.planPath))
   const openRunId = openRow?.runId ?? null
+  const planPath = openRow?.planPath ?? null
 
   // Fetch the open experiment's detail. A DRAFT has no run: its overview is
   // the row, and spending an RPC on it would only produce a refusal.
@@ -251,6 +247,105 @@ export function LabView(props: LabViewProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, openRunId, refreshRev, actions, fetchExperiment])
+
+  // The plan review, fetched when its tab is open: validate walks the dataset
+  // tree, so it is paid for by the page that asked for it.
+  useEffect(() => {
+    if (page !== 'plan' || planPath === null) return
+    let cancelled = false
+    actions.setReviewLoading(true)
+    void fetchPlanReview(sessionId, { planPath }).then((result) => {
+      if (cancelled) return
+      actions.setReviewLoading(false)
+      if (result.ok) actions.setReview(result.value)
+      else actions.setReviewError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, page, planPath, refreshRev, actions, fetchPlanReview])
+
+  // The condition registry, likewise — it is the REPOSITORY's, so it is not
+  // re-read when the open experiment changes, only when its tab is opened.
+  useEffect(() => {
+    if (page !== 'conditions') return
+    let cancelled = false
+    actions.setConditionsLoading(true)
+    void fetchConditions(sessionId, {}).then((result) => {
+      if (cancelled) return
+      actions.setConditionsLoading(false)
+      if (result.ok) actions.setConditions(result.value)
+      else actions.setConditionsError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, page, refreshRev, actions, fetchConditions])
+
+  // Two picked conditions are a diff; one or none is not.
+  const [pairA, pairB] = diffPair
+  useEffect(() => {
+    if (pairA === undefined || pairB === undefined) return
+    let cancelled = false
+    void fetchConditionDiff(sessionId, { a: pairA, b: pairB }).then((result) => {
+      if (cancelled) return
+      if (result.ok) actions.setDiff(result.value)
+      else actions.setDiffError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, pairA, pairB, refreshRev, actions, fetchConditionDiff])
+
+  // The started job's log. The ONLY place a readiness refusal is written: the
+  // run never reaches `runCreate`, so no ledger row for it ever exists.
+  const startedJobId = started?.jobId ?? null
+  useEffect(() => {
+    if (startedJobId === null) return
+    let cancelled = false
+    // `.catch` and not only the result envelope: the gateway's client proxy
+    // rejects on its own (a namespace it never mounted, an arity it refuses)
+    // before any envelope exists, and an unhandled rejection here would leave
+    // the block saying "no line yet" forever with the reason only in the
+    // browser console.
+    void fetchRunOutput(startedJobId).then((result) => {
+      if (cancelled) return
+      if (result.ok) actions.setOutput(result.value)
+      else actions.setOutputError(result.error.message)
+    }, (error: unknown) => {
+      if (!cancelled) actions.setOutputError(error instanceof Error ? error.message : String(error))
+    })
+    return () => { cancelled = true }
+  }, [startedJobId, refreshRev, actions, fetchRunOutput])
+
+  /** Approve and start the open plan — the human act of ui-spec step 5. */
+  function approve(): void {
+    if (planPath === null) return
+    actions.setApproving(true)
+    void approvePlan(sessionId, { planPath }).then((result) => {
+      actions.setApproving(false)
+      if (!result.ok) {
+        actions.setApproveRefusal(result.error.message)
+        return
+      }
+      const value = result.value
+      if (!value.started || value.jobId === null || value.runId === null) {
+        actions.setApproveRefusal(value.refusal ?? '')
+        // Re-read the plan: a refusal means validate said something, and the
+        // check list on screen must be the one the refusal came from.
+        actions.refresh()
+        return
+      }
+      actions.setStarted({
+        planPath,
+        jobId: value.jobId,
+        runId: value.runId,
+        parentSessionId: value.parentSessionId ?? '',
+      })
+      // Land on the overview, where the run's own fields appear as the ledger
+      // fills in, and refresh the list so the row leaves 待批准.
+      actions.setPage('overview')
+      actions.refresh()
+    })
+  }
+
+  // 退回修改 shows the experiment as a draft. The plan file is untouched: the
+  // status is the reviewer's verdict on this page, not a new fact on disk.
+  const shownStatus = sentBack && openRow !== undefined && openRow.runId === null ? 'draft' : openRow?.status
 
   // The matrix, re-arranged whenever the reader moves a factor. The
   // arrangement is the host's — the browser only says what it wants.
@@ -340,7 +435,7 @@ export function LabView(props: LabViewProps) {
             <>
               <Button size="sm" onClick={() => { actions.open(null) }}>{t('detail.back')}</Button>
               <span className={css.title}>{openRow.name}</span>
-              <span className={css.statusPill} data-status={openRow.status}>{t(statusKey(openRow.status))}</span>
+              <span className={css.statusPill} data-status={shownStatus}>{t(statusKey(shownStatus ?? openRow.status))}</span>
             </>
           )}
         <span className={css.barSpacer} />
@@ -425,8 +520,44 @@ export function LabView(props: LabViewProps) {
                   {detailError !== null && (
                     <div className={css.empty}>{t('detail.error')}: {detailError}</div>
                   )}
-                  <Overview row={openRow} detail={detail} t={t} />
+                  <Overview
+                    row={openRow}
+                    detail={detail}
+                    started={started}
+                    output={output}
+                    outputError={outputError}
+                    t={t}
+                  />
                 </>
+              )}
+              {page === 'plan' && (
+                <PlanReviewPage
+                  row={openRow}
+                  review={review}
+                  loading={reviewLoading}
+                  error={reviewError}
+                  sentBack={sentBack}
+                  approving={approving}
+                  refusal={approveRefusal}
+                  started={started}
+                  output={output}
+                  outputError={outputError}
+                  onApprove={approve}
+                  onSendBack={() => { actions.sendBack() }}
+                  t={t}
+                />
+              )}
+              {page === 'conditions' && (
+                <ConditionsPage
+                  view={conditions}
+                  loading={conditionsLoading}
+                  error={conditionsError}
+                  pair={diffPair}
+                  diff={diff}
+                  diffError={diffError}
+                  onPick={(id: string) => { actions.pickCondition(id) }}
+                  t={t}
+                />
               )}
               {page === 'matrix' && (
                 openRunId === null
@@ -467,7 +598,9 @@ export function LabView(props: LabViewProps) {
                     />
                   )
               )}
-              {isPlaceholderPage(page) && <div className={css.empty}>{t(PAGE_PLACEHOLDER[page])}</div>}
+              {(page === 'report' || page === 'judging') && (
+                <div className={css.empty}>{t(PAGE_PLACEHOLDER[page])}</div>
+              )}
             </div>
             <ExportDialog
               runId={openRunId ?? ''}

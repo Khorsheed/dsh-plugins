@@ -35,8 +35,9 @@ import type {} from '@khorsheed/dsh-eval/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
-  EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalExperimentRequest, EvalExperimentsRequest,
-  EvalExportPlanRequest, EvalExportRunRequest, EvalMatrixRequest,
+  EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
+  EvalConditionsRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
+  EvalExportRunRequest, EvalMatrixRequest, EvalPlanRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -98,6 +99,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (_sessionId: SessionId): LabViewInjected => ({
         fetchExperiments: (sid: SessionId, request: EvalExperimentsRequest) => remote.runs(sid, request),
         fetchExperiment: (sid: SessionId, request: EvalExperimentRequest) => remote.run(sid, request),
+        fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
+        fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
+        fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
+        approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
+        // The cursor is passed EXPLICITLY even though the verb defaults it:
+        // the gateway's client proxy enforces exact positional arity, so a
+        // call that leaves an optional parameter off throws
+        // "expected 2 argument(s), got 1" before it reaches the wire.
+        fetchRunOutput: (jobId: string) => remote.runOutput(jobId, 0),
         fetchMatrix: (sid: SessionId, request: EvalMatrixRequest) => remote.matrix(sid, request),
         fetchCells: (sid: SessionId, request: EvalCellsRequest) => remote.cells(sid, request),
         fetchCell: (sid: SessionId, request: EvalCellRequest) => remote.cell(sid, request),

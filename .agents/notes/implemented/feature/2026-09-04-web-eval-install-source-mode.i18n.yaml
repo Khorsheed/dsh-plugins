@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-04-web-eval-install-source-mode.md
-.agents/notes/implemented/feature/2026-09-04-web-eval-install-source-mode.md: c84c7fd48d2353c37541857ed4324889fb9ef1b7
-.agents/notes/implemented/feature/2026-09-04-web-eval-install-source-mode.zh.md: c2679083591e387fbea2133b8bc4879200b8548a
+.agents/notes/implemented/feature/2026-09-04-web-eval-install-source-mode.md: 5c6df9bbc7aad6635f03a32c459c74971f6393df
+.agents/notes/implemented/feature/2026-09-04-web-eval-install-source-mode.zh.md: dfb5b0a6a7a32974516c391ade7ce87a7c1da693

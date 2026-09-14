@@ -15,18 +15,23 @@
  * requiring one would put the door back where it was.
  *
  * The LAB TAB's verbs all take one, for the opposite reason: which experiments
- * a browser may see follows the calling session's dataset binding, and a
- * session-less read would either see everything or nothing. `runs` / `run`
- * (I5·T35a) read the list and one experiment's overview; `matrix` / `cells` /
- * `cell` (I5·T35b) read the matrix, the cell list and one cell in full.
+ * and conditions a browser may see follows the calling session's dataset
+ * binding, and a session-less read would either see everything or nothing.
+ * `runs` / `run` (I5·T35a) read the list and one experiment's overview;
+ * `plan` / `conditions` / `conditionDiff` (I5·T36) read the plan review and
+ * the condition registry; `matrix` / `cells` / `cell` (I5·T35b) read the
+ * matrix, the cell list and one cell in full.
  *
- * Three of them WRITE, and all three are human gestures the drawer offers:
- * `retry` opens a fresh attempt against an auditable reason, `releaseCheck`
- * asks the gate before anything is destroyed, and `exportPlan` / `exportRun`
- * forward mission's bundle export together with its fail-closed guarded-layer
- * gate. Starting a run is still `runStart`, and approving one is still a
- * human's act — there is no run-class verb here and no way to relax the leak
- * gate through this face.
+ * Four of them WRITE, and every one is a human's click. `approve` is a click
+ * reaching the same `runStart` the slash command reaches — with the approving
+ * session as the run's parent, exactly as `/eval run` resolves it. The
+ * drawer's three are `retry` (a fresh attempt against an auditable reason),
+ * `releaseCheck` (the gate, asked before anything is destroyed) and
+ * `exportPlan` / `exportRun` (mission's bundle export, forwarded together
+ * with its fail-closed guarded-layer gate). There is no approve-class or
+ * run-class MODEL tool and there will not be one (ui-spec R1): the starting
+ * verb belongs to the interface, never to the toolset — and nothing here can
+ * relax a leak gate it does not implement.
  * @module @khorsheed/dsh-eval/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -34,6 +39,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { EvalService } from './service.ts'
 import type {
+  EvalApproveRequest,
+  EvalApproveResult,
   EvalCellDetail,
   EvalCellReleaseResult,
   EvalCellRequest,
@@ -41,6 +48,10 @@ import type {
   EvalCellRetryResult,
   EvalCellsRequest,
   EvalCellsResult,
+  EvalConditionDiffRequest,
+  EvalConditionDiffView,
+  EvalConditionsRequest,
+  EvalConditionsView,
   EvalExperimentDetail,
   EvalExperimentRequest,
   EvalExperimentsRequest,
@@ -53,6 +64,8 @@ import type {
   EvalItemRunsResult,
   EvalMatrixRequest,
   EvalMatrixView,
+  EvalPlanRequest,
+  EvalPlanReview,
   EvalRunJobView,
   EvalRunOutputView,
   EvalRunRequest,
@@ -187,6 +200,71 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   }
 
   /**
+   * The PLAN-REVIEW page: the plan's own fields plus `validatePlan`'s verdict
+   * as a flat `ok / warn / error` list (ui-spec §五, step 3).
+   * @param agent - owning live agent.
+   * @param request - the plan document to review.
+   * @returns the digest, the check list, and every condition the plan names.
+   */
+  @Remote('plan')
+  plan(agent: Agent, request: EvalPlanRequest): Promise<EvalPlanReview> {
+    void agent
+    return this.service.planReview(request.planPath)
+  }
+
+  /**
+   * The CONDITIONS page: every condition the session's repository declares,
+   * with its lock and its readiness (ui-spec §五, step 4).
+   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param request - repository / dataset overrides.
+   * @returns the table rows.
+   */
+  @Remote('conditions')
+  conditions(agent: Agent, request: EvalConditionsRequest): Promise<EvalConditionsView> {
+    return this.service.conditionsPage({
+      session: { id: String(agent.session.id) },
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
+    })
+  }
+
+  /**
+   * Two conditions, field by field — ONLY what differs.
+   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param request - the two references (a condition id, or a path).
+   * @returns the differing paths and each side's value as canonical JSON text.
+   */
+  @Remote('conditionDiff')
+  conditionDiff(agent: Agent, request: EvalConditionDiffRequest): Promise<EvalConditionDiffView> {
+    return this.service.conditionDiffPage({
+      a: request.a,
+      b: request.b,
+      session: { id: String(agent.session.id) },
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
+    })
+  }
+
+  /**
+   * APPROVE a plan and start it — ui-spec step 5, the button on the
+   * plan-review page and nothing else. Validate runs first and an error
+   * refuses without starting anything; the approving session becomes the run's
+   * parent and its workspace the run's cwd, exactly as `/eval run` resolves
+   * them.
+   * @param agent - the approving session's live agent (the run's parent).
+   * @param request - the plan document to approve.
+   * @returns the check list, and — when it started — the job and run ids.
+   */
+  @Remote('approve')
+  approve(agent: Agent, request: EvalApproveRequest): Promise<EvalApproveResult> {
+    const cwd = agent.session.header?.cwd
+    return this.service.approve(request.planPath, {
+      parentSessionId: String(agent.session.id),
+      ...(cwd === undefined ? {} : { cwd }),
+    })
+  }
+
+  /**
    * The MATRIX page: rows are tasks, one factor on the columns, the rest
    * banded or pinned.
    * @param agent - owning live agent (the tab's session).
@@ -298,4 +376,3 @@ export class EvalRemoteService extends TypertRemoteService<never> {
     return this.service.itemRuns(request.datasetId, request.itemId)
   }
 }
-

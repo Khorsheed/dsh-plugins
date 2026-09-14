@@ -15,6 +15,18 @@ function remoteStub() {
   return {
     runs: vi.fn(async () => ({ ok: true as const, value: { repo: null, datasets: [], rows: [], notes: [] } })),
     run: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    plan: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    conditions: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    conditionDiff: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    approve: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    runOutput: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    matrix: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    cells: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    cell: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    retry: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    releaseCheck: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    exportPlan: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    exportRun: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
   }
 }
 
@@ -116,7 +128,7 @@ describe('eval client apply', () => {
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
-  it('the injected face binds both read verbs to the Remote namespace with the session id', async () => {
+  it('the injected face binds every session-scoped verb to the Remote namespace with the session id', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     const entry = slots.entries('conversation.view')[0]!
@@ -127,6 +139,70 @@ describe('eval client apply', () => {
 
     await face.fetchExperiment('s1' as SessionId, { runId: 'run-1' })
     expect(remote.run).toHaveBeenCalledWith('s1', { runId: 'run-1' })
+
+    await face.fetchPlanReview('s1' as SessionId, { planPath: '/repo/plans/p.json' })
+    expect(remote.plan).toHaveBeenCalledWith('s1', { planPath: '/repo/plans/p.json' })
+
+    await face.fetchConditions('s1' as SessionId, {})
+    expect(remote.conditions).toHaveBeenCalledWith('s1', {})
+
+    await face.fetchConditionDiff('s1' as SessionId, { a: 'x', b: 'y' })
+    expect(remote.conditionDiff).toHaveBeenCalledWith('s1', { a: 'x', b: 'y' })
+
+    await face.approvePlan('s1' as SessionId, { planPath: '/repo/plans/p.json' })
+    expect(remote.approve).toHaveBeenCalledWith('s1', { planPath: '/repo/plans/p.json' })
+
+    await face.fetchMatrix('s1' as SessionId, { runId: 'run-1' })
+    expect(remote.matrix).toHaveBeenCalledWith('s1', { runId: 'run-1' })
+
+    await face.fetchCells('s1' as SessionId, { runId: 'run-1', bucket: 'active' })
+    expect(remote.cells).toHaveBeenCalledWith('s1', { runId: 'run-1', bucket: 'active' })
+
+    await face.fetchCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
+    expect(remote.cell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1' })
+
+    await face.retryCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1', reason: 'the unit died', category: 'infrastructure' })
+    expect(remote.retry).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1', reason: 'the unit died', category: 'infrastructure' })
+
+    await face.releaseCheck('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
+    expect(remote.releaseCheck).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1' })
+
+    await face.planExport('s1' as SessionId, { runId: 'run-1', outDir: '/out' })
+    expect(remote.exportPlan).toHaveBeenCalledWith('s1', { runId: 'run-1', outDir: '/out' })
+
+    await face.exportRun('s1' as SessionId, { runId: 'run-1', outDir: '/out', confirmed: [] })
+    expect(remote.exportRun).toHaveBeenCalledWith('s1', { runId: 'run-1', outDir: '/out', confirmed: [] })
+  })
+
+  // Every lab verb is checked for its FULL positional list above, not just for
+  // its payload: the gateway's client proxy enforces exact arity, so a call
+  // that leaves a parameter off throws before it reaches the wire. T35b's
+  // eight all take exactly (sessionId, request) and have no optional tail —
+  // `runOutput` is the only verb that does, and the test below pins its 0.
+  it('every session-scoped verb takes exactly the session and one request object', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.view')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
+
+    await face.fetchMatrix('s1' as SessionId, { runId: 'run-1' })
+    await face.fetchCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
+    for (const spy of [remote.matrix, remote.cell]) {
+      expect(spy.mock.calls.every(call => call.length === 2)).toBe(true)
+    }
+  })
+
+  it('the job-log verb is session-LESS — it is the CI face\'s own runOutput', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.view')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
+
+    await face.fetchRunOutput('eval-run-1')
+    // The cursor rides along explicitly: the proxy enforces exact arity, and a
+    // one-argument call throws before it reaches the wire (measured on the
+    // temporary instance, T36).
+    expect(remote.runOutput).toHaveBeenCalledWith('eval-run-1', 0)
   })
 
   it('collapses the view entry on teardown', async () => {

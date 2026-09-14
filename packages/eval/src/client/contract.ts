@@ -10,10 +10,12 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  EvalCellDetail, EvalCellReleaseResult, EvalCellRequest, EvalCellRetryRequest, EvalCellRetryResult,
-  EvalCellsRequest, EvalCellsResult, EvalExperimentDetail, EvalExperimentRequest, EvalExperimentsRequest,
-  EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
-  EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
+  EvalApproveRequest, EvalApproveResult, EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
+  EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
+  EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView, EvalExperimentDetail,
+  EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
+  EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
+  EvalPlanRequest, EvalPlanReview, EvalRunOutputView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
 
@@ -21,19 +23,35 @@ import type { createLabViewStore } from './store.ts'
 export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
 
 /**
- * Business face injected into the conversation.view lab entry.
+ * Business face injected into the conversation.view lab entry: the list, one
+ * experiment's overview, the plan review, the condition registry and its diff,
+ * the matrix, the cell list and one cell in full.
  *
- * Five reads and three writes. The writes are the drawer's human gestures and
- * nothing more: re-open an attempt with a reason, ask the release gate, and
- * walk the two-step bundle export. Starting a run and approving a plan are
- * elsewhere by design; the remaining sub-pages (report, judging desk) arrive
- * with T38 and T37.
+ * Four of them WRITE, and every one is a human's click. `approvePlan` is
+ * ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
+ * two-step bundle export. The remaining sub-pages (report, judging desk)
+ * arrive with T38 and T37.
  */
 export interface LabViewInjected {
   /** Every experiment: the runs eval started, plus the unstarted plans (one RPC). */
   fetchExperiments: (sessionId: SessionId, request: EvalExperimentsRequest) => Promise<RemoteResult<EvalExperimentsResult>>
   /** One started experiment's overview payload. */
   fetchExperiment: (sessionId: SessionId, request: EvalExperimentRequest) => Promise<RemoteResult<EvalExperimentDetail>>
+  /** One plan's review payload: its own fields, and validate line by line. */
+  fetchPlanReview: (sessionId: SessionId, request: EvalPlanRequest) => Promise<RemoteResult<EvalPlanReview>>
+  /** The condition registry of the session's dataset repository. */
+  fetchConditions: (sessionId: SessionId, request: EvalConditionsRequest) => Promise<RemoteResult<EvalConditionsView>>
+  /** Two conditions, field by field — only what differs. */
+  fetchConditionDiff: (sessionId: SessionId, request: EvalConditionDiffRequest) => Promise<RemoteResult<EvalConditionDiffView>>
+  /** Approve a plan and start it (the ONE write this face carries). */
+  approvePlan: (sessionId: SessionId, request: EvalApproveRequest) => Promise<RemoteResult<EvalApproveResult>>
+  /**
+   * A started run's job log from the top, verbatim. Session-less on purpose:
+   * this is the CI face's own `runOutput`, and a readiness refusal is written
+   * there and NOWHERE else — the run never reaches `runCreate`, so the mission
+   * ledger holds nothing at all for it.
+   */
+  fetchRunOutput: (jobId: string) => Promise<RemoteResult<EvalRunOutputView>>
   /** The matrix page: rows are tasks, one factor on the columns. */
   fetchMatrix: (sessionId: SessionId, request: EvalMatrixRequest) => Promise<RemoteResult<EvalMatrixView>>
   /** The cells page: one run's cells, exact-match filtered. */

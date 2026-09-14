@@ -50,6 +50,14 @@ export interface ConditionSummary {
   harness: { name: string | null; version: string | null; drive: string | null }
   /** The DECLARED model (decision 5); what a run observed lives in the run's annotations. */
   model: { declared: string | null }
+  /**
+   * The named scoped home this condition logs in as, or null for the harness's
+   * default one. Part of the hash: two conditions differing only in scope are
+   * two subjects, because they hold two accounts.
+   */
+  scope: string | null
+  /** The agent-preset roster the condition runs under, or null for none. */
+  preset: string | null
   /** sha256 of the declaration; null when it is unreadable or contract-violating. */
   sha: string | null
   /**
@@ -147,6 +155,8 @@ export async function listConditions(repo: string, only?: readonly string[]): Pr
           drive: stringOrNull(harness?.['drive']),
         },
         model: { declared: stringOrNull(model?.['declared']) },
+        scope: stringOrNull(document?.['scope']),
+        preset: stringOrNull(document?.['preset']),
         sha: entry.sha,
         lock: {
           present: entry.lock !== null,

@@ -256,6 +256,197 @@ export interface EvalExperimentDetail {
   job: EvalExperimentJob | null
 }
 
+/* ─────────────────── the plan-review and conditions pages ─────────────────── */
+
+/**
+ * One line of the plan review's validate list (ui-spec §五: `ok / warn / error`
+ * 逐条). The three severities are the reviewer's whole decision procedure: an
+ * `error` blocks approval, a `warn` is something to have read before approving,
+ * and an `ok` line is a condition that resolved — the list must say what passed
+ * as well as what did not, or a clean plan renders as an empty page.
+ */
+export interface EvalPlanCheck {
+  severity: 'ok' | 'warn' | 'error'
+  /** validate's own diagnostic code, or `CONDITION_READY` for a resolved condition. */
+  code: string
+  message: string
+}
+
+/** One condition a plan names, as the review page reports it. */
+export interface EvalPlanCondition {
+  id: string
+  role: 'player' | 'judge'
+  /** sha256 of the declaration; null when it is unreadable or contract-violating. */
+  sha: string | null
+  /** `ready` / `unready` / `missing`, from the resolver validate itself uses. */
+  status: string
+  /** The lock beside the declaration: present, still matching, home hashed. */
+  lock: { present: boolean; matches: boolean; homeSha: string | null }
+}
+
+/** The plan document's own digest — the review page's kv block. */
+export interface EvalPlanDigest {
+  /** What the plan pins: repository, dataset set, commit (null = pinned at run start). */
+  dataset: { repo: string | null; id: string | null; commit: string | null }
+  /** The item ids the matrix runs over, in plan order. */
+  items: string[]
+  /** Player condition ids, in plan order. */
+  conditions: string[]
+  /** The judge conditions and the sampling count; samples null when no judge is declared. */
+  judge: { conditions: string[]; samples: number | null }
+  reps: number | null
+  stages: string[]
+  /** The shuffle seed, and whether same-condition cells are deliberately spread apart. */
+  order: { seed: number | null; interleave: boolean | null }
+  budget: { activeMinutes: number | null; turns: number | null } | null
+  expectedNs: string[]
+  /** Per-cell infrastructure-retry budget; null when the plan leaves the default. */
+  retryInfrastructure: number | null
+  /** Bundle export directory the plan names; null for the default. */
+  exports: string | null
+  unit: EvalExperimentUnit | null
+  /** The plan's own review commentary, verbatim; null when it carries none. */
+  notes: string | null
+}
+
+/** The plan-review page's answer: what the plan says, and what validate makes of it. */
+export interface EvalPlanReview {
+  /** The plan document (absolute). */
+  planPath: string
+  schema: string
+  /** True when validate found no ERROR. Warnings never block approval. */
+  ok: boolean
+  errors: number
+  warnings: number
+  /** The plan's own fields; null when the document could not be read at all. */
+  digest: EvalPlanDigest | null
+  /** validate, line by line — errors first, then warnings, then the resolved conditions. */
+  checks: EvalPlanCheck[]
+  /** Every condition the plan names, players first, then judges. */
+  conditions: EvalPlanCondition[]
+}
+
+/** Which plan the review verb answers about. */
+export interface EvalPlanRequest {
+  /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
+  planPath: string
+}
+
+/** One row of the conditions page's table. */
+export interface EvalConditionRow {
+  id: string
+  /** The dataset set whose `conditions/` directory declares it. */
+  dataset: string
+  harness: string | null
+  /** `exec` — the only drive a condition may declare (frozen decision 2). */
+  drive: string | null
+  /** The DECLARED model; what a run observed lives in that run's annotations. */
+  model: string | null
+  /** The named scoped home, or null for the harness's default one. */
+  scope: string | null
+  /** The agent-preset roster the condition runs under, or null for none. */
+  preset: string | null
+  sha: string | null
+  lock: {
+    present: boolean
+    matches: boolean
+    homeSha: string | null
+    /** Epoch ms `conditions provision` wrote the lock; null on a lock written before it existed. */
+    provisionedAt: number | null
+    cliVersion: string | null
+  }
+  /** `ready` / `unready` / `missing` — the same word the CLI listing prints. */
+  status: string
+  /** Nullable contract fields still unresolved, as dotted paths. */
+  unresolved: string[]
+  /** Contract violations, one message each (these make the condition unusable). */
+  errors: string[]
+  /** Readiness notes, one message each. */
+  warnings: string[]
+}
+
+/** The conditions page's answer. */
+export interface EvalConditionsView {
+  /** The dataset repository the listing resolved against. */
+  repo: string
+  /** The dataset sets scanned, in order. */
+  datasets: string[]
+  rows: EvalConditionRow[]
+}
+
+/** What narrows the conditions listing; the session's binding decides by default. */
+export interface EvalConditionsRequest {
+  repo?: string
+  dataset?: string
+}
+
+/**
+ * One field two conditions disagree on. Values travel as CANONICAL JSON TEXT,
+ * not as raw JSON: the wire schema would otherwise have to say `unknown` for a
+ * field whose type is whatever the declaration holds, and the page renders the
+ * two sides as text either way. `null` means the field is ABSENT on that side,
+ * which is a difference like any other (`scope` absent versus `scope: "eval-b"`
+ * is exactly the two-subjects case the field exists for).
+ */
+export interface EvalConditionFieldDiff {
+  /** Dotted path, e.g. `model.declared`, `unit.scopedHome.container`. */
+  path: string
+  a: string | null
+  b: string | null
+}
+
+/** One side of a condition diff. */
+export interface EvalConditionDiffSide {
+  id: string
+  /** The declaration that was read (absolute). */
+  path: string
+  sha: string | null
+}
+
+/** The conditions page's diff: what differs, and nothing else. */
+export interface EvalConditionDiffView {
+  a: EvalConditionDiffSide
+  b: EvalConditionDiffSide
+  /** True when the two hash alike (`notes` excluded, as everywhere). */
+  identical: boolean
+  /** True when `notes` differs and nothing else does — a comment edit is not a factor. */
+  notesOnly: boolean
+  /** ONLY the differing paths, sorted. A field both sides agree on never appears. */
+  differences: EvalConditionFieldDiff[]
+}
+
+/** Which two conditions to diff (a condition id, or a path). */
+export interface EvalConditionDiffRequest {
+  a: string
+  b: string
+  repo?: string
+  dataset?: string
+}
+
+/** Which plan a human is approving. */
+export interface EvalApproveRequest {
+  /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
+  planPath: string
+}
+
+/**
+ * What approving answers with. A refusal is DATA, not a thrown error: the page
+ * shows the same validate list either way, and the reason a plan was not
+ * started belongs beside the list that explains it.
+ */
+export interface EvalApproveResult {
+  /** True when the run was started; false when it was refused. */
+  started: boolean
+  /** The validate list, exactly as the review page renders it — refusal included. */
+  checks: EvalPlanCheck[]
+  /** Why the approval was refused, verbatim; null when it started. */
+  refusal: string | null
+  jobId: string | null
+  runId: string | null
+  /** The session every delegation parents to — the approving session itself. */
+  parentSessionId: string | null
+}
+
 /* ──────────────────── the matrix page and the cell drawer ─────────────────── */
 
 /** One rep's dot in a matrix cell (ui-spec §五: 实心已判 / 半心进行中 / 空心未起). */

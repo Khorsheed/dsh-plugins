@@ -4,7 +4,11 @@
  * (createLabViewStore().create()) and injected Remote mocks. Asserts the
  * experiment table (drafts and runs in one list, the status word, the factor
  * and progress cells), the row click opening the detail shell, the overview
- * page's fields for a run and for a draft, and the six placeholder sub-pages.
+ * page's fields for a run and for a draft, and the four placeholder sub-pages.
+ *
+ * The plan-review and conditions pages have their own spec
+ * (`LabReview.client.spec.tsx`); the shared harness lives there too, so the
+ * two files build the same props by the same rule.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -32,6 +36,11 @@ interface Harness {
   actions: Instance['actions']
   fetchExperiments: ReturnType<typeof vi.fn>
   fetchExperiment: ReturnType<typeof vi.fn>
+  fetchPlanReview: ReturnType<typeof vi.fn>
+  fetchConditions: ReturnType<typeof vi.fn>
+  fetchConditionDiff: ReturnType<typeof vi.fn>
+  approvePlan: ReturnType<typeof vi.fn>
+  fetchRunOutput: ReturnType<typeof vi.fn>
 }
 
 const LIST: EvalExperimentsResult = {
@@ -128,6 +137,13 @@ function makeHarness(overrides: { list?: EvalExperimentsResult } = {}): Harness 
     actions: instance.actions,
     fetchExperiments: vi.fn(async (): Promise<Result<EvalExperimentsResult>> => ({ ok: true, value: overrides.list ?? LIST })),
     fetchExperiment: vi.fn(async (): Promise<Result<EvalExperimentDetail>> => ({ ok: true, value: DETAIL })),
+    // The three T36 pages are exercised in LabReview.client.spec.tsx; here
+    // they only have to exist, because the tab strip walks past them.
+    fetchPlanReview: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    fetchConditions: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    fetchConditionDiff: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    approvePlan: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    fetchRunOutput: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
   }
 }
 
@@ -144,6 +160,11 @@ function renderView(h: Harness) {
     actions: h.actions,
     fetchExperiments: h.fetchExperiments,
     fetchExperiment: h.fetchExperiment,
+    fetchPlanReview: h.fetchPlanReview,
+    fetchConditions: h.fetchConditions,
+    fetchConditionDiff: h.fetchConditionDiff,
+    approvePlan: h.approvePlan,
+    fetchRunOutput: h.fetchRunOutput,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -243,15 +264,13 @@ describe('LabView detail', () => {
     expect(h.fetchExperiment).not.toHaveBeenCalled()
   })
 
-  // Four, not six: the matrix and the cells pages gained bodies in I5·T35b
-  // and are covered by MatrixCells.client.spec.tsx.
-  it('the four unbuilt sub-pages carry the placeholder that names their task', async () => {
+  // Two, not six: plan and conditions gained bodies in I5·T36 (LabReview),
+  // matrix and cells in I5·T35b (MatrixCells) — each covered by its own spec.
+  it('the two unbuilt sub-pages carry the placeholder that names their task', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('harness-comparison'))
     for (const [tab, placeholder] of [
-      ['page.plan', 'placeholder.plan'],
-      ['page.conditions', 'placeholder.conditions'],
       ['page.report', 'placeholder.report'],
       ['page.judging', 'placeholder.judging'],
     ] as const) {

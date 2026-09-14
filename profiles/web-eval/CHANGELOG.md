@@ -9,3 +9,4 @@
 - README 立住理想架构、依赖插件、理想流程、最终 UI 与迭代计划（I0–I6），每个迭代带完成判据。
 - 同端口交接脚本 `restart-into-web-eval.sh`，与 web-dev 同款（仅改名），走 ankh-guard 守卫通道；评测实例应使用独立的 `$DSH_HOME`。
 - 安装路径可从源码走通（I1 · T5，缺口 G5/G6）：`install.sh` 增加 `--source <dsh-plugins 检出>` 源码模式——构建未上架成员、按 `--family` 打 tarball 进 profile 的 `tarballs/`、写 pnpm overrides 钉住家族边，再标准安装；npm 模式行为不变（成员全部上架的 I6 前会撞 registry 404）。
+- I5 · T49：源码模式给 `pack-dist` 的 `--family` 改成逐个成员写 `name=version`。pack-dist 自 2026-09-12 起要求出现在依赖边上的家族成员自带版本（边按**目标包自己的版本**定范围），而 `install.sh` 仍只拼名字，打到 `local-agent-tool-subagent` 即停在 `peerDependencies entry @khorsheed/dsh-local-agent is a family edge but no version was given for it`，源码模式在 main 上整条不通。现在先把检出的 `packages/*/package.json` 扫成一张「包名 → 自身版本」表，循环里逐个成员查表；查不到版本的保持光名字并打一行 warn（只做改写的成员本就不需要版本）。
