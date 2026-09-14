@@ -69,11 +69,86 @@ export type EvalKey =
   | 'overview.validationFailed'
   | 'ready.ok'
   | 'ready.failed'
-  | 'placeholder.matrix'
-  | 'placeholder.cells'
   | 'placeholder.report'
   | 'placeholder.judging'
   | 'placeholder.new'
+  | 'matrix.loading'
+  | 'matrix.error'
+  | 'matrix.empty'
+  | 'matrix.column'
+  | 'matrix.group'
+  | 'matrix.filter'
+  | 'matrix.filterAll'
+  | 'matrix.noFactor'
+  | 'matrix.task'
+  | 'matrix.legend'
+  | 'matrix.hashMismatch'
+  | 'matrix.hashUnknown'
+  | 'matrix.stuck'
+  | 'matrix.reps'
+  | 'summary.title'
+  | 'summary.materialization'
+  | 'summary.fingerprint'
+  | 'summary.unreleased'
+  | 'summary.judge'
+  | 'summary.judgePending'
+  | 'summary.stuck'
+  | 'summary.cells'
+  | 'invariant.ok'
+  | 'invariant.violated'
+  | 'invariant.unverifiable'
+  | 'cells.loading'
+  | 'cells.error'
+  | 'cells.empty'
+  | 'cells.matched'
+  | 'cells.bucketAll'
+  | 'cells.col.cell'
+  | 'cells.col.bucket'
+  | 'cells.col.stage'
+  | 'cells.col.attempt'
+  | 'cells.col.duration'
+  | 'drawer.close'
+  | 'drawer.loading'
+  | 'drawer.error'
+  | 'drawer.refs'
+  | 'drawer.resourceNone'
+  | 'drawer.checkpoints'
+  | 'drawer.artifacts'
+  | 'drawer.annotations'
+  | 'drawer.attempts'
+  | 'drawer.history'
+  | 'drawer.probes'
+  | 'drawer.probesNone'
+  | 'drawer.materialization'
+  | 'drawer.openSession'
+  | 'drawer.noSession'
+  | 'drawer.releasable'
+  | 'drawer.notReleasable'
+  | 'action.retry'
+  | 'action.release'
+  | 'action.export'
+  | 'retry.reason'
+  | 'retry.category'
+  | 'notice.retried'
+  | 'notice.releasable'
+  | 'notice.notReleasable'
+  | 'export.title'
+  | 'export.description'
+  | 'export.outDir'
+  | 'export.layers'
+  | 'export.snapshotDir'
+  | 'export.snapshotRepo'
+  | 'export.snapshotCommit'
+  | 'export.snapshotDataset'
+  | 'export.plan'
+  | 'export.planOk'
+  | 'export.guardedTitle'
+  | 'export.confirmLayer'
+  | 'export.confirm'
+  | 'export.cancel'
+  | 'export.close'
+  | 'export.done'
+  | 'export.error'
   | 'review.loading'
   | 'review.error'
   | 'review.noPlan'
@@ -211,11 +286,86 @@ export const en: Record<EvalKey, string> = {
   'overview.validationFailed': '{errors} error(s), {warnings} warning(s)',
   'ready.ok': 'ok',
   'ready.failed': 'failed',
-  'placeholder.matrix': 'The matrix page belongs to T35b.',
-  'placeholder.cells': 'The cells page and the cell drawer belong to T35b.',
   'placeholder.report': 'The report page belongs to T38.',
   'placeholder.judging': 'The judging desk belongs to T37.',
-  'placeholder.new': 'The new-experiment form belongs to T34. Until then a plan is drafted as a file: <repo>/datasets/<set>/plans/<name>.json.',
+  'placeholder.new': 'The new-experiment form belongs to T36. Until then a plan is drafted as a file: <repo>/datasets/<set>/plans/<name>.json.',
+  'matrix.loading': 'Arranging the matrix…',
+  'matrix.error': 'Failed to arrange the matrix',
+  'matrix.empty': 'This run expanded no cells',
+  'matrix.column': 'Column',
+  'matrix.group': 'Group by',
+  'matrix.filter': 'Filter',
+  'matrix.filterAll': 'all',
+  'matrix.noFactor': 'the conditions agree on every field — one column, nothing to compare',
+  'matrix.task': 'Item',
+  'matrix.legend': 'dot: ● judged  ◐ in progress  ○ not started · red edge: this row disagrees on the item material',
+  'matrix.hashMismatch': 'material differs from the rest of this item',
+  'matrix.hashUnknown': 'no material hash recorded',
+  'matrix.stuck': 'nothing has happened here for over {minutes} min',
+  'matrix.reps': '{count} rep(s)',
+  'summary.title': 'Run summary',
+  'summary.materialization': 'Item material',
+  'summary.fingerprint': 'Environment fingerprint',
+  'summary.unreleased': 'Unreleased units',
+  'summary.judge': 'Judge consistency',
+  'summary.judgePending': 'awaiting the report',
+  'summary.stuck': 'Stuck cells',
+  'summary.cells': 'Cells shown',
+  'invariant.ok': 'ok',
+  'invariant.violated': 'violated',
+  'invariant.unverifiable': 'unverifiable',
+  'cells.loading': 'Loading the cells…',
+  'cells.error': 'Failed to load the cells',
+  'cells.empty': 'No cell matches this filter',
+  'cells.matched': '{matched}/{total} cell(s)',
+  'cells.bucketAll': 'All',
+  'cells.col.cell': 'Item × condition × rep',
+  'cells.col.bucket': 'Bucket',
+  'cells.col.stage': 'Stage',
+  'cells.col.attempt': 'Attempt',
+  'cells.col.duration': 'In state',
+  'drawer.close': 'Close',
+  'drawer.loading': 'Loading the cell…',
+  'drawer.error': 'Failed to open the cell',
+  'drawer.refs': 'Unit',
+  'drawer.resourceNone': 'no unit (host path)',
+  'drawer.checkpoints': 'Checkpoints',
+  'drawer.artifacts': 'Artifacts',
+  'drawer.annotations': 'Annotations',
+  'drawer.attempts': 'Attempts',
+  'drawer.history': 'Transitions',
+  'drawer.probes': 'Verify output (verbatim)',
+  'drawer.probesNone': 'this cell recorded no probe run',
+  'drawer.materialization': 'Item material',
+  'drawer.openSession': 'Open the child session',
+  'drawer.noSession': 'this attempt recorded no child session — nothing to open',
+  'drawer.releasable': 'releasable — its resources may be destroyed',
+  'drawer.notReleasable': 'NOT releasable',
+  'action.retry': 'Re-run',
+  'action.release': 'Release check',
+  'action.export': 'Export bundle',
+  'retry.reason': 'Reason for the re-run',
+  'retry.category': 'Retry category',
+  'notice.retried': '{id}: attempt {attempt} opened',
+  'notice.releasable': '{id}: releasable — its resources may be destroyed',
+  'notice.notReleasable': '{id}: NOT releasable',
+  'export.title': 'Export the run bundle',
+  'export.description': 'A self-contained bundle of the run: template, cells, annotations, artifacts and the dataset layers you include. Guarded layers must be confirmed one by one, and the check is re-run against a fresh plan before anything is written.',
+  'export.outDir': 'Output directory',
+  'export.layers': 'Layers (comma-separated)',
+  'export.snapshotDir': 'Snapshot directory',
+  'export.snapshotRepo': 'Snapshot repo',
+  'export.snapshotCommit': 'Snapshot commit',
+  'export.snapshotDataset': 'Snapshot dataset id',
+  'export.plan': 'Check',
+  'export.planOk': 'nothing guarded — {missions} cell(s), {attempts} attempt(s) into {dir}',
+  'export.guardedTitle': 'Guarded (modelFacing: false) layers — confirm each one to include it:',
+  'export.confirmLayer': 'include {layer}',
+  'export.confirm': 'Export',
+  'export.cancel': 'Cancel',
+  'export.close': 'Close',
+  'export.done': 'exported {dir} ({count} files)',
+  'export.error': 'Export failed',
   'review.loading': 'Validating the plan…',
   'review.error': 'Failed to review the plan',
   'review.noPlan': 'This run records no plan document, so there is nothing to review — its run.meta is on the overview.',
@@ -347,11 +497,86 @@ export const zh: Record<EvalKey, string> = {
   'overview.validationFailed': '{errors} 个错误，{warnings} 条警告',
   'ready.ok': '通过',
   'ready.failed': '未通过',
-  'placeholder.matrix': '矩阵页归 T35b。',
-  'placeholder.cells': '格子页与格子详情抽屉归 T35b。',
   'placeholder.report': '报告页归 T38。',
   'placeholder.judging': '判官台归 T37。',
-  'placeholder.new': '新建实验表单归 T34。在那之前，实验用文件起草：<题库>/datasets/<题集>/plans/<名称>.json。',
+  'placeholder.new': '新建实验表单归 T36。在那之前，实验用文件起草：<题库>/datasets/<题集>/plans/<名称>.json。',
+  'matrix.loading': '排矩阵…',
+  'matrix.error': '矩阵排布失败',
+  'matrix.empty': '这个 run 没有展开出格子',
+  'matrix.column': '列',
+  'matrix.group': '分组',
+  'matrix.filter': '筛选',
+  'matrix.filterAll': '全部',
+  'matrix.noFactor': '各条件逐字段相同——只有一列，没有可比的',
+  'matrix.task': '题',
+  'matrix.legend': '圆点：● 已判　◐ 进行中　○ 未起 · 红边：本行的题面与其余格不一致',
+  'matrix.hashMismatch': '题面与本题其余格不一致',
+  'matrix.hashUnknown': '没有记录物化哈希',
+  'matrix.stuck': '已经 {minutes} 分钟没有动静',
+  'matrix.reps': '{count} 个 rep',
+  'summary.title': 'run 级汇总',
+  'summary.materialization': '物化哈希',
+  'summary.fingerprint': '环境指纹',
+  'summary.unreleased': '未释放单元',
+  'summary.judge': '判官一致性',
+  'summary.judgePending': '待报告',
+  'summary.stuck': '卡格数',
+  'summary.cells': '显示的格子',
+  'invariant.ok': '一致',
+  'invariant.violated': '不一致',
+  'invariant.unverifiable': '无法核验',
+  'cells.loading': '加载格子…',
+  'cells.error': '格子加载失败',
+  'cells.empty': '这个筛选下没有格子',
+  'cells.matched': '{matched}/{total} 格',
+  'cells.bucketAll': '全部',
+  'cells.col.cell': '题 × 条件 × rep',
+  'cells.col.bucket': '桶',
+  'cells.col.stage': '阶段',
+  'cells.col.attempt': 'attempt',
+  'cells.col.duration': '在态时长',
+  'drawer.close': '关闭',
+  'drawer.loading': '加载格子详情…',
+  'drawer.error': '格子详情打开失败',
+  'drawer.refs': '单元',
+  'drawer.resourceNone': '没有单元（宿主路径）',
+  'drawer.checkpoints': '检查点',
+  'drawer.artifacts': '产物',
+  'drawer.annotations': '注解',
+  'drawer.attempts': 'attempt',
+  'drawer.history': '状态迁移',
+  'drawer.probes': 'verify 原样输出',
+  'drawer.probesNone': '这一格没有记录探针运行',
+  'drawer.materialization': '物化哈希',
+  'drawer.openSession': '打开子会话',
+  'drawer.noSession': '这次 attempt 没有记录子会话——没有可打开的',
+  'drawer.releasable': '可释放——资源可以销毁',
+  'drawer.notReleasable': '不可释放',
+  'action.retry': '带原因重跑',
+  'action.release': '释放检查',
+  'action.export': '导出 bundle',
+  'retry.reason': '重跑原因',
+  'retry.category': '重跑类别',
+  'notice.retried': '{id}：已开 attempt {attempt}',
+  'notice.releasable': '{id}：可释放——资源可以销毁',
+  'notice.notReleasable': '{id}：不可释放',
+  'export.title': '导出 run bundle',
+  'export.description': '自包含的 run bundle：模板、格子、注解、产物，以及你收录的题库层。guarded 层要逐项确认，落盘之前还会按一份新鲜的 plan 重核一次。',
+  'export.outDir': '输出目录',
+  'export.layers': '收录层（逗号分隔）',
+  'export.snapshotDir': '快照目录',
+  'export.snapshotRepo': '快照仓库',
+  'export.snapshotCommit': '快照 commit',
+  'export.snapshotDataset': '快照数据集 id',
+  'export.plan': '检查',
+  'export.planOk': '没有 guarded 层——{missions} 格、{attempts} 次 attempt，导出到 {dir}',
+  'export.guardedTitle': 'guarded（modelFacing: false）层——逐项确认才会收录：',
+  'export.confirmLayer': '收录 {layer}',
+  'export.confirm': '导出',
+  'export.cancel': '取消',
+  'export.close': '关闭',
+  'export.done': '已导出 {dir}（{count} 个文件）',
+  'export.error': '导出失败',
   'review.loading': '正在校验计划…',
   'review.error': '计划审阅加载失败',
   'review.noPlan': '这个 run 没有记录计划文件，无从审阅——它的 run.meta 在概览页。',

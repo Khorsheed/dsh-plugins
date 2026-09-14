@@ -1,15 +1,16 @@
 /**
  * The lab tab's transient store: the experiment list, which row is open, which
- * of the detail's seven sub-pages is showing, and each built sub-page's own
- * payload. Module level exports the factory only — a module-level handle would
- * pin the store's identity in the module cache (a de-facto singleton surviving
- * plugin reloads).
+ * of the detail's seven sub-pages is showing, each built sub-page's own
+ * payload, and — for the matrix — how the reader arranged it. Module level
+ * exports the factory only: a module-level handle would pin the store's
+ * identity in the module cache (a de-facto singleton surviving plugin
+ * reloads).
  */
 import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
-  EvalConditionDiffView, EvalConditionsView, EvalExperimentDetail, EvalExperimentsResult,
-  EvalPlanReview, EvalRunOutputView,
+  EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView, EvalExperimentDetail,
+  EvalExperimentsResult, EvalMatrixView, EvalPlanReview, EvalRunOutputView,
 } from '../types.ts'
 
 /**
@@ -28,8 +29,9 @@ export interface LabStartedRun {
 }
 
 /**
- * The detail's sub-pages, in the tab order ui-spec §五 fixes. Only `overview`
- * has a body in this slice; the rest carry the placeholder naming their task.
+ * The detail's sub-pages, in the tab order ui-spec §五 fixes. `overview`
+ * (T35a), `matrix` and `cells` (T35b) have bodies; the rest carry the
+ * placeholder naming their task.
  */
 export const LAB_PAGES = ['overview', 'plan', 'conditions', 'matrix', 'cells', 'report', 'judging'] as const
 
@@ -44,7 +46,7 @@ export interface LabViewState {
   loading: boolean
   /** Human-readable list-fetch failure, or null when idle. */
   error: string | null
-  /** Bumped by the refresh action to re-trigger the list fetch. */
+  /** Bumped by the refresh action to re-trigger every fetch. */
   refreshRev: number
   /** The open experiment's row id, or null while the list is showing. */
   selection: string | null
@@ -91,6 +93,36 @@ export interface LabViewState {
   diff: EvalConditionDiffView | null
   /** Human-readable diff failure, or null. */
   diffError: string | null
+
+  /** The factor the matrix puts on its columns; null takes the first one. */
+  matrixColumn: string | null
+  /** Remaining factors banding the matrix rows. */
+  matrixGroupBy: string[]
+  /** Remaining factors pinned to one canonical value each. */
+  matrixFilter: Record<string, string>
+  /** The matrix payload, or null before the first load. */
+  matrix: EvalMatrixView | null
+  matrixLoading: boolean
+  matrixError: string | null
+
+  /** The cells page's bucket filter, or null for every bucket. */
+  cellsBucket: string | null
+  /** The cell list, or null before the first load. */
+  cells: EvalCellsResult | null
+  cellsLoading: boolean
+  cellsError: string | null
+
+  /** The cell whose drawer is open, or null. */
+  cellSelection: string | null
+  /** The open cell's detail, or null before it completes. */
+  cell: EvalCellDetail | null
+  cellLoading: boolean
+  cellError: string | null
+
+  /** Whether the export dialog is open. */
+  exportOpen: boolean
+  /** One-shot notice line (retry / release check / export outcomes), or null. */
+  notice: string | null
 }
 
 /** Annotation twin of the actions literal below (drift fails assignability at defineStore). */
@@ -119,6 +151,22 @@ export type LabViewActions = {
   pickCondition: (draft: LabViewState, id: string) => void
   setDiff: (draft: LabViewState, diff: EvalConditionDiffView) => void
   setDiffError: (draft: LabViewState, error: string | null) => void
+  setMatrixColumn: (draft: LabViewState, column: string | null) => void
+  toggleMatrixGroup: (draft: LabViewState, factor: string) => void
+  setMatrixFilter: (draft: LabViewState, factor: string, value: string | null) => void
+  setMatrix: (draft: LabViewState, matrix: EvalMatrixView) => void
+  setMatrixLoading: (draft: LabViewState, loading: boolean) => void
+  setMatrixError: (draft: LabViewState, error: string | null) => void
+  setCellsBucket: (draft: LabViewState, bucket: string | null) => void
+  setCells: (draft: LabViewState, cells: EvalCellsResult) => void
+  setCellsLoading: (draft: LabViewState, loading: boolean) => void
+  setCellsError: (draft: LabViewState, error: string | null) => void
+  openCell: (draft: LabViewState, missionId: string | null) => void
+  setCell: (draft: LabViewState, cell: EvalCellDetail) => void
+  setCellLoading: (draft: LabViewState, loading: boolean) => void
+  setCellError: (draft: LabViewState, error: string | null) => void
+  setExportOpen: (draft: LabViewState, open: boolean) => void
+  setNotice: (draft: LabViewState, notice: string | null) => void
 }
 
 const INITIAL: LabViewState = {
@@ -146,12 +194,36 @@ const INITIAL: LabViewState = {
   diffPair: [],
   diff: null,
   diffError: null,
+  matrixColumn: null,
+  matrixGroupBy: [],
+  matrixFilter: {},
+  matrix: null,
+  matrixLoading: false,
+  matrixError: null,
+  cellsBucket: null,
+  cells: null,
+  cellsLoading: false,
+  cellsError: null,
+  cellSelection: null,
+  cell: null,
+  cellLoading: false,
+  cellError: null,
+  exportOpen: false,
+  notice: null,
 }
 
-/** What `open` clears: everything that belongs to the experiment being left. */
+/**
+ * What `open` clears: everything that belongs to the experiment being left.
+ * The two collection-valued matrix fields are NOT here — `Object.assign`
+ * would alias one array and one object across every experiment — so `open`
+ * sets those itself, the way it already does for the diff pair.
+ */
 const PER_EXPERIMENT: Pick<
   LabViewState,
-  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal' | 'started' | 'output' | 'outputError'
+  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal'
+  | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
+  | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
+  | 'exportOpen' | 'notice'
 > = {
   detail: null,
   detailError: null,
@@ -163,6 +235,17 @@ const PER_EXPERIMENT: Pick<
   started: null,
   output: null,
   outputError: null,
+  matrixColumn: null,
+  matrix: null,
+  matrixError: null,
+  cellsBucket: null,
+  cells: null,
+  cellsError: null,
+  cellSelection: null,
+  cell: null,
+  cellError: null,
+  exportOpen: false,
+  notice: null,
 }
 
 /**
@@ -171,7 +254,7 @@ const PER_EXPERIMENT: Pick<
  */
 export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewActions> {
   return defineStore({
-    init: (): LabViewState => ({ ...INITIAL }),
+    init: (): LabViewState => ({ ...INITIAL, matrixGroupBy: [], matrixFilter: {}, diffPair: [] }),
     actions: {
       setList: (d, list: EvalExperimentsResult) => {
         d.list = list
@@ -186,6 +269,10 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         // a property of the visit, not of the experiment.
         d.page = 'overview'
         Object.assign(d, PER_EXPERIMENT)
+        // Fresh instances, never the constant's: assigning them would alias
+        // one array and one object across every experiment the visit opens.
+        d.matrixGroupBy = []
+        d.matrixFilter = {}
         // The condition registry is the REPOSITORY's, not the experiment's, so
         // the listing survives; the picked pair does not, because a diff read
         // beside one experiment means nothing beside the next.
@@ -241,6 +328,64 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         d.diffError = null
       },
       setDiffError: (d, error: string | null) => { d.diffError = error },
+
+      setMatrixColumn: (d, column: string | null) => {
+        d.matrixColumn = column
+        // A factor cannot be the column and a band at once, and pinning the
+        // column's own factor would collapse the comparison to one column.
+        d.matrixGroupBy = d.matrixGroupBy.filter(factor => factor !== column)
+        if (column !== null && column in d.matrixFilter) {
+          const next = { ...d.matrixFilter }
+          delete next[column]
+          d.matrixFilter = next
+        }
+        d.matrix = null
+      },
+      toggleMatrixGroup: (d, factor: string) => {
+        d.matrixGroupBy = d.matrixGroupBy.includes(factor)
+          ? d.matrixGroupBy.filter(entry => entry !== factor)
+          : [...d.matrixGroupBy, factor]
+        d.matrix = null
+      },
+      setMatrixFilter: (d, factor: string, value: string | null) => {
+        const next = { ...d.matrixFilter }
+        if (value === null) delete next[factor]
+        else next[factor] = value
+        d.matrixFilter = next
+        d.matrix = null
+      },
+      setMatrix: (d, matrix: EvalMatrixView) => {
+        d.matrix = matrix
+        d.matrixError = null
+      },
+      setMatrixLoading: (d, loading: boolean) => { d.matrixLoading = loading },
+      setMatrixError: (d, error: string | null) => { d.matrixError = error },
+
+      setCellsBucket: (d, bucket: string | null) => {
+        d.cellsBucket = bucket
+        d.cells = null
+      },
+      setCells: (d, cells: EvalCellsResult) => {
+        d.cells = cells
+        d.cellsError = null
+      },
+      setCellsLoading: (d, loading: boolean) => { d.cellsLoading = loading },
+      setCellsError: (d, error: string | null) => { d.cellsError = error },
+
+      openCell: (d, missionId: string | null) => {
+        d.cellSelection = missionId
+        d.cell = null
+        d.cellError = null
+        d.exportOpen = false
+      },
+      setCell: (d, cell: EvalCellDetail) => {
+        d.cell = cell
+        d.cellError = null
+      },
+      setCellLoading: (d, loading: boolean) => { d.cellLoading = loading },
+      setCellError: (d, error: string | null) => { d.cellError = error },
+      setExportOpen: (d, open: boolean) => { d.exportOpen = open },
+      setNotice: (d, notice: string | null) => { d.notice = notice },
     },
   })
 }

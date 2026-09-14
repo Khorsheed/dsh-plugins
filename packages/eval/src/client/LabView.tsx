@@ -27,13 +27,17 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalExperimentDetail, EvalExperimentRow } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ConditionsPage } from './ConditionsPage.tsx'
 import { Field, StartedRun, factorCell, snapshotCell, stamp, statusKey } from './parts.tsx'
 import { PlanReviewPage } from './PlanReviewPage.tsx'
-import { LAB_PAGES, type LabPage } from './store.ts'
+import { LAB_PAGES } from './store.ts'
+import { CellsPage } from './CellsPage.tsx'
+import { ExportDialog } from './ExportDialog.tsx'
+import { MatrixPage } from './MatrixPage.tsx'
 import css from './LabView.module.css'
 
 /** name → count, rendered as a single compact line (`ready 2 · done 10`). */
@@ -145,10 +149,8 @@ function Overview(props: {
   )
 }
 
-/** The placeholder body of a sub-page this slice does not build. */
-const PAGE_PLACEHOLDER: Readonly<Record<Exclude<LabPage, 'overview' | 'plan' | 'conditions'>, EvalKey>> = {
-  matrix: 'placeholder.matrix',
-  cells: 'placeholder.cells',
+/** The placeholder body of a sub-page nobody has built yet, and who owns it. */
+const PAGE_PLACEHOLDER: Readonly<Record<'report' | 'judging', EvalKey>> = {
   report: 'placeholder.report',
   judging: 'placeholder.judging',
 }
@@ -161,6 +163,7 @@ export function LabView(props: LabViewProps) {
   const {
     sessionId, useStore, actions, t,
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
+    fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -186,6 +189,22 @@ export function LabView(props: LabViewProps) {
   const diffPair = useStore(s => s.diffPair)
   const diff = useStore(s => s.diff)
   const diffError = useStore(s => s.diffError)
+  const matrixColumn = useStore(s => s.matrixColumn)
+  const matrixGroupBy = useStore(s => s.matrixGroupBy)
+  const matrixFilter = useStore(s => s.matrixFilter)
+  const matrix = useStore(s => s.matrix)
+  const matrixLoading = useStore(s => s.matrixLoading)
+  const matrixError = useStore(s => s.matrixError)
+  const cellsBucket = useStore(s => s.cellsBucket)
+  const cells = useStore(s => s.cells)
+  const cellsLoading = useStore(s => s.cellsLoading)
+  const cellsError = useStore(s => s.cellsError)
+  const cellSelection = useStore(s => s.cellSelection)
+  const cell = useStore(s => s.cell)
+  const cellLoading = useStore(s => s.cellLoading)
+  const cellError = useStore(s => s.cellError)
+  const exportOpen = useStore(s => s.exportOpen)
+  const notice = useStore(s => s.notice)
   const [newNotice, setNewNotice] = useState(false)
 
   // Fetch the list on mount and whenever refreshRev moves.
@@ -328,6 +347,85 @@ export function LabView(props: LabViewProps) {
   // status is the reviewer's verdict on this page, not a new fact on disk.
   const shownStatus = sentBack && openRow !== undefined && openRow.runId === null ? 'draft' : openRow?.status
 
+  // The matrix, re-arranged whenever the reader moves a factor. The
+  // arrangement is the host's — the browser only says what it wants.
+  const matrixGroupKey = matrixGroupBy.join(',')
+  const matrixFilterKey = JSON.stringify(matrixFilter)
+  useEffect(() => {
+    if (openRunId === null || page !== 'matrix') return
+    let cancelled = false
+    actions.setMatrixLoading(true)
+    void fetchMatrix(sessionId, {
+      runId: openRunId,
+      ...(matrixColumn === null ? {} : { column: matrixColumn }),
+      ...(matrixGroupBy.length === 0 ? {} : { groupBy: [...matrixGroupBy] }),
+      ...(Object.keys(matrixFilter).length === 0 ? {} : { filter: { ...matrixFilter } }),
+    }).then((result) => {
+      if (cancelled) return
+      actions.setMatrixLoading(false)
+      if (result.ok) actions.setMatrix(result.value)
+      else actions.setMatrixError(result.error.message)
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the two key strings stand in for the arrays they serialize
+  }, [sessionId, openRunId, page, refreshRev, matrixColumn, matrixGroupKey, matrixFilterKey, actions, fetchMatrix])
+
+  // The cell list.
+  useEffect(() => {
+    if (openRunId === null || page !== 'cells') return
+    let cancelled = false
+    actions.setCellsLoading(true)
+    void fetchCells(sessionId, {
+      runId: openRunId,
+      ...(cellsBucket === null ? {} : { bucket: cellsBucket }),
+    }).then((result) => {
+      if (cancelled) return
+      actions.setCellsLoading(false)
+      if (result.ok) actions.setCells(result.value)
+      else actions.setCellsError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRunId, page, refreshRev, cellsBucket, actions, fetchCells])
+
+  // The open cell's drawer.
+  useEffect(() => {
+    if (openRunId === null || cellSelection === null) return
+    let cancelled = false
+    const missionId = cellSelection
+    actions.setCellLoading(true)
+    void fetchCell(sessionId, { runId: openRunId, missionId }).then((result) => {
+      if (cancelled) return
+      actions.setCellLoading(false)
+      if (result.ok) actions.setCell(result.value)
+      else actions.setCellError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRunId, cellSelection, refreshRev, actions, fetchCell])
+
+  // ── the drawer's three human gestures ──────────────────────────────────
+  const onRetry = (reason: string, category: string): void => {
+    if (openRunId === null || cellSelection === null) return
+    const missionId = cellSelection
+    void retryCell(sessionId, { runId: openRunId, missionId, reason, category }).then((result) => {
+      if (result.ok) {
+        actions.setNotice(t('notice.retried', { id: missionId, attempt: result.value.attempt }))
+        actions.refresh()
+      } else {
+        actions.setNotice(result.error.message)
+      }
+    })
+  }
+
+  const onRelease = (): void => {
+    if (openRunId === null || cellSelection === null) return
+    const missionId = cellSelection
+    void releaseCheck(sessionId, { runId: openRunId, missionId }).then((result) => {
+      actions.setNotice(result.ok
+        ? t(result.value.releasable ? 'notice.releasable' : 'notice.notReleasable', { id: missionId })
+        : result.error.message)
+    })
+  }
+
   return (
     <div className={css.view} data-conversation-composer-overlay="">
       <div className={css.bar}>
@@ -349,6 +447,7 @@ export function LabView(props: LabViewProps) {
       {newNotice && openRow === undefined && (
         <div className={css.notice}>{t('placeholder.new')}</div>
       )}
+      {notice !== null && openRow !== undefined && <div className={css.notice}>{notice}</div>}
       {openRow === undefined
         ? (
           <div className={css.body}>
@@ -460,10 +559,59 @@ export function LabView(props: LabViewProps) {
                   t={t}
                 />
               )}
-              {page !== 'overview' && page !== 'plan' && page !== 'conditions' && (
+              {page === 'matrix' && (
+                openRunId === null
+                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  : (
+                    <MatrixPage
+                      matrix={matrix}
+                      loading={matrixLoading}
+                      error={matrixError}
+                      onColumn={(factor) => { actions.setMatrixColumn(factor) }}
+                      onToggleGroup={(factor) => { actions.toggleMatrixGroup(factor) }}
+                      onFilter={(factor, value) => { actions.setMatrixFilter(factor, value) }}
+                      onOpenCell={(missionId) => { actions.setPage('cells'); actions.openCell(missionId) }}
+                      t={t}
+                    />
+                  )
+              )}
+              {page === 'cells' && (
+                openRunId === null
+                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  : (
+                    <CellsPage
+                      cells={cells}
+                      loading={cellsLoading}
+                      error={cellsError}
+                      bucket={cellsBucket}
+                      onBucket={(bucket) => { actions.setCellsBucket(bucket) }}
+                      selection={cellSelection}
+                      cell={cell}
+                      cellLoading={cellLoading}
+                      cellError={cellError}
+                      onOpenCell={(missionId) => { actions.openCell(missionId) }}
+                      onRetry={onRetry}
+                      onRelease={onRelease}
+                      onExport={() => { actions.setExportOpen(true) }}
+                      onOpenSession={(childId) => { openSession(childId as SessionId) }}
+                      t={t}
+                    />
+                  )
+              )}
+              {(page === 'report' || page === 'judging') && (
                 <div className={css.empty}>{t(PAGE_PLACEHOLDER[page])}</div>
               )}
             </div>
+            <ExportDialog
+              runId={openRunId ?? ''}
+              open={exportOpen && openRunId !== null}
+              onClose={() => { actions.setExportOpen(false) }}
+              onDone={(text) => { actions.setNotice(text) }}
+              planExport={planExport}
+              exportRun={exportRun}
+              sessionId={sessionId}
+              t={t}
+            />
           </>
         )}
     </div>

@@ -20,6 +20,13 @@ function remoteStub() {
     conditionDiff: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     approve: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     runOutput: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    matrix: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    cells: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    cell: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    retry: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    releaseCheck: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    exportPlan: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    exportRun: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
   }
 }
 
@@ -144,6 +151,45 @@ describe('eval client apply', () => {
 
     await face.approvePlan('s1' as SessionId, { planPath: '/repo/plans/p.json' })
     expect(remote.approve).toHaveBeenCalledWith('s1', { planPath: '/repo/plans/p.json' })
+
+    await face.fetchMatrix('s1' as SessionId, { runId: 'run-1' })
+    expect(remote.matrix).toHaveBeenCalledWith('s1', { runId: 'run-1' })
+
+    await face.fetchCells('s1' as SessionId, { runId: 'run-1', bucket: 'active' })
+    expect(remote.cells).toHaveBeenCalledWith('s1', { runId: 'run-1', bucket: 'active' })
+
+    await face.fetchCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
+    expect(remote.cell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1' })
+
+    await face.retryCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1', reason: 'the unit died', category: 'infrastructure' })
+    expect(remote.retry).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1', reason: 'the unit died', category: 'infrastructure' })
+
+    await face.releaseCheck('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
+    expect(remote.releaseCheck).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1' })
+
+    await face.planExport('s1' as SessionId, { runId: 'run-1', outDir: '/out' })
+    expect(remote.exportPlan).toHaveBeenCalledWith('s1', { runId: 'run-1', outDir: '/out' })
+
+    await face.exportRun('s1' as SessionId, { runId: 'run-1', outDir: '/out', confirmed: [] })
+    expect(remote.exportRun).toHaveBeenCalledWith('s1', { runId: 'run-1', outDir: '/out', confirmed: [] })
+  })
+
+  // Every lab verb is checked for its FULL positional list above, not just for
+  // its payload: the gateway's client proxy enforces exact arity, so a call
+  // that leaves a parameter off throws before it reaches the wire. T35b's
+  // eight all take exactly (sessionId, request) and have no optional tail —
+  // `runOutput` is the only verb that does, and the test below pins its 0.
+  it('every session-scoped verb takes exactly the session and one request object', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.view')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
+
+    await face.fetchMatrix('s1' as SessionId, { runId: 'run-1' })
+    await face.fetchCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
+    for (const spy of [remote.matrix, remote.cell]) {
+      expect(spy.mock.calls.every(call => call.length === 2)).toBe(true)
+    }
   })
 
   it('the job-log verb is session-LESS — it is the CI face\'s own runOutput', async () => {

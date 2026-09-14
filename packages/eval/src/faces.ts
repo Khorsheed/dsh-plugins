@@ -440,7 +440,18 @@ export interface MissionAttemptFace {
   /** state → first entry timestamp (epoch ms), the duration fallback. */
   enteredAt?: Record<string, number>
   /** Progress points inside the attempt, in the order they were reached. */
-  checkpoints?: ReadonlyArray<{ name: string; at?: number }>
+  checkpoints?: ReadonlyArray<{ name: string; at?: number; ref?: string; artifacts?: readonly string[] }>
+  /**
+   * Files the attempt registered (`materialization.json`, the archive, the
+   * populate manifest). OPTIONAL like everything else here: a ledger that
+   * answers less reports an empty list, never a throw. Widened for the cell
+   * drawer (I5·T35b), which lists them.
+   */
+  artifacts?: ReadonlyArray<{ path: string; kind: string; addedAt?: number }>
+  /** Present only on attempts a retry opened — the auditable reason for THIS attempt. */
+  retry?: { reason?: string; category?: string; at?: number; by?: string }
+  /** Applied transitions, oldest first; the drawer shows the last few. */
+  history?: ReadonlyArray<{ from: string; to: string; at?: number; by?: string }>
 }
 
 /**
@@ -462,9 +473,72 @@ export interface MissionReadFace {
       /** The attempt every per-attempt field below is read from. */
       currentAttempt?: number
       attempts?: readonly MissionAttemptFace[]
-      annotations: ReadonlyArray<{ ns: string; attempt: number; payload: unknown; createdAt: number }>
+      annotations: ReadonlyArray<{ ns: string; attempt: number; payload: unknown; createdAt: number; by?: string }>
+      /** The cell's human title, when the template gave it one. */
+      title?: string
+      /** The matrix coordinates as labels; the row carries them too. */
+      labels?: Record<string, string>
     }
   }
+  /**
+   * The mission data root, so a reader can find the run-data tree
+   * (`<dataDir>/runs/<runId>/data/<missionId>/attempt-<n>/`) the orchestrator
+   * wrote `materialization.json` into. OPTIONAL: a face without it makes the
+   * matrix report the per-task hash as UNVERIFIABLE rather than guessing.
+   */
+  readonly dataDir?: string
+}
+
+/**
+ * The two mission WRITES the cell drawer forwards, and the release question it
+ * asks before offering to destroy anything. Separate from {@link MissionFace}
+ * because the run loop and the drawer need different slices: the loop writes
+ * the ledger, the drawer only re-opens an attempt and asks whether a unit may
+ * go.
+ *
+ * Both are HUMAN gestures from the tab — never the model's. eval forwards them
+ * and adds no policy of its own: `retry` still demands an auditable reason,
+ * and `isReleasable` still answers about the state machine's own
+ * `releasableStates`.
+ */
+export interface MissionActionFace {
+  retry(missionId: string, options: { runId?: string; reason: string; category: string; by?: string }): Promise<{ attempt: number }>
+  isReleasable(missionId: string, runId?: string): boolean
+}
+
+/**
+ * mission's own Remote service, host-side — the ONE place the bundle export's
+ * leak gate lives.
+ *
+ * eval forwards `exportPlan` / `exportRun` to it rather than re-deriving the
+ * guarded-layer set from mission's `planExport`, and that is the whole point:
+ * the gate (every `modelFacing: false` layer confirmed against a FRESH plan,
+ * fail-closed) plus the datasets probe that decides WHICH layers are guarded
+ * are mission's, and a second implementation of a leak gate is a second place
+ * for it to be wrong. eval only relays the caller's confirmations; it can
+ * narrow nothing and widen nothing.
+ *
+ * Structural and optional: a composition that mounts mission without a Typert
+ * gateway has no Remote service, and the export verbs then refuse naming it.
+ */
+export interface MissionExportRemoteFace {
+  exportPlan(agent: unknown, request: {
+    runId: string
+    outDir: string
+    layers?: string[]
+    snapshotDir?: string
+    snapshot?: { repo: string; commit: string; dataset?: string }
+    guarded?: string[]
+  }): Promise<{ bundleDir: string; guardedLayers: string[]; expectedNs: string[] | null; missions: number; attempts: number }>
+  exportRun(agent: unknown, request: {
+    runId: string
+    outDir: string
+    layers?: string[]
+    snapshotDir?: string
+    snapshot?: { repo: string; commit: string; dataset?: string }
+    guarded?: string[]
+    confirmed: string[]
+  }): Promise<{ bundleDir: string; files: number }>
 }
 
 /**

@@ -10,9 +10,12 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  EvalApproveRequest, EvalApproveResult, EvalConditionDiffRequest, EvalConditionDiffView,
-  EvalConditionsRequest, EvalConditionsView, EvalExperimentDetail, EvalExperimentRequest,
-  EvalExperimentsRequest, EvalExperimentsResult, EvalPlanRequest, EvalPlanReview, EvalRunOutputView,
+  EvalApproveRequest, EvalApproveResult, EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
+  EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
+  EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView, EvalExperimentDetail,
+  EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
+  EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
+  EvalPlanRequest, EvalPlanReview, EvalRunOutputView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
 
@@ -21,10 +24,13 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
 
 /**
  * Business face injected into the conversation.view lab entry: the list, one
- * experiment's overview, the plan review, the condition registry and its
- * diff — and exactly ONE write, `approvePlan`, which is the human act of
- * ui-spec step 5. The remaining human actions (retry, release check, export,
- * the final score) arrive with the sub-pages that own them — T35b, T37, T38.
+ * experiment's overview, the plan review, the condition registry and its diff,
+ * the matrix, the cell list and one cell in full.
+ *
+ * Four of them WRITE, and every one is a human's click. `approvePlan` is
+ * ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
+ * two-step bundle export. The remaining sub-pages (report, judging desk)
+ * arrive with T38 and T37.
  */
 export interface LabViewInjected {
   /** Every experiment: the runs eval started, plus the unstarted plans (one RPC). */
@@ -46,6 +52,27 @@ export interface LabViewInjected {
    * ledger holds nothing at all for it.
    */
   fetchRunOutput: (jobId: string) => Promise<RemoteResult<EvalRunOutputView>>
+  /** The matrix page: rows are tasks, one factor on the columns. */
+  fetchMatrix: (sessionId: SessionId, request: EvalMatrixRequest) => Promise<RemoteResult<EvalMatrixView>>
+  /** The cells page: one run's cells, exact-match filtered. */
+  fetchCells: (sessionId: SessionId, request: EvalCellsRequest) => Promise<RemoteResult<EvalCellsResult>>
+  /** One cell in full — the drawer. */
+  fetchCell: (sessionId: SessionId, request: EvalCellRequest) => Promise<RemoteResult<EvalCellDetail>>
+  /** Re-run one cell: a fresh attempt against an auditable reason. */
+  retryCell: (sessionId: SessionId, request: EvalCellRetryRequest) => Promise<RemoteResult<EvalCellRetryResult>>
+  /** The release check: may this cell's resources be destroyed? */
+  releaseCheck: (sessionId: SessionId, request: EvalCellRequest) => Promise<RemoteResult<EvalCellReleaseResult>>
+  /** The export dialog's plan step: which layers are guarded. */
+  planExport: (sessionId: SessionId, request: EvalExportPlanRequest) => Promise<RemoteResult<EvalExportPlanView>>
+  /** The export dialog's confirm step; mission re-checks against a fresh plan. */
+  exportRun: (sessionId: SessionId, request: EvalExportRunRequest) => Promise<RemoteResult<EvalExportResultView>>
+  /**
+   * Open the delegation's child session in the host's own session controller.
+   * READ the player's transcript — the member composer and dock are
+   * local-agent's, and continuing the conversation there is a human's call,
+   * never an intervention in the run.
+   */
+  openSession: (sessionId: SessionId) => void
 }
 
 /** Full props of the lab view entry (runtime + store + injected + locale shares). */

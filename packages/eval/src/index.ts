@@ -84,12 +84,15 @@ export type {
   PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness, LockedCapabilities,
 } from './validate.ts'
 export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './validate.ts'
-export { conditionFactors, listConditions, runCells, runStatus } from './read.ts'
+export { conditionFactors, conditionLeaves, listConditions, runCells, runStatus } from './read.ts'
 export type {
   ConditionsReport, ConditionSummary, RunCellDetail, RunCellRefs, RunCellsQuery, RunCellsReport, RunCellStatus, RunStatusReport,
 } from './read.ts'
-export { deriveExperimentStatus, experimentDetail, listExperiments } from './experiments.ts'
+export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
+export { attemptDataDir, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
+export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
+export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 export { evalToolDefinitions, EVAL_TOOL_NAMES } from './tool.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
@@ -148,7 +151,8 @@ export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.t
 export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
 export type { RunSubset as RunSubsetRecord } from './run.ts'
 export type {
-  DatasetsBindingFace, DatasetsFace, MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
+  DatasetsBindingFace, DatasetsFace, MissionActionFace, MissionExportRemoteFace,
+  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,
   LabUnitInfo, LabVerifyResult,

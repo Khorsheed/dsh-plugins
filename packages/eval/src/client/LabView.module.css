@@ -403,3 +403,359 @@
   line-height: 16px;
   overflow-wrap: anywhere;
 }
+
+/* ── the matrix page (I5·T35b) ──────────────────────────────────────────── */
+
+.matrixPage,
+.cellsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+  min-width: 0;
+}
+
+/* The arrangement controls: the same borderless toolbar toggles the rest of
+   the tab uses, so "which factor is the column" reads as a selection. */
+.matrixBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font: var(--dsw-font-xxs-12);
+}
+
+.chip:hover,
+.chip[aria-pressed='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chip:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.matrixGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.matrixGroupLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+/* The table scrolls on its own axis: a run with many conditions must not make
+   the whole tab scroll sideways. */
+.matrixTable {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.matrixCorner,
+.matrixHead,
+.matrixRowHead,
+.matrixTd {
+  border: 1px solid var(--dsw-alias-border-l2);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.matrixCorner,
+.matrixHead {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.matrixRowHead {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.matrixCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 96px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+/* The two warnings ui-spec §五 asks a cell to carry, as its edge. */
+.matrixCell[data-mismatch] {
+  border-color: var(--dsw-alias-label-danger, #b3261e);
+}
+
+.matrixCell[data-stuck] {
+  background: var(--dsw-alias-bg-l2);
+}
+
+.matrixDots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.matrixDot {
+  border: 0;
+  background: transparent;
+  padding: 0 1px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.matrixDot[data-dot='filled'] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.matrixDot[data-dot='half'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.matrixDot[data-stuck] {
+  color: var(--dsw-alias-label-warning, #b8600a);
+}
+
+.matrixDot:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.matrixStage {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.summaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.summaryLabel {
+  min-width: 92px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.summaryStatus[data-status='ok'] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.summaryStatus[data-status='violated'] {
+  color: var(--dsw-alias-label-danger, #b3261e);
+}
+
+.summaryStatus[data-status='unverifiable'] {
+  color: var(--dsw-alias-label-warning, #b8600a);
+}
+
+/* ── the cells page and its drawer ──────────────────────────────────────── */
+
+.cellsSplit {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.cellsTable {
+  flex: 1;
+  min-width: 0;
+}
+
+.cellsHead,
+.cellsRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 2fr) 72px minmax(80px, 1fr) 64px 72px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+}
+
+.cellsHead {
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  padding: 4px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.cellsRow {
+  border: 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  padding: 0;
+  min-height: 24px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.cellsRow:hover,
+.rowSelected {
+  background: var(--dsw-alias-bg-l2);
+}
+
+.colCell,
+.colBucket,
+.colStage,
+.colAttempt,
+.colDuration {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.colCell {
+  color: var(--dsw-alias-label-primary);
+}
+
+.colAttempt,
+.colDuration {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.colBucket[data-bucket='done'] {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.colBucket[data-bucket='blocked'] {
+  color: var(--dsw-alias-label-warning, #b8600a);
+}
+
+/* The drawer is a pane beside the table rather than an overlay: the reader
+   compares the row they clicked with the rest of the run while it is open. */
+.drawer {
+  flex: 0 0 380px;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.drawerBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.drawerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.drawerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.select {
+  min-height: 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.annotationLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.probeRun {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+/* ── the export dialog ──────────────────────────────────────────────────── */
+
+.exportForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 420px;
+}
+
+.guardedBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.guardedTitle {
+  color: var(--dsw-alias-label-warning, #b8600a);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.guardedItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}

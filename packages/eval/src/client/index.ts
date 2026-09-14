@@ -15,6 +15,10 @@
  * The browser half imports NOTHING from mission or datasets (ui-spec R2 and
  * §八): both projections are computed host-side behind eval's own Remote, so
  * the tab reads one face and the client bundle stays free of sibling packages.
+ * That holds for the WRITES too (I5·T35b): re-running a cell, asking the
+ * release gate and exporting a bundle are forwarded through eval's Remote to
+ * mission's service and its own export gate — the tab never names mission,
+ * and it cannot relax a gate it does not implement.
  * @module @khorsheed/dsh-eval/client
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -31,8 +35,9 @@ import type {} from '@khorsheed/dsh-eval/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
-  EvalApproveRequest, EvalConditionDiffRequest, EvalConditionsRequest, EvalExperimentRequest,
-  EvalExperimentsRequest, EvalPlanRequest,
+  EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
+  EvalConditionsRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
+  EvalExportRunRequest, EvalMatrixRequest, EvalPlanRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -103,6 +108,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // call that leaves an optional parameter off throws
         // "expected 2 argument(s), got 1" before it reaches the wire.
         fetchRunOutput: (jobId: string) => remote.runOutput(jobId, 0),
+        fetchMatrix: (sid: SessionId, request: EvalMatrixRequest) => remote.matrix(sid, request),
+        fetchCells: (sid: SessionId, request: EvalCellsRequest) => remote.cells(sid, request),
+        fetchCell: (sid: SessionId, request: EvalCellRequest) => remote.cell(sid, request),
+        retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(sid, request),
+        releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
+        planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
+        exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
+        // The host's own session controller: the drawer OPENS the player's
+        // child session so a person can read the transcript; the member
+        // composer and dock there are local-agent's, not this tab's.
+        openSession: (childSessionId: SessionId) => { ctx.sessions.open(childSessionId) },
       }),
     }, LabView),
     () => chrome.show(ctx.sessions.list.getSnapshot().current),
