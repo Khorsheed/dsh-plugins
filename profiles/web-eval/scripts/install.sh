@@ -232,6 +232,28 @@ if [ -n "$SOURCE" ]; then
   # (GEN_TYPERT_ONLY) so a neighbor's WIP cannot block the install, then pack
   # it with its @khorsheed family so cross-family edges land as ^ranges — the
   # overrides written below pin those names to these tarballs.
+  #
+  # The scoping is NOT free, and dropping it was measured rather than assumed
+  # (T50, 2026-09-14). Scoped runs never read or write gen-typert's freshness
+  # stamp, so every typert package among the 27 `pnpm --filter … build` calls
+  # below regenerates the very same artifacts: the same 8 registered typert
+  # packages, ~44s per call, ~6 of the 6m20s this script took over a WARM
+  # checkout — nearly all of it. (T35b saw ~80 minutes against ~12 for full
+  # mode; that was a cold checkout, where tsc and tsdown dominate instead.
+  # Either way the repeated generation is what full mode would remove.)
+  #
+  # What full mode would also change is the bytes. The generator's shared
+  # type-declaration table depends on the ANALYZED SET, and full mode analyzes
+  # all 11 registered typert packages — including room, worktrees and canvas,
+  # which this profile does not install. Measured: full mode appends room's 14
+  # Room* declarations (+4154 bytes) to mission, file-preview and local-agent's
+  # typert.host.js and to local-files' remote client; the packed
+  # khorsheed-dsh-mission tarball carries 0 of those declarations today.
+  # Shipping a member with the types of a package the profile never loads is
+  # not a speed/size trade the installer gets to make silently, so the scoping
+  # stays. The saving is real and still available — it needs the STAMP to key
+  # on the selected set so a scoped run can hit it too, which is a change to
+  # gen-typert's cache contract, not to this script.
   NAMES=""
   for d in $UNPUBLISHED_DIRS; do
     NAMES="$NAMES $(node -p "require('$SOURCE/packages/$d/package.json').name")"
@@ -322,8 +344,20 @@ fi
 dsh plugin --profile web-eval install
 DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 # Distinct @khorsheed names, not raw matches: the composed dump repeats each
-# member (layer header + entry row) and tool-subagent appears only through its
-# per-provider entries — distinct names is the member invariant (23).
+# member (layer header + entry row), so the raw count is nearly double (48 vs
+# 24 as this was written).
+#
+# Three counts, and they are deliberately different numbers — a drop in any of
+# them is the symptom this line exists to surface:
+#   27  tarballs packed above, one per UNPUBLISHED_DIRS entry;
+#   26  @khorsheed dependencies in the profile's own package.json — every
+#       tarball except local-agent-dsh-headless, which local-agent-dsh pulls
+#       in transitively and the overrides pin, never a direct dependency;
+#   24  distinct names in the dump: the 22 @khorsheed bundles, plus
+#       local-agent-tool-subagent (no bundle row of its own — it appears only
+#       through its three per-provider entries) and local-agent-dsh-headless
+#       (no row at all — it is the headlessBundleDir path). The three *-tool
+#       members are dependencies but are not composed into the dump.
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 trap - 0
