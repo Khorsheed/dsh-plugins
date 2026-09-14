@@ -16,15 +16,22 @@ const READ = [
   'datasets_list', 'datasets_show', 'datasets_describe', 'datasets_read', 'datasets_snapshot', 'datasets_validate',
 ]
 
+/** One recorded slash registration (the fields the composer contract reads). */
+interface RecordedCommand {
+  name: string
+  description: string
+  input?: { hint: string }
+}
+
 /** Apply the core against a recording context with no model-facing registry. */
-function applyCore(): { provided: string[]; commands: string[]; plugins: number } {
+function applyCore(): { provided: string[]; commands: RecordedCommand[]; plugins: number } {
   const provided: string[] = []
-  const commands: string[] = []
+  const commands: RecordedCommand[] = []
   let plugins = 0
   const ctx = {
     provide: (name: string) => { provided.push(name) },
     plugin: () => { plugins += 1 },
-    commands: { register: (command: { name: string }) => { commands.push(command.name); return () => {} } },
+    commands: { register: (command: RecordedCommand) => { commands.push(command); return () => {} } },
   }
   apply(ctx as never, { repo: '', worktreeRoot: '' })
   return { provided, commands, plugins }
@@ -34,8 +41,19 @@ describe('the datasets core faces', () => {
   it('mounts the service, the slash command, and the Remote face without a tool registry', () => {
     const { provided, commands, plugins } = applyCore()
     expect(provided).toEqual(['datasets'])
-    expect(commands).toEqual(['datasets'])
+    expect(commands.map(command => command.name)).toEqual(['datasets'])
     expect(plugins).toBe(1)
+  })
+
+  it('declares its free-form input, so a composer forwards the rest of the line', () => {
+    // WITHOUT this descriptor a capable composer has no reason to believe the
+    // command takes arguments: picking `/datasets` from the completion strip
+    // submits a bare invocation and leaves `bind <path>` in the MESSAGE body,
+    // which is how the command answered with its usage line during T36's live
+    // pass. The hint's content is copy; its PRESENCE is the contract.
+    const [command] = applyCore().commands
+    expect(command?.input?.hint).toBeTypeOf('string')
+    expect(command?.input?.hint).toContain('bind <repoPath>')
   })
 
   it('injects only the command registry and takes no tool-group config', () => {

@@ -9,20 +9,27 @@
  * deduplicated sparse-checkout worktrees. No path produces a second copy.
  */
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   readBinding, validateBinding, writeBinding, type BindingSession, type DatasetBinding,
 } from './binding.ts'
 import {
-  assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir, DatasetsError,
+  assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir,
+  DATASET_DESCRIPTOR, DatasetsError,
   descriptorWarnings, fieldNameWarnings, itemDir, ITEM_METADATA,
   listDatasetIds, listDatasetLayers, listItems, loadDescriptor, loadItem, registeredFiles, summarizeDataset,
   validateDescriptor, type DatasetDescriptor, type DatasetRegistry, type DatasetSummary, type DescriptorWarning,
   type ItemRecord, type JsonObject,
 } from './dataset.ts'
+import {
+  itemBrief as computeItemBrief, overviewRow, type DatasetOverview, type ItemBrief,
+} from './brief.ts'
 import { listFiles, repoToplevel, resolveCommit, showFile } from './git.ts'
 import { judgeabilityIssues } from './rubric.ts'
+import {
+  planDatasetSkeleton, planItemSkeleton, type SkeletonResult,
+} from './scaffold.ts'
 import { ensureWorktree, type ManagedWorktree } from './worktree.ts'
 
 /**
@@ -243,6 +250,47 @@ export interface PutItemResult {
   written: string[]
 }
 
+/** `datasets/itemBrief` request: which item the tab is showing. */
+export interface ItemBriefRequest {
+  dataset: string
+  item: string
+  /** Pinned commit (default HEAD). */
+  commit?: string
+}
+
+/** `datasets/validate` request: one dataset, or every dataset when absent. */
+export interface ValidateRequest {
+  dataset?: string
+}
+
+/** `datasets/scaffoldDataset` input — the «新建题集» gesture. */
+export interface ScaffoldDatasetInput {
+  /** The new dataset's id, which is also its directory name under `datasets/`. */
+  id: string
+  /** Display name for the descriptor, when the author gave one. */
+  name?: string
+}
+
+/** `datasets/scaffoldItem` input — the «题目骨架» gesture. */
+export interface ScaffoldItemInput {
+  dataset: string
+  item: string
+}
+
+/** `datasets/importItem` input — the «导入题目» gesture. */
+export interface ImportItemInput {
+  dataset: string
+  /** The item id to create (the directory name under `items/`). */
+  item: string
+  /** An existing item directory on this machine, copied in verbatim. */
+  sourceDir: string
+}
+
+/** At most this many files may be imported in one gesture. */
+export const IMPORT_FILE_LIMIT = 500
+/** At most this many bytes per imported file. */
+export const IMPORT_BYTE_LIMIT = 4 * 1024 * 1024
+
 /** `datasets_worktree_path` options. */
 export interface WorktreeOptions {
   commit?: string
@@ -265,6 +313,40 @@ export interface DatasetsService {
   snapshot(scope: DatasetScope, datasetId: string, commit?: string): Promise<DatasetSnapshot>
   worktreePath(scope: DatasetScope, datasetId: string, options?: WorktreeOptions): Promise<ManagedWorktree>
   putItem(scope: DatasetScope, input: PutItemInput): Promise<PutItemResult>
+  /**
+   * The 题集 tab's list page in one call: the repository, the commit every row
+   * was read at, and one row per dataset (slot ← layer mapping, canary,
+   * validate outcome). Always reads HEAD — the list is about the working
+   * repository's current state, and a pinned commit would disagree with the
+   * `validate` cell, which has no pin of its own.
+   */
+  overview(scope: DatasetScope): Promise<DatasetOverview>
+  /**
+   * One item's «选手将看到» and «可判性». The two judging reads carry an
+   * EXPLICIT single-layer scope, never the operator bypass — the page needs
+   * the answer key's shape, not its bytes.
+   */
+  itemBrief(scope: DatasetScope, datasetId: string, itemId: string, commit?: string): Promise<ItemBrief>
+  /**
+   * Write a new dataset's skeleton into the working tree (descriptor, one
+   * stage prompt, one stage schema, the item container). A HUMAN gesture: it
+   * requires the operator scope, because a brand-new id cannot be inside any
+   * session's whitelist and an agent's authoring path is `putItem`.
+   */
+  scaffoldDataset(scope: DatasetScope, input: ScaffoldDatasetInput): Promise<SkeletonResult>
+  /**
+   * Write one item's placeholder files into the working tree, homed by the
+   * dataset's own layers and `register`. Existing files are never overwritten.
+   * Operator-only, for the same reason as {@link DatasetsService.scaffoldDataset}.
+   */
+  scaffoldItem(scope: DatasetScope, input: ScaffoldItemInput): Promise<SkeletonResult>
+  /**
+   * Copy an existing item directory into the dataset verbatim. The dataset's
+   * own layers and `register` decide what each copied file becomes — this
+   * never re-homes anything, so what the author had is what the author gets.
+   * Operator-only.
+   */
+  importItem(scope: DatasetScope, input: ImportItemInput): Promise<SkeletonResult>
   /** Fail loud unless `repo` is inside a git work tree; resolves to the canonical toplevel. */
   assertRepository(repo: string): Promise<string>
   /**
@@ -298,6 +380,68 @@ async function toplevelOf(repo: string): Promise<string> {
   } catch (error) {
     throw new DatasetsError(`${repo} is not a git repository: ${String(error)}`, 'NOT_A_REPO')
   }
+}
+
+/**
+ * Read and validate a dataset's descriptor from the WORKING TREE (not from a
+ * git object): every write verb targets the working tree, so the shape it
+ * writes against must be the shape on disk.
+ * @param repo - the resolved repository toplevel.
+ * @param datasetId - the dataset id.
+ * @returns the validated descriptor.
+ */
+async function readWorkingDescriptor(repo: string, datasetId: string): Promise<DatasetDescriptor> {
+  const descriptorPath = join(repo, datasetDir(datasetId), DATASET_DESCRIPTOR)
+  if (!existsSync(descriptorPath)) {
+    throw new DatasetsError(`dataset ${JSON.stringify(datasetId)} not found in the working tree of ${repo}`, 'DATASET_NOT_FOUND')
+  }
+  try {
+    return validateDescriptor(JSON.parse(await readFile(descriptorPath, 'utf8')), descriptorPath)
+  } catch (error) {
+    if (error instanceof DatasetsError) throw error
+    throw new DatasetsError(`${descriptorPath}: invalid JSON — ${String(error)}`, 'SHAPE_INVALID')
+  }
+}
+
+/**
+ * Every file under an imported item directory, as source-relative paths.
+ * Symlinks are skipped rather than followed (an import must not reach outside
+ * the directory the human pointed at) and `.git` is skipped whole; the file
+ * count is capped, because this walks a directory chosen in a UI.
+ * @param source - the absolute source directory.
+ * @returns the relative paths, sorted, and one note per skipped entry class.
+ */
+async function collectImportFiles(source: string): Promise<{ paths: string[]; notes: string[] }> {
+  const paths: string[] = []
+  const notes: string[] = []
+  let links = 0
+  const walk = async (relative: string): Promise<void> => {
+    for (const entry of await readdir(join(source, relative), { withFileTypes: true })) {
+      const rel = relative === '' ? entry.name : `${relative}/${entry.name}`
+      if (entry.isSymbolicLink()) {
+        links += 1
+        continue
+      }
+      if (entry.isDirectory()) {
+        if (entry.name === '.git') continue
+        await walk(rel)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (paths.length >= IMPORT_FILE_LIMIT) {
+        throw new DatasetsError(
+          `${source} holds more than ${IMPORT_FILE_LIMIT} files — import a single item directory, not a tree`,
+          'SHAPE_INVALID',
+        )
+      }
+      paths.push(rel)
+    }
+  }
+  await walk('')
+  if (links > 0) notes.push(`${links} symlink(s) skipped: an import copies regular files only`)
+  if (paths.length === 0) notes.push(`${source} holds no regular file to import`)
+  paths.sort()
+  return { paths, notes }
 }
 
 function assertDatasetAllowed(scope: DatasetScope, datasetId: string): void {
@@ -368,7 +512,47 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     return { repo, sha }
   }
 
-  return {
+  /**
+   * A working-tree write, containment-checked. Shared by `putItem` and the
+   * three skeleton gestures so that one rule decides what «inside the
+   * repository» means.
+   * @param repo - the resolved repository toplevel.
+   * @param rel - the repo-relative path to write.
+   * @param content - the bytes.
+   * @param keepExisting - true to leave an existing file alone (a skeleton
+   *   never overwrites the author's own work; `putItem` upserts).
+   * @returns whether the file was written.
+   */
+  const writeInRepo = async (repo: string, rel: string, content: string | Buffer, keepExisting = false): Promise<boolean> => {
+    const target = resolve(repo, rel)
+    if (target !== repo && !target.startsWith(`${repo}${sep}`)) {
+      throw new DatasetsError(`refusing to write outside the repository: ${rel}`, 'INVALID_NAME')
+    }
+    if (keepExisting && existsSync(target)) return false
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, content)
+    return true
+  }
+
+  /**
+   * The skeleton gestures are the HUMAN's (the tab's buttons): an agent's
+   * authoring path is `datasets_put_item`, which the binding's whitelist
+   * governs. A brand-new dataset id cannot be inside any whitelist, so rather
+   * than inventing an exception the write simply requires the operator view.
+   * @param scope - the calling scope.
+   * @param gesture - what the caller was trying to do, for the message.
+   */
+  const assertOperator = (scope: DatasetScope, gesture: string): void => {
+    if (scope.operator !== true) {
+      throw new DatasetsError(
+        `${gesture} is a human gesture from the datasets tab, not an agent verb — `
+        + 'an agent drafts items through datasets_put_item, inside the session binding',
+        'LAYER_NOT_ALLOWED',
+      )
+    }
+  }
+
+  const service: DatasetsService = {
     async list(scope, datasetId, commit) {
       const { repo, sha } = await resolveCommitAt(scope, commit)
       if (datasetId !== undefined) {
@@ -516,27 +700,11 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       assertDatasetAllowed(scope, input.dataset)
       assertValidName('item id', input.item)
       const repo = await toplevelOf(scope.repo)
-      const dir = join(repo, datasetDir(input.dataset))
-      const descriptorPath = join(dir, 'dataset.json')
-      if (!existsSync(descriptorPath)) {
-        throw new DatasetsError(`dataset ${JSON.stringify(input.dataset)} not found in the working tree of ${repo}`, 'DATASET_NOT_FOUND')
-      }
-      let descriptor
-      try {
-        descriptor = validateDescriptor(JSON.parse(await readFile(descriptorPath, 'utf8')), descriptorPath)
-      } catch (error) {
-        if (error instanceof DatasetsError) throw error
-        throw new DatasetsError(`${descriptorPath}: invalid JSON — ${String(error)}`, 'SHAPE_INVALID')
-      }
+      const descriptor = await readWorkingDescriptor(repo, input.dataset)
       const declared = descriptor.layers.map(layer => layer.name)
       const written: string[] = []
       const writeOne = async (rel: string, content: string): Promise<void> => {
-        const target = resolve(repo, rel)
-        if (target !== repo && !target.startsWith(`${repo}${sep}`)) {
-          throw new DatasetsError(`refusing to write outside the repository: ${rel}`, 'INVALID_NAME')
-        }
-        await mkdir(dirname(target), { recursive: true })
-        await writeFile(target, content, 'utf8')
+        await writeInRepo(repo, rel, content)
         written.push(rel)
       }
       if (input.metadata !== undefined) {
@@ -639,6 +807,108 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       return { datasets }
     },
 
+    async overview(scope) {
+      const { repo, sha } = await resolveCommitAt(scope, undefined)
+      const ids = (await listDatasetIds(repo, sha))
+        .filter(id => scope.operator === true || scope.datasets === undefined || scope.datasets.includes(id))
+      const datasets = []
+      for (const id of ids) {
+        const summary = await summarizeDataset(repo, sha, id)
+        datasets.push(await overviewRow(repo, sha, summary, async (datasetId) => {
+          const result = await service.validate(scope, datasetId)
+          const one = result.datasets.find(entry => entry.id === datasetId)
+          return { errors: one?.errors ?? [], warnings: one?.warnings ?? [] }
+        }))
+      }
+      return { repo, commit: sha, datasets }
+    },
+
+    async itemBrief(scope, datasetId, itemId, commit) {
+      assertDatasetAllowed(scope, datasetId)
+      assertValidName('item id', itemId)
+      const { repo, sha } = await resolveCommitAt(scope, commit)
+      // The rubric read names its ONE layer explicitly instead of riding the
+      // operator bypass: the brief needs the answer key's shape, and the
+      // narrowest scope that reaches it is the honest one to ask with.
+      return await computeItemBrief(repo, sha, datasetId, itemId, async (layer, path) => {
+        const result = await service.read(
+          { repo: scope.repo, layers: [layer] },
+          { dataset: datasetId, item: itemId, layer, path, commit: sha },
+        )
+        return result.content
+      })
+    },
+
+    async scaffoldDataset(scope, input) {
+      assertOperator(scope, 'creating a dataset')
+      assertValidName('dataset id', input.id)
+      const repo = await toplevelOf(scope.repo)
+      const base = datasetDir(input.id)
+      if (existsSync(join(repo, base, DATASET_DESCRIPTOR))) {
+        throw new DatasetsError(
+          `dataset ${JSON.stringify(input.id)} already exists in ${repo} (${base}/${DATASET_DESCRIPTOR})`,
+          'SHAPE_INVALID',
+        )
+      }
+      const written: string[] = []
+      const skipped: string[] = []
+      for (const file of planDatasetSkeleton(input.id, input.name)) {
+        const rel = `${base}/${file.path}`
+        if (await writeInRepo(repo, rel, file.content, true)) written.push(rel)
+        else skipped.push(rel)
+      }
+      return { written, skipped, notes: [] }
+    },
+
+    async scaffoldItem(scope, input) {
+      assertOperator(scope, 'drafting an item skeleton')
+      assertDatasetAllowed(scope, input.dataset)
+      assertValidName('item id', input.item)
+      const repo = await toplevelOf(scope.repo)
+      const descriptor = await readWorkingDescriptor(repo, input.dataset)
+      const plan = planItemSkeleton(descriptor, input.item)
+      const written: string[] = []
+      const skipped: string[] = []
+      for (const file of plan.files) {
+        const rel = `${itemDir(input.dataset, input.item)}/${file.itemPath}`
+        if (await writeInRepo(repo, rel, file.content, true)) written.push(rel)
+        else skipped.push(rel)
+      }
+      return { written, skipped, notes: plan.notes }
+    },
+
+    async importItem(scope, input) {
+      assertOperator(scope, 'importing an item')
+      assertDatasetAllowed(scope, input.dataset)
+      assertValidName('item id', input.item)
+      const repo = await toplevelOf(scope.repo)
+      await readWorkingDescriptor(repo, input.dataset) // the target must be a real dataset
+      const source = resolve(input.sourceDir.trim())
+      let sourceStat
+      try {
+        sourceStat = await stat(source)
+      } catch (error) {
+        throw new DatasetsError(`cannot read ${source}: ${String(error)}`, 'FILE_NOT_FOUND')
+      }
+      if (!sourceStat.isDirectory()) {
+        throw new DatasetsError(`${source} is not a directory — point at an item directory to copy in`, 'INVALID_NAME')
+      }
+      const files = await collectImportFiles(source)
+      const written: string[] = []
+      const notes: string[] = [...files.notes]
+      for (const rel of files.paths) {
+        const bytes = await readFile(join(source, rel))
+        if (bytes.byteLength > IMPORT_BYTE_LIMIT) {
+          notes.push(`${rel} skipped: ${bytes.byteLength} bytes is over the ${IMPORT_BYTE_LIMIT}-byte per-file import limit`)
+          continue
+        }
+        const target = `${itemDir(input.dataset, input.item)}/${rel}`
+        await writeInRepo(repo, target, bytes)
+        written.push(target)
+      }
+      return { written, skipped: [], notes }
+    },
+
     async assertRepository(repo) {
       return await toplevelOf(repo)
     },
@@ -657,4 +927,5 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       return readBinding(options.bindingsRoot, session.id)
     },
   }
+  return service
 }

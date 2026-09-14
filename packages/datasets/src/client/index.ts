@@ -26,12 +26,17 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import datasetsRemote from '@khorsheed/dsh-datasets/remote'
-import type { DatasetBinding, ReadPassthroughRequest, ReadQuery } from '../types.ts'
+import type {
+  DatasetBinding, ImportItemInput, ReadPassthroughRequest, ReadQuery,
+  ScaffoldDatasetInput, ScaffoldItemInput,
+} from '../types.ts'
 import { DatasetsView } from './DatasetsView.tsx'
 import { en, NS, zh } from './locales.ts'
 import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createDatasetsViewStore } from './store.ts'
-import type { DatasetsRemote, DatasetsViewInjected, HostDescriptionSource } from './contract.ts'
+import type {
+  DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, ItemRunsView,
+} from './contract.ts'
 
 export { DatasetsView }
 
@@ -81,6 +86,37 @@ function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionS
 }
 
 /**
+ * The two eval verbs the 题集 tab reads, structurally — never imported.
+ * A plugin may not import a sibling package (the independence check), and the
+ * tab must work on an instance that carries no orchestrator at all, so the
+ * namespace is duck-typed and probed at CALL time.
+ */
+interface EvalProjectionRemote {
+  runsForItem?: (sessionId: SessionId, request: { datasetId: string; itemId: string }) => Promise<
+    { ok: true; value: { runs: ItemRunsView['runs']; notes: string[] } } | { ok: false }
+  >
+  runs?: (sessionId: SessionId, request: Record<string, never>) => Promise<
+    { ok: true; value: { rows: Array<{ id: string; name: string; status: string; snapshot: { datasetId: string | null } }> } }
+    | { ok: false }
+  >
+}
+
+/**
+ * The eval Remote namespace, or undefined when this instance has none.
+ *
+ * Read through `ctx.get` on EVERY call rather than once at apply: datasets and
+ * eval each mount their own Remote through `$mount`, in whatever order the
+ * loader composes them, so a one-shot probe at mount would answer «no
+ * orchestrator» purely because eval had not settled yet — and the 作答记录
+ * area would stay hidden for the life of the page.
+ * @param ctx - client root context.
+ * @returns the namespace, or undefined.
+ */
+function evalRemoteOf(ctx: Context): EvalProjectionRemote | undefined {
+  return ctx.get('remote.dshEval') as EvalProjectionRemote | undefined
+}
+
+/**
  * Client plugin body: mount the Remote, register the dictionaries, and inject
  * the datasets view tab (registered exactly while the current session's preset
  * composition grants the dataset tool row).
@@ -106,7 +142,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const remote = ctx.get('remote.datasets') as DatasetsRemote
   const connection = ctx.get('connection') as ConnectionHandle
 
-  // The M3'④ self-hide criterion for the 数据集 tab: the official preset
+  // The M3'④ self-hide criterion for the 题集 tab: the official preset
   // composition data, fail-open on every unreadable path. Hidden means NO
   // registration (the tab strip's buttons enumerate registrations), so the
   // strip never carries an empty-body button.
@@ -127,6 +163,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         listDatasets: (sid: SessionId, dataset?: string) => remote.list(sid, dataset === undefined ? {} : { dataset }),
         readFile: (sid: SessionId, query: ReadQuery) => remote.read(sid, query),
         readPassthroughFile: (sid: SessionId, query: ReadPassthroughRequest) => remote.readPassthrough(sid, query),
+        overview: (sid: SessionId) => remote.overview(sid),
+        itemBrief: (sid: SessionId, dataset: string, item: string) => remote.itemBrief(sid, { dataset, item }),
+        validateDataset: (sid: SessionId, dataset: string) => remote.validate(sid, { dataset }),
+        scaffoldDataset: (sid: SessionId, input: ScaffoldDatasetInput) => remote.scaffoldDataset(sid, input),
+        scaffoldItem: (sid: SessionId, input: ScaffoldItemInput) => remote.scaffoldItem(sid, input),
+        importItem: (sid: SessionId, input: ImportItemInput) => remote.importItem(sid, input),
+        itemRuns: async (sid: SessionId, dataset: string, item: string): Promise<ItemRunsView | null> => {
+          const face = evalRemoteOf(ctx)?.runsForItem
+          if (face === undefined) return null
+          const answer = await face(sid, { datasetId: dataset, itemId: item })
+          // An eval that is present but cannot answer is NOT the same as an
+          // absent one: the area stays, carrying eval's own reason.
+          return answer.ok ? { runs: answer.value.runs, notes: answer.value.notes } : { runs: [], notes: [] }
+        },
+        datasetExperiments: async (sid: SessionId): Promise<DatasetExperimentRow[] | null> => {
+          const face = evalRemoteOf(ctx)?.runs
+          if (face === undefined) return null
+          const answer = await face(sid, {})
+          if (!answer.ok) return null
+          return answer.value.rows.map(row => ({
+            id: row.id, name: row.name, status: row.status, datasetId: row.snapshot.datasetId,
+          }))
+        },
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: hostDescriptionSourceOf(connection) },
         // rc hosts hang the native picker on the workspaces service; 0.1.2

@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-`@khorsheed/dsh-datasets` 的伴生工具行：模型可见的 8 个 `datasets_*` 工具与 `datasets:tools` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。服务（`ctx.datasets`）、CLI、`/datasets` slash 与数据集 tab 都留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
+`@khorsheed/dsh-datasets` 的伴生工具行：模型可见的 8 个 `datasets_*` 工具与 `datasets:tools` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。服务（`ctx.datasets`）、CLI、`/datasets` slash 与题集 tab 都留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
 
 ## 形态：不自挂载的伴生包
 
@@ -33,7 +33,7 @@
 ## 安装
 
 ```sh
-# core 仍按原样全局安装（服务 / CLI / slash / 数据集 tab 都在 core）
+# core 仍按原样全局安装（服务 / CLI / slash / 题集 tab 都在 core）
 dsh plugin --profile web add @khorsheed/dsh-datasets
 # 伴生包只需装到 profile 的 node_modules（可解析即可，不会自挂载）
 dsh plugin --profile web add @khorsheed/dsh-datasets-tool

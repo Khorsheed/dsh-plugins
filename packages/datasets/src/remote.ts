@@ -12,11 +12,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { validateBinding, type DatasetBinding } from './binding.ts'
+import type { DatasetOverview, ItemBrief } from './brief.ts'
+import type { SkeletonResult } from './scaffold.ts'
 import {
   resolveScope, type DatasetScope, type DatasetsService,
+  type ImportItemInput, type ItemBriefRequest,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
   type PreviewRepoRequest, type PreviewRepoResult,
-  type ReadPassthroughRequest, type ReadQuery, type ReadResult, type ShowRequest, type ShowResult,
+  type ReadPassthroughRequest, type ReadQuery, type ReadResult,
+  type ScaffoldDatasetInput, type ScaffoldItemInput,
+  type ShowRequest, type ShowResult, type ValidateRequest, type ValidateResult,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -167,6 +172,86 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   @Remote('show')
   async show(agent: Agent, request: ShowRequest): Promise<ShowResult> {
     return await this.datasets.show(this.scope(agent), request.dataset, request.item, request.commit)
+  }
+
+  /**
+   * The 题集 tab's list page: the repository, the commit, and one row per
+   * dataset — the slot ← layer mapping, whether a canary is declared, and the
+   * `validate` outcome. One call rather than three per dataset: the
+   * projection is the host's job (ui-spec §八), and a list page that fired an
+   * RPC storm would answer in a different order every time.
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @returns the list page's rows.
+   */
+  @Remote('overview')
+  async overview(agent: Agent): Promise<DatasetOverview> {
+    return await this.datasets.overview(this.scope(agent))
+  }
+
+  /**
+   * One item's «选手将看到» and «可判性» (ui-spec §四). The judging reads
+   * behind it name their one layer explicitly — the page shows the answer
+   * key's SHAPE (how many leaves, of which kind) and never its bytes.
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @param request - the dataset, the item, and an optional commit pin.
+   * @returns the item's brief.
+   */
+  @Remote('itemBrief')
+  async itemBrief(agent: Agent, request: ItemBriefRequest): Promise<ItemBrief> {
+    return await this.datasets.itemBrief(this.scope(agent), request.dataset, request.item, request.commit)
+  }
+
+  /**
+   * Validate one dataset, or every dataset of the bound repository — the
+   * list page's cell and the item page's button. Author-facing, so it sees
+   * everything (the same operator semantics the rest of this face carries).
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @param request - an optional dataset selector.
+   * @returns the per-dataset errors and warnings.
+   */
+  @Remote('validate')
+  async validate(agent: Agent, request: ValidateRequest): Promise<ValidateResult> {
+    return await this.datasets.validate(this.scope(agent), request.dataset)
+  }
+
+  /**
+   * «新建题集»: write a new dataset's skeleton into the WORKING TREE — the
+   * descriptor with its three layers declared, one stage prompt, one stage
+   * schema, the item container. The commit stays the human's; this plugin
+   * never makes one.
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @param input - the new dataset's id and optional display name.
+   * @returns what was written.
+   */
+  @Remote('scaffoldDataset')
+  async scaffoldDataset(agent: Agent, input: ScaffoldDatasetInput): Promise<SkeletonResult> {
+    return await this.datasets.scaffoldDataset(this.scope(agent), input)
+  }
+
+  /**
+   * «题目骨架»: write one item's placeholder files, homed by this dataset's
+   * own layers and `register`. Existing files are left alone — a skeleton
+   * never overwrites what an author already wrote.
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @param input - the dataset and the new item id.
+   * @returns what was written, what was left alone, and what could not be planned.
+   */
+  @Remote('scaffoldItem')
+  async scaffoldItem(agent: Agent, input: ScaffoldItemInput): Promise<SkeletonResult> {
+    return await this.datasets.scaffoldItem(this.scope(agent), input)
+  }
+
+  /**
+   * «导入题目»: copy an existing item directory in verbatim. The dataset's
+   * layers and `register` decide what each file becomes — the import re-homes
+   * nothing, so `validate` reports honestly what landed outside every layer.
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @param input - the dataset, the new item id, and the source directory.
+   * @returns what was written and one note per skipped entry class.
+   */
+  @Remote('importItem')
+  async importItem(agent: Agent, input: ImportItemInput): Promise<SkeletonResult> {
+    return await this.datasets.importItem(this.scope(agent), input)
   }
 
   /**
