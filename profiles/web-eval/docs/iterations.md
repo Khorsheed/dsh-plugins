@@ -343,6 +343,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **T46 / T35a 验收（2026-09-13）**：两条都单提交、无 checkpoint、锁文件按需动；T35a 合并态 eval 510、eval-tool 3，整仓 gate 14 步绿。T35a 三处点名的裁决：一、`install.sh --source` 在 main 上已坏，与本任务无关——pack-dist 9/12 起要 family 边带版本，install.sh 还传光名字；立 T49，未修前临时实例按 T35a 的绕法（一次性副本把 `--family` 改成 `name=version`）。二、改 `scripts/gen-typert.mts`（eval 的聚合 tsconfig 拆成 references 后生成器要指向 host 配置）接受，与 mission / datasets 同形。三、worktree 里跑 gate 撞 pnpm 的依赖状态检查——不用改 pnpm-workspace.yaml，用 `pnpm --config.verify-deps-before-run=false gate` 即可，写进通用提醒。状态推导的五条边界都接受（job 层把就绪拒绝与中途抛错都记成 failed，「被拒」的口径就是 job failed；半路停下与空账本读作运行中；没有 job 记录时只按格子读；run 与 plan 按解析路径或 planSha 配对，改过的 plan 如实变回草稿）。本机 `~/.local/bin/dsh` 是死链（指向不存在的 ~/.dsh/source/current），是机器上的事，实施者用临时 shim 绕过。
 
+**T49 / T36 验收，T35b 待解冲突（2026-09-14）**：T49 合入 `5e4ec1a3`，T36 合入 `66dbdede`（合并态 eval 534、302 对双语同步、独立性 0）。T36 真机抓到的网关精确位参 bug 已随分支修掉（runOutput 显式传 cursor），T35b / T37 / T38 同一处都要注意；「新建实验」占位改指 T34 接受。T35b 内容验收通过——「按 harness 出一次矩阵」在本机账本上做不到（三个评测 run 都是单 harness），实施者用 pilot-a-round1 的 bundle 走同一个 pivotMatrix 取证、没有编账本，对；打开子会话用一次性账本副本做接线探针、真记录没动，接受。但它与 T36 同时改了 packages/eval 的 client / remote / service / store，15 个文件 48 处冲突，两条都是往同一批文件里加东西，协调者不代解——退回实施者把 main 并进分支解冲突再 gate。教训：同一个包的两个切片并行发，合并成本落在后合的那条；以后同包切片串行，或文案里先分好文件。T35b 顺带发现的三件：gen-typert 全量模式在全新 DSH_HOME 上死锁、install.sh 去掉 GEN_TYPERT_ONLY 后全量构建 80 分钟降到 12 分钟、T49 已修的 family 边——前两件立 T50。T36 顺带发现：`/datasets bind` 在 composer 里补全后参数丢失（归 T47 顺手修）；gate 的 GLOBAL_PATHS 不含 profiles 的 scripts（T49 实测改脚本只跑 11 步，进 T50）。
+
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
@@ -350,9 +352,10 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T46 ✅ | 代码 + profile | eval 预设摘掉 `mission-tool` 行（任务 tab 随之自隐）；eval-tool 加 `eval_cells`（按 run 读格子投影，收编原四个 mission 读工具的用途） | 无 | 合入 main `42ab0ae3`（2026-09-13，`39273ed4`）；`cells(runId, query)` 一格一行（坐标、桶、阶段、在态时长、attempt、refs、检查点、各 ns 注解数、childSessionId），投影算在服务端；eval-tool 四个读工具；用预设文件喂 mission 的 preset-visibility 证得任务 tab 在 eval 会话不注册；活实例原文并入 T35a 的真机步骤；「不给 run_id 就列评测 run」留给 T35a 的 runs 读面 |
 | T48 | 文档 | 按 [ui-spec.md](ui-spec.md) 改写 README「最终 UI」与「工具按域开放」；修十处口径不一致（清单见 §三 T48） | 无 | 双语 README + sidecar；题库两处修正 |
 | T35a ✅ | 代码 | eval client 半骨架 + 实验室 tab 列表与详情壳：tsconfig / tsdown / package 的 client 出口，`conversation.view` 注册（order 40，自隐按 eval-tool 行），Remote 会话态读面 `runs / run`，状态推导，六个子页路由（先只有概览） | T46 | 合入 main `7fff2efb`（2026-09-13，`78f76b86`）；临时实例 3199 上 eval 会话 tab 环「对话 · 轨迹 · 数据集 · 实验室」、无任务 tab，standard 会话两个都无；工具卡 33 个含 eval_cells 无 mission_*（T46 欠的原文补齐）；列表 11 行（3 run + 8 草稿）、run 与 plan 按解析路径或 planSha 配对；概览页字段齐；eval_cells 不给 run_id 即列评测 run（T46 的缺口收了）；状态推导五条边界写在注释与测试里；顺带改了 scripts/gen-typert.mts（eval 指向 tsconfig.host.json）与 docs/packages.md |
-| T49 | 代码（脚本） | `install.sh --source` 自 pack-dist 的 family-edge 规则（`3406a471`）起坏了：`--family` 传的是光名字，打到 local-agent-tool-subagent 报 `is a family edge but no version was given`；改成 `name=version`，用临时 DSH_HOME 全量装一遍验证 | 无 | 源码模式重装恢复；T33e / T36 / T35b / T47 的临时实例都靠它 |
-| T36 | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 第 3、4、5 步在界面上完成 |
-| T35b | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 第 6 步在界面上完成；missions tab 的三个动作有了新家 |
+| T49 ✅ | 代码（脚本） | `install.sh --source` 自 pack-dist 的 family-edge 规则（`3406a471`）起坏了：`--family` 传的是光名字，打到 local-agent-tool-subagent 报 `is a family edge but no version was given`；改成 `name=version`，用临时 DSH_HOME 全量装一遍验证 | 无 | 合入 main `5e4ec1a3`（2026-09-14，`cd3c9ad4`）；27 个 tarball、7 个带家族、零 warn，临时实例起到就绪协议走完；`--dump-config` 24 成员是 profile 根的口径（伴生三包在预设层），判据里的 27 是 tarball 数 |
+| T50 | 代码（脚本，小） | 三处脚本卫生：`scripts/gen-typert.mts` 全量模式在全新 DSH_HOME 上死锁（取锁用非递归 mkdirSync，scratch/ 不存在就空转 900 秒）；`install.sh` 第 287 行附近「成员不变量 23」的注释落后两轮；评估去掉 `GEN_TYPERT_ONLY` 让全量模式吃缓存（T35b 实测 27 包构建 80 分钟 → 12 分钟）；`scripts/gate.mts` 的 GLOBAL_PATHS 不含 `profiles/*/scripts/`，改脚本不触发整仓 | T49 | 三处各一条提交；全新 DSH_HOME 上 install.sh 全量一遍不再死锁 |
+| T36 ✅ | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 合入 main `66dbdede`（2026-09-14，`7cb31f66` + `14753348`）；Remote 加 plan / conditions / conditionDiff / approve 四个带会话的 verb，approve 先 validate 有 error 即拒；临时实例 3199 上计划审阅、批准后的概览（就绪拒绝原文原样）、dsh-exec 与 codex-exec 的 diff 只报 7 个不同项；真机抓到并修了 runOutput 少传 cursor 被网关精确位参拒的 bug；「新建实验」占位指向 T34 |
+| T35b 🔄 | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 分支 `feat/eval-client-cells`（`57776e71`）内容验收通过（矩阵两种列、抽屉、三个动作、导出对话框都有原文，eval 559 绿）；与 T36 在 packages/eval 的 15 个文件 48 处冲突，等实施者把 main（含 T36）并进分支解完冲突、gate 绿后再合 |
 | T38 | 代码 | 实验室 › 报告页：读 bundle 出四条不变量、配对、效率、一致性；finalize 与导出按钮 | T35b | 第 7 步在界面上完成 |
 | T37 | 代码 | 实验室 › 判官台：盲评队列、去指纹产物、llm-draft 与 human-final 并排；human-final 唯一写入口 | T38 | 第 8 步在界面上完成 |
 | T47 | 代码 | 题集 tab 改造：列表页（槽位与层的对应、canary、validate、用于的实验）、详情的槽位标签与筛选、「选手将看到」、可判性、作答记录投影、题目骨架 / 导入题集 / 导入题目 | 无（与 T35 并行） | 题集 tab 按 ui-spec §四 |
@@ -389,6 +392,7 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
 - Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
 - UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。
+- 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。
 ```
 
 ### I1 的文案（已全部完成）
@@ -1935,7 +1939,7 @@ eval / eval-tool 测试全绿，gate 绿；本机 eval 预设会话：工具卡�
 
 **验收（2026-09-13）**：`feat/eval-client-lab`（`78f76b86`）合入 main `7fff2efb`；判据全部有原文（临时实例 3199 的 tab 环、工具卡、列表 11 行、run 与草稿的概览页）。裁决见 §二「T46 / T35a 验收」。Agent Note：`.agents/notes/implemented/feature/2026-09-13-eval-client-lab.md`。
 
-### T49 · 脚本：install.sh 的 family 边带版本（可发，小）
+### T49 · 脚本：install.sh 的 family 边带版本（已完成，2026-09-14 验收）
 
 ```text
 # 任务 T49：install.sh --source 适配 pack-dist 的 family-edge 规则
@@ -1960,7 +1964,7 @@ scripts/pack-dist.ts 头注释与 parseFamilySpecs（--family 的两种写法）
 分支与 commit；install.sh 的关键输出（打包那几行）；--dump-config 成员数；临时 DSH_HOME 已清。
 ```
 
-### T36 · 实验室 › 计划审阅 + 条件页 + 「批准并启动」（可发，依赖 T35a；T49 未合入前临时实例按 T35a 的绕法装）
+### T36 · 实验室 › 计划审阅 + 条件页 + 「批准并启动」（已完成，2026-09-14 验收）
 
 ```text
 # 任务 T36：实验室详情的计划审阅页、条件页，和人的「批准并启动」
@@ -1990,7 +1994,9 @@ eval 测试全绿，gate 绿；临时实例上从列表点一个草稿 → 计�
 分支与 commit；Agent Note；gate；临时实例上的三段原文（计划审阅、批准后的概览、条件 diff）。
 ```
 
-### T35b · 实验室 › 矩阵 + 格子 + 格子详情（可发，依赖 T35a；可与 T36 并行）
+**验收（2026-09-14）**：`feat/eval-client-review`（`7cb31f66`、`14753348`）合入 main `66dbdede`。三段原文齐：计划审阅（i1-walk 的摘要与六条 warn、条件就绪态）、批准后的概览（就绪拒绝原文原样：本机没有注册 dsh 委派 provider）、条件 diff 七项。approve 的形状按文案（先 validate，有 error 即拒，不给模型工具）。Agent Note：`.agents/notes/implemented/feature/2026-09-14-eval-plan-review-and-approve.md`。
+
+### T35b · 实验室 › 矩阵 + 格子 + 格子详情（内容验收通过，待解冲突后合入）
 
 ```text
 # 任务 T35b：矩阵页、格子页与格子详情抽屉，mission 账本的投影与三个动作转发
@@ -2020,6 +2026,21 @@ eval 测试全绿，gate 绿；临时实例上对本机一个多格 run（pilot-
 分支与 commit；Agent Note；gate；矩阵两种列的原文；抽屉与导出对话框的原文。
 ```
 
+**补充（2026-09-14）**：
+
+```text
+# T35b 补充：把 main 并进分支、解冲突、重跑 gate，再回报
+
+内容验收已过（矩阵两种列、抽屉、三个动作、导出对话框、eval 559 绿），只差一步：T36 先合进了 main（66dbdede），与你的分支在 packages/eval 的 15 个文件 48 处冲突——LabView.tsx / store.ts / contract.ts / index.ts / locales.ts / remote.ts / service.ts / types.ts / tsconfig.client.json / LabView.module.css / LabView.client.spec.tsx / README 双语与 sidecar。两边都是往同一批文件里加东西（各自的子页、verb、store 分片、locale 键、测试），没有语义冲突，但协调者不代解代码冲突。
+
+1. 在你的 worktree 里 git merge main，逐文件保留双方：子页路由并在一起，Remote verb 与 service 方法两组都留，store 分片与 locale 键合并，README 两节都留后重录 sidecar（node_modules/.bin/tsx scripts/verify-translation-pairing.mts --write packages/eval/README.en.md）。
+2. T36 修了 runOutput 少传 cursor 被网关精确位参拒的 bug，你新加的 verb 调用侧同样按精确位参传，别靠默认值。
+3. 重跑 pnpm --config.verify-deps-before-run=false gate（整仓），eval 测试数应当是 534 + 你的 49 上下。
+4. 回报分支与 merge 后的 commit；不 squash 我也能合。
+
+通用提醒照旧；临时实例照 T49 之后的 install.sh 装。
+```
+
 ### T47 · 题集 tab 改造：列表、槽位、选手将看到、骨架与导入（可发，与 T35 并行）
 
 ```text
@@ -2039,6 +2060,7 @@ packages/datasets/src/client/{index.ts, DatasetsView.tsx, BindForm.tsx, preview.
 - 列表页：题集、快照（绑定的 repo @ commit）、题目数、槽位 ← 层对应、canary 是否设置、validate 结果、用于的实验（从 remote.dshEval 的 runs 按题集过滤，缺席隐藏）；动作：新建题集（服务面 scaffoldDataset：写 dataset.json 骨架、prompts/、schemas/、items/），导入题集（就是现在的绑定表单，换个标题）。
 - 详情页：树（每文件标槽位 + 谁看得到，三种颜色）、槽位筛选 chip、预览沿用；「选手将看到」= 该题 visible 层文件 + 题集级 prompts 的清单与字节数；可判性 = rubric 各 kind 的条数、探针数、阶段 schema 数（读 grading / verify 层用显式单层 scope）；作答记录 = runsForItem 的投影，缺席隐藏；动作：题目骨架（putItem 写占位的 task.md / standards.yml / answers/rubric.yml / checks/ 目录，位置按该题集的层与 register 规则落）、导入题目（putItem 从一个已有目录拷入）、validate。
 - 标签改「题集 / Datasets」；自隐规则不变。commit 仍是人的，界面不 commit。
+- 顺手修 T36 撞见的 `/datasets bind` 在 composer 里补全条选中后参数丢失（slash 侧），补一条用例。
 
 ## 测试
 槽位启发式与角色计算的单测（含 register 形态、无 register 的层目录形态、透传）；Remote spec：scaffoldDataset 与骨架 putItem 的落位；client spec：列表渲染、槽位筛选、「选手将看到」、作答记录缺席隐藏。
@@ -2048,6 +2070,87 @@ datasets 测试全绿，gate 绿；临时实例上绑定 harness-comparison：�
 
 ## 回报
 分支与 commit；Agent Note；gate；临时实例上的列表与 P0 详情原文；骨架落位后的 validate 原文。
+```
+
+### T50 · 脚本卫生三处：gen-typert 取锁、install.sh 注释与缓存、gate 的路径范围（可发，小）
+
+```text
+# 任务 T50：三处脚本卫生
+
+## 背景
+T35b / T49 在临时实例上装 web-eval 时撞见：(1) scripts/gen-typert.mts 全量模式在全新 DSH_HOME 上死锁——acquireTypertLock 用非递归 mkdirSync(<DSH_HOME>/scratch/typert-gen.lock)，scratch/ 不存在时每次 ENOENT，空转 900 秒再「破」一个不存在的锁；今天没人撞见只因部署路径都走 GEN_TYPERT_ONLY 在取锁前返回。(2) install.sh 第 287 行附近的注释还写「成员不变量 23」，已经落后两轮（现在 27 个 tarball、profile 根 24 成员）。(3) T35b 实测把 install.sh 的 GEN_TYPERT_ONLY 去掉让全量模式吃缓存，27 包构建从约 80 分钟降到约 12 分钟。(4) scripts/gate.mts 的 GLOBAL_PATHS 只含仓库根的 scripts/，改 profiles/*/scripts/ 不触发整仓，T49 只跑了 11 步。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-script-hygiene，分支 fix/script-hygiene-typert-install-gate；改 scripts/gen-typert.mts、profiles/web-eval/scripts/install.sh（注释 + GEN_TYPERT_ONLY）、scripts/gate.mts；每处一条提交。
+
+## 已定决定
+- gen-typert：取锁前 mkdirSync(dirname(lockDir), { recursive: true })；补一条用例（全新目录取锁不空转）。
+- install.sh：注释改成当前口径（tarball 数与 profile 根成员数分开写）；GEN_TYPERT_ONLY 去掉前先确认全量模式在 (1) 修好后不死锁、缓存命中时产物与 scoped 模式逐字节相同（对比一次 tarball 内容），确认了才去，否则保留并写明原因。
+- gate.mts：GLOBAL_PATHS 加 profiles/*/scripts/（或等价的 glob）；这是根 scripts 的改动，本身会触发整仓 gate。
+
+## 完成判据
+全新 DSH_HOME 上 install.sh --source <主检出> --fresh 全量一遍不死锁；gate --all 绿；改 profiles/web-eval/scripts 下任一文件后 gate 的 scope 变成整仓。
+
+## 回报
+三条提交；全新 DSH_HOME 那一遍的耗时与 tarball 对比结论；gate scope 原文。
+```
+
+### T38 · 实验室 › 报告页（可发；等 T35b 合入 main 后再开分支）
+
+```text
+# 任务 T38：实验详情的报告页——不变量、配对、效率、一致性，finalize 与导出
+
+## 背景
+ui-spec §五：报告页 = 四条不变量、配对差值表、效率表、判官一致性；四条全 ok 前「报告」显示为「比较节未开」；动作 finalize（过释放闸）与导出（走 T35b 的导出对话框）。报告的计算已在 packages/eval/src/report.ts（dsh-eval report 读 bundle 出 RunReport：invariants、comparisonAllowed、factors、comparisons、judge、efficiency、usageRows），本任务只做投影与界面，不改口径。
+
+## 先读
+packages/eval/src/report.ts 与 report-render.ts（RunReport 的字段、四条不变量的 id 与 title、比较节开关、自评标记）；service.ts 的 report 与 finalize；T35b 合入后的 remote.ts（exportPlan / exportRun）与 LabView 的子页路由；T24 / T30c / T31 的 Agent Note（权重、usage.jsonl、判官归属）；ui-spec §五 §七第 7 步。
+
+## 分支
+等 T35b 合入 main 后从 main 开 worktree ../dsh-plugins-wt-eval-client-report，分支 feat/eval-client-report；只改 packages/eval（README 双语 + sidecar）。
+
+## 已定决定
+- Remote 加 report(agent, { runId })：找该 run 最近一次导出的 bundle（导出目录按 plan 的 exports 约定），没有就返回「先导出」；有就调 service.report 出 RunReport 的投影，不落盘（落盘仍是 CLI 的 --out）。加 finalize(agent, { runId })：调 service.finalize，返回 released / refused / skipped 计数与原文。两个都不做模型工具。
+- 报告页：不变量四行（ok / violated / unverifiable 三态与 details 原样）；比较节只在 comparisonAllowed 时展开，否则一行「比较节未开：<哪条不变量没过>」；配对表（题 × 因子 × 差值 × n × 判官，自评格标出）；效率表（活跃秒、in / out / cacheRead、工具调用）；判官一致性（同判官 κ、跨判官）；顶部动作：finalize、导出（复用 T35b 的对话框）、「用 CLI 落盘」的命令提示。
+- 未导出时页面显示「还没有 bundle」+ 导出按钮，不空白。
+
+## 测试
+Remote spec：report 无 bundle 时的返回、finalize 转发；client spec：不变量三态渲染、比较节开关、自评标记、未导出态。
+
+## 完成判据
+eval 测试全绿，gate 绿；临时实例上对 t31-judge-panel（有 bundle）出完整报告页；对一个未导出的 run 显示未导出态并能从页面导出后刷新出报告；finalize 一次原文。第 7 步在界面上走通。
+
+## 回报
+分支与 commit；Agent Note；gate；两种状态的报告页原文。
+```
+
+### T37 · 实验室 › 判官台（可发；等 T38 合入 main 后再开分支）
+
+```text
+# 任务 T37：判官台——盲评队列、去指纹产物、llm-draft 与 human-final 并排，human-final 的唯一写入口
+
+## 背景
+ui-spec §五：判官台 = 盲评队列、去指纹产物、llm-draft 与 human-final 并排、一致性统计；human-final 只从这里写（R1 的「终评是人的」）。今天 human-final 走 dsh-mission annotate --ns human-final，判官的去指纹副本由 judge.ts 生成，rubric 的 human 类判据由协议定义（objective 归探针、llm-draft 归判官、human 归判官台）。
+
+## 先读
+packages/eval/src/judge.ts（去指纹、llm-draft 样本记录、by 字段）；packages/eval/src/report.ts 的 human-final 处理（by 为 tool: 前缀标红、覆盖位置）；packages/mission 的 annotate 语义（append-only，ns human-final）；docs/dataset-authoring-protocol.md 的 rubric kind 三分；T31 的 Agent Note（面板与自评）；T38 合入后的 LabView 路由；ui-spec §五 §七第 8 步。
+
+## 分支
+等 T38 合入 main 后从 main 开 worktree ../dsh-plugins-wt-eval-client-judge，分支 feat/eval-client-judge；只改 packages/eval（README 双语 + sidecar）。
+
+## 已定决定
+- Remote 加 judgeQueue(agent, { runId })：每格的去指纹产物清单与正文（复用 judge.ts 的去指纹函数，不另写一份）、rubric 里 kind: human 的判据、已有 llm-draft 样本（每判官每样本的分值）、已有 human-final；humanFinal(agent, { runId, missionId, verdicts })：转发 mission annotate(ns human-final)，by 记为本会话（不是 tool: 前缀），只追加不改写。不做模型工具；模型永远拿不到 human-final 的写入口。
+- 页面：左队列（格子按未评 / 已评分组，盲：不显示 harness 与模型名，只显示格子编号）、中去指纹产物（stage 文件原文）、右判据表（llm-draft 各判官各样本 · human-final 输入），提交后队列状态更新；顶部一致性统计（同判官 κ、跨判官、human-final 与 llm-draft 的一致）。
+- 盲评的边界：页面上不出现条件 id、harness、模型；报告页才揭盲。
+
+## 测试
+去指纹在页面路径上的复用（同一函数）；humanFinal 的 by 不带 tool: 前缀且 append-only；client spec：队列分组、盲态不含 harness / 模型字样、提交后刷新。
+
+## 完成判据
+eval 测试全绿，gate 绿；临时实例上对 t31-judge-panel 打一条 human-final，账本里出现 ns human-final 的注解且 by 是会话，报告页重算后 human-final 覆盖位置正确；页面上搜不到 harness 与模型名。第 8 步在界面上走通。
+
+## 回报
+分支与 commit；Agent Note；gate；判官台盲态原文、提交后的账本注解原文、报告页的覆盖原文。
 ```
 
 ### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（可发）
