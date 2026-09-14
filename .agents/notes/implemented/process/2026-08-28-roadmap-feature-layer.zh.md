@@ -30,6 +30,8 @@ agent preset 不承载 domain。preset 组合的是 tools、prompt sections 与 
 
 工作方式的表述按性质分流到这两个平面加第三个：通用实践属于 preset 的 prompt section，某个仓库自身的纪律留在该项目的 `AGENTS.md`，跨项目的个人偏好留在 `$DSH_HOME/AGENTS.md`。三者叠加，互不替代。「不感知某项能力」不需要任何屏蔽机制——未挂载 `worktrees` 的 preset 就没有 worktree 的 prompt section，模型从不见到它。
 
+按同一判据，原先堆积在用户全局文件里的插件开发纪律属于仓库自身的纪律，因此于 2026-09-14 迁入本仓库：打包、profile 安装与装完验证改由本仓 `AGENTS.md` 与 `docs/ops.md` / `docs/publishing.md` 承载，`$DSH_HOME/AGENTS.md` 只留一条指向和那条与工作区无关的红线。全局文件在每个工作区都会加载，放在那里的插件专属文字，是不碰插件的会话在替它付费。
+
 命名三个 domain：`dev`（日常在用的软件工作台）、`eval`（harness 对比）、`novel`。`dsh-dev` 首发。两个已具备条件的 domain 相交于 local-agent 家族与 `mission`，因此发布阻塞点是这个交集，而不是其中任一 domain。
 
 路线图同时记录八条约束未来提案的既定决策，其中包括：dsh 是唯一工作台外壳、AgentOS 冻结为设计资产；本地与远程是 local-agent 家族的一个执行目标维度，而非两套工作台；多人协作的上限是每人一实例加共享数据面，因为 harness 的信任模型把任何连上的调用方视同本机用户；判定不进插件，`lab` / `mission` / `datasets` 只记录事实、不给分。
