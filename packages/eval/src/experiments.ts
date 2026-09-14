@@ -30,7 +30,8 @@ import { PLAN_SCHEMA_ID } from './schema.ts'
 import { expandHome, validatePlan } from './validate.ts'
 import type {
   EvalExperimentDetail, EvalExperimentJob, EvalExperimentMeta, EvalExperimentRow, EvalExperimentsResult,
-  EvalExperimentSnapshot, EvalExperimentStatus, EvalExperimentUnit, EvalReadinessLine,
+  EvalExperimentSnapshot, EvalExperimentStatus, EvalExperimentUnit, EvalItemRunRow, EvalItemRunsResult,
+  EvalReadinessLine,
 } from './types.ts'
 
 /** The template state a finalized cell rests in (the generated template's last one). */
@@ -43,6 +44,23 @@ const RELEASED_STATE = 'released'
  * judge's and the human's, which is what `judging` means.
  */
 const JUDGED_OR_BEYOND: ReadonlySet<string> = new Set(['judged', 'halted', 'archived', 'releasable', RELEASED_STATE])
+
+/**
+ * Whether a cell's template state is `judged` or past it — the orchestrator
+ * has nothing left to do with it. The matrix page's rep dot and the status
+ * rule read the SAME predicate, so a cell can never be a solid dot in one
+ * view and "still running" in the other.
+ * @param state - the template state, as the ledger holds it.
+ * @returns true when nothing further is the orchestrator's to do.
+ */
+export function isJudgedOrBeyond(state: string): boolean {
+  return JUDGED_OR_BEYOND.has(state)
+}
+
+/** The template state a cell rests in once finalize released it. */
+export function isReleased(state: string): boolean {
+  return state === RELEASED_STATE
+}
 
 /** Job statuses that mean the job stopped; anything else is still live. */
 const SETTLED_JOB: ReadonlySet<string> = new Set(['completed', 'killed', 'failed'])
@@ -573,4 +591,71 @@ export function experimentDetail(
     unreleased: status.unreleased,
     job: jobView(job),
   }
+}
+
+/**
+ * Every evaluation run that answered ONE dataset item — the 作答记录 the
+ * item page shows (ui-spec §四: "作答记录不进题库；每次作答的产物在实验的格子里，
+ * 题目详情按题目投影一份只读的作答记录").
+ *
+ * The projection is by LABEL: a cell belongs to an item when its `task` label
+ * is that item's id and its run's `meta.datasetId` is that dataset. Both are
+ * the orchestrator's own coordinates, so this cannot drift from the matrix.
+ *
+ * Read-only and degrading: no mission service lists nothing and says so. The
+ * consumer (the 题集 tab, T47) hides the section when the answer is empty,
+ * which is why an empty list still carries its reason.
+ * @param mission - the mission ledger face.
+ * @param datasetId - the dataset set the item belongs to.
+ * @param itemId - the item (the `task` label).
+ * @returns one row per run, newest first.
+ */
+export function runsForItem(
+  mission: MissionRunListFace | undefined,
+  datasetId: string,
+  itemId: string,
+): EvalItemRunsResult {
+  const notes: string[] = []
+  if (mission === undefined) {
+    notes.push('no mission service: run records live in the mission ledger, so no answer record can be shown — mount the dsh-mission plugin')
+    return { datasetId, itemId, runs: [], notes }
+  }
+  const runs: EvalItemRunRow[] = []
+  for (const projection of evalRuns(mission, notes)) {
+    if (stringOrNull(projection.meta['datasetId']) !== datasetId) continue
+    const rows = projection.rows.filter(row => row.labels['task'] === itemId)
+    if (rows.length === 0) continue
+    const planPath = stringOrNull(projection.meta['planPath'])
+    runs.push({
+      runId: projection.runId,
+      name: planPath === null ? projection.runId : basename(planPath).replace(/\.json$/, ''),
+      startedAt: numberOrNull(projection.meta['startedAt']) ?? projection.createdAt,
+      commit: stringOrNull(projection.meta['commit']),
+      cells: rows.map((row) => {
+        // ns → how many verdicts that namespace carries. A cell the ledger
+        // cannot resolve reports none rather than failing the listing.
+        const verdicts: Record<string, number> = {}
+        try {
+          for (const annotation of mission.get(row.id, projection.runId).mission.annotations) {
+            if (annotation.ns === 'orchestrator') continue
+            const payload = annotation.payload
+            verdicts[annotation.ns] = (verdicts[annotation.ns] ?? 0) + (Array.isArray(payload) ? payload.length : 1)
+          }
+        } catch {
+          /* an unreadable cell contributes no verdict counts */
+        }
+        const rep = Number(row.labels['rep'])
+        return {
+          missionId: row.id,
+          condition: row.labels['condition'] ?? null,
+          rep: Number.isFinite(rep) ? rep : null,
+          state: row.state,
+          bucket: row.bucket,
+          verdicts,
+        }
+      }),
+    })
+  }
+  runs.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
+  return { datasetId, itemId, runs, notes }
 }

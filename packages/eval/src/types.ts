@@ -255,3 +255,355 @@ export interface EvalExperimentDetail {
   unreleased: string[]
   job: EvalExperimentJob | null
 }
+
+/* ──────────────────── the matrix page and the cell drawer ─────────────────── */
+
+/** One rep's dot in a matrix cell (ui-spec §五: 实心已判 / 半心进行中 / 空心未起). */
+export type EvalRepDot = 'filled' | 'half' | 'empty'
+
+/** One rep inside a matrix cell — one mission of the ledger. */
+export interface EvalMatrixRep {
+  /** The rep number from the cell's labels; null when the ledger does not say. */
+  rep: number | null
+  missionId: string
+  condition: string | null
+  dot: EvalRepDot
+  /** The template state (`stage-1`, `judged`, `released`, …). */
+  state: string
+  /** mission's five-bucket projection. */
+  bucket: string
+  /** Nothing has happened here for longer than the run's threshold. */
+  stuck: boolean
+  inStateMs: number | null
+}
+
+/** One (task × column) cell of the matrix — the reps that landed in it. */
+export interface EvalMatrixCell {
+  task: string
+  /** The column key this cell sits under (the canonical factor value). */
+  column: string
+  /** The condition ids that produced these reps — more than one when a factor rides along. */
+  conditions: string[]
+  reps: EvalMatrixRep[]
+  /** The state the reps agree on, or `mixed (a / b)`. */
+  stage: string
+  /** At least one rep is stuck. */
+  stuck: boolean
+  /** This cell's material differs from the rest of its row — the red edge. */
+  hashMismatch: boolean
+  /** No materialization hash could be read for any rep here. */
+  hashUnknown: boolean
+}
+
+/** One matrix row: a task, and one slot per column (null where nothing ran). */
+export interface EvalMatrixRow {
+  task: string
+  cells: Array<EvalMatrixCell | null>
+}
+
+/** One factor and every value the run's conditions give it — the filter's menu. */
+export interface EvalMatrixFactorValues {
+  factor: string
+  values: Array<{ key: string; label: string; conditions: string[] }>
+}
+
+/** One column header: the factor value, and which conditions carry it. */
+export interface EvalMatrixColumn {
+  /** Canonical JSON of the factor value; the empty string when there is no factor. */
+  key: string
+  label: string
+  conditions: string[]
+}
+
+/** One band of rows — the remaining factors the reader chose to group by. */
+export interface EvalMatrixGroup {
+  key: string
+  /** Empty when nothing is grouped (the single unnamed band). */
+  label: string
+  rows: EvalMatrixRow[]
+}
+
+/** One invariant line of the matrix footer. */
+export interface EvalMatrixInvariant {
+  status: 'ok' | 'violated' | 'unverifiable'
+  detail: string
+}
+
+/** The run-level footer under the matrix (ui-spec §五). */
+export interface EvalMatrixSummary {
+  /** 题面一致: the per-task materialization hash. */
+  materialization: EvalMatrixInvariant
+  /** 环境一致: the run's `refs.fingerprint`. */
+  fingerprint: EvalMatrixInvariant
+  /** Cells holding a resource they have not released. */
+  unreleased: number
+  /** The report's judge-consistency line; null means 待报告. */
+  judgeConsistency: string | null
+  /** Cells sitting in one state past the threshold. */
+  stuck: number
+  /** Cells the arrangement kept. */
+  cells: number
+}
+
+/** The matrix page's whole payload. */
+export interface EvalMatrixView {
+  runId: string
+  /** Every factor the run's conditions disagree on, sorted. */
+  factors: string[]
+  /** Each factor's distinct values — what the filter may pin, and to what. */
+  factorValues: EvalMatrixFactorValues[]
+  /** The factor on the columns; null when the conditions agree on everything. */
+  column: string | null
+  /** The factors banding the rows. */
+  groupBy: string[]
+  /** The factors pinned to one canonical value. */
+  filter: Record<string, string>
+  columns: EvalMatrixColumn[]
+  groups: EvalMatrixGroup[]
+  summary: EvalMatrixSummary
+  /** The stuck threshold this view was computed with. */
+  stuckMs: number
+}
+
+/** What the matrix verb is asked for. */
+export interface EvalMatrixRequest {
+  runId: string
+  /** The factor to put on the columns; omit for the first one. */
+  column?: string
+  /** Remaining factors to band the rows by. */
+  groupBy?: string[]
+  /** Remaining factors pinned to one canonical value each. */
+  filter?: Record<string, string>
+  /** Override the stuck threshold (ms). */
+  stuckMs?: number
+}
+
+/** What the cell list is asked for — the same filters `eval_cells` takes. */
+export interface EvalCellsRequest {
+  runId: string
+  bucket?: string
+  task?: string
+  condition?: string
+}
+
+/** One annotation namespace, as the drawer summarizes it. */
+export interface EvalCellAnnotationNs {
+  ns: string
+  count: number
+  /** Epoch ms of the newest entry. */
+  latestAt: number | null
+  /** A one-line digest of the newest entry (its `kind`, or its shape). */
+  latest: string | null
+  /** The writer of the newest entry (`tool:…`, `cli`, the orchestrator tag). */
+  by: string | null
+}
+
+/**
+ * One probe run VERBATIM — the verify output the drawer shows whole.
+ *
+ * These come from the orchestrator's `kind: 'probes'` annotation, which is
+ * what `lab.verify` produced on the container path and what the host executor
+ * produced on the host path. There is no `lab` annotation namespace on this
+ * line, and inventing one here would have made the drawer claim a source that
+ * does not exist.
+ */
+export interface EvalCellProbeRun {
+  /** Epoch ms the annotation was written. */
+  at: number
+  /** `host` or `unit` — where the probes ran. */
+  where: string | null
+  /** The whole payload, pretty-printed: nothing summarized away. */
+  raw: string
+  /** The per-probe lines, for the compact list above the raw block. */
+  probes: Array<{
+    probe: string | null
+    origin: string | null
+    exitCode: number | null
+    outcome: string | null
+    ok: boolean
+    verdicts: number | null
+    durationMs: number | null
+    error: string | null
+    reason: string | null
+  }>
+}
+
+/** One attempt of a cell, as the drawer lists them. */
+export interface EvalCellAttempt {
+  attempt: number
+  state: string | null
+  /** Set only on attempts a retry opened. */
+  retry: { reason: string | null; category: string | null; at: number | null; by: string | null } | null
+  refs: { resource: string | null; fingerprint: string | null; sessions: string[] }
+  /** Checkpoint names in the order they were reached, with their times. */
+  checkpoints: Array<{ name: string; at: number | null }>
+  artifacts: Array<{ path: string; kind: string; addedAt: number | null }>
+  /** Applied transitions, oldest first. */
+  history: Array<{ from: string; to: string; at: number | null }>
+}
+
+/** The cell drawer's payload: everything about ONE cell. */
+export interface EvalCellDetail {
+  runId: string
+  missionId: string
+  title: string | null
+  task: string | null
+  condition: string | null
+  rep: number | null
+  labels: Record<string, string>
+  state: string
+  bucket: string
+  attempt: number
+  enteredCurrentAt: number | null
+  inStateMs: number | null
+  refs: { resource: string | null; fingerprint: string | null }
+  /** The materialization digest of the current attempt; null when unread. */
+  materializationSha: string | null
+  /**
+   * The delegation's child session, when the attempt started one. The drawer's
+   * 打开子会话 opens it with the host's own `sessions.open` — reading the
+   * player's transcript, never steering it mid-run.
+   */
+  childSessionId: string | null
+  attempts: EvalCellAttempt[]
+  annotations: EvalCellAnnotationNs[]
+  /** The verify runs, verbatim. */
+  probes: EvalCellProbeRun[]
+  /** Whether this cell's resources may be destroyed right now. */
+  releasable: boolean
+}
+
+/** Which cell a per-cell verb is about. */
+export interface EvalCellRequest {
+  runId: string
+  missionId: string
+}
+
+/** `retry` — a fresh attempt, and the auditable reason it demands. */
+export interface EvalCellRetryRequest extends EvalCellRequest {
+  reason: string
+  /** mission's own vocabulary: infrastructure / operator / outcome. */
+  category: string
+}
+
+/** What a retry answers with. */
+export interface EvalCellRetryResult {
+  attempt: number
+}
+
+/** The release check's answer. */
+export interface EvalCellReleaseResult {
+  missionId: string
+  releasable: boolean
+}
+
+/** The export dialog's first step — forwarded to mission verbatim. */
+export interface EvalExportPlanRequest {
+  runId: string
+  outDir: string
+  layers?: string[]
+  snapshotDir?: string
+  snapshot?: { repo: string; commit: string; dataset?: string }
+  guarded?: string[]
+}
+
+/** The export dialog's confirm step. */
+export interface EvalExportRunRequest extends EvalExportPlanRequest {
+  /** The guarded layers the human ticked — re-checked against a FRESH plan by mission. */
+  confirmed: string[]
+}
+
+/** The plan view the dialog renders. */
+export interface EvalExportPlanView {
+  bundleDir: string
+  /** Layers the human must confirm one by one before anything is written. */
+  guardedLayers: string[]
+  expectedNs: string[] | null
+  missions: number
+  attempts: number
+}
+
+/** The export outcome. */
+export interface EvalExportResultView {
+  bundleDir: string
+  files: number
+}
+
+/** One run's answer for one dataset item — the 作答记录 of the item page (T47). */
+export interface EvalItemRunRow {
+  runId: string
+  /** The plan's file stem, falling back to the run id. */
+  name: string
+  startedAt: number | null
+  commit: string | null
+  /** The cells of THIS item, one per condition × rep. */
+  cells: Array<{
+    missionId: string
+    condition: string | null
+    rep: number | null
+    state: string
+    bucket: string
+    /** ns → how many verdicts that namespace carries for this cell. */
+    verdicts: Record<string, number>
+  }>
+}
+
+/** What the item-answers verb is asked for. */
+export interface EvalItemRunsRequest {
+  datasetId: string
+  itemId: string
+}
+
+/** The 作答记录 answer: every eval run that ran this item. */
+export interface EvalItemRunsResult {
+  datasetId: string
+  itemId: string
+  runs: EvalItemRunRow[]
+  /** Honest degrades, one sentence each. */
+  notes: string[]
+}
+
+/**
+ * One row of the CELLS page's table. A restatement of the slice `runCells`
+ * projects — not a second projection: the verb feeds this from that one
+ * function, so the tab, the `eval_cells` tool and the matrix can never
+ * disagree about a cell. It is restated here rather than re-exported because
+ * every Remote boundary type must be reachable from this `./types` subpath,
+ * and pulling the host-side read module in would drag `node:fs` into the
+ * browser half's type program for no gain.
+ */
+export interface EvalCellRow {
+  missionId: string
+  task: string | null
+  condition: string | null
+  rep: number | null
+  /** The template state (the stage). */
+  state: string
+  /** mission's five-bucket projection. */
+  bucket: string
+  attempt: number
+  /** How long the cell has been in its current state; null when the ledger does not say. */
+  inStateMs: number | null
+  refs: { resource: string | null; fingerprint: string | null }
+  /** Checkpoint names of the current attempt. */
+  checkpoints: string[]
+  /** ns → how many annotations the cell carries, across attempts. */
+  annotations: Record<string, number>
+  childSessionId: string | null
+}
+
+/** The CELLS page's answer: the run's shape, then the rows the filter kept. */
+export interface EvalCellsResult {
+  runId: string
+  /** The RUN's state (`active` / `closed`), not a cell's. */
+  state: string
+  /** The filter that was applied, echoed. */
+  filter: { bucket?: string; task?: string; condition?: string }
+  /** Cells in the run, before the filter. */
+  total: number
+  /** Cells the filter kept. */
+  matched: number
+  /** bucket → how many cells of the WHOLE run sit in it. */
+  buckets: Record<string, number>
+  rows: EvalCellRow[]
+}

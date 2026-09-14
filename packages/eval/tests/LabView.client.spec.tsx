@@ -243,15 +243,15 @@ describe('LabView detail', () => {
     expect(h.fetchExperiment).not.toHaveBeenCalled()
   })
 
-  it('the other six sub-pages carry the placeholder that names their task', async () => {
+  // Four, not six: the matrix and the cells pages gained bodies in I5·T35b
+  // and are covered by MatrixCells.client.spec.tsx.
+  it('the four unbuilt sub-pages carry the placeholder that names their task', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('harness-comparison'))
     for (const [tab, placeholder] of [
       ['page.plan', 'placeholder.plan'],
       ['page.conditions', 'placeholder.conditions'],
-      ['page.matrix', 'placeholder.matrix'],
-      ['page.cells', 'placeholder.cells'],
       ['page.report', 'placeholder.report'],
       ['page.judging', 'placeholder.judging'],
     ] as const) {

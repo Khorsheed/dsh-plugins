@@ -14,13 +14,16 @@
     ]
   },
   "files": [
-    "src/css-modules.d.ts",
-    "src/types.ts",
-    "src/client/index.ts",
-    "src/client/contract.ts",
-    "src/client/store.ts",
-    "src/client/locales.ts",
+    "src/client/CellsPage.tsx",
+    "src/client/ExportDialog.tsx",
     "src/client/LabView.tsx",
-    "src/client/preset-visibility.ts"
+    "src/client/MatrixPage.tsx",
+    "src/client/contract.ts",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/preset-visibility.ts",
+    "src/client/store.ts",
+    "src/css-modules.d.ts",
+    "src/types.ts"
   ]
 }

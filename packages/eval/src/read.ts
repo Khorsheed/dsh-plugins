@@ -257,6 +257,21 @@ export function diffConditionDocuments(a: unknown, b: unknown): { differences: C
 }
 
 /**
+ * Flatten one condition declaration to its leaf paths — the same flattening
+ * {@link diffConditionDocuments} and {@link conditionFactors} compare with, so
+ * the matrix page's "which value does this condition have for this factor"
+ * can never disagree with the diff that named the factor in the first place.
+ * Arrays are leaves, for the reason stated on the diff.
+ * @param document - the declaration, verbatim.
+ * @returns dotted path → value; a path the document does not have is absent.
+ */
+export function conditionLeaves(document: unknown): Map<string, unknown> {
+  const sink = new Map<string, unknown>()
+  leaves(document, '', sink)
+  return sink
+}
+
+/**
  * The condition fields a SET of declarations does not agree on, as dotted
  * paths — the lab list's factor column. {@link diffConditionDocuments} answers
  * about two; a run with three conditions needs the question asked of the whole

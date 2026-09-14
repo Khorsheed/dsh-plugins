@@ -34,16 +34,47 @@ import {
   type RunStatusReport,
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
-import { experimentDetail, listExperiments } from './experiments.ts'
+import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
+import { materializationShaOf, runCellDetail } from './cell-detail.ts'
+import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
-  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace,
-  MissionRunListFace,
+  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionActionFace, MissionExportRemoteFace,
+  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
-import type { EvalExperimentDetail, EvalExperimentsResult } from './types.ts'
+import type {
+  EvalCellDetail, EvalCellsResult, EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest,
+  EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalItemRunsResult, EvalMatrixView,
+} from './types.ts'
+
+/**
+ * The export verbs' refusal. mission's Remote is where the leak gate lives, so
+ * a composition without it gets no export at all — not an export with the gate
+ * re-implemented on this side.
+ */
+const MISSION_EXPORT_ABSENT = new EvalReadRefused(
+  'no mission Remote face: the bundle export and its guarded-layer gate live there, so this composition cannot export '
+  + '— mount the dsh-mission plugin on a host with the Typert gateway, or export with the dsh-mission CLI',
+)
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
+
+/**
+ * The run's PLAYER condition declarations, as `run.meta.conditions` carries
+ * them since T8b. The matrix's factor set is derived from these and from
+ * nothing else — the judge is a condition but not a contestant, so its
+ * declaration never widens the factor set.
+ */
+function metaConditionDocuments(meta: Record<string, unknown>): Array<{ id: string; document: unknown }> {
+  const entries = meta['conditions']
+  if (!Array.isArray(entries)) return []
+  return entries.flatMap((entry) => {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
+    const record = entry as Record<string, unknown>
+    return typeof record['id'] === 'string' ? [{ id: record['id'], document: record['condition'] }] : []
+  })
+}
 
 /** Result of hashing one condition document. */
 export interface ConditionHash {
@@ -333,6 +364,232 @@ export class EvalService {
   }
 
   /**
+   * The MATRIX page: this run's cells arranged rows-are-tasks, one factor on
+   * the columns, the rest banded or pinned (ui-spec §五). The arrangement rule
+   * is the pure {@link pivotMatrix}; this verb only feeds it — the ledger's
+   * cells, the run's condition documents, and the per-attempt materialization
+   * digest read from the run-data tree.
+   *
+   * The digest read is why this verb is async: the hash the「题面一致」
+   * invariant compares lives in `materialization.json` beside each attempt,
+   * not in the ledger. A composition whose mission face reports no `dataDir`
+   * simply gets `unverifiable` — the matrix never invents a hash.
+   * @param runId - the run to arrange.
+   * @param options - which factor is the column, what is banded, what is pinned.
+   * @throws {@link EvalReadRefused} when the composition mounts no mission service.
+   */
+  async matrix(runId: string, options: {
+    column?: string
+    groupBy?: readonly string[]
+    filter?: Readonly<Record<string, string>>
+    stuckMs?: number
+    now?: number
+  } = {}): Promise<EvalMatrixView> {
+    const mission = this.requireMissionRead('arrange a run\'s matrix')
+    const report = runCells(mission, runId, options.now === undefined ? {} : { now: options.now })
+    const status = mission.runStatus(runId)
+    const conditions = metaConditionDocuments(status.run.meta)
+    const cells: MatrixInputCell[] = await Promise.all(report.cells.map(async cell => ({
+      missionId: cell.missionId,
+      task: cell.task,
+      condition: cell.condition,
+      rep: cell.rep,
+      state: cell.state,
+      bucket: cell.bucket,
+      inStateMs: cell.inStateMs,
+      materializationSha: await materializationShaOf(mission.dataDir, runId, cell.missionId, cell.attempt),
+      fingerprint: cell.refs.fingerprint,
+    })))
+    return pivotMatrix({
+      runId: status.run.id,
+      conditions,
+      cells,
+      unreleased: status.unreleased,
+      ...(options.column === undefined ? {} : { column: options.column }),
+      ...(options.groupBy === undefined ? {} : { groupBy: options.groupBy }),
+      ...(options.filter === undefined ? {} : { filter: options.filter }),
+      ...(options.stuckMs === undefined ? {} : { stuckMs: options.stuckMs }),
+    })
+  }
+
+  /**
+   * The CELLS page's table: the same {@link EvalService.cells} projection,
+   * narrowed to the columns the table shows. One implementation, two shapes —
+   * the model reads the whole `cells` answer, the tab reads this.
+   * @param runId - the run.
+   * @param query - the same exact-match filters `cells` takes.
+   * @throws {@link EvalReadRefused} when the composition mounts no mission service.
+   */
+  cellRows(runId: string, query: RunCellsQuery = {}): EvalCellsResult {
+    const report = this.cells(runId, query)
+    return {
+      runId: report.runId,
+      state: report.state,
+      filter: report.filter,
+      total: report.total,
+      matched: report.matched,
+      buckets: report.buckets,
+      rows: report.cells.map(cell => ({
+        missionId: cell.missionId,
+        task: cell.task,
+        condition: cell.condition,
+        rep: cell.rep,
+        state: cell.state,
+        bucket: cell.bucket,
+        attempt: cell.attempt,
+        inStateMs: cell.inStateMs,
+        refs: { resource: cell.refs.resource, fingerprint: cell.refs.fingerprint },
+        checkpoints: [...cell.checkpoints],
+        annotations: { ...cell.annotations },
+        childSessionId: cell.childSessionId,
+      })),
+    }
+  }
+
+  /**
+   * ONE cell in full — the drawer's payload (attempts, checkpoints, artifacts,
+   * annotation namespaces, the verify output verbatim, the child session, and
+   * the release answer).
+   * @param runId - the run.
+   * @param missionId - the cell.
+   * @param options - the clock the duration is taken against.
+   * @throws {@link EvalReadRefused} when mission is absent, or the cell is not in the run.
+   */
+  // `async` so the refusal is a REJECTION: the signature promises a promise,
+  // and a caller that only attached `.catch` would otherwise be hit by a
+  // synchronous throw.
+  async cell(runId: string, missionId: string, options: { now?: number } = {}): Promise<EvalCellDetail> {
+    const mission = this.requireMissionRead('open a cell')
+    return await runCellDetail(mission, this.missionActions(), runId, missionId, options)
+  }
+
+  /**
+   * Re-run one cell: open a fresh attempt. A HUMAN gesture from the drawer,
+   * forwarded to mission unchanged — including its demand for an auditable
+   * reason, which this verb re-states rather than relaxes.
+   * @param runId - the run.
+   * @param missionId - the cell.
+   * @param options - the reason (required, non-empty), mission's retry
+   *   category, and the caller tag recorded on the attempt.
+   * @returns the new attempt number.
+   * @throws {@link EvalReadRefused} when no mission service is mounted, or the
+   *   reason is blank — an attempt nobody can account for is worse than none.
+   */
+  retryCell(runId: string, missionId: string, options: { reason: string; category: string; by?: string }): Promise<{ attempt: number }> {
+    const actions = this.missionActions()
+    if (actions === undefined) {
+      return Promise.reject(new EvalReadRefused(
+        'no mission service: attempts live in the mission ledger, so this composition cannot re-run a cell '
+        + '— mount the dsh-mission plugin',
+      ))
+    }
+    const reason = options.reason.trim()
+    if (reason === '') {
+      return Promise.reject(new EvalReadRefused('retry needs a reason: every fresh attempt is recorded with why it was opened'))
+    }
+    return actions.retry(missionId, {
+      runId,
+      reason,
+      category: options.category,
+      ...(options.by === undefined ? {} : { by: options.by }),
+    })
+  }
+
+  /**
+   * The release check: may this cell's resources be destroyed? Asked BEFORE
+   * anything is destroyed, and answered by the state machine's own
+   * `releasableStates` — eval adds no opinion.
+   * @param runId - the run.
+   * @param missionId - the cell.
+   * @throws {@link EvalReadRefused} when no mission service is mounted.
+   */
+  releaseCheck(runId: string, missionId: string): { missionId: string; releasable: boolean } {
+    const actions = this.missionActions()
+    if (actions === undefined) {
+      throw new EvalReadRefused(
+        'no mission service: the release gate lives in the mission ledger, so this composition cannot answer '
+        + '— mount the dsh-mission plugin',
+      )
+    }
+    return { missionId, releasable: actions.isReleasable(missionId, runId) }
+  }
+
+  /**
+   * The export dialog's first step, forwarded to mission's own Remote:
+   * which layers would be written and which of them are GUARDED
+   * (`modelFacing: false`, resolved through the datasets probe).
+   *
+   * Forwarded rather than re-derived on purpose. The guarded set and the
+   * fail-closed gate are mission's, and a second implementation of a leak gate
+   * is a second place for it to be wrong — eval relays the caller's
+   * confirmations and can neither narrow nor widen them.
+   * @param agent - the calling agent, passed through unchanged.
+   * @param request - run, output directory, layers, snapshot reference.
+   * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
+   */
+  exportPlan(agent: unknown, request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
+    const remote = this.missionExport()
+    if (remote === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
+    return remote.exportPlan(agent, request)
+  }
+
+  /**
+   * The export dialog's confirm step, forwarded the same way. mission
+   * re-checks the `confirmed` list against a FRESH plan and refuses when a
+   * guarded layer is unconfirmed — a dialog-stale confirmation never
+   * authorizes a changed layer set, and that check stays on mission's side.
+   * @param agent - the calling agent, passed through unchanged.
+   * @param request - the export plus the confirmed guarded layers.
+   * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
+   */
+  exportRun(agent: unknown, request: EvalExportRunRequest): Promise<EvalExportResultView> {
+    const remote = this.missionExport()
+    if (remote === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
+    return remote.exportRun(agent, request)
+  }
+
+  /**
+   * The 作答记录 of one dataset item: every evaluation run that answered it,
+   * with its cells and their verdict counts. Consumed by the 题集 tab (T47);
+   * degrades to an empty list plus a sentence when no ledger is mounted.
+   * @param datasetId - the dataset set.
+   * @param itemId - the item id (the cells' `task` label).
+   */
+  itemRuns(datasetId: string, itemId: string): EvalItemRunsResult {
+    return runsForItem(this.hosts?.get('mission') as MissionRunListFace | undefined, datasetId, itemId)
+  }
+
+  /** The mission READ face, or a refusal naming what is missing. */
+  private requireMissionRead(what: string): MissionReadFace {
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    if (mission === undefined) {
+      // Named without its scope like the other read verbs: a sentence for a
+      // human, not a dependency edge.
+      throw new EvalReadRefused(
+        `no mission service: run records live in the mission ledger, so this composition cannot ${what} `
+        + '— mount the dsh-mission plugin',
+      )
+    }
+    return mission
+  }
+
+  /** The two mission writes the drawer forwards; undefined when mission is absent. */
+  private missionActions(): MissionActionFace | undefined {
+    const mission = this.hosts?.get('mission') as Partial<MissionActionFace> | undefined
+    return typeof mission?.retry === 'function' && typeof mission.isReleasable === 'function'
+      ? (mission as MissionActionFace)
+      : undefined
+  }
+
+  /** mission's own Remote service — the leak gate's one home. */
+  private missionExport(): MissionExportRemoteFace | undefined {
+    const remote = this.hosts?.get('missionRemote') as Partial<MissionExportRemoteFace> | undefined
+    return typeof remote?.exportPlan === 'function' && typeof remote.exportRun === 'function'
+      ? (remote as MissionExportRemoteFace)
+      : undefined
+  }
+
+  /**
    * Generate a run template from a dataset-suite manifest (deterministic —
    * the same function `dsh-eval template` prints and the run loop writes
    * beside the plan).
@@ -480,8 +737,11 @@ export { EvalFinalizeRefused } from './finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
 export { EvalReadRefused } from './read.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
-export { deriveExperimentStatus, experimentDetail, listExperiments } from './experiments.ts'
+export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
+export { materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
+export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
+export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export { EvalProvisionRefused } from './provision.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'
