@@ -278,10 +278,17 @@ export function LabView(props: LabViewProps) {
   useEffect(() => {
     if (startedJobId === null) return
     let cancelled = false
+    // `.catch` and not only the result envelope: the gateway's client proxy
+    // rejects on its own (a namespace it never mounted, an arity it refuses)
+    // before any envelope exists, and an unhandled rejection here would leave
+    // the block saying "no line yet" forever with the reason only in the
+    // browser console.
     void fetchRunOutput(startedJobId).then((result) => {
       if (cancelled) return
       if (result.ok) actions.setOutput(result.value)
       else actions.setOutputError(result.error.message)
+    }, (error: unknown) => {
+      if (!cancelled) actions.setOutputError(error instanceof Error ? error.message : String(error))
     })
     return () => { cancelled = true }
   }, [startedJobId, refreshRev, actions, fetchRunOutput])

@@ -24,6 +24,7 @@ T35a 搭好了实验室 tab 的列表与七个子页的详情壳，只填了一�
 - **两页按需拉取，打开各自的 tab 才发 RPC。** validate 要走一遍题集树，条件列举要走一遍 `conditions/`；让概览页在每次访问时替这两件事付账，是拿便宜的那页去补贵的那页。
 - **批准之后，页面留住 id 并把 job 日志原样贴出。** `runCreate` 之前账本里没有这个 run，而就绪检查拒绝**恰好发生在那之前**——被拒的 run 一行账本都不会有，它的拒绝理由只存在于 job 的输出里。store 留住批准返回的东西，按那个 job id 读一次 `runOutput`，把行原样贴上去。概览页与计划审阅页共用这一块。
 - **打开的那一行能扛住自己 id 变化。** 一份被批准的计划，在编排器调用 `runCreate` 之前在列表里是 `plan:<路径>`，之后是它的 run id；视图按「被批准的那份计划」重新找到它，审阅者不会在 run 跑到一半时被弹回列表。
+- **读 job 日志时显式传 cursor。** `runOutput(jobId, cursor?)` 自己有默认值，但网关的客户端代理强制**精确位参**：只传一个参数会在到线之前抛 `client api: dshEval/runOutput expected 2 argument(s), got 1`。这是在临时实例上量出来的——测试里注入的 mock 接受任意参数个数，只有活网关能抓到。那个 effect 同时挂了 rejection 处理：代理在信封存在之前就 reject 的话，页面会永远停在「还没有输出」，理由只留在浏览器 console 里。
 - **`scope` 与 `preset` 进 `ConditionSummary`。** 条件表要这两列，CLI 列举与 `eval_conditions` 工具顺带也拿到——一份投影，不开第二条读路径。
 
 ## 包的形状
@@ -57,7 +58,8 @@ T35a 搭好了实验室 tab 的列表与七个子页的详情壳，只填了一�
 
 ## Testing
 
-- `packages/eval`：533 个测试全绿（此前 510）。新增 `tests/remote.spec.ts` — 9 例，跑在真实 cordis context 里的真实服务核上：审阅的摘要与 ok 行、违反契约的条件是 error、条件文件缺失只是 warning 的边界（钉死，页面永远不会比 CLI 更严）、approve 拒绝时不碰 `runStart`、approve 通过时带上批准会话与它的 cwd、没有工作区的会话不编一个 cwd、接线失败按拒绝返回、条件表的 scope / preset / lock 三列、diff 只带不同的键且缺一侧为 null、只差 notes 仍算 `identical`。
-- 新增 `tests/LabReview.client.spec.tsx` — 12 例，全部经由 `LabView`：审阅的懒加载、kv 块与逐条 validate 列表、批准后落在概览并出现 job / run / 日志原文、拒绝时原样显示且什么都没起、被 validate 拒的计划按钮不可点、退回修改只改页面、没有计划文件的 run、条件表、两条件 diff 只列不同项、第三次点选的顶替、取消选、「新建条件」占位、以及列举被拒。
+- `packages/eval`：534 个测试全绿（此前 510）。新增 `tests/remote.spec.ts` — 9 例，跑在真实 cordis context 里的真实服务核上：审阅的摘要与 ok 行、违反契约的条件是 error、条件文件缺失只是 warning 的边界（钉死，页面永远不会比 CLI 更严）、approve 拒绝时不碰 `runStart`、approve 通过时带上批准会话与它的 cwd、没有工作区的会话不编一个 cwd、接线失败按拒绝返回、条件表的 scope / preset / lock 三列、diff 只带不同的键且缺一侧为 null、只差 notes 仍算 `identical`。
+- 新增 `tests/LabReview.client.spec.tsx` — 13 例，全部经由 `LabView`：审阅的懒加载、kv 块与逐条 validate 列表、批准后落在概览并出现 job / run / 日志原文、拒绝时原样显示且什么都没起、被 validate 拒的计划按钮不可点、退回修改只改页面、没有计划文件的 run、条件表、两条件 diff 只列不同项、第三次点选的顶替、取消选、「新建条件」占位、列举被拒、以及 job 日志读取直接 reject（而不是返回信封）。
 - `tests/apply.client.spec.ts` 补上五个新注入动词，并钉住 `fetchRunOutput` 是**不带会话**的那一个。
-- `pnpm gate` 全绿。
+- `pnpm gate --all` 全绿。
+- 在一台一次性实例上走通（独立 `DSH_HOME`、端口 3199、源码模式装 profile，用完拆掉）：评测模式预设下 tab 注册出来，列表列出题库里的计划，计划审阅页渲染出 kv 块与每一条带 severity 和 code 的 validate 行，「批准并启动」返回 `job eval-run-1 · run run-20260914070348-djrz` 并落到概览页，运行日志原样显示拒绝理由（`run … refused: condition dsh-exec: no local-agent harness "dsh" with a delegation provider is registered`），条件页对 `dsh-exec` 与 `codex-exec` 出 7 个不同字段、别的一个不列。全程 console 零错误。上面那个位参 bug 就是这一趟走出来的。

@@ -281,6 +281,16 @@ describe('the plan-review page', () => {
     expect(await screen.findByText(/readiness codex-exec: NOT READY — the scoped home holds no credential/)).toBeTruthy()
   })
 
+  it('a job-log read that REJECTS (the proxy, not the envelope) surfaces instead of vanishing', async () => {
+    const h = makeHarness()
+    h.fetchRunOutput.mockRejectedValue(new Error('client api: dshEval/runOutput expected 2 argument(s), got 1'))
+    renderView(h)
+    await openPage(h, 'page.plan')
+    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+
+    expect(await screen.findByText(/review.jobLogError: client api: dshEval\/runOutput/)).toBeTruthy()
+  })
+
   it('a refused approval shows the refusal verbatim and starts nothing', async () => {
     const h = makeHarness()
     h.approvePlan.mockResolvedValue({

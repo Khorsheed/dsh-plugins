@@ -153,7 +153,10 @@ describe('eval client apply', () => {
     const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
 
     await face.fetchRunOutput('eval-run-1')
-    expect(remote.runOutput).toHaveBeenCalledWith('eval-run-1')
+    // The cursor rides along explicitly: the proxy enforces exact arity, and a
+    // one-argument call throws before it reaches the wire (measured on the
+    // temporary instance, T36).
+    expect(remote.runOutput).toHaveBeenCalledWith('eval-run-1', 0)
   })
 
   it('collapses the view entry on teardown', async () => {

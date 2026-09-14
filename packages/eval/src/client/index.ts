@@ -98,7 +98,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
         fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
         approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
-        fetchRunOutput: (jobId: string) => remote.runOutput(jobId),
+        // The cursor is passed EXPLICITLY even though the verb defaults it:
+        // the gateway's client proxy enforces exact positional arity, so a
+        // call that leaves an optional parameter off throws
+        // "expected 2 argument(s), got 1" before it reaches the wire.
+        fetchRunOutput: (jobId: string) => remote.runOutput(jobId, 0),
       }),
     }, LabView),
     () => chrome.show(ctx.sessions.list.getSnapshot().current),
