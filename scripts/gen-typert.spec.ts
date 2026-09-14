@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { copyTypertPackageSources, copyTypertSiblingTypes, harnessGitState, isTypertCacheFresh, selectTypertPackages, typertFileHash, typertInputHash, typertSiblingTypePaths, TYPERT_PACKAGES, writeTypertCache } from './gen-typert.mts'
+import { acquireTypertLock, copyTypertPackageSources, copyTypertSiblingTypes, harnessGitState, isTypertCacheFresh, releaseTypertLock, selectTypertPackages, typertFileHash, typertInputHash, typertSiblingTypePaths, TYPERT_PACKAGES, writeTypertCache } from './gen-typert.mts'
 
 const temporaryRoots: string[] = []
 
@@ -131,5 +131,29 @@ describe('typert freshness cache', () => {
     const notGit = mkdtempSync(join(tmpdir(), 'dsh-typert-harness-'))
     temporaryRoots.push(notGit)
     expect(harnessGitState(notGit)).toBeNull()
+  })
+})
+
+describe('full-mode generation lock', () => {
+  it('takes the lock on a cold DSH_HOME instead of spinning until the break deadline', () => {
+    // A DSH_HOME that has never generated has no scratch/ — the state every
+    // fresh install starts in. The non-recursive mkdir that makes the lock
+    // atomic fails with ENOENT there, and the retry loop cannot tell that
+    // apart from a held lock: before the parent was created first this call
+    // spun for 900 seconds, broke a lock nobody held, and spun again.
+    const home = mkdtempSync(join(tmpdir(), 'dsh-typert-lock-'))
+    temporaryRoots.push(home)
+    const lockDir = join(home, 'scratch', 'typert-gen.lock')
+    expect(existsSync(join(home, 'scratch'))).toBe(false)
+
+    const started = Date.now()
+    acquireTypertLock(lockDir)
+
+    expect(existsSync(lockDir)).toBe(true)
+    expect(Date.now() - started).toBeLessThan(2_000)
+    releaseTypertLock(lockDir)
+    expect(existsSync(lockDir)).toBe(false)
+    // Releasing removes the lock, never the scratch dir the cache lives in.
+    expect(existsSync(join(home, 'scratch'))).toBe(true)
   })
 })
