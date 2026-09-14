@@ -28,7 +28,7 @@ export function ExportDialog(props: {
   runId: string
   open: boolean
   onClose: () => void
-  onDone: (notice: string) => void
+  onDone: (notice: string, outDir: string) => void
   planExport: LabViewProps['planExport']
   exportRun: LabViewProps['exportRun']
   sessionId: LabViewProps['sessionId']
@@ -93,7 +93,10 @@ export function ExportDialog(props: {
         setError(result.error.message)
         return
       }
-      onDone(t('export.done', { dir: result.value.bundleDir, count: result.value.files }))
+      // The DIRECTORY, not the bundle: it is where the report page looks for
+      // `<runId>-bundle` next, and this dialog is the only place a reader can
+      // name one the plan never mentions.
+      onDone(t('export.done', { dir: result.value.bundleDir, count: result.value.files }), outDir.trim())
       onClose()
     })
   }

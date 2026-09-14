@@ -20,6 +20,7 @@
     "src/client/LabView.tsx",
     "src/client/MatrixPage.tsx",
     "src/client/PlanReviewPage.tsx",
+    "src/client/ReportPage.tsx",
     "src/client/contract.ts",
     "src/client/index.ts",
     "src/client/locales.ts",

@@ -266,17 +266,14 @@ describe('LabView detail', () => {
 
   // Two, not six: plan and conditions gained bodies in I5·T36 (LabReview),
   // matrix and cells in I5·T35b (MatrixCells) — each covered by its own spec.
-  it('the two unbuilt sub-pages carry the placeholder that names their task', async () => {
+  it('the one unbuilt sub-page carries the placeholder that names its task', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('harness-comparison'))
-    for (const [tab, placeholder] of [
-      ['page.report', 'placeholder.report'],
-      ['page.judging', 'placeholder.judging'],
-    ] as const) {
-      fireEvent.click(screen.getByRole('button', { name: tab }))
-      expect(screen.getByText(placeholder)).toBeTruthy()
-    }
+    // The report page gained a body with T38; the judging desk is T37's, and
+    // a tab that lied about being empty would be worse than one that says so.
+    fireEvent.click(screen.getByRole('button', { name: 'page.judging' }))
+    expect(screen.getByText('placeholder.judging')).toBeTruthy()
   })
 
   it('回到列表 returns to the table', async () => {

@@ -37,7 +37,7 @@ import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
   EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionsRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
-  EvalExportRunRequest, EvalMatrixRequest, EvalPlanRequest,
+  EvalExportRunRequest, EvalFinalizeRequest, EvalMatrixRequest, EvalPlanRequest, EvalReportRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -115,6 +115,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
         planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
         exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
+        fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
+        finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
         // The host's own session controller: the drawer OPENS the player's
         // child session so a person can read the transcript; the member
         // composer and dock there are local-agent's, not this tab's.

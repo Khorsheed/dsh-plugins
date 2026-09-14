@@ -14,6 +14,11 @@
  * the task that owns it: a tab that lies about being empty is worse than one
  * that says who is building it.
  *
+ * The report page (T38) is fetched the same lazy way, and for a stronger
+ * reason: it reads a mission export BUNDLE off disk and analyzes it, which is
+ * the most expensive read in the tab and means nothing until the run has been
+ * exported at all.
+ *
  * A DRAFT's overview is rendered from the list row: there is no run to fetch,
  * and the row already carries the plan digest. Only a started experiment
  * spends an RPC. The plan review and the conditions registry are fetched
@@ -38,6 +43,7 @@ import { LAB_PAGES } from './store.ts'
 import { CellsPage } from './CellsPage.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { MatrixPage } from './MatrixPage.tsx'
+import { ReportPage } from './ReportPage.tsx'
 import css from './LabView.module.css'
 
 /** name → count, rendered as a single compact line (`ready 2 · done 10`). */
@@ -150,8 +156,7 @@ function Overview(props: {
 }
 
 /** The placeholder body of a sub-page nobody has built yet, and who owns it. */
-const PAGE_PLACEHOLDER: Readonly<Record<'report' | 'judging', EvalKey>> = {
-  report: 'placeholder.report',
+const PAGE_PLACEHOLDER: Readonly<Record<'judging', EvalKey>> = {
   judging: 'placeholder.judging',
 }
 
@@ -164,6 +169,7 @@ export function LabView(props: LabViewProps) {
     sessionId, useStore, actions, t,
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
     fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
+    fetchReport, finalizeRun,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -203,6 +209,12 @@ export function LabView(props: LabViewProps) {
   const cell = useStore(s => s.cell)
   const cellLoading = useStore(s => s.cellLoading)
   const cellError = useStore(s => s.cellError)
+  const report = useStore(s => s.report)
+  const reportLoading = useStore(s => s.reportLoading)
+  const reportError = useStore(s => s.reportError)
+  const finalizing = useStore(s => s.finalizing)
+  const finalizeResult = useStore(s => s.finalizeResult)
+  const exportedTo = useStore(s => s.exportedTo)
   const exportOpen = useStore(s => s.exportOpen)
   const notice = useStore(s => s.notice)
   const [newNotice, setNewNotice] = useState(false)
@@ -402,6 +414,26 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, openRunId, cellSelection, refreshRev, actions, fetchCell])
 
+  // The report: the bundle read, paid for by the page that asked for it. The
+  // export directory a reader named in THIS visit is tried first — the dialog
+  // takes a free-text path, and a bundle written outside the plan's `exports`
+  // would otherwise read as 未导出.
+  useEffect(() => {
+    if (openRunId === null || page !== 'report') return
+    let cancelled = false
+    actions.setReportLoading(true)
+    void fetchReport(sessionId, {
+      runId: openRunId,
+      ...(exportedTo === null ? {} : { outDir: exportedTo }),
+    }).then((result) => {
+      if (cancelled) return
+      actions.setReportLoading(false)
+      if (result.ok) actions.setReport(result.value)
+      else actions.setReportError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRunId, page, refreshRev, exportedTo, actions, fetchReport])
+
   // ── the drawer's three human gestures ──────────────────────────────────
   const onRetry = (reason: string, category: string): void => {
     if (openRunId === null || cellSelection === null) return
@@ -423,6 +455,32 @@ export function LabView(props: LabViewProps) {
       actions.setNotice(result.ok
         ? t(result.value.releasable ? 'notice.releasable' : 'notice.notReleasable', { id: missionId })
         : result.error.message)
+    })
+  }
+
+  /**
+   * FINALIZE — ui-spec step 7's human act. Every archived cell of the run
+   * walks the release gate; a refusal is recorded against its cell and the
+   * walk carries on, which is why the answer is rendered whole rather than
+   * reduced to a success line.
+   */
+  const onFinalize = (): void => {
+    if (openRunId === null) return
+    actions.setFinalizing(true)
+    actions.setFinalizeResult(null)
+    void finalizeRun(sessionId, { runId: openRunId }).then((result) => {
+      actions.setFinalizing(false)
+      if (!result.ok) {
+        actions.setNotice(result.error.message)
+        return
+      }
+      actions.setFinalizeResult(result.value)
+      actions.setNotice(t('notice.finalized', {
+        released: result.value.released, refused: result.value.refused, skipped: result.value.skipped,
+      }))
+      // Released cells change the run's states, which the overview and the
+      // matrix both show.
+      actions.refresh()
     })
   }
 
@@ -598,7 +656,23 @@ export function LabView(props: LabViewProps) {
                     />
                   )
               )}
-              {(page === 'report' || page === 'judging') && (
+              {page === 'report' && (
+                openRunId === null
+                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  : (
+                    <ReportPage
+                      report={report}
+                      loading={reportLoading}
+                      error={reportError}
+                      finalizing={finalizing}
+                      finalizeResult={finalizeResult}
+                      onFinalize={onFinalize}
+                      onExport={() => { actions.setExportOpen(true) }}
+                      t={t}
+                    />
+                  )
+              )}
+              {page === 'judging' && (
                 <div className={css.empty}>{t(PAGE_PLACEHOLDER[page])}</div>
               )}
             </div>
@@ -606,7 +680,12 @@ export function LabView(props: LabViewProps) {
               runId={openRunId ?? ''}
               open={exportOpen && openRunId !== null}
               onClose={() => { actions.setExportOpen(false) }}
-              onDone={(text) => { actions.setNotice(text) }}
+              onDone={(text, outDir) => {
+                actions.setNotice(text)
+                // Where the bundle just landed — the first place the report
+                // page looks, ahead of the plan's own `exports`.
+                if (outDir !== '') actions.setExportedTo(outDir)
+              }}
               planExport={planExport}
               exportRun={exportRun}
               sessionId={sessionId}

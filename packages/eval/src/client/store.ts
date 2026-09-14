@@ -10,7 +10,7 @@ import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
   EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView, EvalExperimentDetail,
-  EvalExperimentsResult, EvalMatrixView, EvalPlanReview, EvalRunOutputView,
+  EvalExperimentsResult, EvalFinalizeView, EvalMatrixView, EvalPlanReview, EvalRunOutputView, EvalRunReportView,
 } from '../types.ts'
 
 /**
@@ -30,8 +30,8 @@ export interface LabStartedRun {
 
 /**
  * The detail's sub-pages, in the tab order ui-spec §五 fixes. `overview`
- * (T35a), `matrix` and `cells` (T35b) have bodies; the rest carry the
- * placeholder naming their task.
+ * (T35a), `matrix` and `cells` (T35b) and `report` (T38) have bodies; the
+ * judging desk carries the placeholder naming its task.
  */
 export const LAB_PAGES = ['overview', 'plan', 'conditions', 'matrix', 'cells', 'report', 'judging'] as const
 
@@ -119,6 +119,27 @@ export interface LabViewState {
   cellLoading: boolean
   cellError: string | null
 
+  /**
+   * The report page's payload, or null before it loads. A run with no bundle
+   * is NOT null: it is a payload whose `bundleDir` is null and which carries
+   * the directories that were looked in, so the page shows a state with a
+   * button instead of a spinner that never ends.
+   */
+  report: EvalRunReportView | null
+  reportLoading: boolean
+  reportError: string | null
+  /** Whether a finalize walk is in flight (the button is disabled meanwhile). */
+  finalizing: boolean
+  /** The last finalize walk's outcome, verbatim; null until one runs. */
+  finalizeResult: EvalFinalizeView | null
+  /**
+   * The directory the last export in THIS visit wrote into — the first place
+   * the report looks for the bundle. The dialog takes a free-text path, so a
+   * reader who exported somewhere other than the plan's `exports` would
+   * otherwise get 未导出 on a bundle they just wrote.
+   */
+  exportedTo: string | null
+
   /** Whether the export dialog is open. */
   exportOpen: boolean
   /** One-shot notice line (retry / release check / export outcomes), or null. */
@@ -165,6 +186,12 @@ export type LabViewActions = {
   setCell: (draft: LabViewState, cell: EvalCellDetail) => void
   setCellLoading: (draft: LabViewState, loading: boolean) => void
   setCellError: (draft: LabViewState, error: string | null) => void
+  setReport: (draft: LabViewState, report: EvalRunReportView) => void
+  setReportLoading: (draft: LabViewState, loading: boolean) => void
+  setReportError: (draft: LabViewState, error: string | null) => void
+  setFinalizing: (draft: LabViewState, finalizing: boolean) => void
+  setFinalizeResult: (draft: LabViewState, result: EvalFinalizeView | null) => void
+  setExportedTo: (draft: LabViewState, dir: string) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setNotice: (draft: LabViewState, notice: string | null) => void
 }
@@ -208,6 +235,12 @@ const INITIAL: LabViewState = {
   cell: null,
   cellLoading: false,
   cellError: null,
+  report: null,
+  reportLoading: false,
+  reportError: null,
+  finalizing: false,
+  finalizeResult: null,
+  exportedTo: null,
   exportOpen: false,
   notice: null,
 }
@@ -223,6 +256,7 @@ const PER_EXPERIMENT: Pick<
   'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal'
   | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
+  | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'exportedTo'
   | 'exportOpen' | 'notice'
 > = {
   detail: null,
@@ -244,6 +278,11 @@ const PER_EXPERIMENT: Pick<
   cellSelection: null,
   cell: null,
   cellError: null,
+  report: null,
+  reportError: null,
+  finalizing: false,
+  finalizeResult: null,
+  exportedTo: null,
   exportOpen: false,
   notice: null,
 }
@@ -384,6 +423,20 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       },
       setCellLoading: (d, loading: boolean) => { d.cellLoading = loading },
       setCellError: (d, error: string | null) => { d.cellError = error },
+      setReport: (d, report: EvalRunReportView) => {
+        d.report = report
+        d.reportError = null
+      },
+      setReportLoading: (d, loading: boolean) => { d.reportLoading = loading },
+      setReportError: (d, error: string | null) => { d.reportError = error },
+      setFinalizing: (d, finalizing: boolean) => { d.finalizing = finalizing },
+      setFinalizeResult: (d, result: EvalFinalizeView | null) => { d.finalizeResult = result },
+      setExportedTo: (d, dir: string) => {
+        d.exportedTo = dir
+        // The bundle on screen is the OLD one: a fresh export is exactly when
+        // the report must be re-read rather than kept.
+        d.report = null
+      },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },
       setNotice: (d, notice: string | null) => { d.notice = notice },
     },

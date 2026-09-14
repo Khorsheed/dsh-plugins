@@ -38,6 +38,7 @@ import { experimentDetail, listExperiments, runsForItem } from './experiments.ts
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
 import { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
+import { projectFinalize, runReportView } from './report-view.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionActionFace, MissionExportRemoteFace,
@@ -46,7 +47,7 @@ import type {
 import type {
   EvalApproveResult, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
-  EvalExportRunRequest, EvalItemRunsResult, EvalMatrixView, EvalPlanReview,
+  EvalExportRunRequest, EvalFinalizeView, EvalItemRunsResult, EvalMatrixView, EvalPlanReview, EvalRunReportView,
 } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
@@ -817,6 +818,47 @@ export class EvalService {
     }
     return finalizeRun(mission, runId, options)
   }
+
+  /**
+   * The REPORT page's payload (ui-spec §五): the four invariants, the paired
+   * differences, the efficiency table and the judge numbers, read from the
+   * run's exported bundle.
+   *
+   * A projection of an EXPORT, never of the ledger. The report's honesty rules
+   * are `analyzeBundle`'s and stay there; this verb finds the bundle, hands it
+   * over, and reshapes the answer. A run nobody has exported yet comes back
+   * with `bundleDir: null` and the directories that were looked in — "not
+   * exported" and "no report" are different facts, and only the first one has
+   * a button.
+   *
+   * Writes NOTHING. `dsh-eval report --out` is still the way a report lands on
+   * disk: where the archived artifact of a run goes is a human's decision, and
+   * a page render must not make it.
+   * @param runId - the run the page is open on.
+   * @param options - the export directory to try first (the dialog's).
+   * @throws {@link EvalReadRefused} when mission is absent, or the run is unknown.
+   */
+  runReport(runId: string, options: { outDir?: string } = {}): Promise<EvalRunReportView> {
+    const mission = this.requireMissionRead('read a run\'s report')
+    return runReportView(mission, runId, options)
+  }
+
+  /**
+   * {@link EvalService.finalize} for the report page's button: the same walk,
+   * with its progress lines captured so the page can show what the gate said
+   * cell by cell rather than only how many moved.
+   * @param runId - the run to finalize.
+   * @param by - caller tag recorded against the mission writes.
+   * @throws {@link EvalFinalizeRefused} when mission is absent or the run cannot be projected.
+   */
+  async finalizeView(runId: string, by?: string): Promise<EvalFinalizeView> {
+    const log: string[] = []
+    const report = await this.finalize(runId, {
+      log: (message) => { log.push(message) },
+      ...(by === undefined ? {} : { by }),
+    })
+    return projectFinalize(report, log)
+  }
 }
 
 export { EvalRunRefused } from './run.ts'
@@ -829,6 +871,7 @@ export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased,
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 export { materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
+export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runReportView } from './report-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
