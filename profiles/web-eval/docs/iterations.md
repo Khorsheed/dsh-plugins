@@ -347,6 +347,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **T35b / T50 验收（2026-09-14）**：T35b 并 main 后合入 `e3fe4904`，T50 合入 `05050252`；合并态 eval 584、脚本测试 169、303 对双语同步、独立性 0。T35b 解冲突的经验记进通用提醒：追加型切片并 main 时，从 base / ours / theirs 三个版本取原文、按稳定锚点把自己追加的整块 graft 进 main 版本，不要逐 hunk 拼 ours+theirs——冲突边界落在声明内部时后者会把方法和接口切成两半。T50 的三件裁决：GEN_TYPERT_ONLY **保留**，全量模式会把 profile 不装的包的类型发进成员 tarball，安装器不该默默决定这个；那笔加速改走「stamp 按选中集做 key」，是缓存契约的改动，立 T52 先方案；实施者发现的 gate porcelain 解析错位（首行未暂存文件丢一个字符 → 假绿）是既存缺陷、影响所有人，立 T51 小修。主检出的 typert 产物被 T50 的全量实验重写过一次，已用全量模式跑回日常口径。
 
+**T38 / T47 验收（2026-09-14）**：T38 合入 `c83c7fb9`、T47 合入 `7ec52ed7`，两包互不相交，合并态 eval 608、datasets 167、datasets-tool 绿、双语同步、独立性 0。T38 超出文案的「换个目录找」接受——根因是 run.meta 不记导出去向，正解是导出时记进账本，立 T53（小）。T47 三件都接受：读路径在 HEAD、写只进工作区是 put_item 的既有语义，骨架落位后要 commit 才在树上出现，两侧 README 已写明；`/datasets bind` 在 composer 里丢参数是 slash 没声明 free-form input，补 input.hint 修掉；React effect 把自己写的加载态放进依赖导致自取消——eval 客户端同形状的 effect 在 T37 里顺手查一遍。作答记录一区真机上在场无行（全新 HOME 无 run），T39 端到端时会有行。
+
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
@@ -360,9 +362,10 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T52 | 代码（脚本，低优先） | gen-typert 的 stamp 按选中集做 key，让 scoped 模式也命中缓存（T50 实测 8 次 scoped × 44 秒占了安装耗时的九成）；这是缓存契约的改动，先方案 | T50 | install.sh 源码模式耗时降到分钟级以内 |
 | T36 ✅ | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 合入 main `66dbdede`（2026-09-14，`7cb31f66` + `14753348`）；Remote 加 plan / conditions / conditionDiff / approve 四个带会话的 verb，approve 先 validate 有 error 即拒；临时实例 3199 上计划审阅、批准后的概览（就绪拒绝原文原样）、dsh-exec 与 codex-exec 的 diff 只报 7 个不同项；真机抓到并修了 runOutput 少传 cursor 被网关精确位参拒的 bug；「新建实验」占位指向 T34 |
 | T35b ✅ | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 合入 main `e3fe4904`（2026-09-14，`57776e71` + 并 main 的 `57fec492`）；15 文件 48 处冲突按「两边都留」解净，Remote 18 个 verb、locale 207 键、占位页只剩 report / judging；面绑定 14 处显式传满位参并加守卫用例；合并态 eval 584；矩阵两种列（真账本按 scope、pilot-a bundle 按 harness 与 model）、抽屉、三个动作、导出对话框（mission 的拒绝原文原样转出）都有原文 |
-| T38 | 代码 | 实验室 › 报告页：读 bundle 出四条不变量、配对、效率、一致性；finalize 与导出按钮 | T35b | 第 7 步在界面上完成 |
+| T38 ✅ | 代码 | 实验室 › 报告页：读 bundle 出四条不变量、配对、效率、一致性；finalize 与导出按钮 | T35b | 合入 main `c83c7fb9`（2026-09-14，`803e474b` + `bd76772b`）；Remote report / finalize 不配模型工具；bundle 按「刚导的目录 → plan 的 exports → 题库 exports」找，找不到给清单与「换个目录找」；比较闸在服务端合上（comparisonAllowed 为假时 pairs 不过线）；真机两种状态原文齐，finalize 一次原文，账本 history 记 by: tab；eval 608 |
 | T37 | 代码 | 实验室 › 判官台：盲评队列、去指纹产物、llm-draft 与 human-final 并排；human-final 唯一写入口 | T38 | 第 8 步在界面上完成 |
-| T47 | 代码 | 题集 tab 改造：列表页（槽位与层的对应、canary、validate、用于的实验）、详情的槽位标签与筛选、「选手将看到」、可判性、作答记录投影、题目骨架 / 导入题集 / 导入题目 | 无（与 T35 并行） | 题集 tab 按 ui-spec §四 |
+| T47 ✅ | 代码 | 题集 tab 改造：列表页（槽位与层的对应、canary、validate、用于的实验）、详情的槽位标签与筛选、「选手将看到」、可判性、作答记录投影、题目骨架 / 导入题集 / 导入题目 | 无（与 T35 并行） | 合入 main `7ec52ed7`（2026-09-14，`14dca787`）；角色由 layers + register 定、槽位由基名启发式给出并按角色兜底，两种布局同一答案（slots.spec 成对表）；真机列表一行字段齐、P0 每个文件槽位与「谁看得到」对、「选手将看到」4 文件无答案键、可判性 13 条 7/5/1 对得上；骨架落位 4 文件、validate 报 RUBRIC_NO_ITEMS 指向占位（预期）；顺手修了 /datasets 的 composer 参数丢失（补 input.hint）；datasets 167 |
+| T53 | 代码（小） | 导出目录记进账本：T38 发现带 `--out` 导出的 bundle 在 run.meta 里无迹可寻，页面只能让人「换个目录找」；导出成功后由 eval 把目录记成 run 级注解（orchestrator ns）或 run.meta 字段，报告页优先读它 | T38 | 报告页对任何已导出的 run 直接找到 bundle |
 | T34 | 代码 | `eval-planning` skill + `eval_plan_draft` 工具：把「写 plan / condition + validate」并成一个动作，草稿落实验室列表 | T36 | 第 2 步一句话起草 |
 | T39 | 运维 | 端到端走查：一句话到报告，记录人介入的次数与位置；先宿主路径，T33e 后再跑容器版拿 I4 的配对报告 | T34–T38 T47 | 一份走查记录 + 缺口清单 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
@@ -2045,7 +2048,7 @@ eval 测试全绿，gate 绿；临时实例上对本机一个多格 run（pilot-
 通用提醒照旧；临时实例照 T49 之后的 install.sh 装。
 ```
 
-### T47 · 题集 tab 改造：列表、槽位、选手将看到、骨架与导入（可发，与 T35 并行）
+### T47 · 题集 tab 改造：列表、槽位、选手将看到、骨架与导入（已完成，2026-09-14 验收）
 
 ```text
 # 任务 T47：datasets 的 tab 按 ui-spec §四 改成「题集」：列表 · 骨架 / 导入 · 详情
@@ -2099,7 +2102,7 @@ T35b / T49 在临时实例上装 web-eval 时撞见：(1) scripts/gen-typert.mts
 三条提交；全新 DSH_HOME 那一遍的耗时与 tarball 对比结论；gate scope 原文。
 ```
 
-### T38 · 实验室 › 报告页（可发，T35b 已合入 main）
+### T38 · 实验室 › 报告页（已完成，2026-09-14 验收）
 
 ```text
 # 任务 T38：实验详情的报告页——不变量、配对、效率、一致性，finalize 与导出
@@ -2128,7 +2131,9 @@ eval 测试全绿，gate 绿；临时实例上对 t31-judge-panel（有 bundle�
 分支与 commit；Agent Note；gate；两种状态的报告页原文。
 ```
 
-### T37 · 实验室 › 判官台（可发；等 T38 合入 main 后再开分支）
+**验收（2026-09-14）**：`feat/eval-client-report`（`803e474b`、`bd76772b`）合入 main `c83c7fb9`。两种状态的报告页、比较节打开（pilot-b-p0-runA 六个配对块、bootstrap CI、n=1 不可排名）与关闭（t31 环境一致 unverifiable）、finalize 一次与重复 finalize 的 skipped 计数都有原文。Agent Note：`.agents/notes/implemented/feature/2026-09-14-eval-report-page.md`。给 T37 的接口：判官一致性与自评标记是判官台按格展示的同一批事实；路由里只剩 placeholder.judging。
+
+### T37 · 实验室 › 判官台（可发，T38 已合入 main）
 
 ```text
 # 任务 T37：判官台——盲评队列、去指纹产物、llm-draft 与 human-final 并排，human-final 的唯一写入口
@@ -2140,12 +2145,13 @@ ui-spec §五：判官台 = 盲评队列、去指纹产物、llm-draft 与 human
 packages/eval/src/judge.ts（去指纹、llm-draft 样本记录、by 字段）；packages/eval/src/report.ts 的 human-final 处理（by 为 tool: 前缀标红、覆盖位置）；packages/mission 的 annotate 语义（append-only，ns human-final）；docs/dataset-authoring-protocol.md 的 rubric kind 三分；T31 的 Agent Note（面板与自评）；T38 合入后的 LabView 路由；ui-spec §五 §七第 8 步。
 
 ## 分支
-等 T38 合入 main 后从 main 开 worktree ../dsh-plugins-wt-eval-client-judge，分支 feat/eval-client-judge；只改 packages/eval（README 双语 + sidecar）。
+从 main（≥ c83c7fb9，T38 已合入）开 worktree ../dsh-plugins-wt-eval-client-judge，分支 feat/eval-client-judge；只改 packages/eval（README 双语 + sidecar）。
 
 ## 已定决定
 - Remote 加 judgeQueue(agent, { runId })：每格的去指纹产物清单与正文（复用 judge.ts 的去指纹函数，不另写一份）、rubric 里 kind: human 的判据、已有 llm-draft 样本（每判官每样本的分值）、已有 human-final；humanFinal(agent, { runId, missionId, verdicts })：转发 mission annotate(ns human-final)，by 记为本会话（不是 tool: 前缀），只追加不改写。不做模型工具；模型永远拿不到 human-final 的写入口。
 - 页面：左队列（格子按未评 / 已评分组，盲：不显示 harness 与模型名，只显示格子编号）、中去指纹产物（stage 文件原文）、右判据表（llm-draft 各判官各样本 · human-final 输入），提交后队列状态更新；顶部一致性统计（同判官 κ、跨判官、human-final 与 llm-draft 的一致）。
 - 盲评的边界：页面上不出现条件 id、harness、模型；报告页才揭盲。
+- 顺手查一遍 eval 客户端里「effect 把自己写的加载态放进依赖」的自取消形状（T47 在 datasets 撞到并改用 ref 记已请求的 key），有同款就照改并补用例。
 
 ## 测试
 去指纹在页面路径上的复用（同一函数）；humanFinal 的 by 不带 tool: 前缀且 append-only；client spec：队列分组、盲态不含 harness / 模型字样、提交后刷新。
@@ -2178,6 +2184,8 @@ scripts 测试全绿；探针 worktree 里改一个根 scripts 文件不 add 直
 ## 回报
 分支与 commit；两次 gate scope 原文（修前 NONE、修后整仓）。
 ```
+
+**验收（2026-09-14）**：`feat/datasets-tab-slots`（`14dca787`）合入 main `7ec52ed7`，只动 datasets 与 datasets-tool 的 README。真机原文齐（列表一行、P0 详情树、选手将看到、可判性、槽位筛选、骨架落位与 validate）。Agent Note：`.agents/notes/implemented/feature/2026-09-14-datasets-tab-slots.md`。
 
 ### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（可发）
 
