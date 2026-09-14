@@ -75,6 +75,8 @@ export type EvalKey =
   | 'report.noBundle'
   | 'report.searched'
   | 'report.exportNow'
+  | 'report.lookInDir'
+  | 'report.lookInGo'
   | 'report.counts'
   | 'report.cliHint'
   | 'report.toolOnlyNs'
@@ -425,6 +427,8 @@ export const en: Record<EvalKey, string> = {
   'report.noBundle': 'No bundle exported yet',
   'report.searched': 'Looked in',
   'report.exportNow': 'Export the bundle',
+  'report.lookInDir': 'Export directory to look in (a run started with --out)',
+  'report.lookInGo': 'Look here',
   'report.counts': '{rows} verdict row(s) · {missions} cell(s) · {attempts} attempt(s) · {retries} infrastructure retry/retries (aggregation uses each cell\'s current attempt)',
   'report.cliHint': 'Write it to disk',
   'report.toolOnlyNs': 'RED FLAG: every verdict in the expectedNs namespace `{ns}` was written by a `tool:` caller — the source disagrees with that namespace\'s contract, and conclusions resting on it are in doubt.',
@@ -691,6 +695,8 @@ export const zh: Record<EvalKey, string> = {
   'report.noBundle': '还没有 bundle',
   'report.searched': '找过',
   'report.exportNow': '导出 bundle',
+  'report.lookInDir': '换一个导出目录找（run 是带 --out 跑的就填这里）',
+  'report.lookInGo': '在这里找',
   'report.counts': '判定行 {rows} · 格子 {missions} · attempt {attempts} · 基础设施重试 {retries}（聚合只用各格最新 attempt）',
   'report.cliHint': '用 CLI 落盘',
   'report.toolOnlyNs': '红字警告：expectedNs 中的 `{ns}` 的判定全部由 `tool:` 写入——判定来源与该 ns 的契约作者不符，相关结论效力存疑。',

@@ -21,6 +21,7 @@ Status: implemented
 - **NaN 的 κ 过线时转成 `null`。** Cohen κ 在退化情形（评分者恒定）是 NaN。JSON 里没有 NaN，它无论如何都会变成一个悄无声息的 null；在投影这一层转，是唯一能把理由写下来的地方。
 - **`finalize(agent, {runId})` 是人的一次点击**，以 `tab:<sessionId>` 记名，返回计数、逐格结局**和那次走的日志原文**。读者读不到的闸拒绝，等于无从处理的闸拒绝。页面在走之前问一次：这是从一张只读页上发起的整 run 写。
 - **导出对话框现在把它写入的目录报出来**，tab 记住它作为报告的第一个查找位置。对话框收的是自由文本路径，不记住它，一个把 bundle 导到 plan 的 `exports` 之外的人，就会被告知他刚写好的那份「未导出」。
+- **未导出态另给一个「换个目录找」的输入框。** 这条是真机上发现的、不是测试里想出来的：`t31-judge-panel` 当初是带 `--out` 跑的，它的 bundle 既不在 plan 的 `exports` 下、也不在 `<题库仓库>/exports` 下，而 `run.meta` 对导出去了哪里只字未记。没有这个框，页面就会把一份导好的 bundle 说成未导出，而唯一的出路是再导一次。
 - **文案四节之外多带两条事实**，因为 `summary.md` 开头就是它们，丢掉会让这张页比它所映照的那份文件更不老实：expectedNs 全由 `tool:` 写入的红字警告，以及报告自己的保留条款。
 
 ## Alternatives considered
@@ -50,7 +51,7 @@ Status: implemented
 - `EvalRemoteService` 多两个带会话参数的动词 `report` 与 `finalize`（共 20 个）。CI 的四个动词一字未动；两个新动词都**不**配模型工具——启动与释放的动词归界面（界面规格 R1）。
 - `EvalService` 多 `runReport` 与 `finalizeView`；新增 `report-view.ts`，装 bundle 搜索、投影与 finalize 的整形。
 - 报告子页建成；`placeholder.report` 删除，判官台是最后一个占位（T37）。
-- `ExportDialog` 的 `onDone` 多带一个输出目录参数，store 以 `exportedTo` 记住（随实验切换清空）。
+- `ExportDialog` 的 `onDone` 多带一个输出目录参数，store 以 `lookIn` 记住（随实验切换清空），报告页也能直接设它。
 - T37 继承这张页的词汇：判官一致性那一块与自评标记，正是判官台要按格展示的同一批事实。
 
 ## Testing
@@ -58,5 +59,9 @@ Status: implemented
 - `packages/eval`：607 条测试全绿（此前 584）。`tests/report-face.spec.ts` —— 两个动词与投影共 12 例：未导出时点名找过的每一个目录、在 plan 的 `exports` 下找到 bundle、调用方的目录压过 plan 的、meta 里既无 plan 也无仓库的那种、未知 run 的拒绝、三候选的搜索顺序与去重、读不到的 plan 不贡献候选、不变量没过时 `pairs` 为空（而不变量本身照常过线）、配对行各带自己的判官且自评已标、NaN 的 κ 过线成 null、finalize 带 `tab:` 记名转发并返回日志原文、跳过的格子带 `reason: null`。
 - `tests/Report.client.spec.tsx` —— 11 例：四条不变量三种状态各自的词与 details、四条全 ok 时比较节打开、比较节未开点名没过的那几条且全页无一个差值、tool-only 红字、配对表的因子行 / 加权列 / 置信区间 / 拒绝排名原文 / 自评标记、效率表的破折号与跨模型提醒与排除行、判官两行、未导出态的按钮与被禁用的 finalize、从页面导出后按刚写的目录重读、finalize 的问 → 走 → 逐格结局（以及取消什么都不走）。
 - `tests/LabView.client.spec.tsx`：占位那一例收窄到判官台一页。
-- 真机（临时 DSH_HOME、源码模式 web-eval）：对有 bundle 的 run 与没有 bundle 的 run 各看一次报告页。
-- `pnpm gate` 绿。
+- 真机（临时 DSH_HOME + 空闲端口、源码模式 web-eval，账本与 bundle 都用一次性副本——真记录事后核对未动）：
+  - **`t31-judge-panel`**（`run-20260911090742-1e4c`，1 条件 2 判官，20 条判定行）：先是未导出态，点名它找过的那一个目录（这个 run 当初带 `--out` 跑，bundle 两个候选下都没有）；再把 bundle 所在目录填进去，整页出来——四条不变量里 环境一致 是 `unverifiable`（「本 run 无指纹」），比较节未开且正是点名这一条，效率行（3.4 min / 2 轮 / 5 次工具调用 / 输出 10,277 / 输入 26,720 / cacheRead 241,024）带同模型可比的说明，判官一致性（双采样判据 10 条一致 9/10、κ 0.615；跨判官 5 条全员一致、κ 1.000；自评判据 5 条）。
+  - **`pilot-b-p0-runA`**（`run-20260909102545-1qzq`，4 条件，四条不变量全 ok）：比较节打开——六个配对块，各带多因子行、逐题差值表、自助法置信区间与拒绝排名的原文（`不可排名（n=1 < 3）`），外加四条件效率表，工具调用列四格全是 `—`（没有任何一轮报过计数），跨模型提醒在位。
+  - **`i1-walk`**（`run-20260905150049-1ndl`，从未导出过）：真正没有 bundle 的 run 上的未导出态。
+  - **finalize**：先出确认那句话，再走——`1 released · 0 gate-refused · 0 skipped`，日志原文 `cell p0-placeholder-codex-scope-a-rep1: archived → releasable → released`，账本自己的 history 记着 `by: tab:<sessionId>`。对已经 released 的格子再走一次答 `0 released · 0 gate-refused · 1 skipped (1 released)`。
+- `pnpm gate` 绿（14 步，scope 为 eval + eval-tool）。

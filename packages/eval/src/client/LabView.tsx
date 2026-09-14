@@ -214,7 +214,7 @@ export function LabView(props: LabViewProps) {
   const reportError = useStore(s => s.reportError)
   const finalizing = useStore(s => s.finalizing)
   const finalizeResult = useStore(s => s.finalizeResult)
-  const exportedTo = useStore(s => s.exportedTo)
+  const lookIn = useStore(s => s.lookIn)
   const exportOpen = useStore(s => s.exportOpen)
   const notice = useStore(s => s.notice)
   const [newNotice, setNewNotice] = useState(false)
@@ -414,17 +414,18 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, openRunId, cellSelection, refreshRev, actions, fetchCell])
 
-  // The report: the bundle read, paid for by the page that asked for it. The
-  // export directory a reader named in THIS visit is tried first — the dialog
-  // takes a free-text path, and a bundle written outside the plan's `exports`
-  // would otherwise read as 未导出.
+  // The report: the bundle read, paid for by the page that asked for it. A
+  // directory named in THIS visit — exported into, or typed on the page — is
+  // tried first: a run started with `--out` records nothing about where its
+  // bundle went, so without that the page would call an exported bundle
+  // 未导出.
   useEffect(() => {
     if (openRunId === null || page !== 'report') return
     let cancelled = false
     actions.setReportLoading(true)
     void fetchReport(sessionId, {
       runId: openRunId,
-      ...(exportedTo === null ? {} : { outDir: exportedTo }),
+      ...(lookIn === null ? {} : { outDir: lookIn }),
     }).then((result) => {
       if (cancelled) return
       actions.setReportLoading(false)
@@ -432,7 +433,7 @@ export function LabView(props: LabViewProps) {
       else actions.setReportError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [sessionId, openRunId, page, refreshRev, exportedTo, actions, fetchReport])
+  }, [sessionId, openRunId, page, refreshRev, lookIn, actions, fetchReport])
 
   // ── the drawer's three human gestures ──────────────────────────────────
   const onRetry = (reason: string, category: string): void => {
@@ -668,6 +669,7 @@ export function LabView(props: LabViewProps) {
                       finalizeResult={finalizeResult}
                       onFinalize={onFinalize}
                       onExport={() => { actions.setExportOpen(true) }}
+                      onLookIn={(dir) => { actions.setLookIn(dir) }}
                       t={t}
                     />
                   )
@@ -684,7 +686,7 @@ export function LabView(props: LabViewProps) {
                 actions.setNotice(text)
                 // Where the bundle just landed — the first place the report
                 // page looks, ahead of the plan's own `exports`.
-                if (outDir !== '') actions.setExportedTo(outDir)
+                if (outDir !== '') actions.setLookIn(outDir)
               }}
               planExport={planExport}
               exportRun={exportRun}

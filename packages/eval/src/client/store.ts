@@ -133,12 +133,17 @@ export interface LabViewState {
   /** The last finalize walk's outcome, verbatim; null until one runs. */
   finalizeResult: EvalFinalizeView | null
   /**
-   * The directory the last export in THIS visit wrote into — the first place
-   * the report looks for the bundle. The dialog takes a free-text path, so a
-   * reader who exported somewhere other than the plan's `exports` would
-   * otherwise get 未导出 on a bundle they just wrote.
+   * The export directory the report page looks in FIRST, set two ways: an
+   * export made in this visit (the dialog takes a free-text path), or a
+   * directory the reader typed on the report page itself.
+   *
+   * Both exist for the same reason. A run started with `--out <dir>` records
+   * nothing about where its bundle went — `run.meta` names the plan and the
+   * repository, and neither is where the bundle is — so without a way to say
+   * "look over there", the page would report 未导出 about a bundle that is on
+   * disk and exported.
    */
-  exportedTo: string | null
+  lookIn: string | null
 
   /** Whether the export dialog is open. */
   exportOpen: boolean
@@ -191,7 +196,7 @@ export type LabViewActions = {
   setReportError: (draft: LabViewState, error: string | null) => void
   setFinalizing: (draft: LabViewState, finalizing: boolean) => void
   setFinalizeResult: (draft: LabViewState, result: EvalFinalizeView | null) => void
-  setExportedTo: (draft: LabViewState, dir: string) => void
+  setLookIn: (draft: LabViewState, dir: string) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setNotice: (draft: LabViewState, notice: string | null) => void
 }
@@ -240,7 +245,7 @@ const INITIAL: LabViewState = {
   reportError: null,
   finalizing: false,
   finalizeResult: null,
-  exportedTo: null,
+  lookIn: null,
   exportOpen: false,
   notice: null,
 }
@@ -256,7 +261,7 @@ const PER_EXPERIMENT: Pick<
   'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal'
   | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
-  | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'exportedTo'
+  | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'lookIn'
   | 'exportOpen' | 'notice'
 > = {
   detail: null,
@@ -282,7 +287,7 @@ const PER_EXPERIMENT: Pick<
   reportError: null,
   finalizing: false,
   finalizeResult: null,
-  exportedTo: null,
+  lookIn: null,
   exportOpen: false,
   notice: null,
 }
@@ -431,10 +436,11 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setReportError: (d, error: string | null) => { d.reportError = error },
       setFinalizing: (d, finalizing: boolean) => { d.finalizing = finalizing },
       setFinalizeResult: (d, result: EvalFinalizeView | null) => { d.finalizeResult = result },
-      setExportedTo: (d, dir: string) => {
-        d.exportedTo = dir
-        // The bundle on screen is the OLD one: a fresh export is exactly when
-        // the report must be re-read rather than kept.
+      setLookIn: (d, dir: string) => {
+        d.lookIn = dir
+        // Whatever is on screen was read from somewhere else: a fresh export,
+        // or another directory entirely, is exactly when the report must be
+        // re-read rather than kept.
         d.report = null
       },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },

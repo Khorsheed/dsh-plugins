@@ -325,6 +325,20 @@ describe('a run with no bundle', () => {
     expect(screen.getByRole('button', { name: 'report.finalize' }).hasAttribute('disabled')).toBe(true)
   })
 
+  it('takes a directory to look in — a run started with --out is exported, just not where the plan says', async () => {
+    const h = makeHarness(NOT_EXPORTED)
+    await openReport(h)
+
+    fireEvent.change(await screen.findByLabelText('report.lookInDir'), {
+      target: { value: '/scratch/t31-panel/exports' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'report.lookInGo' }))
+
+    await waitFor(() => {
+      expect(h.fetchReport).toHaveBeenLastCalledWith('s1', { runId: 'run-1', outDir: '/scratch/t31-panel/exports' })
+    })
+  })
+
   it('exporting from the page re-reads the report against the directory just written', async () => {
     const h = makeHarness(NOT_EXPORTED)
     await openReport(h)

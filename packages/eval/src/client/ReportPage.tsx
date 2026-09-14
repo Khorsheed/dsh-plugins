@@ -21,7 +21,7 @@
  */
 
 import { useState } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalFinalizeView, EvalReportJudgeTag, EvalReportPair, EvalRunReportView,
 } from '../types.ts'
@@ -272,14 +272,17 @@ export function ReportPage(props: {
   finalizeResult: EvalFinalizeView | null
   onFinalize: () => void
   onExport: () => void
+  /** Look for the bundle under this export directory instead. */
+  onLookIn: (dir: string) => void
   t: LabViewProps['t']
 }) {
-  const { report, loading, error, finalizing, finalizeResult, onFinalize, onExport, t } = props
+  const { report, loading, error, finalizing, finalizeResult, onFinalize, onExport, onLookIn, t } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
   // button asks once — the gate itself never forces, but the reader should
   // still have meant it.
   const [confirming, setConfirming] = useState(false)
+  const [dir, setDir] = useState('')
 
   if (error !== null) return <div className={css.empty}>{t('report.error')}: {error}</div>
   if (report === null) return <div className={css.empty}>{t('report.loading')}</div>
@@ -325,6 +328,22 @@ export function ReportPage(props: {
             )}
             <div className={css.actions}>
               <Button size="sm" variant="primary" onClick={onExport}>{t('report.exportNow')}</Button>
+            </div>
+            {/* A run started with `--out <dir>` records nothing about where
+                its bundle went: run.meta names the plan and the repository,
+                and the bundle is under neither. Without this box the page
+                would keep calling an exported bundle 未导出, and the only way
+                out would be to export it a second time. */}
+            <div className={css.actions}>
+              <Input
+                value={dir}
+                onChange={(event) => { setDir(event.target.value) }}
+                placeholder={t('report.lookInDir')}
+                aria-label={t('report.lookInDir')}
+              />
+              <Button size="sm" disabled={dir.trim() === ''} onClick={() => { onLookIn(dir.trim()) }}>
+                {t('report.lookInGo')}
+              </Button>
             </div>
           </div>
         )
