@@ -385,8 +385,17 @@ const lockSleep = (ms: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
-/** Serialize concurrent full-mode generations; the loser re-reads the stamp. */
-function acquireTypertLock(lockDir: string): void {
+/** Serialize concurrent full-mode generations; the loser re-reads the stamp.
+ *
+ * The parent is created first: `mkdirSync(lockDir)` is deliberately
+ * non-recursive (an atomic create-or-fail is what makes the directory a lock),
+ * so on a DSH_HOME whose `scratch/` does not exist yet it fails with ENOENT —
+ * indistinguishable, in the catch below, from "someone else holds the lock".
+ * A cold home therefore spun for the full 900-second break deadline, tore down
+ * a lock nobody held, and spun again. Nobody hit it because every deployment
+ * path set GEN_TYPERT_ONLY and returned before the lock. */
+export function acquireTypertLock(lockDir: string): void {
+  mkdirSync(dirname(lockDir), { recursive: true })
   let deadline = Date.now() + 900_000
   for (;;) {
     try {
@@ -404,7 +413,7 @@ function acquireTypertLock(lockDir: string): void {
   }
 }
 
-function releaseTypertLock(lockDir: string): void {
+export function releaseTypertLock(lockDir: string): void {
   rmSync(lockDir, { recursive: true, force: true })
 }
 
