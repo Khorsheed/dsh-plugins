@@ -345,6 +345,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **T49 / T36 验收，T35b 待解冲突（2026-09-14）**：T49 合入 `5e4ec1a3`，T36 合入 `66dbdede`（合并态 eval 534、302 对双语同步、独立性 0）。T36 真机抓到的网关精确位参 bug 已随分支修掉（runOutput 显式传 cursor），T35b / T37 / T38 同一处都要注意；「新建实验」占位改指 T34 接受。T35b 内容验收通过——「按 harness 出一次矩阵」在本机账本上做不到（三个评测 run 都是单 harness），实施者用 pilot-a-round1 的 bundle 走同一个 pivotMatrix 取证、没有编账本，对；打开子会话用一次性账本副本做接线探针、真记录没动，接受。但它与 T36 同时改了 packages/eval 的 client / remote / service / store，15 个文件 48 处冲突，两条都是往同一批文件里加东西，协调者不代解——退回实施者把 main 并进分支解冲突再 gate。教训：同一个包的两个切片并行发，合并成本落在后合的那条；以后同包切片串行，或文案里先分好文件。T35b 顺带发现的三件：gen-typert 全量模式在全新 DSH_HOME 上死锁、install.sh 去掉 GEN_TYPERT_ONLY 后全量构建 80 分钟降到 12 分钟、T49 已修的 family 边——前两件立 T50。T36 顺带发现：`/datasets bind` 在 composer 里补全后参数丢失（归 T47 顺手修）；gate 的 GLOBAL_PATHS 不含 profiles 的 scripts（T49 实测改脚本只跑 11 步，进 T50）。
 
+**T35b / T50 验收（2026-09-14）**：T35b 并 main 后合入 `e3fe4904`，T50 合入 `05050252`；合并态 eval 584、脚本测试 169、303 对双语同步、独立性 0。T35b 解冲突的经验记进通用提醒：追加型切片并 main 时，从 base / ours / theirs 三个版本取原文、按稳定锚点把自己追加的整块 graft 进 main 版本，不要逐 hunk 拼 ours+theirs——冲突边界落在声明内部时后者会把方法和接口切成两半。T50 的三件裁决：GEN_TYPERT_ONLY **保留**，全量模式会把 profile 不装的包的类型发进成员 tarball，安装器不该默默决定这个；那笔加速改走「stamp 按选中集做 key」，是缓存契约的改动，立 T52 先方案；实施者发现的 gate porcelain 解析错位（首行未暂存文件丢一个字符 → 假绿）是既存缺陷、影响所有人，立 T51 小修。主检出的 typert 产物被 T50 的全量实验重写过一次，已用全量模式跑回日常口径。
+
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
@@ -353,9 +355,11 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T48 | 文档 | 按 [ui-spec.md](ui-spec.md) 改写 README「最终 UI」与「工具按域开放」；修十处口径不一致（清单见 §三 T48） | 无 | 双语 README + sidecar；题库两处修正 |
 | T35a ✅ | 代码 | eval client 半骨架 + 实验室 tab 列表与详情壳：tsconfig / tsdown / package 的 client 出口，`conversation.view` 注册（order 40，自隐按 eval-tool 行），Remote 会话态读面 `runs / run`，状态推导，六个子页路由（先只有概览） | T46 | 合入 main `7fff2efb`（2026-09-13，`78f76b86`）；临时实例 3199 上 eval 会话 tab 环「对话 · 轨迹 · 数据集 · 实验室」、无任务 tab，standard 会话两个都无；工具卡 33 个含 eval_cells 无 mission_*（T46 欠的原文补齐）；列表 11 行（3 run + 8 草稿）、run 与 plan 按解析路径或 planSha 配对；概览页字段齐；eval_cells 不给 run_id 即列评测 run（T46 的缺口收了）；状态推导五条边界写在注释与测试里；顺带改了 scripts/gen-typert.mts（eval 指向 tsconfig.host.json）与 docs/packages.md |
 | T49 ✅ | 代码（脚本） | `install.sh --source` 自 pack-dist 的 family-edge 规则（`3406a471`）起坏了：`--family` 传的是光名字，打到 local-agent-tool-subagent 报 `is a family edge but no version was given`；改成 `name=version`，用临时 DSH_HOME 全量装一遍验证 | 无 | 合入 main `5e4ec1a3`（2026-09-14，`cd3c9ad4`）；27 个 tarball、7 个带家族、零 warn，临时实例起到就绪协议走完；`--dump-config` 24 成员是 profile 根的口径（伴生三包在预设层），判据里的 27 是 tarball 数 |
-| T50 | 代码（脚本，小） | 三处脚本卫生：`scripts/gen-typert.mts` 全量模式在全新 DSH_HOME 上死锁（取锁用非递归 mkdirSync，scratch/ 不存在就空转 900 秒）；`install.sh` 第 287 行附近「成员不变量 23」的注释落后两轮；评估去掉 `GEN_TYPERT_ONLY` 让全量模式吃缓存（T35b 实测 27 包构建 80 分钟 → 12 分钟）；`scripts/gate.mts` 的 GLOBAL_PATHS 不含 `profiles/*/scripts/`，改脚本不触发整仓 | T49 | 三处各一条提交；全新 DSH_HOME 上 install.sh 全量一遍不再死锁 |
+| T50 ✅ | 代码（脚本，小） | 三处脚本卫生：`scripts/gen-typert.mts` 全量模式在全新 DSH_HOME 上死锁（取锁用非递归 mkdirSync，scratch/ 不存在就空转 900 秒）；`install.sh` 第 287 行附近「成员不变量 23」的注释落后两轮；评估去掉 `GEN_TYPERT_ONLY` 让全量模式吃缓存（T35b 实测 27 包构建 80 分钟 → 12 分钟）；`scripts/gate.mts` 的 GLOBAL_PATHS 不含 `profiles/*/scripts/`，改脚本不触发整仓 | T49 | 合入 main `05050252`（2026-09-14，三提交）；死锁复现（未修版挂 11 分钟 CPU 0.1 秒）→ 修后 42 秒；gate 把 profiles/<id>/scripts/ 当共享层（探针 worktree 实测 scope 变整仓）；**GEN_TYPERT_ONLY 保留**——全量模式的 typert.host.js 会把本 profile 不装的 room / worktrees / canvas 的类型发进 mission 等成员 tarball（+4 KB、14 条 Room* 声明），注释写明两个耗时的前提；全新 DSH_HOME 全量装一遍 6 分 20 秒 |
+| T51 | 代码（脚本，小） | gate 的 porcelain 解析错位：gitRunner 对输出 `.trim()`，`git status --porcelain` 未暂存行以空格开头，首行被吃掉一格后 `slice(3)` 少一个字符——改了 `scripts/foo.ts` 未 add 时 scope 成 NONE 假绿；改成按 `/^(..) (.*)$/` 解析或对 status 不 trim，补用例 | T50 | 首行未暂存的共享层文件也能触发整仓 |
+| T52 | 代码（脚本，低优先） | gen-typert 的 stamp 按选中集做 key，让 scoped 模式也命中缓存（T50 实测 8 次 scoped × 44 秒占了安装耗时的九成）；这是缓存契约的改动，先方案 | T50 | install.sh 源码模式耗时降到分钟级以内 |
 | T36 ✅ | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 合入 main `66dbdede`（2026-09-14，`7cb31f66` + `14753348`）；Remote 加 plan / conditions / conditionDiff / approve 四个带会话的 verb，approve 先 validate 有 error 即拒；临时实例 3199 上计划审阅、批准后的概览（就绪拒绝原文原样）、dsh-exec 与 codex-exec 的 diff 只报 7 个不同项；真机抓到并修了 runOutput 少传 cursor 被网关精确位参拒的 bug；「新建实验」占位指向 T34 |
-| T35b 🔄 | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 分支 `feat/eval-client-cells`（`57776e71`）内容验收通过（矩阵两种列、抽屉、三个动作、导出对话框都有原文，eval 559 绿）；与 T36 在 packages/eval 的 15 个文件 48 处冲突，等实施者把 main（含 T36）并进分支解完冲突、gate 绿后再合 |
+| T35b ✅ | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 合入 main `e3fe4904`（2026-09-14，`57776e71` + 并 main 的 `57fec492`）；15 文件 48 处冲突按「两边都留」解净，Remote 18 个 verb、locale 207 键、占位页只剩 report / judging；面绑定 14 处显式传满位参并加守卫用例；合并态 eval 584；矩阵两种列（真账本按 scope、pilot-a bundle 按 harness 与 model）、抽屉、三个动作、导出对话框（mission 的拒绝原文原样转出）都有原文 |
 | T38 | 代码 | 实验室 › 报告页：读 bundle 出四条不变量、配对、效率、一致性；finalize 与导出按钮 | T35b | 第 7 步在界面上完成 |
 | T37 | 代码 | 实验室 › 判官台：盲评队列、去指纹产物、llm-draft 与 human-final 并排；human-final 唯一写入口 | T38 | 第 8 步在界面上完成 |
 | T47 | 代码 | 题集 tab 改造：列表页（槽位与层的对应、canary、validate、用于的实验）、详情的槽位标签与筛选、「选手将看到」、可判性、作答记录投影、题目骨架 / 导入题集 / 导入题目 | 无（与 T35 并行） | 题集 tab 按 ui-spec §四 |
@@ -392,7 +396,7 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
 - Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
 - UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。
-- 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。
+- 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。解追加型冲突用 graft：从 base / ours / theirs 取原文，按稳定锚点把自己追加的整块插进 main 版本，不逐 hunk 拼 ours+theirs。
 ```
 
 ### I1 的文案（已全部完成）
@@ -1996,7 +2000,7 @@ eval 测试全绿，gate 绿；临时实例上从列表点一个草稿 → 计�
 
 **验收（2026-09-14）**：`feat/eval-client-review`（`7cb31f66`、`14753348`）合入 main `66dbdede`。三段原文齐：计划审阅（i1-walk 的摘要与六条 warn、条件就绪态）、批准后的概览（就绪拒绝原文原样：本机没有注册 dsh 委派 provider）、条件 diff 七项。approve 的形状按文案（先 validate，有 error 即拒，不给模型工具）。Agent Note：`.agents/notes/implemented/feature/2026-09-14-eval-plan-review-and-approve.md`。
 
-### T35b · 实验室 › 矩阵 + 格子 + 格子详情（内容验收通过，待解冲突后合入）
+### T35b · 实验室 › 矩阵 + 格子 + 格子详情（已完成，2026-09-14 验收）
 
 ```text
 # 任务 T35b：矩阵页、格子页与格子详情抽屉，mission 账本的投影与三个动作转发
@@ -2072,7 +2076,7 @@ datasets 测试全绿，gate 绿；临时实例上绑定 harness-comparison：�
 分支与 commit；Agent Note；gate；临时实例上的列表与 P0 详情原文；骨架落位后的 validate 原文。
 ```
 
-### T50 · 脚本卫生三处：gen-typert 取锁、install.sh 注释与缓存、gate 的路径范围（可发，小）
+### T50 · 脚本卫生三处：gen-typert 取锁、install.sh 注释与缓存、gate 的路径范围（已完成，2026-09-14 验收）
 
 ```text
 # 任务 T50：三处脚本卫生
@@ -2095,7 +2099,7 @@ T35b / T49 在临时实例上装 web-eval 时撞见：(1) scripts/gen-typert.mts
 三条提交；全新 DSH_HOME 那一遍的耗时与 tarball 对比结论；gate scope 原文。
 ```
 
-### T38 · 实验室 › 报告页（可发；等 T35b 合入 main 后再开分支）
+### T38 · 实验室 › 报告页（可发，T35b 已合入 main）
 
 ```text
 # 任务 T38：实验详情的报告页——不变量、配对、效率、一致性，finalize 与导出
@@ -2107,7 +2111,7 @@ ui-spec §五：报告页 = 四条不变量、配对差值表、效率表、判�
 packages/eval/src/report.ts 与 report-render.ts（RunReport 的字段、四条不变量的 id 与 title、比较节开关、自评标记）；service.ts 的 report 与 finalize；T35b 合入后的 remote.ts（exportPlan / exportRun）与 LabView 的子页路由；T24 / T30c / T31 的 Agent Note（权重、usage.jsonl、判官归属）；ui-spec §五 §七第 7 步。
 
 ## 分支
-等 T35b 合入 main 后从 main 开 worktree ../dsh-plugins-wt-eval-client-report，分支 feat/eval-client-report；只改 packages/eval（README 双语 + sidecar）。
+从 main（≥ e3fe4904，T35b 已合入）开 worktree ../dsh-plugins-wt-eval-client-report，分支 feat/eval-client-report；只改 packages/eval（README 双语 + sidecar）。
 
 ## 已定决定
 - Remote 加 report(agent, { runId })：找该 run 最近一次导出的 bundle（导出目录按 plan 的 exports 约定），没有就返回「先导出」；有就调 service.report 出 RunReport 的投影，不落盘（落盘仍是 CLI 的 --out）。加 finalize(agent, { runId })：调 service.finalize，返回 released / refused / skipped 计数与原文。两个都不做模型工具。
@@ -2151,6 +2155,28 @@ eval 测试全绿，gate 绿；临时实例上对 t31-judge-panel 打一条 huma
 
 ## 回报
 分支与 commit；Agent Note；gate；判官台盲态原文、提交后的账本注解原文、报告页的覆盖原文。
+```
+
+### T51 · 脚本：gate 的 porcelain 解析错位（可发，小）
+
+```text
+# 任务 T51：gate 读 git status --porcelain 时首行未暂存文件丢一个字符
+
+## 背景
+T50 发现：scripts/gate.mts 的 gitRunner 对每条命令输出做 .trim()，而 git status --porcelain 的未暂存修改行以空格开头（" M path"）。首行被 trim 掉前导空格后，porcelainPaths 的定长 slice(3) 就错位一格——"profiles/…/update.sh" 变成 "rofiles/…/update.sh"，共享层判定 [true, true] 变成 [false, true]。只影响首行且未暂存的那一条，但改了 scripts/foo.ts 还没 add 就跑 gate 时 scope 会成 NONE，正是 gate 注释里说「scoping must not have」的假绿。它先于 T50 存在，改它会改变所有人的 gate 行为，所以单独一条。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-gate-porcelain，分支 fix/gate-porcelain-parse；只改 scripts/gate.mts 与 scripts/gate.spec.ts。
+
+## 已定决定
+- porcelainPaths 按 /^(..) (.*)$/ 逐行解析（状态两列 + 空格 + 路径），不再定长切片；gitRunner 对 status 命令不 trim 或改为只去尾部换行——二选一，选改动面小的那个并写明。
+- 用例：首行为未暂存的共享层文件时 scope 判为整仓；重命名行（"R  old -> new"）取新路径。
+
+## 完成判据
+scripts 测试全绿；探针 worktree 里改一个根 scripts 文件不 add 直接跑 gate，scope 原文是整仓；gate --all 绿（根 scripts 改动触发整仓）。
+
+## 回报
+分支与 commit；两次 gate scope 原文（修前 NONE、修后整仓）。
 ```
 
 ### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（可发）
