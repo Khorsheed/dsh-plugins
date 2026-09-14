@@ -57,7 +57,8 @@ struct HarnessWebView: UIViewRepresentable {
             navigationWatch?.cancel()
             navigationWatch = Task { @MainActor [weak self, weak webView] in
                 do { try await Task.sleep(for: .seconds(30)) } catch { return }
-                guard let self, let webView, !Task.isCancelled else { return }
+                guard let self, let webView, !Task.isCancelled,
+                      !self.authenticationRejected, !self.state.mobileAvailable else { return }
                 self.state.loading = false
                 self.state.chromeVisible = false
                 self.state.failure = String(localized: "页面加载超时，请重新载入，或检查连接设置。")
@@ -65,12 +66,23 @@ struct HarnessWebView: UIViewRepresentable {
             }
         }
 
+        // The app can be usable before WebKit finishes slow subresources.
+        // A trusted bridge readiness signal also recovers a previously timed-out load.
+        private func pageBecameReady() {
+            guard !authenticationRejected else { return }
+            navigationWatch?.cancel()
+            navigationWatch = nil
+            state.loading = false
+            state.failure = nil
+        }
+
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame,
                   let url = message.frameInfo.request.url, host.contains(url),
                   let body = message.body as? [String: Any], body["bridgeVersion"] as? Int == 1,
                   let type = body["type"] as? String else { return }
-            if type == "ready" {
+            if type == "ready", !authenticationRejected {
+                pageBecameReady()
                 state.mobileAvailable = true
                 if let layout = body["layout"] as? [String: Any], let mode = layout["mode"] as? String,
                    ["auto", "mobile", "desktop"].contains(mode) { state.displayMode = mode }
@@ -124,6 +136,7 @@ struct HarnessWebView: UIViewRepresentable {
             #if DEBUG
             print("DSH navigation started")
             #endif
+            state.failure = nil
             state.loading = true
             state.mobileAvailable = false
             state.chromeVisible = false
@@ -148,7 +161,7 @@ struct HarnessWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             navigationWatch?.cancel()
             state.loading = false
-            if !authenticationRejected, let url = webView.url, host.contains(url) { state.failure = nil }
+            if let url = webView.url, host.contains(url) { pageBecameReady() }
             #if DEBUG
             print("DSH navigation finished")
             #endif

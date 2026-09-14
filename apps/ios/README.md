@@ -37,7 +37,7 @@ The connection sheet can change hosts, disconnect or clear this App's cookies/ca
 
 For cellular access, provision HTTPS/WSS forwarding separately and retain upstream Host/Origin checks. The Mac must stay awake and online. Network provisioning, cookie Secure hardening at ingress, device signing and cellular acceptance are not performed by this project.
 
-Native navigation has a 30-second load deadline with Reload and Connection Settings recovery. Reloading an uncommitted or blank WebView explicitly requests the configured login URL; reloading a committed same-origin page keeps its current navigation. A rejected HTTP 401 retains the login-expired explanation when WebKit subsequently reports its policy cancellation. Debug navigation diagnostics contain only lifecycle events, origin-match flags and numeric status/error codes, never authenticated URLs or cookies.
+Native navigation has a 30-second load deadline with Reload and Connection Settings recovery. A validated same-origin mobile `ready` signal cancels the deadline and clears an earlier load error, even while WebKit waits for slow subresources; an explicit login rejection remains an error. Each new navigation resets the previous loading error. Reloading an uncommitted or blank WebView explicitly requests the configured login URL; reloading a committed same-origin page keeps its current navigation. A rejected HTTP 401 retains the login-expired explanation when WebKit subsequently reports its policy cancellation. Debug navigation diagnostics contain only lifecycle events, origin-match flags and numeric status/error codes, never authenticated URLs or cookies.
 
 ## QR login and native settings
 
