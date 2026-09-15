@@ -122,6 +122,8 @@ describe('room journal persistence', () => {
       session.append('room/run-state', { member: 'ada', state: 'done', startedAt: 1, elapsedMs: 2 })
       session.append('room/member-removed', { name: 'ada' })
       session.append('room/goal', { text: '插件 API v2 上线' })
+      session.append('room/coordinator', { version: 1, memberId: 'legacy:1', previousMemberId: 'legacy:1', revision: 1, handoff: 'Continue' })
+      session.append('room/delivery-state', { id: 'delivery', dispatchSeq: 3, memberId: 'ada', state: 'done' })
       await fix.ctx.sessions.flush(session)
 
       const reader = await fix.ctx.sessionPersistence.open(sessionId, 'read')

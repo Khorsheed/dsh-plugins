@@ -191,6 +191,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /** Map a structured RoomFailure to the dialog's localized copy. */
   const failureText = (error: RoomFailure): string => {
     switch (error.code) {
+      case 'coordinator-busy': return t('coordinator.busy')
+      case 'coordinator-not-ready': return error.message
+      case 'coordinator-conflict': return t('coordinator.conflict')
+      case 'active-coordinator': return t('coordinator.active')
+      case 'configuration-owned-by-core': return t('coordinator.configuration')
       case 'duplicate-name': return t('invite.error.duplicate')
       case 'invalid-name': return t('invite.error.invalid')
       case 'local-agent-unavailable': return t('invite.error.unavailable')
@@ -256,6 +261,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    setCoordinator: async (memberId, expectedRevision) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      await roomStore.refresh(sessionId)
+      return { ok: true }
+    },
     renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
     ...inviteFace(sessionId),
     // The localAgentGateway member model surface (the family client half's
@@ -361,6 +374,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...tasksFace(sessionId),
       ...inviteFace(sessionId),
       submit,
+      renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
+      stopMember: name => { void remote?.cancel({ sessionId, name }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       // The hidden official bar's Stop: the runtime session face's cancel
       // (the same verb ui-conversation's own Stop injects). A torn-down

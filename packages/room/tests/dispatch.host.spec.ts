@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
@@ -465,3 +467,118 @@ describe('DispatchEngine (real composition)', () => {
   })
 })
 import { createRoom } from './promote.ts'
+
+describe('coordinator routing and durable deliveries', () => {
+  async function preparedMember(bench: Bench, name = 'ada') {
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name })
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    session.append('room/member-updated', { name, childSessionId: SessionId(`child-${name}`) })
+    bench.localAgentStub['memberConfiguration'] = () => ({ status: 'idle' })
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    return state.value.members.find(member => member.name === name)!
+  }
+
+  it('promotes a ready identity without a prompt, routes bare input directly, and keeps native DSH addressable', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    expect(await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 }))
+      .toMatchObject({ ok: true, value: { memberId: member.id, revision: 1 } })
+    expect(bench.facade.start).not.toHaveBeenCalled()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'external answer'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: 'hello', requestId: 'input-1' })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledTimes(1)
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('Coordinator handoff')
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@main hello' })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
+    expect(await bench.service.removeMember({ sessionId: bench.sessionId, name: 'ada' }))
+      .toEqual({ ok: false, error: { code: 'active-coordinator' } })
+    expect(await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: 'legacy:1', expectedRevision: 0 }))
+      .toEqual({ ok: false, error: { code: 'coordinator-conflict' } })
+    expect(await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: 'legacy:1', expectedRevision: 1 }))
+      .toMatchObject({ ok: true, value: { memberId: 'legacy:1', revision: 2 } })
+  })
+
+  it('reroutes stale official input before any native model request through the public pre-step seam', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 })
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'answer'))
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const agent = { session } as Agent
+    const message = createUserMessage({ content: [{ type: 'text', text: 'stale client input' }], source: { kind: 'user' } })
+    const next = vi.fn(async () => ({ kind: 'enter' as const, messages: [message] }))
+    expect(await agentEvents(bench.ctx, agent).waterfall('agent/pre-step', { messages: [message], turn: 1, step: 1, signal: new AbortController().signal }, next))
+      .toEqual({ kind: 'enter', messages: [] })
+    expect(next).not.toHaveBeenCalled()
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledTimes(1)
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+  })
+
+  it('returns acceptance before background completion and reports exactly once; human @ never wakes main', async () => {
+    const bench = await bootRoom()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    const done = deferred<SubagentResult>()
+    bench.facade.start.mockImplementation(async () => ({ ...settledRun('child-ada', ''), result: done.promise }))
+    expect(await bench.service.messageMember({ sessionId: bench.sessionId, member: 'ada', text: 'small job' })).toMatchObject({ ok: true })
+    await tick()
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+    done.resolve({ output: [{ type: 'text', text: 'evidence: done' }], stopReason: 'completed' })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    expect(session.snapshotEvents().filter(event => event.type === 'room/dispatch' && event.data.reportFor !== undefined)).toHaveLength(1)
+    await bench.service.engine.recover(session)
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'private answer'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada private question' })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
+  })
+
+  it('deduplicates accepted requests and preserves queued recipient identity across a rename', async () => {
+    const bench = await bootRoom()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    const first = deferred<SubagentResult>()
+    bench.facade.start.mockImplementation(async () => ({ ...settledRun('child-ada', ''), result: first.promise }))
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'second'))
+    const request = { sessionId: bench.sessionId, text: '@ada first', requestId: 'first' }
+    const receipt = await bench.service.postMessage(request)
+    expect(await bench.service.postMessage(request)).toEqual(receipt)
+    await tick()
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada second', requestId: 'second' })
+    await bench.service.updateMember({ sessionId: bench.sessionId, name: 'ada', rename: 'renamed' })
+    first.resolve({ output: [{ type: 'text', text: 'first' }], stopReason: 'completed' })
+    await bench.service.engine.idle()
+    expect(bench.facade.start).toHaveBeenCalledTimes(1)
+    expect(bench.facade.resume).toHaveBeenCalledTimes(1)
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [{ member: 'renamed', state: 'done' }] } })
+    expect(bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/speech').map(event => event.data.member)).toEqual(['renamed', 'renamed'])
+  })
+
+  it('recovers unstarted deliveries and marks crashed in-flight work uncertain without replay', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'done'))
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const started = session.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: 'side effect' })
+    session.append('room/delivery-state', { id: `${started.seq}:${member.id}`, dispatchSeq: started.seq, memberId: member.id!, state: 'running' })
+    session.append('room/dispatch', { id: 'queued', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: 'next' })
+    await bench.service.engine.recover(session)
+    await bench.service.engine.idle()
+    await bench.service.engine.recover(session)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(await bench.service.reconcileDelivery({ sessionId: bench.sessionId, deliveryId: `${started.seq}:${member.id}`, outcome: 'cancelled', evidence: 'Reviewed native transcript and cancelled the uncertain attempt' })).toEqual({ ok: true })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledTimes(1)
+    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('next')
+    expect(session.snapshotEvents().some(event => event.type === 'room/delivery-state' && event.data.state === 'uncertain')).toBe(true)
+  })
+})

@@ -33,12 +33,12 @@
  * trigger on the same directory; a host without ui-model-selection gets no
  * picker).
  */
+import { coordinatorMember } from '../journal.ts'
 import {
   useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { parseMentions } from '../journal.ts'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
@@ -93,9 +93,9 @@ export function selectRoomComposer(
 
 /** The room composer takeover component. */
 export function RoomComposer({
-  sessionId, inputActions, roomStore, submit, stop, addTask, closeTask, setGoal,
+  sessionId, roomStore, submit, stop, addTask, closeTask, setGoal,
   roomCwd, invite, listProviders, listNames, browseDirectory, modelSurface, renderHarnessModelPicker, roomChrome,
-  modelDirectory, useSession, useProjection, t,
+  modelDirectory, renderMemberConfiguration, stopMember, useSession, useProjection, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
@@ -113,7 +113,10 @@ export function RoomComposer({
   // The inherited environment state: the room's own main-agent turn flag
   // (drives the Send/Stop swap) and the still-queued inbox rows (the official
   // queue dock's data, re-homed as a read-only strip).
-  const running = useSession(snapshot => snapshot.running) ?? false
+  const nativeRunning = useSession(snapshot => snapshot.running) ?? false
+  const coordinator = state === undefined ? undefined : coordinatorMember(state)
+  const external = coordinator?.kind === 'cli'
+  const running = external ? state?.runs.some(run => run.member === coordinator.name && run.state === 'running') ?? false : nativeRunning
   const queued = (useSession(snapshot => snapshot.queue) ?? [])
     .filter(row => row.placement === 'queued')
 
@@ -142,19 +145,6 @@ export function RoomComposer({
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (text === '' || busy) return
-    // Bare message — no leading tokens AND no menu picks: release to the
-    // official submit path, a normal turn of the room's own main agent. The
-    // takeover never journals it; the official pipeline (queue admission,
-    // adjudication, delivery) owns it from here.
-    if (parseMentions(text).targets.length === 0 && picked.length === 0) {
-      inputActions.setDraft(text)
-      inputActions.submit()
-      setDraft('')
-      setMention(null)
-      setPicked([])
-      setError(null)
-      return
-    }
     setBusy(true)
     setError(null)
     try {
@@ -214,7 +204,7 @@ export function RoomComposer({
           seat), the goal/task capsules, and the queued-messages strip (the
           official QueueDock, read-only). */}
       <div className={css.dock}>
-        {useProjection !== undefined && <RoomTodoStrip useProjection={useProjection} t={t} />}
+        {!external && useProjection !== undefined && <RoomTodoStrip useProjection={useProjection} t={t} />}
         <RoomDockCapsules
           sessionId={sessionId}
           roomStore={roomStore}
@@ -232,12 +222,13 @@ export function RoomComposer({
           t={t}
         />
         <RoomQueueStrip
-          items={queued.map(row => ({ id: String(row.id), preview: row.preview }))}
+          items={[...external ? [] : queued.map(row => ({ id: String(row.id), preview: row.preview })), ...(state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain')).map(row => ({ id: row.id, preview: row.status === 'uncertain' ? `${row.error ?? 'Outcome unknown'}: ${row.text}` : row.text }))]}
           t={t}
         />
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       <div className={css.card}>
+        <div className={css.hint}>{t('coordinator.label')} · {coordinator?.name ?? 'main'}{external ? ` · ${coordinator.provider}` : ' · DSH'}</div>
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label="members">
             {candidates.map((member, index) => (
@@ -278,7 +269,8 @@ export function RoomComposer({
               SESSION selection only — an @-addressed member dispatch rides
               room's own submit remote and is never touched. Absent service =
               no picker. */}
-          {modelDirectory !== undefined && (
+          {external && coordinator.childSessionId !== undefined && renderMemberConfiguration?.(coordinator.childSessionId)}
+          {!external && modelDirectory !== undefined && (
             <RoomModelPicker directory={modelDirectory} onError={setError} t={t} />
           )}
           {/* Send/Stop swap, the official InputBar's ordinary-session
@@ -293,7 +285,7 @@ export function RoomComposer({
               className={css.primary}
               aria-label={t('composer.stop')}
               onMouseDown={(event) => { event.preventDefault() }}
-              onClick={stop}
+              onClick={() => { if (external) stopMember?.(coordinator.name); else stop() }}
             >
               <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                 <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />

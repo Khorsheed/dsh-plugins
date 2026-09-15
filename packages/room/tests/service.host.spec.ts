@@ -54,7 +54,7 @@ async function bootRoom(options: BenchOptions = {}) {
 }
 
 /** The roster row every fresh room seats: its own main agent. */
-const MAIN_MEMBER = { name: 'main', kind: 'main-agent', invitedBy: 'human' }
+const MAIN_MEMBER = { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' }
 
 /**
  * Flush the task queue so the engine's queued run reaches the delivery point.
@@ -321,16 +321,13 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
   })
 
-  it('postMessage without a mention is a structured no-targets rejection (bare messages belong to the official path)', async () => {
+  it('routes a bare message through the persisted native coordinator and rejects empty input', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     expect(await service.postMessage({ sessionId, text: '今天先讨论方向' }))
-      .toEqual({ ok: false, error: { code: 'no-targets' } })
-    // Nothing is journaled: the rejection is pure defense.
-    const events = ctx.sessions.get(sessionId)!.snapshotEvents()
-    expect(events.filter(event => event.type.startsWith('room/'))).toHaveLength(2)
-    expect(events.some(event => event.type === 'user/message')).toBe(false)
-    expect(await service.postMessage({ sessionId, text: '   ' }))
-      .toEqual({ ok: false, error: { code: 'empty-text' } })
+      .toMatchObject({ ok: true, value: { parsed: { targets: ['main'], text: '今天先讨论方向' } } })
+    const dispatch = ctx.sessions.get(sessionId)!.snapshotEvents().find(event => event.type === 'room/dispatch')
+    expect(dispatch?.data).toMatchObject({ origin: 'human', targetIds: ['legacy:1'] })
+    expect(await service.postMessage({ sessionId, text: '   ' })).toEqual({ ok: false, error: { code: 'empty-text' } })
   })
 
   it('postMessage with mentions logs a standard user/message (the official bubble) plus the dispatch bookkeeping, auto-opens tasks, and validates the roster', async () => {
@@ -363,7 +360,7 @@ describe('RoomService Remote surface (real composition)', () => {
     ])
     // The dispatch record stays as bookkeeping (tasks, cursors, replay).
     const dispatches = events.filter(event => event.type === 'room/dispatch')
-    expect(dispatches.map(event => event.data)).toEqual([
+    expect(dispatches.map(event => event.data)).toMatchObject([
       { targets: ['ada'], text: '出方案' },
       { targets: ['ada', 'bill'], text: '对齐接口' },
     ])
@@ -405,7 +402,7 @@ describe('RoomService Remote surface (real composition)', () => {
 
     const events = ctx.sessions.get(sessionId)!.snapshotEvents()
     const dispatches = events.filter(event => event.type === 'room/dispatch')
-    expect(dispatches.map(event => event.data)).toEqual([
+    expect(dispatches.map(event => event.data)).toMatchObject([
       { targets: ['bill'], text: '接口找 @bill 对齐一下' },
       { targets: ['ada', 'bill'], text: '顺带 @bill 看看' },
     ])

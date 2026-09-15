@@ -79,8 +79,8 @@ describe('replay (pure journal fold)', () => {
     ]
     const state = replay(events)
     expect(state.members).toEqual([
-      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端 + 接口评审', cwd: '/home/user/api' },
-      { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' },
+      { id: 'legacy:1', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端 + 接口评审', cwd: '/home/user/api' },
+      { id: 'legacy:2', name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' },
     ])
     expect(state.tasks).toEqual([{ id: 't1', member: 'ada', title: '出方案', status: 'done', updatedAt: 1000 }])
     expect(state.relays).toEqual([{ id: 'r1', from: 'ada', to: 'bill', content: '接口定稿', state: 'confirmed' }])
@@ -131,7 +131,7 @@ describe('replay (pure journal fold)', () => {
       ev('room/member-removed', { name: 'ghost' }),
     ]
     expect(replay(events).members).toEqual([
-      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
+      { id: 'legacy:0', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
     ])
   })
 
@@ -179,7 +179,7 @@ describe('replay (pure journal fold)', () => {
       ev('room/member-updated', { name: 'ada', childSessionId: 'child-1' }),
     ]
     expect(replay(events).members).toEqual([
-      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-1' },
+      { id: 'legacy:0', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-1' },
     ])
   })
 

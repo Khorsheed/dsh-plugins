@@ -13,6 +13,7 @@
     "src/invariant.ts",
     "src/journal.ts",
     "src/tool.ts",
-    "src/types.ts"
+    "src/types.ts",
+    "src/deliveries.ts"
   ]
 }

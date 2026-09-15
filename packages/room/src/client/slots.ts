@@ -174,6 +174,8 @@ export interface RoomModelDirectory {
  * ui-model-selection — the picker simply does not render.
  */
 export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjected {
+  readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
+  readonly stopMember?: ((name: string) => void) | undefined
   /**
    * Dispatch an @-message into the room and refresh the store on success.
    * Bare messages never reach here — the composer releases them to the
@@ -236,6 +238,7 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   /** Open a session (the member's child-session trajectory jump). */
   readonly openSession: (sessionId: SessionId) => void
   /** Remove the named member from the roster. */
+  readonly setCoordinator?: ((memberId: string, expectedRevision: number) => Promise<RoomMutationOutcome>) | undefined
   readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
   /**
    * Edit the named member: rename, cwd override (null clears back to

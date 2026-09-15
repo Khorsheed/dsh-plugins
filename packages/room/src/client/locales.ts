@@ -2,10 +2,16 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'coordinator.label': '协调者',
+  'coordinator.promote': '设为协调者',
+  'coordinator.busy': '请等待原协调者与候选成员空闲、队列清空后交接',
+  'coordinator.conflict': '协调者已改变，请刷新后重试',
+  'coordinator.active': '请先交接协调者，再移除此成员',
+  'coordinator.configuration': '已启动成员的模型和 effort 由成员配置面板管理',
   'action.inviteAgent': '＋ 邀请 agent',
   'view.members': '成员',
   'members.empty': '暂无成员',
-  'composer.placeholder': '跟主 agent 对话；@ 成员以派发',
+  'composer.placeholder': '跟协调者对话；@ 指定其他成员',
   'composer.send': '发送',
   'composer.stop': '停止生成',
   'composer.error.unknownTargets': '未知成员：{names}',
@@ -154,6 +160,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'coordinator.label': 'Coordinator',
+  'coordinator.promote': 'Set as coordinator',
+  'coordinator.busy': 'Wait for both coordinators to be idle with empty queues before handoff',
+  'coordinator.conflict': 'Coordinator changed; refresh and retry',
+  'coordinator.active': 'Hand off coordination before removing this member',
+  'coordinator.configuration': 'Use member controls to change a started member model or effort',
   'action.inviteAgent': '＋ Invite agent',
   'view.members': 'Members',
   'members.empty': 'No members yet',

@@ -72,6 +72,8 @@ async function bench(
     t?: RoomComposerProps['t']
     session?: SessionSlice
     state?: RoomState
+    renderMemberConfiguration?: RoomComposerProps['renderMemberConfiguration']
+    stopMember?: (name: string) => void
     modelDirectory?: RoomModelDirectory
   } = {},
 ): Promise<Bench> {
@@ -94,6 +96,8 @@ async function bench(
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
     browseDirectory: vi.fn(async () => null),
+    renderMemberConfiguration: options.renderMemberConfiguration,
+    stopMember: options.stopMember,
     modelDirectory: options.modelDirectory,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
@@ -159,7 +163,7 @@ describe('RoomComposer', () => {
     expect(inputActions.submit).not.toHaveBeenCalled()
   })
 
-  it('releases a bare message to the official submit path (a normal main-agent turn)', async () => {
+  it('routes bare input through the room service', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const { area, inputActions } = await bench(submit)
     type(area, '随便聊聊')
@@ -167,9 +171,8 @@ describe('RoomComposer', () => {
     await waitFor(() => { expect(area.value).toBe('') })
     // The official input machine received the text and the submission —
     // the room Remote was never called.
-    expect(inputActions.setDraft).toHaveBeenCalledWith('随便聊聊')
-    expect(inputActions.submit).toHaveBeenCalledTimes(1)
-    expect(submit).not.toHaveBeenCalled()
+    expect(inputActions.submit).not.toHaveBeenCalled()
+    expect(submit).toHaveBeenCalledWith(SESSION, '随便聊聊')
   })
 
   it('triggers the menu on a whitespace-preceded @ anywhere (line start, mid-sentence, sentence end), never on a glued @', async () => {
@@ -213,16 +216,15 @@ describe('RoomComposer', () => {
     expect(inputActions.submit).not.toHaveBeenCalled()
   })
 
-  it('a hand-typed mid-sentence mention without a menu pick stays prose (released to the official path)', async () => {
+  it('a hand-typed mid-sentence mention stays prose for the coordinator', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const { area, inputActions } = await bench(submit)
     // The caret sits after 吧: no active mention, Enter sends. The @ada inside
     // the sentence is prose, not addressing.
     type(area, '你去问 @ada 吧')
     fireEvent.keyDown(area, { key: 'Enter' })
-    await waitFor(() => { expect(inputActions.submit).toHaveBeenCalledTimes(1) })
-    expect(inputActions.setDraft).toHaveBeenCalledWith('你去问 @ada 吧')
-    expect(submit).not.toHaveBeenCalled()
+    await waitFor(() => { expect(submit).toHaveBeenCalledWith(SESSION, '你去问 @ada 吧') })
+    expect(inputActions.submit).not.toHaveBeenCalled()
   })
 
   it('shows the structured error line and keeps the draft on rejection', async () => {
@@ -332,15 +334,14 @@ describe('RoomComposer inherited environment duties', () => {
     expect(stop).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps releasing bare messages to the official submit path while running (busy admission enqueues)', async () => {
+  it('accepts bare messages through the room while the coordinator is running', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const { area, inputActions } = await bench(submit, { session: { running: true, queue: [] } })
     type(area, '排队等我')
     fireEvent.keyDown(area, { key: 'Enter' })
     await waitFor(() => { expect(area.value).toBe('') })
-    expect(inputActions.setDraft).toHaveBeenCalledWith('排队等我')
-    expect(inputActions.submit).toHaveBeenCalledTimes(1)
-    expect(submit).not.toHaveBeenCalled()
+    expect(inputActions.submit).not.toHaveBeenCalled()
+    expect(submit).toHaveBeenCalledWith(SESSION, '排队等我')
   })
 
   it('renders the todo strip from the todos projection and expands to the item list', async () => {
@@ -500,5 +501,33 @@ describe('RoomComposer main-agent model picker', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Model Two' }))
     expect(await screen.findByRole('alert')).toBeDefined()
     expect(screen.getByRole('alert').textContent).toBe(zh['composer.model.failed'])
+  })
+})
+
+
+describe('external coordinator composer', () => {
+  it('binds configuration and Stop to the coordinator and hides the former native todo/queue', async () => {
+    const stopMember = vi.fn()
+    const renderMemberConfiguration = vi.fn((id: string) => <div>Configuration for {id}</div>)
+    const state: RoomState = { ...STATE,
+      members: STATE.members.map(member => ({ ...member, id: member.name, ...member.name === 'ada' ? { childSessionId: 'child-ada' as SessionId } : {} })),
+      coordinator: { version: 1, memberId: 'ada', previousMemberId: 'main', revision: 1, handoff: 'goal' },
+      runs: [{ member: 'ada', state: 'running', startedAt: Date.now() }],
+    }
+    const submit = vi.fn(async () => ({ ok: true as const }))
+    const { area, stop, inputActions } = await bench(submit, { state, stopMember, renderMemberConfiguration,
+      session: { running: true, queue: [{ id: 'old', placement: 'queued', preview: 'old DSH input' }] },
+      useProjection: (() => [{ content: 'old DSH todo', status: 'in_progress' }]) as unknown as UseProjection,
+    })
+    expect(screen.getByText('Configuration for child-ada')).toBeDefined()
+    expect(screen.queryByText('old DSH todo')).toBeNull()
+    expect(screen.queryByText('old DSH input')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'composer.stop' }))
+    expect(stopMember).toHaveBeenCalledWith('ada')
+    expect(stop).not.toHaveBeenCalled()
+    type(area, 'next coordinator input')
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(SESSION, 'next coordinator input'))
+    expect(inputActions.submit).not.toHaveBeenCalled()
   })
 })

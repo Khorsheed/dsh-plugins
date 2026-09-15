@@ -10,6 +10,7 @@
  * journaled for UI projection and replay only.
  * @module @khorsheed/dsh-room/journal
  */
+import { replayDeliveries } from './deliveries.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
   RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask, RoomTaskProgress,
@@ -36,6 +37,8 @@ export const MAIN_AGENT_MEMBER = 'main'
  */
 export const ROOM_EVENT_TYPES = [
   'room/created',
+  'room/coordinator',
+  'room/delivery-state',
   'room/member-added',
   'room/member-updated',
   'room/member-removed',
@@ -118,11 +121,17 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const taskById = new Map<string, RoomTask>()
   const runs = new Map<string, RoomMemberRun>()
   let goal: string | undefined
+  let coordinator: RoomState['coordinator']
   for (const event of events) {
     switch (event.type) {
+      case 'room/coordinator': {
+        if (event.data.revision > (coordinator?.revision ?? 0)) coordinator = event.data
+        break
+      }
       case 'room/member-added': {
         if (byName.has(event.data.name)) break
         const added: RoomMember = {
+          id: event.data.id ?? `legacy:${event.seq}`,
           name: event.data.name,
           kind: event.data.kind,
           invitedBy: event.data.invitedBy,
@@ -287,7 +296,8 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
     }
   }
-  return { members, relays, tasks, runs: [...runs.values()], ...goal === undefined ? {} : { goal } }
+  const deliveries = replayDeliveries(events)
+  return { members, relays, tasks, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
 }
 
 /**
@@ -392,4 +402,21 @@ export function pendingInstructions(
   if (cursor === undefined) return { kind: 'initial', instructions: lastInstructions }
   if (lastSeq > cursor) return { kind: 'update', instructions: lastInstructions }
   return undefined
+}
+
+/** Resolve legacy join identity through renames; never key a new dispatch by display name. */
+export function memberId(events: readonly SessionEvent[], member: RoomMember): string {
+  if (member.id !== undefined) return member.id
+  let name = member.name
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index]!
+    if (event.type === 'room/member-updated' && event.data.rename === name) name = event.data.name
+    if (event.type === 'room/member-added' && event.data.name === name) return event.data.id ?? `legacy:${event.seq}`
+  }
+  throw new Error('Room member has no join identity')
+}
+
+export function coordinatorMember(state: RoomState, events?: readonly SessionEvent[]): RoomMember | undefined {
+  if (state.coordinator === undefined) return state.members.find(member => member.kind === 'main-agent')
+  return state.members.find(member => (member.id ?? (events === undefined ? undefined : memberId(events, member))) === state.coordinator!.memberId)
 }

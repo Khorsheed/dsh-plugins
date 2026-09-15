@@ -255,7 +255,7 @@ describe('room_message tool (real composition)', () => {
     // The dispatch record and the auto-opened task journal as usual; the
     // caller is the main agent, so NO human user/message bubble is appended.
     expect(events.filter(event => event.type === 'room/dispatch').map(event => event.data))
-      .toEqual([{ targets: ['ada'], text: '看看接口定义' }])
+      .toMatchObject([{ targets: ['ada'], text: '看看接口定义', origin: 'coordinator', replyTo: 'legacy:1' }])
     expect(events.some(event => event.type === 'user/message')).toBe(false)
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({

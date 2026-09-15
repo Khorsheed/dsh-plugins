@@ -50,13 +50,13 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine } from './dispatch.ts'
-import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
+import { DispatchEngine, ROOM_PLUGIN } from './dispatch.ts'
+import { coordinatorMember, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
   RoomCloseTaskRequest, RoomCloseTaskResult,
-  RoomFailure,
+  RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult,
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
@@ -120,6 +120,7 @@ export class RoomService extends TypertRemoteService {
 
   /** The dispatch engine executing this service's dispatch records. */
   readonly engine: DispatchEngine
+  private readonly handoffs = new Set<string>()
 
   /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
   private readonly resumes = new Map<SessionId, Promise<RoomLoad>>()
@@ -130,6 +131,28 @@ export class RoomService extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'room')
     this.engine = new DispatchEngine(ctx)
+    // A stale client or another official input surface must not wake a DSH
+    // model behind an external coordinator. Public pre-step admits an empty
+    // initial step without a model call after room has durably accepted it.
+    const nativeTurns = new WeakMap<object, number>()
+    ctx.on('agent/pre-step', async ({ agent, messages, turn, step }, next) => {
+      const events = agent.session.snapshotEvents()
+      if (!isRoomLog(events) || coordinatorMember(replay(events), events)?.kind !== 'cli') return next()
+      if (nativeTurns.get(agent) === turn) return next()
+      if (step !== 1) throw new Error('Room native turn has no explicit member dispatch')
+      if (messages.some(message => message.source.kind === 'plugin' && message.source.plugin === ROOM_PLUGIN)) {
+        nativeTurns.set(agent, turn)
+        return next()
+      }
+      for (const message of messages) {
+        if (message.source.kind !== 'user' || message.content.some(block => block.type !== 'text')) {
+          throw new Error('Use the room input route for this coordinator; this input cannot be forwarded losslessly')
+        }
+        const result = await this.postMessage({ sessionId: agent.session.id, requestId: String(message.id), text: message.content.map(block => block.type === 'text' ? block.text : '').join('\n') })
+        if (!result.ok) throw new Error(`Room input routing failed: ${result.error.code}`)
+      }
+      return { kind: 'enter', messages: [] }
+    })
     // The model-facing room tools are deliberately NOT registered here: they
     // moved to the companion `@khorsheed/dsh-room-tool`, which mounts the
     // tool row inside agent-preset compositions (session-granted). The
@@ -197,7 +220,9 @@ export class RoomService extends TypertRemoteService {
     } catch (error: unknown) {
       return { ok: false, error: { code: 'resume-failed', message: String(error) } }
     }
-    return this.load(sessionId)
+    const loaded = this.load(sessionId)
+    if (loaded.ok) await this.engine.recover(loaded.session)
+    return loaded
   }
 
   /**
@@ -346,6 +371,7 @@ export class RoomService extends TypertRemoteService {
       }
     }
     loaded.session.append('room/member-added', {
+      id: randomUUID(),
       name: request.name,
       kind: 'cli',
       provider: request.provider,
@@ -357,6 +383,8 @@ export class RoomService extends TypertRemoteService {
     let firstTaskSeq: number | undefined
     if (request.firstTask !== undefined) {
       firstTaskSeq = loaded.session.append('room/dispatch', {
+        id: randomUUID(), origin: invitedBy === 'human' ? 'human' : 'coordinator',
+        targetIds: [memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)],
         targets: [request.name], text: request.firstTask,
       }).seq
       loaded.session.append('room/task-added', {
@@ -406,6 +434,7 @@ export class RoomService extends TypertRemoteService {
     if (member === undefined) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
+    if (request.model !== undefined && member.childSessionId !== undefined) return { ok: false, error: { code: 'configuration-owned-by-core' } }
     if (request.rename === undefined && request.instructions === undefined
       && request.cwd === undefined && request.model === undefined) {
       return { ok: false, error: { code: 'nothing-to-update' } }
@@ -439,6 +468,65 @@ export class RoomService extends TypertRemoteService {
     return { ok: true, value: { name: request.name } }
   }
 
+  /** A human records the known result before releasing a crashed member's queued work. */
+  @Remote('reconcileDelivery')
+  async reconcileDelivery(request: RoomReconcileDeliveryRequest): Promise<RoomReconcileDeliveryResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const delivery = loaded.state.deliveries?.find(row => row.id === request.deliveryId)
+    if (delivery?.status !== 'uncertain') return { ok: false, error: { code: 'delivery-not-uncertain' } }
+    if (request.evidence.trim() === '') return { ok: false, error: { code: 'empty-text' } }
+    loaded.session.append('room/delivery-state', { id: delivery.id, dispatchSeq: delivery.dispatchSeq, memberId: delivery.memberId, state: request.outcome, text: request.evidence.trim() })
+    await this.ctx.sessions.flush(loaded.session)
+    await this.engine.recover(loaded.session)
+    return { ok: true }
+  }
+
+  /** Explicit human role change; state is committed only after readiness and idle checks. */
+  @Remote('setCoordinator')
+  async setCoordinator(request: RoomSetCoordinatorRequest): Promise<RoomSetCoordinatorResult> {
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    this.handoffs.add(request.sessionId)
+    try {
+      const loaded = await this.ensureLive(request.sessionId)
+      if (!loaded.ok) return { ok: false, error: loaded.error }
+      const events = loaded.session.snapshotEvents()
+      const candidate = loaded.state.members.find(member => memberId(events, member) === request.memberId)
+      const previous = coordinatorMember(loaded.state, events)
+      if (candidate === undefined || previous === undefined) return { ok: false, error: { code: 'member-not-found' } }
+      if ((loaded.state.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
+      const agent = this.ctx.agents.get(request.sessionId)
+      if (agent?.status === 'running' || (agent?.inbox?.nextTurn.length ?? 0) > 0 || (agent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) {
+        return { ok: false, error: { code: 'coordinator-busy' } }
+      }
+      if (candidate.kind === 'cli') {
+        const family = this.ctx.get('localAgent') as { memberConfiguration?: (id: string) => { status: string; round?: unknown; pending?: unknown; lockedReason?: string } } | undefined
+        if (candidate.childSessionId === undefined || family?.memberConfiguration === undefined) {
+          return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member native session preparation is required before promotion' } }
+        }
+        const control = family.memberConfiguration(candidate.childSessionId)
+        if (control.status !== 'idle' || control.round !== undefined || control.pending !== undefined || control.lockedReason !== undefined) {
+          return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member configuration has not converged or is locked' } }
+        }
+      }
+      const handoff = [
+        `Coordinator handoff from ${previous.name} to ${candidate.name}.`,
+        `Room session: ${request.sessionId}. Earlier native conversations remain available by their session IDs.`,
+        loaded.state.goal === undefined ? '' : `Goal: ${loaded.state.goal}`,
+        ...loaded.state.tasks.filter(task => !['done', 'cancelled'].includes(task.status)).map(task => `Open task ${task.id}: ${task.member}: ${task.title} (${task.status})`),
+        ...events.filter(event => event.type === 'room/speech' || event.type === 'room/dispatch').slice(-12).map(event =>
+          event.type === 'room/speech' ? `${event.data.member}: ${event.data.text.slice(0, 1500)}`
+          : event.type === 'room/dispatch' ? `To ${event.data.targets.join(', ')}: ${event.data.text.slice(0, 1500)}` : ''),
+      ].filter(Boolean).join('\n').slice(0, 16000)
+      const value = { version: 1 as const, memberId: request.memberId, previousMemberId: memberId(events, previous), revision: request.expectedRevision + 1, handoff }
+      loaded.session.append('room/coordinator', value)
+      await this.ctx.sessions.flush(loaded.session)
+      return { ok: true, value }
+    } catch (error) {
+      return { ok: false, error: { code: 'coordinator-not-ready', message: String(error) } }
+    } finally { this.handoffs.delete(request.sessionId) }
+  }
+
   /**
    * Remove a member from the roster. An in-flight run is NOT interrupted
    * here — cancel() first when the member is running.
@@ -452,6 +540,7 @@ export class RoomService extends TypertRemoteService {
     if (!loaded.state.members.some(member => member.name === request.name)) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
+    if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
     loaded.session.append('room/member-removed', { name: request.name })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { name: request.name } }
@@ -488,7 +577,12 @@ export class RoomService extends TypertRemoteService {
     // Menu-picked addressees union with the parsed leading tokens: a menu
     // pick is explicit addressing wherever the `@name` sits in the sentence.
     const targets = [...new Set([...parsed.targets, ...request.targets ?? []])]
-    if (targets.length === 0) return { ok: false, error: { code: 'no-targets' } }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    if (targets.length === 0) {
+      const selected = coordinatorMember(loaded.state, loaded.session.snapshotEvents())
+      if (selected === undefined) return { ok: false, error: { code: 'member-not-found' } }
+      targets.push(selected.name)
+    }
     // Leading tokens are stripped from the dispatched text; a picked mid-
     // sentence mention stays — the sentence is dispatched verbatim.
     const text = parsed.targets.length > 0 ? parsed.text : request.text.trim()
@@ -496,11 +590,18 @@ export class RoomService extends TypertRemoteService {
     const roster = new Set(loaded.state.members.map(member => member.name))
     const unknown = targets.filter(target => !roster.has(target))
     if (unknown.length > 0) return { ok: false, error: { code: 'unknown-targets', names: unknown } }
+    if (request.requestId !== undefined) {
+      const previous = loaded.session.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.id === request.requestId)
+      if (previous?.type === 'room/dispatch') return { ok: true, value: { parsed: { targets: previous.data.targets, text: previous.data.text }, seq: previous.seq } }
+    }
     loaded.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: request.text.trim() }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    const dispatch = loaded.session.append('room/dispatch', { targets, text })
+    const dispatch = loaded.session.append('room/dispatch', {
+      id: request.requestId ?? randomUUID(), targets, text, origin: 'human',
+      targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
+    })
     for (const target of targets) {
       loaded.session.append('room/task-added', {
         id: randomUUID(), member: target, title: taskTitle(text), status: 'in_progress',
@@ -534,7 +635,12 @@ export class RoomService extends TypertRemoteService {
     }
     const text = request.text.trim()
     if (text === '') return { ok: false, error: { code: 'empty-text' } }
-    const dispatch = loaded.session.append('room/dispatch', { targets: [request.member], text })
+    const coordinator = coordinatorMember(loaded.state, loaded.session.snapshotEvents())
+    const target = loaded.state.members.find(member => member.name === request.member)!
+    const dispatch = loaded.session.append('room/dispatch', {
+      id: randomUUID(), targets: [request.member], targetIds: [memberId(loaded.session.snapshotEvents(), target)], text, origin: 'coordinator',
+      ...coordinator === undefined || coordinator.name === request.member ? {} : { replyTo: memberId(loaded.session.snapshotEvents(), coordinator) },
+    })
     loaded.session.append('room/task-added', {
       id: randomUUID(), member: request.member, title: taskTitle(text), status: 'in_progress',
     })

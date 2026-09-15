@@ -11,6 +11,7 @@
  * elapsed honest). The main-agent member takes no instructions and cannot be
  * removed — it is the room itself.
  */
+import { coordinatorMember } from '../journal.ts'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Button, IconAgentPresetOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RoomMember } from '../types.ts'
@@ -42,7 +43,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 /** The members tab. */
 export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory,
-  modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, t,
+  modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -200,7 +201,11 @@ export function MembersView({
           const running = run?.state === 'running'
           return (
             <MemberCard
-              key={member.name}
+              key={member.id ?? member.name}
+              coordinator={coordinatorMember(state)?.name === member.name}
+              onPromote={setCoordinator === undefined || member.id === undefined ? undefined : () => {
+                void setCoordinator(member.id!, state.coordinator?.revision ?? 0).then(outcome => { if (!outcome.ok) setError(outcome.message) })
+              }}
               member={member}
               run={run}
               elapsedMs={running ? Date.now() - (run?.startedAt ?? Date.now()) : undefined}

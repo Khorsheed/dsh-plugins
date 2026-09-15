@@ -32,6 +32,8 @@ export interface RoomCreatedEvent {
  * instances of one provider can coexist (`ada (kimi-cli)`).
  */
 export interface RoomMemberAddedEvent {
+  /** Stable identity; older journals derive it from their original join event. */
+  readonly id?: string
   readonly name: string
   readonly kind: 'main-agent' | 'cli'
   /** CLI provider id; present exactly on `kind: 'cli'` members. */
@@ -106,6 +108,13 @@ export interface RoomMemberRemovedEvent {
  * log.
  */
 export interface RoomDispatchEvent {
+  /** Caller retry identity, persisted before accepting input. */
+  readonly id?: string
+  readonly targetIds?: readonly string[]
+  readonly origin?: 'human' | 'coordinator' | 'report' | 'relay'
+  readonly replyTo?: string
+  /** Completion report deduplication key (one source delivery). */
+  readonly reportFor?: string
   readonly targets: readonly string[]
   readonly text: string
 }
@@ -252,6 +261,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 /** One roster member, as folded by the journal replay. */
 export interface RoomMember {
+  readonly id?: string
   readonly name: string
   readonly kind: 'main-agent' | 'cli'
   readonly provider?: string
@@ -306,6 +316,8 @@ export interface RoomMemberRun {
  * design note).
  */
 export interface RoomState {
+  readonly deliveries?: readonly RoomDelivery[]
+  readonly coordinator?: RoomCoordinatorEvent
   readonly members: readonly RoomMember[]
   readonly relays: readonly RoomRelay[]
   readonly tasks: readonly RoomTask[]
@@ -326,6 +338,12 @@ export interface RoomTaskProgress {
 
 /** Closed failure vocabulary of the room Remote surface. */
 export type RoomFailure =
+  | { readonly code: 'delivery-not-uncertain' }
+  | { readonly code: 'coordinator-busy' }
+  | { readonly code: 'coordinator-not-ready'; readonly message: string }
+  | { readonly code: 'coordinator-conflict' }
+  | { readonly code: 'active-coordinator' }
+  | { readonly code: 'configuration-owned-by-core' }
   | { readonly code: 'session-not-found' }
   | { readonly code: 'not-a-room' }
   | { readonly code: 'invalid-name' }
@@ -470,6 +488,7 @@ export type RoomRemoveMemberResult =
 
 /** postMessage request: a human @-message into the room. */
 export interface RoomPostMessageRequest {
+  readonly requestId?: string
   /** Room session. */
   readonly sessionId: SessionId
   /** Raw composer text: leading `@name` tokens address members. */
@@ -648,3 +667,57 @@ export interface RoomProviderList {
   readonly localAgentAvailable: boolean
   readonly providers: readonly RoomProviderInfo[]
 }
+
+/** Durable role change. Handoff is bounded context, never native history migration. */
+export interface RoomCoordinatorEvent {
+  readonly version: 1
+  readonly memberId: string
+  readonly revision: number
+  readonly previousMemberId: string
+  readonly handoff: string
+}
+
+export interface RoomSetCoordinatorRequest {
+  readonly sessionId: SessionId
+  readonly memberId: string
+  readonly expectedRevision: number
+}
+export type RoomSetCoordinatorResult =
+  | { readonly ok: true; readonly value: RoomCoordinatorEvent }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** A dispatch target's durable lifecycle. An uncertain crashed run is never replayed. */
+export interface RoomDeliveryStateEvent {
+  readonly id: string
+  readonly dispatchSeq: number
+  readonly memberId: string
+  readonly state: 'running' | 'done' | 'cancelled' | 'failed' | 'uncertain'
+  readonly text?: string
+  readonly error?: string
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    'room/coordinator': RoomCoordinatorEvent
+    'room/delivery-state': RoomDeliveryStateEvent
+  }
+}
+
+export interface RoomDelivery {
+  readonly id: string
+  readonly dispatchSeq: number
+  readonly memberId: string
+  readonly status: 'queued' | RoomDeliveryStateEvent['state']
+  readonly origin: NonNullable<RoomDispatchEvent['origin']>
+  readonly text: string
+  readonly error?: string
+}
+export interface RoomReconcileDeliveryRequest {
+  readonly sessionId: SessionId
+  readonly deliveryId: string
+  readonly outcome: 'done' | 'cancelled'
+  readonly evidence: string
+}
+export type RoomReconcileDeliveryResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: RoomFailure }
