@@ -18,6 +18,10 @@ The review adds three explicit delivery gates. Retire the live event mirror mode
 
 Use one replaceable pending configuration rather than a FIFO of intermediate choices. The latest accepted valid revision wins; cancellation targets a revision. Apply before admitting the next turn, including previously queued ordinary messages. Serialize control and admission, reconcile in-flight changes and restarts, and block subsequent turns on failure or uncertain acknowledgements until resolved. An idle selection does not trigger generation. Stop, apply and continue is the immediate-switch path; eval-locked configurations reject changes before accepting pending state.
 
+New rooms start with native DSH. The existing invite action needs no mention target; inviting adds a member without changing the coordinator. Explicit promotion of a ready member transfers the role after handoff, with both participants idle and their input/control state settled. Reopening a configured room restores its coordinator. Native DSH remains addressable after handoff. A coordinator is a stable member role, so model changes do not require promotion again; automatic external-coordinator templates for new rooms are outside v1.
+
+Extend existing member cards, goal/task capsules and chat events. Delivery A adds invitation/promotion and visible default-recipient controls. Delivery B adds milestone grouping, task dependencies, submitted versus accepted results, evidence/rework history, concise progress events and goal start/pause/resume controls. Saving a goal remains a draft until explicitly started. Keep per-turn todos distinct from room tasks and attributed to the current coordinator; accepted-task counts describe the current plan, not a reliable percentage of total goal work. Routine automated acceptance does not require a human click for every task.
+
 ## Alternatives considered
 
 **Replace the host AgentFactory.** Not required for default room routing and expands the compatibility burden beyond this request.
@@ -37,6 +41,8 @@ Use one replaceable pending configuration rather than a FIFO of intermediate cho
 User review precedes implementation. Delivery A requires all four coordinator choices to support direct conversation, truthful controls and verified streaming/replay. Delivery B additionally requires dependent tasks, explicit acceptance, durable reporting and bounded continuation. Detailed matrices and evidence limits live in the linked proposal; this documentation commit does not claim those capabilities shipped.
 
 Delivery A also covers default/legacy streaming paths and sparse-tail latency; synchronized applied/pending controls, replacement/cancellation, stale revisions, admission races and recovery; effort binding on start/resume; and eval override/mismatch counterexamples. Historical condition digests remain stable; missing runtime evidence stays unverified rather than being backfilled as a match. Eval compatibility is an M1 gate, not follow-up work after exposing the selector.
+
+Cold-start acceptance covers DSH first, invitation without automatic promotion, candidate readiness failures and restoration of a saved external coordinator. Goal UI acceptance covers draft versus active state, navigable dependencies and evidence, truthful acceptance counts, visible blockers and pause/recovery across refresh and narrow screens. M3–M5 own these UI changes alongside their corresponding service contracts.
 
 ## Risks
 
