@@ -670,7 +670,10 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       ctx.effect(() => () => { clearInterval(releaseTimer) })
     }
 
-    ctx.on('agent/created', ({ agent }) => {
+    // agent/created went @mode serial in 0.1.6: the creation transaction
+    // awaits whatever a listener returns, so delivery stays fire-and-forget
+    // here — return nothing, and never await agent.whenIdle in this listener.
+    ctx.on('agent/created', ({ agent }): undefined => {
       if (!ctx.agents.roots().includes(agent)) return
       deliver(agent)
     })
