@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent-dsh`
 
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。DSH 在宿主 0.1.5 上仍需接通新的瞬时流桥，当前完成事件镜像本身不算真流式验收通过。
+
 [English](README.en.md) | 中文
 
 把任务委派给 dsh 自己——作为独立的本地 CLI 进程运行，与 kimi / codex / claude-code harness 平级。子 dsh 在自己的 scoped home 下运行，通过父级的 API key 认证，可跨轮续接；设置开关（默认关）打开后才启用委派工具。

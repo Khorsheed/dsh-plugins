@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent-codex`
 
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。最终内容仍以 provider 完成项为准，包括工具记录和用量。
+
 [English](README.en.md) | 中文
 
 把编码任务从任意 dsh agent preset 委派给你本地安装的 Codex CLI。委派在插件隔离的作用域目录下运行，你个人的 `~/.codex`——config、凭据、会话——完全不被触碰。

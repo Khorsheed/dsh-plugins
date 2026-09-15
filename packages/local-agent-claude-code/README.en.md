@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent-claude-code`
 
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
+
 English | [中文](README.md)
 
 Delegate coding tasks to a locally installed Claude Code from any dsh agent preset — answers stream back live, and your personal `~/.claude` is never touched. The Claude Code harness of the [local-agent family](../local-agent/README.md).

@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent-dsh`
 
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. The DSH child-session stream still needs the new transient bridge on host 0.1.5; its completed-event mirror alone is not true-streaming acceptance.
+
 English | [中文](README.md)
 
 Delegate a task to dsh itself as a separate local CLI process, sibling to the kimi / codex / claude-code harnesses. It runs under its own scoped home, authenticates through the parent's API key, and resumes across rounds; a settings toggle (default off) turns the delegation tool on.

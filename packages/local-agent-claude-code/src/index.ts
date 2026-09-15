@@ -72,13 +72,7 @@ export interface Config {
   live?: boolean
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
-  /**
-   * Live mirror granularity: `event` mirrors the shared stream fold. `token`
-   * still spawns with `--include-partial-messages` and reports per-token
-   * deltas over the run-progress channel, but host 0.1.5 removed the
-   * per-chunk session event, so deltas no longer land in the child session
-   * log (the round settles as one combined final message).
-   */
+  /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
 }
 
@@ -93,7 +87,7 @@ export const Config: z<Config> = z.object({
   proxyUrl: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
 })
 
 /** The permission mode a fresh delegation defaults to. */
@@ -113,7 +107,7 @@ export const CLAUDE_SETTINGS_NAMESPACE = 'local-agent-claude-code'
  */
 const CLAUDE_SETTINGS_SCHEMA = z.object({
   live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
 })
@@ -137,8 +131,7 @@ export function apply(ctx: Context, config: Config): void {
     // layer over the YAML composition base) swaps driver generations without
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
     // back to exec, in-flight rounds finish on their runtime, idle runtimes
-    // are reclaimed at once. A granularity change needs no new generation:
-    // the driver reads it per round.
+    // are reclaimed at once. Legacy granularity settings are accepted but ignored.
     const scope = ctx.settings.register(CLAUDE_SETTINGS_NAMESPACE, CLAUDE_SETTINGS_SCHEMA, {
       base: {
         ...config.live === undefined ? {} : { live: config.live },

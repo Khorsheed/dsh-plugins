@@ -14,9 +14,9 @@
  * token-level chunks, NOT the wire.jsonl line fold the exec mirror owns — so
  * completed items always fold from the file: push events merely TRIGGER
  * throttled `mirrorKimiDelta` passes and the settle pass stays authoritative
- * (one fold, one offset, zero divergence between the two drivers). BOTH
- * granularities fold every transcript item 1:1 into the child session log.
- * The token granularity additionally mirrors the in-flight item live: chunk
+ * (one fold, one offset, zero divergence between the two drivers). Every
+ * transcript item folds 1:1 into the child session log.
+ * Live output also mirrors the in-flight item: chunk
  * deltas accumulate per streaming item and append throttled snapshot
  * assistant/messages at the item's reserved (turn, step) — the host folds
  * repeated settles at one coordinate into one live-updating chat node — and
@@ -441,7 +441,7 @@ export class KimiAcpLiveDriver {
     private readonly config: {
       liveIdleMs?: number
       liveMirrorGranularity?: KimiLiveMirrorGranularity
-      /** Snapshot throttle for the token granularity's streaming messages. */
+      /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
       snapshotMinChars?: number
@@ -510,13 +510,8 @@ export class KimiAcpLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: KimiLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: KimiLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -832,7 +827,6 @@ export class KimiAcpLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: KimiLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
 
     const runAbort = new AbortController()
@@ -853,7 +847,7 @@ export class KimiAcpLiveDriver {
      */
     const reservedSteps: number[] = []
     /**
-     * The streaming items seen this round (token granularity). kimi's ACP
+     * The streaming items seen this round . kimi's ACP
      * chunks carry no item id, so the stream key is synthetic per kind per
      * round (the codex live driver's fallback shape): thought chunks share
      * one stream, message chunks another. Deltas accumulate into throttled
@@ -874,14 +868,6 @@ export class KimiAcpLiveDriver {
     }>()
     /** The stream the latest delta accumulated into (a kind switch force-snapshots it). */
     let activeStream: string | undefined
-    /**
-     * The latest ACP plan snapshot, rendered (event granularity only — the
-     * token granularity folds plans through their own stream). The wire.jsonl
-     * fold never carries plans (kimi records text/think parts only — surveyed
-     * against production wires), so the settle fold below appends it once;
-     * there is no wire copy to dedupe against.
-     */
-    let roundPlan = ''
     /**
      * The round's usage NOT carried by a folded line, summed across mirror
      * passes (each pass's window is disjoint). The settle's final snapshot
@@ -916,16 +902,14 @@ export class KimiAcpLiveDriver {
      */
     const foldDelta = (text: string): void => {
       roundText += text
-      if (granularity === 'token') {
-        const key = streamKey('text')
-        reserveStream(key, 'text')
-        const stream = streams.get(key)
-        if (stream !== undefined) {
-          stream.text += text
-          appendStreamSnapshot(stream, false, false)
-        }
-        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
+      const key = streamKey('text')
+      reserveStream(key, 'text')
+      const stream = streams.get(key)
+      if (stream !== undefined) {
+        stream.text += text
+        appendStreamSnapshot(stream, false, false)
       }
+      localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
     }
 
     /**
@@ -946,25 +930,21 @@ export class KimiAcpLiveDriver {
     const foldPlan = (update: JsonObject): void => {
       const plan = renderPlan(update)
       if (plan === '') return
-      if (granularity === 'token') {
-        // The plan's own snapshot stream (think-styled): every update replaces
-        // the text and lands a snapshot at the reserved (turn, step); the
-        // stream force-finalizes at settle (the wire carries no plan line
-        // that could complete it).
-        reserveStream(planKey, 'think')
-        const stream = streams.get(planKey)
-        if (stream !== undefined && stream.text !== plan) {
-          stream.text = plan
-          appendStreamSnapshot(stream, true, false)
-        }
-      } else {
-        roundPlan = plan
+      // The plan's own snapshot stream (think-styled): every update replaces
+      // the text and lands a snapshot at the reserved (turn, step); the
+      // stream force-finalizes at settle (the wire carries no plan line
+      // that could complete it).
+      reserveStream(planKey, 'think')
+      const stream = streams.get(planKey)
+      if (stream !== undefined && stream.text !== plan) {
+        stream.text = plan
+        appendStreamSnapshot(stream, true, false)
       }
     }
 
     /**
      * Append one snapshot of a streaming item at its reserved (turn, step).
-     * Throttled per stream by interval and growth unless `force`; the forced
+     * Batched per stream on a bounded deadline unless `force`; the forced
      * final snapshot carries `interrupted` (a cancelled turn reads 已停止
      * legitimately) and, when `withUsage`, the round's uncarried usage. An
      * empty stream leaves no boundary at all.
@@ -1037,7 +1017,7 @@ export class KimiAcpLiveDriver {
     }
 
     /**
-     * The fold-pass coordination surface (token granularity only): the file
+     * The fold-pass coordination surface : the file
      * fold skips reserved steps for sequential folds and pairs a completed
      * think/assistant line with its stream — scoped to THIS round's turn, so
      * an earlier round's leftover lines never consume this round's stream.
@@ -1055,8 +1035,7 @@ export class KimiAcpLiveDriver {
         return { step: stream.step, opened: stream.opened }
       },
     }
-    const mirrorOptions = (): KimiMirrorOptions | undefined =>
-      granularity === 'token' ? { streams: mirrorStreams } : undefined
+    const mirrorOptions = (): KimiMirrorOptions => ({ streams: mirrorStreams })
 
     /**
      * Observation accounting across mirror passes: a pass whose window
@@ -1120,7 +1099,7 @@ export class KimiAcpLiveDriver {
         }
         const text = content?.text ?? ''
         if (text !== '') foldDelta(text)
-      } else if (kind === 'agent_thought_chunk' && granularity === 'token') {
+      } else if (kind === 'agent_thought_chunk') {
         const content = update['content'] as { type?: string; text?: string } | undefined
         const text = content?.text ?? ''
         if (text !== '') {
@@ -1280,7 +1259,7 @@ export class KimiAcpLiveDriver {
       liveFlush.dispose()
       promptInFlight = false
       if (turnOpened) {
-        // Token granularity: reconcile the file fold INSIDE the turn window
+        // Reconcile the file fold INSIDE the turn window
         // (bounded quiescence — the price of the wire flush race; a mirror
         // failure never fails the round), so every streamed item's completion
         // fold lands at its reserved step before turn/end. Streams whose
@@ -1288,22 +1267,20 @@ export class KimiAcpLiveDriver {
         // quiescence window) then finalize in place: one forced snapshot each
         // — interrupted on a non-completed round, the LAST one carrying the
         // round's uncarried usage — then step/end.
-        if (granularity === 'token') {
-          try {
-            await settleMirror()
-          } catch (error) {
-            this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
+        try {
+          await settleMirror()
+        } catch (error) {
+          this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
+        }
+        if (streams.size > 0) {
+          const remaining = [...streams.values()]
+          for (const [position, stream] of remaining.entries()) {
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+            if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
           }
-          if (streams.size > 0) {
-            const remaining = [...streams.values()]
-            for (const [position, stream] of remaining.entries()) {
-              appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
-              if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
-            }
-            streams.clear()
-            activeStream = undefined
-            persist()
-          }
+          streams.clear()
+          activeStream = undefined
+          persist()
         }
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
@@ -1321,51 +1298,22 @@ export class KimiAcpLiveDriver {
       return settled
     })
 
-    // Settle reconciliation (event granularity): the fold runs AFTER the turn
-    // closes — the location index registers steps from their boundary pair
-    // whenever it lands, so a post-turn/end fold still materializes. Token
-    // granularity already reconciled inside the turn window above (its
-    // completion folds and final stream snapshots had to precede turn/end).
-    // Then re-arm the reaper.
-    void result.then(async () => {
-      try {
-        if (turnOpened && granularity !== 'token') {
-          await settleMirror()
-          // The round's plan snapshot: the wire fold has no plan line, so the
-          // driver folds the latest ACP plan update once, think-styled, at the
-          // turn's next free step (after the mirror, so the step is past
-          // every fold the settle pass landed).
-          if (roundPlan !== '') {
-            const step = nextKimiSessionStep(childSession, turn)
-            childSession.append('step/start', { turn, step })
-            childSession.append('assistant/message', {
-              turn,
-              step,
-              message: assistantEvent([{ type: 'reasoning' as const, text: roundPlan }]),
-              stream: [],
-            }, { surfaceOp: 'append' })
-            childSession.append('step/end', { turn, step })
-            persist()
-          }
+    // Re-arm the reaper and publish observations after in-turn reconciliation.
+    void result.then(() => {
+      // Every settled round reports its observed model through the
+      // registry's observation channel (record merge + `settled` event) —
+      // the live drive's half of the exec path's onRoundSettled. A mirror
+      // failure never drops an observation an earlier pass already saw, and
+      // a round that never opened owns no span to observe. Degrades
+      // silently on a core predating recordRoundSettled.
+      if (turnOpened) {
+        const round = {
+          ...roundModel === undefined ? {} : { observedModel: roundModel },
         }
-      } catch (error) {
-        this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
-      } finally {
-        // Every settled round reports its observed model through the
-        // registry's observation channel (record merge + `settled` event) —
-        // the live drive's half of the exec path's onRoundSettled. A mirror
-        // failure never drops an observation an earlier pass already saw, and
-        // a round that never opened owns no span to observe. Degrades
-        // silently on a core predating recordRoundSettled.
-        if (turnOpened) {
-          const round = {
-            ...roundModel === undefined ? {} : { observedModel: roundModel },
-          }
-          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
-          registry?.recordRoundSettled?.(childSession.id, round)
-        }
-        this.armIdleTimer(String(childSession.id))
+        const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
+        registry?.recordRoundSettled?.(childSession.id, round)
       }
+      this.armIdleTimer(String(childSession.id))
     })
 
     // Publication gate: hold start() until the session is ready and the

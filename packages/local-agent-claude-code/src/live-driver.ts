@@ -30,9 +30,8 @@
  * (`system`/`assistant`/`user`/`result`), so each turn folds through the
  * shared `ClaudeStreamParser` with the exec live mirror's hold-back rule (the
  * volatile last line waits for `result`, which carries the round's usage).
- * BOTH granularities fold every line 1:1 — nothing is withheld. Token
- * granularity (`--include-partial-messages` at spawn) adds the streaming
- * channel on top: each `stream_event` partial accumulates into its kind's
+ * Every line folds 1:1. The always-enabled
+ * `--include-partial-messages` adds incremental output on top: each `stream_event` partial accumulates into its kind's
  * stream (claude's deltas carry no item id, so thinking and text each share
  * one per-turn stream), which reserves a (turn, step) at its first delta and
  * appends throttled snapshot `assistant/message`s there — the host folds
@@ -369,7 +368,7 @@ export class ClaudeLiveDriver {
     private readonly config: Pick<Config, 'permissionMode' | 'baseUrl'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: ClaudeLiveMirrorGranularity
-      /** Snapshot throttle for the token granularity's streaming messages. */
+      /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
       snapshotMinChars?: number
@@ -413,13 +412,8 @@ export class ClaudeLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: ClaudeLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: ClaudeLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -542,7 +536,6 @@ export class ClaudeLiveDriver {
     // exactly as in the exec path; the resident process serves one member, so
     // its token lives with the process.
     const member = registerClaudeMemberRun(this.ctx, String(spec.childSession.id), spec.parentSessionId)
-    const granularity = this.config.liveMirrorGranularity ?? 'event'
     // The resident process serves one member, so the model resolved here binds
     // that member's runtime; a later change reaches it when the runtime is next
     // respawned (idle reclaim, crash, a broker-initiated retire, or the
@@ -559,12 +552,12 @@ export class ClaudeLiveDriver {
       ...model === undefined ? [] : ['--model', model],
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
+      '--include-partial-messages',
       ...(this.config.permissionMode ?? 'skip') === 'skip' ? ['--dangerously-skip-permissions'] : [],
       ...spec.resume === undefined ? [] : ['--resume', spec.resume.cliSessionId],
       // `--allowedTools` is variadic: without the `--` terminator it swallows
       // every following flag (the exec path's e191e27 lesson, same shape here).
       ...member === undefined ? [] : ['--mcp-config', member.mcpConfig, '--allowedTools', member.allowedTool, '--'],
-      ...granularity === 'token' ? ['--include-partial-messages'] : [],
     ]
     const spawnSpec: SubprocessSpawnSpec = {
       argv,
@@ -648,7 +641,6 @@ export class ClaudeLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: ClaudeLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
 
     const runAbort = new AbortController()
@@ -683,7 +675,7 @@ export class ClaudeLiveDriver {
      */
     const reservedSteps: number[] = []
     /**
-     * The streaming kinds seen this round (token granularity), by stream key:
+     * The streaming kinds seen this round by stream key:
      * deltas accumulate into throttled snapshot assistant/messages appended
      * at the kind's reserved (turn, step) — the host folds repeated settles
      * at one coordinate into one live-updating chat node, which is the only
@@ -741,7 +733,7 @@ export class ClaudeLiveDriver {
 
     /**
      * Append one snapshot of a streaming kind at its reserved (turn, step).
-     * Throttled per stream by interval and growth unless `force`; the forced
+     * Batched per stream on a bounded deadline unless `force`; the forced
      * final snapshot carries `interrupted` (a cancelled turn reads 已停止
      * legitimately) and, when `withUsage` and no folded line carried it, the
      * round's usage.
@@ -903,7 +895,6 @@ export class ClaudeLiveDriver {
         return
       }
       if (type === 'stream_event') {
-        if (granularity !== 'token') return
         const inner = event['event'] as JsonObject | undefined
         const delta = inner?.['delta'] as JsonObject | undefined
         const deltaType = delta?.['type']

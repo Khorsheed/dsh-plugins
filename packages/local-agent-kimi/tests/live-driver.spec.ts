@@ -933,10 +933,10 @@ describe('kimi live driver review fixes', () => {
     })
     m.queueChild(fake)
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
-    expect((await run.result).stopReason).toBe('completed')
     // The answer lands in the wire 500ms after the prompt response — inside
     // the quiescence window (3 stable reads at 300ms).
     setTimeout(() => { writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', '文件建好了') }, 500)
+    expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
     expect(m.mirrorOffsets.get('child-kimi-flushrace')).toBe(2)
@@ -999,24 +999,24 @@ describe('kimi live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-kimi-drain4'))
     child.append('turn/start', { turn: 1 })
     m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['一', '二'] }) }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
-    // Event granularity: no wire to fold, nothing lands in the log.
-    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(0)
-    m.driver.setLiveMirrorGranularity('token')
+    // Without a wire file the live stream still finalizes in the transcript.
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
     await second.result
     // Token granularity: no wire lines folded, so the unfinished stream
     // finalizes at settle with one forced snapshot at its reserved step.
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)
     }, { timeout: 5_000 })
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message' && (e.data as { turn: number }).turn === 2)!
     expect(final.data).toMatchObject({ turn: 2 })
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '一二' }])
     // Same runtime, same process: granularity rides the existing generation.
@@ -1203,7 +1203,7 @@ describe('kimi live driver transcript completeness', () => {
     await m.driver.disposeAll()
   })
 
-  it('event granularity folds the round\'s plan once at settle (the wire carries none)', async () => {
+  it('default live output retains ACP plans that have no wire copy', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-kimi-plan-event'))
     const fake = new FakeAcpServer({
@@ -1219,7 +1219,9 @@ describe('kimi live driver transcript completeness', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => {
-      expect(reasoningTexts(child).filter(text => text.includes('▶ 唯一步骤'))).toHaveLength(1)
+      expect(reasoningTexts(child).some(text => text.includes('▶ 唯一步骤'))).toBe(true)
+      const planMessages = child.snapshotEvents().filter(e => e.type === 'assistant/message' && JSON.stringify(e.data).includes('▶ 唯一步骤'))
+      expect(new Set(planMessages.map(e => (e.data as { step: number }).step)).size).toBe(1)
     }, { timeout: 5_000 })
     await m.driver.disposeAll()
   })

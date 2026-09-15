@@ -927,7 +927,7 @@ describe('dsh live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-dsh-drain4'))
     m.queueChild(new FakeServeChild({
@@ -951,7 +951,7 @@ describe('dsh live driver drain (settings handoff)', () => {
     // Retired chunk-shaped rows stay behind in BOTH granularities (host 0.1.5
     // has no per-chunk event); the message rows cross.
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
-    m.driver.setLiveMirrorGranularity('token')
+    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
     await second.result
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)

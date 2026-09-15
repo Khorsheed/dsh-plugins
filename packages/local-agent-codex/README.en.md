@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent-codex`
 
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
+
 English | [中文](README.md)
 
 Delegate coding tasks from any dsh agent preset to your locally installed Codex CLI. Delegations run under a plugin-scoped home, so your personal `~/.codex` — config, credentials, sessions — is never touched.

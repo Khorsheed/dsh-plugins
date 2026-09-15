@@ -75,13 +75,7 @@ export interface Config {
   live?: boolean
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
-  /**
-   * Live mirror granularity: `event` mirrors the wire.jsonl fold via
-   * throttled passes. `token` folds the same items 1:1 and additionally
-   * appends throttled snapshot messages for the in-flight item at its
-   * reserved (turn, step) — the host merges repeated settles at one
-   * coordinate into one live-updating message.
-   */
+  /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
 }
 
@@ -90,7 +84,7 @@ export const Config: z<Config> = z.object({
   thinkingEffort: z.union([z.const('low'), z.const('high'), z.const('max')]),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
 })
 
 /**
@@ -107,7 +101,7 @@ export const KIMI_SETTINGS_NAMESPACE = 'local-agent-kimi'
  */
 const KIMI_SETTINGS_SCHEMA = z.object({
   live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
 })
@@ -176,8 +170,7 @@ export function apply(ctx: Context, config: Config): void {
     // layer over the YAML composition base) swaps driver generations without
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
     // back to exec, in-flight rounds finish on their runtime, idle runtimes
-    // are reclaimed at once. A granularity change needs no new generation:
-    // the driver reads it per round.
+    // are reclaimed at once. Legacy granularity settings are accepted but ignored.
     const scope = ctx.settings.register(KIMI_SETTINGS_NAMESPACE, KIMI_SETTINGS_SCHEMA, {
       base: {
         ...config.live === undefined ? {} : { live: config.live },

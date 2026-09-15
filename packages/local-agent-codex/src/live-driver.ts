@@ -497,7 +497,7 @@ export class CodexLiveDriver {
     private readonly config: Pick<Config, 'sandbox'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: CodexLiveMirrorGranularity
-      /** Snapshot throttle for the token granularity's streaming messages. */
+      /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
       snapshotMinChars?: number
@@ -565,13 +565,8 @@ export class CodexLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: CodexLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: CodexLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -829,7 +824,6 @@ export class CodexLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: CodexLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
     /** The round's start moment, anchoring the settle read-back's rollout time window. */
     const startedAtMs = Date.now()
@@ -862,7 +856,7 @@ export class CodexLiveDriver {
      */
     const reservedSteps: number[] = []
     /**
-     * The streaming items seen this round (token granularity), by item id:
+     * The streaming items seen this round by item id:
      * deltas accumulate into throttled snapshot assistant/messages appended
      * at the item's reserved (turn, step) — the host folds repeated settles
      * at one coordinate into one live-updating chat node, which is the only
@@ -1087,7 +1081,7 @@ export class CodexLiveDriver {
         return
       }
       if (method === 'item/agentMessage/delta' || method === 'item/reasoning/textDelta') {
-        if (granularity !== 'token' || typeof params['delta'] !== 'string') return
+        if (typeof params['delta'] !== 'string') return
         const text = params['delta']
         if (text === '') return
         const reasoning = method === 'item/reasoning/textDelta'

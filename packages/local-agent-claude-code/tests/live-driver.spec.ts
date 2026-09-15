@@ -308,6 +308,7 @@ describe('claude live driver rounds', () => {
       'claude', '-p', '--verbose',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
+      '--include-partial-messages',
       '--dangerously-skip-permissions',
     ])
     // The auth discipline: exactly the scoped config dir, nothing else.
@@ -458,6 +459,26 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('keeps partial-message flags before the variadic member tool terminator for legacy profiles', async () => {
+    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'event' } })
+    Object.assign(m.ctx.localAgent, {
+      registerMemberRun: () => 'test-member',
+      unregisterMemberRun: () => {},
+      memberBridgeSocketPath: () => '/home/user/member.sock',
+      memberBridgeCommand: () => ({ command: 'node', args: ['member-bridge.js'] }),
+    })
+    const child = Session.create(SessionId('child-claude-legacy-stream'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('done') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    const argv = m.spawns[0]!.spec.argv
+    expect(argv).toContain('--')
+    expect(argv.indexOf('--include-partial-messages')).toBeGreaterThan(0)
+    expect(argv.indexOf('--include-partial-messages')).toBeLessThan(argv.indexOf('--allowedTools'))
+    expect(argv.at(-1)).toBe('--')
+    await m.driver.disposeAll()
+  })
+
   it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
     const deltas = ['hel', 'lo']
     const off = mount()
@@ -465,7 +486,7 @@ describe('claude live driver rounds', () => {
     off.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(off.spawns[0]!.spec.argv).not.toContain('--include-partial-messages')
+    expect(off.spawns[0]!.spec.argv).toContain('--include-partial-messages')
     await off.driver.disposeAll()
 
     // Zero thresholds: every delta lands a snapshot immediately. Token
@@ -752,7 +773,7 @@ describe('claude live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -762,7 +783,7 @@ describe('claude live driver drain (settings handoff)', () => {
     // Event granularity folds the stream lines into per-line messages.
     const eventModeMessages = child.snapshotEvents().filter(e => e.type === 'assistant/message').length
     expect(eventModeMessages).toBeGreaterThan(0)
-    m.driver.setLiveMirrorGranularity('token')
+    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
     await second.result
     // Token granularity folds every line too; the streamed answer finalizes
@@ -815,6 +836,7 @@ describe('claude live driver model key', () => {
       '--model', 'claude-opus-5',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
+      '--include-partial-messages',
       '--dangerously-skip-permissions',
     ])
   })

@@ -6,8 +6,7 @@
  * is DRAINED, not killed — new rounds are refused (the provider's catch falls
  * back to exec), in-flight rounds finish on their runtime, idle runtimes are
  * reclaimed at once. Toggling ON builds the next generation lazily (no
- * process until the first round). A granularity change needs no generation
- * swap: the driver reads it per round (`setLiveMirrorGranularity`).
+ * process until the first round). Legacy granularity settings are ignored.
  *
  * Composition with the `enabled` toggle: the switch lives INSIDE one enabled
  * generation (index.ts constructs it only while the harness/provider/tool are
@@ -95,7 +94,6 @@ export class LiveDriverSwitch {
   /** Mirror the resolved settings into the driver generation. */
   private apply(next: DshLiveSettings): void {
     if (next.live === this.liveOn) {
-      this.active?.setLiveMirrorGranularity(next.liveMirrorGranularity)
       return
     }
     this.liveOn = next.live
@@ -103,7 +101,6 @@ export class LiveDriverSwitch {
     this.active = next.live
       ? new DshLiveDriver(this.ctx, {
         ...this.config,
-        liveMirrorGranularity: next.liveMirrorGranularity,
         ...this.extras.modelFor === undefined ? {} : { modelFor: this.extras.modelFor },
       })
       : undefined

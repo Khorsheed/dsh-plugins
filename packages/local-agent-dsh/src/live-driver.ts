@@ -396,13 +396,8 @@ export class DshLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: DshLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: DshLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -641,7 +636,6 @@ export class DshLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: DshLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
 
     const runAbort = new AbortController()
@@ -679,7 +673,7 @@ export class DshLiveDriver {
     })
 
     const mirrorOne = (event: SessionEvent): void => {
-      const text = mirrorDshLiveEvent(childSession, event, { granularity })
+      const text = mirrorDshLiveEvent(childSession, event)
       if (event.type === 'user/message' || event.type === 'assistant/message') {
         mirroredMessages += 1
         persist()

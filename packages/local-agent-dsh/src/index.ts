@@ -69,13 +69,7 @@ export interface LocalAgentDshConfig {
   live?: boolean
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
-  /**
-   * Live mirror granularity: `event` mirrors finalized messages. `token`
-   * still reports per-token deltas over the run-progress channel, but host
-   * 0.1.5 removed the per-chunk session event, so deltas no longer land in
-   * the child session log (the round settles as one combined final message).
-   * Deployment default; the settings card can override it live.
-   */
+  /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
   /**
    * The model every delegation round starts the sub-dsh with, spelled
@@ -100,7 +94,7 @@ export const Config: z<LocalAgentDshConfig> = z.object({
   model: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
 })
 
 /**
@@ -119,7 +113,7 @@ export const DSH_SETTINGS_NAMESPACE = 'local-agent-dsh'
 const DSH_SETTINGS_SCHEMA = z.object({
   enabled: z.boolean().default(false),
   live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   // `model` deliberately carries NO default: an unset key must resolve to
   // undefined, which is what keeps the pre-key behavior byte-identical.
   model: z.string(),
@@ -303,8 +297,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // driver generations without a reload. Toggling live OFF drains the
       // retiring generation — new rounds fall back to exec, in-flight rounds
       // finish on their runtime, idle runtimes are reclaimed at once. A
-      // granularity change needs no new generation: the driver reads it per
-      // round. Toggling ENABLED off keeps the historical hard semantics:
+      // legacy granularity setting no longer changes live behavior. Toggling ENABLED off keeps the historical hard semantics:
       // provider unregisters and the switch disposes (disposeAll).
       const liveSwitch = new LiveDriverSwitch(ctx, scope, config, {
         modelFor: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),

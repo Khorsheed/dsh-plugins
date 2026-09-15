@@ -6,8 +6,7 @@
  * new rounds are refused (the provider's catch falls back to exec), in-flight
  * rounds finish on their runtime, idle runtimes are reclaimed at once.
  * Toggling ON builds the next generation lazily (no process until the first
- * round). A granularity change needs no generation swap: the driver reads it
- * per round (`setLiveMirrorGranularity`).
+ * round). Legacy granularity settings are ignored.
  *
  * @module @khorsheed/dsh-local-agent-kimi — internal, unit-tested directly.
  */
@@ -65,7 +64,6 @@ export class LiveDriverSwitch {
   /** Mirror the resolved settings into the driver generation. */
   private apply(next: KimiLiveSettings): void {
     if (next.live === this.liveOn) {
-      this.active?.setLiveMirrorGranularity(next.liveMirrorGranularity)
       return
     }
     this.liveOn = next.live
@@ -74,7 +72,6 @@ export class LiveDriverSwitch {
       ? new KimiAcpLiveDriver(this.ctx, {
         ...this.liveIdleMs === undefined ? {} : { liveIdleMs: this.liveIdleMs },
         ...this.model === undefined ? {} : { model: this.model },
-        liveMirrorGranularity: next.liveMirrorGranularity,
       })
       : undefined
     if (retiring !== undefined) {

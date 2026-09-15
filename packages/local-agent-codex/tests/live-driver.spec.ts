@@ -945,7 +945,7 @@ describe('codex live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -955,7 +955,7 @@ describe('codex live driver drain (settings handoff)', () => {
     await first.result
     // Event granularity folds the completed items into messages.
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThan(0)
-    m.driver.setLiveMirrorGranularity('token')
+    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
     await second.result
     // Token granularity additionally streams the in-flight item: the round
