@@ -1435,7 +1435,34 @@ function comparePair(
 
 // --- judge consistency -------------------------------------------------------
 
-function judgeConsistencyOf(cells: BundleCell[]): JudgeConsistency {
+/**
+ * The slice of a cell the consistency numbers are computed over. Narrower
+ * than {@link BundleCell} on purpose: the JUDGE BENCH (I5·T37) computes the
+ * same numbers off the live mission ledger rather than off an exported
+ * bundle, and a second implementation of κ would be a second opinion a reader
+ * could not tell from the first. A bundle cell satisfies this structurally.
+ */
+export interface JudgeConsistencyCell {
+  missionId: string
+  /** Only the current attempt counts — a superseded attempt is not a second rater. */
+  isCurrent: boolean
+  verdicts: ReadonlyArray<{
+    ns: string
+    criterion: string
+    pass: boolean
+    judge: VerdictJudge | null
+    createdAt: number
+    seq: number
+  }>
+}
+
+/**
+ * Judge consistency for a set of cells: one judge sampled twice (κ), the
+ * panel across judges, and llm-draft against human-final.
+ * @param cells - the cells to count over; non-current attempts are ignored.
+ * @returns the numbers plus the report's own sentences, verbatim.
+ */
+export function judgeConsistencyOf(cells: readonly JudgeConsistencyCell[]): JudgeConsistency {
   const current = cells.filter(c => c.isCurrent)
   const details: string[] = []
   // (cell, criterion) → sample pass values in annotation order. With a PANEL

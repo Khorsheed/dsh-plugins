@@ -4,7 +4,8 @@
  * (createLabViewStore().create()) and injected Remote mocks. Asserts the
  * experiment table (drafts and runs in one list, the status word, the factor
  * and progress cells), the row click opening the detail shell, the overview
- * page's fields for a run and for a draft, and the four placeholder sub-pages.
+ * page's fields for a run and for a draft, and the draft's refusal to open
+ * the sub-pages that need a run.
  *
  * The plan-review and conditions pages have their own spec
  * (`LabReview.client.spec.tsx`); the shared harness lives there too, so the
@@ -264,16 +265,20 @@ describe('LabView detail', () => {
     expect(h.fetchExperiment).not.toHaveBeenCalled()
   })
 
-  // Two, not six: plan and conditions gained bodies in I5·T36 (LabReview),
-  // matrix and cells in I5·T35b (MatrixCells) — each covered by its own spec.
-  it('the one unbuilt sub-page carries the placeholder that names its task', async () => {
+  // None left: the seven-tab shell is complete as of I5·T37. plan and
+  // conditions gained bodies in T36 (LabReview), matrix and cells in T35b
+  // (MatrixCells), report in T38 (Report) and the judging desk in T37
+  // (Judging) — each covered by its own spec. What this one still pins is
+  // that a DRAFT cannot open the run-only pages: there is no run to read, and
+  // a spinner over nothing would be the lie the placeholders used to prevent.
+  it('a draft says so on every sub-page that needs a run', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('harness-comparison'))
-    // The report page gained a body with T38; the judging desk is T37's, and
-    // a tab that lied about being empty would be worse than one that says so.
-    fireEvent.click(screen.getByRole('button', { name: 'page.judging' }))
-    expect(screen.getByText('placeholder.judging')).toBeTruthy()
+    fireEvent.click(await screen.findByText('effort-sweep'))
+    for (const page of ['matrix', 'cells', 'report', 'judging']) {
+      fireEvent.click(screen.getByRole('button', { name: `page.${page}` }))
+      expect(screen.getAllByText('overview.draftNotice').length).toBeGreaterThan(0)
+    }
   })
 
   it('回到列表 returns to the table', async () => {

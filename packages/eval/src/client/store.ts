@@ -10,7 +10,8 @@ import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
   EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView, EvalExperimentDetail,
-  EvalExperimentsResult, EvalFinalizeView, EvalMatrixView, EvalPlanReview, EvalRunOutputView, EvalRunReportView,
+  EvalExperimentsResult, EvalFinalizeView, EvalJudgeQueueView, EvalMatrixView, EvalPlanReview,
+  EvalRunOutputView, EvalRunReportView,
 } from '../types.ts'
 
 /**
@@ -29,9 +30,9 @@ export interface LabStartedRun {
 }
 
 /**
- * The detail's sub-pages, in the tab order ui-spec §五 fixes. `overview`
- * (T35a), `matrix` and `cells` (T35b) and `report` (T38) have bodies; the
- * judging desk carries the placeholder naming its task.
+ * The detail's sub-pages, in the tab order ui-spec §五 fixes. All seven have
+ * bodies as of I5·T37 — `overview` (T35a), `plan` / `conditions` (T36),
+ * `matrix` / `cells` (T35b), `report` (T38) and `judging` (T37).
  */
 export const LAB_PAGES = ['overview', 'plan', 'conditions', 'matrix', 'cells', 'report', 'judging'] as const
 
@@ -145,6 +146,25 @@ export interface LabViewState {
    */
   lookIn: string | null
 
+  /**
+   * The judge bench's queue, or null before it loads. Every cell in it is
+   * BLIND — an ordinal and a ticket, no condition, harness or model — so
+   * nothing this store holds can unblind a grader.
+   */
+  judge: EvalJudgeQueueView | null
+  judgeLoading: boolean
+  judgeError: string | null
+  /** The queue entry being graded, by ticket; null while the queue is showing. */
+  judgeTicket: string | null
+  /**
+   * The grader's in-progress answers for the open cell: criterion id → the
+   * verdict being composed. Cleared when the cell changes or a submission
+   * lands, so a half-written answer never follows a grader to the next cell.
+   */
+  judgeDraft: Record<string, { pass: boolean; evidence: string }>
+  /** Whether a human-final submission is in flight (the button is disabled meanwhile). */
+  judgeSubmitting: boolean
+
   /** Whether the export dialog is open. */
   exportOpen: boolean
   /** One-shot notice line (retry / release check / export outcomes), or null. */
@@ -197,6 +217,12 @@ export type LabViewActions = {
   setFinalizing: (draft: LabViewState, finalizing: boolean) => void
   setFinalizeResult: (draft: LabViewState, result: EvalFinalizeView | null) => void
   setLookIn: (draft: LabViewState, dir: string) => void
+  setJudge: (draft: LabViewState, view: EvalJudgeQueueView) => void
+  setJudgeLoading: (draft: LabViewState, loading: boolean) => void
+  setJudgeError: (draft: LabViewState, error: string | null) => void
+  openJudgeCell: (draft: LabViewState, ticket: string | null) => void
+  setJudgeDraft: (draft: LabViewState, criterion: string, value: { pass: boolean; evidence: string }) => void
+  setJudgeSubmitting: (draft: LabViewState, submitting: boolean) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setNotice: (draft: LabViewState, notice: string | null) => void
 }
@@ -246,6 +272,12 @@ const INITIAL: LabViewState = {
   finalizing: false,
   finalizeResult: null,
   lookIn: null,
+  judge: null,
+  judgeLoading: false,
+  judgeError: null,
+  judgeTicket: null,
+  judgeDraft: {},
+  judgeSubmitting: false,
   exportOpen: false,
   notice: null,
 }
@@ -262,6 +294,7 @@ const PER_EXPERIMENT: Pick<
   | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'lookIn'
+  | 'judge' | 'judgeError' | 'judgeTicket' | 'judgeSubmitting'
   | 'exportOpen' | 'notice'
 > = {
   detail: null,
@@ -288,6 +321,10 @@ const PER_EXPERIMENT: Pick<
   finalizing: false,
   finalizeResult: null,
   lookIn: null,
+  judge: null,
+  judgeError: null,
+  judgeTicket: null,
+  judgeSubmitting: false,
   exportOpen: false,
   notice: null,
 }
@@ -298,7 +335,7 @@ const PER_EXPERIMENT: Pick<
  */
 export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewActions> {
   return defineStore({
-    init: (): LabViewState => ({ ...INITIAL, matrixGroupBy: [], matrixFilter: {}, diffPair: [] }),
+    init: (): LabViewState => ({ ...INITIAL, matrixGroupBy: [], matrixFilter: {}, diffPair: [], judgeDraft: {} }),
     actions: {
       setList: (d, list: EvalExperimentsResult) => {
         d.list = list
@@ -317,6 +354,7 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         // one array and one object across every experiment the visit opens.
         d.matrixGroupBy = []
         d.matrixFilter = {}
+        d.judgeDraft = {}
         // The condition registry is the REPOSITORY's, not the experiment's, so
         // the listing survives; the picked pair does not, because a diff read
         // beside one experiment means nothing beside the next.
@@ -443,6 +481,24 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         // re-read rather than kept.
         d.report = null
       },
+      setJudge: (d, view: EvalJudgeQueueView) => {
+        d.judge = view
+        d.judgeError = null
+      },
+      setJudgeLoading: (d, loading: boolean) => { d.judgeLoading = loading },
+      setJudgeError: (d, error: string | null) => { d.judgeError = error },
+      openJudgeCell: (d, ticket: string | null) => {
+        d.judgeTicket = ticket
+        // A half-written answer belongs to the cell it was written against:
+        // carrying it to the next one would let a grader submit evidence
+        // about work they are no longer looking at.
+        d.judgeDraft = {}
+        d.judgeSubmitting = false
+      },
+      setJudgeDraft: (d, criterion: string, value: { pass: boolean; evidence: string }) => {
+        d.judgeDraft = { ...d.judgeDraft, [criterion]: value }
+      },
+      setJudgeSubmitting: (d, submitting: boolean) => { d.judgeSubmitting = submitting },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },
       setNotice: (d, notice: string | null) => { d.notice = notice },
     },

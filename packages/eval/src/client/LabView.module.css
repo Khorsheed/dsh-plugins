@@ -884,3 +884,140 @@
   line-height: 18px;
   overflow-wrap: anywhere;
 }
+
+/* ───────────────── the judge bench (ui-spec §五, step 8) ──────────────── */
+
+.judgePage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+  min-width: 0;
+}
+
+/* Queue · artifacts · criteria. The artifacts column is the widest because it
+   is the one a grader actually reads; the queue only has to hold a number. */
+.judgeColumns {
+  display: grid;
+  grid-template-columns: minmax(150px, 180px) minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+/* Narrow panes stack rather than squeeze: a de-fingerprinted stage file is
+   unreadable in a 90px column, and an unreadable artifact is a guessed
+   verdict. */
+@media (width <= 900px) {
+  .judgeColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.judgeQueue,
+.judgeMaterial,
+.judgeCriteria {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.judgeMaterial {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.queueGroup {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  padding-top: 4px;
+}
+
+.queueRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.queueRow:hover {
+  background: var(--dsw-alias-fill-hover, rgb(0 0 0 / 4%));
+}
+
+.queueRow[aria-pressed='true'] {
+  background: var(--dsw-alias-fill-selected, rgb(0 0 0 / 8%));
+}
+
+/* The cell's whole blind name. Monospaced so a column of numbers lines up —
+   the ordinal IS the identity here, and it has to be easy to call out. */
+.queueNo {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.queueTask {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.materialHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding-top: 4px;
+}
+
+.criterionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  min-width: 0;
+}
+
+.criterionHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.criterionDrafts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* The two verdict buttons and the evidence box on one line, the box taking
+   whatever is left: evidence is the field that must not feel optional. */
+.criterionAnswer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding-top: 2px;
+  min-width: 0;
+}
+
+.criterionAnswer > *:nth-child(3) {
+  flex: 1 1 180px;
+  min-width: 0;
+}

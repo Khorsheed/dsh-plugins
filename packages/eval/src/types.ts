@@ -973,3 +973,136 @@ export interface EvalFinalizeView {
   /** The walk's own log lines, verbatim. */
   log: string[]
 }
+
+/* ───────────────── the judge bench (ui-spec §五, step 8) ──────────────── */
+
+/** Which run's judging queue to open. */
+export interface EvalJudgeQueueRequest {
+  runId: string
+}
+
+/**
+ * One de-identified material file, as the bench shows it. `text` is the
+ * SCRUBBED bytes — the original never leaves the host — and `replacements`
+ * says how many fingerprints the run's table removed from this file, which is
+ * the one number that tells a grader the scrubber actually ran.
+ */
+export interface EvalJudgeMaterial {
+  path: string
+  text: string
+  replacements: number
+}
+
+/** One `kind: human` rubric row — what the bench asks a person to answer. */
+export interface EvalJudgeCriterionRow {
+  id: string
+  criterion: string
+  /** What the author said counts as evidence; null when the rubric omits it. */
+  evidence: string | null
+  weight: number | null
+  /** The criterion states a DEFECT: holding it means points off. */
+  negative: boolean
+  /** Failing it sinks the cell regardless of the rest. */
+  veto: boolean
+  note: string | null
+}
+
+/**
+ * One llm-draft value already on record for a criterion. `judge` is the BLIND
+ * panel label (判官 A / 判官 B), never the judge condition id — that id names
+ * a harness as often as not, and the bench is blind.
+ */
+export interface EvalJudgeDraftSample {
+  judge: string
+  sample: number | null
+  criterion: string
+  pass: boolean
+  evidence: string | null
+  /** The judge's model is the model this cell ran (decision 9, disclosed per cell). */
+  selfJudged: boolean
+}
+
+/** One human-final verdict already on record for a criterion. */
+export interface EvalJudgeHumanVerdict {
+  criterion: string
+  pass: boolean
+  evidence: string | null
+  at: number
+  /** The annotation's writer — a session tag for a bench write. */
+  by: string | null
+}
+
+/**
+ * One queue entry: a cell, blinded. There is no condition id, no harness and
+ * no model anywhere in this shape, and no mission id either — the
+ * orchestrator's `<task>-<conditionId>-rep<N>` naming would put the harness
+ * in the page's DOM. The cell travels as an ordinal plus an opaque ticket,
+ * and the ticket is what the write verb takes back.
+ */
+export interface EvalJudgeQueueCell {
+  /** The opaque handle `humanFinal` resolves back to a mission id. */
+  ticket: string
+  /** The cell's blind name: its position in the run's own (seeded) order. */
+  cellNo: number
+  /** The dataset item — the question being graded, not a subject fingerprint. */
+  task: string | null
+  rep: number | null
+  state: string
+  bucket: string
+  attempt: number
+  materials: EvalJudgeMaterial[]
+  criteria: EvalJudgeCriterionRow[]
+  /** Why the criteria list is empty, when it is; null when it has rows. */
+  criteriaNote: string | null
+  drafts: EvalJudgeDraftSample[]
+  humanFinal: EvalJudgeHumanVerdict[]
+  /** Whether this cell already carries a human-final verdict — the queue's split. */
+  graded: boolean
+}
+
+/**
+ * The judge bench's payload: the blind queue and the run's live consistency
+ * numbers (computed off the LEDGER, so a verdict written here moves them
+ * without waiting for a re-export).
+ */
+export interface EvalJudgeQueueView {
+  runId: string
+  cells: EvalJudgeQueueCell[]
+  consistency: EvalReportJudgeConsistency
+  /** How many judge conditions the run declared — the panel's size. */
+  judgeCount: number
+  /** Degradations, each as a sentence: no data root, no conditions in meta, … */
+  notes: string[]
+}
+
+/** One verdict a person is submitting from the bench. */
+export interface EvalJudgeVerdictInput {
+  criterion: string
+  pass: boolean
+  /** A checkable fact; the bench refuses a blank one. */
+  evidence: string
+  /** Partial credit for a proportional criterion (protocol §6.8). */
+  ratio?: { passed: number; total: number } | null
+}
+
+/** Submit one cell's human-final verdicts. */
+export interface EvalHumanFinalRequest {
+  runId: string
+  /** The blind handle the queue issued; never a mission id. */
+  ticket: string
+  verdicts: EvalJudgeVerdictInput[]
+}
+
+/** What the human-final write did. */
+export interface EvalHumanFinalResult {
+  runId: string
+  ticket: string
+  /** The cell the ticket resolved to — host-side truth, echoed for the ledger's sake. */
+  missionId: string
+  written: number
+  added: boolean
+  /** The annotation's `by`: `tab:<sessionId>`, never a `tool:` origin. */
+  by: string
+  /** mission's annotate is a no-op on an identical repeat; this says it was one. */
+  duplicate: boolean
+}
