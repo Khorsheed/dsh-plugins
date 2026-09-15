@@ -59,22 +59,50 @@ export interface Outcome { readonly ok: boolean; readonly out: string }
 
 export type Runner = (command: string) => Outcome
 
+/** Trailing newlines only — deliberately NOT `.trim()`.
+ *
+ * Column 1 of `git status --porcelain` carries meaning: ` M path` is a
+ * modification that has not been staged. Trimming the whole output ate that
+ * leading space on the FIRST line, and the parser below then read that line one
+ * column short — `scripts/gate.mts` came back as `cripts/gate.mts`, which
+ * belongs to no shared layer, so an unstaged edit to a root `scripts/` file
+ * scoped to NONE and the gate skipped build, test and pack entirely: exactly
+ * the false green scoping must not have. Observed 2026-09-15 (T51), where a
+ * clean checkout with one unstaged `scripts/` file passed in 11 steps.
+ *
+ * Every other caller only ever wanted the trailing newline gone, so narrowing
+ * the trim for all of them is a smaller change than teaching the runner which
+ * commands have significant leading whitespace. */
+export function trimTrailingNewlines(out: string): string {
+  return out.replace(/\n+$/, '')
+}
+
 const gitRunner: Runner = (command) => {
   try {
-    return { ok: true, out: execSync(command, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
+    return { ok: true, out: trimTrailingNewlines(execSync(command, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })) }
   } catch {
     return { ok: false, out: '' }
   }
 }
 
-/** Every path a porcelain line refers to. A rename prints `R  old -> new`, and
- * checking only the head of that string tests the OLD path — so a file renamed
- * INTO a shared layer would not trigger the fallback. */
+/** Every path a porcelain line refers to.
+ *
+ * A porcelain v1 line is `XY<space>path`: two status columns — either of which
+ * may itself be a space — then one separator. Matching that shape, rather than
+ * slicing a fixed three characters, is what keeps a line whose columns are not
+ * where they should be from yielding a path short one character: a path that is
+ * merely wrong belongs to no shared layer, and reads exactly like "nothing
+ * shared changed". It assumes column 1 survived the runner — see
+ * `trimTrailingNewlines`, which is the other half of this fix.
+ *
+ * A rename prints `R  old -> new`, and checking only the head of that string
+ * tests the OLD path — so a file renamed INTO a shared layer would not trigger
+ * the fallback. Both ends are returned. */
 export function porcelainPaths(porcelain: string): string[] {
   const paths: string[] = []
   for (const line of porcelain.split('\n')) {
-    if (line.length < 4) continue
-    const rest = line.slice(3)
+    const rest = /^.. (.+)$/.exec(line)?.[1]
+    if (rest === undefined) continue
     const arrow = rest.indexOf(' -> ')
     if (arrow === -1) paths.push(rest)
     else paths.push(rest.slice(0, arrow), rest.slice(arrow + 4))

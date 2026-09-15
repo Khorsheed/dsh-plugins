@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GLOBAL_PATHS, isGlobalPath, packageFilter, porcelainPaths, resolveScope, type Outcome, type Runner } from './gate.mts'
+import { GLOBAL_PATHS, isGlobalPath, packageFilter, porcelainPaths, resolveScope, trimTrailingNewlines, type Outcome, type Runner } from './gate.mts'
 
 /** A runner driven by a table, so every branch — including the ones that only
  * happen when a command fails — is reachable without a git repository. */
@@ -23,6 +23,17 @@ it('excludes the recursive root orchestrator for both scoped and full execution'
   expect(seen.find(command => command.startsWith('pnpm '))).toContain("--filter '!.'")
 })
 
+describe('trimTrailingNewlines', () => {
+  it('keeps the leading space that marks an unstaged change — `.trim()` ate it, and only on the first line', () => {
+    expect(trimTrailingNewlines(' M scripts/gate.mts\n?? note.md\n')).toBe(' M scripts/gate.mts\n?? note.md')
+  })
+
+  it('still drops the trailing blank tail every other caller used .trim() for', () => {
+    expect(trimTrailingNewlines('v0.1.5\n\n')).toBe('v0.1.5')
+    expect(trimTrailingNewlines('')).toBe('')
+  })
+})
+
 describe('porcelainPaths', () => {
   it('reads both ends of a rename — the old path alone would miss a move INTO a shared layer', () => {
     expect(porcelainPaths('R  packages/x/a.ts -> scripts/a.ts'))
@@ -32,6 +43,19 @@ describe('porcelainPaths', () => {
   it('reads ordinary, staged and untracked entries', () => {
     expect(porcelainPaths(' M packages/x/a.ts\nA  packages/y/b.ts\n?? packages/z/c.ts'))
       .toEqual(['packages/x/a.ts', 'packages/y/b.ts', 'packages/z/c.ts'])
+  })
+
+  it('takes the path from after the two status columns, whichever of them is a space', () => {
+    // A fixed slice(3) reads these identically; it is a line that has LOST a
+    // column that tells the two apart, and that line must not yield a path.
+    expect(porcelainPaths(' M scripts/gate.mts')).toEqual(['scripts/gate.mts'])
+    expect(porcelainPaths('MM scripts/gate.mts')).toEqual(['scripts/gate.mts'])
+    expect(porcelainPaths('M scripts/gate.mts')).toEqual([])
+  })
+
+  it('reads both ends of a rename detected in the WORKTREE column too', () => {
+    expect(porcelainPaths(' R packages/x/a.ts -> scripts/a.ts'))
+      .toEqual(['packages/x/a.ts', 'scripts/a.ts'])
   })
 
   it('unquotes paths git quoted for spaces', () => {
@@ -89,6 +113,22 @@ describe('resolveScope', () => {
     // And the pattern is anchored: a package path that merely mentions the
     // segments is not a profile script.
     expect(isGlobalPath('packages/eval/profiles/x/scripts/a.sh')).toBe(false)
+  })
+
+  it('refuses to scope when the FIRST porcelain line is an UNSTAGED shared-layer file', () => {
+    // The bytes git prints for an unstaged change begin with a space, and this
+    // is the whole path they travel: runner trim, then parse. `.trim()` ate the
+    // space, `slice(3)` dropped a character, the path matched no shared layer
+    // and the gate reported scope NONE — skipping build, test and pack on a
+    // change to the scripts every package runs (T51).
+    for (const path of ['scripts/gate.mts', 'profiles/web-eval/scripts/update.sh']) {
+      const scope = resolveScope(stub({
+        'git diff --name-only': ok(''),
+        'git status --porcelain': ok(trimTrailingNewlines(` M ${path}\n`)),
+      }), base)
+      expect(scope.filter, `${path} must force a whole-repo run`).toBeUndefined()
+      expect(scope.why).toContain(path)
+    }
   })
 
   it('refuses to scope when a file is RENAMED into a shared layer', () => {
