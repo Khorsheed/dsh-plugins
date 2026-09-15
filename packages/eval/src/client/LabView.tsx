@@ -35,13 +35,13 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalExperimentDetail, EvalExperimentRow } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
-import type { EvalKey } from './locales.ts'
 import { ConditionsPage } from './ConditionsPage.tsx'
 import { Field, StartedRun, factorCell, snapshotCell, stamp, statusKey } from './parts.tsx'
 import { PlanReviewPage } from './PlanReviewPage.tsx'
 import { LAB_PAGES } from './store.ts'
 import { CellsPage } from './CellsPage.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
+import { JudgingPage } from './JudgingPage.tsx'
 import { MatrixPage } from './MatrixPage.tsx'
 import { ReportPage } from './ReportPage.tsx'
 import css from './LabView.module.css'
@@ -155,11 +155,6 @@ function Overview(props: {
   )
 }
 
-/** The placeholder body of a sub-page nobody has built yet, and who owns it. */
-const PAGE_PLACEHOLDER: Readonly<Record<'judging', EvalKey>> = {
-  judging: 'placeholder.judging',
-}
-
 /**
  * The lab tab body.
  * @param props - composed props (runtime + store + injected + locale shares).
@@ -169,7 +164,7 @@ export function LabView(props: LabViewProps) {
     sessionId, useStore, actions, t,
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
     fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
-    fetchReport, finalizeRun,
+    fetchReport, finalizeRun, fetchJudgeQueue, submitHumanFinal,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -215,6 +210,12 @@ export function LabView(props: LabViewProps) {
   const finalizing = useStore(s => s.finalizing)
   const finalizeResult = useStore(s => s.finalizeResult)
   const lookIn = useStore(s => s.lookIn)
+  const judge = useStore(s => s.judge)
+  const judgeLoading = useStore(s => s.judgeLoading)
+  const judgeError = useStore(s => s.judgeError)
+  const judgeTicket = useStore(s => s.judgeTicket)
+  const judgeDraft = useStore(s => s.judgeDraft)
+  const judgeSubmitting = useStore(s => s.judgeSubmitting)
   const exportOpen = useStore(s => s.exportOpen)
   const notice = useStore(s => s.notice)
   const [newNotice, setNewNotice] = useState(false)
@@ -435,6 +436,27 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, openRunId, page, refreshRev, lookIn, actions, fetchReport])
 
+  // The judge bench's blind queue, paid for by the page that asked for it: it
+  // reads every cell's archived material off disk and scrubs it, which is not
+  // a read to spend on a visit to the overview.
+  //
+  // `judge` is deliberately NOT in this dependency list. The effect writes it,
+  // and an effect that depends on what it writes re-runs on its own answer —
+  // the cleanup then cancels the request that produced it (the shape T47 hit
+  // in the datasets tab). The refresh counter is the only re-fetch lever.
+  useEffect(() => {
+    if (openRunId === null || page !== 'judging') return
+    let cancelled = false
+    actions.setJudgeLoading(true)
+    void fetchJudgeQueue(sessionId, { runId: openRunId }).then((result) => {
+      if (cancelled) return
+      actions.setJudgeLoading(false)
+      if (result.ok) actions.setJudge(result.value)
+      else actions.setJudgeError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRunId, page, refreshRev, actions, fetchJudgeQueue])
+
   // ── the drawer's three human gestures ──────────────────────────────────
   const onRetry = (reason: string, category: string): void => {
     if (openRunId === null || cellSelection === null) return
@@ -481,6 +503,42 @@ export function LabView(props: LabViewProps) {
       }))
       // Released cells change the run's states, which the overview and the
       // matrix both show.
+      actions.refresh()
+    })
+  }
+
+  /**
+   * Record the open cell's human-final verdicts — ui-spec step 8, and the one
+   * write in this tab with no model-facing twin anywhere in the family.
+   *
+   * Only answered criteria are sent (an untouched criterion is not a verdict
+   * of "false"), and the ledger is append-only, so a second pass over the
+   * same cell adds rather than replaces. The queue is re-read afterwards
+   * because the cell has just moved from 未评 to 已评 and the agreement
+   * numbers at the top have just changed.
+   */
+  const onHumanFinal = (): void => {
+    if (openRunId === null || judgeTicket === null) return
+    const ticket = judgeTicket
+    const cellNo = judge?.cells.find(cell => cell.ticket === ticket)?.cellNo ?? 0
+    const verdicts = Object.entries(judgeDraft)
+      .filter(([, value]) => value.evidence.trim() !== '')
+      .map(([criterion, value]) => ({ criterion, pass: value.pass, evidence: value.evidence.trim() }))
+    if (verdicts.length === 0) return
+    actions.setJudgeSubmitting(true)
+    void submitHumanFinal(sessionId, { runId: openRunId, ticket, verdicts }).then((result) => {
+      actions.setJudgeSubmitting(false)
+      if (!result.ok) {
+        actions.setNotice(result.error.message)
+        return
+      }
+      actions.setNotice(result.value.duplicate
+        ? t('notice.humanFinalDuplicate', { no: cellNo })
+        : t('notice.humanFinal', { no: cellNo, count: result.value.written, by: result.value.by }))
+      // Clears the composed answers with the selection, then re-reads: the
+      // cell's group, its recorded verdicts and the header's agreement
+      // numbers all changed with this write.
+      actions.openJudgeCell(null)
       actions.refresh()
     })
   }
@@ -675,7 +733,22 @@ export function LabView(props: LabViewProps) {
                   )
               )}
               {page === 'judging' && (
-                <div className={css.empty}>{t(PAGE_PLACEHOLDER[page])}</div>
+                openRunId === null
+                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  : (
+                    <JudgingPage
+                      view={judge}
+                      loading={judgeLoading}
+                      error={judgeError}
+                      selection={judgeTicket}
+                      draft={judgeDraft}
+                      submitting={judgeSubmitting}
+                      onPick={(ticket) => { actions.openJudgeCell(ticket) }}
+                      onAnswer={(criterion, value) => { actions.setJudgeDraft(criterion, value) }}
+                      onSubmit={onHumanFinal}
+                      t={t}
+                    />
+                  )
               )}
             </div>
             <ExportDialog

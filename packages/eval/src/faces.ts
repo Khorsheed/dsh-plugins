@@ -507,6 +507,24 @@ export interface MissionActionFace {
 }
 
 /**
+ * The ONE mission write the JUDGE BENCH makes: append a `human-final`
+ * annotation (I5·T37). Separate from {@link MissionActionFace} because the
+ * drawer's two gestures and the bench's one are granted independently — a
+ * composition may mount a ledger that can be read and annotated but whose
+ * retry path is absent — and separate from {@link MissionFace} because the
+ * bench is not the run loop and must not be able to transition, submit, or
+ * set refs.
+ *
+ * Narrow on purpose: this interface is the entire surface through which
+ * `human-final` can be written in this family, and keeping it to one verb is
+ * how ui-spec R1 (终评是人的) stays a structural fact rather than a rule
+ * someone has to remember.
+ */
+export interface MissionAnnotateFace {
+  annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
+}
+
+/**
  * mission's own Remote service, host-side — the ONE place the bundle export's
  * leak gate lives.
  *

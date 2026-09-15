@@ -37,7 +37,8 @@ import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
   EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionsRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
-  EvalExportRunRequest, EvalFinalizeRequest, EvalMatrixRequest, EvalPlanRequest, EvalReportRequest,
+  EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
+  EvalMatrixRequest, EvalPlanRequest, EvalReportRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -117,6 +118,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
         fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
         finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
+        fetchJudgeQueue: (sid: SessionId, request: EvalJudgeQueueRequest) => remote.judgeQueue(sid, request),
+        // The one write with no model-facing twin anywhere in this family
+        // (ui-spec R1): the final verdict is a person's, and the toolset has
+        // no path to the verb on the other side of this line.
+        submitHumanFinal: (sid: SessionId, request: EvalHumanFinalRequest) => remote.humanFinal(sid, request),
         // The host's own session controller: the drawer OPENS the player's
         // child session so a person can read the transcript; the member
         // composer and dock there are local-agent's, not this tab's.

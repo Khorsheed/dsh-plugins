@@ -17,6 +17,7 @@
     "src/client/CellsPage.tsx",
     "src/client/ConditionsPage.tsx",
     "src/client/ExportDialog.tsx",
+    "src/client/JudgingPage.tsx",
     "src/client/LabView.tsx",
     "src/client/MatrixPage.tsx",
     "src/client/PlanReviewPage.tsx",

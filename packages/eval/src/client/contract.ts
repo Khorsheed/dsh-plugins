@@ -15,7 +15,8 @@ import type {
   EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView, EvalExperimentDetail,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
-  EvalFinalizeRequest, EvalFinalizeView, EvalPlanRequest, EvalPlanReview, EvalReportRequest,
+  EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
+  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalPlanRequest, EvalPlanReview, EvalReportRequest,
   EvalRunOutputView, EvalRunReportView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
@@ -28,11 +29,13 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
  * experiment's overview, the plan review, the condition registry and its diff,
  * the matrix, the cell list and one cell in full.
  *
- * Five of them WRITE, and every one is a human's click. `approvePlan` is
+ * Six of them WRITE, and every one is a human's click. `approvePlan` is
  * ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
  * two-step bundle export. `finalizeRun` is the report page's — the same
- * release gate, walked over every archived cell of the run. The judging desk
- * arrives with T37.
+ * release gate, walked over every archived cell of the run. `submitHumanFinal`
+ * is the judge bench's, and the ONLY door the `human-final` namespace has:
+ * ui-spec R1 says 终评是人的, and it holds because no model-facing tool in this
+ * family reaches the verb behind this field.
  */
 export interface LabViewInjected {
   /** Every experiment: the runs eval started, plus the unstarted plans (one RPC). */
@@ -77,6 +80,16 @@ export interface LabViewInjected {
   fetchReport: (sessionId: SessionId, request: EvalReportRequest) => Promise<RemoteResult<EvalRunReportView>>
   /** Walk every archived cell of the run through the release gate (a human's click). */
   finalizeRun: (sessionId: SessionId, request: EvalFinalizeRequest) => Promise<RemoteResult<EvalFinalizeView>>
+  /**
+   * The judge bench's BLIND queue: the run's cells as ordinal + ticket, their
+   * de-identified material, the rubric's human criteria, and every verdict
+   * already on record. No condition, harness or model is in this payload —
+   * blindness is a property of what crosses the wire, not of what the page
+   * chooses to render.
+   */
+  fetchJudgeQueue: (sessionId: SessionId, request: EvalJudgeQueueRequest) => Promise<RemoteResult<EvalJudgeQueueView>>
+  /** Record one cell's human-final verdicts — append-only, tagged by session. */
+  submitHumanFinal: (sessionId: SessionId, request: EvalHumanFinalRequest) => Promise<RemoteResult<EvalHumanFinalResult>>
   /**
    * Open the delegation's child session in the host's own session controller.
    * READ the player's transcript — the member composer and dock are

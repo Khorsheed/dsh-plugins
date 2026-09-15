@@ -32,6 +32,13 @@
  * run-class MODEL tool and there will not be one (ui-spec R1): the starting
  * verb belongs to the interface, never to the toolset — and nothing here can
  * relax a leak gate it does not implement.
+ *
+ * `humanFinal` (I5·T37) is the sharpest case of that rule. R1 says 终评是人的,
+ * and it holds because the only code path that writes the `human-final`
+ * namespace is this verb, reached from the judge bench, tagged with the
+ * clicking session. `@khorsheed/dsh-eval-tool` registers no twin of it, and
+ * the reason it never will is structural rather than editorial: a model with
+ * a door to the final verdict would make every run's conclusion its own.
  * @module @khorsheed/dsh-eval/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -62,8 +69,12 @@ import type {
   EvalExportRunRequest,
   EvalFinalizeRequest,
   EvalFinalizeView,
+  EvalHumanFinalRequest,
+  EvalHumanFinalResult,
   EvalItemRunsRequest,
   EvalItemRunsResult,
+  EvalJudgeQueueRequest,
+  EvalJudgeQueueView,
   EvalMatrixRequest,
   EvalMatrixView,
   EvalPlanRequest,
@@ -401,6 +412,39 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   @Remote('finalize')
   finalize(agent: Agent, request: EvalFinalizeRequest): Promise<EvalFinalizeView> {
     return this.service.finalizeView(request.runId, `tab:${String(agent.session.id)}`)
+  }
+
+  /**
+   * The JUDGE BENCH's queue (ui-spec step 8): the run's cells as BLIND
+   * entries — an ordinal and an opaque ticket each — with their
+   * de-identified material, the rubric's `human` criteria, the llm-draft
+   * samples already recorded and whatever human-final they carry.
+   *
+   * Nothing naming a condition, a harness or a model crosses this seam. That
+   * is what makes the review blind, and it is enforced by what the payload
+   * CONTAINS rather than by what the page chooses to render.
+   * @param agent - owning live agent (the tab's session).
+   * @param request - the run whose cells are being graded.
+   */
+  @Remote('judgeQueue')
+  judgeQueue(agent: Agent, request: EvalJudgeQueueRequest): Promise<EvalJudgeQueueView> {
+    void agent
+    return this.service.judgeQueue(request.runId)
+  }
+
+  /**
+   * Record one cell's human-final verdicts — the bench's one write, and the
+   * ONLY door the `human-final` namespace has.
+   *
+   * Append-only (mission's `annotate` never rewrites) and attributed to the
+   * clicking session, so the report's `tool:`-written red flag can never fire
+   * on a verdict that came from here.
+   * @param agent - the grading session; recorded as `tab:<sessionId>`.
+   * @param request - the run, the cell's ticket, and the verdicts.
+   */
+  @Remote('humanFinal')
+  humanFinal(agent: Agent, request: EvalHumanFinalRequest): Promise<EvalHumanFinalResult> {
+    return this.service.humanFinal(request.runId, request.ticket, request.verdicts, String(agent.session.id))
   }
 
   /**

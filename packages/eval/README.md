@@ -246,6 +246,8 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 | `report(bundleDir, {out?})` | 把 mission export 的自包含 bundle 变成 `results.jsonl` + `summary.md`（见下节）。只读 bundle，写入缺省 `<bundleDir>/report/`，重复运行覆盖（报告是派生态，bundle 本身只增不改） |
 | `runReport(runId, {outDir?})` | 报告页的载荷（I5·T38）：先**找**这个 run 导出的 bundle——调用方刚导的目录 → plan 自己的 `exports` → `<题库仓库>/exports`（决策 11），逐个试 `<runId>-bundle`——再交给同一个 `analyzeBundle` 分析，把四条不变量、配对差值、效率表与判官数字投影出来。**一个字节都不写**：落盘仍是 `dsh-eval report --out`，报告去哪儿是人的决定。还没导出的 run 返回 `bundleDir: null` 加找过的目录清单——「还没导出」和「没有报告」是两件事，只有前者有按钮 |
 | `finalizeView(runId, by?)` | 报告页那颗 finalize 按钮背后的 `finalize`：同一条闸、同一次走，把逐行进度**原文**一起收下来，页面因此能按格显示闸说了什么，而不是只有一个成功数 |
+| `judgeQueue(runId)` | 判官台的**盲**队列（I5·T37）：每格一条——序号 + 不透明 ticket、去指纹产物原文（复用 run 循环那个 `deidentify`，规则由 `run.meta.conditions` 重建）、rubric 里 `kind: human` 的判据、各判官各样本的 llm-draft、已有的 human-final，外加按**活账本**实时算出的一致性。载荷里没有条件 id、harness、模型，也没有 missionId——盲是载荷的属性，页面漏不出它没收到的东西 |
+| `humanFinal(runId, ticket, verdicts, sessionId)` | 把一格的终评记进 `human-final` ns——**这个 ns 在整个家族里唯一的写入口**。ticket 在服务端反解回格子；转发 mission 的 `annotate`，只追加不改写；注解的 `by` 记 `tab:<sessionId>`（不是 `tool:` 前缀），verdict 文档的 `by` 记 `judge-bench`。每条判定必须带证据，空的拒绝。**没有对应的模型工具，将来也不会有**（界面规格 R1） |
 
 ## 报告（report）
 
@@ -343,7 +345,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 - **自隐**：当前会话的 preset 组合里点了 `@khorsheed/dsh-eval-tool` 行才注册这个 tab，没点就**不注册**——tab 条的按钮是按注册枚举的，返回 null 的组件只会在条上留一个空壳按钮。判据读官方 `pluginInventory` Remote，**每条读不到的路都失败开放**（可见）：宿主没有这个命名空间、RPC 还没回来或失败、preset 组不存在或标了 `broken`、会话根本没有 preset。判据是那一行**在不在**，不另设逃生口：隐掉一个只读视图不会弄坏任何已有的 run。
 - **列表**：一行一个实验，**草稿与 run 同列**——对着手要规划下一次比较的人来说它们是同一类东西（界面规格 §五）。列：名称、题库快照、条件数（+ 判官）、题数、rep、因子、状态、进度、开始时间。动作只有「新建实验」，本轮是占位（归 T36）。
 - **状态**七个词，由纯函数 `deriveExperimentStatus` 从三处推出——plan 的 validate 结果、账本里每格的阶段、后台 job 的结局：草稿（validate 没过或没跑）→ 待批准（过了，没人起）→ 运行中（job 还活着，或还有格子在动）→ 评估中（所有格子到了 `judged` 或更后，且还没 finalize）→ 已完成（全格 `released`）；另有被拒（job 以 failed 落地）与已取消（job 被 kill）。三处**粗糙的边**是写在函数注释里的，不是抹平的：job 层把「就绪检查拒绝」和「跑到一半抛错」记成同一种 `failed`（是哪种看状态详情那句话）；job 跑完但格子停在中途读作运行中，因为账本里确实还有没跑完的格子，而第八个词不存在；一格都没有的 run 同理；实例重启后 job 记录没了，那条 run 就只按格子读，被拒与已取消于是够不着。
-- **详情**是七个子页的壳（概览 · 计划审阅 · 条件 · 矩阵 · 格子 · 报告 · 判官台，按界面规格 §五），已填六页。**概览**：快照、矩阵形状、因子、判官与采样数、环境（镜像 / 网络 / 用户，宿主路径就直说）、就绪检查原文、run.meta 摘要，外加桶与阶段直方图、未释放清单、后台 job。草稿的概览直接由列表那一行渲染，不多花一次 RPC：它没有 run 可读。剩下的判官台留一句点名归 T37——一个假装自己是空的 tab 比一个说明谁在建它的 tab 更糟。
+- **详情**是七个子页的壳（概览 · 计划审阅 · 条件 · 矩阵 · 格子 · 报告 · 判官台，按界面规格 §五），**七页全部填好**（判官台随 I5·T37）。**概览**：快照、矩阵形状、因子、判官与采样数、环境（镜像 / 网络 / 用户，宿主路径就直说）、就绪检查原文、run.meta 摘要，外加桶与阶段直方图、未释放清单、后台 job。草稿的概览直接由列表那一行渲染，不多花一次 RPC：它没有 run 可读；矩阵 / 格子 / 报告 / 判官台四页对草稿直说「没有 run」，不转一个永不落地的转圈。
 - **计划审阅页**（T36）：上面那套 kv（快照 · 矩阵形状 · 因子 · 判官与采样 · 题目 · 顺序种子 · 阶段 · 环境 · 预算 · 期望 ns · 重试 · 导出目录 · 计划文件 · 作者备注）+ validate 逐条（`ok / warn / error`，各带稳定 code）+ 每个条件的就绪与 lock，然后是人的两个按钮。**「批准并启动」**是 `approve`；**「退回修改」**只在本页记一段备注、把状态按草稿显示——**计划文件一个字节都不动**：退回是给作者的一句话，一个会改写文档的按钮等于让审阅者变成作者。计划审阅**按需拉取**（打开这一页才发一次 RPC）：validate 要走一遍题集树，让概览替它付账不合理。
 - **条件页**（T36）：一行一条条件——条件 · harness · model.declared · scope · preset · lock · 就绪；点两行出 diff，**只列不同的字段**，缺一侧就写「无此字段」（那也是一种不同）。点第三行顶掉先选的那条，再点已选的取消选。「新建条件」是占位：**选模型即新建条件**（界面规格 §五），所以它回到新建实验那张表，归 T34。
 - **批准之后看什么**：`runCreate` 之前账本里没有这个 run，而就绪检查拒绝**恰好发生在那之前**——被拒的 run 在账本里一行都不会有。所以批准返回的 job 与 run id 会留在页面上，并按 job id 拉一次 `runOutput`，把**运行日志原样**贴出来：`readiness <条件>: NOT READY — <原因>` 就写在那里，别处没有。概览页与计划审阅页共用这一块。
@@ -371,6 +373,20 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 - **判官一致性**：同判官重采样（多样本判据数、一致率、Cohen κ）与跨判官（多判官判据数、全体一致率、κ）分两行——把两位判官的分歧算成某一位的噪声是两件事混成一件。κ 在退化情形是 NaN，过线时转成 `null`：JSON 里没有 NaN，与其让它变成一个悄悄的 null，不如在能写下理由的地方转。
 - **两个动作**：**finalize** 走 `finalize` 动词，把本 run 每个 `archived` 的格子过一遍释放闸；它在一张只读页上做整 run 的写，所以**先问一次**再走，结果按格显示——闸拒了哪一格、原话是什么、加上那次走的日志原文。**导出**复用格子页那个对话框（闸仍在 mission 侧）。另有一行「用 CLI 落盘」的命令提示：页面渲染不留文件，`results.jsonl` / `summary.md` 要不要落、落哪儿，是人的决定。
 
+## 判官台（I5·T37）
+
+实验详情的第七个子页，八步流程的**第 8 步**（终评与分析初稿）在界面上的落点，也是 `human-final` 这个 ns 在整个家族里**唯一的写入口**（界面规格 R1：批准、登录、终评永远是人的动作）。
+
+- **盲是载荷的属性，不是页面的自律**：`judgeQueue` 送下来的东西里没有条件 id、没有 harness、没有模型——**也没有 missionId**。编排器给格子起的名字是 `<题>-<条件 id>-rep<N>`，而条件 id 十有八九带着 harness 的名字，把它发给浏览器等于把受试对象写进 DOM。所以每个格子以**序号 + 不透明 ticket** 出现（ticket = `sha256(runId\0missionId)` 前 16 位，写入时在服务端反解回格子），判官面板显示**判官 A / 判官 B**（按 run 自己的判官排序，稳定但不具名）。序号按 run 自己那份（按 seed 洗过的）顺序排，这本身也是盲的一部分：相邻的号码不透露哪两格共用一个条件。**揭盲在报告页**——判定落定之后再揭盲，改不了判定。
+- **去指纹只有一份实现**：中栏的产物用的就是 run 循环喂给 LLM 判官的那个 `deidentify`，规则也由同一份 `run.meta.conditions`（各条件的 `model.declared` 与 `harness.name`）重建。自己再写一个洗法，就是给同一条红线开第二个可能出错的地方，而且第一次往别名表里加一个 harness 时两边就会分叉。原文从**归档**里读（`archive/workspace/`，宿主路径的目录拷贝与容器路径的 `lab.archive` 都写这里），所以格子的临时目录清掉之后判官台照常能用。每份文件标明**替换掉几处指纹**——这是判官唯一能看出洗法确实跑过的数字。
+- **右栏三件事并排**：rubric 里 `kind: human` 的判据（`objective` 归探针、`llm-draft` 归判官，都不在这里问——出题人标成 `human` 的那条，就是他判断不该由模型定的那条）、该判据**各判官各样本**的 llm-draft 值与证据（自评样本带「自评」标）、以及人自己的输入。判据的**极性来自 rubric**：`pass` 恒为「判据成立」，负向判据成立即缺陷存在，所以行首把「负向」「一票否决」「权重」直接标出来——这是防止判官把答案答反的唯一办法。
+- **一个 ns 给一格算分——所以第一条终评是有代价的**：报告按格取「有判定的最权威 ns」**整体**算分（`primaryPass`，`human-final` > `llm-draft` > `script`），不是逐条判据合并。于是一格上**第一条** human-final——哪怕只答了一条 `kind: human` 判据——就让 human-final 成为这一格唯一的得分来源，其余只有 llm-draft 判定的判据**不再计入本格得分**（真机上实测：t31-judge-panel 那一格答 C2 一条，B2 / D1–D4 五条随即出局；合成 bundle 上配对均值从 4 掉到 1）。这条规则是报告的、早于本切片，改它会动到历史上每一份报告，所以判官台不改它——但把代价在按钮**之前**说清楚，并点名是哪几条判据（`draftOnlyCriteria`）。把那几条一并答掉就没有损失。
+- **只追加，不改写**：`humanFinal` 转发 mission 的 `annotate(ns: human-final)`，别的什么都不做。同一格再评一次是**追加**一条注解，报告按每条判据的最新值读数，先前那条仍留在账本里——所以页面对已评的格子明说「再记一次是追加」。一模一样的重复提交被 mission 判为空操作，页面照实说「这次没有写入」，不谎称写了。
+- **`by` 是会话**：注解的 `by` 记 `tab:<sessionId>`，与格子抽屉的 retry、报告页的 finalize 同一套口径；verdict 文档自己的 `by` 记 `judge-bench`（协议给这个来源的词）。报告顶部那条红字警告盯的是 `tool:` 前缀——从这里写出去的终评**不可能**触发它，因为这条路上根本没有模型。
+- **每条判定都要证据**：`dataseek.verdict/1` 的 `evidence` 是「可核对的事实，不是观感」，空白的会被服务端拒绝，页面也在按钮上先拦一道——判官当时的依据一旦丢了，这条判定就永远无法复核了。没答的判据**不发**：没碰过的判据不是一条「不成立」。
+- **顶部一致性用账本实时算**：同判官 κ、跨判官、llm-draft 对 human-final，走的是报告页那同一个 `judgeConsistencyOf`（这次为它加了一个结构化的入参，不是抄一份）。区别只在数据源：报告读 bundle，判官台读**活账本**——判官刚打的那一条必须立刻反映在他自己看得见的数字上，而不是等一次重新导出。
+- **没有模型工具，将来也不会有**：`@khorsheed/dsh-eval-tool` 不注册 `humanFinal` 的任何孪生动词。R1 的「终评是人的」在这里成立，靠的是工具面**根本没有通往这段代码的路**，不是靠一个检查把模型挡回去。
+
 ## 哈希规则
 
 - **条件哈希**：规范化 JSON（键全排序、无空白）的 sha256 小写十六进制；`notes` 除外。
@@ -393,7 +409,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 
 ## 状态
 
-I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的伴生行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具；T35b 填上矩阵页与格子页：`matrix` / `cells` / `cell` 三个读面、`retry` / `releaseCheck` 两个动作转发、`exportPlan` / `exportRun` 转发 mission 的导出闸（闸仍在 mission 侧），外加给题集 tab 用的 `runsForItem`。T38 填上报告页：`report` / `finalize` 两个 Remote 动词与服务面的 `runReport` / `finalizeView`——四条不变量、配对差值、效率表、判官一致性都由同一个 `analyzeBundle` 算出后投影，比较闸在服务端合上。判官台归 T37。
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的伴生行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具；T35b 填上矩阵页与格子页：`matrix` / `cells` / `cell` 三个读面、`retry` / `releaseCheck` 两个动作转发、`exportPlan` / `exportRun` 转发 mission 的导出闸（闸仍在 mission 侧），外加给题集 tab 用的 `runsForItem`。T38 填上报告页：`report` / `finalize` 两个 Remote 动词与服务面的 `runReport` / `finalizeView`——四条不变量、配对差值、效率表、判官一致性都由同一个 `analyzeBundle` 算出后投影，比较闸在服务端合上；T37 填上判官台，七个子页至此填满：`judgeQueue` 出盲队列（序号 + ticket、去指纹产物、`kind: human` 判据、各判官各样本的 llm-draft、已有 human-final），`humanFinal` 是 `human-final` 这个 ns 的唯一写入口（转发 mission 的 annotate，只追加，`by` 记会话），rubric 解析与判官一致性各自收归一份实现。
 
 ## 许可
 

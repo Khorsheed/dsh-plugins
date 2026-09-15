@@ -69,7 +69,6 @@ export type EvalKey =
   | 'overview.validationFailed'
   | 'ready.ok'
   | 'ready.failed'
-  | 'placeholder.judging'
   | 'report.loading'
   | 'report.error'
   | 'report.noBundle'
@@ -128,6 +127,48 @@ export type EvalKey =
   | 'report.finalizeResult'
   | 'report.finalizeCounts'
   | 'notice.finalized'
+  | 'judge.loading'
+  | 'judge.error'
+  | 'judge.empty'
+  | 'judge.blindNotice'
+  | 'judge.queue'
+  | 'judge.ungraded'
+  | 'judge.graded'
+  | 'judge.cell'
+  | 'judge.cellTitle'
+  | 'judge.pick'
+  | 'judge.material'
+  | 'judge.materialNone'
+  | 'judge.scrubbed'
+  | 'judge.criteria'
+  | 'judge.criteriaNone'
+  | 'judge.negative'
+  | 'judge.veto'
+  | 'judge.weight'
+  | 'judge.criterionEvidence'
+  | 'judge.drafts'
+  | 'judge.draftsNone'
+  | 'judge.selfJudged'
+  | 'judge.pass'
+  | 'judge.fail'
+  | 'judge.unanswered'
+  | 'judge.evidence'
+  | 'judge.evidencePlaceholder'
+  | 'judge.humanFinal'
+  | 'judge.humanFinalNone'
+  | 'judge.submit'
+  | 'judge.submitting'
+  | 'judge.submitBlocked'
+  | 'judge.regrade'
+  | 'judge.scoringWarning'
+  | 'judge.stats'
+  | 'judge.statsSame'
+  | 'judge.statsCross'
+  | 'judge.statsHuman'
+  | 'judge.statsSelf'
+  | 'judge.panel'
+  | 'notice.humanFinal'
+  | 'notice.humanFinalDuplicate'
   | 'placeholder.new'
   | 'matrix.loading'
   | 'matrix.error'
@@ -343,7 +384,48 @@ export const en: Record<EvalKey, string> = {
   'overview.validationFailed': '{errors} error(s), {warnings} warning(s)',
   'ready.ok': 'ok',
   'ready.failed': 'failed',
-  'placeholder.judging': 'The judging desk belongs to T37.',
+  'judge.loading': 'Loading the judging queue…',
+  'judge.error': 'Failed to open the judging queue',
+  'judge.empty': 'This run has no cells to grade yet.',
+  'judge.blindNotice': 'Blind review: the harness, the model and the condition are deliberately absent from this page. Cells are numbered in the run\'s own (seeded) order, and the panel reads Judge A / Judge B. Unblinding happens on the report page.',
+  'judge.queue': 'Queue',
+  'judge.ungraded': 'Not graded ({count})',
+  'judge.graded': 'Graded ({count})',
+  'judge.cell': 'Cell {no}',
+  'judge.cellTitle': 'Cell {no} · item {task} · rep {rep}',
+  'judge.pick': 'Pick a cell from the queue to grade it.',
+  'judge.material': 'De-fingerprinted artifacts',
+  'judge.materialNone': 'This cell archived none of the judged stage files — there is nothing to read, and a verdict on nothing would be a guess.',
+  'judge.scrubbed': '{count} fingerprint(s) replaced',
+  'judge.criteria': 'Criteria (kind: human)',
+  'judge.criteriaNone': 'No human criteria to answer: {reason}',
+  'judge.negative': 'defect',
+  'judge.veto': 'veto',
+  'judge.weight': 'weight {weight}',
+  'judge.criterionEvidence': 'What counts as evidence: {evidence}',
+  'judge.drafts': 'llm-draft',
+  'judge.draftsNone': 'no llm-draft sample for this criterion',
+  'judge.selfJudged': 'self-judged',
+  'judge.pass': 'holds',
+  'judge.fail': 'does not hold',
+  'judge.unanswered': 'unanswered',
+  'judge.evidence': 'Evidence',
+  'judge.evidencePlaceholder': 'A checkable fact, not an opinion',
+  'judge.humanFinal': 'human-final on record',
+  'judge.humanFinalNone': 'nothing recorded yet',
+  'judge.submit': 'Record human-final ({count})',
+  'judge.submitting': 'Recording…',
+  'judge.submitBlocked': 'Answer at least one criterion, with evidence, before recording.',
+  'judge.scoringWarning': 'Recording here makes human-final this cell\'s ONLY scoring source. The report scores each cell from the most authoritative namespace that has any verdict at all, so these {count} criteria — judged only by llm-draft ({criteria}) — would stop counting toward this cell\'s score. Answer them here too, or accept that the cell scores on the human criteria alone.',
+  'judge.regrade': 'This cell already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
+  'judge.stats': 'Agreement (live, from the ledger)',
+  'judge.statsSame': 'One judge, resampled',
+  'judge.statsCross': 'Across judges',
+  'judge.statsHuman': 'llm-draft vs human-final',
+  'judge.statsSelf': 'Self-judged criteria',
+  'judge.panel': '{count} judge condition(s) on the panel',
+  'notice.humanFinal': 'human-final recorded on cell {no}: {count} verdict(s), by {by}',
+  'notice.humanFinalDuplicate': 'Cell {no} already carried exactly these verdicts — the ledger is append-only and identical repeats are a no-op, so nothing was written.',
   'placeholder.new': 'The new-experiment form belongs to T36. Until then a plan is drafted as a file: <repo>/datasets/<set>/plans/<name>.json.',
   'matrix.loading': 'Arranging the matrix…',
   'matrix.error': 'Failed to arrange the matrix',
@@ -611,7 +693,48 @@ export const zh: Record<EvalKey, string> = {
   'overview.validationFailed': '{errors} 个错误，{warnings} 条警告',
   'ready.ok': '通过',
   'ready.failed': '未通过',
-  'placeholder.judging': '判官台归 T37。',
+  'judge.loading': '判官台加载中…',
+  'judge.error': '判官台打不开',
+  'judge.empty': '这个 run 还没有可评的格子。',
+  'judge.blindNotice': '盲评：本页刻意不出现 harness、模型与条件。格子按这个 run 自己的（种子）顺序编号，判官只显示判官 A / 判官 B。揭盲在报告页。',
+  'judge.queue': '队列',
+  'judge.ungraded': '未评（{count}）',
+  'judge.graded': '已评（{count}）',
+  'judge.cell': '格子 {no}',
+  'judge.cellTitle': '格子 {no} · 题 {task} · rep {rep}',
+  'judge.pick': '从左边队列里选一个格子开始评。',
+  'judge.material': '去指纹产物',
+  'judge.materialNone': '这个格子没有归档任何被判的阶段文件——没有可读的东西，对着空白打分就是猜。',
+  'judge.scrubbed': '替换掉 {count} 处指纹',
+  'judge.criteria': '判据（kind: human）',
+  'judge.criteriaNone': '没有要人答的判据：{reason}',
+  'judge.negative': '负向',
+  'judge.veto': '一票否决',
+  'judge.weight': '权重 {weight}',
+  'judge.criterionEvidence': '出题人给的取证口径：{evidence}',
+  'judge.drafts': 'llm-draft',
+  'judge.draftsNone': '这条判据没有 llm-draft 样本',
+  'judge.selfJudged': '自评',
+  'judge.pass': '成立',
+  'judge.fail': '不成立',
+  'judge.unanswered': '未答',
+  'judge.evidence': '证据',
+  'judge.evidencePlaceholder': '写可核对的事实，不写观感',
+  'judge.humanFinal': '已有 human-final',
+  'judge.humanFinalNone': '还没有记录',
+  'judge.submit': '记入 human-final（{count} 条）',
+  'judge.submitting': '记录中…',
+  'judge.submitBlocked': '至少答一条判据并写上证据，才能记录。',
+  'judge.scoringWarning': '在这里记一条，human-final 就成为这个格子**唯一**的得分来源。报告按格取「有判定的最权威 ns」整体算分，所以这 {count} 条只有 llm-draft 判定的判据（{criteria}）将不再计入本格得分。要么在这里一并答掉，要么接受这一格只按人评的判据算分。',
+  'judge.regrade': '这个格子已经有 human-final。再记一次是**追加**：报告按每条判据的最新值读数，先前那条仍留在账本里。',
+  'judge.stats': '一致性（实时，来自账本）',
+  'judge.statsSame': '同判官多采样',
+  'judge.statsCross': '跨判官',
+  'judge.statsHuman': 'llm-draft 与 human-final',
+  'judge.statsSelf': '自评判据',
+  'judge.panel': '判官面板 {count} 位',
+  'notice.humanFinal': '格子 {no} 的 human-final 已记入：{count} 条，by {by}',
+  'notice.humanFinalDuplicate': '格子 {no} 上已经有一模一样的判定——账本只追加、重复即空操作，这次没有写入。',
   'placeholder.new': '新建实验表单归 T36。在那之前，实验用文件起草：<题库>/datasets/<题集>/plans/<名称>.json。',
   'matrix.loading': '排矩阵…',
   'matrix.error': '矩阵排布失败',

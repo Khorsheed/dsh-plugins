@@ -36,18 +36,21 @@ import {
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
 import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
+import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
 import { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 import { projectFinalize, runReportView } from './report-view.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
-  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionActionFace, MissionExportRemoteFace,
+  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionActionFace,
+  MissionAnnotateFace, MissionExportRemoteFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
 import type {
   EvalApproveResult, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
-  EvalExportRunRequest, EvalFinalizeView, EvalItemRunsResult, EvalMatrixView, EvalPlanReview, EvalRunReportView,
+  EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView,
+  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanReview, EvalRunReportView,
 } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
@@ -638,6 +641,67 @@ export class EvalService {
   }
 
   /**
+   * The JUDGE BENCH's queue (ui-spec step 8): every cell of the run as a
+   * BLIND entry — an ordinal and an opaque ticket, its de-identified
+   * material, the rubric's `human` criteria, every llm-draft sample already
+   * recorded and whatever human-final it carries — plus the run's live
+   * consistency numbers.
+   *
+   * Blind is a property of the PAYLOAD, not of the page: nothing naming a
+   * condition, a harness or a model crosses this seam, so no amount of
+   * client-side carelessness can unblind a grader. The report page is where
+   * the same run is read with its labels on.
+   * @param runId - the run whose cells are being graded.
+   * @throws {@link EvalReadRefused} when no mission service is mounted.
+   */
+  // `async` so the refusal is a REJECTION, like `cell`: the signature promises
+  // a promise, and a caller that only attached `.catch` would otherwise be hit
+  // by a synchronous throw.
+  async judgeQueue(runId: string): Promise<EvalJudgeQueueView> {
+    const mission = this.requireMissionRead('open the judging queue')
+    const datasets = this.hosts?.get('datasets') as DatasetsFace | undefined
+    return await judgeQueueView({
+      mission,
+      runId,
+      ...(datasets === undefined ? {} : { datasets }),
+    })
+  }
+
+  /**
+   * Write one cell's human-final verdicts — ui-spec step 8, and the ONLY door
+   * `human-final` has in this family. A human's click, tagged by session, and
+   * append-only: mission's `annotate` pushes and never rewrites.
+   *
+   * There is deliberately no model-facing twin of this verb, and adding one
+   * would break R1 rather than extend it: 终评是人的 holds here because the
+   * toolset has no path to this code, not because a check turns a model away.
+   * @param runId - the run.
+   * @param ticket - the blind handle the queue issued for the cell.
+   * @param verdicts - one entry per criterion being answered.
+   * @param sessionId - the calling session; recorded as `tab:<sessionId>`.
+   * @throws {@link EvalReadRefused} when mission is absent, the ticket names
+   *   no cell, or a verdict fails `dataseek.verdict/1`.
+   */
+  // `async` for the same reason as `judgeQueue`: every refusal on this verb
+  // reaches the browser as a rejected RPC, never as a throw mid-call.
+  async humanFinal(
+    runId: string,
+    ticket: string,
+    verdicts: readonly EvalJudgeVerdictInput[],
+    sessionId: string,
+  ): Promise<EvalHumanFinalResult> {
+    const mission = this.requireMissionRead('write a human-final verdict')
+    const annotate = this.missionAnnotate()
+    if (annotate === undefined) {
+      throw new EvalReadRefused(
+        'no mission annotate face: human-final verdicts live in the mission ledger, so this composition cannot record one '
+        + '— mount the dsh-mission plugin',
+      )
+    }
+    return await writeHumanFinal({ mission, annotate, runId, ticket, verdicts, sessionId })
+  }
+
+  /**
    * The 作答记录 of one dataset item: every evaluation run that answered it,
    * with its cells and their verdict counts. Consumed by the 题集 tab (T47);
    * degrades to an empty list plus a sentence when no ledger is mounted.
@@ -668,6 +732,12 @@ export class EvalService {
     return typeof mission?.retry === 'function' && typeof mission.isReleasable === 'function'
       ? (mission as MissionActionFace)
       : undefined
+  }
+
+  /** The ONE mission write the judge bench makes; undefined when mission is absent. */
+  private missionAnnotate(): MissionAnnotateFace | undefined {
+    const mission = this.hosts?.get('mission') as Partial<MissionAnnotateFace> | undefined
+    return typeof mission?.annotate === 'function' ? (mission as MissionAnnotateFace) : undefined
   }
 
   /** mission's own Remote service — the leak gate's one home. */

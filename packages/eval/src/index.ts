@@ -102,9 +102,9 @@ export type {
   CapabilityProbe, CapabilityProbeInput, ProvisionedCapabilities, ProvisionOptions, ProvisionReport,
 } from './provision.ts'
 export {
-  buildDeidentifyRules, buildJudgePrompt, collectProbes, deidentify, itemLayerPath, itemProbeCwd,
+  buildDeidentifyRules, buildJudgePrompt, collectProbes, deidentify, humanCriteria, itemLayerPath, itemProbeCwd,
   itemVerifyRoot, llmDraftCriteria, mergeReplacements, pickChecklistPath, pickRubricPath, probePaths,
-  registerEntriesOf, registerPatternMatches,
+  registerEntriesOf, registerPatternMatches, rubricCriteria,
   DATASET_VERIFY_ROOT, DEFAULT_JUDGE_SAMPLES, HARNESS_ALIASES, JUDGE_MATERIAL_FILES,
   PROBE_EXIT_NOT_APPLICABLE,
 } from './judge.ts'
@@ -112,7 +112,9 @@ export type {
   Deidentified, DeidentifyRule, JudgeSampleRecord, ProbeOutcome, ProbeRef, ProbeStatus,
   RegisterEntry, ReplacementCount, ResolvedJudge, RubricCriterion, VerdictAnchor,
 } from './judge.ts'
-export { analyzeBundle, writeEvalReport, parseMissionId } from './report.ts'
+export { cellTicket, judgeQueueView, resolveTicket, writeHumanFinal } from './judge-bench.ts'
+export type { HumanFinalInput, JudgeQueueInput } from './judge-bench.ts'
+export { analyzeBundle, judgeConsistencyOf, writeEvalReport, parseMissionId } from './report.ts'
 export type {
   ConditionEfficiency,
   EvalReport,
@@ -120,6 +122,7 @@ export type {
   FactorPair,
   InvariantCheck,
   JudgeConsistency,
+  JudgeConsistencyCell,
   NegativeHit,
   PairComparison,
   PairTaskDelta,
@@ -151,7 +154,7 @@ export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.t
 export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
 export type { RunSubset as RunSubsetRecord } from './run.ts'
 export type {
-  DatasetsBindingFace, DatasetsFace, MissionActionFace, MissionExportRemoteFace,
+  DatasetsBindingFace, DatasetsFace, MissionActionFace, MissionAnnotateFace, MissionExportRemoteFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,
