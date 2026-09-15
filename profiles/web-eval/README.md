@@ -4,7 +4,7 @@
 
 **在一个界面里跑对照实验：同一批题交给不同的 harness、模型、preset 或 skill，按题配对比较。** 题库、条件、计划进 git 评审；执行由确定性编排器驱动；判定分脚本、LLM 初评、人终评三源互不覆盖；结论随自包含 bundle 导出。基础体验与本地 Agent 家族全部内含。
 
-> **状态**：I2 已收口（2026-09-08）：编排器 v0（run 循环、判官、报告、只读工具）合入 main；pilot A 在宿主上真跑 F2 + F3 × codex / dsh 三格到 released，报告因无环境指纹如实拒绝比较，判官一致性 κ 0.655（单格支撑），第一份结论是 14 条缺口而不是名次（题库 `docs/pilot-a-log.md`）。I3 已收口（2026-09-09）：一格在容器内走完全流程、release 经闸；四家在容器内跑通同一题（P0），报告四条不变量首次全部成立、比较节首次打开、效率表 token 四列有数（题库 `docs/pilot-b-log.md`）；阶段三的数据缺口记 T19d。I4 进行中：放宽因子——机制已齐（作用域、模型、provision 与 lock、能力哈希实测、job 起的容器路径与出网自检、dsh 的会话回读），三份 pilot 待跑（题库 `docs/i4-pilots-log.md`）。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)；I5 的界面规格见 [docs/ui-spec.md](docs/ui-spec.md)（2026-09-13 定稿，「最终 UI」一节待按它改写，T48）。路线图里的「dsh-eval 整合包」即本 profile。
+> **状态**：I2 已收口（2026-09-08）：编排器 v0（run 循环、判官、报告、只读工具）合入 main；pilot A 在宿主上真跑 F2 + F3 × codex / dsh 三格到 released，报告因无环境指纹如实拒绝比较，判官一致性 κ 0.655（单格支撑），第一份结论是 14 条缺口而不是名次（题库 `docs/pilot-a-log.md`）。I3 已收口（2026-09-09）：一格在容器内走完全流程、release 经闸；四家在容器内跑通同一题（P0），报告四条不变量首次全部成立、比较节首次打开、效率表 token 四列有数（题库 `docs/pilot-b-log.md`）；阶段三的数据缺口记 T19d。I4 进行中：放宽因子——机制已齐（作用域、模型、provision 与 lock、能力哈希实测、job 起的容器路径与出网自检、dsh 的会话回读），三份 pilot 待跑（题库 `docs/i4-pilots-log.md`）。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)；I5 的界面规格见 [docs/ui-spec.md](docs/ui-spec.md)（2026-09-13 定稿，「最终 UI」一节按它写，T48）。路线图里的「dsh-eval 整合包」即本 profile。
 
 ## 定位
 
@@ -43,7 +43,7 @@ flowchart TB
   subgraph L5[执行层]
     K[容器 · 题集级镜像]
     CLI[四家 CLI · exec 驱动]
-    V[判定探针 · 宿主侧]
+    V[判定探针 · 单元内]
   end
   subgraph L6[存储层]
     G[(题库 git 仓库)]
@@ -75,7 +75,7 @@ flowchart TB
 | 契约层 | 把评测语义写成可校验、可哈希的数据 | `docs/dataset-authoring-protocol.md` 与本 profile 的三份 schema |
 | 编排层 | 唯一的执行者；每个动作确定性，可用假 exec 测试 | `@khorsheed/dsh-eval`（待建）：服务面 + CLI + skill |
 | 机制层 | 通用动词：题库、状态机、单元、委派 | 四个现有插件 |
-| 执行层 | 选手真正跑的地方；起点字节级一致 | 题集级镜像、各家 CLI、宿主侧探针 |
+| 执行层 | 选手真正跑的地方；起点字节级一致 | 题集级镜像、各家 CLI、单元内探针（I3 起经 `lab.verify` 跑在格子的单元里） |
 | 存储层 | 题库进 git，运行数据进数据根，分享物是 bundle | 三个目录 |
 
 ### 契约层的三份 schema
@@ -127,15 +127,15 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 ## 依赖插件
 
-23 个成员，四组：
+26 个成员，三组：
 
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
-| 基础体验 | 与 web-dev 相同的 12 个 | ✅ / 🔶 | 无 |
-| 本地 Agent 家族 | `local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装已落地（T17：`exec: {container, workdir, env}`，值不上 argv）；「CLI 驱动抽成独立包」推迟到出现第二个消费者；`cliVersion` 与 `credentialState` 填实（T25）。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
-| 评测机制 | `datasets` / `mission` / `lab` / `eval` | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
+| 基础体验 | 与 web-dev 相同的 13 个（`ankh-guard` 在其中） | ✅ / 🔶 | 无；评测实例用自己的 `$DSH_HOME`，切换与看护归 `ankh-guard` |
+| 本地 Agent 家族 | 6 个：`local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装已落地（T17：`exec: {container, workdir, env}`，值不上 argv）；「CLI 驱动抽成独立包」推迟到出现第二个消费者；`cliVersion` 与 `credentialState` 填实（T25）。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
+| 评测机制 | 7 个：`datasets` / `mission` / `lab` / `eval` 四个 core + `datasets-tool` / `mission-tool` / `eval-tool` 三个伴生（M4'③ 起拆开，伴生行归预设） | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
 
-第 23 个成员是 **`@khorsheed/dsh-eval`**（编排器，I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。待补：判官委派（T9）、`dsh-eval report`（T10）、只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status`（T14）。
+评测机制里的 **`@khorsheed/dsh-eval`** 是编排器（I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。待补：判官委派（T9）、`dsh-eval report`（T10）、只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status`（T14）。
 
 `capability-catalog` 在这里多一个用途：它按 preset 的 standing scope 读注册表，是「这个条件下 agent 有哪些工具和 skill」的取证来源。T32 起它给出 `snapshotFor(presetId)` 与 `hashOf(snapshot)`：规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters（描述措辞不进——改一次文案不该换一个受试对象），哈希写作 `caps:<sha256>`。编排实例自己的那份记进 `run.meta.orchestrator.capabilities` 做取证；受试对象那份由 provision 算进 lock 的 `provisioned.capabilities`，就绪检查据此核对条件声明的 `preset`。
 
@@ -237,31 +237,37 @@ pending → ws-ready → stage-1 → stage-2 → iterating ⇄ checkpoint-N → 
 
 ## 最终 UI
 
-七个面，四个已有，三个待建：
+评测模式下人有三个面：**会话**、**题集 tab**、**实验室 tab**（口径正本是 [docs/ui-spec.md](docs/ui-spec.md)，2026-09-13 定稿）。两个 tab 同形——列表 + 新建 + 详情，实验详情再分子页。**missions tab 隐藏**：mission 仍是评测的账本与释放闸，但这个词不进界面，逐格细节由 `eval_cells` 从 eval 自己的投影读（ui-spec R6）。
 
 | 面 | 作用 | 状态 |
 |---|---|---|
-| **实验台 tab**（`eval`） | 矩阵板：题 × 条件，格内显示 rep 进度、阶段、桶、物化哈希是否一致、卡格告警；run 范围与五桶复用 missions tab 的投影 | ⬜ I5 |
-| **条件注册表** | 条件列表、两条件 diff（只差哪一项）、哈希、来源（scoped home / 镜像 / skill 包）；模型等因子只展示与 diff，不给选，选模型即新建条件 | ⬜ I4 数据、I5 界面 |
-| **计划审阅** | agent 产出的 plan 呈现为「快照 @commit · N 条件 · M 题 · R rep · 顺序」+ validate 结果 + 批准按钮；批准是人的动作 | ⬜ I5 |
-| **格子详情** | 成员子会话 transcript、verify 原样输出、checkpoint 与 tag、产物、三源注解分栏 | 🔶 missions tab 详情 + 成员 dock 已有大半 |
-| **判官台** | 盲评队列、去指纹产物、llm-draft 与 human-final 并排、一致性统计；human-final 的唯一写入口 | ⬜ I5 |
-| **报告视图** | 按题配对差值表、Pareto 图（完成度 × 成本）、n 与置信区间、样本不足时拒绝排名；导出走现有泄题闸对话框 | ⬜ I2 先出 CLI 表，I5 进界面 |
-| **datasets tab / missions tab / 成员 dock** | 题库浏览与绑定、队列与释放检查、成员续聊 | ✅ 已有 |
+| **题集 › 列表** | 一行一个题集：id、快照（分支 @ commit）、题目数、槽位与层的对应、canary 是否设置、validate 结果、用于哪些实验。动作：新建题集（生成带 `dataset.json` 的骨架）、导入题集（指一个已按协议组织的目录或仓库 + commit，validate 后入列——本质是绑定） | ✅ I5·T47 |
+| **题集 › 详情**（题集 › 题目） | 文件树 + 预览：树上每个文件标槽位与「谁看得到」，槽位可筛选；「选手将看到」把这道题在单元里的样子原样列出（防泄题自查）；可判性一行（评估标准几条、探针几个、阶段 schema 几个）；「作答记录」按题目投影各实验的格子。动作：题目骨架、导入题目、validate | ✅ I5·T47 |
+| **实验室 › 列表** | 一行一个实验：名称、题库快照、条件数（+ 判官）、题数、rep、因子（由条件 diff 自动推出）、状态、进度、开始时间；草稿与 run 同列。状态：草稿 → 待批准 → 运行中 → 评估中 → 已完成，另有被拒、已取消 | ✅ I5·T35a |
+| **实验室 › 新建实验** | 名称、题库快照、题目多选、条件（选已有或新建：harness、模型、scope、preset、权限、推理强度）、判官与采样数、rep、阶段、顺序 seed、环境（镜像、网络、出网自检）、预算。产出是 `plans/<name>.json` 与新条件文件，进题库工作树的透传区；动作只有「保存草稿并 validate」——**启动不在这张表单上**。agent 起草的草稿与人建的落在同一个列表 | ⬜ I5·T34 |
+| 详情 › **概览** | 快照、矩阵形状、因子、判官、环境、就绪检查原文、run.meta | ✅ I5·T35a |
+| 详情 › **计划审阅** | 快照 · 条件 · 题 · rep · 顺序 + validate 结果逐条（ok / warn / error）。动作：**批准并启动**、退回修改——批准永远是人的动作 | ✅ I5·T36 |
+| 详情 › **条件** | 条件列表与两条件 diff（只高亮不同项）、lock 与就绪状态；模型等因子只展示与 diff，不在这里选——选模型即新建条件，回到新建实验 | ✅ I5·T36 |
+| 详情 › **矩阵** | 行永远是题，列是人选的因子，其余因子分组或筛选；格内固定四样：rep 圆点（实心已判 / 半心进行中 / 空心未起）、阶段或桶、卡格告警、物化哈希是否与同题其它格一致；底部 run 级汇总（物化哈希、环境指纹、未释放单元、判官一致性、卡格数）。点格子打开格子详情 | ✅ I5·T35b |
+| 详情 › **格子** | 原 missions 队列按本 run 过滤：题 × 条件 × rep、桶、阶段、attempt、时长；右侧抽屉是格子详情——refs、检查点、子会话（打开成员子会话，可续聊不干预）、verify 原样输出、产物、注解计数。动作：带原因重跑、释放检查、导出 bundle | ✅ I5·T35b |
+| 详情 › **报告** | 四条不变量、配对差值表、效率表、判官一致性；四条全 ok 前「报告」显示为「比较节未开」。动作：finalize（过释放闸）、导出（走原泄题闸对话框） | ✅ I5·T38 |
+| 详情 › **判官台** | 盲评队列、去指纹产物、llm-draft 与 human-final 并排、一致性统计；human-final 的唯一写入口。判官不是矩阵上的一行——它的判定是本格的 llm-draft 注解，带 `by` = 判官条件 id | ⬜ I5·T37 |
+| **成员 dock · 成员续聊** | 从格子详情用宿主的 `sessions.open(childSessionId)` 打开成员子会话，composer 与 dock 由 local-agent 接管 | ✅ 已有 |
 
-实验台的样子：
+实验详情的矩阵页：
 
 ```text
-┌ eval · run 2026-09-20-pilot ─────────────────── 快照 harness-comparison@d1ac20a ┐
-│ 条件: [A codex/…] [B claude/…] [C kimi/…] [D dsh/…]        rep 3 · 阶段 1-2  │
-│──────────┬──────────────┬──────────────┬──────────────┬─────────────────────│
-│ 题       │ A            │ B            │ C            │ D                   │
-│──────────┼──────────────┼──────────────┼──────────────┼─────────────────────│
-│ F2       │ ●●● judged   │ ●●○ stage-2  │ ●●● judged   │ ●○○ stage-1 ⚠ 47m  │
-│ F3       │ ●●● judged   │ ●●● judged   │ ●●● halted×1 │ ●●● judged          │
-│──────────┴──────────────┴──────────────┴──────────────┴─────────────────────│
-│ 物化哈希 9f2c1a2b 全部一致 · 未释放单元 2 · 判官一致性 κ 0.71   [报告] [导出] │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌ 实验室 › 2026-09-20-pilot ─────────────── 快照 harness-comparison@d1ac20a ┐
+│ 概览 · 计划审阅 · 条件 ·[矩阵]· 格子 · 报告 · 判官台                      │
+│ 列 = harness ▾  其余因子：model 默认 · scope eval        rep 3 · 阶段 1-2 │
+│────────┬─────────────┬─────────────┬─────────────┬────────────────────────│
+│ 题     │ codex       │ claude-code │ kimi        │ dsh                    │
+│────────┼─────────────┼─────────────┼─────────────┼────────────────────────│
+│ F2     │ ●●● judged  │ ●●○ stage-2 │ ●●● judged  │ ●○○ stage-1 ⚠ 47m      │
+│ F3     │ ●●● judged  │ ●●● judged  │ ●●● halted×1│ ●●● judged  ≠ 物化哈希 │
+│────────┴─────────────┴─────────────┴─────────────┴────────────────────────│
+│ 物化哈希全部一致 · 未释放 2 · κ 0.71                    [finalize] [导出] │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。

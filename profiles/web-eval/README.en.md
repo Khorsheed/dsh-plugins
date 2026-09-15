@@ -4,7 +4,7 @@
 
 **Run controlled comparisons from one screen: hand the same batch of tasks to different harnesses, models, presets, or skills, and compare them paired by task.** Task sets, conditions, and plans are reviewed in git; execution is driven by a deterministic orchestrator; verdicts come from three sources (scripts, LLM draft, human final) that never overwrite each other; conclusions leave as a self-contained bundle. The base experience and the local-agent family are included.
 
-> **Status**: I2 closed (2026-09-08): orchestrator v0 (run loop, judge, report, read-only tools) is merged to main; pilot A ran F2 + F3 × codex / dsh for three cells to released on the host, the report refused comparison for lack of an environment fingerprint as designed, judge agreement is κ 0.655 (carried by one cell), and the first conclusion is a list of 14 gaps rather than a ranking (the task repo's `docs/pilot-a-log.md`). I3 closed (2026-09-09): one cell ran the whole flow inside a container and was released through the gate; the four harnesses ran the same item (P0) in containers, all four report invariants held for the first time, the comparison section opened, and the efficiency table carries the four token columns (the task repo's `docs/pilot-b-log.md`); the stage-3 data gap is recorded as T19d. I4 is in progress: relaxing factors — the mechanisms are in (scopes, models, provision and locks, measured capability hashes, job-started container runs with an egress check, dsh session read-back); the three pilots are next (dataset `docs/i4-pilots-log.md`). This document first fixes the target architecture, member plugins, target flow, and final UI, then approaches them iteration by iteration, with each iteration's done criteria pinned in the [iteration plan](#iteration-plan); per-task status and briefs live in [docs/iterations.md](docs/iterations.md) (Chinese); the I5 UI specification is [docs/ui-spec.md](docs/ui-spec.md) (settled 2026-09-13; the 最终 UI section is to be rewritten from it, T48). The roadmap's "dsh-eval pack" is this profile.
+> **Status**: I2 closed (2026-09-08): orchestrator v0 (run loop, judge, report, read-only tools) is merged to main; pilot A ran F2 + F3 × codex / dsh for three cells to released on the host, the report refused comparison for lack of an environment fingerprint as designed, judge agreement is κ 0.655 (carried by one cell), and the first conclusion is a list of 14 gaps rather than a ranking (the task repo's `docs/pilot-a-log.md`). I3 closed (2026-09-09): one cell ran the whole flow inside a container and was released through the gate; the four harnesses ran the same item (P0) in containers, all four report invariants held for the first time, the comparison section opened, and the efficiency table carries the four token columns (the task repo's `docs/pilot-b-log.md`); the stage-3 data gap is recorded as T19d. I4 is in progress: relaxing factors — the mechanisms are in (scopes, models, provision and locks, measured capability hashes, job-started container runs with an egress check, dsh session read-back); the three pilots are next (dataset `docs/i4-pilots-log.md`). This document first fixes the target architecture, member plugins, target flow, and final UI, then approaches them iteration by iteration, with each iteration's done criteria pinned in the [iteration plan](#iteration-plan); per-task status and briefs live in [docs/iterations.md](docs/iterations.md) (Chinese); the I5 UI specification is [docs/ui-spec.md](docs/ui-spec.md) (settled 2026-09-13; the Final UI section below is written from it, T48). The roadmap's "dsh-eval pack" is this profile.
 
 ## Positioning
 
@@ -43,7 +43,7 @@ flowchart TB
   subgraph L5[Execution layer]
     K[containers · suite-level image]
     CLI[the four CLIs · exec driver]
-    V[verification probes · host side]
+    V[verification probes · inside the unit]
   end
   subgraph L6[Storage layer]
     G[(task-set git repository)]
@@ -75,7 +75,7 @@ Each of the six layers does exactly one thing:
 | Contract | evaluation semantics written as validatable, hashable data | `docs/dataset-authoring-protocol.md` plus this profile's three schemas |
 | Orchestration | the only executor; every action deterministic, testable with a fake exec | `@khorsheed/dsh-eval` (to be built): service face + CLI + skill |
 | Mechanism | generic verbs: task sets, state machines, units, delegation | the four existing plugins |
-| Execution | where contestants actually run; the starting point is byte-identical | suite-level image, each CLI, host-side probes |
+| Execution | where contestants actually run; the starting point is byte-identical | suite-level image, each CLI, in-unit probes (since I3 they run through `lab.verify` inside the cell's unit) |
 | Storage | task sets in git, run data in the data root, the shareable thing is a bundle | three directories |
 
 ### The contract layer's three schemas
@@ -127,16 +127,15 @@ The plan's `conditions` and `judge.conditions` carry **condition ids** (never sh
 
 ## Member plugins
 
-23 members in four groups:
+26 members in three groups:
 
 | Group | Members | Status | Changes this profile needs |
 |---|---|---|---|
-| Base experience | the same 12 as web-dev | ✅ / 🔶 | none |
-| Local-agent family | `local-agent` + the kimi / codex / claude-code / dsh providers + `tool-subagent` | 🔶 | I1: evaluation pins (all exec, codex full-access inside containers, explicit reasoning effort for claude and kimi) and the effectiveSettings snapshot (including the configured model). I2: model read-back, recording the model actually used. I3: in-container exec wrapping landed (T17: `exec: {container, workdir, env}`, values never on argv); "the CLI driver extracted into its own package" is deferred until a second consumer exists; `cliVersion` and `credentialState` filled in (T25). I4: per-condition model parameter (set on the first delegation, fixed within a member, unchanged on resume) and scoped-home override, plus a "default model" field on each provider's settings card |
-| Evaluation mechanisms | `datasets` / `mission` / `lab` / `eval` | 🔶 rc | `mission`: retry carries a reason; the ns report carries writtenBy. `lab`: composite fingerprint (image + resource limits + mount layout + env keys). `datasets`: canary field; item-level external source pointers. `eval`: the run loop's judge (T9), report (T10), read-only tools (T14), and the full readiness gate |
-| Ops guard | `ankh-guard` | ✅ | none; the eval instance gets its own `$DSH_HOME` |
+| Base experience | the same 13 as web-dev (`ankh-guard` among them) | ✅ / 🔶 | none; the eval instance gets its own `$DSH_HOME`, and `ankh-guard` owns switching it and watching over it |
+| Local-agent family | 6: `local-agent` + the kimi / codex / claude-code / dsh providers + `tool-subagent` | 🔶 | I1: evaluation pins (all exec, codex full-access inside containers, explicit reasoning effort for claude and kimi) and the effectiveSettings snapshot (including the configured model). I2: model read-back, recording the model actually used. I3: in-container exec wrapping landed (T17: `exec: {container, workdir, env}`, values never on argv); "the CLI driver extracted into its own package" is deferred until a second consumer exists; `cliVersion` and `credentialState` filled in (T25). I4: per-condition model parameter (set on the first delegation, fixed within a member, unchanged on resume) and scoped-home override, plus a "default model" field on each provider's settings card |
+| Evaluation mechanisms | 7: the `datasets` / `mission` / `lab` / `eval` cores plus the `datasets-tool` / `mission-tool` / `eval-tool` companions (split since M4'③; the companion rows belong to the preset) | 🔶 rc | `mission`: retry carries a reason; the ns report carries writtenBy. `lab`: composite fingerprint (image + resource limits + mount layout + env keys). `datasets`: canary field; item-level external source pointers. `eval`: the run loop's judge (T9), report (T10), read-only tools (T14), and the full readiness gate |
 
-The 23rd member is **`@khorsheed/dsh-eval`** (the orchestrator, joined with I2·T8). Landed: the three contract schemas, `validatePlan` / `hashCondition` / `hashHome`, `generateTemplate` (manifest → run template, item-for-item equivalent to the I1 hand-written bench-v1), the run loop v0 (stages one-two, host directories, per-cell materialization, byte-exact delegation, submit/transition, the archive gate, bundle export), the `/eval run` slash command, and the `dsh-eval` CLI (validate / run --dry-run / template / conditions hash). To come: judge delegation (T9), `dsh-eval report` (T10), the read-only tools `eval_conditions` / `eval_plan_validate` / `eval_run_status` (T14).
+The evaluation mechanisms' **`@khorsheed/dsh-eval`** is the orchestrator (joined with I2·T8). Landed: the three contract schemas, `validatePlan` / `hashCondition` / `hashHome`, `generateTemplate` (manifest → run template, item-for-item equivalent to the I1 hand-written bench-v1), the run loop v0 (stages one-two, host directories, per-cell materialization, byte-exact delegation, submit/transition, the archive gate, bundle export), the `/eval run` slash command, and the `dsh-eval` CLI (validate / run --dry-run / template / conditions hash). To come: judge delegation (T9), `dsh-eval report` (T10), the read-only tools `eval_conditions` / `eval_plan_validate` / `eval_run_status` (T14).
 
 `capability-catalog` gains one more use here: it reads the registry by the preset's standing scope, so it is the evidence source for "which tools and skills does the agent have under this condition". Since T32 it offers `snapshotFor(presetId)` and `hashOf(snapshot)`: the canonical form keeps each skill's name/source/body-sha and each tool's name/channel/parameters (descriptions stay out — rewording one must not mint a new subject), and the hash is written `caps:<sha256>`. The orchestrating instance's own face is recorded in `run.meta.orchestrator.capabilities` as provenance; a subject's face is computed by provision into the lock's `provisioned.capabilities`, which is what the readiness gate checks the condition's declared `preset` against.
 
@@ -238,31 +237,37 @@ The division among the three verdict sources stays: `script` is written only by 
 
 ## Final UI
 
-Seven surfaces, four existing and three to build:
+In evaluation mode the human has three surfaces: the **session**, the **task-sets tab**, and the **Experiments tab** (the normative text is [docs/ui-spec.md](docs/ui-spec.md), settled 2026-09-13, in Chinese). Both tabs have the same shape — a list, a create form, and a detail page, with the experiment detail split into subpages. **The missions tab is hidden**: mission is still the evaluation's ledger and release gate, but the word never reaches the UI, and per-cell detail is read by `eval_cells` from eval's own projection (ui-spec R6).
 
 | Surface | Purpose | Status |
 |---|---|---|
-| **Bench tab** (`eval`) | matrix board: task × condition; each cell shows rep progress, stage, bucket, whether the materialization hash matches, stuck-cell warnings; run scope and the five buckets reuse the missions tab's projection | ⬜ I5 |
-| **Condition registry** | the list of conditions, a diff of two conditions (which single item differs), hashes, provenance (scoped home / image / skill pack); factors such as the model are displayed and diffed, never chosen here, since choosing a model means creating a new condition | ⬜ I4 data, I5 surface |
-| **Plan review** | the agent's plan rendered as "snapshot @commit · N conditions · M tasks · R reps · order" + validate result + an approve button; approval is the human's action | ⬜ I5 |
-| **Cell detail** | the member child session's transcript, verify output verbatim, checkpoints and tags, artifacts, the three annotation sources side by side | 🔶 mostly there in the missions tab detail + member dock |
-| **Judge console** | the blind-review queue, de-fingerprinted artifacts, llm-draft and human-final side by side, agreement statistics; the only write entry for human-final | ⬜ I5 |
-| **Report view** | paired-delta table by task, Pareto chart (completion × cost), n and confidence intervals, refuses to rank on insufficient samples; export goes through the existing leak-gate dialog | ⬜ I2 as a CLI table, I5 in the UI |
-| **datasets tab / missions tab / member dock** | browse and bind task sets, queue and release checks, continue a member | ✅ existing |
+| **Task sets › list** | one row per task set: id, snapshot (branch @ commit), item count, which slot maps to which layer, whether a canary is set, the validate result, which experiments use it. Actions: new task set (scaffold with a `dataset.json`), import task set (point at a directory or repo + commit already organized per the protocol; it validates and joins the list — binding, in essence) | ✅ I5·T47 |
+| **Task sets › detail** (task set › item) | a file tree plus a preview: every file in the tree carries its slot and who sees it, and the slots filter the tree; "what the contestant will see" lists this item exactly as it lands in the unit (the anti-leak self-check); a can-this-be-scored line (how many rubric rows, how many probes, how many stage schemas); "answer records" projects each experiment's cells by item. Actions: item skeleton, import item, validate | ✅ I5·T47 |
+| **Experiments › list** | one row per experiment: name, task-set snapshot, condition count (+ judge), item count, rep, factors (derived from the condition diff), state, progress, start time; drafts and runs share the list. States: draft → awaiting approval → running → judging → done, plus rejected and cancelled | ✅ I5·T35a |
+| **Experiments › new experiment** | name, task-set snapshot, multi-select items, conditions (pick an existing one or create one: harness, model, scope, preset, permissions, reasoning effort), judge and sampling count, rep, stages, order seed, environment (image, network, egress check), budget. It produces `plans/<name>.json` and any new condition files in the task repo's working tree's passthrough zone; the only action is "save draft and validate" — **starting is not on this form**. Agent-drafted and human-drafted plans land in the same list | ⬜ I5·T34 |
+| Detail › **overview** | snapshot, matrix shape, factors, judge, environment, the readiness check verbatim, run.meta | ✅ I5·T35a |
+| Detail › **plan review** | snapshot · conditions · items · rep · order, plus the validate result row by row (ok / warn / error). Actions: **approve and start**, send back for changes — approval is always the human's | ✅ I5·T36 |
+| Detail › **conditions** | the condition list and a two-condition diff (only differing items highlighted), lock and readiness state; factors such as the model are displayed and diffed, never chosen here — choosing a model means creating a condition, which returns you to the new-experiment form | ✅ I5·T36 |
+| Detail › **matrix** | rows are always items, columns are the factor the human picked, the remaining factors group or filter; each cell carries four fixed things: rep dots (filled judged / half running / hollow not started), stage or bucket, stuck-cell warning, whether the materialization hash matches the item's other cells; a run-level summary sits at the bottom (materialization hash, environment fingerprint, unreleased units, judge agreement, stuck cells). Clicking a cell opens its detail | ✅ I5·T35b |
+| Detail › **cells** | the old missions queue filtered to this run: item × condition × rep, bucket, stage, attempt, duration; the right-hand drawer is the cell detail — refs, checkpoints, the child session (opens the member session; you can keep chatting without intervening), verify output verbatim, artifacts, annotation counts. Actions: retry with a reason, release check, export bundle | ✅ I5·T35b |
+| Detail › **report** | the four invariants, the paired-delta table, the efficiency table, judge agreement; until all four are ok, "report" reads "comparison section not open". Actions: finalize (through the release gate), export (through the existing leak-gate dialog) | ✅ I5·T38 |
+| Detail › **judge console** | the blind-review queue, de-fingerprinted artifacts, llm-draft and human-final side by side, agreement statistics; the only write entry for human-final. A judge is not a row on the matrix — its verdict is that cell's llm-draft annotation, carrying `by` = the judge condition's id | ⬜ I5·T37 |
+| **Member dock · continue a member** | from the cell detail, the host's `sessions.open(childSessionId)` opens the member's child session, with the composer and dock taken over by local-agent | ✅ existing |
 
-What the bench tab looks like:
+The experiment detail's matrix subpage:
 
 ```text
-┌ eval · run 2026-09-20-pilot ─────────────── snapshot harness-comparison@d1ac20a ┐
-│ conditions: [A codex/…] [B claude/…] [C kimi/…] [D dsh/…]   rep 3 · stages 1-2 │
-│──────────┬──────────────┬──────────────┬──────────────┬────────────────────────│
-│ task     │ A            │ B            │ C            │ D                      │
-│──────────┼──────────────┼──────────────┼──────────────┼────────────────────────│
-│ F2       │ ●●● judged   │ ●●○ stage-2  │ ●●● judged   │ ●○○ stage-1 ⚠ 47m     │
-│ F3       │ ●●● judged   │ ●●● judged   │ ●●● halted×1 │ ●●● judged             │
-│──────────┴──────────────┴──────────────┴──────────────┴────────────────────────│
-│ materialization 9f2c1a2b all equal · 2 units unreleased · judge κ 0.71 [report] [export] │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌ Experiments › 2026-09-20-pilot ───────────── snapshot harness-comparison@d1ac20a ┐
+│ overview · plan · conditions ·[matrix]· cells · report · judging                 │
+│ column = harness ▾ other factors: model default · scope eval  rep 3 · stages 1-2 │
+│────────┬─────────────┬─────────────┬─────────────┬───────────────────────────────│
+│ task   │ codex       │ claude-code │ kimi        │ dsh                           │
+│────────┼─────────────┼─────────────┼─────────────┼───────────────────────────────│
+│ F2     │ ●●● judged  │ ●●○ stage-2 │ ●●● judged  │ ●○○ stage-1 ⚠ 47m             │
+│ F3     │ ●●● judged  │ ●●● judged  │ ●●● halted×1│ ●●● judged  ≠ materialization │
+│────────┴─────────────┴─────────────┴─────────────┴───────────────────────────────│
+│ materialization hashes all equal · 2 unreleased · κ 0.71     [finalize] [export] │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 CLI and UI share semantics: `dsh-eval conditions | plan validate | run | report`.

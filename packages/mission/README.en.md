@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 Generic task management for the dsh ecosystem: a **mission** is one work item — state, labels, plan data (dependencies / one-shot schedule), attempts, opaque resource references, an artifact index, and append-only namespaced annotations; a **run** is a batch of missions created from a template. The template declares a state machine, the run freezes it, and every mission enforces it: declaration *is* enforcement — undeclared transitions fail loud, guards are deterministic, and nothing ever transitions automatically.
 
-M1 ships the store, the state machine with three built-in guards, the run-template linter, the five-bucket projection, the service face (`ctx.mission`), twelve model tools, and the `dsh-mission` CLI; M2 adds the `/mission` slash face and gated run-bundle export; M4 adds the web session tab over a Typert Remote data face.
+M1 ships the store, the state machine with three built-in guards, the run-template linter, the five-bucket projection, the service face (`ctx.mission`), twelve model tools, and the `dsh-mission` CLI; **since M4'③ those twelve are no longer registered by this package** — they are still defined here (`src/tool.ts`), but registration and the `tool:mission` prompt section belong to the companion row `@khorsheed/dsh-mission-tool`, granted per session by the agent preset (see [Model tools](#model-tools)); M2 adds the `/mission` slash face and gated run-bundle export; M4 adds the web session tab over a Typert Remote data face.
 
 ## How it works
 
