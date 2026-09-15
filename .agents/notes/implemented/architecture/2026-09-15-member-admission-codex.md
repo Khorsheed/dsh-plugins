@@ -22,6 +22,8 @@ Kimi also acquires the lease. ACP model selection is confirmed first; the return
 
 Preparation and pre-publication launch failures now persist a failed admission state. Later dispatch cannot silently retry that configuration: reconciliation, retry or a new selection must clear the failure.
 
+Named live scopes now use the same member-bound home passed to the provider; stale exec-only guards were removed for Codex, Claude, Kimi and DSH. The existing resume scope fence remains. Kimi named exec scopes retain their existing member-channel isolation; ACP uses its session-local bridge declaration. Scoped-home regression tests verify the live dispatch receives the requested home without falling back to exec.
+
 ## Alternatives considered
 
 **Guard only facade starts.** Rejected because direct tool starts would bypass the consistency contract.
@@ -32,7 +34,7 @@ Preparation and pre-publication launch failures now persist a failed admission s
 
 ## Consequences
 
-The shared picker, evaluation frozen-condition callers and full runtime acceptance remain in progress. A configuration acknowledgement is not an observation of the generated model. Existing live scope guards and native default-resolution limitations still need their dedicated integration work. No production profile or authentication state changes in this slice.
+The shared picker, evaluation frozen-condition callers and full runtime acceptance remain in progress. A configuration acknowledgement is not an observation of the generated model. Native default-resolution limitations still need authenticated acceptance. No production profile or authentication state changes in this slice.
 
 ## Testing
 

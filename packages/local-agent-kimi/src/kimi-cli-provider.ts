@@ -30,7 +30,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
   containerScopedHome,
@@ -315,9 +314,7 @@ export class KimiCliProvider implements SubagentProvider {
     // target exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
-      // A scoped round is exec-only: the resident `kimi acp` process is
-      // started per member against the DEFAULT scoped home.
-      assertScopeExecOnly(scope, 'subagent-kimi')
+      // The member-bound live driver receives this exact scoped home.
       // A delegation naming its own model is NOT refused anymore: the model
       // becomes the member's start model, which the live driver's spawn
       // resolver binds (rewriting the scoped `default_model` before spawn; a
@@ -462,9 +459,7 @@ export class KimiCliProvider implements SubagentProvider {
       // See the fresh path: a container target is exec-only.
       const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
-        // See the fresh path: a scoped round never goes to the resident
-        // process, which binds the default scoped home.
-        assertScopeExecOnly(scope, 'subagent-kimi')
+        // Resume retains the recorded scope and its native session.
         // See the fresh path: the recorded model is the member's start model,
         // which the spawn resolver binds (retiring a mismatched runtime).
         if (requestedModel !== undefined) this.memberModels?.noteStartModel(intent.childSessionId, requestedModel)

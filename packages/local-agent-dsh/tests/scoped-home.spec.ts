@@ -1,8 +1,7 @@
 /**
  * T29 — a sub-dsh round against a NAMED scoped home. The scope selects which
  * `DSH_HOME` (and therefore which sub-profile) the round launches from; a
- * resume may not change it, and a scoped round never goes to the resident
- * `serve` process.
+ * resume may not change it; live rounds receive the same scoped home.
  */
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -126,11 +125,12 @@ describe('dsh scoped home', () => {
     expect(wrong.specs).toHaveLength(0)
   })
 
-  it('refuses a scoped round that the live driver would serve', async () => {
-    const live = { disabled: false, startRound: vi.fn() }
-    const { provider, specs } = mount({ kind: 'fresh', scope: 'eval-b' }, { live })
-    await expect(provider.start(request())).rejects.toThrow(/exec-only/)
-    expect(live.startRound).not.toHaveBeenCalled()
+  it('passes the recorded scoped home to the live driver without an exec fallback', async () => {
+    const liveRun = { result: Promise.resolve({ status: 'done' }), dispose: vi.fn() }
+    const live = { disabled: false, startRound: vi.fn(async () => liveRun) }
+    const { provider, specs, homes } = mount({ kind: 'fresh', scope: 'eval-b' }, { live })
+    expect(await provider.start(request())).toBe(liveRun)
+    expect(live.startRound).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ homeDir: `${homes}/dsh@eval-b` }))
     expect(specs).toHaveLength(0)
   })
 })

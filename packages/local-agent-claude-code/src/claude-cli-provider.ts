@@ -38,7 +38,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
   containerScopedHome,
@@ -349,10 +348,7 @@ export class ClaudeCliProvider implements SubagentProvider {
     // target exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
-      // A scoped round is exec-only: the resident stream-json process is
-      // started per member against the DEFAULT scoped home, so serving a
-      // scoped round from it would run it under the wrong credentials.
-      assertScopeExecOnly(scope, 'subagent-claude')
+      // The member-bound live driver receives this exact scoped home.
       try {
         return await live.startRound(request, {
           cwd,
@@ -486,9 +482,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       // See the fresh path: a container target is exec-only.
       const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
-        // See the fresh path: a scoped round never goes to the resident
-        // process, which binds the default scoped home.
-        assertScopeExecOnly(scope, 'subagent-claude')
+        // Resume retains the recorded scope and its native session.
         try {
           const liveRun = await live.startRound(request, {
             cwd,

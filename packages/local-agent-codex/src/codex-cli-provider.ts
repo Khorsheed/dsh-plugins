@@ -36,7 +36,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
   containerScopedHome,
@@ -345,11 +344,7 @@ export class CodexCliProvider implements SubagentProvider {
     // exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
-      // A scoped round is exec-only: the resident app-server is started once
-      // per member against the DEFAULT scoped home, so serving a scoped round
-      // from it would run the round under the wrong credentials. Refused
-      // rather than silently downgraded — the caller asked for a scope.
-      assertScopeExecOnly(scope, 'subagent-codex')
+      // The member-bound live driver receives this exact scoped home.
       // A round that names its own model is NOT refused: it becomes the
       // member's start model, bound at the runtime spawn (a runtime bound to
       // a different model is retired first, so the fresh thread spawns onto
@@ -483,9 +478,7 @@ export class CodexCliProvider implements SubagentProvider {
       // See the fresh path: a container target is exec-only.
       const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
-        // See the fresh path: a scoped round never goes to the resident
-        // app-server, which binds the default scoped home.
-        assertScopeExecOnly(scope, 'subagent-codex')
+        // Resume retains the recorded scope and its native session.
         // The resume re-requests its recorded model as the member's start
         // model (the session-level override outranks it): a runtime bound to
         // a different model is retired so the thread respawns onto this one.
