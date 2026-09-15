@@ -373,6 +373,41 @@ describe('acpStopReasonToHarness', () => {
 })
 
 describe('kimi live driver rounds', () => {
+  it('separates same-kind output around a tool before delayed wire reconciliation', async () => {
+    const m = mount({ config: { snapshotMinIntervalMs: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-kimi-generations'))
+    const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const text = (value: string) => fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } })
+    text('before')
+    fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', toolCallId: 'tool-one', title: 'Read', status: 'in_progress' })
+    text('after')
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      { type: 'turn.prompt', input: [{ type: 'text', text: 'task' }] },
+      { type: 'usage.record', usage: { inputOther: 10, output: 4 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: 'before' } } },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, toolCallId: 'tool-one', name: 'Read', args: {} } },
+      { type: 'context.append_loop_event', event: { type: 'tool.result', turnId: 0, toolCallId: 'tool-one', result: { output: 'contents' } } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: 'after' } } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    const messages = events.filter(event => event.type === 'assistant/message')
+    expect(messages.map(event => event.data.message.content)).toEqual([[{ type: 'text', text: 'before' }], [{ type: 'text', text: 'after' }]])
+    expect(messages.map(event => event.data.step)).toEqual([1, 3])
+    expect(events.find(event => event.type === 'tool/call')?.data).toMatchObject({ step: 2, callId: 'tool-one' })
+    expect(events.filter(event => event.type === 'step/start').map(event => event.data.step)).toEqual([1, 2, 3])
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
     const m = mount({ config: { snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()

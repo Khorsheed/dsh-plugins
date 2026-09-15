@@ -292,12 +292,43 @@ function expectStepBoundaries(child: Session): void {
 }
 
 describe('claude live driver rounds', () => {
+  it('keeps multiple text blocks and successive assistant messages at distinct stream coordinates', async () => {
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-claude-block-identities'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const partial = (event: Record<string, unknown>) => fake.emit({ type: 'stream_event', event })
+    partial({ type: 'message_start', message: { id: 'message-one' } })
+    partial({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'first' } })
+    partial({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'second' } })
+    fake.emit({ type: 'assistant', message: { id: 'message-one', role: 'assistant', content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }] } })
+    partial({ type: 'message_start', message: { id: 'message-two' } })
+    partial({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'third' } })
+    fake.emit({ type: 'assistant', message: { id: 'message-two', role: 'assistant', content: [{ type: 'text', text: 'third' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 10, output_tokens: 4 } })
+    expect((await run.result).stopReason).toBe('completed')
+    const checkpoints = child.snapshotEvents().filter(event => event.type === 'local-agent/stream')
+    expect(checkpoints.map(event => event.data.text)).toEqual(['first', 'second', 'third'])
+    const messages = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(messages.map(event => event.data.message.content)).toEqual([
+      [{ type: 'text', text: 'first' }], [{ type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
+    ])
+    expect(new Set(messages.map(event => event.data.step)).size).toBe(3)
+    expect(messages.at(-1)!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
     const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()
     Object.assign(m.ctx.localAgent, { liveStreams })
     const child = Session.create(SessionId('child-transient-claude-code'))
-    m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['hello'], events: answerEvents('hello'), usage: { input_tokens: 10, output_tokens: 4 } }) }))
+    m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['hello'], events: answerEvents('hello'), usage: { input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 4 } }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
     const events = child.snapshotEvents()

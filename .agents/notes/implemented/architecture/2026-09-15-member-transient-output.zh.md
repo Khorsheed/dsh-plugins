@@ -14,6 +14,8 @@ Core 持有瞬时注册表与流式 Remote。每个被查看的会话收到当�
 
 恢复检查点独立按一秒节奏保存后缀字节，非前缀更新显式替换，使普通追加输出的恢复字节量随输出长度线性增长。生产者释放时保存剩余部分。三家外部 provider 在 core 提供该能力时使用新通道，旧 core 兼容仍走快照路径。子 DSH headless 进程经新增 wire 通知转发真实 Agent 的原生帧；父侧过滤轮次与 attempt 身份，使用公开 BlockAssembler 组装文本与 reasoning，并在取消时保存带 interrupted 的部分消息。
 
+Claude 使用原生消息 ID 与内容块索引配对部分和完成事件，旧帧退化为按消息顺序分配的 key。Kimi 在新的 ACP 工具调用处划分生成段，在延迟 wire 折叠前预留工具坐标，并按序消费同类型片段。ACP 没有通用文本子项身份，所以这里使用已知边界退化，不伪造厂商 ID。
+
 ## Alternatives considered
 
 **伪造原生 Agent 流总线。** 镜像 Session 不是 Agent，不符合宿主所有权合同，因此拒绝。

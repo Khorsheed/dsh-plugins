@@ -890,7 +890,10 @@ export class KimiAcpLiveDriver {
     }
 
     /** A stream's synthetic key: kimi's ACP deltas carry no item id, so kind + turn pairs them. */
-    const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}`
+    let generation = 0
+    const seenToolCalls = new Set<string>()
+    const toolSteps = new Map<string, number>()
+    const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}-${generation}`
     /** The plan stream's key: a snapshot stream beside the think/text delta streams. */
     const planKey = `kimi-stream-plan-${turn}`
 
@@ -1038,11 +1041,19 @@ export class KimiAcpLiveDriver {
      */
     const mirrorStreams: KimiMirrorStreams = {
       reservedSteps: t => t === turn ? reservedSteps : [],
+      completeTool: (line) => {
+        if (line.turn !== turn) return undefined
+        const step = toolSteps.get(line.id)
+        if (step === undefined) return undefined
+        toolSteps.delete(line.id)
+        return { step, opened: true }
+      },
       completeStream: (line) => {
         if (line.turn !== turn) return undefined
-        const key = streamKey(line.kind === 'think' ? 'think' : 'text')
-        const stream = streams.get(key)
-        if (stream === undefined) return undefined
+        const kind = line.kind === 'think' ? 'think' : 'text'
+        const entry = [...streams.entries()].find(([key, stream]) => key !== planKey && stream.kind === kind)
+        if (entry === undefined) return undefined
+        const [key, stream] = entry
         liveFlush.cancel(stream.step)
         streamPublisher?.finish(stream.step)
         streams.delete(key)
@@ -1125,6 +1136,22 @@ export class KimiAcpLiveDriver {
             stream.text += text
             appendStreamSnapshot(stream, false, false)
           }
+        }
+      } else if (kind === 'tool_call') {
+        const id = typeof update['toolCallId'] === 'string' ? update['toolCallId'] : undefined
+        if (id === undefined || !seenToolCalls.has(id)) {
+          if (id !== undefined) {
+            seenToolCalls.add(id)
+            let step = nextKimiSessionStep(childSession, turn)
+            for (const reserved of reservedSteps) step = Math.max(step, reserved + 1)
+            reservedSteps.push(step)
+            toolSteps.set(id, step)
+            childSession.append('step/start', { turn, step })
+            persist()
+          }
+          // ACP has no text-item ids. A new tool call separates generation
+          // segments; late file folds consume same-kind segments in order.
+          generation++
         }
       } else if (kind === 'plan') {
         // ACP plan updates are full-plan snapshots; the wire.jsonl fold never
@@ -1298,6 +1325,8 @@ export class KimiAcpLiveDriver {
           activeStream = undefined
           persist()
         }
+        for (const step of toolSteps.values()) childSession.append('step/end', { turn, step })
+        toolSteps.clear()
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
         } else if (settled.stopReason === 'aborted') {

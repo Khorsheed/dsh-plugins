@@ -14,6 +14,8 @@ The producer writes a log-only `local-agent/stream` anchor at the reserved step.
 
 Recovery uses independent one-second checkpoints containing suffix bytes, with explicit replacement for non-prefix updates. This makes ordinary append-only recovery bytes linear in output length. Producer disposal checkpoints the remaining partial. Three external providers use this transport when the core exposes it; compatibility with older core instances retains the snapshot path. The sub-DSH headless process forwards the real Agent's native frames over an additive wire notification. Its parent filters round and attempt identity, assembles text/reasoning with the public BlockAssembler, and preserves an interrupted partial on cancellation.
 
+Claude pairs native message IDs and content-block indexes across partial and completed events; older frames use ordered per-message fallback keys. Kimi separates generations at new ACP tool calls, reserves the tool coordinate before a delayed wire fold, and consumes same-kind segments in order. ACP does not provide a universal text-item identity, so this is a boundary-based fallback rather than an invented vendor ID.
+
 ## Alternatives considered
 
 **Spoofing the native Agent stream bus.** Rejected because a mirrored Session is not an Agent and cannot satisfy the host ownership contract.

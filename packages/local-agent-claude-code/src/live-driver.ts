@@ -32,8 +32,8 @@
  * volatile last line waits for `result`, which carries the round's usage).
  * Every line folds 1:1. The always-enabled
  * `--include-partial-messages` adds incremental output on top: each `stream_event` partial accumulates into its kind's
- * stream (claude's deltas carry no item id, so thinking and text each share
- * one per-turn stream), which reserves a (turn, step) at its first delta and
+ * stream (native message id + block index, with ordered legacy fallback),
+ * which reserves a (turn, step) at its first delta and
  * appends throttled snapshot `assistant/message`s there — the host folds
  * repeated settles at one coordinate into one live-updating chat node, the
  * only streaming channel left after 0.1.5 retired the durable per-chunk
@@ -724,12 +724,13 @@ export class ClaudeLiveDriver {
       return text === undefined || text === '' ? [] : [{ type: 'text', text: parser.text as string }]
     }
 
-    /**
-     * The stream key one delta/completion pairs by. Claude's `stream_event`
-     * partials carry no item id, so thinking and text each share one per-turn
-     * stream — the codex driver's per-kind fallback for id-less deltas.
-     */
-    const streamKey = (kind: 'think' | 'text'): string => `claude-stream-${kind}-${turn}`
+    // Native message identity plus content-block index separates same-kind
+    // blocks. Older partials without those fields use a message-generation
+    // key, paired with their completion in arrival order.
+    let messageKey: string | undefined
+    let legacyMessage = 0
+    const streamKey = (kind: 'think' | 'text', index: unknown): string =>
+      `${messageKey ?? `legacy-${turn}-${legacyMessage}`}:${typeof index === 'number' ? index : kind}`
 
     /**
      * Append one snapshot of a streaming kind at its reserved (turn, step).
@@ -847,8 +848,10 @@ export class ClaudeLiveDriver {
         if (line === undefined) continue
         const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
         if (lineUsage !== undefined) usageCarried = true
-        const itemId = line.kind === 'tool' ? undefined : streamKey(line.kind)
-        const stream = itemId === undefined ? undefined : streams.get(itemId)
+        const stream = line.kind === 'tool' ? undefined
+          : (line.streamId === undefined ? undefined : streams.get(line.streamId))
+            ?? [...streams.values()].find(candidate => candidate.kind === line.kind && (line.streamId === undefined || candidate.itemId.startsWith('legacy-')))
+        const itemId = stream?.itemId
         if (itemId !== undefined && stream !== undefined) {
           // A streamed line folds at its reserved step, finalizing the
           // snapshots: the step opens only if no snapshot ever landed (a
@@ -911,12 +914,17 @@ export class ClaudeLiveDriver {
       }
       if (type === 'stream_event') {
         const inner = event['event'] as JsonObject | undefined
+        if (inner?.['type'] === 'message_start') {
+          const message = inner['message'] as JsonObject | undefined
+          messageKey = typeof message?.['id'] === 'string' ? message['id'] : `legacy-${turn}-${++legacyMessage}`
+          return
+        }
         const delta = inner?.['delta'] as JsonObject | undefined
         const deltaType = delta?.['type']
         const text = delta?.['text'] ?? delta?.['thinking']
         if ((deltaType === 'text_delta' || deltaType === 'thinking_delta') && typeof text === 'string' && text !== '') {
           const kind = deltaType === 'thinking_delta' ? 'think' as const : 'text' as const
-          reserveStream(streamKey(kind), kind)
+          reserveStream(streamKey(kind, inner?.['index']), kind)
           const stream = activeStream === undefined ? undefined : streams.get(activeStream)
           if (stream !== undefined) {
             stream.text += text
@@ -932,6 +940,7 @@ export class ClaudeLiveDriver {
       // stdout carried them.
       parser.push(JSON.stringify(event) + '\n')
       mirrorUpTo(parser.lines.length - 1, false)
+      if (type === 'assistant') { messageKey = undefined; legacyMessage++ }
     }
 
     const sendAndInit = async (): Promise<void> => {

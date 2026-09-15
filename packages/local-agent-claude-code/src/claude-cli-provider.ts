@@ -666,8 +666,8 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 
 /** One ordered transcript line from a `claude --output-format stream-json` stream. */
 export type ClaudeTranscriptLine =
-  | { kind: 'think'; text: string }
-  | { kind: 'text'; text: string }
+  | { kind: 'think'; text: string; streamId?: string }
+  | { kind: 'text'; text: string; streamId?: string }
   /**
    * Tool activity: one `tool_use` with its (possibly still pending)
    * `tool_result`. `id` is the stream's tool_use id when present, else a
@@ -809,7 +809,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   let event: {
     type?: string
     model?: unknown
-    message?: { content?: unknown[]; type?: string }
+    message?: { content?: unknown[]; type?: string; id?: unknown }
     is_error?: unknown
     error?: unknown
     usage?: unknown
@@ -845,21 +845,23 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   }
   if (event.type !== 'assistant' && event.type !== 'user') return
   const blocks = event.message?.content ?? []
-  for (const block of blocks) {
+  for (const [blockIndex, block] of blocks.entries()) {
     if (typeof block !== 'object' || block === null) continue
     const record = block as Record<string, unknown>
+    const identity = event.type === 'assistant' && typeof event.message?.id === 'string'
+      ? { streamId: `${event.message.id}:${blockIndex}` } : {}
     const kind = record['type']
     if (kind === 'text' && typeof record['text'] === 'string' && (record['text'] as string).trim() !== '') {
-      state.lines.push({ kind: 'text', text: record['text'] as string })
+      state.lines.push({ kind: 'text', text: record['text'] as string, ...identity })
       // The final assistant text block is the run output.
       if (event.type === 'assistant') state.text = record['text'] as string
     } else if (kind === 'thinking' && typeof record['thinking'] === 'string' && (record['thinking'] as string).trim() !== '') {
-      state.lines.push({ kind: 'think', text: record['thinking'] as string })
+      state.lines.push({ kind: 'think', text: record['thinking'] as string, ...identity })
     } else if (kind === 'redacted_thinking') {
       // The model reasoned, but the content is opaque by design (encrypted on
       // the server): a visible placeholder line says so instead of dropping
       // the block and misreporting the round as reasoning-free.
-      state.lines.push({ kind: 'think', text: REDACTED_THINKING_TEXT })
+      state.lines.push({ kind: 'think', text: REDACTED_THINKING_TEXT, ...identity })
     } else if (kind === 'tool_use' || kind === 'server_tool_use') {
       const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
       // Counted here, ahead of the TodoWrite intercept below: that intercept
