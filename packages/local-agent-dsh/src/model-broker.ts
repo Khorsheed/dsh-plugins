@@ -21,9 +21,10 @@
  */
 
 import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
+import type { MemberConfigurationAdapter } from '@khorsheed/dsh-local-agent'
 import type { DshModelCatalog } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory, LocalAgentMemberBinding, LocalAgentMemberConfiguration, LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 
 /** Everything the broker reads or drives, injected so the unit specs stay small. */
 export interface DshModelBrokerDeps {
@@ -37,6 +38,7 @@ export interface DshModelBrokerDeps {
    * the selection is unreadable (absence is the honest answer, never a guess).
    */
   readonly cliDefault: () => string | undefined
+  readonly defaultEffort?: () => string | undefined
   /**
    * The host's adapter enumeration spelled `provider/model` — discovered
    * host-side via `ctx.llm` and cached by the caller (refreshed on
@@ -79,6 +81,31 @@ function dedupeChoices(layers: ReadonlyArray<string | undefined>): string[] {
 
 export class DshModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: DshModelBrokerDeps) {}
+
+  configurationAdapter(binding: LocalAgentMemberBinding): MemberConfigurationAdapter {
+    const resolve = async (selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration> => {
+      let directory = this.deps.catalog?.read()
+      if (directory?.status === 'loading') directory = await this.deps.catalog?.refresh()
+      const model = selection.model.mode === 'value' ? selection.model.value
+        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel() ?? this.deps.cliDefault()
+      const entry = directory?.entries.find(entry => entry.value === model)
+      const requested = selection.effort.mode === 'value' ? selection.effort.value : selection.effort.mode === 'inherit' ? binding.effort : undefined
+      const effort = requested ?? this.deps.defaultEffort?.() ?? entry?.reasoning?.default
+      if (effort !== undefined && !entry?.reasoning?.options.some(option => option.value === effort)) {
+        throw new Error('DSH has not advertised this reasoning effort for the selected model')
+      }
+      return { ...model === undefined ? {} : { model }, ...effort === undefined ? {} : { effort } }
+    }
+    return {
+      validate: async selection => { await resolve(selection) }, prepare: resolve,
+      apply: async selection => { const resolved = await resolve(selection); await this.deps.retireRuntime(binding.childSessionId); return resolved },
+      reconcile: async state => {
+        if (this.activeDelegations().includes(binding.childSessionId)) return { active: true, matches: 'unknown', resolved: {} }
+        await this.deps.retireRuntime(binding.childSessionId)
+        return { active: false, matches: 'current', resolved: await resolve(state.current.selection) }
+      },
+    }
+  }
 
   async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
     if (refresh) await this.deps.catalog?.refresh()
@@ -144,6 +171,7 @@ export class DshModelBroker implements LocalAgentModelBroker {
    * the run.
    */
   async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    if (typeof this.deps.ctx.localAgent.setMemberModel === 'function') return this.deps.ctx.localAgent.setMemberModel(childSessionId, model)
     if (this.activeDelegations().includes(childSessionId)) {
       throw new Error(`subagent-dsh: 成员有进行中的委派轮次，等其完成后再切换模型 (child session ${childSessionId})`)
     }

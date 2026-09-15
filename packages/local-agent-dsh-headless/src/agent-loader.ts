@@ -127,7 +127,7 @@ export async function joinSubDshPreset(ctx: Context, agentCtx: Context): Promise
  */
 export async function loadSubDshAgent(
   ctx: Context,
-  identity: { sessionId?: string; resumeSessionId?: string; model?: string },
+  identity: { sessionId?: string; resumeSessionId?: string; model?: string; effort?: string },
 ): Promise<AgentHandle> {
   const agents = ctx.get('agents')
   const defaultModel = ctx.get('agentDefaultModel')
@@ -136,7 +136,15 @@ export async function loadSubDshAgent(
   }
   // The instance default is the base; `--model` overrides it for this launch
   // (one-shot: this round; `--serve`: every session the process hosts).
-  const selection = applyModelRequest(defaultModel.currentSelection(), identity.model)
+  let selection = applyModelRequest(defaultModel.currentSelection(), identity.model)
+  if (identity.effort !== undefined) {
+    // Validate against THIS sub-instance's adapters before any Agent can
+    // generate. Parent catalog metadata is not proof of the scoped runtime.
+    const info = await ctx.get('llm')?.resolveModelInfo(selection.provider, selection.model, AbortSignal.timeout(5_000))
+    const native = info?.reasoning?.efforts.find(effort => String(effort.id) === identity.effort)
+    if (native === undefined) throw new Error('The sub-DSH model does not advertise the requested reasoning effort')
+    selection = { ...selection, reasoningEffort: native.id }
+  }
   // This bundle composes no preset roster, so the model-facing rows sit in the
   // host plane and the agent reads them from the global layer. A deployment
   // that DOES configure one has to join it here first

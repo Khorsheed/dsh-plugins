@@ -1,3 +1,5 @@
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { claudeDirectory } from './model-catalog.ts'
 /**
  * The claude provider's live driver: one resident Claude Code stream-json
  * process per member (child session), driven over the vendor's
@@ -162,6 +164,7 @@ export interface ClaudeLiveRoundSpec {
    * other layer.
    */
   readonly model?: string | undefined
+  readonly configuration?: LocalAgentResolvedConfiguration
   /** Fresh round: called with the session id from the turn's system/init. */
   readonly onSessionId?: ((sessionId: string) => void) | undefined
 }
@@ -189,6 +192,7 @@ class ClaudeLiveRuntime {
   /** The member's claude session id (first turn's system/init). */
   sessionId: string | undefined
   /** The model this runtime's process was spawned with (undefined = no flag). */
+  configurationKey: string | undefined
   model: string | undefined
   /** Serializes turns per member (converge-before-next-message). */
   turnChain: Promise<unknown> = Promise.resolve()
@@ -295,6 +299,17 @@ class ClaudeLiveRuntime {
   /** Write one stdin frame. */
   send(message: JsonObject): void {
     this.child.stdin?.write(JSON.stringify(message) + '\n')
+  }
+
+  /** Native initialization and model binding precede any user prompt. */
+  async configure(configuration: LocalAgentResolvedConfiguration, signal: AbortSignal): Promise<void> {
+    const initialized = await this.controls.request({ subtype: 'initialize', hooks: {} }, signal)
+    const directory = claudeDirectory(initialized)
+    const entry = directory.entries.find(entry => entry.value === configuration.model || entry.resolvedModel === configuration.model)
+    if (configuration.effort !== undefined && !entry?.reasoning?.options.some(option => option.value === configuration.effort)) {
+      throw new Error('The running Claude CLI does not advertise the requested model/effort combination')
+    }
+    if (configuration.model !== undefined) await this.controls.request({ subtype: 'set_model', model: configuration.model }, signal)
   }
 
   /** The graceful runtime interrupt, bounded and checked for an actual success ack. */
@@ -456,7 +471,8 @@ export class ClaudeLiveDriver {
   private ensureRuntime(spec: ClaudeLiveRoundSpec, signal: AbortSignal): Promise<ClaudeLiveRuntime> {
     const key = String(spec.childSession.id)
     const existing = this.runtimes.get(key)
-    if (existing !== undefined && !existing.dead && existing.model === this.spawnModel(key, spec)) {
+    if (existing !== undefined && !existing.dead && existing.model === this.spawnModel(key, spec)
+      && existing.configurationKey === (spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration))) {
       this.clearIdleTimer(key)
       return Promise.resolve(existing)
     }
@@ -477,6 +493,7 @@ export class ClaudeLiveDriver {
 
   /** The model a spawn for this round would bind (the argv `--model` value). */
   private spawnModel(key: string, spec: ClaudeLiveRoundSpec): string | undefined {
+    if (spec.configuration !== undefined) return spec.configuration.model
     const model = this.config.model?.(key, spec.model)?.trim()
     return model === undefined || model === '' ? undefined : model
   }
@@ -532,7 +549,7 @@ export class ClaudeLiveDriver {
     // The settings.json scratch: a --resume respawn restores the session's
     // stored model over the --model flag, so the effective model also goes
     // into the scoped file (best-effort — the argv flag still applies).
-    if (this.config.provisionModel !== undefined) {
+    if (spec.configuration === undefined && this.config.provisionModel !== undefined) {
       await this.config.provisionModel(spec.homeDir, model).catch(() => undefined)
     }
     const argv = [
@@ -556,6 +573,7 @@ export class ClaudeLiveDriver {
       // dir, plus the configured base URL override only.
       env: delegationEnv({
         CLAUDE_CONFIG_DIR: spec.homeDir,
+        ...spec.configuration === undefined ? {} : { CLAUDE_CODE_EFFORT_LEVEL: spec.configuration.effort ?? 'auto' },
         ...this.config.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.config.baseUrl },
       }),
     }
@@ -569,6 +587,7 @@ export class ClaudeLiveDriver {
     }
     const runtime = new ClaudeLiveRuntime(child, message => { this.ctx.logger.warn(message) })
     runtime.model = model
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     runtime.onDead = () => {
       // Delete only OUR registration (crash-then-respawn interleave safety).
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
@@ -579,6 +598,10 @@ export class ClaudeLiveDriver {
       await runtime.reclaim()
       if (signal.aborted) throw new Error('subagent-claude: run cancelled locally')
       throw new LiveChannelUnavailableError('the live driver was disposed during spawn')
+    }
+    if (spec.configuration !== undefined) {
+      try { await runtime.configure(spec.configuration, signal) }
+      catch (error) { await runtime.reclaim(); throw error }
     }
     this.channelBrokenAt = undefined
     this.runtimes.set(key, runtime)

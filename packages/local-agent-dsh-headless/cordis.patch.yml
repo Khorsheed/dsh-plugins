@@ -55,6 +55,7 @@
         # `--model`: the launch's model override (provider/model). Absent
         # leaves the instance's own default selection in place.
         model: !!js ctx.localAgentDshHeadlessStartup.model
+        effort: !!js ctx.localAgentDshHeadlessStartup.effort
 
     # The member bridge (local-agent member channel, M3): the parent provider
     # hands the per-run socket path, token, and bridge entry through the

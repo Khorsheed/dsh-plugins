@@ -25,9 +25,9 @@
  */
 
 import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelSource, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
-import { readClaudeConfiguredModel, writeClaudeScopedModel } from './provision.ts'
+import type { LocalAgentRegistry, MemberConfigurationAdapter } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelSource, LocalAgentModelDirectory, LocalAgentMemberBinding, LocalAgentMemberConfiguration, LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { readClaudeConfiguredModel, readClaudeConfiguredEffort, writeClaudeScopedModel } from './provision.ts'
 import type { LiveDriverSwitch } from './live-switch.ts'
 
 /**
@@ -105,7 +105,8 @@ export class ClaudeScopedModelMemory {
 /** Everything the broker reads that it does not own. */
 export interface ClaudeModelBrokerDeps {
   /** The registry face for the in-flight check and the delegation record. */
-  readonly localAgent: Pick<LocalAgentRegistry, 'isDelegationActive' | 'getDelegation'>
+  readonly localAgent: Pick<LocalAgentRegistry, 'isDelegationActive' | 'getDelegation'> & Partial<Pick<LocalAgentRegistry, 'setMemberModel'>>
+  readonly configurationContext?: (binding: LocalAgentMemberBinding) => { home: string; directory: (refresh?: boolean) => LocalAgentModelDirectory | Promise<LocalAgentModelDirectory> }
   /** The settings layer: the plugin-config model, read per call. */
   readonly settingsModel: () => string | undefined
   /** The scoped settings.json's own model, minus live-spawn scratch writes. */
@@ -134,6 +135,35 @@ export const OBSERVED_MODEL_CACHE_TTL_MS = 60_000
 
 export class ClaudeModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: ClaudeModelBrokerDeps) {}
+
+  configurationAdapter(binding: LocalAgentMemberBinding): MemberConfigurationAdapter {
+    const context = this.deps.configurationContext?.(binding)
+    if (context === undefined) throw new Error('Claude member configuration context is unavailable')
+    const resolve = async (selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration> => {
+      let directory = await context.directory()
+      if (directory.status === 'loading') directory = await context.directory(true)
+      const model = selection.model.mode === 'value' ? selection.model.value
+        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel()
+          ?? await readClaudeConfiguredModel(context.home) ?? directory.defaultModel
+      const entry = directory.entries.find(entry => entry.value === model || entry.resolvedModel === model)
+      const effort = (selection.effort.mode === 'value' ? selection.effort.value : selection.effort.mode === 'inherit' ? binding.effort : undefined)
+        ?? await readClaudeConfiguredEffort(context.home) ?? entry?.reasoning?.default
+      if (effort !== undefined && !entry?.reasoning?.options.some(option => option.value === effort)) {
+        throw new Error('Claude has not advertised this reasoning effort for the selected model')
+      }
+      return { ...model === undefined ? {} : { model }, ...effort === undefined ? {} : { effort } }
+    }
+    const retire = async (): Promise<void> => { await this.deps.liveSwitch.hostingDriver(binding.childSessionId)?.retireRuntime(binding.childSessionId) }
+    return {
+      validate: async selection => { await resolve(selection) }, prepare: resolve,
+      apply: async selection => { const resolved = await resolve(selection); await retire(); return resolved },
+      reconcile: async state => {
+        if (this.deps.localAgent.isDelegationActive(binding.childSessionId)) return { active: true, matches: 'unknown', resolved: {} }
+        await retire()
+        return { active: false, matches: 'current', resolved: await resolve(state.current.selection) }
+      },
+    }
+  }
 
   async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
     if (refresh) await this.deps.directory?.(childSessionId, true)
@@ -221,6 +251,7 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
    * respawn, so the conversation carries over).
    */
   async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    if (this.deps.localAgent.setMemberModel !== undefined) return this.deps.localAgent.setMemberModel(childSessionId, model)
     if (this.deps.localAgent.isDelegationActive(childSessionId)) {
       throw new Error(
         `subagent-claude: 成员 ${childSessionId} 有进行中的委派轮次，等其完成后再切换模型 `

@@ -49,7 +49,7 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
@@ -265,9 +265,27 @@ export class ClaudeCliProvider implements SubagentProvider {
       // A resume re-requests the model the FIRST round recorded — the caller
       // cannot name one (the facade refuses it), and a record without one is
       // a delegation that named none, which this round repeats.
-      return this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model)
+      if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') return this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model)
+      return this.ctx.localAgent.withMemberConfigurationRound({
+        childSessionId: intent.childSessionId, provider: this.name, parentSessionId: request.parent.session.id, cwd,
+        ...scope === undefined ? {} : { scope },
+        ...record?.model === undefined ? {} : { model: record.model },
+        ...record?.effort === undefined ? {} : { effort: record.effort },
+        ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
+      }, configuration => this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration))
     }
-    return this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model)
+    const childSessionId = SessionId(randomUUID())
+    if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
+      if (intent?.effort !== undefined) throw new Error('Claude effort requires the configuration admission core')
+      return this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId)
+    }
+    return this.ctx.localAgent.withMemberConfigurationRound({
+      childSessionId, provider: this.name, parentSessionId: request.parent.session.id, cwd,
+      ...scope === undefined ? {} : { scope },
+      ...intent?.model === undefined ? {} : { model: intent.model },
+      ...intent?.effort === undefined ? {} : { effort: intent.effort },
+      ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
+    }, configuration => this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration))
   }
 
   /** Fresh round: record the child session, spawn `claude -p`, append after settle. */
@@ -279,8 +297,9 @@ export class ClaudeCliProvider implements SubagentProvider {
     scope: string | undefined,
     /** The model this DELEGATION requested, when the caller named one. */
     requestedModel: string | undefined,
+    runId: ReturnType<typeof SessionId>,
+    configuration?: LocalAgentAppliedConfiguration,
   ): Promise<SubagentRun> {
-    const runId = SessionId(randomUUID())
     let childSession: Session | undefined
     try {
       const sessions = this.ctx.get('sessions')
@@ -339,6 +358,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           cwd,
           homeDir,
           childSession,
+          ...configuration === undefined ? {} : { configuration: configuration.resolved },
           parentSessionId: request.parent.session.id,
           // A fresh delegation naming a model is NOT exec-only: the model
           // binds as the member's start model at the runtime's spawn (a
@@ -385,7 +405,8 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: effectiveBaseUrl,
         permissionMode: this.permissionMode,
-        ...this.roundModel(runId, requestedModel),
+        ...(configuration?.resolved ?? this.roundModel(runId, requestedModel)),
+        ...configuration === undefined ? {} : { controlled: true },
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -440,6 +461,7 @@ export class ClaudeCliProvider implements SubagentProvider {
     scope: string | undefined,
     /** The model the delegation's FIRST round recorded, re-requested here. */
     requestedModel: string | undefined,
+    configuration?: LocalAgentAppliedConfiguration,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -472,6 +494,7 @@ export class ClaudeCliProvider implements SubagentProvider {
             cwd,
             homeDir,
             childSession,
+            ...configuration === undefined ? {} : { configuration: configuration.resolved },
             parentSessionId: request.parent.session.id,
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
             // The delegation's recorded model re-requests through the spawn
@@ -506,7 +529,8 @@ export class ClaudeCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           endpointLabel: effectiveBaseUrl,
           permissionMode: this.permissionMode,
-          ...this.roundModel(intent.childSessionId, requestedModel),
+          ...(configuration?.resolved ?? this.roundModel(intent.childSessionId, requestedModel)),
+          ...configuration === undefined ? {} : { controlled: true },
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {
@@ -574,6 +598,8 @@ export interface ClaudeCliRunSpec {
    * before the key existed.
    */
   readonly model?: string | undefined
+  readonly effort?: string | undefined
+  readonly controlled?: boolean
   /** Subprocess termination grace passed to the shared process-tree owner. */
   readonly disposeGraceMs: number
   /** Shared subprocess service spawn operation. */
@@ -1273,9 +1299,10 @@ export async function startClaudeCliRun(
   // Container target: the same argv, wrapped in `docker exec`. The host cwd
   // still applies — it is the docker CLIENT's working directory now, while
   // the CLI's own is the target's in-container workdir.
+  const env = spec.controlled ? { ...spec.env, CLAUDE_CODE_EFFORT_LEVEL: spec.effort ?? 'auto' } : spec.env
   const launch = spec.exec === undefined
-    ? { argv, env: spec.env }
-    : containerExecSpawn(spec.exec, { argv, env: spec.env }, 'subagent-claude')
+    ? { argv, env }
+    : containerExecSpawn(spec.exec, { argv, env }, 'subagent-claude')
 
   const child = spec.spawn({
     argv: launch.argv,

@@ -1,4 +1,4 @@
-# Agent Note: Core admission leases and Codex configuration binding
+# Agent Note: Core admission leases and native provider configuration binding
 
 Status: implemented
 
@@ -14,6 +14,10 @@ The registry and gateway expose one durable configuration state and correlated s
 
 Codex is the first provider wired through this boundary. Its adapter distinguishes member inheritance from harness defaults, validates explicit effort against the selected native directory entry, and retires idle runtimes on changes. Its next live round carries the admitted model and effort on native `turn/start`; the same snapshot supplies process overrides and the exec argv. This protocol shape was checked against the installed CLI's generated JSON schema. Requested/resolved configuration remains separate from observed generation facts.
 
+DSH and Claude now use the same provider admission lease. DSH passes effort through the owned headless launch and validates it against the actual sub-instance adapter before Agent creation/resume. Claude initializes its native control channel and requires a successful `set_model` response before sending a user prompt. Its controlled path skips shared model scratch writes; the compatibility path remains pending authenticated acceptance. Claude effort uses the documented per-process `CLAUDE_CODE_EFFORT_LEVEL`, including native `auto` reset, because a local isolated probe confirmed `set_effort` is unsupported ([official model configuration](https://code.claude.com/docs/en/model-config)).
+
+Resident reuse compares the complete admitted configuration, including absent values. A change to effort defaults or clearing a model cannot leave an earlier process binding active. Native acknowledgement failures stop admission without an exec retry of that prompt.
+
 ## Alternatives considered
 
 **Guard only facade starts.** Rejected because direct tool starts would bypass the consistency contract.
@@ -24,8 +28,8 @@ Codex is the first provider wired through this boundary. Its adapter distinguish
 
 ## Consequences
 
-The shared picker, other provider adapters, evaluation frozen-condition callers and full runtime acceptance remain in progress. A configuration acknowledgement is not an observation of the generated model. Existing live scope guards and native default-resolution limitations still need their dedicated integration work. No production profile or authentication state changes in this slice.
+The shared picker, Kimi admission adapter, evaluation frozen-condition callers and full runtime acceptance remain in progress. A configuration acknowledgement is not an observation of the generated model. Existing live scope guards and native default-resolution limitations still need their dedicated integration work. No production profile or authentication state changes in this slice.
 
 ## Testing
 
-Core full suite: 299 tests. New admission tests cover provider-result release, failed starts, identity/scope/lock mismatch, default refresh and selection during preparation. Codex tests cover native effort validation and admitted model/effort on a resumed thread's `turn/start`; both packages build successfully.
+Core full suite: 299 tests. New admission tests cover provider-result release, failed starts, identity/scope/lock mismatch, default refresh and selection during preparation. Codex: 222 tests, including native effort validation, resumed `turn/start` configuration, and changed/cleared defaults. DSH: 184 tests; headless: 54 tests, including sub-instance validation and launch effort propagation. Claude: 230 tests, including pre-prompt native controls, scratch avoidance and rejection without generation. Core and all affected provider/headless builds pass.

@@ -76,6 +76,14 @@ export async function readClaudeConfiguredModel(homeDir: string): Promise<string
   }
 }
 
+/** Read the scoped native effort setting without changing the settings file. */
+export async function readClaudeConfiguredEffort(homeDir: string): Promise<string | undefined> {
+  try {
+    const settings = JSON.parse(await readFile(join(homeDir, SCOPED_SETTINGS), 'utf8')) as { effortLevel?: unknown }
+    return typeof settings.effortLevel === 'string' && settings.effortLevel.trim() !== '' ? settings.effortLevel.trim() : undefined
+  } catch { return undefined }
+}
+
 /**
  * Write (or, with undefined, remove) the scoped settings.json `model` key,
  * merging the rest of the file exactly as {@link provisionClaudeHome} merges

@@ -187,6 +187,10 @@ export function apply(ctx: Context, config: Config): void {
     }
     const modelBroker = new ClaudeModelBroker({
       localAgent: ctx.localAgent,
+      configurationContext: binding => {
+        const home = ctx.localAgent.homeDir('claude-code', binding.scope)
+        return { home, directory: refresh => refresh ? modelCatalog.refresh(home, binding.cwd) : modelCatalog.read(home, binding.cwd) }
+      },
       settingsModel: resolveModel,
       cliDefault: childSessionId => {
         const context = modelContext(childSessionId)

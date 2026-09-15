@@ -1004,6 +1004,19 @@ describe('codex provider live resolver', () => {
 })
 
 describe('codex live driver model key', () => {
+  it('retires a process when effort defaults change or an explicit selection is cleared', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('changed-effort-default'))
+    for (let i = 0; i < 3; i++) m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('ok') }) }))
+    for (const configuration of [{ model: 'same', effort: 'high' }, { model: 'same', effort: 'low' }, {}]) {
+      const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), configuration })
+      await run.result
+    }
+    expect(m.spawns).toHaveLength(3)
+    expect(m.spawns[2]!.spec.argv).toEqual(['codex', 'app-server', '--stdio'])
+    await m.driver.disposeAll()
+  })
+
   it('sends the admitted model and effort to native turn/start even when resuming a thread', async () => {
     const m = mount({ config: { sandbox: 'workspace-write', model: () => 'different-setting' } })
     const child = Session.create(SessionId('child-admitted-config'))

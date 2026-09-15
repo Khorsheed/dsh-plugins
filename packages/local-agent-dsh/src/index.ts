@@ -191,6 +191,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       ctx,
       settingsModel: resolveModel,
       cliDefault: hostDefaultModel,
+      defaultEffort: () => ctx.get('agentDefaultModel')?.currentSelection().reasoningEffort,
       discovered: () => modelCatalog.read().entries.filter(entry => !entry.hidden).map(entry => entry.value),
       catalog: modelCatalog,
       recentModels: () => scope.get().recentModels ?? [],

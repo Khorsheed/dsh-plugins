@@ -2,12 +2,31 @@
  * T30b — `--model` on the sub-dsh launch: how a `provider/model` request lands
  * on the instance's default selection, and what a launch without one keeps.
  */
-import { describe, expect, it } from 'vitest'
-import { applyModelRequest } from '../src/agent-loader.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { applyModelRequest, loadSubDshAgent } from '../src/agent-loader.ts'
 
 const DEFAULT = { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } as never
 
 describe('applyModelRequest', () => {
+  it('checks effort against the actual sub-instance before creating or resuming an Agent', async () => {
+    const ctx = new Context()
+    const create = vi.fn(async () => ({}))
+    const resume = vi.fn(async () => ({}))
+    const resolveModelInfo = vi.fn(async () => ({ reasoning: { efforts: [{ id: 'low', name: 'Low' }] } }))
+    ctx.provide('agentDefaultModel', { currentSelection: () => DEFAULT } as never)
+    ctx.provide('agents', { create, resume } as never)
+    ctx.provide('llm', { resolveModelInfo } as never)
+    await expect(loadSubDshAgent(ctx, { sessionId: 'fresh', model: 'other/selected', effort: 'high' })).rejects.toThrow('does not advertise')
+    await expect(loadSubDshAgent(ctx, { resumeSessionId: 'prior', effort: 'high' })).rejects.toThrow('does not advertise')
+    expect(create).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
+    await loadSubDshAgent(ctx, { sessionId: 'fresh', model: 'other/selected', effort: 'low' })
+    expect(resolveModelInfo).toHaveBeenCalledWith('other', 'selected', expect.any(AbortSignal))
+    expect(create).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
   it('splits provider/model and replaces both halves', () => {
     expect(applyModelRequest(DEFAULT, 'deepseek-official/deepseek-v4-pro')).toEqual({
       provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high',

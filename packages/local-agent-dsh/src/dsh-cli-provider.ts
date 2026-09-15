@@ -43,7 +43,7 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentAppliedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import type { LocalAgentDshConfig } from './index.ts'
 import { LiveChannelUnavailableError } from './live-driver.ts'
@@ -220,9 +220,27 @@ export class DshCliProvider implements SubagentProvider {
       // A resume re-requests the model the FIRST round recorded — the caller
       // cannot name one (the facade refuses it), and a record without one is
       // a delegation that named none, which this round repeats.
-      return this.startDshResume(request, intent, cwd, homeDir, exec, scope, record?.model)
+      if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') return this.startDshResume(request, intent, cwd, homeDir, exec, scope, record?.model)
+      return this.ctx.localAgent.withMemberConfigurationRound({
+        childSessionId: intent.childSessionId, provider: this.name, parentSessionId: request.parent.session.id, cwd,
+        ...scope === undefined ? {} : { scope },
+        ...record?.model === undefined ? {} : { model: record.model },
+        ...record?.effort === undefined ? {} : { effort: record.effort },
+        ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
+      }, configuration => this.startDshResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration))
     }
-    return this.startDshFresh(request, cwd, homeDir, exec, scope, intent?.model)
+    const childSessionId = SessionId(randomUUID())
+    if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
+      if (intent?.effort !== undefined) throw new Error('DSH effort requires the configuration admission core')
+      return this.startDshFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId)
+    }
+    return this.ctx.localAgent.withMemberConfigurationRound({
+      childSessionId, provider: this.name, parentSessionId: request.parent.session.id, cwd,
+      ...scope === undefined ? {} : { scope },
+      ...intent?.model === undefined ? {} : { model: intent.model },
+      ...intent?.effort === undefined ? {} : { effort: intent.effort },
+      ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
+    }, configuration => this.startDshFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration))
   }
 
   /** Fresh round: record the child session and delegation, spawn the sub-dsh create. */
@@ -234,8 +252,9 @@ export class DshCliProvider implements SubagentProvider {
     scope: string | undefined,
     /** The model this DELEGATION requested, when the caller named one. */
     requestedModel: string | undefined,
+    runId: ReturnType<typeof SessionId>,
+    configuration?: LocalAgentAppliedConfiguration,
   ): Promise<SubagentRun> {
-    const runId = SessionId(randomUUID())
     let childSession: Session | undefined
     try {
       // Strict global read, never the caller-scope `ctx.sessions` proxy: the
@@ -313,7 +332,7 @@ export class DshCliProvider implements SubagentProvider {
       // bound to a different model is retired first, so the fresh session
       // spawns onto the asked-for model). The session-level override outranks
       // even this.
-      const startModel = this.overrides?.(runId) ?? requestedModel
+      const startModel = configuration === undefined ? this.overrides?.(runId) ?? requestedModel : configuration.resolved.model
       try {
         return await live.startRound(request, {
           cwd,
@@ -322,6 +341,7 @@ export class DshCliProvider implements SubagentProvider {
           sessionId: runId,
           parentSessionId: request.parent.session.id,
           ...startModel === undefined ? {} : { startModel },
+          ...configuration === undefined ? {} : { configuration: configuration.resolved },
         })
       } catch (error) {
         if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
@@ -341,7 +361,7 @@ export class DshCliProvider implements SubagentProvider {
         homeDir,
         childSession,
         sessionId: runId,
-        ...resolveRoundModel(this.overrides?.(runId) ?? requestedModel, this.model),
+        ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(runId) ?? requestedModel, this.model)),
         resume: undefined,
         config: this.config,
         ctx: this.ctx,
@@ -369,6 +389,7 @@ export class DshCliProvider implements SubagentProvider {
     scope: string | undefined,
     /** The model the delegation's FIRST round recorded, re-requested here. */
     requestedModel: string | undefined,
+    configuration?: LocalAgentAppliedConfiguration,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -400,7 +421,7 @@ export class DshCliProvider implements SubagentProvider {
         // The resume re-requests its recorded model as the member's start
         // model (the session-level override outranks it): a runtime bound to
         // a different model is retired so the session respawns onto this one.
-        const startModel = this.overrides?.(intent.childSessionId) ?? requestedModel
+        const startModel = configuration === undefined ? this.overrides?.(intent.childSessionId) ?? requestedModel : configuration.resolved.model
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -410,6 +431,7 @@ export class DshCliProvider implements SubagentProvider {
             parentSessionId: request.parent.session.id,
             resume: { turn: nextTurn },
             ...startModel === undefined ? {} : { startModel },
+            ...configuration === undefined ? {} : { configuration: configuration.resolved },
           })
           void liveRun.result.then(
             () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
@@ -431,7 +453,7 @@ export class DshCliProvider implements SubagentProvider {
           homeDir,
           childSession,
           sessionId: intent.cliSessionId,
-          ...resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, this.model),
+          ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, this.model)),
           resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
           config: this.config,
           ctx: this.ctx,
@@ -488,6 +510,7 @@ export interface DshCliRunSpec {
    * instance's default, exactly as it did before the flag existed.
    */
   readonly model?: string | undefined
+  readonly effort?: string | undefined
   /**
    * Resume round: continue the sub-dsh session named by `sessionId` with
    * `--resume` instead of a fresh `--session-id`, appending this round into
@@ -640,7 +663,7 @@ export async function startDshCliRun(
   // orthogonal to which session runs, and the sub-dsh's parser takes it in
   // either mode. Nothing configured appends nothing — the argv is then
   // byte-for-byte the shape that shipped before the flag existed.
-  const modelArgv = spec.model === undefined ? [] : ['--model', spec.model]
+  const modelArgv = [...spec.model === undefined ? [] : ['--model', spec.model], ...spec.effort === undefined ? [] : ['--effort', spec.effort]]
   const argv = spec.resume === undefined
     ? [...launch, '--profile', profileName, '--session-id', spec.sessionId, ...modelArgv, task]
     : [...launch, '--profile', profileName, '--resume', spec.sessionId, ...modelArgv, task]

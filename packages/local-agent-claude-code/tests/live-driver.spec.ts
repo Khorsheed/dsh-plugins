@@ -36,6 +36,8 @@ interface FakeTurn {
 }
 
 interface FakeClaudeScript {
+  nativeModels?: unknown[]
+  rejectControl?: string
   turn?: (params: { text: string }) => FakeTurn
   /** Exit immediately on spawn (channel-broken simulation). */
   silentInit?: boolean
@@ -110,7 +112,10 @@ class FakeClaude {
     if (message['type'] === 'control_request') {
       this.controlRequests.push(message)
       const requestId = message['request_id']
-      this.emit({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { still_queued: [] } } })
+      const subtype = (message['request'] as { subtype: string }).subtype
+      this.emit({ type: 'control_response', response: subtype === this.script.rejectControl
+        ? { subtype: 'error', request_id: requestId, error: 'native control rejected' }
+        : { subtype: 'success', request_id: requestId, response: { still_queued: [], ...subtype === 'initialize' ? { models: this.script.nativeModels } : {} } } })
       return
     }
     if (message['type'] === 'control_response') {
@@ -875,6 +880,37 @@ describe('claude provider live resolver', () => {
 })
 
 describe('claude live driver model key', () => {
+  it('binds native controls before a resumed prompt, without a shared model scratch write', async () => {
+    const provisionModel = vi.fn(async () => {})
+    const m = mount({ config: { permissionMode: 'skip', model: () => 'legacy-model', provisionModel } })
+    const child = Session.create(SessionId('native-config'))
+    const fake = new FakeClaude({ nativeModels: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['low', 'high'] }] })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, {
+      ...roundSpec(m, child, { resume: { cliSessionId: 'prior-session', turn: 2 } }),
+      configuration: { model: 'sonnet', effort: 'low' },
+    })
+    await run.result
+    expect(fake.controlRequests.map(request => request['request'])).toEqual([{ subtype: 'initialize', hooks: {} }, { subtype: 'set_model', model: 'sonnet' }])
+    expect(m.spawns[0]!.spec.argv).toContain('prior-session')
+    expect(m.spawns[0]!.spec.env).toMatchObject({ CLAUDE_CODE_EFFORT_LEVEL: 'low' })
+    expect(provisionModel).not.toHaveBeenCalled()
+    expect(fake.userMessages).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('does not send a user prompt after native model control rejection', async () => {
+    const m = mount()
+    const fake = new FakeClaude({ rejectControl: 'set_model', nativeModels: [] })
+    m.queueChild(fake)
+    await expect(m.driver.startRound(request() as never, {
+      ...roundSpec(m, Session.create(SessionId('native-reject'))), configuration: { model: 'custom-model' },
+    })).rejects.toThrow('native control rejected')
+    expect(fake.userMessages).toEqual([])
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
   it('set: the resident process starts with --model, before the stream-format flags', async () => {
     const m = mount({ config: { model: () => 'claude-opus-5' } })
     const child = Session.create(SessionId('child-claude-model'))

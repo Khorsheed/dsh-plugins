@@ -1,3 +1,4 @@
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 /**
  * The dsh provider's live driver: one resident sub-dsh serve process per
  * member (child session), driven over the family-internal wire
@@ -124,6 +125,7 @@ export interface DshLiveRoundSpec {
    * spawn resolver decides (override → settings).
    */
   readonly startModel?: string | undefined
+  readonly configuration?: LocalAgentResolvedConfiguration
 }
 
 function delay(ms: number): Promise<void> {
@@ -147,6 +149,7 @@ class LiveRuntime {
    * spawned with no model flag at all. A round whose start model differs
    * retires the runtime instead of silently running the old one.
    */
+  configurationKey: string | undefined
   boundModel: string | undefined
   private reclaimed = false
   private readonly pending = new Map<number, {
@@ -460,7 +463,9 @@ export class DshLiveDriver {
       // to a different one: retire so the respawn binds the asked-for model
       // (the sub-dsh session resumes from disk — only the process is
       // replaced).
-      if (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel) {
+      if ((spec.configuration !== undefined && existing.configurationKey !== JSON.stringify(spec.configuration))
+        || (spec.configuration === undefined && existing.configurationKey !== undefined)
+        || (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel)) {
         await this.reclaim(key)
       } else {
         this.clearIdleTimer(key)
@@ -503,15 +508,15 @@ export class DshLiveDriver {
     // reads the member's configured model (override → settings). A later
     // switch reaches the runtime by retiring it first.
     const startModel = spec.startModel?.trim()
-    const model = startModel !== undefined && startModel !== ''
-      ? startModel
-      : this.config.modelFor?.(key)?.trim()
+    const model = spec.configuration !== undefined ? spec.configuration.model
+      : startModel !== undefined && startModel !== '' ? startModel : this.config.modelFor?.(key)?.trim()
     const spawnSpec: SubprocessSpawnSpec = {
       argv: [
         ...dshLaunchArgv(this.config),
         '--profile', profileName,
         '--serve',
         ...model === undefined || model === '' ? [] : ['--model', model],
+        ...spec.configuration?.effort === undefined ? [] : ['--effort', spec.configuration.effort],
       ],
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
@@ -540,6 +545,7 @@ export class DshLiveDriver {
     // A blank resolution binds no model at all — record exactly what the argv
     // carries so a later start-model comparison never retires needlessly.
     runtime.boundModel = model === undefined || model === '' ? undefined : model
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     runtime.onDead = () => {
       // Delete only OUR registration: a crash-then-respawn can interleave so
       // the dead runtime's late onDead would otherwise evict the NEW

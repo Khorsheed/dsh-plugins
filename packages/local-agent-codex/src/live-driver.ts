@@ -398,6 +398,7 @@ class CodexLiveRuntime {
    * undefined when it spawned with no model flag at all. A round whose start
    * model differs retires the runtime instead of silently running the old one.
    */
+  configurationKey: string | undefined
   boundModel: string | undefined
   /** Turn ids of settled/interrupted rounds — their late notifications are tagged out. */
   readonly retiredTurnIds = new Set<string>()
@@ -619,7 +620,9 @@ export class CodexLiveDriver {
       // A round that names its own start model never runs on a runtime bound
       // to a different one: retire so the respawn binds the asked-for model
       // (the codex thread resumes — only the process is replaced).
-      if (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel) {
+      if ((spec.configuration !== undefined && existing.configurationKey !== JSON.stringify(spec.configuration))
+        || (spec.configuration === undefined && existing.configurationKey !== undefined)
+        || (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel)) {
         await this.reclaim(key)
       } else {
         this.clearIdleTimer(key)
@@ -693,6 +696,7 @@ export class CodexLiveDriver {
     // A blank resolution binds no model at all — record exactly what the argv
     // carries so a later start-model comparison never retires needlessly.
     runtime.boundModel = model === undefined || model === '' ? undefined : model
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     runtime.onDead = () => {
       // Delete only OUR registration (crash-then-respawn interleave safety).
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
