@@ -1,8 +1,8 @@
 # 宿主 0.1.5 适配与 UI 归位（host-015-adaptation）
 
 - **分类**：plugin
-- **状态**：planned
-- **最后更新**：2026-09-10
+- **状态**：in-progress
+- **最后更新**：2026-09-15
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：room-composer-parity（composer 对齐已在册，本提案不重复立项）、worktree-governance（badge/抽屉能力本体在册，本提案只覆盖其入口迁移）、file-view-html-rendering、local-agent-dsh-sdk-resume（S8 仍堵，维持原判）、capability-catalog（S13 仍堵）。无「0.1.5 整体适配」提案，新建。
 - **官方依赖**：纯插件。所有切换走官方 0.1.5-rc.1 已发布的扩展面，不含新 seam 请求。
 
@@ -100,6 +100,14 @@
 - 每批以独立插件交付（`dsh plugin add/remove` 可用、可热卸载），minHost 随切换点前移至 0.1.5-rc.1 的包更新 README Compatibility + `dsh.compat`。
 - seam registry S1、S5（实测通过后）标「已退役」并写退役版本。
 - 3080 走标准 `pnpm deploy:3080` 验收门。
+
+## 进度快照（2026-09-15）
+
+- **第一批 breaking 适配**：✅ 完成（2026-09-10，note `implemented/architecture/2026-09-10-host-015-breaking-adaptation.md`；基线 commit `bb04c84b`）。slash thunk / persona 拆分经全仓 grep 实证零消费，零改动过线；message-timeline 零改动过线。
+- **第二批 ui-file-preview / S1 退役**：✅ 完成（0.3.0，S1 标已退役；turnTail 卡片经用户决策以 `priority: -1` 表格形态保留；留 S1 尾巴 mentions-wrap 绕行，已登记）。
+- **第三批 入口归位**：✅ 完成。两处实测偏离：worktrees badge 未进 corner 槽（single 槽被官方 ExpandButton 占死，留 utilities 槽 order -20）；local-files 走得更远——`conversation.view` tab 整体退役、只留右栏 Files tab。room / mission 按方案保持 `conversation.view`。
+- **第四批 能力层切换**：✅ subagent/catalog（S15 登记）；🟡 typert 构建链实测 npm 生成器 monorepo 耦合不可行，维持借官方 checkout（S5 绕行中）；readByteRange 分页与 ankh-guard 租约两项 → **转 host-016-adaptation 波次**；context-clearing 与流式评估 → host-016 波后讨论。
+- 余量清零后本提案转 verified → done。
 
 ## 风险 / 放弃的东西
 

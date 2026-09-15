@@ -99,8 +99,9 @@
 - **需求**：撤回后「恢复」（restore）时，被撤回的**助手回复**应以 assistant role 回到模型上下文，而不是被当作一条新的用户输入。当前 `restore` 把助手文本重放成 `user/message`（plugin source, `op:'restore-assistant'`），模型看到的是 user-role 内容，无法区分「这是历史助手引用」与「用户的新指令」——语义上改变了"助手说的"这个事实，可能被模型误执行。
 - **为何不能自包含修**：`assistant/message` 是模型自有事件类型，官方 `assertMessageEventShape` 强制 `source.kind === 'model'` 且有真实 `provider`/`model`，`createAssistantMessage` 也硬编码 `source:{kind:'model'}`；插件无法合法伪造 model source（会谎报审计/语义）。且 harness 对所有 `user/message`（无论 source 是 user/plugin/agent-instructions）一视同仁投影为 user-role 传给模型，**没有**把 plugin 信封转成 system/assistant role 的 API。`agent/pre-step` 只能替换新 claim 的用户消息，`agent/request` 明确不能改模型可见消息——没有诚实的"历史助手内容插入缝"。
 - **现状绕行**：仅缓解——保留 plugin-sourced `user/message`，用 `RESTORED_ASSISTANT_NOTICE`(“以下是先前被撤回、现随恢复放回的助手回复”)前缀让模型自己识别；UI 层（`message-tools-restored-assistant`）用官方 `MarkdownText` 渲染成助手排版，所以**界面看起来是助手格式**，但**模型上下文里 role 仍是 user**。缓解不保证可靠（role 就是 user）。
-- **退役条件**：官方提供能保留原始 provenance、又投影成 assistant-role（或至少明确的"历史引用"语义）的持久化事件/投影机制——例如插件可 append 一个带 `source`/`op` 标记、模型侧投影为 context-引用而非新指令的事件；或提供"重放历史助手内容 seam"。落地后 `restore` 改走该 seam，`RESTORED_ASSISTANT_NOTICE` 前缀与 `restore-assistant` 用户消息退场，UI 保持。
-- **状态**：绕行中（@khorsheed/dsh-client-message-tools；未上报官方，等官方 rc 评估是否已有可用机制）。
+- **官方机制（0.1.6-alpha.1）**：新增 `ctx.sessions.registerMessageProjection()`（`packages/core/session/src/index.ts:923`）+ `@messageProjection` 事件机制（`surface.ts` `SessionMessageProjection`）——插件可声明自有事件，以纯 `project()` 改写既有 surface 消息、不限制 role；首个一方实例 `image/offload`（compaction-image-offload）。`assertMessageEventShape` 未松绑，但 projection 通道不需要它：不伪造 `assistant/message`，注册自有 restore 事件 + 投影。
+- **退役条件**：官方提供能保留原始 provenance、又投影成 assistant-role（或至少明确的"历史引用"语义）的持久化事件/投影机制——例如插件可 append 一个带 `source`/`op` 标记、模型侧投影为 context-引用而非新指令的事件；或提供"重放历史助手内容 seam"。落地后 `restore` 改走该 seam，`RESTORED_ASSISTANT_NOTICE` 前缀与 `restore-assistant` 用户消息退场，UI 保持。**前置探针**：projection 事件的持久化契约（append/重放/跨重启读回、`ignorable` 语义、`session.list` 兼容）未实测——S2 条目记录过未知事件毒化读回的教训，M0 探针先行。
+- **状态**：待实施（提案 `proposals/active/2026-09-15-message-tools-projection-restore.md`，随 host-016 波次；0.1.6-alpha.1 起官方机制落地，0.1.5 上 degrade 回前缀通道；npm latest 前滚后拆前缀、标本条已退役）。
 
 ### S13. 工具注册表不暴露来源（ToolSchema 无 source/owner）
 
@@ -136,3 +137,4 @@
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
 - 每次官方升级：逐条核对"退役条件"是否已满足（S1 的核对清单可以直接抄进升级 checklist)。
+- 2026-09-15 全量核对（`0.1.5-rc.1 → 0.1.6-alpha.1`，区间约 804 commits）：S12 部分落地（`registerMessageProjection`），转待实施；S2/S3/S4/S8/S10/S11/S13/S14/S15 均未落地，绕行保留；S5 维持（npm 生成器 exports 无变化，monorepo 耦合结论不变）。适配波次见提案 `proposals/active/2026-09-15-host-016-adaptation.md`。
