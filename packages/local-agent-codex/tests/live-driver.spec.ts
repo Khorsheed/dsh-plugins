@@ -570,6 +570,28 @@ describe('codex live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('flushes a sparse delta before completion and never overwrites the final with a late timer', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-sparse-live'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(fake.requests.some(r => r.method === 'turn/start')).toBe(true) })
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'sparse', delta: 'hi' })
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    }, { timeout: 1_000, interval: 10 })
+    expect(child.snapshotEvents().some(e => e.type === 'turn/end')).toBe(false)
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'sparse', delta: '!' })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { type: 'agentMessage', id: 'sparse', text: 'hi!', phase: 'final_answer' } })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    const count = child.snapshotEvents().length
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(child.snapshotEvents()).toHaveLength(count)
+    await m.driver.disposeAll()
+  })
+
   it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
     const deltas: [string, string][] = [['item-x', 'hel'], ['item-x', 'lo']]
     // Zero thresholds: every delta lands a snapshot immediately.

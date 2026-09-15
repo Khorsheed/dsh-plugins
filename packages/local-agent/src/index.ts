@@ -86,6 +86,7 @@ export type {
 } from './types.ts'
 
 export { delegationEnv } from './env.ts'
+export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'
 
 export {

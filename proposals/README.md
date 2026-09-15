@@ -123,7 +123,7 @@ grep -l '状态.*closed（放弃' proposals/closed/*.md      # 只看放弃的
 
 | 分类 | 提案 | 状态 | 官方依赖 | 前置 / 依赖 | 备注 | 最后更新 |
 |---|---|---|---|---|---|---|
-| plugin | [Room 可切换协调者、真流式与目标驱动协作](active/2026-09-15-room-coordinator-runtime.md) | idea | 纯插件（M0 验证公开接口） | local-agent / room 既有能力 | 待确认；交付 A 统一模型/控制/流式/默认协调者，交付 B 任务验收与目标闭环 | 2026-09-15 |
+| plugin | [Room 可切换协调者、真流式与目标驱动协作](active/2026-09-15-room-coordinator-runtime.md) | in-progress | 纯插件（M0 验证公开接口） | local-agent / room 既有能力 | 待确认；交付 A 统一模型/控制/流式/默认协调者，交付 B 任务验收与目标闭环 | 2026-09-15 |
 | plugin | [通用版本化数据集存储（datasets）](active/2026-08-19-datasets-store.md) | in-progress | 纯插件 | — | M1 已交付；独立可用，与 mission 可选兼容 | 2026-08-19 |
 | plugin | [通用任务管理（mission）](active/2026-08-19-mission-tasks.md) | in-progress | 纯插件 | bench 仓库模板（评测用法） | M1 已交付；独立可用，与 datasets 可选兼容 | 2026-08-19 |
 | plugin | [数据集作者协议与 skill](active/2026-08-23-dataset-authoring-protocol-skill.md) | planned | 纯插件 | — | 协议 + skill + 绑定确认流；skill 公开发行供其他 agent 复用 | 2026-08-24 |

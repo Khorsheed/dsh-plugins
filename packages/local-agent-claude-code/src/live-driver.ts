@@ -75,7 +75,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
@@ -106,10 +106,10 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 const RECLAIM_EOF_GRACE_MS = 1_000
 
 /** Default minimum interval between one streaming kind's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = 300
+export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = LIVE_FLUSH_INTERVAL_MS
 
 /** Default minimum text growth between one streaming kind's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_CHARS = 200
+export const DEFAULT_SNAPSHOT_MIN_CHARS = 0
 
 /**
  * The stream-json channel could not come up (spawn failure or the first
@@ -371,6 +371,7 @@ export class ClaudeLiveDriver {
       liveMirrorGranularity?: ClaudeLiveMirrorGranularity
       /** Snapshot throttle for the token granularity's streaming messages. */
       snapshotMinIntervalMs?: number
+      /** @deprecated Character growth no longer gates live publication. */
       snapshotMinChars?: number
       /**
        * Resolver for the member's effective model, read at each RUNTIME SPAWN
@@ -745,6 +746,11 @@ export class ClaudeLiveDriver {
      * legitimately) and, when `withUsage` and no folded line carried it, the
      * round's usage.
      */
+    const liveFlush = new LiveFlush(
+      error => this.ctx.logger.warn(`live mirror flush failed: ${String(error)}`),
+      this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
+    )
+
     const appendStreamSnapshot = (
       stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
       force: boolean,
@@ -753,10 +759,11 @@ export class ClaudeLiveDriver {
     ): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
-      const minInterval = this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS
-      const minChars = this.config.snapshotMinChars ?? DEFAULT_SNAPSHOT_MIN_CHARS
-      if (!force && now - stream.lastSnapshotAt < minInterval) return
-      if (!force && stream.text.length - stream.lastSnapshotLen < minChars) return
+      if (!force) {
+        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
+        return
+      }
+      liveFlush.cancel(stream.step)
       if (!stream.opened) {
         childSession.append('step/start', { turn, step: stream.step })
         stream.opened = true
@@ -840,6 +847,7 @@ export class ClaudeLiveDriver {
           // A streamed line folds at its reserved step, finalizing the
           // snapshots: the step opens only if no snapshot ever landed (a
           // fast stream that stayed under the throttle), and closes here.
+          liveFlush.cancel(stream.step)
           streams.delete(itemId)
           if (activeStream === itemId) activeStream = undefined
           if (!stream.opened) childSession.append('step/start', { turn, step: stream.step })
@@ -1027,6 +1035,7 @@ export class ClaudeLiveDriver {
       onAbort,
     }).then((settled) => {
       roundSettled = true
+      liveFlush.dispose()
       turnInFlight = false
       if (turnOpened) {
         // An aborted or failed turn never sees the result event, so its
