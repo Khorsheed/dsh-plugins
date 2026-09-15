@@ -86,6 +86,7 @@ export type {
 } from './types.ts'
 
 export { delegationEnv } from './env.ts'
+export { ModelDirectoryCache, extendModelDirectory, modelDirectoryContextKey } from './model-directory.ts'
 export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'

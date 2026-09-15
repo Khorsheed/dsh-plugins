@@ -40,6 +40,34 @@ async function mount(config: localAgent.Config): Promise<{ ctx: Context; gateway
 }
 
 describe('LocalAgentGateway', () => {
+  it('routes directory refresh and subscriptions without reading an unrelated member context', async () => {
+    const { ctx, gateway } = await mount({ homesRoot: tempHome('gw-directory-') })
+    let calls = 0
+    const directory = new localAgent.ModelDirectoryCache({ load: async () => {
+      calls++
+      return { entries: [{ value: 'alias', label: 'Native label', source: 'native' }], complete: true, customInput: true }
+    } })
+    ctx.localAgent.register(harness({
+      delegationProvider: 'fake-cli',
+      modelBroker: {
+        modelInfo: () => ({ source: 'cli-builtin', choices: [], live: true, switchable: true }),
+        setMemberModel: async () => {},
+        modelDirectory: (_child, refresh) => refresh ? directory.refresh('fake') : directory.read('fake'),
+        followModelDirectory: (_child, signal) => directory.follow('fake', signal),
+      },
+    }))
+    expect(await gateway.modelDirectory('fake', 'unknown-child', true)).toBeNull()
+    expect(calls).toBe(0)
+    expect(await gateway.modelDirectory('fake', undefined, true)).toMatchObject({ status: 'ready', entries: [{ label: 'Native label' }] })
+    expect(calls).toBe(1)
+    const abort = new AbortController()
+    const reader = gateway.followModelDirectory('fake', undefined, abort.signal)[Symbol.asyncIterator]()
+    expect((await reader.next()).value?.entries[0]?.value).toBe('alias')
+    abort.abort()
+    expect((await reader.next()).done).toBe(true)
+    directory.dispose()
+  })
+
   it('lists the registered harnesses as roster rows', async () => {
     const { ctx, gateway } = await mount({ homesRoot: tempHome('gw-roster-') })
     ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry

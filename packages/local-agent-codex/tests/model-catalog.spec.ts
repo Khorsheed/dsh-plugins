@@ -78,6 +78,26 @@ describe('codex model catalog probe', () => {
     expect(models).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'only-model-field'])
   })
 
+  it('retains native labels, hidden candidates and reasoning options across pagination', async () => {
+    const m = mount({ mode: 'paged' })
+    expect(await m.catalog.refresh(m.homeDir)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'only-model-field'])
+    const directory = m.catalog.directory(m.homeDir)
+    expect(directory).toMatchObject({ status: 'ready', complete: true, defaultModel: 'gpt-5.6-sol' })
+    expect(directory.entries).toHaveLength(4)
+    expect(directory.entries[0]).toMatchObject({
+      value: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', source: 'native',
+      reasoning: { default: 'high', options: [{ value: 'high', description: 'More reasoning' }] },
+    })
+    expect(directory.entries.find(entry => entry.value === 'gpt-5-legacy')?.hidden).toBe(true)
+  })
+
+  it('rejects repeated cursors instead of presenting a partial directory as complete', async () => {
+    const m = mount({ mode: 'cursor-loop' })
+    await m.catalog.refresh(m.homeDir)
+    expect(m.catalog.directory(m.homeDir)).toMatchObject({ status: 'error', complete: false })
+    expect(m.warnings.some(warning => warning.includes('repeated a pagination cursor'))).toBe(true)
+  })
+
   it('captures the account’s built-in default from the first isDefault marker', async () => {
     const m = mount()
     // Cold cache: no default is known yet.

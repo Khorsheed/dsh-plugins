@@ -170,7 +170,11 @@ export function apply(ctx: Context, config: Config): void {
       ctx,
       settingsModel: resolveModel,
       recentModels: () => scope.get().recentModels ?? [],
-      homeDir: () => ctx.localAgent.homeDir('codex'),
+      homeDir: childSessionId => ctx.localAgent.homeDir('codex', childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)?.scope),
+      cwd: childSessionId => childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)?.cwd,
+      directory: (home, cwd) => modelCatalog.directory(home, cwd),
+      refreshDirectory: (home, cwd) => modelCatalog.refresh(home, cwd),
+      followDirectory: (home, cwd, signal) => modelCatalog.follow(home, signal, cwd),
       live: () => scope.get().live,
       overrides: memberModelOverrides,
       liveBoundModel: childSessionId => liveSwitch.boundModel(childSessionId),
@@ -178,11 +182,11 @@ export function apply(ctx: Context, config: Config): void {
       // The account catalog probe is LAZY per read: read() serves the cache
       // and kicks a background probe when stale; the apply above warms the
       // default scope's cache so the first card open usually hits it.
-      catalog: scopedHome => modelCatalog.read(scopedHome),
+      catalog: (scopedHome, cwd) => modelCatalog.read(scopedHome, cwd),
       // The account's built-in default slug (the probe's isDefault entry) —
       // the layer that names the CLI's compiled default, read off the same
       // cache.
-      catalogDefault: scopedHome => modelCatalog.readDefault(scopedHome),
+      catalogDefault: (scopedHome, cwd) => modelCatalog.readDefault(scopedHome, cwd),
     })
     const disposeProvider = ctx.subagents.registerProvider(
       new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
@@ -253,6 +257,7 @@ export function apply(ctx: Context, config: Config): void {
     })
     return () => {
       clearTimeout(warmup)
+      modelCatalog.dispose()
       disposeProvider()
       disposeHarness()
       liveSwitch.dispose()

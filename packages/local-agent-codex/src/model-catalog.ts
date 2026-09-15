@@ -1,40 +1,11 @@
-/**
- * The codex account model catalog: a one-shot probe of
- * `codex app-server --stdio`'s `model/list` against the SCOPED home, cached
- * in-process, so the model broker's pickable vocabulary includes the models
- * the account can actually run — the layer that fixes an empty settings-card
- * dropdown when the scoped config.toml names no models. Protocol-verified
- * against codex-cli 0.144.0: a plain `initialize` (no experimentalApi
- * capability) suffices, and the answer is `result.data[]` of
- * `{ id, model, displayName, hidden, supportedReasoningEfforts, ... }` where
- * `id` and `model` both carry the slug the CLI binds via `-m` / `-c model=…`
- * (the probe reads `id`, falling back to `model`). The entry the account has
- * as its built-in default carries `isDefault: true` (verified live:
- * gpt-5.6-sol) — the ONE side channel that names the CLI's compiled default,
- * which is why the probe captures it alongside the slugs and the broker can
- * report source `cli-builtin` WITH an effective model.
- *
- * The probe reuses the live driver's spawn discipline — the same
- * `codex app-server --stdio` argv, the same `delegationEnv({ CODEX_HOME })`
- * pinning — but deliberately carries NO `-c` overrides: the only ones the
- * driver uses are the per-member bridge token and the per-member model
- * binding, and both are meaningless (a model binding could even scope the
- * answer) for an anonymous account-catalog read. The process is bounded by
- * an overall timeout and killed on expiry; ANY failure — codex missing,
- * spawn error, handshake refusal, timeout, a malformed answer — degrades to
- * an empty list, never a throw.
- *
- * Caching rule (the simpler robust one): a COMPLETED probe — success or
- * failure — is cached per scoped home for a flat TTL; nothing watches
- * config.toml mtimes. A failed probe is cached too, so a missing codex CLI
- * costs one dead spawn per TTL window instead of one per settings-card open.
- * Concurrent reads for the same home share one in-flight probe.
- * @module @khorsheed/dsh-local-agent-codex/model-catalog
- */
+/** Native app-server model/list discovery. Shared core cache owns refresh,
+ * stale data and subscriptions; this provider owns protocol and pagination. */
 
+import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv } from '@khorsheed/dsh-local-agent'
+import { ModelDirectoryCache, modelDirectoryContextKey, delegationEnv } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentModelDirectory, LocalAgentModelDirectoryData, LocalAgentModelEntry } from '@khorsheed/dsh-local-agent/types'
 import { DEFAULT_DISPOSE_GRACE_MS } from './codex-cli-provider.ts'
 
 /** Default overall bound for one catalog probe (spawn → model/list answer). */
@@ -62,133 +33,98 @@ export interface CodexModelCatalogDeps {
   readonly now?: () => number
 }
 
-/**
- * Extract the runnable slugs and the account's built-in default from a
- * `model/list` result: entries with `hidden === true` are dropped from the
- * slug list, each remaining entry contributes its `id` (the schema-stable
- * slug field; `model`, which mirrors it on 0.144.0, is the fallback), and the
- * list is deduped order-preserving. The entry carrying `isDefault === true`
- * names the account's compiled default; the marker is honored even on a
- * hidden entry (hidden means unlisted, not unrunnable) and the first marker
- * wins. Anything that is not the expected shape yields an empty list and no
- * default.
- */
-function catalogEntries(result: unknown): { models: string[]; defaultModel?: string } {
-  const data = (result as { data?: unknown } | null)?.data
-  if (!Array.isArray(data)) return { models: [] }
-  const seen = new Set<string>()
-  const models: string[] = []
+/** Preserve native metadata, including hidden candidates; reject malformed pages. */
+function catalogEntries(result: unknown): { entries: LocalAgentModelEntry[]; defaultModel?: string; nextCursor?: string } {
+  const page = result as { data?: unknown; nextCursor?: unknown } | null
+  if (!Array.isArray(page?.data)) throw new Error('model/list returned no model array')
+  const entries: LocalAgentModelEntry[] = []
   let defaultModel: string | undefined
-  for (const entry of data) {
-    const record = entry as { id?: unknown; model?: unknown; hidden?: unknown; isDefault?: unknown } | null
-    if (record === null) continue
-    const raw = typeof record.id === 'string' ? record.id : typeof record.model === 'string' ? record.model : undefined
-    const slug = raw?.trim()
-    if (record.isDefault === true && defaultModel === undefined && slug !== undefined && slug !== '') {
-      defaultModel = slug
-    }
-    if (record.hidden === true) continue
-    if (slug === undefined || slug === '' || seen.has(slug)) continue
-    seen.add(slug)
-    models.push(slug)
+  for (const entry of page.data) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as JsonObject
+    const raw = typeof record['id'] === 'string' ? record['id'] : record['model']
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (value === '') continue
+    if (record['isDefault'] === true && defaultModel === undefined) defaultModel = value
+    const nativeEfforts = record['supportedReasoningEfforts']
+    const options = Array.isArray(nativeEfforts) ? nativeEfforts.flatMap(option => {
+      if (typeof option !== 'object' || option === null) return []
+      const effort = option as JsonObject
+      const choice = effort['reasoningEffort']
+      if (typeof choice !== 'string' || choice === '') return []
+      return [{ value: choice, label: choice, ...typeof effort['description'] === 'string' ? { description: effort['description'] } : {} }]
+    }) : undefined
+    const defaultEffort = record['defaultReasoningEffort']
+    entries.push({
+      value, label: typeof record['displayName'] === 'string' ? record['displayName'] : value,
+      source: 'native', hidden: record['hidden'] === true,
+      ...typeof record['description'] === 'string' ? { description: record['description'] } : {},
+      ...options === undefined ? {} : { reasoning: { options, ...typeof defaultEffort === 'string' ? { default: defaultEffort } : {} } },
+    })
   }
-  return defaultModel === undefined ? { models } : { models, defaultModel }
+  return {
+    entries, ...defaultModel === undefined ? {} : { defaultModel },
+    ...typeof page.nextCursor === 'string' && page.nextCursor !== '' ? { nextCursor: page.nextCursor } : {},
+  }
 }
 
-/**
- * The codex account model catalog cache. `read` is SYNCHRONOUS — it serves
- * the last completed probe and, when the entry is absent or stale, kicks a
- * background re-probe without awaiting it. The first read after boot (or
- * after a TTL expiry) therefore misses the catalog; the settings card
- * re-fetches on every open, so the next open sees the probed slugs. This
- * keeps a cold cache — worst case a few seconds of CLI boot — out of the
- * broker's read path.
- */
+/** Synchronous compatibility reads plus a rich, subscribable directory. */
 export class CodexModelCatalog {
   private readonly timeoutMs: number
-  private readonly ttlMs: number
-  private readonly now: () => number
-  private readonly entries = new Map<string, { at: number; models: readonly string[]; defaultModel?: string }>()
-  private readonly inflight = new Map<string, Promise<readonly string[]>>()
+  private readonly cache: ModelDirectoryCache
 
   constructor(private readonly deps: CodexModelCatalogDeps) {
     this.timeoutMs = deps.timeoutMs ?? DEFAULT_CATALOG_PROBE_TIMEOUT_MS
-    this.ttlMs = deps.ttlMs ?? DEFAULT_CATALOG_TTL_MS
-    this.now = deps.now ?? Date.now
-  }
-
-  /** The cached slugs for the scoped home; re-probes in the background when stale. */
-  read(homeDir: string): readonly string[] {
-    return this.cached(homeDir)?.models ?? []
-  }
-
-  /**
-   * The cached built-in default slug (`isDefault: true` on the last completed
-   * probe), or undefined when no probe named one. Same cache, same background
-   * re-probe as {@link read} — the two reads share one in-flight probe.
-   */
-  readDefault(homeDir: string): string | undefined {
-    return this.cached(homeDir)?.defaultModel
-  }
-
-  /** The fresh-enough cache entry for the home, kicking a background re-probe when absent or stale. */
-  private cached(homeDir: string): { at: number; models: readonly string[]; defaultModel?: string } | undefined {
-    const cached = this.entries.get(homeDir)
-    if (cached === undefined || this.now() - cached.at >= this.ttlMs) {
-      void this.refresh(homeDir).catch(() => {})
-    }
-    return cached
-  }
-
-  /**
-   * Probe (or await the in-flight probe for) the scoped home and cache the
-   * outcome — success or failure — for the TTL. Concurrent calls share one
-   * probe process.
-   */
-  refresh(homeDir: string): Promise<readonly string[]> {
-    const pending = this.inflight.get(homeDir)
-    if (pending !== undefined) return pending
-    const probe = this.probe(homeDir).then(
-      result => {
-        this.entries.set(homeDir, { at: this.now(), ...result })
-        return result.models
+    this.cache = new ModelDirectoryCache({
+      load: (key, signal) => {
+        const context = JSON.parse(key) as { homeDir: string; cwd: string }
+        return this.probe(context.homeDir, context.cwd, signal)
       },
-      () => {
-        // probe() never throws by contract; this guard keeps the cache write
-        // total even against a regression, so a broken probe cannot spam.
-        this.entries.set(homeDir, { at: this.now(), models: [] })
-        return [] as readonly string[]
-      },
-    )
-    this.inflight.set(homeDir, probe)
-    void probe.finally(() => {
-      if (this.inflight.get(homeDir) === probe) this.inflight.delete(homeDir)
+      ttlMs: deps.ttlMs ?? DEFAULT_CATALOG_TTL_MS,
+      ...deps.now === undefined ? {} : { now: deps.now },
+      onError: error => deps.warn?.(`local-agent-codex: the model catalog probe degraded: ${error instanceof Error ? error.message : String(error)}`),
     })
-    return probe
+  }
+
+  private key(homeDir: string, cwd = homeDir): string {
+    const files = [join(homeDir, 'config.toml'), join(homeDir, 'auth.json')]
+    for (let directory = cwd; ; directory = dirname(directory)) {
+      files.push(join(directory, '.codex', 'config.toml'))
+      if (dirname(directory) === directory) break
+    }
+    return modelDirectoryContextKey({ provider: 'codex', homeDir, cwd, cli: ['codex'], files })
+  }
+
+  read(homeDir: string, cwd?: string): readonly string[] {
+    return this.directory(homeDir, cwd).entries.filter(entry => !entry.hidden).map(entry => entry.value)
+  }
+
+  readDefault(homeDir: string, cwd?: string): string | undefined { return this.directory(homeDir, cwd).defaultModel }
+  directory(homeDir: string, cwd?: string): LocalAgentModelDirectory { return this.cache.read(this.key(homeDir, cwd)) }
+  follow(homeDir: string, signal: AbortSignal, cwd?: string): AsyncIterable<LocalAgentModelDirectory> { return this.cache.follow(() => this.key(homeDir, cwd), signal) }
+  invalidate(homeDir: string, cwd?: string): void { this.cache.invalidate(this.key(homeDir, cwd)) }
+  dispose(): void { this.cache.dispose() }
+
+  async refresh(homeDir: string, cwd?: string): Promise<readonly string[]> {
+    const snapshot = await this.cache.refresh(this.key(homeDir, cwd))
+    return snapshot.entries.filter(entry => !entry.hidden).map(entry => entry.value)
   }
 
   /**
    * One bounded probe: spawn the app-server against the scoped home, answer
    * the initialize handshake exactly as the live driver shapes it, ask
    * `model/list`, then tear the process down (stdin EOF → grace →
-   * terminate). The overall timeout kills the process on expiry. Every
-   * failure path resolves to an empty list.
+   * terminate). The overall timeout kills the process on expiry. Failures propagate to the shared cache, which preserves prior data.
    */
-  private async probe(homeDir: string): Promise<{ models: string[]; defaultModel?: string }> {
+  private async probe(homeDir: string, cwd: string, signal: AbortSignal): Promise<LocalAgentModelDirectoryData> {
     const spec: SubprocessSpawnSpec = {
       argv: ['codex', 'app-server', '--stdio'],
-      cwd: homeDir,
+      cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
       env: delegationEnv({ CODEX_HOME: homeDir }),
     }
-    let child: SubprocessHandle
-    try {
-      child = this.deps.spawn(spec)
-    } catch (error) {
-      this.deps.warn?.(`local-agent-codex: the model catalog probe failed to spawn: ${error instanceof Error ? error.message : String(error)}`)
-      return { models: [] }
-    }
+    const child: SubprocessHandle = this.deps.spawn(spec)
     const decoder = new StringDecoder('utf8')
     let buffer = ''
     const pending = new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void }>()
@@ -233,7 +169,11 @@ export class CodexModelCatalog {
       }
     })
     void child.done.then(finish, finish)
+    const abort = (): void => { finish(); child.terminate() }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
     const request = <T>(method: string, params: JsonObject): Promise<T> => {
+      if (done) return Promise.reject(new Error('the model catalog probe closed'))
       nextId += 1
       const id = nextId
       return new Promise<T>((resolve, reject) => {
@@ -248,6 +188,7 @@ export class CodexModelCatalog {
       child.terminate()
       await child.waitForExit().catch(() => {})
     }
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
       return await Promise.race([
         (async () => {
@@ -256,17 +197,31 @@ export class CodexModelCatalog {
             capabilities: { experimentalApi: false, requestAttestation: false },
           })
           child.stdin?.write(JSON.stringify({ jsonrpc: '2.0', method: 'initialized' }) + '\n')
-          return catalogEntries(await request('model/list', {}))
+          const entries = new Map<string, LocalAgentModelEntry>()
+          const cursors = new Set<string>()
+          let cursor: string | undefined
+          let defaultModel: string | undefined
+          do {
+            const page = catalogEntries(await request('model/list', { includeHidden: true, ...cursor === undefined ? {} : { cursor } }))
+            for (const entry of page.entries) if (!entries.has(entry.value)) entries.set(entry.value, entry)
+            defaultModel ??= page.defaultModel
+            cursor = page.nextCursor
+            if (cursor !== undefined) {
+              if (cursors.has(cursor)) throw new Error('model/list repeated a pagination cursor')
+              cursors.add(cursor)
+            }
+          } while (cursor !== undefined)
+          return { entries: [...entries.values()], complete: true, customInput: true, ...defaultModel === undefined ? {} : { defaultModel } }
+
         })(),
         new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => reject(new Error('the model catalog probe timed out')), this.timeoutMs)
+          timer = setTimeout(() => reject(new Error('the model catalog probe timed out')), this.timeoutMs)
           timer.unref()
         }),
       ])
-    } catch (error) {
-      this.deps.warn?.(`local-agent-codex: the model catalog probe degraded: ${error instanceof Error ? error.message : String(error)}`)
-      return { models: [] }
     } finally {
+      if (timer !== undefined) clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
       await teardown()
     }
   }

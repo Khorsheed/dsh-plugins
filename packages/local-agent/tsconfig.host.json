@@ -16,6 +16,7 @@
     "src/member-channel.ts",
     "src/member-bridge.ts",
     "src/live-flush.ts",
+    "src/model-directory.ts",
     "src/live-stream.ts"
   ]
 }

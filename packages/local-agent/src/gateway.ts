@@ -15,11 +15,14 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   LocalAgentDelegationView,
   LocalAgentModelInfo,
+  LocalAgentModelBroker,
+  LocalAgentModelDirectory,
   LocalAgentPromptResult,
   LocalAgentSessionRecord,
   LocalAgentStreamFrame,
 } from './types.ts'
 import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
+import { extendModelDirectory } from './model-directory.ts'
 
 /**
  * Remote-only projection of the local-agent registry, exposed to the browser
@@ -35,8 +38,12 @@ import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
  */
 function withObservedChoice(info: LocalAgentModelInfo): LocalAgentModelInfo {
   const observed = info.lastObserved
-  if (observed === undefined || info.choices.includes(observed)) return info
-  return { ...info, choices: [...info.choices, observed] }
+  if (observed === undefined) return info
+  return {
+    ...info,
+    choices: info.choices.includes(observed) ? info.choices : [...info.choices, observed],
+    ...info.directory === undefined ? {} : { directory: extendModelDirectory(info.directory, [], [observed]) },
+  }
 }
 
 export default class LocalAgentGateway extends TypertRemoteService {
@@ -55,6 +62,45 @@ export default class LocalAgentGateway extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   followMemberOutput(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentStreamFrame> {
     return this.ctx.localAgent.liveStreams.follow(childSessionId, signal)
+  }
+
+  private directoryBroker(name: string, childSessionId: string | undefined): LocalAgentModelBroker | undefined {
+    const harness = this.ctx.localAgent.get(name)
+    if (childSessionId !== undefined) {
+      const record = this.ctx.localAgent.getDelegation(childSessionId)
+      if (record === undefined || record.provider !== harness?.delegationProvider) return undefined
+    }
+    return harness?.modelBroker
+  }
+
+  /**
+   * Read or explicitly refresh native model discovery, without changing a member.
+   * @param name - owning harness.
+   * @param childSessionId - member context, or undefined for the harness default.
+   * @param refresh - bypass the discovery TTL.
+   * @returns source-labelled discovery state, or null for an unavailable broker.
+   */
+  @Remote('modelDirectory')
+  async modelDirectory(name: string, childSessionId: string | undefined, refresh: boolean): Promise<LocalAgentModelDirectory | null> {
+    const broker = this.directoryBroker(name, childSessionId)
+    return await broker?.modelDirectory?.(childSessionId, refresh) ?? null
+  }
+
+  /**
+   * Keep a currently open model picker synchronized with discovery completion.
+   * @param name - owning harness.
+   * @param childSessionId - member context, or undefined for the harness default.
+   * @param signal - Remote-owned cancellation.
+   * @returns directory baselines and subsequent snapshots.
+   */
+  @Remote({ mode: 'stream' })
+  async *followModelDirectory(name: string, childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    const broker = this.directoryBroker(name, childSessionId)
+    if (broker?.followModelDirectory !== undefined) yield* broker.followModelDirectory(childSessionId, signal)
+    else {
+      const directory = await broker?.modelDirectory?.(childSessionId)
+      if (directory !== undefined && !signal.aborted) yield directory
+    }
   }
 
   /**

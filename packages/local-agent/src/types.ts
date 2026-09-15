@@ -376,6 +376,41 @@ export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
  */
 export type LocalAgentModelSource = 'override' | 'delegation' | 'settings' | 'cli-config' | 'cli-builtin'
 
+/** Provider-native values, never normalized into a supposedly equivalent budget. */
+export interface LocalAgentReasoningOption {
+  value: string
+  label: string
+  description?: string
+}
+
+/** A catalog candidate is not proof that an account can successfully run it. */
+export interface LocalAgentModelEntry {
+  value: string
+  label: string
+  resolvedModel?: string
+  description?: string
+  source: 'native' | 'configuration' | 'history'
+  hidden?: boolean
+  reasoning?: { options: readonly LocalAgentReasoningOption[]; default?: string }
+}
+
+export interface LocalAgentModelDirectoryData {
+  entries: readonly LocalAgentModelEntry[]
+  defaultModel?: string
+  /** Complete enumeration of this source, not a guarantee of account access. */
+  complete: boolean
+  customInput: boolean
+  unsupported?: boolean
+  reason?: string
+}
+
+export interface LocalAgentModelDirectory extends LocalAgentModelDirectoryData {
+  status: 'loading' | 'ready' | 'stale' | 'error' | 'unsupported'
+  refreshing: boolean
+  revision: number
+  refreshedAt?: number
+}
+
 /**
  * The model surface for one member — or, without a member, for a harness's
  * next round (the settings card's "what would run" line). Every layer reports
@@ -413,6 +448,8 @@ export interface LocalAgentModelInfo {
    * that only ever ran its CLI default still has a one-item menu.
    */
   choices: readonly string[]
+  /** Rich, source-labelled directory; choices remains the legacy read face. */
+  directory?: LocalAgentModelDirectory
   /** Whether the harness's live driver is on for the member's rounds. */
   live: boolean
   /**
@@ -432,6 +469,10 @@ export interface LocalAgentModelInfo {
  * faces exactly (the card's free-text model input still writes plugin config).
  */
 export interface LocalAgentModelBroker {
+  /** Refresh only discovery; never starts a model turn or changes selection. */
+  modelDirectory?(childSessionId?: string, refresh?: boolean): LocalAgentModelDirectory | Promise<LocalAgentModelDirectory>
+  /** Keeps an open picker current after a background probe. */
+  followModelDirectory?(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory>
   /**
    * Read the model surface. With a member, `delegationModel` carries the
    * delegation record's requested model (the record lives in the core; the
