@@ -20,6 +20,9 @@ import type {
   LocalAgentPromptResult,
   LocalAgentSessionRecord,
   LocalAgentStreamFrame,
+  LocalAgentMemberControlState,
+  LocalAgentMemberConfiguration,
+  LocalAgentControlReceipt,
 } from './types.ts'
 import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
@@ -228,7 +231,14 @@ export default class LocalAgentGateway extends TypertRemoteService {
     if (record === undefined) return null
     const broker = registry.harnessForProvider(record.provider)?.modelBroker
     if (broker === undefined) return null
-    const info = await broker.modelInfo(childSessionId, record.model)
+    let info = await broker.modelInfo(childSessionId, record.model)
+    if (broker.configurationAdapter !== undefined) {
+      const configuration = registry.memberConfiguration(childSessionId)
+      info = { ...info, configuration, switchable: configuration.lockedReason === undefined }
+      delete info.reason
+      if (configuration.lockedReason !== undefined) info.reason = configuration.lockedReason
+      if (configuration.current.resolved.model !== undefined) info.effective = configuration.current.resolved.model
+    }
     return withObservedChoice(info.lastObserved !== undefined || record.observedModel === undefined
       ? info
       : { ...info, lastObserved: record.observedModel })
@@ -257,11 +267,37 @@ export default class LocalAgentGateway extends TypertRemoteService {
       return { ok: false, error: `localAgent: ${record.provider} exposes no model broker` }
     }
     try {
-      await broker.setMemberModel(childSessionId, model)
+      if (broker.configurationAdapter === undefined) await broker.setMemberModel(childSessionId, model)
+      else await registry.setMemberModel(childSessionId, model)
     } catch (error: unknown) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
     return { ok: true }
+  }
+
+  @Remote('memberConfiguration')
+  async memberConfiguration(childSessionId: string): Promise<LocalAgentMemberControlState> {
+    return this.ctx.localAgent.memberConfiguration(childSessionId)
+  }
+
+  @Remote('selectMemberConfiguration')
+  async selectMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number, selection: LocalAgentMemberConfiguration): Promise<LocalAgentControlReceipt> {
+    return this.ctx.localAgent.selectMemberConfiguration(childSessionId, requestId, expectedRevision, selection)
+  }
+
+  @Remote('cancelMemberConfiguration')
+  async cancelMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number): Promise<LocalAgentControlReceipt> {
+    return this.ctx.localAgent.cancelMemberConfiguration(childSessionId, requestId, expectedRevision)
+  }
+
+  @Remote('retryMemberConfiguration')
+  async retryMemberConfiguration(childSessionId: string, expectedRevision: number): Promise<void> {
+    await this.ctx.localAgent.retryMemberConfiguration(childSessionId, expectedRevision)
+  }
+
+  @Remote({ mode: 'stream' })
+  followMemberConfiguration(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentMemberControlState> {
+    return this.ctx.localAgent.followMemberConfiguration(childSessionId, signal)
   }
 
   /**

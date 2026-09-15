@@ -14,18 +14,8 @@ export interface MemberControlStorage {
   write(memberId: string, record: MemberControlRecord): void
 }
 
-export interface MemberConfigurationAdapter {
-  /** Read-only validation. Unknown native values can fail later at the control boundary. */
-  validate(selection: LocalAgentMemberConfiguration): Promise<void>
-  /** No generation. Implementations must bound native controls and preserve session history. */
-  apply(selection: LocalAgentMemberConfiguration, previous: LocalAgentAppliedConfiguration, operationId: string): Promise<LocalAgentResolvedConfiguration>
-  /** Reconcile before retry/recovery; unknown never authorizes another round. */
-  reconcile(state: LocalAgentMemberControlState): Promise<{
-    active: boolean
-    matches: 'current' | 'operation' | 'unknown'
-    resolved: LocalAgentResolvedConfiguration
-  }>
-}
+export type { MemberConfigurationAdapter } from './types.ts'
+import type { MemberConfigurationAdapter } from './types.ts'
 
 function normalize(selection: LocalAgentMemberConfiguration): LocalAgentMemberConfiguration {
   const choice = (value: LocalAgentMemberConfiguration['model']): LocalAgentMemberConfiguration['model'] => {
@@ -171,7 +161,7 @@ export class MemberConfigurationController {
   }
 
   private kick(): void {
-    if (!this.activeLease) void this.work().catch(() => {})
+    if (!this.activeLease && !this.admitting) void this.work().catch(() => {})
   }
 
   private work(): Promise<void> {
@@ -252,8 +242,18 @@ export class MemberConfigurationController {
     if (this.activeLease || this.admitting) throw new Error('The member already has an active or admitting round')
     this.admitting = true
     try {
-      do { await this.work() } while (this.record.state.pending !== undefined)
-      if (this.record.state.status === 'failed') throw new Error(this.record.state.error)
+      for (;;) {
+        await this.work()
+        if (this.record.state.status === 'failed') throw new Error(this.record.state.error)
+        if (this.record.state.pending !== undefined) continue
+        const revision = this.record.state.revision
+        const resolved = await this.adapter.prepare?.(structuredClone(this.record.state.current.selection))
+        // A selection made during native preparation belongs before this
+        // admission, and must be confirmed before any prompt leaves core.
+        if (this.record.state.revision !== revision || this.record.state.pending !== undefined) continue
+        if (resolved !== undefined) this.change(record => { record.state.current.resolved = resolved })
+        break
+      }
       const configuration = structuredClone(this.record.state.current)
       this.change(record => { record.state.round = { id: roundId, configuration: structuredClone(configuration) } })
       Object.freeze(configuration.selection.model)
@@ -270,7 +270,7 @@ export class MemberConfigurationController {
         this.activeLease = false
         this.kick()
       } }
-    } finally { this.admitting = false }
+    } finally { this.admitting = false; if (!this.activeLease) this.kick() }
   }
 
   async *follow(signal: AbortSignal): AsyncIterable<LocalAgentMemberControlState> {

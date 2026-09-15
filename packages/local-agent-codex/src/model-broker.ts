@@ -27,8 +27,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
-import { listCodexConfigModels, readCodexModel } from './provision.ts'
+import type { MemberConfigurationAdapter } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory, LocalAgentMemberBinding, LocalAgentMemberConfiguration, LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { listCodexConfigModels, readCodexModel, readCodexReasoningEffort } from './provision.ts'
 
 /** Everything the broker reads or drives, injected so the unit specs stay small. */
 export interface CodexModelBrokerDeps {
@@ -91,6 +92,45 @@ function dedupeChoices(layers: ReadonlyArray<string | undefined>): string[] {
 
 export class CodexModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: CodexModelBrokerDeps) {}
+
+  configurationAdapter(binding: LocalAgentMemberBinding): MemberConfigurationAdapter {
+    const home = this.deps.ctx.localAgent.homeDir('codex', binding.scope)
+    const resolve = async (selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration> => {
+      let directory = this.deps.directory?.(home, binding.cwd)
+      if (directory?.status === 'loading') {
+        await this.deps.refreshDirectory?.(home, binding.cwd)
+        directory = this.deps.directory?.(home, binding.cwd)
+      }
+      const model = selection.model.mode === 'value' ? selection.model.value
+        : (selection.model.mode === 'inherit' ? binding.model : undefined)
+          ?? this.deps.settingsModel() ?? await readCodexModel(home)
+          ?? this.deps.catalogDefault(home, binding.cwd)
+      const entry = directory?.entries.find(entry => entry.value === model)
+      const explicitEffort = selection.effort.mode === 'value' ? selection.effort.value
+        : selection.effort.mode === 'inherit' ? binding.effort : undefined
+      const effort = explicitEffort ?? await readCodexReasoningEffort(home) ?? entry?.reasoning?.default
+      if (explicitEffort !== undefined && !entry?.reasoning?.options.some(option => option.value === explicitEffort)) {
+        throw new Error('Codex has not advertised this reasoning effort for the selected model; refresh its native directory')
+      }
+      return { ...model === undefined ? {} : { model }, ...effort === undefined ? {} : { effort } }
+    }
+    return {
+      validate: async selection => { await resolve(selection) },
+      prepare: resolve,
+      apply: async selection => {
+        const resolved = await resolve(selection)
+        await this.deps.retireRuntime(binding.childSessionId)
+        return resolved
+      },
+      reconcile: async state => {
+        if (this.activeDelegations().includes(binding.childSessionId)) return { active: true, matches: 'unknown', resolved: {} }
+        // No request is replayed: retire any idle process, then arm the
+        // persisted current selection for the next thread/resume + turn/start.
+        await this.deps.retireRuntime(binding.childSessionId)
+        return { active: false, matches: 'current', resolved: await resolve(state.current.selection) }
+      },
+    }
+  }
 
   async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
     const home = this.deps.homeDir(childSessionId)
@@ -175,6 +215,9 @@ export class CodexModelBroker implements LocalAgentModelBroker {
    * while a round is in flight — retiring mid-round would kill the run.
    */
   async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    if (typeof this.deps.ctx.localAgent.setMemberModel === 'function') {
+      return this.deps.ctx.localAgent.setMemberModel(childSessionId, model)
+    }
     if (this.activeDelegations().includes(childSessionId)) {
       throw new Error(`subagent-codex: 成员有进行中的委派轮次，等其完成后再切换模型 (child session ${childSessionId})`)
     }

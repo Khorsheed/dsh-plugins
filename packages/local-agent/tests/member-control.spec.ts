@@ -40,6 +40,26 @@ function mount(storageOverride?: MemberControlStorage) {
 }
 
 describe('member configuration boundaries', () => {
+  it('serializes a selection arriving during admission preparation before starting the next turn', async () => {
+    const m = mount()
+    const preparing = deferred()
+    const entered = deferred()
+    m.adapter.prepare = async value => {
+      if (model(value) === 'a') { entered.resolve(); await preparing.promise }
+      return { model: model(value) }
+    }
+    const control = m.create()
+    const next = control.admit('next')
+    await entered.promise
+    await control.select('b', 0, selection('b'))
+    expect(m.calls).toEqual([])
+    preparing.resolve()
+    const lease = await next
+    expect(lease.configuration.resolved.model).toBe('b')
+    expect(m.calls).toEqual(['b'])
+    lease.release()
+  })
+
   it('assigns a choice validated after admission to the following round', async () => {
     const m = mount()
     const validation = deferred()

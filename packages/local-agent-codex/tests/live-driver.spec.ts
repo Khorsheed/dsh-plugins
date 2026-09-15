@@ -1004,6 +1004,21 @@ describe('codex provider live resolver', () => {
 })
 
 describe('codex live driver model key', () => {
+  it('sends the admitted model and effort to native turn/start even when resuming a thread', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', model: () => 'different-setting' } })
+    const child = Session.create(SessionId('child-admitted-config'))
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: 'ok', phase: 'final_answer' }] }) }))
+    const run = await m.driver.startRound(request() as never, {
+      ...roundSpec(m, child, { resume: { cliSessionId: 'persisted-thread', turn: 2 } }),
+      configuration: { model: 'admitted-model', effort: 'high' },
+    })
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="admitted-model"', '-c', 'model_reasoning_effort="high"', '--stdio'])
+    expect(m.spawns[0]!.fake!.requests.find(r => r.method === 'turn/start')?.params).toMatchObject({ model: 'admitted-model', effort: 'high' })
+    expect(m.spawns[0]!.fake!.requests.find(r => r.method === 'thread/resume')?.params).toMatchObject({ threadId: 'persisted-thread' })
+    await m.driver.disposeAll()
+  })
+
   it('unset: the app-server argv is exactly the pre-key shape', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-model-off'))

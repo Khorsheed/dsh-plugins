@@ -39,6 +39,7 @@ import {
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import {
   appendCodexTranscriptLine,
   codexAssistantEvent,
@@ -130,6 +131,7 @@ export interface CodexLiveRoundSpec {
    * decides (override → recorded → settings).
    */
   readonly startModel?: string | undefined
+  readonly configuration?: LocalAgentResolvedConfiguration
 }
 
 type JsonObject = Record<string, unknown>
@@ -659,14 +661,14 @@ export class CodexLiveDriver {
     // first (idle reclaim, crash, a live toggle, or the composer's model
     // picker).
     const startModel = spec.startModel?.trim()
-    const model = startModel !== undefined && startModel !== ''
-      ? startModel
-      : this.config.model?.(key)?.trim()
+    const model = spec.configuration !== undefined ? spec.configuration.model
+      : startModel !== undefined && startModel !== '' ? startModel : this.config.model?.(key)?.trim()
     const spawnSpec: SubprocessSpawnSpec = {
       argv: [
         'codex', 'app-server',
         ...member === undefined ? [] : ['-c', member.configOverride],
         ...model === undefined || model === '' ? [] : ['-c', `model=${JSON.stringify(model)}`],
+        ...spec.configuration?.effort === undefined ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(spec.configuration.effort)}`],
         '--stdio',
       ],
       cwd: spec.cwd,
@@ -1202,6 +1204,8 @@ export class CodexLiveDriver {
         const response = await rt.peer.request<{ turn: { id: string } }>('turn/start', {
           threadId: rt.threadId,
           input: [{ type: 'text', text: task, text_elements: [] }],
+          ...spec.configuration?.model === undefined ? {} : { model: spec.configuration.model },
+          ...spec.configuration?.effort === undefined ? {} : { effort: spec.configuration.effort },
         })
         if (typeof response?.turn?.id !== 'string') {
           throw new Error('subagent-codex live: turn/start returned no turn id')

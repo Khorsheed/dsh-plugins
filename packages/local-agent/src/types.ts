@@ -258,6 +258,9 @@ export interface LocalAgentRosterRow {
  * rejected instead of resuming someone else's conversation context.
  */
 export interface LocalAgentDelegationRecord {
+  /** Creation-time reasoning request and optional frozen evaluation lock. */
+  effort?: string
+  configurationLock?: string
   /** The dsh subagent child session id (the run id of the first round). */
   childSessionId: string
   /** The `ctx.subagents` provider name that owns the CLI session. */
@@ -467,6 +470,8 @@ export interface LocalAgentControlReceipt {
  * config-discovered + recently used, deduped), never a hardcoded catalog.
  */
 export interface LocalAgentModelInfo {
+  /** Durable current/pending selection, shared by every member entry point. */
+  configuration?: LocalAgentMemberControlState
   /** The model the next round would actually run with, when any layer names one. */
   effective?: string
   /** Which layer {@link LocalAgentModelInfo.effective} came from. */
@@ -516,7 +521,36 @@ export interface LocalAgentModelInfo {
  * reads and switches per member. A harness without a broker keeps its old
  * faces exactly (the card's free-text model input still writes plugin config).
  */
+/** Stable execution identity, available before the first native session ID arrives. */
+export interface MemberConfigurationAdapter {
+  /** Re-resolve defaults and validate before every whole-turn admission. */
+  prepare?(selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration>
+  /** Read-only validation. Unknown native values can fail later at the control boundary. */
+  validate(selection: LocalAgentMemberConfiguration): Promise<void>
+  /** No generation. Implementations must bound native controls and preserve session history. */
+  apply(selection: LocalAgentMemberConfiguration, previous: LocalAgentAppliedConfiguration, operationId: string): Promise<LocalAgentResolvedConfiguration>
+  /** Reconcile before retry/recovery; unknown never authorizes another round. */
+  reconcile(state: LocalAgentMemberControlState): Promise<{
+    active: boolean
+    matches: 'current' | 'operation' | 'unknown'
+    resolved: LocalAgentResolvedConfiguration
+  }>
+}
+
+export interface LocalAgentMemberBinding {
+  childSessionId: string
+  provider: string
+  parentSessionId: string
+  cwd: string
+  scope?: string
+  model?: string
+  effort?: string
+  configurationLock?: string
+}
+
 export interface LocalAgentModelBroker {
+  /** Native preparation for the core-owned configuration admission barrier. */
+  configurationAdapter?(binding: LocalAgentMemberBinding): MemberConfigurationAdapter
   /** Refresh only discovery; never starts a model turn or changes selection. */
   modelDirectory?(childSessionId?: string, refresh?: boolean): LocalAgentModelDirectory | Promise<LocalAgentModelDirectory>
   /** Keeps an open picker current after a background probe. */
@@ -632,6 +666,8 @@ export interface LocalAgentMemberRun {
 export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'fresh'
+    readonly effort?: string
+    readonly configurationLock?: string
     /**
      * The working directory the round's CLI process runs in, when the caller
      * supplied one (the `cwd` call option riding the staged intent). Absent
@@ -796,6 +832,10 @@ export interface DelegationExecTarget {
  * it without changing the existing fields.
  */
 export interface DelegationCallOptions {
+  /** Native reasoning value, fixed at creation unless changed through member controls. */
+  readonly effort?: string
+  /** Frozen evaluation condition: rejects interactive configuration changes. */
+  readonly configurationLock?: string
   /**
    * Child display label persisted with a session-backed child; omitted, the
    * harness's own display name labels the delegation.

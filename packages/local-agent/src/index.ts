@@ -42,6 +42,11 @@ import type {
   LocalAgentEffectiveSettings,
   LocalAgentMemberRun,
   LocalAgentModelBroker,
+  LocalAgentMemberBinding,
+  LocalAgentMemberControlState,
+  LocalAgentMemberConfiguration,
+  LocalAgentControlReceipt,
+  LocalAgentAppliedConfiguration,
   LocalAgentRosterRow,
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
@@ -50,6 +55,9 @@ import type {
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 import { MemberChannel } from './member-channel.ts'
+import { MemberControls } from './member-controls.ts'
+import { FileMemberControlStorage } from './member-control-storage.ts'
+import type { MemberConfigurationController } from './member-control.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'local-agent'
@@ -641,6 +649,8 @@ function parseDelegationLine(
     // The model the delegation requested. A line without one is a delegation
     // that named none — which every line written before the field existed is.
     ...typeof model === 'string' && model !== '' ? { model } : {},
+    ...typeof record['effort'] === 'string' && record['effort'] !== '' ? { effort: record['effort'] } : {},
+    ...typeof record['configurationLock'] === 'string' && record['configurationLock'] !== '' ? { configurationLock: record['configurationLock'] } : {},
   }
 }
 
@@ -833,6 +843,51 @@ function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signa
  * @module @khorsheed/dsh-local-agent
  */
 export class LocalAgentRegistry {
+  private readonly memberControls: MemberControls
+  /** All provider starts, including direct tool starts, acquire the same whole-turn lease. */
+  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>): Promise<SubagentRun> {
+    return this.memberControls.run(binding, start)
+  }
+
+  private memberControl(childSessionId: string): MemberConfigurationController {
+    let binding = this.memberControls.binding(childSessionId)
+    if (binding === undefined) {
+      const record = this.getDelegation(childSessionId)
+      if (record === undefined || record.cwd === undefined) throw new Error('localAgent: member execution identity is unavailable')
+      binding = { ...record, cwd: record.cwd }
+    }
+    return this.memberControls.get(binding)
+  }
+
+  memberConfiguration(childSessionId: string): LocalAgentMemberControlState {
+    return this.memberControl(childSessionId).read()
+  }
+
+  selectMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number, selection: LocalAgentMemberConfiguration): Promise<LocalAgentControlReceipt> {
+    return this.memberControl(childSessionId).select(requestId, expectedRevision, selection)
+  }
+
+  cancelMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number): LocalAgentControlReceipt {
+    return this.memberControl(childSessionId).cancel(requestId, expectedRevision)
+  }
+
+  retryMemberConfiguration(childSessionId: string, expectedRevision: number): Promise<void> {
+    return this.memberControl(childSessionId).retry(expectedRevision)
+  }
+
+  followMemberConfiguration(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentMemberControlState> {
+    return this.memberControl(childSessionId).follow(signal)
+  }
+
+  /** Compatibility write routes through the durable slot, including while busy. */
+  async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    const state = this.memberConfiguration(childSessionId)
+    const selection = state.pending?.selection ?? state.current.selection
+    const receipt = await this.selectMemberConfiguration(childSessionId, randomUUID(), state.revision, {
+      ...selection, model: model?.trim() ? { mode: 'value', value: model } : { mode: 'inherit' },
+    })
+    if (!['pending', 'applying', 'applied'].includes(receipt.status)) throw new Error(receipt.error ?? receipt.status)
+  }
   /** Independent live output transport for mirrored sessions without native Agents. */
   readonly liveStreams: LocalAgentStreams = new LocalAgentStreams()
   private readonly harnesses = new Map<string, LocalAgentHarness>()
@@ -994,6 +1049,11 @@ export class LocalAgentRegistry {
     private readonly homesRoot: string,
     private readonly loginPromptTimeoutMs: number,
   ) {
+    this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
+      const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
+      if (adapter === undefined) throw new Error(`localAgent: ${binding.provider} exposes no configuration admission adapter`)
+      return adapter
+    }, error => { this.ctx.logger.warn(`localAgent: member control persistence failed: ${String(error)}`) })
     // Reattached child sessions leave the live store, in-flight run
     // heartbeats stop, and every cached child-session write handle closes,
     // when the plugin unloads.
@@ -1322,6 +1382,12 @@ export class LocalAgentRegistry {
    *   parent session id, and CLI session id.
    */
   recordDelegation(record: LocalAgentDelegationRecord): void {
+    const binding = this.memberControls.binding(record.childSessionId)
+    if (binding !== undefined) record = {
+      ...record,
+      ...binding.effort === undefined ? {} : { effort: binding.effort },
+      ...binding.configurationLock === undefined ? {} : { configurationLock: binding.configurationLock },
+    }
     // A settle that beat the record (see pendingRoundObservations) fills only
     // the fields the record itself does not carry — the record's own values
     // win.
@@ -1729,6 +1795,8 @@ export class LocalAgentRegistry {
       // records it, so a resume round re-requests the same value without the
       // caller restating it (and without being able to change it).
       ...options?.model === undefined ? {} : { model: options.model },
+      ...options?.effort === undefined ? {} : { effort: options.effort },
+      ...options?.configurationLock === undefined ? {} : { configurationLock: options.configurationLock },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -1847,6 +1915,9 @@ export class LocalAgentRegistry {
     // that. Naming one here would switch a live conversation's model mid-way
     // — which the CLI would honour and the transcript would not show — so it
     // is a caller error, not a silently ignored field.
+    if (options?.effort !== undefined || options?.configurationLock !== undefined) {
+      throw new Error('localAgent: resume reuses the member configuration; use member controls to change effort')
+    }
     if (options?.model !== undefined) {
       throw new Error(
         `localAgent: resume does not take a model — child session ${childSessionId} re-requests the model its first `
