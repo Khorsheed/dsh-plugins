@@ -11,11 +11,11 @@
 | 插件 | 服务面（编排器用） | agent 工具（eval 域开放） | CLI（人与脚本） | UI | 备注 |
 |---|---|---|---|---|---|
 | **datasets** | `snapshot` / `worktree_path` / `read`（显式层，operator scope） | 读类：`list` `show` `describe` `read` `validate` `snapshot`；作者：`put_item` | `dsh-datasets` 全动词 + `bind` | datasets tab：绑定条、层树、预览 | 判官要的 verify / grading 层由编排器经服务面显式取，绝不经会话白名单 |
-| **mission** | 全部写方法：`runCreate` `transition` `submit` `annotate` `attest` `retry` `setRefs` `addArtifact` `addCheckpoint`；读：`get` `runStatus` `isReleasable` | 只读：`run_list` `run_status` `list` `get` | `dsh-mission` 全动词，`export` 带 TTY 泄题闸 | missions tab：五桶队列、详情、重跑、释放检查、导出对话框 | 写工具在 eval 域关闭（工具分组配置，I2） |
+| **mission** | 全部写方法：`runCreate` `transition` `submit` `annotate` `attest` `retry` `setRefs` `addArtifact` `addCheckpoint`；读：`get` `runStatus` `isReleasable` | 不开——eval 预设不挂 `mission-tool`（I5·T46）；逐格投影改由 eval 的 `eval_cells` 给 | `dsh-mission` 全动词，`export` 带 TTY 泄题闸 | missions tab：五桶队列、详情、重跑、释放检查、导出对话框 | 写工具在 eval 域关闭（工具分组配置，I2） |
 | **lab** | 全部：`acquire` `populate` `collect` `checkpoint` `verify` `archive` `release` `status` | 无（刻意） | `dsh-lab` 全动词，`status` 进度表 | 无自有 UI；单元状态进实验台（I5） | 只记录不判断；`release` 是闸的执行点 |
-| **local-agent 家族** | `start` / `resume` / `cancel` 门面；`effectiveSettings`（I1）；每条件 home 覆盖（I4） | `subagent_<harness>`（规划 agent 不需要，判官委派由编排器发起） | slash：`status` `login` `records` | 设置卡、成员 dock、成员续聊 | 委派记录 `delegations.jsonl`、transcript 镜像、用量归一 |
+| **local-agent 家族** | `start` / `resume` / `cancel` 门面；`effectiveSettings`（I1）；每条件 home 覆盖（I4） | 不开——codex / claude-code / kimi 三行 `tools: none`，dsh 那家默认不挂（I3·T27）；选手与判官的委派都由编排器经门面发起 | slash：`status` `login` `records` | 设置卡、成员 dock、成员续聊 | 委派记录 `delegations.jsonl`、transcript 镜像、用量归一 |
 | **capability-catalog** | 按 preset scope 读注册表 | `list_capabilities` | 无 | catalog tab | I4 输出可哈希的能力清单，作为 condition 的取证 |
-| **eval** | `validatePlan` `hashCondition` `readiness` `generateTemplate` `run` `report` | 只读：`eval_conditions` `eval_plan_validate` `eval_run_status`；不开 `run` | `dsh-eval conditions | validate | run | report`，`provision`（I4） | 实验台、计划审阅、判官台、报告（I5） | 唯一的执行者；对四个上游用 `ctx.get` 探测，缺一即拒绝 `run`。服务键是 `dshEval`，不能叫 `eval`：loader 用 with(ctx) 求值 !!js 表达式，同名属性会遮蔽全局 eval |
+| **eval** | `validatePlan` `hashCondition` `readiness` `generateTemplate` `run` `report` | 只读：`eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells`；不开 `run` | `dsh-eval conditions | validate | run | report`，`provision`（I4） | 实验台、计划审阅、判官台、报告（I5） | 唯一的执行者；对四个上游用 `ctx.get` 探测，缺一即拒绝 `run`。服务键是 `dshEval`，不能叫 `eval`：loader 用 with(ctx) 求值 !!js 表达式，同名属性会遮蔽全局 eval |
 | **ankh-guard** | 守卫重启 | 无 | `restart` | 无 | 不在实验流程内，负责评测实例的切换与看护 |
 
 工具开放的原则：agent 只在规划期与分析期出现，需要的是**读**与**起草**；执行期没有 agent；判官是一次委派而不是一个带工具的会话。写类工具留给编排器（服务面）和人（CLI、tab）。

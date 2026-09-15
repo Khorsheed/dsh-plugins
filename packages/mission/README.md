@@ -4,7 +4,7 @@
 
 dsh 生态的通用任务管理：**mission** 是一个工作项——状态、标签、计划数据（依赖 / 一次性定时）、attempt、不透明资源引用、产物索引、append-only 命名空间注解；**run** 是从模板批量创建的一批 mission。模板声明状态机，run 创建时冻结它，每个 mission 强制它：声明即强制——未声明的转移一律 fail loud，guard 是确定性的，且任何代码路径都不做自动转移。
 
-M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；M2 补上 `/mission` slash 面与带闸的 bundle 导出；M4 补上 Typert Remote 数据面驱动的 web 会话 tab。
+M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；**那十二个工具自 M4'③ 起不由本包注册**——定义仍在本包（`src/tool.ts`），注册与 `tool:mission` 提示词段归伴生行 `@khorsheed/dsh-mission-tool`，由 agent preset 按会话授予（见[模型工具](#模型工具)）；M2 补上 `/mission` slash 面与带闸的 bundle 导出；M4 补上 Typert Remote 数据面驱动的 web 会话 tab。
 
 ## 工作方式
 

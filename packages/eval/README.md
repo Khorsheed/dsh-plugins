@@ -2,7 +2,7 @@
 
 中文 | [English](README.en.md)
 
-**web-eval 编排器：dataseek 契约 schema、plan/condition 校验、条件与 scoped home 哈希、由题集 manifest 生成 run 模板、阶段一二的 run 循环（逐格物化、逐字节委派、提交推进、归档闸、bundle 导出）。** run 的发起是人的动作（`/eval run`，发起会话即所有委派的父会话）；判定的两条机器通路（探针写 `script`、判官盲评写 `llm-draft`）随 T9 落地，`human-final` 仍归人。不依赖任何兄弟插件——四个上游服务（datasets / mission / localAgent）在 run 时经 `ctx.get` 探测，缺哪个就拒绝并列出哪个，绝不炸启动。
+**web-eval 编排器：dataseek 契约 schema、plan/condition 校验、条件与 scoped home 哈希、由题集 manifest 生成 run 模板、阶段一二的 run 循环（逐格物化、逐字节委派、提交推进、归档闸、bundle 导出）。** run 的发起是人的动作（`/eval run`，发起会话即所有委派的父会话）；判定的两条机器通路（探针写 `script`、判官盲评写 `llm-draft`）随 T9 落地，`human-final` 仍归人。不依赖任何兄弟插件——四个上游服务（`datasets` / `mission` / `localAgent` / `lab`）在 run 时经 `ctx.get` 探测，缺哪个就拒绝并列出哪个，绝不炸启动；前三个每次 run 都要，`lab` 只在 plan 带 `unit` 段（容器路径）时才要——没有 unit 段就在宿主目录里跑，拒绝文案会说「挂上 dsh-lab 插件，或去掉 unit 段」。
 
 给 agent 的模型工具只有四个读工具（见「模型工具」一节），run、finalize 与注解都不给模型。
 
@@ -71,7 +71,7 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 5. **每阶段一轮委派**：`exec = {container, workdir: '/workspace', env: {<VAR>: <容器内路径>}}`，**不传 `cwd`**（单元里宿主 cwd 没有意义；作用域目录变量不点名的话 T17 会当场拒绝这一轮）。
 6. **每阶段结束 `checkpoint({name: <阶段 id>})`**（ref 经 lab 进 mission），再 `collect('/workspace' → 格子目录)`。格子目录在容器路径上是**工作区的宿主镜像**：收产出、结构校验、`submit`、判官取材都在它上面，因此第 7、9 两步的代码两条路径共用。
 7. **判定在单元内**：探针经 `lab.verify` 跑，判定材料走 verify 自己的 scratch（`/run/dsh-lab/verify`，跑完即删）；`--out` 写到 `/run/dsh-lab/verdicts/<探针>/`，**不在 `/workspace`**——归档是选手的产物，不该带判定输出。全部跑完一次 `collect` 把整棵 verdict 树收回该 attempt 的 `probe-verdicts/`，在宿主上解析、判定，再删掉单元内那个目录。退出码三态、`task` / `by` 先回填后校验的顺序，与宿主路径逐字相同。
-7. **`archive`**：lab 导出 `workspace/` 与 `manifest.json` 到该 attempt 的 `archive/`；`verdicts/` 早已在旁边（判在归档之前，闸要求它非空）。
+8. **`archive`**：lab 导出 `workspace/` 与 `manifest.json` 到该 attempt 的 `archive/`；`verdicts/` 早已在旁边（判在归档之前，闸要求它非空）。
 
 ### 「环境一致」比的是环境类
 
