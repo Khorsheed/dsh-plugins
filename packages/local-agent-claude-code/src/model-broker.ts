@@ -24,8 +24,9 @@
  * @module @khorsheed/dsh-local-agent-claude-code/model-broker — internal, unit-tested directly.
  */
 
+import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelSource } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelSource, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
 import { readClaudeConfiguredModel, writeClaudeScopedModel } from './provision.ts'
 import type { LiveDriverSwitch } from './live-switch.ts'
 
@@ -108,7 +109,9 @@ export interface ClaudeModelBrokerDeps {
   /** The settings layer: the plugin-config model, read per call. */
   readonly settingsModel: () => string | undefined
   /** The scoped settings.json's own model, minus live-spawn scratch writes. */
-  readonly cliDefault: () => Promise<string | undefined>
+  readonly cliDefault: (childSessionId?: string) => Promise<string | undefined>
+  readonly directory?: (childSessionId?: string, refresh?: boolean) => LocalAgentModelDirectory | Promise<LocalAgentModelDirectory>
+  readonly followDirectory?: (childSessionId: string | undefined, signal: AbortSignal) => AsyncIterable<LocalAgentModelDirectory>
   /** Model identifiers the settings card saved before (the card's memory). */
   readonly recentModels: () => readonly string[]
   /** Whether the live driver is on for the member's rounds. */
@@ -123,7 +126,7 @@ export interface ClaudeModelBrokerDeps {
    * settings card's memberless read — the newest transcript in the scoped
    * home's projects tree. Read-only history; never throws.
    */
-  readonly transcriptModel: (cliSessionId?: string) => Promise<string | undefined>
+  readonly transcriptModel: (cliSessionId?: string, childSessionId?: string) => Promise<string | undefined>
 }
 
 /** How long one transcript read-back answer is reused (repeated card opens). */
@@ -131,6 +134,17 @@ export const OBSERVED_MODEL_CACHE_TTL_MS = 60_000
 
 export class ClaudeModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: ClaudeModelBrokerDeps) {}
+
+  async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
+    if (refresh) await this.deps.directory?.(childSessionId, true)
+    const info = await this.modelInfo(childSessionId, childSessionId === undefined ? undefined : this.deps.localAgent.getDelegation(childSessionId)?.model)
+    return info.directory ?? { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 0 }
+  }
+
+  async *followModelDirectory(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    if (this.deps.followDirectory === undefined) { yield await this.modelDirectory(childSessionId); return }
+    for await (const _snapshot of this.deps.followDirectory(childSessionId, signal)) yield await this.modelDirectory(childSessionId)
+  }
 
   /**
    * The `lastObserved` cache: childSessionId (empty key = the memberless
@@ -151,7 +165,7 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
     const key = childSessionId ?? ''
     const hit = this.observedCache.get(key)
     if (hit !== undefined && Date.now() - hit.at < OBSERVED_MODEL_CACHE_TTL_MS) return hit.model
-    const model = await this.deps.transcriptModel(record?.cliSessionId).catch(() => undefined)
+    const model = await this.deps.transcriptModel(record?.cliSessionId, childSessionId).catch(() => undefined)
     this.observedCache.set(key, { at: Date.now(), model })
     return model
   }
@@ -165,7 +179,8 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
     const override = childSessionId === undefined ? undefined : this.deps.overrides.get(childSessionId)
     const delegation = delegationModel?.trim() === '' ? undefined : delegationModel?.trim()
     const settings = this.deps.settingsModel()
-    const cliDefault = await this.deps.cliDefault()
+    const cliDefault = await this.deps.cliDefault(childSessionId)
+    const native = await this.deps.directory?.(childSessionId)
     const [effective, source]: [string | undefined, LocalAgentModelSource] = override !== undefined
       ? [override, 'override']
       : delegation !== undefined
@@ -174,11 +189,9 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
           ? [settings, 'settings']
           : cliDefault !== undefined
             ? [cliDefault, 'cli-config']
-            : [undefined, 'cli-builtin']
-    // The pickable vocabulary: what the layers name plus what the card saved
-    // before. No catalog is hardcoded anywhere in this plugin — claude's own
-    // config names no further models, so discovery ends at the scoped file.
-    const choices = [...new Set([settings, cliDefault, ...this.deps.recentModels()]
+            : [native?.defaultModel, 'cli-builtin']
+    // Native candidates plus labelled configuration and historical suggestions.
+    const choices = [...new Set([settings, cliDefault, ...native?.entries.filter(entry => !entry.hidden).map(entry => entry.value) ?? [], ...this.deps.recentModels()]
       .filter((value): value is string => value !== undefined))]
     const lastObserved = await this.lastObserved(childSessionId)
     const active = childSessionId !== undefined && this.deps.localAgent.isDelegationActive(childSessionId)
@@ -191,6 +204,7 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
       ...cliDefault === undefined ? {} : { cliDefault },
       ...lastObserved === undefined ? {} : { lastObserved },
       choices,
+      ...native === undefined ? {} : { directory: extendModelDirectory(native, [settings, cliDefault], [...this.deps.recentModels(), lastObserved]) },
       live: this.deps.live(),
       switchable: !active,
       ...active

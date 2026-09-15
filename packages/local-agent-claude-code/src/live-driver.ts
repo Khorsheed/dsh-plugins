@@ -60,6 +60,7 @@
  * @module @khorsheed/dsh-local-agent-claude-code/live-driver
  */
 
+import { ClaudeControlRequests } from './control-requests.ts'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -193,9 +194,7 @@ class ClaudeLiveRuntime {
   turnChain: Promise<unknown> = Promise.resolve()
   /** The active round's event sink; installed per round, cleared at settle. */
   onEvent: ((event: JsonObject) => void) | undefined
-  /** Control responses by request_id (the interrupt ack). */
-  private readonly controlResponses = new Map<string, () => void>()
-  private controlSeq = 0
+  private readonly controls = new ClaudeControlRequests(message => this.send(message))
   onDead: (() => void) | undefined
   private buffer = ''
   private readonly decoder = new StringDecoder('utf8')
@@ -244,15 +243,7 @@ class ClaudeLiveRuntime {
   }
 
   private dispatchEvent(event: JsonObject): void {
-    if (event['type'] === 'control_response') {
-      const response = event['response'] as JsonObject | undefined
-      const requestId = response?.['request_id']
-      if (typeof requestId === 'string') {
-        this.controlResponses.get(requestId)?.()
-        this.controlResponses.delete(requestId)
-      }
-      return
-    }
+    if (this.controls.accept(event)) return
     if (event['type'] === 'control_request') {
       this.answerControlRequest(event)
       return
@@ -306,19 +297,16 @@ class ClaudeLiveRuntime {
     this.child.stdin?.write(JSON.stringify(message) + '\n')
   }
 
-  /** The graceful runtime interrupt; resolves when the control ack lands (or never). */
-  interrupt(): Promise<void> {
-    if (this.dead) return Promise.resolve()
-    this.controlSeq += 1
-    const requestId = `live-interrupt-${this.controlSeq}`
-    const acked = new Promise<void>((resolve) => { this.controlResponses.set(requestId, resolve) })
-    this.send({ type: 'control_request', request_id: requestId, request: { subtype: 'interrupt' } })
-    return acked
+  /** The graceful runtime interrupt, bounded and checked for an actual success ack. */
+  async interrupt(): Promise<void> {
+    if (this.dead) return
+    await this.controls.request({ subtype: 'interrupt' })
   }
 
   private markDead(): void {
     if (this.dead) return
     this.dead = true
+    this.controls.close()
     this.onDead?.()
   }
 

@@ -21,6 +21,7 @@ import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { ClaudeModelCatalog } from './model-catalog.ts'
 import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
 import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, readClaudeTranscriptModel, syncClaudeCredentialFile } from './records.ts'
 import { claudeLogout, provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
@@ -175,10 +176,30 @@ export function apply(ctx: Context, config: Config): void {
       model: effectiveModel,
       provisionModel: (home, model) => scopedModelMemory.provision(home, model),
     })
+    const modelCatalog = new ClaudeModelCatalog({
+      spawn: spec => ctx.subprocess.spawn(spec),
+      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      warn: message => ctx.logger.warn(message),
+    })
+    const modelContext = (childSessionId?: string): { home: string; cwd: string | undefined } => {
+      const record = childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)
+      return { home: ctx.localAgent.homeDir('claude-code', record?.scope), cwd: record?.cwd }
+    }
     const modelBroker = new ClaudeModelBroker({
       localAgent: ctx.localAgent,
       settingsModel: resolveModel,
-      cliDefault: () => scopedModelMemory.cliDefault(homeDir),
+      cliDefault: childSessionId => {
+        const context = modelContext(childSessionId)
+        return context.home === homeDir ? scopedModelMemory.cliDefault(homeDir) : readClaudeConfiguredModel(context.home)
+      },
+      directory: (childSessionId, refresh) => {
+        const context = modelContext(childSessionId)
+        return refresh ? modelCatalog.refresh(context.home, context.cwd) : modelCatalog.read(context.home, context.cwd)
+      },
+      followDirectory: (childSessionId, signal) => {
+        const context = modelContext(childSessionId)
+        return modelCatalog.follow(context.home, context.cwd, signal)
+      },
       recentModels: () => scope.get().recentModels ?? [],
       live: () => scope.get().live,
       overrides,
@@ -186,7 +207,7 @@ export function apply(ctx: Context, config: Config): void {
       // The lastObserved backstop: the member's own transcript (or the
       // tree's newest) answers for every round that predates the
       // live-settle report.
-      transcriptModel: cliSessionId => readClaudeTranscriptModel(homeDir, cliSessionId),
+      transcriptModel: (cliSessionId, childSessionId) => readClaudeTranscriptModel(modelContext(childSessionId).home, cliSessionId),
     })
     const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve, effectiveModel))
     const disposeHarness = ctx.localAgent.register({
@@ -271,6 +292,7 @@ export function apply(ctx: Context, config: Config): void {
       },
     })
     return () => {
+      modelCatalog.dispose()
       disposeProvider()
       disposeHarness()
       liveSwitch.dispose()
