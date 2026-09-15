@@ -42,8 +42,8 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-agent": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-tools": "^0.1.6-alpha.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@khorsheed/dsh-mission": "workspace:*",
     "tsdown": "^0.22.2",
