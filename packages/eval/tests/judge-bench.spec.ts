@@ -30,6 +30,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { cellTicket, judgeQueueView, resolveTicket, writeHumanFinal } from '../src/judge-bench.ts'
 import { humanCriteria, llmDraftCriteria, rubricCriteria } from '../src/judge.ts'
 import { EvalRemoteService } from '../src/remote.ts'
+import { analyzeBundle } from '../src/report.ts'
 import { EvalService } from '../src/service.ts'
 import { cleanupTmp, tmpTree } from './helpers.ts'
 
@@ -280,6 +281,29 @@ describe('the blind queue', () => {
     expect(cell?.drafts.filter(d => d.selfJudged)).toHaveLength(2)
   })
 
+  it('names the criteria a first human-final verdict would drop from the cell score', async () => {
+    const dataDir = tmpTree()
+    const mission = missionFace({ dataDir })
+    const before = await judgeQueueView({ mission: mission as never, datasets: datasetsFace() as never, runId: RUN })
+    // The report scores a cell from ONE namespace — the most authoritative
+    // holding any verdict — so the first human-final verdict here would take
+    // D1 out of this cell's score entirely. The grader has to be told before
+    // spending it, not after.
+    expect(before.cells[0]?.draftOnlyCriteria).toEqual(['D1'])
+    expect(before.cells[1]?.draftOnlyCriteria).toEqual([])
+
+    // Answering D1 itself removes it from the list: nothing is lost when the
+    // person supplies the value that supersedes.
+    await writeHumanFinal({
+      mission: mission as never, annotate: mission as never, runId: RUN,
+      ticket: cellTicket(RUN, CELL_A),
+      verdicts: [{ criterion: 'D1', pass: true, evidence: '人终评同意判官' }],
+      sessionId: 's1',
+    })
+    const after = await judgeQueueView({ mission: mission as never, datasets: datasetsFace() as never, runId: RUN })
+    expect(after.cells[0]?.draftOnlyCriteria).toEqual([])
+  })
+
   it('splits the queue by whether a cell already carries human-final', async () => {
     const dataDir = tmpTree()
     const mission = missionFace({ dataDir })
@@ -455,5 +479,65 @@ describe('the Remote verbs', () => {
     const service = new EvalService({ get: () => undefined })
     await expect(service.judgeQueue(RUN)).rejects.toThrow(/dsh-mission/)
     await expect(service.humanFinal(RUN, 'ticket', [], 's1')).rejects.toThrow(/dsh-mission/)
+  })
+})
+
+describe('the bench\'s envelope in the report\'s authority order', () => {
+  /**
+   * The seam T37 actually creates. `NS_PRIORITY` (human-final > llm-draft >
+   * script) predates this slice and the report's own specs cover it; what is
+   * NEW is whether the envelope `writeHumanFinal` produces is one
+   * `analyzeBundle` can read at all. So this test does not hand-write a
+   * payload: it captures the bytes the bench really wrote, drops them into a
+   * bundle beside a CONTRADICTING llm-draft value on the same criterion, and
+   * checks the human answer is the one that counts.
+   *
+   * It is the one case the interface cannot produce by itself — the bench
+   * only offers `kind: human` criteria, and a criterion the rubric marks
+   * `human` has no llm-draft value to override. Which is exactly why the
+   * override has to be pinned here rather than on a screen.
+   */
+  it('a bench verdict overrides the llm-draft value for the same criterion', async () => {
+    const mission = missionFace()
+    await writeHumanFinal({
+      mission: mission as never,
+      annotate: mission as never,
+      runId: RUN,
+      ticket: cellTicket(RUN, CELL_A),
+      // The judges said D1 HOLDS (three samples, unanimous). The person says
+      // it does not.
+      verdicts: [{ criterion: 'D1', pass: false, evidence: '判官读漏了：那一段只复述了需求，没有给出归类规则' }],
+      sessionId: 's1',
+    })
+    const written = (mission.annotations[CELL_A] as Array<{ ns: string; by?: string; payload: unknown }>)
+      .find(a => a.ns === 'human-final') as { ns: string; by?: string; payload: unknown }
+
+    // A one-cell bundle: the judges' three llm-draft samples, plus the bench's
+    // own annotation verbatim.
+    const bundle = join(tmpTree(), `${RUN}-bundle`)
+    const attemptDir = join(bundle, 'missions', CELL_A, 'attempt-1')
+    mkdirSync(attemptDir, { recursive: true })
+    writeFileSync(join(bundle, 'run.json'), `${JSON.stringify({
+      id: RUN, createdAt: 0, state: 'closed', stateMachine: { states: [], transitions: [] },
+      meta: { ...metaOf('/repo'), expectedNs: ['llm-draft', 'human-final'] },
+    }, null, 2)}\n`)
+    writeFileSync(join(attemptDir, 'meta.json'), `${JSON.stringify({
+      attempt: 1, state: 'released', refs: {}, enteredAt: {}, checkpoints: [], history: [], artifacts: [], attestations: [],
+    }, null, 2)}\n`)
+    writeFileSync(join(attemptDir, 'annotations.json'), `${JSON.stringify([
+      ...(missionFace().annotations[CELL_A] as unknown[]).map(a => ({ missionId: CELL_A, ...(a as object) })),
+      { missionId: CELL_A, attempt: 1, ns: written.ns, by: written.by, createdAt: 99, payload: written.payload },
+    ], null, 2)}\n`)
+
+    const report = await analyzeBundle(bundle)
+    const d1 = report.rows.filter(row => row.criterion === 'D1')
+    // Every sample is still a row — the ledger loses nothing.
+    expect(d1.filter(row => row.ns === 'llm-draft')).toHaveLength(3)
+    expect(d1.filter(row => row.ns === 'human-final')).toHaveLength(1)
+    // But the authority order counts the person's: three judges saying yes do
+    // not outvote the one human who said no.
+    expect(report.judge.humanAgreement).toEqual({ agreed: 0, total: 1 })
+    // And the red flag stays down: a bench write is `tab:`, never `tool:`.
+    expect(report.toolOnlyNs).not.toContain('human-final')
   })
 })

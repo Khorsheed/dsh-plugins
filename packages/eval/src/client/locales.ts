@@ -160,6 +160,7 @@ export type EvalKey =
   | 'judge.submitting'
   | 'judge.submitBlocked'
   | 'judge.regrade'
+  | 'judge.scoringWarning'
   | 'judge.stats'
   | 'judge.statsSame'
   | 'judge.statsCross'
@@ -415,6 +416,7 @@ export const en: Record<EvalKey, string> = {
   'judge.submit': 'Record human-final ({count})',
   'judge.submitting': 'Recording…',
   'judge.submitBlocked': 'Answer at least one criterion, with evidence, before recording.',
+  'judge.scoringWarning': 'Recording here makes human-final this cell\'s ONLY scoring source. The report scores each cell from the most authoritative namespace that has any verdict at all, so these {count} criteria — judged only by llm-draft ({criteria}) — would stop counting toward this cell\'s score. Answer them here too, or accept that the cell scores on the human criteria alone.',
   'judge.regrade': 'This cell already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
   'judge.stats': 'Agreement (live, from the ledger)',
   'judge.statsSame': 'One judge, resampled',
@@ -723,6 +725,7 @@ export const zh: Record<EvalKey, string> = {
   'judge.submit': '记入 human-final（{count} 条）',
   'judge.submitting': '记录中…',
   'judge.submitBlocked': '至少答一条判据并写上证据，才能记录。',
+  'judge.scoringWarning': '在这里记一条，human-final 就成为这个格子**唯一**的得分来源。报告按格取「有判定的最权威 ns」整体算分，所以这 {count} 条只有 llm-draft 判定的判据（{criteria}）将不再计入本格得分。要么在这里一并答掉，要么接受这一格只按人评的判据算分。',
   'judge.regrade': '这个格子已经有 human-final。再记一次是**追加**：报告按每条判据的最新值读数，先前那条仍留在账本里。',
   'judge.stats': '一致性（实时，来自账本）',
   'judge.statsSame': '同判官多采样',

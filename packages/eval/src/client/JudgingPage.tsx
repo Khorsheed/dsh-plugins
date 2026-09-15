@@ -289,6 +289,21 @@ export function JudgingPage(props: {
                       {t('judge.cellTitle', { no: open.cellNo, task: open.task ?? DASH, rep: open.rep ?? DASH })}
                     </div>
                     {open.graded && <div className={css.notice}>{t('judge.regrade')}</div>}
+                    {/* The cost of the first verdict on this cell. The report
+                        scores a cell from ONE namespace — the most
+                        authoritative that has any verdict — so a single human
+                        answer here drops every llm-draft-only criterion from
+                        this cell's score. The bench cannot change that rule
+                        without moving every report ever produced; what it can
+                        do is refuse to let a person spend it unknowingly. */}
+                    {open.draftOnlyCriteria.length > 0 && (
+                      <div className={css.blocked}>
+                        {t('judge.scoringWarning', {
+                          count: open.draftOnlyCriteria.length,
+                          criteria: open.draftOnlyCriteria.join(', '),
+                        })}
+                      </div>
+                    )}
                     {open.criteria.length === 0
                       ? (
                         <div className={css.dim}>

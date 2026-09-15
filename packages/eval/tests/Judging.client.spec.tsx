@@ -108,6 +108,7 @@ const QUEUE: EvalJudgeQueueView = {
       ],
       humanFinal: [],
       graded: false,
+      draftOnlyCriteria: ['H1'],
     },
     {
       ticket: 'cccc2222dddd3333',
@@ -123,6 +124,7 @@ const QUEUE: EvalJudgeQueueView = {
       drafts: [],
       humanFinal: [{ criterion: 'H1', pass: true, evidence: '之前已经判过', at: 99, by: 'tab:s1' }],
       graded: true,
+      draftOnlyCriteria: [],
     },
   ],
 }
@@ -251,6 +253,20 @@ describe('the criteria table', () => {
     expect(screen.getByText('judge.negative')).toBeTruthy()
     expect(screen.getByText('judge.veto')).toBeTruthy()
     expect(screen.getByText('judge.weight {"weight":2}')).toBeTruthy()
+  })
+
+  it('warns, before the button, which criteria a first verdict would drop from the score', async () => {
+    const h = makeHarness()
+    await openBench(h)
+    await screen.findByText('judge.queue')
+    pickCell(1)
+    // The report scores a cell from ONE namespace, so the first human-final
+    // verdict takes the llm-draft-only criteria out of this cell's score. The
+    // bench cannot change that rule; it can refuse to let it happen quietly.
+    expect(screen.getByText('judge.scoringWarning {"count":1,"criteria":"H1"}')).toBeTruthy()
+    // A cell with nothing to lose says nothing.
+    pickCell(2)
+    expect(screen.queryByText(/judge\.scoringWarning/)).toBeNull()
   })
 
   it('shows what a graded cell already carries, and warns that recording appends', async () => {

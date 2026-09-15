@@ -1058,6 +1058,21 @@ export interface EvalJudgeQueueCell {
   humanFinal: EvalJudgeHumanVerdict[]
   /** Whether this cell already carries a human-final verdict — the queue's split. */
   graded: boolean
+  /**
+   * Criteria this cell has an `llm-draft` value for and NO human-final.
+   *
+   * It is here because of how the report picks a cell's scoring source: it
+   * takes the most authoritative namespace that has ANY verdict for the cell
+   * and scores from that one alone (`human-final` > `llm-draft` > `script`).
+   * So the first human-final verdict on a cell — even one answering a single
+   * `kind: human` criterion — makes human-final the cell's ONLY scoring
+   * source, and every criterion in this list stops counting toward its score.
+   *
+   * The bench cannot fix that from here (changing the rule would move every
+   * report ever produced), but it must not let a person do it without
+   * knowing. The page prints the consequence beside the button.
+   */
+  draftOnlyCriteria: string[]
 }
 
 /**

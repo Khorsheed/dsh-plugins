@@ -24,6 +24,15 @@
  * second place for the redaction to be wrong, and the two would drift the
  * first time a harness alias was added to one of them.
  *
+ * ONE NAMESPACE SCORES A CELL. The report picks a cell's scoring source as
+ * the most authoritative namespace holding ANY verdict for it, so the FIRST
+ * human-final verdict — even one answering a single `kind: human` criterion —
+ * makes human-final that cell's only scoring source and drops its
+ * llm-draft-only criteria from the score. That rule is the report's and
+ * predates this module; changing it would move every report ever produced.
+ * What the bench owes a grader is the consequence, up front, which is what
+ * `draftOnlyCriteria` carries.
+ *
  * APPEND-ONLY, AND A PERSON'S. `humanFinal` forwards to mission's `annotate`
  * in the `human-final` namespace and does nothing else: no overwrite, no
  * delete, no recount. The annotation's `by` is the calling SESSION
@@ -371,6 +380,12 @@ export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQ
       drafts,
       humanFinal,
       graded: humanFinal.length > 0,
+      // What a first human-final verdict on this cell would cost it. See the
+      // field's own note: the report scores a cell from ONE namespace, the
+      // most authoritative that has any verdict at all.
+      draftOnlyCriteria: [...new Set(drafts.map(draft => draft.criterion))]
+        .filter(criterion => !humanFinal.some(verdict => verdict.criterion === criterion))
+        .sort((a, b) => (a < b ? -1 : 1)),
     })
     consistencyCells.push({ missionId, isCurrent: true, verdicts: verdictsForStats })
   }
