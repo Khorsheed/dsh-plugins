@@ -5,5 +5,17 @@
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
-  "files": ["src/index.ts", "src/cli-version.ts", "src/container.ts", "src/env.ts", "src/invariant.ts", "src/types.ts", "src/gateway.ts", "src/member-channel.ts", "src/member-bridge.ts", "src/live-flush.ts"]
+  "files": [
+    "src/index.ts",
+    "src/cli-version.ts",
+    "src/container.ts",
+    "src/env.ts",
+    "src/invariant.ts",
+    "src/types.ts",
+    "src/gateway.ts",
+    "src/member-channel.ts",
+    "src/member-bridge.ts",
+    "src/live-flush.ts",
+    "src/live-stream.ts"
+  ]
 }

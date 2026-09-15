@@ -15,6 +15,7 @@ import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { acpStopReasonToHarness, KimiAcpLiveDriver } from '../src/live-driver.ts'
@@ -372,6 +373,24 @@ describe('acpStopReasonToHarness', () => {
 })
 
 describe('kimi live driver rounds', () => {
+  it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
+    const m = mount({ config: { snapshotMinIntervalMs: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-transient-kimi'))
+    m.queueChild(new FakeAcpServer({ turn: () => { writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', 'hello'); return { chunks: ['hello'] } } }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'local-agent/stream')).toHaveLength(1)
+    const answers = events.filter(event => event.type === 'assistant/message' && JSON.stringify(event.data.message.content).includes('hello'))
+    expect(answers).toHaveLength(1)
+    expect(answers[0]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('spawns the resident kimi acp, creates a session, streams the turn, and mirrors via the file fold at settle', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-kimi-1'))

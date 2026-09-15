@@ -8,6 +8,38 @@
 
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 
+/** In-flight text item, identified by the durable turn/step coordinate. */
+export interface LocalAgentStreamItem {
+  id: string
+  turn: number
+  step: number
+  kind: 'think' | 'text'
+  text: string
+  revision: number
+  receivedAt: number
+}
+
+/** Reconnection starts with a baseline; subsequent updates carry suffixes or explicit replacements. */
+export interface LocalAgentStreamFrame {
+  baseline: boolean
+  updates: readonly (LocalAgentStreamItem & { append: boolean })[]
+  removed: readonly string[]
+}
+
+/** Log-only recovery checkpoint; never injected into a model's conversation. */
+export interface LocalAgentStreamCheckpoint extends Omit<LocalAgentStreamItem, 'revision'> {
+  sessionId: string
+  opening?: boolean
+  append: boolean
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Plugin-owned live presentation anchor and incremental recovery checkpoints. */
+    'local-agent/stream': LocalAgentStreamCheckpoint
+  }
+}
+
 /** One session record a harness's records adapter lists. */
 export interface LocalAgentSessionRecord {
   /** Harness session id. */

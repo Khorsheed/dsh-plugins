@@ -87,6 +87,8 @@ export type {
 
 export { delegationEnv } from './env.ts'
 export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
+import { LocalAgentStreams } from './live-stream.ts'
+export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'
 
 export {
@@ -827,6 +829,8 @@ function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signa
  * @module @khorsheed/dsh-local-agent
  */
 export class LocalAgentRegistry {
+  /** Independent live output transport for mirrored sessions without native Agents. */
+  readonly liveStreams: LocalAgentStreams = new LocalAgentStreams()
   private readonly harnesses = new Map<string, LocalAgentHarness>()
   /**
    * Named scopes materialized in this host process, keyed exactly like their
@@ -990,6 +994,7 @@ export class LocalAgentRegistry {
     // heartbeats stop, and every cached child-session write handle closes,
     // when the plugin unloads.
     ctx.effect(() => () => {
+      this.liveStreams.dispose()
       for (const entry of this.runs.values()) {
         if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
       }

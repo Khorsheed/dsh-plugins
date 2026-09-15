@@ -74,7 +74,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
@@ -738,6 +738,9 @@ export class ClaudeLiveDriver {
      * legitimately) and, when `withUsage` and no folded line carried it, the
      * round's usage.
      */
+    const streamPublisher = localAgent?.liveStreams === undefined ? undefined
+      : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
+        error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
     const liveFlush = new LiveFlush(
       error => this.ctx.logger.warn(`live mirror flush failed: ${String(error)}`),
       this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
@@ -748,6 +751,7 @@ export class ClaudeLiveDriver {
       force: boolean,
       interrupted: boolean,
       withUsage = false,
+      final = false,
     ): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
@@ -756,6 +760,16 @@ export class ClaudeLiveDriver {
         return
       }
       liveFlush.cancel(stream.step)
+      if (streamPublisher !== undefined && !final) {
+        if (!stream.opened) {
+          childSession.append('step/start', { turn, step: stream.step })
+          stream.opened = true
+        }
+        streamPublisher.update(stream.step, stream.kind, stream.text)
+        stream.lastSnapshotAt = now
+        stream.lastSnapshotLen = stream.text.length
+        return
+      }
       if (!stream.opened) {
         childSession.append('step/start', { turn, step: stream.step })
         stream.opened = true
@@ -853,6 +867,7 @@ export class ClaudeLiveDriver {
             stream: [],
             ...lineUsage === undefined ? {} : { usage: lineUsage },
           }, { surfaceOp: 'append' })
+          streamPublisher?.finish(stream.step)
           childSession.append('step/end', { turn, step: stream.step })
         } else {
           appendClaudeTranscriptLine(childSession, turn, foldStep(index), line, lineUsage)
@@ -1040,7 +1055,8 @@ export class ClaudeLiveDriver {
         if (streams.size > 0) {
           const remaining = [...streams.values()]
           for (const [position, stream] of remaining.entries()) {
-            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
+            streamPublisher?.finish(stream.step)
             if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
           }
           streams.clear()
@@ -1063,6 +1079,7 @@ export class ClaudeLiveDriver {
       if (runtime !== undefined && runtime.onEvent === onEvent && !awaitingResult) {
         runtime.onEvent = undefined
       }
+      streamPublisher?.dispose()
       return settled
     })
 

@@ -1,8 +1,8 @@
 # `@khorsheed/dsh-local-agent-codex`
 
-**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
-
 English | [中文](README.md)
+
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
 
 Delegate coding tasks from any dsh agent preset to your locally installed Codex CLI. Delegations run under a plugin-scoped home, so your personal `~/.codex` — config, credentials, sessions — is never touched.
 
@@ -87,7 +87,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full (`liveMirrorGranularity: token` streams via incremental snapshots at one (turn, step) — the npm line's ui-chat `settleMessage` is wholesale-replace by design; adapted to format v2/v3 and handle-based sessionPersistence; build+test green); minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations

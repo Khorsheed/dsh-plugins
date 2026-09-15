@@ -1,8 +1,8 @@
 # `@khorsheed/dsh-local-agent-dsh`
 
-**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。DSH 在宿主 0.1.5 上仍需接通新的瞬时流桥，当前完成事件镜像本身不算真流式验收通过。
-
 [English](README.en.md) | 中文
+
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。DSH headless 进程把原生 assistant 帧转入共用的插件瞬时通道。
 
 把任务委派给 dsh 自己——作为独立的本地 CLI 进程运行，与 kimi / codex / claude-code harness 平级。子 dsh 在自己的 scoped home 下运行，通过父级的 API key 认证，可跨轮续接；设置开关（默认关）打开后才启用委派工具。
 
@@ -65,7 +65,7 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 不再逐字写入子会话日志（宿主移除逐 chunk 事件），增量改走运行进度通道、轮次以一条合并消息落定（最终文本不变）；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。更旧宿主留在前一发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制

@@ -104,6 +104,15 @@ export async function runServe(ctx: Context, io: ServeIo, model?: string): Promi
     })
   })
 
+  // This process owns real Agents, so the public scoped stream bus is valid
+  // here. The parent presents these frames through the plugin's own channel.
+  ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+    const sessionId = String(agent.session.id)
+    const turn = activeTurns.get(sessionId)
+    if (shuttingDown || !managed.has(sessionId) || turn === undefined) return
+    notify('session/assistant-stream', { sessionId, turn, frame })
+  }, { global: true })
+
   const debug = process.env['DSH_SERVE_DEBUG'] === '1'
     ? (message: string): void => { io.stderr.write(`dsh-serve: ${message}\n`) }
     : (): void => {}

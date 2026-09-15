@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent`
 
+成员实时输出通过流式 Remote 与公开 Conversation 节点呈现。浏览器更新最多合并 50ms，增量恢复检查点独立按一秒节奏保存。原生最终消息替换临时展示，保留用量、工具与会话导航。重连读取新基线；宿主崩溃可能丢失未落检查点的末段，恢复内容明确标为部分记录。浏览器 P95 仍需在 room 协调者提案中验收。
+
 [English](README.en.md) | 中文
 
 从 dsh web GUI 使用本机安装的编码 agent CLI——Kimi Code、Codex、Claude Code。每个 CLI 获得一个隔离的作用域目录、一组登录/会话/状态/退出的斜杠命令，以及设置里的认证分区。

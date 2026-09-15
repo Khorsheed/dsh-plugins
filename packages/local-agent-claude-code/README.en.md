@@ -1,8 +1,8 @@
 # `@khorsheed/dsh-local-agent-claude-code`
 
-**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
-
 English | [中文](README.md)
+
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
 
 Delegate coding tasks to a locally installed Claude Code from any dsh agent preset — answers stream back live, and your personal `~/.claude` is never touched. The Claude Code harness of the [local-agent family](../local-agent/README.md).
 
@@ -62,7 +62,7 @@ The settings card's "Default model" writes the same key: a free-text input (no m
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the live mirror folds every output item 1:1 into the child session log, and the host ui-chat's wholesale replace of a repeated assistant/message at one coordinate (shipped since 0.1.5-rc.1) provides the incremental live rendering. Adapted to format v2/v3 and handle-based sessionPersistence; build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations

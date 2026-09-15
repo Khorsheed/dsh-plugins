@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent`
 
+Live member output uses a streaming Remote and public Conversation nodes. Browser updates are batched for at most 50ms, while incremental recovery checkpoints use an independent one-second cadence. Native final messages replace the transient presentation and retain usage, tools and session navigation. Reconnect obtains a fresh baseline; a host crash may lose the uncheckpointed tail, which remains visibly partial. Browser P95 acceptance remains part of the room coordinator proposal.
+
 English | [中文](README.md)
 
 Run locally installed coding-agent CLIs — Kimi Code, Codex, Claude Code — from the dsh web GUI. Each CLI gets an isolated home, slash commands for login/sessions/status/logout, and an auth section in Settings.

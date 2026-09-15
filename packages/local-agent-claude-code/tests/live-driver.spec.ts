@@ -16,6 +16,7 @@ import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
@@ -291,6 +292,24 @@ function expectStepBoundaries(child: Session): void {
 }
 
 describe('claude live driver rounds', () => {
+  it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-transient-claude-code'))
+    m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['hello'], events: answerEvents('hello'), usage: { input_tokens: 10, output_tokens: 4 } }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'local-agent/stream')).toHaveLength(1)
+    const answers = events.filter(event => event.type === 'assistant/message' && JSON.stringify(event.data.message.content).includes('hello'))
+    expect(answers).toHaveLength(1)
+    expect(answers[0]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('spawns the resident stream-json process, drives a turn, and folds the shared stream live', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-1'))

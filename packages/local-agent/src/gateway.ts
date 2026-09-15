@@ -17,6 +17,7 @@ import type {
   LocalAgentModelInfo,
   LocalAgentPromptResult,
   LocalAgentSessionRecord,
+  LocalAgentStreamFrame,
 } from './types.ts'
 import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
 
@@ -43,6 +44,17 @@ export default class LocalAgentGateway extends TypertRemoteService {
 
   constructor(ctx: Context) {
     super(ctx, 'localAgentGateway')
+  }
+
+  /**
+   * Follow one member's transient output with a complete reconnect baseline.
+   * @param childSessionId - mirrored session identity.
+   * @param signal - Remote-owned cancellation, including browser disconnects.
+   * @returns bounded incremental updates; final content remains in session history.
+   */
+  @Remote({ mode: 'stream' })
+  followMemberOutput(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentStreamFrame> {
+    return this.ctx.localAgent.liveStreams.follow(childSessionId, signal)
   }
 
   /**

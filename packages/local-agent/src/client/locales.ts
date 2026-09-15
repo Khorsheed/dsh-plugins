@@ -5,6 +5,12 @@ export const NS = 'local-agent'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'stream.thinking': '思考中',
+  'stream.writing': '正在生成',
+  'stream.recovering': '部分记录，等待实时连接',
+  'stream.copy': '复制',
+  'stream.copied': '已复制',
+  'stream.footnotes': '脚注',
   'list.aria': '{harness} 会话记录',
   'list.title': '{harness} 会话记录',
   'empty': '作用域内还没有 {harness} 会话',
@@ -61,6 +67,12 @@ export const zh = {
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<LocalAgentKey, string> = {
+  'stream.thinking': 'Thinking',
+  'stream.writing': 'Writing',
+  'stream.recovering': 'Partial record, awaiting live connection',
+  'stream.copy': 'Copy',
+  'stream.copied': 'Copied',
+  'stream.footnotes': 'Footnotes',
   'list.aria': '{harness} sessions',
   'list.title': '{harness} sessions',
   'empty': 'No {harness} sessions in the scoped home yet',

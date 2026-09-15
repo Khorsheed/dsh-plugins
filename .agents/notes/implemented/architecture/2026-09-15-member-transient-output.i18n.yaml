@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-15-member-transient-output.md
+.agents/notes/implemented/architecture/2026-09-15-member-transient-output.md: b1433255966c1add2319716e7f3d971b68ca78dc
+.agents/notes/implemented/architecture/2026-09-15-member-transient-output.zh.md: ac33c4c57b1a763394919a86eb7a6ff59e713e45

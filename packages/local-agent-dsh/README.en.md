@@ -1,8 +1,8 @@
 # `@khorsheed/dsh-local-agent-dsh`
 
-**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. The DSH child-session stream still needs the new transient bridge on host 0.1.5; its completed-event mirror alone is not true-streaming acceptance.
-
 English | [中文](README.md)
+
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. The DSH headless process forwards native assistant frames into the shared plugin transient channel.
 
 Delegate a task to dsh itself as a separate local CLI process, sibling to the kimi / codex / claude-code harnesses. It runs under its own scoped home, authenticates through the parent's API key, and resumes across rounds; a settings toggle (default off) turns the delegation tool on.
 
@@ -66,7 +66,7 @@ The settings card's "Default model" writes the same key: a free-text input (no m
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ one degradation — `liveMirrorGranularity: token` no longer writes per-token deltas into the child session log (the host retired the per-chunk event); deltas ride the run-progress channel and the round settles as one combined message (identical final text). Everything else is full (adapted to format v2/v3 and handle-based sessionPersistence; build+test green); minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations

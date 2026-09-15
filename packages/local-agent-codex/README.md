@@ -1,8 +1,8 @@
 # `@khorsheed/dsh-local-agent-codex`
 
-**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。最终内容仍以 provider 完成项为准，包括工具记录和用量。
-
 [English](README.en.md) | 中文
+
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。最终内容仍以 provider 完成项为准，包括工具记录和用量。
 
 把编码任务从任意 dsh agent preset 委派给你本地安装的 Codex CLI。委派在插件隔离的作用域目录下运行，你个人的 `~/.codex`——config、凭据、会话——完全不被触碰。
 
@@ -87,7 +87,7 @@ model_provider = "dsh-router"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整（`liveMirrorGranularity: token` 的流式以增量快照落在同一 (turn,step)，npm 线 ui-chat 的 `settleMessage` 本就是整体替换语义；适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。更旧宿主留在前一发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制

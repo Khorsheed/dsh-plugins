@@ -15,6 +15,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { describe, expect, it, vi } from 'vitest'
+import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { DshCliProvider } from '../src/dsh-cli-provider.ts'
 import { DshLiveDriver } from '../src/live-driver.ts'
 
@@ -341,6 +342,32 @@ function roundSpec(m: Mount, child: Session, over: { resume?: { turn: number } }
 }
 
 describe('dsh live driver rounds', () => {
+  it('presents native stream chunks before completion and preserves a stopped partial', async () => {
+    const m = mount()
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-dsh-stream'))
+    const fake = new FakeServeChild({ turn: () => ({ reason: null }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    fake.pushEvent(String(child.id), 1, { type: 'step/start', data: { turn: 1, step: 1 } })
+    const sendFrame = (turn: number, frame: Record<string, unknown>) => fake.pushRaw(Buffer.from(JSON.stringify({
+      jsonrpc: '2.0', method: 'session/assistant-stream', params: { sessionId: String(child.id), turn, frame },
+    }) + '\n'))
+    sendFrame(1, { type: 'start', attemptId: 'dsh-attempt', revision: 1, turn: 1, step: 1 })
+    sendFrame(0, { type: 'chunk', attemptId: 'dsh-attempt', revision: 1, index: 0, time: 1, chunk: { type: 'text-delta', index: 0, text: 'stale' } })
+    sendFrame(1, { type: 'chunk', attemptId: 'dsh-attempt', revision: 1, index: 0, time: 2, chunk: { type: 'text-delta', index: 0, text: '部分内容' } })
+    await vi.waitFor(() => { expect(child.snapshotEvents().find(event => event.type === 'local-agent/stream')?.data).toMatchObject({ text: '部分内容' }) })
+    expect(child.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(false)
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    const final = child.snapshotEvents().find(event => event.type === 'assistant/message')
+    expect(final?.data).toMatchObject({ interrupted: true, message: { content: [{ type: 'text', text: '部分内容' }] } })
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('spawns the resident serve process, drives a fresh turn, and mirrors events live', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-live-1'))

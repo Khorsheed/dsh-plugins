@@ -49,7 +49,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import {
   DEFAULT_DISPOSE_GRACE_MS,
@@ -949,6 +949,9 @@ export class KimiAcpLiveDriver {
      * legitimately) and, when `withUsage`, the round's uncarried usage. An
      * empty stream leaves no boundary at all.
      */
+    const streamPublisher = localAgent?.liveStreams === undefined ? undefined
+      : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
+        error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
     const liveFlush = new LiveFlush(
       error => this.ctx.logger.warn(`live mirror flush failed: ${String(error)}`),
       this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
@@ -959,6 +962,7 @@ export class KimiAcpLiveDriver {
       force: boolean,
       interrupted: boolean,
       withUsage = false,
+      final = false,
     ): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
@@ -967,6 +971,16 @@ export class KimiAcpLiveDriver {
         return
       }
       liveFlush.cancel(stream.step)
+      if (streamPublisher !== undefined && !final) {
+        if (!stream.opened) {
+          childSession.append('step/start', { turn, step: stream.step })
+          stream.opened = true
+        }
+        streamPublisher.update(stream.step, stream.kind, stream.text)
+        stream.lastSnapshotAt = now
+        stream.lastSnapshotLen = stream.text.length
+        return
+      }
       if (!stream.opened) {
         childSession.append('step/start', { turn, step: stream.step })
         stream.opened = true
@@ -1030,6 +1044,7 @@ export class KimiAcpLiveDriver {
         const stream = streams.get(key)
         if (stream === undefined) return undefined
         liveFlush.cancel(stream.step)
+        streamPublisher?.finish(stream.step)
         streams.delete(key)
         if (activeStream === key) activeStream = undefined
         return { step: stream.step, opened: stream.opened }
@@ -1275,7 +1290,8 @@ export class KimiAcpLiveDriver {
         if (streams.size > 0) {
           const remaining = [...streams.values()]
           for (const [position, stream] of remaining.entries()) {
-            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
+            streamPublisher?.finish(stream.step)
             if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
           }
           streams.clear()
@@ -1293,6 +1309,7 @@ export class KimiAcpLiveDriver {
           })
         }
       }
+      streamPublisher?.dispose()
       // Settlement clears the round's update sink.
       if (runtime !== undefined) runtime.onSessionUpdate = undefined
       return settled

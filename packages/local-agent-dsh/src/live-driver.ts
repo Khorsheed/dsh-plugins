@@ -21,6 +21,7 @@
 
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
+import { BlockAssembler, createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -32,10 +33,11 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush } from '@khorsheed/dsh-local-agent'
 import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_PROTOCOL_VERSION,
+  type LiveAssistantStreamParams,
   type LiveInitializeResult,
   type LiveTurnReason,
   type LiveTurnStartResult,
@@ -50,6 +52,8 @@ import {
 } from './dsh-cli-provider.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
 import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
+
+type AssistantStreamFrame = LiveAssistantStreamParams['frame']
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -162,6 +166,7 @@ class LiveRuntime {
    * round is dropped, never delivered into a stale closure.
    */
   onEvent: ((sessionId: string, turn: number | null, event: SessionEvent) => void) | undefined
+  onStream: ((sessionId: string, turn: number, frame: AssistantStreamFrame) => void) | undefined
   onIdle: ((sessionId: string, turn: number, reason: LiveTurnReason | null) => void) | undefined
   /** Fires once when the process dies or is reclaimed (driver bookkeeping). */
   onDead: (() => void) | undefined
@@ -223,12 +228,15 @@ class LiveRuntime {
         }
         return
       }
-      const params = (message.params ?? {}) as { sessionId?: unknown; turn?: unknown; event?: unknown; reason?: unknown }
+      const params = (message.params ?? {}) as { sessionId?: unknown; turn?: unknown; event?: unknown; reason?: unknown; frame?: unknown }
       if (typeof params.sessionId !== 'string') return
       if (message.method === 'session/event') {
         const event = params.event as SessionEvent | undefined
         if (event === null || typeof event !== 'object' || typeof event.type !== 'string') return
         this.onEvent?.(params.sessionId, typeof params.turn === 'number' ? params.turn : null, event)
+      } else if (message.method === 'session/assistant-stream') {
+        if (typeof params.turn !== 'number' || params.frame === null || typeof params.frame !== 'object') return
+        this.onStream?.(params.sessionId, params.turn, params.frame as AssistantStreamFrame)
       } else if (message.method === 'session/idle') {
         if (typeof params.turn !== 'number') return
         this.onIdle?.(params.sessionId, params.turn, (params.reason ?? null) as LiveTurnReason | null)
@@ -648,10 +656,35 @@ export class DshLiveDriver {
     let lastText = ''
     let mirroredMessages = 0
     /** Events of this round that arrived before the boundary opened (same-chunk batching). */
-    const bufferedEvents: SessionEvent[] = []
+    const bufferedEvents: ({ kind: 'event'; event: SessionEvent } | { kind: 'stream'; frame: AssistantStreamFrame })[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
       persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+    }
+
+    const streamPublisher = localAgent?.liveStreams === undefined ? undefined
+      : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
+        error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
+    const liveFlush = new LiveFlush(error => this.ctx.logger.warn(`subagent-dsh: live flush failed: ${String(error)}`))
+    let streaming: { id: string; step: number; assembler: BlockAssembler; next: number } | undefined
+    const publishStream = (): void => {
+      if (streaming === undefined || streamPublisher === undefined) return
+      const blocks = streaming.assembler.interruptedBlocks()
+      const text = blocks.map(block => 'text' in block ? block.text : '').join('\n\n')
+      if (text !== '') streamPublisher.update(streaming.step, blocks.every(block => block.type === 'reasoning') ? 'think' : 'text', text)
+    }
+    const acceptStream = (frame: AssistantStreamFrame): void => {
+      if (streamPublisher === undefined) return
+      if (frame.type === 'start') {
+        if (streaming !== undefined) liveFlush.cancel(streaming.step)
+        streaming = { id: String(frame.attemptId), step: frame.step, assembler: new BlockAssembler(), next: 0 }
+      } else if (frame.type === 'chunk' && streaming?.id === frame.attemptId) {
+        if (frame.index < streaming.next) return
+        if (frame.index !== streaming.next) throw new Error('non-contiguous DSH assistant stream')
+        streaming.next++
+        streaming.assembler.push(frame.chunk)
+        liveFlush.schedule(streaming.step, publishStream)
+      }
     }
 
     const requestCancel = (): void => {
@@ -674,6 +707,11 @@ export class DshLiveDriver {
 
     const mirrorOne = (event: SessionEvent): void => {
       const text = mirrorDshLiveEvent(childSession, event)
+      if (event.type === 'assistant/message') {
+        liveFlush.cancel(event.data.step)
+        streamPublisher?.finish(event.data.step)
+        if (streaming?.step === event.data.step) streaming = undefined
+      }
       if (event.type === 'user/message' || event.type === 'assistant/message') {
         mirroredMessages += 1
         persist()
@@ -690,7 +728,10 @@ export class DshLiveDriver {
       // buffered and flush now, in wire order, inside the boundary.
       childSession.append('turn/start', { turn })
       turnOpened = true
-      for (const event of bufferedEvents.splice(0)) mirrorOne(event)
+      for (const entry of bufferedEvents.splice(0)) {
+        if (entry.kind === 'event') mirrorOne(entry.event)
+        else acceptStream(entry.frame)
+      }
     }
 
     let resolveIdle!: (outcome: { reason: LiveTurnReason | null }) => void
@@ -702,10 +743,15 @@ export class DshLiveDriver {
         // with ITS turn) and out-of-round events (null) never cross.
         if (sessionId !== spec.sessionId || eventTurn !== turn) return
         if (!turnOpened) {
-          bufferedEvents.push(event)
+          bufferedEvents.push({ kind: 'event', event })
           return
         }
         mirrorOne(event)
+      }
+      rt.onStream = (sessionId, eventTurn, frame) => {
+        if (sessionId !== spec.sessionId || eventTurn !== turn || roundSettled) return
+        if (!turnOpened) bufferedEvents.push({ kind: 'stream', frame })
+        else acceptStream(frame)
       }
       rt.onIdle = (sessionId, idleTurn, reason) => {
         // Only this round's idle settles it — a cancelled round's unwind idle
@@ -794,6 +840,20 @@ export class DshLiveDriver {
       onAbort,
     }).then((settled) => {
       roundSettled = true
+      liveFlush.dispose()
+      if (turnOpened && streaming !== undefined && streamPublisher !== undefined) {
+        const blocks = streaming.assembler.interruptedBlocks()
+        if (blocks.length > 0) {
+          childSession.append('assistant/message', {
+            turn, step: streaming.step,
+            message: createAssistantMessage({ content: blocks, source: { provider: 'dsh-local', model: 'unobserved' } }), stream: [],
+            interrupted: true,
+          }, { surfaceOp: 'append' })
+          streamPublisher.finish(streaming.step)
+          persist()
+        }
+      }
+      streamPublisher?.dispose()
       // Identical turn/end bookkeeping to the exec path — but only for a turn
       // that actually opened (a pre-accept cancel records no turn at all).
       if (turnOpened) {
@@ -811,6 +871,7 @@ export class DshLiveDriver {
       // Settlement clears the round's handlers: a late notification drops at
       // the runtime frame instead of landing in a dead closure.
       if (runtime !== undefined) {
+        runtime.onStream = undefined
         runtime.onEvent = undefined
         runtime.onIdle = undefined
       }

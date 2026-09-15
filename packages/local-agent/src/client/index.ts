@@ -27,6 +27,9 @@ import localAgentRemote from '@khorsheed/dsh-local-agent/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { MemberComposer, selectCliMember, type MemberComposerInjected } from './MemberComposer.tsx'
 import { en, NS, zh, type LocalAgentKey } from './locales.ts'
+import { memberLiveDefinition } from './live-node.ts'
+import { MemberLiveNode } from './MemberLiveNode.tsx'
+import { MemberLiveOutputs } from './live-output.ts'
 
 export type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 export { ProviderAuthBlock } from './ProviderAuthBlock.tsx'
@@ -72,6 +75,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.logger.error(error)
   }
   const gateway = ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote
+  const outputs = new MemberLiveOutputs((id, signal) => gateway.followMemberOutput(id, signal))
+  ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'local-agent-stream', locale: NS,
+    inject: () => ({ outputs }),
+  }, MemberLiveNode))
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-local-agent: dictionaries')
   // The member composer: a one-shot subagent session that the family delegated
   // gets a writable box (send = facade resume via the promptMember Remote);

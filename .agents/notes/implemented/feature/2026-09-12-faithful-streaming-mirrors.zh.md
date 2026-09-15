@@ -8,6 +8,8 @@ live 驱动的 token 粒度（"逐字流式"）是一种伪装成更高档位的
 
 ## Decision
 
+当前通道：已安装 core 提供能力时，provider 使用[共用瞬时输出通道](../architecture/2026-09-15-member-transient-output.zh.md)。下述快照设计保留为旧 core 兼容路径，原生最终折叠与 step 预留规则继续适用。
+
 实时驱动现在 1:1 全量镜像每个 item（reasoning/text → `assistant/message`，工具 item → `tool/call`+`tool/result`）；`skipAssistantContent` 彻底删除。唯一实时路径在其上叠加增量层：item 流式期间，delta 累积成**节流的增量快照 `assistant/message`**（每 item 待发布更新默认最多合并 50ms，`snapshotMinIntervalMs` 可配；旧 `snapshotMinChars` 字段忽略），追加到该 item 预留的 `(turn, step)`。宿主 ui-chat 把同一坐标的重复 settle 折叠成一个实时更新的聊天节点（`settleMessage` 整体替换并立即发布——两条宿主线都核实存在），UI 呈现为一条持续增长的消息；item 完成的正式折叠落在同一坐标收尾，usage 由最终载体携带（最后一个非 tool 折叠行，或没有折叠行携带时由 settle 的最终快照携带）。
 
 step 账本保证工具卡片的时间序：`reservedSteps` 永久记录每个流式预留 step（预留时 `step = lines.length + reservedSteps.length + 1`），顺序折叠跳过所有在它之前的预留值；逐 item 的 `streams` 状态（CLI 提供 itemId 时按 itemId——codex 的 app-server 有；kimi 的 ACP 与 claude 的 stream-json 用 per-kind 合成 key）把完成 item 配对到它的预留 step。完成 item 即使中途插进了别的流也折叠到自己的预留 step；切换 item 时补一条新鲜快照（文本未增长则跳过）；settle 在 turn 窗口内强制收尾所有未完成 stream（非 completed 带 interrupted，最后一条携带 usage）。同一坐标绝不写第二个 `step/start`（live assembler 对重复 start 抛错）——step 在首个快照时打开，在完成折叠或 settle 收尾时关闭。
@@ -23,7 +25,7 @@ core 共用 `LiveFlush` 调度器保留首个待发布更新的截止时间并�
 
 ## Consequences
 
-- event/token 运行时分支已退役。旧配置键与 driver setter 仅作兼容空操作，schema 默认 token；exec 保留。Claude 始终把 `--include-partial-messages` 放在成员桥可变参数 `--allowedTools` 的终止符前。Kimi 始终在轮次边界内对账，保留没有 wire 副本的部分输出。DSH 同样兼容旧配置键，但缺失的瞬时流桥仍是独立待完成项。
+- event/token 运行时分支已退役。旧配置键与 driver setter 仅作兼容空操作，schema 默认 token；exec 保留。Claude 始终把 `--include-partial-messages` 放在成员桥可变参数 `--allowedTools` 的终止符前。Kimi 始终在轮次边界内对账，保留没有 wire 副本的部分输出。DSH 同样兼容旧配置键，并通过共用瞬时桥转发原生帧。
 
 - 实时输出显示工具、reasoning 与文本，包括 item 内增长。子会话日志成为忠实转写（可事后定位问题），abort 轮保留带 interrupted 标记的部分文本。
 - 快照使日志量上升（节流快照；长轮次多几十条事件）。`tokenUsage` 投影的 (turn, step) last-wins 去重保持记账精确。
