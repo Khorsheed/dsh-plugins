@@ -34,6 +34,7 @@ export function canvasDefinition(t: TranslateNS<'canvas'>): SidebarRightTabDefin
     kind: CANVAS_KIND,
     title: () => t('tab.label'),
     guide: [{
+      id: CANVAS_KIND,
       order: 50,
       title: () => t('tab.label'),
       description: () => t('guide.description'),

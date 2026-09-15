@@ -104,6 +104,7 @@ export function filePreviewDefinition(t: TranslateNS<'filePreview'>): SidebarRig
     },
     title: (address) => chipTitle(address, () => t('open')),
     guide: [{
+      id: FILE_PREVIEW_KIND,
       order: 20,
       title: () => t('guide.title'),
       description: () => t('guide.description'),
