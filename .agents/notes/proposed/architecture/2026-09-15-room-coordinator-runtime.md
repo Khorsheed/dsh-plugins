@@ -26,6 +26,8 @@ An ordinary request such as asking main to have Kimi do a small job supports bac
 
 Preserve independent member sessions and existing breadcrumb/session-tree, TaskPilot and room entry points. Stable child-session lineage and run identity survive renaming, model changes and coordinator promotion/demotion. Keep member transcripts, elapsed time, reported tokens and member-scoped stop controls; room summaries supplement these surfaces. Stop interrupts the current turn while retaining output, rather than promising process suspension, and automated retries must not undo a user stop. TaskPilot remains optional, with no new hard dependency.
 
+Acceptance starts in a dedicated lab profile and provider scopes after worktree checks, leaving 3080 on its deployed build. The implementer prepares DSH and the test instance; the user completes Kimi's interactive test login. Verify credential type and effective paths before reuse: profiles share HOME settings, and copied or symlinked OAuth tokens may still share refresh state. Do not copy production settings/sessions wholesale or publish credentials. Follow DSH/Kimi smoke testing with all four harnesses, goal/rework scenarios and candidate-tarball fresh-install/upgrade tests, then the normal gated 3080 deployment and smoke test.
+
 ## Alternatives considered
 
 **Replace the host AgentFactory.** Not required for default room routing and expands the compatibility burden beyond this request.
@@ -51,6 +53,8 @@ Cold-start acceptance covers DSH first, invitation without automatic promotion, 
 Delivery A verifies continued main conversation while Kimi works, automatic completion/failure reports without a goal, and report deduplication and pause behavior. Delivery B verifies that a conversational execution request is sufficient for main to organize the goal, while discussion and saved drafts remain inactive. Direct human mentions retain their separate routing and do not automatically wake main.
 
 M2/M3 compatibility gates cover existing navigation to the same member session during and after execution, role changes and refresh; token deduplication across streaming snapshots and final reconciliation; and equivalent targeted stops from member, room and TaskPilot surfaces. Missing usage remains unknown or pending. Stopping one worker preserves its partial transcript and other members' execution; room/member navigation and controls remain usable without TaskPilot.
+
+The linked proposal's acceptance-environment matrix records real browser/model evidence separately from protocol fixtures and login status. DSH/Kimi success does not certify Codex/Claude or the goal loop. Store sanitized results in docs/acceptance and clean test resources under the ops lifecycle. This proposal update has not started an instance, copied credentials or run inference.
 
 ## Risks
 
