@@ -14,7 +14,9 @@ The [capability proposal](../../../../proposals/active/2026-09-15-room-coordinat
 
 Deliver reliable model selection, native generation deltas and direct default routing first; then add task dependencies, durable reports, acceptance and goal continuation. Claude's isolated 2.1.272 initialize/set_model probes support evaluating native control instead of shared settings-file scratch writes, but do not establish authenticated inference or exhaustive model availability. The existing 208 passing tests primarily cover simulated data.
 
-The review adds three explicit delivery gates. Retire the live event mirror mode, normalize legacy configuration, drain old runtimes and verify partial-output arguments; separate bounded real-time flushes from durable snapshot throttling to meet the 200ms P95 target. Carry model/effort choices through execution and records, including eval's frozen conditions, while preserving historical hashes, locks and results. Core owns control/run admission: busy model or effort changes are rejected consistently by room and member composer, with no deferred setting queue in v1.
+The review adds three explicit delivery gates. Retire the live event mirror mode, normalize legacy configuration, drain old runtimes and verify partial-output arguments; separate bounded real-time flushes from durable snapshot throttling to meet the 200ms P95 target. Carry model/effort choices through execution and records, including eval's frozen conditions, while preserving historical hashes, locks and results. Following user review, model/effort selection is allowed during a run and takes effect at the next turn boundary. Core durably owns applied and pending configurations; room and member composer share their state. The active turn keeps its original configuration, including its tool loop.
+
+Use one replaceable pending configuration rather than a FIFO of intermediate choices. The latest accepted valid revision wins; cancellation targets a revision. Apply before admitting the next turn, including previously queued ordinary messages. Serialize control and admission, reconcile in-flight changes and restarts, and block subsequent turns on failure or uncertain acknowledgements until resolved. An idle selection does not trigger generation. Stop, apply and continue is the immediate-switch path; eval-locked configurations reject changes before accepting pending state.
 
 ## Alternatives considered
 
@@ -26,13 +28,15 @@ The review adds three explicit delivery gates. Retire the live event mirror mode
 
 **Simulate streaming from final text.** Cannot expose actual in-flight progress or preserve honest interruption behavior.
 
-**Keep selectable event mode or queue model changes only in room.** Leaves defaults outside the streaming contract or creates conflicting controls across entry points. Retire the live mode split while preserving exec and final reconciliation; reserve any future deferred control queue for a separate core-owned contract.
+**Keep selectable event mode or queue model changes only in room.** Leaves defaults outside the streaming contract or creates conflicting controls across entry points. Retire the live mode split while preserving exec and final reconciliation; core owns pending controls for every entry point.
+
+**Reject model/effort selection while busy.** This earlier v1 suggestion was superseded after user review: it unnecessarily prevents choosing the next turn's configuration. Accept the intent immediately while preserving the active turn's configuration.
 
 ## Acceptance criteria
 
 User review precedes implementation. Delivery A requires all four coordinator choices to support direct conversation, truthful controls and verified streaming/replay. Delivery B additionally requires dependent tasks, explicit acceptance, durable reporting and bounded continuation. Detailed matrices and evidence limits live in the linked proposal; this documentation commit does not claim those capabilities shipped.
 
-Delivery A also covers default/legacy streaming paths and sparse-tail latency, concurrent control admission, effort binding on start/resume, and eval override/mismatch counterexamples. Historical condition digests remain stable; missing runtime evidence stays unverified rather than being backfilled as a match. Eval compatibility is an M1 gate, not follow-up work after exposing the selector.
+Delivery A also covers default/legacy streaming paths and sparse-tail latency; synchronized applied/pending controls, replacement/cancellation, stale revisions, admission races and recovery; effort binding on start/resume; and eval override/mismatch counterexamples. Historical condition digests remain stable; missing runtime evidence stays unverified rather than being backfilled as a match. Eval compatibility is an M1 gate, not follow-up work after exposing the selector.
 
 ## Risks
 
