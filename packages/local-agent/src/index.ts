@@ -2578,6 +2578,7 @@ export class LocalAgentRegistry {
       argv: [login.pty.command, ...args],
       cwd: homeDir,
       env: { [harness.homeEnvVar]: homeDir },
+      terminalType: 'xterm-256color',
       rows: 24,
       cols: 80,
       graceMs: REPLACE_LOGIN_GRACE_MS,
