@@ -1,7 +1,7 @@
 # 宿主 0.1.6 适配（host-016-adaptation）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress
 - **最后更新**：2026-09-15
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：host-015-adaptation（第一~三批已完成，第四批余量见该提案；本提案承接其 readByteRange 与 guard 租约两项欠账）、message-tools-projection-restore（本波子项，独立提案）、local-agent-dsh-sdk-resume（S8 仍堵，不排）、room-composer-parity / context-clearing（波后讨论，不进本波）。无「0.1.6 整体适配」提案，新建。
 - **官方依赖**：纯插件。所有切换走官方 0.1.6-alpha.1 已发布的扩展面，不含新 seam 请求。
@@ -46,7 +46,7 @@ terminal-controller（`terminalRemote` + 默认行进组合）、`permissionPres
 1. **基线**：devDeps 升 0.1.6-alpha.1 + lockfile 重生成 + 全量 build/test 摸底（红单即适配清单，复核上表第 5 行零命中项）。
 2. **breaking 五项**：ankh-guard `agent/created` serial 化（deliver 路径长 await 审计 + spec 桩改写）→ headless ptc-runtime 改名五处 → eval fixture → mobile anchor 核对 → profiles 收编。
 3. **S12**：message-tools projection 恢复（独立提案；两轮探针后形态定为「投影模块 + fold 语义三道闸」**暗态交付**——0.1.6-alpha.1 的 fold 对 surface 产出型事件不组合投影与节点成员，点亮等上游修复；双线行为逐字节不变）。
-4. **存量两项**（承接 host-015 第四批）：local-files / file-preview 大文件分页 → `ctx.fs.readByteRange`；ankh-guard 借写所有权租约（`SessionOwnershipLostError`）巩固重启接管。
+4. **存量两项**（承接 host-015 第四批）：local-files / file-preview 大文件分页 → `ctx.fs.readByteRange`（**已落地**，2026-09-15，commit `5ce025ef`：有界窗口读 + Remote offset/nextOffset 管道，客户端分页 UI 转波后）；ankh-guard 借写所有权租约（`SessionOwnershipLostError`）→ **sizing 后转 rc 后评估**：租约逻辑是内核态跨进程锁，接入点在重启关键路径的 resume 流上，属设计任务而非机械适配（0.1.6 不要求它，0.1.5 租约已在会话层自动生效），且 ankh-guard 有在飞分支（`fix/ankh-guard-test-lifecycle`），波中动重启关键路径风险不值；sizing 结论与接入点候选记在本提案实现记录。另：ankh-guard spec 的 20+ 处 `agent/created` emit 补 `source` 字段的保真打磨同样留到 rc 轮（与在飞分支同文件，避免波中撞车）。
 5. **合线**：worktree `pnpm gate` 全绿 → 合 main → 共享 harness 检出升线 → `deploy:3080` 验收 → 观察期（默认 3 天）→ **与官方 rc 同波 npm**：0.1.5 欠发与本波成果合在同一版本（双兼容，避免「0.1.5-only 版本发出来几天即过时」的空转）；版本号发布前 `npm view` 核对。
 
 ### 明确不做
@@ -57,12 +57,19 @@ terminal-controller（`terminalRemote` + 默认行进组合）、`permissionPres
 
 ## 里程碑
 
-- **M1** 基线绿（devDeps/lockfile 0.1.6-alpha.1，全量 build+test 红单收敛）。
-- **M2** breaking 五项全绿。
-- **M3** S12 projection 恢复（双通道）。
-- **M4** 存量两项。
-- **M5** 合线 + 共享检出升线 + 3080 验收。
+- **M1** ✅（2026-09-15）：基线绿——devDeps/lockfile 升 0.1.6-alpha.1（commit `cf02cfc5`），全量 build+test 在 `DSH_HARNESS=deepseek-harness-alpha`（完整构建的 detached worktree）下双线绿。红单 5 个全部收敛进 M2。
+- **M2** ✅（2026-09-15）：breaking 五项全绿（`7a0a1b18` ankh-guard / `d5a243e1` local-agent / `c99dee43` headless ptc / `b299bc0a` guide id / `cd23f4cc` profiles）。mobile anchor 静态核实零改动。
+- **M3** ✅（2026-09-15，`40665c34`）：S12 投影模块 + fold 语义三道闸暗态交付；12 测试；双线行为逐字节不变。
+- **M4** 部分：M4a readByteRange ✅（`5ce025ef`）；M4b guard 租约 → rc 后评估（见方案第 4 批）。
+- **M5** 合线 + 共享检出升线 + 3080 验收（等周四 rc 复验后）。
 - **M6** npm 波（前提：官方 rc + 账号解封；预期与官方 rc 同周）。
+
+## 实现记录
+
+- 2026-09-15 M1+M2：基线升线与五处 breaking（Agent Note `implemented/architecture/2026-09-15-host-016-breaking-adaptation.md`）。
+- 2026-09-15 M3：S12 暗态交付（Agent Note `implemented/feature/2026-09-15-message-tools-restore-projection.md`）；两轮探针修正见 seam registry S12。
+- 2026-09-15 M4a：大文件有界读取（Agent Note `implemented/bug-fix/2026-09-15-bounded-preview-reads.md`）。
+- 2026-09-15 M4b sizing（guard 租约）：租约 = 内核态跨进程写锁（`session-persistence-jsonl/src/lease.ts`， contention → `SessionAlreadyOwnedError`，持有期失联 → `SessionOwnershipLostError`）。接入点候选：restart-continuity 的 resume 流驱动 `agent.followup`/重建 agent 时捕获这两个错误，把「租约被持」读作「旧实例未死透」→ 不唤醒、不双驱，与 S14 的 parked 过滤同层。等 rc 后连同 spec emit 保真一起做，动手前核 `fix/ankh-guard-test-lifecycle` 合并状态。
 
 ## 验收标准（done 判定）
 
