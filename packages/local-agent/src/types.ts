@@ -411,6 +411,54 @@ export interface LocalAgentModelDirectory extends LocalAgentModelDirectoryData {
   refreshedAt?: number
 }
 
+/** Inherit the member's creation settings, ask for the harness default, or pin a native value. */
+export type LocalAgentConfigurationChoice = { mode: 'inherit' | 'default' } | { mode: 'value'; value: string }
+
+export interface LocalAgentMemberConfiguration {
+  model: LocalAgentConfigurationChoice
+  effort: LocalAgentConfigurationChoice
+}
+
+/** Resolved control facts; actual generation observations are recorded separately. */
+export interface LocalAgentResolvedConfiguration {
+  model?: string
+  effort?: string
+}
+
+export interface LocalAgentAppliedConfiguration {
+  revision: number
+  selection: LocalAgentMemberConfiguration
+  resolved: LocalAgentResolvedConfiguration
+}
+
+export interface LocalAgentPendingConfiguration {
+  revision: number
+  requestId: string
+  kind: 'selection' | 'cancel'
+  selection: LocalAgentMemberConfiguration
+}
+
+export interface LocalAgentMemberControlState {
+  memberId: string
+  /** Monotonic intent revision, including cancellation. */
+  revision: number
+  current: LocalAgentAppliedConfiguration
+  pending?: LocalAgentPendingConfiguration
+  operation?: LocalAgentPendingConfiguration & { previous: LocalAgentAppliedConfiguration }
+  status: 'idle' | 'pending' | 'applying' | 'reconciling' | 'failed'
+  /** Immutable configuration captured at admission, including tool continuation. */
+  round?: { id: string; configuration: LocalAgentAppliedConfiguration }
+  lockedReason?: string
+  error?: string
+}
+
+export interface LocalAgentControlReceipt {
+  requestId: string
+  revision: number
+  status: 'pending' | 'applying' | 'applied' | 'cancelled' | 'failed' | 'conflict' | 'locked' | 'unsupported'
+  error?: string
+}
+
 /**
  * The model surface for one member — or, without a member, for a harness's
  * next round (the settings card's "what would run" line). Every layer reports

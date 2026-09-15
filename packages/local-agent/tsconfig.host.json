@@ -17,6 +17,8 @@
     "src/member-bridge.ts",
     "src/live-flush.ts",
     "src/model-directory.ts",
+    "src/member-control.ts",
+    "src/member-control-storage.ts",
     "src/live-stream.ts"
   ]
 }
