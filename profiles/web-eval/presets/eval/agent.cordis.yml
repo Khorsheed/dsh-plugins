@@ -10,7 +10,7 @@
 #
 #   (a) anything that can run a host command —
 #       `tool-bash` / `tool-pwsh` (the shell itself), and `tool-workflow` plus
-#       the `workflow-worker-thread` engine it needs: a workflow script is
+#       the `workflow-ptc` engine it needs: a workflow script is
 #       MODEL-AUTHORED JavaScript executed as an async function body in a Node
 #       worker thread, so it reaches `node:child_process` without a shell in
 #       sight. `tool-ralph` drives the same engine and goes with it.

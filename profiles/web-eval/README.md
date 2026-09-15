@@ -159,7 +159,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 「工具按域开放」限的是 profile 根上注册的那批工具；另一半由**预设**限。评测实例的 agent 走 pack 自带的 `eval` 预设（`presets/eval/`），它的组成表是随发行版的 `standard` 减去两类行：
 
-- **能执行宿主命令的**：`tool-bash` / `tool-pwsh`；`tool-workflow` 与它依赖的 `workflow-worker-thread`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行，够得着 `node:child_process`，全程没有 shell；`tool-ralph` 驱动同一个引擎，一起去掉。
+- **能执行宿主命令的**：`tool-bash` / `tool-pwsh`；`tool-workflow` 与它依赖的 `workflow-ptc`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行，够得着 `node:child_process`，全程没有 shell；`tool-ralph` 驱动同一个引擎，一起去掉。
 - **词汇与本线冲突的**：`plan-mode`。它的提示词规划的是**实现**并明令不要写文件，而这个 agent 的产出恰恰是写到盘上、由人批准的 `dataseek.plan/1`。一个会话里两个「plan」是混淆，不是能力缺口。
 
 留下的是读、起草，以及委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以委派递不出这个预设本身没有的 shell。docker 从来不在这张表上——`lab` 一个模型可见工具都不注册，容器动作全在编排器的服务面。
