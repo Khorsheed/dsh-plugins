@@ -21,6 +21,7 @@ import {
   EDIT_TRIGGER_NOTICE, MESSAGE_TOOLS_PLUGIN, WITHDRAWN_NOTICE,
   editReplacementSource, editTriggerSource, restoreAssistantSource,
 } from './marker.ts'
+import { registerRestoreProjection } from './restore-projection.ts'
 import { planEdit, planRestore, planWithdrawal } from './withdraw.ts'
 import type {
   MessageToolsEditRequest, MessageToolsEditResult,
@@ -51,6 +52,10 @@ export class MessageToolsService extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'messageTools')
+    // Seam registry S12: on a host whose session fold can carry a user/message
+    // projection, restore replays derive assistant-role without the frame;
+    // every degrade path leaves the framed user-role channel verbatim.
+    registerRestoreProjection(ctx)
   }
 
   /**

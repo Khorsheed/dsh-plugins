@@ -37,7 +37,10 @@ export const EDIT_TRIGGER_NOTICE = '(用户编辑了上一条消息，请按编�
  * Model-facing frame preceding a replayed assistant text in a restore: the
  * replay lands as a user-role message (assistant/message cannot carry a
  * plugin source, and the session turn/step trace forbids ad-hoc assistant
- * appends), so the frame keeps the role honest for the model.
+ * appends), so the frame keeps the role honest for the model. On hosts whose
+ * session fold carries the S12 `user/message` projection the frame never
+ * reaches the model — the projection strips it and corrects the role at
+ * derivation time; everywhere else it is the role-honesty device.
  */
 export const RESTORED_ASSISTANT_NOTICE = '(以下是先前被撤回、现随恢复放回的助手回复)'
 

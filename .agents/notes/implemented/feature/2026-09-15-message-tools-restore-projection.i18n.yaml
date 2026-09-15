@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-message-tools-restore-projection.md
+.agents/notes/implemented/feature/2026-09-15-message-tools-restore-projection.md: 46860a9dd08d53f0e94d99000712dec141c2e257
+.agents/notes/implemented/feature/2026-09-15-message-tools-restore-projection.zh.md: 0f9983e62b1a6e4268a3a6c4dc139f81f8285514
