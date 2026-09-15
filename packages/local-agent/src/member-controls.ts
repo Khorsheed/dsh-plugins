@@ -6,6 +6,11 @@ import type { LocalAgentAppliedConfiguration, LocalAgentMemberBinding } from './
 
 /** The provider boundary owns the lease; facade and direct tool starts share it. */
 export class MemberControls {
+  private readonly admitted = new WeakMap<object, LocalAgentAppliedConfiguration>()
+  configurationOf(run: object): LocalAgentAppliedConfiguration | undefined {
+    const configuration = this.admitted.get(run)
+    return configuration === undefined ? undefined : structuredClone(configuration)
+  }
   private readonly members = new Map<string, { binding: LocalAgentMemberBinding; control: MemberConfigurationController }>()
 
   constructor(
@@ -53,6 +58,7 @@ export class MemberControls {
     const lease = await control.admit(randomUUID())
     try {
       const run = await start(lease.configuration)
+      this.admitted.set(run, lease.configuration)
       const release = (): void => { try { lease.release() } catch (error) { this.onError(error) } }
       void run.result.then(release, release)
       return run

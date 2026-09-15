@@ -849,6 +849,10 @@ export class LocalAgentRegistry {
     return this.memberControls.run(binding, start)
   }
 
+  /** The admitted snapshot belongs to this exact run object, including after settle. */
+  runConfiguration(run: object): LocalAgentAppliedConfiguration | undefined { return this.memberControls.configurationOf(run) }
+  supportsMemberConfiguration(provider: string): boolean { return this.harnessForProvider(provider)?.modelBroker?.configurationAdapter !== undefined }
+
   private memberControl(childSessionId: string): MemberConfigurationController {
     let binding = this.memberControls.binding(childSessionId)
     if (binding === undefined) {
@@ -1609,6 +1613,7 @@ export class LocalAgentRegistry {
   recordRoundSettled(
     childSessionId: string,
     round: {
+      readonly observedEffort?: string
       readonly observedModel?: string
       readonly cliVersion?: string
       readonly usage?: TokenUsage
@@ -1644,6 +1649,7 @@ export class LocalAgentRegistry {
     // previous round's count with the newest one.
     this.reportRunProgress(childSessionId, {
       kind: 'settled',
+      ...round.observedEffort === undefined ? {} : { observedEffort: round.observedEffort },
       ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
       ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
       ...round.usage === undefined ? {} : { usage: round.usage },

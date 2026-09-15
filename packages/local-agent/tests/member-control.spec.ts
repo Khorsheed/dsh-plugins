@@ -40,6 +40,22 @@ function mount(storageOverride?: MemberControlStorage) {
 }
 
 describe('member configuration boundaries', () => {
+  it('pins resolved defaults for a frozen evaluation across later rounds and controller restart', async () => {
+    const m = mount()
+    let defaultEffort = 'high'
+    m.adapter.prepare = async value => ({ model: model(value), effort: value.effort.mode === 'value' ? value.effort.value : defaultEffort })
+    m.adapter.reconcile = async state => ({ active: false, matches: 'current', resolved: await m.adapter.prepare!(state.current.selection) })
+    const control = m.create('Frozen evaluation')
+    const first = await control.admit('first'); first.release()
+    expect(control.read().frozen?.resolved.effort).toBe('high')
+    defaultEffort = 'low'
+    const second = await control.admit('second')
+    expect(second.configuration.resolved.effort).toBe('high'); second.release()
+    const restored = m.create('Frozen evaluation')
+    const third = await restored.admit('third')
+    expect(third.configuration.resolved.effort).toBe('high'); third.release()
+  })
+
   it('serializes a selection arriving during admission preparation before starting the next turn', async () => {
     const m = mount()
     const preparing = deferred()

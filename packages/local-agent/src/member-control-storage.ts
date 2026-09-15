@@ -26,6 +26,7 @@ function parseRecord(value: unknown): MemberControlRecord {
   const operation = state['operation']
   const round = state['round']
   if (typeof state['memberId'] !== 'string' || !revision(state['revision']) || !applied(state['current'])
+    || (state['frozen'] !== undefined && (!applied(state['frozen']) || typeof state['lockedReason'] !== 'string'))
     || (state['pending'] !== undefined && !pending(state['pending']))
     || (operation !== undefined && (!object(operation) || !pending(operation) || !applied(operation['previous'])))
     || (round !== undefined && (!object(round) || typeof round['id'] !== 'string' || !applied(round['configuration'])))
@@ -54,6 +55,7 @@ export class FileMemberControlStorage implements MemberControlStorage {
     const record = parseRecord(JSON.parse(text))
     const state = record.state
     if (state.memberId !== memberId || state.current.revision > state.revision
+      || (state.frozen !== undefined && state.frozen.revision > state.revision)
       || (state.pending !== undefined && (state.pending.revision > state.revision || !Object.hasOwn(record.requests, state.pending.requestId)))
       || (state.operation !== undefined && (state.operation.revision > state.revision || !Object.hasOwn(record.requests, state.operation.requestId)))
       || (state.round !== undefined && state.round.configuration.revision > state.revision)) {

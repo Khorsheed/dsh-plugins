@@ -452,6 +452,8 @@ export interface LocalAgentMemberControlState {
   /** Immutable configuration captured at admission, including tool continuation. */
   round?: { id: string; configuration: LocalAgentAppliedConfiguration }
   lockedReason?: string
+  /** First admitted configuration of a frozen evaluation; defaults cannot drift on resume. */
+  frozen?: LocalAgentAppliedConfiguration
   error?: string
 }
 
@@ -765,6 +767,8 @@ export type LocalAgentRunProgress =
   }
   | {
     readonly kind: 'settled'
+    /** Native generation observation only, never copied from the requested effort. */
+    readonly observedEffort?: string
     /**
      * The model identifier the provider observed in its own output stream for
      * this round, when the stream carried one — absent otherwise, never

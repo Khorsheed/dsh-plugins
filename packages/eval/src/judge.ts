@@ -1,3 +1,6 @@
+import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
+import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission } from './frozen-configuration.ts'
+import type { DelegationProgress } from './faces.ts'
 /**
  * The judging half of the orchestrator (I2·T9): the two MECHANICAL verdict
  * sources of the three the flow declares. `script` verdicts come from
@@ -875,6 +878,7 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
 
 /** One resolved judge condition (the run loop resolves it once, before executing). */
 export interface ResolvedJudge {
+  declaredEffort?: string | null
   id: string
   sha: string
   harnessName: string
@@ -908,6 +912,7 @@ export interface JudgeSampleRecord {
 
 /** What {@link runJudgeSamples} needs from its caller. */
 export interface JudgeRunInput {
+  readbackWaitMs?: number
   localAgent: LocalAgentFace
   mission: MissionFace
   missionId: string
@@ -967,7 +972,7 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
       materials: input.materials,
     })
     const promptSha = sha256Text(prompt)
-    for (let sample = 1; sample <= input.samples; sample++) {
+    samples: for (let sample = 1; sample <= input.samples; sample++) {
       for (let attempt = 1; attempt <= 2; attempt++) {
         const sampleDir = join(input.judgeDirBase, slug(judge.id), attempt === 1 ? `sample-${sample}` : `sample-${sample}-retry`)
         mkdirSync(sampleDir, { recursive: true })
@@ -979,9 +984,14 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
         writeFileSync(join(sampleDir, 'prompt.md'), prompt, 'utf8')
 
         const startedAt = input.now()
+        let configurationFailure = false
         let outcome: { ok: true; verdicts: Array<Record<string, unknown>>; overwritten: string[]; dropped: string[] } | { ok: false; error: string }
         try {
+          requireEffortAdmission(input.localAgent, judge.provider, judge.declaredEffort)
+          let settled: DelegationProgress | undefined
           const run = await input.localAgent.start(input.parentSessionId, judge.provider, [{ type: 'text', text: prompt }], {
+            ...frozenConfigurationOptions(judge.sha, judge.declaredEffort),
+            onProgress: event => { if (event.kind === 'settled') settled = event },
             label: `${input.runId}/${input.missionId} judge:${judge.id}#${sample}`,
             cwd: sampleDir,
             ...(judge.scope === undefined ? {} : { scope: judge.scope }),
@@ -992,8 +1002,14 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
             // with a player.
             ...(judge.declaredModel === null || judge.declaredModel === undefined ? {} : { model: judge.declaredModel }),
           })
+          const admitted = input.localAgent.runConfiguration?.(run)
           const result = await run.result
-          if (result.stopReason !== 'completed') {
+          const observedModel = settled?.observedModel ?? result.observedModel ?? await awaitObservedModel(input.localAgent, run.id, undefined, input.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS)
+          const reasoning = effortEvidence(judge.declaredEffort, admitted, settled?.observedEffort ?? result.observedEffort)
+          if (reasoning.status === 'mismatch' || (observedModel !== null && judge.declaredModel !== null && observedModel !== judge.declaredModel)) {
+            configurationFailure = true
+            outcome = { ok: false, error: 'Judge frozen model/effort does not match the admitted or observed configuration; verdicts are excluded' }
+          } else if (result.stopReason !== 'completed') {
             outcome = { ok: false, error: `judge delegation ended with stopReason ${JSON.stringify(result.stopReason)}${result.diagnostic !== undefined ? `: ${result.diagnostic}` : ''}` }
           } else {
             const read = readVerdictFile(join(sampleDir, 'verdicts.json'), { task: input.taskId, by: judge.id })
@@ -1017,7 +1033,9 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
             startedAt,
             durationMs: input.now() - startedAt,
             usage: result.usage ?? null,
-            model: { declared: judge.declaredModel, observed: result.observedModel ?? null },
+            model: { declared: judge.declaredModel, observed: observedModel },
+            reasoning,
+            ...(admitted === undefined ? {} : { configuration: admitted }),
             // Same discipline as the probes: a coordinate the judge wrote
             // differently is overwritten, and the fact that it was is recorded.
             ...(outcome.ok && outcome.overwritten.length > 0 ? { overwritten: outcome.overwritten } : {}),
@@ -1054,6 +1072,11 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
           cwd: sampleDir,
           error: outcome.error,
         }, { runId: input.runId, by: input.by }).catch(() => {})
+        if (configurationFailure) {
+          failures.push({ judgeCondition: judge.id, sample, error: outcome.error })
+          input.log(`judge ${judge.id} sample ${sample}: ${outcome.error} — configuration failure, no retry`)
+          break samples
+        }
         input.log(`judge ${judge.id} sample ${sample}: ${outcome.error}${attempt === 1 ? ' — retrying once' : ' — sample dropped'}`)
         if (attempt === 2) failures.push({ judgeCondition: judge.id, sample, error: outcome.error })
       }

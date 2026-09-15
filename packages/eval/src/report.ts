@@ -1,3 +1,4 @@
+import { parseEffortEvidence, type EffortEvidence } from './frozen-configuration.ts'
 /**
  * The `report` verb: turn a self-contained mission export bundle into
  * `results.jsonl` (one line per verdict) and `summary.md` (the paired
@@ -355,6 +356,7 @@ export interface EvalReport {
  * nothing" are different facts and only absence can say the first one.
  */
 export interface UsageRow {
+  reasoning?: EffortEvidence
   /** The run this bundle belongs to; null when its meta names none. */
   run: string | null
   /** The cell's mission id. */
@@ -403,6 +405,7 @@ const NS_PRIORITY = ['human-final', 'llm-draft', 'script'] as const
 const COMPLETED_STATES = new Set(['judged', 'archived', 'releasable', 'released'])
 
 interface DelegationRecord {
+  reasoning?: EffortEvidence
   stage: string | null
   round: number | null
   durationMs: number | null
@@ -601,7 +604,9 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
     if (!isPlainObject(item) || item['kind'] !== 'delegation') continue
     const model = isPlainObject(item['model']) ? item['model'] : undefined
     const usage = isPlainObject(item['usage']) ? item['usage'] : undefined
+    const reasoning = parseEffortEvidence(item['reasoning'])
     out.push({
+      ...reasoning === undefined ? {} : { reasoning },
       stage: str(item['stage']),
       round: num(item['round']),
       durationMs: num(item['durationMs']),
@@ -1130,8 +1135,16 @@ function checkSubject(cells: BundleCell[], conditionEntries: Array<{ id: string;
   }
 
   let observedSeen = false
+  let effortUnverified = false
   for (const cell of current) {
     for (const delegation of cell.delegations) {
+      if (delegation.reasoning?.status === 'mismatch') {
+        violated = true
+        details.push(`${cell.missionId}: 推理强度声明、准入配置或回读不一致，该格不参与比较`)
+      } else if (delegation.reasoning?.status === 'unverified') {
+        effortUnverified = true
+        details.push(`${cell.missionId}: 本轮推理强度缺少原生回读证据，未验证`)
+      }
       if (delegation.modelObserved === null) continue
       observedSeen = true
       if (delegation.modelDeclared !== null && delegation.modelObserved !== delegation.modelDeclared) {
@@ -1143,7 +1156,7 @@ function checkSubject(cells: BundleCell[], conditionEntries: Array<{ id: string;
   if (!observedSeen) details.push('无模型回读记录（delegation 的 model.observed 缺失或为 null）——回读一致性未核验')
 
   if (violated) return { id: 'subject', title, status: 'violated', details }
-  if (!conditionVerified || !observedSeen) return { id: 'subject', title, status: 'unverifiable', details }
+  if (!conditionVerified || !observedSeen || effortUnverified) return { id: 'subject', title, status: 'unverifiable', details }
   return { id: 'subject', title, status: 'ok', details: [`${current.length} 格锚点条件均落在 run.meta.conditions 内且哈希一致；模型回读与声明一致`] }
 }
 
@@ -1258,7 +1271,12 @@ interface PrimaryVerdicts {
   source: Map<string, CellVerdict>
 }
 
+function configurationMismatch(cell: BundleCell): boolean {
+  return cell.delegations.some(delegation => delegation.reasoning?.status === 'mismatch')
+}
+
 function primaryPass(cell: BundleCell): PrimaryVerdicts | null {
+  if (configurationMismatch(cell)) return null
   for (const ns of NS_PRIORITY) {
     const verdicts = cell.verdicts.filter(v => v.ns === ns)
     if (verdicts.length === 0) continue
@@ -1363,7 +1381,7 @@ function comparePair(
   polarity: PolarityMap,
   runId: string,
 ): PairComparison {
-  const current = cells.filter(c => c.isCurrent)
+  const current = cells.filter(c => c.isCurrent && !configurationMismatch(c))
   const tasks = [...new Set(current.map(c => c.task).filter((t): t is string => t !== null))].sort()
   const perTask: PairTaskDelta[] = []
   const allDeltas: number[] = []
@@ -1628,7 +1646,7 @@ function efficiencyOf(
   // condition ids still come from ALL current cells, so a condition whose
   // every cell is unfinished appears in the table with blanks rather than
   // vanishing from it.
-  const completed = current.filter(c => c.state !== null && COMPLETED_STATES.has(c.state))
+  const completed = current.filter(c => c.state !== null && COMPLETED_STATES.has(c.state) && !configurationMismatch(c))
   const conditionIds = [...new Set(current.map(c => c.condition).filter((c): c is string => c !== null))].sort()
   const out: ConditionEfficiency[] = []
   for (const condition of conditionIds) {
@@ -1695,7 +1713,7 @@ function efficiencyOf(
 function usageRowsOf(cells: readonly BundleCell[], runId: string | null): UsageRow[] {
   const out: UsageRow[] = []
   for (const cell of cells) {
-    const counted = cell.isCurrent && cell.state !== null && COMPLETED_STATES.has(cell.state)
+    const counted = cell.isCurrent && cell.state !== null && COMPLETED_STATES.has(cell.state) && !configurationMismatch(cell)
     for (const delegation of cell.delegations) {
       const usage: { outputTokens?: number; inputTokens?: number; cacheReadTokens?: number } = {
         ...delegation.usage.outputTokens === null ? {} : { outputTokens: delegation.usage.outputTokens },
@@ -1711,7 +1729,7 @@ function usageRowsOf(cells: readonly BundleCell[], runId: string | null): UsageR
         stage: delegation.stage,
         round: delegation.round,
         counted,
-        ...delegation.modelObserved === null ? {} : { observedModel: delegation.modelObserved },
+        ...delegation.reasoning === undefined ? {} : { reasoning: delegation.reasoning },        ...delegation.modelObserved === null ? {} : { observedModel: delegation.modelObserved },
         ...delegation.cliVersion === null ? {} : { cliVersion: delegation.cliVersion },
         ...delegation.durationMs === null ? {} : { durationMs: delegation.durationMs },
         ...Object.keys(usage).length === 0 ? {} : { usage },
@@ -1726,9 +1744,9 @@ function excludedCellsOf(cells: BundleCell[]): ExcludedCells[] {
   const counts = new Map<string, ExcludedCells>()
   for (const cell of cells) {
     if (!cell.isCurrent) continue
-    if (cell.state !== null && COMPLETED_STATES.has(cell.state)) continue
+    if (cell.state !== null && COMPLETED_STATES.has(cell.state) && !configurationMismatch(cell)) continue
     const condition = cell.condition ?? '(未知条件)'
-    const state = cell.state ?? '(未知状态)'
+    const state = configurationMismatch(cell) ? 'configuration-mismatch' : cell.state ?? '(未知状态)'
     const key = `${condition}\u0000${state}`
     const existing = counts.get(key)
     if (existing === undefined) counts.set(key, { condition, state, count: 1 })

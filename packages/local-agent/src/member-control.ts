@@ -198,9 +198,27 @@ export class MemberConfigurationController {
     delete record.state.error
   }
 
+  private preparedSelection(): LocalAgentMemberConfiguration {
+    const frozen = this.record.state.frozen
+    const selection = structuredClone(frozen?.selection ?? this.record.state.current.selection)
+    if (frozen?.resolved.model !== undefined) selection.model = { mode: 'value', value: frozen.resolved.model }
+    if (frozen?.resolved.effort !== undefined) selection.effort = { mode: 'value', value: frozen.resolved.effort }
+    return selection
+  }
+
+  private assertFrozen(resolved: LocalAgentResolvedConfiguration): void {
+    const frozen = this.record.state.frozen
+    if (frozen !== undefined && (resolved.model !== frozen.resolved.model || resolved.effort !== frozen.resolved.effort)) {
+      throw new Error('Frozen evaluation configuration changed; admission is blocked')
+    }
+  }
+
   private async reconcile(): Promise<void> {
     this.change(record => { record.state.status = 'reconciling' })
-    const inspected = await this.adapter.reconcile(this.read())
+    const snapshot = this.read()
+    if (snapshot.frozen !== undefined) snapshot.current = { ...snapshot.frozen, selection: this.preparedSelection() }
+    const inspected = await this.adapter.reconcile(snapshot)
+    this.assertFrozen(inspected.resolved)
     if (inspected.active) throw new Error('The native session still has an active round')
     if (inspected.matches === 'unknown' || (inspected.matches === 'operation' && this.record.state.operation === undefined)) {
       throw new Error('Native configuration could not be reconciled; admission remains blocked')
@@ -257,11 +275,17 @@ export class MemberConfigurationController {
         if (this.record.state.status === 'failed') throw new Error(this.record.state.error)
         if (this.record.state.pending !== undefined) continue
         const revision = this.record.state.revision
-        const resolved = await this.adapter.prepare?.(structuredClone(this.record.state.current.selection))
+        const resolved = await this.adapter.prepare?.(this.preparedSelection())
         // A selection made during native preparation belongs before this
         // admission, and must be confirmed before any prompt leaves core.
         if (this.record.state.revision !== revision || this.record.state.pending !== undefined) continue
-        if (resolved !== undefined) this.change(record => { record.state.current.resolved = resolved })
+        if (resolved !== undefined) {
+          this.assertFrozen(resolved)
+          this.change(record => { record.state.current.resolved = resolved })
+        }
+        if (this.record.state.lockedReason !== undefined && this.record.state.frozen === undefined) {
+          this.change(record => { record.state.frozen = structuredClone(record.state.current) })
+        }
         break
       }
       const configuration = structuredClone(this.record.state.current)

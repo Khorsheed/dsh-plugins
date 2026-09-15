@@ -27,7 +27,7 @@ describe('provider configuration admission', () => {
     let finish!: () => void
     const result = new Promise<void>(resolve => { finish = resolve })
     let first: LocalAgentAppliedConfiguration | undefined
-    await m.controls.run(binding, async configuration => { first = configuration; return { result } as unknown as SubagentRun })
+    const firstRun = await m.controls.run(binding, async configuration => { first = configuration; return { result } as unknown as SubagentRun })
     const control = m.controls.get(binding)
     await control.select('later', 0, { model: { mode: 'value', value: 'next' }, effort: { mode: 'inherit' } })
     expect(first?.resolved.model).toBe('initial')
@@ -38,6 +38,10 @@ describe('provider configuration admission', () => {
     const start = vi.fn(async configuration => { expect(configuration.resolved.model).toBe('next'); return { result: Promise.resolve() } as unknown as SubagentRun })
     await m.controls.run(binding, start)
     expect(start).toHaveBeenCalledOnce()
+    expect(m.controls.configurationOf(firstRun)?.resolved.model).toBe('initial')
+    const copy = m.controls.configurationOf(firstRun)!
+    copy.resolved.model = 'tampered'
+    expect(m.controls.configurationOf(firstRun)?.resolved.model).toBe('initial')
     expect(m.errors).not.toHaveBeenCalled()
   })
 

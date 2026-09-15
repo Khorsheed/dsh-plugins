@@ -1,3 +1,4 @@
+import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, type EffortEvidence } from './frozen-configuration.ts'
 /**
  * The pre-run readiness check (pilot A · G4).
  *
@@ -53,6 +54,7 @@ export type ReadinessRole = 'player' | 'judge'
 
 /** One condition's readiness verdict — the payload of the `readiness` annotation. */
 export interface ReadinessRecord {
+  reasoning?: EffortEvidence
   /** `readiness` — the annotation kind, carried in the record itself. */
   kind: 'readiness'
   condition: string
@@ -115,6 +117,8 @@ export interface ReadinessRecord {
 
 /** One condition as the readiness check needs it (the run loop's resolved shape). */
 export interface ReadinessSubject {
+  declaredEffort?: string | null
+  sha?: string
   id: string
   harnessName: string
   declaredModel: string | null
@@ -431,6 +435,7 @@ async function probeIn(
     if (childSessionId !== undefined) localAgent.cancel(childSessionId)
   }, env.timeoutMs)
   let settledModel: string | undefined
+  let settledEffort: string | undefined
 
   const fail = (reason: string): ReadinessRecord => ({
     ...base,
@@ -444,8 +449,10 @@ async function probeIn(
 
   let run: Awaited<ReturnType<LocalAgentFace['start']>>
   try {
+    requireEffortAdmission(localAgent, condition.provider, condition.declaredEffort)
     run = await localAgent.start(env.parentSessionId, condition.provider, [{ type: 'text', text: READINESS_PROMPT }], {
       label: `readiness ${condition.id}`,
+      ...frozenConfigurationOptions(condition.sha ?? condition.id, condition.declaredEffort),
       signal: controller.signal,
       ...(unit === undefined ? { cwd: env.cwd } : { exec: unit.exec }),
       // The scope is orthogonal to where the round runs: it names WHICH
@@ -459,6 +466,7 @@ async function probeIn(
       // failed the run (T22 step 5).
       ...(condition.declaredModel === null ? {} : { model: condition.declaredModel }),
       onProgress: (event: DelegationProgress) => {
+        if (event.kind === 'settled' && event.observedEffort !== undefined) settledEffort = event.observedEffort
         if (event.kind === 'settled' && event.observedModel !== undefined) settledModel = event.observedModel
       },
     })
@@ -481,6 +489,7 @@ async function probeIn(
   }
   clearTimeout(timer)
   const observedModel = settledModel ?? await awaitObservedModel(localAgent, run.id, undefined, env.readbackWaitMs)
+  const reasoning = effortEvidence(condition.declaredEffort, localAgent.runConfiguration?.(run), settledEffort ?? result.observedEffort)
   const durationMs = env.now() - startedAt
   const record: ReadinessRecord = {
     ...base,
@@ -489,6 +498,7 @@ async function probeIn(
     durationMs,
     childSessionId: run.id,
     observedModel,
+    reasoning,
   }
 
   if (timedOut) {
@@ -504,6 +514,7 @@ async function probeIn(
     env.log(`readiness ${condition.id}: NOT READY — ${reason}`)
     return { ...record, ok: false, reason }
   }
+  if (reasoning.status === 'mismatch') return { ...record, ok: false, reason: 'Frozen reasoning effort does not match the admitted or observed configuration' }
   if (observedModel !== null && condition.declaredModel !== null && observedModel !== condition.declaredModel) {
     // Frozen decision 5, caught before the run instead of at its first stage
     // round: the whole run would be misattributed.

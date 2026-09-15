@@ -1,3 +1,4 @@
+import type { DelegationConfiguration, EvalDelegationOptions } from '../src/faces.ts'
 /**
  * The run loop v0 against FAKES of the three upstream faces (no real
  * integration here — the real instance run is the acceptance step, not a
@@ -3047,5 +3048,87 @@ describe('runPlan — a run started as a job reads exactly like one started with
     // The session the job opened is the reason the container probe could run
     // at all: it carries the run's cell root.
     expect(createdCwd).toBe(join(jobRoot, 'state', 'cells', 'run-t29d-parity'))
+  })
+})
+
+
+describe('runPlan frozen native effort', () => {
+  function configuredFake(fake = new FakeLocalAgent()) {
+    const start = fake.start.bind(fake)
+    const resume = fake.resume.bind(fake)
+    const snapshots = new WeakMap<object, DelegationConfiguration>()
+    const members = new Map<string, DelegationConfiguration>()
+    const starts: EvalDelegationOptions[] = []
+    const resumes: EvalDelegationOptions[] = []
+    fake.start = async (parent, provider, prompt, options?: EvalDelegationOptions) => {
+      starts.push(options ?? {})
+      const run = await start(parent, provider, prompt, options)
+      const configuration: DelegationConfiguration = { revision: 0, selection: { model: { mode: 'inherit' }, effort: { mode: 'inherit' } }, resolved: { ...options?.model === undefined ? {} : { model: options.model }, ...options?.effort === undefined ? {} : { effort: options.effort } } }
+      snapshots.set(run, configuration); members.set(run.id, configuration)
+      return run
+    }
+    fake.resume = async (parent, provider, child, prompt, options?: EvalDelegationOptions) => {
+      resumes.push(options ?? {})
+      const run = await resume(parent, provider, child, prompt, options)
+      snapshots.set(run, members.get(child)!)
+      return run
+    }
+    return { face: Object.assign(fake, { supportsMemberConfiguration: () => true, runConfiguration: (run: object) => snapshots.get(run) }), starts, resumes }
+  }
+
+  it('pins native effort and the condition lock on readiness and first start, then resumes the same frozen binding', async () => {
+    const root = makeDatasetTree()
+    writeCondition(root, 'dsh-exec', { reasoning: { effort: 'high' } })
+    const plan = writePlan(root, {}, 'frozen-effort')
+    const mission = new FakeMission(join(root, 'mission'))
+    const h = configuredFake()
+    const report = await runPlan(plan, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { datasets: fakeDatasets(root), mission, localAgent: h.face })
+    expect(h.starts.length).toBeGreaterThan(1)
+    for (const options of h.starts) {
+      expect(options.effort).toBe('high')
+      expect(options.configurationLock).toMatch(/^Frozen evaluation condition [a-f0-9]{64}$/)
+    }
+    expect(h.resumes.length).toBeGreaterThan(0)
+    for (const options of h.resumes) {
+      expect(options.effort).toBeUndefined()
+      expect(options.configurationLock).toBeUndefined()
+    }
+    const readiness = (report.meta as { readiness: Array<{ reasoning: { declared: string; resolved: string; observed: null; status: string } }> }).readiness
+    expect(readiness[0]?.reasoning).toMatchObject({ declared: 'high', resolved: 'high', observed: null, status: 'unverified' })
+  })
+
+  it('pins judge effort on its readiness probe and every judge sample', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const path = join(root, 'datasets', 'harness-comparison', 'conditions', `${judgeId}.json`)
+    const document = JSON.parse(readFileSync(path, 'utf8')); document.reasoning = { effort: 'high' }; writeFileSync(path, JSON.stringify(document))
+    const mission = new FakeMission(join(root, 'mission'))
+    const h = configuredFake()
+    await runPlan(writeJudgingPlan(root, [judgeId], 2), { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent: h.face })
+    const judgeCalls = h.starts.filter(options => options.label?.includes('judge:') || options.label === `readiness ${judgeId}`)
+    expect(judgeCalls.length).toBeGreaterThan(1)
+    for (const options of judgeCalls) { expect(options.effort).toBe('high'); expect(options.configurationLock).toMatch(/^Frozen evaluation condition /) }
+  })
+
+  it('keeps the same effort binding when execution is inside a unit', async () => {
+    const root = makeDatasetTree(); writeUnitCondition(root)
+    const path = join(root, 'datasets', 'harness-comparison', 'conditions', 'dsh-unit.json')
+    const document = JSON.parse(readFileSync(path, 'utf8')); document.reasoning = { effort: 'high' }; writeFileSync(path, JSON.stringify(document))
+    const homesRoot = stageScopedHome(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const h = configuredFake(new FakeLocalAgent({ homesRoot, workspaceOf: container => [...lab.live.values()].find(unit => unit.info.resource === container)?.workspace ?? '' }))
+    await runPlan(writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'frozen-unit'), { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { datasets: fakeDatasets(root), mission, localAgent: h.face, lab })
+    expect(h.starts.length).toBeGreaterThan(1)
+    for (const options of h.starts) { expect(options.effort).toBe('high'); expect(options.exec).toBeDefined(); expect(options.cwd).toBeUndefined() }
+    for (const options of h.resumes) { expect(options.effort).toBeUndefined(); expect(options.exec).toBeDefined() }
+  })
+
+  it('rejects explicit effort before any paid readiness call when the facade cannot enforce it', async () => {
+    const root = makeDatasetTree()
+    writeCondition(root, 'dsh-exec', { reasoning: { effort: 'high' } })
+    const localAgent = new FakeLocalAgent()
+    await expect(runPlan(writePlan(root, {}, 'unsupported-effort'), { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { datasets: fakeDatasets(root), mission: new FakeMission(join(root, 'mission')), localAgent })).rejects.toThrow(/requires native configuration admission/)
+    expect(localAgent.calls).toHaveLength(0)
   })
 })

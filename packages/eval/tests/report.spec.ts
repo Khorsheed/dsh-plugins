@@ -1524,3 +1524,21 @@ describe('report — tool calls (T30c)', () => {
     for (const line of rows) expect(line).not.toContain('toolCalls')
   })
 })
+
+
+describe('report frozen effort evidence', () => {
+  it('recomputes effort mismatch, excludes the sample and retains its cost and evidence', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'effort-mismatch', meta: { conditions: [conditionEntry('codex-exec', baseConditionDoc(), 'a1')] },
+      missions: [{ id: 'P0-codex-exec-rep1', attempts: [{ attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+        annotations: [scriptNote('P0', [['check', true]]), { ns: 'orchestrator', by: 'orchestrator', payload: [{ ...delegation('stage1', 1, 1000, 100), reasoning: { declared: 'high', requested: 'high', resolved: 'high', observed: 'low', revision: 0, status: 'verified' } }] }],
+      }] }],
+    })
+    const report = await analyzeBundle(bundle)
+    expect(report.invariants.find(row => row.id === 'subject')?.status).toBe('violated')
+    expect(report.efficiencyExcluded).toContainEqual({ condition: 'codex-exec', state: 'configuration-mismatch', count: 1 })
+    const written = await writeEvalReport(bundle)
+    const rows = readFileSync(written.usagePath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    expect(rows[0]).toMatchObject({ counted: false, reasoning: { status: 'mismatch', observed: 'low', resolved: 'high' }, usage: { outputTokens: 100 } })
+  })
+})
