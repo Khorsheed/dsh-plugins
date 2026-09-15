@@ -45,7 +45,7 @@ terminal-controller（`terminalRemote` + 默认行进组合）、`permissionPres
 
 1. **基线**：devDeps 升 0.1.6-alpha.1 + lockfile 重生成 + 全量 build/test 摸底（红单即适配清单，复核上表第 5 行零命中项）。
 2. **breaking 五项**：ankh-guard `agent/created` serial 化（deliver 路径长 await 审计 + spec 桩改写）→ headless ptc-runtime 改名五处 → eval fixture → mobile anchor 核对 → profiles 收编。
-3. **S12**：message-tools projection 恢复（独立提案，M0 持久化探针先行）。
+3. **S12**：message-tools projection 恢复（独立提案；两轮探针后形态定为「投影模块 + fold 语义三道闸」**暗态交付**——0.1.6-alpha.1 的 fold 对 surface 产出型事件不组合投影与节点成员，点亮等上游修复；双线行为逐字节不变）。
 4. **存量两项**（承接 host-015 第四批）：local-files / file-preview 大文件分页 → `ctx.fs.readByteRange`；ankh-guard 借写所有权租约（`SessionOwnershipLostError`）巩固重启接管。
 5. **合线**：worktree `pnpm gate` 全绿 → 合 main → 共享 harness 检出升线 → `deploy:3080` 验收 → 观察期（默认 3 天）→ **与官方 rc 同波 npm**：0.1.5 欠发与本波成果合在同一版本（双兼容，避免「0.1.5-only 版本发出来几天即过时」的空转）；版本号发布前 `npm view` 核对。
 
