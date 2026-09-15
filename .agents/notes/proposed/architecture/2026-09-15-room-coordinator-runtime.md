@@ -14,6 +14,8 @@ The [capability proposal](../../../../proposals/active/2026-09-15-room-coordinat
 
 Deliver reliable model selection, native generation deltas and direct default routing first; then add task dependencies, durable reports, acceptance and goal continuation. Claude's isolated 2.1.272 initialize/set_model probes support evaluating native control instead of shared settings-file scratch writes, but do not establish authenticated inference or exhaustive model availability. The existing 208 passing tests primarily cover simulated data.
 
+The review adds three explicit delivery gates. Retire the live event mirror mode, normalize legacy configuration, drain old runtimes and verify partial-output arguments; separate bounded real-time flushes from durable snapshot throttling to meet the 200ms P95 target. Carry model/effort choices through execution and records, including eval's frozen conditions, while preserving historical hashes, locks and results. Core owns control/run admission: busy model or effort changes are rejected consistently by room and member composer, with no deferred setting queue in v1.
+
 ## Alternatives considered
 
 **Replace the host AgentFactory.** Not required for default room routing and expands the compatibility burden beyond this request.
@@ -24,9 +26,13 @@ Deliver reliable model selection, native generation deltas and direct default ro
 
 **Simulate streaming from final text.** Cannot expose actual in-flight progress or preserve honest interruption behavior.
 
+**Keep selectable event mode or queue model changes only in room.** Leaves defaults outside the streaming contract or creates conflicting controls across entry points. Retire the live mode split while preserving exec and final reconciliation; reserve any future deferred control queue for a separate core-owned contract.
+
 ## Acceptance criteria
 
 User review precedes implementation. Delivery A requires all four coordinator choices to support direct conversation, truthful controls and verified streaming/replay. Delivery B additionally requires dependent tasks, explicit acceptance, durable reporting and bounded continuation. Detailed matrices and evidence limits live in the linked proposal; this documentation commit does not claim those capabilities shipped.
+
+Delivery A also covers default/legacy streaming paths and sparse-tail latency, concurrent control admission, effort binding on start/resume, and eval override/mismatch counterexamples. Historical condition digests remain stable; missing runtime evidence stays unverified rather than being backfilled as a match. Eval compatibility is an M1 gate, not follow-up work after exposing the selector.
 
 ## Risks
 
