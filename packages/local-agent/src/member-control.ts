@@ -63,6 +63,16 @@ export class MemberConfigurationController {
     return this.storageFailure === undefined ? state : { ...state, status: 'failed', error: this.storageFailure.message }
   }
 
+  /** A failed pre-prompt native binding requires reconciliation before another admission. */
+  rejectAdmission(error: unknown): void {
+    this.recovering = true
+    if (this.storageFailure !== undefined || this.record.state.status === 'failed') return
+    this.change(record => {
+      record.state.status = 'failed'
+      record.state.error = error instanceof Error ? error.message : 'Native round admission failed'
+    })
+  }
+
   private change(mutate: (record: MemberControlRecord) => void): void {
     const next = structuredClone(this.record)
     mutate(next)
@@ -270,6 +280,9 @@ export class MemberConfigurationController {
         this.activeLease = false
         this.kick()
       } }
+    } catch (error) {
+      this.rejectAdmission(error)
+      throw error
     } finally { this.admitting = false; if (!this.activeLease) this.kick() }
   }
 

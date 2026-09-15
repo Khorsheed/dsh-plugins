@@ -47,6 +47,10 @@ describe('provider configuration admission', () => {
     const started = vi.fn(async () => { throw new Error('spawn failed') })
     await expect(m.controls.run(binding, started)).rejects.toThrow('spawn failed')
     expect(control.read().round).toBeUndefined()
+    expect(control.read().status).toBe('failed')
+    await expect(m.controls.run(binding, started)).rejects.toThrow('spawn failed')
+    expect(started).toHaveBeenCalledOnce()
+    await control.retry(control.read().revision)
     m.defaults('new-default')
     await m.controls.run(binding, async configuration => {
       expect(configuration.resolved.model).toBe('new-default')

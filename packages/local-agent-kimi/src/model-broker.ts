@@ -19,6 +19,9 @@
  */
 
 import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
+import type { MemberConfigurationAdapter } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentMemberBinding, LocalAgentMemberConfiguration, LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { readKimiModelConfiguration } from './model-configuration.ts'
 import type { KimiModelCatalog } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
@@ -76,6 +79,35 @@ export class KimiModelBroker implements LocalAgentModelBroker {
       liveSwitch: LiveDriverSwitch
     },
   ) {}
+
+  configurationAdapter(binding: LocalAgentMemberBinding): MemberConfigurationAdapter {
+    const home = this.ctx.localAgent.homeDir('kimi', binding.scope)
+    const resolve = async (selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration> => {
+      const model = selection.model.mode === 'value' ? selection.model.value
+        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel() ?? await readKimiDefaultModel(home)
+      const configured = await readKimiModelConfiguration(home, model)
+      const native = this.deps.liveSwitch.memberRuntimeConfiguration(binding.childSessionId)
+      const entry = native?.directory.entries.find(entry => entry.value === model)
+        ?? configured.entries.find(entry => entry.value === model)
+      const effort = (selection.effort.mode === 'value' ? selection.effort.value : selection.effort.mode === 'inherit' ? binding.effort : undefined) ?? configured.effort
+      if (effort !== undefined && entry?.reasoning !== undefined && !entry.reasoning.options.some(option => option.value === effort)) {
+        throw new Error('Kimi has not advertised this reasoning effort for the selected model')
+      }
+      if (!this.deps.isLive() && effort !== undefined && configured.protocol !== 'kimi') {
+        throw new Error('This model protocol has no Kimi exec effort override; use ACP live mode')
+      }
+      return { ...model === undefined ? {} : { model }, ...effort === undefined ? {} : { effort } }
+    }
+    return {
+      validate: async selection => { await resolve(selection) }, prepare: resolve,
+      apply: async selection => { const resolved = await resolve(selection); await this.deps.liveSwitch.retireMemberRuntime(binding.childSessionId); return resolved },
+      reconcile: async state => {
+        if (this.ctx.localAgent.isDelegationActive(binding.childSessionId)) return { active: true, matches: 'unknown', resolved: {} }
+        await this.deps.liveSwitch.retireMemberRuntime(binding.childSessionId)
+        return { active: false, matches: 'current', resolved: await resolve(state.current.selection) }
+      },
+    }
+  }
 
   async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
     if (refresh) await this.deps.catalog?.refresh(childSessionId)
@@ -167,6 +199,7 @@ export class KimiModelBroker implements LocalAgentModelBroker {
    * respawns onto it, resuming the same CLI session.
    */
   async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    if (typeof this.ctx.localAgent.setMemberModel === 'function') return this.ctx.localAgent.setMemberModel(childSessionId, model)
     if (this.ctx.localAgent.activeDelegations().includes(childSessionId)) {
       throw new Error(SWITCH_IN_FLIGHT_REASON)
     }

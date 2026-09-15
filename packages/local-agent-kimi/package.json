@@ -66,7 +66,8 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
     "@khorsheed/dsh-local-agent": "workspace:*",
-    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*"
+    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*",
+    "smol-toml": "^1.8.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -86,23 +87,35 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-api-remotes": { "optional": true },
-    "@deepseek-ai/dsh-client-locale": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-settings": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
-    "react": { "optional": true }
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
     "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-test-runtime": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",

@@ -38,6 +38,7 @@ interface FakeAcpScript {
   /** Omit the loadSession capability (breaker-path test). */
   noLoadSession?: boolean
   configOptions?: unknown[]
+  setConfiguration?: (params: Record<string, unknown>) => unknown
 }
 
 /** A fake `kimi acp` process speaking ACP over its stdio. */
@@ -160,6 +161,9 @@ class FakeAcpServer {
         return
       case 'session/load':
         respond({ ...this.script.configOptions === undefined ? {} : { configOptions: this.script.configOptions } })
+        return
+      case 'session/set_config_option':
+        respond(this.script.setConfiguration?.(params) ?? {})
         return
       case 'session/prompt': {
         const turn = this.script.turn?.(params) ?? {}
@@ -374,6 +378,41 @@ describe('acpStopReasonToHarness', () => {
 })
 
 describe('kimi live driver rounds', () => {
+  it('configures a resumed native session before prompting and leaves shared default_model untouched', async () => {
+    const m = mount()
+    writeFileSync(join(m.homeDir, 'config.toml'), 'default_model = "a"\n')
+    const options = (model: string, effort: string) => [
+      { id: 'model', category: 'model', type: 'select', currentValue: model, options: ['a', 'b'].map(value => ({ value, name: value })) },
+      { id: 'thinking', category: 'thought_level', type: 'select', currentValue: effort, options: ['low', 'high'].map(value => ({ value, name: value })) },
+    ]
+    const fake = new FakeAcpServer({
+      configOptions: options('a', 'high'),
+      setConfiguration: params => ({ configOptions: options('b', params['configId'] === 'thinking' ? String(params['value']) : 'high') }),
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, {
+      ...roundSpec(m, Session.create(SessionId('configured-resume')), { resume: { cliSessionId: 'prior', turn: 2 } }),
+      configuration: { model: 'b', effort: 'low' },
+    })
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toEqual(['kimi', '--model', 'b', 'acp'])
+    expect(fake.requests.map(request => request.method)).toEqual(['initialize', 'session/load', 'session/set_config_option', 'session/set_config_option', 'session/prompt'])
+    expect(await readKimiDefaultModel(m.homeDir)).toBe('a')
+    expect(m.driver.runtimeConfiguration('configured-resume')).toMatchObject({ currentModel: 'b', currentEffort: 'low' })
+    await m.driver.disposeAll()
+  })
+
+  it('never sends a prompt if the session cannot confirm the requested configuration', async () => {
+    const m = mount()
+    const fake = new FakeAcpServer()
+    m.queueChild(fake)
+    await expect(m.driver.startRound(request() as never, {
+      ...roundSpec(m, Session.create(SessionId('unverified-configuration'))), configuration: { model: 'b', effort: 'high' },
+    })).rejects.toThrow('no verified model selection')
+    expect(fake.requests.some(request => request.method === 'session/prompt')).toBe(false)
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
   it('keeps native model configuration current between rounds and ignores another session', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-kimi-catalog'))

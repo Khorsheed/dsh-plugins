@@ -34,6 +34,8 @@
  * @module @khorsheed/dsh-local-agent-kimi/live-driver
  */
 
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { configureKimiSession } from './session-configuration.ts'
 import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
@@ -133,6 +135,7 @@ export type KimiLiveMirrorGranularity = 'event' | 'token'
 
 /** Fully resolved inputs for one live round. */
 export interface KimiLiveRoundSpec {
+  readonly configuration?: LocalAgentResolvedConfiguration
   /** Parent Session workspace; also the runtime process cwd and ACP session cwd. */
   readonly cwd: string
   /** The `kimi` harness's scoped home, injected as the runtime's `KIMI_CODE_HOME`. */
@@ -346,6 +349,7 @@ class KimiLiveRuntime {
    * resolving a different model for the member retires this runtime so the
    * respawn binds the new one.
    */
+  configurationKey: string | undefined
   boundModel: string | undefined
   modelConfiguration: KimiNativeConfiguration | undefined
   /** Serializes session/prompt per member (converge-before-next-turn). */
@@ -426,6 +430,7 @@ export class KimiAcpLiveDriver {
   private readonly ensuring = new Map<string, Promise<KimiLiveRuntime>>()
   /** The model each in-flight spawn is binding (a stale-model spawn never serves a switched member). */
   private readonly ensuringModel = new Map<string, string | undefined>()
+  private readonly ensuringConfiguration = new Map<string, string | undefined>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
   /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
   private readonly roundChains = new Map<string, Promise<unknown>>()
@@ -543,9 +548,11 @@ export class KimiAcpLiveDriver {
 
   private ensureRuntime(spec: KimiLiveRoundSpec, signal: AbortSignal): Promise<KimiLiveRuntime> {
     const key = String(spec.childSession.id)
-    const model = this.resolveBoundModel(key)
+    const model = spec.configuration === undefined ? this.resolveBoundModel(key) : spec.configuration.model
+    const configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     const existing = this.runtimes.get(key)
-    if (existing !== undefined && !existing.dead && existing.boundModel === model) {
+    if (existing !== undefined && !existing.dead && existing.boundModel === model
+      && existing.configurationKey === configurationKey) {
       this.clearIdleTimer(key)
       return Promise.resolve(existing)
     }
@@ -558,7 +565,7 @@ export class KimiAcpLiveDriver {
       if (!existing.dead) void existing.reclaim()
     }
     const pending = this.ensuring.get(key)
-    if (pending !== undefined && this.ensuringModel.get(key) === model) return pending
+    if (pending !== undefined && this.ensuringModel.get(key) === model && this.ensuringConfiguration.get(key) === configurationKey) return pending
     // A stale-model spawn in flight: chain behind it, then spawn onto the new
     // model (the chained spawn reclaims the stale runtime via the mismatch
     // path on its own ensure).
@@ -575,10 +582,12 @@ export class KimiAcpLiveDriver {
         if (this.ensuring.get(key) === spawn) {
           this.ensuring.delete(key)
           this.ensuringModel.delete(key)
+          this.ensuringConfiguration.delete(key)
         }
       })
     this.ensuring.set(key, spawn)
     this.ensuringModel.set(key, model)
+    this.ensuringConfiguration.set(key, configurationKey)
     return spawn
   }
 
@@ -632,14 +641,14 @@ export class KimiAcpLiveDriver {
     // nothing. Best-effort: a home whose config cannot be written still gets
     // its runtime, running whatever the config already named, and the round's
     // model read-back is what catches the mismatch.
-    if (boundModel !== undefined) {
+    if (spec.configuration === undefined && boundModel !== undefined) {
       await writeKimiDefaultModel(spec.homeDir, boundModel).catch((error: unknown) => {
         this.ctx.logger.warn(`local-agent-kimi: pinning default_model for the resident runtime failed: ${thrown(error).message}`)
         return false
       })
     }
     const spawnSpec: SubprocessSpawnSpec = {
-      argv: ['kimi', 'acp'],
+      argv: ['kimi', ...spec.configuration?.model === undefined ? [] : ['--model', spec.configuration.model], 'acp'],
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -705,6 +714,7 @@ export class KimiAcpLiveDriver {
     }
     this.channelBrokenAt = undefined
     runtime.boundModel = boundModel
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     this.runtimes.set(key, runtime)
     // Stash the member handle for the session declarations.
     runtimeMember.set(runtime, member)
@@ -1212,6 +1222,10 @@ export class KimiAcpLiveDriver {
             })
             rt.modelConfiguration = kimiNativeConfiguration(response)
           }
+        }
+        if (spec.configuration !== undefined) {
+          rt.modelConfiguration = await configureKimiSession(rt.sessionId, rt.modelConfiguration, spec.configuration,
+            (method, params) => rt.peer.request(method, params))
         }
       } catch (error) {
         // The accept failed: the runtime's session state is unknown, so do

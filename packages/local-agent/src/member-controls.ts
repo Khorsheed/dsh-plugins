@@ -49,13 +49,15 @@ export class MemberControls {
   }
 
   async run(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>): Promise<SubagentRun> {
-    const lease = await this.get(binding).admit(randomUUID())
+    const control = this.get(binding)
+    const lease = await control.admit(randomUUID())
     try {
       const run = await start(lease.configuration)
       const release = (): void => { try { lease.release() } catch (error) { this.onError(error) } }
       void run.result.then(release, release)
       return run
     } catch (error) {
+      try { control.rejectAdmission(error) } catch (persistError) { this.onError(persistError) }
       try { lease.release() } catch (releaseError) { this.onError(releaseError) }
       throw error
     }

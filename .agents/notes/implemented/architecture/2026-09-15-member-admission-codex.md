@@ -18,6 +18,10 @@ DSH and Claude now use the same provider admission lease. DSH passes effort thro
 
 Resident reuse compares the complete admitted configuration, including absent values. A change to effort defaults or clearing a model cannot leave an earlier process binding active. Native acknowledgement failures stop admission without an exec retry of that prompt.
 
+Kimi also acquires the lease. ACP model selection is confirmed first; the returned native options then validate and confirm effort before the user prompt. Its controlled path uses per-invocation model arguments and avoids shared default-model writes. Exec validates scoped TOML metadata and only forwards the documented `KIMI_MODEL_THINKING_EFFORT` for Kimi-protocol models ([official environment reference](https://moonshotai.github.io/kimi-code/en/configuration/env-vars.html)). Other protocol/effort combinations fail before generation. TOML parsing uses a declared parser dependency; only credential-free model metadata leaves the reader.
+
+Preparation and pre-publication launch failures now persist a failed admission state. Later dispatch cannot silently retry that configuration: reconciliation, retry or a new selection must clear the failure.
+
 ## Alternatives considered
 
 **Guard only facade starts.** Rejected because direct tool starts would bypass the consistency contract.
@@ -28,8 +32,8 @@ Resident reuse compares the complete admitted configuration, including absent va
 
 ## Consequences
 
-The shared picker, Kimi admission adapter, evaluation frozen-condition callers and full runtime acceptance remain in progress. A configuration acknowledgement is not an observation of the generated model. Existing live scope guards and native default-resolution limitations still need their dedicated integration work. No production profile or authentication state changes in this slice.
+The shared picker, evaluation frozen-condition callers and full runtime acceptance remain in progress. A configuration acknowledgement is not an observation of the generated model. Existing live scope guards and native default-resolution limitations still need their dedicated integration work. No production profile or authentication state changes in this slice.
 
 ## Testing
 
-Core full suite: 299 tests. New admission tests cover provider-result release, failed starts, identity/scope/lock mismatch, default refresh and selection during preparation. Codex: 222 tests, including native effort validation, resumed `turn/start` configuration, and changed/cleared defaults. DSH: 184 tests; headless: 54 tests, including sub-instance validation and launch effort propagation. Claude: 230 tests, including pre-prompt native controls, scratch avoidance and rejection without generation. Core and all affected provider/headless builds pass.
+Core full suite: 299 tests. New admission tests cover provider-result release, failed starts, identity/scope/lock mismatch, default refresh and selection during preparation. Codex: 222 tests, including native effort validation, resumed `turn/start` configuration, and changed/cleared defaults. DSH: 184 tests; headless: 54 tests, including sub-instance validation and launch effort propagation. Claude: 230 tests, including pre-prompt native controls, scratch avoidance and rejection without generation. Kimi: 242 tests, including ordered native model/effort acknowledgement, unchanged shared defaults and rejection before prompting. Core and all affected provider/headless builds pass.

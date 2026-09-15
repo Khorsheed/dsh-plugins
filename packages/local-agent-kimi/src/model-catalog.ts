@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { ModelDirectoryCache, modelDirectoryContextKey } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentModelDirectory, LocalAgentModelDirectoryData, LocalAgentModelEntry, LocalAgentReasoningOption } from '@khorsheed/dsh-local-agent/types'
-import { listKimiConfigModels, readKimiDefaultModel } from './provision.ts'
+import { readKimiModelConfiguration } from './model-configuration.ts'
 
 type JsonObject = Record<string, unknown>
 const object = (value: unknown): JsonObject | undefined => typeof value === 'object' && value !== null ? value as JsonObject : undefined
@@ -68,9 +68,9 @@ export class KimiModelCatalog {
   private readonly cache = new ModelDirectoryCache({ load: async (key: string) => {
     const context = JSON.parse(key) as { homeDir: string; native?: LocalAgentModelDirectoryData }
     if (context.native !== undefined) return context.native
-    const [models, defaultModel] = await Promise.all([listKimiConfigModels(context.homeDir), readKimiDefaultModel(context.homeDir)])
+    const { entries, defaultModel } = await readKimiModelConfiguration(context.homeDir)
     return {
-      entries: models.map(value => ({ value, label: value, source: 'configuration' as const })),
+      entries,
       ...defaultModel === undefined ? {} : { defaultModel },
       complete: false, customInput: true,
       reason: 'Configured candidates; native session model metadata is not available yet',
