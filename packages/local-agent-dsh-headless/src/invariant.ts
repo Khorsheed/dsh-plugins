@@ -15,11 +15,11 @@ export const inject = ['invariants']
 
 /**
  * Composition guard: this bundle is sub-profile-only. Its patch rows
- * (persona override, `hmr` off, `tools` mode, the `code-runtime` insert, the
+ * (persona override, `hmr` off, `tools` mode, the `ptc-runtime` insert, the
  * member-bridge MCP row) collide with or leak into any Host/web composition —
  * 2026-08-23 P0: reconciled into the prod web profile as a direct dependency
  * (reconcilePlugins auto-mounts every `dsh.bundle`-declaring direct dep), the
- * `code-runtime` insert hit the web-app row's duplicate entry id and the
+ * `code-runtime` insert (today's `ptc-runtime` row) hit the web-app row's duplicate entry id and the
  * whole instance failed to boot. The loader's duplicate-id failure is loud
  * but cryptic, and only fires when the ids collide; this invariant is the
  * CLEAR failure for the non-colliding case (e.g. an upstream row rename would

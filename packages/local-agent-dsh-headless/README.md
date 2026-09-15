@@ -56,7 +56,7 @@ dsh --profile headless-local-agent-dsh --model deepseek-official/deepseek-v4-pro
 
 ## 已知限制
 
-- **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`code-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。本包**不声明 `dsh.bundle`**，因此手工加的 bundles 行在 boot 的 `loadProfile` 处直接 fail loud（"declares no dsh.bundle"），这正是一道闸。
+- **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`ptc-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。本包**不声明 `dsh.bundle`**，因此手工加的 bundles 行在 boot 的 `loadProfile` 处直接 fail loud（"declares no dsh.bundle"），这正是一道闸。
 - **它不会被 `dsh plugin add` 自动挂载，也无需如此**——本包曾声明 `dsh.bundle`，而 reconcilePlugins 会把声明该字段的直接依赖自动挂进组合的 layer 栈：2026-08-23 P0（prod web profile 撞 duplicate `code-runtime`）与 2026-09-03 G3 复发都是这一挂。声明已撤（T6），装成直接依赖只会得到一条 "plain dependency" 警告、不挂载——但也没有必要：经 `@khorsheed/dsh-local-agent-dsh` **传递**安装即可，父级 provider 会自动 provision。包内不变量对挂进 web 组合（检出 `webStartup` 服务）依旧 fail loud。
 - 子 dsh 会话绝不会出现在父实例的会话列表里（独立的 scoped-home 存储）。
 - 此 composition 里不装任何其他 `local-agent` 家族 bundle——这里没有任何东西再 spawn 一个 dsh。
