@@ -22,7 +22,14 @@
  * the condition registry; `matrix` / `cells` / `cell` (I5·T35b) read the
  * matrix, the cell list and one cell in full.
  *
- * Four of them WRITE, and every one is a human's click. `approve` is a click
+ * `newExperiment` / `draftOptions` (I5·T34) are the 新建实验 form's: one read
+ * to fill its pickers, one write that drafts the plan and its new conditions
+ * and validates them. That write is the ONE this face shares with a model
+ * tool — `eval_plan_draft` reaches the same service verb — and it is shared
+ * precisely because drafting is not starting: a draft is a file and a 草稿 row,
+ * and every door to `runStart` stays on the human side of R1.
+ *
+ * Five of them WRITE, and every one is a human's click. `approve` is a click
  * reaching the same `runStart` the slash command reaches — with the approving
  * session as the run's parent, exactly as `/eval run` resolves it. The
  * drawer's three are `retry` (a fresh attempt against an auditable reason),
@@ -59,6 +66,10 @@ import type {
   EvalConditionDiffView,
   EvalConditionsRequest,
   EvalConditionsView,
+  EvalDraftOptionsRequest,
+  EvalDraftOptionsView,
+  EvalDraftRequest,
+  EvalDraftResult,
   EvalExperimentDetail,
   EvalExperimentRequest,
   EvalExperimentsRequest,
@@ -257,6 +268,41 @@ export class EvalRemoteService extends TypertRemoteService<never> {
       session: { id: String(agent.session.id) },
       ...(request.repo === undefined ? {} : { repo: request.repo }),
       ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
+    })
+  }
+
+  /**
+   * DRAFT an experiment — ui-spec step 2, the 新建实验 form's one write.
+   *
+   * The same service verb `eval_plan_draft` reaches, which is the point of the
+   * task that added both: a draft a person fills in on a form and a draft an
+   * agent makes in one sentence are the same file written by the same code,
+   * and the lab list cannot tell them apart.
+   *
+   * A write, but NOT a start. It writes into the session's bound repository
+   * working copy and validates what it wrote; a plan validate rejects still
+   * lands, as a 草稿. The starting verb is `approve`, one page further on, and
+   * this one has no path to it.
+   * @param agent - the drafting session; its binding resolves the repository.
+   * @param request - ui-spec §五's form fields, flat.
+   * @returns where the files landed, and validate's verdict on them.
+   */
+  @Remote('newExperiment')
+  newExperiment(agent: Agent, request: EvalDraftRequest): Promise<EvalDraftResult> {
+    return this.service.draftExperiment(request, { session: { id: String(agent.session.id) } })
+  }
+
+  /**
+   * The 新建实验 form's pickers: which dataset sets this session may draft
+   * into, and the items and stage schemas each one holds.
+   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param request - repository override.
+   */
+  @Remote('draftOptions')
+  draftOptions(agent: Agent, request: EvalDraftOptionsRequest): Promise<EvalDraftOptionsView> {
+    return this.service.draftOptions({
+      session: { id: String(agent.session.id) },
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
     })
   }
 

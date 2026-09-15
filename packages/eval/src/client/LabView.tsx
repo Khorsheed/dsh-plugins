@@ -6,13 +6,14 @@
  * because to the person planning the next comparison they are the same kind
  * of thing (ui-spec §五): name, dataset snapshot, condition count (+ judges),
  * items, reps, the factors a condition diff derived, status, progress, start
- * time. The detail is the seven-tab shell the spec fixes; three of the seven
- * are built — OVERVIEW (snapshot, matrix shape, factors, judge, environment,
- * the readiness records verbatim, the run.meta digest), PLAN REVIEW (validate
- * line by line and the two human buttons) and CONDITIONS (the registry and
- * the two-condition diff) — and each of the rest carries a placeholder naming
- * the task that owns it: a tab that lies about being empty is worse than one
- * that says who is building it.
+ * time. Its one action is 新建实验, which opens the draft form (I5·T34) — the
+ * same service verb `eval_plan_draft` reaches, so a plan a person fills in and
+ * a plan an agent drafts in one sentence arrive in this list as the same row.
+ * The detail is the seven-tab shell the spec fixes, and all seven are built:
+ * OVERVIEW (snapshot, matrix shape, factors, judge, environment, the readiness
+ * records verbatim, the run.meta digest), PLAN REVIEW (validate line by line
+ * and the two human buttons), CONDITIONS (the registry and the two-condition
+ * diff), MATRIX, CELLS, REPORT and the JUDGE BENCH.
  *
  * The report page (T38) is fetched the same lazy way, and for a stronger
  * reason: it reads a mission export BUNDLE off disk and analyzes it, which is
@@ -33,7 +34,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalExperimentDetail, EvalExperimentRow } from '../types.ts'
+import type { EvalDraftResult, EvalExperimentDetail, EvalExperimentRow } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ConditionsPage } from './ConditionsPage.tsx'
 import { Field, StartedRun, factorCell, snapshotCell, stamp, statusKey } from './parts.tsx'
@@ -43,6 +44,7 @@ import { CellsPage } from './CellsPage.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { JudgingPage } from './JudgingPage.tsx'
 import { MatrixPage } from './MatrixPage.tsx'
+import { NewExperimentDialog } from './NewExperimentDialog.tsx'
 import { ReportPage } from './ReportPage.tsx'
 import css from './LabView.module.css'
 
@@ -163,6 +165,7 @@ export function LabView(props: LabViewProps) {
   const {
     sessionId, useStore, actions, t,
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
+    fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
     fetchReport, finalizeRun, fetchJudgeQueue, submitHumanFinal,
   } = props
@@ -218,7 +221,13 @@ export function LabView(props: LabViewProps) {
   const judgeSubmitting = useStore(s => s.judgeSubmitting)
   const exportOpen = useStore(s => s.exportOpen)
   const notice = useStore(s => s.notice)
-  const [newNotice, setNewNotice] = useState(false)
+  // A draft made in THIS visit, held until its row shows up in the refreshed
+  // list. The row does not exist client-side the moment the file lands, so
+  // opening it by id immediately would drop the reader back to the list; the
+  // effect below opens it when the list catches up, and the same sentence is
+  // shown over the list meanwhile.
+  const [newOpen, setNewOpen] = useState(false)
+  const [drafted, setDrafted] = useState<EvalDraftResult | null>(null)
 
   // Fetch the list on mount and whenever refreshRev moves.
   useEffect(() => {
@@ -245,6 +254,40 @@ export function LabView(props: LabViewProps) {
       ?? (started === null ? undefined : rows.find(row => row.planPath === started.planPath))
   const openRunId = openRow?.runId ?? null
   const planPath = openRow?.planPath ?? null
+
+  // What the draft's own sentence says: the paths, and whether validate found
+  // anything. A draft with errors is still a draft — it is on disk and in the
+  // list — so the notice reports rather than apologizes.
+  // The experiment's own name is the plan's file stem — the drafting verb
+  // answers with the path, and the row that carries the name does not exist
+  // client-side yet when this sentence is composed.
+  const draftName = drafted === null
+    ? ''
+    : (drafted.planPath.split('/').pop() ?? drafted.planPath).replace(/\.json$/, '')
+  const draftNotice = drafted === null
+    ? null
+    : (drafted.review.errors === 0
+      ? t('notice.drafted', { name: draftName, plan: drafted.planPath })
+      : t('notice.draftedWithErrors', {
+        name: draftName, plan: drafted.planPath, errors: drafted.review.errors,
+      }))
+
+  // Keyed on `list`, NOT on `rows`: `rows` is a fresh array on every render
+  // (`list?.rows ?? []`), which would re-run this on every render for nothing.
+  // The effect does write `drafted`, but it writes it to null and then early
+  // returns — it cancels no request, so this is not the self-cancelling shape
+  // T47 hit.
+  useEffect(() => {
+    if (drafted === null) return
+    const row = (list?.rows ?? []).find(entry => entry.planPath === drafted.planPath)
+    if (row === undefined) return
+    actions.open(row.id)
+    // `open` lands on the overview and clears the per-experiment notice, so
+    // the page and the sentence are set after it, never before.
+    actions.setPage('plan')
+    if (draftNotice !== null) actions.setNotice(draftNotice)
+    setDrafted(null)
+  }, [list, drafted, draftNotice, actions])
 
   // Fetch the open experiment's detail. A DRAFT has no run: its overview is
   // the row, and spending an RPC on it would only produce a refusal.
@@ -558,12 +601,10 @@ export function LabView(props: LabViewProps) {
         <span className={css.barSpacer} />
         <Button size="sm" onClick={() => { actions.refresh() }}>{t('list.refresh')}</Button>
         {openRow === undefined && (
-          <Button size="sm" variant="primary" onClick={() => { setNewNotice(true) }}>{t('list.new')}</Button>
+          <Button size="sm" variant="primary" onClick={() => { setNewOpen(true) }}>{t('list.new')}</Button>
         )}
       </div>
-      {newNotice && openRow === undefined && (
-        <div className={css.notice}>{t('placeholder.new')}</div>
-      )}
+      {draftNotice !== null && openRow === undefined && <div className={css.notice}>{draftNotice}</div>}
       {notice !== null && openRow !== undefined && <div className={css.notice}>{notice}</div>}
       {openRow === undefined
         ? (
@@ -768,6 +809,21 @@ export function LabView(props: LabViewProps) {
             />
           </>
         )}
+      <NewExperimentDialog
+        open={newOpen}
+        onClose={() => { setNewOpen(false) }}
+        onDrafted={(result) => {
+          setNewOpen(false)
+          setDrafted(result)
+          // The row is the LIST's; ask for it and let the effect above open it.
+          actions.refresh()
+        }}
+        fetchDraftOptions={fetchDraftOptions}
+        fetchConditions={fetchConditions}
+        draftExperiment={draftExperiment}
+        sessionId={sessionId}
+        t={t}
+      />
     </div>
   )
 }

@@ -12,7 +12,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   EvalApproveRequest, EvalApproveResult, EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
-  EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView, EvalExperimentDetail,
+  EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView,
+  EvalDraftOptionsRequest, EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentDetail,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
   EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
@@ -29,8 +30,10 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
  * experiment's overview, the plan review, the condition registry and its diff,
  * the matrix, the cell list and one cell in full.
  *
- * Six of them WRITE, and every one is a human's click. `approvePlan` is
- * ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
+ * Seven of them WRITE, and every one is a human's click. `draftExperiment` is
+ * ui-spec step 2 — the 新建实验 form, and the ONE write this face shares with a
+ * model tool (`eval_plan_draft` reaches the same service verb), because
+ * drafting starts nothing. `approvePlan` is ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
  * two-step bundle export. `finalizeRun` is the report page's — the same
  * release gate, walked over every archived cell of the run. `submitHumanFinal`
  * is the judge bench's, and the ONLY door the `human-final` namespace has:
@@ -48,7 +51,19 @@ export interface LabViewInjected {
   fetchConditions: (sessionId: SessionId, request: EvalConditionsRequest) => Promise<RemoteResult<EvalConditionsView>>
   /** Two conditions, field by field — only what differs. */
   fetchConditionDiff: (sessionId: SessionId, request: EvalConditionDiffRequest) => Promise<RemoteResult<EvalConditionDiffView>>
-  /** Approve a plan and start it (the ONE write this face carries). */
+  /**
+   * What the 新建实验 form's pickers may offer: the dataset sets this session
+   * can draft into, with the items and stage schemas each one holds.
+   */
+  fetchDraftOptions: (sessionId: SessionId, request: EvalDraftOptionsRequest) => Promise<RemoteResult<EvalDraftOptionsView>>
+  /**
+   * DRAFT an experiment: write the plan and any new condition into the bound
+   * repository's working copy and validate them. A write, not a start — the
+   * result carries the plan-review page's own payload, and the button that
+   * starts anything is on that page.
+   */
+  draftExperiment: (sessionId: SessionId, request: EvalDraftRequest) => Promise<RemoteResult<EvalDraftResult>>
+  /** Approve a plan and start it (the one write that reaches `runStart`). */
   approvePlan: (sessionId: SessionId, request: EvalApproveRequest) => Promise<RemoteResult<EvalApproveResult>>
   /**
    * A started run's job log from the top, verbatim. Session-less on purpose:
