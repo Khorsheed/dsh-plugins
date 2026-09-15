@@ -24,6 +24,8 @@ Extend existing member cards, goal/task capsules and chat events. Delivery A add
 
 An ordinary request such as asking main to have Kimi do a small job supports background delegation without a formal goal. Return an accepted/queued receipt promptly, persist correlated reports and deliver them automatically to the coordinator, without manual forwarding. A running member does not hold the coordinator waiting for its result; the user can keep chatting subject to normal per-agent serialization. Main chooses whether larger execution requests need a staged plan, parallel tasks or dependent handoffs; no separate automation mode or mandatory start button is required. Discussion/drafts do not start work, and pauses, scope and budgets remain effective. M3 delivers the shared durable report path for lightweight work; M4 reuses it for formal task dependencies.
 
+Preserve independent member sessions and existing breadcrumb/session-tree, TaskPilot and room entry points. Stable child-session lineage and run identity survive renaming, model changes and coordinator promotion/demotion. Keep member transcripts, elapsed time, reported tokens and member-scoped stop controls; room summaries supplement these surfaces. Stop interrupts the current turn while retaining output, rather than promising process suspension, and automated retries must not undo a user stop. TaskPilot remains optional, with no new hard dependency.
+
 ## Alternatives considered
 
 **Replace the host AgentFactory.** Not required for default room routing and expands the compatibility burden beyond this request.
@@ -47,6 +49,8 @@ Delivery A also covers default/legacy streaming paths and sparse-tail latency; s
 Cold-start acceptance covers DSH first, invitation without automatic promotion, candidate readiness failures and restoration of a saved external coordinator. Goal UI acceptance covers draft versus active state, navigable dependencies and evidence, truthful acceptance counts, visible blockers and pause/recovery across refresh and narrow screens. M3–M5 own these UI changes alongside their corresponding service contracts.
 
 Delivery A verifies continued main conversation while Kimi works, automatic completion/failure reports without a goal, and report deduplication and pause behavior. Delivery B verifies that a conversational execution request is sufficient for main to organize the goal, while discussion and saved drafts remain inactive. Direct human mentions retain their separate routing and do not automatically wake main.
+
+M2/M3 compatibility gates cover existing navigation to the same member session during and after execution, role changes and refresh; token deduplication across streaming snapshots and final reconciliation; and equivalent targeted stops from member, room and TaskPilot surfaces. Missing usage remains unknown or pending. Stopping one worker preserves its partial transcript and other members' execution; room/member navigation and controls remain usable without TaskPilot.
 
 ## Risks
 
