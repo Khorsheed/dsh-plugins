@@ -56,6 +56,7 @@ describe('LocalAgentGateway', () => {
         followModelDirectory: (_child, signal) => directory.follow('fake', signal),
       },
     }))
+    expect(await gateway.memberDirectory('unknown-child', true)).toBeNull()
     expect(await gateway.modelDirectory('fake', 'unknown-child', true)).toBeNull()
     expect(calls).toBe(0)
     expect(await gateway.modelDirectory('fake', undefined, true)).toMatchObject({ status: 'ready', entries: [{ label: 'Native label' }] })

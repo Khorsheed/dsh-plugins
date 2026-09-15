@@ -106,6 +106,7 @@ async function bench(options: {
   memberModel?: (child: string) => Promise<LocalAgentModelInfo | null | undefined>
   setMemberModel?: (child: string, model?: string) => Promise<{ ok: true } | { ok: false; error: string }>
   modelDirectory?: RoomModelDirectory
+  renderMemberConfiguration?: RoomMembersInjected['renderMemberConfiguration']
 } = {}): Promise<Bench> {
   const isRoom = options.room !== false
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
@@ -130,6 +131,7 @@ async function bench(options: {
     memberModel: vi.fn(options.memberModel ?? (async () => undefined)),
     setMemberModel: vi.fn(options.setMemberModel ?? (async () => ({ ok: true as const }))),
     modelDirectory: options.modelDirectory,
+    renderMemberConfiguration: options.renderMemberConfiguration,
   }
   const props = { sessionId: SESSION, ...face, t } as unknown as MembersViewProps
   render(<MembersView {...props} />)
@@ -542,7 +544,19 @@ describe('MembersView', () => {
     expect(dialog.querySelector('datalist')).toBeNull()
   })
 
-  it('the edit save switches the live member through setMemberModel and journals the model', async () => {
+  it('renders the shared member configuration panel and saves metadata without a second model write', async () => {
+    const renderConfiguration = vi.fn((id: string) => <div>Shared configuration: {id}</div>)
+    const { face } = await bench({ renderMemberConfiguration: renderConfiguration, memberModel: async () => modelInfo() })
+    fireEvent.click(Array.from(cardOf('ada').querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    await screen.findByText('Shared configuration: child-1')
+    expect(screen.queryByRole('button', { name: '选择模型' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(face.setMemberModel).not.toHaveBeenCalled()
+    expect(face.updateMember).not.toHaveBeenCalled()
+  })
+
+  it('the compatibility edit delegates model ownership to core without duplicating it in the room journal', async () => {
     const { face } = await bench({
       memberModel: async (child) => child === 'child-1' ? modelInfo() : null,
     })
@@ -554,11 +568,12 @@ describe('MembersView', () => {
     fireEvent.change(input, { target: { value: 'kimi-k1' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => { expect(face.setMemberModel).toHaveBeenCalledWith('child-1', 'kimi-k1') })
-    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('ada', { model: 'kimi-k1' }) })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(face.updateMember).not.toHaveBeenCalled()
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   })
 
-  it('clearing the model field clears the override (undefined to the broker, null to the journal)', async () => {
+  it('clearing the model field only clears the core override for a started member', async () => {
     const { face } = await bench({
       memberModel: async (child) => child === 'child-1' ? modelInfo({ source: 'override', override: 'kimi-k2' }) : null,
     })
@@ -570,7 +585,8 @@ describe('MembersView', () => {
     fireEvent.change(input, { target: { value: ' ' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => { expect(face.setMemberModel).toHaveBeenCalledWith('child-1', undefined) })
-    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('ada', { model: null }) })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(face.updateMember).not.toHaveBeenCalled()
   })
 
   it('a broker refusal rides the dialog error line and aborts the save (no journal write, no close)', async () => {

@@ -13,6 +13,10 @@
  * under the standard 子代理 list like every other subagent. The plugin holds
  * no host data — every open pulls fresh.
  */
+import { createElement, type ReactNode } from 'react'
+import { HarnessModelPicker, type HarnessModelPickerProps, type ModelDirectoryFace } from './HarnessModelPicker.tsx'
+import { MemberConfiguration } from './MemberConfiguration.tsx'
+import { MemberConfigurationStores } from './member-configuration.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the generated Remote API, the ctx.remote merge, and the
 // locale Context merge.
@@ -43,6 +47,18 @@ export { selectCliMember } from './MemberComposer.tsx'
 
 /** The mounted local-agent gateway namespace, read back from the global store. */
 export type LocalAgentGatewayRemote = TypertRemoteNamespaceMap['localAgentGateway']
+
+/** Optional companion-facing renderer; consumers probe the service at gesture time. */
+export type HarnessModelPickerInput = Omit<HarnessModelPickerProps, 'face' | 't'>
+export interface LocalAgentUi {
+  renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
+  renderMemberConfiguration(childSessionId: string): ReactNode
+}
+declare module '@deepseek-ai/cordis' {
+  interface Context { localAgentUi: LocalAgentUi }
+}
+export { ModelConfigurationFields } from './ModelConfigurationFields.tsx'
+export type { ConfigurationTranslate } from './ModelConfigurationFields.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -75,6 +91,33 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.logger.error(error)
   }
   const gateway = ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote
+  const unwrap = <T,>(result: { ok: true; value: T } | { ok: false }): T => {
+    if (!result.ok) throw new Error('Configuration request failed')
+    return result.value
+  }
+  const configurations = new MemberConfigurationStores({
+    read: async id => unwrap(await gateway.memberConfiguration(id)),
+    follow: (id, signal) => gateway.followMemberConfiguration(id, signal),
+    directory: async (id, refresh) => unwrap(await gateway.memberDirectory(id, refresh)),
+    followDirectory: (id, signal) => gateway.followMemberDirectory(id, signal),
+    select: async (id, request, revision, selection) => unwrap(await gateway.selectMemberConfiguration(id, request, revision, selection)),
+    cancel: async (id, request, revision) => unwrap(await gateway.cancelMemberConfiguration(id, request, revision)),
+    retry: async (id, revision) => { unwrap(await gateway.retryMemberConfiguration(id, revision)) },
+  })
+  const directoryFaces = new Map<string, ModelDirectoryFace>()
+  const directoryFace = (name: string): ModelDirectoryFace => {
+    let face = directoryFaces.get(name)
+    if (face === undefined) directoryFaces.set(name, face = {
+      read: async refresh => unwrap(await gateway.modelDirectory(name, undefined, refresh)),
+      follow: signal => gateway.followModelDirectory(name, undefined, signal),
+    })
+    return face
+  }
+  const configurationUi: LocalAgentUi = {
+    renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
+    renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), t: ctx.locale.bind(NS) }),
+  }
+  ctx.provide('localAgentUi', configurationUi)
   const outputs = new MemberLiveOutputs((id, signal) => gateway.followMemberOutput(id, signal))
   ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
@@ -97,6 +140,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       locale: NS,
       select: selectCliMember,
       inject: (): MemberComposerInjected => ({
+        renderMemberConfiguration: configurationUi.renderMemberConfiguration,
         memberOf: childSessionId => gateway.memberOf(childSessionId).then(result => (result.ok ? result.value : undefined)),
         promptMember: (childSessionId, text) => gateway.promptMember(childSessionId, text).then(result => (result.ok ? result.value : undefined)),
         stopMember: childSessionId => gateway.stopMember(childSessionId).then(result => (result.ok ? result.value : undefined)),

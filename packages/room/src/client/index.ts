@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import roomRemote from '@khorsheed/dsh-room/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
@@ -210,6 +211,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
    * serve a pure path pick, so the dialog consumes the primitive directly.
    */
   const inviteFace = (sessionId: SessionId): RoomInviteInjected => ({
+    renderHarnessModelPicker: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker,
     // The room session's own cwd: the invite dialog's cwd field placeholder
     // (empty = inherit). Read at inject time; a later cwd change refreshes
     // with the next view mount.
@@ -254,6 +256,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
     ...inviteFace(sessionId),
     // The localAgentGateway member model surface (the family client half's
     // namespace, probed lazily like the invite dialog's harnessModel read):

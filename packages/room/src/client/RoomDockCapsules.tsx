@@ -250,7 +250,7 @@ function TaskRow({ task, tasks, now, closeTask, t }: {
 /** The dock capsules (goal + tasks) with their expanded cards. */
 export function RoomDockCapsules({
   sessionId, roomStore, addTask, closeTask, setGoal,
-  roomCwd, invite, listProviders, browseDirectory, modelSurface, t,
+  roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker, t,
 }: RoomDockCapsulesProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [open, setOpen] = useState<'goal' | 'tasks' | null>(null)
@@ -327,6 +327,7 @@ export function RoomDockCapsules({
             existingNames={state.members.map(entry => entry.name)}
             browseDirectory={browseDirectory}
             modelSurface={modelSurface}
+          renderHarnessModelPicker={renderHarnessModelPicker}
             onSubmit={submitInvite}
             onClose={() => { setInviteOpen(false) }}
             t={t}

@@ -1,0 +1,16 @@
+.root { min-width: 0; font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-primary); }
+.root summary { cursor: pointer; overflow-wrap: anywhere; padding: 6px 8px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); }
+.panel { display: flex; flex-direction: column; gap: 10px; width: min(480px, 100%); box-sizing: border-box; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; margin-top: 6px; }
+.value { overflow-wrap: anywhere; }
+.fields { display: flex; flex-direction: column; min-width: 0; gap: 6px; border: 0; padding: 0; margin: 0; }
+.fields legend { font-weight: 600; margin-bottom: 6px; }
+.fields input, .fields select { min-width: 0; padding: 7px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; color: inherit; background: transparent; }
+.modes, .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.panel button { font: inherit; color: inherit; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 5px 8px; background: transparent; cursor: pointer; }
+.panel button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.panel button[aria-pressed="true"], .panel button[aria-selected="true"] { border-color: var(--dsw-alias-button-info-fill); }
+.panel button:disabled { cursor: default; opacity: .5; }
+.candidates { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.candidates button { display: flex; flex-direction: column; text-align: left; overflow-wrap: anywhere; white-space: normal; }
+.panel small { color: var(--dsw-alias-label-secondary); }
+.custom { display: flex; flex-direction: column; gap: 5px; }

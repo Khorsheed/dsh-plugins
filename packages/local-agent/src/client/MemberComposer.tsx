@@ -15,7 +15,7 @@
  * machine; Stop goes to `stopMember`.
  */
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, KeyboardEvent } from 'react'
+import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -68,6 +68,7 @@ export function selectCliMember(owner: ComposerChainProps): MemberComposerMatch 
  * renders through its own copy rather than throwing into the slot tree).
  */
 export interface MemberComposerInjected {
+  renderMemberConfiguration?: ((childSessionId: string) => ReactNode) | undefined
   /** The delegation view for a child session; null = not a family member. */
   memberOf: (childSessionId: string) => Promise<LocalAgentDelegationView | null | undefined>
   /** Send one human follow-up to the member (facade resume host-side). */
@@ -152,7 +153,7 @@ export function resetMembershipCache(): void {
  * @returns the composer, the neutral checking state while probing, or the
  *   read-only panel when not a member.
  */
-export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, t }: MemberComposerProps) {
+export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, renderMemberConfiguration, t }: MemberComposerProps) {
   const [membership, setMembership] = useState<Membership>(() => membershipCache.get(matched.childSessionId))
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -374,7 +375,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           {/* The model seat sits in the right cluster, immediately before the
               Send/Stop circle — the official composer's order (model seat →
               send, ui-model-selection's ModelSelect). */}
-          {modelInfo !== null && (
+          {renderMemberConfiguration !== undefined ? renderMemberConfiguration(matched.childSessionId) : modelInfo !== null && (
             <div className={css.modelPicker} ref={modelPickerRef}>
               <button
                 type="button"

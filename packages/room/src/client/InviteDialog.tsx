@@ -1,3 +1,4 @@
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 /**
  * The invite/edit dialog as a character-creation card: a self-drawn
  * lightweight modal (overlay + centered card, Esc/overlay-click closes) with
@@ -57,6 +58,8 @@ export interface InviteDialogSubmit {
 }
 
 export interface InviteDialogProps {
+  readonly renderHarnessModelPicker?: LocalAgentUi['renderHarnessModelPicker'] | undefined
+  readonly memberConfiguration?: ReactNode | undefined
   readonly mode: 'invite' | 'edit'
   /** The member being edited (edit mode). */
   readonly member?: RoomMember | undefined
@@ -101,7 +104,7 @@ function validName(name: string): boolean {
 /** The invite/edit modal card. */
 export function InviteDialog({
   mode, member, providers, localAgentAvailable, inheritedCwd, existingNames,
-  browseDirectory, modelSurface, memberModel, onSubmit, onClose, t,
+  browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
   const [name, setName] = useState(member?.name ?? '')
@@ -366,7 +369,7 @@ export function InviteDialog({
                 </label>
               )
             )}
-            {modelField}
+            {memberConfiguration ?? (chosenHarness !== undefined ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy, defaultLabel: modelDefaultItem }) : undefined) ?? modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>

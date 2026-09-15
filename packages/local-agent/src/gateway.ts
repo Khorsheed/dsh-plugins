@@ -106,6 +106,25 @@ export default class LocalAgentGateway extends TypertRemoteService {
     }
   }
 
+  /** Resolve directory ownership from the recorded member, never a UI provider guess. */
+  @Remote('memberDirectory')
+  async memberDirectory(childSessionId: string, refresh: boolean): Promise<LocalAgentModelDirectory | null> {
+    const record = this.ctx.localAgent.getDelegation(childSessionId)
+    const broker = record === undefined ? undefined : this.ctx.localAgent.harnessForProvider(record.provider)?.modelBroker
+    return await broker?.modelDirectory?.(childSessionId, refresh) ?? null
+  }
+
+  @Remote({ mode: 'stream' })
+  async *followMemberDirectory(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    const record = this.ctx.localAgent.getDelegation(childSessionId)
+    const broker = record === undefined ? undefined : this.ctx.localAgent.harnessForProvider(record.provider)?.modelBroker
+    if (broker?.followModelDirectory !== undefined) yield* broker.followModelDirectory(childSessionId, signal)
+    else {
+      const directory = await broker?.modelDirectory?.(childSessionId)
+      if (directory !== undefined && !signal.aborted) yield directory
+    }
+  }
+
   /**
    * Registered harnesses in registration order.
    * @returns the roster rows.
