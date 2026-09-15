@@ -349,21 +349,24 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **T38 / T47 验收（2026-09-14）**：T38 合入 `c83c7fb9`、T47 合入 `7ec52ed7`，两包互不相交，合并态 eval 608、datasets 167、datasets-tool 绿、双语同步、独立性 0。T38 超出文案的「换个目录找」接受——根因是 run.meta 不记导出去向，正解是导出时记进账本，立 T53（小）。T47 三件都接受：读路径在 HEAD、写只进工作区是 put_item 的既有语义，骨架落位后要 commit 才在树上出现，两侧 README 已写明；`/datasets bind` 在 composer 里丢参数是 slash 没声明 free-form input，补 input.hint 修掉；React effect 把自己写的加载态放进依赖导致自取消——eval 客户端同形状的 effect 在 T37 里顺手查一遍。作答记录一区真机上在场无行（全新 HOME 无 run），T39 端到端时会有行。
 
+**T37 / T51 / T48 验收（2026-09-16）**：三条合入 `899410e9`、`db4376e6`、`cbadb266`（T48 与 T37 只撞 eval README 的 sidecar，重录），题库 i5-docs 并入 i1-walk `3c5ebf4`，validate 57 条 UNREGISTERED 警告、0 error；合并态 eval 641、脚本 174、305 对双语同步、独立性 0。T37 两处偏离：一、humanFinal 入参用 ticket 不用 missionId——接受，文案自相矛盾（格子名 `<题>-<条件>-rep<N>` 本身带 harness，按文案写就把它印进盲评页），实施者的改法对；二、**得分口径隐患**：报告按格取最权威 ns 整体算分，判官台第一次让「一条人评让整格其余判据出局」变得好踩，实施者没改算法、在按钮前点名代价，对——这是方法论决定（一条人评覆盖整格还是一条判据），立 T54 待用户拍板。T51 两处都改（runner 只去尾换行、逐行正则）接受。T48 两问：ui-spec §五「六个子页」是笔误（表与代码都是七个），协调者顺手改正；README「待补 T9 / T10 / T14」那句过时，一并改成已落地（双语 + sidecar）。实验室六个子页至此全部落地，I5 剩 T34（一句话起草）与 T39（端到端）。
+
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
 | T46 ✅ | 代码 + profile | eval 预设摘掉 `mission-tool` 行（任务 tab 随之自隐）；eval-tool 加 `eval_cells`（按 run 读格子投影，收编原四个 mission 读工具的用途） | 无 | 合入 main `42ab0ae3`（2026-09-13，`39273ed4`）；`cells(runId, query)` 一格一行（坐标、桶、阶段、在态时长、attempt、refs、检查点、各 ns 注解数、childSessionId），投影算在服务端；eval-tool 四个读工具；用预设文件喂 mission 的 preset-visibility 证得任务 tab 在 eval 会话不注册；活实例原文并入 T35a 的真机步骤；「不给 run_id 就列评测 run」留给 T35a 的 runs 读面 |
-| T48 | 文档 | 按 [ui-spec.md](ui-spec.md) 改写 README「最终 UI」与「工具按域开放」；修十处口径不一致（清单见 §三 T48） | 无 | 双语 README + sidecar；题库两处修正 |
+| T48 ✅ | 文档 | 按 [ui-spec.md](ui-spec.md) 改写 README「最终 UI」与「工具按域开放」；修十处口径不一致（清单见 §三 T48） | 无 | 合入 main `cbadb266`（2026-09-16，`3f08d971`）；题库 `i5-docs`（`19358bc`）并入 i1-walk `3c5ebf4`：协议 v1-rev11、P0 指针修正、canary 埋进八个可见层文件（反向验证 CANARY_MISSING 会报）；「最终 UI」按七个子页逐行重写、依赖插件数成 26 成员三组；第 2 条（工具表）T46 已同步故零改动 |
 | T35a ✅ | 代码 | eval client 半骨架 + 实验室 tab 列表与详情壳：tsconfig / tsdown / package 的 client 出口，`conversation.view` 注册（order 40，自隐按 eval-tool 行），Remote 会话态读面 `runs / run`，状态推导，六个子页路由（先只有概览） | T46 | 合入 main `7fff2efb`（2026-09-13，`78f76b86`）；临时实例 3199 上 eval 会话 tab 环「对话 · 轨迹 · 数据集 · 实验室」、无任务 tab，standard 会话两个都无；工具卡 33 个含 eval_cells 无 mission_*（T46 欠的原文补齐）；列表 11 行（3 run + 8 草稿）、run 与 plan 按解析路径或 planSha 配对；概览页字段齐；eval_cells 不给 run_id 即列评测 run（T46 的缺口收了）；状态推导五条边界写在注释与测试里；顺带改了 scripts/gen-typert.mts（eval 指向 tsconfig.host.json）与 docs/packages.md |
 | T49 ✅ | 代码（脚本） | `install.sh --source` 自 pack-dist 的 family-edge 规则（`3406a471`）起坏了：`--family` 传的是光名字，打到 local-agent-tool-subagent 报 `is a family edge but no version was given`；改成 `name=version`，用临时 DSH_HOME 全量装一遍验证 | 无 | 合入 main `5e4ec1a3`（2026-09-14，`cd3c9ad4`）；27 个 tarball、7 个带家族、零 warn，临时实例起到就绪协议走完；`--dump-config` 24 成员是 profile 根的口径（伴生三包在预设层），判据里的 27 是 tarball 数 |
 | T50 ✅ | 代码（脚本，小） | 三处脚本卫生：`scripts/gen-typert.mts` 全量模式在全新 DSH_HOME 上死锁（取锁用非递归 mkdirSync，scratch/ 不存在就空转 900 秒）；`install.sh` 第 287 行附近「成员不变量 23」的注释落后两轮；评估去掉 `GEN_TYPERT_ONLY` 让全量模式吃缓存（T35b 实测 27 包构建 80 分钟 → 12 分钟）；`scripts/gate.mts` 的 GLOBAL_PATHS 不含 `profiles/*/scripts/`，改脚本不触发整仓 | T49 | 合入 main `05050252`（2026-09-14，三提交）；死锁复现（未修版挂 11 分钟 CPU 0.1 秒）→ 修后 42 秒；gate 把 profiles/<id>/scripts/ 当共享层（探针 worktree 实测 scope 变整仓）；**GEN_TYPERT_ONLY 保留**——全量模式的 typert.host.js 会把本 profile 不装的 room / worktrees / canvas 的类型发进 mission 等成员 tarball（+4 KB、14 条 Room* 声明），注释写明两个耗时的前提；全新 DSH_HOME 全量装一遍 6 分 20 秒 |
-| T51 | 代码（脚本，小） | gate 的 porcelain 解析错位：gitRunner 对输出 `.trim()`，`git status --porcelain` 未暂存行以空格开头，首行被吃掉一格后 `slice(3)` 少一个字符——改了 `scripts/foo.ts` 未 add 时 scope 成 NONE 假绿；改成按 `/^(..) (.*)$/` 解析或对 status 不 trim，补用例 | T50 | 首行未暂存的共享层文件也能触发整仓 |
+| T51 ✅ | 代码（脚本，小） | gate 的 porcelain 解析错位：gitRunner 对输出 `.trim()`，`git status --porcelain` 未暂存行以空格开头，首行被吃掉一格后 `slice(3)` 少一个字符——改了 `scripts/foo.ts` 未 add 时 scope 成 NONE 假绿；改成按 `/^(..) (.*)$/` 解析或对 status 不 trim，补用例 | T50 | 合入 main `899410e9`（2026-09-16，`53e89adf`）；两处都改：gitRunner 只去尾部换行（抽成 trimTrailingNewlines 可测）、porcelainPaths 逐行正则；修前后 scope 原文对照（NONE → 整仓）；畸形行丢弃是「往窄里错」，唯一来源已堵 |
+| T54 | 代码 + 方法论 | 报告的得分口径：按格取最权威 ns 整体算分（primaryPass），一格第一条 human-final 会让只有 llm-draft 判定的判据全部出局（T37 实测 4 → 1）；改成逐判据合并（human-final 只覆盖它判的那条），历史报告会重算——**方法论决定，待用户拍板后写文案** | T37 | 定了口径再写；判官台现已在按钮前点名代价 |
 | T52 | 代码（脚本，低优先） | gen-typert 的 stamp 按选中集做 key，让 scoped 模式也命中缓存（T50 实测 8 次 scoped × 44 秒占了安装耗时的九成）；这是缓存契约的改动，先方案 | T50 | install.sh 源码模式耗时降到分钟级以内 |
 | T36 ✅ | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 合入 main `66dbdede`（2026-09-14，`7cb31f66` + `14753348`）；Remote 加 plan / conditions / conditionDiff / approve 四个带会话的 verb，approve 先 validate 有 error 即拒；临时实例 3199 上计划审阅、批准后的概览（就绪拒绝原文原样）、dsh-exec 与 codex-exec 的 diff 只报 7 个不同项；真机抓到并修了 runOutput 少传 cursor 被网关精确位参拒的 bug；「新建实验」占位指向 T34 |
 | T35b ✅ | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 合入 main `e3fe4904`（2026-09-14，`57776e71` + 并 main 的 `57fec492`）；15 文件 48 处冲突按「两边都留」解净，Remote 18 个 verb、locale 207 键、占位页只剩 report / judging；面绑定 14 处显式传满位参并加守卫用例；合并态 eval 584；矩阵两种列（真账本按 scope、pilot-a bundle 按 harness 与 model）、抽屉、三个动作、导出对话框（mission 的拒绝原文原样转出）都有原文 |
 | T38 ✅ | 代码 | 实验室 › 报告页：读 bundle 出四条不变量、配对、效率、一致性；finalize 与导出按钮 | T35b | 合入 main `c83c7fb9`（2026-09-14，`803e474b` + `bd76772b`）；Remote report / finalize 不配模型工具；bundle 按「刚导的目录 → plan 的 exports → 题库 exports」找，找不到给清单与「换个目录找」；比较闸在服务端合上（comparisonAllowed 为假时 pairs 不过线）；真机两种状态原文齐，finalize 一次原文，账本 history 记 by: tab；eval 608 |
-| T37 | 代码 | 实验室 › 判官台：盲评队列、去指纹产物、llm-draft 与 human-final 并排；human-final 唯一写入口 | T38 | 第 8 步在界面上完成 |
+| T37 ✅ | 代码 | 实验室 › 判官台：盲评队列、去指纹产物、llm-draft 与 human-final 并排；human-final 唯一写入口 | T38 | 合入 main `db4376e6`（2026-09-16，`f9ca4627` + `d675ea55`）；humanFinal 用序号 + 不透明 ticket（sha256(runId\0missionId) 前 16 位）而不是 mission id，判官显示为「判官 A / B」——格子名本身带 harness，照文案写会把它印进最不该带的页面；真机盲态 DOM 搜不到 harness / 模型 / 条件 / mission id；账本 human-final 追加不改写、by 为会话；eval 客户端 11 个 effect 无自取消形状；eval 641 |
 | T47 ✅ | 代码 | 题集 tab 改造：列表页（槽位与层的对应、canary、validate、用于的实验）、详情的槽位标签与筛选、「选手将看到」、可判性、作答记录投影、题目骨架 / 导入题集 / 导入题目 | 无（与 T35 并行） | 合入 main `7ec52ed7`（2026-09-14，`14dca787`）；角色由 layers + register 定、槽位由基名启发式给出并按角色兜底，两种布局同一答案（slots.spec 成对表）；真机列表一行字段齐、P0 每个文件槽位与「谁看得到」对、「选手将看到」4 文件无答案键、可判性 13 条 7/5/1 对得上；骨架落位 4 文件、validate 报 RUBRIC_NO_ITEMS 指向占位（预期）；顺手修了 /datasets 的 composer 参数丢失（补 input.hint）；datasets 167 |
 | T53 | 代码（小） | 导出目录记进账本：T38 发现带 `--out` 导出的 bundle 在 run.meta 里无迹可寻，页面只能让人「换个目录找」；导出成功后由 eval 把目录记成 run 级注解（orchestrator ns）或 run.meta 字段，报告页优先读它 | T38 | 报告页对任何已导出的 run 直接找到 bundle |
 | T34 | 代码 | `eval-planning` skill + `eval_plan_draft` 工具：把「写 plan / condition + validate」并成一个动作，草稿落实验室列表 | T36 | 第 2 步一句话起草 |
@@ -2133,7 +2136,7 @@ eval 测试全绿，gate 绿；临时实例上对 t31-judge-panel（有 bundle�
 
 **验收（2026-09-14）**：`feat/eval-client-report`（`803e474b`、`bd76772b`）合入 main `c83c7fb9`。两种状态的报告页、比较节打开（pilot-b-p0-runA 六个配对块、bootstrap CI、n=1 不可排名）与关闭（t31 环境一致 unverifiable）、finalize 一次与重复 finalize 的 skipped 计数都有原文。Agent Note：`.agents/notes/implemented/feature/2026-09-14-eval-report-page.md`。给 T37 的接口：判官一致性与自评标记是判官台按格展示的同一批事实；路由里只剩 placeholder.judging。
 
-### T37 · 实验室 › 判官台（可发，T38 已合入 main）
+### T37 · 实验室 › 判官台（已完成，2026-09-16 验收）
 
 ```text
 # 任务 T37：判官台——盲评队列、去指纹产物、llm-draft 与 human-final 并排，human-final 的唯一写入口
@@ -2163,7 +2166,9 @@ eval 测试全绿，gate 绿；临时实例上对 t31-judge-panel 打一条 huma
 分支与 commit；Agent Note；gate；判官台盲态原文、提交后的账本注解原文、报告页的覆盖原文。
 ```
 
-### T51 · 脚本：gate 的 porcelain 解析错位（可发，小）
+**验收（2026-09-16）**：`feat/eval-client-judge`（`f9ca4627`、`d675ea55`）合入 main `db4376e6`。盲态、去指纹、账本注解追加、报告页覆盖、得分警告五段原文齐。Agent Note：`.agents/notes/implemented/feature/2026-09-15-eval-judge-bench.md`。得分口径的方法论问题另立 T54。
+
+### T51 · 脚本：gate 的 porcelain 解析错位（已完成，2026-09-16 验收）
 
 ```text
 # 任务 T51：gate 读 git status --porcelain 时首行未暂存文件丢一个字符
@@ -2187,7 +2192,9 @@ scripts 测试全绿；探针 worktree 里改一个根 scripts 文件不 add 直
 
 **验收（2026-09-14）**：`feat/datasets-tab-slots`（`14dca787`）合入 main `7ec52ed7`，只动 datasets 与 datasets-tool 的 README。真机原文齐（列表一行、P0 详情树、选手将看到、可判性、槽位筛选、骨架落位与 validate）。Agent Note：`.agents/notes/implemented/feature/2026-09-14-datasets-tab-slots.md`。
 
-### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（可发）
+**验收（2026-09-16）**：`fix/gate-porcelain-parse`（`53e89adf`）合入 main `899410e9`；修前 NONE、修后整仓的 scope 原文与「真实字节 → trim → 解析 → scope」整链用例齐。
+
+### T48 · 文档：README 按 ui-spec 改写，修十处口径不一致（已完成，2026-09-16 验收）
 
 ```text
 # 任务 T48：README「最终 UI」按 ui-spec 改写；修走查时对出来的十处不一致
@@ -2253,6 +2260,66 @@ eval 测试全绿，gate 绿；临时实例上 eval 预设会话的 tab 环出�
 
 ## 回报
 分支名与 commit；Agent Note 路径（feature）；gate 输出；tab 环截图或原文；列表与概览的原文；状态推导的边界情况清单。
+```
+
+**验收（2026-09-16）**：`docs/web-eval-ui-spec`（`3f08d971`）合入 main `cbadb266`，题库 `i5-docs`（`19358bc`）并入 i1-walk `3c5ebf4`。十条各有落点；第 2 条零改动成立（T46 已同步）。两问的裁决见 §二。
+
+### T34 · eval-planning skill + eval_plan_draft + 新建实验表单（可发）
+
+```text
+# 任务 T34：一句话起草——技能、工具、表单走同一个服务面动词
+
+## 背景
+ui-spec §七第 2 步：agent 起草实验（草稿落实验室列表）。今天 agent 得先 write 两个文件再调 eval_plan_validate，人建草稿没有表单（T36 把「新建实验」留成占位指向本任务）。ui-spec §五定了表单字段，§六定了 eval_plan_draft 把「写文件 + validate」并成一个动作；预设注释写明 eval-planning 技能经 skill-filesystem 的预设层进来。R1 不变：起草不是启动。
+
+## 先读
+packages/eval/src/service.ts（validatePlan、conditions）、remote.ts（T36 的 plan / approve）、client/LabView.tsx 的 placeholder.new 与 store；packages/eval-tool/src（四个读工具的注册形状）；@deepseek-ai/dsh-skill-filesystem 的 README（技能根目录约定、SKILL.md 的 frontmatter）；profiles/web-eval/scripts/install.sh 与 update.sh 里 PRESET_IDS 整目录覆盖的做法（技能目录同款）；题库 conditions/*.json 与 plans/*.json 的现成样本（T33b 起草的两条条件就是「从 dsh-exec 复制改 model.declared」）；ui-spec §五 §六 §七；T31 的 lock 语义。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-planning，分支 feat/eval-planning；改 packages/eval（服务面 + Remote + 表单）、packages/eval-tool（eval_plan_draft）、profiles/web-eval（skills/eval-planning/SKILL.md、install.sh / update.sh 装技能目录、README 双语 + sidecar、CHANGELOG）。
+
+## 已定决定
+- 服务面 draftExperiment(input)：按表单字段（名称、题库快照、题目多选、条件——选已有或「从某条复制并改字段」新建：harness / model.declared / scope / preset / permissions / reasoning、判官与采样数、rep、阶段、顺序 seed、环境 image / network / egressCheck、预算）写 plans/<name>.json 与新条件文件到会话绑定的题库工作树透传区（不 commit），随即 validatePlan，返回文件路径与 validate 结果。新条件只能从现有条件复制再改，不从零造。
+- Remote newExperiment(agent, input)（表单用）与 eval-tool 的 eval_plan_draft（agent 用）调同一个 draftExperiment；eval_plan_draft 的描述写明「只起草，不启动，启动是人的」；tools: all 变五个。
+- 表单在实验室列表页「新建实验」；保存成功后跳到该草稿的计划审阅页（T36）。
+- 技能 profiles/web-eval/skills/eval-planning/SKILL.md：教 agent 流程——用 datasets_list / show / read 看题与 prompts，用 eval_conditions 看条件注册表，用 eval_plan_draft 起草，把 validate 结果与路径报给人，明说不批准不启动、登录与 provision 是人的；随 pack 装到 skill-filesystem 的根目录（install.sh / update.sh 与 presets/eval 同款整目录覆盖），在 eval 预设的技能层出现。
+- 不改 mission / datasets / lab。
+
+## 测试
+service：落位路径、复制条件只改指定字段、validate 结果原样返回；Remote 与工具都命中同一函数（守卫用例）；client：表单提交 → 跳转计划审阅；技能文件存在且 frontmatter 合规。
+
+## 完成判据
+eval / eval-tool 测试全绿，gate 绿；临时实例：表单建一个草稿 → 列表出现「草稿」→ 计划审阅页有 validate 结果；在 eval 会话里一句话让 agent 起草同样的实验，回复里有路径与 validate 结果、没有起 run；技能卡里有 eval-planning。第 2 步在界面与会话里都走通。
+
+## 回报
+分支与 commit；Agent Note；gate；表单与会话两条路径的原文；SKILL.md 全文。
+```
+
+### T39 · 端到端走查：一句话到报告（可发，依赖 T34；容器版等 T33e）
+
+```text
+# 任务 T39：端到端走查——一句话到报告，记录人介入的次数与位置
+
+## 背景
+I5 的完成判据：「一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评」。实验室六个子页与题集 tab 都落地了（T35a / T36 / T35b / T38 / T37 / T47），T34 补上一句话起草。本任务不改代码，把八步在一台临时实例上按 ui-spec §七 走一遍，记每一步人介入了几次、在哪、为什么，缺口逐条指向任务或立新任务。先走宿主路径：比较节因环境指纹 unverifiable 不开是预期，记原文；容器版等 T33e 落地后再走一遍拿 I4 的配对报告。
+
+## 先读
+ui-spec §七；iterations.md I5 各任务的验收记录（哪些原文已有）；T33b 的中止记录（宿主路径的限制）；题库 docs/pilot-a-log.md / pilot-b-log.md 的记录写法；T30b / T31 的 Agent Note（登录、provision、lock）。
+
+## 分支
+题库从 i1-walk 开 worktree，分支 i5-walkthrough，记录写 docs/i5-walkthrough-log.md（新建）。dsh-plugins 不改代码；缺陷只记不修。
+
+## 已定决定
+- 临时实例（独立 DSH_HOME + 空闲端口，源码模式装 main）绑 harness-comparison；题目 P0-placeholder；条件按本机能登录的家取——优先 dsh × 两模型（v4-flash / v4-pro），登不上就 codex 单条件 + 判官 t31-judge-other。
+- 八步逐步做并逐步记：1 一句话（会话）→ 2 agent 用 eval_plan_draft 起草（草稿出现在实验室列表）→ 3 计划审阅看 validate → 4 登录与 provision（人）→ 5 批准并启动 → 6 矩阵 / 格子看进度，点一次格子详情与子会话 → 7 finalize、导出、报告页 → 8 判官台打一条 human-final，agent 读 bundle 写分析初稿。每步记：用到的面与动词、人介入（次数、位置、原因：审批 / 登录 / 修错 / 绕过）、卡点与原文。
+- 日志末尾两张表：人介入汇总（哪几步是设计上的人、哪几步是缺口）、缺口清单（每条指向既有任务或建议新任务）。
+- 只跑 P0；不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh。
+
+## 完成判据
+一份 i5-walkthrough-log.md：八步各有原文、人介入表、缺口清单；validate 0 error；实例与临时 HOME 已清。
+
+## 回报
+题库分支与 commit；人介入表；缺口清单；分析初稿的路径。
 ```
 
 ## 四、验收规程
