@@ -422,3 +422,5 @@ Claude 的 partial 输出参数在统一启动路径中无条件按协议正确�
 - 实现记录：四家退役 event/token 运行时选择，保留旧键空操作与 exec；Claude partial 参数提前到工具桥终止符前，Kimi 统一轮内对账。DSH 瞬时流桥仍待接通，尚未宣告 M2 达标。
 
 - 实现记录：core 瞬时 Remote + Conversation 自定义节点已接通四家；1 秒后缀恢复检查点与 50ms 发布独立，原生最终消息隐藏临时节点。重连、慢消费者、真实 assembler 替换、停止保留部分内容与 provider 用量回归已验证。M2 仍待同 kind 子项身份、内容覆盖与浏览器 P95 实测。
+
+- 实现记录：Claude 以原生 message ID + block index 配对同类型片段；Kimi 以新工具调用划分生成段并预留工具位置，相关回归通过。四家已接入丰富目录读面与共用刷新订阅：Codex 分页与原生推理元数据、Claude initialize、Kimi 实际 ACP 会话配置/明确标识的 scoped 配置回退、DSH 公开适配器元数据。旧缓存按上下文失效，失败保留成功数据，闲置旧身份有界淘汰。M1 的共用菜单、持久待生效配置与 effort 执行/评测约束仍在接入；M2 仍待内容完整性与实测延迟。尚未启动验收实例或变更 3080。

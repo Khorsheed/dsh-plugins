@@ -37,6 +37,7 @@ interface FakeAcpScript {
   failSessionNew?: string
   /** Omit the loadSession capability (breaker-path test). */
   noLoadSession?: boolean
+  configOptions?: unknown[]
 }
 
 /** A fake `kimi acp` process speaking ACP over its stdio. */
@@ -155,10 +156,10 @@ class FakeAcpServer {
         }
         this.sessionSeq += 1
         // Real kimi ACP session ids are directory names (`session_<uuid>`).
-        respond({ sessionId: `session_acp-session-${this.sessionSeq}` })
+        respond({ sessionId: `session_acp-session-${this.sessionSeq}`, ...this.script.configOptions === undefined ? {} : { configOptions: this.script.configOptions } })
         return
       case 'session/load':
-        respond({})
+        respond({ ...this.script.configOptions === undefined ? {} : { configOptions: this.script.configOptions } })
         return
       case 'session/prompt': {
         const turn = this.script.turn?.(params) ?? {}
@@ -373,6 +374,21 @@ describe('acpStopReasonToHarness', () => {
 })
 
 describe('kimi live driver rounds', () => {
+  it('keeps native model configuration current between rounds and ignores another session', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-catalog'))
+    const configOptions = (value: string) => [{ id: 'route', category: 'model', type: 'select', currentValue: value, options: [{ value, name: value }] }]
+    const fake = new FakeAcpServer({ configOptions: configOptions('one') })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.driver.runtimeConfiguration(String(child.id))?.currentModel).toBe('one')
+    fake.update('other-session', { sessionUpdate: 'config_option_update', configOptions: configOptions('wrong') })
+    fake.update('session_acp-session-1', { sessionUpdate: 'config_option_update', configOptions: configOptions('two') })
+    await vi.waitFor(() => { expect(m.driver.runtimeConfiguration(String(child.id))?.currentModel).toBe('two') })
+    await m.driver.disposeAll()
+  })
+
   it('separates same-kind output around a tool before delayed wire reconciliation', async () => {
     const m = mount({ config: { snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()

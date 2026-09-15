@@ -64,6 +64,7 @@ export class ModelDirectoryCache {
     load: (context: string, signal: AbortSignal) => Promise<LocalAgentModelDirectoryData>
     ttlMs?: number
     retryMs?: number
+    maxEntries?: number
     now?: () => number
     onError?: (error: unknown) => void
   }) {}
@@ -78,6 +79,14 @@ export class ModelDirectoryCache {
         nextAttemptAt: 0, generation: 0, listeners: new Set(),
       }
       this.entries.set(key, entry)
+    }
+    // Configuration and credential rotations produce new identities. Retain
+    // active subscriptions/probes, but do not accumulate every old identity.
+    this.entries.delete(key)
+    this.entries.set(key, entry)
+    for (const [candidate, value] of this.entries) {
+      if (this.entries.size <= Math.max(1, this.options.maxEntries ?? 128)) break
+      if (candidate !== key && value.listeners.size === 0 && value.pending === undefined) this.entries.delete(candidate)
     }
     return entry
   }

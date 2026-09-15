@@ -11,6 +11,7 @@
  * @module @khorsheed/dsh-local-agent-kimi — internal, unit-tested directly.
  */
 
+import type { KimiNativeConfiguration } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { KimiAcpLiveDriver } from './live-driver.ts'
@@ -112,6 +113,14 @@ export class LiveDriverSwitch {
    */
   memberHasRuntime(childSessionId: string): boolean {
     return this.active?.hasRuntime(childSessionId) ?? false
+  }
+
+  memberRuntimeConfiguration(childSessionId: string): KimiNativeConfiguration | undefined {
+    for (const driver of [this.active, ...this.draining]) {
+      const configuration = driver?.runtimeConfiguration(childSessionId)
+      if (configuration !== undefined) return configuration
+    }
+    return undefined
   }
 
   /** Plugin unload: interrupt whatever survives (disposeAll, not drain). */

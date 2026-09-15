@@ -18,8 +18,10 @@
  * @module @khorsheed/dsh-local-agent-kimi/model-broker
  */
 
+import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
+import type { KimiModelCatalog } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { LocalAgentModelBroker, LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
 import type { LiveDriverSwitch } from './live-switch.ts'
 import { listKimiConfigModels, readKimiDefaultModel } from './provision.ts'
 
@@ -62,7 +64,8 @@ export class KimiModelBroker implements LocalAgentModelBroker {
     private readonly ctx: Context,
     private readonly deps: {
       /** The default scope's scoped home (cliDefault + discovery reads). */
-      homeDir: () => string
+      homeDir: (childSessionId?: string) => string
+      catalog?: KimiModelCatalog
       /** The plugin-config `model` key, resolved per read. */
       settingsModel: () => string | undefined
       /** The settings card's recently saved identifiers (choices memory). */
@@ -73,6 +76,17 @@ export class KimiModelBroker implements LocalAgentModelBroker {
       liveSwitch: LiveDriverSwitch
     },
   ) {}
+
+  async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
+    if (refresh) await this.deps.catalog?.refresh(childSessionId)
+    const info = await this.modelInfo(childSessionId)
+    return info.directory ?? { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 0 }
+  }
+
+  async *followModelDirectory(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    if (this.deps.catalog === undefined) { yield await this.modelDirectory(childSessionId); return }
+    for await (const _snapshot of this.deps.catalog.follow(childSessionId, signal)) yield await this.modelDirectory(childSessionId)
+  }
 
   /**
    * Record the model a member's delegation STARTED with (the provider's call
@@ -115,12 +129,13 @@ export class KimiModelBroker implements LocalAgentModelBroker {
       ? undefined
       : delegationModel ?? this.startModels.get(childSessionId)
     const settings = this.deps.settingsModel()
-    const homeDir = this.deps.homeDir()
+    const homeDir = this.deps.homeDir(childSessionId)
+    const native = this.deps.catalog?.read(childSessionId)
     const [cliDefault, discovered] = await Promise.all([
       readKimiDefaultModel(homeDir).catch(() => undefined),
       listKimiConfigModels(homeDir).catch(() => [] as string[]),
     ])
-    const choices = dedupe([settings, cliDefault, ...discovered, ...this.deps.recentModels()])
+    const choices = dedupe([settings, cliDefault, ...discovered, ...(native?.entries.filter(entry => !entry.hidden).map(entry => entry.value) ?? []), ...this.deps.recentModels()])
     const [effective, source] = override !== undefined ? [override, 'override' as const]
       : delegation !== undefined ? [delegation, 'delegation' as const]
         : settings !== undefined ? [settings, 'settings' as const]
@@ -136,6 +151,7 @@ export class KimiModelBroker implements LocalAgentModelBroker {
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
       choices,
+      ...native === undefined ? {} : { directory: extendModelDirectory(native, [settings, cliDefault, ...discovered], this.deps.recentModels()) },
       live: this.deps.isLive(),
       switchable: !inFlight,
       ...inFlight ? { reason: SWITCH_IN_FLIGHT_REASON } : {},

@@ -34,6 +34,7 @@
  * @module @khorsheed/dsh-local-agent-kimi/live-driver
  */
 
+import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -346,6 +347,7 @@ class KimiLiveRuntime {
    * respawn binds the new one.
    */
   boundModel: string | undefined
+  modelConfiguration: KimiNativeConfiguration | undefined
   /** Serializes session/prompt per member (converge-before-next-turn). */
   turnChain: Promise<unknown> = Promise.resolve()
   /** The active round's notification sink; installed per round, cleared at settle. */
@@ -369,7 +371,9 @@ class KimiLiveRuntime {
         if (method !== 'session/update') return
         const sessionId = params['sessionId']
         if (sessionId !== this.sessionId) return
-        this.onSessionUpdate?.((params['update'] ?? {}) as JsonObject)
+        const update = (params['update'] ?? {}) as JsonObject
+        if (update['sessionUpdate'] === 'config_option_update') this.modelConfiguration = kimiNativeConfiguration(update)
+        this.onSessionUpdate?.(update)
       },
       requestMs,
     )
@@ -598,6 +602,11 @@ export class KimiAcpLiveDriver {
   runtimeModel(childSessionId: string): string | undefined {
     const runtime = this.runtimes.get(childSessionId)
     return runtime === undefined || runtime.dead ? undefined : runtime.boundModel
+  }
+
+  runtimeConfiguration(childSessionId: string): KimiNativeConfiguration | undefined {
+    const runtime = this.runtimes.get(childSessionId)
+    return runtime === undefined || runtime.dead ? undefined : runtime.modelConfiguration
   }
 
   /**
@@ -1177,7 +1186,7 @@ export class KimiAcpLiveDriver {
       try {
         if (rt.sessionId === undefined) {
           if (spec.resume === undefined) {
-            const response = await rt.peer.request<{ sessionId?: string }>('session/new', {
+            const response = await rt.peer.request<JsonObject & { sessionId?: string }>('session/new', {
               cwd: spec.cwd,
               mcpServers: member?.mcpServers ?? [],
             })
@@ -1185,6 +1194,7 @@ export class KimiAcpLiveDriver {
               throw new Error('subagent-kimi live: session/new returned no session id')
             }
             rt.sessionId = response.sessionId
+            rt.modelConfiguration = kimiNativeConfiguration(response)
             // The record convention is the bare uuid (the exec path's
             // settle-time parse); the ACP id is a directory name
             // (`session_<uuid>`). Strip before recording so live- and
@@ -1195,11 +1205,12 @@ export class KimiAcpLiveDriver {
             // prefix (legacy live records); the wire always wants the
             // ACP-native form.
             rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
-            await rt.peer.request('session/load', {
+            const response = await rt.peer.request('session/load', {
               sessionId: rt.sessionId,
               cwd: spec.cwd,
               mcpServers: member?.mcpServers ?? [],
             })
+            rt.modelConfiguration = kimiNativeConfiguration(response)
           }
         }
       } catch (error) {

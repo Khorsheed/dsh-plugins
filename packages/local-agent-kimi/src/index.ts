@@ -19,6 +19,7 @@ import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { KimiModelCatalog } from './model-catalog.ts'
 import { KimiModelBroker } from './model-broker.ts'
 import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
@@ -194,8 +195,18 @@ export function apply(ctx: Context, config: Config): void {
     // construction-order only, and no round can run before both exist.
     let broker: KimiModelBroker
     const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs, child => broker.spawnModel(child))
+    const modelCatalog = new KimiModelCatalog(childSessionId => {
+      const record = childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)
+      const native = childSessionId === undefined ? undefined : liveSwitch.memberRuntimeConfiguration(childSessionId)
+      return {
+        homeDir: ctx.localAgent.homeDir('kimi', record?.scope),
+        ...record?.cwd === undefined ? {} : { cwd: record.cwd },
+        ...native === undefined ? {} : { native },
+      }
+    })
     broker = new KimiModelBroker(ctx, {
-      homeDir: () => ctx.localAgent.homeDir('kimi'),
+      homeDir: childSessionId => ctx.localAgent.homeDir('kimi', childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)?.scope),
+      catalog: modelCatalog,
       settingsModel: resolveModel,
       recentModels: () => scope.get().recentModels ?? [],
       isLive: () => scope.get().live,
@@ -260,6 +271,7 @@ export function apply(ctx: Context, config: Config): void {
       },
     })
     return () => {
+      modelCatalog.dispose()
       disposeProvider()
       disposeHarness()
       liveSwitch.dispose()

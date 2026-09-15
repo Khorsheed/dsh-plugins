@@ -35,6 +35,7 @@ import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
 import { CONTAINER_NODE_OPTIONS, DshCliProvider, dshCliVersion } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { DshModelCatalog, type DshModelDirectoryFace } from './model-catalog.ts'
 import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
@@ -171,37 +172,12 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       }
       return undefined
     }
-    // The host's own adapter enumeration — the pickable vocabulary for the
-    // sub-dsh, which routes through the same host adapters spelled
-    // `provider/model`. `ctx.llm` is the public LlmRuntime surface the host's
-    // model picker itself is built on (listProviders × listModels, refreshed
-    // on llm/adapters-updated); probed, never assumed, and a failed provider
-    // costs only its own group — the picker's other layers still answer.
-    const discoveredModels: string[] = []
-    const refreshDiscoveredModels = async (): Promise<void> => {
-      try {
-        const llm = ctx.get('llm') as
-          | {
-              listProviders?: () => readonly { id: string }[]
-              listModels?: (provider: string) => Promise<readonly { id: string }[]>
-            }
-          | undefined
-        if (typeof llm?.listProviders !== 'function' || typeof llm.listModels !== 'function') return
-        const listModels = llm.listModels.bind(llm)
-        const groups = await Promise.all(llm.listProviders().map(async (provider) => {
-          try {
-            return (await listModels(provider.id)).map(model => `${provider.id}/${model.id}`)
-          } catch {
-            return []
-          }
-        }))
-        discoveredModels.splice(0, discoveredModels.length, ...groups.flat())
-      } catch {
-        // Degrade: an unreadable enumeration leaves discovery empty.
-      }
-    }
-    void refreshDiscoveredModels()
-    ctx.on('llm/adapters-updated', () => { void refreshDiscoveredModels() })
+    const modelCatalog = new DshModelCatalog({
+      llm: () => ctx.get('llm') as DshModelDirectoryFace | undefined,
+      defaultModel: hostDefaultModel,
+    })
+    void modelCatalog.read()
+    ctx.on('llm/adapters-updated', () => { modelCatalog.invalidate() })
     // The member-level model surface: the composer picker's session-level
     // overrides (in-memory, deliberately lost on a host restart), shared by
     // reference with the broker (which writes them), the exec provider (which
@@ -215,7 +191,8 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       ctx,
       settingsModel: resolveModel,
       cliDefault: hostDefaultModel,
-      discovered: () => discoveredModels,
+      discovered: () => modelCatalog.read().entries.filter(entry => !entry.hidden).map(entry => entry.value),
+      catalog: modelCatalog,
       recentModels: () => scope.get().recentModels ?? [],
       live: () => scope.get().live,
       overrides: memberModelOverrides,
@@ -330,6 +307,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     sync(scope.get().enabled)
     const unwatch = scope.watch((next) => { sync(next.enabled) })
     return () => {
+      modelCatalog.dispose()
       unwatch()
       // Bump the generation so a tool mount still in flight disposes itself
       // instead of being pushed onto a dead disposer list.

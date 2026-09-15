@@ -13,6 +13,24 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
 }
 
 describe('shared model directory', () => {
+  it('evicts unused context identities while retaining an open subscription', async () => {
+    const calls: string[] = []
+    const cache = new ModelDirectoryCache({ maxEntries: 2, load: async key => { calls.push(key); return data(key) } })
+    const abort = new AbortController()
+    const reader = cache.follow('viewed', abort.signal)[Symbol.asyncIterator]()
+    await reader.next()
+    await cache.refresh('viewed')
+    await cache.refresh('old-config')
+    await cache.refresh('new-config')
+    expect(cache.read('viewed').status).toBe('ready')
+    expect(cache.read('old-config').status).toBe('loading')
+    await cache.refresh('old-config')
+    expect(calls.filter(key => key === 'old-config')).toHaveLength(2)
+    abort.abort()
+    await reader.next()
+    cache.dispose()
+  })
+
   it('deduplicates cold reads and notifies an already-open picker on completion', async () => {
     const load = deferred<LocalAgentModelDirectoryData>()
     let calls = 0

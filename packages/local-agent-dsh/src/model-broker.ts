@@ -20,8 +20,10 @@
  * @module @khorsheed/dsh-local-agent-dsh/model-broker
  */
 
+import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
+import type { DshModelCatalog } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { LocalAgentModelBroker, LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
 
 /** Everything the broker reads or drives, injected so the unit specs stay small. */
 export interface DshModelBrokerDeps {
@@ -42,6 +44,7 @@ export interface DshModelBrokerDeps {
    * service is absent: the other choice layers still answer.
    */
   readonly discovered: () => readonly string[]
+  readonly catalog?: DshModelCatalog
   /** The card's recent-model memory (the suggestion vocabulary's tail). */
   readonly recentModels: () => readonly string[]
   /** Whether the live driver is on (the member's rounds bind resident runtimes). */
@@ -77,6 +80,16 @@ function dedupeChoices(layers: ReadonlyArray<string | undefined>): string[] {
 export class DshModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: DshModelBrokerDeps) {}
 
+  async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
+    if (refresh) await this.deps.catalog?.refresh()
+    return this.modelInfo(childSessionId).directory ?? { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 0 }
+  }
+
+  async *followModelDirectory(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    if (this.deps.catalog === undefined) { yield await this.modelDirectory(childSessionId); return }
+    for await (const _snapshot of this.deps.catalog.follow(signal)) yield await this.modelDirectory(childSessionId)
+  }
+
   /** The member's in-flight rounds (an empty answer on a core that predates the read). */
   private activeDelegations(): readonly string[] {
     const registry = this.deps.ctx.localAgent as unknown as {
@@ -99,6 +112,7 @@ export class DshModelBroker implements LocalAgentModelBroker {
   modelInfo(childSessionId?: string, delegationModel?: string): LocalAgentModelInfo {
     const settings = this.deps.settingsModel()
     const cliDefault = this.deps.cliDefault()
+    const directory = this.deps.catalog?.read()
     const override = childSessionId === undefined ? undefined : this.deps.overrides.get(childSessionId)
     const delegation = delegationModel?.trim() === '' ? undefined : delegationModel
     const effective = override ?? delegation ?? settings ?? cliDefault
@@ -114,6 +128,7 @@ export class DshModelBroker implements LocalAgentModelBroker {
       ...delegation === undefined ? {} : { delegation },
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
+      ...directory === undefined ? {} : { directory: extendModelDirectory(directory, [settings, cliDefault], this.deps.recentModels()) },
       choices: dedupeChoices([settings, cliDefault, ...this.deps.discovered(), ...this.deps.recentModels()]),
       live: this.deps.live(),
       switchable: !inFlight,
