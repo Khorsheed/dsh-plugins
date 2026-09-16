@@ -186,7 +186,6 @@ function makeHarness(options: {
     useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
       return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
     } as CanvasTabProps['useSelection'],
-    useTabInfo: (() => ({ sidebar: { expanded: true, fullscreen: false } })) as never,
   } as unknown as CanvasTabProps
   return { store, mocks, props, boards }
 }
@@ -397,7 +396,7 @@ describe('CanvasTab — the draft view and wide mode', () => {
     await waitFor(() => {
       expect(mocks.suggestWideMode).toHaveBeenCalledTimes(1)
     })
-    expect(mocks.suggestWideMode).toHaveBeenCalledWith('s1', false)
+    expect(mocks.suggestWideMode).toHaveBeenCalledWith('s1')
   })
 
   it('is read-only without a session: every mutating control stays away', async () => {

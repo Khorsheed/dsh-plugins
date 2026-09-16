@@ -144,10 +144,8 @@ export const zh = {
   'lens.exemplify': '降一层',
   'lens.ask': '就此提问',
 
-  'chat.ask': '问 Agent',
   'chat.followup': '追问',
   'chat.followupText': '就这条评论继续追问：「{text}」',
-  'chat.selectionRef': '选区',
   'chat.unavailable': '聊天不可用（side-chat 未安装），卡板不受影响',
   'chat.askFailed': '提问失败：{message}',
 
@@ -331,10 +329,8 @@ export const en: Record<keyof typeof zh, string> = {
   'lens.exemplify': 'Give examples',
   'lens.ask': 'Ask about these',
 
-  'chat.ask': 'Ask agent',
   'chat.followup': 'Follow up',
   'chat.followupText': 'Follow up on this comment: "{text}"',
-  'chat.selectionRef': 'Selection',
   'chat.unavailable': 'Chat is unavailable (side-chat not installed) — the board is unaffected',
   'chat.askFailed': 'Ask failed: {message}',
 

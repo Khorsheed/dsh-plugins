@@ -82,10 +82,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [fatal, setFatal] = useState<string | null>(null)
   /** The chat seam's probe: null while probing, so entries never flash. */
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
-  /** The floating 问 Agent offer: the selected text plus where to float. */
-  const [textPick, setTextPick] = useState<{ text: string; top: number; left: number } | null>(null)
   const toastTimerRef = useRef<number | null>(null)
-  const bodyRef = useRef<HTMLDivElement | null>(null)
 
   const showToast = useCallback((text: string) => {
     setToast(text)
@@ -195,32 +192,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       showToast(t('chat.askFailed', { message: errorText(value.error) }))
       return
     }
-    setTextPick(null)
     openSideChat(value.contextKey)
   }, [sessionId, selection.canvasId, askAgent, openSideChat, run, showToast, errorText, t])
-
-  /** Offer 问 Agent for the text the user selected inside the card body. */
-  const onBodyMouseUp = useCallback(() => {
-    const body = bodyRef.current
-    const picked = window.getSelection()
-    if (body === null || picked === null || picked.isCollapsed) {
-      setTextPick(null)
-      return
-    }
-    const text = picked.toString().trim()
-    if (text === '' || picked.rangeCount === 0) {
-      setTextPick(null)
-      return
-    }
-    const range = picked.getRangeAt(0)
-    if (!body.contains(range.commonAncestorContainer)) {
-      setTextPick(null)
-      return
-    }
-    const rect = range.getBoundingClientRect()
-    const host = body.getBoundingClientRect()
-    setTextPick({ text, top: rect.bottom - host.top + 6, left: Math.max(0, rect.left - host.left) })
-  }, [])
 
   /* -------------------------------------------------------------- rendering */
 
@@ -345,7 +318,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         </div>
       )}
 
-      <div className={css.body} ref={bodyRef} onMouseUp={onBodyMouseUp} data-mode={mode}>
+      <div className={css.body} data-mode={mode}>
         {mode === 'source' || mode === 'split' ? (
           <div className={css.sourcePane}>
             <CardTextarea
@@ -371,24 +344,6 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <MarkdownText text={card.text} labels={markdownLabels} />
           </div>
         ) : null}
-        {textPick !== null && chatAvailable === true && (
-          <button
-            type="button"
-            className={css.askFloat}
-            style={{ top: textPick.top, left: textPick.left }}
-            onClick={() => {
-              const picked = textPick
-              void ask({
-                lens: 'ask',
-                cardIds: [card.id],
-                refs: [{ label: t('chat.selectionRef'), text: picked.text }],
-              })
-            }}
-          >
-            <IconSparkle16 size={12} />
-            {t('chat.ask')}
-          </button>
-        )}
       </div>
 
       {card.source !== undefined && (

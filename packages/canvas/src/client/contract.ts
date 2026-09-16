@@ -105,11 +105,13 @@ export interface CanvasTabInjected extends CanvasChatInjected {
   /** Write the canvas's draft (null token creates; else version-guarded). */
   writeDraft: (sessionId: SessionId, request: BoardWriteDraftRequest) => Promise<RemoteResult<BoardWriteDraftResult>>
   /**
-   * The wide-mode suggestion, fired once per session when the tab first
-   * shows: fullscreen the right panel and collapse the session list — the
-   * user's own controls own it from then on (never re-forced).
+   * The one-shot layout suggestion, fired once per session when the tab
+   * first shows: collapse the session list (M3.1 — the fullscreen suggestion
+   * is gone: the host's fullscreen hides the right panel's resize handle, so
+   * it can never be the default). The user's own controls own the layout
+   * from then on (never re-forced).
    */
-  suggestWideMode: (sessionId: SessionId, fullscreen: boolean) => void
+  suggestWideMode: (sessionId: SessionId) => void
   hooks: {
     /** The selection/freshness feed (open canvas, open card, board rev), bound by the slot renderer. */
     selection: CanvasSelectionSource

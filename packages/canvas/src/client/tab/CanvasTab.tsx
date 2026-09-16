@@ -139,15 +139,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /* ------------------------------------------------------------- wide mode */
 
-  // The wide-mode suggestion fires once per session (the face dedupes): the
-  // user's own controls own the layout from then on.
+  // The one-shot layout suggestion fires once per session (the face dedupes):
+  // the user's own controls own the layout from then on.
   const wideFiredRef = useRef(false)
-  const tabInfo = props.useTabInfo()
   useEffect(() => {
     if (wideFiredRef.current || sessionId === undefined) return
     wideFiredRef.current = true
-    suggestWideMode(sessionId, tabInfo.sidebar.fullscreen)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a one-shot suggestion on mount
+    suggestWideMode(sessionId)
   }, [sessionId, suggestWideMode])
 
   /* ---------------------------------------------------------------- loading */
