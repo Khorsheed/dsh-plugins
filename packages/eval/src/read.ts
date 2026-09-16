@@ -48,8 +48,12 @@ export interface ConditionSummary {
   /** The dataset set whose `conditions/` directory declares it. */
   dataset: string
   harness: { name: string | null; version: string | null; drive: string | null }
-  /** The DECLARED model (decision 5); what a run observed lives in the run's annotations. */
-  model: { declared: string | null }
+  /**
+   * The DECLARED model and endpoint (decision 5); what a run observed lives in
+   * the run's annotations. `endpoint` is listed because the readiness gate
+   * refuses a null one, so it is the field a condition most often stalls on.
+   */
+  model: { declared: string | null; endpoint: string | null }
   /**
    * The named scoped home this condition logs in as, or null for the harness's
    * default one. Part of the hash: two conditions differing only in scope are
@@ -154,7 +158,7 @@ export async function listConditions(repo: string, only?: readonly string[]): Pr
           version: stringOrNull(harness?.['version']),
           drive: stringOrNull(harness?.['drive']),
         },
-        model: { declared: stringOrNull(model?.['declared']) },
+        model: { declared: stringOrNull(model?.['declared']), endpoint: stringOrNull(model?.['endpoint']) },
         scope: stringOrNull(document?.['scope']),
         preset: stringOrNull(document?.['preset']),
         sha: entry.sha,

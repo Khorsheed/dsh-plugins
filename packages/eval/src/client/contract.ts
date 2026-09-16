@@ -12,7 +12,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   EvalApproveRequest, EvalApproveResult, EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
-  EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView,
+  EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
+  EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionsRequest, EvalConditionsView,
   EvalDraftOptionsRequest, EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentDetail,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
@@ -52,6 +53,18 @@ export interface LabViewInjected {
   fetchConditions: (sessionId: SessionId, request: EvalConditionsRequest) => Promise<RemoteResult<EvalConditionsView>>
   /** Two conditions, field by field — only what differs. */
   fetchConditionDiff: (sessionId: SessionId, request: EvalConditionDiffRequest) => Promise<RemoteResult<EvalConditionDiffView>>
+  /**
+   * PROVISION one condition: resolve its scoped home, check the declaration
+   * against it, correct `home.sha` in the declaration and write the lock. One
+   * action — the condition is ready afterwards, or the answer says why not.
+   */
+  provisionCondition: (sessionId: SessionId, request: EvalConditionProvisionRequest) => Promise<RemoteResult<EvalConditionProvisionView>>
+  /**
+   * SET one condition's declared `model.endpoint` — the only field of an
+   * existing declaration any face may change, and a factor edit: the condition
+   * re-hashes and any lock beside it goes stale.
+   */
+  setConditionEndpoint: (sessionId: SessionId, request: EvalConditionEndpointRequest) => Promise<RemoteResult<EvalConditionEndpointView>>
   /**
    * What the 新建实验 form's pickers may offer: the dataset sets this session
    * can draft into, with the items and stage schemas each one holds.

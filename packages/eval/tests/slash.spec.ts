@@ -45,6 +45,69 @@ describe('/eval', () => {
   })
 })
 
+describe('/eval conditions provision — the write-back and the way back (I5·T58 · G7)', () => {
+  /** A service whose provision only records what it was asked for. */
+  function recordingService(): { service: EvalService; calls: Array<Record<string, unknown>> } {
+    const calls: Array<Record<string, unknown>> = []
+    const service = new EvalService()
+    vi.spyOn(service, 'provision').mockImplementation((conditionPath, options) => {
+      calls.push({ conditionPath, ...options })
+      return Promise.resolve({
+        condition: 'c1',
+        conditionPath,
+        lockPath: `${conditionPath.replace(/\.json$/, '')}.lock.json`,
+        repo: options.repo,
+        harness: 'dsh',
+        scope: null,
+        homeDir: '/homes/dsh',
+        credentialState: 'present-unverified',
+        sha: 'a'.repeat(64),
+        home: { sha: 'b'.repeat(64), files: 3, denied: 0 },
+        homeShaWritten: options.writeBack !== false,
+        shaBeforeWriteBack: options.writeBack === false ? null : 'c'.repeat(64),
+        checks: [],
+        written: true,
+        lock: null,
+        errors: [],
+        warnings: [],
+      })
+    })
+    return { service, calls }
+  }
+
+  it('corrects the declaration by default and says so in the reply', async () => {
+    const { service, calls } = recordingService()
+    const result = await handleEvalCommand(service, invocation('conditions provision /repo/datasets/ds/conditions/c1.json --repo /repo'))
+
+    expect(result.kind).toBe('success')
+    expect(calls[0]).not.toHaveProperty('writeBack')
+    expect(result.text).toContain('declaration corrected')
+  })
+
+  it('--no-write-back asks for the old two-step shape', async () => {
+    const { service, calls } = recordingService()
+    const result = await handleEvalCommand(
+      service,
+      invocation('conditions provision /repo/datasets/ds/conditions/c1.json --repo /repo --no-write-back'),
+    )
+
+    expect(result.kind).toBe('success')
+    expect(calls[0]).toMatchObject({ writeBack: false })
+    expect(result.text).not.toContain('declaration corrected')
+  })
+
+  it('refuses --no-write-back on a verb that writes nothing, and still refuses an unknown switch', async () => {
+    const { service } = recordingService()
+    const misplaced = await handleEvalCommand(service, invocation('conditions list --no-write-back'))
+    expect(misplaced.kind).toBe('error')
+    expect(misplaced.text).toContain('--no-write-back is a provision option')
+
+    const unknown = await handleEvalCommand(service, invocation('conditions provision c1.json --repo /repo --rewrite-everything'))
+    expect(unknown.kind).toBe('error')
+    expect(unknown.text).toContain('unknown option(s)')
+  })
+})
+
 describe('/eval run as a background job', () => {
   /** A job registry that records the producer and settles when told. */
   function jobsHost(settleWith?: () => Promise<unknown>) {

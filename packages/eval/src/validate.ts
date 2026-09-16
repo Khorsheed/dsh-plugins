@@ -12,7 +12,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { statSync } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { checkAgainstEffective, type EffectiveSnapshot } from './effective.ts'
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
@@ -99,6 +99,40 @@ export function expandHome(path: string): string {
   if (path === '~') return homedir()
   if (path.startsWith('~/')) return join(homedir(), path.slice(2))
   return path
+}
+
+/**
+ * One repository path reduced to the form two of them can be COMPARED in:
+ * `~` expanded, made absolute, trailing separator dropped, and resolved
+ * through symlinks when the path exists on this machine.
+ *
+ * Comparison is the whole purpose — the agent-facing repo parameter is only
+ * ever a restatement of the session's binding, and the two spellings reaching
+ * that check are written by different hands: a binding recorded as a literal
+ * `~/…` and an argument an agent typed as an absolute path are the same
+ * repository and must not read as two (I5·T39 · G5 is the same mismatch seen
+ * from the read side). A path that does not exist normalizes as far as it can
+ * rather than throwing: refusing to compare is not an improvement on comparing
+ * the text.
+ * @param path - the path as its writer spelled it.
+ * @returns the comparable form.
+ */
+export function normalizeRepoPath(path: string): string {
+  const absolute = resolve(expandHome(path.trim()))
+  try {
+    return realpathSync(absolute)
+  } catch {
+    return absolute
+  }
+}
+
+/**
+ * Whether two repository paths name the same repository.
+ * @param a - one path, as written.
+ * @param b - the other.
+ */
+export function sameRepoPath(a: string, b: string): boolean {
+  return normalizeRepoPath(a) === normalizeRepoPath(b)
 }
 
 function isDirectory(path: string): boolean {

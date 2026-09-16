@@ -9,7 +9,8 @@
 import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
-  EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView, EvalExperimentDetail,
+  EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow,
+  EvalConditionsView, EvalExperimentDetail,
   EvalExperimentsResult, EvalFinalizeView, EvalJudgeQueueView, EvalMatrixView, EvalPlanReview,
   EvalRunOutputView, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
@@ -88,6 +89,18 @@ export interface LabViewState {
   conditionsLoading: boolean
   /** Human-readable conditions-fetch failure, or null. */
   conditionsError: string | null
+  /**
+   * The condition a provision or an endpoint write is in flight for, or null.
+   * One at a time on purpose: both write the same declaration, and two
+   * overlapping writes would race over one file.
+   */
+  conditionBusy: string | null
+  /** What the last provision on this page answered, or null. */
+  provision: EvalConditionProvisionView | null
+  /** Human-readable failure of the last provision or endpoint write, or null. */
+  conditionActionError: string | null
+  /** The condition whose endpoint field is open for editing, or null. */
+  endpointEditing: string | null
   /** The one or two conditions picked for the diff, in pick order. */
   diffPair: string[]
   /** The diff of the picked pair, or null until both are picked. */
@@ -202,6 +215,11 @@ export type LabViewActions = {
   setConditions: (draft: LabViewState, conditions: EvalConditionsView) => void
   setConditionsLoading: (draft: LabViewState, loading: boolean) => void
   setConditionsError: (draft: LabViewState, error: string | null) => void
+  setConditionBusy: (draft: LabViewState, id: string | null) => void
+  setProvision: (draft: LabViewState, provision: EvalConditionProvisionView | null) => void
+  setConditionActionError: (draft: LabViewState, error: string | null) => void
+  editEndpoint: (draft: LabViewState, id: string | null) => void
+  applyConditionRow: (draft: LabViewState, row: EvalConditionRow) => void
   pickCondition: (draft: LabViewState, id: string) => void
   setDiff: (draft: LabViewState, diff: EvalConditionDiffView) => void
   setDiffError: (draft: LabViewState, error: string | null) => void
@@ -259,6 +277,10 @@ const INITIAL: LabViewState = {
   conditions: null,
   conditionsLoading: false,
   conditionsError: null,
+  conditionBusy: null,
+  provision: null,
+  conditionActionError: null,
+  endpointEditing: null,
   diffPair: [],
   diff: null,
   diffError: null,
@@ -410,6 +432,31 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       },
       setConditionsLoading: (d, loading: boolean) => { d.conditionsLoading = loading },
       setConditionsError: (d, error: string | null) => { d.conditionsError = error },
+      setConditionBusy: (d, id: string | null) => { d.conditionBusy = id },
+      setProvision: (d, provision: EvalConditionProvisionView | null) => {
+        d.provision = provision
+        d.conditionActionError = null
+      },
+      setConditionActionError: (d, error: string | null) => { d.conditionActionError = error },
+      editEndpoint: (d, id: string | null) => {
+        d.endpointEditing = id
+        d.conditionActionError = null
+      },
+      /**
+       * Replace one row in place with what the write answered. A refetch would
+       * also work and would cost a walk of the whole `conditions/` directory
+       * to learn what the call that just returned already said — and it would
+       * drop the picked diff pair's rendering for a frame.
+       */
+      applyConditionRow: (d, row: EvalConditionRow) => {
+        if (d.conditions === null) return
+        d.conditions.rows = d.conditions.rows.map(entry => (entry.id === row.id && entry.dataset === row.dataset ? row : entry))
+        // The pair's diff was computed against the pre-write declarations.
+        if (d.diffPair.includes(row.id)) {
+          d.diff = null
+          d.diffError = null
+        }
+      },
       pickCondition: (d, id: string) => {
         // Two slots, filled in click order: picking a third drops the older of
         // the two, so comparing a chain of conditions never needs a clear step.

@@ -312,8 +312,8 @@
 .condRow {
   display: grid;
   grid-template-columns:
-    minmax(120px, 1.2fr) minmax(88px, 0.9fr) minmax(120px, 1.2fr)
-    minmax(72px, 0.7fr) minmax(72px, 0.7fr) minmax(120px, 1fr) 72px;
+    minmax(120px, 1.2fr) minmax(88px, 0.9fr) minmax(120px, 1.2fr) minmax(96px, 1fr)
+    minmax(72px, 0.7fr) minmax(72px, 0.7fr) minmax(120px, 1fr) 72px minmax(88px, 0.8fr);
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -357,6 +357,36 @@
 
 .condId {
   color: var(--dsw-alias-label-primary);
+}
+
+/* The provision cell: its own click target, so pressing it never also toggles
+   the row's diff pick. */
+.condAction {
+  display: flex;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+/* The endpoint editor replaces the cell in place rather than opening a dialog:
+   the value is one short word and the row it belongs to is the context. */
+.endpointEdit {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow: visible;
+}
+
+.endpointInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-l1);
+  padding: 1px 4px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-family: var(--dsw-font-mono, monospace);
+  line-height: 18px;
 }
 
 .diffHead {

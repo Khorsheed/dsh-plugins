@@ -165,6 +165,7 @@ export function LabView(props: LabViewProps) {
   const {
     sessionId, useStore, actions, t,
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
+    provisionCondition, setConditionEndpoint,
     fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal,
@@ -190,6 +191,10 @@ export function LabView(props: LabViewProps) {
   const conditions = useStore(s => s.conditions)
   const conditionsLoading = useStore(s => s.conditionsLoading)
   const conditionsError = useStore(s => s.conditionsError)
+  const conditionBusy = useStore(s => s.conditionBusy)
+  const provision = useStore(s => s.provision)
+  const conditionActionError = useStore(s => s.conditionActionError)
+  const endpointEditing = useStore(s => s.endpointEditing)
   const diffPair = useStore(s => s.diffPair)
   const diff = useStore(s => s.diff)
   const diffError = useStore(s => s.diffError)
@@ -369,6 +374,57 @@ export function LabView(props: LabViewProps) {
     })
     return () => { cancelled = true }
   }, [startedJobId, refreshRev, actions, fetchRunOutput])
+
+  /**
+   * PROVISION one condition — ui-spec step 4, and a human's click.
+   *
+   * The whole action: the same call resolves the scoped home, checks the
+   * declaration against it field by field, corrects `home.sha`, re-hashes the
+   * condition and writes the lock. What comes back carries the row as it now
+   * reads, so the table updates from the answer rather than from a second read
+   * of the same directory.
+   * @param row - the condition to provision.
+   */
+  function provisionRow(row: { id: string; dataset: string }): void {
+    actions.setConditionBusy(row.id)
+    actions.setProvision(null)
+    void provisionCondition(sessionId, { dataset: row.dataset, condition: row.id }).then((result) => {
+      actions.setConditionBusy(null)
+      if (!result.ok) {
+        actions.setConditionActionError(`${t('conditions.provisionFailed')}: ${result.error.message}`)
+        return
+      }
+      actions.setProvision(result.value)
+      if (result.value.row !== null) actions.applyConditionRow(result.value.row)
+    })
+  }
+
+  /**
+   * Set one condition's declared `model.endpoint`.
+   *
+   * A factor edit, so the answer may say the lock beside it is now stale. The
+   * notice says so and provisioning again is the next click — deliberately not
+   * something this does on the person's behalf.
+   * @param row - the condition being edited.
+   * @param endpoint - the value typed (empty declares "not resolved yet").
+   */
+  function setEndpoint(row: { id: string; dataset: string }, endpoint: string): void {
+    actions.setConditionBusy(row.id)
+    void setConditionEndpoint(sessionId, { dataset: row.dataset, condition: row.id, endpoint }).then((result) => {
+      actions.setConditionBusy(null)
+      if (!result.ok) {
+        actions.setConditionActionError(`${t('conditions.endpointFailed')}: ${result.error.message}`)
+        return
+      }
+      const value = result.value
+      actions.editEndpoint(null)
+      const said = value.written
+        ? t('conditions.endpointWritten', { id: value.condition, value: value.after ?? t('conditions.endpointUnset') })
+        : t('conditions.endpointUnchanged', { id: value.condition, value: value.after ?? t('conditions.endpointUnset') })
+      actions.setConditionActionError(value.lockStale ? `${said} ${t('conditions.endpointLockStale')}` : said)
+      if (value.row !== null) actions.applyConditionRow(value.row)
+    })
+  }
 
   /**
    * Approve and start the open plan — the human act of ui-spec step 5.
@@ -742,7 +798,14 @@ export function LabView(props: LabViewProps) {
                   pair={diffPair}
                   diff={diff}
                   diffError={diffError}
+                  busy={conditionBusy}
+                  provision={provision}
+                  actionError={conditionActionError}
+                  editing={endpointEditing}
                   onPick={(id: string) => { actions.pickCondition(id) }}
+                  onProvision={provisionRow}
+                  onEditEndpoint={(id: string | null) => { actions.editEndpoint(id) }}
+                  onSetEndpoint={setEndpoint}
                   t={t}
                 />
               )}

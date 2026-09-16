@@ -19,18 +19,32 @@
  * plan-review page's button and R1 keeps it there.
  *
  * A new condition is a COPY, never an invention. `from` names a declaration
- * that already exists and the edit changes the six fields ui-spec §五 lists
- * (harness, model, scope, preset, permissions, reasoning effort); everything
- * else is carried over byte for byte. That is the discipline the whole
- * comparison rests on — an experiment is worth running when its conditions
- * differ in ONE field, and a condition written from scratch differs in
- * however many its author forgot to think about.
+ * that already exists and the edit changes the seven fields ui-spec §五 lists
+ * (harness, model, endpoint, scope, preset, permissions, reasoning effort);
+ * everything else is carried over byte for byte. That is the discipline the
+ * whole comparison rests on — an experiment is worth running when its
+ * conditions differ in ONE field, and a condition written from scratch differs
+ * in however many its author forgot to think about.
+ *
+ * `model.endpoint` is the seventh since I5·T58. It is a field the readiness
+ * gate REFUSES a condition for leaving null, so a draft that could not set it
+ * produced a plan nobody could run without opening the two JSON files in an
+ * editor — and the two had to agree, or the experiment silently grew a second
+ * factor (I5·T39 · G6).
+ *
+ * Two things the copy fills in that nobody named: `home.sha` is nulled (below),
+ * and on a plan that declares a container unit the condition's own `unit`
+ * segment is completed from {@link defaultConditionUnit} when the source has
+ * none. A source written before the container path has no segment to copy and
+ * the edit cannot express one, which left the container path unreachable from
+ * a draft at all (I5·T39 · G4).
  * @module @khorsheed/dsh-eval
  */
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { CONDITION_ID_RE, PLAN_SCHEMA_ID } from './schema.ts'
+import { conditionUnitOf, defaultConditionUnit } from './unit.ts'
 
 /**
  * Thrown when a draft cannot be written at all: an unresolvable repository, a
@@ -54,6 +68,13 @@ export interface DraftConditionEdit {
   harness?: string
   /** `model.declared`; null says "not resolved yet", which is a legal declaration. */
   model?: string | null
+  /**
+   * `model.endpoint` — the upstream route (frozen decision 5). `"default"`
+   * means the harness's own endpoint with no base URL in force; any other
+   * value is compared against the scope's endpoint hostname at provision time.
+   * null says "not resolved yet", which the readiness gate refuses.
+   */
+  endpoint?: string | null
   /** The named scoped home, or null for the harness's default one. */
   scope?: string | null
   /** The agent-preset roster, or null for none. */
@@ -155,6 +176,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
 /**
  * Write a path back in `~`-relative form when it is under this user's home.
  * The plans in a dataset repository are committed and read on other machines,
@@ -229,13 +254,25 @@ async function itemIdsOf(datasetRoot: string): Promise<string[]> {
  * - `notes` is replaced by a provenance line. The original's commentary is
  *   about the original, and `notes` is excluded from the condition hash, so
  *   rewriting it changes no subject's identity.
+ *
+ * A fourth moves only on a plan that declares a container unit: the condition's
+ * `unit.scopedHome` and the `env.keys` entry naming it, completed from
+ * {@link defaultConditionUnit} when the source declares none. It is NOT counted
+ * among the changed fields — it is the copy being made runnable where the plan
+ * puts it, not a factor the author chose, and counting it would let a copy that
+ * names no edit pass the "changes nothing" refusal below.
+ * @param source - the declaration being copied.
+ * @param edit - the fields to change.
+ * @param planName - the drafting plan, for the provenance line.
+ * @param containerPlan - whether the plan declares a `unit` segment.
  * @returns the minted document and the dotted paths the edit actually changed.
  */
 function mintCondition(
   source: Record<string, unknown>,
   edit: DraftConditionEdit,
   planName: string,
-): { document: Record<string, unknown>; changed: string[] } {
+  containerPlan: boolean,
+): { document: Record<string, unknown>; changed: string[]; unitFilled: string | null } {
   const document = structuredClone(source)
   const changed: string[] = []
   const harness = isPlainObject(document['harness']) ? { ...document['harness'] } : {}
@@ -250,6 +287,10 @@ function mintCondition(
   if (edit.model !== undefined && edit.model !== model['declared']) {
     model['declared'] = edit.model
     changed.push('model.declared')
+  }
+  if (edit.endpoint !== undefined && edit.endpoint !== (model['endpoint'] ?? null)) {
+    model['endpoint'] = edit.endpoint
+    changed.push('model.endpoint')
   }
   if (edit.reasoning !== undefined && edit.reasoning !== reasoning['effort']) {
     reasoning['effort'] = edit.reasoning
@@ -286,10 +327,41 @@ function mintCondition(
     )
   }
   document['home'] = { sha: null }
+
+  // The container completion. `conditionUnitOf` is the same reader the run
+  // loop and the contract check use, so "has no usable segment" means here
+  // exactly what it means there.
+  let unitFilled: string | null = null
+  if (containerPlan && conditionUnitOf(document) === null) {
+    const fill = defaultConditionUnit(stringOrNull(harness['name']))
+    if (fill !== undefined) {
+      document['unit'] = fill
+      // The variable must also be one `env.keys` admits, or the run would
+      // inject a name the reviewed document never declared
+      // (UNIT_SCOPED_HOME_VAR_UNDECLARED).
+      const env = isPlainObject(document['env']) ? { ...document['env'] } : {}
+      const keys = Array.isArray(env['keys']) ? env['keys'].filter((key): key is string => typeof key === 'string') : []
+      env['keys'] = keys.includes(fill.scopedHome.var) ? keys : [...keys, fill.scopedHome.var]
+      document['env'] = env
+      unitFilled = fill.scopedHome.var
+    }
+  }
+
   document['notes'] = `Drafted with plan "${planName}": copied from condition "${edit.from}", changing ${changed.join(', ')}. `
     + 'home.sha is null because the scoped home is not provisioned yet — `/eval conditions provision` is a human act '
     + 'and the only writer of a lock.'
-  return { document, changed }
+    + (unitFilled === null
+      ? ''
+      : ` The plan runs in a container and "${edit.from}" declares no unit segment, so unit.scopedHome`
+        + ` (${JSON.stringify(fillDescription(document))}) and the ${unitFilled} entry in env.keys were completed`
+        + ' from this harness\'s default mount — change them if this run mounts credentials somewhere else.')
+  return { document, changed, unitFilled }
+}
+
+/** The filled segment as one readable phrase for the provenance line. */
+function fillDescription(document: Record<string, unknown>): string {
+  const decl = conditionUnitOf(document)
+  return decl === null ? '' : `${decl.scopedHome.container} as $${decl.scopedHome.var}`
 }
 
 /** Refuse anything that cannot be a file stem in `plans/` or `conditions/`. */
@@ -375,7 +447,7 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
       join(conditionsDir, `${from}.json`),
       `condition ${JSON.stringify(id)} copies ${JSON.stringify(from)}, which`,
     )
-    const { document } = mintCondition(source, edit, name)
+    const { document } = mintCondition(source, edit, name, input.unit !== undefined)
     await mkdir(conditionsDir, { recursive: true })
     const path = join(conditionsDir, `${id}.json`)
     await writeNewJson(path, document, `condition ${JSON.stringify(id)}`)

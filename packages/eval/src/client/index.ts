@@ -36,6 +36,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
   EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
+  EvalConditionEndpointRequest, EvalConditionProvisionRequest,
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
@@ -104,6 +105,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
         fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
         fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
+        provisionCondition: (sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(sid, request),
+        setConditionEndpoint: (sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(sid, request),
         // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
         // a draft a person fills in and a draft an agent makes in one
         // sentence are the same file in the same list.
