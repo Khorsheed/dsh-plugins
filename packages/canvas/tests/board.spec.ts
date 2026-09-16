@@ -504,3 +504,79 @@ describe('CanvasBoardService fencing', () => {
     expect(fs.policies).toEqual([undefined])
   })
 })
+
+describe('CanvasBoardService.focusCanvas', () => {
+  it('records the open canvas per session and answers it back', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    expect(board.focusedCanvasId(SESSION)).toBeUndefined()
+    expect(await board.focusCanvas({ canvasId: created.id }, SESSION)).toEqual({ ok: true })
+    expect(board.focusedCanvasId(SESSION)).toBe(created.id)
+    // Another session has its own focus, or none.
+    const other = { id: 's2', header: { cwd: WS } } as unknown as Session
+    expect(board.focusedCanvasId(other)).toBeUndefined()
+  })
+
+  it('refuses a missing canvas and an unusable id', async () => {
+    const { board } = harness()
+    expect(await board.focusCanvas({ canvasId: 'canvas_01234567abcdefgh' }, SESSION))
+      .toEqual({ ok: false, error: 'missing' })
+    expect(await board.focusCanvas({ canvasId: '../etc' }, SESSION))
+      .toEqual({ ok: false, error: 'invalid-name' })
+  })
+})
+
+describe('CanvasBoardService draft', () => {
+  it('reads an absent draft as empty with a null token, and errors a missing canvas', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    expect(await board.readDraft({ canvasId: created.id })).toEqual({ ok: true, content: '', version: null })
+    expect(await board.readDraft({ canvasId: 'canvas_01234567abcdefgh' })).toEqual({ ok: false, error: 'missing' })
+    expect(await board.readDraft({ canvasId: '../etc' })).toEqual({ ok: false, error: 'invalid-name' })
+  })
+
+  it('creates the draft on a null token and round-trips it', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    const written = await board.writeDraft({ canvasId: created.id, content: '# 初稿\n\n正文。', version: null }, SESSION)
+    if (!written.ok) throw new Error(`expected the draft to land, got ${written.error}`)
+    expect(await board.readDraft({ canvasId: created.id }))
+      .toEqual({ ok: true, content: '# 初稿\n\n正文。', version: written.version })
+  })
+
+  it('refuses a second create and a stale overwrite — the manuscript is never clobbered', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    const first = await board.writeDraft({ canvasId: created.id, content: '一', version: null }, SESSION)
+    if (!first.ok) throw new Error('expected the draft to land')
+    expect(await board.writeDraft({ canvasId: created.id, content: '二', version: null }, SESSION))
+      .toEqual({ ok: false, error: 'exists' })
+    expect(await board.writeDraft({ canvasId: created.id, content: '二', version: '999' }, SESSION))
+      .toEqual({ ok: false, error: 'stale' })
+    const second = await board.writeDraft({ canvasId: created.id, content: '二', version: first.version }, SESSION)
+    if (!second.ok) throw new Error('expected the guarded write to land')
+    expect(await board.readDraft({ canvasId: created.id })).toEqual({ ok: true, content: '二', version: second.version })
+  })
+
+  it('fences the draft write at the state dir (the re-rooted fence, mode preserved)', async () => {
+    const { fs, board } = confiningHarness()
+    const created = await createBoard(board)
+    fs.policies.length = 0
+    expect(await board.writeDraft({ canvasId: created.id, content: 'x', version: null }, SESSION))
+      .toEqual({ ok: true, version: expect.any(String) })
+    expect(fs.policies).toEqual([{ mode: 'workspace-write', workspaceRoot: STATE, sessionId: 's1' }])
+  })
+
+  it('refuses the draft write under read-only', async () => {
+    const { fs, board } = confiningHarness('read-only')
+    // Seed the canvas itself directly (its creation would also be denied here).
+    const now = new Date().toISOString()
+    fs.seed(`${STATE}/canvas_01234567abcdefgh/canvas.json`, `${JSON.stringify({
+      id: 'canvas_01234567abcdefgh', title: '主题', attachedWorkspaces: [], chat: { sessionId: null },
+      cards: [], stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: now },
+      archivedAt: null, createdAt: now, updatedAt: now,
+    })}\n`)
+    expect(await board.writeDraft({ canvasId: 'canvas_01234567abcdefgh', content: 'x', version: null }, SESSION))
+      .toEqual({ ok: false, error: 'denied' })
+  })
+})

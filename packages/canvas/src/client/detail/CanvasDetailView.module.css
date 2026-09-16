@@ -129,7 +129,30 @@
   border-color: var(--dsw-alias-label-tertiary);
 }
 
-/* -------------------------------------------------------------------- body */
+/* The tri-state reading modes (render / source / split). */
+.seg {
+  display: flex;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.seg button {
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  font-family: var(--dsw-font-family);
+  padding: 3px 10px;
+  border-radius: 5px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
 
 .body {
   position: relative;
@@ -137,6 +160,24 @@
   line-height: 1.75;
   color: var(--dsw-alias-label-primary);
   min-height: 60px;
+}
+
+.body[data-mode="split"] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.sourcePane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.renderPane {
+  min-width: 0;
 }
 
 /* The floating 问 Agent offer, anchored below the text selection. */

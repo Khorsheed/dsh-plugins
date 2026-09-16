@@ -154,6 +154,14 @@ export const zh = {
   'pane.collapse': '收起详情',
   'pane.expand': '展开详情',
 
+  'view.board': '卡板',
+  'view.draft': '成稿',
+  'detail.back': '返回卡板',
+  'detail.render': '渲染',
+  'detail.source': '源码',
+  'detail.split': '并列',
+  'switcher.pick': '选择画布',
+
   'q.open': '待探索',
   'q.exploring': '探索中',
   'q.answered': '已有初步回答',
@@ -332,6 +340,14 @@ export const en: Record<keyof typeof zh, string> = {
 
   'pane.collapse': 'Collapse detail',
   'pane.expand': 'Expand detail',
+
+  'view.board': 'Board',
+  'view.draft': 'Draft',
+  'detail.back': 'Back to board',
+  'detail.render': 'Render',
+  'detail.source': 'Source',
+  'detail.split': 'Split',
+  'switcher.pick': 'Pick a canvas',
 
   'q.open': 'Open',
   'q.exploring': 'Exploring',

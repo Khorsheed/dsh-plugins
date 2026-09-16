@@ -45,6 +45,20 @@ export class CanvasSelectionStore {
     this.source.set({ canvasId, cardId, rev: current.rev })
   }
 
+  /** Switch the open canvas (the drill's card clears with it; `rev` untouched). */
+  openCanvas(canvasId: string): void {
+    const current = this.source.getSnapshot()
+    if (current.canvasId === canvasId && current.cardId === null) return
+    this.source.set({ canvasId, cardId: null, rev: current.rev })
+  }
+
+  /** Leave the detail page (the drill's back): keeps the open canvas. */
+  clearCard(): void {
+    const current = this.source.getSnapshot()
+    if (current.cardId === null) return
+    this.source.set({ ...current, cardId: null })
+  }
+
   /** Note that a board changed under the open detail (either seat's mutation). */
   touch(): void {
     const current = this.source.getSnapshot()

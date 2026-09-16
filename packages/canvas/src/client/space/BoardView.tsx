@@ -21,8 +21,8 @@ import { useState, type ReactNode } from 'react'
 import {
   IconArchiveOutline20, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
   IconCloseOutline16, IconCodeOutline16, IconDatabaseOutline16, IconEditOutline16,
-  IconFolderOpenOutline16, IconLightOutline16, IconLinkOutline14, IconListPenOutline16,
-  IconNewChatOutline16, IconPlusOutline16, IconQuestionOutline14, IconRefreshOutline14,
+  IconLightOutline16, IconLinkOutline14, IconListPenOutline16,
+  IconNewChatOutline16, IconQuestionOutline14, IconRefreshOutline14,
   IconSparkle16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
@@ -32,7 +32,7 @@ import {
 } from '../../types.ts'
 import type {} from '../locales.ts'
 import { CardTextarea } from './CardTextarea.tsx'
-import css from './CanvasSpacePage.module.css'
+import css from './board.module.css'
 
 /** The mutations the board can ask for (the page wires them to the Remote). */
 export interface BoardActions {
@@ -353,7 +353,6 @@ export function BoardView({
   chatAvailable, onAsk, onFollowUp,
   editingId, onEditingChange, draftKind, onDraftKindChange, actions, showArchived, onToggleArchived,
 }: BoardViewProps): ReactNode {
-  const [menuOpen, setMenuOpen] = useState(false)
 
   const visible = board.cards.filter(card => card.status !== 'archived')
   const archived = board.cards.filter(card => card.status === 'archived')
@@ -363,18 +362,6 @@ export function BoardView({
 
   return (
     <section className={css.main}>
-      <header className={css.topbar}>
-        <span className={css.topic}>{board.title}</span>
-        {board.attachedWorkspaces.map(workspace => (
-          <span key={workspace} className={css.attachChip} title={workspace}>
-            <IconFolderOpenOutline16 size={12} />
-            <b>{basenameOf(workspace)}</b>
-          </span>
-        ))}
-        <span className={css.spacer} />
-        {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
-      </header>
-
       <div className={css.boardScroll}>
         <div className={css.chips}>
           <button
@@ -400,38 +387,6 @@ export function BoardView({
               </button>
             )
           })}
-          <span className={css.spacer} />
-          {!readonly && (
-            <span style={{ position: 'relative' }}>
-              <button
-                type="button"
-                className={css.newButton}
-                aria-expanded={menuOpen}
-                onClick={() => { setMenuOpen(open => !open) }}
-              >
-                <IconPlusOutline16 size={12} />
-                {t('board.newCard')}
-              </button>
-              {menuOpen && (
-                <div className={css.menu}>
-                  {BOARD_CARD_KINDS.map(kind => {
-                    const KindIcon = KIND_ICONS[kind]
-                    return (
-                      <button
-                        key={kind}
-                        type="button"
-                        className={css.menuItem}
-                        onClick={() => { setMenuOpen(false); onDraftKindChange(kind) }}
-                      >
-                        <KindIcon size={12} />
-                        {t(`kind.${kind}`)}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </span>
-          )}
         </div>
 
         {selection.size > 0 && (

@@ -20,7 +20,7 @@ import {
 } from 'react'
 import {
   IconArchiveOutline20, IconCheckOutline16, IconCloseOutline16, IconCodeOutline16,
-  IconDatabaseOutline16, IconEditOutline16, IconLinkOutline14, IconListPenOutline16,
+  IconDatabaseOutline16, IconLinkOutline14, IconListPenOutline16,
   IconQuestionOutline14, IconRefreshOutline14, IconRightUpOutline14, IconSparkle16,
   MarkdownText, type MarkdownLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -76,7 +76,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   const [open, setOpen] = useState<{ board: CanvasBoard; version: string } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
+  /** The detail's three reading modes (render / source / split). */
+  const [mode, setMode] = useState<'render' | 'source' | 'split'>('render')
   const [toast, setToast] = useState<string | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   /** The chat seam's probe: null while probing, so entries never flash. */
@@ -148,7 +149,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   }, [selection.canvasId, selection.rev, readBoard, run, errorText])
 
   // A selection change always returns the body to the reading state.
-  useEffect(() => { setEditing(false) }, [selection.canvasId, selection.cardId])
+  useEffect(() => { setMode('render') }, [selection.canvasId, selection.cardId])
 
   /** Run one mutation: the service answers the fresh board; apply it in place. */
   const mutate = useCallback(async (
@@ -291,16 +292,19 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>
           )}
           <span className={css.spacer} />
-          {!editing && !proposed && !archived && !readonly && (
-            <button
-              type="button"
-              className={css.iconButton}
-              title={t('card.edit')}
-              onClick={() => { setEditing(true) }}
-            >
-              <IconEditOutline16 size={12} />
-              {t('detail.edit')}
-            </button>
+          {!proposed && !archived && !readonly && (
+            <span className={css.seg} role="group" aria-label={t('card.edit')}>
+              {(['render', 'source', 'split'] as const).map(candidate => (
+                <button
+                  key={candidate}
+                  type="button"
+                  aria-pressed={mode === candidate}
+                  onClick={() => { setMode(candidate) }}
+                >
+                  {candidate === 'render' ? t('detail.render') : candidate === 'source' ? t('detail.source') : t('detail.split')}
+                </button>
+              ))}
+            </span>
           )}
           {archived && !readonly && (
             <button
@@ -341,29 +345,32 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         </div>
       )}
 
-      <div className={css.body} ref={bodyRef} onMouseUp={onBodyMouseUp}>
-        {editing ? (
-          <>
+      <div className={css.body} ref={bodyRef} onMouseUp={onBodyMouseUp} data-mode={mode}>
+        {mode === 'source' || mode === 'split' ? (
+          <div className={css.sourcePane}>
             <CardTextarea
               className={css.editor}
               defaultValue={card.text}
               submitOn="mod-enter"
-              autoFocus
+              autoFocus={mode === 'source'}
               onSubmit={text => {
                 const trimmed = text.trim()
-                setEditing(false)
+                setMode('render')
                 if (trimmed.length === 0 || trimmed === card.text) return
                 void mutate(sid => patchCard(sid, {
                   canvasId: open.board.id, cardId: card.id, text: trimmed,
                 }), 'toast.cardSaved')
               }}
-              onCancel={() => { setEditing(false) }}
+              onCancel={() => { setMode('render') }}
             />
             <span className={css.editHint}>{t('card.editHint')}</span>
-          </>
-        ) : (
-          <MarkdownText text={card.text} labels={markdownLabels} />
-        )}
+          </div>
+        ) : null}
+        {mode === 'render' || mode === 'split' ? (
+          <div className={css.renderPane}>
+            <MarkdownText text={card.text} labels={markdownLabels} />
+          </div>
+        ) : null}
         {textPick !== null && chatAvailable === true && (
           <button
             type="button"

@@ -185,12 +185,12 @@ describe('CanvasDetailView', () => {
     expect(ghost.status).toBe('kept')
   })
 
-  it('saves the edit toggle through patchCard and returns to reading', async () => {
+  it('saves the source mode through patchCard and returns to reading', async () => {
     const { store, mocks, props } = makeHarness([card('c_1')])
     store.select(CANVAS_ID, 'c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
-    fireEvent.click(screen.getByRole('button', { name: /编辑/ }))
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
     const editor = await screen.findByDisplayValue('卡片 c_1 的正文')
     fireEvent.change(editor, { target: { value: '改过的正文' } })
     fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })

@@ -809,3 +809,40 @@ export interface BoardProposeCardRequest {
   /** The proposal's rationale, hung on the card as an agent comment. */
   readonly comment?: string
 }
+
+/* ---------------------------------------------------------- draft + focus */
+
+/** The draft file beside `canvas.json` (the user's own manuscript). */
+export const DRAFT_FILE_NAME = 'draft.md'
+
+/** Mark the canvas the session's tab has open (the main-session tools' target). */
+export interface BoardFocusRequest {
+  readonly canvasId: string
+}
+
+/** The focus gesture's receipt. */
+export type BoardFocusResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: CanvasError }
+
+/** Read the canvas's draft. */
+export interface BoardReadDraftRequest {
+  readonly canvasId: string
+}
+
+/** An absent draft reads as EMPTY with a null token — the first write creates it. */
+export type BoardReadDraftOutcome =
+  | { readonly ok: true; readonly content: string; readonly version: string | null }
+  | { readonly ok: false; readonly error: CanvasError }
+
+/** Write the draft; a null token means create (the first write), else version-guarded. */
+export interface BoardWriteDraftRequest {
+  readonly canvasId: string
+  readonly content: string
+  readonly version: string | null
+}
+
+/** The draft write's receipt: the new freshness token, or the failure code. */
+export type BoardWriteDraftResult =
+  | { readonly ok: true; readonly version: string }
+  | { readonly ok: false; readonly error: CanvasError }

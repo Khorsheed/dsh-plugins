@@ -14,7 +14,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
-import { canvasToolDefinitions } from '../src/tools.ts'
+import { canvasMainSessionToolDefinitions, canvasToolDefinitions } from '../src/tools.ts'
 import type { CanvasBoard } from '../src/types.ts'
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
@@ -214,5 +214,63 @@ describe('the canvas tools', () => {
     const agent = { session: CANVAS_AGENT_SESSION } as unknown as Agent
     await propose.execute({ kind: 'fragment', text: 'b' }, { agent } as never)
     expect(seen).toEqual([FALLBACK, CANVAS_AGENT_SESSION])
+  })
+})
+
+describe('the main-session canvas tools (M3 second entrance)', () => {
+  it('answers the no-canvas message instead of failing when nothing is open', async () => {
+    const fs = new FakeFs()
+    const ctx = { fs, get: () => undefined } as unknown as Context
+    const pad = new CanvasService(ctx)
+    ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
+    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
+    const tools = canvasMainSessionToolDefinitions(board)
+    expect(tools.map(def => def.name)).toEqual(['canvas_propose_card', 'canvas_comment'])
+    for (const def of tools) {
+      expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
+        channel: 'plugin', owner: '@khorsheed/dsh-canvas',
+      })
+    }
+    const agent = { session: FALLBACK } as unknown as Agent
+    expect(await tools[0]!.execute({ kind: 'fragment', text: 'x' }, { agent } as never))
+      .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
+    expect(await tools[1]!.execute({ cardId: 'c_1', text: 'x' }, { agent } as never))
+      .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
+    // And nothing was written.
+    expect(await board.listCanvases()).toEqual({ items: [] })
+  })
+
+  it('targets the focused canvas once the tab reports it, fencing with the main session', async () => {
+    const fs = new FakeFs()
+    const ctx = { fs, get: () => undefined } as unknown as Context
+    const pad = new CanvasService(ctx)
+    ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
+    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
+    const created = await board.createCanvas({ title: '主题' }, FALLBACK)
+    if (!created.ok) throw new Error('expected a created canvas')
+    expect(await board.focusCanvas({ canvasId: created.board.id }, FALLBACK)).toEqual({ ok: true })
+    const tools = canvasMainSessionToolDefinitions(board)
+    const agent = { session: FALLBACK } as unknown as Agent
+    const answer = await tools[0]!.execute({ kind: 'reference', text: '效能假说综述' }, { agent } as never)
+    const read = await board.readBoard({ canvasId: created.board.id })
+    if (!read.ok) throw new Error('expected a readable board')
+    expect(read.board.cards).toHaveLength(1)
+    expect(read.board.cards[0]).toMatchObject({ kind: 'reference', status: 'proposed', createdBy: 'agent' })
+    expect(answer).toBe(`完成：${read.board.cards[0]!.id}`)
+    expect(await tools[1]!.execute({ cardId: read.board.cards[0]!.id, text: '这里隐含一个假设。有数据吗？' }, { agent } as never)).toBe('完成')
+    const after = await board.readBoard({ canvasId: created.board.id })
+    if (!after.ok) throw new Error('expected a readable board')
+    expect(after.board.cards[0]?.comments[0]).toMatchObject({ author: 'agent', text: '这里隐含一个假设。有数据吗？' })
+  })
+
+  it('answers the no-canvas message when the run context carries no agent at all', async () => {
+    const fs = new FakeFs()
+    const ctx = { fs, get: () => undefined } as unknown as Context
+    const pad = new CanvasService(ctx)
+    ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
+    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
+    const tools = canvasMainSessionToolDefinitions(board)
+    expect(await tools[0]!.execute({ kind: 'fragment', text: 'x' }, {} as never))
+      .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
   })
 })
