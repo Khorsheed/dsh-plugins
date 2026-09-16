@@ -13,7 +13,7 @@ import {
   useCallback, useEffect, useRef,
   type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react'
-import css from './CanvasSpacePage.module.css'
+import css from './board.module.css'
 
 /** The shared card textarea. */
 export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, className, onSubmit, onCancel }: {

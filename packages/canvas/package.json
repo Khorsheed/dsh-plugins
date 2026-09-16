@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-canvas",
   "description": "灵感画布：与工作区平级的主题画布空间（左导轨整页卡板：碎片/问题/依据/资料/文档卡、幽灵提议、归档不删除），另含工作区级灵感稿纸右栏 tab",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "publishConfig": {
     "access": "public"
   },
@@ -59,7 +59,6 @@
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-workspace": "^0.1.0-rc.6",
@@ -81,9 +80,6 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-primitives": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-sidebar": {
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-sidebar-right": {
@@ -117,7 +113,6 @@
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-workspace": "^0.1.5-rc.1",
@@ -163,7 +158,6 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-primitives",
-        "@deepseek-ai/dsh-client-ui-sidebar",
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-workspace"

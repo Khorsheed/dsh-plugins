@@ -21,9 +21,10 @@
     "src/client/paste-table.ts",
     "src/client/detail/CanvasDetailView.tsx",
     "src/client/space/BoardView.tsx",
-    "src/client/space/CanvasSpacePage.tsx",
     "src/client/space/CardTextarea.tsx",
-    "src/client/space/definition.tsx",
-    "src/client/space/selection.ts"
+    "src/client/space/selection.ts",
+    "src/client/tab/CanvasSwitcher.tsx",
+    "src/client/tab/CanvasTab.tsx",
+    "src/client/tab/DraftView.tsx"
   ]
 }

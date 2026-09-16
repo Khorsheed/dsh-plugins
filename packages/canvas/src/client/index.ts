@@ -1,22 +1,20 @@
 /**
- * Inspiration canvas, browser half: the v2 canvas space (主题画布空间), its
- * card-detail reader, and — M2 — the chat integration through the side-chat
- * seam.
+ * Inspiration canvas, browser half (M3): the right-Sidebar canvas tab in
+ * wide mode — the ONLY seat (the main-panel space route is retired: the
+ * host's RightbarRoot renders the right Sidebar for the conversation panel
+ * only, so a custom main panel makes every right-Sidebar surface fail by
+ * construction; the tab is the answer isomorphic with the host's layout).
  *
  * It mounts the canvas Remote through the official `ctx.remote.$mount`
- * channel and surfaces twice: as a root-level space (the keyed `main` panel
- * 'canvas' plus its `sidebar.panellist` rail row) and as the page-type
- * `sidebar.right.pane.tab` entry (the card-detail reader). All four
- * registrations ride `ctx.slots.inject`, so a host that declares a seat
- * never mounts the matching surface (the rest keep working).
- *
- * The chat edge is ONE-WAY and probed: `remote.canvas.askAgent` primes the
- * canvas's side-chat context host-side; the client only activates the
- * side-chat tab through the official `openTab` (params mirrored
- * structurally — the sidechat package is never imported) and watches the
- * turn through a probed `remote.sidechat.getState` so the board re-reads as
- * the agent's tool calls land. Every probe degrades: no side-chat → every
- * chat entry hides and the board keeps working.
+ * channel, registers the `canvas` tab type and its body on the keyed
+ * `sidebar.right.pane.tab` seat, reports the open canvas to the host
+ * (`focusCanvas`, so the MAIN session's canvas tools target it), and fires
+ * the wide-mode suggestion once per session (fullscreen right panel +
+ * collapsed session list, through the probed layout face — the user's own
+ * controls own it from then on). Every seat is probed, never assumed:
+ * registrations ride `ctx.slots.inject`, and with no `remote.canvas` mounted
+ * the tab still registers and reports the missing half instead of throwing
+ * through boot.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -30,38 +28,32 @@ import type {} from '@khorsheed/dsh-canvas/remote'
 // Type-only: pulls the ctx.sidebarRight/ctx.sidebarRightTabs service merges
 // and the right-Sidebar SlotMap seat ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-// Type-only: pulls ui-layout's SlotMap merge (the root 'main' seat).
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-// Type-only: pulls ui-sidebar's SlotMap merge ('sidebar.panellist').
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
-import { CanvasDetailView } from './detail/CanvasDetailView.tsx'
-import type { CanvasChatInjected, CanvasDetailInjected, CanvasRemote, CanvasSpaceInjected } from './contract.ts'
+import type { CanvasChatInjected, CanvasRemote, CanvasTabInjected } from './contract.ts'
 import { CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
-import { CanvasSpacePage } from './space/CanvasSpacePage.tsx'
-import { CANVAS_PANEL_ID, CanvasNavIcon } from './space/definition.tsx'
 import { CanvasSelectionStore } from './space/selection.ts'
+import { CanvasTab } from './tab/CanvasTab.tsx'
 
 export { CanvasDetailView } from './detail/CanvasDetailView.tsx'
 export { CANVAS_KIND, CANVAS_TAB_ID } from './definition.ts'
-export { CanvasSpacePage } from './space/CanvasSpacePage.tsx'
+export { CanvasSelectionStore } from './space/selection.ts'
 export { BoardView } from './space/BoardView.tsx'
 export { CardTextarea } from './space/CardTextarea.tsx'
-export { CANVAS_PANEL_ID, CanvasNavIcon } from './space/definition.tsx'
-export { CanvasSelectionStore } from './space/selection.ts'
+export { CanvasTab } from './tab/CanvasTab.tsx'
+export { CanvasSwitcher } from './tab/CanvasSwitcher.tsx'
+export { DraftView } from './tab/DraftView.tsx'
 export type {
   CanvasChatInjected, CanvasDetailInjected, CanvasDetailProps, CanvasRemote,
-  CanvasSpaceInjected, CanvasSpacePageProps,
+  CanvasTabInjected, CanvasTabProps,
 } from './contract.ts'
 export * from './paste-table.ts'
 
 /**
  * Required services: slots, the remote channel, the locale, and the
  * right-Sidebar faces (the tab-type registry and the navigation service the
- * detail tab's activation and attachment previews go through).
+ * tab's activation and attachment previews go through).
  * `remote.canvas` is deliberately NOT an inject: this plugin both mounts the
  * namespace (through `$mount` below) and consumes it, and the Cordis
  * property proxy only resolves services declared in `inject` or provided by
@@ -73,7 +65,7 @@ export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRigh
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, then the
- * four registrations (detail tab type + body, space main panel + rail row).
+ * tab type and its body.
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -90,8 +82,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'canvas: dictionaries')
   const t = ctx.locale.bind(NS)
 
-  // The board↔detail selection: one store, published into both inject faces.
+  // The selection/freshness store: one instance, published into the tab's face.
   const selection = new CanvasSelectionStore()
+  /** Sessions already handed the wide-mode suggestion (one shot each). */
+  const wideSuggested = new Set<string>()
 
   // Read lazily and through `ctx.get`: a composition without the host half
   // yields undefined, and the view reports that instead of the plugin
@@ -103,8 +97,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
 
   /**
-   * Every mutating wrapper in both faces lands here: a landed board mutation
-   * touches the shared store, so the OTHER seat re-reads. (The mutating seat
+   * Every mutating wrapper in the face lands here: a landed board mutation
+   * touches the shared store, so every reader re-reads. (The mutating view
    * already has the fresh board from the response; its own rev-triggered
    * re-read is the one idempotent extra fetch this consistency costs.)
    */
@@ -116,9 +110,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /**
    * Watch one sent turn: while the side-chat context runs, the agent's tool
    * calls land on the host board, so the shared rev is touched per poll and
-   * both seats re-read. The sidechat namespace is probed through `ctx.get`
-   * (never injected, never imported — a structural mirror of `getState`);
-   * without it the board simply refreshes on the next gesture.
+   * every reader re-reads. The sidechat namespace is probed through
+   * `ctx.get` (never injected, never imported — a structural mirror of
+   * `getState`); without it the board simply refreshes on the next gesture.
    */
   const watchTurn = (contextKey: string): void => {
     const sidechat = ctx.get('remote.sidechat') as {
@@ -165,10 +159,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       try {
         // The side-chat kind's params are ITS contract; the call is mirrored
         // structurally — the package is never imported (the one edge is the
-        // probed service, declared in dsh.references). NOTE: the right Sidebar
-        // only renders for the conversation panel (RightbarRoot's contract),
-        // so inside the canvas space this reveal is a silent no-op — side-chat
-        // M3's own floating dock is the in-space answer, not this call.
+        // probed service, declared in dsh.references).
         ;(ctx.sidebarRight as unknown as {
           openTab(kind: string, options?: { params?: Record<string, unknown> }): void
         }).openTab('sidechat', { params: { contextKey } })
@@ -178,81 +169,68 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
   }
 
-  /**
-   * Open a file attachment in the official document preview (shared by both
-   * faces; the right Sidebar itself only renders for the conversation panel,
-   * so inside the space this too is a silent no-op by construction).
-   */
-  const openFile = (sessionId: SessionId, cwd: string | undefined, path: string): void => {
-    try {
-      ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
-    } catch (error) {
-      ctx.logger.warn('canvas: openResource failed (no mounted session?)', error)
-    }
-  }
-
-  const spaceFace = (): CanvasSpaceInjected => ({
+  const tabFace = (): CanvasTabInjected => ({
     ...chatFace,
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
     probeV1Pad: request => requireRemote().list(request),
-    openFile,
-    // The mutating calls hand the CURRENT session to the host: the board is
-    // deployment-level state, and the host re-roots that session's fence mode
-    // at the canvas state dir.
+    openFile: (sessionId, cwd, path) => {
+      try {
+        ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
+      } catch (error) {
+        ctx.logger.warn('canvas: openResource failed (no mounted session?)', error)
+      }
+    },
+    // The mutating calls hand the TAB's session to the host (the tab is
+    // session scope; the fence resolves that session's mode).
     createCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().createCanvas(sessionId, request)),
     putCard: async (sessionId, request) => touchOnSuccess(await requireRemote().putCard(sessionId, request)),
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
     importV1: async (sessionId, request) => touchOnSuccess(await requireRemote().importV1(sessionId, request)),
-    // A body click selects the card in the shared store; the in-space detail
-    // pane follows it (the page expands the pane on selection).
-    selectCard: (canvasId, cardId) => {
-      selection.select(canvasId, cardId)
+    selectCard: (canvasId, cardId) => { selection.select(canvasId, cardId) },
+    openCanvas: canvasId => { selection.openCanvas(canvasId) },
+    clearCard: () => { selection.clearCard() },
+    focusCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().focusCanvas(sessionId, request)),
+    readDraft: request => requireRemote().readDraft(request),
+    writeDraft: async (sessionId, request) => touchOnSuccess(await requireRemote().writeDraft(sessionId, request)),
+    // The wide-mode suggestion: one shot per session, through the probed
+    // layout face (the presentation is ui-sidebar-right's to report, so the
+    // canvas only SUGGESTS once — a user's own control re-asserts it after).
+    // The left session list collapses through the layout's own toggle, gated
+    // on the frame's collapsed marker (never a blind toggle).
+    suggestWideMode: (sessionId, fullscreen) => {
+      if (wideSuggested.has(String(sessionId))) return
+      wideSuggested.add(String(sessionId))
+      try {
+        const layout = ctx.get('layout') as {
+          openRightbar?: (track: boolean, fullscreen: boolean) => void
+          toggleSidebar?: () => void
+        } | undefined
+        if (layout === undefined) return
+        if (!fullscreen) layout.openRightbar?.(true, true)
+        const frame = document.querySelector('[data-side]')
+        if (frame !== null && !frame.hasAttribute('data-sidebar-collapsed')) layout.toggleSidebar?.()
+      } catch {
+        // A suggestion, never a failure: the user can fullscreen by hand.
+      }
     },
     hooks: { selection: selection.source },
   })
-  const detailFace = (): CanvasDetailInjected => ({
-    ...chatFace,
-    readBoard: request => requireRemote().readBoard(request),
-    patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
-    addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
-    openFile,
-    hooks: { selection: selection.source },
-  })
-
-  /* ---------------- the four registrations (unconditional; slots.inject degrades) */
 
   // Stage one of the right-Sidebar registration: the page type itself (guide
   // entry, no address claims). The default band is 'extension', correct for a
   // type shipped from outside the product.
   ctx.effect(() => ctx.sidebarRightTabs.register(canvasDefinition(t)), 'canvas: tab type')
 
-  // Stage two: the detail reader's body under the type's id in the keyed pane seat.
+  // Stage two: the tab body under the type's id in the keyed pane seat.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: CANVAS_TAB_ID,
     locale: NS,
-    inject: detailFace,
-  }, CanvasDetailView)), 'canvas: detail reader body')
-
-  // The v2 canvas space: one id for the main panel key and the rail row (the
-  // shell matches them). Both ride slots.inject, so a host without either
-  // seat degrades silently.
-  ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
-    name: 'main',
-    key: CANVAS_PANEL_ID,
-    locale: NS,
-    inject: spaceFace,
-  }, CanvasSpacePage)), 'canvas: space main panel')
-  ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-    name: 'sidebar.panellist',
-    id: CANVAS_PANEL_ID,
-    order: 100,
-    label: () => t('space.nav'),
-    locale: NS,
-  }, CanvasNavIcon)), 'canvas: space rail row')
+    inject: tabFace,
+  }, CanvasTab)), 'canvas: tab body')
 
   return async () => {
     for (const timer of timers) clearTimeout(timer)
