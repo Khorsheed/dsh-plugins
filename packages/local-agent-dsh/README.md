@@ -40,6 +40,7 @@ scoped home（`$DSH_HOME/local-agent/dsh`）被有意保留——里面存着子
 | `apiKeyRef` | `DEEPSEEK_API_KEY` | 子 dsh 解析的凭据引用 |
 | `cliLaunch` | 父级自身启动 | dsh 启动 argv 前缀覆盖 |
 | `headlessBundleDir` | 从安装解析 | 子 profile 符号链接指向的 headless bundle 目录（scoped home 被多个文件系统解析时**必须 pin**，见下文「容器内委派」） |
+| `permissions` | 不写（跟随 dsh-base） | 子 dsh 的权限档：`read-only` / `workspace-write` / `danger-full-access`，由 provisioning 写进子 profile 的 patch 层，见下文「权限边界」 |
 | `live` | `false` | 长驻驱动：每成员常驻一个 `--serve` 子 dsh 进程，委派 = 向活着的 runtime 发 turn（runtime 级优雅中断、事件推送镜像）；关闭或通道不可用即回一次性 exec 路径 |
 | `liveIdleMs` | `1800000`（30 分钟） | 长驻 runtime 的空闲回收时限 |
 
@@ -59,7 +60,7 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 **这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照有 drive(exec/live)、端点未固定、CLI 版本(拿委派真正要 spawn 的那条 launch argv 去问 `--version`,按入口脚本路径+mtime 缓存——无头子 dsh 复制的就是父实例自己的 build)与已配置模型(读宿主 `agentDefaultModel` 的当前选择,`provider/model` 格式——无头子 dsh 继承它;服务缺位或选择不可读就不给字段,绝不猜值)：无头子 dsh 没有沙箱或权限旋钮（web-eval 冻结基线称其无限制——字段缺位本身就是诚实的条件输入），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照有 drive(exec/live)、端点未固定、CLI 版本(拿委派真正要 spawn 的那条 launch argv 去问 `--version`,按入口脚本路径+mtime 缓存——无头子 dsh 复制的就是父实例自己的 build)与已配置模型(读宿主 `agentDefaultModel` 的当前选择,`provider/model` 格式——无头子 dsh 继承它;服务缺位或选择不可读就不给字段,绝不猜值)：`sandbox` 是子 profile 钉住的权限档，**配了才报**（缺位仍然是诚实的条件输入——这个作用域不钉边界，跑的就是 dsh-base 组成的那一档），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 
@@ -95,6 +96,19 @@ readSubProfilePreset(scopedHome)   // 'eval-lean'——生成的层也是可解�
 ```
 
 preset 目录从哪来：子 dsh 以 `DSH_HOME=<作用域目录>` 启动，所以 roster 自带的用户根就是 `<作用域目录>/.agent-presets`——把一份 preset 目录放在那里，这个 scope 就有了自己的 preset（`roots` / `includeShippedRoot` / `includeUserRoot` 可另行指定）。roster 模块**不软链**：它是官方包，本来就在 dsh 安装锚点的闭包里、与 `@deepseek-ai/dsh-base` 并列。链第二份会给它第二份 `@deepseek-ai/cordis`，而 cordis 按实例身份做服务查找与类型判断，症状是静默的服务缺失而不是报错（与上文「双文件系统契约」里 bundle 那一节同一个坑）。锚点里真没有它的部署会拿到 loader 自己那句「模块解析不了」，比这一步能说的更准。preset id 只接受 `[a-z0-9][a-z0-9-]*`（它是目录名）。撤掉 `preset` 再 provision 一次，这一层原样消失。
+
+**权限边界（`permissions`）。** 子 dsh 跑 bash 时的文件效应边界与审批策略，由 provisioning 多写一层 patch：两条**覆盖**行钉住 `sandbox-policy` 的 `mode` 与 `user-approval` 的 `policy`（两者按 dsh-base 自己的 `permission-presets` 表配对——`danger-full-access` 配 `never`，另两档配 `ask`；分开钉两个插件而让它们漂开，等于造一个跑不进去也问不到人的边界）。不写这一项就一层都不写，子 dsh 跑 dsh-base 组成的 `workspace-write` + `ask`——与本字段出现之前逐字节相同。
+
+```ts
+import { provisionDshSubProfile, readSubProfilePermissions } from '@khorsheed/dsh-local-agent-dsh/provision'
+
+provisionDshSubProfile(scopedHome, { permissions: 'danger-full-access' })
+readSubProfilePermissions(scopedHome)   // 'danger-full-access'——生成的层也是可解析的层
+```
+
+**为什么钉在作用域目录而不是环境变量。** dsh-base 那两行本来读 `DSH_PERMISSION_MODE`，但这个值属于受试对象：写进子 profile，它就随作用域目录走——包括被 bind 挂进容器单元的那一份，`home.sha` 已经把它哈希在内；走 spawn env 则每个变量名都要进单元的复合指纹，且与条件无关的键越多，「只差一个因子」越难说清。层落在 base 层之后，所以字面值压过那个环境变量，边界不再取决于谁起的进程。
+
+**什么时候该钉 `danger-full-access`。** 只在**别的东西已经是边界**的时候：一次性评测单元、用完即毁的容器。在开发机上子 dsh 共享的是真实 home，`workspace-write` 才是对的默认值——这也是不写这一项时的表现。反过来，**单元里不钉就是跑不了 shell**：容器镜像通常既无 bubblewrap，内核也不给 Landlock（实测 `landlock-run` 的探针报 `unusable`），沙箱按设计 fail closed 而不是悄悄不设防，于是每一笔 bash 都拿到 `SANDBOX_UNAVAILABLE`；无头子 dsh 又没有审批通道，模型按提示升档重试也只会拿到「没有审批通道」。两条一起，选手在单元里就是没有 shell（I5·T39 的 G14 实测）。
 
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`，其余（会话镜像、settle、记录）逐字节不变。`env` 必须给出容器内的 `DSH_HOME`；解析出的 API key 只以 `-e DEEPSEEK_API_KEY` 的**名字**上 argv，值留在 docker 客户端环境里，不进宿主进程表。容器轮另有两条本包独有的行为。其一，**自动补 `NODE_OPTIONS=--use-env-proxy`**（调用方在 `target.env` 里自己给了就不覆盖）：dsh 的 HTTP 客户端是 node 的 `fetch`（undici），**默认不读** `HTTP(S)_PROXY`，在只有白名单代理、没有 NAT 出网的单元里会直连 API 并当场失败，而代理连一条 `CONNECT` 都收不到；这个开关打开 undici 的 `EnvHttpProxyAgent`。四家里只有 dsh 需要它，因此由 provider 自动补上，并在 `effectiveSettings.containerNodeOptions` 里报出来让条件文件看得见。其二，**跳过宿主侧子 profile 的 provisioning**：那份 profile 的 `node_modules` 符号链接指向宿主上的 headless bundle，在单元里解析不到；而作用域目录是 bind 挂载的，写进去等于在单元真正会读的目录里放一份坏 profile。容器轮的入口与 profile 由调用方用既有旋钮点名（`cliLaunch`、`profileName`），且**单元里必须备好家族 headless bundle 及其运行期依赖闭包**——镜像自带的 in-box `headless` profile 是另一个更小的 app，不认 `--session-id`/`--resume`，不足以承载一次委派轮。实测：`eval-env:pinned` 单元里备好之后，一次「回答 2+2」settle 为 `completed`、输出 `4`，`observedModel` 从容器写进宿主作用域目录的子 dsh 会话日志里回读为 `deepseek-official/deepseek-v4-flash`。
 

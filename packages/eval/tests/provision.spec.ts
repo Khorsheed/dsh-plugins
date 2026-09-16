@@ -242,7 +242,13 @@ describe('conditions provision — step 3: the declaration against the scope', (
     ['claude-code', { permissionMode: 'skip' }, 'skip'],
     ['kimi', { autoApprove: true }, 'auto-approve'],
     ['kimi', { autoApprove: false }, 'no-auto-approve'],
+    // dsh answers nothing until its deployment pins a boundary…
     ['dsh', {}, null],
+    // …and `unrestricted` is earned by exactly one preset (T59).
+    ['dsh', { sandbox: 'danger-full-access' }, 'unrestricted'],
+    // A scope still confining its sub-dsh reads as itself, so a condition
+    // claiming the container is the boundary mismatches loudly.
+    ['dsh', { sandbox: 'workspace-write' }, 'workspace-write'],
   ] as const)('spells %s\'s permission knob in the condition vocabulary', (harness, over, expected) => {
     const snapshot = flattenEffective(harness, { drive: 'exec', baseUrlSet: false, ...over })
     expect(snapshot.permissions).toBe(expected)

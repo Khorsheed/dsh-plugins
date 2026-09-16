@@ -86,9 +86,27 @@ function stringOrNull(value: unknown): string | null {
 }
 
 /**
+ * The dsh sub-profile's permission preset spelled as the protocol's word for
+ * it. `unrestricted` is the only word §6.2 gives the dsh harness, and
+ * `danger-full-access` is the only preset that earns it; every other preset
+ * is returned VERBATIM so a scope still confining its sub-dsh reads as the
+ * mismatch it is against a condition claiming the container is the boundary.
+ */
+function dshPermissionsOf(sandbox: string | undefined): string | null {
+  if (sandbox === undefined) return null
+  return sandbox === 'danger-full-access' ? 'unrestricted' : sandbox
+}
+
+/**
  * The harness's permission knob, spelled in the condition's own vocabulary
- * (protocol §6.2). `null` means the harness declares no such knob at all —
- * which is exactly why the dsh harness's word is `unrestricted`.
+ * (protocol §6.2). `null` means this scope answers nothing for it — the
+ * harness has no such knob, or its deployment pins none.
+ *
+ * dsh's knob only exists when the deployment pins one: a sub-profile with no
+ * permission layer runs whatever `dsh-base` composes, and this family reports
+ * absence rather than transcribing a default nobody chose. Until T59 that was
+ * the only answer dsh could give, and it read as "no knob" against a
+ * condition whose `unrestricted` was, in the evaluation unit, simply untrue.
  *
  * kimi's knob is a boolean, so its false side needs a word of its own:
  * `no-auto-approve` is outside the vocabulary on purpose, so a condition
@@ -101,6 +119,7 @@ export function effectivePermissionsOf(harness: string, effective: LocalAgentEff
   if (harness === 'codex') return effective.sandbox ?? null
   if (harness === 'claude-code') return effective.permissionMode ?? null
   if (harness === 'kimi') return effective.autoApprove === undefined ? null : (effective.autoApprove ? 'auto-approve' : 'no-auto-approve')
+  if (harness === 'dsh') return dshPermissionsOf(effective.sandbox)
   return null
 }
 
