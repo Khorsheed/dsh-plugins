@@ -49,7 +49,14 @@ export interface SideChatOpenInput {
 
 /** One projected transcript row: user and assistant text, tool calls folded to a one-line status. */
 export type SideChatTranscriptRow =
-  | { readonly kind: 'user'; readonly text: string; readonly time: number }
+  | {
+    readonly kind: 'user'
+    /** The user's own text with any quoted_context blocks lifted out (empty when the message was all refs). */
+    readonly text: string
+    /** The refs this message carried, parsed back from the fold (empty for ordinary messages). */
+    readonly refs: readonly SideChatRef[]
+    readonly time: number
+  }
   | { readonly kind: 'assistant'; readonly text: string; readonly time: number }
   | { readonly kind: 'tool'; readonly name: string; readonly state: SideChatToolState; readonly time: number }
 
@@ -95,6 +102,14 @@ export interface SideChatContextSummary {
   readonly refs: number
   /** ISO timestamp of the last record change (list ordering). */
   readonly updatedAt: string
+  /**
+   * Epoch ms of the latest assistant row in the journal projection, or null
+   * when the context has none (the client's unread marker compares it
+   * against its own last-seen marks).
+   */
+  readonly lastAssistantAt: number | null
+  /** Epoch ms of the latest transcript row of any kind, or null on an empty journal. */
+  readonly lastActivityAt: number | null
 }
 
 /** `listContexts` result. */
@@ -228,6 +243,39 @@ export function foldRefsIntoText(refs: readonly SideChatRef[], text: string): st
   if (refs.length === 0) return text
   const blocks = refs.map(ref => `<quoted_context label=${JSON.stringify(ref.label)}>\n${ref.text}\n</quoted_context>`)
   return `${blocks.join('\n\n')}\n\n${text}`
+}
+
+/** One folded block at the message head: the JSON-escaped label, then the body up to the closer. */
+const FOLDED_REF_AT_HEAD = /^<quoted_context label="((?:[^"\\]|\\.)*)">\n([\s\S]*?)\n<\/quoted_context>(?:\n\n|$)/
+
+/**
+ * The fold's inverse for the transcript projection: lift the LEADING run of
+ * `<quoted_context>` blocks (the shape {@link foldRefsIntoText} writes) back
+ * into structured refs, leaving the user's own text. A message that does not
+ * start with a block answers `{ text, refs: [] }` untouched — only our own
+ * fold is ever parsed, so foreign text with a stray `<quoted_context>` mid
+ * body stays verbatim. A body containing the literal closer breaks the parse
+ * of that block and everything after it stays text: accepted and documented,
+ * since the fold never escapes it either.
+ * @param text - the durable user message text.
+ * @returns the lifted refs and the remaining user text (trimmed).
+ */
+export function unfoldQuotedContext(text: string): { text: string; refs: SideChatRef[] } {
+  const refs: SideChatRef[] = []
+  let rest = text
+  for (;;) {
+    const match = FOLDED_REF_AT_HEAD.exec(rest)
+    if (match === null) break
+    let label: string
+    try {
+      label = JSON.parse(`"${match[1]!}"`) as string
+    } catch {
+      label = match[1]!
+    }
+    refs.push({ label, text: match[2]! })
+    rest = rest.slice(match[0].length)
+  }
+  return { text: rest.trim(), refs }
 }
 
 /**

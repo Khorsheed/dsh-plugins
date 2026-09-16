@@ -368,22 +368,50 @@ export class SideChatService {
   }
 
   /**
-   * List every known context, most recently active first.
+   * List every known context, most recently active first. Each row carries
+   * the latest assistant-row time of its journal projection (live contexts
+   * from the snapshot, cold contexts from a persistence inspection — the
+   * read-only path, never a resume) so the client can mark unread activity.
    * @returns the summaries with the live status overlay.
    */
   async listContexts(): Promise<SideChatListResult> {
     return this.mutate(async () => {
       await this.ensureLoaded()
-      const items: SideChatContextSummary[] = [...this.contexts.values()].map(runtime => ({
-        contextKey: runtime.record.contextKey,
-        label: runtime.record.label,
-        status: liveStatusOf(this.ctx.agents, runtime.record),
-        refs: runtime.record.refs.length,
-        updatedAt: runtime.record.updatedAt,
-      }))
-      items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      const items: SideChatContextSummary[] = []
+      for (const runtime of this.contexts.values()) {
+        items.push({
+          contextKey: runtime.record.contextKey,
+          label: runtime.record.label,
+          status: liveStatusOf(this.ctx.agents, runtime.record),
+          refs: runtime.record.refs.length,
+          updatedAt: runtime.record.updatedAt,
+          ...await this.activityOf(runtime.record),
+        })
+      }
+      items.sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0) || b.updatedAt.localeCompare(a.updatedAt))
       return { items }
     })
+  }
+
+  /**
+   * The projection times of one record's journal: the latest assistant row
+   * (the unread marker's basis) and the latest row of any kind (the list's
+   * ordering). Read-only: live from the snapshot, cold from an inspection.
+   */
+  private async activityOf(record: SideChatContextRecord): Promise<{ lastAssistantAt: number | null; lastActivityAt: number | null }> {
+    if (record.sessionId === undefined) return { lastAssistantAt: null, lastActivityAt: null }
+    const live = this.ctx.agents.get(SessionId(record.sessionId))
+    const events = live !== undefined
+      ? live.session.snapshotEvents()
+      : (await inspectCold(this.ctx, SessionId(record.sessionId)))?.events
+    if (events === undefined) return { lastAssistantAt: null, lastActivityAt: null }
+    let lastAssistantAt: number | null = null
+    let lastActivityAt: number | null = null
+    for (const row of projectTranscript(events)) {
+      lastActivityAt = row.time
+      if (row.kind === 'assistant') lastAssistantAt = row.time
+    }
+    return { lastAssistantAt, lastActivityAt }
   }
 
   /**

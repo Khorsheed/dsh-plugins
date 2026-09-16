@@ -13,7 +13,7 @@
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { SideChatToolState, SideChatTranscriptRow } from './types.ts'
+import { unfoldQuotedContext, type SideChatToolState, type SideChatTranscriptRow } from './types.ts'
 
 /** Join the visible text blocks; reasoning, images, files and tool blocks stay out of the transcript. */
 export function messageTextOf(content: readonly ContentBlock[]): string {
@@ -41,9 +41,13 @@ export function projectTranscript(events: readonly SessionEvent[]): SideChatTran
   for (const event of events) {
     switch (event.type) {
       case 'user/message': {
-        const text = messageTextOf(event.data.content)
-        if (text === '') break
-        rows.push({ kind: 'user', text, time: event.time })
+        const folded = messageTextOf(event.data.content)
+        if (folded === '') break
+        // Our own fold carries the quoted refs IN the durable text; lift them
+        // back out so the transcript renders chips, not markup.
+        const { text, refs } = unfoldQuotedContext(folded)
+        if (text === '' && refs.length === 0) break
+        rows.push({ kind: 'user', text, refs, time: event.time })
         break
       }
       case 'assistant/message': {

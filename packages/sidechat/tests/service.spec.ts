@@ -426,6 +426,23 @@ describe('SideChatService — state, list, and the store fence', () => {
     expect(state.ok).toBe(true)
   })
 
+  it('reports each context\'s latest assistant time (live from the snapshot, cold from inspection)', async () => {
+    const fs = new FakeFs()
+    const first = bench({ fs })
+    await first.service.send(first.calling, { contextKey: 'k', text: '一' })
+    const firstRec = first.agentsKit.live.values().next().value as FakeAgentRec
+    firstRec.events.push(assistantEvent('a1', '答', 99))
+    expect(await first.service.listContexts()).toMatchObject({
+      items: [{ contextKey: 'k', lastAssistantAt: 99, lastActivityAt: 99 }],
+    })
+    // The cold read answers the same times from persistence inspection — no resume.
+    const second = bench({ fs, coldEvents: [userEvent('一', 1), assistantEvent('a1', '答', 42)] })
+    expect(await second.service.listContexts()).toMatchObject({
+      items: [{ contextKey: 'k', status: 'cold', lastAssistantAt: 42, lastActivityAt: 42 }],
+    })
+    expect(second.agentsKit.resumed).toHaveLength(0)
+  })
+
   it('projects the live transcript from the session journal (user/assistant/tool)', async () => {
     const { service, agentsKit, calling } = bench()
     await service.send(calling, { contextKey: 'k', text: '问' })

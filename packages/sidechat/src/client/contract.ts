@@ -11,7 +11,7 @@
  * @module @khorsheed/dsh-sidechat/client
  */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the generated Remote API (ctx.remote merge + namespace).
 import type {} from '@khorsheed/dsh-sidechat/remote'
@@ -23,10 +23,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the right-Sidebar SlotMap seat ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+// Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   SideChatListResult, SideChatQuoteOutcome, SideChatQuoteRequest,
   SideChatSendOutcome, SideChatSendRequest, SideChatStateOutcome,
 } from '../types.ts'
+import type { createSideChatDockStore } from './dock-store.ts'
 import type {} from './locales.ts'
 
 /** The sidechat Remote namespace, as mounted by this plugin. */
@@ -35,7 +38,10 @@ export type SideChatRemote = TypertRemoteNamespaceMap['sidechat']
 /**
  * Business face injected into the side-chat tab body. `send` names its
  * session first because the host fences the state write on that session and
- * inherits its cwd for a fresh side session; the reads need neither.
+ * inherits its cwd for a fresh side session; the reads need neither. The two
+ * dock verbs are probed/lazy: `dockAvailable` answers whether the
+ * `shell.overlay` seat exists (the button hides without it), `openDock` is a
+ * no-op until the dock entry has mounted.
  */
 export interface SideChatInjected {
   /** Read one context's full state (label, pending refs, transcript, status). */
@@ -44,12 +50,40 @@ export interface SideChatInjected {
   listContexts: () => Promise<RemoteResult<SideChatListResult>>
   /** Send one user message into one context (pending refs fold in and clear). */
   send: (sessionId: SessionId, request: SideChatSendRequest) => Promise<RemoteResult<SideChatSendOutcome>>
+  /** Whether the floating dock's seat exists (the「弹出为浮层」button's visibility). */
+  dockAvailable: () => boolean
+  /** Open the floating dock on one context. */
+  openDock: (contextKey: string) => void
 }
 
 /** Full props of the side-chat tab body. */
 export type SideChatViewProps =
   PropsRuntime<'sidebar.right.pane.tab'>
   & InjectFace<SideChatInjected>
+  & PropsLocale<'sidechat'>
+
+/**
+ * Business face injected into the floating dock (`shell.overlay`). The dock
+ * is root-scoped: sends ride the CURRENTLY SELECTED session (the component
+ * reads it from `useSessions`), and `closeToTab` hands the context back to
+ * the right-Sidebar tab through the official navigation face.
+ */
+export interface SideChatDockInjected {
+  /** Read one context's full state (label, pending refs, transcript, status). */
+  getState: (contextKey: string) => Promise<RemoteResult<SideChatStateOutcome>>
+  /** List every known context, most recently active first. */
+  listContexts: () => Promise<RemoteResult<SideChatListResult>>
+  /** Send one user message into one context (pending refs fold in and clear). */
+  send: (sessionId: SessionId, request: SideChatSendRequest) => Promise<RemoteResult<SideChatSendOutcome>>
+  /** Close the dock and reveal the tab on one context. */
+  closeToTab: (contextKey: string) => void
+}
+
+/** Full props of the floating dock entry. */
+export type SideChatDockProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsStore<ReturnType<typeof createSideChatDockStore>>
+  & InjectFace<SideChatDockInjected>
   & PropsLocale<'sidechat'>
 
 /**
