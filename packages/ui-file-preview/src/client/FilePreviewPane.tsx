@@ -1,7 +1,8 @@
 /** Detail-view preview pane: the file's current content by default, with a
  * change-history tab (the shared DiffHistory) stepping through every recorded
- * write/edit diff. Restored from the pre-0.1.5 drawer stack; the diff
- * stepping itself lives in DiffHistory.tsx. */
+ * write/edit diff, and a content search that keeps the read's rendered form.
+ * Restored from the pre-0.1.5 drawer stack; the diff stepping itself lives in
+ * DiffHistory.tsx. */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
@@ -12,7 +13,12 @@ import { DiffHistory } from './DiffHistory.tsx'
 import { buildSrcDoc } from './html-src-doc.ts'
 import { attachBridge } from './html-bridge.ts'
 import { markdownLabels, structuredPreview } from './structured.tsx'
+import { SEARCH_SKIP_ATTRIBUTE, supportsRenderedSearch, useRenderedSearch } from './rendered-search.ts'
 import css from './FilePreviewPane.module.css'
+
+/** Chrome marker for the content scan: the format banner and the truncation
+ * notice are not document text, so a query must not count them as hits. */
+const searchSkip = { [SEARCH_SKIP_ATTRIBUTE]: '' } as const
 
 /** Content-search state handed to the text preview body. */
 interface ContentSearch {
@@ -141,33 +147,38 @@ function HtmlRenderView(props: {
  * keeps raw HTML literal by design. Every document view (markdown included)
  * sits in the same block chrome the code and diff views use — a rounded
  * surface with a small format banner — so the previews read as one family.
- * A content search switches any text read to the raw marked-lines view so
- * matches stay visible regardless of rendering. */
+ * A content search keeps the read's own form — markdown, the JSON tree, the
+ * CSV table or the code view — and paints the hits over it through the CSS
+ * Custom Highlight API; the raw matched-lines view is only the fallback for a
+ * query the rendered body cannot show (see rendered-search.ts). */
 function PreviewBody(props: {
   read: FilePreviewRead
   t: TranslateNS<'filePreview'>
   search?: ContentSearch
+  /** Show the raw matched-lines view instead of the rendered body. */
+  rawSearch: boolean
   htmlMode: 'source' | 'render' | 'script'
   scripted: boolean
   onLoaded: () => void
   iframeRef: RefObject<HTMLIFrameElement>
   frameRef: RefObject<HTMLDivElement>
+  contentRef: RefObject<HTMLDivElement>
   fullscreen: boolean
 }) {
-  const { read, t, search, htmlMode, scripted, onLoaded, iframeRef, frameRef, fullscreen } = props
+  const { read, t, search, rawSearch, htmlMode, scripted, onLoaded, iframeRef, frameRef, contentRef, fullscreen } = props
   // Cordis-free Markdown/CodeBlock chrome copy, rebuilt per locale revision.
   const mdLabels = markdownLabels(t)
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
-      const searching = search !== undefined && search.query !== '' && search.matches.length > 0
+      const marked = rawSearch && search !== undefined
       // HTML: the render view is a sandboxed iframe (the source view is
       // the CodeBlock below); a content search still shows the raw lines.
       if (isHtmlPath(read.path)) {
         return (
           <div className={css.previewScroll}>
-            {read.truncated === true && <div className={css.notice}>{t('drawer.truncated')}</div>}
-            {searching
+            {read.truncated === true && <div className={css.notice} {...searchSkip}>{t('drawer.truncated')}</div>}
+            {marked
               ? <MarkedContent content={content} search={search} />
               : htmlMode === 'source'
                 ? <CodeBlock code={content} lang="html" copyLabel={mdLabels.code.copyLabel} copiedLabel={mdLabels.code.copiedLabel} />
@@ -177,7 +188,7 @@ function PreviewBody(props: {
       }
       // The document-form body (structured JSON/CSV, or rendered markdown),
       // or null when the file has none — the code view then renders.
-      const documentBody = searching
+      const documentBody = rawSearch
         ? null
         : structuredPreview(read.path, content, t)
           ?? (languageFor(read.path) === 'markdown' ? <MarkdownText text={content} labels={mdLabels} /> : null)
@@ -187,14 +198,14 @@ function PreviewBody(props: {
       const dot = read.path.lastIndexOf('.')
       const documentLabel = languageFor(read.path) ?? (dot < 0 ? read.path : read.path.slice(dot + 1).toLowerCase())
       return (
-        <div className={css.previewScroll}>
-          {read.truncated === true && <div className={css.notice}>{t('drawer.truncated')}</div>}
-          {searching
+        <div className={css.previewScroll} ref={contentRef}>
+          {read.truncated === true && <div className={css.notice} {...searchSkip}>{t('drawer.truncated')}</div>}
+          {marked
             ? <MarkedContent content={content} search={search} />
             : documentBody !== null
               ? (
                 <div className={css.structured}>
-                  <div className={css.structuredBanner}>
+                  <div className={css.structuredBanner} {...searchSkip}>
                     <span className={css.structuredInfo}>{documentLabel}</span>
                   </div>
                   <div className={css.structuredBody}>{documentBody}</div>
@@ -297,6 +308,9 @@ export function FilePreviewPane(props: {
     return () => document.removeEventListener('fullscreenchange', onFullscreen)
   }, [])
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
+  // The rendered body's scrollport: the content search paints its hits over
+  // this subtree and scrolls the jump target within it (rendered-search.ts).
+  const contentRef = useRef<HTMLDivElement | null>(null)
   // The toggle appears only when the fold recorded diffs for this file — an
   // always-on 改动记录 tab that then shows an empty notice reads as broken.
   // (The official document tab's renderer dropdown keeps its own always-listed
@@ -313,16 +327,42 @@ export function FilePreviewPane(props: {
     })
     return hits
   }, [content, contentQuery])
-  const active = matches.length === 0 ? 0 : Math.min(activeMatch, matches.length - 1)
+  const searchQuery = contentQuery.trim()
+  // `matches` is the source-line hit set: it names the hits for the raw view
+  // and its counter, and it is also the cheap "is there anything at all" gate.
+  const searching = content !== null && searchQuery !== '' && matches.length > 0
+  // The rendered body keeps its form and the hits are painted over it (see
+  // rendered-search.ts). The html preview is excluded: its body is an
+  // opaque-origin iframe whose text is not in this DOM, so it keeps the raw
+  // matched-lines view.
+  const canPaint = searching && !html && supportsRenderedSearch()
+  const paintedSearch = useRenderedSearch({
+    rootRef: contentRef,
+    query: searchQuery,
+    active: activeMatch,
+    enabled: canPaint,
+  })
+  const painted = canPaint && !paintedSearch.fallback
+  // The counter and the jump cursor size themselves against what is on screen:
+  // painted occurrences in the rendered body, matched lines in the raw view.
+  // An unmeasured query (the commit before its scan) reads the raw count, which
+  // is always ≥ the painted one — the hook clamps the index. The rendered body
+  // MUST stay mounted until the scan says otherwise: falling back on the
+  // unmeasured frame would scan the raw view (where the source syntax it could
+  // not find is visible) and latch a hit count for a body that is gone.
+  const total = painted ? (paintedSearch.count ?? matches.length) : matches.length
+  const rawSearch = searching && !painted
+  const active = total === 0 ? 0 : Math.min(activeMatch, total - 1)
   useEffect(() => {
     activeLineRef.current?.scrollIntoView({ block: 'center' })
   }, [active, contentQuery])
   const stepMatch = (delta: number): void => {
     // Wrap-around: a content search cycles through its hits without ends.
-    setActiveMatch(index => (index + delta + matches.length) % matches.length)
+    if (total === 0) return
+    setActiveMatch(index => (index + delta + total) % total)
   }
   const search: ContentSearch = {
-    query: contentQuery.trim(),
+    query: searchQuery,
     matches,
     active,
     activeLineRef,
@@ -365,7 +405,7 @@ export function FilePreviewPane(props: {
           )}
           {matches.length > 0 && (
             <>
-              <span className={css.searchCount}>{active + 1}/{matches.length}</span>
+              <span className={css.searchCount}>{active + 1}/{total}</span>
               <button
                 type="button"
                 className={css.stepButton}
@@ -464,7 +504,7 @@ export function FilePreviewPane(props: {
             <DiffHistory entry={entry} t={t} />
           </div>
         )
-        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={scripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} fullscreen={fullscreen} />}
+        : <PreviewBody read={read} t={t} search={search} rawSearch={rawSearch} htmlMode={htmlMode} scripted={scripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} contentRef={contentRef} fullscreen={fullscreen} />}
     </div>
   )
 }
