@@ -79,11 +79,17 @@ Each session may bind its own dataset repository, stored as a plugin-owned durab
 { repoPath: string, datasets?: string[], layers?: string[] }
 ```
 
-`datasets` restricts which dataset ids are visible; `layers` is the layer whitelist. Absent fields mean "everything". The whitelist is enforced on **every** tool read path — `list`/`show` filter to it, `read` rejects outside it, and `worktree_path` intersects with it (an empty intersection is an error; the sparse-checkout physically omits disallowed layer directories).
+`datasets` restricts which dataset ids are visible; `layers` is the layer whitelist. An absent `datasets` means "every dataset"; an absent **`layers` does NOT mean "every layer"** — it means that dataset's `modelFacing: true` layers (next paragraph). The whitelist is enforced on **every** tool read path — `list`/`show` filter to it, `read` rejects outside it, and `worktree_path` intersects with it (an empty intersection is an error; the sparse-checkout physically omits disallowed layer directories).
+
+**Safe by default, and what the boundary is about**: a binding with no explicit `layers` gives the agent that dataset's `modelFacing: true` layers and nothing else — a sensitive layer reaches an agent only when somebody lists it. Since I5 · T58 that floor is **unconditional**: the old "a dataset that declares nothing sensitive is not filtered at all" branch is gone, because it made "no whitelist" mean two different things depending on a descriptor the binder never reads, and the unfiltered branch also admitted item-level directories no `register` entry claims — precisely the ones nobody has declared a sensitivity for. The write path (`put_item`) and the worktree default follow the same floor. What the whitelist constrains is the two real boundaries, **agent tools and worktree materialization**; the web tab's and the CLI's read verbs are the human's view (operator scope) and are bound by neither the whitelist nor the floor — sensitive layers stay visible to a person with a `· sensitive` marker, and the tree carries a separate "passthrough" group making the unprotected content conspicuous.
 
 **Why not a session event**: the binding was a log-only `datasets/binding` session event in the first cut, but the harness's persistence read path refuses to rebuild a session whose log contains an event type outside its generated known-types set unless the envelope carries `ignorable: true` — a downstream plugin's event types are outside that set by construction (the registration surface is deferred upstream), and `Session.append()` offers no way to set the marker. Any custom-typed event this plugin appended made the session unresumable, so the binding moved to the plugin's own store (read per call, so a CLI write to a live session's binding is race-free). The trade: a forked session starts unbound, and deleting a session leaves an orphan record behind.
 
-Binding **writes** are human operations: `/datasets bind` in a live session, the web tab's binding bar, or `dsh-datasets bind` from a script. Agent tools only resolve the binding — which datasets an agent may use is decided by the human. Tool calls with an explicit `repo` argument do not need a binding (the whitelist still applies when one exists); with neither an explicit repo nor a binding nor a configured default, tools fail loud and say how to bind.
+Binding **writes** are human operations: `/datasets bind` in a live session, the web tab's binding bar, or `dsh-datasets bind` from a script. Agent tools only resolve the binding — which datasets an agent may use is decided by the human.
+
+**The `repo` argument only restates the binding** (I5 · T58): on the model-tool face `repo` may only restate this session's binding (or, with no binding, the repository the plugin was configured with) — a path that is not that one is refused with both named, and in a session with neither a binding nor a configured default every `repo` is refused with "ask the person to `/datasets bind`". The comparison is on normalized paths (`~` expanded, realpath resolved, trailing separator dropped), so a binding recorded one way and an argument typed another are still one repository. The human faces are unchanged: the CLI's `--repo`, `/datasets` and the tab all still name one.
+
+The narrowing came from a real incident: told plainly by the tools that a person had to bind one, an agent in an unbound session did not stop — it searched the disk with glob, found a checkout several agents share, and wrote three files onto somebody else's branch, editing the evaluation plan that was executing at the time. "Findable" is not "mine to use".
 
 The whitelist is a session-level constraint, not a security boundary: a same-machine human can rebind, and an agent with shell access can read the original repository. It prevents accidental fetches and workflow cross-contamination, not malice.
 
@@ -135,7 +141,17 @@ dsh-datasets binding --session ID [--state-root DIR]
 /datasets unbind
 ```
 
+`bind` **with no `--layers` binds the model-facing layers only**, and the receipt says so; opening more (sensitive layers included) takes an explicit `--layers a,b`, which the receipt then names. The receipt used to read "(all layers)" — a sentence that said the opposite of the truth, so a person reading it believed the reference answers and the grading rubric were already open to the planning agent (I5 · T39 · G3). `dsh-datasets bind` prints the same receipt.
+
 The command declares its free-form input (`input.hint`). That is not decoration: without it a capable composer has no reason to believe `/datasets` takes arguments — picking the command from the completion strip submits a bare invocation and leaves the `bind <path>` the human typed in the MESSAGE body, so the command answers with its usage line (found during T36's live pass).
+
+## The binding chip on the composer (I5 · T58)
+
+The browser half puts a read-only chip on the composer tool row (`conversation.input.left`): **Datasets · <repository name> · model-facing layers**, or a dashed "Datasets · not bound" when there is none, with the full path and the rebinding command in its title.
+
+It exists because `/datasets bind` had **nowhere to print its receipt**. The binding lands on disk and the 题集 tab reads it correctly, but the tab strip waits for the session to have content and binding is the first thing done in a session that has none — so the one command whose whole output is "it worked" answered into a part of the screen that was not there yet (walkthrough gap G2). The composer tool row is there from the first frame.
+
+The chip is **read-only**: binding is a human act with two doors already (the slash command and the tab), and a third one wedged into the composer would be a third place for the same decision to be made. It rides the same self-hide criterion as the tab (does this session's preset composition name the `@khorsheed/dsh-datasets-tool` row), so the two can never disagree about whether this is a datasets session. It refreshes by subscribing to its own session's snapshot, throttled: a slash command moves the session when it starts and again when it settles — exactly when the receipt has to appear — and the throttle keeps a streaming turn from becoming a poll.
 
 ## The 题集 tab (web)
 

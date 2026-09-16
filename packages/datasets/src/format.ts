@@ -88,3 +88,27 @@ export function formatValidate(result: ValidateResult): string {
   }
   return lines.join('\n')
 }
+
+/**
+ * The `/datasets bind` receipt.
+ *
+ * Its layer sentence is the reason this is a function rather than a template
+ * at the call site. It used to read "(all layers)" for a binding with no
+ * `--layers`, and that was wrong in the direction that matters: with no
+ * whitelist an agent sees the dataset's model-facing layers and nothing else,
+ * so a person reading the receipt believed the reference answers and the
+ * rubric were already open to the planning agent when they were not — and
+ * would have had no reason to check on a dataset where they WERE (I5·T39 ·
+ * G3). A widened binding now names what it widened to, because that is the
+ * case worth reading twice.
+ * @param binding - the binding as it was recorded.
+ * @returns the one-line receipt.
+ */
+export function formatBindReceipt(binding: { repoPath: string; datasets?: readonly string[]; layers?: readonly string[] }): string {
+  return `bound ${binding.repoPath}`
+    + `${binding.datasets === undefined ? '' : ` datasets: ${binding.datasets.join(', ')}`}`
+    + `${binding.layers === undefined
+      ? ' — agent-visible: the model-facing layers only'
+        + ' (add --layers <a,b> to open more, including sensitive ones)'
+      : ` — agent-visible layers: ${binding.layers.join(', ')} (named explicitly, sensitive ones included)`}`
+}

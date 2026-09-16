@@ -28,7 +28,7 @@ import { pathToFileURL } from 'node:url'
 import { readBinding, validateBinding, writeBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
+import { formatBindReceipt, formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from './service.ts'
 import { pruneManagedWorktrees } from './worktree.ts'
 
@@ -58,7 +58,10 @@ flags:
   --item I           item id
   --layer L          layer name (read)
   --path P           layer-relative file path (read)
-  --layers a,b       layer selection (worktree path) / binding whitelist (bind)
+  --layers a,b       layer selection (worktree path) / binding whitelist (bind).
+                     Omitted on bind = the agent sees each dataset's
+                     model-facing layers and nothing else; naming layers opens
+                     exactly those, sensitive ones included.
   --datasets a,b     binding dataset whitelist (bind)
   --session ID       session id (bind/unbind/binding)
   --worktree-root DIR  managed worktree root (default: $DSH_HOME/state/datasets/worktrees)
@@ -218,7 +221,7 @@ export async function runCli(
           ...(csv(flags['layers']) !== undefined ? { layers: csv(flags['layers']) } : {}),
         })
         writeBinding(bindingsRoot, session, binding)
-        io.stdout(`bound session ${session} to ${binding.repoPath}\n`)
+        io.stdout(`${formatBindReceipt(binding)} (session ${session})\n`)
         return 0
       }
       case 'unbind': {

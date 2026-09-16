@@ -1,0 +1,39 @@
+/**
+ * The composer's binding chip. Sized like the other compact controls in the
+ * tool row (context-guard's button is the neighbour), and quiet by default:
+ * it is a standing fact, not a notification.
+ */
+.chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 260px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* Unbound is the state the flow starts in and the one worth noticing: the
+   walkthrough's first step was a bind nobody could see the result of. */
+.unbound {
+  border-style: dashed;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.label {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.repo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--dsw-font-mono, monospace);
+}
+
+.layers {
+  color: var(--dsw-alias-label-tertiary);
+}
