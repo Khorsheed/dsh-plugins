@@ -291,8 +291,8 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T33e ✅ | 环境 | 题集镜像 `eval-env:pinned` 上 0.1.5 线：dsh 闭包从 rc-0.1.5-rc.1 工具链打、headless 包从主检出源码打 tarball 喂进镜像（不从 npm）、三家 CLI 版本与宿主对齐；四家容器就绪各过一次（只到就绪） | T33a | 题库 `i4-env-0.1.5`（三提交）并入 i1-walk `0cd3f7b`（2026-09-16）；镜像 `sha256:1fc8cd14…`，dsh 0.1.5-rc.1 落 /opt/dsh-toolchain、闭包 241 包、claude 2.1.272 / kimi 0.42.0 / codex 0.144.0 与宿主逐项相等，harness 源码树切 dsh-v0.1.5-rc.1 不再 build:lib（second_dsh_in_tree 记 lock）；包镜像快照 803e484d/958 → 004ac04b/1614 只追加一次密封；**根因比 T33b 的推测硬**：headless manifest 的 minHost 0.1.5-rc.1 高于旧镜像里的 dsh 0.1.1-rc.2，伪装成 provisioning 故障；headless 0.1.0-rc.6 两条线各一份、版本号认不了人，Dockerfile 改按 sha256 断言；容器轮就绪：dsh ✅（63 s）、kimi ✅、claude ❌（探针那一刻 .credentials.json 被清空——pilot-b-log G9 复现 → T55）、codex ❌（宿主轮也 error，auth 9/7 未续，根因未定）；第一跑是宿主轮（plan 无 unit 段，输出与容器轮一模一样）——回归清单加一条 |
 | T33f ⏸ | 代码 | local-agent-dsh：sub-dsh 的 scoped home 在宿主与单元两侧都成立——宿主的 profiles/node_modules 愈合「补缺不换错」，同一 scope 先被哪侧碰过另一侧就坏；先出方案再改 | T29 T20c | **降为观察项（2026-09-16）**：T33e 证明 T33b 的失败根因是镜像里 dsh 版本低于 headless 的 minHost，两侧链混用是症状不是原因——dsh 在共用的默认 scope 上容器轮就绪通过。pilot D 若出现两侧混用导致的失败再做；文案保留 |
 | T55 | 代码 | claude 容器轮把宿主登出：单元挂的是实例自己的 scoped home（可写），容器内续期消费了 refresh token，宿主再续被拒后 claude 清空 .credentials.json、实例随之登出（pilot-b-log G9，T33e 复现）。方案：claude 容器条件用容器专用命名 scope（T29 的 `scope` 字段），或挂载只读 + 续期不写回；先方案 | T29 T20c | claude 容器轮就绪不登出宿主 |
-| T33b 🔄 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型——P0 先证机制与配对形状，真题预算先报 | T33a T33e T55 T57 | 2026-09-12 停在缺陷报告（根因后由 T33e 证实是镜像宿主线）；**补充二（2026-09-16）容器版跑了 2/3 格**（题库 `i4-pilot-b-container` 并入 i1-walk `768df21`）：两条 dsh 条件各挂各的命名 scope、各自回读到声明的模型（T30b 在容器轮成立）、判官双采样 κ 1.0；但计划在跑前被本任务之外的人加了 kimi-exec，环境类不再一致、比较未启用；第 3 格（dsh-v4-flash）撞 maxConcurrentUnits——不 finalize 的 run 每格留一个单元（→ T57）；两个单元未释放；真题预算已估（v4-pro 单格 F3 46–78 min / F2 62–93 min，output 22–45 万，flash 未测）停在放行点；C 等 T55 |
-| T33c | 运维 | pilot D：sub-dsh × 两 preset（同工具、不同技能）——两 scope 各 provision、两 caps 哈希、P0 一轮 | T33a T33e T33f | P0 配对结果 + 真题预算 |
+| T33b ✅ | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型——P0 先证机制与配对形状，真题预算先报 | T33a T33e | 2026-09-12 停在缺陷报告（根因后由 T33e 证实是镜像宿主线）；**补充二（2026-09-16）容器版跑了 2/3 格**（题库 `i4-pilot-b-container` 并入 i1-walk `768df21`）：两条 dsh 条件各挂各的命名 scope、各自回读到声明的模型（T30b 在容器轮成立）、判官双采样 κ 1.0；但计划在跑前被本任务之外的人加了 kimi-exec，环境类不再一致、比较未启用；第 3 格（dsh-v4-flash）撞 maxConcurrentUnits——不 finalize 的 run 每格留一个单元（→ T57）；两个单元未释放；真题预算已估（v4-pro 单格 F3 46–78 min / F2 62–93 min，output 22–45 万，flash 未测）停在放行点；C 等 T55。**2026-09-17 收口**：pilot B 以 T39 那次 run 为准（dsh × 两模型 × P0 容器轮，四条不变量全 ✅、比较节打开，两格 usage 都在 bundle 里），补充二那次是重复，补充四撤回；pilot C 不单独跑，等 T55 后并进第一次真题 run |
+| T33c | 运维 | pilot D：sub-dsh × 两 preset（同工具、不同技能）——两 scope 各 provision、两 caps 哈希、P0 一轮；I4 三条判据里唯一没在真机 run 上证过的，跑一次 P0 即收 | T58 | P0 配对结果 |
 
 T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个条件今天共用一份作用域目录（T20c 记的边界），模型之外的因子——登录身份、作用域配置——没法按条件分开；T30b、T31 都压在它上面。
 
@@ -356,6 +356,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 **T33e / T34 验收（2026-09-16）**：T33e 的题库分支并入 i1-walk `0cd3f7b`（validate 0 error），T34 合入 main `76b4f1a6`（合并态 eval 681、eval-tool 4、脚本 193、双语同步、独立性 0）。T33e 两问的裁决已执行：包镜像解封 → 拉 → 密封一次做完、旧快照留对照；harness 源码树切 dsh-v0.1.5-rc.1 并去掉 build:lib。四家容器轮就绪两过两败，dsh 通了是本任务要的那一条；claude 的败因是容器内续期把宿主登出（立 T55），codex 宿主轮也败、auth 9/7 未续，先由人重登再复测。T33f 降为观察项。T34 三件：会话那半边没验到（本机无凭据）归 T39；改 ui-spec §六 是记录既定项落地，接受；profile 脚本的 `set -e` 既有 bug 顺手修掉，接受。**接下来两件人的事**：在 3171 上重登 claude（`/claude-code login`）与 codex（`/codex login`），T39 与 T33b 的容器版都压在它上面。
 
 **T39 / T33b 补充二验收（2026-09-16）**：两条题库分支并入 i1-walk `768df21`（validate 0 error，67 条 UNREGISTERED 警告是新增的 lock / plan / 日志 / usage）。**I4 的交付物拿到了**：T39 的容器轮 run 四条不变量全 ✅、比较节打开，第三条「模型回读与声明一致」第一次在容器轮的配对报告上被证到；Δ 为 0 是 P0 两个阶段都是设计阶段的必然，证的是链路与配对机制。**I5 的功能闭环走通了**，但判据「人只做审批与终评」没达成：17 次人介入里 9 次是缺口，集中在两处最后一公里——条件字段（endpoint 没入口、home.sha 手抄回填再 provision）和产物落盘（报告要命令行、终评不进 bundle、单元要手动回收）。缺口按处立四条：T57（run 缺省 finalize 与单元回收）、T58（条件与绑定）、T59（单元里没有 shell——对真题是硬阻塞）、T60（导出与终评）。三件裁决：一、决策 9 的现行口径是 2026-09-10 放宽后的（判官可与选手同模型，标自评不排除），判官条件 notes 里的旧句子是陈旧文本，T33b 顺手改；二、pilot B 的计划在跑前被别的任务改过（加了 kimi-exec、重写格式）——根因就是 G1（未绑定的 agent 拿 repo 参数写进了别人的检出），规则写进通用提醒：并行任务各用各的 worktree，agent 起草只认会话绑定；三、pilot B 第 3 格撞单元上限不是 pilot 的错，是 run 不 finalize 就不回收的设计，T57 先修再重跑。真题预算（v4-pro 单格：F3 46–78 min、F2 62–93 min，output 22–45 万；两格翻倍；budget.activeMinutes 30 要先上调；flash 未测）停在放行点等用户。3171 由安装副本的看门狗守着（`~/.dsh-lab/profiles/web-eval/node_modules/@khorsheed/dsh-ankh-guard`），实施者担心的「守它的是别的 worktree 那份」不成立——那是另一台实例的看门狗。
+
+**只留必要测试（2026-09-17 定）**：9/11 以来的真机 run 逐次剥的是不同的层（宿主线、镜像线、单元回收、shell），但 T33b 补充二与 T39 是同一件事，补充四撤回。用户定：机制 pilot 到此为止，只留 pilot D 一次（I4 唯一没在 run 上证过的判据），真题等上线后在使用中跑，专注把插件整体做出来。
 
 **T57 / T59 验收（2026-09-17）**：两条无冲突合入 `4a11d4ad`、`8dc26e97`，合并态 eval 707、local-agent-dsh 188、local-agent 267、315 对双语同步、独立性 34 包 0、profiles 组合干净。T57 五个被否掉的替代方案与那条诚实代价都接受。T59 把 G14 从「环境问题」纠成「决策 3 的执行点缺失」——这是本轮最值钱的发现：条件的 `permissions: unrestricted` 在 dsh 这一家背后原先什么都没有，宿主轮也一样，只是 Seatbelt 掩住了。三件交接：一、两条 dsh 条件的 `home.sha` 随子 profile 多了一层而变，T33b 重跑前要重新 provision 并把哈希抄回条件文档（G7 那两步，T58 收）；二、这条 pin 同样作用于宿主轮与判官委派，有意为之，与 codex 的 danger-full-access 同一条纪律；三、容器轮里 member-bridge 那行起不来（单元里 `DSH_MEMBER_BRIDGE_ENTRY` 为 SyntaxError），走的是 failOnStartupError: false 的降级路径，每个容器轮 stderr 都有这段噪声，记为 T61（低）。T59 跑 `gate --all` 时 ankh-guard 的 supervise 泳道红，实施者在 main 上复现同一泳道也红且更多——既有抖动，归 ankh-guard 线，本轮按既有规则记录。另：T57 跑时旁边冒出六只 alpine 单元，是同机另一会话的 integration-triad 集成测试，与评测 run 并存照样跑完。
 
@@ -2423,10 +2425,10 @@ packages/local-agent-dsh-headless 的 cordis.patch.yml 与 agent-loader（sandbo
 
 **验收（2026-09-17）**：`fix/local-agent-dsh-unit-shell`（`19e52e7f`）合入 main `8dc26e97`。修前两段拒绝原文、当时生效的 sandbox-policy / approval 配置、修后单元里 bash 成功原文、宿主路径 patch 逐字节不变，都齐。Agent Note：`.agents/notes/implemented/bug-fix/2026-09-16-dsh-sub-profile-permission-boundary.md`。
 
-**T33b 补充四（2026-09-17）**：
+**T33b 补充四（2026-09-17，已撤回——pilot B 以 T39 的 run 收口，见 §二「只留必要测试」）**：
 
 ```text
-# T33b 补充四：T57 与 T59 都在 3171 上了，pilot B 容器版三格重跑
+# T33b 补充四（撤回）：T57 与 T59 都在 3171 上了，pilot B 容器版三格重跑
 
 1. 3171 现在跑的是 e0a37060（T57）；T59 的 permissions pin 还没装上去——先按 T33a 第 3 步重装到 main ≥ 8dc26e97（经看门狗通道停起，锚点快进）。
 2. 两条 dsh 条件（v4-flash / v4-pro）与判官条件的 home.sha 随 T59 的子 profile 多了一层而变：会话里逐条 /eval conditions provision，把新哈希抄回条件文档再 provision 一次写 lock（G7 的两步，T58 之前只能这样）。
