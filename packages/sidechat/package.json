@@ -1,0 +1,202 @@
+{
+  "name": "@khorsheed/dsh-sidechat",
+  "description": "侧边对话：全 preset 常驻的随身 Agent——右栏轻量聊天，每个 contextKey 绑定一个持久 agent 会话，引用是不透明文本块（普通会话消息动作「引用到侧边对话」，其他插件经 ctx.sideChat.openWith 供给）",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/sidechat"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "lib/typert.host.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.js",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-sandbox-policy": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent-presets": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-chat": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-conversation": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-sidebar-right": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-fs": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-sandbox": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-sandbox-policy": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-persistence": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-fs": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox-policy": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "jsdom": "^30.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "sidechat",
+    "side-chat",
+    "chat",
+    "agent"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ],
+      "platform": "web"
+    },
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "notes": "侧边对话 is a page-type right-Sidebar tab (0.1.5's sidebar.right.pane.tab + sidebarRightTabs registry, the local-files/canvas precedent) — hosts before 0.1.5 have no right Sidebar seat, so minHost starts there. The「引用到侧边对话」message action rides the `conversation.chat.assistant-actions` list seat (declared by ui-chat's turn-tail node; both registrations ride ctx.slots.inject, so a host without the seat simply shows no action). It is a web surface: a headless profile has no browser consumer and the plugin contributes nothing there. The host half runs each context's chat as a real agent session (ctx.agents.create/resume, the room precedent) and persists its contextKey→session mapping at $DSH_HOME/state/sidechat/contexts.json through the mounted ctx.fs with the sandbox fence RE-ROOTED at that state dir (the canvas store.ts precedent: calling session resolves the mode and lends its id, boundary is the plugin state root; a host without ctx.fs degrades to in-memory state, lost on restart). Consumer tools/systemPrompt are host-side objects passed in-process (ctx.sideChat.openWith) — they never cross the Remote wire; origin tagging of caller tools is the caller's job. The side agent mounts the deployment's default agent preset (probed agentPresets) so ordinary file tools work with the inherited cwd; without a presets roster it composes plain (chat-only).",
+      "verifiedHost": "0.1.5-rc.1"
+    }
+  }
+}

@@ -1,0 +1,188 @@
+/* The side-chat view's layout. Every colour comes from a `--dsw-*` alias
+   token, so light and dark are the theme's business, not this file's. */
+
+.root {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto auto;
+  height: 100%;
+  min-height: 240px;
+  overflow: hidden;
+  font-family: var(--dsw-font-family);
+}
+
+.notice {
+  padding: 24px 16px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ------------------------------------------------------------------ header */
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.status {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.status[data-running="true"] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* --------------------------------------------------------------- transcript */
+
+.transcript {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.empty {
+  margin: auto;
+  max-width: 260px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.userRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.userBubble {
+  max-width: 88%;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.assistantRow {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolRow {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.toolRow[data-state="running"] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.toolRow[data-state="error"] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* -------------------------------------------------------------------- refs */
+
+.refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+.refChip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ----------------------------------------------------------------- composer */
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 8px 12px 12px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.composer:focus-within {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  max-height: 160px;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  font-family: var(--dsw-font-family);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-primary);
+  box-sizing: border-box;
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption);
+  user-select: none;
+}
+
+.send {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.send:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.error {
+  margin: 0 12px 12px;
+  font-size: 11px;
+  color: var(--dsw-alias-state-error-primary);
+}
