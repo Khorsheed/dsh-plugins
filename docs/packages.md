@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**33**
-- 自挂载 bundle(`dsh.bundle.patch`):**26**
+- 包总数:**34**
+- 自挂载 bundle(`dsh.bundle.patch`):**27**
 - 组合组件(不自挂载,`dsh.composition.component`):**7** — `preset-composed-row` 5、`provider-mounted-row` 1、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**24**
+- 带浏览器半边(`dsh.client`):**25**
 - 整合 profile(默认安装单元):**3** — `web-basic`、`web-dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -44,6 +44,7 @@
 | `@khorsheed/dsh-room` | `packages/room` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |

@@ -1,0 +1,40 @@
+/* The quote-to-side-chat action in the assistant IconActions row. Every
+   colour comes from a `--dsw-*` alias token. */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.action[data-phase="busy"] {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.notice {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.notice[data-tone="error"] {
+  color: var(--dsw-alias-state-error-primary);
+}
