@@ -697,6 +697,23 @@ export interface LabPopulateResult {
  * `status` is a human/CLI surface, and the loop reads the mission ledger
  * rather than asking the provider what state a cell is in.
  */
+/**
+ * One row of {@link LabFace.status} — a unit lab is holding right now. This is
+ * the LIVE truth about containers, as opposed to mission's `unreleased`, which
+ * is the ledger's belief about which cells hold a resource. The two disagree
+ * in exactly the case worth reporting: a cell the ledger has already released
+ * whose container is still up.
+ */
+export interface LabUnitRow {
+  id: string
+  resource: string
+  running: boolean
+  /** The mission this unit was acquired for; absent for a unit bound to none. */
+  missionId?: string
+  /** The run this unit was acquired for; absent for a unit bound to none. */
+  runId?: string
+}
+
 export interface LabFace {
   acquire(spec: LabAcquireSpec): Promise<LabUnitInfo>
   populate(unitId: string, options: {
@@ -717,7 +734,14 @@ export interface LabFace {
    * protects (the readiness probe unit, which is bound to no mission).
    */
   release(unitId: string, options?: { force?: boolean }): Promise<void>
-  status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean }>>
+  /**
+   * Every unit lab currently holds. The two BINDING fields are what make this
+   * answer usable from here: `runId` and `missionId` are what the orchestrator
+   * wrote at acquire, so a caller can ask "which of these are mine" without
+   * lab having to know what a run is. Both stay optional — a unit acquired
+   * outside a run (the readiness probe's) carries neither.
+   */
+  status(unitId?: string): Promise<LabUnitRow[]>
   /**
    * Hash a component set — the same rule `acquire` uses, as a pure function.
    * The orchestrator asks it what the ENVIRONMENT CLASS hashes to: the unit's

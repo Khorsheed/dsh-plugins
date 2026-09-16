@@ -3,7 +3,7 @@
  * --dry-run` works anywhere (the offline kernel needs no host); a live run
  * outside a host context is refused, honestly.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { handleEvalCommand } from '../src/slash.ts'
 import { EvalService } from '../src/service.ts'
 
@@ -131,6 +131,9 @@ describe('/eval finalize', () => {
     expect(result.text).toContain('1 released（已终结）跳过、1 中断（未走到 archived）跳过、1 pending（未开跑）跳过')
     expect(result.text).toContain('cell-a: archived → released')
     expect(result.text).toContain('cell-c: skipped (stage-2)')
+    // The container half is said even here, where there is no lab to ask:
+    // silence would read as "and the containers are gone" (T39 · G18).
+    expect(result.text).toContain('单元: 未知')
   })
 
   it('refuses honestly when the composition has no mission service', async () => {
@@ -168,6 +171,33 @@ describe('/eval run — the subset flags', () => {
     const result = await handleEvalCommand(new EvalService(), invocation(`run ${T1_PLAN} --dry-run --only nope-1,nope-2`))
     expect(result.kind).toBe('error')
     expect(result.text).toContain('2 cell(s) the plan')
+  })
+})
+
+describe('/eval run — the 保留单元 switch (T57)', () => {
+  /** Drive the run verb and report what options it was handed. */
+  async function optionsOf(input: string): Promise<Record<string, unknown>> {
+    const service = new EvalService()
+    // Rejecting is enough: the switch is parsed before the run is reached, so
+    // the call's arguments are the whole fact under test.
+    const run = vi.spyOn(service, 'run').mockRejectedValue(new Error('not run here'))
+    await handleEvalCommand(service, invocation(input))
+    return (run.mock.calls[0]?.[1] ?? {}) as Record<string, unknown>
+  }
+
+  it('is off unless asked: a plain run walks the release gate', async () => {
+    expect(await optionsOf(`run ${T1_PLAN} --wait`)).toMatchObject({ keepUnits: false })
+  })
+
+  it('--keep-units reaches the kernel', async () => {
+    expect(await optionsOf(`run ${T1_PLAN} --wait --keep-units`)).toMatchObject({ keepUnits: true })
+  })
+
+  it('--finalize is still accepted — it asks for what the default already does', async () => {
+    // A saved command or a script that still passes it must not start failing
+    // over a flag whose meaning became the default.
+    const options = await optionsOf(`run ${T1_PLAN} --wait --finalize`)
+    expect(options).toMatchObject({ keepUnits: false })
   })
 })
 

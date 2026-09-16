@@ -18,6 +18,7 @@
  * would make the reviewer the author.
  */
 
+import { useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanDigest, EvalPlanReview, EvalRunOutputView,
@@ -125,11 +126,13 @@ export function PlanReviewPage(props: {
   started: LabStartedRun | null
   output: EvalRunOutputView | null
   outputError: string | null
-  onApprove: () => void
+  /** Approve and start; the flag is the 保留单元 box's state. */
+  onApprove: (keepUnits: boolean) => void
   onSendBack: () => void
   t: LabViewProps['t']
 }) {
   const { row, review, loading, error, sentBack, approving, refusal, started, output, outputError, t } = props
+  const [keepUnits, setKeepUnits] = useState(false)
   // A run whose meta records no plan document has nothing to review; its
   // run.meta is the overview's business, and inventing a review of a file
   // nobody can name would be a page of guesses.
@@ -181,13 +184,22 @@ export function PlanReviewPage(props: {
                 size="sm"
                 variant="primary"
                 disabled={approving || !review.ok}
-                onClick={props.onApprove}
+                onClick={() => { props.onApprove(keepUnits) }}
               >
                 {approving ? t('review.approving') : t('review.approve')}
               </Button>
               <Button size="sm" onClick={props.onSendBack}>{t('review.sendBack')}</Button>
+              {/* The debugging switch, and it is OFF unless someone ticks it.
+                  Left on by default it would be T33b's shape again: every
+                  cell's container survives the run, and the matrix stops at
+                  lab's ceiling. The hint under it says what it costs. */}
+              <label className={css.guardedItem}>
+                <input type="checkbox" checked={keepUnits} onChange={(e) => { setKeepUnits(e.target.checked) }} />
+                <span>{t('review.keepUnits')}</span>
+              </label>
             </div>
           )}
+          {startable && keepUnits && <div className={css.notice}>{t('review.keepUnitsHint')}</div>}
           {startable && !review.ok && (
             <div className={css.notice}>{t('review.approveBlocked', { errors: review.errors })}</div>
           )}

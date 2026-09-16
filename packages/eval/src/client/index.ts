@@ -39,7 +39,7 @@ import type {
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
-  EvalMatrixRequest, EvalPlanRequest, EvalReportRequest,
+  EvalMatrixRequest, EvalPlanRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -124,6 +124,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
         fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
         finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
+        fetchRunUnits: (sid: SessionId, request: EvalRunUnitsRequest) => remote.runUnits(sid, request),
         fetchJudgeQueue: (sid: SessionId, request: EvalJudgeQueueRequest) => remote.judgeQueue(sid, request),
         // The one write with no model-facing twin anywhere in this family
         // (ui-spec R1): the final verdict is a person's, and the toolset has

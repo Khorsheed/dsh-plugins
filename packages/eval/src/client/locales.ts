@@ -126,6 +126,20 @@ export type EvalKey =
   | 'report.finalizeCancel'
   | 'report.finalizeResult'
   | 'report.finalizeCounts'
+  | 'report.finalizeUnits'
+  | 'report.finalizeUnitsUnknown'
+  | 'report.unitsLoading'
+  | 'report.unitsError'
+  | 'report.unitsUnknown'
+  | 'report.unitsNone'
+  | 'report.unitsHeld'
+  | 'report.unitsTitle'
+  | 'report.unitsHint'
+  | 'report.unitRunning'
+  | 'report.unitStopped'
+  | 'report.reclaim'
+  | 'report.reclaimConfirm'
+  | 'report.reclaimConfirmAsk'
   | 'notice.finalized'
   | 'judge.loading'
   | 'judge.error'
@@ -326,6 +340,8 @@ export type EvalKey =
   | 'severity.warn'
   | 'severity.error'
   | 'review.approve'
+  | 'review.keepUnits'
+  | 'review.keepUnitsHint'
   | 'review.approving'
   | 'review.approveBlocked'
   | 'review.sendBack'
@@ -663,7 +679,21 @@ export const en: Record<EvalKey, string> = {
   'report.finalizeCancel': 'Cancel',
   'report.finalizeResult': 'finalize',
   'report.finalizeCounts': '{released} released · {refused} gate-refused · {skipped} skipped ({skips})',
-  'notice.finalized': 'finalize: {released} released, {refused} gate-refused, {skipped} skipped',
+  'report.finalizeUnits': 'containers: {released} reclaimed · {held} still up',
+  'report.finalizeUnitsUnknown': 'containers: unknown — this instance mounts no lab, so none were touched',
+  'report.unitsLoading': 'units…',
+  'report.unitsError': 'units',
+  'report.unitsUnknown': 'units: unknown',
+  'report.unitsNone': 'units: none held',
+  'report.unitsHeld': 'unreclaimed units: {count}',
+  'report.unitsTitle': 'Unreclaimed units',
+  'report.unitsHint': "A unit whose cell is 'archived' is one Reclaim can still take; one whose cell is already 'released' is past every gate, and only dsh-lab release --force can end it — a human's call.",
+  'report.unitRunning': 'up',
+  'report.unitStopped': 'stopped',
+  'report.reclaim': 'Reclaim',
+  'report.reclaimConfirm': 'Yes, reclaim',
+  'report.reclaimConfirmAsk': 'Reclaiming walks the SAME release gate finalize does: every archived cell goes archived → releasable → released and its container is destroyed there. A refused gate is recorded, never forced.',
+  'notice.finalized': 'finalize: {released} released, {refused} gate-refused, {skipped} skipped; containers: {unitsReleased} reclaimed, {unitsHeld} still up',
   'review.loading': 'Validating the plan…',
   'review.error': 'Failed to review the plan',
   'review.noPlan': 'This run records no plan document, so there is nothing to review — its run.meta is on the overview.',
@@ -692,6 +722,8 @@ export const en: Record<EvalKey, string> = {
   'severity.warn': 'warn',
   'severity.error': 'error',
   'review.approve': 'Approve and start',
+  'review.keepUnits': 'Keep the units',
+  'review.keepUnitsHint': "Every cell will stop at 'archived' and keep its container for you to open. Nothing is released until you finalize the run, so a matrix larger than lab's unit ceiling cannot finish this way.",
   'review.approving': 'Starting…',
   'review.approveBlocked': 'validate found {errors} error(s) — fix them and refresh; nothing can be started over a plan whose conditions do not resolve',
   'review.sendBack': 'Send back for changes',
@@ -1023,7 +1055,21 @@ export const zh: Record<EvalKey, string> = {
   'report.finalizeCancel': '取消',
   'report.finalizeResult': 'finalize 结果',
   'report.finalizeCounts': '{released} 已释放 · {refused} 被闸拒 · {skipped} 跳过（{skips}）',
-  'notice.finalized': 'finalize：{released} 释放、{refused} 被闸拒、{skipped} 跳过',
+  'report.finalizeUnits': '容器：{released} 已回收 · {held} 仍在',
+  'report.finalizeUnitsUnknown': '容器：未知——这个实例没挂 lab，容器没被碰过',
+  'report.unitsLoading': '单元…',
+  'report.unitsError': '单元',
+  'report.unitsUnknown': '单元：未知',
+  'report.unitsNone': '单元：无占用',
+  'report.unitsHeld': '未回收单元：{count}',
+  'report.unitsTitle': '未回收单元',
+  'report.unitsHint': '格子还停在 archived 的单元，「回收」还能收；格子已经 released 的，任何闸都不会再放行，只剩 dsh-lab release --force——那是人的决定。',
+  'report.unitRunning': '运行中',
+  'report.unitStopped': '已停',
+  'report.reclaim': '回收',
+  'report.reclaimConfirm': '确认回收',
+  'report.reclaimConfirmAsk': '回收走的就是 finalize 那条释放闸：每个 archived 格子走 archived → releasable → released，容器在这中间销毁。闸拒了就记下来，不强推。',
+  'notice.finalized': 'finalize：{released} 释放、{refused} 被闸拒、{skipped} 跳过；容器：{unitsReleased} 已回收、{unitsHeld} 仍在',
   'review.loading': '正在校验计划…',
   'review.error': '计划审阅加载失败',
   'review.noPlan': '这个 run 没有记录计划文件，无从审阅——它的 run.meta 在概览页。',
@@ -1052,6 +1098,8 @@ export const zh: Record<EvalKey, string> = {
   'severity.warn': '警告',
   'severity.error': '错误',
   'review.approve': '批准并启动',
+  'review.keepUnits': '保留单元',
+  'review.keepUnitsHint': '每个格子跑完停在 archived，容器留着给你打开。不 finalize 就不会释放，格子数超过 lab 的单元上限时这样跑不完。',
   'review.approving': '正在启动…',
   'review.approveBlocked': 'validate 有 {errors} 个错误——改掉再刷新；条件都解析不出来的计划不能启动。',
   'review.sendBack': '退回修改',

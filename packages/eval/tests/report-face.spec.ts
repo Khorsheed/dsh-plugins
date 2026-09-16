@@ -58,23 +58,36 @@ function writeBundle(outDir: string, runId: string, meta: Record<string, unknown
   return bundle
 }
 
-/** A mission READ face that answers one run, with the meta a test hands it. */
-function missionOf(meta: Record<string, unknown>): { get(name: string): unknown } {
+/**
+ * A mission READ face that answers one run, with the meta a test hands it —
+ * plus, optionally, a lab face, because the units verb reads BOTH (lab for
+ * what is up, mission for what state its cell is in).
+ */
+function missionOf(
+  meta: Record<string, unknown>,
+  options: { rows?: Array<{ id: string; state: string }>; lab?: unknown } = {},
+): { get(name: string): unknown } {
   const mission = {
     dataDir: '/nowhere',
     runStatus: (runId: string) => {
       if (runId !== RUN) throw new Error(`unknown run ${runId}`)
-      return { run: { id: runId, state: 'closed', createdAt: 0, meta }, rows: [], buckets: {}, unreleased: [] }
+      return { run: { id: runId, state: 'closed', createdAt: 0, meta }, rows: options.rows ?? [], buckets: {}, unreleased: [] }
     },
     get: () => { throw new Error('not used') },
   }
-  return { get: (name: string) => (name === 'mission' ? mission : undefined) }
+  return {
+    get: (name: string) => {
+      if (name === 'mission') return mission
+      if (name === 'lab') return options.lab
+      return undefined
+    },
+  }
 }
 
 /** Mount the Remote over a service whose mission face answers `meta`. */
-async function bench(meta: Record<string, unknown>) {
+async function bench(meta: Record<string, unknown>, options: { rows?: Array<{ id: string; state: string }>; lab?: unknown } = {}) {
   const ctx = new Context()
-  const service = new EvalService(missionOf(meta))
+  const service = new EvalService(missionOf(meta, options))
   ctx.provide('dshEval', service as never)
   const fiber = ctx.plugin(EvalRemoteService)
   await fiber.await()
@@ -263,6 +276,52 @@ describe('the projection', () => {
   })
 })
 
+describe('the units verb (T57)', () => {
+  /** Two containers of this run, one of somebody else's, and lab's own list. */
+  const labWith = (rows: unknown[]) => ({ status: async () => rows, release: async () => {} })
+
+  it('lists only this run\'s units and joins each cell\'s state from the ledger', async () => {
+    const { fiber, remote } = await bench({}, {
+      rows: [{ id: 'p0-cond-a-rep1', state: 'archived' }, { id: 'p0-cond-b-rep1', state: 'released' }],
+      lab: labWith([
+        { id: 'u1', resource: 'dsh-lab-u1', running: true, missionId: 'p0-cond-a-rep1', runId: RUN },
+        { id: 'u2', resource: 'dsh-lab-u2', running: false, missionId: 'p0-cond-b-rep1', runId: RUN },
+        { id: 'u3', resource: 'dsh-lab-u3', running: true, missionId: 'other', runId: 'run-someone-else' },
+      ]),
+    })
+
+    const view = await remote.runUnits(agentOf(), { runId: RUN })
+
+    expect(view.available).toBe(true)
+    expect(view.units).toEqual([
+      { id: 'u1', resource: 'dsh-lab-u1', running: true, missionId: 'p0-cond-a-rep1', missionState: 'archived' },
+      { id: 'u2', resource: 'dsh-lab-u2', running: false, missionId: 'p0-cond-b-rep1', missionState: 'released' },
+    ])
+    await fiber.dispose()
+  })
+
+  it('answers UNKNOWN rather than zero when the composition mounts no lab', async () => {
+    const { fiber, remote } = await bench({})
+    const view = await remote.runUnits(agentOf(), { runId: RUN })
+    // The distinction the page depends on: a confident 0 from a composition
+    // that never looked is how a held container stays invisible.
+    expect(view.available).toBe(false)
+    expect(view.units).toEqual([])
+    expect(view.refusal).toContain('no lab service')
+    await fiber.dispose()
+  })
+
+  it('answers UNKNOWN with the reason when lab cannot be asked', async () => {
+    const { fiber, remote } = await bench({}, {
+      lab: { status: () => Promise.reject(new Error('docker daemon is not running')), release: async () => {} },
+    })
+    const view = await remote.runUnits(agentOf(), { runId: RUN })
+    expect(view.available).toBe(false)
+    expect(view.refusal).toContain('docker daemon is not running')
+    await fiber.dispose()
+  })
+})
+
 describe('the finalize verb', () => {
   it('forwards to the service and answers the counts, the cells and the log verbatim', async () => {
     const { fiber, service, remote } = await bench({})
@@ -281,6 +340,15 @@ describe('the finalize verb', () => {
         skipped: 1,
         skippedByCategory: { 'already-released': 0, interrupted: 0, 'not-started': 1 },
         skippedByState: { pending: 1 },
+        unitsReleased: 1,
+        unitsHeld: [{
+          id: 'u2',
+          resource: 'dsh-lab-u2',
+          missionId: 'p0-cond-b-rep1',
+          missionState: 'archived',
+          reason: 'the archive gate refused its cell, so nothing authorized the destroy',
+        }],
+        unitsKnown: true,
       }
     })
 
@@ -294,6 +362,17 @@ describe('the finalize verb', () => {
       'cell p0-cond-a-rep1: archived → releasable → released',
       'cell p0-cond-b-rep1: gate refused at archived — verdicts/ is empty',
     ])
+    // The container half crosses the wire too: a walk that reported only cells
+    // is how two units stayed up on 3171 with nothing on screen about them.
+    expect(view.unitsReleased).toBe(1)
+    expect(view.unitsKnown).toBe(true)
+    expect(view.unitsHeld).toEqual([{
+      id: 'u2',
+      resource: 'dsh-lab-u2',
+      missionId: 'p0-cond-b-rep1',
+      missionState: 'archived',
+      reason: 'the archive gate refused its cell, so nothing authorized the destroy',
+    }])
     // The tab is named as the caller, so the ledger says which one asked.
     expect(finalize.mock.calls[0]?.[1]).toMatchObject({ by: 'tab:s1' })
     await fiber.dispose()
@@ -306,10 +385,16 @@ describe('the finalize verb', () => {
       released: 0, refused: 0, skipped: 1,
       skippedByCategory: { 'already-released': 1, interrupted: 0, 'not-started': 0 },
       skippedByState: { released: 1 },
+      unitsReleased: 0,
+      unitsHeld: [],
+      unitsKnown: false,
     }, [])
 
     expect(view.cells[0]).toEqual({
-      missionId: 'm1', state: 'released', action: 'skipped', finalState: 'released', reason: null,
+      missionId: 'm1', state: 'released', action: 'skipped', finalState: 'released', reason: null, unit: null,
     })
+    // Not asked is not zero: a composition with no lab must not read as one
+    // that looked and found nothing.
+    expect(view.unitsKnown).toBe(false)
   })
 })

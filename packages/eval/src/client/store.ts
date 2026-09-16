@@ -11,7 +11,7 @@ import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
   EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView, EvalExperimentDetail,
   EvalExperimentsResult, EvalFinalizeView, EvalJudgeQueueView, EvalMatrixView, EvalPlanReview,
-  EvalRunOutputView, EvalRunReportView,
+  EvalRunOutputView, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
 
 /**
@@ -134,6 +134,14 @@ export interface LabViewState {
   /** The last finalize walk's outcome, verbatim; null until one runs. */
   finalizeResult: EvalFinalizeView | null
   /**
+   * The containers lab still holds for this run — lab's own list, re-read
+   * after every finalize walk. Null before it loads, and a payload whose
+   * `available` is false when this composition has no lab: the page must be
+   * able to say 未知 where it would otherwise print a confident 0.
+   */
+  runUnits: EvalRunUnitsView | null
+  runUnitsError: string | null
+  /**
    * The export directory the report page looks in FIRST, set two ways: an
    * export made in this visit (the dialog takes a free-text path), or a
    * directory the reader typed on the report page itself.
@@ -216,6 +224,8 @@ export type LabViewActions = {
   setReportError: (draft: LabViewState, error: string | null) => void
   setFinalizing: (draft: LabViewState, finalizing: boolean) => void
   setFinalizeResult: (draft: LabViewState, result: EvalFinalizeView | null) => void
+  setRunUnits: (draft: LabViewState, units: EvalRunUnitsView) => void
+  setRunUnitsError: (draft: LabViewState, error: string | null) => void
   setLookIn: (draft: LabViewState, dir: string) => void
   setJudge: (draft: LabViewState, view: EvalJudgeQueueView) => void
   setJudgeLoading: (draft: LabViewState, loading: boolean) => void
@@ -271,6 +281,8 @@ const INITIAL: LabViewState = {
   reportError: null,
   finalizing: false,
   finalizeResult: null,
+  runUnits: null,
+  runUnitsError: null,
   lookIn: null,
   judge: null,
   judgeLoading: false,
@@ -293,7 +305,7 @@ const PER_EXPERIMENT: Pick<
   'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal'
   | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
-  | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'lookIn'
+  | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
   | 'judge' | 'judgeError' | 'judgeTicket' | 'judgeSubmitting'
   | 'exportOpen' | 'notice'
 > = {
@@ -320,6 +332,8 @@ const PER_EXPERIMENT: Pick<
   reportError: null,
   finalizing: false,
   finalizeResult: null,
+  runUnits: null,
+  runUnitsError: null,
   lookIn: null,
   judge: null,
   judgeError: null,
@@ -474,6 +488,11 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setReportError: (d, error: string | null) => { d.reportError = error },
       setFinalizing: (d, finalizing: boolean) => { d.finalizing = finalizing },
       setFinalizeResult: (d, result: EvalFinalizeView | null) => { d.finalizeResult = result },
+      setRunUnits: (d, units: EvalRunUnitsView) => {
+        d.runUnits = units
+        d.runUnitsError = null
+      },
+      setRunUnitsError: (d, error: string | null) => { d.runUnitsError = error },
       setLookIn: (d, dir: string) => {
         d.lookIn = dir
         // Whatever is on screen was read from somewhere else: a fresh export,

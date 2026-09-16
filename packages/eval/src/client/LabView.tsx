@@ -167,7 +167,7 @@ export function LabView(props: LabViewProps) {
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
     fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
-    fetchReport, finalizeRun, fetchJudgeQueue, submitHumanFinal,
+    fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -212,6 +212,8 @@ export function LabView(props: LabViewProps) {
   const reportError = useStore(s => s.reportError)
   const finalizing = useStore(s => s.finalizing)
   const finalizeResult = useStore(s => s.finalizeResult)
+  const runUnits = useStore(s => s.runUnits)
+  const runUnitsError = useStore(s => s.runUnitsError)
   const lookIn = useStore(s => s.lookIn)
   const judge = useStore(s => s.judge)
   const judgeLoading = useStore(s => s.judgeLoading)
@@ -368,11 +370,16 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [startedJobId, refreshRev, actions, fetchRunOutput])
 
-  /** Approve and start the open plan — the human act of ui-spec step 5. */
-  function approve(): void {
+  /**
+   * Approve and start the open plan — the human act of ui-spec step 5.
+   * @param keepUnits - the dialog's 保留单元 box: stop every cell at
+   *   `archived` and keep its container. Off is the default, and the run then
+   *   walks the release gate cell by cell.
+   */
+  function approve(keepUnits: boolean): void {
     if (planPath === null) return
     actions.setApproving(true)
-    void approvePlan(sessionId, { planPath }).then((result) => {
+    void approvePlan(sessionId, { planPath, ...(keepUnits ? { keepUnits: true } : {}) }).then((result) => {
       actions.setApproving(false)
       if (!result.ok) {
         actions.setApproveRefusal(result.error.message)
@@ -479,6 +486,24 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, openRunId, page, refreshRev, lookIn, actions, fetchReport])
 
+  // The containers this run still holds, read beside the report and NOT as
+  // part of it: the report is a projection of an exported bundle (a fact
+  // about the past), and this is what `docker ps` would say right now. Tying
+  // them together would make a page about a bundle depend on a live daemon.
+  //
+  // `refreshRev` is in the list, so the finalize walk's own refresh re-reads
+  // the count — which is the whole point of showing it after a walk.
+  useEffect(() => {
+    if (openRunId === null || page !== 'report') return
+    let cancelled = false
+    void fetchRunUnits(sessionId, { runId: openRunId }).then((result) => {
+      if (cancelled) return
+      if (result.ok) actions.setRunUnits(result.value)
+      else actions.setRunUnitsError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRunId, page, refreshRev, actions, fetchRunUnits])
+
   // The judge bench's blind queue, paid for by the page that asked for it: it
   // reads every cell's archived material off disk and scrubs it, which is not
   // a read to spend on a visit to the overview.
@@ -541,8 +566,12 @@ export function LabView(props: LabViewProps) {
         return
       }
       actions.setFinalizeResult(result.value)
+      // The containers are in the notice because they are the half a reader
+      // could not see before: a walk that said only "3 released" is what left
+      // two units up on 3171 with nothing on screen about them.
       actions.setNotice(t('notice.finalized', {
         released: result.value.released, refused: result.value.refused, skipped: result.value.skipped,
+        unitsReleased: result.value.unitsReleased, unitsHeld: result.value.unitsHeld.length,
       }))
       // Released cells change the run's states, which the overview and the
       // matrix both show.
@@ -766,6 +795,8 @@ export function LabView(props: LabViewProps) {
                       error={reportError}
                       finalizing={finalizing}
                       finalizeResult={finalizeResult}
+                      units={runUnits}
+                      unitsError={runUnitsError}
                       onFinalize={onFinalize}
                       onExport={() => { actions.setExportOpen(true) }}
                       onLookIn={(dir) => { actions.setLookIn(dir) }}

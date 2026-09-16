@@ -283,7 +283,12 @@ export async function runReportView(
   return notExported(runId, searched)
 }
 
-/** Reshape a finalize walk for the wire: the counts, every cell, and the log. */
+/**
+ * Reshape a finalize walk for the wire: the counts, every cell, what happened
+ * to the containers, and the log. Optional fields become explicit nulls here,
+ * as everywhere on this seam — a reader must be able to tell "no unit" from
+ * "a field this projection forgot".
+ */
 export function projectFinalize(report: FinalizeReport, log: readonly string[]): EvalFinalizeView {
   return {
     runId: report.runId,
@@ -297,7 +302,13 @@ export function projectFinalize(report: FinalizeReport, log: readonly string[]):
       action: cell.action,
       finalState: cell.finalState,
       reason: cell.reason ?? null,
+      unit: cell.unit === undefined
+        ? null
+        : { id: cell.unit.id, resource: cell.unit.resource, released: cell.unit.released, reason: cell.unit.reason ?? null },
     })),
+    unitsReleased: report.unitsReleased,
+    unitsHeld: report.unitsHeld.map(held => ({ ...held })),
+    unitsKnown: report.unitsKnown,
     log: [...log],
   }
 }
