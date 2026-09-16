@@ -13,7 +13,8 @@ import type { CanvasSpacePageProps } from '../src/client/contract.ts'
 import { CanvasSpacePage } from '../src/client/space/CanvasSpacePage.tsx'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardListResult, BoardMutationResult, BoardReadOutcome, CanvasBoard, CanvasListResult,
+  BoardAskAgentOutcome, BoardChatStatusResult, BoardListResult, BoardMutationResult,
+  BoardReadOutcome, CanvasBoard, CanvasListResult,
   BoardImportResult,
 } from '../src/types.ts'
 
@@ -81,6 +82,9 @@ interface Harness {
     importV1: ReturnType<typeof vi.fn>
     probeV1Pad: ReturnType<typeof vi.fn>
     selectCard: ReturnType<typeof vi.fn>
+    askAgent: ReturnType<typeof vi.fn>
+    chatStatus: ReturnType<typeof vi.fn>
+    openSideChat: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasSpacePageProps
   /** Current board the fake host holds (mutations answer it back). */
@@ -93,6 +97,8 @@ function makeHarness(options: {
   sessionId?: string | 'none'
   board?: CanvasBoard
   workspaces?: readonly { workspaceId: string; path: string; title: string }[]
+  /** The chat seam's probe answer (default true — entries show). */
+  chatAvailable?: boolean
 } = {}): Harness {
   const current = { board: options.board ?? board() }
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
@@ -111,6 +117,11 @@ function makeHarness(options: {
     importV1: vi.fn(async (): Promise<Result<BoardImportResult>> => ok({ ok: true, board: minted, version: '2', imported: 2 })),
     probeV1Pad: vi.fn(async (): Promise<Result<CanvasListResult>> => ok({ items: [{ name: '卡片/雨伞的意象.md' }, { name: '文章/第一章.md' }] as never, archived: [] })),
     selectCard: vi.fn(),
+    askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
+      ok({ ok: true, contextKey: `canvas:${CANVAS_ID}`, sent: true })),
+    chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
+      ok({ available: options.chatAvailable ?? true })),
+    openSideChat: vi.fn(),
   }
   const sessionId = options.sessionId === 'none' ? undefined : (options.sessionId ?? 's1')
   const props = {
@@ -283,6 +294,67 @@ describe('CanvasSpacePage', () => {
       expect(screen.queryByText('卡片 c_1')).toBeNull()
       expect(screen.getByText('为什么？')).toBeTruthy()
     })
+  })
+
+  it('shows the lens bar on selection and asks through a lens, then activates the side-chat tab', async () => {
+    const { mocks, props } = makeHarness({ board: board([card('c_1'), card('c_2')]) })
+    render(<CanvasSpacePage {...props} />)
+    await screen.findByText('卡片 c_1')
+    const boxes = screen.getAllByRole('checkbox', { name: '选择' })
+    fireEvent.click(boxes[0]!)
+    fireEvent.click(boxes[1]!)
+    await screen.findByText('已选 2 张')
+    fireEvent.click(screen.getByRole('button', { name: '挑战假设' }))
+    await waitFor(() => {
+      expect(mocks.askAgent).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, lens: 'challenge', cardIds: ['c_1', 'c_2'] })
+    })
+    await waitFor(() => {
+      expect(mocks.openSideChat).toHaveBeenCalledWith(`canvas:${CANVAS_ID}`)
+    })
+    // The other lenses are one click each too, including the prime-only 就此提问.
+    fireEvent.click(screen.getByRole('button', { name: '就此提问' }))
+    await waitFor(() => {
+      expect(mocks.askAgent).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, lens: 'ask', cardIds: ['c_1', 'c_2'] })
+    })
+  })
+
+  it('follows up on an agent comment from the card thread', async () => {
+    const commented = card('c_1', {
+      comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
+    })
+    const { mocks, props } = makeHarness({ board: board([commented]) })
+    render(<CanvasSpacePage {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: '1 条评论' }))
+    fireEvent.click(await screen.findByRole('button', { name: /追问/ }))
+    await waitFor(() => {
+      expect(mocks.askAgent).toHaveBeenCalledWith('s1', {
+        canvasId: CANVAS_ID,
+        lens: 'ask',
+        cardIds: ['c_1'],
+        text: '就这条评论继续追问：「这里隐含一个假设」',
+      })
+    })
+  })
+
+  it('hides every chat entry when the seam is absent, and the board keeps working', async () => {
+    const commented = card('c_1', {
+      comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
+    })
+    const { props } = makeHarness({ board: board([commented]), chatAvailable: false })
+    render(<CanvasSpacePage {...props} />)
+    await screen.findByText('卡片 c_1')
+    // Select a card: the selection bar appears without any lens button.
+    fireEvent.click(screen.getAllByRole('checkbox', { name: '选择' })[0]!)
+    await screen.findByText('已选 1 张')
+    expect(screen.queryByRole('button', { name: '挑战假设' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '就此提问' })).toBeNull()
+    // The thread still opens; only the 追问 affordance is gone.
+    fireEvent.click(screen.getByRole('button', { name: '1 条评论' }))
+    await screen.findByText(/这里隐含一个假设/)
+    expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
+    // And the board's own gestures are untouched.
+    expect(screen.getByRole('button', { name: /归档所选/ })).toBeTruthy()
   })
 
   it('restores an archived card from the well', async () => {

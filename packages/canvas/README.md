@@ -6,18 +6,21 @@
 
 **摘要与详情分工**（M1.5）：板上卡片一律摘要态（clamp ~6 行 + 渐隐 + 长文字数标），点正文在右栏「画布详情」tab 读全文——`MarkdownText` 渲染、评论线程、附件预览、编辑保存，跟随卡板选中。
 
+**聊天集成**（M2）：画布不自建聊天，经 **side-chat 插件**承接——选中卡片后透镜条七个透镜（挑战假设/找反例/找证据/追问原因/换个视角/升一层/降一层）+「就此提问」，Agent 评论旁「追问」，详情里选中文字浮动「问 Agent」。Agent 的提议以幽灵卡落板，你 ✓/✗ 决定去留。side-chat 未安装时聊天入口全部隐藏，卡板完整可用。
+
 v1 的工作区级灵感稿纸**存储原样保留**（右栏 tab 已改为详情阅读器，不再是稿纸编辑器），检测到 v1 目录时可以在空间里一次性「导入为画布」（只读复制，原文件不动）。
 
-## 画布空间（v2，M1 + M1.5）
+## 画布空间（v2，M1 + M1.5 + M2）
 
-- **左导轨整页入口**（`sidebar.panellist` + keyed `main`）：从左导轨切进画布空间，再点一下会话区切回。空间不绑定任何工作区；通过「挂载工作区」关联 0..n 个目录。
+- **左导轨整页入口**（`sidebar.panellist` + keyed `main`）：从左导轨切进画布空间，再点一下会话区切回。空间不绑定任何工作区；通过「挂载工作区」关联 0..n 个目录。**preset 自隐**（M2）：当前会话的 preset 组合不含本包时入口自动隐藏；无 preset 配置的 profile 一律可见（fail-open）。
 - **部署级存储**：每块画布是 `$DSH_HOME/state/canvas/<canvasId>/canvas.json` 一个文件（元信息 + 全部卡 + 计数），纯 JSON，任何编辑器都能打开。卸载插件不会删除它。
 - **五种内容卡**：碎片（灵感）/ 问题（open → exploring → answered 生命周期）/ 依据（共同认识）/ 资料（带出处）/ 文档。建卡行内编辑，⌘⏎ 确认。
 - **摘要与详情分工**（M1.5）：板上卡片一律摘要——clamp ~6 行、底部渐隐，长文显示字数标；document 卡用启发式标题（首个 markdown 标题或首行），不再把原文从 `#` 糊上去。**点正文在右栏「画布详情」tab 打开详情**（官方 `openTab` 激活，同一 bundle 共享 store 跟随选中）；多选改由卡片右上角的**悬停勾选框**，与打开详情互不干扰。
 - **右栏「画布详情」阅读器**（M1.5）：kind 图标 + 状态 + 来源 + 时间、`MarkdownText` 渲染**全文**、评论线程（可读可发）、幽灵卡 ✓/✗、附件区（url 链接；文件附件一键调官方文档预览）。**编辑 toggle** 复用 v1 编辑器三件套（非受控 textarea、IME 硬停、⌘⏎ 保存走 `patchCard`），保存后回到阅读态。
+- **聊天集成**（M2，经 side-chat 插件）：选中卡后**透镜条**出现——挑战假设 / 找反例 / 找证据 / 追问原因 / 换个视角 / 升一层 / 降一层，外加「就此提问」；Agent 评论旁「追问」；详情里选中文字浮动「问 Agent」（选区作为引用）。一块画布 = 一个 side-chat 上下文（`canvas:<id>`）= 一个持久 Agent 会话，系统提示每轮新鲜（主题 + 板摘要 + 工具契约 + 透镜语义 + grounding 护栏 + stats 回授）。Agent 经两个工具落板：`canvas_propose_card`（提议卡，proposed 待你 ✓/✗）与 `canvas_comment`（评论挂卡，指出假设/张力并以追问收尾）。**side-chat 缺席时聊天入口全部隐藏，卡板完整可用。**
 - **幽灵提议卡**：`proposed` 状态的卡以虚线幽灵态内联在板上，「收下」转为正式卡、「拒绝」归档（**不做删除**）；接受率计入 `stats`，供后续自调整规则使用。
 - **筛选、多选、归档**：按 kind 的筛选 chips（全部/碎片/问题/依据/资料/文档）；勾选框多选，选择条上可批量归档；已归档的卡进「归档井」，随时恢复。
-- **评论挂卡上**：角标展开线程，评论即数据（后续里程碑里 Agent 的评论会把 open 问题卡自动推进到 exploring）。
+- **评论挂卡上**：角标展开线程，评论即数据（Agent 的评论会把 open 问题卡自动推进到 exploring）。
 - **v1 一次性导入**：列表底部「导入 v1 灵感画布」——选中一个工作区，探测到 `<工作区>/灵感画布/` 后一键复制成新画布（v1 卡片 → 碎片卡、v1 文章 → 文档卡，来源回指原文件绝对路径；**只读，原目录一个字节不动**；v1 已归档的条目留在原地）。
 - **编辑器三件套沿用 v1**：非受控 textarea（光标不跳）、输入法组合期间硬停（候选窗绝不被打断）、板区单滚动容器（卡内编辑框自动增高、绝不自滚动）。
 - **暗色自动跟随**：所有颜色都走官方 `--dsw-*` 主题 token，kind 只靠图标 + 文字区分，不用彩色。
@@ -46,7 +49,8 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 - **web 面插件**：headless profile 没有浏览器消费者，本插件在那里不贡献任何东西。
 - 宿主半边不注册模型可见工具、不向提示词注入任何内容（聊天 dock 与画布工具在后续里程碑）。
 - **v1 写入按「发起这次点击的会话」围栏**。三个写接口（新建/保存/归档）都先取调用会话的沙箱策略再写：围栏挂在会话自己的工作区上，不是宿主的进程目录。所以会话是只读模式时，画布会明确拒绝写入（`这个位置不可写`），而不是悄悄写进去。
-- **v2 板写入围栏重定界到 state 目录**。画布是部署级状态，任何会话的工作区都装不下它：板写入沿用挂载的 `ctx.fs`（版本守卫、原子写、观测轨迹），会话解析出**模式**与 session id（只读部署照样拒绝），但可写边界重定界为插件自己的 `$DSH_HOME/state/canvas`——一个正好围住 state 目录的 workspace-write 围栏，绝不用裸 `node:fs` 绕。`DSH_HOME` 未设置时 state 根退回 `process.cwd()`（datasets 先例）。
+- 宿主半边不做全局工具注册、不向普通会话注入任何内容；画布的两个工具只随 `openWith` 注入画布自己的 side-chat 上下文（origin tag 自带）。**聊天依赖 side-chat 插件但缺席不致命**：探测 `ctx.get('sideChat')`（单向边，manifest `dsh.references` 登记），缺席时聊天入口全部隐藏、卡板完整可用。
+- **v2 板写入围栏重定界到 state 目录**。画布是部署级状态，任何会话的工作区都装不下它：板写入沿用挂载的 `ctx.fs`（版本守卫、原子写、观测轨迹），会话解析出**模式**与 session id（只读部署照样拒绝），但可写边界重定界为插件自己的 `$DSH_HOME/state/canvas`——一个正好围住 state 目录的 workspace-write 围栏，绝不用裸 `node:fs` 绕。`DSH_HOME` 未设置时 state 根退回 `process.cwd()`（datasets 先例）。画布工具的写入走同一条围栏（优先执行 Agent 自己的会话）。
 
 ## Known Limitations
 
@@ -56,7 +60,9 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 - **跨工作区只能读、不能写**。模型的 `read` 不受工作区限制，所以你能把 A 工作区的稿子引用到 B 工作区的会话里；但会话 B 的沙箱以 B 为界，模型改不回 A 的文件。
 - **中文目录名**：`git status` 里会因 `core.quotepath` 显示成八进制转义（功能正常，观感吓人）。宿主侧一律走 `ctx.fs` 拿绝对路径，不 shell 出去，所以中文与空格都不成问题。
 - **HTML 表格的合并单元格降级**为「文本 + 空格子」，不重建跨行列。
-- **M1.5 之后的画布空间仍不做**（后续里程碑）：聊天 dock 与画布 Agent 会话（M2）、模型工具与 stats 自适应规则（M3）、成稿视图与 document 卡的 html 内嵌渲染（文件附件目前调官方文档预览，iframe srcdoc 内嵌版在 M4）、会话侧检索工具（M4）。也没有「粘贴即建卡」与画布标题改名。
+- **M2 之后的画布空间仍不做**（后续里程碑）：`canvas_propose_draft` 与候选 diff 接受流、stats 自适应规则、web 搜索接线（M3）；成稿视图与 document 卡的 html 内嵌渲染、会话侧检索工具（M4）。也没有「粘贴即建卡」与画布标题改名。
+- **画布 Agent 的 cwd 由 side-chat 的继承规则决定**（调用会话的 cwd），不是提案 §6 设想的「首个挂载工作区或画布目录」——那是 side-chat 包的契约，画布不越界修改。
+- **幽灵卡落板的可见性**靠客户端的回合监听（发送后轮询 side-chat 状态并触发重读）；轮询停止后、或别的浏览器标签页的改动，仍靠下一次手势时的版本守卫浮现，板不常驻轮询。
 
 ## 工作原理
 
@@ -79,6 +85,8 @@ $DSH_HOME/state/canvas/<canvasId>/
 **空间客户端**：`ctx.slots.inject('main')` 注册 `{ key: 'canvas' }` 的整页面板，`ctx.slots.inject('sidebar.panellist')` 注册同 id、order 100 的导轨行（宿主侧栏负责行按钮与激活态，插件只给图标与标签）。页面是 root 作用域、没有自己的会话：工作区上下文读全局 `useWorkspaces`，写入围栏搭当前选中会话（`useSessions`）；两者都带常量回退，最小组合（无 ui-session / ui-workspace）里空间照开、只读。
 
 **摘要/详情分工（M1.5）**：板卡一律摘要（CSS clamp ~6 行；`isLongCardText` 判定渐隐与字数标；document 卡标题走 `documentHeadingOf` 纯函数启发式）。点正文写共享 store（`space/selection.ts`，`createSnapshotStore`，`{ canvasId, cardId, rev }`）并经官方 `ctx.sidebarRight.openTab('canvas')` 激活右栏 tab（无挂载会话时 try/catch 降级为只写 store）。右栏 tab 的详情阅读器（`detail/CanvasDetailView.tsx`，session 作用域）经 `hooks.selection` 跟随选中；任一侧的变更动词在 apply 层包装里统一 `touch()` 推 rev，对侧重读跟随。附件区：url 直接链接；文件附件 `fileAddressFor` 组 `dsh-resource://file` 地址，`ctx.sidebarRight.openResource` 调官方文档预览（html 也走它；srcdoc 内嵌版与 `assets/` 读取动词留 M4）。
+
+**聊天集成（M2）**：`askAgent` 动词（agent 优先）探测 `ctx.get('sideChat')`，命中则 `openWith({ contextKey: canvas:<id>, label: 主题, systemPrompt, tools, refs })`——`prompt.ts` 纯函数渲染系统提示段（主题与目标 / 板摘要：各 kind 计数、kept 卡摘要、open 问题列表 / grounding 护栏 / 工具契约 / 透镜语义 / stats 回授段），`tools.ts` 出两个 `defineTool` 定义（`canvas_propose_card` → `proposeCard` 服务路径，`canvas_comment` → `addComment` author agent；origin tag 走 `Symbol.for('dsh.tool.origin')` 免导入路径）。发送规则：自由文本优先，否则非 `ask` 透镜的模板文本，都没有则只 prime。客户端三处发起（透镜条 / 评论「追问」/ 详情选区「问 Agent」），`chatStatus` 探测门控制全部聊天入口的显隐；发送成功后监听 `remote.sidechat.getState`（结构镜像），running 期间定期 `touch()` 共享 rev，幽灵卡随工具调用落板即现。preset 自隐走官方 `pluginInventory`（room 先例），一切读不到 fail OPEN。
 
 **v1 磁盘布局**
 

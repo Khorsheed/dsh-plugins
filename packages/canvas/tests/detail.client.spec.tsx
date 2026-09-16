@@ -17,7 +17,7 @@ import { CanvasDetailView } from '../src/client/detail/CanvasDetailView.tsx'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardMutationResult, BoardReadOutcome, CanvasBoard,
+  BoardAskAgentOutcome, BoardChatStatusResult, BoardMutationResult, BoardReadOutcome, CanvasBoard,
 } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
@@ -66,13 +66,16 @@ interface Harness {
     patchCard: ReturnType<typeof vi.fn>
     addComment: ReturnType<typeof vi.fn>
     openFile: ReturnType<typeof vi.fn>
+    askAgent: ReturnType<typeof vi.fn>
+    chatStatus: ReturnType<typeof vi.fn>
+    openSideChat: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasDetailProps
   readonly current: { board: CanvasBoard }
 }
 
 /** Mount the reader over a fake host whose mutations apply to its board. */
-function makeHarness(cards: CanvasBoard['cards']): Harness {
+function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boolean } = {}): Harness {
   const current = { board: board(cards) }
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
   const store = new CanvasSelectionStore()
@@ -92,6 +95,11 @@ function makeHarness(cards: CanvasBoard['cards']): Harness {
       return ok({ ok: true, board: current.board, version: '2' })
     }),
     openFile: vi.fn(),
+    askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
+      ok({ ok: true, contextKey: `canvas:${CANVAS_ID}`, sent: true })),
+    chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
+      ok({ available: options.chatAvailable ?? true })),
+    openSideChat: vi.fn(),
   }
   const props = {
     t,
@@ -216,6 +224,65 @@ describe('CanvasDetailView', () => {
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: /预览 第一章 雨夜/ }))
     expect(mocks.openFile).toHaveBeenCalledWith('s1', '/ws', '/ws/灵感画布/文章/第一章.md')
+  })
+
+  it('offers 问 Agent over the selected text and sends the selection as a ref', async () => {
+    const { store, mocks, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    const body = await screen.findByText('卡片 c_1 的正文')
+    // Wait for the chat probe before the selection gesture.
+    await waitFor(() => { expect(mocks.chatStatus).toHaveBeenCalled() })
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      isCollapsed: false,
+      toString: () => '卡片 c_1 的正文',
+      rangeCount: 1,
+      getRangeAt: () => ({
+        commonAncestorContainer: body,
+        getBoundingClientRect: () => ({ bottom: 10, left: 5, top: 0, right: 0, width: 0, height: 0 }),
+      }),
+    } as unknown as Selection)
+    fireEvent.mouseUp(body)
+    fireEvent.click(await screen.findByRole('button', { name: /问 Agent/ }))
+    await waitFor(() => {
+      expect(mocks.askAgent).toHaveBeenCalledWith('s1', {
+        canvasId: CANVAS_ID,
+        lens: 'ask',
+        cardIds: ['c_1'],
+        refs: [{ label: '选区', text: '卡片 c_1 的正文' }],
+      })
+    })
+    expect(mocks.openSideChat).toHaveBeenCalledWith(`canvas:${CANVAS_ID}`)
+  })
+
+  it('follows up on an agent comment, and hides the chat entries when the seam is absent', async () => {
+    const commented = card('c_1', {
+      comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
+    })
+    const { store, mocks, props } = makeHarness([commented])
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: /追问/ }))
+    await waitFor(() => {
+      expect(mocks.askAgent).toHaveBeenCalledWith('s1', {
+        canvasId: CANVAS_ID,
+        lens: 'ask',
+        cardIds: ['c_1'],
+        text: '就这条评论继续追问：「这里隐含一个假设」',
+      })
+    })
+  })
+
+  it('hides 追问 and the selection offer when side-chat is absent', async () => {
+    const commented = card('c_1', {
+      comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
+    })
+    const { store, props } = makeHarness([commented], { chatAvailable: false })
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText(/这里隐含一个假设/)
+    expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /问 Agent/ })).toBeNull()
   })
 
   it('shows an archived card with its tag and restores it', async () => {

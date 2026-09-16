@@ -1,25 +1,24 @@
 /**
- * Inspiration canvas, browser half: the v2 canvas space (主题画布空间) and
- * its card-detail reader.
+ * Inspiration canvas, browser half: the v2 canvas space (主题画布空间), its
+ * card-detail reader, and — M2 — the chat integration through the side-chat
+ * seam.
  *
  * It mounts the canvas Remote through the official `ctx.remote.$mount`
- * channel and surfaces twice: as a root-level space — the keyed `main` panel
- * 'canvas' plus its `sidebar.panellist` rail row, so the left rail switches
- * the whole main area to the canvas space — and as the page-type
- * `sidebar.right.pane.tab` entry, which since M1.5 is the CARD-DETAIL
- * READER: it follows the board's selection through the shared store and
- * renders the one open card in full. (The v1 pad editor retired from this
- * seat; the pad's files stay on disk and the space's one-shot import carries
- * them into canvases.)
+ * channel and surfaces twice: as a root-level space (the keyed `main` panel
+ * 'canvas' plus its `sidebar.panellist` rail row) and as the page-type
+ * `sidebar.right.pane.tab` entry (the card-detail reader). All four
+ * registrations ride the preset-visibility toggles (M2's self-hide: hidden
+ * when the CURRENT session's preset composition does not name this package's
+ * row, fail-OPEN everywhere else — a preset-less profile never loses the
+ * space).
  *
- * Every seat is probed, never assumed: the registrations ride
- * `ctx.slots.inject`, so a host that declares neither `main` nor
- * `sidebar.panellist` simply never mounts the space; with no `remote.canvas`
- * mounted, the views still register and report the missing half instead of
- * throwing through boot. The detail tab's activation rides the official
- * `ctx.sidebarRight.openTab` inside a try/catch — a composition without a
- * mounted session (or the right Sidebar at all) still gets the shared-store
- * selection, just no forced tab switch.
+ * The chat edge is ONE-WAY and probed: `remote.canvas.askAgent` primes the
+ * canvas's side-chat context host-side; the client only activates the
+ * side-chat tab through the official `openTab` (params mirrored
+ * structurally — the sidechat package is never imported) and watches the
+ * turn through a probed `remote.sidechat.getState` so the board re-reads as
+ * the agent's tool calls land. Every probe degrades: no side-chat → every
+ * chat entry hides and the board keeps working.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -40,29 +39,32 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import { CanvasDetailView } from './detail/CanvasDetailView.tsx'
-import type { CanvasDetailInjected, CanvasRemote, CanvasSpaceInjected } from './contract.ts'
+import type { CanvasChatInjected, CanvasDetailInjected, CanvasRemote, CanvasSpaceInjected } from './contract.ts'
 import { CANVAS_KIND, CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
+import { CanvasPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { CanvasSpacePage } from './space/CanvasSpacePage.tsx'
 import { CANVAS_PANEL_ID, CanvasNavIcon } from './space/definition.tsx'
 import { CanvasSelectionStore } from './space/selection.ts'
 
 export { CanvasDetailView } from './detail/CanvasDetailView.tsx'
 export { CANVAS_KIND, CANVAS_TAB_ID } from './definition.ts'
+export { CanvasPresetVisibility, CANVAS_ROW_MODULE, RegistrationToggle } from './preset-visibility.ts'
 export { CanvasSpacePage } from './space/CanvasSpacePage.tsx'
 export { BoardView } from './space/BoardView.tsx'
 export { CardTextarea } from './space/CardTextarea.tsx'
 export { CANVAS_PANEL_ID, CanvasNavIcon } from './space/definition.tsx'
 export { CanvasSelectionStore } from './space/selection.ts'
 export type {
-  CanvasDetailInjected, CanvasDetailProps, CanvasRemote, CanvasSpaceInjected, CanvasSpacePageProps,
+  CanvasChatInjected, CanvasDetailInjected, CanvasDetailProps, CanvasRemote,
+  CanvasSpaceInjected, CanvasSpacePageProps,
 } from './contract.ts'
 export * from './paste-table.ts'
 
 /**
- * Required services: slots, the remote channel, the locale, the right-Sidebar
- * faces (the tab-type registry and the navigation service the detail tab's
- * activation and attachment previews go through).
+ * Required services: slots, sessions, the remote channel, the locale, and the
+ * right-Sidebar faces (the tab-type registry and the navigation service the
+ * detail tab's activation and attachment previews go through).
  * `remote.canvas` is deliberately NOT an inject: this plugin both mounts the
  * namespace (through `$mount` below) and consumes it, and the Cordis
  * property proxy only resolves services declared in `inject` or provided by
@@ -70,16 +72,17 @@ export * from './paste-table.ts'
  * awaited and the namespace is then read back from the global store with
  * `ctx.get` (the ui-file-preview precedent).
  */
-export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs']
+export const inject = ['slots', 'remote', 'locale', 'sessions', 'sidebarRight', 'sidebarRightTabs']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, then the
- * detail tab type and its reader body, then the canvas space (main panel +
- * rail row).
+ * four visibility-gated registrations (detail tab type + body, space main
+ * panel + rail row).
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
+  const timers = new Set<ReturnType<typeof setTimeout>>()
   try {
     disposers.push(await ctx.remote.$mount(canvasRemote))
   } catch (error) {
@@ -115,6 +118,47 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
 
   /**
+   * Watch one sent turn: while the side-chat context runs, the agent's tool
+   * calls land on the host board, so the shared rev is touched per poll and
+   * both seats re-read. The sidechat namespace is probed through `ctx.get`
+   * (never injected, never imported — a structural mirror of `getState`);
+   * without it the board simply refreshes on the next gesture.
+   */
+  const watchTurn = (contextKey: string): void => {
+    const sidechat = ctx.get('remote.sidechat') as {
+      getState?: (key: string) => Promise<
+        | { ok: true; value: { ok: true; state: { status: string } } | { ok: false } }
+        | { ok: false }
+      >
+    } | undefined
+    if (sidechat?.getState === undefined) return
+    const getState = sidechat.getState.bind(sidechat)
+    let polls = 0
+    const tick = async (): Promise<void> => {
+      polls += 1
+      try {
+        const result = await getState(contextKey)
+        const status = result.ok && result.value.ok ? result.value.state.status : undefined
+        if (status === 'running' || status === 'idle') selection.touch()
+        if (status === 'running' && polls < 60) {
+          const timer = setTimeout(() => {
+            timers.delete(timer)
+            void tick()
+          }, 2000)
+          timers.add(timer)
+        }
+      } catch {
+        // A failed poll ends the watch silently; the next gesture refreshes.
+      }
+    }
+    const first = setTimeout(() => {
+      timers.delete(first)
+      void tick()
+    }, 1500)
+    timers.add(first)
+  }
+
+  /**
    * Activate the detail tab through the official navigation face. `openTab`
    * requires a mounted session; a composition without one (or without the
    * right Sidebar) degrades to the store write alone — the tab renders the
@@ -128,7 +172,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
   }
 
+  const chatFace: CanvasChatInjected = {
+    askAgent: async (sessionId, request) => {
+      const result = touchOnSuccess(await requireRemote().askAgent(sessionId, request))
+      if (result.ok && result.value.ok && result.value.sent) watchTurn(result.value.contextKey)
+      return result
+    },
+    chatStatus: () => requireRemote().chatStatus(),
+    openSideChat: contextKey => {
+      try {
+        // The side-chat kind's params are ITS contract; the call is mirrored
+        // structurally — the package is never imported (the one edge is the
+        // probed service, declared in dsh.references).
+        ;(ctx.sidebarRight as unknown as {
+          openTab(kind: string, options?: { params?: Record<string, unknown> }): void
+        }).openTab('sidechat', { params: { contextKey } })
+      } catch (error) {
+        ctx.logger.warn('canvas: openTab(sidechat) failed (no mounted session?)', error)
+      }
+    },
+  }
+
   const spaceFace = (): CanvasSpaceInjected => ({
+    ...chatFace,
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
     probeV1Pad: request => requireRemote().list(request),
@@ -148,6 +214,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     hooks: { selection: selection.source },
   })
   const detailFace = (): CanvasDetailInjected => ({
+    ...chatFace,
     readBoard: request => requireRemote().readBoard(request),
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
@@ -161,37 +228,79 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     hooks: { selection: selection.source },
   })
 
-  // Stage one of the right-Sidebar registration: the page type itself (guide
-  // entry, no address claims). The default band is 'extension', correct for a
-  // type shipped from outside the product.
-  ctx.effect(() => ctx.sidebarRightTabs.register(canvasDefinition(t)), 'canvas: tab type')
+  /* ------------------------- the preset-visibility self-hide (M2, fail-open) */
 
-  // Stage two: the detail reader's body under the type's id in the keyed pane seat.
-  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-    name: 'sidebar.right.pane.tab',
-    key: CANVAS_TAB_ID,
-    locale: NS,
-    inject: detailFace,
-  }, CanvasDetailView)), 'canvas: detail reader body')
+  const visibility = new CanvasPresetVisibility(ctx)
+  const showSpace = (): boolean => visibility.show(ctx.sessions.list.getSnapshot().current)
+  // Hiding the ACTIVE main panel would strand the frame on an unregistered
+  // key: leave it first (the layout face is probed, never injected).
+  const leaveCanvasPanel = (): void => {
+    try {
+      (ctx.get('layout') as { selectPanel?: (id: null) => void } | undefined)?.selectPanel?.(null)
+    } catch { /* the next navigation re-selects; nothing to repair */ }
+  }
 
-  // The v2 canvas space: one id for the main panel key and the rail row (the
-  // shell matches them). Both ride slots.inject, so a host without either
-  // seat degrades silently.
-  ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
-    name: 'main',
-    key: CANVAS_PANEL_ID,
-    locale: NS,
-    inject: spaceFace,
-  }, CanvasSpacePage)), 'canvas: space main panel')
-  ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-    name: 'sidebar.panellist',
-    id: CANVAS_PANEL_ID,
-    order: 100,
-    label: () => t('space.nav'),
-    locale: NS,
-  }, CanvasNavIcon)), 'canvas: space rail row')
+  const mainToggle = new RegistrationToggle(
+    () => ctx.slots.register({
+      name: 'main',
+      key: CANVAS_PANEL_ID,
+      locale: NS,
+      inject: spaceFace,
+    }, CanvasSpacePage),
+    showSpace,
+    leaveCanvasPanel,
+  )
+  ctx.slots.inject('main', () => {
+    mainToggle.setReady(true)
+    return () => { mainToggle.setReady(false) }
+  })
+
+  const panelToggle = new RegistrationToggle(
+    () => ctx.slots.register({
+      name: 'sidebar.panellist',
+      id: CANVAS_PANEL_ID,
+      order: 100,
+      label: () => t('space.nav'),
+      locale: NS,
+    }, CanvasNavIcon),
+    showSpace,
+  )
+  ctx.slots.inject('sidebar.panellist', () => {
+    panelToggle.setReady(true)
+    return () => { panelToggle.setReady(false) }
+  })
+
+  // The tab type registration owns no slot arm, so its toggle is ready at once.
+  const typeToggle = new RegistrationToggle(
+    () => ctx.sidebarRightTabs.register(canvasDefinition(t)),
+    showSpace,
+  )
+  typeToggle.setReady(true)
+
+  const bodyToggle = new RegistrationToggle(
+    () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab',
+      key: CANVAS_TAB_ID,
+      locale: NS,
+      inject: detailFace,
+    }, CanvasDetailView),
+    showSpace,
+  )
+  ctx.slots.inject('sidebar.right.pane.tab', () => {
+    bodyToggle.setReady(true)
+    return () => { bodyToggle.setReady(false) }
+  })
+
+  ctx.effect(() => visibility.subscribe(() => {
+    mainToggle.sync()
+    panelToggle.sync()
+    typeToggle.sync()
+    bodyToggle.sync()
+  }), 'canvas: space visibility')
 
   return async () => {
+    for (const timer of timers) clearTimeout(timer)
+    timers.clear()
     await Promise.all(disposers.map(dispose => dispose()))
   }
 }

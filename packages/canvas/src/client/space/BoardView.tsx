@@ -27,8 +27,8 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  BOARD_CARD_KINDS, documentHeadingOf, isLongCardText,
-  type BoardCard, type BoardCardKind, type BoardCardStatus, type CanvasBoard,
+  BOARD_CARD_KINDS, CANVAS_LENS_IDS, documentHeadingOf, isLongCardText,
+  type BoardCard, type BoardCardKind, type BoardCardStatus, type CanvasBoard, type CanvasLensId,
 } from '../../types.ts'
 import type {} from '../locales.ts'
 import { CardTextarea } from './CardTextarea.tsx'
@@ -63,6 +63,12 @@ export interface BoardViewProps {
   readonly onClearSelection: () => void
   /** Open one card in the right-Sidebar detail reader (a body click). */
   readonly onOpenDetail: (cardId: string) => void
+  /** Whether the side-chat seam answered the probe (the lens bar and 追问 hide without it). */
+  readonly chatAvailable: boolean
+  /** Ask the canvas's agent through one lens over the current selection. */
+  readonly onAsk: (lens: CanvasLensId) => void
+  /** Follow up on one comment (card id + the comment's text). */
+  readonly onFollowUp: (cardId: string, commentText: string) => void
   readonly editingId: string | null
   readonly onEditingChange: (cardId: string | null) => void
   readonly draftKind: BoardCardKind | null
@@ -88,11 +94,13 @@ function basenameOf(path: string): string {
 }
 
 /** One comment thread under a card (badge toggle + list + the user's form). */
-function CommentThread({ t, card, readonly, onComment }: {
+function CommentThread({ t, card, readonly, chatAvailable, onComment, onFollowUp }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
   readonly readonly: boolean
+  readonly chatAvailable: boolean
   readonly onComment: (text: string) => void
+  readonly onFollowUp: (commentText: string) => void
 }): ReactNode {
   return (
     <div className={css.commentThread} onClick={event => { event.stopPropagation() }}>
@@ -103,6 +111,18 @@ function CommentThread({ t, card, readonly, onComment }: {
           </span>
           {'：'}
           {comment.text}
+          {comment.author === 'agent' && chatAvailable && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className={css.followUp}
+                onClick={() => { onFollowUp(comment.text) }}
+              >
+                {t('chat.followup')} →
+              </button>
+            </>
+          )}
         </span>
       ))}
       {!readonly && (
@@ -144,7 +164,7 @@ function CardSummary({ t, card }: {
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggleSelect, onOpenDetail, onEditingChange, actions }: {
+function CardItem({ t, card, readonly, selected, editing, archivedWell, chatAvailable, onToggleSelect, onOpenDetail, onFollowUp, onEditingChange, actions }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
   readonly readonly: boolean
@@ -152,8 +172,10 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
   readonly editing: boolean
   /** Rendered inside the archived well (restore is the only gesture). */
   readonly archivedWell?: boolean
+  readonly chatAvailable: boolean
   readonly onToggleSelect: () => void
   readonly onOpenDetail: () => void
+  readonly onFollowUp: (commentText: string) => void
   readonly onEditingChange: (cardId: string | null) => void
   readonly actions: BoardActions
 }): ReactNode {
@@ -310,7 +332,14 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
                 : t('comment.many', { count: String(card.comments.length) })}
           </button>
           {threadOpen && (
-            <CommentThread t={t} card={card} readonly={readonly} onComment={text => { actions.comment(card.id, text) }} />
+            <CommentThread
+              t={t}
+              card={card}
+              readonly={readonly}
+              chatAvailable={chatAvailable}
+              onComment={text => { actions.comment(card.id, text) }}
+              onFollowUp={onFollowUp}
+            />
           )}
         </>
       )}
@@ -321,6 +350,7 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
 /** The board view. */
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
+  chatAvailable, onAsk, onFollowUp,
   editingId, onEditingChange, draftKind, onDraftKindChange, actions, showArchived, onToggleArchived,
 }: BoardViewProps): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -407,6 +437,16 @@ export function BoardView({
         {selection.size > 0 && (
           <div className={css.selBar}>
             <span className={css.selCount}>{t('board.selected', { count: String(selection.size) })}</span>
+            {chatAvailable && CANVAS_LENS_IDS.map(lens => (
+              <button
+                key={lens}
+                type="button"
+                className={lens === 'ask' ? css.lensPrimary : css.lens}
+                onClick={() => { onAsk(lens) }}
+              >
+                {t(`lens.${lens}`)}
+              </button>
+            ))}
             {!readonly && (
               <button type="button" className={css.ghostButton} onClick={() => { actions.archiveSelected() }}>
                 <IconArchiveOutline20 size={12} />
@@ -473,8 +513,10 @@ export function BoardView({
                 readonly={readonly}
                 selected={selection.has(card.id)}
                 editing={editingId === card.id}
+                chatAvailable={chatAvailable}
                 onToggleSelect={() => { onToggleSelect(card.id) }}
                 onOpenDetail={() => { onOpenDetail(card.id) }}
+                onFollowUp={commentText => { onFollowUp(card.id, commentText) }}
                 onEditingChange={onEditingChange}
                 actions={actions}
               />
@@ -499,8 +541,10 @@ export function BoardView({
                     selected={false}
                     editing={false}
                     archivedWell
+                    chatAvailable={chatAvailable}
                     onToggleSelect={() => {}}
                     onOpenDetail={() => {}}
+                    onFollowUp={() => {}}
                     onEditingChange={() => {}}
                     actions={actions}
                   />

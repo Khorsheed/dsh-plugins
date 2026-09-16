@@ -419,6 +419,57 @@
   font-weight: 500;
 }
 
+/* The lens bar lives inside the selection bar (storyboard: pill buttons). */
+.lens {
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--dsw-font-family);
+  padding: 4px 11px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lens:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.lensPrimary {
+  border: none;
+  background: var(--dsw-static-deepseek-400);
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--dsw-font-family);
+  font-weight: 500;
+  padding: 4px 11px;
+  color: var(--dsw-alias-label-primary-inverted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lensPrimary:hover {
+  filter: brightness(1.08);
+}
+
+/* The per-comment 追问 affordance (agent comments only). */
+.followUp {
+  display: inline;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  font-family: var(--dsw-font-family);
+  color: var(--dsw-static-deepseek-400);
+  cursor: pointer;
+}
+
+.followUp:hover {
+  text-decoration: underline;
+}
+
 .iconButton {
   display: inline-flex;
   align-items: center;
