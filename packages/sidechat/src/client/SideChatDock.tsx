@@ -41,7 +41,7 @@ export function SideChatDock({
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - x, offsetY: event.clientY - y }
-    event.currentTarget.setPointerCapture(event.pointerId)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
   }, [x, y])
   const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
