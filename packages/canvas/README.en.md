@@ -4,28 +4,29 @@ English | [中文](README.md)
 
 **Inspiration canvas (灵感画布)** — since v2, a **topic canvas space at the same level as workspaces**: one "Canvas" entry on the left rail opens a full-page surface pairing a canvas list column with the card board. One canvas = one topic = a deployment-level entity accumulating five card kinds — fragments, questions, grounding (shared understandings), references, documents; model proposals land on the board as ghost cards, and your ✓/✗ decides their fate.
 
-The v1 workspace pad (the right-Sidebar tab: one inspiration = one markdown file) is **kept exactly as it is**, and when a v1 directory is detected the space offers a one-shot "import as canvas" (a read-only copy — the original files are never touched).
+**Summary/detail split** (M1.5): board cards are always summaries (clamped at ~6 lines with a fade and a word count for long texts); clicking a body opens the full card in the right-Sidebar "Card detail" tab — `MarkdownText` rendering, the comment thread, attachment previews, editing — following the board's selection.
 
-## The canvas space (v2, M1)
+The v1 workspace pad's **storage is kept exactly as it is** (the right-Sidebar tab is now the detail reader, no longer the pad editor), and when a v1 directory is detected the space offers a one-shot "import as canvas" (a read-only copy — the original files are never touched).
+
+## The canvas space (v2, M1 + M1.5)
 
 - **A full-page rail entry** (`sidebar.panellist` + keyed `main`): the left rail switches the whole main area to the canvas space, and the conversation is one click back. A canvas binds no workspace; it attaches 0..n workspace directories.
 - **Deployment-level storage**: every canvas is one `$DSH_HOME/state/canvas/<canvasId>/canvas.json` (metadata + every card + counters) — plain JSON any editor can open. Uninstalling the plugin never deletes it.
 - **Five content card kinds**: fragment (a thought) / question (open → exploring → answered lifecycle) / grounding (a shared understanding) / reference (with a source) / document. New cards edit inline, ⌘⏎ to confirm.
+- **Summary/detail split** (M1.5): every board card renders a summary — clamped at ~6 lines with a fade, long texts carry a word count; document cards lead with a derived heading (the first markdown heading or first line) instead of the raw `#` opener. **Clicking a body opens the card in the right-Sidebar detail tab** (activated through the official `openTab`, following via a shared store in the same bundle); multi-select moved to a **hover checkbox** in the card's corner so it never fights the open gesture.
+- **The right-Sidebar "Card detail" reader** (M1.5): kind icon + status + source + times, the FULL text through `MarkdownText`, the comment thread (readable and postable), ghost ✓/✗, and the attachment area (url link; a file attachment opens the official document preview). The **edit toggle** reuses the v1 editor invariants (uncontrolled textarea, IME hard stop, ⌘⏎ saving through `patchCard`) and returns to reading.
 - **Ghost proposal cards**: a `proposed` card sits inline with a dashed ghost frame; "Accept" turns it into a real card, "Reject" archives it (**there is no delete**); the acceptance counters feed `stats` for the self-tuning rules of later milestones.
-- **Filter, multi-select, archive**: kind filter chips (all/fragment/question/grounding/reference/document); click cards to multi-select and batch-archive from the selection bar; archived cards wait in the archive well, restorable any time.
+- **Filter, multi-select, archive**: kind filter chips (all/fragment/question/grounding/reference/document); checkbox multi-select with batch archive from the selection bar; archived cards wait in the archive well, restorable any time.
 - **Comments hang on cards**: a badge unfolds the thread; comments are data (in later milestones an agent comment moves an open question card to exploring automatically).
 - **One-shot v1 import**: "Import a v1 pad" at the list's foot — pick a workspace, and when `<workspace>/灵感画布/` is found, copy it into a new canvas in one gesture (v1 cards → fragment cards, v1 articles → document cards, sources pointing back at the original absolute paths; **read-only — not one byte of the pad changes**; items already archived in the pad stay behind).
 - **The editor invariants carry over from v1**: uncontrolled textareas (the caret never jumps), a hard stop while an IME composes (the candidate window is never torn down), and one scroll container for the whole board (card editors auto-grow and never scroll themselves).
 - **Dark mode follows the theme**: every colour is an official `--dsw-*` token; kind is told by icon + words only, never by colour.
 
-## The v1 pad (kept)
+## The v1 pad (storage kept, editor retired)
 
 - **One inspiration = one file.** The originals live under `<workspace>/灵感画布/`, with `文章/` (articles) and `卡片/` (cards) as the two shapes and the file name as the title. No database, no private format.
-- **A full-height writing surface** (a `sidebar.right.pane.tab` page-type tab): the inspiration list on the left (collapsible), edit / preview / split on the right. Switching to split collapses the list once, handing the width back to the text.
-- **Paste a table, get a table.** Copying a table out of Excel, Numbers, a web page, or Word turns into a real markdown table (a real table in the preview). Anything it cannot read is **pasted as-is** — ordinary prose is never mangled. Space-aligned tables (PDFs, plain text) have an explicit “selection to table” action instead.
-- **Copy the absolute path for the model.** The status line always shows the workspace-relative path (short, readable); the copy button yields the absolute one — because you reference a draft from **another session, even another workspace**.
-- **Archive, never delete.** Archiving hides an item from the list and **does not touch the file at all** (the official session-archive semantics); the archive well restores it, to its recorded position.
-- **Friendly to Chinese input**: no save and no re-render while an IME is composing, an uncontrolled editor so the caret never jumps, and auto-save behind a version guard (a change made elsewhere stops the save instead of being silently overwritten).
+- **Since M1.5 the right-Sidebar tab is the "Card detail" reader** (above); the v1 pad editor retired from the tab: the pad's future is "import as canvas" (above); the files stay on disk, openable by any editor; the v1 five Remote verbs (`list` / `read` / `create` / `write` / `setArchived`) stay on the wire untouched.
+- **Archive, never delete** (the same semantics in the space and the pad): archiving hides an item from the list and **does not touch the file at all**; the archive well restores it.
 
 ## Install
 
@@ -55,7 +56,7 @@ Restart the host afterwards. Uninstalling does **not** delete `$DSH_HOME/state/c
 - **Cross-workspace reads only.** The model's `read` is not workspace-bound, so you can reference a workspace-A draft from a session in workspace B; but B's sandbox fences at B, so the model cannot write back into A.
 - **Chinese directory name**: `git status` shows it as octal escapes under `core.quotepath` (harmless, alarming to look at). The host resolves everything through `ctx.fs` and never shells out, so non-ASCII and spaces are not a problem.
 - **Merged HTML table cells degrade** to “text plus empty slots”; spans are not rebuilt.
-- **M1's space does not** (later milestones): the chat dock and the per-canvas agent session (M2); the model tools and the stats-driven self-tuning rules (M3); the draft view, document-card rendering, session-side search tools, and the v1 right-Sidebar entry's removal (M4). M1 also ships no paste-to-create and no canvas renaming.
+- **The space still does not, after M1.5** (later milestones): the chat dock and the per-canvas agent session (M2); the model tools and the stats-driven self-tuning rules (M3); the draft view and the document cards' inline html rendering (file attachments currently open the official document preview — the sandboxed srcdoc inline version lands with `assets/` in M4); the session-side search tools (M4). There is still no paste-to-create and no canvas renaming.
 
 ## How it works
 
@@ -77,6 +78,8 @@ Each `cards[]` entry: `{ id, kind, text, source?, status: proposed|kept|archived
 
 **The space client**: `ctx.slots.inject('main')` registers the full-page panel under `key: 'canvas'`; `ctx.slots.inject('sidebar.panellist')` registers the rail row with the same id at order 100 (the host sidebar owns the row button and its active state; the plugin supplies the icon and the label). The page is root scope and owns no session: workspace context arrives through the global `useWorkspaces` hook, and the write fence rides the currently selected session (`useSessions`); both hooks carry a constant fallback, so a minimal composition (no ui-session / ui-workspace) still opens the space, read-only.
 
+**The summary/detail split (M1.5)**: board cards are summaries (a CSS clamp at ~6 lines; `isLongCardText` drives the fade and the word count; document titles come from the pure `documentHeadingOf` heuristic). A body click writes the shared store (`space/selection.ts`, `createSnapshotStore`, `{ canvasId, cardId, rev }`) and activates the right-Sidebar tab through the official `ctx.sidebarRight.openTab('canvas')` (try/catch-degraded to the store write alone when no session is mounted). The tab's detail reader (`detail/CanvasDetailView.tsx`, session scope) follows through `hooks.selection`; either seat's mutating verbs `touch()` the store's rev in the apply-level face wrappers, so the other seat re-reads. Attachments: urls are plain links; a file attachment is addressed by `fileAddressFor` into a `dsh-resource://file` address and opened through `ctx.sidebarRight.openResource` (the official document preview — html included; the inline srcdoc variant and an `assets/` read verb are M4's).
+
 **v1 on-disk layout**
 
 ```
@@ -90,9 +93,9 @@ Each `cards[]` entry: `{ id, kind, text, source?, status: proposed|kept|archived
 
 **v1 host half**: `CanvasService` (the core) plus `CanvasRemoteService` (a Typert Remote). Five verbs, all **plain JSON, absolute-path arguments, no session lookup** (the local-files convention). Every write goes through the mounted `ctx.fs`, so the deployment's sandbox mode fences it and the observation policy sees it; the version guard is `writeText`'s `{ kind: 'replaceIfVersion' }`, and a conflict returns `stale` instead of overwriting.
 
-**v1 browser half**: `ctx.remote.$mount` mounts the Remote, then registers the tab type (its `guide` capsule puts it on the official guide page, and when it is a pane's only registered type the official `defaultSeed` enters it directly) and the body on the keyed `sidebar.right.pane.tab`. With no host half (`ctx.get('remote.canvas')` is undefined) the browser half still registers and reports the missing half rather than failing boot.
+**v1 browser half** (the detail reader since M1.5): `ctx.remote.$mount` mounts the Remote, then registers the tab type (its `guide` capsule puts it on the official guide page, and when it is a pane's only registered type the official `defaultSeed` enters it directly) and the body on the keyed `sidebar.right.pane.tab` (now `CanvasDetailView`). With no host half (`ctx.get('remote.canvas')` is undefined) the browser half still registers and reports the missing half rather than failing boot.
 
-**Three hard editor constraints** (in `CanvasView.tsx` and in the space's card editors alike, because breaking any one wrecks writing): an uncontrolled `<textarea>` whose `value` is never written back after mount; no save and no submit while an IME is composing; and exactly one scroll container — the pad textarea's, the board's own.
+**Three hard editor constraints** (one implementation in `space/CardTextarea.tsx`, shared by the board and the detail reader, because breaking any one wrecks writing): an uncontrolled `<textarea>` whose `value` is never written back after mount; no save and no submit while an IME is composing; and exactly one scroll container — the board's or the detail root's.
 
 **Paste conversion** (`paste-table.ts`, pure functions): the `<table>` inside `text/html` is tried first (only the table, never the whole document — a spreadsheet's clipboard HTML carries the entire sheet and its styling), with tab-separated plain text as the fallback; insertion uses `document.execCommand('insertText')` to preserve the browser's native undo stack.
 
