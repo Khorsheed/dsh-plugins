@@ -130,6 +130,17 @@ describe('provisionCondition — one click, and the condition is ready (G7)', ()
     expect(view.checks.some(check => check.code === 'HOME_SHA_WRITTEN')).toBe(true)
   })
 
+  it('never puts a tick beside a field the declaration left null', async () => {
+    // `model.endpoint: null` is the reason the readiness gate refuses this
+    // condition, and provision reports it with no severity only because there
+    // was nothing to compare it against (I5·T58 · G6).
+    const { service } = bound()
+    const view = await service.provisionCondition({ dataset: 'ds', condition: 'dsh-exec' }, SESSION)
+    const endpoint = view.checks.find(check => check.message.startsWith('model.endpoint:'))
+
+    expect(endpoint).toMatchObject({ severity: 'warn', code: 'UNRESOLVED_FIELD' })
+  })
+
   it('refuses a condition id that is not a file name, and an unbound session', async () => {
     const { service } = bound()
 
