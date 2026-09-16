@@ -4,7 +4,7 @@
 
 **灵感画布** —— v2 起是**与工作区平级的主题画布空间**：左导轨一个「画布」入口，整页承载「左列画布列表 + 卡片板」。一块画布 = 一个主题 = 部署级实体，上面积累碎片、问题、依据（共同认识）、资料、文档五种卡；模型的提议以幽灵卡落板，你 ✓/✗ 决定它的去留。
 
-**摘要与详情分工**（M1.5）：板上卡片一律摘要态（clamp ~6 行 + 渐隐 + 长文字数标），点正文在右栏「画布详情」tab 读全文——`MarkdownText` 渲染、评论线程、附件预览、编辑保存，跟随卡板选中。
+**摘要与详情分工**（M1.5，详情位置 M2.5 修正）：板上卡片一律摘要态（clamp ~6 行 + 渐隐 + 长文字数标），点正文在**空间内右列详情 pane** 读全文——`MarkdownText` 渲染、评论线程、附件预览、编辑保存，跟随卡板选中（宿主右栏只在会话面板渲染，详情 pane 因此搬进空间内部；右栏 tab 保留给会话场景）。
 
 **聊天集成**（M2）：画布不自建聊天，经 **side-chat 插件**承接——选中卡片后透镜条七个透镜（挑战假设/找反例/找证据/追问原因/换个视角/升一层/降一层）+「就此提问」，Agent 评论旁「追问」，详情里选中文字浮动「问 Agent」。Agent 的提议以幽灵卡落板，你 ✓/✗ 决定去留。side-chat 未安装时聊天入口全部隐藏，卡板完整可用。
 
@@ -15,8 +15,8 @@ v1 的工作区级灵感稿纸**存储原样保留**（右栏 tab 已改为详�
 - **左导轨整页入口**（`sidebar.panellist` + keyed `main`）：从左导轨切进画布空间，再点一下会话区切回。空间不绑定任何工作区；通过「挂载工作区」关联 0..n 个目录。**不做会话 preset 自隐**：preset 在会话创建时绑定，而画布是跨会话空间——按会话 preset 隐藏入口等于永久隐藏（3080 实证）；模式可见性由 profile / 整合包的安装层决定。
 - **部署级存储**：每块画布是 `$DSH_HOME/state/canvas/<canvasId>/canvas.json` 一个文件（元信息 + 全部卡 + 计数），纯 JSON，任何编辑器都能打开。卸载插件不会删除它。
 - **五种内容卡**：碎片（灵感）/ 问题（open → exploring → answered 生命周期）/ 依据（共同认识）/ 资料（带出处）/ 文档。建卡行内编辑，⌘⏎ 确认。
-- **摘要与详情分工**（M1.5）：板上卡片一律摘要——clamp ~6 行、底部渐隐，长文显示字数标；document 卡用启发式标题（首个 markdown 标题或首行），不再把原文从 `#` 糊上去。**点正文在右栏「画布详情」tab 打开详情**（官方 `openTab` 激活，同一 bundle 共享 store 跟随选中）；多选改由卡片右上角的**悬停勾选框**，与打开详情互不干扰。
-- **右栏「画布详情」阅读器**（M1.5）：kind 图标 + 状态 + 来源 + 时间、`MarkdownText` 渲染**全文**、评论线程（可读可发）、幽灵卡 ✓/✗、附件区（url 链接；文件附件一键调官方文档预览）。**编辑 toggle** 复用 v1 编辑器三件套（非受控 textarea、IME 硬停、⌘⏎ 保存走 `patchCard`），保存后回到阅读态。
+- **摘要与详情分工**（M1.5，详情位置 M2.5 修正）：板上卡片一律摘要——clamp ~6 行、底部渐隐，长文显示字数标；document 卡用启发式标题（首个 markdown 标题或首行），不再把原文从 `#` 糊上去。**点正文在空间内右列详情 pane 打开详情**（宿主右栏只在会话面板激活时渲染——`RightbarRoot` 的契约——所以详情 pane 搬进空间内部；右栏「画布详情」tab 保留给会话场景，两处同读一个选中 store）。多选改由卡片右上角的**悬停勾选框**，与打开详情互不干扰。
+- **空间内详情阅读器**（M2.5）：kind 图标 + 状态 + 来源 + 时间、`MarkdownText` 渲染**全文**、评论线程（可读可发）、幽灵卡 ✓/✗、附件区（url 链接；文件附件在会话场景一键调官方文档预览）。**编辑 toggle** 复用 v1 编辑器三件套（非受控 textarea、IME 硬停、⌘⏎ 保存走 `patchCard`），保存后回到阅读态。pane 可收起为窄条，折叠状态记忆；无会话时只读。
 - **聊天集成**（M2，经 side-chat 插件）：选中卡后**透镜条**出现——挑战假设 / 找反例 / 找证据 / 追问原因 / 换个视角 / 升一层 / 降一层，外加「就此提问」；Agent 评论旁「追问」；详情里选中文字浮动「问 Agent」（选区作为引用）。一块画布 = 一个 side-chat 上下文（`canvas:<id>`）= 一个持久 Agent 会话，系统提示每轮新鲜（主题 + 板摘要 + 工具契约 + 透镜语义 + grounding 护栏 + stats 回授）。Agent 经两个工具落板：`canvas_propose_card`（提议卡，proposed 待你 ✓/✗）与 `canvas_comment`（评论挂卡，指出假设/张力并以追问收尾）。**side-chat 缺席时聊天入口全部隐藏，卡板完整可用。**
 - **幽灵提议卡**：`proposed` 状态的卡以虚线幽灵态内联在板上，「收下」转为正式卡、「拒绝」归档（**不做删除**）；接受率计入 `stats`，供后续自调整规则使用。
 - **筛选、多选、归档**：按 kind 的筛选 chips（全部/碎片/问题/依据/资料/文档）；勾选框多选，选择条上可批量归档；已归档的卡进「归档井」，随时恢复。
@@ -84,7 +84,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **空间客户端**：`ctx.slots.inject('main')` 注册 `{ key: 'canvas' }` 的整页面板，`ctx.slots.inject('sidebar.panellist')` 注册同 id、order 100 的导轨行（宿主侧栏负责行按钮与激活态，插件只给图标与标签）。页面是 root 作用域、没有自己的会话：工作区上下文读全局 `useWorkspaces`，写入围栏搭当前选中会话（`useSessions`）；两者都带常量回退，最小组合（无 ui-session / ui-workspace）里空间照开、只读。
 
-**摘要/详情分工（M1.5）**：板卡一律摘要（CSS clamp ~6 行；`isLongCardText` 判定渐隐与字数标；document 卡标题走 `documentHeadingOf` 纯函数启发式）。点正文写共享 store（`space/selection.ts`，`createSnapshotStore`，`{ canvasId, cardId, rev }`）并经官方 `ctx.sidebarRight.openTab('canvas')` 激活右栏 tab（无挂载会话时 try/catch 降级为只写 store）。右栏 tab 的详情阅读器（`detail/CanvasDetailView.tsx`，session 作用域）经 `hooks.selection` 跟随选中；任一侧的变更动词在 apply 层包装里统一 `touch()` 推 rev，对侧重读跟随。附件区：url 直接链接；文件附件 `fileAddressFor` 组 `dsh-resource://file` 地址，`ctx.sidebarRight.openResource` 调官方文档预览（html 也走它；srcdoc 内嵌版与 `assets/` 读取动词留 M4）。
+**摘要/详情分工（M1.5；详情位置 M2.5 修正）**：板卡一律摘要（CSS clamp ~6 行；`isLongCardText` 判定渐隐与字数标；document 卡标题走 `documentHeadingOf` 纯函数启发式）。点正文写共享 store（`space/selection.ts`，`createSnapshotStore`，`{ canvasId, cardId, rev }`），**空间内右列详情 pane** 经同一 store 跟随（M2.5：宿主 `RightbarRoot` 只在会话面板渲染右栏，`openTab` 在画布里必败，故详情搬进空间内部、不再程序化激活右栏 tab；右栏 tab 注册保留给会话场景，两处共享 store 天然一致）。pane 复用 `detail/CanvasDetailView.tsx`（无会话时只读），可收起，折叠状态 localStorage 记忆。任一侧的变更动词在 apply 层包装里统一 `touch()` 推 rev，对侧重读跟随。附件区：url 直接链接；文件附件 `fileAddressFor` 组 `dsh-resource://file` 地址，`ctx.sidebarRight.openResource` 调官方文档预览（空间内按构造静默，会话场景有效；srcdoc 内嵌版与 `assets/` 读取动词留 M4）。
 
 **聊天集成（M2）**：`askAgent` 动词（agent 优先）探测 `ctx.get('sideChat')`，命中则 `openWith({ contextKey: canvas:<id>, label: 主题, systemPrompt, tools, refs })`——`prompt.ts` 纯函数渲染系统提示段（主题与目标 / 板摘要：各 kind 计数、kept 卡摘要、open 问题列表 / grounding 护栏 / 工具契约 / 透镜语义 / stats 回授段），`tools.ts` 出两个 `defineTool` 定义（`canvas_propose_card` → `proposeCard` 服务路径，`canvas_comment` → `addComment` author agent；origin tag 走 `Symbol.for('dsh.tool.origin')` 免导入路径）。发送规则：自由文本优先，否则非 `ask` 透镜的模板文本，都没有则只 prime。客户端三处发起（透镜条 / 评论「追问」/ 详情选区「问 Agent」），`chatStatus` 探测门控制全部聊天入口的显隐；发送成功后监听 `remote.sidechat.getState`（结构镜像），running 期间定期 `touch()` 共享 rev，幽灵卡随工具调用落板即现。画布不做会话 preset 自隐（preset 绑定会话创建、画布是跨会话空间，自隐=永隐）；可见性由 profile / 整合包的安装层决定。
 
