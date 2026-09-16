@@ -85,10 +85,14 @@ export interface CanvasSpaceInjected extends CanvasChatInjected {
   /** One workspace's v1 pad listing (the import flow's probe and count). */
   probeV1Pad: (request: CanvasListRequest) => Promise<RemoteResult<CanvasListResult>>
   /**
-   * Open one card in the right-Sidebar detail reader (a board body click):
-   * the shared store is written, then the canvas tab is activated through the
-   * official `openTab` when a session is mounted (a no-op otherwise — the
-   * store alone already carries the selection).
+   * Open a file attachment in the official document preview (shared with the
+   * detail face; inside the space the right Sidebar never renders, so this is
+   * a silent no-op there by construction — RightbarRoot's contract).
+   */
+  openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
+  /**
+   * Open one card in the in-space detail pane (a board body click): the
+   * shared store is written, and the page expands the pane on selection.
    */
   selectCard: (canvasId: string, cardId: string) => void
   hooks: {
@@ -127,9 +131,14 @@ export interface CanvasDetailInjected extends CanvasChatInjected {
   }
 }
 
-/** Full props of the card-detail reader. */
+/**
+ * Full props of the card-detail reader. `sessionId` is optional: the
+ * right-Sidebar seat always supplies one, while the in-space pane (root
+ * scope) passes the currently selected session — possibly none, in which
+ * case the reader renders read-only (no edits, no comments, no asks).
+ */
 export type CanvasDetailProps =
-  & { sessionId: SessionId }
+  & { sessionId: SessionId | undefined }
   & GlobalStandardProps
   & InjectFace<CanvasDetailInjected>
   & PropsLocale<'canvas'>

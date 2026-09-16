@@ -5,12 +5,17 @@
  * create-canvas and new-card flows, the ghost proposal's accept/reject wiring
  * to patchCard status transitions, selection with batch archive, the question
  * card's mark-answered, the IME hard stop on a card editor, read-only mode
- * without a session, and the v1 import probe → import chain.
+ * without a session, the v1 import probe → import chain, the chat entries
+ * (lens bar, comment follow-up, their full-hide degrade), and — M2.5 — the
+ * in-space detail pane: opening on a body click, rendering the full card,
+ * and its remembered fold state.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useSyncExternalStore } from 'react'
 import type { CanvasSpacePageProps } from '../src/client/contract.ts'
 import { CanvasSpacePage } from '../src/client/space/CanvasSpacePage.tsx'
+import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
   BoardAskAgentOutcome, BoardChatStatusResult, BoardListResult, BoardMutationResult,
@@ -85,10 +90,13 @@ interface Harness {
     askAgent: ReturnType<typeof vi.fn>
     chatStatus: ReturnType<typeof vi.fn>
     openSideChat: ReturnType<typeof vi.fn>
+    openFile: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasSpacePageProps
   /** Current board the fake host holds (mutations answer it back). */
   current: { board: CanvasBoard }
+  /** The REAL selection store the harness's selectCard writes (the pane follows). */
+  store: CanvasSelectionStore
 }
 
 /** Mount the page over a fake host: one board, every verb a mock. */
@@ -106,6 +114,9 @@ function makeHarness(options: {
   // create/import mint a NEW canvas, so their receipts carry a fresh id (the
   // real service never echoes the open board back).
   const minted = { ...current.board, id: 'canvas_new00000abcdefgh' }
+  // A REAL selection store: the pane tests rely on the same channel the board
+  // and the detail use in production (mocking it would test nothing).
+  const store = new CanvasSelectionStore()
   const mocks = {
     listCanvases: vi.fn(async (): Promise<Result<BoardListResult>> => ok({ items: [rowOf(current.board)] })),
     createCanvas: vi.fn(async (): Promise<Result<BoardMutationResult>> => ok({ ok: true, board: minted, version: '2' })),
@@ -116,29 +127,35 @@ function makeHarness(options: {
     archiveCanvas: vi.fn(async (): Promise<Result<BoardMutationResult>> => mutation()),
     importV1: vi.fn(async (): Promise<Result<BoardImportResult>> => ok({ ok: true, board: minted, version: '2', imported: 2 })),
     probeV1Pad: vi.fn(async (): Promise<Result<CanvasListResult>> => ok({ items: [{ name: '卡片/雨伞的意象.md' }, { name: '文章/第一章.md' }] as never, archived: [] })),
-    selectCard: vi.fn(),
+    selectCard: vi.fn((canvasId: string, cardId: string) => { store.select(canvasId, cardId) }),
     askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
       ok({ ok: true, contextKey: `canvas:${CANVAS_ID}`, sent: true })),
     chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
       ok({ available: options.chatAvailable ?? true })),
     openSideChat: vi.fn(),
+    openFile: vi.fn(),
   }
   const sessionId = options.sessionId === 'none' ? undefined : (options.sessionId ?? 's1')
   const props = {
     t,
     ...mocks,
-    useSessions: ((selector: (snapshot: { current: string | undefined }) => unknown) =>
-      selector({ current: sessionId })) as CanvasSpacePageProps['useSessions'],
+    // The page reads `current`; the detail pane reads `byId[<id>].cwd`.
+    useSessions: ((selector: (snapshot: { current: string | undefined; byId: Record<string, { cwd: string }> }) => unknown) =>
+      selector({ current: sessionId, byId: sessionId === undefined ? {} : { [sessionId]: { cwd: '/ws' } } })) as CanvasSpacePageProps['useSessions'],
     useWorkspaces: ((selector: (snapshot: { items: readonly unknown[] }) => unknown) =>
       selector({ items: options.workspaces ?? [] })) as CanvasSpacePageProps['useWorkspaces'],
-    // No detail selection in these specs: the feed is a fixed empty snapshot.
-    useSelection: ((selector: (snapshot: { canvasId: null; cardId: null; rev: number }) => unknown) =>
-      selector({ canvasId: null, cardId: null, rev: 0 })) as CanvasSpacePageProps['useSelection'],
+    useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
+      return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
+    } as CanvasSpacePageProps['useSelection'],
   } as CanvasSpacePageProps
-  return { mocks, props, current }
+  return { mocks, props, current, store }
 }
 
-afterEach(() => { cleanup() })
+afterEach(() => {
+  cleanup()
+  // The pane's fold preference persists in localStorage — never across tests.
+  window.localStorage.clear()
+})
 
 describe('CanvasSpacePage', () => {
   it('loads the list and opens the first canvas\'s board', async () => {
@@ -355,6 +372,47 @@ describe('CanvasSpacePage', () => {
     expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
     // And the board's own gestures are untouched.
     expect(screen.getByRole('button', { name: /归档所选/ })).toBeTruthy()
+  })
+
+  it('opens the in-space detail pane on a body click and renders the card in full', async () => {
+    const longText = `长文全文。\n${'这是一段很长的正文，用来证明详情 pane 里不做摘要折叠。\n'.repeat(10)}结尾。`
+    const { props } = makeHarness({ board: board([card('c_1', { text: longText })]) })
+    render(<CanvasSpacePage {...props} />)
+    // The pane starts with its empty state.
+    await screen.findByText('在画布空间点一张卡，在这里读全文')
+    fireEvent.click(await screen.findByText(/这是一段很长的正文/))
+    // The pane follows the selection store and renders the FULL text.
+    await screen.findByText(/结尾。/)
+    expect(screen.queryByText('在画布空间点一张卡，在这里读全文')).toBeNull()
+  })
+
+  it('collapses the pane to its rail, remembers the fold, and re-expands on a new open', async () => {
+    const { props } = makeHarness({ board: board([card('c_1')]) })
+    const first = render(<CanvasSpacePage {...props} />)
+    // The pane's empty state is its unique marker (the board never renders it).
+    await screen.findByText('在画布空间点一张卡，在这里读全文')
+    fireEvent.click(screen.getByText('卡片 c_1'))
+    // A selection replaces the empty state with the reader (collapse button shows).
+    await screen.findByRole('button', { name: '收起详情' })
+    expect(screen.queryByText('在画布空间点一张卡，在这里读全文')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '收起详情' }))
+    expect(window.localStorage.getItem('canvas.detailPane')).toBe('closed')
+    // The rail replaces the pane: only the expand affordance remains.
+    await screen.findByRole('button', { name: '展开详情' })
+    expect(screen.queryByRole('button', { name: '收起详情' })).toBeNull()
+    first.unmount()
+    // The fold survives a remount — a real reload starts a fresh store, so
+    // the second mount gets one (a still-selected card would rightfully
+    // re-open the pane, which is the first mount's own behavior above).
+    const second = render(<CanvasSpacePage {...makeHarness({ board: board([card('c_1')]) }).props} />)
+    await screen.findByText('卡片 c_1')
+    await screen.findByRole('button', { name: '展开详情' })
+    expect(screen.queryByRole('button', { name: '收起详情' })).toBeNull()
+    // Re-expanding on demand.
+    fireEvent.click(screen.getByRole('button', { name: '展开详情' }))
+    await screen.findByRole('button', { name: '收起详情' })
+    expect(window.localStorage.getItem('canvas.detailPane')).toBe('open')
+    second.unmount()
   })
 
   it('restores an archived card from the well', async () => {

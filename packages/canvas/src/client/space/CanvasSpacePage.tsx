@@ -19,8 +19,8 @@ import {
   useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode,
 } from 'react'
 import {
-  IconArchiveOutline20, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconPlusOutline16, IconRefreshOutline14, relativeTime,
+  IconArchiveOutline20, IconChevronDownOutline14, IconChevronLeftOutline14,
+  IconChevronRightOutline14, IconPlusOutline16, IconRefreshOutline14, relativeTime,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasSpacePageProps } from '../contract.ts'
@@ -29,6 +29,7 @@ import {
   type BoardAskAgentRequest, type BoardCardKind, type BoardCardStatus,
   type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasSummary,
 } from '../../types.ts'
+import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { BoardView, type BoardActions } from './BoardView.tsx'
 import css from './CanvasSpacePage.module.css'
 
@@ -43,6 +44,25 @@ const useNoSessions = ((selector: (snapshot: { current: undefined }) => unknown)
   selector({ current: undefined })) as unknown as CanvasSpacePageProps['useSessions']
 const useNoWorkspaces = ((selector: (snapshot: { items: readonly [] }) => unknown) =>
   selector({ items: [] })) as unknown as CanvasSpacePageProps['useWorkspaces']
+
+/** The detail pane's fold preference key (localStorage; best-effort). */
+const PANE_PREF_KEY = 'canvas.detailPane'
+
+/** Read the remembered fold state (default open; storage failures read open). */
+function readPanePref(): boolean {
+  try {
+    return window.localStorage.getItem(PANE_PREF_KEY) !== 'closed'
+  } catch {
+    return true
+  }
+}
+
+/** Remember the fold state (storage failures are fine — it is a preference). */
+function writePanePref(open: boolean): void {
+  try {
+    window.localStorage.setItem(PANE_PREF_KEY, open ? 'open' : 'closed')
+  } catch { /* a preference, not state */ }
+}
 
 /** True when a promise rejection or remote failure carries a usable message. */
 function messageOf(error: unknown): string {
@@ -65,6 +85,7 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
   // shared rev, and the board re-reads (its own mutations ride the same bump —
   // one idempotent extra read, the price of never going stale).
   const selectionRev = useSelection(current => current.rev)
+  const detailCardId = useSelection(current => current.cardId)
 
   const [canvases, setCanvases] = useState<readonly CanvasSummary[] | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -86,6 +107,8 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
   const [fatal, setFatal] = useState<string | null>(null)
   /** The chat seam's probe: null while probing, so entries never flash. */
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
+  /** The detail pane's fold state, remembered across reloads (M2.5). */
+  const [paneOpen, setPaneOpen] = useState(readPanePref)
 
   const toastTimerRef = useRef<number | null>(null)
   const boardRef = useRef(openBoard)
@@ -148,6 +171,14 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
     })()
     return () => { cancelled = true }
   }, [chatStatus, run])
+
+  // A card opened on the board expands the detail pane (the whole point of
+  // the click); the fold state itself is remembered, never forced back shut.
+  useEffect(() => {
+    if (detailCardId !== null) setPaneOpen(true)
+  }, [detailCardId])
+
+  useEffect(() => { writePanePref(paneOpen) }, [paneOpen])
 
   /**
    * Ask the canvas's agent: prime the context with the current selection (or
@@ -369,7 +400,7 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
   const archivedRows = canvases?.filter(canvas => canvas.archivedAt !== null) ?? []
 
   return (
-    <div className={css.root}>
+    <div className={css.root} data-pane={paneOpen ? 'open' : 'closed'}>
       <aside className={css.list}>
         <div className={css.listHead}>
           <span className={css.listTitle}>{t('space.title')}</span>
@@ -596,6 +627,39 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
             {canvases === null || openId !== null ? t('state.loading') : t('space.empty')}
           </div>
         </section>
+      )}
+
+      {paneOpen ? (
+        <div className={css.detailPane}>
+          <div className={css.paneBar}>
+            <span className={css.spacer} />
+            <button
+              type="button"
+              className={css.iconButton}
+              title={t('pane.collapse')}
+              aria-label={t('pane.collapse')}
+              onClick={() => { setPaneOpen(false) }}
+            >
+              <IconChevronRightOutline14 size={13} />
+            </button>
+          </div>
+          <CanvasDetailView
+            {...props}
+            sessionId={sessionId}
+          />
+        </div>
+      ) : (
+        <div className={css.paneRail}>
+          <button
+            type="button"
+            className={css.iconButton}
+            title={t('pane.expand')}
+            aria-label={t('pane.expand')}
+            onClick={() => { setPaneOpen(true) }}
+          >
+            <IconChevronLeftOutline14 size={13} />
+          </button>
+        </div>
       )}
 
       {toast !== null && <div className={css.toast}>{toast}</div>}

@@ -25,6 +25,7 @@ import {
   MarkdownText, type MarkdownLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   documentHeadingOf,
   type BoardAskAgentRequest, type BoardCard, type BoardMutationResult, type CanvasBoard, type CanvasError,
@@ -70,6 +71,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const useSessions = props.useSessions ?? useNoSessions
   const workspaceRoot = useSessions(sessions =>
     sessionId === undefined ? undefined : sessions.byId[sessionId]?.cwd)
+  /** The pane (root scope) can sit above no session: the reader then reads only. */
+  const readonly = sessionId === undefined
 
   const [open, setOpen] = useState<{ board: CanvasBoard; version: string } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -149,10 +152,11 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   /** Run one mutation: the service answers the fresh board; apply it in place. */
   const mutate = useCallback(async (
-    call: () => Promise<RemoteResult<BoardMutationResult>>,
+    call: (sessionId: SessionId) => Promise<RemoteResult<BoardMutationResult>>,
     toastKey: Parameters<typeof t>[0],
   ): Promise<void> => {
-    const value = await run(call)
+    if (sessionId === undefined) return
+    const value = await run(() => call(sessionId))
     if (value === null) return
     if (!value.ok) {
       showToast(errorText(value.error))
@@ -160,10 +164,12 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     }
     setOpen({ board: value.board, version: value.version })
     showToast(t(toastKey))
-  }, [run, showToast, errorText, t])
+  }, [sessionId, run, showToast, errorText, t])
 
-  // Probe the chat seam once per mount: 问 Agent / 追问 hide when absent.
+  // Probe the chat seam once per mount: 问 Agent / 追问 hide when absent
+  // (and a session-less pane never asks at all).
   useEffect(() => {
+    if (readonly) return
     let cancelled = false
     void (async () => {
       const value = await run(() => chatStatus())
@@ -171,12 +177,12 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       setChatAvailable(value.available)
     })()
     return () => { cancelled = true }
-  }, [chatStatus, run])
+  }, [readonly, chatStatus, run])
 
   /** Ask through the seam and activate the side-chat tab (the ask flow's tail). */
   const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
     const canvasId = selection.canvasId
-    if (canvasId === null) return
+    if (sessionId === undefined || canvasId === null) return
     const value = await run(() => askAgent(sessionId, { canvasId, ...request }))
     if (value === null) return
     if (!value.ok) {
@@ -285,7 +291,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>
           )}
           <span className={css.spacer} />
-          {!editing && !proposed && !archived && (
+          {!editing && !proposed && !archived && !readonly && (
             <button
               type="button"
               className={css.iconButton}
@@ -296,11 +302,11 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               {t('detail.edit')}
             </button>
           )}
-          {archived && (
+          {archived && !readonly && (
             <button
               type="button"
               className={css.iconButton}
-              onClick={() => void mutate(() => patchCard(sessionId, {
+              onClick={() => void mutate(sid => patchCard(sid, {
                 canvasId: open.board.id, cardId: card.id, status: 'kept',
               }), 'toast.cardRestored')}
             >
@@ -311,12 +317,12 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         </div>
       </div>
 
-      {proposed && (
+      {proposed && !readonly && (
         <div className={css.ghostActions}>
           <button
             type="button"
             className={css.accept}
-            onClick={() => void mutate(() => patchCard(sessionId, {
+            onClick={() => void mutate(sid => patchCard(sid, {
               canvasId: open.board.id, cardId: card.id, status: 'kept',
             }), 'toast.accepted')}
           >
@@ -325,7 +331,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           </button>
           <button
             type="button"
-            onClick={() => void mutate(() => patchCard(sessionId, {
+            onClick={() => void mutate(sid => patchCard(sid, {
               canvasId: open.board.id, cardId: card.id, status: 'archived',
             }), 'toast.rejected')}
           >
@@ -347,7 +353,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
                 const trimmed = text.trim()
                 setEditing(false)
                 if (trimmed.length === 0 || trimmed === card.text) return
-                void mutate(() => patchCard(sessionId, {
+                void mutate(sid => patchCard(sid, {
                   canvasId: open.board.id, cardId: card.id, text: trimmed,
                 }), 'toast.cardSaved')
               }}
@@ -396,7 +402,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <button
               type="button"
               className={css.attachmentButton}
-              onClick={() => { openFile(sessionId, workspaceRoot, card.source!.ref) }}
+              onClick={() => { if (sessionId !== undefined) openFile(sessionId, workspaceRoot, card.source!.ref) }}
             >
               <IconRightUpOutline14 size={12} />
               {t('detail.openFile', { name: card.source.title ?? basenameOf(card.source.ref) })}
@@ -442,6 +448,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             )}
           </span>
         ))}
+        {!readonly && (
         <div className={css.commentForm}>
           <CardTextarea
             className={css.editor}
@@ -452,12 +459,13 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             onSubmit={text => {
               const trimmed = text.trim()
               if (trimmed.length === 0) return
-              void mutate(() => addComment(sessionId, {
+              void mutate(sid => addComment(sid, {
                 canvasId: open.board.id, cardId: card.id, text: trimmed,
               }), 'toast.commented')
             }}
           />
         </div>
+        )}
       </div>
 
       {toast !== null && <div className={css.toast}>{toast}</div>}

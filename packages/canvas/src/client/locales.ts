@@ -151,6 +151,9 @@ export const zh = {
   'chat.unavailable': '聊天不可用（side-chat 未安装），卡板不受影响',
   'chat.askFailed': '提问失败：{message}',
 
+  'pane.collapse': '收起详情',
+  'pane.expand': '展开详情',
+
   'q.open': '待探索',
   'q.exploring': '探索中',
   'q.answered': '已有初步回答',
@@ -326,6 +329,9 @@ export const en: Record<keyof typeof zh, string> = {
   'chat.selectionRef': 'Selection',
   'chat.unavailable': 'Chat is unavailable (side-chat not installed) — the board is unaffected',
   'chat.askFailed': 'Ask failed: {message}',
+
+  'pane.collapse': 'Collapse detail',
+  'pane.expand': 'Expand detail',
 
   'q.open': 'Open',
   'q.exploring': 'Exploring',

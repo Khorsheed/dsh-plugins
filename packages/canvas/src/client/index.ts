@@ -35,10 +35,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls ui-sidebar's SlotMap merge ('sidebar.panellist').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import { CanvasDetailView } from './detail/CanvasDetailView.tsx'
 import type { CanvasChatInjected, CanvasDetailInjected, CanvasRemote, CanvasSpaceInjected } from './contract.ts'
-import { CANVAS_KIND, CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
+import { CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
 import { CanvasSpacePage } from './space/CanvasSpacePage.tsx'
 import { CANVAS_PANEL_ID, CanvasNavIcon } from './space/definition.tsx'
@@ -153,20 +154,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     timers.add(first)
   }
 
-  /**
-   * Activate the detail tab through the official navigation face. `openTab`
-   * requires a mounted session; a composition without one (or without the
-   * right Sidebar) degrades to the store write alone — the tab renders the
-   * detail whenever it is open by any other means.
-   */
-  const activateDetailTab = (): void => {
-    try {
-      ctx.sidebarRight.openTab(CANVAS_KIND)
-    } catch (error) {
-      ctx.logger.warn('canvas: openTab failed (no mounted session?)', error)
-    }
-  }
-
   const chatFace: CanvasChatInjected = {
     askAgent: async (sessionId, request) => {
       const result = touchOnSuccess(await requireRemote().askAgent(sessionId, request))
@@ -178,7 +165,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       try {
         // The side-chat kind's params are ITS contract; the call is mirrored
         // structurally — the package is never imported (the one edge is the
-        // probed service, declared in dsh.references).
+        // probed service, declared in dsh.references). NOTE: the right Sidebar
+        // only renders for the conversation panel (RightbarRoot's contract),
+        // so inside the canvas space this reveal is a silent no-op — side-chat
+        // M3's own floating dock is the in-space answer, not this call.
         ;(ctx.sidebarRight as unknown as {
           openTab(kind: string, options?: { params?: Record<string, unknown> }): void
         }).openTab('sidechat', { params: { contextKey } })
@@ -188,11 +178,25 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
   }
 
+  /**
+   * Open a file attachment in the official document preview (shared by both
+   * faces; the right Sidebar itself only renders for the conversation panel,
+   * so inside the space this too is a silent no-op by construction).
+   */
+  const openFile = (sessionId: SessionId, cwd: string | undefined, path: string): void => {
+    try {
+      ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
+    } catch (error) {
+      ctx.logger.warn('canvas: openResource failed (no mounted session?)', error)
+    }
+  }
+
   const spaceFace = (): CanvasSpaceInjected => ({
     ...chatFace,
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
     probeV1Pad: request => requireRemote().list(request),
+    openFile,
     // The mutating calls hand the CURRENT session to the host: the board is
     // deployment-level state, and the host re-roots that session's fence mode
     // at the canvas state dir.
@@ -202,9 +206,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
     importV1: async (sessionId, request) => touchOnSuccess(await requireRemote().importV1(sessionId, request)),
+    // A body click selects the card in the shared store; the in-space detail
+    // pane follows it (the page expands the pane on selection).
     selectCard: (canvasId, cardId) => {
       selection.select(canvasId, cardId)
-      activateDetailTab()
     },
     hooks: { selection: selection.source },
   })
@@ -213,13 +218,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     readBoard: request => requireRemote().readBoard(request),
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
-    openFile: (sessionId, cwd, path) => {
-      try {
-        ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
-      } catch (error) {
-        ctx.logger.warn('canvas: openResource failed (no mounted session?)', error)
-      }
-    },
+    openFile,
     hooks: { selection: selection.source },
   })
 
