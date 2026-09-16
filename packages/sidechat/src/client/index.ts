@@ -55,6 +55,8 @@ export { SIDECHAT_KIND, SIDECHAT_TAB_ID, sidechatDefinition } from './definition
 export type { SideChatTabParams } from './definition.ts'
 export { createSideChatDockStore } from './dock-store.ts'
 export { lastSeenOf, markSeen } from './seen.ts'
+export { useOpenWithSurfacer, SURFACE_POLL_MS, SURFACE_NARROW_WIDTH } from './use-open-with-surfacer.ts'
+export type { OpenWithSurfacerOptions } from './use-open-with-surfacer.ts'
 export type {
   SideChatInjected, SideChatQuoteInjected, SideChatDockInjected, SideChatRemote,
   SideChatViewProps, QuoteActionProps, SideChatDockProps,
@@ -112,36 +114,40 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return mounted
   }
   const controller = new SideChatDockController()
+  // Surface one context on the right-Sidebar tab: the official navigation
+  // face, probed — without it the call is a no-op (never a boot failure).
+  const openTabWith = (contextKey: string): void => {
+    const sidebarRight = ctx.get('sidebarRight') as ISidebarRight | undefined
+    sidebarRight?.openTab(SIDECHAT_KIND, { params: { contextKey } })
+  }
   const browserFace = (): SideChatInjected => ({
     getState: contextKey => requireRemote().getState({ contextKey }),
     listContexts: () => requireRemote().listContexts(),
     // The mutating call hands the session to the host: it fences the state
     // write on that session and inherits its cwd for a fresh side session.
     send: (sessionId, request) => requireRemote().send(sessionId, request),
+    surfaceHints: () => requireRemote().surfaceHints(),
     // The overlay seat is probed lazily (at the tab body's mount, after the
     // shell's own apply): without it the「弹出为浮层」button simply hides.
     dockAvailable: () => ctx.slots.spec('shell.overlay') !== undefined,
     openDock: (contextKey) => { controller.openDock(contextKey) },
+    openTab: openTabWith,
   })
   const quoteFace = (): SideChatQuoteInjected => ({
     quote: (sessionId, request) => requireRemote().quoteMessage(sessionId, request),
-    // Programmatic tab activation: the official right-Sidebar navigation face,
-    // probed — without it the ref still lands, only the reveal is skipped.
-    openSideChat: (contextKey) => {
-      const sidebarRight = ctx.get('sidebarRight') as ISidebarRight | undefined
-      sidebarRight?.openTab(SIDECHAT_KIND, { params: { contextKey } })
-    },
+    openSideChat: openTabWith,
   })
   const dockFace = (actions: DockActions): SideChatDockInjected => ({
     getState: contextKey => requireRemote().getState({ contextKey }),
     listContexts: () => requireRemote().listContexts(),
     send: (sessionId, request) => requireRemote().send(sessionId, request),
+    surfaceHints: () => requireRemote().surfaceHints(),
+    openTab: openTabWith,
     // Close the dock AND reveal the tab on the same context: the「回到侧栏
     // tab」gesture is a hand-off, not a dismissal.
     closeToTab: (contextKey) => {
       actions.close()
-      const sidebarRight = ctx.get('sidebarRight') as ISidebarRight | undefined
-      sidebarRight?.openTab(SIDECHAT_KIND, { params: { contextKey } })
+      openTabWith(contextKey)
     },
   })
 

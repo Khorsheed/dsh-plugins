@@ -27,7 +27,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   SideChatListResult, SideChatQuoteOutcome, SideChatQuoteRequest,
-  SideChatSendOutcome, SideChatSendRequest, SideChatStateOutcome,
+  SideChatSendOutcome, SideChatSendRequest, SideChatStateOutcome, SideChatSurfaceHints,
 } from '../types.ts'
 import type { createSideChatDockStore } from './dock-store.ts'
 import type {} from './locales.ts'
@@ -50,10 +50,14 @@ export interface SideChatInjected {
   listContexts: () => Promise<RemoteResult<SideChatListResult>>
   /** Send one user message into one context (pending refs fold in and clear). */
   send: (sessionId: SessionId, request: SideChatSendRequest) => Promise<RemoteResult<SideChatSendOutcome>>
+  /** The openWith revisions of every known context (the surfacer's diff basis). */
+  surfaceHints: () => Promise<RemoteResult<SideChatSurfaceHints>>
   /** Whether the floating dock's seat exists (the「弹出为浮层」button's visibility). */
   dockAvailable: () => boolean
   /** Open the floating dock on one context. */
   openDock: (contextKey: string) => void
+  /** Surface one context on THIS tab (re-navigates it — the tab-side surfacer's move). */
+  openTab: (contextKey: string) => void
 }
 
 /** Full props of the side-chat tab body. */
@@ -75,6 +79,10 @@ export interface SideChatDockInjected {
   listContexts: () => Promise<RemoteResult<SideChatListResult>>
   /** Send one user message into one context (pending refs fold in and clear). */
   send: (sessionId: SessionId, request: SideChatSendRequest) => Promise<RemoteResult<SideChatSendOutcome>>
+  /** The openWith revisions of every known context (the surfacer's diff basis). */
+  surfaceHints: () => Promise<RemoteResult<SideChatSurfaceHints>>
+  /** Surface one context on the right-Sidebar tab (the surfacer's conversation-panel move). */
+  openTab: (contextKey: string) => void
   /** Close the dock and reveal the tab on one context. */
   closeToTab: (contextKey: string) => void
 }

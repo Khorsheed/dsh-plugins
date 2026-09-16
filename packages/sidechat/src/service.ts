@@ -37,7 +37,7 @@ import {
   type SideChatContextRecord, type SideChatContextsDoc, type SideChatContextSummary,
   type SideChatListResult, type SideChatOpenInput, type SideChatQuoteOutcome, type SideChatQuoteRequest,
   type SideChatRef, type SideChatSendOutcome, type SideChatSendRequest, type SideChatState,
-  type SideChatStateOutcome, type SideChatStatus,
+  type SideChatStateOutcome, type SideChatStatus, type SideChatSurfaceHints,
 } from './types.ts'
 
 /** Plugin config for the side-chat service; every key is optional. */
@@ -315,7 +315,9 @@ export class SideChatService {
       if (input.tools !== undefined) {
         for (const def of input.tools) runtime.tools.set(def.name, def)
       }
-      runtime.record = { ...record, updatedAt: new Date().toISOString() }
+      // Every openWith bumps the revision: the client's surfacer diffs it
+      // over the wire and surfaces the context the consumer just opened.
+      runtime.record = { ...record, rev: (record.rev ?? 0) + 1, updatedAt: new Date().toISOString() }
       await this.persist()
       // The prompt section reads the record fresh by itself; tools need a live re-attach.
       if (input.tools !== undefined && runtime.record.sessionId !== undefined) {
@@ -365,6 +367,24 @@ export class SideChatService {
       refs: record.refs,
       transcript,
     }
+  }
+
+  /**
+   * The openWith revisions of every known context — the surfacer's diff
+   * basis. The lightest read the service offers: memory only, no projection,
+   * no inspection, so a 2.5s poll costs one map iteration.
+   * @returns contextKey → openWith revision pairs.
+   */
+  async surfaceHints(): Promise<SideChatSurfaceHints> {
+    return this.mutate(async () => {
+      await this.ensureLoaded()
+      return {
+        items: [...this.contexts.values()].map(runtime => ({
+          contextKey: runtime.record.contextKey,
+          rev: runtime.record.rev ?? 0,
+        })),
+      }
+    })
   }
 
   /**

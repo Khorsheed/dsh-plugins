@@ -9,6 +9,7 @@
 - **ref chip 内联展开**：composer 上方的待发送引用、以及 transcript 里用户消息携带的引用，都可点击展开为完整引用块（label + 全文，可收起）——引用内容随对话走，不用回来源 tab 查看。transcript 的引用是从持久消息文本里按我们自己的折叠格式解析回来的（重启后依然在）。
 - **浮动 dock 模式**：tab 头部「弹出为浮层」把整个聊天面板变成一个可拖动的浮层（注册在官方 `shell.overlay` 帧层，worktrees badge 先例）——在自定义 main 面板（如画布空间）上边看内容边聊天，详情 tab 不用让位。浮层可拖动、位置记忆（框架 client store 持久化），关闭即回到侧栏 tab 同上下文；发送搭当前选中会话（无选中时只读）。无 overlay 座位或窄屏时降级为只 tab。
 - **多 context 切换**：tab 顶部标题即上下文选择器（listContexts），切换即换 transcript；非当前上下文有新 assistant 回复时显示未读点（宿主侧投影给出每个上下文的最新 assistant 时间，客户端按 last-seen 标记比对，标记持久在 localStorage）。
+- **openWith 自我浮出水面（M3）**：消费方一调 `openWith`，side-chat 客户端自己决定在哪里出现——消费方不用再（也无法可靠地）唤起右栏。机制：宿主给每个上下文维护 openWith 修订号（`rev`，仅 openWith 递增、持久化），客户端经轻量 Remote 动词 `surfaceHints` 轮询并比对；呈现规则是——会话面板激活（`usePanelInfo().activePanelId === null`）→ 右栏 tab；自定义 main 面板（如画布空间）→ 浮层 dock 并切到对应 contextKey；dock 座位缺席或窄屏 → 仍 `openTab`（导航被记录，回到会话面板即见）。**根因**：官方 `RightbarRoot` 只在会话面板激活时渲染右栏，所以消费方在自定义面板里 `openTab` 按构造静默失效——呈现决策必须内化在 side-chat 客户端。
 - **选区引用（探针结论）**：会话区"任意文本选区 → ref"没有官方 seam（见 Known Limitations），M2 未实现；composer 照常接受粘贴纯文本。
 
 ## 会话模型
@@ -39,7 +40,8 @@ await ctx.sideChat.openWith({
 | 动词 | 说明 |
 | --- | --- |
 | `getState({ contextKey })` | 读一个上下文的完整状态（label、待发送引用、transcript、状态）。冷上下文走持久化检视，**读不唤醒 agent**。 |
-| `listContexts()` | 列出全部已知上下文（最近活跃在前，带 live 状态覆盖）。 |
+| `listContexts()` | 列出全部已知上下文（最近活跃在前，带 live 状态覆盖与最新 assistant 时间）。 |
+| `surfaceHints()` | 每个上下文的 openWith 修订号（`rev`）——客户端浮出水面机制的 diff 基线；最轻的读取（纯内存，无投影无检视）。 |
 | `send(agent, { contextKey, text, label?, refs? })` | 发送一条用户消息：待发送引用折叠进消息并清空，agent 懒创建/冷恢复。agent 优先——调用会话供电围栏、捐赠 cwd。 |
 | `quoteMessage(agent, { messageId, label? })` | 把调用会话里的一条助手消息落成该会话侧边对话的待发送引用（宿主按 messageId 从会话日志折出文本，线上不传正文）。 |
 

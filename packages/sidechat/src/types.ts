@@ -117,6 +117,24 @@ export interface SideChatListResult {
   readonly items: readonly SideChatContextSummary[]
 }
 
+/**
+ * One surface hint: a context's current openWith revision. The client's
+ * surfacer polls {@link SideChatSurfaceHints}, diffs revisions against its
+ * own baseline, and a bump means "a consumer just opened this context —
+ * surface it". Deliberately the lightest possible read (memory only: no
+ * journal projection, no persistence inspection).
+ */
+export interface SideChatSurfaceHint {
+  readonly contextKey: string
+  /** The context's openWith revision (0 when never opened via `openWith`). */
+  readonly rev: number
+}
+
+/** `surfaceHints` result. */
+export interface SideChatSurfaceHints {
+  readonly items: readonly SideChatSurfaceHint[]
+}
+
 /** `send` request: the text, one-shot refs, and the label a first send records. */
 export interface SideChatSendRequest {
   readonly contextKey: string
@@ -158,6 +176,12 @@ export interface SideChatContextRecord {
   readonly segment?: string
   /** The agent preset resolved at creation, replayed at cold resume. */
   readonly agentPreset?: string
+  /**
+   * The openWith revision: bumped on EVERY `openWith` call (and nothing
+   * else), so the client can diff it over the wire and surface the context a
+   * consumer just opened. Absent on pre-M3 records (reads as 0).
+   */
+  readonly rev?: number
   /** Pending refs, folded into the next sent message and cleared. */
   readonly refs: readonly SideChatRef[]
   readonly createdAt: string
@@ -197,6 +221,7 @@ function isRecord(value: unknown): value is SideChatContextRecord {
     && (record['sessionId'] === undefined || typeof record['sessionId'] === 'string')
     && (record['segment'] === undefined || typeof record['segment'] === 'string')
     && (record['agentPreset'] === undefined || typeof record['agentPreset'] === 'string')
+    && (record['rev'] === undefined || typeof record['rev'] === 'number')
     && Array.isArray(record['refs'])
     && typeof record['createdAt'] === 'string' && typeof record['updatedAt'] === 'string'
 }

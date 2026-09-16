@@ -19,7 +19,7 @@ import { zh } from '../src/client/locales.ts'
 import { QuoteAction } from '../src/client/QuoteAction.tsx'
 import { SideChatDock } from '../src/client/SideChatDock.tsx'
 import { SideChatView } from '../src/client/SideChatView.tsx'
-import type { SideChatState, SideChatStateOutcome, SideChatQuoteOutcome, SideChatListResult } from '../src/types.ts'
+import type { SideChatState, SideChatStateOutcome, SideChatQuoteOutcome, SideChatListResult, SideChatSurfaceHints } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
@@ -46,8 +46,10 @@ interface ViewHarness {
     getState: ReturnType<typeof vi.fn>
     listContexts: ReturnType<typeof vi.fn>
     send: ReturnType<typeof vi.fn>
+    surfaceHints: ReturnType<typeof vi.fn>
     dockAvailable: ReturnType<typeof vi.fn>
     openDock: ReturnType<typeof vi.fn>
+    openTab: ReturnType<typeof vi.fn>
   }
 }
 
@@ -55,7 +57,7 @@ interface ViewHarness {
 function viewBench(
   state: SideChatState | Error = EMPTY,
   params?: SideChatTabParams,
-  opts: { dockAvailable?: boolean } = {},
+  opts: { dockAvailable?: boolean; activePanelId?: string | null; hints?: Result<SideChatSurfaceHints> } = {},
 ): ViewHarness {
   const mocks = {
     getState: vi.fn(async (): Promise<Result<SideChatStateOutcome>> => {
@@ -64,12 +66,15 @@ function viewBench(
     }),
     listContexts: vi.fn(async () => ({ ok: true, value: { items: [] as SideChatListResult['items'] } })),
     send: vi.fn(async () => ({ ok: true, value: { ok: true, state: { ...EMPTY, status: 'running' as const } } })),
+    surfaceHints: vi.fn(async () => opts.hints ?? { ok: true, value: { items: [] as SideChatSurfaceHints['items'] } }),
     dockAvailable: vi.fn(() => opts.dockAvailable ?? true),
     openDock: vi.fn(),
+    openTab: vi.fn(),
   }
   const props: SideChatViewProps = {
     sessionId: 's-main' as SideChatViewProps['sessionId'],
     useSessions: (selector) => selector({ byId: { 's-main': { displayTitle: '主会话' } } } as never),
+    usePanelInfo: (selector) => selector({ activePanelId: opts.activePanelId ?? null } as never),
     useTabInfo: () => ({
       sidebar: { expanded: true, fullscreen: false },
       panel: { id: 'p1' },
@@ -79,8 +84,10 @@ function viewBench(
     getState: mocks.getState as SideChatViewProps['getState'],
     listContexts: mocks.listContexts as SideChatViewProps['listContexts'],
     send: mocks.send as SideChatViewProps['send'],
+    surfaceHints: mocks.surfaceHints as SideChatViewProps['surfaceHints'],
     dockAvailable: mocks.dockAvailable as SideChatViewProps['dockAvailable'],
     openDock: mocks.openDock as SideChatViewProps['openDock'],
+    openTab: mocks.openTab as SideChatViewProps['openTab'],
   }
   render(<SideChatView {...props} />)
   return { mocks }
@@ -227,47 +234,60 @@ describe('context selector', () => {
   })
 })
 
+interface DockHarness {
+  readonly instance: ReturnType<ReturnType<typeof createSideChatDockStore>['create']>
+  readonly mocks: {
+    getState: ReturnType<typeof vi.fn>
+    listContexts: ReturnType<typeof vi.fn>
+    send: ReturnType<typeof vi.fn>
+    surfaceHints: ReturnType<typeof vi.fn>
+    openTab: ReturnType<typeof vi.fn>
+    closeToTab: ReturnType<typeof vi.fn>
+  }
+}
+
+/** Render the dock over a real store instance and mock remote faces. */
+function dockBench(opts: {
+  open?: boolean
+  current?: string | undefined
+  activePanelId?: string | null
+  hints?: Result<SideChatSurfaceHints>
+} = {}): DockHarness {
+  const instance = createSideChatDockStore().create(`spec-${Math.random().toString(36).slice(2)}`)
+  if (opts.open === true) instance.actions.open('s-main')
+  const mocks = {
+    getState: vi.fn(async (): Promise<Result<SideChatStateOutcome>> => ({ ok: true, value: { ok: true, state: EMPTY } })),
+    listContexts: vi.fn(async () => ({ ok: true, value: { items: [] as SideChatListResult['items'] } })),
+    send: vi.fn(async () => ({ ok: true, value: { ok: true, state: EMPTY } })),
+    surfaceHints: vi.fn(async () => opts.hints ?? { ok: true, value: { items: [] as SideChatSurfaceHints['items'] } }),
+    openTab: vi.fn(),
+    closeToTab: vi.fn(),
+  }
+  const useStore = ((selector: (state: ReturnType<typeof instance.store.getSnapshot>) => unknown) =>
+    // The framework's PropsStore binding, minimal: subscribe + snapshot.
+     
+    useSyncExternalStore(instance.store.subscribe, () => selector(instance.store.getSnapshot()))) as SideChatDockProps['useStore']
+  const current = opts.current
+  const props = {
+    useStore,
+    actions: instance.actions,
+    useSessions: ((selector: (state: unknown) => unknown) =>
+      selector({ current, byId: current === undefined ? {} : { [current]: { displayTitle: '主会话' } } })) as SideChatDockProps['useSessions'],
+    usePanelInfo: ((selector: (state: unknown) => unknown) =>
+      selector({ activePanelId: opts.activePanelId ?? null })) as SideChatDockProps['usePanelInfo'],
+    t,
+    getState: mocks.getState as SideChatDockProps['getState'],
+    listContexts: mocks.listContexts as SideChatDockProps['listContexts'],
+    send: mocks.send as SideChatDockProps['send'],
+    surfaceHints: mocks.surfaceHints as SideChatDockProps['surfaceHints'],
+    openTab: mocks.openTab as SideChatDockProps['openTab'],
+    closeToTab: mocks.closeToTab as SideChatDockProps['closeToTab'],
+  } as SideChatDockProps
+  render(<SideChatDock {...props} />)
+  return { instance, mocks }
+}
+
 describe('SideChatDock', () => {
-  interface DockHarness {
-    readonly instance: ReturnType<ReturnType<typeof createSideChatDockStore>['create']>
-    readonly mocks: {
-      getState: ReturnType<typeof vi.fn>
-      listContexts: ReturnType<typeof vi.fn>
-      send: ReturnType<typeof vi.fn>
-      closeToTab: ReturnType<typeof vi.fn>
-    }
-  }
-
-  /** Render the dock over a real store instance and mock remote faces. */
-  function dockBench(opts: { open?: boolean; current?: string | undefined } = {}): DockHarness {
-    const instance = createSideChatDockStore().create(`spec-${Math.random().toString(36).slice(2)}`)
-    if (opts.open === true) instance.actions.open('s-main')
-    const mocks = {
-      getState: vi.fn(async (): Promise<Result<SideChatStateOutcome>> => ({ ok: true, value: { ok: true, state: EMPTY } })),
-      listContexts: vi.fn(async () => ({ ok: true, value: { items: [] as SideChatListResult['items'] } })),
-      send: vi.fn(async () => ({ ok: true, value: { ok: true, state: EMPTY } })),
-      closeToTab: vi.fn(),
-    }
-    const useStore = ((selector: (state: ReturnType<typeof instance.store.getSnapshot>) => unknown) =>
-      // The framework's PropsStore binding, minimal: subscribe + snapshot.
-       
-      useSyncExternalStore(instance.store.subscribe, () => selector(instance.store.getSnapshot()))) as SideChatDockProps['useStore']
-    const current = opts.current
-    const props = {
-      useStore,
-      actions: instance.actions,
-      useSessions: ((selector: (state: unknown) => unknown) =>
-        selector({ current, byId: current === undefined ? {} : { [current]: { displayTitle: '主会话' } } })) as SideChatDockProps['useSessions'],
-      t,
-      getState: mocks.getState as SideChatDockProps['getState'],
-      listContexts: mocks.listContexts as SideChatDockProps['listContexts'],
-      send: mocks.send as SideChatDockProps['send'],
-      closeToTab: mocks.closeToTab as SideChatDockProps['closeToTab'],
-    } as SideChatDockProps
-    render(<SideChatDock {...props} />)
-    return { instance, mocks }
-  }
-
   it('renders nothing while closed, and the shared panel once the store opens it', async () => {
     const { instance } = dockBench({ current: 's-main' })
     expect(document.querySelector('[class*="frame"]')).toBeNull()
@@ -301,6 +321,75 @@ describe('SideChatDock', () => {
     expect(after.y).toBeGreaterThanOrEqual(8)
   })
 })
+describe('the openWith surfacer (M3 presentation decision)', () => {
+  const BUMP1 = { ok: true, value: { items: [{ contextKey: 'canvas:c1', rev: 1 }] } }
+  const BUMP2 = { ok: true, value: { items: [{ contextKey: 'canvas:c1', rev: 2 }] } }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('opens the dock on a bumped context when a custom main panel is active', async () => {
+    vi.useFakeTimers()
+    const { instance, mocks } = dockBench({ activePanelId: 'canvas', hints: BUMP1 })
+    mocks.surfaceHints.mockResolvedValue(BUMP2)
+    // The mount poll only seeds the baseline — nothing surfaces.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(instance.store.getSnapshot().open).toBe(false)
+    expect(mocks.openTab).not.toHaveBeenCalled()
+    // The bump lands on the next interval: the dock opens on the consumer's context, no tab call.
+    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
+    expect(instance.store.getSnapshot()).toMatchObject({ open: true, contextKey: 'canvas:c1' })
+    expect(mocks.openTab).not.toHaveBeenCalled()
+  })
+
+  it('opens the tab on a bumped context when the conversation panel is active', async () => {
+    vi.useFakeTimers()
+    const { instance, mocks } = dockBench({ activePanelId: null, hints: BUMP1 })
+    mocks.surfaceHints.mockResolvedValue(BUMP2)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
+    expect(mocks.openTab).toHaveBeenCalledWith('canvas:c1')
+    expect(instance.store.getSnapshot().open).toBe(false)
+  })
+
+  it('falls back to the tab on a narrow viewport even with a custom panel active', async () => {
+    vi.stubGlobal('innerWidth', 600)
+    vi.useFakeTimers()
+    const { instance, mocks } = dockBench({ activePanelId: 'canvas', hints: BUMP1 })
+    mocks.surfaceHints.mockResolvedValue(BUMP2)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
+    expect(mocks.openTab).toHaveBeenCalledWith('canvas:c1')
+    expect(instance.store.getSnapshot().open).toBe(false)
+  })
+
+  it('never re-surfaces after a reload baseline (pre-existing revisions are seeded)', async () => {
+    vi.useFakeTimers()
+    const { instance, mocks } = dockBench({ activePanelId: 'canvas', hints: BUMP2 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(5200) })
+    expect(instance.store.getSnapshot().open).toBe(false)
+    expect(mocks.openTab).not.toHaveBeenCalled()
+  })
+
+  it('the tab runs its own fallback surfacer only when the overlay seat is absent', async () => {
+    vi.useFakeTimers()
+    // Seat present: the tab stays silent (the dock is the primary surfacer).
+    const seated = viewBench(EMPTY)
+    await act(async () => { await vi.advanceTimersByTimeAsync(5200) })
+    expect(seated.mocks.surfaceHints).not.toHaveBeenCalled()
+    cleanup()
+    // Seat absent: the tab polls and re-navigates itself on a bump.
+    const fallback = viewBench(EMPTY, undefined, { dockAvailable: false, hints: BUMP1 })
+    fallback.mocks.surfaceHints.mockResolvedValue(BUMP2)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(fallback.mocks.openTab).not.toHaveBeenCalled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
+    expect(fallback.mocks.openTab).toHaveBeenCalledWith('canvas:c1')
+  })
+})
+
 describe('QuoteAction', () => {
   interface QuoteHarness {
     readonly mocks: {
