@@ -51,10 +51,27 @@ describe('projectTranscript', () => {
       USER('引用这句话', 3),
     ])
     expect(rows).toEqual([
-      { kind: 'user', text: '你好', time: 1 },
+      { kind: 'user', text: '你好', refs: [], time: 1 },
       { kind: 'assistant', text: '你好，有什么可以帮你？', time: 2 },
-      { kind: 'user', text: '引用这句话', time: 3 },
+      { kind: 'user', text: '引用这句话', refs: [], time: 3 },
     ])
+  })
+
+  it('lifts our own folded refs back out of user messages (chips, not markup)', () => {
+    const folded = '<quoted_context label="第一条">\n引用一\n</quoted_context>\n\n'
+      + '<quoted_context label="带\\"引号\\"">\n引用二\n</quoted_context>\n\n怎么看？'
+    const rows = projectTranscript([USER(folded, 1)])
+    expect(rows).toEqual([{
+      kind: 'user',
+      text: '怎么看？',
+      refs: [{ label: '第一条', text: '引用一' }, { label: '带"引号"', text: '引用二' }],
+      time: 1,
+    }])
+  })
+
+  it('leaves a stray quoted_context marker mid-body verbatim (only the leading run parses)', () => {
+    const rows = projectTranscript([USER('前文 <quoted_context label="x">\n不是引用\n</quoted_context> 后文', 1)])
+    expect(rows).toEqual([{ kind: 'user', text: '前文 <quoted_context label="x">\n不是引用\n</quoted_context> 后文', refs: [], time: 1 }])
   })
 
   it('skips messages whose visible text is empty and every other event type', () => {
@@ -65,7 +82,7 @@ describe('projectTranscript', () => {
       ASSISTANT('', 4, [{ type: 'reasoning', text: '只在想' }]),
       USER('问', 5),
     ])
-    expect(rows).toEqual([{ kind: 'user', text: '问', time: 5 }])
+    expect(rows).toEqual([{ kind: 'user', text: '问', refs: [], time: 5 }])
   })
 
   it('folds a tool call and its result into one one-line status', () => {
@@ -76,7 +93,7 @@ describe('projectTranscript', () => {
       ASSISTANT('读完了', 4),
     ])
     expect(rows).toEqual([
-      { kind: 'user', text: '读一下 a.ts', time: 1 },
+      { kind: 'user', text: '读一下 a.ts', refs: [], time: 1 },
       { kind: 'tool', name: 'read', state: 'done', time: 2 },
       { kind: 'assistant', text: '读完了', time: 4 },
     ])

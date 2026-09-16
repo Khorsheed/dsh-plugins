@@ -15,6 +15,14 @@ export const zh = {
   'status.running': '思考中…',
 
   'refs.title': '引用（{count}）',
+  'refs.collapse': '收起',
+
+  'context.switch': '切换上下文',
+  'context.unread': '有新回复',
+
+  'dock.open': '弹出为浮层',
+  'dock.backToTab': '回到侧栏 tab',
+  'dock.readonly': '只读：没有选中的会话',
 
   'composer.placeholder': '问点什么…（⌘⏎ 发送）',
   'composer.send': '发送',
@@ -50,6 +58,14 @@ export const en: Record<keyof typeof zh, string> = {
   'status.running': 'Thinking…',
 
   'refs.title': 'Refs ({count})',
+  'refs.collapse': 'Collapse',
+
+  'context.switch': 'Switch context',
+  'context.unread': 'New replies',
+
+  'dock.open': 'Pop out as a floating dock',
+  'dock.backToTab': 'Back to the sidebar tab',
+  'dock.readonly': 'Read-only: no session selected',
 
   'composer.placeholder': 'Ask something… (⌘⏎ sends)',
   'composer.send': 'Send',

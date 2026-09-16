@@ -16,9 +16,14 @@
     "src/types.ts",
     "src/client/contract.ts",
     "src/client/definition.ts",
+    "src/client/dock-store.ts",
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/QuoteAction.tsx",
+    "src/client/RefChips.tsx",
+    "src/client/seen.ts",
+    "src/client/SideChatDock.tsx",
+    "src/client/SideChatPanel.tsx",
     "src/client/SideChatView.tsx"
   ]
 }
