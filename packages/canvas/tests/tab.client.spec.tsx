@@ -18,9 +18,9 @@ import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { CanvasTab } from '../src/client/tab/CanvasTab.tsx'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardAskAgentOutcome, BoardChatStatusResult, BoardFocusResult, BoardImportResult,
+  BoardAskAgentOutcome, BoardChatStatusResult, BoardFocusResult,
   BoardListResult, BoardMutationResult, BoardReadDraftOutcome, BoardReadOutcome,
-  BoardWriteDraftResult, CanvasBoard, CanvasListResult, CanvasSummary,
+  BoardWriteDraftResult, CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
@@ -85,8 +85,6 @@ interface Harness {
     patchCard: ReturnType<typeof vi.fn>
     addComment: ReturnType<typeof vi.fn>
     archiveCanvas: ReturnType<typeof vi.fn>
-    importV1: ReturnType<typeof vi.fn>
-    probeV1Pad: ReturnType<typeof vi.fn>
     openFile: ReturnType<typeof vi.fn>
     selectCard: ReturnType<typeof vi.fn>
     focusCanvas: ReturnType<typeof vi.fn>
@@ -154,12 +152,6 @@ function makeHarness(options: {
       if (current !== undefined) current.archivedAt = request.archived ? NOW : null
       return mutationFor(request.canvasId)
     }),
-    importV1: vi.fn(async (): Promise<Result<BoardImportResult>> => {
-      const minted = board('canvas_imported01abcdef', [card('c_imp')])
-      boards.set(minted.id, minted)
-      return ok({ ok: true, board: minted, version: '1', imported: 1 })
-    }),
-    probeV1Pad: vi.fn(async (): Promise<Result<CanvasListResult>> => ok({ items: [{ name: '卡片/雨伞的意象.md' }] as never, archived: [] })),
     openFile: vi.fn(),
     selectCard: vi.fn((canvasId: string, cardId: string) => { store.select(canvasId, cardId) }),
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
@@ -249,20 +241,6 @@ describe('CanvasTab — list, switcher, board', () => {
     expect(boards.get(CANVAS_ID)?.archivedAt).not.toBeNull()
   })
 
-  it('imports a v1 pad from the switcher flow', async () => {
-    const { mocks, props } = makeHarness({
-      workspaces: [{ workspaceId: 'w1', path: '/ws/report', title: 'report' }],
-    })
-    render(<CanvasTab {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: /为什么人们不愿表达异议/ }))
-    fireEvent.click(screen.getByRole('button', { name: /导入 v1 灵感画布/ }))
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '/ws/report' } })
-    await screen.findByText(/发现 1 条灵感/)
-    fireEvent.click(screen.getByRole('button', { name: '导入为画布' }))
-    await waitFor(() => {
-      expect(mocks.importV1).toHaveBeenCalledWith('s1', { dir: '/ws/report' })
-    })
-  })
 
   it('adds a card through the topbar new-card menu (⌘⏎), stopping the submit mid-IME', async () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
@@ -405,6 +383,7 @@ describe('CanvasTab — the draft view and wide mode', () => {
     await screen.findByText('卡片 c_1')
     expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /为什么人们不愿表达异议/ }))
-    expect(screen.getByRole('button', { name: /新画布/ })).toHaveProperty('disabled', true)
+    // Read-only: the 新画布 row is not even offered.
+    expect(screen.queryByRole('button', { name: /新画布/ })).toBeNull()
   })
 })

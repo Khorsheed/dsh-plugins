@@ -27,10 +27,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
   BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
-  BoardImportResult, BoardImportV1Request, BoardListResult, BoardMutationResult,
+  BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest,
   BoardReadOutcome, BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
-  CanvasListRequest, CanvasListResult,
 } from '../types.ts'
 import type {} from './locales.ts'
 import type { CanvasSelectionSource } from './space/selection.ts'
@@ -76,10 +75,6 @@ export interface CanvasTabInjected extends CanvasChatInjected {
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Archive a canvas from the switcher, or restore it (never a delete). */
   archiveCanvas: (sessionId: SessionId, request: BoardArchiveRequest) => Promise<RemoteResult<BoardMutationResult>>
-  /** Import one workspace's v1 pad as a new canvas (read-only). */
-  importV1: (sessionId: SessionId, request: BoardImportV1Request) => Promise<RemoteResult<BoardImportResult>>
-  /** One workspace's v1 pad listing (the import flow's probe and count). */
-  probeV1Pad: (request: CanvasListRequest) => Promise<RemoteResult<CanvasListResult>>
   /**
    * Open a file attachment in the official document preview
    * (`ctx.sidebarRight.openResource` over a `dsh-resource://file` address);

@@ -666,23 +666,11 @@ export interface BoardArchiveRequest {
   readonly archived: boolean
 }
 
-/** Import one workspace's v1 pad (`<workspace>/灵感画布/`) as a new canvas. */
-export interface BoardImportV1Request {
-  /** Absolute workspace root whose v1 pad is read (read-only — never modified). */
-  readonly dir: string
-  /** Canvas title; defaults to `导入：<workspace directory name>`. */
-  readonly title?: string
-}
-
 /** A mutation either lands (with the fresh board and its new token) or reports a code. */
 export type BoardMutationResult =
   | ({ readonly ok: true } & BoardReadResult)
   | { readonly ok: false; readonly error: CanvasError }
 
-/** The import gesture's receipt: the new canvas plus how many items came over. */
-export type BoardImportResult =
-  | ({ readonly ok: true } & BoardReadResult & { readonly imported: number })
-  | { readonly ok: false; readonly error: CanvasError }
 
 /* ------------------------------------------------------- summary heuristics */
 

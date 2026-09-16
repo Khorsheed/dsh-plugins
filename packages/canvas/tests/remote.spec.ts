@@ -18,7 +18,7 @@ import type { CanvasService } from '../src/service.ts'
 import type { CanvasBoardService } from '../src/store.ts'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentRequest, BoardCreateRequest,
-  BoardImportV1Request, BoardPatchCardRequest, BoardPutCardRequest,
+  BoardPatchCardRequest, BoardPutCardRequest,
   CanvasArchiveRequest, CanvasCreateRequest, CanvasWriteRequest,
 } from '../src/types.ts'
 
@@ -80,7 +80,6 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
     patchCard: async (_request: BoardPatchCardRequest, session: Session) => { seen.push({ method: 'patchCard', session }); return boardReceipt() },
     addComment: async (_request: BoardAddCommentRequest, session: Session) => { seen.push({ method: 'addComment', session }); return boardReceipt() },
     archiveCanvas: async (_request: BoardArchiveRequest, session: Session) => { seen.push({ method: 'archiveCanvas', session }); return boardReceipt() },
-    importV1: async (_request: BoardImportV1Request, session: Session) => { seen.push({ method: 'importV1', session }); return { ...boardReceipt(), imported: 0 } },
     askAgent: async (_request: BoardAskAgentRequest, session: Session) => { seen.push({ method: 'askAgent', session }); return { ok: true as const, contextKey: `canvas:${CANVAS_ID}`, sent: true } },
     chatAvailable: () => ({ available: true }),
     focusCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'focusCanvas', session }); return { ok: true as const } },
@@ -131,7 +130,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     expect(await remote.patchCard(agent, { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })).toMatchObject({ ok: true })
     expect(await remote.addComment(agent, { canvasId: CANVAS_ID, cardId: 'c_1', text: 'x' })).toMatchObject({ ok: true })
     expect(await remote.archiveCanvas(agent, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
-    expect(await remote.importV1(agent, { dir: WS })).toMatchObject({ ok: true, imported: 0 })
     expect(await remote.askAgent(agent, { canvasId: CANVAS_ID, lens: 'challenge' })).toMatchObject({ ok: true, sent: true })
     expect(await remote.focusCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
     expect(await remote.writeDraft(agent, { canvasId: CANVAS_ID, content: 'x', version: null })).toEqual({ ok: true, version: '3' })
@@ -141,7 +139,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
       { method: 'patchCard', session: SESSION },
       { method: 'addComment', session: SESSION },
       { method: 'archiveCanvas', session: SESSION },
-      { method: 'importV1', session: SESSION },
       { method: 'askAgent', session: SESSION },
       { method: 'focusCanvas', session: SESSION },
       { method: 'writeDraft', session: SESSION },

@@ -34,6 +34,9 @@ import { BoardView, type BoardActions } from '../space/BoardView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { DraftView } from './DraftView.tsx'
 import css from './CanvasTab.module.css'
+// The dropdown panel primitive lives with the board styles (the switcher's
+// own module — a copy here was dead CSS and the M3.1 topbar bug's source).
+import boardCss from '../space/board.module.css'
 
 /** How long a transient toast stays up. */
 const TOAST_MS = 2200
@@ -69,7 +72,7 @@ function messageOf(error: unknown): string {
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
-    archiveCanvas, importV1, probeV1Pad, selectCard, openCanvas: showCanvas, clearCard, focusCanvas,
+    archiveCanvas, selectCard, openCanvas: showCanvas, clearCard, focusCanvas,
     readDraft, writeDraft, askAgent, chatStatus, openSideChat, suggestWideMode,
     useSelection,
   } = props
@@ -328,21 +331,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     )
   }, [sessionId, archiveCanvas, mutate])
 
-  const submitImport = useCallback(async (dir: string): Promise<boolean> => {
-    if (sessionId === undefined) return false
-    const value = await run(() => importV1(sessionId, { dir }))
-    if (value === null) return false
-    if (!value.ok) {
-      showToast(errorText(value.error))
-      return false
-    }
-    showToast(t('import.done', { count: String(value.imported), title: value.board.title }))
-    setCanvases(current => [summarizeBoard(value.board), ...(current ?? [])])
-    openCanvas(value.board.id)
-    setOpenBoard({ board: value.board, version: value.version })
-    return true
-  }, [sessionId, importV1, run, showToast, errorText, t, openCanvas])
-
   /* -------------------------------------------------------------- ask flow */
 
   const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
@@ -377,8 +365,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           onOpen={openCanvas}
           onCreate={submitCreate}
           onArchive={setCanvasArchived}
-          onProbeImport={dir => probeV1Pad({ dir })}
-          onImport={submitImport}
         />
         {openBoard?.board.attachedWorkspaces.map(workspace => (
           <span key={workspace} className={css.attachChip} title={workspace}>
@@ -414,7 +400,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   {t('board.newCard')}
                 </button>
                 {newCardMenu && (
-                  <div className={css.switcherMenu} style={{ width: 160, left: 'auto', right: 0 }}>
+                  <div className={boardCss.switcherMenu} style={{ width: 160, left: 'auto', right: 0 }}>
                     {BOARD_CARD_KINDS.map(kind => {
                       const KindIcon = KIND_ICONS[kind]
                       return (

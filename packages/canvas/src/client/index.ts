@@ -173,7 +173,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ...chatFace,
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
-    probeV1Pad: request => requireRemote().list(request),
     openFile: (sessionId, cwd, path) => {
       try {
         ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
@@ -188,7 +187,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
-    importV1: async (sessionId, request) => touchOnSuccess(await requireRemote().importV1(sessionId, request)),
     selectCard: (canvasId, cardId) => { selection.select(canvasId, cardId) },
     openCanvas: canvasId => { selection.openCanvas(canvasId) },
     clearCard: () => { selection.clearCard() },
