@@ -26,8 +26,8 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasSpacePageProps } from '../contract.ts'
 import {
   summarizeBoard,
-  type BoardCardKind, type BoardCardStatus, type BoardMutationResult,
-  type CanvasBoard, type CanvasError, type CanvasSummary,
+  type BoardAskAgentRequest, type BoardCardKind, type BoardCardStatus,
+  type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasSummary,
 } from '../../types.ts'
 import { BoardView, type BoardActions } from './BoardView.tsx'
 import css from './CanvasSpacePage.module.css'
@@ -54,6 +54,7 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
     archiveCanvas, importV1, probeV1Pad, selectCard, useSelection,
+    askAgent, chatStatus, openSideChat,
   } = props
   const useSessions = props.useSessions ?? useNoSessions
   const useWorkspaces = props.useWorkspaces ?? useNoWorkspaces
@@ -83,6 +84,8 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
+  /** The chat seam's probe: null while probing, so entries never flash. */
+  const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
 
   const toastTimerRef = useRef<number | null>(null)
   const boardRef = useRef(openBoard)
@@ -133,6 +136,39 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
   }, [listCanvases, run])
 
   useEffect(() => { void reloadList() }, [reloadList])
+
+  // Probe the chat seam once per mount: every chat entry (lens bar, 追问, 问
+  // Agent) hides when side-chat is absent, and the board keeps working.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const value = await run(() => chatStatus())
+      if (cancelled || value === null) return
+      setChatAvailable(value.available)
+    })()
+    return () => { cancelled = true }
+  }, [chatStatus, run])
+
+  /**
+   * Ask the canvas's agent: prime the context with the current selection (or
+   * the followed-up comment) and activate the side-chat tab. An `unavailable`
+   * answer flips the probe off — every chat entry hides from then on.
+   */
+  const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
+    if (sessionId === undefined || openId === null) return
+    const value = await run(() => askAgent(sessionId, { canvasId: openId, ...request }))
+    if (value === null) return
+    if (!value.ok) {
+      if (value.error === 'unavailable') {
+        setChatAvailable(false)
+        showToast(t('chat.unavailable'))
+        return
+      }
+      showToast(t('chat.askFailed', { message: errorText(value.error) }))
+      return
+    }
+    openSideChat(value.contextKey)
+  }, [sessionId, openId, askAgent, openSideChat, run, showToast, errorText, t])
 
   // Open the most recently active canvas once the list is known.
   useEffect(() => {
@@ -540,6 +576,11 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
           onClearSelection={() => { setSelection(new Set()) }}
           onOpenDetail={cardId => {
             if (openId !== null) selectCard(openId, cardId)
+          }}
+          chatAvailable={chatAvailable === true}
+          onAsk={lens => { void ask({ lens, cardIds: [...selection] }) }}
+          onFollowUp={(cardId, commentText) => {
+            void ask({ lens: 'ask', cardIds: [cardId], text: t('chat.followupText', { text: commentText }) })
           }}
           editingId={editingId}
           onEditingChange={setEditingId}

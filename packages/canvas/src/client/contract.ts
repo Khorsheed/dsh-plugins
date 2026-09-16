@@ -29,7 +29,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls ui-sidebar's SlotMap merge ('sidebar.panellist').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {
-  BoardAddCommentRequest, BoardArchiveRequest, BoardCreateRequest, BoardImportResult,
+  BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
+  BoardChatStatusResult, BoardCreateRequest, BoardImportResult,
   BoardImportV1Request, BoardListResult, BoardMutationResult, BoardPatchCardRequest,
   BoardPutCardRequest, BoardReadOutcome, BoardReadRequest,
   CanvasListRequest, CanvasListResult,
@@ -41,12 +42,30 @@ import type { CanvasSelectionSource } from './space/selection.ts'
 export type CanvasRemote = TypertRemoteNamespaceMap['canvas']
 
 /**
+ * The chat-seam face both seats share (M2): ask through the probed side-chat
+ * service, probe its availability (every chat entry hides when absent), and
+ * activate the side-chat tab on the primed context.
+ */
+export interface CanvasChatInjected {
+  /** Prime the canvas's chat context (and send when there is a text to send). */
+  askAgent: (sessionId: SessionId, request: BoardAskAgentRequest) => Promise<RemoteResult<BoardAskAgentOutcome>>
+  /** Whether a sideChat-shaped service answered the host's probe. */
+  chatStatus: () => Promise<RemoteResult<BoardChatStatusResult>>
+  /**
+   * Activate the side-chat tab on one context through the official right-
+   * Sidebar navigation (its params mirrored structurally — the package is
+   * never imported); degrades to a no-op without a mounted session/sidebar.
+   */
+  openSideChat: (contextKey: string) => void
+}
+
+/**
  * Business face injected into the canvas space page (v2). The page is root
  * scope — there is no session of its own, so the mutating calls name the
  * CURRENTLY SELECTED session: the host re-roots that session's fence mode at
  * the deployment state dir (the board can never live inside a workspace).
  */
-export interface CanvasSpaceInjected {
+export interface CanvasSpaceInjected extends CanvasChatInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
   /** Create one canvas (a topic, optionally with workspaces attached). */
@@ -89,7 +108,7 @@ export type CanvasSpacePageProps =
  * after M1.5). The tab is session scope: its mutations name the tab's own
  * session, which resolves the fence mode the host stamps onto the write.
  */
-export interface CanvasDetailInjected {
+export interface CanvasDetailInjected extends CanvasChatInjected {
   /** Read one board with the freshness token a later mutation must present. */
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
   /** Edit one card: text, a status transition, or a question-state transition. */

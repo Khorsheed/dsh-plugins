@@ -132,10 +132,49 @@
 /* -------------------------------------------------------------------- body */
 
 .body {
+  position: relative;
   font-size: 13px;
   line-height: 1.75;
   color: var(--dsw-alias-label-primary);
   min-height: 60px;
+}
+
+/* The floating 问 Agent offer, anchored below the text selection. */
+.askFloat {
+  position: absolute;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-elevation-prominent);
+  color: var(--dsw-static-deepseek-400);
+  font-size: 12px;
+  font-family: var(--dsw-font-family);
+  cursor: pointer;
+}
+
+.askFloat:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+/* The per-comment 追问 affordance (agent comments only). */
+.followUp {
+  display: inline;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  font-family: var(--dsw-font-family);
+  color: var(--dsw-static-deepseek-400);
+  cursor: pointer;
+}
+
+.followUp:hover {
+  text-decoration: underline;
 }
 
 /* The edit toggle's textarea: uncontrolled, auto-sized, never its own

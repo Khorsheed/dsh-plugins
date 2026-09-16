@@ -27,7 +27,7 @@ import {
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   documentHeadingOf,
-  type BoardCard, type BoardMutationResult, type CanvasBoard, type CanvasError,
+  type BoardAskAgentRequest, type BoardCard, type BoardMutationResult, type CanvasBoard, type CanvasError,
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
@@ -62,7 +62,10 @@ const useNoSessions = ((selector: (snapshot: { byId: Record<string, never> }) =>
 
 /** The card-detail reader. */
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
-  const { t, sessionId, readBoard, patchCard, addComment, openFile, useSelection } = props
+  const {
+    t, sessionId, readBoard, patchCard, addComment, openFile, useSelection,
+    askAgent, chatStatus, openSideChat,
+  } = props
   const selection = useSelection(current => current)
   const useSessions = props.useSessions ?? useNoSessions
   const workspaceRoot = useSessions(sessions =>
@@ -73,7 +76,12 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [editing, setEditing] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
+  /** The chat seam's probe: null while probing, so entries never flash. */
+  const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
+  /** The floating 问 Agent offer: the selected text plus where to float. */
+  const [textPick, setTextPick] = useState<{ text: string; top: number; left: number } | null>(null)
   const toastTimerRef = useRef<number | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
 
   const showToast = useCallback((text: string) => {
     setToast(text)
@@ -153,6 +161,59 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     setOpen({ board: value.board, version: value.version })
     showToast(t(toastKey))
   }, [run, showToast, errorText, t])
+
+  // Probe the chat seam once per mount: 问 Agent / 追问 hide when absent.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const value = await run(() => chatStatus())
+      if (cancelled || value === null) return
+      setChatAvailable(value.available)
+    })()
+    return () => { cancelled = true }
+  }, [chatStatus, run])
+
+  /** Ask through the seam and activate the side-chat tab (the ask flow's tail). */
+  const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
+    const canvasId = selection.canvasId
+    if (canvasId === null) return
+    const value = await run(() => askAgent(sessionId, { canvasId, ...request }))
+    if (value === null) return
+    if (!value.ok) {
+      if (value.error === 'unavailable') {
+        setChatAvailable(false)
+        showToast(t('chat.unavailable'))
+        return
+      }
+      showToast(t('chat.askFailed', { message: errorText(value.error) }))
+      return
+    }
+    setTextPick(null)
+    openSideChat(value.contextKey)
+  }, [sessionId, selection.canvasId, askAgent, openSideChat, run, showToast, errorText, t])
+
+  /** Offer 问 Agent for the text the user selected inside the card body. */
+  const onBodyMouseUp = useCallback(() => {
+    const body = bodyRef.current
+    const picked = window.getSelection()
+    if (body === null || picked === null || picked.isCollapsed) {
+      setTextPick(null)
+      return
+    }
+    const text = picked.toString().trim()
+    if (text === '' || picked.rangeCount === 0) {
+      setTextPick(null)
+      return
+    }
+    const range = picked.getRangeAt(0)
+    if (!body.contains(range.commonAncestorContainer)) {
+      setTextPick(null)
+      return
+    }
+    const rect = range.getBoundingClientRect()
+    const host = body.getBoundingClientRect()
+    setTextPick({ text, top: rect.bottom - host.top + 6, left: Math.max(0, rect.left - host.left) })
+  }, [])
 
   /* -------------------------------------------------------------- rendering */
 
@@ -274,7 +335,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         </div>
       )}
 
-      <div className={css.body}>
+      <div className={css.body} ref={bodyRef} onMouseUp={onBodyMouseUp}>
         {editing ? (
           <>
             <CardTextarea
@@ -296,6 +357,24 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           </>
         ) : (
           <MarkdownText text={card.text} labels={markdownLabels} />
+        )}
+        {textPick !== null && chatAvailable === true && (
+          <button
+            type="button"
+            className={css.askFloat}
+            style={{ top: textPick.top, left: textPick.left }}
+            onClick={() => {
+              const picked = textPick
+              void ask({
+                lens: 'ask',
+                cardIds: [card.id],
+                refs: [{ label: t('chat.selectionRef'), text: picked.text }],
+              })
+            }}
+          >
+            <IconSparkle16 size={12} />
+            {t('chat.ask')}
+          </button>
         )}
       </div>
 
@@ -343,6 +422,24 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             </span>
             {'：'}
             {comment.text}
+            {comment.author === 'agent' && chatAvailable === true && (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className={css.followUp}
+                  onClick={() => {
+                    void ask({
+                      lens: 'ask',
+                      cardIds: [card.id],
+                      text: t('chat.followupText', { text: comment.text }),
+                    })
+                  }}
+                >
+                  {t('chat.followup')} →
+                </button>
+              </>
+            )}
           </span>
         ))}
         <div className={css.commentForm}>
