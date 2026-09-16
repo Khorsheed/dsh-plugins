@@ -62,7 +62,7 @@ export interface SideChatPanelProps {
 
 /** The not-found answer's presentation: an empty, unsent context. */
 function emptyState(contextKey: string, label: string): SideChatState {
-  return { contextKey, label, status: 'new', refs: [], transcript: [] }
+  return { contextKey, label, status: 'new', refs: [], transcript: [], lastError: null }
 }
 
 /** True when a rejection carries a usable message. */
@@ -86,6 +86,8 @@ export function SideChatPanel({
   const [state, setState] = useState<SideChatState | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** The lastError text the user dismissed (a NEW error text re-raises the bar). */
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
   const [contexts, setContexts] = useState<readonly SideChatContextSummary[] | null>(null)
   const [selectorOpen, setSelectorOpen] = useState(false)
 
@@ -171,6 +173,9 @@ export function SideChatPanel({
     const text = element.value.trim()
     if (text === '') return
     setError(null)
+    // Captured before the wire call: the pending refs this send folds in
+    // (the optimistic row carries them until the projection catches up).
+    const pendingRefs = state?.refs ?? []
     try {
       const carried = await remote.send(sessionId, { contextKey, text, label: state?.label ?? fallbackLabel })
       if (!carried.ok) {
@@ -184,11 +189,19 @@ export function SideChatPanel({
       // The deliberate clear: the user's own send, so no caret is at stake.
       element.value = ''
       autosize()
-      setState(carried.value.state)
+      // The optimistic row: the followup's journal append lands one turn
+      // later (a 1.2s poll window in which the sent message would look
+      // lost), so echo it locally unless the state already shows it.
+      const fresh = carried.value.state
+      const tail = fresh.transcript.at(-1)
+      const echoed = tail !== undefined && tail.kind === 'user' && tail.text === text
+      setState(echoed
+        ? fresh
+        : { ...fresh, transcript: [...fresh.transcript, { kind: 'user', text, refs: pendingRefs, time: Date.now() }] })
     } catch (cause) {
       setError(t('error.send', { message: messageOf(cause) }))
     }
-  }, [sessionId, contextKey, fallbackLabel, state?.label, remote, autosize, t])
+  }, [sessionId, contextKey, fallbackLabel, state?.label, state?.refs, remote, autosize, t])
 
   const onKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || composingRef.current) return
@@ -241,6 +254,7 @@ export function SideChatPanel({
 
   const refs = state?.refs ?? []
   const transcript = state?.transcript ?? []
+  const lastError = state?.lastError ?? null
   return (
     <div className={css.root}>
       <header className={css.header}>
@@ -283,6 +297,19 @@ export function SideChatPanel({
         </span>
         {headerActions}
       </header>
+      {lastError !== null && lastError !== dismissedError && (
+        <div className={css.errorBar} role="alert">
+          <span className={css.errorBarText}>{lastError}</span>
+          <button
+            type="button"
+            className={css.errorBarClose}
+            aria-label={t('error.dismiss')}
+            onClick={() => { setDismissedError(lastError) }}
+          >
+            ×
+          </button>
+        </div>
+      )}
       <div className={css.transcript} ref={transcriptRef}>
         {transcript.length === 0 && status !== 'running' && (
           <div className={css.empty}>{t('state.empty')}</div>

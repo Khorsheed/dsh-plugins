@@ -6,7 +6,7 @@
  */
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { describe, expect, it } from 'vitest'
-import { messageTextOf, projectTranscript } from '../src/journal.ts'
+import { messageTextOf, projectTranscript, projectTurnError } from '../src/journal.ts'
 
 /** A bare event envelope for the fold (seq/time/data are all it reads). */
 function event<T extends Record<string, unknown>>(type: string, time: number, data: T): SessionEvent {
@@ -122,5 +122,36 @@ describe('projectTranscript', () => {
       event('tool/result', 2, { turn: 1, step: 1, message: { id: 'r0', role: 'user', content: [{ type: 'tool-result', toolCallId: 'unknown', content: [] }], source: { kind: 'tool', tool: 'bash' } } }),
     ])
     expect(rows).toEqual([{ kind: 'tool', name: 'bash', state: 'running', time: 1 }])
+  })
+})
+
+describe('projectTurnError', () => {
+  const TURN_END = (reason: Record<string, unknown>, time: number) => event('turn/end', time, { turn: time, reason })
+
+  it('answers the latest error-ended turn\'s message', () => {
+    expect(projectTurnError([
+      TURN_END({ kind: 'completed' }, 1),
+      TURN_END({ kind: 'error', error: { message: 'agent has no provider/model', code: 'UNKNOWN' } }, 2),
+    ])).toBe('agent has no provider/model')
+  })
+
+  it('clears on the first non-error turn/end after it, and ignores everything else', () => {
+    expect(projectTurnError([
+      TURN_END({ kind: 'error', error: { message: 'boom', code: 'UNKNOWN' } }, 1),
+      USER('再问', 2),
+      TURN_END({ kind: 'completed' }, 3),
+    ])).toBeNull()
+  })
+
+  it('treats aborted/blocked/max-tokens/interrupted as clean, and empty logs as no error', () => {
+    for (const reason of [
+      { kind: 'aborted', reason: { kind: 'user' } },
+      { kind: 'blocked' },
+      { kind: 'max-tokens' },
+      { kind: 'interrupted' },
+    ]) {
+      expect(projectTurnError([TURN_END(reason, 1)])).toBeNull()
+    }
+    expect(projectTurnError([])).toBeNull()
   })
 })
