@@ -257,26 +257,31 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
 
   const submitCreate = useCallback(async (event: FormEvent) => {
     event.preventDefault()
-    if (sessionId === undefined) return
+    if (sessionId === undefined || busy) return
     const title = newTitle.trim()
     if (title.length === 0) {
       showToast(t('toast.needTitle'))
       return
     }
-    const value = await run(() => createCanvas(sessionId, { title, attachedWorkspaces: [...attachPicks] }))
-    if (value === null) return
-    if (!value.ok) {
-      showToast(errorText(value.error))
-      return
+    setBusy(true)
+    try {
+      const value = await run(() => createCanvas(sessionId, { title, attachedWorkspaces: [...attachPicks] }))
+      if (value === null) return
+      if (!value.ok) {
+        showToast(errorText(value.error))
+        return
+      }
+      setCreating(false)
+      setNewTitle('')
+      setAttachPicks(new Set())
+      showToast(t('toast.canvasCreated', { title: value.board.title }))
+      setCanvases(current => [summarizeBoard(value.board), ...(current ?? [])])
+      openCanvas(value.board.id)
+      setOpenBoard({ board: value.board, version: value.version })
+    } finally {
+      setBusy(false)
     }
-    setCreating(false)
-    setNewTitle('')
-    setAttachPicks(new Set())
-    showToast(t('toast.canvasCreated', { title: value.board.title }))
-    setCanvases(current => [summarizeBoard(value.board), ...(current ?? [])])
-    openCanvas(value.board.id)
-    setOpenBoard({ board: value.board, version: value.version })
-  }, [sessionId, newTitle, attachPicks, createCanvas, run, showToast, errorText, t, openCanvas])
+  }, [sessionId, busy, newTitle, attachPicks, createCanvas, run, showToast, errorText, t, openCanvas])
 
   const setCanvasArchived = useCallback(async (row: CanvasSummary, archived: boolean) => {
     if (sessionId === undefined) return
