@@ -25,6 +25,7 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalConditionDiffView, EvalConditionRow, EvalConditionsView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
+import { ErrorState } from './ErrorState.tsx'
 import { Field } from './parts.tsx'
 import css from './LabView.module.css'
 
@@ -98,7 +99,7 @@ export function ConditionsPage(props: {
   return (
     <div className={css.overview}>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
-      {error !== null && <div className={css.empty}>{t('conditions.error')}: {error}</div>}
+      {error !== null && <ErrorState what={t('conditions.error')} message={error} t={t} />}
       {view !== null && rows.length === 0 && <div className={css.empty}>{t('conditions.empty')}</div>}
       {rows.length > 0 && (
         <>
@@ -138,7 +139,7 @@ export function ConditionsPage(props: {
           ))}
         </>
       )}
-      {diffError !== null && <div className={css.notice}>{t('conditions.diffError')}: {diffError}</div>}
+      {diffError !== null && <ErrorState what={t('conditions.diffError')} message={diffError} compact t={t} />}
       {diff !== null && <Diff diff={diff} t={t} />}
       {view !== null && (
         <Field label={t('conditions.repo')}>

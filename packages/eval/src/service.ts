@@ -11,7 +11,10 @@
 import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
 import { writeEvalReport, type ReportWrite } from './report.ts'
 import { CONDITION_SCHEMA_ID } from './schema.ts'
-import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
+import {
+  conditionDiagnostics, expandHome, normalizeRepoPath, validatePlan,
+  type EvalDiagnostic, type PlanValidation,
+} from './validate.ts'
 import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
 import { runPlan, EvalRunRefused, type RunDeps, type RunOptions, type RunReport } from './run.ts'
 import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport, type FinalizeUnitsFace } from './finalize.ts'
@@ -238,6 +241,10 @@ export class EvalService {
    * `repo` wins; otherwise the calling session's datasets binding decides, and
    * its whitelist is honoured — which datasets an agent may see is the human's
    * decision, not the agent's.
+   *
+   * BOTH sources are normalized, not just the explicit argument: a binding
+   * written before the datasets plugin canonicalized `repoPath` still holds a
+   * literal `~`, and this reader must not be the one that trips over it.
    */
   private resolveRepoScope(
     options: { repo?: string; dataset?: string; session?: { id: string } },
@@ -245,9 +252,8 @@ export class EvalService {
     const binding = options.session === undefined
       ? undefined
       : (this.hosts?.get('datasets') as DatasetsBindingFace | undefined)?.binding(options.session)
-    const repo = options.repo !== undefined && options.repo !== ''
-      ? expandHome(options.repo)
-      : binding?.repoPath
+    const source = options.repo !== undefined && options.repo !== '' ? options.repo : binding?.repoPath
+    const repo = source === undefined ? undefined : normalizeRepoPath(source)
     if (repo === undefined || repo === '') {
       return new EvalReadRefused(
         'no dataset repository: pass repo, or ask the human to bind one for this session (/datasets bind <repoPath>)',

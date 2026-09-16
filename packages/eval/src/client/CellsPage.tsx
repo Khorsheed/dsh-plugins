@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalCellDetail, EvalCellsResult } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 /** mission's own retry vocabulary, restated (eval imports nothing from mission). */
@@ -68,7 +69,7 @@ function CellDrawer(props: {
       </div>
       <div className={css.drawerBody}>
         {loading && cell === null && <div className={css.empty}>{t('drawer.loading')}</div>}
-        {error !== null && <div className={css.empty}>{t('drawer.error')}: {error}</div>}
+        {error !== null && <ErrorState what={t('drawer.error')} message={error} compact t={t} />}
         {cell !== null && (
           <>
             <Field label={t('cells.col.cell')}>
@@ -223,7 +224,7 @@ export function CellsPage(props: {
       </div>
       <div className={css.cellsSplit}>
         <div className={css.cellsTable}>
-          {error !== null && <div className={css.empty}>{t('cells.error')}: {error}</div>}
+          {error !== null && <ErrorState what={t('cells.error')} message={error} t={t} />}
           {cells === null && error === null && <div className={css.empty}>{t('cells.loading')}</div>}
           {cells !== null && rows.length === 0 && <div className={css.empty}>{t('cells.empty')}</div>}
           {rows.length > 0 && (

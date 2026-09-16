@@ -12,7 +12,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { statSync } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { checkAgainstEffective, type EffectiveSnapshot } from './effective.ts'
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
@@ -99,6 +99,31 @@ export function expandHome(path: string): string {
   if (path === '~') return homedir()
   if (path.startsWith('~/')) return join(homedir(), path.slice(2))
   return path
+}
+
+/**
+ * The canonical form of a dataset repository root: `~` expanded, made
+ * absolute, and — when the directory is there — resolved through its
+ * symlinks. Mirrors `normalizeRepoPath` in the datasets plugin on purpose;
+ * the two are copies rather than an import because a client-facing plugin
+ * never imports a sibling plugin.
+ *
+ * WHY every repo root goes through this: `readdir(<repo>/datasets)` does not
+ * expand `~`, so a session bound to `~/x` made the conditions page report
+ * "not a dataset repository" about a repository that exists (I5 walkthrough
+ * gap G5).
+ * @param path - the repository path as configured, passed, or bound.
+ * @returns the canonical path; '' stays '' for the caller's shape check.
+ */
+export function normalizeRepoPath(path: string): string {
+  const trimmed = path.trim()
+  if (trimmed === '') return trimmed
+  const absolute = resolve(expandHome(trimmed))
+  try {
+    return realpathSync(absolute)
+  } catch {
+    return absolute
+  }
 }
 
 function isDirectory(path: string): boolean {

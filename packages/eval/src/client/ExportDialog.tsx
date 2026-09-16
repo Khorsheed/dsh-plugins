@@ -18,6 +18,7 @@ import { useState } from 'react'
 import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalExportPlanView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 /**
@@ -136,7 +137,7 @@ export function ExportDialog(props: {
           placeholder={t('export.snapshotCommit')} aria-label={t('export.snapshotCommit')} />
         <Input value={dataset} onChange={(e) => { setDataset(e.target.value); invalidate() }}
           placeholder={t('export.snapshotDataset')} aria-label={t('export.snapshotDataset')} />
-        {error !== null && <div className={css.warning}>{t('export.error')}: {error}</div>}
+        {error !== null && <ErrorState what={t('export.error')} message={error} compact t={t} />}
         {plan !== null && guarded.length > 0 && (
           <div className={css.guardedBox}>
             <div className={css.guardedTitle}>{t('export.guardedTitle')}</div>

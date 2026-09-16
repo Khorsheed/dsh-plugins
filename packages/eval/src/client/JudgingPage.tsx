@@ -26,6 +26,7 @@ import type {
   EvalJudgeCriterionRow, EvalJudgeDraftSample, EvalJudgeQueueCell, EvalJudgeQueueView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 const DASH = '—'
@@ -220,7 +221,7 @@ export function JudgingPage(props: {
 }) {
   const { view, loading, error, selection, draft, submitting, onPick, onAnswer, onSubmit, t } = props
 
-  if (error !== null) return <div className={css.empty}>{t('judge.error')}: {error}</div>
+  if (error !== null) return <ErrorState what={t('judge.error')} message={error} t={t} />
   if (view === null) return <div className={css.empty}>{t('judge.loading')}</div>
 
   const open = view.cells.find(cell => cell.ticket === selection) ?? null

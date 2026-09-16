@@ -12,6 +12,7 @@
 
 import type { EvalMatrixCell, EvalMatrixInvariant, EvalMatrixView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 /** The dot glyphs, in the spec's own words: 实心已判 / 半心进行中 / 空心未起. */
@@ -87,7 +88,7 @@ export function MatrixPage(props: {
   t: LabViewProps['t']
 }) {
   const { matrix, loading, error, onColumn, onToggleGroup, onFilter, onOpenCell, t } = props
-  if (error !== null) return <div className={css.empty}>{t('matrix.error')}: {error}</div>
+  if (error !== null) return <ErrorState what={t('matrix.error')} message={error} t={t} />
   if (matrix === null) return <div className={css.empty}>{t('matrix.loading')}</div>
 
   const stuckMinutes = Math.round(matrix.stuckMs / 60_000)

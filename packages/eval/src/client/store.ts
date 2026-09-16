@@ -76,6 +76,13 @@ export interface LabViewState {
   approving: boolean
   /** The refusal an approval answered with, verbatim; null when none. */
   approveRefusal: string | null
+  /**
+   * The approval call's own FAILURE, as opposed to the gate's refusal above.
+   * A refusal is the mechanism working and is quoted verbatim (it is the only
+   * place a readiness verdict is written); a failure is an exception, and the
+   * page renders it through the three-part error seat (ui-spec §九).
+   */
+  approveError: string | null
   /** What the approval started; null until one succeeds in this visit. */
   started: LabStartedRun | null
   /** The started job's log, verbatim — where the readiness refusal is written. */
@@ -177,6 +184,14 @@ export interface LabViewState {
   exportOpen: boolean
   /** One-shot notice line (retry / release check / export outcomes), or null. */
   notice: string | null
+  /**
+   * The same one-shot seat when the gesture FAILED: the raw failure message,
+   * which the page renders through the three-part error seat rather than
+   * printing (ui-spec §九). Kept apart from `notice` because that field holds
+   * sentences this tab wrote for a human, and this one holds a sentence the
+   * host wrote for whoever debugs it — the two cannot share a renderer.
+   */
+  noticeError: string | null
 }
 
 /** Annotation twin of the actions literal below (drift fails assignability at defineStore). */
@@ -196,6 +211,7 @@ export type LabViewActions = {
   sendBack: (draft: LabViewState) => void
   setApproving: (draft: LabViewState, approving: boolean) => void
   setApproveRefusal: (draft: LabViewState, refusal: string | null) => void
+  setApproveError: (draft: LabViewState, message: string | null) => void
   setStarted: (draft: LabViewState, started: LabStartedRun) => void
   setOutput: (draft: LabViewState, output: EvalRunOutputView) => void
   setOutputError: (draft: LabViewState, error: string | null) => void
@@ -235,6 +251,7 @@ export type LabViewActions = {
   setJudgeSubmitting: (draft: LabViewState, submitting: boolean) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setNotice: (draft: LabViewState, notice: string | null) => void
+  setNoticeError: (draft: LabViewState, message: string | null) => void
 }
 
 const INITIAL: LabViewState = {
@@ -253,6 +270,7 @@ const INITIAL: LabViewState = {
   sentBack: false,
   approving: false,
   approveRefusal: null,
+  approveError: null,
   started: null,
   output: null,
   outputError: null,
@@ -292,6 +310,7 @@ const INITIAL: LabViewState = {
   judgeSubmitting: false,
   exportOpen: false,
   notice: null,
+  noticeError: null,
 }
 
 /**
@@ -302,12 +321,12 @@ const INITIAL: LabViewState = {
  */
 const PER_EXPERIMENT: Pick<
   LabViewState,
-  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal'
+  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal' | 'approveError'
   | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
   | 'judge' | 'judgeError' | 'judgeTicket' | 'judgeSubmitting'
-  | 'exportOpen' | 'notice'
+  | 'exportOpen' | 'notice' | 'noticeError'
 > = {
   detail: null,
   detailError: null,
@@ -316,6 +335,7 @@ const PER_EXPERIMENT: Pick<
   sentBack: false,
   approving: false,
   approveRefusal: null,
+  approveError: null,
   started: null,
   output: null,
   outputError: null,
@@ -341,6 +361,7 @@ const PER_EXPERIMENT: Pick<
   judgeSubmitting: false,
   exportOpen: false,
   notice: null,
+  noticeError: null,
 }
 
 /**
@@ -391,10 +412,13 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setReviewError: (d, error: string | null) => { d.reviewError = error },
       sendBack: (d) => { d.sentBack = true },
       setApproving: (d, approving: boolean) => { d.approving = approving },
-      setApproveRefusal: (d, refusal: string | null) => { d.approveRefusal = refusal },
+      // One seat, two renderers (see the two fields' docs).
+      setApproveRefusal: (d, refusal: string | null) => { d.approveRefusal = refusal; d.approveError = null },
+      setApproveError: (d, message: string | null) => { d.approveError = message; d.approveRefusal = null },
       setStarted: (d, started: LabStartedRun) => {
         d.started = started
         d.approveRefusal = null
+        d.approveError = null
         // An approved plan is no longer sent back, whatever the reviewer
         // pressed earlier in this visit.
         d.sentBack = false
@@ -519,7 +543,9 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       },
       setJudgeSubmitting: (d, submitting: boolean) => { d.judgeSubmitting = submitting },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },
-      setNotice: (d, notice: string | null) => { d.notice = notice },
+      // One seat, two renderers: whichever kind of news arrives clears the other.
+      setNotice: (d, notice: string | null) => { d.notice = notice; d.noticeError = null },
+      setNoticeError: (d, message: string | null) => { d.noticeError = message; d.notice = null },
     },
   })
 }

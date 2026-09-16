@@ -41,6 +41,7 @@ import { Field, StartedRun, factorCell, snapshotCell, stamp, statusKey } from '.
 import { PlanReviewPage } from './PlanReviewPage.tsx'
 import { LAB_PAGES } from './store.ts'
 import { CellsPage } from './CellsPage.tsx'
+import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { JudgingPage } from './JudgingPage.tsx'
 import { MatrixPage } from './MatrixPage.tsx'
@@ -184,6 +185,7 @@ export function LabView(props: LabViewProps) {
   const sentBack = useStore(s => s.sentBack)
   const approving = useStore(s => s.approving)
   const approveRefusal = useStore(s => s.approveRefusal)
+  const approveError = useStore(s => s.approveError)
   const started = useStore(s => s.started)
   const output = useStore(s => s.output)
   const outputError = useStore(s => s.outputError)
@@ -223,6 +225,7 @@ export function LabView(props: LabViewProps) {
   const judgeSubmitting = useStore(s => s.judgeSubmitting)
   const exportOpen = useStore(s => s.exportOpen)
   const notice = useStore(s => s.notice)
+  const noticeError = useStore(s => s.noticeError)
   // A draft made in THIS visit, held until its row shows up in the refreshed
   // list. The row does not exist client-side the moment the file lands, so
   // opening it by id immediately would drop the reader back to the list; the
@@ -382,7 +385,7 @@ export function LabView(props: LabViewProps) {
     void approvePlan(sessionId, { planPath, ...(keepUnits ? { keepUnits: true } : {}) }).then((result) => {
       actions.setApproving(false)
       if (!result.ok) {
-        actions.setApproveRefusal(result.error.message)
+        actions.setApproveError(result.error.message)
         return
       }
       const value = result.value
@@ -534,7 +537,7 @@ export function LabView(props: LabViewProps) {
         actions.setNotice(t('notice.retried', { id: missionId, attempt: result.value.attempt }))
         actions.refresh()
       } else {
-        actions.setNotice(result.error.message)
+        actions.setNoticeError(result.error.message)
       }
     })
   }
@@ -543,9 +546,11 @@ export function LabView(props: LabViewProps) {
     if (openRunId === null || cellSelection === null) return
     const missionId = cellSelection
     void releaseCheck(sessionId, { runId: openRunId, missionId }).then((result) => {
-      actions.setNotice(result.ok
-        ? t(result.value.releasable ? 'notice.releasable' : 'notice.notReleasable', { id: missionId })
-        : result.error.message)
+      if (result.ok) {
+        actions.setNotice(t(result.value.releasable ? 'notice.releasable' : 'notice.notReleasable', { id: missionId }))
+      } else {
+        actions.setNoticeError(result.error.message)
+      }
     })
   }
 
@@ -562,7 +567,7 @@ export function LabView(props: LabViewProps) {
     void finalizeRun(sessionId, { runId: openRunId }).then((result) => {
       actions.setFinalizing(false)
       if (!result.ok) {
-        actions.setNotice(result.error.message)
+        actions.setNoticeError(result.error.message)
         return
       }
       actions.setFinalizeResult(result.value)
@@ -601,7 +606,7 @@ export function LabView(props: LabViewProps) {
     void submitHumanFinal(sessionId, { runId: openRunId, ticket, verdicts }).then((result) => {
       actions.setJudgeSubmitting(false)
       if (!result.ok) {
-        actions.setNotice(result.error.message)
+        actions.setNoticeError(result.error.message)
         return
       }
       actions.setNotice(result.value.duplicate
@@ -635,12 +640,15 @@ export function LabView(props: LabViewProps) {
       </div>
       {draftNotice !== null && openRow === undefined && <div className={css.notice}>{draftNotice}</div>}
       {notice !== null && openRow !== undefined && <div className={css.notice}>{notice}</div>}
+      {noticeError !== null && openRow !== undefined && (
+        <ErrorState what={t('notice.failed')} message={noticeError} compact t={t} />
+      )}
       {openRow === undefined
         ? (
           <div className={css.body}>
             {loading && list === null && <div className={css.empty}>{t('list.loading')}</div>}
             {!loading && error !== null && list === null && (
-              <div className={css.empty}>{t('list.error')}: {error}</div>
+              <ErrorState what={t('list.error')} message={error} t={t} />
             )}
             {(list?.notes ?? []).map(note => <div key={note} className={css.note}>{note}</div>)}
             {list !== null && rows.length === 0 && <div className={css.empty}>{t('list.empty')}</div>}
@@ -705,7 +713,7 @@ export function LabView(props: LabViewProps) {
                 <>
                   {detailLoading && detail === null && <div className={css.empty}>{t('detail.loading')}</div>}
                   {detailError !== null && (
-                    <div className={css.empty}>{t('detail.error')}: {detailError}</div>
+                    <ErrorState what={t('detail.error')} message={detailError} t={t} />
                   )}
                   <Overview
                     row={openRow}
@@ -726,6 +734,7 @@ export function LabView(props: LabViewProps) {
                   sentBack={sentBack}
                   approving={approving}
                   refusal={approveRefusal}
+                  approveError={approveError}
                   started={started}
                   output={output}
                   outputError={outputError}
