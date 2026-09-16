@@ -110,7 +110,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 ## CLI
 
-`dsh-datasets` bin 镜像工具的读取动词（同语义同名参数），另有维护动词。仓库解析：`--repo`，否则 `$DSH_DATASETS_REPO`。退出码：0 成功，1 操作失败，2 用法错误。
+`dsh-datasets` bin 镜像工具的读取动词（同语义同名参数），另有维护动词。仓库解析：`--repo`，否则 `$DSH_DATASETS_REPO`。退出码：0 成功，1 操作失败，2 用法错误。从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
 
 ```sh
 dsh-datasets list [--repo R] [--dataset D] [--commit C]

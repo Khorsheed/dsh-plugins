@@ -318,6 +318,8 @@ run 的发起仍是人的动作，不注册任何 run 类模型工具——写�
 
 ## slash 与 CLI
 
+从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
+
 ```sh
 dsh-eval validate <plan.json>             # 校验 plan；报告 JSON 走 stdout
 dsh-eval run <plan.json> --dry-run        # 离线彩排：校验 + 模板 + 矩阵 + 顺序

@@ -108,7 +108,7 @@ The whitelist is a session-level constraint, not a security boundary: a same-mac
 
 ## CLI
 
-The `dsh-datasets` bin mirrors the tools' read verbs (same semantics, same parameters) and adds the maintenance verbs. Repository resolution: `--repo`, else `$DSH_DATASETS_REPO`. Exit codes: 0 ok, 1 operational failure, 2 usage error.
+The `dsh-datasets` bin mirrors the tools' read verbs (same semantics, same parameters) and adds the maintenance verbs. Repository resolution: `--repo`, else `$DSH_DATASETS_REPO`. Exit codes: 0 ok, 1 operational failure, 2 usage error. Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
 
 ```sh
 dsh-datasets list [--repo R] [--dataset D] [--commit C]
