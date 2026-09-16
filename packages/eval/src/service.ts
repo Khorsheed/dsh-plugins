@@ -34,6 +34,7 @@ import {
   type RunStatusReport,
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
+import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './draft.ts'
 import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
@@ -48,6 +49,7 @@ import type {
 } from './faces.ts'
 import type {
   EvalApproveResult, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView,
+  EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
   EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView,
   EvalJudgeVerdictInput, EvalMatrixView, EvalPlanReview, EvalRunReportView,
@@ -367,6 +369,104 @@ export class EvalService {
       )
     }
     return experimentDetail(mission, runId, this.jobs.list())
+  }
+
+  /**
+   * DRAFT an experiment — step 2 of ui-spec §七, and the one verb its three
+   * faces share: the 新建实验 form's Remote, the `eval_plan_draft` tool, and
+   * the `eval-planning` skill that tells an agent to call it.
+   *
+   * One action where there were two. Writing `plans/<name>.json`, writing each
+   * new condition beside it and then validating the result used to be three
+   * separate things an agent did with `write` and hoped it had spelled right,
+   * and a person could not do at all. Here they are one call: the files land in
+   * the session's bound repository (its pass-through area — `plans/` and
+   * `conditions/`, the 其他文件 slot of ui-spec §三), nothing is committed, and
+   * the same `validatePlan` every other face runs judges what was written.
+   *
+   * Drafting is NOT starting. There is no path from this verb to `runStart`,
+   * and a plan validate rejects still lands on disk — it is a 草稿, which is
+   * what the lab list calls it, and 批准并启动 stays the plan-review page's
+   * button (R1). The refusals here are the cases where there would be no draft
+   * to look at: an unresolvable repository, a name that is not a file name, a
+   * source condition that does not exist, a target file that does.
+   * @param request - ui-spec §五's fields, flat.
+   * @param options - the calling session (its dataset binding resolves the repository).
+   * @returns where the files landed, what the plan names, and validate's verdict.
+   * @throws {@link EvalReadRefused} when no dataset repository can be resolved,
+   *   or the named set is outside this session's binding.
+   * @throws {@link EvalDraftRefused} when the draft cannot be written.
+   */
+  async draftExperiment(request: EvalDraftRequest, options: { session?: { id: string } } = {}): Promise<EvalDraftResult> {
+    const scope = this.resolveRepoScope({
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+      dataset: request.dataset,
+      ...(options.session === undefined ? {} : { session: options.session }),
+    })
+    if (scope instanceof EvalReadRefused) throw scope
+    const write = await writeDraft({
+      repo: scope.repo,
+      dataset: request.dataset,
+      name: request.name,
+      ...(request.commit === undefined ? {} : { commit: request.commit }),
+      items: request.items,
+      conditions: request.conditions,
+      ...(request.newConditions === undefined ? {} : { newConditions: request.newConditions }),
+      ...(request.judgeConditions === undefined || request.judgeConditions.length === 0
+        ? {}
+        : {
+          judge: {
+            conditions: request.judgeConditions,
+            ...(request.judgeSamples === undefined ? {} : { samples: request.judgeSamples }),
+          },
+        }),
+      reps: request.reps,
+      stages: request.stages,
+      order: { seed: request.seed, ...(request.interleave === undefined ? {} : { interleave: request.interleave }) },
+      budget: { activeMinutes: request.activeMinutes, turns: request.turns },
+      ...(request.expectedNs === undefined ? {} : { expectedNs: request.expectedNs }),
+      ...(request.retryInfrastructure === undefined ? {} : { retryInfrastructure: request.retryInfrastructure }),
+      ...(request.unit === undefined
+        ? {}
+        : {
+          unit: {
+            image: request.unit.image,
+            ...(request.unit.network === undefined ? {} : { network: request.unit.network }),
+            ...(request.unit.user === undefined ? {} : { user: request.unit.user }),
+            ...(request.unit.egressCommand === undefined || request.unit.egressCommand.length === 0
+              ? {}
+              : {
+                egressCheck: {
+                  command: request.unit.egressCommand,
+                  ...(request.unit.egressTimeoutMs === undefined ? {} : { timeoutMs: request.unit.egressTimeoutMs }),
+                },
+              }),
+          },
+        }),
+      ...(request.exports === undefined ? {} : { exports: request.exports }),
+      ...(request.notes === undefined ? {} : { notes: request.notes }),
+    })
+    // The review page's own projection, not a summary of it: what an agent
+    // reports to a person and what that person then reads on the page come
+    // from one call to one validate.
+    return { ...write, review: await this.planReview(write.planPath) }
+  }
+
+  /**
+   * What the 新建实验 form may offer: the dataset sets of the session's bound
+   * repository, each with the items it declares and the stage schemas it
+   * ships. One read fills every picker on the form.
+   *
+   * Degrades rather than refusing, like the lab list: a repository with no
+   * `datasets/` directory answers with an empty list and a sentence saying so.
+   * @param options - `repo` wins; otherwise the session's binding decides, and
+   *   its dataset whitelist is honoured.
+   * @throws {@link EvalReadRefused} when no repository can be resolved at all.
+   */
+  draftOptions(options: { repo?: string; session?: { id: string } } = {}): Promise<EvalDraftOptionsView> {
+    const scope = this.resolveRepoScope(options)
+    if (scope instanceof EvalReadRefused) return Promise.reject(scope)
+    return readDraftOptions(scope.repo, scope.datasets)
   }
 
   /**
@@ -945,5 +1045,7 @@ export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runRe
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
+export { EvalDraftRefused, draftExperiment, draftOptions } from './draft.ts'
+export type { DraftConditionEdit, DraftExperimentInput, DraftOptions, DraftWrite } from './draft.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'

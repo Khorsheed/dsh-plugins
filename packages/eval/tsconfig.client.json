@@ -20,6 +20,7 @@
     "src/client/JudgingPage.tsx",
     "src/client/LabView.tsx",
     "src/client/MatrixPage.tsx",
+    "src/client/NewExperimentDialog.tsx",
     "src/client/PlanReviewPage.tsx",
     "src/client/ReportPage.tsx",
     "src/client/contract.ts",

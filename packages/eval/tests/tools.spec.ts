@@ -1,12 +1,13 @@
 /**
- * The four READ tools the companion row registers: the definition factory's
- * names and each adapter's `execute` against fake service faces — a temp
- * dataset tree for the two contract tools, a fake mission ledger for the two
- * run projections. Registration, origin tagging, and the `tools: 'none'` switch
- * belong to `@khorsheed/dsh-eval-tool` and are pinned in its own spec.
+ * The five tools the companion row registers — four reads and `eval_plan_draft`
+ * — through the definition factory's names and each adapter's `execute`
+ * against fake service faces: a temp dataset tree for the contract tools, a
+ * fake mission ledger for the two run projections. Registration, origin
+ * tagging, and the `tools: 'none'` switch belong to
+ * `@khorsheed/dsh-eval-tool` and are pinned in its own spec.
  */
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalService } from '../src/service.ts'
 import { evalToolDefinitions } from '../src/tool.ts'
@@ -61,7 +62,7 @@ function writeRepo(): string {
   return repo
 }
 
-/** Build the four tools over one service and index them by name. */
+/** Build the five tools over one service and index them by name. */
 function toolsOver(service: EvalService): Map<string, RegisteredTool> {
   const definitions = evalToolDefinitions(service) as unknown as RegisteredTool[]
   return new Map(definitions.map(tool => [tool.name, tool]))
@@ -239,6 +240,97 @@ function missionFace(): {
     }),
   }
 }
+
+describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', () => {
+  /** A repository the draft can land in: one item, one stage schema, one condition. */
+  function draftableRepo(): string {
+    const repo = writeRepo()
+    const dataset = join(repo, 'datasets', 'harness-comparison')
+    writeJson(dataset, 'schemas/stage1.json', { type: 'object', properties: { done: { type: 'boolean' } } })
+    writeJson(dataset, 'items/P0/item.json', { id: 'P0' })
+    return repo
+  }
+
+  const DRAFT_ARGS = {
+    name: 'i5-walk',
+    dataset: 'harness-comparison',
+    items: ['P0'],
+    conditions: ['locked'],
+    reps: 1,
+    stages: ['stage1'],
+    seed: 20260916,
+    active_minutes: 60,
+    turns: 10,
+  }
+
+  it('writes the plan, validates it, and answers with both', async () => {
+    const repo = draftableRepo()
+    const tool = toolsOver(new EvalService()).get('eval_plan_draft') as RegisteredTool
+
+    const result = await tool.execute({ ...DRAFT_ARGS, repo }, {}) as {
+      planPath: string
+      conditionPaths: string[]
+      conditions: string[]
+      review: { ok: boolean; errors: number }
+    }
+
+    expect(result.planPath).toBe(join(repo, 'datasets', 'harness-comparison', 'plans', 'i5-walk.json'))
+    expect(result.conditions).toEqual(['locked'])
+    expect(result.review.ok).toBe(true)
+    expect(result.review.errors).toBe(0)
+  })
+
+  it('reaches the SAME service verb the 新建实验 form\'s Remote reaches', async () => {
+    const repo = draftableRepo()
+    const service = new EvalService()
+    const draft = vi.spyOn(service, 'draftExperiment')
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
+
+    await tool.execute({ ...DRAFT_ARGS, repo }, { agent: { session: { id: 's1' } } })
+
+    // One verb, three faces (form, tool, skill). A second implementation of
+    // "write the plan and validate it" is a second place for the two to
+    // disagree about what a draft IS — and the lab list would then be able to
+    // tell a person's draft from an agent's.
+    expect(draft).toHaveBeenCalledTimes(1)
+    expect(draft.mock.calls[0]?.[0]).toMatchObject({ name: 'i5-walk', dataset: 'harness-comparison', repo })
+    // The session rides along, because the repository a draft lands in is the
+    // human's binding decision, not the model's.
+    expect(draft.mock.calls[0]?.[1]).toEqual({ session: { id: 's1' } })
+  })
+
+  it('mints a condition as a copy, and refuses one with no source to copy', async () => {
+    const repo = draftableRepo()
+    const tool = toolsOver(new EvalService()).get('eval_plan_draft') as RegisteredTool
+
+    const result = await tool.execute({
+      ...DRAFT_ARGS,
+      repo,
+      conditions: ['locked'],
+      new_conditions: [{ id: 'locked-pro', from: 'locked', model: 'deepseek-official/deepseek-v4-pro' }],
+    }, {}) as { conditionPaths: string[]; conditions: string[] }
+
+    expect(result.conditions).toEqual(['locked', 'locked-pro'])
+    expect(result.conditionPaths).toHaveLength(1)
+
+    await expect(tool.execute({
+      ...DRAFT_ARGS, repo, name: 'other', new_conditions: [{ id: 'orphan' }],
+    }, {})).rejects.toThrow(/always a COPY/)
+  })
+
+  it('never starts anything — the row has no run verb and this one reaches none', async () => {
+    const repo = draftableRepo()
+    const service = new EvalService()
+    const runStart = vi.spyOn(service, 'runStart')
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
+
+    await tool.execute({ ...DRAFT_ARGS, repo }, {})
+
+    expect(runStart).not.toHaveBeenCalled()
+    // And it says so where the model reads it, rather than only in a comment.
+    expect((tool as unknown as { description: string }).description).toContain('DRAFTING IS NOT STARTING')
+  })
+})
 
 describe('eval_run_status', () => {
   it('digests run.meta and projects every cell through the orchestrator ns', async () => {

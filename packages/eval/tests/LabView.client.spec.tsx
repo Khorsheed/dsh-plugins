@@ -42,6 +42,8 @@ interface Harness {
   fetchConditionDiff: ReturnType<typeof vi.fn>
   approvePlan: ReturnType<typeof vi.fn>
   fetchRunOutput: ReturnType<typeof vi.fn>
+  fetchDraftOptions: ReturnType<typeof vi.fn>
+  draftExperiment: ReturnType<typeof vi.fn>
 }
 
 const LIST: EvalExperimentsResult = {
@@ -143,6 +145,11 @@ function makeHarness(overrides: { list?: EvalExperimentsResult } = {}): Harness 
     fetchPlanReview: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     fetchConditions: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     fetchConditionDiff: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    // The 新建实验 form has its own spec (NewExperiment.client.spec.tsx);
+    // here the two verbs only have to exist, because the dialog mounts with
+    // the view and reads them when it is opened.
+    fetchDraftOptions: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    draftExperiment: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     approvePlan: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     fetchRunOutput: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
   }
@@ -164,6 +171,8 @@ function renderView(h: Harness) {
     fetchPlanReview: h.fetchPlanReview,
     fetchConditions: h.fetchConditions,
     fetchConditionDiff: h.fetchConditionDiff,
+    fetchDraftOptions: h.fetchDraftOptions,
+    draftExperiment: h.draftExperiment,
     approvePlan: h.approvePlan,
     fetchRunOutput: h.fetchRunOutput,
     t: (key: string, params?: Record<string, unknown>) => (
@@ -210,12 +219,25 @@ describe('LabView list', () => {
     expect(screen.getByText('list.empty')).toBeTruthy()
   })
 
-  it('新建实验 is a placeholder naming the task that owns it', async () => {
+  it('新建实验 opens the draft form and reads what the repository holds', async () => {
     const h = makeHarness()
     renderView(h)
     await screen.findByText('harness-comparison')
     fireEvent.click(screen.getByRole('button', { name: 'list.new' }))
-    expect(screen.getByText('placeholder.new')).toBeTruthy()
+
+    // The form's own behaviour is NewExperiment.client.spec.tsx's; what this
+    // spec pins is that the list's one action opens it and that the two reads
+    // are paid for THEN — walking a repository's item tree is not a read to
+    // spend on a person who is only looking at their experiments.
+    expect(await screen.findByText('new.title')).toBeTruthy()
+    await waitFor(() => { expect(h.fetchDraftOptions).toHaveBeenCalledWith('s1', {}) })
+  })
+
+  it('does not read the draft options until the form is opened', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await screen.findByText('harness-comparison')
+    expect(h.fetchDraftOptions).not.toHaveBeenCalled()
   })
 })
 

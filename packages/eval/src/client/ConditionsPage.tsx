@@ -13,9 +13,11 @@
  * fields are the experiment's intended factor, because deciding that depends
  * on things no file knows.
  *
- * 新建条件 is a placeholder on purpose. Choosing a model IS minting a
- * condition (ui-spec §五), so the button belongs to the new-experiment form,
- * which is T34's; a form here would be a second way to write the same file.
+ * 新建条件 POINTS rather than forms. Choosing a model IS minting a condition
+ * (ui-spec §五), so the place to do it is the 新建实验 form on the list, which
+ * mints the condition and the plan that uses it in one write (I5·T34). A
+ * second form here would be a second way to write the same file, and the two
+ * would drift.
  */
 
 import { useState } from 'react'

@@ -2,6 +2,13 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— I5 · T34：起草实验的一个动词，三个面
+
+- `@khorsheed/dsh-eval`：新增服务面 `draftExperiment(request, {session})`——把「写 `plans/<名称>.json` + 写它引用的新条件 + validate」并成一次调用，文件落进会话绑定题库工作树的透传区（`plans/` 与 `conditions/`），不 commit、不覆盖已有文件。新条件一律从现有条件**复制**再改点名的六个字段（harness / model.declared / scope / preset / permissions / reasoning.effort），改零个字段会被拒；复制后 `home.sha` 一律置空、换 harness 时 `harness.version` 置空、`notes` 换成出处行。validate 不过的 plan 照样落盘——它就是「草稿」。配套 `draftOptions` 给表单填选择器（题集 → 题目 / 阶段 schema）
+- `@khorsheed/dsh-eval` Remote 加 `newExperiment` / `draftOptions` 两个带会话的动词；客户端的「实验室 › 新建实验」从占位变成真表单（ui-spec §五的字段全在，题目 / 条件 / 阶段都是多选，「新建条件」是复制表单），保存后跳到该草稿的计划审阅页。**启动仍不在这张表单上**：能起 run 的只有计划审阅页的「批准并启动」与 `/eval run`
+- `@khorsheed/dsh-eval-tool` 的 `tools: all` 从四个工具变五个：新增 `eval_plan_draft`，与表单走同一个服务面动词，所以人建的草稿与 agent 建的草稿是同一份文件、落进同一个列表。这是这一行唯一的写，理由与其它写类动词不给的理由是同一条——草稿是文件不是动作，批准 / 登录 / provision / 终评一个都没挪位（ui-spec R1）
+- `dsh-web-eval` pack 随包装 `eval-planning` 技能到 `$DSH_HOME/skills`
+
 ## Unreleased —— 单实例多模式 M4'③：mission / datasets / eval 工具行拆分
 
 - 三个新伴生包（0.1.0）：`@khorsheed/dsh-mission-tool`（12 个 mission 工具 + `tool:mission` 段；`tools`: all / read / none）、`@khorsheed/dsh-datasets-tool`（8 个 datasets 工具 + `datasets:tools` 段；`tools`: all / read / authoring / none）、`@khorsheed/dsh-eval-tool`（3 个只读 eval 工具 + `tool:eval` 段；`tools`: all / none）——只注册工具与提示词段、不发布服务、不声明 `dsh.bundle`（依赖安装仅可解析、不自挂载），由各 agent preset 的 `agent.cordis.yml` 按名引用；core 缺席时记一条日志后静默不注册

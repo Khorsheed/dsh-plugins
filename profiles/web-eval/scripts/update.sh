@@ -26,6 +26,13 @@ UPDATE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml"
 # because the preset roster is per-HOME.
 PRESET_IDS="eval"
 
+# Overwritten on update too: the pack's skills. `eval-planning` teaches the one
+# drafting verb and where the line between drafting and starting is, so it is
+# apparatus like the preset. Keep the list in step with install.sh's SKILL_IDS;
+# the destination is $DSH_HOME/skills — `dsh-skill-filesystem`'s `user-dsh`
+# root, outside the profile directory, because the skill roster is per-HOME.
+SKILL_IDS="eval-planning"
+
 # ── Machine-level preflight, BEFORE anything is written. ────────────────
 # Same rule as install.sh, and for the same reason: an update replaces the
 # pinned patch layer and the agent presets WHOLE, and the first `dsh` call is
@@ -64,6 +71,7 @@ fi
 # nothing on screen about it.
 UPDATE_BACKUP="$DEST/.web-eval-update-backup.$$"
 PRESET_BACKUP="$DSH_HOME/.agent-presets/.web-eval-backup.$$"
+SKILL_BACKUP="$DSH_HOME/skills/.web-eval-backup.$$"
 trap 'echo "dsh-web-eval: update failed — $DEST may be half-updated" >&2
   if [ -d "$UPDATE_BACKUP" ]; then
     echo "  the previous template files are at $UPDATE_BACKUP (restore with cp -R $UPDATE_BACKUP/. $DEST/)" >&2
@@ -71,6 +79,10 @@ trap 'echo "dsh-web-eval: update failed — $DEST may be half-updated" >&2
   if [ -d "$PRESET_BACKUP" ]; then
     echo "  the previous agent preset(s) are at $PRESET_BACKUP" >&2
     echo "  restore with: rm -rf $DSH_HOME/.agent-presets/<id> && mv $PRESET_BACKUP/<id> $DSH_HOME/.agent-presets/" >&2
+  fi
+  if [ -d "$SKILL_BACKUP" ]; then
+    echo "  the previous skill(s) are at $SKILL_BACKUP" >&2
+    echo "  restore with: rm -rf $DSH_HOME/skills/<id> && mv $SKILL_BACKUP/<id> $DSH_HOME/skills/" >&2
   fi' 0
 
 mkdir -p "$UPDATE_BACKUP"
@@ -94,10 +106,24 @@ for id in $PRESET_IDS; do
   cp -R "$SRC/presets/$id" "$PRESET_ROOT/$id"
   echo "dsh-web-eval: refreshed agent preset \"$id\" at $PRESET_ROOT/$id"
 done
+
+SKILL_ROOT="$DSH_HOME/skills"
+for id in $SKILL_IDS; do
+  [ -f "$SRC/skills/$id/SKILL.md" ] || { echo "dsh-web-eval: skills/$id/SKILL.md missing from the clone" >&2; exit 1; }
+  mkdir -p "$SKILL_ROOT"
+  if [ -d "$SKILL_ROOT/$id" ]; then
+    mkdir -p "$SKILL_BACKUP"
+    cp -R "$SKILL_ROOT/$id" "$SKILL_BACKUP/$id"
+  fi
+  rm -rf "$SKILL_ROOT/$id"
+  cp -R "$SRC/skills/$id" "$SKILL_ROOT/$id"
+  echo "dsh-web-eval: refreshed skill \"$id\" at $SKILL_ROOT/$id"
+done
 dsh plugin --profile web-eval install
 ROWS=$(dsh --profile web-eval --dump-config 2>/dev/null | grep -c '^- id: ' || true)
 trap - 0
 rm -rf "$UPDATE_BACKUP"
-[ -d "$PRESET_BACKUP" ] && rm -rf "$PRESET_BACKUP"
+if [ -d "$PRESET_BACKUP" ]; then rm -rf "$PRESET_BACKUP"; fi
+if [ -d "$SKILL_BACKUP" ]; then rm -rf "$SKILL_BACKUP"; fi
 echo "dsh-web-eval: updated $DEST — $ROWS loader rows composed"
 echo "next: sh $(cd "$(dirname "$0")/.." && pwd)/scripts/restart-into-web-eval.sh   # restart to pick up the new members"

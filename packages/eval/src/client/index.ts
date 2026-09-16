@@ -36,7 +36,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
   EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
-  EvalConditionsRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
+  EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
+  EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
   EvalMatrixRequest, EvalPlanRequest, EvalReportRequest,
 } from '../types.ts'
@@ -103,6 +104,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
         fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
         fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
+        // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
+        // a draft a person fills in and a draft an agent makes in one
+        // sentence are the same file in the same list.
+        fetchDraftOptions: (sid: SessionId, request: EvalDraftOptionsRequest) => remote.draftOptions(sid, request),
+        draftExperiment: (sid: SessionId, request: EvalDraftRequest) => remote.newExperiment(sid, request),
         approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
         // The cursor is passed EXPLICITLY even though the verb defaults it:
         // the gateway's client proxy enforces exact positional arity, so a

@@ -1021,3 +1021,73 @@
   flex: 1 1 180px;
   min-width: 0;
 }
+
+/* ── the 新建实验 form (ui-spec §五, step 2) ─────────────────────────────── */
+
+/* No min-width: the modal decides how wide it is, and a form that insists on
+   being wider is not scrolled — it is CLIPPED, which cost this slice a round
+   of acceptance (half of every condition label and the second budget field
+   were off the right edge). Everything below shrinks or wraps instead. */
+.newForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 60vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Label ABOVE the field, not beside it: a side label costs ~100px of a narrow
+   dialog, and the widest things here are condition labels (`id · harness /
+   model`) that need every pixel. */
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.formLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.formField {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The three multi-selects (题目 / 条件 / 阶段). Capped and scrollable: a
+   dataset set with fifty items must not push the save button off screen. */
+.pickList {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  min-width: 0;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 4px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}
+
+/* A long label wraps within the row rather than pushing the row wider. */
+.pickList .guardedItem {
+  align-items: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pickList .guardedItem > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

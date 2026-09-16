@@ -74,11 +74,11 @@
 | 包 · 档位 | 工具 | 备注 |
 |---|---|---|
 | datasets-tool · authoring | list · show · describe · read · snapshot · validate · put_item | 读只到绑定白名单内的可见层；`put_item` 即题目骨架；`worktree_path` 不给 |
-| eval-tool · all | eval_conditions · eval_plan_validate · eval_run_status · **eval_cells**（新） | 按格子读投影，收编原 mission 四个读工具的用途；没有 run / finalize / provision |
+| eval-tool · all | eval_conditions · eval_plan_validate · eval_run_status · **eval_cells**（新） · **eval_plan_draft**（新） | 前四个按格子读投影，收编原 mission 四个读工具的用途；`eval_plan_draft` 是这一行唯一的写——写 plan 与新条件再 validate，与「新建实验」表单同一个服务面动词；没有 run / finalize / provision |
 | 预设自带 | read · write · edit · glob · grep · job_* · subagent · subagent_fork · web_search · skill · goal · todo · ask_user | 写 plan / condition / 分析初稿全靠 write |
 | 不在表上 | bash · pwsh · workflow · ralph · plan_mode · subagent_<harness> · 任何 lab 工具 · mission-tool | 决策 12 与 R6 |
 
-I5 可补 `eval_plan_draft` 把「写文件 + validate」并成一个动作，供 `eval-planning` skill 用。
+`eval_plan_draft` 已落地（I5·T34）：把「写文件 + validate」并成一个动作，`eval-planning` skill 教 agent 走这条路，技能随 pack 装到 `$DSH_HOME/skills`。
 
 ## 七、八步流程与面
 

@@ -169,7 +169,58 @@ export type EvalKey =
   | 'judge.panel'
   | 'notice.humanFinal'
   | 'notice.humanFinalDuplicate'
-  | 'placeholder.new'
+  | 'new.title'
+  | 'new.description'
+  | 'new.name'
+  | 'new.namePlaceholder'
+  | 'new.dataset'
+  | 'new.datasetPick'
+  | 'new.commit'
+  | 'new.commitPlaceholder'
+  | 'new.items'
+  | 'new.itemsEmpty'
+  | 'new.conditions'
+  | 'new.conditionsEmpty'
+  | 'new.mintOpen'
+  | 'new.mintClose'
+  | 'new.mintTitle'
+  | 'new.mintId'
+  | 'new.mintIdPlaceholder'
+  | 'new.mintFrom'
+  | 'new.mintFromPick'
+  | 'new.mintUnchanged'
+  | 'new.mintOneFactor'
+  | 'new.mintFactors'
+  | 'new.mint.harness'
+  | 'new.mint.model'
+  | 'new.mint.scope'
+  | 'new.mint.preset'
+  | 'new.mint.permissions'
+  | 'new.mint.reasoning'
+  | 'new.judges'
+  | 'new.judgeSamples'
+  | 'new.stages'
+  | 'new.stagesEmpty'
+  | 'new.reps'
+  | 'new.seed'
+  | 'new.interleave'
+  | 'new.budget'
+  | 'new.activeMinutes'
+  | 'new.turns'
+  | 'new.unit'
+  | 'new.unitImage'
+  | 'new.unitNetwork'
+  | 'new.egress'
+  | 'new.notes'
+  | 'new.notesPlaceholder'
+  | 'new.notStarting'
+  | 'new.save'
+  | 'new.saving'
+  | 'new.cancel'
+  | 'new.error'
+  | 'new.optionsError'
+  | 'notice.drafted'
+  | 'notice.draftedWithErrors'
   | 'matrix.loading'
   | 'matrix.error'
   | 'matrix.empty'
@@ -426,7 +477,58 @@ export const en: Record<EvalKey, string> = {
   'judge.panel': '{count} judge condition(s) on the panel',
   'notice.humanFinal': 'human-final recorded on cell {no}: {count} verdict(s), by {by}',
   'notice.humanFinalDuplicate': 'Cell {no} already carried exactly these verdicts — the ledger is append-only and identical repeats are a no-op, so nothing was written.',
-  'placeholder.new': 'The new-experiment form belongs to T36. Until then a plan is drafted as a file: <repo>/datasets/<set>/plans/<name>.json.',
+  'new.title': 'New experiment',
+  'new.description': 'Drafts plans/<name>.json (and any new condition file) into the bound repository working copy, then validates it. Nothing is committed and nothing is started — approving is the next page.',
+  'new.name': 'Name',
+  'new.namePlaceholder': 'The plan\'s file name, e.g. i5-walk',
+  'new.dataset': 'Dataset set',
+  'new.datasetPick': 'Pick a set…',
+  'new.commit': 'Snapshot',
+  'new.commitPlaceholder': 'Commit to pin; empty lets the run pin it at start',
+  'new.items': 'Items',
+  'new.itemsEmpty': 'Pick a dataset set first — its items fill this list',
+  'new.conditions': 'Conditions',
+  'new.conditionsEmpty': 'This set declares no conditions yet',
+  'new.mintOpen': 'New condition',
+  'new.mintClose': 'Drop the new condition',
+  'new.mintTitle': 'A new condition is a COPY: pick one that exists and change a field. Two conditions differing in ONE field are a single-factor pair — that is what makes the comparison answerable.',
+  'new.mintId': 'New id',
+  'new.mintIdPlaceholder': 'conditions/<id>.json',
+  'new.mintFrom': 'Copy from',
+  'new.mintFromPick': 'Pick the condition to copy…',
+  'new.mintUnchanged': 'unchanged',
+  'new.mintOneFactor': 'One field changes: {field}. That is a single-factor pair.',
+  'new.mintFactors': '{count} fields change — the comparison then cannot say which one moved the result.',
+  'new.mint.harness': 'harness',
+  'new.mint.model': 'model',
+  'new.mint.scope': 'scope',
+  'new.mint.preset': 'preset',
+  'new.mint.permissions': 'permissions',
+  'new.mint.reasoning': 'reasoning',
+  'new.judges': 'Judge',
+  'new.judgeSamples': 'samples per cell',
+  'new.stages': 'Stages',
+  'new.stagesEmpty': 'This set ships no stage schemas',
+  'new.reps': 'Reps',
+  'new.seed': 'Order seed',
+  'new.interleave': 'interleave (spread same-condition cells apart)',
+  'new.budget': 'Budget',
+  'new.activeMinutes': 'active minutes per cell',
+  'new.turns': 'turns per cell',
+  'new.unit': 'Environment',
+  'new.unitImage': 'image (empty = host path)',
+  'new.unitNetwork': 'network (undeclared bridge HAS egress)',
+  'new.egress': 'egress check argv, space separated',
+  'new.notes': 'Notes',
+  'new.notesPlaceholder': 'What this comparison is for, and what it cannot settle',
+  'new.notStarting': 'Saving drafts and validates. Starting is 批准并启动 on the plan-review page; logging the harnesses in and provisioning their conditions come first, and both are yours.',
+  'new.save': 'Save draft and validate',
+  'new.saving': 'Saving…',
+  'new.cancel': 'Cancel',
+  'new.error': 'The draft was not written',
+  'new.optionsError': 'Could not read what this repository holds',
+  'notice.drafted': 'Drafted {name}: {plan} — validate found no errors. Approving and starting is on this page.',
+  'notice.draftedWithErrors': 'Drafted {name}: {plan} — validate found {errors} error(s), so it stays a draft. The list below says what.',
   'matrix.loading': 'Arranging the matrix…',
   'matrix.error': 'Failed to arrange the matrix',
   'matrix.empty': 'This run expanded no cells',
@@ -629,7 +731,7 @@ export const en: Record<EvalKey, string> = {
   'conditions.diffAbsent': 'absent',
   'conditions.diffError': 'Failed to diff the two conditions',
   'conditions.new': 'New condition',
-  'conditions.newPlaceholder': 'Choosing a model IS minting a condition, so the button leads to the new-experiment form, which belongs to T34. Until then a condition is drafted as a file and provisioned with /eval conditions provision.',
+  'conditions.newPlaceholder': 'Choosing a model IS minting a condition, so minting one lives in the 新建实验 form: go back to the list, press it, and open 新建条件 there — it copies a condition you pick and changes the field you name, together with the plan that uses it. Turning the declaration into a real scoped home is still yours: /eval conditions provision.',
 }
 
 /** 中文词典。 */
@@ -735,7 +837,58 @@ export const zh: Record<EvalKey, string> = {
   'judge.panel': '判官面板 {count} 位',
   'notice.humanFinal': '格子 {no} 的 human-final 已记入：{count} 条，by {by}',
   'notice.humanFinalDuplicate': '格子 {no} 上已经有一模一样的判定——账本只追加、重复即空操作，这次没有写入。',
-  'placeholder.new': '新建实验表单归 T36。在那之前，实验用文件起草：<题库>/datasets/<题集>/plans/<名称>.json。',
+  'new.title': '新建实验',
+  'new.description': '把 plans/<名称>.json（以及新建的条件文件）写进绑定题库的工作树并 validate。不 commit，也不启动——批准在下一页。',
+  'new.name': '名称',
+  'new.namePlaceholder': '即 plan 的文件名，如 i5-walk',
+  'new.dataset': '题集',
+  'new.datasetPick': '选一个题集…',
+  'new.commit': '快照',
+  'new.commitPlaceholder': '要钉的 commit；留空则由 run 启动时钉',
+  'new.items': '题目',
+  'new.itemsEmpty': '先选题集——它的题目会填进这里',
+  'new.conditions': '条件',
+  'new.conditionsEmpty': '这个题集还没有条件',
+  'new.mintOpen': '新建条件',
+  'new.mintClose': '不新建条件',
+  'new.mintTitle': '新条件一律是「复制」：选一条已有的，改一个字段。两条只差一个字段才是单因子配对——比较能回答问题靠的就是这个。',
+  'new.mintId': '新条件 id',
+  'new.mintIdPlaceholder': 'conditions/<id>.json',
+  'new.mintFrom': '复制自',
+  'new.mintFromPick': '选要复制的条件…',
+  'new.mintUnchanged': '不改',
+  'new.mintOneFactor': '只改了 {field} 一项，是单因子配对。',
+  'new.mintFactors': '改了 {count} 项——比较就说不清是哪一项让结果变了。',
+  'new.mint.harness': 'harness',
+  'new.mint.model': '模型',
+  'new.mint.scope': 'scope',
+  'new.mint.preset': 'preset',
+  'new.mint.permissions': '权限',
+  'new.mint.reasoning': '推理强度',
+  'new.judges': '判官',
+  'new.judgeSamples': '每格采样数',
+  'new.stages': '阶段',
+  'new.stagesEmpty': '这个题集没有阶段 schema',
+  'new.reps': 'rep',
+  'new.seed': '顺序 seed',
+  'new.interleave': '交错（同条件的格子不连着排）',
+  'new.budget': '预算',
+  'new.activeMinutes': '每格活跃分钟',
+  'new.turns': '每格轮数',
+  'new.unit': '环境',
+  'new.unitImage': '镜像（留空即宿主路径）',
+  'new.unitNetwork': '网络（不声明就是默认桥接网，那是通外网的）',
+  'new.egress': '出网自检 argv，空格分隔',
+  'new.notes': '备注',
+  'new.notesPlaceholder': '这次比较是为了回答什么，又答不了什么',
+  'new.notStarting': '保存＝起草并 validate。启动是计划审阅页的「批准并启动」；在那之前还要人去登录各家、provision 条件。',
+  'new.save': '保存草稿并 validate',
+  'new.saving': '保存中…',
+  'new.cancel': '取消',
+  'new.error': '草稿没写成',
+  'new.optionsError': '读不到这个题库里有什么',
+  'notice.drafted': '已起草 {name}：{plan}——validate 没有 error。批准并启动就在本页。',
+  'notice.draftedWithErrors': '已起草 {name}：{plan}——validate 报了 {errors} 条 error，所以它仍是草稿。下面的清单说了是哪些。',
   'matrix.loading': '排矩阵…',
   'matrix.error': '矩阵排布失败',
   'matrix.empty': '这个 run 没有展开出格子',
@@ -938,5 +1091,5 @@ export const zh: Record<EvalKey, string> = {
   'conditions.diffAbsent': '无此字段',
   'conditions.diffError': '两条条件的 diff 失败',
   'conditions.new': '新建条件',
-  'conditions.newPlaceholder': '选模型即新建条件，所以这个按钮回到新建实验表单，那张表归 T34。在那之前，条件用文件起草，再用 /eval conditions provision 落成。',
+  'conditions.newPlaceholder': '选模型即新建条件，所以新建条件在「新建实验」表单里：回到实验室列表点「新建实验」，在里面开「新建条件」——它把你选的那条复制一份、只改你填的字段，和用它的 plan 一起写出来。把声明落成真的作用域家目录仍是人的事：/eval conditions provision。',
 }

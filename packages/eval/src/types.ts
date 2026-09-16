@@ -447,6 +447,151 @@ export interface EvalApproveResult {
   parentSessionId: string | null
 }
 
+/* ──────────────── the 新建实验 form (ui-spec §五, step 2) ──────────────── */
+
+/**
+ * One condition the draft MINTS: a copy of a declaration that already exists,
+ * with some of the six fields ui-spec §五 lists changed. There is deliberately
+ * no shape here for a condition written from scratch — an experiment is worth
+ * running when its conditions differ in one field, and a declaration nobody
+ * copied differs in however many its author forgot to think about.
+ *
+ * Every field except `id` and `from` is optional, and an edit that changes
+ * NOTHING is refused: that would be the same subject under a second name, and
+ * it would double every count keyed by condition id.
+ */
+export interface EvalDraftConditionRequest {
+  /** The new condition's id; it doubles as the file name. */
+  id: string
+  /** The condition to copy, by id, in the same dataset set. */
+  from: string
+  /** `harness.name`. Changing it nulls `harness.version` — that version was another CLI's. */
+  harness?: string
+  /** `model.declared`; null is the legal "not resolved yet" declaration. */
+  model?: string | null
+  /** The named scoped home, or null for the harness's default one. */
+  scope?: string | null
+  /** The agent-preset roster, or null for none. */
+  preset?: string | null
+  /** The harness's permission word. */
+  permissions?: string
+  /** `reasoning.effort`. */
+  reasoning?: string
+}
+
+/** The container segment a drafted plan may declare. */
+export interface EvalDraftUnitRequest {
+  /** Image tag or digest of the dataset suite's env/ layer. */
+  image: string
+  /** The docker network the units join; undeclared is the default bridge, which HAS egress. */
+  network?: string
+  /** In-container user (uid[:gid]). */
+  user?: string
+  /** argv of the per-unit egress probe; empty declares none. */
+  egressCommand?: string[]
+  /** Budget for that probe, in ms. */
+  egressTimeoutMs?: number
+}
+
+/**
+ * What the 新建实验 form (and `eval_plan_draft`) sends. The fields are ui-spec
+ * §五's list, flattened: the form's own shape and the tool's arguments are the
+ * same request because they reach the same service verb.
+ */
+export interface EvalDraftRequest {
+  /** The experiment name — the plan's file stem (`plans/<name>.json`). */
+  name: string
+  /** The dataset set to draft into. */
+  dataset: string
+  /** Dataset repository override; omit to use the calling session's binding. */
+  repo?: string
+  /** The commit to pin, or omit to let the run's snapshot pin it. */
+  commit?: string | null
+  /** The dataset items the matrix runs over. */
+  items: string[]
+  /** Player condition ids; a minted condition not named here is appended. */
+  conditions: string[]
+  /** Conditions to mint, each a copy of an existing declaration. */
+  newConditions?: EvalDraftConditionRequest[]
+  /** Judge condition ids; empty writes no judge block at all. */
+  judgeConditions?: string[]
+  /** Judge samples per cell; ignored without judge conditions. */
+  judgeSamples?: number
+  /** Independent samples per cell. */
+  reps: number
+  /** Stage names, each backed by `schemas/<stage>.json`. */
+  stages: string[]
+  /** The order seed, recorded with the run (frozen decision 11). */
+  seed: number
+  /** Whether same-condition cells are deliberately spread apart; default true. */
+  interleave?: boolean
+  /** Per-cell budget in ACTIVE minutes (not wall clock). */
+  activeMinutes: number
+  /** Per-cell delegation turns. */
+  turns: number
+  /** Verdict sources the run expects; omit for script + llm-draft + human-final. */
+  expectedNs?: string[]
+  /** Per-cell infrastructure-retry budget; omit to leave the default. */
+  retryInfrastructure?: number
+  /** The container segment; omit for the host path. */
+  unit?: EvalDraftUnitRequest
+  /** Bundle export directory; omit for the repository's own `exports/`. */
+  exports?: string
+  /** Review commentary, written into the plan verbatim. */
+  notes?: string
+}
+
+/**
+ * What drafting answers with: where the files landed, and what validate makes
+ * of them.
+ *
+ * `review` is the plan-review page's own payload, not a summary of it — the
+ * same projection of the same `validatePlan`, so the sentence an agent reports
+ * to a person and the list that person then reads on the page cannot disagree.
+ * A draft with errors is still a draft: it is on disk, the lab list shows it
+ * as 草稿, and `review.ok` is false. Drafting refuses only when there would be
+ * no draft to look at.
+ */
+export interface EvalDraftResult {
+  /** The dataset repository written into (absolute). */
+  repo: string
+  dataset: string
+  /** The plan document (absolute). */
+  planPath: string
+  /** The condition declarations minted, in mint order (absolute); empty when none were. */
+  conditionPaths: string[]
+  /** The plan's player condition ids as written, minted ones included. */
+  conditions: string[]
+  /** The plan's judge condition ids as written; empty when it declares no judge. */
+  judges: string[]
+  /** validate's verdict on what was just written, as the review page renders it. */
+  review: EvalPlanReview
+}
+
+/** What the 新建实验 form's pickers are filled from. */
+export interface EvalDraftOptionsRequest {
+  /** Dataset repository override; omit to use the calling session's binding. */
+  repo?: string
+}
+
+/** One dataset set the form may draft into. */
+export interface EvalDraftDatasetOption {
+  id: string
+  /** Item ids the set declares, sorted — the 题目多选 list. */
+  items: string[]
+  /** Stage names it ships a schema for, sorted. */
+  stages: string[]
+}
+
+/** The form's vocabulary: which sets exist, and what each holds. */
+export interface EvalDraftOptionsView {
+  /** The dataset repository the options were read from (absolute); null when none resolved. */
+  repo: string | null
+  datasets: EvalDraftDatasetOption[]
+  /** Honest degrades, one sentence each — the list still answers. */
+  notes: string[]
+}
+
 /* ──────────────────── the matrix page and the cell drawer ─────────────────── */
 
 /** One rep's dot in a matrix cell (ui-spec §五: 实心已判 / 半心进行中 / 空心未起). */
