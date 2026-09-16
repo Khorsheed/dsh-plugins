@@ -7,10 +7,8 @@
  * channel and surfaces twice: as a root-level space (the keyed `main` panel
  * 'canvas' plus its `sidebar.panellist` rail row) and as the page-type
  * `sidebar.right.pane.tab` entry (the card-detail reader). All four
- * registrations ride the preset-visibility toggles (M2's self-hide: hidden
- * when the CURRENT session's preset composition does not name this package's
- * row, fail-OPEN everywhere else — a preset-less profile never loses the
- * space).
+ * registrations ride `ctx.slots.inject`, so a host that declares a seat
+ * never mounts the matching surface (the rest keep working).
  *
  * The chat edge is ONE-WAY and probed: `remote.canvas.askAgent` primes the
  * canvas's side-chat context host-side; the client only activates the
@@ -42,14 +40,12 @@ import { CanvasDetailView } from './detail/CanvasDetailView.tsx'
 import type { CanvasChatInjected, CanvasDetailInjected, CanvasRemote, CanvasSpaceInjected } from './contract.ts'
 import { CANVAS_KIND, CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
-import { CanvasPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { CanvasSpacePage } from './space/CanvasSpacePage.tsx'
 import { CANVAS_PANEL_ID, CanvasNavIcon } from './space/definition.tsx'
 import { CanvasSelectionStore } from './space/selection.ts'
 
 export { CanvasDetailView } from './detail/CanvasDetailView.tsx'
 export { CANVAS_KIND, CANVAS_TAB_ID } from './definition.ts'
-export { CanvasPresetVisibility, CANVAS_ROW_MODULE, RegistrationToggle } from './preset-visibility.ts'
 export { CanvasSpacePage } from './space/CanvasSpacePage.tsx'
 export { BoardView } from './space/BoardView.tsx'
 export { CardTextarea } from './space/CardTextarea.tsx'
@@ -62,7 +58,7 @@ export type {
 export * from './paste-table.ts'
 
 /**
- * Required services: slots, sessions, the remote channel, the locale, and the
+ * Required services: slots, the remote channel, the locale, and the
  * right-Sidebar faces (the tab-type registry and the navigation service the
  * detail tab's activation and attachment previews go through).
  * `remote.canvas` is deliberately NOT an inject: this plugin both mounts the
@@ -72,12 +68,11 @@ export * from './paste-table.ts'
  * awaited and the namespace is then read back from the global store with
  * `ctx.get` (the ui-file-preview precedent).
  */
-export const inject = ['slots', 'remote', 'locale', 'sessions', 'sidebarRight', 'sidebarRightTabs']
+export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, then the
- * four visibility-gated registrations (detail tab type + body, space main
- * panel + rail row).
+ * four registrations (detail tab type + body, space main panel + rail row).
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -228,75 +223,37 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     hooks: { selection: selection.source },
   })
 
-  /* ------------------------- the preset-visibility self-hide (M2, fail-open) */
+  /* ---------------- the four registrations (unconditional; slots.inject degrades) */
 
-  const visibility = new CanvasPresetVisibility(ctx)
-  const showSpace = (): boolean => visibility.show(ctx.sessions.list.getSnapshot().current)
-  // Hiding the ACTIVE main panel would strand the frame on an unregistered
-  // key: leave it first (the layout face is probed, never injected).
-  const leaveCanvasPanel = (): void => {
-    try {
-      (ctx.get('layout') as { selectPanel?: (id: null) => void } | undefined)?.selectPanel?.(null)
-    } catch { /* the next navigation re-selects; nothing to repair */ }
-  }
+  // Stage one of the right-Sidebar registration: the page type itself (guide
+  // entry, no address claims). The default band is 'extension', correct for a
+  // type shipped from outside the product.
+  ctx.effect(() => ctx.sidebarRightTabs.register(canvasDefinition(t)), 'canvas: tab type')
 
-  const mainToggle = new RegistrationToggle(
-    () => ctx.slots.register({
-      name: 'main',
-      key: CANVAS_PANEL_ID,
-      locale: NS,
-      inject: spaceFace,
-    }, CanvasSpacePage),
-    showSpace,
-    leaveCanvasPanel,
-  )
-  ctx.slots.inject('main', () => {
-    mainToggle.setReady(true)
-    return () => { mainToggle.setReady(false) }
-  })
+  // Stage two: the detail reader's body under the type's id in the keyed pane seat.
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab',
+    key: CANVAS_TAB_ID,
+    locale: NS,
+    inject: detailFace,
+  }, CanvasDetailView)), 'canvas: detail reader body')
 
-  const panelToggle = new RegistrationToggle(
-    () => ctx.slots.register({
-      name: 'sidebar.panellist',
-      id: CANVAS_PANEL_ID,
-      order: 100,
-      label: () => t('space.nav'),
-      locale: NS,
-    }, CanvasNavIcon),
-    showSpace,
-  )
-  ctx.slots.inject('sidebar.panellist', () => {
-    panelToggle.setReady(true)
-    return () => { panelToggle.setReady(false) }
-  })
-
-  // The tab type registration owns no slot arm, so its toggle is ready at once.
-  const typeToggle = new RegistrationToggle(
-    () => ctx.sidebarRightTabs.register(canvasDefinition(t)),
-    showSpace,
-  )
-  typeToggle.setReady(true)
-
-  const bodyToggle = new RegistrationToggle(
-    () => ctx.slots.register({
-      name: 'sidebar.right.pane.tab',
-      key: CANVAS_TAB_ID,
-      locale: NS,
-      inject: detailFace,
-    }, CanvasDetailView),
-    showSpace,
-  )
-  ctx.slots.inject('sidebar.right.pane.tab', () => {
-    bodyToggle.setReady(true)
-    return () => { bodyToggle.setReady(false) }
-  })
-
-  ctx.effect(() => visibility.subscribe(() => {
-    mainToggle.sync()
-    panelToggle.sync()
-    typeToggle.sync()
-    bodyToggle.sync()
-  }), 'canvas: space visibility')
+  // The v2 canvas space: one id for the main panel key and the rail row (the
+  // shell matches them). Both ride slots.inject, so a host without either
+  // seat degrades silently.
+  ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: CANVAS_PANEL_ID,
+    locale: NS,
+    inject: spaceFace,
+  }, CanvasSpacePage)), 'canvas: space main panel')
+  ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: CANVAS_PANEL_ID,
+    order: 100,
+    label: () => t('space.nav'),
+    locale: NS,
+  }, CanvasNavIcon)), 'canvas: space rail row')
 
   return async () => {
     for (const timer of timers) clearTimeout(timer)

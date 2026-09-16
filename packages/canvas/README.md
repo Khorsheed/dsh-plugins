@@ -12,7 +12,7 @@ v1 的工作区级灵感稿纸**存储原样保留**（右栏 tab 已改为详�
 
 ## 画布空间（v2，M1 + M1.5 + M2）
 
-- **左导轨整页入口**（`sidebar.panellist` + keyed `main`）：从左导轨切进画布空间，再点一下会话区切回。空间不绑定任何工作区；通过「挂载工作区」关联 0..n 个目录。**preset 自隐**（M2）：当前会话的 preset 组合不含本包时入口自动隐藏；无 preset 配置的 profile 一律可见（fail-open）。
+- **左导轨整页入口**（`sidebar.panellist` + keyed `main`）：从左导轨切进画布空间，再点一下会话区切回。空间不绑定任何工作区；通过「挂载工作区」关联 0..n 个目录。**不做会话 preset 自隐**：preset 在会话创建时绑定，而画布是跨会话空间——按会话 preset 隐藏入口等于永久隐藏（3080 实证）；模式可见性由 profile / 整合包的安装层决定。
 - **部署级存储**：每块画布是 `$DSH_HOME/state/canvas/<canvasId>/canvas.json` 一个文件（元信息 + 全部卡 + 计数），纯 JSON，任何编辑器都能打开。卸载插件不会删除它。
 - **五种内容卡**：碎片（灵感）/ 问题（open → exploring → answered 生命周期）/ 依据（共同认识）/ 资料（带出处）/ 文档。建卡行内编辑，⌘⏎ 确认。
 - **摘要与详情分工**（M1.5）：板上卡片一律摘要——clamp ~6 行、底部渐隐，长文显示字数标；document 卡用启发式标题（首个 markdown 标题或首行），不再把原文从 `#` 糊上去。**点正文在右栏「画布详情」tab 打开详情**（官方 `openTab` 激活，同一 bundle 共享 store 跟随选中）；多选改由卡片右上角的**悬停勾选框**，与打开详情互不干扰。
@@ -86,7 +86,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **摘要/详情分工（M1.5）**：板卡一律摘要（CSS clamp ~6 行；`isLongCardText` 判定渐隐与字数标；document 卡标题走 `documentHeadingOf` 纯函数启发式）。点正文写共享 store（`space/selection.ts`，`createSnapshotStore`，`{ canvasId, cardId, rev }`）并经官方 `ctx.sidebarRight.openTab('canvas')` 激活右栏 tab（无挂载会话时 try/catch 降级为只写 store）。右栏 tab 的详情阅读器（`detail/CanvasDetailView.tsx`，session 作用域）经 `hooks.selection` 跟随选中；任一侧的变更动词在 apply 层包装里统一 `touch()` 推 rev，对侧重读跟随。附件区：url 直接链接；文件附件 `fileAddressFor` 组 `dsh-resource://file` 地址，`ctx.sidebarRight.openResource` 调官方文档预览（html 也走它；srcdoc 内嵌版与 `assets/` 读取动词留 M4）。
 
-**聊天集成（M2）**：`askAgent` 动词（agent 优先）探测 `ctx.get('sideChat')`，命中则 `openWith({ contextKey: canvas:<id>, label: 主题, systemPrompt, tools, refs })`——`prompt.ts` 纯函数渲染系统提示段（主题与目标 / 板摘要：各 kind 计数、kept 卡摘要、open 问题列表 / grounding 护栏 / 工具契约 / 透镜语义 / stats 回授段），`tools.ts` 出两个 `defineTool` 定义（`canvas_propose_card` → `proposeCard` 服务路径，`canvas_comment` → `addComment` author agent；origin tag 走 `Symbol.for('dsh.tool.origin')` 免导入路径）。发送规则：自由文本优先，否则非 `ask` 透镜的模板文本，都没有则只 prime。客户端三处发起（透镜条 / 评论「追问」/ 详情选区「问 Agent」），`chatStatus` 探测门控制全部聊天入口的显隐；发送成功后监听 `remote.sidechat.getState`（结构镜像），running 期间定期 `touch()` 共享 rev，幽灵卡随工具调用落板即现。preset 自隐走官方 `pluginInventory`（room 先例），一切读不到 fail OPEN。
+**聊天集成（M2）**：`askAgent` 动词（agent 优先）探测 `ctx.get('sideChat')`，命中则 `openWith({ contextKey: canvas:<id>, label: 主题, systemPrompt, tools, refs })`——`prompt.ts` 纯函数渲染系统提示段（主题与目标 / 板摘要：各 kind 计数、kept 卡摘要、open 问题列表 / grounding 护栏 / 工具契约 / 透镜语义 / stats 回授段），`tools.ts` 出两个 `defineTool` 定义（`canvas_propose_card` → `proposeCard` 服务路径，`canvas_comment` → `addComment` author agent；origin tag 走 `Symbol.for('dsh.tool.origin')` 免导入路径）。发送规则：自由文本优先，否则非 `ask` 透镜的模板文本，都没有则只 prime。客户端三处发起（透镜条 / 评论「追问」/ 详情选区「问 Agent」），`chatStatus` 探测门控制全部聊天入口的显隐；发送成功后监听 `remote.sidechat.getState`（结构镜像），running 期间定期 `touch()` 共享 rev，幽灵卡随工具调用落板即现。画布不做会话 preset 自隐（preset 绑定会话创建、画布是跨会话空间，自隐=永隐）；可见性由 profile / 整合包的安装层决定。
 
 **v1 磁盘布局**
 
