@@ -14,7 +14,7 @@ import { CONDITION_SCHEMA_ID } from './schema.ts'
 import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
 import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
 import { runPlan, EvalRunRefused, type RunDeps, type RunOptions, type RunReport } from './run.ts'
-import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport } from './finalize.ts'
+import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport, type FinalizeUnitsFace } from './finalize.ts'
 import {
   EvalRunJobs,
   type EvalRunHandle,
@@ -43,7 +43,7 @@ import { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 import { projectFinalize, runReportView } from './report-view.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
-  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionActionFace,
+  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
   MissionAnnotateFace, MissionExportRemoteFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
@@ -52,7 +52,7 @@ import type {
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
   EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView,
-  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanReview, EvalRunReportView,
+  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanReview, EvalRunReportView, EvalRunUnitsView,
 } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
@@ -514,11 +514,16 @@ export class EvalService {
    * list either way, and the reason belongs beside the list that explains it.
    * Wiring failures (no job registry, no live parent agent) are caught here
    * for the same reason and arrive verbatim in `refusal`.
+   * The run it starts walks the release gate cell by cell, which is the
+   * default everywhere since T57; `keepUnits` is the dialog's 保留单元 box,
+   * and the ONE reason it exists is a container a human wants to open
+   * afterwards. It is off unless the approver ticked it.
    * @param planPath - path to a `dataseek.plan/1` document (`~` expanded).
-   * @param options - the approving session (the run's parent) and its workspace.
+   * @param options - the approving session (the run's parent), its workspace,
+   *   and whether the approver asked to keep the units.
    * @returns what validate said, and — when it started — the job and run ids.
    */
-  async approve(planPath: string, options: { parentSessionId: string; cwd?: string }): Promise<EvalApproveResult> {
+  async approve(planPath: string, options: { parentSessionId: string; cwd?: string; keepUnits?: boolean }): Promise<EvalApproveResult> {
     const review = await this.planReview(planPath)
     const refused = (refusal: string): EvalApproveResult => ({
       started: false,
@@ -539,6 +544,7 @@ export class EvalService {
       const handle = await this.runStart(planPath, {
         parentSessionId: options.parentSessionId,
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.keepUnits === true ? { keepUnits: true } : {}),
         label: `eval run ${planPath} (approved)`,
       })
       return {
@@ -973,8 +979,13 @@ export class EvalService {
    * archived with its state. A gate refusal is recorded against that cell,
    * never forced — the re-entry point pilot A had to improvise with
    * per-cell `dsh-mission transition` calls (G13).
+   * Since T57 the walk also RECLAIMS the units: each cell that passes the gate
+   * has its container destroyed between the two transitions, exactly where the
+   * run loop destroys it. lab is probed, not required — a host-path run has no
+   * units and a composition without lab reports the list unknown rather than
+   * claiming zero.
    * @param runId - the run to finalize.
-   * @param options - caller tag and progress sink.
+   * @param options - caller tag and progress sink; the unit face is wired here.
    * @throws {@link EvalFinalizeRefused} when the composition mounts no
    *   mission service, or the run cannot be projected.
    */
@@ -986,7 +997,11 @@ export class EvalService {
         + '— mount the dsh-mission plugin, or use the dsh-eval CLI (it drives the dsh-mission CLI in a child process)',
       ))
     }
-    return finalizeRun(mission, runId, options)
+    const lab = this.hosts?.get('lab') as FinalizeUnitsFace | undefined
+    return finalizeRun(mission, runId, {
+      ...options,
+      ...(options.units !== undefined || lab === undefined ? {} : { units: lab }),
+    })
   }
 
   /**
@@ -1011,6 +1026,69 @@ export class EvalService {
   runReport(runId: string, options: { outDir?: string } = {}): Promise<EvalRunReportView> {
     const mission = this.requireMissionRead('read a run\'s report')
     return runReportView(mission, runId, options)
+  }
+
+  /**
+   * The units lab is holding for a run, RIGHT NOW — the report page's 未回收
+   * count, and the one number that tells a reader whether the run actually
+   * let go of its containers.
+   *
+   * Deliberately NOT mission's `unreleased`. That list is the ledger's belief,
+   * derived from the refs a cell registered; this one is lab's own answer, and
+   * the two disagree in exactly the case worth showing — a cell the ledger has
+   * released whose container is still up, which is what T39's G18 found and
+   * what no page could see. The cell's state is joined back on from the ledger
+   * so the reader can tell a container the 回收 walk can still take (its cell
+   * is `archived`) from one only `--force` can (its cell is `released`).
+   *
+   * A composition with no lab answers `available: false` — unknown, not zero.
+   * @param runId - the run to ask about.
+   * @returns the held units, or why the list is unknown.
+   */
+  async runUnits(runId: string): Promise<EvalRunUnitsView> {
+    const lab = this.hosts?.get('lab') as FinalizeUnitsFace | undefined
+    if (lab === undefined) {
+      return {
+        runId,
+        available: false,
+        units: [],
+        refusal: 'no lab service: this composition runs no containers, so there is nothing to hold or reclaim',
+      }
+    }
+    let rows: readonly LabUnitRow[]
+    try {
+      rows = await lab.status()
+    } catch (error) {
+      // A lab that cannot be asked is not a lab that holds nothing. The page
+      // shows the refusal where the count would be.
+      return {
+        runId,
+        available: false,
+        units: [],
+        refusal: `lab could not be asked which units this run holds: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+    const states = new Map<string, string>()
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    if (mission !== undefined) {
+      try {
+        for (const row of mission.runStatus(runId).rows) states.set(row.id, row.state)
+      } catch {
+        // An unknown run joins nothing; the units are still the units.
+      }
+    }
+    return {
+      runId,
+      available: true,
+      units: rows.filter(row => row.runId === runId).map(row => ({
+        id: row.id,
+        resource: row.resource,
+        running: row.running,
+        missionId: row.missionId ?? null,
+        missionState: row.missionId === undefined ? null : states.get(row.missionId) ?? null,
+      })),
+      refusal: null,
+    }
   }
 
   /**

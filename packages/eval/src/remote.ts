@@ -80,6 +80,8 @@ import type {
   EvalExportRunRequest,
   EvalFinalizeRequest,
   EvalFinalizeView,
+  EvalRunUnitsRequest,
+  EvalRunUnitsView,
   EvalHumanFinalRequest,
   EvalHumanFinalResult,
   EvalItemRunsRequest,
@@ -130,7 +132,8 @@ export class EvalRemoteService extends TypertRemoteService<never> {
     const handle = await this.service.runStart(request.plan, {
       ...(request.dryRun === true ? { dryRun: true } : {}),
       ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
-      ...(request.finalize === true ? { finalize: true } : {}),
+      ...(request.finalize === false ? { finalize: false } : {}),
+      ...(request.keepUnits === true ? { keepUnits: true } : {}),
       ...(request.out === undefined ? {} : { exportsDir: request.out }),
       ...(request.retries === undefined ? {} : { retryInfrastructure: request.retries }),
       ...(request.only === undefined ? {} : { only: request.only }),
@@ -322,6 +325,7 @@ export class EvalRemoteService extends TypertRemoteService<never> {
     return this.service.approve(request.planPath, {
       parentSessionId: String(agent.session.id),
       ...(cwd === undefined ? {} : { cwd }),
+      ...(request.keepUnits === true ? { keepUnits: true } : {}),
     })
   }
 
@@ -451,13 +455,31 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * released` through the SAME release gate, and a refusal is recorded against
    * that cell rather than forced: the gate is why the archive means anything,
    * and a button that could bypass it would make the bundle worthless.
+   *
+   * It is also the page's 回收 action. The two are one verb on purpose: what
+   * reclaiming a container IS, is the cell passing its gate, so a second verb
+   * that skipped the ledger would be the force this whole seam refuses.
    * @param agent - owning live agent; recorded as `tab:<sessionId>`.
    * @param request - the run to finalize.
-   * @returns the counts, every cell's outcome, and the walk's log verbatim.
+   * @returns the counts, every cell's outcome, what became of the containers,
+   *   and the walk's log verbatim.
    */
   @Remote('finalize')
   finalize(agent: Agent, request: EvalFinalizeRequest): Promise<EvalFinalizeView> {
     return this.service.finalizeView(request.runId, `tab:${String(agent.session.id)}`)
+  }
+
+  /**
+   * The units lab is holding for this run RIGHT NOW — the report page's 未回收
+   * count. A read: it lists containers, it never touches one.
+   * @param agent - owning live agent (the tab's session).
+   * @param request - the run to ask about.
+   * @returns the held units with their cells' states, or why the list is unknown.
+   */
+  @Remote('runUnits')
+  runUnits(agent: Agent, request: EvalRunUnitsRequest): Promise<EvalRunUnitsView> {
+    void agent
+    return this.service.runUnits(request.runId)
   }
 
   /**

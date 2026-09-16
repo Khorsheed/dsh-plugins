@@ -40,7 +40,7 @@ import { canonicalJson, hashConditionDocument } from './hash.ts'
 import type {
   CapabilityCatalogFace,
   DelegationProgress, DelegationResult, DelegationToolCalls, DelegationUsage,
-  DatasetsFace, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
+  DatasetsFace, LabAcquireSpec, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
 } from './faces.ts'
 import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type LockedCapabilities, type PlanValidation } from './validate.ts'
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
@@ -154,11 +154,31 @@ export interface RunOptions {
   /** Explicit run id; default is mission's timestamped default. */
   runId?: string
   /**
-   * After archiving, attempt archived → releasable → released. The archive
-   * gate's file-check requires a NON-EMPTY verdicts/ directory, which v0
-   * (no judge yet) cannot fill — so the default run stops at `archived`.
+   * After archiving, attempt archived → releasable → released — and, on the
+   * container path, destroy the cell's unit between those two transitions.
+   *
+   * DEFAULT TRUE since T57. It was false while v0 had no judge and could not
+   * fill the `verdicts/` the archive gate requires; since T9 every cell is
+   * judged before it archives, so the gate normally says yes and the old
+   * default only meant one thing in practice — every cell's container
+   * survived the run, and the fourth cell of a plan met `maxConcurrentUnits`
+   * and could not start (T33b). A gate refusal is still recorded, never
+   * forced, so defaulting this on cannot release anything the gate would not
+   * have released when asked explicitly.
+   *
+   * {@link RunOptions.keepUnits} is how a caller asks for the old behavior.
    */
   finalize?: boolean
+  /**
+   * Stop every cell at `archived` and KEEP its unit — the debugging switch
+   * (`--keep-units`, and the approve dialog's 保留单元 box).
+   *
+   * This is the same axis as {@link RunOptions.finalize} seen from the side
+   * an operator actually cares about: what they want is the container still
+   * there to open, and the gate walk is the thing that takes it away. It wins
+   * over `finalize` when both are given, because it is the more specific ask.
+   */
+  keepUnits?: boolean
   /**
    * Bundle export directory. Overrides the plan's `exports`; without either,
    * `<dataset repo>/exports/` (decision 11).
@@ -401,6 +421,72 @@ const PROBE_VERDICTS = 'probe-verdicts'
 
 /** lab's own hash of what it copied into the unit — the proof, not the comparability number. */
 const POPULATE_MANIFEST = 'populate-manifest.json'
+
+/**
+ * Lab's held units, written out as the sentence a blocked acquire needs:
+ * WHICH runs are holding the ceiling and which unit each one holds.
+ *
+ * lab's own refusal is correct and says nothing actionable — "release a unit
+ * first" leaves the reader to `docker ps`, guess which container belongs to
+ * which run, and find out the hard way that a stranger's run owns three of
+ * them. The list is the orchestrator's to add, not lab's: lab does not know
+ * what a run is, and giving it the vocabulary to say so would be the wrong
+ * half of the boundary to move.
+ *
+ * Never throws: this runs on a path that is ALREADY failing, and a second
+ * failure here would replace a useful refusal with a useless one.
+ * @param lab - the lab face to ask.
+ * @returns one line naming the holders, or why they could not be named.
+ */
+async function describeUnitHolders(lab: LabFace): Promise<string> {
+  let rows: Awaited<ReturnType<LabFace['status']>>
+  try {
+    rows = await lab.status()
+  } catch (error) {
+    return `the units holding it could not be listed: ${error instanceof Error ? error.message : String(error)}`
+  }
+  if (rows.length === 0) {
+    return 'lab reports no held unit, so whatever holds the ceiling was not acquired through this face'
+  }
+  const byRun = new Map<string, string[]>()
+  for (const row of rows) {
+    const key = row.runId ?? ''
+    const cell = row.missionId === undefined ? '' : `, cell ${row.missionId}`
+    const entry = `${row.id} (${row.resource}${cell})`
+    const held = byRun.get(key)
+    if (held === undefined) byRun.set(key, [entry])
+    else held.push(entry)
+  }
+  const groups = [...byRun].map(([runId, held]) =>
+    `${runId === '' ? 'no run recorded' : `run ${runId}`}: ${held.join(', ')}`)
+  return `the ${rows.length} unit(s) holding it — ${groups.join('; ')}.`
+    + ' Release a run\'s units with `/eval finalize <runId>` (the report page\'s 回收 button walks the same gate);'
+    + ' a unit no mission gates needs `dsh-lab release <unit> --force`, which is a human\'s call.'
+}
+
+/**
+ * `lab.acquire`, with the one refusal a container run actually meets made
+ * actionable. Everything else is re-thrown untouched — a missing image and a
+ * dead daemon are not improved by a list of containers.
+ * @param lab - the lab face.
+ * @param spec - the acquire spec, unchanged.
+ * @param where - what was being acquired, for the refusal's first clause.
+ * @returns the acquired unit.
+ */
+async function acquireUnit(lab: LabFace, spec: LabAcquireSpec, where: string): Promise<LabUnitInfo> {
+  try {
+    return await lab.acquire(spec)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    // Matching on lab's own wording is a seam, and a shallow one on purpose:
+    // if lab ever rewords the refusal the enrichment stops happening and the
+    // raw message still reaches the reader. The alternative — a typed error
+    // across the package boundary — is a contract change to a package this
+    // task does not touch.
+    if (!/maxconcurrentunits/i.test(reason)) throw error
+    throw new Error(`${where}: ${reason}\n  ${await describeUnitHolders(lab)}`)
+  }
+}
 
 /**
  * THE destroy path. Every unit this orchestrator acquires dies here and
@@ -808,7 +894,11 @@ async function runCellOnce(
     // acquire first, then populate: mounts cannot be added to a container
     // that already exists, so everything the unit will ever have is declared
     // once, and the fingerprint that describes it exists before any work does.
-    unit = await env.unit.lab.acquire(acquireSpecFor(env.unit.plan, { missionId, runId: env.runId }))
+    unit = await acquireUnit(
+      env.unit.lab,
+      acquireSpecFor(env.unit.plan, { missionId, runId: env.runId }),
+      `cell ${missionId} could not acquire a unit`,
+    )
     if (env.held !== undefined) env.held.unit = unit
     // Between acquire and populate, for the same reason the readiness probe
     // asks before delegating: a unit that cannot reach its endpoints wastes
@@ -1471,6 +1561,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   const now = (): number => options.now ?? Date.now()
   const by = options.by ?? 'eval-orchestrator'
   const log = options.log ?? (() => {})
+  // The two knobs are one axis; they collapse here so nothing downstream has
+  // to remember which of them wins. `keepUnits` is the more specific ask, so
+  // it beats an explicit `finalize: true` rather than fighting it.
+  const passGate = options.keepUnits === true ? false : options.finalize !== false
 
   // ── Offline validation first: a plan with errors never executes. ──────
   const validation: PlanValidation = await validatePlan(planPath)
@@ -1783,12 +1877,17 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     }
     const absentNote = egressCheckAbsentNote(planUnit)
     if (absentNote !== undefined) log(absentNote)
-    if (options.finalize !== true) {
-      // Not a refusal: stopping at `archived` is a legitimate thing to want.
-      // But on the container path it means every cell's container survives
-      // the run, so it is said out loud rather than discovered by hitting the
-      // concurrency ceiling three cells later.
-      log('containers: this run stops at archived (no --finalize), so every cell\'s unit stays until its gate is passed — release them with dsh-lab once reviewed')
+    if (passGate) {
+      log('containers: each cell walks the release gate as it finishes, so its unit is destroyed there'
+        + ' — the run holds one unit at a time, whatever the matrix\'s size (--keep-units stops at archived instead)')
+    } else {
+      // Not a refusal: stopping at `archived` is a legitimate thing to want,
+      // and it is what --keep-units asks for. But it means every cell's
+      // container survives the run, so it is said out loud rather than
+      // discovered by hitting the concurrency ceiling three cells later.
+      log('containers: --keep-units is set, so every cell stops at archived and its unit stays'
+        + ' — a matrix larger than lab\'s maxConcurrentUnits cannot finish this way;'
+        + ' release them with /eval finalize <runId> (the report page\'s 回收 walks the same gate) once reviewed')
     }
   }
   const lab = deps?.lab
@@ -1900,7 +1999,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         // gap.
         const cellUnit = cellUnits.get(subject.id)
         if (cellUnit === undefined) return undefined
-        const unit = await lab.acquire(acquireSpecFor(cellUnit))
+        const unit = await acquireUnit(lab, acquireSpecFor(cellUnit), `the readiness probe for ${subject.id} could not acquire a unit`)
         return {
           exec: {
             container: unit.resource,
@@ -1983,6 +2082,11 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     conditions: conditions.map(condition => ({ id: condition.id, sha: condition.sha, condition: condition.document })),
     order: { seed: plan.order.seed, sequence: ordered.map(cell => cell.missionId) },
     concurrency: options.concurrency ?? 1,
+    // Whether this run walked the release gate per cell. It belongs in meta
+    // for the same reason `subset` does: a bundle whose cells all stopped at
+    // `archived` should say that it was ASKED to, rather than read as a run
+    // that broke off halfway.
+    finalize: passGate,
     budget: { activeMinutes: plan.budget.activeMinutes, turns: plan.budget.turns },
     judge: { conditions: judges.map(judge => ({ id: judge.id, sha: judge.sha })), samples: judgeSamples },
     ...(plan.expectedNs !== undefined ? { expectedNs: plan.expectedNs } : {}),
@@ -2117,7 +2221,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         condition: conditions.find(condition => condition.id === cell.labels.condition) as ResolvedCondition,
         parentSessionId: options.parentSessionId as string,
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
-        finalize: options.finalize === true,
+        finalize: passGate,
         readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
         ...(cellUnit !== undefined && lab !== undefined
           ? { unit: { lab, plan: cellUnit, ...(planUnit?.egressCheck === undefined ? {} : { egressCheck: planUnit.egressCheck }) } }

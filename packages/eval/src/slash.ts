@@ -17,7 +17,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type { EvalService } from './service.ts'
 
 const USAGE = `usage:
-  /eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--finalize] [--out DIR]
+  /eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--keep-units] [--out DIR]
            [--retries N] [--only id,id] [--max-cells N] [--ignore-readiness]
   /eval finalize <runId>
   /eval conditions list [--repo DIR] [--dataset ID]
@@ -56,26 +56,32 @@ const USAGE = `usage:
   its cells are recorded as skipped. --only and --max-cells run part of the
   matrix and record the subset in run.meta. Every cell is judged before it is
   archived (the item's probes write script verdicts; the plan's judge
-  conditions write double-sampled llm-draft ones). The default run stops at
-  'archived'; --finalize attempts releasable → released, which the archive
-  gate allows once verdicts/ is non-empty.
+  conditions write double-sampled llm-draft ones), and then walks
+  releasable → released — the archive gate allows that once verdicts/ is
+  non-empty, and a refusal is recorded against the cell, never forced.
+  --keep-units stops every cell at 'archived' instead and keeps its container
+  for debugging. (--finalize is still accepted; it asks for the default.)
 
   A plan that declares a unit segment runs every cell inside a container. Each
   condition's harness mounts THIS instance's own scoped home (the directory
   /<harness> login writes into) at the container path the condition declares,
   so a round's rollout lands where the delegation read-back reads it. Log in
   on this instance; nothing is staged or copied. The container path is serial,
-  and without --finalize each cell's container survives the run — the release
-  gate is the only destroy path, and a cell that stopped at 'archived' has not
-  passed it.
+  and each cell's unit is destroyed as that cell passes the release gate — the
+  gate is the only destroy path, so the run holds one unit at a time whatever
+  the matrix's size. With --keep-units every container survives the run, and a
+  matrix larger than lab's maxConcurrentUnits then cannot finish.
 
   Before the run is created, every condition the plan names is probed with one
   minimal delegation — the judge conditions included, because a judge that
   cannot be delegated to costs the whole round's llm-draft verdicts.
 
-  finalize is the re-entry point for a run that already stopped at 'archived':
-  it walks every archived cell through the same gate and lists every cell that
-  was not archived with its state. It never forces a refused gate.`
+  finalize is the re-entry point for a run that stopped at 'archived' — after
+  --keep-units, after a cancel, after a gate refusal somebody has since fixed.
+  It walks every archived cell through the same gate, destroys that cell's
+  container on the way through, and lists every cell that was not archived
+  with its state. It never forces a refused gate, and it reports any container
+  still up afterwards with the reason.`
 
 /** Parsed slash input: positional tokens, `--flag value` pairs, bare `--switches`. */
 interface SlashArgs {
@@ -412,13 +418,25 @@ async function handleFinalize(service: EvalService, args: SlashArgs): Promise<Co
     .filter(([, count]) => count > 0)
     .map(([category, count]) => `${count} ${SKIP_CATEGORY_LABEL[category] ?? category}跳过`)
   if (skipSummary.length > 0) body.push(`  跳过: ${skipSummary.join('、')}`)
+  // The container half, and it is said even when it is zero: a walk that
+  // reports only cells reads as "and the containers went away", which is the
+  // reading G18 was.
+  body.push(report.unitsKnown
+    ? `  单元: ${report.unitsReleased} 个已回收, ${report.unitsHeld.length} 个仍在`
+    : '  单元: 未知（这个组合没有挂 lab，容器没被碰过）')
+  for (const held of report.unitsHeld) {
+    body.push(`  ⚠ ${held.resource} 仍在 — ${held.reason}`)
+  }
   for (const cell of report.cells) {
     const suffix = cell.action === 'released'
       ? 'archived → released'
       : cell.action === 'refused'
         ? `gate refused at ${cell.finalState} — ${cell.reason ?? 'unknown'}`
         : `skipped (${cell.state})`
-    body.push(`  ${cell.missionId}: ${suffix}`)
+    const unit = cell.unit === undefined
+      ? ''
+      : cell.unit.released ? `（单元 ${cell.unit.resource} 已回收）` : `（单元 ${cell.unit.resource} 未回收：${cell.unit.reason ?? 'unknown'}）`
+    body.push(`  ${cell.missionId}: ${suffix}${unit}`)
   }
   return { kind: 'success', text: body.join('\n') }
 }
@@ -489,7 +507,9 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
     parentSessionId,
     ...(concurrency !== undefined ? { concurrency } : {}),
     dryRun: args.switches.has('--dry-run'),
-    finalize: args.switches.has('--finalize'),
+    // --finalize asked for what is now the default; it stays accepted so a
+    // saved command does not start failing.
+    keepUnits: args.switches.has('--keep-units'),
     ...(flagOf(args, '--out') !== undefined ? { exportsDir: flagOf(args, '--out') as string } : {}),
     ...(retries !== undefined ? { retryInfrastructure: retries } : {}),
     ...(only.length > 0 ? { only } : {}),
@@ -551,8 +571,8 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
 export function registerEvalSlash(ctx: Context, service: EvalService): void {
   ctx.commands.register({
     name: 'eval',
-    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session (dry-run validates and prints the order without executing); /eval finalize <runId> walks an already-archived run through the release gate; /eval conditions list|diff|provision reads the condition registry and writes the one lock that anchors it.',
-    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId> | conditions list|diff|provision' },
+    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session and walks every cell through the release gate as it finishes (dry-run validates and prints the order without executing; --keep-units stops at archived and keeps the containers); /eval finalize <runId> walks an already-archived run through that gate and reclaims its units; /eval conditions list|diff|provision reads the condition registry and writes the one lock that anchors it.',
+    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--keep-units] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId> | conditions list|diff|provision' },
     handler: (invocation: CommandInvocation) => handleEvalCommand(service, invocation),
   })
 }

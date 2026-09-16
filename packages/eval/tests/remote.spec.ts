@@ -198,6 +198,22 @@ describe('approve — the human act of ui-spec step 5', () => {
     })
     expect(runStart).toHaveBeenCalledTimes(1)
     expect(runStart.mock.calls[0]?.[1]).toMatchObject({ parentSessionId: 's1', cwd: '/workspace' })
+    // The approval that ticks nothing walks the release gate: `keepUnits` is
+    // absent, and absent is the default (T57).
+    expect(runStart.mock.calls[0]?.[1]).not.toHaveProperty('keepUnits')
+    await fiber.dispose()
+  })
+
+  it('carries the 保留单元 box through to the run when the approver ticked it', async () => {
+    const { fiber, service, remote } = await bench()
+    const { plan } = fixtureRepo()
+    const runStart = vi.spyOn(service, 'runStart').mockResolvedValue({
+      jobId: 'eval-run-1', runId: 'run-1', parentSessionId: 's1',
+    })
+
+    await remote.approve(agentOf('/workspace'), { planPath: plan, keepUnits: true })
+
+    expect(runStart.mock.calls[0]?.[1]).toMatchObject({ keepUnits: true })
     await fiber.dispose()
   })
 

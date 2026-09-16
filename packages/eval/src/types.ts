@@ -30,8 +30,18 @@ export interface EvalRunRequest {
   dryRun?: boolean
   /** Concurrent cells (host path only; a unit plan is serial). */
   concurrency?: number
-  /** After archiving, attempt archived → releasable → released. */
+  /**
+   * After archiving, attempt archived → releasable → released and destroy the
+   * cell's unit. The DEFAULT since T57: send `false` (or `keepUnits`) to stop
+   * at `archived` instead.
+   */
   finalize?: boolean
+  /**
+   * Keep every cell's container: stop at `archived` and release nothing. The
+   * same axis as `finalize: false`, named the way an operator asks for it, and
+   * it wins when both are sent.
+   */
+  keepUnits?: boolean
   /** Bundle export directory, overriding the plan's own. */
   out?: string
   /** Infrastructure-retry budget per cell. */
@@ -423,10 +433,16 @@ export interface EvalConditionDiffRequest {
   dataset?: string
 }
 
-/** Which plan a human is approving. */
+/** Which plan a human is approving, and on what terms. */
 export interface EvalApproveRequest {
   /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
   planPath: string
+  /**
+   * The dialog's 保留单元 box: stop every cell at `archived` and keep its
+   * container for someone to open. Absent or false is the default — the run
+   * walks the release gate cell by cell and holds one unit at a time.
+   */
+  keepUnits?: boolean
 }
 
 /**
@@ -1104,6 +1120,29 @@ export interface EvalFinalizeCell {
   finalState: string
   /** The gate's refusal, or why the cell was skipped. */
   reason: string | null
+  /** The unit this cell held and what became of it; null when it held none. */
+  unit: EvalFinalizeCellUnit | null
+}
+
+/** What the walk did with one cell's container. */
+export interface EvalFinalizeCellUnit {
+  id: string
+  resource: string
+  /** True when the destroy went through; false when it was tried and failed. */
+  released: boolean
+  /** lab's verbatim refusal, when the destroy failed. */
+  reason: string | null
+}
+
+/** A unit of this run still up when the walk ended, with the reason. */
+export interface EvalFinalizeHeldUnit {
+  id: string
+  resource: string
+  missionId: string | null
+  /** The cell's state when the walk ended; null when the run owns no such cell. */
+  missionState: string | null
+  /** Why no gate could authorize its destroy, in terms the reader can act on. */
+  reason: string
 }
 
 /** The finalize answer: what moved, what the gate refused, and what was left alone. */
@@ -1115,8 +1154,51 @@ export interface EvalFinalizeView {
   /** Skipped cells per raw state — the operator's one-line summary. */
   skippedByState: Record<string, number>
   cells: EvalFinalizeCell[]
+  /** Containers the walk destroyed, one per released cell that held one. */
+  unitsReleased: number
+  /** Containers of this run still up afterwards, each with the reason. */
+  unitsHeld: EvalFinalizeHeldUnit[]
+  /**
+   * Whether the unit list is knowable at all. False on a composition with no
+   * lab: an empty `unitsHeld` then means "not asked", not "none left".
+   */
+  unitsKnown: boolean
   /** The walk's own log lines, verbatim. */
   log: string[]
+}
+
+/** Which run's held units to list. */
+export interface EvalRunUnitsRequest {
+  runId: string
+}
+
+/** One unit lab is holding for a run right now. */
+export interface EvalRunUnit {
+  id: string
+  /** The container name — what `docker ps` shows. */
+  resource: string
+  running: boolean
+  /** The cell it was acquired for; null for a unit bound to none. */
+  missionId: string | null
+  /**
+   * That cell's state in the ledger. It is what separates a container the
+   * 回收 walk can still take (`archived`) from one that only `--force` can
+   * (`released`) — the distinction the report page's action depends on.
+   */
+  missionState: string | null
+}
+
+/**
+ * The report page's 未回收单元 answer: lab's own list, not the ledger's belief.
+ * `available: false` means the count is UNKNOWN — no lab in this composition,
+ * or lab could not be asked — which the page must not render as zero.
+ */
+export interface EvalRunUnitsView {
+  runId: string
+  available: boolean
+  units: EvalRunUnit[]
+  /** Why the list is unknown; null when it was read. */
+  refusal: string | null
 }
 
 /* ───────────────── the judge bench (ui-spec §五, step 8) ──────────────── */

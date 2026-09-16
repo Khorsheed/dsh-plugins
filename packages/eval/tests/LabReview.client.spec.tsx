@@ -290,6 +290,25 @@ describe('the plan-review page', () => {
     expect(await screen.findByText(/readiness codex-exec: NOT READY — the scoped home holds no credential/)).toBeTruthy()
   })
 
+  it('保留单元 is off by default and carries into the approval when ticked', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.plan')
+    const box = await screen.findByRole('checkbox', { name: 'review.keepUnits' })
+    // Off unless someone ticks it: left on, every cell's container would
+    // survive the run and the matrix would stop at lab's ceiling (T33b).
+    expect((box as HTMLInputElement).checked).toBe(false)
+    expect(screen.queryByText('review.keepUnitsHint')).toBeNull()
+
+    fireEvent.click(box)
+    expect(screen.getByText('review.keepUnitsHint')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'review.approve' }))
+
+    await waitFor(() => {
+      expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: PLAN_PATH, keepUnits: true })
+    })
+  })
+
   it('a job-log read that REJECTS (the proxy, not the envelope) surfaces instead of vanishing', async () => {
     const h = makeHarness()
     h.fetchRunOutput.mockRejectedValue(new Error('client api: dshEval/runOutput expected 2 argument(s), got 1'))

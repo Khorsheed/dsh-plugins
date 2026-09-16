@@ -18,7 +18,7 @@ import type {
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
   EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
   EvalJudgeQueueRequest, EvalJudgeQueueView, EvalPlanRequest, EvalPlanReview, EvalReportRequest,
-  EvalRunOutputView, EvalRunReportView,
+  EvalRunOutputView, EvalRunReportView, EvalRunUnitsRequest, EvalRunUnitsView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
 
@@ -35,7 +35,8 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
  * model tool (`eval_plan_draft` reaches the same service verb), because
  * drafting starts nothing. `approvePlan` is ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
  * two-step bundle export. `finalizeRun` is the report page's — the same
- * release gate, walked over every archived cell of the run. `submitHumanFinal`
+ * release gate, walked over every archived cell of the run, and the same call
+ * behind its 回收 action. `submitHumanFinal`
  * is the judge bench's, and the ONLY door the `human-final` namespace has:
  * ui-spec R1 says 终评是人的, and it holds because no model-facing tool in this
  * family reaches the verb behind this field.
@@ -93,8 +94,19 @@ export interface LabViewInjected {
    * an error — "not exported yet" is a state with a button.
    */
   fetchReport: (sessionId: SessionId, request: EvalReportRequest) => Promise<RemoteResult<EvalRunReportView>>
-  /** Walk every archived cell of the run through the release gate (a human's click). */
+  /**
+   * Walk every archived cell of the run through the release gate, destroying
+   * each passing cell's container on the way (a human's click). The report
+   * page's finalize button AND its 回收 action are this one call: reclaiming a
+   * container IS the cell passing its gate.
+   */
   finalizeRun: (sessionId: SessionId, request: EvalFinalizeRequest) => Promise<RemoteResult<EvalFinalizeView>>
+  /**
+   * The containers lab still holds for this run — lab's own list, not the
+   * ledger's belief about which cells hold a resource. A read; it is what the
+   * report page's 未回收 count is drawn from.
+   */
+  fetchRunUnits: (sessionId: SessionId, request: EvalRunUnitsRequest) => Promise<RemoteResult<EvalRunUnitsView>>
   /**
    * The judge bench's BLIND queue: the run's cells as ordinal + ticket, their
    * de-identified material, the rubric's human criteria, and every verdict

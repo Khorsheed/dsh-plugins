@@ -49,7 +49,7 @@ pending → ws-ready → stage-1 → … → judged → archived → releasable 
 6. **逐格**（并发缺省 1）：格子独立目录 `$DSH_HOME/state/eval/cells/<runId>/<missionId>/attempt-<N>/`，物化该题 visible 层内容并写 `materialization.json`（排序逐文件 sha256 + 整体 sha，addArtifact kind `materialization`）；每阶段一条 prompt = 题集 visible 层 `prompts/<stage>.md` 字节 + 一个换行 + 该题 `task.md` 字节，sha256 记入 orchestrator ns；编排器直接调 `ctx.localAgent.start`（首轮）/ `resume`（续轮），格子目录经委派 `cwd` 选项传给子代理（local-agent 家族的 cwd 支持，T11）。
 7. **推进**：委派返回后从格子目录收 `<stageId>.json` / `<stageId>.md`，`submit({to, json, files})`（意向边预校验），`transition(to)`；`halt_on` 命中走 `halted`。schema 违规不重试：记 `{kind: 'submission-rejected', violations}`，格子停在当前态。
 8. **失败策略**：委派启动失败、门面报错、超时取消 → `retry(reason, 'infrastructure')` 重做该格，预算缺省 1 次（`--retries` 可调）；超限记 `{kind: 'cell-skipped'}` 并跳过。超时 = `plan.budget.activeMinutes` 的每格累计委派时长，到点 `cancel(childSessionId)`。
-9. **判定与归档**：格子停在终态后先判（见下节），判定落 `archive/verdicts/`，再把格子目录拷到 `archive/workspace/`，`transition(archived)`。缺省停在 archived；`--finalize` 显式推 `releasable → released`，file-check 要求 verdicts/ 非空——两条源里任一有产出即可过闸，两条都没有就如实记 `finalize-refused` 并停在 archived。
+9. **判定、归档、过闸**：格子停在终态后先判（见下节），判定落 `archive/verdicts/`，再把格子目录拷到 `archive/workspace/`，`transition(archived)`，然后推 `releasable → released`——**T57 起这是缺省，逐格进行**；file-check 要求 verdicts/ 非空：两条源里任一有产出即可过闸，两条都没有就如实记 `finalize-refused` 并停在 archived。`--keep-units` 是调试用的退出口：开了之后每格停在 archived、容器留着。
 10. **导出**：结束时 export bundle 到 `<题库仓库>/exports/`（`--out` 可改），只收 visible 层（modelFacing:true，无需泄题闸确认）。
 
 run 开始时先为每格写一条锚点 `{kind: 'cell', task, condition, conditionSha, rep}`——在任何工作之前，所以连被跳过的格子也可归属；报告只认这条锚点定格子身份（bundle 里没有 labels，mission id 是有损的）。
@@ -110,14 +110,15 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 `run.ts` 里只有一个 `destroyUnit`，`lab.release` 只在它里面出现：
 
-- **过闸即销毁**：`--finalize` 时 `archived → releasable` 一过就销毁，然后才 `→ released`。位置是刻意的：`isReleasable` 读的是**当前**状态，而模板的 releasableStates 只有 `releasable`——先走到 `released` 再销毁，闸会答否，于是每个容器都活着。
-- **闸拒绝即留下**：没有 `--finalize`、或 verdicts 为空导致 `releasable` 过不去，销毁照样问一次、照样被拒，**容器留着**并在格子上记一条 `{kind: 'unit-retained', reason}`。没人看过的格子，现场比容器数值钱。
+- **过闸即销毁**：`archived → releasable` 一过就销毁，然后才 `→ released`。位置是刻意的：`isReleasable` 读的是**当前**状态，而模板的 releasableStates 只有 `releasable`——先走到 `released` 再销毁，闸会答否，于是每个容器都活着。`finalize` 走的是同样三步、同样顺序，事后回收容器才成为可能。
+- **过闸是缺省（T57）**：它曾经要显式开，因为 v0 没有判官、填不满闸要的 `verdicts/`。自从每格归档前都先判，旧缺省在实践中只意味着一件事：每个容器都活过它那一格，计划的第 4 格撞上 lab 的 `maxConcurrentUnits` 起不来——于是**跑循环的缺省悄悄决定了矩阵能有多大**。想要旧行为（留个容器进去看）就用 `--keep-units`（CLI 旗标，以及批准对话框的「保留单元」）。
+- **闸拒绝即留下**：开了 `--keep-units`、或 verdicts 为空导致 `releasable` 过不去，销毁照样问一次、照样被拒，**容器留着**并在格子上记一条 `{kind: 'unit-retained', reason}`。没人看过的格子，现场比容器数值钱。
 - **异常路径先归档再释放**：格子抛错（基础设施失败、schema 拒绝、归属错误）时先 `collect` 再 `archive` 再走同一条闸——不归档就 release 等于毁证据（lab README「失败恢复循环」）。同样不带 force，所以失败的格子会留着它的容器。
 - **`force` 在本文件里只有一处**：就绪检查的探活单元。它不绑 mission，因而没有闸；lab 要求这种销毁必须显式 `force`，正是为了让「无闸销毁」是一句判决而不是一个默认。
 
 ### 已知取舍
 
-- **串行**。容器路径固定 `concurrency: 1`（显式给 >1 会被拒），并发单元归 I4。`acquire` 撞上 `maxConcurrentUnits` 当缺陷报出来，不排队。
+- **串行**。容器路径固定 `concurrency: 1`（显式给 >1 会被拒），并发单元归 I4。`acquire` 撞上 `maxConcurrentUnits` 当缺陷报出来，不排队——而且拒绝原文**点名占着名额的是谁**：lab 只说「先释放一个」，不说是哪个，于是编排器补上每个占着名额的单元的 run id、单元 id、容器名与格子，外加能结束它们的两条命令。这份名单加在这边而不是 lab 里，因为 lab 不知道什么叫一次 run。
 - **多家横比的指纹问题已由环境类解决**（见上）：`refs.fingerprint` 记环境类，单元自己的指纹记在 `unit` 注解与归档 manifest 里。
 - **物化哈希两条路径统一**（见上）：`materialization.json` 由编排器按同一算法算，lab 的那份另存 `populate-manifest.json`。报告仍兼容旧 bundle 的 `sha` 字段。
 
@@ -144,11 +145,13 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 ## `finalize`：跑完之后的再入口
 
-`--finalize` 只在 run 启动的那一刻存在，而「判官与终评」恰恰是归档**之后**的工作。pilot A 因此人手把十二格逐个 `dsh-mission transition` 推过去。`/eval finalize <runId>` 就是这条路，机械化：对 run 内每个 `archived` 的格子走同一条闸（`archived → releasable → released`，含归档闸对 `verdicts/` 非空的 file-check），非 `archived` 的格子逐格列出状态并跳过。
+run 自己那次过闸发生在每格跑完的当下，而「判官与终评」是归档**之后**的工作。pilot A 因此人手把十二格逐个 `dsh-mission transition` 推过去。`/eval finalize <runId>` 就是这条路，机械化：对 run 内每个 `archived` 的格子走同一条闸（`archived → releasable → released`，含归档闸对 `verdicts/` 非空的 file-check），非 `archived` 的格子逐格列出状态并跳过。它是 `--keep-units` 之后、取消之后、以及闸拒了而后来有人修好之后的再入口。
 
 它不 force。闸拒绝按格记 `{kind: 'finalize-refused', from, error}` 到 orchestrator ns，格子停在闸拦下它的地方——闸正是「归档」这两个字有意义的原因。它也不碰没走到 `archived` 的格子：pending 或半途的格子是**没做完的工作**，不是**没释放的工作**。跳过按 `already-released` / `interrupted` / `not-started` 归类，一整个 run 一行就能说清。
 
-进程外没有 mission 服务，所以 `dsh-eval finalize` 以子进程调用 `dsh-mission` 的 CLI（`--data-dir`、`--mission-cli`、`$DSH_MISSION_CLI`）——正是人手工用的那条缝。eval 仍然不 import mission 包的任何东西。
+**它也回收容器（T57）**。每个过闸的格子，单元在两次 transition 之间销毁——同一个位置、同一个顺序、同样不 force，与跑循环一致。在此之前这条路只动账本：一次容器 run 事后 finalize，会走到 `released` 而每个容器还 Up 着，且再没有任何一道闸能放行它们（T39 · G18）。报告写清销毁了哪些、还剩哪些，逐条给原因：闸拒了它的格子；格子已经过闸，只剩 `dsh-lab release <unit> --force`，那是人的决定；或者格子根本没跑完。单元面是**可选**的——组合里没有 lab 就把名单报成**未知**，绝不报 `0`。
+
+进程外没有 mission 服务，所以 `dsh-eval finalize` 以子进程调用 `dsh-mission` 的 CLI（`--data-dir`、`--mission-cli`、`$DSH_MISSION_CLI`）——正是人手工用的那条缝。eval 仍然不 import mission 包的任何东西。那个子进程是账本不是 lab，所以 CLI 这一面不释放任何容器，并且每次都说出来。
 
 ## 条件 provision：声明 → 实物 → lock（I4·T31）
 
@@ -242,7 +245,8 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 | `exportPlan(agent, request)` / `exportRun(agent, request)` | 导出 bundle 的两步，转发给 **mission 自己的 Remote**。guarded 层怎么算（经 datasets 探测）与 fail-closed 的闸都在 mission 那边，eval 只转发调用方的确认，既不能放宽也不能收窄——泄题闸有第二份实现，就有第二个地方会错。组合里没有 mission 的 Remote 就整个拒绝导出，而不是在这边把闸再写一遍 |
 | `itemRuns(datasetId, itemId)` | 一道题的「作答记录」：哪些评测 run 跑过它、各格在哪个态、各 ns 各有几条判定。按 `task` label 与 `meta.datasetId` 认题，与矩阵同源；给题集 tab（T47）用，没挂 mission 就空列表加一句话 |
 | `runStatus(runId)` | 投影一次 run：run.meta 摘要（planSha、快照 commit、条件、随机顺序与种子、启动时间）+ 逐格一行（题、条件、rep、attempt、状态、桶、编排器最近一条注解、submission-rejected 次数）。缺 mission 服务即拒绝并说明原因 |
-| `finalize(runId, options?)` | 把 run 内每个 `archived` 的格子走一遍 `archived → releasable → released`（与 `--finalize` 同一条闸），非 archived 的格子逐格列出状态。闸拒绝按格记录，不 force。组合里没有 mission 服务即拒绝并说明原因 |
+| `finalize(runId, options?)` | 把 run 内每个 `archived` 的格子走一遍 `archived → releasable → released`（与跑循环逐格走的是同一条闸），并**在两次 transition 之间销毁过闸格子的单元**；非 archived 的格子逐格列出状态，仍在的容器逐条给原因。闸拒绝按格记录，不 force。lab 是探测来的、不是必需的：没有就把单元名单报成未知。组合里没有 mission 服务即拒绝并说明原因 |
+| `runUnits(runId)` | 此刻 **lab** 为这次 run 持有的容器，与每格在账本里的状态 join 起来。刻意不用 mission 的 `unreleased`——那是账本按格子 refs 推出的**判断**；值得看的恰恰是两者不一致的那种：账本已经 released、容器却还 Up 着。组合里没有 lab 就答 `available: false`（未知），而不是空名单 |
 | `report(bundleDir, {out?})` | 把 mission export 的自包含 bundle 变成 `results.jsonl` + `summary.md`（见下节）。只读 bundle，写入缺省 `<bundleDir>/report/`，重复运行覆盖（报告是派生态，bundle 本身只增不改） |
 | `runReport(runId, {outDir?})` | 报告页的载荷（I5·T38）：先**找**这个 run 导出的 bundle——调用方刚导的目录 → plan 自己的 `exports` → `<题库仓库>/exports`（决策 11），逐个试 `<runId>-bundle`——再交给同一个 `analyzeBundle` 分析，把四条不变量、配对差值、效率表与判官数字投影出来。**一个字节都不写**：落盘仍是 `dsh-eval report --out`，报告去哪儿是人的决定。还没导出的 run 返回 `bundleDir: null` 加找过的目录清单——「还没导出」和「没有报告」是两件事，只有前者有按钮 |
 | `finalizeView(runId, by?)` | 报告页那颗 finalize 按钮背后的 `finalize`：同一条闸、同一次走，把逐行进度**原文**一起收下来，页面因此能按格显示闸说了什么，而不是只有一个成功数 |
@@ -305,7 +309,7 @@ run 是**后台 job**，不是一句回复。`/eval run` 把它注册成一个 `
 - **没挂 jobs 服务的组合**：不拒绝，退回同步等待，并在回复**首行**写明这一轮的等待意味着什么。
 
 ```sh
-/eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N]
+/eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--keep-units] [--out DIR] [--retries N]
                       [--only id,id] [--max-cells N] [--ignore-readiness]
 /eval finalize <runId>
 ```
@@ -321,9 +325,11 @@ dsh-eval run <plan.json> --dry-run        # 离线彩排：校验 + 模板 + 矩
 dsh-eval run <plan.json> --instance URL   # 在一台**在跑的实例**上起 run 并跟日志到结束（CI 入口）
                                           #   [--token T]（或 $DSH_TOKEN）带实例的启动 token
                                           #   [--no-follow] 只打印 job/run id 就返回
+                                          #   [--keep-units] 每格停在 archived、容器留着
                                           #   plan 路径按**实例上**的路径解析；停它用实例上的 job_kill
 dsh-eval finalize <runId>                 # 把 archived 的格子走一遍释放闸
                                           #   [--data-dir DIR] [--mission-cli PATH]；以子进程调 dsh-mission CLI
+                                          #   是账本不是 lab：这一面不释放任何容器
 dsh-eval template <manifest.yml> [--stages a,b]  # 打印生成的 run 模板
 dsh-eval conditions hash <condition.json> # 打印 { id, sha, warnings }
 dsh-eval conditions list [--repo DIR]     # 逐条件：哈希、lock 状态、home 是否核过、provisioned 快照
@@ -372,7 +378,8 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 - **配对差值表**：一行一道题——两侧得分、Δ、逐 rep Δ、n，以及**这一行由谁判**。判官条件与模型是从该题两侧格子的判官归属里取的；其中任一格是自评（判官模型 = 该格选手模型），整行标**自评**——决策 9 放宽后判官可以是选手，报告的做法是逐格披露而不是排除，而一个只标在部分格上的提醒等于没提醒。rubric 带权重时多两列加权差；置信区间与**名次判定原文**（包括「n = 2 < 3，不排名」这种拒绝排名的原文）照抄报告。
 - **效率表并列**：活跃时长、委派轮次、工具调用、输出 / 输入 / cacheRead token，一行一个条件，不合成分数。**「—」不是 0**：没有任何一轮报过工具调用计数就打破折号，「没人报过」不是「一次没用」。表下两句：多于一个模型时提醒 token 跨模型不适用（冻结决策 10），以及被效率口径排除的未完成格子（T23）。
 - **判官一致性**：同判官重采样（多样本判据数、一致率、Cohen κ）与跨判官（多判官判据数、全体一致率、κ）分两行——把两位判官的分歧算成某一位的噪声是两件事混成一件。κ 在退化情形是 NaN，过线时转成 `null`：JSON 里没有 NaN，与其让它变成一个悄悄的 null，不如在能写下理由的地方转。
-- **两个动作**：**finalize** 走 `finalize` 动词，把本 run 每个 `archived` 的格子过一遍释放闸；它在一张只读页上做整 run 的写，所以**先问一次**再走，结果按格显示——闸拒了哪一格、原话是什么、加上那次走的日志原文。**导出**复用格子页那个对话框（闸仍在 mission 侧）。另有一行「用 CLI 落盘」的命令提示：页面渲染不留文件，`results.jsonl` / `summary.md` 要不要落、落哪儿，是人的决定。
+- **两个动作**：**finalize** 走 `finalize` 动词，把本 run 每个 `archived` 的格子过一遍释放闸；它在一张只读页上做整 run 的写，所以**先问一次**再走，结果按格显示——闸拒了哪一格、原话是什么、每个容器的下场，加上那次走的日志原文。**导出**复用格子页那个对话框（闸仍在 mission 侧）。另有一行「用 CLI 落盘」的命令提示：页面渲染不留文件，`results.jsonl` / `summary.md` 要不要落、落哪儿，是人的决定。
+- **未回收单元**（T57 · G18）：页顶数出本 run 还没放掉的容器，数据来自 `runUnits`——lab 自己的名单，不是账本的判断。大于零就给一个**回收**，它调的还是 `finalize`，而不是第二条路：回收一个容器**就是**它那格过闸，一个绕开账本的动词正是这条缝拒绝的 force。下面那节逐个列容器与它那格的状态，因为正是这个状态决定「回收」还收不收得动（`archived`）、还是只剩 `--force`（`released`）。没挂 lab 的实例显示**未知**，绝不显示 `0`：一个从没去看过的东西给出笃定的零，正是持有的容器藏起来的方式。
 
 ## 判官台（I5·T37）
 
@@ -410,7 +417,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 
 ## 状态
 
-I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的伴生行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具；T35b 填上矩阵页与格子页：`matrix` / `cells` / `cell` 三个读面、`retry` / `releaseCheck` 两个动作转发、`exportPlan` / `exportRun` 转发 mission 的导出闸（闸仍在 mission 侧），外加给题集 tab 用的 `runsForItem`。T38 填上报告页：`report` / `finalize` 两个 Remote 动词与服务面的 `runReport` / `finalizeView`——四条不变量、配对差值、效率表、判官一致性都由同一个 `analyzeBundle` 算出后投影，比较闸在服务端合上；T37 填上判官台，七个子页至此填满：`judgeQueue` 出盲队列（序号 + ticket、去指纹产物、`kind: human` 判据、各判官各样本的 llm-draft、已有 human-final），`humanFinal` 是 `human-final` 这个 ns 的唯一写入口（转发 mission 的 annotate，只追加，`by` 记会话），rubric 解析与判官一致性各自收归一份实现。T34 补上第 2 步「一句话起草」：服务面 `draftExperiment` 一次写下 plan 与它引用的新条件（新条件一律从现有条件复制再改点名字段）并 validate，Remote 的 `newExperiment` / `draftOptions` 给「新建实验」表单用，`eval_plan_draft` 给 agent 用，两个面同一个动词；随 pack 装的 `eval-planning` 技能教 agent 走这条路，并点名批准、登录、provision、终评都不是它的。
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的伴生行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具；T35b 填上矩阵页与格子页：`matrix` / `cells` / `cell` 三个读面、`retry` / `releaseCheck` 两个动作转发、`exportPlan` / `exportRun` 转发 mission 的导出闸（闸仍在 mission 侧），外加给题集 tab 用的 `runsForItem`。T38 填上报告页：`report` / `finalize` 两个 Remote 动词与服务面的 `runReport` / `finalizeView`——四条不变量、配对差值、效率表、判官一致性都由同一个 `analyzeBundle` 算出后投影，比较闸在服务端合上；T37 填上判官台，七个子页至此填满：`judgeQueue` 出盲队列（序号 + ticket、去指纹产物、`kind: human` 判据、各判官各样本的 llm-draft、已有 human-final），`humanFinal` 是 `human-final` 这个 ns 的唯一写入口（转发 mission 的 annotate，只追加，`by` 记会话），rubric 解析与判官一致性各自收归一份实现。T34 补上第 2 步「一句话起草」：服务面 `draftExperiment` 一次写下 plan 与它引用的新条件（新条件一律从现有条件复制再改点名字段）并 validate，Remote 的 `newExperiment` / `draftOptions` 给「新建实验」表单用，`eval_plan_draft` 给 agent 用，两个面同一个动词；随 pack 装的 `eval-planning` 技能教 agent 走这条路，并点名批准、登录、provision、终评都不是它的。T57 把释放闸从一个旗标变成 run 的缺省，并把容器交给这条路：每格跑完当场过闸、单元在那里销毁（`--keep-units` 与批准对话框的「保留单元」可退出），`finalize` 也会销毁过闸格子的单元——事后回收的 run 这才真的被回收；`acquire` 撞上 `maxConcurrentUnits` 时点名占着名额的 run 与单元；报告页数出 lab 还持有多少，并给一个走同一条闸的「回收」。
 
 ## 许可
 

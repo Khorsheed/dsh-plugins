@@ -15,7 +15,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  EvalExperimentDetail, EvalExperimentsResult, EvalFinalizeView, EvalRunReportView,
+  EvalExperimentDetail, EvalExperimentsResult, EvalFinalizeView, EvalRunReportView, EvalRunUnitsView,
 } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
@@ -150,13 +150,44 @@ const FINALIZED: EvalFinalizeView = {
   skipped: 0,
   skippedByState: {},
   cells: [
-    { missionId: 'p0-cond-a-rep1', state: 'archived', action: 'released', finalState: 'released', reason: null },
-    { missionId: 'p0-cond-b-rep1', state: 'archived', action: 'refused', finalState: 'archived', reason: 'verdicts/ is empty' },
+    {
+      missionId: 'p0-cond-a-rep1', state: 'archived', action: 'released', finalState: 'released', reason: null,
+      unit: { id: 'u1', resource: 'dsh-lab-u1', released: true, reason: null },
+    },
+    { missionId: 'p0-cond-b-rep1', state: 'archived', action: 'refused', finalState: 'archived', reason: 'verdicts/ is empty', unit: null },
   ],
+  unitsReleased: 3,
+  unitsHeld: [{
+    id: 'u2',
+    resource: 'dsh-lab-u2',
+    missionId: 'p0-cond-b-rep1',
+    missionState: 'archived',
+    reason: 'the archive gate refused its cell, so nothing authorized the destroy',
+  }],
+  unitsKnown: true,
   log: ['cell p0-cond-a-rep1: archived → releasable → released'],
 }
 
-function makeHarness(report: EvalRunReportView = REPORT) {
+/** Two containers still up: one whose cell the gate refused, one already past it. */
+const UNITS_HELD: EvalRunUnitsView = {
+  runId: 'run-1',
+  available: true,
+  units: [
+    { id: 'u2', resource: 'dsh-lab-u2', running: true, missionId: 'p0-cond-b-rep1', missionState: 'archived' },
+    { id: 'u3', resource: 'dsh-lab-u3', running: true, missionId: 'p0-cond-c-rep1', missionState: 'released' },
+  ],
+  refusal: null,
+}
+
+/** A composition with no lab: the count is unknown, and must never render as 0. */
+const UNITS_UNAVAILABLE: EvalRunUnitsView = {
+  runId: 'run-1',
+  available: false,
+  units: [],
+  refusal: 'no lab service: this composition runs no containers, so there is nothing to hold or reclaim',
+}
+
+function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView = { runId: 'run-1', available: true, units: [], refusal: null }) {
   const instance = createLabViewStore().create()
   return {
     instance,
@@ -165,6 +196,7 @@ function makeHarness(report: EvalRunReportView = REPORT) {
     fetchExperiment: vi.fn(async (): Promise<Result<EvalExperimentDetail>> => ({ ok: true, value: DETAIL })),
     fetchReport: vi.fn(async (): Promise<Result<EvalRunReportView>> => ({ ok: true, value: report })),
     finalizeRun: vi.fn(async (): Promise<Result<EvalFinalizeView>> => ({ ok: true, value: FINALIZED })),
+    fetchRunUnits: vi.fn(async (): Promise<Result<EvalRunUnitsView>> => ({ ok: true, value: units })),
     planExport: vi.fn(async () => ({
       ok: true as const,
       value: { bundleDir: '/out/run-1-bundle', guardedLayers: [], expectedNs: ['script'], missions: 4, attempts: 5 },
@@ -184,6 +216,7 @@ function renderView(h: Harness) {
     fetchExperiment: h.fetchExperiment,
     fetchReport: h.fetchReport,
     finalizeRun: h.finalizeRun,
+    fetchRunUnits: h.fetchRunUnits,
     planExport: h.planExport,
     exportRun: h.exportRun,
     openSession: vi.fn(),
@@ -375,6 +408,9 @@ describe('finalize', () => {
     expect(screen.getByText('p0-cond-b-rep1')).toBeTruthy()
     expect(screen.getByText(/verdicts\/ is empty/)).toBeTruthy()
     expect(screen.getByText(/archived → releasable → released/)).toBeTruthy()
+    // The container half of the walk, on screen rather than in `docker ps`.
+    expect(screen.getByText('report.finalizeUnits {"released":3,"held":1}')).toBeTruthy()
+    expect(screen.getByText(/nothing authorized the destroy/)).toBeTruthy()
   })
 
   it('cancelling the confirmation walks nothing', async () => {
@@ -384,5 +420,55 @@ describe('finalize', () => {
     fireEvent.click(screen.getByRole('button', { name: 'report.finalizeCancel' }))
     expect(h.finalizeRun).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'report.finalize' })).toBeTruthy()
+  })
+})
+
+/* ─────────── T57 · G18: the containers this run has not let go ─────────── */
+
+describe('unreclaimed units', () => {
+  it('counts them at the top and lists each with the cell state that decides what can end it', async () => {
+    const h = makeHarness(REPORT, UNITS_HELD)
+    await openReport(h)
+    await waitFor(() => { expect(h.fetchRunUnits).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+
+    expect(await screen.findByText('report.unitsHeld {"count":2}')).toBeTruthy()
+    expect(screen.getByText('dsh-lab-u2')).toBeTruthy()
+    expect(screen.getByText('dsh-lab-u3')).toBeTruthy()
+    // The field the reader acts on: 'archived' is one 回收 can still take,
+    // 'released' is past every gate.
+    expect(screen.getByText('archived')).toBeTruthy()
+    expect(screen.getByText('released')).toBeTruthy()
+  })
+
+  it('回收 asks once, then walks the SAME gate finalize walks', async () => {
+    const h = makeHarness(REPORT, UNITS_HELD)
+    await openReport(h)
+    await screen.findByText('report.unitsHeld {"count":2}')
+
+    fireEvent.click(screen.getByRole('button', { name: 'report.reclaim' }))
+    expect(screen.getByText('report.reclaimConfirmAsk')).toBeTruthy()
+    expect(h.finalizeRun).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'report.reclaimConfirm' }))
+    // One verb, not two: reclaiming a container IS its cell passing the gate,
+    // so there is no second path that could skip the ledger.
+    await waitFor(() => { expect(h.finalizeRun).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+  })
+
+  it('offers no 回收 when nothing is held', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    expect(await screen.findByText('report.unitsNone')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'report.reclaim' })).toBeNull()
+  })
+
+  it('says UNKNOWN, not zero, on a composition with no lab', async () => {
+    const h = makeHarness(REPORT, UNITS_UNAVAILABLE)
+    await openReport(h)
+    // A confident 0 here would read as "nothing is up" about an instance that
+    // never looked — the reading this strip exists to prevent.
+    expect(await screen.findByText('report.unitsUnknown')).toBeTruthy()
+    expect(screen.queryByText('report.unitsNone')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'report.reclaim' })).toBeNull()
   })
 })

@@ -1,7 +1,9 @@
 /**
  * The report sub-page (ui-spec §五, step 7): the four invariants, the paired
  * difference table, the efficiency table and the judge numbers — plus the two
- * human actions, finalize and export.
+ * human actions, finalize and export — and, since T57, what this run is still
+ * holding: the containers lab has not reclaimed, counted at the top of the
+ * page with a 回收 action beside them.
  *
  * The page renders what the bundle's own analysis decided and adds no judgment
  * of its own. That is the whole design: the four invariants gate the
@@ -23,7 +25,7 @@
 import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  EvalFinalizeView, EvalReportJudgeTag, EvalReportPair, EvalRunReportView,
+  EvalFinalizeView, EvalReportJudgeTag, EvalReportPair, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import css from './LabView.module.css'
@@ -237,7 +239,89 @@ function JudgeConsistency(props: { report: EvalRunReportView; t: LabViewProps['t
   )
 }
 
-/** What a finalize walk did, verbatim: the counts, the refusals, the log. */
+/**
+ * The run's UNRECLAIMED containers, at the top of the page where a reader
+ * actually looks — the count first, then which ones and what state their cell
+ * is in.
+ *
+ * The count is lab's, not the ledger's: mission's `unreleased` is derived from
+ * the refs a cell registered, and the case this strip exists for is the one
+ * where the two disagree — a cell the ledger has released whose container is
+ * still up (T39's G18, found by typing `docker ps` because no page said it).
+ *
+ * `available: false` renders as UNKNOWN, never as 0. A composition with no lab
+ * holds no containers, but this page cannot tell that from a lab it failed to
+ * reach, and printing a confident zero for both is how a leak stays invisible.
+ * @param props - the payload, the read error, and the reclaim action.
+ */
+function UnitsStrip(props: {
+  units: EvalRunUnitsView | null
+  error: string | null
+  reclaiming: boolean
+  onReclaim: () => void
+  t: LabViewProps['t']
+}) {
+  const { units, error, reclaiming, onReclaim, t } = props
+  const [confirming, setConfirming] = useState(false)
+  if (error !== null) return <span className={css.warning}>{t('report.unitsError')}: {error}</span>
+  if (units === null) return <span className={css.dim}>{t('report.unitsLoading')}</span>
+  if (!units.available) {
+    return <span className={css.dim} title={units.refusal ?? ''}>{t('report.unitsUnknown')}</span>
+  }
+  const held = units.units.length
+  if (held === 0) return <span className={css.dim}>{t('report.unitsNone')}</span>
+  return (
+    <>
+      <span className={css.warning}>{t('report.unitsHeld', { count: held })}</span>
+      {confirming
+        ? (
+          <>
+            {/* The same gate, said plainly: 回收 releases what the gate
+                allows and records what it refuses. Nothing here forces. */}
+            <span className={css.warning}>{t('report.reclaimConfirmAsk')}</span>
+            <Button size="sm" variant="primary" disabled={reclaiming}
+              onClick={() => { setConfirming(false); onReclaim() }}>
+              {t('report.reclaimConfirm')}
+            </Button>
+            <Button size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
+          </>
+        )
+        : (
+          <Button size="sm" disabled={reclaiming} onClick={() => { setConfirming(true) }}>
+            {t('report.reclaim')}
+          </Button>
+        )}
+    </>
+  )
+}
+
+/**
+ * The held containers in full, under the page's own heading: which container,
+ * which cell, and the cell's state — the field that says whether 回收 can
+ * still take it (`archived`) or only a human with `--force` can (`released`).
+ * @param props - the payload and the locale face.
+ */
+function UnitsSection(props: { units: EvalRunUnitsView; t: LabViewProps['t'] }) {
+  const { units, t } = props
+  return (
+    <div className={css.reportSection}>
+      <div className={css.sectionTitle}>{t('report.unitsTitle')}</div>
+      {units.units.map(unit => (
+        <div key={unit.id} className={css.checkLine}>
+          <span className={css.mono}>{unit.resource}</span>
+          <span className={css.dim}>{unit.missionId ?? DASH}</span>
+          <span className={unit.missionState === 'archived' ? css.warning : css.dim}>{unit.missionState ?? DASH}</span>
+          <span className={unit.running ? css.warning : css.dim}>
+            {t(unit.running ? 'report.unitRunning' : 'report.unitStopped')}
+          </span>
+        </div>
+      ))}
+      <div className={css.dim}>{t('report.unitsHint')}</div>
+    </div>
+  )
+}
+
+/** What a finalize walk did, verbatim: the counts, the containers, the refusals, the log. */
 function FinalizeResult(props: { result: EvalFinalizeView; t: LabViewProps['t'] }) {
   const { result, t } = props
   const refused = result.cells.filter(cell => cell.action === 'refused')
@@ -250,6 +334,19 @@ function FinalizeResult(props: { result: EvalFinalizeView; t: LabViewProps['t'] 
           released: result.released, refused: result.refused, skipped: result.skipped, skips: skips === '' ? DASH : skips,
         })}
       </div>
+      {/* Said even when nothing was held: a walk that reports only cells reads
+          as "and the containers went away", which is the reading that left two
+          of them up with nothing on screen about it. */}
+      <div className={result.unitsHeld.length > 0 ? css.warning : css.dim}>
+        {result.unitsKnown
+          ? t('report.finalizeUnits', { released: result.unitsReleased, held: result.unitsHeld.length })
+          : t('report.finalizeUnitsUnknown')}
+      </div>
+      {result.unitsHeld.map(held => (
+        <div key={held.id} className={css.warning}>
+          <span className={css.mono}>{held.resource}</span> · {held.reason}
+        </div>
+      ))}
       {refused.map(cell => (
         <div key={cell.missionId} className={css.warning}>
           <span className={css.mono}>{cell.missionId}</span> · {cell.finalState} · {cell.reason ?? ''}
@@ -270,13 +367,16 @@ export function ReportPage(props: {
   error: string | null
   finalizing: boolean
   finalizeResult: EvalFinalizeView | null
+  /** lab's own list of containers this run still holds; null before it loads. */
+  units: EvalRunUnitsView | null
+  unitsError: string | null
   onFinalize: () => void
   onExport: () => void
   /** Look for the bundle under this export directory instead. */
   onLookIn: (dir: string) => void
   t: LabViewProps['t']
 }) {
-  const { report, loading, error, finalizing, finalizeResult, onFinalize, onExport, onLookIn, t } = props
+  const { report, loading, error, finalizing, finalizeResult, units, unitsError, onFinalize, onExport, onLookIn, t } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
   // button asks once — the gate itself never forces, but the reader should
@@ -309,6 +409,10 @@ export function ReportPage(props: {
             </Button>
           )}
         <Button size="sm" onClick={onExport}>{t('action.export')}</Button>
+        {/* 回收 is the SAME walk as finalize — reclaiming a container IS its
+            cell passing the gate — so it shares the in-flight flag and the
+            action behind it, and differs only in what the reader came for. */}
+        <UnitsStrip units={units} error={unitsError} reclaiming={finalizing} onReclaim={onFinalize} t={t} />
         <span className={css.barSpacer} />
         {loading && <span className={css.dim}>{t('report.loading')}</span>}
       </div>
@@ -403,6 +507,7 @@ export function ReportPage(props: {
           </>
         )}
 
+      {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
       {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
     </div>
   )
