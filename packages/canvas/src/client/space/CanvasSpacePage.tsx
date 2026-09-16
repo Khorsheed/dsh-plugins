@@ -53,13 +53,17 @@ function messageOf(error: unknown): string {
 export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
-    archiveCanvas, importV1, probeV1Pad,
+    archiveCanvas, importV1, probeV1Pad, selectCard, useSelection,
   } = props
   const useSessions = props.useSessions ?? useNoSessions
   const useWorkspaces = props.useWorkspaces ?? useNoWorkspaces
   const sessionId = useSessions(sessions => sessions.current)
   const workspaces = useWorkspaces(snapshot => snapshot.items)
   const readonly = sessionId === undefined
+  // The detail reader's freshness channel: a mutation from the tab bumps the
+  // shared rev, and the board re-reads (its own mutations ride the same bump —
+  // one idempotent extra read, the price of never going stale).
+  const selectionRev = useSelection(current => current.rev)
 
   const [canvases, setCanvases] = useState<readonly CanvasSummary[] | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -137,8 +141,8 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
     if (first !== undefined) setOpenId(first.id)
   }, [canvases, openId])
 
-  // Load the open canvas's board; it re-reads only on a switch (mutations
-  // return the fresh board themselves).
+  // Load the open canvas's board: on a switch, and again whenever either
+  // seat mutates a board (the shared rev is the freshness channel).
   useEffect(() => {
     if (openId === null) {
       setOpenBoard(null)
@@ -156,7 +160,7 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
       setOpenBoard({ board: value.board, version: value.version })
     })()
     return () => { cancelled = true }
-  }, [openId, readBoard, run, showToast, errorText])
+  }, [openId, selectionRev, readBoard, run, showToast, errorText])
 
   /** Switch the open canvas, resetting the board-local UI state with it. */
   const openCanvas = useCallback((id: string) => {
@@ -534,6 +538,9 @@ export function CanvasSpacePage(props: CanvasSpacePageProps): ReactNode {
             })
           }}
           onClearSelection={() => { setSelection(new Set()) }}
+          onOpenDetail={cardId => {
+            if (openId !== null) selectCard(openId, cardId)
+          }}
           editingId={editingId}
           onEditingChange={setEditingId}
           draftKind={draftKind}

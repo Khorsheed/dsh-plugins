@@ -2,8 +2,8 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'tab.label': '灵感画布',
-  'guide.description': '灵感列表与写作区，稿子就是你自己目录里的 markdown 文件',
+  'tab.label': '画布详情',
+  'guide.description': '卡片详情阅读器——跟随画布空间的选中，渲染全文、评论与附件',
 
   'mode.edit': '编辑',
   'mode.preview': '预览',
@@ -120,10 +120,20 @@ export const zh = {
   'card.restore': '恢复',
   'card.accept': '收下',
   'card.reject': '拒绝',
+  'card.select': '选择',
   'card.proposed': 'AGENT 提议 · 待你确认',
   'card.markAnswered': '标记已回答',
   'card.editHint': '⌘⏎ 保存 · Esc 取消',
   'card.fromAgent': '来自 Agent',
+
+  'detail.empty': '在画布空间点一张卡，在这里读全文',
+  'detail.cardGone': '这张卡已不在板上',
+  'detail.archived': '已归档',
+  'detail.edit': '编辑',
+  'detail.attachment': '来源与附件',
+  'detail.openFile': '预览 {name}',
+  'detail.created': '创建于 {time}',
+  'detail.updated': '更新于 {time}',
 
   'q.open': '待探索',
   'q.exploring': '探索中',
@@ -152,8 +162,8 @@ export const zh = {
 
 /** English dictionary (same key set). */
 export const en: Record<keyof typeof zh, string> = {
-  'tab.label': 'Inspiration canvas',
-  'guide.description': 'The inspiration list and writing surface — your drafts are markdown files in your own folder',
+  'tab.label': 'Card detail',
+  'guide.description': 'The card-detail reader — follows the canvas space selection with the full text, comments, and attachments',
 
   'mode.edit': 'Edit',
   'mode.preview': 'Preview',
@@ -270,10 +280,20 @@ export const en: Record<keyof typeof zh, string> = {
   'card.restore': 'Restore',
   'card.accept': 'Accept',
   'card.reject': 'Reject',
+  'card.select': 'Select',
   'card.proposed': 'Proposed by AGENT · your call',
   'card.markAnswered': 'Mark answered',
   'card.editHint': '⌘⏎ save · Esc cancel',
   'card.fromAgent': 'from Agent',
+
+  'detail.empty': 'Click a card in the canvas space to read it here',
+  'detail.cardGone': 'This card is no longer on the board',
+  'detail.archived': 'Archived',
+  'detail.edit': 'Edit',
+  'detail.attachment': 'Source & attachment',
+  'detail.openFile': 'Preview {name}',
+  'detail.created': 'created {time}',
+  'detail.updated': 'updated {time}',
 
   'q.open': 'Open',
   'q.exploring': 'Exploring',

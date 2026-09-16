@@ -8,8 +8,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  computeKindCounts, makeBoardId, normalizeBoard, normalizeCanvasId, sanitizeCanvasTitle,
-  summarizeBoard, MAX_CANVAS_TITLE_LENGTH,
+  computeKindCounts, documentHeadingOf, isLongCardText, makeBoardId, normalizeBoard,
+  normalizeCanvasId, sanitizeCanvasTitle, summarizeBoard, MAX_CANVAS_TITLE_LENGTH,
   type BoardCard, type CanvasBoard,
 } from '../src/types.ts'
 
@@ -197,5 +197,48 @@ describe('computeKindCounts + summarizeBoard', () => {
       archivedAt: NOW,
       lastActiveAt: NOW,
     })
+  })
+})
+
+describe('isLongCardText', () => {
+  it('is false for a short card', () => {
+    expect(isLongCardText('沉默并不总是因为恐惧')).toBe(false)
+  })
+
+  it('is true past the character budget', () => {
+    expect(isLongCardText('长'.repeat(241))).toBe(true)
+  })
+
+  it('is true past the line budget even when short in characters', () => {
+    expect(isLongCardText(Array.from({ length: 7 }, (_, i) => `第${i}行`).join('\n'))).toBe(true)
+  })
+})
+
+describe('documentHeadingOf', () => {
+  it('takes the first markdown heading and drops that line from the body', () => {
+    const read = documentHeadingOf('# 大模型心理学：综述\n\n第一段正文。\n## 第二章\n更多。')
+    expect(read).toEqual({ title: '大模型心理学：综述', body: '\n第一段正文。\n## 第二章\n更多。' })
+  })
+
+  it('skips blank lines before the heading', () => {
+    expect(documentHeadingOf('\n\n## 标题\n正文')?.title).toBe('标题')
+  })
+
+  it('falls back to the first non-empty line only when no heading exists, and keeps the body whole', () => {
+    const read = documentHeadingOf('开篇就是正文。\n紧接的第二行。\n更多。')
+    expect(read).toEqual({ title: '开篇就是正文。', body: '开篇就是正文。\n紧接的第二行。\n更多。' })
+  })
+
+  it('prefers a later heading over a prose first line', () => {
+    expect(documentHeadingOf('开篇是导语。\n# 真正的标题\n正文。')?.title).toBe('真正的标题')
+  })
+
+  it('treats a bare hash run as no heading and keeps scanning', () => {
+    expect(documentHeadingOf('##\n# 真标题\n正文')?.title).toBe('真标题')
+  })
+
+  it('caps the title and reports an empty text', () => {
+    expect(documentHeadingOf(`# ${'长'.repeat(100)}`)?.title).toHaveLength(60)
+    expect(documentHeadingOf('   \n  ')).toBeUndefined()
   })
 })

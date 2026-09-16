@@ -3,20 +3,21 @@
  * kind filter chips, the selection bar, the card grid (kept cards, the ghost
  * proposal affordance, the new-card draft), and the archived well.
  *
- * Text editing follows the pad's three invariants exactly: every editor is an
- * UNCONTROLLED textarea (nothing ever writes its value back), IME composition
- * is a hard stop for submit handlers (a candidate window must never be torn
- * down mid-word), and `.boardScroll` is the one scroll container — card
- * textareas auto-size and never scroll themselves.
+ * M1.5's summary/detail split: every card renders a SUMMARY — clamped at
+ * ~6 lines with a fade and a word count for long texts, and document cards
+ * lead with their derived heading instead of the raw `#` opener. Clicking a
+ * card body opens the card in the right-Sidebar detail reader; selection is
+ * a hover checkbox in the card's corner, so the two gestures never fight.
+ *
+ * Text editing follows the pad's three invariants exactly (see
+ * CardTextarea.tsx): uncontrolled textareas, IME composition as a hard stop,
+ * and `.boardScroll` as the one scroll container.
  *
  * Kind is told by icon + words only, never by colour (the storyboard rule).
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import {
-  useCallback, useEffect, useRef, useState,
-  type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
-} from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   IconArchiveOutline20, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
   IconCloseOutline16, IconCodeOutline16, IconDatabaseOutline16, IconEditOutline16,
@@ -26,10 +27,11 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  BOARD_CARD_KINDS,
+  BOARD_CARD_KINDS, documentHeadingOf, isLongCardText,
   type BoardCard, type BoardCardKind, type BoardCardStatus, type CanvasBoard,
 } from '../../types.ts'
 import type {} from '../locales.ts'
+import { CardTextarea } from './CardTextarea.tsx'
 import css from './CanvasSpacePage.module.css'
 
 /** The mutations the board can ask for (the page wires them to the Remote). */
@@ -59,6 +61,8 @@ export interface BoardViewProps {
   readonly selection: ReadonlySet<string>
   readonly onToggleSelect: (cardId: string) => void
   readonly onClearSelection: () => void
+  /** Open one card in the right-Sidebar detail reader (a body click). */
+  readonly onOpenDetail: (cardId: string) => void
   readonly editingId: string | null
   readonly onEditingChange: (cardId: string | null) => void
   readonly draftKind: BoardCardKind | null
@@ -81,77 +85,6 @@ const KIND_ICONS = {
 function basenameOf(path: string): string {
   const parts = path.split(/[\\/]/).filter(segment => segment.length > 0)
   return parts[parts.length - 1] ?? path
-}
-
-/**
- * The board's one textarea shape: uncontrolled, auto-sizing (never its own
- * scroller), IME-hard-stopped submits. `submitOn` picks the chord:
- * 'mod-enter' for card text (⌘⏎, plus blur), 'enter' for comments (⏎).
- */
-function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, onSubmit, onCancel }: {
-  readonly defaultValue?: string
-  readonly placeholder?: string
-  readonly submitOn: 'mod-enter' | 'enter'
-  readonly autoFocus?: boolean
-  readonly onSubmit: (text: string) => void
-  readonly onCancel?: () => void
-}): ReactNode {
-  const ref = useRef<HTMLTextAreaElement | null>(null)
-  const composingRef = useRef(false)
-
-  const autosize = useCallback(() => {
-    const element = ref.current
-    if (element === null) return
-    element.style.height = '0px'
-    element.style.height = `${element.scrollHeight}px`
-  }, [])
-
-  useEffect(() => { autosize() }, [autosize])
-
-  const submit = useCallback(() => {
-    const element = ref.current
-    if (element === null || composingRef.current) return
-    onSubmit(element.value)
-  }, [onSubmit])
-
-  const onKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onCancel?.()
-      return
-    }
-    if (event.key !== 'Enter' || composingRef.current) return
-    const chord = submitOn === 'enter'
-      ? !event.shiftKey && !event.metaKey && !event.ctrlKey
-      : event.metaKey || event.ctrlKey
-    if (chord) {
-      event.preventDefault()
-      submit()
-    }
-  }, [submitOn, submit, onCancel])
-
-  return (
-    <textarea
-      ref={element => {
-        ref.current = element
-        if (element !== null) {
-          element.style.height = '0px'
-          element.style.height = `${element.scrollHeight}px`
-        }
-      }}
-      className={css.cardEditor}
-      defaultValue={defaultValue}
-      placeholder={placeholder}
-      spellCheck={false}
-      autoFocus={autoFocus}
-      rows={1}
-      onInput={autosize}
-      onKeyDown={onKeyDown}
-      onBlur={submitOn === 'mod-enter' ? submit : undefined}
-      onCompositionStart={() => { composingRef.current = true }}
-      onCompositionEnd={() => { composingRef.current = false }}
-    />
-  )
 }
 
 /** One comment thread under a card (badge toggle + list + the user's form). */
@@ -190,8 +123,28 @@ function CommentThread({ t, card, readonly, onComment }: {
   )
 }
 
+/** A card's summary: the clamped text, the fade for long texts, the word count. */
+function CardSummary({ t, card }: {
+  readonly t: TranslateNS<'canvas'>
+  readonly card: BoardCard
+}): ReactNode {
+  const long = isLongCardText(card.text)
+  // Document cards lead with their derived heading (never the raw `#` opener)
+  // and summarize the body that remains after it.
+  const heading = card.kind === 'document' ? documentHeadingOf(card.text) : undefined
+  return (
+    <>
+      {heading !== undefined && <div className={css.docTitle}>{heading.title}</div>}
+      <div className={css.cardTextWrap} data-clamped={long || undefined}>
+        <div className={css.cardText}>{heading?.body ?? card.text}</div>
+      </div>
+      {long && <div className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</div>}
+    </>
+  )
+}
+
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggleSelect, onEditingChange, actions }: {
+function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggleSelect, onOpenDetail, onEditingChange, actions }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
   readonly readonly: boolean
@@ -200,6 +153,7 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
   /** Rendered inside the archived well (restore is the only gesture). */
   readonly archivedWell?: boolean
   readonly onToggleSelect: () => void
+  readonly onOpenDetail: () => void
   readonly onEditingChange: (cardId: string | null) => void
   readonly actions: BoardActions
 }): ReactNode {
@@ -211,8 +165,21 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
     <div
       className={`${css.card}${proposed ? ` ${css.cardGhost}` : ''}`}
       data-selected={selected || undefined}
-      onClick={proposed || archivedWell || editing ? undefined : onToggleSelect}
+      onClick={archivedWell || editing ? undefined : onOpenDetail}
     >
+      {!proposed && !archivedWell && (
+        <button
+          type="button"
+          className={css.selectBox}
+          role="checkbox"
+          aria-checked={selected}
+          title={t('card.select')}
+          aria-label={t('card.select')}
+          onClick={event => { event.stopPropagation(); onToggleSelect() }}
+        >
+          {selected && <IconCheckOutline16 size={11} />}
+        </button>
+      )}
       {proposed && (
         <span className={css.ghostFlag}>
           <IconSparkle16 size={12} />
@@ -241,7 +208,7 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
           <span className={css.editHint}>{t('card.editHint')}</span>
         </div>
       ) : (
-        <div className={css.cardText}>{card.text}</div>
+        <CardSummary t={t} card={card} />
       )}
 
       {card.source !== undefined && (
@@ -275,11 +242,11 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
 
       {proposed ? (
         <div className={css.ghostActions}>
-          <button type="button" className={css.accept} onClick={() => { actions.setCardStatus(card.id, 'kept') }}>
+          <button type="button" className={css.accept} onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'kept') }}>
             <IconCheckOutline16 size={12} />
             {t('card.accept')}
           </button>
-          <button type="button" onClick={() => { actions.setCardStatus(card.id, 'archived') }}>
+          <button type="button" onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'archived') }}>
             <IconCloseOutline16 size={12} />
             {t('card.reject')}
           </button>
@@ -353,7 +320,7 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, onToggle
 
 /** The board view. */
 export function BoardView({
-  t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection,
+  t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
   editingId, onEditingChange, draftKind, onDraftKindChange, actions, showArchived, onToggleArchived,
 }: BoardViewProps): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -507,6 +474,7 @@ export function BoardView({
                 selected={selection.has(card.id)}
                 editing={editingId === card.id}
                 onToggleSelect={() => { onToggleSelect(card.id) }}
+                onOpenDetail={() => { onOpenDetail(card.id) }}
                 onEditingChange={onEditingChange}
                 actions={actions}
               />
@@ -532,6 +500,7 @@ export function BoardView({
                     editing={false}
                     archivedWell
                     onToggleSelect={() => {}}
+                    onOpenDetail={() => {}}
                     onEditingChange={() => {}}
                     actions={actions}
                   />

@@ -80,6 +80,7 @@ interface Harness {
     archiveCanvas: ReturnType<typeof vi.fn>
     importV1: ReturnType<typeof vi.fn>
     probeV1Pad: ReturnType<typeof vi.fn>
+    selectCard: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasSpacePageProps
   /** Current board the fake host holds (mutations answer it back). */
@@ -109,6 +110,7 @@ function makeHarness(options: {
     archiveCanvas: vi.fn(async (): Promise<Result<BoardMutationResult>> => mutation()),
     importV1: vi.fn(async (): Promise<Result<BoardImportResult>> => ok({ ok: true, board: minted, version: '2', imported: 2 })),
     probeV1Pad: vi.fn(async (): Promise<Result<CanvasListResult>> => ok({ items: [{ name: '卡片/雨伞的意象.md' }, { name: '文章/第一章.md' }] as never, archived: [] })),
+    selectCard: vi.fn(),
   }
   const sessionId = options.sessionId === 'none' ? undefined : (options.sessionId ?? 's1')
   const props = {
@@ -118,6 +120,9 @@ function makeHarness(options: {
       selector({ current: sessionId })) as CanvasSpacePageProps['useSessions'],
     useWorkspaces: ((selector: (snapshot: { items: readonly unknown[] }) => unknown) =>
       selector({ items: options.workspaces ?? [] })) as CanvasSpacePageProps['useWorkspaces'],
+    // No detail selection in these specs: the feed is a fixed empty snapshot.
+    useSelection: ((selector: (snapshot: { canvasId: null; cardId: null; rev: number }) => unknown) =>
+      selector({ canvasId: null, cardId: null, rev: 0 })) as CanvasSpacePageProps['useSelection'],
   } as CanvasSpacePageProps
   return { mocks, props, current }
 }
@@ -184,18 +189,47 @@ describe('CanvasSpacePage', () => {
     })
   })
 
-  it('selects cards and batch-archives them, sequentially', async () => {
-    const { mocks, props } = makeHarness({ board: board([card('c_1'), card('c_2')]) })
+  it('opens the detail reader on a body click (the shared store carries the selection)', async () => {
+    const { mocks, props } = makeHarness({ board: board([card('c_1')]) })
     render(<CanvasSpacePage {...props} />)
     await screen.findByText('卡片 c_1')
     fireEvent.click(screen.getByText('卡片 c_1'))
-    fireEvent.click(screen.getByText('卡片 c_2'))
+    expect(mocks.selectCard).toHaveBeenCalledWith(CANVAS_ID, 'c_1')
+  })
+
+  it('selects cards through the hover checkbox and batch-archives them, sequentially', async () => {
+    const { mocks, props } = makeHarness({ board: board([card('c_1'), card('c_2')]) })
+    render(<CanvasSpacePage {...props} />)
+    await screen.findByText('卡片 c_1')
+    const boxes = screen.getAllByRole('checkbox', { name: '选择' })
+    fireEvent.click(boxes[0]!)
+    fireEvent.click(boxes[1]!)
     await screen.findByText('已选 2 张')
+    // The body click did not select anything by itself.
+    expect(mocks.selectCard).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /归档所选/ }))
     await waitFor(() => {
       expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })
       expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_2', status: 'archived' })
     })
+  })
+
+  it('shows the word count on a long card and the derived heading on a document card', async () => {
+    const longText = '长'.repeat(300)
+    const docText = '# 大模型心理学：综述\n\n第一段正文。\n## 第二章\n更多。'
+    const { props } = makeHarness({
+      board: board([
+        card('c_long', { text: longText }),
+        card('c_doc', { kind: 'document', text: docText }),
+      ]),
+    })
+    render(<CanvasSpacePage {...props} />)
+    await screen.findByText('300 字')
+    // The derived heading, never the raw `#` opener.
+    await screen.findByText('大模型心理学：综述')
+    expect(screen.queryByText(/^# 大模型心理学/)).toBeNull()
+    // The body summary skips the heading line but keeps the rest.
+    await screen.findByText(/第一段正文。/)
   })
 
   it('marks a question card answered from its hover action', async () => {

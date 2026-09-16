@@ -465,6 +465,38 @@
   border-color: var(--dsw-static-deepseek-400);
 }
 
+/* The selection checkbox: top-right corner, hover-revealed, always on when
+   the card is selected — body clicks belong to the detail reader. */
+.selectBox {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary-inverted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.card:hover .selectBox {
+  opacity: 1;
+}
+
+.card[data-selected="true"] .selectBox {
+  opacity: 1;
+  background: var(--dsw-static-deepseek-400);
+  border-color: var(--dsw-static-deepseek-400);
+}
+
 .kindTag {
   display: inline-flex;
   align-items: center;
@@ -480,6 +512,45 @@
   color: var(--dsw-alias-label-primary);
   white-space: pre-wrap;
   word-break: break-word;
+  /* The board shows summaries only: ~6 lines, then the fade below cuts it. */
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The document card's derived heading (never the raw `#` opener). */
+.docTitle {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+}
+
+.cardTextWrap {
+  position: relative;
+}
+
+/* The fade says "there is more" — open the detail reader for the full text. */
+.cardTextWrap[data-clamped="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  background: linear-gradient(transparent, var(--dsw-alias-bg-layer-1));
+  pointer-events: none;
+}
+
+.cardGhost .cardTextWrap[data-clamped="true"]::after {
+  background: linear-gradient(transparent, var(--dsw-alias-bg-base));
+}
+
+.cardWords {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-caption);
 }
 
 .cardSrc {
@@ -520,7 +591,7 @@
 .cardActions {
   position: absolute;
   top: 7px;
-  right: 7px;
+  right: 30px;
   display: none;
   gap: 2px;
 }

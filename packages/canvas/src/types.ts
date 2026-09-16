@@ -683,3 +683,69 @@ export type BoardMutationResult =
 export type BoardImportResult =
   | ({ readonly ok: true } & BoardReadResult & { readonly imported: number })
   | { readonly ok: false; readonly error: CanvasError }
+
+/* ------------------------------------------------------- summary heuristics */
+
+/** A card summary is clamped at about this many lines (the CSS enforces it). */
+export const SUMMARY_CLAMP_LINES = 6
+
+/** A text longer than this always wears the long-card affordances (fade + count). */
+export const SUMMARY_CLAMP_CHARS = 240
+
+/** Longest derived document-card title, in code units. */
+export const MAX_DOCUMENT_TITLE_LENGTH = 60
+
+/**
+ * Whether a card text is long enough that the summary clamp will actually
+ * cut it — the driver for the fade and the word count (the board never
+ * measures layout; the estimate is deliberately textual).
+ * @param text - the card's full text.
+ * @returns true when the clamp hides something.
+ */
+export function isLongCardText(text: string): boolean {
+  if (text.length > SUMMARY_CLAMP_CHARS) return true
+  let lines = 1
+  for (const char of text) {
+    if (char === '\n') lines += 1
+    if (lines > SUMMARY_CLAMP_LINES) return true
+  }
+  return false
+}
+
+/** A document card's derived heading: the display title and the body that remains. */
+export interface DocumentHeading {
+  /** The first markdown heading's text, or the first non-empty line as-is. */
+  readonly title: string
+  /**
+   * The text with the heading line removed (the summary does not repeat the
+   * title); the whole text when the title came from the first line.
+   */
+  readonly body: string
+}
+
+/**
+ * Derive a document card's display title: the first markdown heading when one
+ * exists, otherwise the first non-empty line — never the raw document from
+ * its `#` opener (the M1.5 acceptance complaint). When the title came from a
+ * heading, that line leaves the body so the summary does not show it twice.
+ * @param text - the document card's full text.
+ * @returns the heading and the remaining body, or undefined for an empty text.
+ */
+export function documentHeadingOf(text: string): DocumentHeading | undefined {
+  const lines = text.split('\n')
+  let firstLine: string | undefined
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index]!.trim()
+    if (trimmed.length === 0) continue
+    if (firstLine === undefined) firstLine = trimmed
+    const heading = /^#{1,6}\s+(\S.*)$/.exec(trimmed)
+    if (heading !== null) {
+      return {
+        title: heading[1]!.trim().slice(0, MAX_DOCUMENT_TITLE_LENGTH),
+        body: [...lines.slice(0, index), ...lines.slice(index + 1)].join('\n'),
+      }
+    }
+  }
+  if (firstLine === undefined) return undefined
+  return { title: firstLine.slice(0, MAX_DOCUMENT_TITLE_LENGTH), body: text }
+}

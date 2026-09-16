@@ -1,18 +1,13 @@
 /**
- * Composed props contract for the canvas view. The view mounts on one seat —
- * the keyed `sidebar.right.pane.tab` — and its props are spelled structurally
- * (the session id plus the `GlobalStandardProps` seat that brings
- * `useSessions`) rather than riding `PropsRuntime`, so no seat owner share
- * leaks into the contract.
- *
- * The view keeps its own React state rather than a slot store: everything it
- * shows is either derived from the host (the pad listing, the item body) or
- * re-derivable on mount, and the editor's unsaved buffer is auto-saved anyway.
- *
- * The canvas SPACE page (v2) mounts the same way on the keyed root `main`
- * seat: root scope, no session binding — workspace context arrives through
- * the standard `useWorkspaces` hook and the fence for its mutations rides
- * the currently selected session (`useSessions`).
+ * Composed props contract for the canvas space's two seats. The board page
+ * mounts on the keyed root `main` seat (root scope, no session binding —
+ * workspace context arrives through the standard `useWorkspaces` hook and the
+ * fence for its mutations rides the currently selected session); the
+ * card-detail reader mounts the keyed `sidebar.right.pane.tab` seat (session
+ * scope — its mutations ride the tab's own session). Both keep their own
+ * React state; the board↔detail selection crosses them through the shared
+ * store exposed as `hooks.selection` (the slot runtime binds it into the
+ * `useSelection` prop).
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -37,39 +32,13 @@ import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardCreateRequest, BoardImportResult,
   BoardImportV1Request, BoardListResult, BoardMutationResult, BoardPatchCardRequest,
   BoardPutCardRequest, BoardReadOutcome, BoardReadRequest,
-  CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
-  CanvasListRequest, CanvasListResult, CanvasReadOutcome, CanvasReadRequest,
-  CanvasWriteRequest, CanvasWriteResult,
+  CanvasListRequest, CanvasListResult,
 } from '../types.ts'
 import type {} from './locales.ts'
+import type { CanvasSelectionSource } from './space/selection.ts'
 
 /** The canvas Remote namespace, as mounted by this plugin. */
 export type CanvasRemote = TypertRemoteNamespaceMap['canvas']
-
-/**
- * Business face injected into the canvas view. The mutating calls name their
- * session first because the host resolves that session's file policy and
- * workspace boundary onto the write; the reads need neither.
- */
-export interface CanvasViewInjected {
-  /** List one workspace's pad (active items + archive set). */
-  list: (request: CanvasListRequest) => Promise<RemoteResult<CanvasListResult>>
-  /** Read one item's text with the freshness token a later write must present. */
-  read: (request: CanvasReadRequest) => Promise<RemoteResult<CanvasReadOutcome>>
-  /** Create one item; an existing title is refused rather than overwritten. */
-  create: (sessionId: SessionId, request: CanvasCreateRequest) => Promise<RemoteResult<CanvasWriteResult>>
-  /** Overwrite one item under the version guard from the last read. */
-  write: (sessionId: SessionId, request: CanvasWriteRequest) => Promise<RemoteResult<CanvasWriteResult>>
-  /** Hide one item from the list, or restore it — the file is never touched. */
-  setArchived: (sessionId: SessionId, request: CanvasArchiveRequest) => Promise<RemoteResult<CanvasArchiveResult>>
-}
-
-/** Full props of the canvas view. */
-export type CanvasViewProps =
-  & { sessionId: SessionId }
-  & GlobalStandardProps
-  & InjectFace<CanvasViewInjected>
-  & PropsLocale<'canvas'>
 
 /**
  * Business face injected into the canvas space page (v2). The page is root
@@ -96,10 +65,52 @@ export interface CanvasSpaceInjected {
   importV1: (sessionId: SessionId, request: BoardImportV1Request) => Promise<RemoteResult<BoardImportResult>>
   /** One workspace's v1 pad listing (the import flow's probe and count). */
   probeV1Pad: (request: CanvasListRequest) => Promise<RemoteResult<CanvasListResult>>
+  /**
+   * Open one card in the right-Sidebar detail reader (a board body click):
+   * the shared store is written, then the canvas tab is activated through the
+   * official `openTab` when a session is mounted (a no-op otherwise — the
+   * store alone already carries the selection).
+   */
+  selectCard: (canvasId: string, cardId: string) => void
+  hooks: {
+    /** The board↔detail selection feed, bound by the slot renderer. */
+    selection: CanvasSelectionSource
+  }
 }
 
 /** Full props of the canvas space page. */
 export type CanvasSpacePageProps =
   & GlobalStandardProps
   & InjectFace<CanvasSpaceInjected>
+  & PropsLocale<'canvas'>
+
+/**
+ * Business face injected into the card-detail reader (the right-Sidebar tab
+ * after M1.5). The tab is session scope: its mutations name the tab's own
+ * session, which resolves the fence mode the host stamps onto the write.
+ */
+export interface CanvasDetailInjected {
+  /** Read one board with the freshness token a later mutation must present. */
+  readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
+  /** Edit one card: text, a status transition, or a question-state transition. */
+  patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Comment on one card. */
+  addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /**
+   * Open a file attachment in the official document preview
+   * (`ctx.sidebarRight.openResource` over a `dsh-resource://file` address);
+   * a host without the right Sidebar degrades to a no-op.
+   */
+  openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
+  hooks: {
+    /** The board↔detail selection feed, bound by the slot renderer. */
+    selection: CanvasSelectionSource
+  }
+}
+
+/** Full props of the card-detail reader. */
+export type CanvasDetailProps =
+  & { sessionId: SessionId }
+  & GlobalStandardProps
+  & InjectFace<CanvasDetailInjected>
   & PropsLocale<'canvas'>
