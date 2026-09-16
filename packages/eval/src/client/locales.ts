@@ -687,7 +687,7 @@ export const en: Record<EvalKey, string> = {
   'report.unitsNone': 'units: none held',
   'report.unitsHeld': 'unreclaimed units: {count}',
   'report.unitsTitle': 'Unreclaimed units',
-  'report.unitsHint': "A unit whose cell is 'archived' is one 回收 can still take; one whose cell is already 'released' is past every gate, and only dsh-lab release --force can end it — a human's call.",
+  'report.unitsHint': "A unit whose cell is 'archived' is one Reclaim can still take; one whose cell is already 'released' is past every gate, and only dsh-lab release --force can end it — a human's call.",
   'report.unitRunning': 'up',
   'report.unitStopped': 'stopped',
   'report.reclaim': 'Reclaim',
