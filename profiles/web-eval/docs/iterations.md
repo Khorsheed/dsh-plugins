@@ -385,6 +385,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T58 | 代码 | 条件与绑定的最后一公里：未绑定会话里 `eval_*` / `datasets_*` 的 `repo` 参数收窄成只认会话绑定（G1）；`/datasets bind` 层缺省 visible（G3）；绑定路径归一化存 realpath（G5）；`model.endpoint` 进起草可改字段（G6）；provision 写回 `home.sha`（G7，或 lock 权威）；容器条件的 `unit` 段来源（G4）；绑定回执在空会话可见（G2） | T34 T36 | 第 4 步人介入从 6 次降到 2 次（登录 + 批准 provision） |
 | T59 ✅ | 环境 + 代码（硬） | 选手在容器单元里没有 shell：sub-dsh 报「宿主无可用 sandbox 后端且无审批通道，bash 全部被拒」（G14）；查 headless 在单元里的 sandbox / approval 配置怎么落（permissions: unrestricted 应当到位），真题轮之前必须解决 | T33e | 合入 main `8dc26e97`（2026-09-17，`19e52e7f`）；两条报错都成立且互相独立（镜像无 bubblewrap、Landlock probe 返回 unusable；无头子 dsh 没有审批通道），但都不是缺陷——**真正的缺陷是 local-agent-dsh 没有权限旋钮**，子 profile 跑的是 dsh-base 的 workspace-write + ask，决策 3 在四家里少一个执行点，宿主上没人察觉是因为 macOS 有 Seatbelt；修法：`permissions` 配置键，provisioning 追加一层生成 patch 覆盖 sandbox-policy.mode 与 approval.policy，值落作用域目录（进 home.sha）不落 env；web-eval pack 钉 danger-full-access（与 codex 同一条纪律）；单元里 bash 修后成功原文；镜像未动；local-agent-dsh 188、local-agent 267 |
 | T60 | 代码 | 导出与终评：终评之后的再导出并标 bundle 的导出时间（G17）；报告页导出一并写盘 report（G15，与 T53 合并做）；详情页在 run 启动后自动拉一次（G11）；成员子会话 tab 的自隐判据（G13）；agent 写题库工作树的窄口（G16） | T38 T37 | 第 7、8 步的缺口清零 |
+| T62 | 代码（热修，小） | 两个 tab 打不开：绑定存字面 `~`，git 与 datasets 层不展开，题集列表与条件页整页报错（走查 G5，从 T58 提前拆出）；错误态改三段式（人话 + 修法 + 折叠的详情），页面不再直接渲染 error.message 与绝对路径 | 无 | 3171 上题集与条件页能打开；两个 tab 的 22 处裸错误都过三段式 |
+| T63 | 代码（界面收口） | 题集 + 实验室两个 tab 的整体设计与文案收口，一人从头到尾负责，按 ui-spec §九：沿用宿主 tokens、人话标签、列永远是条件名、状态词表、空态与错误态同一组件、矩阵页重做、报告与判官台同套样式；交付每页明暗两套截图 + 对照 ui-spec 的核对表，然后人验收 | T62 | 用户点着验收，问题一轮收完 |
 | T61 | 代码（低） | 容器轮里 member-bridge 行起不来（单元里 `DSH_MEMBER_BRIDGE_ENTRY` 为 SyntaxError），走 failOnStartupError: false 降级，每个容器轮 stderr 一段噪声；查该行在单元里该不该挂、不挂就别起 | T59 | 容器轮 stderr 干净 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
@@ -416,7 +418,7 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - 从 main 开 worktree，分支只改文案指明的目录；题库仓库是多 agent 共享检出，写操作一律 `git worktree add` 后再动，从 i1-walk 开，不在共享检出上 checkout。
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
 - Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
-- UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。
+- UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。UI 任务的回报必须附每页明暗两套截图，按 ui-spec §九 自查；协调者看图验收。
 - 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。解追加型冲突用 graft：从 base / ours / theirs 取原文，按稳定锚点把自己追加的整块插进 main 版本，不逐 hunk 拼 ours+theirs。
 - 并行任务写题库时各用各的 worktree，不碰别人分支上的 plan / condition；会话里的 agent 起草只认本会话绑定的题库（T58 之前尤其要盯：未绑定时它会拿 repo 参数自己挑一个）。
 ```
@@ -2455,7 +2457,7 @@ T39 走查日志第 4 步与 G1–G7；packages/eval/src/provision.ts（lock 与
 - G7：provision 写回 home.sha 到条件文档（默认写回，`--no-write-back` 保留旧行为）；条件页的「provision」动作就是这一步，变 ready 是一步。
 - G6：model.endpoint 进起草可改字段与条件页可编辑字段（改了即新条件哈希，照旧）。
 - G4：起草新条件时若源条件无 unit 段而计划走容器路径，按 harness 的默认 scopedHome 模板补齐（模板放在 eval 一处，四家各一行）。
-- G5：绑定存 realpath，读取处统一走同一个归一化函数；旧绑定读到 ~ 时就地归一。
+- G5 已提前拆到 T62 热修；本任务不重复做，若 T62 先合入就以它为准。
 - G1：未绑定会话里 eval_* / datasets_* 的 repo 参数只认与会话绑定相同的仓库；未绑定即拒绝并提示 /datasets bind——agent 不再能自己挑仓库。
 - G3：/datasets bind 不带层参数缺省只绑 modelFacing 层；要开更多层必须显式写，并在回执里点名。
 - G2：绑定回执在空会话也可见（composer 回执一行）。
@@ -2468,6 +2470,62 @@ provision 写回与不写回；endpoint 进起草；unit 模板补齐；路径�
 
 ## 回报
 分支与 commit；Agent Note；gate；第 4 步的人介入计数（目标 2）。
+```
+
+### T62 · 热修：绑定路径归一 + 错误态三段式（可发，小，先于一切）
+
+```text
+# 任务 T62：两个 tab 先能打开——绑定路径归一，错误态不再裸露异常
+
+## 背景
+3171 上题集 tab 报「~/.dsh/scratch/dataseek-eval-i5 is not a git repository: GitError: git rev-parse --show-toplevel failed」，实验室 › 条件页报「not a dataset repository (no datasets/ directory)」。根因是走查记的 G5：绑定里存的是字面 ~，git 与 datasets 的读路径不展开。同时两个 tab 把 error.message 与绝对路径原样渲染，用户看到的是异常原文。
+
+## 先读
+packages/datasets/src/binding.ts（repoPath 存法）、service.ts 与 remote.ts 里读 repoPath 的每一处、client 的 BindForm 与 DatasetsView 的错误渲染；packages/eval/src/client 里 22 处 error.message 渲染；ui-spec §九「错误态三段式」；T39 日志 G5。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-ui-hotfix，分支 fix/ui-binding-path-and-errors；改 packages/datasets 与 packages/eval（README 若提到绑定路径就补一句 + sidecar）。两包各自成提交。
+
+## 已定决定
+- 绑定写入时展开 ~ 并存 realpath；读取处统一走一个归一化函数；旧绑定读到 ~ 时就地归一并写回。
+- 错误态组件（两个 tab 共用一个实现，各自 import 自己的副本不跨包 import）：第一行人话（按错误码映射：不是 git 仓库 / 不是题库 / 路径不存在 / 服务不在），第二行修法（能给命令就给命令），「详情」折叠里放异常原文与路径。页面不再直接渲染 error.message。
+- 不改矩阵页等其它样式（归 T63）。
+
+## 完成判据
+datasets 与 eval 测试全绿，gate 绿；3171 重装后题集列表与条件页能打开；人为绑一个不存在的路径，两个 tab 的错误态都是三段式；回报附截图（明暗各一）。
+
+## 回报
+分支与 commit；Agent Note；gate；两个 tab 修前修后截图。
+```
+
+### T63 · 界面整体收口：题集 + 实验室按视觉与文案基线重做（可发，依赖 T62）
+
+```text
+# 任务 T63：两个 tab 的整体设计与文案收口——一个人从头到尾
+
+## 背景
+六个子页由不同的人各做各的，功能都在，但没有人做过整体设计：矩阵页把条件文档里所有键当因子摊开（unit.scopedHome.var、完整 home.sha 都在筛选行里），列头是 ["DEEPSEEK_API_KEY","DSH_HOME"] 这种数组，状态是 mixed (archived / ws-ready) 中英混杂，报告页把英文异常与绝对路径直接打在页上。用户看过之后的结论是「可读性低、设计感弱、体验差」。ui-spec §九 定了硬规则，本任务按它把两个 tab 从头到尾过一遍。
+
+## 先读
+ui-spec 全文（§九为准）；走查稿 scratch-storyboard/eval-flow-storyboard.html 里的目标样子（本地 open）；packages/mission 与 packages/datasets 的 *.module.css（宿主 tokens 的用法）；packages/eval/src/client 与 packages/datasets/src/client 全部页面；T39 日志的截图与缺口 G11 / G13。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-ui-polish，分支 feat/ui-polish-lab-datasets；改 packages/eval 与 packages/datasets 的 client（README 双语 + sidecar）。功能与数据面不动，只动呈现与文案；发现数据面缺字段就记下来不顺手扩。
+
+## 已定决定
+- 视觉：只用宿主 tokens；明暗两套都过；间距、字号、表格、chip、圆点、抽屉在两个 tab 用同一套写法。
+- 文案：一张状态词表（ui-spec §九）落成 locale 词典，中英各一套，页面上不再出现英文状态词与键名；哈希缩 12 位；数组与 JSON 不当标题。
+- 矩阵页重做：列头永远是条件 id，因子值作副标题（如「v4-flash」）；单因子时没有筛选行；多因子时「按因子分组」选择器默认折叠；卡格告警与哈希红边保留但换成 chip 与描边；run 级汇总一行放底部。
+- 列表页：状态 chip 用词表；因子列显示人话（「模型」）而不是键名。
+- 报告页：未导出态一句话 + 按钮；不变量四行用同一组件；比较未开的原因一句人话。
+- 判官台与格子抽屉：同套组件。
+- 交付：每页明暗两套截图（题集列表 / 题目详情 / 实验室列表 / 新建实验 / 概览 / 计划审阅 / 条件 / 矩阵 / 格子 / 报告 / 判官台）+ 对照 ui-spec §九 的核对表（每条规则：哪页怎么落的）。
+
+## 完成判据
+两包测试全绿，gate 绿；3171 重装后用户点着走一遍，截图与核对表在回报里；用户提的问题记成清单一轮收完。
+
+## 回报
+分支与 commit；Agent Note；gate；截图集与核对表。
 ```
 
 ## 四、验收规程
