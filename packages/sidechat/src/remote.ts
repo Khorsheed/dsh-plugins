@@ -18,7 +18,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { SideChatService } from './service.ts'
 import type {
   SideChatListResult, SideChatQuoteOutcome, SideChatQuoteRequest,
-  SideChatSendOutcome, SideChatSendRequest, SideChatStateOutcome,
+  SideChatSendOutcome, SideChatSendRequest, SideChatStateOutcome, SideChatSurfaceHints,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -59,6 +59,12 @@ export class SideChatRemoteService extends TypertRemoteService<SideChatRemoteCon
   @Remote('listContexts')
   listContexts(): Promise<SideChatListResult> {
     return this.sideChat.listContexts()
+  }
+
+  /** The openWith revision of every known context (the surfacer's diff basis; the lightest read). */
+  @Remote('surfaceHints')
+  surfaceHints(): Promise<SideChatSurfaceHints> {
+    return this.sideChat.surfaceHints()
   }
 
   /**

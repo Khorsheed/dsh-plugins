@@ -20,11 +20,13 @@ import { IconBrowseOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primiti
 import type { SideChatTabParams } from './definition.ts'
 import type { SideChatViewProps } from './contract.ts'
 import { SideChatPanel } from './SideChatPanel.tsx'
+import { useOpenWithSurfacer } from './use-open-with-surfacer.ts'
 import panelCss from './SideChatPanel.module.css'
 
 /** The side-chat tab body. */
 export function SideChatView({
-  sessionId, useSessions, useTabInfo, t, getState, listContexts, send, dockAvailable, openDock,
+  sessionId, useSessions, usePanelInfo, useTabInfo, t,
+  getState, listContexts, send, surfaceHints, dockAvailable, openDock, openTab,
 }: SideChatViewProps): ReactNode {
   const { tab } = useTabInfo()
   const params = tab.navigation.params as SideChatTabParams | undefined
@@ -33,11 +35,26 @@ export function SideChatView({
   const fallbackLabel = useSessions(sessions => sessions.byId[sessionId]?.displayTitle) ?? String(sessionId)
 
   const [contextKey, setContextKey] = useState(navContext ?? String(sessionId))
-  // A re-navigation (quote action, a consumer's openTab) re-aims the view;
-  // the selector's own switches are view-local and never write navigation.
+  // A re-navigation (quote action, a consumer's openTab, the surfacer's)
+  // re-aims the view; the selector's own switches are view-local and never
+  // write navigation.
   useEffect(() => {
     setContextKey(navContext ?? String(sessionId))
   }, [navContext, revision, sessionId])
+
+  // The fallback surfacer: only while the overlay seat is ABSENT (the dock
+  // is the primary otherwise, and the two never double-fire). It only ever
+  // re-navigates this tab — a host without the overlay seat surfaces nothing
+  // while the tab itself is closed (documented degrade).
+  const dockSeated = dockAvailable()
+  const activePanelId = usePanelInfo(info => info.activePanelId)
+  useOpenWithSurfacer({
+    surfaceHints,
+    activePanelId,
+    openTab,
+    openDock: undefined,
+    enabled: !dockSeated,
+  })
 
   return (
     <SideChatPanel

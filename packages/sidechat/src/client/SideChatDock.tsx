@@ -18,6 +18,7 @@ import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type React
 import { IconCloseOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SideChatDockProps } from './contract.ts'
 import { SideChatPanel } from './SideChatPanel.tsx'
+import { useOpenWithSurfacer } from './use-open-with-surfacer.ts'
 import css from './SideChatDock.module.css'
 
 /** The frame's size and the viewport margin its position clamps to. */
@@ -27,7 +28,7 @@ const VIEWPORT_MARGIN = 8
 
 /** The floating dock. */
 export function SideChatDock({
-  useStore, actions, useSessions, t, getState, listContexts, send, closeToTab,
+  useStore, actions, useSessions, usePanelInfo, t, getState, listContexts, send, surfaceHints, openTab, closeToTab,
 }: SideChatDockProps): ReactNode {
   const open = useStore(s => s.open)
   const contextKey = useStore(s => s.contextKey)
@@ -36,6 +37,20 @@ export function SideChatDock({
   const current = useSessions(sessions => sessions.current)
   const currentLabel = useSessions(sessions =>
     current === undefined ? undefined : sessions.byId[current]?.displayTitle)
+  const activePanelId = usePanelInfo(info => info.activePanelId)
+
+  // The surfacer's primary home: this entry mounts at shell boot, so a
+  // consumer's openWith surfaces whether or not any side-chat surface is
+  // open — tab on the conversation panel, dock anywhere else, tab as the
+  // fallback tier. (The tab runs its own surfacer only when the overlay
+  // seat is absent, so the two never double-fire.)
+  useOpenWithSurfacer({
+    surfaceHints,
+    activePanelId,
+    openTab,
+    openDock: (key) => { actions.open(key) },
+    enabled: true,
+  })
 
   // The drag: pointer deltas translate the frame, clamped to the viewport.
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)

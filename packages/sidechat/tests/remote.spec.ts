@@ -29,6 +29,7 @@ async function bench(): Promise<{ seen: Seen[]; remote: SideChatRemoteService; d
   const core = {
     getState: async () => ({ ok: false as const, error: 'not-found' as const }),
     listContexts: async () => ({ items: [] }),
+    surfaceHints: async () => ({ items: [{ contextKey: 'k', rev: 2 }] }),
     send: async (agent: Agent, _request: SideChatSendRequest) => {
       seen.push({ method: 'send', agent })
       return { ok: true as const, state: { contextKey: 'k', label: 'k', status: 'running' as const, refs: [], transcript: [] } }
@@ -66,6 +67,7 @@ describe('SideChatRemoteService', () => {
     const { remote, dispose } = await bench()
     expect(await remote.getState({ contextKey: 'k' })).toEqual({ ok: false, error: 'not-found' })
     expect(await remote.listContexts()).toEqual({ items: [] })
+    expect(await remote.surfaceHints()).toEqual({ items: [{ contextKey: 'k', rev: 2 }] })
     await dispose()
   })
 })

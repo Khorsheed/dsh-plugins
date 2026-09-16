@@ -488,6 +488,37 @@ describe('SideChatService — state, list, and the store fence', () => {
   })
 })
 
+describe('SideChatService — the openWith revision (the surfacer signal)', () => {
+  it('bumps rev on every openWith — never on send or quote — and persists it', async () => {
+    const fs = new FakeFs()
+    const { service, calling, callingEvents } = bench({ fs })
+    expect((await service.surfaceHints()).items).toEqual([])
+    await service.openWith({ contextKey: 'k', label: 'k' })
+    expect(await service.surfaceHints()).toEqual({ items: [{ contextKey: 'k', rev: 1 }] })
+    // Neither gesture from the chat itself moves the revision.
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    callingEvents.push(assistantEvent('m1', '答', 1))
+    await service.quoteMessage(calling, { messageId: 'm1' })
+    expect(await service.surfaceHints()).toEqual({
+      items: [{ contextKey: 'k', rev: 1 }, { contextKey: 's-main', rev: 0 }],
+    })
+    // A consumer refresh bumps again (the surfacer fires per call, not per change).
+    await service.openWith({ contextKey: 'k', label: 'k', systemPrompt: '新' })
+    expect(await service.surfaceHints()).toEqual({
+      items: [{ contextKey: 'k', rev: 2 }, { contextKey: 's-main', rev: 0 }],
+    })
+    // The revision survives a "restart" (a new instance over the same fs).
+    const second = bench({ fs })
+    expect(await second.service.surfaceHints()).toEqual({
+      items: [{ contextKey: 'k', rev: 2 }, { contextKey: 's-main', rev: 0 }],
+    })
+    // A pre-M3 record (no rev field) reads as 0 through the tolerant reader.
+    fs.seed(DOC_PATH, JSON.stringify({ version: 1, contexts: [{ contextKey: 'old', label: 'o', refs: [], createdAt: 't', updatedAt: 't' }] }))
+    const third = bench({ fs })
+    expect(await third.service.surfaceHints()).toEqual({ items: [{ contextKey: 'old', rev: 0 }] })
+  })
+})
+
 describe('resolveSideChatStateRoot', () => {
   it('honours the explicit override, then $DSH_HOME, then the cwd fallback', () => {
     expect(resolveSideChatStateRoot('/explicit')).toBe('/explicit')
