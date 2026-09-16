@@ -78,3 +78,22 @@ export function projectTranscript(events: readonly SessionEvent[]): SideChatTran
   }
   return rows
 }
+
+/**
+ * Fold the journal's `turn/end` closers into the latest turn error: an
+ * error-ended turn contributes its failure message, and the first non-error
+ * `turn/end` after it clears the slate. Everything else (completed, aborted,
+ * blocked, max-tokens, interrupted, and turns that never closed) projects to
+ * no error. This is what makes a silently dying turn — a request that fails
+ * before its message even reaches the log — visible to the user.
+ * @param events - the session's events in log order (live snapshot or cold read).
+ * @returns the latest error message, or null when the latest closed turn was clean.
+ */
+export function projectTurnError(events: readonly SessionEvent[]): string | null {
+  let lastError: string | null = null
+  for (const event of events) {
+    if (event.type !== 'turn/end') continue
+    lastError = event.data.reason.kind === 'error' ? event.data.reason.error.message : null
+  }
+  return lastError
+}

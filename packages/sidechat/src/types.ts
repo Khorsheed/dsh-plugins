@@ -78,6 +78,12 @@ export interface SideChatState {
   /** Pending refs — the chips above the composer, folded into the next send. */
   readonly refs: readonly SideChatRef[]
   readonly transcript: readonly SideChatTranscriptRow[]
+  /**
+   * The latest turn's error message (a turn that failed — e.g. an unrouted
+   * model — surfaces here instead of dying silently), or null when the
+   * latest closed turn was clean / none ever closed.
+   */
+  readonly lastError: string | null
 }
 
 /** Domain error vocabulary shared by every mutating verb. */

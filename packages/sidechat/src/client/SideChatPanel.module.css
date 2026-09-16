@@ -366,3 +366,37 @@
   font-size: 11px;
   color: var(--dsw-alias-state-error-primary);
 }
+
+.errorBar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 12px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.errorBarText {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.errorBarClose {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.errorBarClose:hover {
+  color: var(--dsw-alias-label-primary);
+}

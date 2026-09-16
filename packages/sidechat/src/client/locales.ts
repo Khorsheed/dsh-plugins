@@ -36,6 +36,7 @@ export const zh = {
   'action.quoteFailed': '引用失败',
 
   'error.send': '发送失败：{message}',
+  'error.dismiss': '关闭',
   'error.unknown': '未知错误',
 
   'markdown.copy': '复制',
@@ -79,6 +80,7 @@ export const en: Record<keyof typeof zh, string> = {
   'action.quoteFailed': 'Quote failed',
 
   'error.send': 'Send failed: {message}',
+  'error.dismiss': 'Dismiss',
   'error.unknown': 'Unknown error',
 
   'markdown.copy': 'Copy',
