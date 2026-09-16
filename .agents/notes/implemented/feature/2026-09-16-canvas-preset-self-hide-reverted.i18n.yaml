@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-16-canvas-preset-self-hide-reverted.md
+.agents/notes/implemented/feature/2026-09-16-canvas-preset-self-hide-reverted.md: 8ece057396b8e8bd45b2afc70bc5883163e65c76
+.agents/notes/implemented/feature/2026-09-16-canvas-preset-self-hide-reverted.zh.md: 3890f908b3f519fe09e3c8ff6dd49f8ec27ef88e
