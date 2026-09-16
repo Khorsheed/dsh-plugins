@@ -27,6 +27,7 @@ export type DatasetsKey =
   | 'binding.form.preview.loading'
   | 'binding.form.preview.ok'
   | 'binding.form.preview.empty'
+  | 'binding.form.preview.failed'
   | 'binding.form.keepOne'
   | 'binding.form.submit'
   | 'binding.form.cancel'
@@ -43,6 +44,7 @@ export type DatasetsKey =
   | 'role.passthrough'
   | 'list.loading'
   | 'list.error'
+  | 'notice.failed'
   | 'list.empty'
   | 'list.itemCount'
   | 'list.unbound'
@@ -129,6 +131,21 @@ export type DatasetsKey =
   | 'json.collapseNode'
   | 'json.expandNode'
   | 'json.copyButtonTitle'
+  | 'error.notGitRepo'
+  | 'error.notGitRepo.fix'
+  | 'error.notDatasetRepo'
+  | 'error.notDatasetRepo.fix'
+  | 'error.pathMissing'
+  | 'error.pathMissing.fix'
+  | 'error.unbound'
+  | 'error.unbound.fix'
+  | 'error.serviceMissing'
+  | 'error.serviceMissing.fix'
+  | 'error.cancelled'
+  | 'error.cancelled.fix'
+  | 'error.unknownFix'
+  | 'error.details'
+  | 'error.detailsPath'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -139,6 +156,22 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<DatasetsKey, string> = {
+  // 错误态三段式（ui-spec §九）：一句人话 + 一句修法，异常原文与路径折在「详情」里。
+  'error.notGitRepo': '绑定的题库路径不是 git 仓库',
+  'error.notGitRepo.fix': '改绑到仓库根目录：/datasets bind <路径> --layers visible',
+  'error.notDatasetRepo': '这个仓库里没有题集（缺 datasets/ 目录）',
+  'error.notDatasetRepo.fix': '改绑到题库仓库的根目录，或先在仓库里建出 datasets/',
+  'error.pathMissing': '绑定的题库路径在磁盘上找不到',
+  'error.pathMissing.fix': '确认目录还在，再重新绑定：/datasets bind <路径> --layers visible',
+  'error.unbound': '本会话还没绑定题库',
+  'error.unbound.fix': '先绑定题库：/datasets bind <路径> --layers visible',
+  'error.serviceMissing': '这台实例缺少本页要用的服务',
+  'error.serviceMissing.fix': '预设里少装了成员；补齐后重开这个 tab',
+  'error.cancelled': '这次请求被取消了',
+  'error.cancelled.fix': '再试一次',
+  'error.unknownFix': '再试一次；仍然不行就把「详情」里的原文发给维护者',
+  'error.details': '详情',
+  'error.detailsPath': '路径',
   'open': '题集',
   'binding.none': '本会话未绑定题库仓库',
   'binding.repo': '题库: {repo}',
@@ -160,6 +193,7 @@ export const zh: Record<DatasetsKey, string> = {
   'binding.form.taskFacingOnly': '仅题面',
   'binding.form.preview.loading': '检查仓库…',
   'binding.form.preview.ok': '✓ 有效仓库 · {count} 个题集',
+  'binding.form.preview.failed': '这个路径没预览出来',
   'binding.form.preview.empty': 'git 仓库有效，但没有题集（datasets/ 为空）',
   'binding.form.keepOne': '每组至少保留一项；要全部可见请折叠此区',
   'binding.form.submit': '确认',
@@ -177,6 +211,7 @@ export const zh: Record<DatasetsKey, string> = {
   'role.passthrough': '所有人可读',
   'list.loading': '加载中…',
   'list.error': '题集列表加载失败',
+  'notice.failed': '这次操作没做成',
   'list.empty': '这个仓库里没有题集（datasets/ 为空）',
   'list.itemCount': '{count} 道题',
   'list.unbound': '先导入一个题库仓库，或新建一个题集',
@@ -223,7 +258,7 @@ export const zh: Record<DatasetsKey, string> = {
   'detail.runsEmpty': '这道题还没有在任何实验里作答过',
   'detail.runsCell': '{condition} · rep {rep} · {bucket}',
   'detail.briefLoading': '读取题面与可判性…',
-  'detail.briefError': '读取失败',
+  'detail.briefError': '这道题的题面与可判性没读出来',
   'form.newDatasetTitle': '新建题集（写 dataset.json 骨架、prompts/、schemas/、items/）',
   'form.datasetId': '题集 id（也是目录名）',
   'form.datasetName': '显示名（可选）',
@@ -239,7 +274,7 @@ export const zh: Record<DatasetsKey, string> = {
   'skeleton.dismiss': '知道了',
   'preview.empty': '在左侧选择一个文件查看内容',
   'preview.loading': '加载中…',
-  'preview.error': '读取失败',
+  'preview.error': '这个文件没读出来',
   'preview.copy': '复制',
   'preview.copied': '已复制',
   'preview.footnotes': '脚注',
@@ -267,6 +302,23 @@ export const zh: Record<DatasetsKey, string> = {
 
 /** English dictionary. */
 export const en: Record<DatasetsKey, string> = {
+  // The three-part error seat (ui-spec §九): one sentence on what happened,
+  // one on the fix; the raw text and the path stay folded under Details.
+  'error.notGitRepo': 'The bound dataset path is not a git repository',
+  'error.notGitRepo.fix': 'Bind the repository root instead: /datasets bind <path> --layers visible',
+  'error.notDatasetRepo': 'That repository holds no datasets (no datasets/ directory)',
+  'error.notDatasetRepo.fix': 'Bind the dataset repository’s root, or create datasets/ in it first',
+  'error.pathMissing': 'The bound dataset path is not on disk',
+  'error.pathMissing.fix': 'Check the directory is still there, then bind again: /datasets bind <path> --layers visible',
+  'error.unbound': 'This session has no dataset repository bound',
+  'error.unbound.fix': 'Bind one first: /datasets bind <path> --layers visible',
+  'error.serviceMissing': 'This instance is missing a service this page needs',
+  'error.serviceMissing.fix': 'A member is absent from the preset; install it and reopen this tab',
+  'error.cancelled': 'The request was cancelled',
+  'error.cancelled.fix': 'Try again',
+  'error.unknownFix': 'Try again; if it persists, send the raw text under Details to the maintainer',
+  'error.details': 'Details',
+  'error.detailsPath': 'Path',
   'open': 'Datasets',
   'binding.none': 'No dataset repository bound to this session',
   'binding.repo': 'Repository: {repo}',
@@ -288,6 +340,7 @@ export const en: Record<DatasetsKey, string> = {
   'binding.form.taskFacingOnly': 'Model-facing only',
   'binding.form.preview.loading': 'Checking the repository…',
   'binding.form.preview.ok': '✓ valid repository · {count} datasets',
+  'binding.form.preview.failed': 'Could not preview that path',
   'binding.form.preview.empty': 'Valid git repository, but no datasets (empty datasets/)',
   'binding.form.keepOne': 'Keep at least one per group; collapse the section to keep everything visible',
   'binding.form.submit': 'Confirm',
@@ -305,6 +358,7 @@ export const en: Record<DatasetsKey, string> = {
   'role.passthrough': 'readable by everyone',
   'list.loading': 'Loading…',
   'list.error': 'Failed to load the dataset list',
+  'notice.failed': 'That action did not go through',
   'list.empty': 'This repository holds no dataset (empty datasets/)',
   'list.itemCount': '{count} items',
   'list.unbound': 'Import a dataset repository first, or create a new dataset',
@@ -351,7 +405,7 @@ export const en: Record<DatasetsKey, string> = {
   'detail.runsEmpty': 'This item has not been answered in any experiment yet',
   'detail.runsCell': '{condition} · rep {rep} · {bucket}',
   'detail.briefLoading': 'Reading the task face and judgeability…',
-  'detail.briefError': 'Failed to read',
+  'detail.briefError': 'Could not read this item’s task face and judgeability',
   'form.newDatasetTitle': 'New dataset (writes the dataset.json skeleton, prompts/, schemas/, items/)',
   'form.datasetId': 'Dataset id (also its directory name)',
   'form.datasetName': 'Display name (optional)',
@@ -367,7 +421,7 @@ export const en: Record<DatasetsKey, string> = {
   'skeleton.dismiss': 'Got it',
   'preview.empty': 'Select a file on the left to preview it',
   'preview.loading': 'Loading…',
-  'preview.error': 'Failed to read',
+  'preview.error': 'Could not read this file',
   'preview.copy': 'Copy',
   'preview.copied': 'Copied',
   'preview.footnotes': 'Footnotes',

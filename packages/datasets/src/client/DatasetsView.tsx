@@ -26,6 +26,7 @@ import type { DatasetBinding, DatasetOverviewRow, ListItemsResult } from '../typ
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
 import { DatasetList } from './DatasetList.tsx'
+import { ErrorState } from './ErrorState.tsx'
 import { snapshotCell } from './parts.tsx'
 import { SkeletonForm } from './SkeletonForm.tsx'
 import { itemKey, type DatasetsForm } from './store.ts'
@@ -328,9 +329,11 @@ export function DatasetsView(props: DatasetsViewProps) {
             </>
           )}
         </div>
-        {notice !== null && !bindOpen && form === null && <div className={css.notice}>{notice}</div>}
+        {notice !== null && !bindOpen && form === null && (
+          <ErrorState what={t('notice.failed')} message={notice} path={binding?.repoPath} compact t={t} />
+        )}
         {validatedRow !== undefined && (
-          <div className={validatedRow.errors.length > 0 ? css.noticeError : css.notice}>
+          <div className={validatedRow.errors.length > 0 ? `${css.notice} ${css.noticeError}` : css.notice}>
             {validatedRow.errors.length === 0
               ? t('detail.validateOk', { warnings: validatedRow.warnings.length })
               : t('detail.validateFound', {
@@ -384,7 +387,7 @@ export function DatasetsView(props: DatasetsViewProps) {
             <div className={css.empty}>{t('list.loading')}</div>
           )}
           {!listLoading && listError !== null && overviewValue === null && (
-            <div className={css.empty}>{t('list.error')}: {listError}</div>
+            <ErrorState what={t('list.error')} message={listError} path={binding?.repoPath} t={t} />
           )}
           {overviewValue !== null && overviewValue.datasets.length === 0 && (
             <div className={css.empty}>{t('list.empty')}</div>

@@ -12,7 +12,8 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  readBinding, validateBinding, writeBinding, type BindingSession, type DatasetBinding,
+  normalizeRepoPath, readBinding, validateBinding, writeBinding,
+  type BindingSession, type DatasetBinding,
 } from './binding.ts'
 import {
   assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir,
@@ -81,6 +82,11 @@ export interface ScopeSelectors {
  * apply whenever a binding exists — including alongside an explicit repo
  * (the binding human owns what the session's agent may see). No repo source
  * at all fails loud instead of guessing.
+ *
+ * Whichever source wins is normalized (`normalizeRepoPath`): a `~` typed into
+ * a tool argument or a config file reaches git as a literal directory name
+ * otherwise, and the three sources must not disagree about what one path
+ * means.
  * @param selectors - explicit per-call selectors.
  * @param binding - the session binding, when one exists.
  * @param defaultRepo - the plugin config's default repo ('' / undefined = none).
@@ -102,7 +108,7 @@ export function resolveScope(
     )
   }
   return {
-    repo,
+    repo: normalizeRepoPath(repo),
     ...(binding?.datasets !== undefined ? { datasets: binding.datasets } : {}),
     ...(binding?.layers !== undefined ? { layers: binding.layers } : {}),
   }

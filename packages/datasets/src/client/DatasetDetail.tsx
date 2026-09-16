@@ -22,6 +22,7 @@ import { IconFolderClose16, IconFolderOpen16, Pill } from '@deepseek-ai/dsh-clie
 import { classifyFile, DATASET_SLOTS, type DatasetSlot } from '../slots.ts'
 import type { DatasetOverviewRow, ItemBrief, ItemRecord, JsonObject } from '../types.ts'
 import type { DatasetsViewProps, ItemRunsView } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import { bytes, Chevron, FileIcon, SlotMark, slotKey, stamp } from './parts.tsx'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
@@ -432,7 +433,7 @@ export function DatasetDetail(props: DatasetDetailProps) {
             <div className={css.empty}>{t('detail.briefLoading')}</div>
           )}
           {openItem !== null && briefError !== undefined && (
-            <div className={css.panelWarn}>{t('detail.briefError')}: {briefError}</div>
+            <ErrorState what={t('detail.briefError')} message={briefError} compact t={t} />
           )}
           {openItem !== null && brief !== undefined && (
             <>
@@ -457,7 +458,13 @@ export function DatasetDetail(props: DatasetDetailProps) {
               </div>
               {previewLoading && <div className={css.empty}>{t('preview.loading')}</div>}
               {!previewLoading && previewError !== null && (
-                <div className={css.panelWarn}>{t('preview.error')}: {previewError}</div>
+                <ErrorState
+                  what={t('preview.error')}
+                  message={previewError}
+                  path={selection.path}
+                  compact
+                  t={t}
+                />
               )}
               {!previewLoading && previewError === null && preview !== null && (
                 <div className={css.previewContent}>

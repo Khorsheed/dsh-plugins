@@ -20,13 +20,19 @@
  * the plugin's own state. The store is read per call, so a CLI write to a
  * LIVE session's binding is race-free (the M1 offline-append race is gone).
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { DatasetsError } from './dataset.ts'
 
 /** A session's dataset binding. Absent fields mean "everything in the repo". */
 export interface DatasetBinding {
-  /** Absolute path of the git repository holding the datasets. */
+  /**
+   * Absolute, `~`-free, symlink-resolved path of the git repository holding
+   * the datasets — see {@link normalizeRepoPath}. Every write goes through
+   * {@link validateBinding}, so a binding that reached the store is already
+   * in this form.
+   */
   repoPath: string
   /** Dataset-id whitelist; absent = every dataset in the repository. */
   datasets?: string[]
@@ -49,15 +55,54 @@ export interface BindingSession {
   readonly id: string
 }
 
+/**
+ * The canonical form of a bound repository path: a leading `~` expanded
+ * against this user's home, the result made absolute, and — when the
+ * directory is actually there — resolved through its symlinks.
+ *
+ * WHY the store holds this rather than what the human typed: a bound path is
+ * consumed by `git -C`, by `readdir(<repo>/datasets)`, and by containment
+ * checks comparing it against a session's realpath cwd. None of those expand
+ * `~` (the shell does, and no shell is in the loop when the web tab writes a
+ * binding), so a stored `~/x` reaches git as a literal directory named `~`
+ * and the tab reports "not a git repository" about a repository that exists.
+ * Resolving symlinks at the same time keeps `/tmp` vs `/private/tmp` from
+ * making two names for one repository compare unequal.
+ *
+ * A path that does not exist yet keeps its absolute form rather than failing:
+ * normalizing is not the existence check (`assertRepository` is), and a
+ * binding to an unmounted volume must still round-trip.
+ * @param raw - the path as typed, passed, or read back from an old record.
+ * @returns the canonical path; '' stays '' for the caller's shape check.
+ */
+export function normalizeRepoPath(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed === '') return trimmed
+  const expanded = trimmed === '~' || trimmed.startsWith('~/')
+    ? join(homedir(), trimmed.slice(1))
+    : trimmed
+  const absolute = resolve(expanded)
+  try {
+    return realpathSync(absolute)
+  } catch {
+    return absolute
+  }
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(entry => typeof entry === 'string' && entry !== '')
 }
 
 /**
  * Validate a binding object (from a store record, CLI flags, or a tool
- * caller).
+ * caller) and put its `repoPath` in canonical form.
+ *
+ * Normalizing HERE rather than at each call site is what makes the guarantee
+ * hold: every write goes through this function, and so does every read (see
+ * {@link readBinding}), so no consumer has to remember to expand `~` and none
+ * of them can disagree about what the bound path means.
  * @param value - the candidate binding.
- * @returns the validated binding.
+ * @returns the validated binding, `repoPath` normalized.
  */
 export function validateBinding(value: unknown): DatasetBinding {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -77,7 +122,7 @@ export function validateBinding(value: unknown): DatasetBinding {
     throw new DatasetsError('binding "layers" must be an array of layer names', 'SHAPE_INVALID')
   }
   return {
-    repoPath,
+    repoPath: normalizeRepoPath(repoPath),
     ...(datasets !== undefined ? { datasets: [...datasets] } : {}),
     ...(layers !== undefined ? { layers: [...layers] } : {}),
   }
@@ -110,6 +155,12 @@ function bindingPath(root: string, sessionId: string): string {
  * Read a session's current binding from the store. A missing file means
  * unbound; a corrupt or shape-invalid file fails loud (a hand-edited store
  * must not silently drop the session's access governance).
+ *
+ * A record written before `repoPath` was normalized (a literal `~`, a
+ * trailing slash, a relative path) is migrated IN PLACE on this read: the
+ * caller gets the canonical path and the file stops being a trap for the next
+ * reader. The write-back is best effort — a store we may not write to still
+ * answers the read correctly.
  * @param root - the bindings root (`<stateRoot>/bindings`).
  * @param sessionId - the session.
  * @returns the binding, or undefined when none is in effect.
@@ -127,7 +178,16 @@ export function readBinding(root: string, sessionId: string): DatasetBinding | u
   if (typeof record !== 'object' || record === null || record.version !== 1) {
     throw new DatasetsError(`${path}: unknown binding record shape`, 'SHAPE_INVALID')
   }
-  return validateBinding(record.binding)
+  const stored = (record.binding as { repoPath?: unknown } | undefined)?.repoPath
+  const binding = validateBinding(record.binding)
+  if (stored !== binding.repoPath) {
+    try {
+      writeBinding(root, sessionId, binding)
+    } catch {
+      // Migration is a courtesy to the next reader, never this read's problem.
+    }
+  }
+  return binding
 }
 
 /**

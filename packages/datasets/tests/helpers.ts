@@ -4,7 +4,7 @@
  * rejects machine-specific absolute paths).
  */
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -57,7 +57,13 @@ export function commitAll(dir: string, message: string): string {
  * - dataset `beta`: one `visible` layer, one item.
  */
 export function makeFixtureRepo(): FixtureRepo {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-datasets-test-'))
+  // realpath, not the mkdtemp name: on macOS the runtime temp root is itself a
+  // symlink (/var → /private/var), and every path the code under test hands
+  // back is canonical — git's `rev-parse --show-toplevel` and the binding
+  // store's `normalizeRepoPath` both resolve links. A fixture holding the
+  // unresolved name would make every such assertion compare two spellings of
+  // one directory.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-datasets-test-')))
   git(dir, ['init', '-q'])
   git(dir, ['config', 'user.email', 'fixture@example.com'])
   git(dir, ['config', 'user.name', 'fixture'])

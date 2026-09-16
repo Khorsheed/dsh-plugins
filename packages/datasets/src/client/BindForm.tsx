@@ -19,6 +19,7 @@ import {
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { DatasetBinding, PreviewRepoResult } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './BindForm.module.css'
 
 /** Live preview state of the path input. */
@@ -197,7 +198,15 @@ export function BindForm(props: BindFormProps) {
         {preview.status === 'loading' && (
           <span className={css.previewLoading}>{t('binding.form.preview.loading')}</span>
         )}
-        {preview.status === 'error' && <span className={css.previewError}>{preview.message}</span>}
+        {preview.status === 'error' && (
+          <ErrorState
+            what={t('binding.form.preview.failed')}
+            message={preview.message}
+            path={preview.path}
+            compact
+            t={t}
+          />
+        )}
         {ok !== null && ok.datasets.length > 0 && (
           <span className={css.previewOk}>
             <IconCheckOutline16 size={14} />
@@ -278,7 +287,7 @@ export function BindForm(props: BindFormProps) {
         </Button>
         <Button type="button" size="sm" onClick={onCancel}>{t('binding.form.cancel')}</Button>
       </div>
-      {notice !== null && <div className={css.notice}>{notice}</div>}
+      {notice !== null && <ErrorState what={t('notice.failed')} message={notice} compact t={t} />}
     </form>
   )
 }
