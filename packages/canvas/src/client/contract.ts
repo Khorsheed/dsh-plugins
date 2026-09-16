@@ -9,6 +9,11 @@
  * shows is either derived from the host (the pad listing, the item body) or
  * re-derivable on mount, and the editor's unsaved buffer is auto-saved anyway.
  *
+ * The canvas SPACE page (v2) mounts the same way on the keyed root `main`
+ * seat: root scope, no session binding — workspace context arrives through
+ * the standard `useWorkspaces` hook and the fence for its mutations rides
+ * the currently selected session (`useSessions`).
+ *
  * @module @khorsheed/dsh-canvas/client
  */
 
@@ -20,7 +25,18 @@ import type {} from '@khorsheed/dsh-canvas/remote'
 // Type-only: pulls ui-session's GlobalStandardProps merge (useSessions — the
 // workspace root's reactive data source, the same read ui-sidebar-files makes).
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+// Type-only: pulls ui-workspace's GlobalStandardProps merge (useWorkspaces —
+// the registered workspaces feed the space page's attach pickers read).
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+// Type-only: pulls ui-layout's SlotMap merge (the root 'main' seat) and its
+// GlobalStandardProps merge (usePanelInfo).
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: pulls ui-sidebar's SlotMap merge ('sidebar.panellist').
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {
+  BoardAddCommentRequest, BoardArchiveRequest, BoardCreateRequest, BoardImportResult,
+  BoardImportV1Request, BoardListResult, BoardMutationResult, BoardPatchCardRequest,
+  BoardPutCardRequest, BoardReadOutcome, BoardReadRequest,
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
   CanvasListRequest, CanvasListResult, CanvasReadOutcome, CanvasReadRequest,
   CanvasWriteRequest, CanvasWriteResult,
@@ -53,4 +69,37 @@ export type CanvasViewProps =
   & { sessionId: SessionId }
   & GlobalStandardProps
   & InjectFace<CanvasViewInjected>
+  & PropsLocale<'canvas'>
+
+/**
+ * Business face injected into the canvas space page (v2). The page is root
+ * scope — there is no session of its own, so the mutating calls name the
+ * CURRENTLY SELECTED session: the host re-roots that session's fence mode at
+ * the deployment state dir (the board can never live inside a workspace).
+ */
+export interface CanvasSpaceInjected {
+  /** List every canvas the deployment holds (archived included). */
+  listCanvases: () => Promise<RemoteResult<BoardListResult>>
+  /** Create one canvas (a topic, optionally with workspaces attached). */
+  createCanvas: (sessionId: SessionId, request: BoardCreateRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Read one board with the freshness token a later mutation must present. */
+  readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
+  /** Add one user card (createdBy user, straight to kept). */
+  putCard: (sessionId: SessionId, request: BoardPutCardRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Edit one card: text, a status transition, or a question-state transition. */
+  patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Comment on one card. */
+  addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Archive a canvas from the space list, or restore it (never a delete). */
+  archiveCanvas: (sessionId: SessionId, request: BoardArchiveRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Import one workspace's v1 pad as a new canvas (read-only). */
+  importV1: (sessionId: SessionId, request: BoardImportV1Request) => Promise<RemoteResult<BoardImportResult>>
+  /** One workspace's v1 pad listing (the import flow's probe and count). */
+  probeV1Pad: (request: CanvasListRequest) => Promise<RemoteResult<CanvasListResult>>
+}
+
+/** Full props of the canvas space page. */
+export type CanvasSpacePageProps =
+  & GlobalStandardProps
+  & InjectFace<CanvasSpaceInjected>
   & PropsLocale<'canvas'>

@@ -19,6 +19,9 @@
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/paste-table.ts",
-    "src/client/CanvasView.tsx"
+    "src/client/CanvasView.tsx",
+    "src/client/space/BoardView.tsx",
+    "src/client/space/CanvasSpacePage.tsx",
+    "src/client/space/definition.tsx"
   ]
 }
