@@ -1,9 +1,11 @@
 /**
  * The canvas switcher: the tab topbar's dropdown for choosing the open
- * canvas — the active rows (open on click, archive on hover), the archived
- * well (restore), the new-canvas form (topic + attach multi-select), and the
- * v1 one-shot import flow (probe → import). It replaces the M1–M2.5 space
- * page's left column (the main-panel route is retired); the dropdown closes
+ * canvas. One hierarchy, no redundant headers: the active rows (open on
+ * click, archive on hover), the archived well (collapsed, restore), then a
+ * bottom "+ 新画布" row that unfolds the inline create form (topic input +
+ * attach multi-select + create/cancel). The dropdown floats above the
+ * topbar (absolute — its styles live in `../space/board.module.css`, the
+ * module this file imports; a copy elsewhere would be dead CSS) and closes
  * on a choice, on Escape, and on outside pointer down.
  *
  * @module @khorsheed/dsh-canvas/client
@@ -16,7 +18,6 @@ import {
   IconPlusOutline16, IconRefreshOutline14, relativeTime,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasSummary } from '../../types.ts'
 import type {} from '../locales.ts'
 import css from '../space/board.module.css'
@@ -31,7 +32,7 @@ export interface SwitcherWorkspace {
 /** The switcher's props: the canvas list plus the tab's mutation callbacks. */
 export interface CanvasSwitcherProps {
   readonly t: TranslateNS<'canvas'>
-  /** True when no session can fence writes (create/archive/import hide). */
+  /** True when no session can fence writes (create/archive hide). */
   readonly readonly: boolean
   readonly canvases: readonly CanvasSummary[] | null
   readonly openId: string | null
@@ -39,13 +40,6 @@ export interface CanvasSwitcherProps {
   readonly onOpen: (canvasId: string) => void
   readonly onCreate: (title: string, attachedWorkspaces: readonly string[]) => Promise<boolean>
   readonly onArchive: (row: CanvasSummary, archived: boolean) => Promise<void>
-  readonly onProbeImport: (dir: string) => Promise<RemoteResult<CanvasListLike>>
-  readonly onImport: (dir: string) => Promise<boolean>
-}
-
-/** The probe answer's pad listing shape (only the count is read). */
-export interface CanvasListLike {
-  readonly items: readonly unknown[]
 }
 
 /** The row's meta line: card and open-question counts plus a relative time. */
@@ -69,16 +63,13 @@ function metaOf(row: CanvasSummary, t: TranslateNS<'canvas'>): string {
 
 /** The canvas switcher dropdown. */
 export function CanvasSwitcher({
-  t, readonly, canvases, openId, workspaces, onOpen, onCreate, onArchive, onProbeImport, onImport,
+  t, readonly, canvases, openId, workspaces, onOpen, onCreate, onArchive,
 }: CanvasSwitcherProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [attachPicks, setAttachPicks] = useState<ReadonlySet<string>>(new Set())
   const [showArchived, setShowArchived] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const [importDir, setImportDir] = useState('')
-  const [importProbe, setImportProbe] = useState<{ dir: string; count: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -122,30 +113,6 @@ export function CanvasSwitcher({
     }
   }, [newTitle, attachPicks, onCreate, t])
 
-  const probeImport = useCallback(async (dir: string) => {
-    setImportDir(dir)
-    setImportProbe(null)
-    if (dir === '') return
-    const result = await onProbeImport(dir)
-    if (result.ok) setImportProbe({ dir, count: result.value.items.length })
-  }, [onProbeImport])
-
-  const submitImport = useCallback(async () => {
-    if (importProbe === null || importProbe.count === 0) return
-    setBusy(true)
-    try {
-      const okImported = await onImport(importProbe.dir)
-      if (okImported) {
-        setImporting(false)
-        setImportDir('')
-        setImportProbe(null)
-        setOpen(false)
-      }
-    } finally {
-      setBusy(false)
-    }
-  }, [importProbe, onImport])
-
   return (
     <div className={css.switcher} ref={rootRef}>
       <button
@@ -160,69 +127,6 @@ export function CanvasSwitcher({
 
       {open && (
         <div className={css.switcherMenu}>
-          <div className={css.listHead}>
-            <span className={css.listTitle}>{t('space.title')}</span>
-            <button
-              type="button"
-              className={css.newButton}
-              disabled={readonly}
-              title={readonly ? t('space.readonly') : undefined}
-              onClick={() => {
-                setCreating(value => !value)
-                setNewTitle('')
-                setAttachPicks(new Set())
-                setError(null)
-              }}
-            >
-              <IconPlusOutline16 size={12} />
-              {t('space.new')}
-            </button>
-          </div>
-
-          {creating && (
-            <form className={css.form} onSubmit={event => { void submitCreate(event) }}>
-              <input
-                className={css.input}
-                autoFocus
-                value={newTitle}
-                placeholder={t('space.newPlaceholder')}
-                onChange={event => { setNewTitle(event.target.value) }}
-                onKeyDown={event => { if (event.key === 'Escape') setCreating(false) }}
-              />
-              <span className={css.formLabel}>{t('space.newAttach')}</span>
-              {workspaces.length === 0 ? (
-                <span className={css.importNote}>{t('space.noWorkspace')}</span>
-              ) : (
-                <div className={css.attachList}>
-                  {workspaces.map(workspace => (
-                    <label key={workspace.workspaceId} className={css.attachItem} title={workspace.path}>
-                      <input
-                        type="checkbox"
-                        checked={attachPicks.has(workspace.path)}
-                        onChange={event => {
-                          setAttachPicks(current => {
-                            const next = new Set(current)
-                            if (event.target.checked) next.add(workspace.path)
-                            else next.delete(workspace.path)
-                            return next
-                          })
-                        }}
-                      />
-                      {workspace.title}
-                    </label>
-                  ))}
-                </div>
-              )}
-              {error !== null && <span className={css.importNote}>{error}</span>}
-              <div className={css.formActions}>
-                <button type="submit" className={css.primaryButton} disabled={busy}>{t('space.create')}</button>
-                <button type="button" className={css.ghostButton} onClick={() => { setCreating(false) }}>
-                  {t('space.cancel')}
-                </button>
-              </div>
-            </form>
-          )}
-
           <div className={css.listBody}>
             {canvases === null ? (
               <div className={css.empty}>{t('state.loading')}</div>
@@ -298,60 +202,67 @@ export function CanvasSwitcher({
                 ))}
               </div>
             )}
+          </div>
 
-            <div className={css.importBox}>
+          {!readonly && (
+            creating ? (
+              <form className={css.form} onSubmit={event => { void submitCreate(event) }}>
+                <input
+                  className={css.input}
+                  autoFocus
+                  value={newTitle}
+                  placeholder={t('space.newPlaceholder')}
+                  onChange={event => { setNewTitle(event.target.value) }}
+                  onKeyDown={event => { if (event.key === 'Escape') setCreating(false) }}
+                />
+                <span className={css.formLabel}>{t('space.newAttach')}</span>
+                {workspaces.length === 0 ? (
+                  <span className={css.formNote}>{t('space.noWorkspace')}</span>
+                ) : (
+                  <div className={css.attachList}>
+                    {workspaces.map(workspace => (
+                      <label key={workspace.workspaceId} className={css.attachItem} title={workspace.path}>
+                        <input
+                          type="checkbox"
+                          checked={attachPicks.has(workspace.path)}
+                          onChange={event => {
+                            setAttachPicks(current => {
+                              const next = new Set(current)
+                              if (event.target.checked) next.add(workspace.path)
+                              else next.delete(workspace.path)
+                              return next
+                            })
+                          }}
+                        />
+                        {workspace.title}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {error !== null && <span className={css.formNote}>{error}</span>}
+                <div className={css.formActions}>
+                  <button type="submit" className={css.primaryButton} disabled={busy}>{t('space.create')}</button>
+                  <button type="button" className={css.ghostButton} onClick={() => { setCreating(false) }}>
+                    {t('space.cancel')}
+                  </button>
+                </div>
+              </form>
+            ) : (
               <button
                 type="button"
-                className={css.archiveHeader}
-                style={{ width: '100%', margin: 0, padding: '6px 0' }}
-                aria-expanded={importing}
+                className={css.newCanvasRow}
                 onClick={() => {
-                  setImporting(value => !value)
-                  setImportDir('')
-                  setImportProbe(null)
+                  setCreating(true)
+                  setNewTitle('')
+                  setAttachPicks(new Set())
+                  setError(null)
                 }}
               >
-                {importing ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
-                {t('import.toggle')}
+                <IconPlusOutline16 size={12} />
+                {t('space.new')}
               </button>
-              {importing && (
-                <div className={css.form} style={{ margin: '6px 0 0' }}>
-                  {workspaces.length === 0 ? (
-                    <span className={css.importNote}>{t('space.noWorkspace')}</span>
-                  ) : (
-                    <select
-                      className={css.input}
-                      value={importDir}
-                      onChange={event => { void probeImport(event.target.value) }}
-                    >
-                      <option value="">{t('import.pick')}</option>
-                      {workspaces.map(workspace => (
-                        <option key={workspace.workspaceId} value={workspace.path}>{workspace.title}</option>
-                      ))}
-                    </select>
-                  )}
-                  {importProbe !== null && (
-                    importProbe.count === 0 ? (
-                      <span className={css.importNote}>{t('import.none')}</span>
-                    ) : (
-                      <>
-                        <span className={css.importNote}>{t('import.found', { count: String(importProbe.count) })}</span>
-                        <button
-                          type="button"
-                          className={css.primaryButton}
-                          disabled={readonly || busy}
-                          title={readonly ? t('space.readonly') : undefined}
-                          onClick={() => { void submitImport() }}
-                        >
-                          {t('import.go')}
-                        </button>
-                      </>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+            )
+          )}
         </div>
       )}
     </div>

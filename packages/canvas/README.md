@@ -2,18 +2,18 @@
 
 [English](README.en.md) | 中文
 
-**灵感画布** —— **右栏里的写作工作台**：右栏一个「画布详情」tab，普通右栏宽度自调（拖拽把手 + 一次性收会话列表建议），顶栏切换画布，卡板 ↔ 详情钻取导航，成稿编辑器同页切换。一块画布 = 一个主题 = 部署级实体，上面积累碎片、问题、依据（共同认识）、资料、文档五种卡；模型的提议以幽灵卡落板，你 ✓/✗ 决定它的去留。
+**灵感画布** —— **右栏里的写作工作台**：右栏一个「画布」tab，普通右栏宽度自调（拖拽把手 + 一次性收会话列表建议），顶栏切换画布，卡板 ↔ 详情钻取导航，成稿编辑器同页切换。一块画布 = 一个主题 = 部署级实体，上面积累碎片、问题、依据（共同认识）、资料、文档五种卡；模型的提议以幽灵卡落板，你 ✓/✗ 决定它的去留。
 
 **对话双入口**（M2–M3）：**当前会话**——两个画布工具（`canvas_propose_card` / `canvas_comment`）注册到主会话 Agent，你直接让 Agent 改当前打开的画布；**side-chat 插件**——透镜「就此提问」/评论「追问」走第二意见（独立上下文，side-chat 未安装时这些入口全部隐藏、卡板完整可用）。文本选区交互由引用插件（@khorsheed/dsh-quote）在应用级统一承接（引用到当前会话 / 引用到侧边对话 / 复制）。
 
-v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役），检测到 v1 目录时可在切换器里一次性「导入为画布」（只读复制，原文件不动）。
+v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役）——原文件仍在磁盘上，任何编辑器都能打开；v1 五个 Remote 动词在线上不动。
 
-> 路线注记：M1–M2.5 曾走过 main 面板空间路线，已退役——宿主 `RightbarRoot` 只在会话面板渲染右栏，自定义 main 面板让一切右栏承接按构造失效；回到右栏是与宿主布局同构的答案。数据模型、Remote、卡板/详情组件、side-chat 集成、v1 导入全部沿用。
+> 路线注记：M1–M2.5 曾走过 main 面板空间路线，已退役——宿主 `RightbarRoot` 只在会话面板渲染右栏，自定义 main 面板让一切右栏承接按构造失效；回到右栏是与宿主布局同构的答案。数据模型、Remote、卡板/详情组件、side-chat 集成全部沿用。
 
 ## 功能
 
 - **右栏普通宽 + 收列表建议**（M3.1 修正）：打开画布 tab 时每会话一次性建议收起左侧会话列表（DOM 门控，绝不盲 toggle、绝不反复强制）；右栏保持普通 track 模式——拖拽把手可用、宽度你自调、布局有记忆（曾建议 fullscreen，因宿主 fullscreen 隐藏拖拽把手而撤销）。唯一座位 = 右栏页型 tab（`ctx.sidebarRightTabs` + keyed `sidebar.right.pane.tab`），天然 session 作用域。
-- **顶栏一屏切换**（M3）：画布切换器下拉（新建/切换/归档/导入）+ 挂载工作区 chip + [卡板|成稿] 视图切换 + 新卡菜单。不再有独立左列导航。
+- **顶栏一屏切换**：画布切换器下拉（活跃画布行 → 已归档井 → 底部「+ 新画布」内联创建）+ 挂载工作区 chip + [卡板|成稿] 视图切换 + 新卡菜单。不再有独立左列导航。
 - **部署级存储**：每块画布是 `$DSH_HOME/state/canvas/<canvasId>/` 一个目录——`canvas.json`（元信息 + 全部卡 + 计数）与 `draft.md`（成稿正本），纯文本，任何编辑器都能打开。卸载插件不会删除它。
 - **五种内容卡**：碎片（灵感）/ 问题（open → exploring → answered 生命周期）/ 依据（共同认识）/ 资料（带出处）/ 文档。建卡行内编辑，⌘⏎ 确认。
 - **摘要与详情分工**（M1.5）：板上卡片一律摘要——clamp ~6 行、底部渐隐，长文显示字数标；document 卡用启发式标题（首个 markdown 标题或首行），不再把原文从 `#` 糊上去。多选改由卡片右上角的**悬停勾选框**。
@@ -24,14 +24,13 @@ v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役），�
 - **幽灵提议卡**：`proposed` 状态的卡以虚线幽灵态内联在板上，「收下」转为正式卡、「拒绝」归档（**不做删除**）；接受率计入 `stats`，供后续自调整规则使用。
 - **筛选、多选、归档**：按 kind 的筛选 chips（全部/碎片/问题/依据/资料/文档）；勾选框多选，选择条上可批量归档；已归档的卡进「归档井」，随时恢复。
 - **评论挂卡上**：角标展开线程，评论即数据（Agent 的评论会把 open 问题卡自动推进到 exploring）。
-- **v1 一次性导入**：切换器底部「导入 v1 灵感画布」——选中一个工作区，探测到 `<工作区>/灵感画布/` 后一键复制成新画布（v1 卡片 → 碎片卡、v1 文章 → 文档卡，来源回指原文件绝对路径；**只读，原目录一个字节不动**；v1 已归档的条目留在原地）。
 - **编辑器三件套沿用 v1**：非受控 textarea（光标不跳）、输入法组合期间硬停（候选窗绝不被打断）、单滚动容器。
 - **暗色自动跟随**：所有颜色都走官方 `--dsw-*` 主题 token，kind 只靠图标 + 文字区分，不用彩色。
 
 ## v1 灵感稿纸（存储保留，编辑器已退役）
 
 - **一个灵感 = 一个文件**。正本在 `<工作区>/灵感画布/` 下，`文章/` 与 `卡片/` 两个子目录分别是两种形态，文件名就是标题。没有数据库、没有私有格式。
-- **M1.5 起右栏 tab 不再是稿纸编辑器**（现为画布工作台）：稿子的归宿是「导入为画布」（上条）；原文件仍在磁盘上，任何编辑器都能打开；v1 的五个 Remote 动词（`list` / `read` / `create` / `write` / `setArchived`）在线上不动。
+- **M1.5 起右栏 tab 不再是稿纸编辑器**（现为画布工作台）：原文件仍在磁盘上，任何编辑器都能打开；v1 的五个 Remote 动词（`list` / `read` / `create` / `write` / `setArchived`）在线上不动。
 - **归档而不是删除**（画布与稿纸同义）：归档只从列表里隐藏，**文件一个字节都不动**；已归档区可随时恢复。
 
 ## 安装
@@ -83,7 +82,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **板服务**：`CanvasBoardService`（`ctx.canvasBoard`）整板版本围栏读写——读取 → 应用纯函数修改 → `replaceIfVersion` 写回；版本冲突**重读重放一次**再报 `stale`（两个浏览器标签页同时操作不丢卡）。写入围栏见 Compatibility 的「重定界」条。
 
-**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `importV1` / `askAgent` / `chatStatus` / `focusCanvas` / `readDraft` / `writeDraft`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。
+**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `askAgent` / `chatStatus` / `focusCanvas` / `readDraft` / `writeDraft`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。
 
 **右栏 tab（M3）**：`ctx.sidebarRightTabs.register` 类型 + keyed `sidebar.right.pane.tab` 的 body（`tab/CanvasTab.tsx`）。顶栏 = 切换器（`tab/CanvasSwitcher.tsx`）+ 挂载 chip + [卡板|成稿] 切换 + 新卡菜单；卡板页 = `space/BoardView.tsx`；详情页钻入复用 `detail/CanvasDetailView.tsx`（渲染/源码/并列三态）；成稿页 = `tab/DraftView.tsx`（readDraft/writeDraft 驱动）。打开的画布与钻中的卡都走共享 selection store（`space/selection.ts` 的 `{ canvasId, cardId, rev }`）；tab 打开/切换即 `focusCanvas` 上报宿主（主会话工具的目标）；收列表建议（DOM 探测 `data-sidebar-collapsed` 后 `toggleSidebar()`）每会话一次（fullscreen 建议已随 M3.1 撤销：宿主 fullscreen 隐藏右栏拖拽把手）。任一侧的变更动词在 apply 层包装里统一 `touch()` 推 rev，读者重读跟随。
 
