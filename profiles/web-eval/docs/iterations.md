@@ -357,6 +357,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **T39 / T33b 补充二验收（2026-09-16）**：两条题库分支并入 i1-walk `768df21`（validate 0 error，67 条 UNREGISTERED 警告是新增的 lock / plan / 日志 / usage）。**I4 的交付物拿到了**：T39 的容器轮 run 四条不变量全 ✅、比较节打开，第三条「模型回读与声明一致」第一次在容器轮的配对报告上被证到；Δ 为 0 是 P0 两个阶段都是设计阶段的必然，证的是链路与配对机制。**I5 的功能闭环走通了**，但判据「人只做审批与终评」没达成：17 次人介入里 9 次是缺口，集中在两处最后一公里——条件字段（endpoint 没入口、home.sha 手抄回填再 provision）和产物落盘（报告要命令行、终评不进 bundle、单元要手动回收）。缺口按处立四条：T57（run 缺省 finalize 与单元回收）、T58（条件与绑定）、T59（单元里没有 shell——对真题是硬阻塞）、T60（导出与终评）。三件裁决：一、决策 9 的现行口径是 2026-09-10 放宽后的（判官可与选手同模型，标自评不排除），判官条件 notes 里的旧句子是陈旧文本，T33b 顺手改；二、pilot B 的计划在跑前被别的任务改过（加了 kimi-exec、重写格式）——根因就是 G1（未绑定的 agent 拿 repo 参数写进了别人的检出），规则写进通用提醒：并行任务各用各的 worktree，agent 起草只认会话绑定；三、pilot B 第 3 格撞单元上限不是 pilot 的错，是 run 不 finalize 就不回收的设计，T57 先修再重跑。真题预算（v4-pro 单格：F3 46–78 min、F2 62–93 min，output 22–45 万；两格翻倍；budget.activeMinutes 30 要先上调；flash 未测）停在放行点等用户。3171 由安装副本的看门狗守着（`~/.dsh-lab/profiles/web-eval/node_modules/@khorsheed/dsh-ankh-guard`），实施者担心的「守它的是别的 worktree 那份」不成立——那是另一台实例的看门狗。
 
+**T57 / T59 验收（2026-09-17）**：两条无冲突合入 `4a11d4ad`、`8dc26e97`，合并态 eval 707、local-agent-dsh 188、local-agent 267、315 对双语同步、独立性 34 包 0、profiles 组合干净。T57 五个被否掉的替代方案与那条诚实代价都接受。T59 把 G14 从「环境问题」纠成「决策 3 的执行点缺失」——这是本轮最值钱的发现：条件的 `permissions: unrestricted` 在 dsh 这一家背后原先什么都没有，宿主轮也一样，只是 Seatbelt 掩住了。三件交接：一、两条 dsh 条件的 `home.sha` 随子 profile 多了一层而变，T33b 重跑前要重新 provision 并把哈希抄回条件文档（G7 那两步，T58 收）；二、这条 pin 同样作用于宿主轮与判官委派，有意为之，与 codex 的 danger-full-access 同一条纪律；三、容器轮里 member-bridge 那行起不来（单元里 `DSH_MEMBER_BRIDGE_ENTRY` 为 SyntaxError），走的是 failOnStartupError: false 的降级路径，每个容器轮 stderr 都有这段噪声，记为 T61（低）。T59 跑 `gate --all` 时 ankh-guard 的 supervise 泳道红，实施者在 main 上复现同一泳道也红且更多——既有抖动，归 ankh-guard 线，本轮按既有规则记录。另：T57 跑时旁边冒出六只 alpine 单元，是同机另一会话的 integration-triad 集成测试，与评测 run 并存照样跑完。
+
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
@@ -377,10 +379,11 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T53 | 代码（小） | 导出目录记进账本：T38 发现带 `--out` 导出的 bundle 在 run.meta 里无迹可寻，页面只能让人「换个目录找」；导出成功后由 eval 把目录记成 run 级注解（orchestrator ns）或 run.meta 字段，报告页优先读它 | T38 | 报告页对任何已导出的 run 直接找到 bundle |
 | T34 ✅ | 代码 | `eval-planning` skill + `eval_plan_draft` 工具：把「写 plan / condition + validate」并成一个动作，草稿落实验室列表 | T36 | 合入 main `76b4f1a6`（2026-09-16，`83ba74ed`）；一个服务面动词 draftExperiment 三个面共用（表单 → Remote newExperiment、agent → eval_plan_draft、技能 SKILL.md 随 pack 装到 $DSH_HOME/skills）；新条件只能从现有复制改点名字段，从不覆盖；validate 不过照样落盘成草稿；真机表单与工具两条路径原文齐，会话里 34 个工具、技能卡有 eval-planning；「一句话让 agent 起草」那半边本机无 DeepSeek 凭据没跑，归 T39；顺手修了两个 profile 脚本 `set -e` 下 `[ -d ] && rm -rf` 提前退出的既有 bug；eval 681 |
 | T39 ✅ | 运维 | 端到端走查：一句话到报告，记录人介入的次数与位置；先宿主路径，T33e 后再跑容器版拿 I4 的配对报告 | T34–T38 T47 | 题库 `i5-walkthrough` 并入 i1-walk `768df21`（2026-09-16）：3171 重装到含 T34 的 main，容器轮 dsh × {v4-flash, v4-pro} × P0 一跑到底，**四条不变量全 ✅、比较节打开——I4 要的配对报告**（Δ 0 vs 0 是 P0 的设计使然）；八步原文、人介入 17 次 = 8 设计内 + 9 缺口、缺口 G1–G18（硬六条：G1 未绑题集时 agent 拿 repo 参数写了共享检出、G3 bind 缺省 all layers 把答案层开给规划 agent、G5 绑定存字面 ~、G12 探针跳过根因是相位缺失、G14 选手在单元里没有 shell、G17 终评进不了 bundle）；R1 全程未被绕过；agent 写了分析初稿并自查出三件走查没查到的事；分析初稿 `docs/i5-walkthrough-analysis.md` |
-| T57 | 代码（小） | run 与单元回收：`/eval run` 与「批准并启动」缺省跑完过释放闸（G10，留一个「保留单元」开关）；finalize 后在报告页显示未回收单元数并给回收动作（G18）；撞 maxConcurrentUnits 时的原文点名是哪些 run 占着 | T38 | pilot B 容器版三格跑完 |
+| T57 ✅ | 代码（小） | run 与单元回收：`/eval run` 与「批准并启动」缺省跑完过释放闸（G10，留一个「保留单元」开关）；finalize 后在报告页显示未回收单元数并给回收动作（G18）；撞 maxConcurrentUnits 时的原文点名是哪些 run 占着 | T38 | 合入 main `4a11d4ad`（2026-09-17，`e0a37060` + `b423ecf5`）；三格容器 run 单元逐格交替、始终只有一只、跑后归零，`run.meta.finalize: true`；`--keep-units` 行为同今天；报告页未回收计数与「回收」走同一条闸；代价写在 Consequences：没有判定来源的宿主 run 逐格多一条 finalize-refused 注解；题库 `t57-release-gate` 并入 i1-walk `350bd25`；3171 重装到 `e0a37060`、锚点快进、看门狗 14 秒就绪；eval 707 |
 | T58 | 代码 | 条件与绑定的最后一公里：未绑定会话里 `eval_*` / `datasets_*` 的 `repo` 参数收窄成只认会话绑定（G1）；`/datasets bind` 层缺省 visible（G3）；绑定路径归一化存 realpath（G5）；`model.endpoint` 进起草可改字段（G6）；provision 写回 `home.sha`（G7，或 lock 权威）；容器条件的 `unit` 段来源（G4）；绑定回执在空会话可见（G2） | T34 T36 | 第 4 步人介入从 6 次降到 2 次（登录 + 批准 provision） |
-| T59 | 环境 + 代码（硬） | 选手在容器单元里没有 shell：sub-dsh 报「宿主无可用 sandbox 后端且无审批通道，bash 全部被拒」（G14）；查 headless 在单元里的 sandbox / approval 配置怎么落（permissions: unrestricted 应当到位），真题轮之前必须解决 | T33e | dsh 在单元里能跑 bash；两条件一致 |
+| T59 ✅ | 环境 + 代码（硬） | 选手在容器单元里没有 shell：sub-dsh 报「宿主无可用 sandbox 后端且无审批通道，bash 全部被拒」（G14）；查 headless 在单元里的 sandbox / approval 配置怎么落（permissions: unrestricted 应当到位），真题轮之前必须解决 | T33e | 合入 main `8dc26e97`（2026-09-17，`19e52e7f`）；两条报错都成立且互相独立（镜像无 bubblewrap、Landlock probe 返回 unusable；无头子 dsh 没有审批通道），但都不是缺陷——**真正的缺陷是 local-agent-dsh 没有权限旋钮**，子 profile 跑的是 dsh-base 的 workspace-write + ask，决策 3 在四家里少一个执行点，宿主上没人察觉是因为 macOS 有 Seatbelt；修法：`permissions` 配置键，provisioning 追加一层生成 patch 覆盖 sandbox-policy.mode 与 approval.policy，值落作用域目录（进 home.sha）不落 env；web-eval pack 钉 danger-full-access（与 codex 同一条纪律）；单元里 bash 修后成功原文；镜像未动；local-agent-dsh 188、local-agent 267 |
 | T60 | 代码 | 导出与终评：终评之后的再导出并标 bundle 的导出时间（G17）；报告页导出一并写盘 report（G15，与 T53 合并做）；详情页在 run 启动后自动拉一次（G11）；成员子会话 tab 的自隐判据（G13）；agent 写题库工作树的窄口（G16） | T38 T37 | 第 7、8 步的缺口清零 |
+| T61 | 代码（低） | 容器轮里 member-bridge 行起不来（单元里 `DSH_MEMBER_BRIDGE_ENTRY` 为 SyntaxError），走 failOnStartupError: false 降级，每个容器轮 stderr 一段噪声；查该行在单元里该不该挂、不挂就别起 | T59 | 容器轮 stderr 干净 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -2363,7 +2366,7 @@ ui-spec §七；iterations.md I5 各任务的验收记录（哪些原文已有�
 4. 重跑等 T57 合入（run 缺省 finalize，第 3 格不再撞单元上限）；C 等 T55。预算那节留着，等用户放行。
 ```
 
-### T57 · run 缺省 finalize 与单元回收（可发，小）
+### T57 · run 缺省 finalize 与单元回收（已完成，2026-09-17 验收）
 
 ```text
 # 任务 T57：run 跑完缺省过释放闸；finalize 之后界面看得见未回收单元
@@ -2390,7 +2393,9 @@ eval 测试全绿，gate 绿；临时实例或 3171 上：三格以上的容器 
 分支与 commit；Agent Note；gate；三格 run 的 docker ps 前后原文。
 ```
 
-### T59 · 选手在容器单元里没有 shell（可发，硬，真题前必须）
+**验收（2026-09-17）**：`fix/eval-run-finalize-default`（`e0a37060`、`b423ecf5`）合入 main `4a11d4ad`；三格 run 的 docker ps 前中后原文、`--keep-units` 原文、报告页回收原文都齐。Agent Note：`.agents/notes/implemented/bug-fix/2026-09-16-eval-run-release-gate-default.md`。
+
+### T59 · 选手在容器单元里没有 shell（已完成，2026-09-17 验收）
 
 ```text
 # 任务 T59：单元里的 sub-dsh 为什么拒绝 bash
@@ -2414,6 +2419,53 @@ packages/local-agent-dsh-headless 的 cordis.patch.yml 与 agent-loader（sandbo
 
 ## 回报
 分支与 commit；Agent Note；gate；单元里修前修后的两段原文。
+```
+
+**验收（2026-09-17）**：`fix/local-agent-dsh-unit-shell`（`19e52e7f`）合入 main `8dc26e97`。修前两段拒绝原文、当时生效的 sandbox-policy / approval 配置、修后单元里 bash 成功原文、宿主路径 patch 逐字节不变，都齐。Agent Note：`.agents/notes/implemented/bug-fix/2026-09-16-dsh-sub-profile-permission-boundary.md`。
+
+**T33b 补充四（2026-09-17）**：
+
+```text
+# T33b 补充四：T57 与 T59 都在 3171 上了，pilot B 容器版三格重跑
+
+1. 3171 现在跑的是 e0a37060（T57）；T59 的 permissions pin 还没装上去——先按 T33a 第 3 步重装到 main ≥ 8dc26e97（经看门狗通道停起，锚点快进）。
+2. 两条 dsh 条件（v4-flash / v4-pro）与判官条件的 home.sha 随 T59 的子 profile 多了一层而变：会话里逐条 /eval conditions provision，把新哈希抄回条件文档再 provision 一次写 lock（G7 的两步，T58 之前只能这样）。
+3. 计划只含两条 dsh 条件，跑前 git diff 确认没人动过；不带 --keep-units，缺省过闸，三格应逐格释放、docker ps 跑后归零。
+4. 交：四条不变量（环境一致这次应当 ✅）、比较节、两格各自的 usage；预算那节按 flash 实测补上，仍停在放行点。
+5. 判官 notes 的旧口径照补充三改。通用提醒照旧。
+```
+
+### T58 · 条件与绑定的最后一公里（可发）
+
+```text
+# 任务 T58：条件与绑定——第 4 步的人介入从 6 次降到 2 次
+
+## 背景
+T39 走查第 4 步人介入 6 次，其中 4 次是缺口：G6 model.endpoint 是就绪闸必看字段却没有入口；G7 provision 算出 home.sha 但不写回条件文档，人手抄一次再 provision 一次；G4 源条件没有 unit.scopedHome 时起草造不出容器条件；G5 绑定存字面 ~ 让条件子页整页报错。另外两条关乎边界：G1 未绑定会话里 agent 拿 repo 参数自己挑了共享检出写了三份文件（pilot B 的计划就是这么被改的）；G3 /datasets bind 不带层参数默认 all layers，把参考答案与评估标准开给规划 agent。G2 绑定成功后空会话看不到回执。T59 之后 home.sha 会随 permissions 层变，G7 更要紧。
+
+## 先读
+T39 走查日志第 4 步与 G1–G7；packages/eval/src/provision.ts（lock 与 home.sha）、service.ts 的 conditions / draftExperiment、tool.ts 的 repo 参数；packages/datasets/src/{binding.ts, service.ts, remote.ts, slash}（bind 的层缺省、路径存法）与 client 的 BindForm；packages/eval/src/client 的条件页；ui-spec §五（条件页）§六；T31 / T34 / T47 / T59 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-last-mile-conditions，分支 fix/eval-conditions-last-mile；改 packages/eval、packages/eval-tool、packages/datasets（README 双语 + sidecar）。datasets 与 eval 两包的改动各自成提交。
+
+## 已定决定
+- G7：provision 写回 home.sha 到条件文档（默认写回，`--no-write-back` 保留旧行为）；条件页的「provision」动作就是这一步，变 ready 是一步。
+- G6：model.endpoint 进起草可改字段与条件页可编辑字段（改了即新条件哈希，照旧）。
+- G4：起草新条件时若源条件无 unit 段而计划走容器路径，按 harness 的默认 scopedHome 模板补齐（模板放在 eval 一处，四家各一行）。
+- G5：绑定存 realpath，读取处统一走同一个归一化函数；旧绑定读到 ~ 时就地归一。
+- G1：未绑定会话里 eval_* / datasets_* 的 repo 参数只认与会话绑定相同的仓库；未绑定即拒绝并提示 /datasets bind——agent 不再能自己挑仓库。
+- G3：/datasets bind 不带层参数缺省只绑 modelFacing 层；要开更多层必须显式写，并在回执里点名。
+- G2：绑定回执在空会话也可见（composer 回执一行）。
+
+## 测试
+provision 写回与不写回；endpoint 进起草；unit 模板补齐；路径归一化（含旧绑定）；repo 参数拒绝；bind 层缺省；client：条件页 provision 一步变 ready。
+
+## 完成判据
+三包测试全绿，gate 绿；3171 上：一条新条件从起草到 ready 只经「provision」一次；未绑定会话里让 agent 起草，被拒并提示绑定；/datasets bind 不带参数后 datasets_read 读不到 answers/。
+
+## 回报
+分支与 commit；Agent Note；gate；第 4 步的人介入计数（目标 2）。
 ```
 
 ## 四、验收规程
