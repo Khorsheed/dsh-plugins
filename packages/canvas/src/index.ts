@@ -16,9 +16,12 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { CanvasService } from './service.ts'
+import { CanvasBoardService, type CanvasBoardConfig } from './store.ts'
 import { CanvasRemoteService } from './remote.ts'
 
 export { CanvasService, canvasErrorOf } from './service.ts'
+export { CanvasBoardService, resolveCanvasStateRoot } from './store.ts'
+export type { CanvasBoardConfig } from './store.ts'
 export { CanvasRemoteService } from './remote.ts'
 export * from './types.ts'
 
@@ -26,6 +29,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The inspiration pad's service core (the Remote face delegates here). */
     canvasStore: CanvasService
+    /** The canvas space's board service core (deployment-level state). */
+    canvasBoard: CanvasBoardService
   }
 }
 
@@ -36,10 +41,12 @@ export const name = 'canvas'
 export const inject = ['fs']
 
 /**
- * Plugin body: provide the service core, then mount the Remote data face.
+ * Plugin body: provide the service cores, then mount the Remote data face.
  * @param ctx - owning Cordis Context.
+ * @param config - optional board config (state-root override).
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: CanvasBoardConfig = {}): void {
   ctx.provide('canvasStore', new CanvasService(ctx))
+  ctx.provide('canvasBoard', new CanvasBoardService(ctx, config))
   ctx.plugin(CanvasRemoteService, {})
 }

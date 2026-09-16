@@ -17,7 +17,11 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasService } from './service.ts'
+import type { CanvasBoardService } from './store.ts'
 import type {
+  BoardAddCommentRequest, BoardArchiveRequest, BoardCreateRequest, BoardImportResult,
+  BoardImportV1Request, BoardListResult, BoardMutationResult, BoardPatchCardRequest,
+  BoardPutCardRequest, BoardReadOutcome, BoardReadRequest,
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
   CanvasListRequest, CanvasListResult, CanvasReadOutcome, CanvasReadRequest,
   CanvasWriteRequest, CanvasWriteResult,
@@ -37,7 +41,7 @@ export interface CanvasRemoteConfig {}
  * The pad's wire namespace: the browser calls `remote.canvas.*`.
  */
 export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig> {
-  static inject = ['canvasStore']
+  static inject = ['canvasStore', 'canvasBoard']
 
   /**
    * @param ctx - host context carrying the pad service core.
@@ -49,6 +53,10 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
 
   private get store(): CanvasService {
     return this.ctx.canvasStore
+  }
+
+  private get board(): CanvasBoardService {
+    return this.ctx.canvasBoard
   }
 
   /** List one workspace's pad: active items plus the archive set. */
@@ -94,6 +102,86 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('setArchived')
   setArchived(agent: Agent, request: CanvasArchiveRequest): Promise<CanvasArchiveResult> {
     return this.store.setArchived(request, agent.session)
+  }
+
+  /* ------------------------------------------------------ the canvas space (v2, M1) */
+
+  /** List every canvas the deployment holds (archived included; the client groups). */
+  @Remote('listCanvases')
+  listCanvases(): Promise<BoardListResult> {
+    return this.board.listCanvases()
+  }
+
+  /**
+   * Create one canvas (a topic, optionally with workspaces attached).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - topic title and optional attached workspace paths.
+   * @returns the new board and its first freshness token, or the failure code.
+   */
+  @Remote('createCanvas')
+  createCanvas(agent: Agent, request: BoardCreateRequest): Promise<BoardMutationResult> {
+    return this.board.createCanvas(request, agent.session)
+  }
+
+  /** Read one board with the freshness token a later mutation must present. */
+  @Remote('readBoard')
+  readBoard(request: BoardReadRequest): Promise<BoardReadOutcome> {
+    return this.board.readBoard(request)
+  }
+
+  /**
+   * Add one user card (createdBy user, straight to kept).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, kind, text, and optional source.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('putCard')
+  putCard(agent: Agent, request: BoardPutCardRequest): Promise<BoardMutationResult> {
+    return this.board.putCard(request, agent.session)
+  }
+
+  /**
+   * Edit one card: text, a status transition, or a question-state transition.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, card id, and the fields to change.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('patchCard')
+  patchCard(agent: Agent, request: BoardPatchCardRequest): Promise<BoardMutationResult> {
+    return this.board.patchCard(request, agent.session)
+  }
+
+  /**
+   * Comment on one card.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, card id, text, and the author (default user).
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('addComment')
+  addComment(agent: Agent, request: BoardAddCommentRequest): Promise<BoardMutationResult> {
+    return this.board.addComment(request, agent.session)
+  }
+
+  /**
+   * Archive a canvas from the space list, or restore it (never a delete).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id and the target archived state.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('archiveCanvas')
+  archiveCanvas(agent: Agent, request: BoardArchiveRequest): Promise<BoardMutationResult> {
+    return this.board.archiveCanvas(request, agent.session)
+  }
+
+  /**
+   * Import one workspace's v1 pad as a new canvas (read-only; the pad is untouched).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - the workspace root and an optional canvas title.
+   * @returns the new board, its token, and how many items came over.
+   */
+  @Remote('importV1')
+  importV1(agent: Agent, request: BoardImportV1Request): Promise<BoardImportResult> {
+    return this.board.importV1(request, agent.session)
   }
 }
 
