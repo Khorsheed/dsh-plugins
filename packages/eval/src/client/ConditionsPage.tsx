@@ -54,44 +54,25 @@ const STATUS_KEY: Readonly<Record<string, EvalKey>> = {
 const ENDPOINT_UNSET = 'conditions.endpointUnset' as const
 
 /**
- * The endpoint cell: the declared value, or the word for «null», with a
- * click-to-edit affordance. Rendered as a BUTTON inside the row rather than an
- * always-open input: the field is edited once and read many times, and a live
- * input on every row of a registry reads as a form nobody asked for.
+ * The open endpoint editor. Its own component so that it MOUNTS when editing
+ * starts: the draft value seeds from the declaration each time the cell is
+ * opened, rather than surviving a cancel and reappearing as text the person
+ * decided against.
  */
-function EndpointCell(props: {
+function EndpointEditor(props: {
   row: EvalConditionRow
-  editing: boolean
   busy: boolean
-  onEdit: () => void
   onSubmit: (value: string) => void
   onCancel: () => void
   t: LabViewProps['t']
 }) {
-  const { row, editing, busy, onEdit, onSubmit, onCancel, t } = props
+  const { row, busy, onSubmit, onCancel, t } = props
   const [value, setValue] = useState(row.endpoint ?? '')
-  if (!editing) {
-    return (
-      <span
-        role="button"
-        tabIndex={0}
-        className={row.endpoint === null ? css.warning : css.mono}
-        title={t('conditions.endpointEdit')}
-        onClick={(event) => { event.stopPropagation(); onEdit() }}
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return
-          event.stopPropagation()
-          event.preventDefault()
-          onEdit()
-        }}
-      >
-        {row.endpoint ?? t(ENDPOINT_UNSET)}
-      </span>
-    )
-  }
   return (
     <span
       className={css.endpointEdit}
+      // The cell's clicks are its own: editing a row must not also toggle the
+      // row's diff pick.
       onClick={(event) => { event.stopPropagation() }}
       onKeyDown={(event) => { event.stopPropagation() }}
     >
@@ -110,6 +91,42 @@ function EndpointCell(props: {
       />
       <Button size="sm" disabled={busy} onClick={() => { onSubmit(value) }}>{t('conditions.endpointSave')}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>{t('conditions.endpointCancel')}</Button>
+    </span>
+  )
+}
+
+/**
+ * The endpoint cell: the declared value, or the word for «null», with a
+ * click-to-edit affordance. Closed it is text, not an input: the field is
+ * edited once and read many times, and a live input on every row of a registry
+ * reads as a form nobody asked for.
+ */
+function EndpointCell(props: {
+  row: EvalConditionRow
+  editing: boolean
+  busy: boolean
+  onEdit: () => void
+  onSubmit: (value: string) => void
+  onCancel: () => void
+  t: LabViewProps['t']
+}) {
+  const { row, editing, busy, onEdit, onSubmit, onCancel, t } = props
+  if (editing) return <EndpointEditor row={row} busy={busy} onSubmit={onSubmit} onCancel={onCancel} t={t} />
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className={row.endpoint === null ? css.warning : css.mono}
+      title={t('conditions.endpointEdit')}
+      onClick={(event) => { event.stopPropagation(); onEdit() }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.stopPropagation()
+        event.preventDefault()
+        onEdit()
+      }}
+    >
+      {row.endpoint ?? t(ENDPOINT_UNSET)}
     </span>
   )
 }

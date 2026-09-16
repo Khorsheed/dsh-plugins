@@ -573,6 +573,20 @@ describe('the conditions page', () => {
     expect(h.fetchConditionDiff).not.toHaveBeenCalled()
   })
 
+  it('reopening the endpoint cell shows the declaration, not the text a cancel threw away', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.conditions')
+    fireEvent.click(await screen.findByRole('button', { name: 'conditions.endpointUnset' }))
+    fireEvent.change(screen.getByLabelText('conditions.col.endpoint'), { target: { value: 'typo-i-changed-my-mind' } })
+    fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointCancel' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointUnset' }))
+
+    expect((screen.getByLabelText('conditions.col.endpoint') as HTMLInputElement).value).toBe('')
+    expect(h.setConditionEndpoint).not.toHaveBeenCalled()
+  })
+
   it('says the lock went stale when the endpoint edit changed the subject', async () => {
     const h = makeHarness()
     h.setConditionEndpoint.mockResolvedValue({ ok: true, value: { ...ENDPOINT_SET, lockStale: true } })
