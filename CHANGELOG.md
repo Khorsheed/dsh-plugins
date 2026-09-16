@@ -2,6 +2,13 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— I5 · T59：子 dsh 的权限边界是作用域目录里的一个文件
+
+- `@khorsheed/dsh-local-agent-dsh` 新增配置键 `permissions`（`read-only` / `workspace-write` / `danger-full-access`）：供给时多写一层生成 patch，**覆盖** `sandbox-policy` 的 `mode` 与 `user-approval` 的 `policy`（两者按 `dsh-base` 自己的 `permission-presets` 表配对）。不写这个键就一层都不写，子 profile 的 patch 与从前逐字节相同——宿主上现存的每个作用域仍是 `workspace-write` + `ask`。同时导出 `permissionBoundaryLayer` 与 `readSubProfilePermissions`
+- 修 I5·T39 的缺口 G14：**容器单元里 dsh 选手没有 shell**。镜像既无 bubblewrap、Landlock 探针又报 `unusable`，沙箱按设计 fail closed，于是每一笔 `bash` 拿 `SANDBOX_UNAVAILABLE`；无头子 dsh 没有审批通道，模型那一次受认可的升档重试也只拿到「no approval channel is available」。根因不是这两条，而是**没有任何东西决定子 dsh 的边界**——这一家此前没有权限旋钮，冻结决策 3 在四家里缺一个执行点
+- `@khorsheed/dsh-local-agent-dsh` 的 `effectiveSettings` 开始报 `sandbox`（配了才报）；`@khorsheed/dsh-eval` 把它映射进条件词表：`danger-full-access` → `unrestricted`，其余档位原样返回，缺位仍为 `null`。条件的 `permissions` 一行判 ERROR，所以声称 `unrestricted` 却仍在约束子 dsh 的作用域从此写不出 lock
+- `dsh-web-eval` pack 钉 `permissions: danger-full-access`，与 codex 的 `sandbox`、claude 的 `permissionMode` 并列。**这条 pin 与容器路径是一对**：要在宿主上直跑阶段一二，先改回 `workspace-write`。两条 dsh 条件的 `home.sha` 随之改变，需重新 provision 并抄回
+
 ## Unreleased —— I5 · T34：起草实验的一个动词，三个面
 
 - `@khorsheed/dsh-eval`：新增服务面 `draftExperiment(request, {session})`——把「写 `plans/<名称>.json` + 写它引用的新条件 + validate」并成一次调用，文件落进会话绑定题库工作树的透传区（`plans/` 与 `conditions/`），不 commit、不覆盖已有文件。新条件一律从现有条件**复制**再改点名的六个字段（harness / model.declared / scope / preset / permissions / reasoning.effort），改零个字段会被拒；复制后 `home.sha` 一律置空、换 harness 时 `harness.version` 置空、`notes` 换成出处行。validate 不过的 plan 照样落盘——它就是「草稿」。配套 `draftOptions` 给表单填选择器（题集 → 题目 / 阶段 schema）
