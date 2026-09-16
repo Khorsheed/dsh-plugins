@@ -27,15 +27,20 @@ import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { cardToRef, lensSendText, renderCanvasPrompt } from './prompt.ts'
+import { canvasToolDefinitions } from './tools.ts'
 import { canvasErrorOf } from './service.ts'
 import {
   CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, emptyStats,
-  isBoardCardKind, isBoardCardStatus, isQuestionState, makeBoardId,
+  isBoardCardKind, isBoardCardStatus, isCanvasLensId, isQuestionState, makeBoardId,
   MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId,
   sanitizeCanvasTitle, summarizeBoard,
-  type BoardAddCommentRequest, type BoardArchiveRequest, type BoardCard, type BoardCreateRequest,
+  type BoardAddCommentRequest, type BoardArchiveRequest, type BoardAskAgentOutcome,
+  type BoardAskAgentRequest, type BoardCard, type BoardChatStatusResult, type BoardCreateRequest,
   type BoardImportResult, type BoardImportV1Request, type BoardListResult, type BoardMutationResult,
-  type BoardPatchCardRequest, type BoardPutCardRequest, type BoardReadOutcome, type BoardReadRequest,
+  type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
+  type BoardReadOutcome, type BoardReadRequest, type BoardRef,
   type CanvasBoard, type CanvasError, type CanvasSummary,
 } from './types.ts'
 
@@ -67,6 +72,33 @@ function serializeBoard(board: CanvasBoard): string {
 export interface CanvasBoardConfig {
   /** State root override (defaults to `$DSH_HOME/state/canvas`). */
   stateRoot?: string
+}
+
+/**
+ * The probed side-chat seam, mirrored STRUCTURALLY — the side-chat package
+ * itself is never imported (this package's one cross-plugin edge is the
+ * probed service name, declared in the manifest's `dsh.references`). `send`
+ * is optional: a seam that cannot send still primes the context.
+ */
+export interface SideChatMirror {
+  /** Open (or update) one chat context: label, per-turn prompt segment, caller tools, queued refs. */
+  openWith(input: {
+    readonly contextKey: string
+    readonly label: string
+    readonly systemPrompt?: string
+    readonly tools?: readonly ToolDefinition[]
+    readonly refs?: readonly BoardRef[]
+  }): Promise<void>
+  /** Send one message into the context (pending refs fold in). Optional on the mirror. */
+  send?(
+    calling: { readonly session: Session },
+    request: {
+      readonly contextKey: string
+      readonly text: string
+      readonly label?: string
+      readonly refs?: readonly BoardRef[]
+    },
+  ): Promise<unknown>
 }
 
 /**
@@ -380,6 +412,96 @@ export class CanvasBoardService {
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the new board, its token, and how many items came over.
    */
+  /**
+   * The agent's card entrance (`canvas_propose_card`): proposed and awaiting
+   * the user's ✓/✗, createdBy agent. A question card starts OPEN even when
+   * the proposal carries a rationale comment — exploring means work the user
+   * has seen, not the proposal's arrival (the §4 rule applies to comments on
+   * cards already on the board).
+   * @param request - canvas id, kind, text, optional source and rationale comment.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async proposeCard(request: BoardProposeCardRequest, session: Session): Promise<BoardMutationResult> {
+    if (!isBoardCardKind(request.kind)) return { ok: false, error: 'invalid-name' }
+    const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
+    if (text.length === 0) return { ok: false, error: 'invalid-name' }
+    const comment = request.comment?.trim().slice(0, MAX_COMMENT_TEXT_LENGTH)
+    return this.mutate(request.canvasId, session, (board, now) => {
+      const card: BoardCard = {
+        id: makeBoardId('c', Date.now(), randomSuffix()),
+        kind: request.kind,
+        text,
+        status: 'proposed',
+        comments: [],
+        createdBy: 'agent',
+        createdAt: now,
+        updatedAt: now,
+        ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),
+        ...(request.source === undefined ? {} : { source: request.source }),
+      }
+      if (comment !== undefined && comment.length > 0) {
+        card.comments.push({ id: makeBoardId('m', Date.now(), randomSuffix()), author: 'agent', text: comment, createdAt: now })
+      }
+      board.cards.push(card)
+      return board
+    })
+  }
+
+  /** Whether a sideChat-shaped service answered the probe (the client's chat-entry gate). */
+  chatAvailable(): BoardChatStatusResult {
+    return { available: this.ctx.get('sideChat') !== undefined }
+  }
+
+  /**
+   * Ask the canvas's agent through the side-chat seam: prime the canvas's
+   * context (topic label, per-turn prompt segment, the two canvas tools, the
+   * selected cards as opaque refs), then SEND when there is a text to send —
+   * the gesture's free text, else the lens's prompt template; `ask` and
+   * text-less gestures prime only. The seam is probed: without it the answer
+   * is `unavailable` and the board keeps working without any chat.
+   * @param request - canvas id, optional lens, selected card ids, free text, extra refs.
+   * @param session - the session that owns the gesture (its agent primes the context).
+   * @returns the contextKey and whether a message was sent, or the failure code.
+   */
+  async askAgent(request: BoardAskAgentRequest, session: Session): Promise<BoardAskAgentOutcome> {
+    const id = normalizeCanvasId(request.canvasId)
+    if (id === undefined) return { ok: false, error: 'invalid-name' }
+    if (request.lens !== undefined && !isCanvasLensId(request.lens)) return { ok: false, error: 'invalid-name' }
+    const sideChat = this.ctx.get('sideChat') as SideChatMirror | undefined
+    if (sideChat === undefined) return { ok: false, error: 'unavailable' }
+    const raw = await this.readRaw(id)
+    if (raw === 'missing') return { ok: false, error: 'missing' }
+    if (raw === 'corrupt') return { ok: false, error: 'io' }
+    const { board } = raw
+    const refs: BoardRef[] = []
+    for (const cardId of request.cardIds ?? []) {
+      const card = board.cards.find(candidate => candidate.id === cardId)
+      if (card !== undefined) refs.push(cardToRef(card))
+    }
+    refs.push(...(request.refs ?? []))
+    const contextKey = `canvas:${id}`
+    try {
+      await sideChat.openWith({
+        contextKey,
+        label: board.title,
+        systemPrompt: renderCanvasPrompt(board, request.lens),
+        tools: canvasToolDefinitions(this, id, session),
+        refs,
+      })
+      const text = request.text?.trim()
+      const sendText = text !== undefined && text !== '' ? text : lensSendText(request.lens)
+      let sent = false
+      if (sendText !== undefined && sendText !== '' && sideChat.send !== undefined) {
+        await sideChat.send({ session }, { contextKey, text: sendText })
+        sent = true
+      }
+      return { ok: true, contextKey, sent }
+    } catch {
+      return { ok: false, error: 'io' }
+    }
+  }
+
   async importV1(request: BoardImportV1Request, session: Session): Promise<BoardImportResult> {
     const listing = await this.ctx.canvasStore.list(request.dir)
     if (listing.items.length === 0) return { ok: false, error: 'missing' }

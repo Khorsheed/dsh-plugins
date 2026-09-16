@@ -749,3 +749,63 @@ export function documentHeadingOf(text: string): DocumentHeading | undefined {
   if (firstLine === undefined) return undefined
   return { title: firstLine.slice(0, MAX_DOCUMENT_TITLE_LENGTH), body: text }
 }
+
+/* ============================================================================
+ * The M2 chat integration (经 side-chat 插件): the lens vocabulary, the
+ * askAgent / chatStatus wire payloads, and the agent-entrance card proposal.
+ * The side-chat plugin itself is NEVER imported — the seam is a probed
+ * service (`ctx.get('sideChat')`) plus this package's own wire.
+ * ========================================================================= */
+
+/** The lenses, in the order the lens bar offers them (§5's 预置 prompt 模板). */
+export const CANVAS_LENS_IDS = [
+  'challenge', 'counterexample', 'evidence', 'why', 'perspective', 'abstract', 'exemplify', 'ask',
+] as const
+
+/** One lens id; `ask` is the free-question lens (prime-only, no template send). */
+export type CanvasLensId = (typeof CANVAS_LENS_IDS)[number]
+
+/** Whether a value is one of the lens ids. */
+export function isCanvasLensId(value: unknown): value is CanvasLensId {
+  return typeof value === 'string' && (CANVAS_LENS_IDS as readonly string[]).includes(value)
+}
+
+/** One opaque ref chunk handed to the chat context (the side-chat ref protocol). */
+export interface BoardRef {
+  readonly label: string
+  readonly text: string
+}
+
+/** Ask the canvas's agent (prime the chat context, and send when there is a text to send). */
+export interface BoardAskAgentRequest {
+  readonly canvasId: string
+  /** The lens the gesture came through; absent for a free question. */
+  readonly lens?: CanvasLensId
+  /** Selected cards, folded into the context as opaque refs. */
+  readonly cardIds?: readonly string[]
+  /** Free text to send (a comment follow-up); present means an actual send. */
+  readonly text?: string
+  /** Extra opaque refs (the detail reader's text selection). */
+  readonly refs?: readonly BoardRef[]
+}
+
+/** The chat seam's availability probe (the client hides every chat entry when absent). */
+export interface BoardChatStatusResult {
+  /** Whether a `sideChat`-shaped service answered the host's probe. */
+  readonly available: boolean
+}
+
+/** The askAgent outcome: the context it primed and whether a message was sent. */
+export type BoardAskAgentOutcome =
+  | { readonly ok: true; readonly contextKey: string; readonly sent: boolean }
+  | { readonly ok: false; readonly error: CanvasError | 'unavailable' }
+
+/** The agent's card entrance (`canvas_propose_card`): proposed, awaiting the user's ✓/✗. */
+export interface BoardProposeCardRequest {
+  readonly canvasId: string
+  readonly kind: BoardCardKind
+  readonly text: string
+  readonly source?: BoardCardSource
+  /** The proposal's rationale, hung on the card as an agent comment. */
+  readonly comment?: string
+}

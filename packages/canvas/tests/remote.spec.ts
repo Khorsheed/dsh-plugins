@@ -17,8 +17,8 @@ import { CanvasRemoteService } from '../src/remote.ts'
 import type { CanvasService } from '../src/service.ts'
 import type { CanvasBoardService } from '../src/store.ts'
 import type {
-  BoardAddCommentRequest, BoardArchiveRequest, BoardCreateRequest, BoardImportV1Request,
-  BoardPatchCardRequest, BoardPutCardRequest,
+  BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentRequest, BoardCreateRequest,
+  BoardImportV1Request, BoardPatchCardRequest, BoardPutCardRequest,
   CanvasArchiveRequest, CanvasCreateRequest, CanvasWriteRequest,
 } from '../src/types.ts'
 
@@ -81,6 +81,8 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
     addComment: async (_request: BoardAddCommentRequest, session: Session) => { seen.push({ method: 'addComment', session }); return boardReceipt() },
     archiveCanvas: async (_request: BoardArchiveRequest, session: Session) => { seen.push({ method: 'archiveCanvas', session }); return boardReceipt() },
     importV1: async (_request: BoardImportV1Request, session: Session) => { seen.push({ method: 'importV1', session }); return { ...boardReceipt(), imported: 0 } },
+    askAgent: async (_request: BoardAskAgentRequest, session: Session) => { seen.push({ method: 'askAgent', session }); return { ok: true as const, contextKey: `canvas:${CANVAS_ID}`, sent: true } },
+    chatAvailable: () => ({ available: true }),
   }
   const ctx = new Context()
   ctx.provide('canvasStore', store as unknown as CanvasService)
@@ -127,6 +129,7 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     expect(await remote.addComment(agent, { canvasId: CANVAS_ID, cardId: 'c_1', text: 'x' })).toMatchObject({ ok: true })
     expect(await remote.archiveCanvas(agent, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
     expect(await remote.importV1(agent, { dir: WS })).toMatchObject({ ok: true, imported: 0 })
+    expect(await remote.askAgent(agent, { canvasId: CANVAS_ID, lens: 'challenge' })).toMatchObject({ ok: true, sent: true })
     expect(seen).toEqual([
       { method: 'createCanvas', session: SESSION },
       { method: 'putCard', session: SESSION },
@@ -134,6 +137,7 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
       { method: 'addComment', session: SESSION },
       { method: 'archiveCanvas', session: SESSION },
       { method: 'importV1', session: SESSION },
+      { method: 'askAgent', session: SESSION },
     ])
     await dispose()
   })
@@ -142,6 +146,7 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     const { remote, dispose } = await bench()
     expect(await remote.listCanvases()).toEqual({ items: [] })
     expect(await remote.readBoard({ canvasId: CANVAS_ID })).toEqual({ ok: false, error: 'missing' })
+    expect(await remote.chatStatus()).toEqual({ available: true })
     await dispose()
   })
 })
