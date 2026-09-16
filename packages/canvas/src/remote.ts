@@ -20,9 +20,11 @@ import type { CanvasService } from './service.ts'
 import type { CanvasBoardService } from './store.ts'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
-  BoardChatStatusResult, BoardCreateRequest, BoardImportResult,
+  BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardImportResult,
   BoardImportV1Request, BoardListResult, BoardMutationResult, BoardPatchCardRequest,
-  BoardPutCardRequest, BoardReadOutcome, BoardReadRequest,
+  BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest, BoardReadOutcome,
+  BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
   CanvasListRequest, CanvasListResult, CanvasReadOutcome, CanvasReadRequest,
   CanvasWriteRequest, CanvasWriteResult,
@@ -201,6 +203,34 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('chatStatus')
   chatStatus(): Promise<BoardChatStatusResult> {
     return Promise.resolve(this.board.chatAvailable())
+  }
+
+  /**
+   * Mark the canvas this session's tab has open (the main-session tools' target).
+   * @param agent - the calling session's agent; its session records the focus.
+   * @param request - the canvas id.
+   * @returns the receipt, or the failure code.
+   */
+  @Remote('focusCanvas')
+  focusCanvas(agent: Agent, request: BoardFocusRequest): Promise<BoardFocusResult> {
+    return this.board.focusCanvas(request, agent.session)
+  }
+
+  /** Read the canvas's draft (an absent draft reads as empty with a null token). */
+  @Remote('readDraft')
+  readDraft(request: BoardReadDraftRequest): Promise<BoardReadDraftOutcome> {
+    return this.board.readDraft(request)
+  }
+
+  /**
+   * Write the canvas's draft (null token creates; else version-guarded).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, content, and the token the caller holds.
+   * @returns the new freshness token, or the failure code.
+   */
+  @Remote('writeDraft')
+  writeDraft(agent: Agent, request: BoardWriteDraftRequest): Promise<BoardWriteDraftResult> {
+    return this.board.writeDraft(request, agent.session)
   }
 }
 
