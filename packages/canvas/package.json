@@ -20,7 +20,7 @@
     },
     "./agent": {
       "types": "./lib/types/agent.d.ts",
-      "default": "./lib/agent.js"
+      "default": "./lib/types/agent.js"
     },
     "./invariant": {
       "types": "./lib/types/invariant.d.ts",
