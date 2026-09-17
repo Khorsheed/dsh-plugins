@@ -1,0 +1,705 @@
+/* Reader pane styles. Colour/text tokens are the host's own variables, all of
+   which are defined by ui-theme's design-platform.css; the article typography
+   splits Chinese from Latin deliberately (see the design's D5). */
+
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.headTitle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.count {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tool {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.tool:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolOn {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px 6px;
+}
+
+.search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.search svg {
+  position: absolute;
+  top: 50%;
+  left: 7px;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.search input {
+  width: 100%;
+  height: 26px;
+  padding: 0 8px 0 26px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.search input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.search input:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 2px 8px 10px;
+  overflow-y: auto;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- the card */
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2px 9px;
+  align-items: start;
+  padding: 8px 8px 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.card:active {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+/* The unread marker is a badge on the source tile's corner: an avatar badge is
+   the habit readers already have, and it floats instead of occupying layout, so
+   read/unread does not move the title. */
+.tileWrap {
+  position: relative;
+  grid-row: 1 / span 3;
+  grid-column: 1;
+  width: 24px;
+  height: 24px;
+}
+
+.tile {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--dsw-static-neutral-00);
+}
+
+.unread {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-500);
+  box-shadow: 0 0 0 1.5px var(--dsw-alias-bg-base);
+}
+
+.meta {
+  display: flex;
+  grid-column: 2;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.source {
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sep {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.6;
+}
+
+.when {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.title {
+  display: -webkit-box;
+  grid-column: 2 / -1;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.summary {
+  display: -webkit-box;
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: 3px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.tags {
+  display: flex;
+  grid-column: 2 / -1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 5px;
+}
+
+.tag {
+  flex: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--dsw-alias-interactive-bg-active);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.author {
+  overflow: hidden;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The trailing cue says "this opens"; it is not a control of its own. */
+.chevron {
+  display: inline-flex;
+  grid-column: 3;
+  grid-row: 1;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.card:hover .chevron {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.state {
+  padding: 26px 14px;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.state b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------------- add pane */
+
+.add {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  padding: 12px 12px 0;
+}
+
+.add h2 {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.add p {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.add input {
+  width: 100%;
+  height: 30px;
+  margin-bottom: 8px;
+  padding: 0 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.add input:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.submit {
+  align-self: flex-start;
+  padding: 7px 13px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.submit:hover {
+  opacity: 0.88;
+}
+
+.verdict {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.verdict b {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* -------------------------------------------------------------- detail view */
+
+.detail {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.barLabel {
+  padding: 0 4px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.detailBody {
+  flex: 1;
+  min-height: 0;
+  padding: 0 14px 22px;
+  overflow-y: auto;
+}
+
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 8px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.kicker .tile {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+
+.detailTitle {
+  margin: 0 0 9px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.rule {
+  height: 1px;
+  margin: 0 0 16px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.article {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Chinese and Latin need different leading, letter-spacing and measure. Latin
+   prose sits at 1.66 with a 62ch measure; Chinese at 1.78 with 40em, because
+   Han glyphs carry their own side bearing and read as a block without the extra
+   leading, while a wider measure makes Latin lines hard to track back. */
+.articleZh {
+  font-size: 13.5px;
+  line-height: 1.78;
+  letter-spacing: 0.005em;
+}
+
+.articleEn {
+  font-size: 13.5px;
+  line-height: 1.66;
+  letter-spacing: -0.003em;
+}
+
+.article p {
+  margin: 0 0 12px;
+}
+
+.articleZh p {
+  max-width: 40em;
+}
+
+.articleEn p {
+  max-width: 62ch;
+}
+
+.article h1,
+.article h2 {
+  margin: 24px 0 9px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-primary);
+}
+
+.article h3,
+.article h4 {
+  margin: 19px 0 7px;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-primary);
+}
+
+.article ul,
+.article ol {
+  margin: 0 0 12px;
+  padding-left: 19px;
+}
+
+.article li {
+  margin: 0 0 5px;
+}
+
+.article blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 11px;
+  border-left: 3px solid var(--dsw-alias-border-l3);
+}
+
+.article code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+}
+
+.article pre {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow-x: auto;
+}
+
+.article pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.article a {
+  color: var(--dsw-alias-link);
+  text-decoration: none;
+}
+
+.article a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.article img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 4px 0 12px;
+  border-radius: 8px;
+}
+
+.article strong {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 650;
+}
+
+.article table {
+  width: 100%;
+  margin: 0 0 12px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.article th,
+.article td {
+  padding: 5px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  text-align: left;
+}
+
+/* The completeness note: one line at the end of the body, not a card. */
+.incomplete {
+  margin: 18px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.incompleteLink {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--dsw-alias-link);
+  cursor: pointer;
+}
+
+.incompleteLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.alsoFrom {
+  margin-top: 22px;
+}
+
+.alsoFromLabel {
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.alsoFromRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 0;
+  border: none;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: transparent;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.alsoFromRow:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.alsoFromTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------- composer + footer */
+
+.composer {
+  flex: none;
+  padding: 7px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.composerLabel {
+  margin-bottom: 4px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.composerText {
+  max-height: 52px;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.composerEmpty {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ------------------------------------------------------------------ menus */
+
+.menu {
+  position: absolute;
+  z-index: 20;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 6px 20px var(--dsw-alias-bg-mask-2);
+}
+
+.menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.check {
+  color: var(--dsw-static-deepseek-500);
+}
