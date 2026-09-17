@@ -181,8 +181,9 @@ function makeHarness() {
 
 type Harness = ReturnType<typeof makeHarness>
 
-function renderView(h: Harness) {
-  const props = {
+/** Everything but the locale seat — shared with the real-dictionary render below. */
+function propsOf(h: Harness) {
+  return {
     sessionId: 's1' as SessionId,
     useSession: undefined,
     useInput: undefined,
@@ -202,6 +203,12 @@ function renderView(h: Harness) {
     planExport: h.planExport,
     exportRun: h.exportRun,
     openSession: h.openSession,
+  }
+}
+
+function renderView(h: Harness) {
+  const props = {
+    ...propsOf(h),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
