@@ -40,6 +40,19 @@ export const LAB_PAGES = ['overview', 'plan', 'conditions', 'matrix', 'cells', '
 /** One sub-page of an experiment's detail. */
 export type LabPage = typeof LAB_PAGES[number]
 
+/**
+ * What the condition page's action seat is currently saying: a receipt the
+ * person just earned, or a failure.
+ *
+ * Two shapes rather than one pre-joined sentence, because a failure has to
+ * reach the page as {what failed, raw message} for the error seat to fold the
+ * raw half away (ui-spec §九) — joining them here would put the host's English
+ * exception back on the page, which is what I5·T62 is removing.
+ */
+export type ConditionActionNote =
+  | { kind: 'receipt'; text: string }
+  | { kind: 'failure'; what: string; message: string }
+
 /** The view's state; fetched results are whole values, null until loaded. */
 export interface LabViewState {
   /** The list payload, or null before the first load. */
@@ -104,8 +117,8 @@ export interface LabViewState {
   conditionBusy: string | null
   /** What the last provision on this page answered, or null. */
   provision: EvalConditionProvisionView | null
-  /** Human-readable failure of the last provision or endpoint write, or null. */
-  conditionActionError: string | null
+  /** What the last provision or endpoint write had to say, or null. */
+  conditionAction: ConditionActionNote | null
   /** The condition whose endpoint field is open for editing, or null. */
   endpointEditing: string | null
   /** The one or two conditions picked for the diff, in pick order. */
@@ -233,7 +246,7 @@ export type LabViewActions = {
   setConditionsError: (draft: LabViewState, error: string | null) => void
   setConditionBusy: (draft: LabViewState, id: string | null) => void
   setProvision: (draft: LabViewState, provision: EvalConditionProvisionView | null) => void
-  setConditionActionError: (draft: LabViewState, error: string | null) => void
+  setConditionAction: (draft: LabViewState, note: ConditionActionNote | null) => void
   editEndpoint: (draft: LabViewState, id: string | null) => void
   applyConditionRow: (draft: LabViewState, row: EvalConditionRow) => void
   pickCondition: (draft: LabViewState, id: string) => void
@@ -297,7 +310,7 @@ const INITIAL: LabViewState = {
   conditionsError: null,
   conditionBusy: null,
   provision: null,
-  conditionActionError: null,
+  conditionAction: null,
   endpointEditing: null,
   diffPair: [],
   diff: null,
@@ -459,12 +472,12 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setConditionBusy: (d, id: string | null) => { d.conditionBusy = id },
       setProvision: (d, provision: EvalConditionProvisionView | null) => {
         d.provision = provision
-        d.conditionActionError = null
+        d.conditionAction = null
       },
-      setConditionActionError: (d, error: string | null) => { d.conditionActionError = error },
+      setConditionAction: (d, note: ConditionActionNote | null) => { d.conditionAction = note },
       editEndpoint: (d, id: string | null) => {
         d.endpointEditing = id
-        d.conditionActionError = null
+        d.conditionAction = null
       },
       /**
        * Replace one row in place with what the write answered. A refetch would

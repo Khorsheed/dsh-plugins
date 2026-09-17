@@ -18,7 +18,7 @@ The 题集 tab: `~/.dsh/scratch/dataseek-eval-i5 is not a git repository: GitErr
 
 **One normalization function, on the way in and on the way out.** `normalizeRepoPath` trims, expands a leading `~` (and only the `~` / `~/…` shorthand — a directory whose *name* starts with `~` is a directory), resolves to an absolute path, and resolves symlinks when the directory is there. A path that is not there keeps its absolute form: normalizing is not the existence check, `assertRepository` is, and a binding to an unmounted volume must still round-trip.
 
-It runs inside `validateBinding`, which every write AND every read already goes through, so no consumer has to remember. `resolveScope` normalizes whichever of the three sources wins (explicit `repo`, binding, configured default), because those three must not disagree about what one path means.
+It lives in `repo-path.ts` — the module I5·T58 had just added for the very same shape, to compare an agent's `repo` argument against the binding it may only restate; T58 wrote it as "deliberately not a binding-store change", and this is that change, so the two became one function rather than two that could drift. It runs inside `validateBinding`, which every write AND every read already goes through, so no consumer has to remember. `resolveScope` normalizes whichever of the three sources wins (explicit `repo`, binding, configured default), because those three must not disagree about what one path means.
 
 **An old record is migrated in place on read.** `readBinding` compares the stored spelling with the canonical one and, when they differ, writes the record back. A user who bound before this fix does not have to rebind, and the file stops being a trap for the next reader — the CLI, `git`, and `readdir` all see the same path. The write-back is best effort: a store we may not write to still answers the read correctly.
 
@@ -47,6 +47,8 @@ It runs inside `validateBinding`, which every write AND every read already goes 
 ## Consequences
 
 A bound path is now canonical wherever it is read, and the two tabs open. A record written by an older build repairs itself the first time it is read, so nothing asks the user to rebind.
+
+**The condition page's action seat had to split in two.** One store field carried both the receipt of a successful endpoint write and the failure of a refused provision, pre-joined into one sentence with the host's `error.message`. It is now `{kind: 'receipt', text}` or `{kind: 'failure', what, message}`: the receipt renders as the notice it always was, the failure renders in the error seat with its raw half folded away.
 
 **Fixtures had to become canonical too.** `makeFixtureRepo` (datasets) and `tmpTree` (eval) now return `realpathSync(mkdtempSync(…))`. On macOS the runtime temp root is a symlink, so every assertion comparing a fixture path against a path the code answered with was comparing two spellings of one directory; eleven of them failed the moment normalization landed. The fixtures were the thing that was wrong — `git rev-parse --show-toplevel` has always answered with a realpath.
 

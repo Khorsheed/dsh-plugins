@@ -552,7 +552,12 @@ describe('the conditions page', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
 
-    expect(await screen.findByText(/conditions.provisionFailed: .*\/codex login/)).toBeTruthy()
+    // Three-part seat (ui-spec §九): the page says what happened and what to
+    // do, and the host's own sentence is inside the fold — not on the page.
+    expect(await screen.findByText('error.unknownFix')).toBeTruthy()
+    expect(screen.getByText('conditions.provisionFailed')).toBeTruthy()
+    const raw = screen.getByText(/credentialState "absent" — run \/codex login/)
+    expect(raw.closest('details')).not.toBeNull()
     expect(screen.getAllByText('conditions.unready')).toHaveLength(2)
   })
 

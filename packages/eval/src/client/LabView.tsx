@@ -195,7 +195,7 @@ export function LabView(props: LabViewProps) {
   const conditionsError = useStore(s => s.conditionsError)
   const conditionBusy = useStore(s => s.conditionBusy)
   const provision = useStore(s => s.provision)
-  const conditionActionError = useStore(s => s.conditionActionError)
+  const conditionAction = useStore(s => s.conditionAction)
   const endpointEditing = useStore(s => s.endpointEditing)
   const diffPair = useStore(s => s.diffPair)
   const diff = useStore(s => s.diff)
@@ -394,7 +394,7 @@ export function LabView(props: LabViewProps) {
     void provisionCondition(sessionId, { dataset: row.dataset, condition: row.id }).then((result) => {
       actions.setConditionBusy(null)
       if (!result.ok) {
-        actions.setConditionActionError(`${t('conditions.provisionFailed')}: ${result.error.message}`)
+        actions.setConditionAction({ kind: 'failure', what: t('conditions.provisionFailed'), message: result.error.message })
         return
       }
       actions.setProvision(result.value)
@@ -416,7 +416,7 @@ export function LabView(props: LabViewProps) {
     void setConditionEndpoint(sessionId, { dataset: row.dataset, condition: row.id, endpoint }).then((result) => {
       actions.setConditionBusy(null)
       if (!result.ok) {
-        actions.setConditionActionError(`${t('conditions.endpointFailed')}: ${result.error.message}`)
+        actions.setConditionAction({ kind: 'failure', what: t('conditions.endpointFailed'), message: result.error.message })
         return
       }
       const value = result.value
@@ -424,7 +424,10 @@ export function LabView(props: LabViewProps) {
       const said = value.written
         ? t('conditions.endpointWritten', { id: value.condition, value: value.after ?? t('conditions.endpointUnset') })
         : t('conditions.endpointUnchanged', { id: value.condition, value: value.after ?? t('conditions.endpointUnset') })
-      actions.setConditionActionError(value.lockStale ? `${said} ${t('conditions.endpointLockStale')}` : said)
+      actions.setConditionAction({
+        kind: 'receipt',
+        text: value.lockStale ? `${said} ${t('conditions.endpointLockStale')}` : said,
+      })
       if (value.row !== null) actions.applyConditionRow(value.row)
     })
   }
@@ -809,7 +812,7 @@ export function LabView(props: LabViewProps) {
                   diffError={diffError}
                   busy={conditionBusy}
                   provision={provision}
-                  actionError={conditionActionError}
+                  action={conditionAction}
                   editing={endpointEditing}
                   onPick={(id: string) => { actions.pickCondition(id) }}
                   onProvision={provisionRow}

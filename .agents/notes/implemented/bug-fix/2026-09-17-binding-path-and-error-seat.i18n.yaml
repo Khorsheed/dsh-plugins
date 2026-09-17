@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.md
-.agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.md: dc9c2143cddbb31a40082af9065c3e153471b6e0
-.agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.zh.md: 22a11a4199da2a40f3abd660e6dda5cab677b747
+.agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.md: ca83beab9d4c195c39e1061cd62cd04a7cb2d66c
+.agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.zh.md: 2fe8b8bae19a48be3b103691b1f1db1dd4b71954

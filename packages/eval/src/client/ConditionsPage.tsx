@@ -42,6 +42,7 @@ import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { Field } from './parts.tsx'
+import type { ConditionActionNote } from './store.ts'
 import css from './LabView.module.css'
 
 /** The readiness word of one row, keyed so the copy stays exhaustive. */
@@ -216,8 +217,8 @@ export function ConditionsPage(props: {
   busy: string | null
   /** What the last provision answered, or null. */
   provision: EvalConditionProvisionView | null
-  /** The last write's failure, or null. */
-  actionError: string | null
+  /** What the last write had to say — a receipt or a failure, or null. */
+  action: ConditionActionNote | null
   /** The condition whose endpoint is open for editing, or null. */
   editing: string | null
   onPick: (id: string) => void
@@ -227,7 +228,7 @@ export function ConditionsPage(props: {
   t: LabViewProps['t']
 }) {
   const {
-    view, loading, error, pair, diff, diffError, busy, provision, actionError, editing,
+    view, loading, error, pair, diff, diffError, busy, provision, action, editing,
     onPick, onProvision, onEditEndpoint, onSetEndpoint, t,
   } = props
   const [newNotice, setNewNotice] = useState(false)
@@ -248,7 +249,10 @@ export function ConditionsPage(props: {
           {/* Above the table, not below it: this is the answer to a button the
               person just pressed, and a registry of a dozen conditions pushes
               anything under it off the screen. */}
-          {actionError !== null && <div className={css.notice}>{actionError}</div>}
+          {action?.kind === 'receipt' && <div className={css.notice}>{action.text}</div>}
+          {action?.kind === 'failure' && (
+            <ErrorState what={action.what} message={action.message} compact t={t} />
+          )}
           {provision !== null && <ProvisionReport view={provision} t={t} />}
           <div className={css.condHead}>
             <span>{t('conditions.col.id')}</span>
