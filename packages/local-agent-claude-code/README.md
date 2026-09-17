@@ -79,9 +79,9 @@ bundle 行接受这些可选字段:
 
 **工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。计数就在流解析**已经走过**的 `tool_use` 分支里，`byName` 的键是该块自己的 `name`（`Bash`、`Read`、`TodoWrite`，MCP 工具则是 `mcp__server__tool` 全名），原样保留、不跨家归一。`TodoWrite` 也计——折叠逻辑把它挪去了 todo 快照、不进 transcript，但 CLI 确实调了它。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。实测：一轮「先 Read 两个文件再 Bash 列目录」回读 `{count: 3, byName: {Read: 2, Bash: 1}}`，与镜像出的工具卡片逐个对得上。
 
-**命名 scope。** `/claude-code login --scope <名>` 在 `<homesRoot>/claude-code@<名>` 里另开一份 `CLAUDE_CONFIG_DIR`：登录的 argv 由**被登录的那份目录**现算（`env CLAUDE_CONFIG_DIR=… claude auth login` 的赋值压过 spawn env，写死缺省目录会让 `--scope` 登错地方）。claude 的 keychain 项按配置目录路径哈希，命名 scope 因此自动拿到自己的 keychain 项——四家里唯一天然按路径隔离的凭据。带 scope 的委派用该目录跑 `claude -p`、按它做 keychain→文件同步、从它回读；只走 exec。
+**命名 scope。** `/claude-code login --scope <名>` 在 `<homesRoot>/claude-code@<名>` 里另开一份 `CLAUDE_CONFIG_DIR`：登录的 argv 由**被登录的那份目录**现算（`env CLAUDE_CONFIG_DIR=… claude auth login` 的赋值压过 spawn env，写死缺省目录会让 `--scope` 登错地方）。claude 的 keychain 项按配置目录路径哈希，命名 scope 因此自动拿到自己的 keychain 项——四家里唯一天然按路径隔离的凭据。带 scope 的委派用该目录跑 `claude -p`、按它做 keychain↔文件协调、从它回读；只走 exec。
 
-**容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> claude -p …`，其余（stream-json 解析、settle、记录）逐字节不变。`env` 必须给出容器内的 `CLAUDE_CONFIG_DIR`；Linux 上 claude **写作用域目录但读默认 home**（上游 #47661），所以通常把宿主作用域目录 rw bind 到容器里的默认 home，再让 `CLAUDE_CONFIG_DIR` 指向同一处。每次 spawn 前的 keychain→文件同步照常在**宿主**作用域目录上跑，续期结果因此经挂载对容器可见。容器轮固定走 exec 一次性驱动，且不声明成员桥。**注意作用域 `settings.json` 里的宿主专用项**：实测那里给宿主守护进程用的 `https_proxy` 在容器内指向不存在的地址，本轮当场 `Connection refused`——挂进去的目录要由调用方备好。
+**容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> claude -p …`，其余（stream-json 解析、settle、记录）逐字节不变。`env` 必须给出容器内的 `CLAUDE_CONFIG_DIR`；Linux 上 claude **写作用域目录但读默认 home**（上游 #47661），所以通常把宿主作用域目录 rw bind 到容器里的默认 home，再让 `CLAUDE_CONFIG_DIR` 指向同一处。每次 spawn 前的凭据协调照常在**宿主**作用域目录上跑，续期结果因此经挂载对容器可见——而且它是**新者胜，不是单向镜像**，因为单元是同一个文件的**第二个写者**。单元里的 CLI 没有 keychain，只能在挂进去的文件里就地轮换凭证；此时若无条件地把 keychain 盖到文件上，下一轮拿到的就是单元已经用掉的 refresh token，端点拒绝，CLI 随即**清空该文件**——整台实例随之登出，因为那个文件就是实例的凭据。所以协调只在 keychain 那份不比文件旧时才写（以 access token 过期时间为准；任一侧没有过期时间就仍由 keychain 写，不可用的文件永远不会赢）。挂载保持读写还有第二个理由：本轮的会话记录落在同一目录的 `projects/` 下，评测的模型回读正是从这条挂载的宿主侧解析它们。容器轮固定走 exec 一次性驱动，且不声明成员桥。**注意作用域 `settings.json` 里的宿主专用项**：实测那里给宿主守护进程用的 `https_proxy` 在容器内指向不存在的地址，本轮当场 `Connection refused`——挂进去的目录要由调用方备好。
 
 ```
 src/index.ts                harness 注册、/claude-code 命令族、config schema
@@ -92,7 +92,7 @@ src/records.ts              认证探测与作用域目录的会话记录列表
 
 bundle patch 把 `claude-code` harness 注册进家族 core(`@khorsheed/dsh-local-agent`,声明为依赖——claude 包刻意不重复插入 core 行,重复会挂载两次),并挂载 `claude-local` provider,后者在 harness 作用域目录下 spawn `claude -p --verbose --output-format stream-json`。`subagent_claude_code` 工具是家族自有工具(`@khorsheed/dsh-local-agent-tool-subagent`):官方子集(`description`/`prompt`)加一个可选 `resume` 参数。
 
-**作用域隔离。** macOS 上真实凭据在系统 keychain 的哈希条目里(`Claude Code-credentials-<sha256(configDir)[:8]>`,以作用域目录路径为键)——基于文件的 logout 够不到它,但下次登录会重写同一个槽位。Linux 上受上游 bug #47661 影响,`CLAUDE_CONFIG_DIR` 不隔离凭据文件(见已知限制)。认证探测只做轻量文件检查——看作用域 `.claude.json` 的 `oauthAccount`,绝不为了探测而 spawn CLI。
+**作用域隔离。** macOS 上真实凭据在系统 keychain 的哈希条目里(`Claude Code-credentials-<sha256(configDir)[:8]>`,以作用域目录路径为键)——基于文件的 logout 够不到它,但下次登录会重写同一个槽位。Linux 上受上游 bug #47661 影响,`CLAUDE_CONFIG_DIR` 不隔离凭据文件(见已知限制)。认证探测只做轻量文件检查——看作用域 `.claude.json` 的 `oauthAccount`,绝不为了探测而 spawn CLI。该探测同样会协调两个存储，因此遵守与 spawn 点一致的新者胜规则：它在每次状态读与每次就绪检查时都会跑，那里若是无条件镜像，同样会把容器轮的续期抹掉。
 
 **会话记录。** `/claude-code sessions` 列出作用域目录下的 `projects/<cwd-slug>/<uuid>.jsonl` 会话文件——即本 agent 的委派,绝不是你的私人会话。slug 是工作区路径的有损编码,所以列出的 `workDir` 取自文件内容(第一条 `user` 事件的 `cwd` 字段),绝不取自目录名。设置面板呈现同一份列表并收窄到当前工作区。
 

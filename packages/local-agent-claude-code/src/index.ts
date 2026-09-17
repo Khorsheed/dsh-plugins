@@ -220,8 +220,8 @@ export function apply(ctx: Context, config: Config): void {
         // file first (claude 2.1.236 writes keychain but reads the file),
         // then probes.
         watch: async (home) => {
-          await syncClaudeCredentialFile(home)
-          return claudeAuthenticated(home)
+          await syncClaudeCredentialFile(home, message => { ctx.logger.warn(message) })
+          return claudeAuthenticated(home, message => { ctx.logger.warn(message) })
         },
       },
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
@@ -229,7 +229,10 @@ export function apply(ctx: Context, config: Config): void {
       // registry materializes it — the same eager creation and settings the
       // default scope gets from the apply above.
       provision: scopedHome => provisionClaudeHome(scopedHome, config.proxyUrl).then(() => {}),
-      isAuthenticated: claudeAuthenticated,
+      // The logger is wired here because this probe is the clobber site the
+      // spawn sites do not cover: every status read and every readiness check
+      // reconciles the two credential stores through it.
+      isAuthenticated: home => claudeAuthenticated(home, message => { ctx.logger.warn(message) }),
       credentialStamp: claudeCredentialStamp,
       logout: claudeLogout,
       // The model surface: the settings card reads the memberless info ("what

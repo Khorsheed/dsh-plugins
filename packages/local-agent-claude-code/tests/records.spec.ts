@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -264,12 +264,156 @@ describe('keychain credential sync', () => {
       { acct: 'unknown', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
     ]), { unknown: shell })
     try {
-      await expect(syncClaudeCredentialFile(home)).resolves.toBe(false)
+      // The answer is about the FILE, not about the keychain: a usable file
+      // with nothing usable in the keychain is a working credential (it is the
+      // only store a Linux host has at all).
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
       const { readFile } = await import('node:fs/promises')
       await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(real)
     } finally {
       restoreExec()
     }
+  })
+
+  /**
+   * Newer wins. The credentials file is not this process's private mirror: a
+   * containerized round bind-mounts the scoped home read-write and the CLI
+   * inside the unit rotates the grant in place, so an unconditional mirror is
+   * the one participant that can hand the next run an already-spent refresh
+   * token. Each case below is one row of that decision.
+   */
+  describe('newer wins', () => {
+    const hour = 3_600_000
+
+    /** A usable blob at a given access expiry; the token names its generation. */
+    function credential(generation: string, expiresAt: number): string {
+      return JSON.stringify({
+        claudeAiOauth: {
+          accessToken: `${generation}-access`,
+          refreshToken: `${generation}-refresh`,
+          expiresAt,
+          refreshTokenExpiresAt: Date.now() + 30 * 24 * hour,
+        },
+      })
+    }
+
+    it('keeps a file that is AHEAD of the keychain and says so', async () => {
+      const home = tempHome('claude-sync-ahead-')
+      // What a containerized round leaves behind: the unit refreshed the grant
+      // and wrote generation 2 through the bind mount, while the host keychain
+      // still holds generation 1. Mirroring 1 back is the logout bug.
+      const rotated = credential('unit', Date.now() + 8 * hour)
+      const stale = credential('host', Date.now() + 1 * hour)
+      writeFileSync(join(home, '.credentials.json'), rotated)
+      stubKeychain(stale)
+      const warnings: string[] = []
+      try {
+        await expect(syncClaudeCredentialFile(home, m => warnings.push(m))).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(rotated)
+      } finally {
+        restoreExec()
+      }
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('AHEAD of the keychain')
+      // The warn channel reports expiries, never token material: neither
+      // store's tokens may appear anywhere in the line.
+      for (const token of ['unit-access', 'unit-refresh', 'host-access', 'host-refresh']) {
+        expect(warnings[0]).not.toContain(token)
+      }
+    })
+
+    it('writes the keychain blob when the keychain is ahead of the file', async () => {
+      const home = tempHome('claude-sync-behind-')
+      // The ordinary host rotation: the CLI refreshed into the keychain and
+      // left the file behind. This direction must keep working exactly as it
+      // did, or every host round runs on an expired access token.
+      const fresh = credential('host2', Date.now() + 8 * hour)
+      writeFileSync(join(home, '.credentials.json'), credential('host1', Date.now() + 1 * hour))
+      stubKeychain(fresh)
+      const warnings: string[] = []
+      try {
+        await expect(syncClaudeCredentialFile(home, m => warnings.push(m))).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(fresh)
+      } finally {
+        restoreExec()
+      }
+      expect(warnings).toEqual([])
+    })
+
+    it('writes the keychain blob when either side carries no access expiry', async () => {
+      const home = tempHome('claude-sync-noexpiry-')
+      // No expiry is no evidence, and guessing the file is newer would strand
+      // a scope on a credential nothing can refresh. The fallback is the
+      // pre-newer-wins behavior: the keychain writes.
+      const blob = JSON.stringify({ claudeAiOauth: { accessToken: 'keychain-tok' } })
+      writeFileSync(join(home, '.credentials.json'), credential('file', Date.now() + 8 * hour))
+      stubKeychain(blob)
+      try {
+        await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(blob)
+      } finally {
+        restoreExec()
+      }
+    })
+
+    it('never lets an unusable file win, however late its expiry', async () => {
+      const home = tempHome('claude-sync-shell-ahead-')
+      // A cleared credential carries whatever expiry the CLI left in it. It is
+      // still debris, and the keychain still heals it.
+      const shell = JSON.stringify({
+        claudeAiOauth: { accessToken: '', refreshToken: '', expiresAt: Date.now() + 99 * hour },
+      })
+      const real = credential('keychain', Date.now() + 1 * hour)
+      writeFileSync(join(home, '.credentials.json'), shell)
+      stubKeychain(real)
+      const warnings: string[] = []
+      try {
+        await expect(syncClaudeCredentialFile(home, m => warnings.push(m))).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(real)
+      } finally {
+        restoreExec()
+      }
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('cleared credential')
+    })
+
+    it('does not rewrite the file when both stores hold the same blob', async () => {
+      const home = tempHome('claude-sync-same-')
+      const blob = credential('same', Date.now() + 8 * hour)
+      const file = join(home, '.credentials.json')
+      writeFileSync(file, blob)
+      // Backdate so any write at all moves the stamp.
+      const past = new Date(Date.now() - 60_000)
+      utimesSync(file, past, past)
+      const before = statSync(file).mtimeMs
+      stubKeychain(blob)
+      try {
+        await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      } finally {
+        restoreExec()
+      }
+      expect(statSync(file).mtimeMs).toBe(before)
+    })
+
+    it('leaves a rotated file alone across the authentication probe too', async () => {
+      const home = tempHome('claude-sync-probe-')
+      // The probe is the clobber site the spawn sites do not cover: it runs on
+      // every status read and every readiness check.
+      const rotated = credential('unit', Date.now() + 8 * hour)
+      writeFileSync(join(home, '.credentials.json'), rotated)
+      stubKeychain(credential('host', Date.now() + 1 * hour))
+      try {
+        await expect(claudeAuthenticated(home)).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(rotated)
+      } finally {
+        restoreExec()
+      }
+    })
   })
 })
 
