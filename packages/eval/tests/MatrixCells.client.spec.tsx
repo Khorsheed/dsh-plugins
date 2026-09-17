@@ -181,8 +181,9 @@ function makeHarness() {
 
 type Harness = ReturnType<typeof makeHarness>
 
-function renderView(h: Harness) {
-  const props = {
+/** Everything but the locale seat — shared with the real-dictionary render below. */
+function propsOf(h: Harness) {
+  return {
     sessionId: 's1' as SessionId,
     useSession: undefined,
     useInput: undefined,
@@ -202,6 +203,12 @@ function renderView(h: Harness) {
     planExport: h.planExport,
     exportRun: h.exportRun,
     openSession: h.openSession,
+  }
+}
+
+function renderView(h: Harness) {
+  const props = {
+    ...propsOf(h),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -216,6 +223,15 @@ async function openPage(h: Harness, tab: string) {
   fireEvent.click(screen.getByRole('button', { name: tab }))
 }
 
+/**
+ * Open the matrix's arrangement disclosure. It is CLOSED by default (ui-spec
+ * §九) — the matrix is what the page is for, and choosing the column is a rare
+ * act — so a test that reaches a chip has to open it the way a reader does.
+ */
+function openArrange() {
+  fireEvent.click(screen.getByText('matrix.arrange'))
+}
+
 afterEach(() => { cleanup() })
 
 describe('the matrix page', () => {
@@ -225,28 +241,47 @@ describe('the matrix page', () => {
     await waitFor(() => { expect(h.fetchMatrix).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
 
     expect(screen.getByText('matrix.task')).toBeTruthy()
-    // The column headers are the factor's values, each naming its conditions.
-    expect(screen.getByText('a')).toBeTruthy()
-    expect(screen.getByText('b')).toBeTruthy()
-    // Both factors are offered as the column; `scope` is the one in force.
-    const columnChips = screen.getAllByRole('button', { name: 'scope' })
-    expect(columnChips[0]?.getAttribute('aria-pressed')).toBe('true')
+    // ui-spec §九: the heading is the CONDITION, and the factor value is its
+    // subtitle. (`scope` is already the preferred column here, so the page
+    // does not have to correct the host's pick — see the test below.)
     expect(screen.getByText('codex-a')).toBeTruthy()
-    // The row header is the item, and the two stage lines are its cells'.
+    expect(screen.getByText('codex-b')).toBeTruthy()
+    expect(screen.getByText(/factor\.scope\s+a/)).toBeTruthy()
+    expect(screen.getByText(/factor\.scope\s+b/)).toBeTruthy()
+    // Which factor separates the columns is said once, in words, above the table.
+    expect(screen.getByText(/matrix\.columnIs/)).toBeTruthy()
+    // The row header is the item, and each cell's stage comes from the word table.
     expect(screen.getByText('P0')).toBeTruthy()
-    expect(screen.getByText('archived')).toBeTruthy()
-    expect(screen.getByText('stage-2')).toBeTruthy()
+    expect(screen.getByText('stage.archived')).toBeTruthy()
+    expect(screen.getByText('stage.stage-2')).toBeTruthy()
     // One dot per rep, labelled so a reader (and a screen reader) can tell them apart.
-    expect(screen.getByLabelText('P0 codex-a rep 1 archived')).toBeTruthy()
-    expect(screen.getByLabelText('P0 codex-b rep 1 stage-2')).toBeTruthy()
+    expect(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-a".*"stage":"stage\.archived"/)).toBeTruthy()
+    expect(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-b".*"stage":"stage\.stage-2"/)).toBeTruthy()
+  })
+
+  it('asks for the DESIGNED factor when the host picked an incidental one', async () => {
+    const h = makeHarness()
+    // `env.keys` sorts first over these three, so the pivot's own default puts
+    // a JSON array on the columns — the I5 walkthrough's heading. The browser
+    // half knows `model.declared` is the designed factor and asks for it.
+    h.fetchMatrix.mockResolvedValue({
+      ok: true,
+      value: { ...MATRIX, factors: ['env.keys', 'home.sha', 'model.declared'], column: 'env.keys' },
+    })
+    await openPage(h, 'page.matrix')
+    await waitFor(() => {
+      expect(h.fetchMatrix).toHaveBeenLastCalledWith('s1', { runId: 'run-1', column: 'model.declared' })
+    })
   })
 
   it('shows the two per-cell warnings and the run-level summary', async () => {
     const h = makeHarness()
     await openPage(h, 'page.matrix')
     await screen.findByText('matrix.task')
-    expect(screen.getByText('matrix.hashMismatch')).toBeTruthy()
-    expect(screen.getByText('matrix.stuck {"minutes":30}')).toBeTruthy()
+    // The two warnings are chips now; the sentence rides on the chip's title.
+    expect(screen.getByText('matrix.hashMismatchChip')).toBeTruthy()
+    expect(screen.getByText('matrix.stuckChip {"minutes":30}')).toBeTruthy()
+    // An invariant that did not hold still says why, right under the band.
     expect(screen.getByText('1 道题出现不同物化哈希：P0')).toBeTruthy()
     expect(screen.getByText('本 run 无环境指纹（宿主路径的 run 不记）')).toBeTruthy()
     // Judge consistency is 待报告 until a report exists — never a guess.
@@ -258,9 +293,10 @@ describe('the matrix page', () => {
     const h = makeHarness()
     await openPage(h, 'page.matrix')
     await screen.findByText('matrix.task')
+    openArrange()
     // A factor is offered twice — as the column and as a band — so the first
     // chip is the column control.
-    const chips = screen.getAllByRole('button', { name: 'harness.name' })
+    const chips = screen.getAllByRole('button', { name: 'factor.harness.name' })
     fireEvent.click(chips[0] as HTMLElement)
     await waitFor(() => {
       expect(h.fetchMatrix).toHaveBeenLastCalledWith('s1', { runId: 'run-1', column: 'harness.name' })
@@ -271,8 +307,9 @@ describe('the matrix page', () => {
     const h = makeHarness()
     await openPage(h, 'page.matrix')
     await screen.findByText('matrix.task')
+    openArrange()
     // `harness.name` is not the column here, so it is offered as a band.
-    const band = screen.getAllByRole('button', { name: 'harness.name' })
+    const band = screen.getAllByRole('button', { name: 'factor.harness.name' })
     fireEvent.click(band[band.length - 1] as HTMLElement)
     await waitFor(() => {
       expect(h.fetchMatrix).toHaveBeenLastCalledWith('s1', expect.objectContaining({ groupBy: ['harness.name'] }))
@@ -283,7 +320,7 @@ describe('the matrix page', () => {
     const h = makeHarness()
     await openPage(h, 'page.matrix')
     await screen.findByText('matrix.task')
-    fireEvent.click(screen.getByLabelText('P0 codex-a rep 1 archived'))
+    fireEvent.click(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-a"/))
     await waitFor(() => {
       expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-codex-a-rep1' })
     })
@@ -296,7 +333,8 @@ describe('the cells page and its drawer', () => {
     await openPage(h, 'page.cells')
     await waitFor(() => { expect(h.fetchCells).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
     expect(screen.getByText('cells.matched {"matched":2,"total":2}')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'active' }))
+    // The bucket chips carry the word and the run's own count for it.
+    fireEvent.click(screen.getByRole('button', { name: /^bucket\.active/ }))
     await waitFor(() => {
       expect(h.fetchCells).toHaveBeenLastCalledWith('s1', { runId: 'run-1', bucket: 'active' })
     })
@@ -313,11 +351,15 @@ describe('the cells page and its drawer', () => {
     expect(screen.getByText('stage1 → archive')).toBeTruthy()
     expect(screen.getByText('archive/workspace (archive)')).toBeTruthy()
     // The probe line AND the raw payload — a summary would drop the exit code.
-    expect(screen.getByText('probe-skipped')).toBeTruthy()
+    // ui-spec §五 keeps verify verbatim; only the verdict word is ours.
+    expect(screen.getByText('drawer.probeFailed')).toBeTruthy()
+    expect(screen.getByText(/probe-skipped/)).toBeTruthy()
     expect(screen.getByText(/not applicable this round/)).toBeTruthy()
     expect(screen.getByText(/"kind": "probes"/)).toBeTruthy()
-    // The retry that opened attempt 2 is on the record.
-    expect(screen.getByText(/infrastructure: the container died mid-round/)).toBeTruthy()
+    // The retry that opened attempt 2 is on the record, in the word table's
+    // vocabulary rather than mission's own token.
+    expect(screen.getAllByText('retry.cat.infrastructure').length).toBeGreaterThan(0)
+    expect(screen.getByText(/the container died mid-round/)).toBeTruthy()
   })
 
   it('re-runs with a reason and a category, and refuses to send a blank one', async () => {

@@ -244,13 +244,15 @@ describe('the four invariants', () => {
     await screen.findByText('report.invariants')
 
     expect(screen.getByText('题面一致')).toBeTruthy()
-    expect(screen.getByText('环境同构')).toBeTruthy()
     expect(screen.getByText('受试可辨')).toBeTruthy()
-    expect(screen.getByText('流程同形')).toBeTruthy()
+    // The two that did not hold are named twice on purpose: once in the list
+    // of four, once beside the closed comparison section that cites them.
+    expect(screen.getAllByText('环境同构').length).toBe(2)
+    expect(screen.getAllByText('流程同形').length).toBe(2)
     // Three statuses, each said in its own word — never collapsed to pass/fail.
     expect(screen.getAllByText('invariant.ok')).toHaveLength(2)
-    expect(screen.getByText('invariant.violated')).toBeTruthy()
-    expect(screen.getByText('invariant.unverifiable')).toBeTruthy()
+    expect(screen.getAllByText('invariant.violated')).toHaveLength(2)
+    expect(screen.getAllByText('invariant.unverifiable')).toHaveLength(2)
     // The details are what make a status a finding rather than an opinion.
     expect(screen.getByText('两格指纹不同：lab-env:aaaa / lab-env:bbbb')).toBeTruthy()
     expect(screen.getByText('无委派记录')).toBeTruthy()
@@ -269,9 +271,9 @@ describe('the comparison gate', () => {
     const h = makeHarness(BLOCKED)
     await openReport(h)
 
-    expect(await screen.findByText(
-      'report.comparisonClosed {"invariants":"环境同构（invariant.violated）、流程同形（invariant.unverifiable）"}',
-    )).toBeTruthy()
+    // ui-spec §九: one human sentence for WHY it is closed, and the invariants
+    // that closed it beside it as the same chips the list above uses.
+    expect(await screen.findByText('report.comparisonClosed {"count":2}')).toBeTruthy()
     // Not one number from the pair table reaches the page: the host sent none.
     expect(screen.queryByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toBeNull()
     expect(screen.queryByText('report.col.delta')).toBeNull()
@@ -348,10 +350,14 @@ describe('a run with no bundle', () => {
     const h = makeHarness(NOT_EXPORTED)
     await openReport(h)
 
+    // ui-spec §九: one sentence, one next step. Where it looked and what the
+    // host said about not finding it are kept, folded under «详情».
     expect(await screen.findByText('report.noBundle')).toBeTruthy()
-    expect(screen.getByText(NOT_EXPORTED.refusal as string)).toBeTruthy()
-    expect(screen.getByText('report.searched: /repo/exports/run-1-bundle')).toBeTruthy()
+    expect(screen.getByText('report.noBundleHint')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'report.exportNow' })).toBeTruthy()
+    expect(screen.getByText('report.searched')).toBeTruthy()
+    expect(screen.getByText(NOT_EXPORTED.refusal as string)).toBeTruthy()
+    expect(screen.getByText('/repo/exports/run-1-bundle')).toBeTruthy()
     // Nothing is claimed about a bundle that does not exist.
     expect(screen.queryByText('report.invariants')).toBeNull()
     // finalize is not offered over a run whose evidence is not exported.
@@ -434,10 +440,10 @@ describe('unreclaimed units', () => {
     expect(await screen.findByText('report.unitsHeld {"count":2}')).toBeTruthy()
     expect(screen.getByText('dsh-lab-u2')).toBeTruthy()
     expect(screen.getByText('dsh-lab-u3')).toBeTruthy()
-    // The field the reader acts on: 'archived' is one 回收 can still take,
-    // 'released' is past every gate.
-    expect(screen.getByText('archived')).toBeTruthy()
-    expect(screen.getByText('released')).toBeTruthy()
+    // The field the reader acts on: 已归档 is one 回收 can still take,
+    // 已释放 is past every gate. Both through the word table (§九).
+    expect(screen.getByText('stage.archived')).toBeTruthy()
+    expect(screen.getByText('stage.released')).toBeTruthy()
   })
 
   it('回收 asks once, then walks the SAME gate finalize walks', async () => {

@@ -30,6 +30,7 @@
     "src/client/parts.tsx",
     "src/client/preset-visibility.ts",
     "src/client/store.ts",
+    "src/client/vocab.ts",
     "src/css-modules.d.ts",
     "src/types.ts"
   ]

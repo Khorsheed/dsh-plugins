@@ -37,7 +37,10 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalDraftResult, EvalExperimentDetail, EvalExperimentRow } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ConditionsPage } from './ConditionsPage.tsx'
-import { Field, StartedRun, factorCell, snapshotCell, stamp, statusKey } from './parts.tsx'
+import {
+  Chip, Detail, EmptyState, FactorCell, Field, StartedRun,
+  bucketTone, repoName, snapshotCell, stageTone, stamp, statusKey, statusTone, Word,
+} from './parts.tsx'
 import { PlanReviewPage } from './PlanReviewPage.tsx'
 import { LAB_PAGES } from './store.ts'
 import { CellsPage } from './CellsPage.tsx'
@@ -47,12 +50,35 @@ import { JudgingPage } from './JudgingPage.tsx'
 import { MatrixPage } from './MatrixPage.tsx'
 import { NewExperimentDialog } from './NewExperimentDialog.tsx'
 import { ReportPage } from './ReportPage.tsx'
+import { bucketPhrase, preferredColumn, stagePhrase } from './vocab.ts'
 import css from './LabView.module.css'
 
-/** name → count, rendered as a single compact line (`ready 2 · done 10`). */
-function histogram(counts: Record<string, number>): string {
+/**
+ * A `token → count` histogram as chips in the word table's own vocabulary.
+ *
+ * The tokens are mission's (`ws-ready`, `done`) and the page is not allowed to
+ * print them (ui-spec §九), so each one becomes a chip carrying its word, its
+ * count and — on hover — the token a person greps the ledger with.
+ * @param props - the counts, which table to read them through, and the locale seat.
+ */
+function Histogram(props: {
+  counts: Record<string, number>
+  kind: 'bucket' | 'stage'
+  t: LabViewProps['t']
+}) {
+  const { counts, kind, t } = props
   const entries = Object.entries(counts).filter(([, count]) => count > 0)
-  return entries.length === 0 ? '—' : entries.map(([name, count]) => `${name} ${count}`).join(' · ')
+  if (entries.length === 0) return <span className={css.dim}>—</span>
+  return (
+    <span className={css.chipRow}>
+      {entries.map(([token, count]) => (
+        <Chip key={token} tone={kind === 'bucket' ? bucketTone(token) : stageTone(token)} title={token}>
+          <Word phrase={kind === 'bucket' ? bucketPhrase(token) : stagePhrase(token)} t={t} />
+          <span className={css.chipCount}>{count}</span>
+        </Chip>
+      ))}
+    </span>
+  )
 }
 
 /**
@@ -84,13 +110,15 @@ function Overview(props: {
       )}
       <Field label={t('overview.snapshot')}>
         <span className={css.mono}>{snapshotCell(row)}</span>
-        {row.snapshot.repo !== null && <span className={css.dim}> · {row.snapshot.repo}</span>}
+        {row.snapshot.repo !== null && (
+          <span className={css.dim} title={row.snapshot.repo}> · {repoName(row.snapshot.repo)}</span>
+        )}
       </Field>
       <Field label={t('overview.shape')}>
         {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}
         <div className={css.dim}>{row.conditions.join(', ') || '—'}</div>
       </Field>
-      <Field label={t('overview.factors')}>{factorCell(row, t)}</Field>
+      <Field label={t('overview.factors')}><FactorCell row={row} t={t} /></Field>
       <Field label={t('overview.judge')}>
         {row.judges.length === 0
           ? t('overview.judgeNone')
@@ -117,8 +145,8 @@ function Overview(props: {
       {started !== null && <StartedRun started={started} output={output} outputError={outputError} t={t} />}
       {detail !== null && (
         <>
-          <Field label={t('overview.buckets')}>{histogram(detail.buckets)}</Field>
-          <Field label={t('overview.states')}>{histogram(detail.states)}</Field>
+          <Field label={t('overview.buckets')}><Histogram counts={detail.buckets} kind="bucket" t={t} /></Field>
+          <Field label={t('overview.states')}><Histogram counts={detail.states} kind="stage" t={t} /></Field>
           {detail.unreleased.length > 0 && (
             <Field label={t('overview.unreleased')}>
               <span className={css.warning}>{detail.unreleased.join(', ')}</span>
@@ -126,8 +154,16 @@ function Overview(props: {
           )}
           {detail.job !== null && (
             <Field label={t('overview.job')}>
-              <span className={css.mono}>{detail.job.jobId} · {detail.job.status}</span>
-              {detail.job.detail !== null && <div className={css.dim}>{detail.job.detail}</div>}
+              <span className={css.mono}>{detail.job.jobId}</span>
+              <span className={css.dim}> · {detail.job.status}</span>
+              {/* The job's own line is the host's sentence about a background
+                  process — English, and sometimes a path. It is evidence, so
+                  it is kept; §九 keeps it folded rather than on the page. */}
+              {detail.job.detail !== null && (
+                <Detail summary={t('error.details')}>
+                  <pre className={css.errorRaw}>{detail.job.detail}</pre>
+                </Detail>
+              )}
             </Field>
           )}
           <Field label={t('overview.readiness')}>
@@ -137,19 +173,35 @@ function Overview(props: {
                 <div className={css.readiness}>
                   {detail.readiness.map(line => (
                     <div key={`${line.condition}:${line.role}:${line.startedAt}`} className={css.readinessLine}>
-                      <span className={line.ok ? css.ok : css.warning}>{line.ok ? t('ready.ok') : t('ready.failed')}</span>
+                      <Chip tone={line.ok ? 'ok' : 'danger'}>{line.ok ? t('ready.ok') : t('ready.failed')}</Chip>
                       <span className={css.mono}>{line.condition}</span>
-                      <span className={css.dim}>{line.role} · {line.harness} · {line.provider}</span>
-                      {line.reason !== null && <span className={css.warning}>{line.reason}</span>}
+                      <span className={css.dim}>
+                        {t(line.role === 'judge' ? 'role.judge' : 'role.player')} · {line.harness} · {line.provider}
+                      </span>
                     </div>
                   ))}
-                  <pre className={css.pre}>{JSON.stringify(detail.readiness, null, 2)}</pre>
+                  {/* The refusal sentence and the records verbatim: written by
+                      the host for whoever debugs it, and the only place a
+                      refused run's reason exists (the ledger never saw it). §九
+                      keeps both under «详情» rather than on the page. */}
+                  <Detail summary={t('overview.readinessRaw')}>
+                    {detail.readiness.filter(line => line.reason !== null).map(line => (
+                      <div key={`why:${line.condition}:${line.startedAt}`} className={css.errorDetailLine}>
+                        {line.condition}: {line.reason}
+                      </div>
+                    ))}
+                    <pre className={css.errorRaw}>{JSON.stringify(detail.readiness, null, 2)}</pre>
+                  </Detail>
                 </div>
               )}
           </Field>
           {meta !== null && (
             <Field label={t('overview.meta')}>
-              <pre className={css.pre}>{JSON.stringify(meta, null, 2)}</pre>
+              {/* A JSON document is not a page (ui-spec §九). The facts a
+                  reader needs are the fields above; this is the receipt. */}
+              <Detail summary={t('overview.metaRaw')}>
+                <pre className={css.errorRaw}>{JSON.stringify(meta, null, 2)}</pre>
+              </Detail>
             </Field>
           )}
         </>
@@ -274,13 +326,14 @@ export function LabView(props: LabViewProps) {
   const draftName = drafted === null
     ? ''
     : (drafted.planPath.split('/').pop() ?? drafted.planPath).replace(/\.json$/, '')
+  // The plan's PATH is not in the sentence (ui-spec §九): the name is what a
+  // person calls the experiment, and the path is on the plan-review page under
+  // «详情», beside the file it names.
   const draftNotice = drafted === null
     ? null
     : (drafted.review.errors === 0
-      ? t('notice.drafted', { name: draftName, plan: drafted.planPath })
-      : t('notice.draftedWithErrors', {
-        name: draftName, plan: drafted.planPath, errors: drafted.review.errors,
-      }))
+      ? t('notice.drafted', { name: draftName })
+      : t('notice.draftedWithErrors', { name: draftName, errors: drafted.review.errors }))
 
   // Keyed on `list`, NOT on `rows`: `rows` is a fresh array on every render
   // (`list?.rows ?? []`), which would re-run this on every render for nothing.
@@ -488,8 +541,23 @@ export function LabView(props: LabViewProps) {
     }).then((result) => {
       if (cancelled) return
       actions.setMatrixLoading(false)
-      if (result.ok) actions.setMatrix(result.value)
-      else actions.setMatrixError(result.error.message)
+      if (!result.ok) {
+        actions.setMatrixError(result.error.message)
+        return
+      }
+      actions.setMatrix(result.value)
+      // ui-spec §九: the columns separate CONDITIONS by a designed factor. The
+      // pivot takes the first factor when the request names none, and «first»
+      // is alphabetical over every path the declarations disagree on — which
+      // is how `env.keys` became the column of a run that varied the model,
+      // and how a JSON array became a column heading. The browser half is the
+      // side that knows which fields are designed factors, so it corrects the
+      // arrangement once, here. Naming the column puts `matrixColumn` past
+      // null, so this branch cannot run twice.
+      if (matrixColumn === null) {
+        const want = preferredColumn(result.value.factors)
+        if (want !== null && want !== result.value.column) actions.setMatrixColumn(want)
+      }
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the two key strings stand in for the arrays they serialize
@@ -688,7 +756,7 @@ export function LabView(props: LabViewProps) {
             <>
               <Button size="sm" onClick={() => { actions.open(null) }}>{t('detail.back')}</Button>
               <span className={css.title}>{openRow.name}</span>
-              <span className={css.statusPill} data-status={shownStatus}>{t(statusKey(shownStatus ?? openRow.status))}</span>
+              <Chip tone={statusTone(shownStatus ?? openRow.status)}>{t(statusKey(shownStatus ?? openRow.status))}</Chip>
             </>
           )}
         <span className={css.barSpacer} />
@@ -710,7 +778,16 @@ export function LabView(props: LabViewProps) {
               <ErrorState what={t('list.error')} message={error} t={t} />
             )}
             {(list?.notes ?? []).map(note => <div key={note} className={css.note}>{note}</div>)}
-            {list !== null && rows.length === 0 && <div className={css.empty}>{t('list.empty')}</div>}
+            {list !== null && rows.length === 0 && (
+              // The seat's call to action says what it is FOR ("the first
+              // one"), so it reads as the next step rather than as a second
+              // copy of the toolbar button standing beside it.
+              <EmptyState title={t('list.empty')} hint={t('list.emptyHint')}>
+                <Button size="sm" variant="primary" onClick={() => { setNewOpen(true) }}>
+                  {t('list.emptyAction')}
+                </Button>
+              </EmptyState>
+            )}
             {rows.length > 0 && (
               <>
                 <div className={css.tableHead}>
@@ -740,8 +817,10 @@ export function LabView(props: LabViewProps) {
                     </span>
                     <span className={css.colNum}>{row.items}</span>
                     <span className={css.colNum}>{row.reps}</span>
-                    <span className={css.colFactors} title={row.factors.join(', ')}>{factorCell(row, t)}</span>
-                    <span className={css.colStatus} data-status={row.status}>{t(statusKey(row.status))}</span>
+                    <span className={css.colFactors}><FactorCell row={row} t={t} /></span>
+                    <span className={css.colStatus}>
+                      <Chip tone={statusTone(row.status)}>{t(statusKey(row.status))}</Chip>
+                    </span>
                     <span className={css.colProgress}>
                       {row.progress === null ? '—' : `${row.progress.done}/${row.progress.total}`}
                     </span>
@@ -823,7 +902,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'matrix' && (
                 openRunId === null
-                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
                   : (
                     <MatrixPage
                       matrix={matrix}
@@ -839,7 +918,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'cells' && (
                 openRunId === null
-                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
                   : (
                     <CellsPage
                       cells={cells}
@@ -862,7 +941,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'report' && (
                 openRunId === null
-                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
                   : (
                     <ReportPage
                       report={report}
@@ -881,7 +960,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'judging' && (
                 openRunId === null
-                  ? <div className={css.empty}>{t('overview.draftNotice')}</div>
+                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
                   : (
                     <JudgingPage
                       view={judge}

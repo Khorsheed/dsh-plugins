@@ -31,7 +31,7 @@
 .repo {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: var(--dsw-font-mono, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
 }
 
 .layers {

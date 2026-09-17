@@ -27,6 +27,7 @@ import type {
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
+import { Chip, EmptyState, Section } from './parts.tsx'
 import css from './LabView.module.css'
 
 const DASH = '—'
@@ -45,8 +46,7 @@ function Stats(props: { view: EvalJudgeQueueView; t: LabViewProps['t'] }) {
   const { view, t } = props
   const c = view.consistency
   return (
-    <div className={css.reportSection}>
-      <div className={css.sectionTitle}>{t('judge.stats')}</div>
+    <Section title={t('judge.stats')}>
       <div className={css.summaryRow}>
         <span className={css.summaryLabel}>{t('judge.statsSame')}</span>
         <span>{t('report.judgeSameValue', {
@@ -65,10 +65,10 @@ function Stats(props: { view: EvalJudgeQueueView; t: LabViewProps['t'] }) {
       </div>
       <div className={css.summaryRow}>
         <span className={css.summaryLabel}>{t('judge.statsSelf')}</span>
-        <span className={c.selfJudgedCriteria > 0 ? css.warning : css.dim}>{c.selfJudgedCriteria}</span>
+        <Chip tone={c.selfJudgedCriteria > 0 ? 'warn' : 'neutral'}>{c.selfJudgedCriteria}</Chip>
       </div>
       <div className={css.dim}>{t('judge.panel', { count: view.judgeCount })}</div>
-    </div>
+    </Section>
   )
 }
 
@@ -115,12 +115,10 @@ function Drafts(props: { drafts: readonly EvalJudgeDraftSample[]; t: LabViewProp
           <span className={css.mono}>{draft.judge}</span>
           {draft.sample !== null && <span className={css.dim}> #{draft.sample}</span>}
           {' '}
-          <span className={draft.pass ? css.ok : css.warning}>
-            {draft.pass ? t('judge.pass') : t('judge.fail')}
-          </span>
+          <Chip tone={draft.pass ? 'ok' : 'warn'}>{draft.pass ? t('judge.pass') : t('judge.fail')}</Chip>
           {/* 决策 9 lets a judge be a player; the bench discloses it per
               sample rather than hiding the sample or dropping it. */}
-          {draft.selfJudged && <span className={css.selfJudged}> {t('judge.selfJudged')}</span>}
+          {draft.selfJudged && <Chip tone="warn">{t('judge.selfJudged')}</Chip>}
           {draft.evidence !== null && <div className={css.dim}>{draft.evidence}</div>}
         </span>
       ))}
@@ -147,8 +145,8 @@ function CriterionRow(props: {
             it: `pass` always means the criterion HOLDS, and for a negative
             criterion holding means the defect is present. Saying so on the
             row is what keeps a grader from inverting the answer. */}
-        {criterion.negative && <span className={css.warning}>{t('judge.negative')}</span>}
-        {criterion.veto && <span className={css.warning}>{t('judge.veto')}</span>}
+        {criterion.negative && <Chip tone="warn">{t('judge.negative')}</Chip>}
+        {criterion.veto && <Chip tone="danger">{t('judge.veto')}</Chip>}
         {criterion.weight !== null && (
           <span className={css.dim}>{t('judge.weight', { weight: criterion.weight })}</span>
         )}
@@ -167,9 +165,7 @@ function CriterionRow(props: {
       {recorded !== undefined && (
         <div className={css.criterionDrafts}>
           <span className={css.summaryLabel}>{t('judge.humanFinal')}</span>
-          <span className={recorded.pass ? css.ok : css.warning}>
-            {recorded.pass ? t('judge.pass') : t('judge.fail')}
-          </span>
+          <Chip tone={recorded.pass ? 'ok' : 'warn'}>{recorded.pass ? t('judge.pass') : t('judge.fail')}</Chip>
           {recorded.evidence !== null && <span className={css.dim}>{recorded.evidence}</span>}
         </div>
       )}
@@ -248,7 +244,7 @@ export function JudgingPage(props: {
       <Stats view={view} t={t} />
 
       {view.cells.length === 0
-        ? <div className={css.empty}>{t('judge.empty')}</div>
+        ? <EmptyState title={t('judge.empty')} hint={t('judge.emptyHint')} />
         : (
           <div className={css.judgeColumns}>
             <div className={css.judgeQueue}>
@@ -264,7 +260,7 @@ export function JudgingPage(props: {
             </div>
 
             {open === null
-              ? <div className={css.empty}>{t('judge.pick')}</div>
+              ? <EmptyState title={t('judge.pick')} hint={t('judge.pickHint')} />
               : (
                 <>
                   <div className={css.judgeMaterial}>

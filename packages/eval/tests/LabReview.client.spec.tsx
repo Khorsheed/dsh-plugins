@@ -302,7 +302,9 @@ describe('the plan-review page', () => {
 
     // The kv block: snapshot, shape, factors, judge and samples, order, stages.
     expect(await screen.findByText('overview.shapeValue {"items":4,"conditions":2,"reps":2,"cells":16}')).toBeTruthy()
-    expect(screen.getByText('harness.name, model.declared')).toBeTruthy()
+    // ui-spec §九: the factor cell carries the fields' WORDS, in the spec's
+    // own order; the dotted paths stay on the cell's title.
+    expect(screen.getByText(/factor\.model\.declared · factor\.harness\.name/)).toBeTruthy()
     expect(screen.getByText(/judge-a · overview.judgeSamples/)).toBeTruthy()
     expect(screen.getByText('review.orderValue {"seed":7}')).toBeTruthy()
     expect(screen.getByText('stage-1, stage-2')).toBeTruthy()
@@ -313,7 +315,9 @@ describe('the plan-review page', () => {
     // validate, one line per diagnostic, each carrying its severity and code.
     expect(screen.getByText('severity.warn')).toBeTruthy()
     expect(screen.getAllByText('severity.ok')).toHaveLength(2)
-    expect(screen.getByText('COMMIT_UNRESOLVED')).toBeTruthy()
+    // The diagnostic code is the host's handle on the check, not a word:
+    // ui-spec §九 keeps it on the row's title and the sentence on the page.
+    expect(screen.getByTitle('COMMIT_UNRESOLVED')).toBeTruthy()
     // The condition list carries the readiness word and the lock state.
     expect(screen.getAllByText('conditions.ready').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('conditions.unready')).toBeTruthy()
@@ -388,8 +392,12 @@ describe('the plan-review page', () => {
     await openPage(h, 'page.plan')
     fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
 
+    // The gate's own words are the ONLY record of why (the run never reached
+    // `runCreate`), so they are kept verbatim — under «详情», per §九.
     expect(await screen.findByText(/no conditions\/codex-exec.json/)).toBeTruthy()
     expect(screen.getByText('review.refusal')).toBeTruthy()
+    expect(screen.getByText('review.refusalLead')).toBeTruthy()
+    expect(screen.getByText('review.refusalRaw')).toBeTruthy()
     // Still on the plan page, and nothing claims to have started.
     expect(screen.queryByText('review.started')).toBeNull()
     expect(h.fetchRunOutput).not.toHaveBeenCalled()
@@ -478,12 +486,13 @@ describe('the conditions page', () => {
 
     await waitFor(() => { expect(h.fetchConditionDiff).toHaveBeenCalledWith('s1', { a: 'dsh-exec', b: 'codex-exec' }) })
     expect(await screen.findByText('conditions.diffCount {"count":3}')).toBeTruthy()
-    // The three differing paths, each highlighted, and nothing else.
-    for (const path of ['harness.name', 'model.declared', 'scope']) {
-      expect(screen.getByText(path)).toBeTruthy()
+    // The three differing fields, each highlighted, and nothing else. The
+    // column is the field's NAME; the dotted path is on its title (§九).
+    for (const key of ['factor.harness.name', 'factor.model.declared', 'factor.scope']) {
+      expect(screen.getByText(key)).toBeTruthy()
     }
-    expect(screen.queryByText('permissions')).toBeNull()
-    expect(screen.queryByText('reasoning.effort')).toBeNull()
+    expect(screen.queryByText('factor.permissions')).toBeNull()
+    expect(screen.queryByText('factor.reasoning.effort')).toBeNull()
     // Absent-on-one-side is a difference like any other, and reads as one.
     expect(screen.getByText('conditions.diffAbsent')).toBeTruthy()
     expect(screen.getByText('"gpt-5.6-sol"')).toBeTruthy()

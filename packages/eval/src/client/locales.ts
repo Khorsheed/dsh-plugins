@@ -419,6 +419,87 @@ export type EvalKey =
   | 'error.unknownFix'
   | 'error.details'
   | 'error.detailsPath'
+  | 'factors.plusIncidental'
+  | 'list.emptyHint'
+  | 'list.emptyAction'
+  | 'draft.notStarted'
+  | 'draft.notStartedHint'
+  | 'overview.readinessRaw'
+  | 'overview.metaRaw'
+  | 'role.player'
+  | 'role.judge'
+  | 'stage.pending'
+  | 'stage.ws-ready'
+  | 'stage.stage-1'
+  | 'stage.stage-2'
+  | 'stage.stage-3'
+  | 'stage.stage-4'
+  | 'stage.stage-5'
+  | 'stage.stage-6'
+  | 'stage.stageN'
+  | 'stage.judged'
+  | 'stage.halted'
+  | 'stage.archived'
+  | 'stage.releasable'
+  | 'stage.released'
+  | 'stage.unknown'
+  | 'stage.mixed'
+  | 'bucket.ready'
+  | 'bucket.scheduled'
+  | 'bucket.blocked'
+  | 'bucket.active'
+  | 'bucket.done'
+  | 'bucket.other'
+  | 'retry.cat.infrastructure'
+  | 'retry.cat.operator'
+  | 'retry.cat.outcome'
+  | 'retry.cat.other'
+  | 'factor.harness.name'
+  | 'factor.harness.version'
+  | 'factor.harness.drive'
+  | 'factor.model.declared'
+  | 'factor.model.endpoint'
+  | 'factor.reasoning.effort'
+  | 'factor.permissions'
+  | 'factor.instructions'
+  | 'factor.preset'
+  | 'factor.skills.pack'
+  | 'factor.scope'
+  | 'factor.home.sha'
+  | 'factor.env.keys'
+  | 'factor.unit.scopedHome.container'
+  | 'factor.unit.scopedHome.var'
+  | 'factor.other'
+  | 'matrix.arrange'
+  | 'matrix.columnIs'
+  | 'matrix.legendToggle'
+  | 'matrix.repLabel'
+  | 'matrix.noCondition'
+  | 'matrix.hashMismatchChip'
+  | 'matrix.hashUnknownChip'
+  | 'matrix.stuckChip'
+  | 'matrix.incidental'
+  | 'matrix.incidentalHint'
+  | 'matrix.emptyHint'
+  | 'cells.emptyHint'
+  | 'cells.emptyClear'
+  | 'drawer.title'
+  | 'drawer.attemptNo'
+  | 'drawer.fingerprint'
+  | 'drawer.probeOk'
+  | 'drawer.probeFailed'
+  | 'conditions.emptyHint'
+  | 'conditions.provisionCredential'
+  | 'conditions.provisionHomeFold'
+  | 'review.refusalLead'
+  | 'review.refusalRaw'
+  | 'report.noBundleHint'
+  | 'report.whereFold'
+  | 'report.finalizeRaw'
+  | 'report.unitHeldChip'
+  | 'report.refusedChip'
+  | 'judge.emptyHint'
+  | 'judge.pickHint'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -451,7 +532,7 @@ export const en: Record<EvalKey, string> = {
   'list.new': 'New experiment',
   'list.loading': 'Loading…',
   'list.error': 'Failed to load the experiments',
-  'list.empty': 'No experiments yet — a plan lives at <repo>/datasets/<set>/plans/<name>.json',
+  'list.empty': 'No experiment yet',
   'list.refresh': 'Refresh',
   'col.name': 'Name',
   'col.snapshot': 'Snapshot',
@@ -597,8 +678,8 @@ export const en: Record<EvalKey, string> = {
   'new.cancel': 'Cancel',
   'new.error': 'The draft was not written',
   'new.optionsError': 'Could not read what this repository holds',
-  'notice.drafted': 'Drafted {name}: {plan} — validate found no errors. Approving and starting is on this page.',
-  'notice.draftedWithErrors': 'Drafted {name}: {plan} — validate found {errors} error(s), so it stays a draft. The list below says what.',
+  'notice.drafted': 'Drafted {name} — validate found no errors. Approving and starting is on this page.',
+  'notice.draftedWithErrors': 'Drafted {name} — validate found {errors} error(s), so it stays a draft. The list below says what.',
   'matrix.loading': 'Arranging the matrix…',
   'matrix.error': 'Failed to arrange the matrix',
   'matrix.empty': 'This run expanded no cells',
@@ -679,8 +760,8 @@ export const en: Record<EvalKey, string> = {
   'export.error': 'Export failed',
   'report.loading': 'Reading the bundle…',
   'report.error': 'Failed to build the report',
-  'report.noBundle': 'No bundle exported yet',
-  'report.searched': 'Looked in',
+  'report.noBundle': 'This run has not been exported yet',
+  'report.searched': 'Where it looked, and what it said',
   'report.exportNow': 'Export the bundle',
   'report.lookInDir': 'Export directory to look in (a run started with --out)',
   'report.lookInGo': 'Look here',
@@ -688,7 +769,7 @@ export const en: Record<EvalKey, string> = {
   'report.cliHint': 'Write it to disk',
   'report.toolOnlyNs': 'RED FLAG: every verdict in the expectedNs namespace `{ns}` was written by a `tool:` caller — the source disagrees with that namespace\'s contract, and conclusions resting on it are in doubt.',
   'report.invariants': 'The four invariants',
-  'report.comparisonClosed': 'Comparison is CLOSED: {invariants}. Facts only below — no deltas, no ranking (architecture §5).',
+  'report.comparisonClosed': 'The comparison section is closed: {count} invariant(s) did not hold, so this run\u2019s cells are not comparable. Facts only below — no deltas, no ranking (architecture §5).',
   'report.singleCondition': 'Single-condition run — there is no second condition to pair with, so there is nothing to compare. The facts are below.',
   'report.noPairs': 'No condition pair produced a comparison.',
   'report.pairTitle': '{a} vs {b}',
@@ -840,6 +921,91 @@ export const en: Record<EvalKey, string> = {
   'conditions.diffError': 'Failed to diff the two conditions',
   'conditions.new': 'New condition',
   'conditions.newPlaceholder': 'Choosing a model IS minting a condition, so minting one lives in the 新建实验 form: go back to the list, press it, and open 新建条件 there — it copies a condition you pick and changes the field you name, together with the plan that uses it. Turning the declaration into a real scoped home is still yours: /eval conditions provision.',
+
+  // ── the word table (ui-spec §九) ────────────────────────────────────────
+  // Every internal token this tab shows resolves through one of the four
+  // groups below, so the same fact reads the same on every page.
+  'role.player': 'player',
+  'role.judge': 'judge',
+  'stage.pending': 'Not started',
+  'stage.ws-ready': 'Workspace ready',
+  'stage.stage-1': 'Stage 1',
+  'stage.stage-2': 'Stage 2',
+  'stage.stage-3': 'Stage 3',
+  'stage.stage-4': 'Stage 4',
+  'stage.stage-5': 'Stage 5',
+  'stage.stage-6': 'Stage 6',
+  'stage.stageN': 'Stage {n}',
+  'stage.judged': 'Judged',
+  'stage.halted': 'Halted',
+  'stage.archived': 'Archived',
+  'stage.releasable': 'Releasable',
+  'stage.released': 'Released',
+  'stage.unknown': 'Unknown stage ({token})',
+  'stage.mixed': 'Mixed: {states}',
+  'bucket.ready': 'Ready',
+  'bucket.scheduled': 'Scheduled',
+  'bucket.blocked': 'Blocked',
+  'bucket.active': 'In progress',
+  'bucket.done': 'Done',
+  'bucket.other': 'Other ({token})',
+  'retry.cat.infrastructure': 'Infrastructure',
+  'retry.cat.operator': 'Operator',
+  'retry.cat.outcome': 'Outcome',
+  'retry.cat.other': 'Other ({token})',
+  'factor.harness.name': 'Harness',
+  'factor.harness.version': 'Version',
+  'factor.harness.drive': 'Drive',
+  'factor.model.declared': 'Model',
+  'factor.model.endpoint': 'Endpoint',
+  'factor.reasoning.effort': 'Reasoning effort',
+  'factor.permissions': 'Permissions',
+  'factor.instructions': 'System instructions',
+  'factor.preset': 'Preset',
+  'factor.skills.pack': 'Skill pack',
+  'factor.scope': 'Scope',
+  'factor.home.sha': 'Scoped-home digest',
+  'factor.env.keys': 'Environment variable names',
+  'factor.unit.scopedHome.container': 'Credential mount in the unit',
+  'factor.unit.scopedHome.var': 'Credential variable in the unit',
+  'factor.other': 'Other field',
+  'factors.plusIncidental': '+{count} more',
+  'list.emptyAction': 'Create the first experiment',
+  'list.emptyHint': 'Draft one here, or ask the agent in chat for one — either way it lands in this list as a draft, and starting it is still a click on the plan-review page.',
+  'draft.notStarted': 'Not started yet',
+  'draft.notStartedHint': 'This page fills in once a human approves the plan and starts the run — go to Plan review.',
+  'overview.readinessRaw': 'Records and refusals, verbatim',
+  'overview.metaRaw': 'run.meta, verbatim',
+  'matrix.arrange': 'Column, bands and pins',
+  'matrix.columnIs': 'Columns separate the conditions by',
+  'matrix.legendToggle': 'Legend',
+  'matrix.repLabel': '{task} {condition} rep {rep} {stage}',
+  'matrix.noCondition': 'no condition',
+  'matrix.hashMismatchChip': 'material differs',
+  'matrix.hashUnknownChip': 'material unknown',
+  'matrix.stuckChip': 'stuck {minutes} min',
+  'matrix.incidental': '{count} more field(s) vary with the conditions',
+  'matrix.incidentalHint': 'These follow from the fields above — the credential variable a harness dictates, the digest of a provisioned home — so they are reported rather than offered as a column.',
+  'matrix.emptyHint': 'The run expanded no cell the current pins keep. Clear them under «Column, bands and pins», or check the plan review.',
+  'cells.emptyHint': 'No cell of this run is in that bucket right now.',
+  'cells.emptyClear': 'Show every bucket',
+  'drawer.title': '{task} × {condition} × rep {rep}',
+  'drawer.attemptNo': 'attempt {attempt}',
+  'drawer.fingerprint': 'fingerprint',
+  'drawer.probeOk': 'passed',
+  'drawer.probeFailed': 'did not pass',
+  'conditions.emptyHint': 'The bound repository declares no condition yet. Minting one is part of 新建实验 — go back to the list and press it.',
+  'conditions.provisionCredential': 'credential: {credential}',
+  'conditions.provisionHomeFold': 'Scoped home',
+  'review.refusalLead': 'The readiness gate refused this run — nothing was created, and the sentence below is the only record of why.',
+  'review.refusalRaw': 'The refusal, verbatim',
+  'report.noBundleHint': 'A report is read from an exported bundle. Export this run and the four invariants, the paired deltas and the judge numbers appear here.',
+  'report.whereFold': 'Where this came from',
+  'report.finalizeRaw': 'Refusals and the walk log, verbatim',
+  'report.unitHeldChip': 'still held',
+  'report.refusedChip': 'refused',
+  'judge.emptyHint': 'Cells reach this queue once they are archived — run the experiment first, or finalize it.',
+  'judge.pickHint': 'The queue on the left is in the run\u2019s own seeded order; the numbers say nothing about which cells share a condition.',
 }
 
 /** 中文词典。 */
@@ -865,7 +1031,7 @@ export const zh: Record<EvalKey, string> = {
   'list.new': '新建实验',
   'list.loading': '加载中…',
   'list.error': '实验列表加载失败',
-  'list.empty': '还没有实验——计划文件放在 <题库>/datasets/<题集>/plans/<名称>.json',
+  'list.empty': '还没有实验',
   'list.refresh': '刷新',
   'col.name': '名称',
   'col.snapshot': '题库快照',
@@ -1011,8 +1177,8 @@ export const zh: Record<EvalKey, string> = {
   'new.cancel': '取消',
   'new.error': '草稿没写成',
   'new.optionsError': '读不到这个题库里有什么',
-  'notice.drafted': '已起草 {name}：{plan}——validate 没有 error。批准并启动就在本页。',
-  'notice.draftedWithErrors': '已起草 {name}：{plan}——validate 报了 {errors} 条 error，所以它仍是草稿。下面的清单说了是哪些。',
+  'notice.drafted': '已起草 {name}——validate 没有 error。批准并启动就在本页。',
+  'notice.draftedWithErrors': '已起草 {name}——validate 报了 {errors} 条 error，所以它仍是草稿。下面的清单说了是哪些。',
   'matrix.loading': '排矩阵…',
   'matrix.error': '矩阵排布失败',
   'matrix.empty': '这个 run 没有展开出格子',
@@ -1093,8 +1259,8 @@ export const zh: Record<EvalKey, string> = {
   'export.error': '导出失败',
   'report.loading': '正在读 bundle…',
   'report.error': '报告生成失败',
-  'report.noBundle': '还没有 bundle',
-  'report.searched': '找过',
+  'report.noBundle': '这个 run 还没有导出',
+  'report.searched': '找过哪些目录、原话是什么',
   'report.exportNow': '导出 bundle',
   'report.lookInDir': '换一个导出目录找（run 是带 --out 跑的就填这里）',
   'report.lookInGo': '在这里找',
@@ -1102,7 +1268,7 @@ export const zh: Record<EvalKey, string> = {
   'report.cliHint': '用 CLI 落盘',
   'report.toolOnlyNs': '红字警告：expectedNs 中的 `{ns}` 的判定全部由 `tool:` 写入——判定来源与该 ns 的契约作者不符，相关结论效力存疑。',
   'report.invariants': '四条不变量',
-  'report.comparisonClosed': '比较节未开：{invariants}。下面只有事实表，没有差值与名次（architecture §5）。',
+  'report.comparisonClosed': '比较节未开：有 {count} 条不变量没成立，这个 run 的格子之间不可比。下面只有事实表，没有差值与名次（architecture §5）。',
   'report.singleCondition': '单条件 run——没有第二个条件可配对，无可比较。事实见下。',
   'report.noPairs': '没有任何条件对给出比较。',
   'report.pairTitle': '{a} vs {b}',
@@ -1254,4 +1420,89 @@ export const zh: Record<EvalKey, string> = {
   'conditions.diffError': '两条条件的 diff 失败',
   'conditions.new': '新建条件',
   'conditions.newPlaceholder': '选模型即新建条件，所以新建条件在「新建实验」表单里：回到实验室列表点「新建实验」，在里面开「新建条件」——它把你选的那条复制一份、只改你填的字段，和用它的 plan 一起写出来。把声明落成真的作用域家目录仍是人的事：/eval conditions provision。',
+
+  // ── 状态词表（ui-spec §九）──────────────────────────────────────────────
+  // 这个 tab 上出现的每个内部标识都经下面四组之一落成一个词，同一件事在
+  // 每一页的写法相同。
+  'role.player': '选手',
+  'role.judge': '判官',
+  'stage.pending': '待起',
+  'stage.ws-ready': '工作区就绪',
+  'stage.stage-1': '阶段一',
+  'stage.stage-2': '阶段二',
+  'stage.stage-3': '阶段三',
+  'stage.stage-4': '阶段四',
+  'stage.stage-5': '阶段五',
+  'stage.stage-6': '阶段六',
+  'stage.stageN': '阶段 {n}',
+  'stage.judged': '已判',
+  'stage.halted': '已停',
+  'stage.archived': '已归档',
+  'stage.releasable': '可释放',
+  'stage.released': '已释放',
+  'stage.unknown': '未知阶段（{token}）',
+  'stage.mixed': '多态：{states}',
+  'bucket.ready': '就绪',
+  'bucket.scheduled': '排期',
+  'bucket.blocked': '阻塞',
+  'bucket.active': '进行中',
+  'bucket.done': '完成',
+  'bucket.other': '其它（{token}）',
+  'retry.cat.infrastructure': '基础设施',
+  'retry.cat.operator': '操作',
+  'retry.cat.outcome': '结果',
+  'retry.cat.other': '其它（{token}）',
+  'factor.harness.name': 'harness',
+  'factor.harness.version': '版本',
+  'factor.harness.drive': '驱动方式',
+  'factor.model.declared': '模型',
+  'factor.model.endpoint': '服务端点',
+  'factor.reasoning.effort': '推理强度',
+  'factor.permissions': '权限',
+  'factor.instructions': '系统指令',
+  'factor.preset': '预设',
+  'factor.skills.pack': '技能包',
+  'factor.scope': '作用域',
+  'factor.home.sha': '家目录指纹',
+  'factor.env.keys': '环境变量名',
+  'factor.unit.scopedHome.container': '单元内凭据目录',
+  'factor.unit.scopedHome.var': '单元内凭据变量',
+  'factor.other': '其它字段',
+  'factors.plusIncidental': '另 {count} 项',
+  'list.emptyAction': '新建第一个实验',
+  'list.emptyHint': '在这里起一个草稿，或者在会话里让 agent 起——两条路都落在这张列表里，都是草稿；启动仍是计划审阅页上的一次点击。',
+  'draft.notStarted': '还没启动',
+  'draft.notStartedHint': '人在计划审阅页批准并启动之后，这一页才有内容——去「计划审阅」。',
+  'overview.readinessRaw': '就绪记录与拒绝原文',
+  'overview.metaRaw': 'run.meta 原文',
+  'matrix.arrange': '换列 · 分组 · 筛选',
+  'matrix.columnIs': '列按这个因子区分条件：',
+  'matrix.legendToggle': '图例',
+  'matrix.repLabel': '{task} {condition} 第 {rep} 次 {stage}',
+  'matrix.noCondition': '无条件',
+  'matrix.hashMismatchChip': '题面不一致',
+  'matrix.hashUnknownChip': '题面未记录',
+  'matrix.stuckChip': '卡格 {minutes} 分钟',
+  'matrix.incidental': '另有 {count} 项字段随条件而变',
+  'matrix.incidentalHint': '它们是上面那些因子带出来的——harness 决定凭据变量名，家目录落地才有指纹——所以只报告，不做成列或筛选。',
+  'matrix.emptyHint': '当前筛选下没有格子。到「换列 · 分组 · 筛选」里清掉筛选，或去计划审阅页看这个 run 展开了什么。',
+  'cells.emptyHint': '这个 run 现在没有格子落在这个桶里。',
+  'cells.emptyClear': '看全部桶',
+  'drawer.title': '{task} × {condition} × 第 {rep} 次',
+  'drawer.attemptNo': '第 {attempt} 次尝试',
+  'drawer.fingerprint': '环境指纹',
+  'drawer.probeOk': '通过',
+  'drawer.probeFailed': '未通过',
+  'conditions.emptyHint': '绑定的题库里还没有条件。新建条件在「新建实验」表单里——回到实验室列表点它。',
+  'conditions.provisionCredential': '凭据：{credential}',
+  'conditions.provisionHomeFold': '作用域家目录',
+  'review.refusalLead': '就绪闸拒绝了这次启动——什么都没创建，下面这段是唯一记着原因的地方。',
+  'review.refusalRaw': '拒绝原文',
+  'report.noBundleHint': '报告是从导出的 bundle 读出来的。把这个 run 导出，四条不变量、配对差值与判官一致性就会出现在这里。',
+  'report.whereFold': '这份报告的出处',
+  'report.finalizeRaw': '拒绝原因与走查日志原文',
+  'report.unitHeldChip': '仍持有',
+  'report.refusedChip': '被拒',
+  'judge.emptyHint': '格子归档之后才进这个队列——先把实验跑完，或者先做 finalize。',
+  'judge.pickHint': '左边的队列按 run 自己的种子顺序排；编号说明不了哪些格子同属一个条件。',
 }

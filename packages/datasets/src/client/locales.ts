@@ -95,6 +95,34 @@ export type DatasetsKey =
   | 'detail.judgeSchemas'
   | 'detail.runs'
   | 'detail.runsEmpty'
+  | 'list.unboundHint'
+  | 'list.unboundAction'
+  | 'list.emptyAction'
+  | 'list.emptyHint'
+  | 'detail.itemEmptyHint'
+  | 'detail.filterEmptyHint'
+  | 'detail.runsEmptyHint'
+  | 'stage.pending'
+  | 'stage.ws-ready'
+  | 'stage.stage-1'
+  | 'stage.stage-2'
+  | 'stage.stage-3'
+  | 'stage.stage-4'
+  | 'stage.stage-5'
+  | 'stage.stage-6'
+  | 'stage.stageN'
+  | 'stage.judged'
+  | 'stage.halted'
+  | 'stage.archived'
+  | 'stage.releasable'
+  | 'stage.released'
+  | 'stage.unknown'
+  | 'bucket.ready'
+  | 'bucket.scheduled'
+  | 'bucket.blocked'
+  | 'bucket.active'
+  | 'bucket.done'
+  | 'bucket.other'
   | 'detail.runsCell'
   | 'detail.briefLoading'
   | 'detail.briefError'
@@ -268,7 +296,7 @@ export const zh: Record<DatasetsKey, string> = {
   'detail.judgeSchemas': '阶段 schema {count} 个',
   'detail.runs': '作答记录',
   'detail.runsEmpty': '这道题还没有在任何实验里作答过',
-  'detail.runsCell': '{condition} · rep {rep} · {bucket}',
+  'detail.runsCell': '{condition} · rep {rep}',
   'detail.briefLoading': '读取题面与可判性…',
   'detail.briefError': '这道题的题面与可判性没读出来',
   'form.newDatasetTitle': '新建题集（写 dataset.json 骨架、prompts/、schemas/、items/）',
@@ -310,6 +338,36 @@ export const zh: Record<DatasetsKey, string> = {
   'json.collapseNode': '折叠 JSON 节点',
   'json.expandNode': '展开 JSON 节点',
   'json.copyButtonTitle': '{action}；右键查看更多复制选项',
+
+  'list.unboundAction': '绑定一个题库仓库',
+  'list.emptyAction': '新建第一个题集',
+  'list.unboundHint': '绑定之后，这里按题集列出快照、题目数、槽位与层的对应、canary 与 validate 结果。',
+  'list.emptyHint': '题集是 datasets/<id>/ 下的一个目录，带一份 dataset.json。新建一个会生成骨架，提交仍是你的。',
+  'detail.itemEmptyHint': '右边会列出「选手将看到」的每个文件与字节数（防泄题自查），以及这道题能不能判。',
+  'detail.filterEmptyHint': '这个题集在这些槽位下没有文件。点上面的「全部」看整棵树。',
+  'detail.runsEmptyHint': '实验跑过这道题之后，每个格子会按条件与 rep 列在这里。',
+  // ── 状态词表（ui-spec §九）：与实验室 tab 同一张表 ──────────────────────
+  'stage.pending': '待起',
+  'stage.ws-ready': '工作区就绪',
+  'stage.stage-1': '阶段一',
+  'stage.stage-2': '阶段二',
+  'stage.stage-3': '阶段三',
+  'stage.stage-4': '阶段四',
+  'stage.stage-5': '阶段五',
+  'stage.stage-6': '阶段六',
+  'stage.stageN': '阶段 {n}',
+  'stage.judged': '已判',
+  'stage.halted': '已停',
+  'stage.archived': '已归档',
+  'stage.releasable': '可释放',
+  'stage.released': '已释放',
+  'stage.unknown': '未知阶段（{token}）',
+  'bucket.ready': '就绪',
+  'bucket.scheduled': '排期',
+  'bucket.blocked': '阻塞',
+  'bucket.active': '进行中',
+  'bucket.done': '完成',
+  'bucket.other': '其它（{token}）',
 }
 
 /** English dictionary. */
@@ -421,7 +479,7 @@ export const en: Record<DatasetsKey, string> = {
   'detail.judgeSchemas': '{count} stage schemas',
   'detail.runs': 'Answer record',
   'detail.runsEmpty': 'This item has not been answered in any experiment yet',
-  'detail.runsCell': '{condition} · rep {rep} · {bucket}',
+  'detail.runsCell': '{condition} · rep {rep}',
   'detail.briefLoading': 'Reading the task face and judgeability…',
   'detail.briefError': 'Could not read this item’s task face and judgeability',
   'form.newDatasetTitle': 'New dataset (writes the dataset.json skeleton, prompts/, schemas/, items/)',
@@ -463,4 +521,34 @@ export const en: Record<DatasetsKey, string> = {
   'json.collapseNode': 'Collapse JSON node',
   'json.expandNode': 'Expand JSON node',
   'json.copyButtonTitle': '{action}; right-click for copy options',
+
+  'list.unboundAction': 'Bind a dataset repository',
+  'list.emptyAction': 'Create the first dataset',
+  'list.unboundHint': 'Once bound, this page lists each dataset with its snapshot, item count, slot \u2190 layer mapping, canary and validate result.',
+  'list.emptyHint': 'A dataset is a directory under datasets/<id>/ with a dataset.json. Creating one writes the skeleton; the commit is still yours.',
+  'detail.itemEmptyHint': 'The right pane lists every file the player will receive, with byte counts (the anti-leak self-check), and whether the item can be scored at all.',
+  'detail.filterEmptyHint': 'This dataset has no file in those slots. Press All above to see the whole tree.',
+  'detail.runsEmptyHint': 'Once an experiment has run this item, each of its cells is listed here by condition and rep.',
+  // ── the word table (ui-spec §九): the same table the 实验室 tab carries ──
+  'stage.pending': 'Not started',
+  'stage.ws-ready': 'Workspace ready',
+  'stage.stage-1': 'Stage 1',
+  'stage.stage-2': 'Stage 2',
+  'stage.stage-3': 'Stage 3',
+  'stage.stage-4': 'Stage 4',
+  'stage.stage-5': 'Stage 5',
+  'stage.stage-6': 'Stage 6',
+  'stage.stageN': 'Stage {n}',
+  'stage.judged': 'Judged',
+  'stage.halted': 'Halted',
+  'stage.archived': 'Archived',
+  'stage.releasable': 'Releasable',
+  'stage.released': 'Released',
+  'stage.unknown': 'Unknown stage ({token})',
+  'bucket.ready': 'Ready',
+  'bucket.scheduled': 'Scheduled',
+  'bucket.blocked': 'Blocked',
+  'bucket.active': 'In progress',
+  'bucket.done': 'Done',
+  'bucket.other': 'Other ({token})',
 }
