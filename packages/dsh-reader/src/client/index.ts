@@ -24,7 +24,9 @@ import type {} from '@khorsheed/dsh-reader/remote'
 // Type-only: pulls the ctx.sidebarRightTabs merge and the pane seat.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import readerRemote from '@khorsheed/dsh-reader/remote'
+import type { ReaderEntryBodyView } from '../types.ts'
 import type { ReaderPaneInjected } from './contract.ts'
+import { extractArticle } from './extract-article.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
 import { ReaderPane } from './ReaderPane.tsx'
 import { createReaderStore } from './store.ts'
@@ -100,6 +102,35 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
   }
 
+  /**
+   * Fetch one entry's article and cache the extraction.
+   *
+   * The split is the host/browser boundary: the host owns the network (its
+   * sanctioned egress seam), this process owns the DOM, and neither can do the
+   * other's half — so the view calls this one function and both halves happen.
+   */
+  const fetchEntryBody = async (entryId: string, url: string): Promise<ReaderEntryBodyView> => {
+    const fetched = await remote.fetchEntryBody({ entryId, url })
+    if (!fetched.ok) {
+      return { entryId, cached: false, fresh: false, fromFeed: false, error: fetched.error.message }
+    }
+    const value = fetched.value
+    if (value.raw === undefined || value.url === undefined) {
+      return { entryId, cached: false, fresh: false, fromFeed: false, error: value.error ?? 'fetch-failed' }
+    }
+    const extracted = extractArticle(value.raw, value.url)
+    if (!extracted.ok) {
+      return { entryId, cached: false, fresh: false, fromFeed: false, error: extracted.error }
+    }
+    const stored = await remote.storeEntryBody({
+      entryId,
+      url: value.url,
+      html: extracted.html,
+      ...(value.truncated === true ? { truncated: true } : {}),
+    })
+    return stored.ok ? stored.value : { entryId, cached: false, fresh: false, fromFeed: false, error: stored.error.message }
+  }
+
   /** The injected business face, identical for whichever session mounts it. */
   const face = (sessionId: SessionId): ReaderPaneInjected => ({
     capabilities: () => remote.capabilities(),
@@ -110,6 +141,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     refresh: ids => remote.refresh(ids === undefined ? {} : { ids }),
     getBodies: ids => remote.getBodies({ ids }),
     quoteToSideChat: request => remote.quoteToSideChat(request),
+    getEntryBody: request => remote.getEntryBody(request),
+    fetchEntryBody,
+    entryTags: entryId => remote.entryTags({ entryId }),
+    listTags: () => remote.listTags(),
+    createTag: name => remote.createTag({ name }),
+    tagEntry: (entryId, tagId, on) => remote.tagEntry({ entryId, tagId, on }),
+    renameTag: (id, name) => remote.renameTag({ id, name }),
+    deleteTag: id => remote.deleteTag({ id }),
+    pruneTags: () => remote.pruneTags(),
+    getCachePolicy: () => remote.getCachePolicy(),
+    setCachePolicy: (ttlHours, maxEntries) => remote.setCachePolicy(maxEntries === undefined ? { ttlHours } : { ttlHours, maxEntries }),
     readDraft: () => readDraft(sessionId),
     setDraft: merged => { setDraft(sessionId, merged) },
     copyText,

@@ -20,11 +20,14 @@ import type {
   ReaderAddFailure,
   ReaderAddOutcome,
   ReaderAddRefusal,
+  ReaderAnnotationOutcome,
+  ReaderEntryBodyView,
   ReaderBody,
   ReaderCapabilities,
   ReaderMutationOutcome,
   ReaderRefreshResult,
   ReaderSourceSummary,
+  ReaderTag,
 } from '../types.ts'
 import type { createReaderStore } from './store.ts'
 
@@ -74,6 +77,39 @@ export interface ReaderPaneInjected {
     label: string
     text: string
   }) => Promise<RemoteResult<'ok' | 'unavailable'>>
+  /* ---------------------------------------------------- bodies and tags */
+
+  /**
+   * What the host has for one entry: a fresh cached body, else the feed's own
+   * payload, else nothing (plus why a previous fetch failed).
+   */
+  getEntryBody: (request: {
+    entryId: string
+    url: string
+    feedHtml?: string
+  }) => Promise<RemoteResult<ReaderEntryBodyView>>
+  /**
+   * Fetch one entry's article, extract it in THIS process (the host has no
+   * parser) and cache what came out. One call from the view's perspective.
+   */
+  fetchEntryBody: (entryId: string, url: string) => Promise<ReaderEntryBodyView>
+  /** The tags on one entry. */
+  entryTags: (entryId: string) => Promise<RemoteResult<{ tags: ReaderTag[] }>>
+  /** The tag vocabulary, with per-tag usage counts. */
+  listTags: () => Promise<RemoteResult<{ tags: ReaderTag[]; counts: Record<string, number> }>>
+  /** Create a tag, or return the existing one whose name matches. */
+  createTag: (name: string) => Promise<RemoteResult<ReaderTag | ReaderAnnotationOutcome>>
+  /** Add or remove one tag on one entry. */
+  tagEntry: (entryId: string, tagId: string, on: boolean) => Promise<RemoteResult<ReaderAnnotationOutcome>>
+  /** Rename a tag. */
+  renameTag: (id: string, name: string) => Promise<RemoteResult<ReaderAnnotationOutcome>>
+  /** Delete a tag everywhere. */
+  deleteTag: (id: string) => Promise<RemoteResult<ReaderAnnotationOutcome>>
+  /** Drop tags nothing references any more. */
+  pruneTags: () => Promise<RemoteResult<{ removed: number }>>
+  /** Read / set the article cache policy. */
+  getCachePolicy: () => Promise<RemoteResult<{ ttlHours: number; maxEntries: number }>>
+  setCachePolicy: (ttlHours: number, maxEntries?: number) => Promise<RemoteResult<ReaderAnnotationOutcome>>
   /** Read the current conversation draft (the merge `setDraft` needs). */
   readDraft: () => string
   /** Replace the conversation draft with `merged`; a no-op without a session surface. */

@@ -19,10 +19,15 @@ export { ReaderService, classifyPayload, normalizeUrl } from './service.ts'
 export { ReaderRemoteService } from './remote.ts'
 export type { ReaderRemoteConfig } from './remote.ts'
 export {
+  MAX_CACHED_BODIES,
+  MAX_TAGS,
   ReaderStore,
   ReaderStoreError,
+  boundAnnotations,
+  boundPayloads,
   emptyStateDoc,
   normalizeStateDoc,
+  pruneOrphanTags,
   resolveReaderStateRoot,
   serializeStateDoc,
 } from './store.ts'

@@ -62,11 +62,46 @@ export interface ReaderStateDoc {
   readonly version: 1
   readonly sources: readonly ReaderSource[]
   readonly refresh: ReaderRefreshConfig
+  /** How long fetched article bodies are served, and how many are kept. */
+  readonly cache?: ReaderCachePolicy
+  /** The reader's tag vocabulary, keyed by tag id. */
+  readonly tags?: Readonly<Record<string, ReaderTag>>
   /** ISO-8601 timestamp of the last completed refresh run. */
   readonly lastRefreshAt?: string
+  /**
+   * The reader's own annotations, keyed by ENTRY id.
+   *
+   * Deliberately a separate table from the sources: an entry belongs to a feed
+   * that may drop it tomorrow, while a tag the reader put on it is theirs and
+   * must outlive the feed's window. It is also the only place a fetched article
+   * body can live — the sources hold raw payloads, not per-entry markup.
+   */
+  readonly annotations?: Readonly<Record<string, ReaderEntryAnnotation>>
 }
 
-/** The daily refresh schedule. */
+/** One entry's reader-authored state (see the annotations section below). */
+export interface ReaderEntryAnnotation {
+  /** The fetched full text, when one was asked for and arrived. */
+  readonly body?: ReaderEntryBody
+  /** Tag ids on this entry, in the order they were applied. */
+  readonly tagIds?: readonly string[]
+  /** Why the last fetch failed, so a retry is a decision and not a loop. */
+  readonly error?: string
+  /** When that failure was recorded (ISO-8601). */
+  readonly failedAt?: string
+}
+
+/** How long a fetched article body is served before the reader is offered a refetch. */
+export interface ReaderCachePolicy {
+  /** 0 means "never expires" (the body is kept until the budget evicts it). */
+  readonly ttlHours: number
+  /** How many entry bodies may be retained at once (oldest evicted first). */
+  readonly maxEntries: number
+}
+
+/** The default cache policy: a day, and a few hundred articles. */
+export const DEFAULT_CACHE_POLICY: ReaderCachePolicy = { ttlHours: 24, maxEntries: 500 }
+
 export interface ReaderRefreshConfig {
   readonly enabled: boolean
   /** Local time of day as `HH:MM`; defaults to `10:00`. */
@@ -290,4 +325,70 @@ function hash32(input: string): number {
     hash = Math.imul(hash, 0x01000193)
   }
   return hash >>> 0
+}
+
+/* ----------------------------------------------------------- entry annotations */
+
+/**
+ * One entry's cached article body, keyed by the entry's stable id.
+ *
+ * A feed may publish full text for some entries and only a summary for others
+ * (measured: the OpenAI alignment feed runs 155 to 62,044 characters entry by
+ * entry), so this is where the full text of a summary-only entry lives once the
+ * reader has asked for it. Keyed by entry id — NOT by the source — because the
+ * id is derived from the entry's guid/link and therefore survives every
+ * refresh; keying by "position in the feed" would mix entries up on the next
+ * fetch.
+ */
+export interface ReaderEntryBody {
+  /** Whitelist-normalized article markup, ready for the detail view. */
+  readonly html: string
+  /** When it was fetched (ISO-8601), for the "fetched just now" line and pruning. */
+  readonly fetchedAt: string
+  /**
+   * When it stops being served without asking again (ISO-8601).
+   *
+   * A cached body is an optimization, not an archive: the acceptance decision
+   * was 24h, because a reader re-opens an article within the day or not at all.
+   * Past the deadline the detail view offers the fetch again rather than
+   * silently serving yesterday's copy.
+   */
+  readonly expiresAt: string
+  /** The URL it was fetched from, so a source edit is detectable. */
+  readonly url: string
+  /** True when the fetch hit the seam's cap (the note then says so honestly). */
+  readonly truncated?: boolean
+}
+
+/** One user-defined tag. */
+export interface ReaderTag {
+  /** Stable id — renaming a tag must not rewrite every entry that carries it. */
+  readonly id: string
+  /** The reader-facing name, unique case-insensitively. */
+  readonly name: string
+  readonly createdAt: string
+}
+
+/** A mutation on the annotation face, as a bare domain value. */
+export type ReaderAnnotationOutcome = 'ok' | 'not-found' | 'invalid' | 'duplicate' | 'unavailable' | 'empty'
+
+/**
+ * What the pane asks for when it opens one entry.
+ *
+ * `html` present means the detail view can render immediately. Absent means
+ * there is nothing beyond the feed summary and the view should offer the fetch.
+ */
+export interface ReaderEntryBodyView {
+  readonly entryId: string
+  /** True when this body is a cached fetch rather than the feed's own payload. */
+  readonly cached: boolean
+  /** False when the cache's deadline has passed: the view offers the fetch. */
+  readonly fresh: boolean
+  /** True when the feed's payload already carries full text for this entry. */
+  readonly fromFeed: boolean
+  readonly html?: string
+  readonly fetchedAt?: string
+  readonly truncated?: boolean
+  /** Why a fetch could not produce a body, when one was attempted. */
+  readonly error?: string
 }

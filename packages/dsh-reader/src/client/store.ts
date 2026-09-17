@@ -13,7 +13,7 @@
  * @module @khorsheed/dsh-reader/client/store
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { ReaderSourceSummary } from '../types.ts'
+import type { ReaderSourceSummary, ReaderTag } from '../types.ts'
 import type { ReaderEntry } from './parse-rss.ts'
 
 /** Which slice of the list the pane shows. */
@@ -55,6 +55,17 @@ export interface ReaderState {
   openEntryId: string | null
   /** The open entry's source id. */
   openSourceId: string | null
+  /** The tag vocabulary, with usage counts (from the host). */
+  tags: ReaderTag[]
+  tagCounts: Record<string, number>
+  /** Tag ids per entry id — what the detail view and the filters read. */
+  entryTagIds: Record<string, string[]>
+  /** Entry ids whose article is being fetched right now. */
+  fetching: Record<string, true>
+  /** Entry id → whether its cached body is past its deadline. */
+  staleBodies: Record<string, true>
+  /** The article cache policy, from the host. */
+  cacheTtlHours: number
   /** Which surface is up: the wall, one entry, or subscription management. */
   view: ReaderView
   /** Which slice of the list to show. */
@@ -88,6 +99,11 @@ export type ReaderActions = {
   clearParsed: (draft: ReaderState) => void
   openEntry: (draft: ReaderState, entryId: string, sourceId: string) => void
   setView: (draft: ReaderState, view: ReaderView) => void
+  setTags: (draft: ReaderState, tags: ReaderTag[], counts: Record<string, number>) => void
+  setEntryTags: (draft: ReaderState, entryId: string, tagIds: string[]) => void
+  setFetching: (draft: ReaderState, entryId: string, fetching: boolean) => void
+  setStaleBody: (draft: ReaderState, entryId: string, stale: boolean) => void
+  setCacheTtl: (draft: ReaderState, hours: number) => void
   setRefreshing: (draft: ReaderState, refreshing: boolean) => void
   /** Record that a refresh run finished, including one with failures. */
   noteRefreshed: (draft: ReaderState, at: string) => void
@@ -114,6 +130,12 @@ const INITIAL: ReaderState = {
   articleError: null,
   openEntryId: null,
   openSourceId: null,
+  tags: [],
+  tagCounts: {},
+  entryTagIds: {},
+  fetching: {},
+  staleBodies: {},
+  cacheTtlHours: 24,
   view: 'list',
   // 'all' rather than 'today': a subscription's entries are usually NOT from
   // today (measured: the acceptance instance's feed's newest item was 8 days
@@ -153,6 +175,23 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       },
       clearParsed: (d) => { d.parsed = {} },
       setView: (d, view) => { d.view = view },
+      setTags: (d, tags, counts) => { d.tags = tags; d.tagCounts = counts },
+      setEntryTags: (d, entryId, tagIds) => {
+        d.entryTagIds = { ...d.entryTagIds, [entryId]: tagIds }
+      },
+      setFetching: (d, entryId, fetching) => {
+        const next = { ...d.fetching }
+        if (fetching) next[entryId] = true
+        else delete next[entryId]
+        d.fetching = next
+      },
+      setStaleBody: (d, entryId, stale) => {
+        const next = { ...d.staleBodies }
+        if (stale) next[entryId] = true
+        else delete next[entryId]
+        d.staleBodies = next
+      },
+      setCacheTtl: (d, hours) => { d.cacheTtlHours = hours },
       setRefreshing: (d, refreshing) => { d.refreshing = refreshing },
       noteRefreshed: (d, at) => {
         d.lastRefreshAt = at

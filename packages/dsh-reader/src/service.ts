@@ -30,15 +30,20 @@ import { ReaderStore, ReaderStoreError, emptyStateDoc } from './store.ts'
 import {
   defaultSourceLabel,
   errorMessage,
+  DEFAULT_CACHE_POLICY,
   type ReaderAddFailure,
   type ReaderAddOutcome,
   type ReaderAddRefusal,
+  type ReaderAnnotationOutcome,
+  type ReaderEntryAnnotation,
+  type ReaderEntryBodyView,
   type ReaderBody,
   type ReaderCapabilities,
   type ReaderMutationOutcome,
   type ReaderRefreshResult,
   type ReaderSource,
   type ReaderSourceSummary,
+  type ReaderTag,
   type ReaderStateDoc,
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
@@ -366,6 +371,279 @@ export class ReaderService {
     }
   }
 
+  /* -------------------------------------------------- entry bodies and tags */
+
+  /**
+   * The body the detail view should render for one entry, if any.
+   *
+   * The order is the whole contract: a fresh cached fetch wins (it is full text
+   * the reader already paid for), then the feed's own payload, and only when
+   * neither exists does the view offer to fetch. A STALE cache entry reports
+   * `fresh: false` and no html — the detail view then offers the fetch again
+   * rather than quietly serving yesterday's copy.
+   *
+   * @param request - the entry and the payload the feed gave for it.
+   * @returns what there is to show, and whether a fetch is worth offering.
+   */
+  async getEntryBody(request: {
+    entryId: string
+    url: string
+    feedHtml?: string
+  }): Promise<ReaderEntryBodyView> {
+    const doc = await this.currentDoc()
+    const cached = doc.annotations?.[request.entryId]?.body
+    if (cached !== undefined) {
+      const fresh = isFresh(cached.expiresAt)
+      return {
+        entryId: request.entryId,
+        cached: true,
+        fresh,
+        fromFeed: false,
+        fetchedAt: cached.fetchedAt,
+        ...(cached.truncated === true ? { truncated: true } : {}),
+        ...(fresh && cached.url === request.url ? { html: cached.html } : {}),
+      }
+    }
+    if (request.feedHtml !== undefined && request.feedHtml.length > 0) {
+      return { entryId: request.entryId, cached: false, fresh: true, fromFeed: true, html: request.feedHtml }
+    }
+    const failure = doc.annotations?.[request.entryId]
+    return {
+      entryId: request.entryId,
+      cached: false,
+      fresh: true,
+      fromFeed: false,
+      ...(failure?.error === undefined ? {} : { error: failure.error }),
+    }
+  }
+
+  /**
+   * Fetch one entry's article and hand the raw HTML to the browser.
+   *
+   * The HOST does not extract: extraction needs a DOM, and this runtime has no
+   * XML/HTML parser at all (the same reason feed parsing lives in the browser
+   * half). So this verb is the network half only — it returns what came back,
+   * and `storeEntryBody` persists what the browser made of it.
+   *
+   * Fetching here is deliberately NOT automatic on refresh: doing it for every
+   * summary-only entry would make this a crawler of other people's sites, which
+   * the design refuses. One entry, one fetch, on the reader's request.
+   *
+   * @param request - the entry and its article URL.
+   * @returns the raw payload, or why there is none.
+   */
+  async fetchEntryBody(request: {
+    entryId: string
+    url: string
+  }): Promise<{ entryId: string; url?: string; raw?: string; truncated?: boolean; error?: string }> {
+    const url = normalizeUrl(request.url)
+    if (url === undefined) {
+      await this.recordFetchFailure(request.entryId, 'invalid-url')
+      return { entryId: request.entryId, error: 'invalid-url' }
+    }
+    try {
+      const fetched = await this.fetchFollowing(url)
+      return {
+        entryId: request.entryId,
+        url: fetched.url,
+        raw: fetched.raw,
+        ...(fetched.truncated ? { truncated: true } : {}),
+      }
+    } catch (error) {
+      const message = errorMessage(error)
+      await this.recordFetchFailure(request.entryId, message)
+      return { entryId: request.entryId, error: message }
+    }
+  }
+
+  /**
+   * Cache the markup the browser extracted for one entry.
+   *
+   * The deadline is computed here, not on the client, so the policy has exactly
+   * one owner (this service's document) — a client that guessed the TTL would
+   * be a second implementation of it.
+   *
+   * @param request - the entry, the markup, and the URL it came from.
+   * @returns the stored view.
+   */
+  async storeEntryBody(request: {
+    entryId: string
+    url: string
+    html: string
+    truncated?: boolean
+  }): Promise<ReaderEntryBodyView> {
+    const html = request.html.trim()
+    if (html.length === 0) {
+      await this.recordFetchFailure(request.entryId, 'empty extraction')
+      return { entryId: request.entryId, cached: false, fresh: false, fromFeed: false, error: 'empty extraction' }
+    }
+    const doc = await this.currentDoc()
+    const ttlHours = doc.cache?.ttlHours ?? DEFAULT_CACHE_POLICY.ttlHours
+    const now = new Date()
+    const body: NonNullable<ReaderEntryAnnotation['body']> = {
+      html,
+      fetchedAt: now.toISOString(),
+      // 0 = keep until the budget evicts it; a far-future date keeps the
+      // freshness check a single comparison instead of a special case.
+      expiresAt: ttlHours === 0
+        ? new Date(now.getTime() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
+        : new Date(now.getTime() + ttlHours * 60 * 60 * 1000).toISOString(),
+      url: request.url,
+      ...(request.truncated === true ? { truncated: true } : {}),
+    }
+    await this.commit(current => {
+      const existing = current.annotations?.[request.entryId]
+      const tagIds = existing?.tagIds
+      return {
+        ...current,
+        annotations: {
+          ...current.annotations,
+          [request.entryId]: tagIds === undefined ? { body } : { body, tagIds },
+        },
+      }
+    })
+    return {
+      entryId: request.entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: body.html,
+      fetchedAt: body.fetchedAt,
+      ...(body.truncated === true ? { truncated: true } : {}),
+    }
+  }
+
+  /** The tag vocabulary plus which entry ids carry each tag. */
+  async listTags(): Promise<{ tags: ReaderTag[]; counts: Record<string, number> }> {
+    const doc = await this.currentDoc()
+    const tags = Object.values(doc.tags ?? {}).sort((a, b) => a.name.localeCompare(b.name))
+    const counts: Record<string, number> = {}
+    for (const annotation of Object.values(doc.annotations ?? {})) {
+      for (const id of annotation.tagIds ?? []) counts[id] = (counts[id] ?? 0) + 1
+    }
+    return { tags, counts }
+  }
+
+  /**
+   * Create a tag, or return the existing one with the same name.
+   *
+   * Names are matched case-insensitively on purpose: "AI" and "ai" becoming two
+   * tags is what makes a tag system useless for filtering, and the reader
+   * cannot be expected to remember which spelling they used.
+   *
+   * @param request - the name to create or find.
+   * @returns the tag id, or a refusal.
+   */
+  async createTag(request: { name: string }): Promise<ReaderTag | ReaderAnnotationOutcome> {
+    const name = request.name.trim().slice(0, 40)
+    if (name.length === 0) return 'empty'
+    const doc = await this.currentDoc()
+    const existing = Object.values(doc.tags ?? {}).find(tag => tag.name.toLowerCase() === name.toLowerCase())
+    if (existing !== undefined) return existing
+    const tag: ReaderTag = { id: `tag-${hash(name.toLowerCase())}`, name, createdAt: new Date().toISOString() }
+    await this.commit(current => ({ ...current, tags: { ...current.tags, [tag.id]: tag } }))
+    return tag
+  }
+
+  /** Rename a tag (its id, and therefore every entry that carries it, is untouched). */
+  async renameTag(request: { id: string; name: string }): Promise<ReaderAnnotationOutcome> {
+    const name = request.name.trim().slice(0, 40)
+    if (name.length === 0) return 'empty'
+    const doc = await this.currentDoc()
+    if (doc.tags?.[request.id] === undefined) return 'not-found'
+    await this.commit(current => ({
+      ...current,
+      tags: { ...current.tags, [request.id]: { ...current.tags?.[request.id], id: request.id, name } as ReaderTag },
+    }))
+    return 'ok'
+  }
+
+  /** Drop a tag from the vocabulary and from every entry that carried it. */
+  async deleteTag(request: { id: string }): Promise<ReaderAnnotationOutcome> {
+    const doc = await this.currentDoc()
+    if (doc.tags?.[request.id] === undefined) return 'not-found'
+    await this.commit(current => {
+      const annotations: Record<string, ReaderEntryAnnotation> = {}
+      for (const [entryId, entry] of Object.entries(current.annotations ?? {})) {
+        const tagIds = (entry.tagIds ?? []).filter(id => id !== request.id)
+        annotations[entryId] = tagIds.length > 0
+          ? { ...entry, tagIds }
+          : withoutTags(entry)
+      }
+      const { [request.id]: _removed, ...tags } = current.tags ?? {}
+      return { ...current, tags, annotations: cleanupAnnotations(annotations) }
+    })
+    return 'ok'
+  }
+
+  /** Add or remove one tag on one entry. */
+  async tagEntry(request: { entryId: string; tagId: string; on: boolean }): Promise<ReaderAnnotationOutcome> {
+    const doc = await this.currentDoc()
+    if (doc.tags?.[request.tagId] === undefined) return 'not-found'
+    await this.commit(current => {
+      const entry = current.annotations?.[request.entryId] ?? {}
+      const ids = new Set(entry.tagIds ?? [])
+      if (request.on) ids.add(request.tagId)
+      else ids.delete(request.tagId)
+      const tagIds = [...ids]
+      return {
+        ...current,
+        annotations: {
+          ...current.annotations,
+          [request.entryId]: tagIds.length > 0 ? { ...entry, tagIds } : withoutTags(entry),
+        },
+      }
+    })
+    return 'ok'
+  }
+
+  /** The tags on one entry. */
+  async entryTags(request: { entryId: string }): Promise<{ tags: ReaderTag[] }> {
+    const doc = await this.currentDoc()
+    const ids = new Set(doc.annotations?.[request.entryId]?.tagIds ?? [])
+    return { tags: Object.values(doc.tags ?? {}).filter(tag => ids.has(tag.id)) }
+  }
+
+  /** How long a fetched body is served, and how many are kept. */
+  async getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number }> {
+    const doc = await this.currentDoc()
+    return doc.cache ?? DEFAULT_CACHE_POLICY
+  }
+
+  /** Change the cache policy (`ttlHours: 0` = keep until the budget evicts). */
+  async setCachePolicy(request: { ttlHours: number; maxEntries?: number }): Promise<ReaderAnnotationOutcome> {
+    if (!Number.isFinite(request.ttlHours) || request.ttlHours < 0 || request.ttlHours > 24 * 90) return 'invalid'
+    const doc = await this.currentDoc()
+    const maxEntries = request.maxEntries ?? doc.cache?.maxEntries ?? DEFAULT_CACHE_POLICY.maxEntries
+    await this.commit(current => ({ ...current, cache: { ttlHours: request.ttlHours, maxEntries } }))
+    return 'ok'
+  }
+
+  /** Drop tags no entry references any more. */
+  async pruneTags(): Promise<{ removed: number }> {
+    const doc = await this.currentDoc()
+    const used = new Set(Object.values(doc.annotations ?? {}).flatMap(entry => entry.tagIds ?? []))
+    const kept: Record<string, ReaderTag> = {}
+    let removed = 0
+    for (const [id, tag] of Object.entries(doc.tags ?? {})) {
+      if (used.has(id)) kept[id] = tag
+      else removed += 1
+    }
+    if (removed > 0) await this.commit(current => ({ ...current, tags: kept }))
+    return { removed }
+  }
+
+  /** Record why a fetch produced nothing, so the retry is a decision. */
+  private async recordFetchFailure(entryId: string, error: string): Promise<void> {
+    await this.commit(current => ({
+      ...current,
+      annotations: {
+        ...current.annotations,
+        [entryId]: { ...current.annotations?.[entryId], error, failedAt: new Date().toISOString() },
+      },
+    }))
+  }
+
   /* --------------------------------------------------------------- internals */
 
   /** The probed web seam (no host import, no boot-time dependency). */
@@ -514,4 +792,43 @@ function summarize(source: ReaderSource): ReaderSourceSummary {
     ...(source.error !== undefined ? { error: source.error } : {}),
     ...(source.truncated === true ? { truncated: true } : {}),
   }
+}
+
+/**
+ * The same annotation with no `tagIds` key at all.
+ *
+ * Under `exactOptionalPropertyTypes` an explicit `undefined` is not the same as
+ * an absent optional field, and this document is serialized straight to disk —
+ * so an empty tag list must be an ABSENT key, not a null one.
+ *
+ * @param entry - the annotation to strip.
+ * @returns the annotation without its tag list.
+ */
+function withoutTags(entry: ReaderEntryAnnotation): ReaderEntryAnnotation {
+  const { tagIds: _removed, ...rest } = entry
+  return rest
+}
+
+/**
+ * Drop annotations that carry nothing, so the document does not accumulate
+ * empty objects as tags are removed.
+ *
+ * @param annotations - the table to clean.
+ * @returns the table with empty entries removed.
+ */
+function cleanupAnnotations(
+  annotations: Record<string, ReaderEntryAnnotation>,
+): Record<string, ReaderEntryAnnotation> {
+  const out: Record<string, ReaderEntryAnnotation> = {}
+  for (const [entryId, entry] of Object.entries(annotations)) {
+    if (entry.body === undefined && (entry.tagIds ?? []).length === 0 && entry.error === undefined) continue
+    out[entryId] = (entry.tagIds ?? []).length > 0 ? entry : withoutTags(entry)
+  }
+  return out
+}
+
+/** Whether a cache deadline is still in the future. */
+function isFresh(expiresAt: string): boolean {
+  const deadline = new Date(expiresAt).getTime()
+  return Number.isFinite(deadline) && deadline > Date.now()
 }

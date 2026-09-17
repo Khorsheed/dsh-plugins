@@ -17,7 +17,9 @@ export const NS = 'reader'
 export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
-  | 'filter.readState' | 'filter.bySource' | 'action.filter'
+  | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
+  | 'action.fetchBody' | 'detail.bodyStale' | 'action.more' | 'action.addTag'
+  | 'tag.title' | 'tag.placeholder'
   | 'search.placeholder'
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
@@ -32,8 +34,10 @@ export type ReaderKey =
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
-  | 'sources.name' | 'sources.url' | 'action.pause' | 'action.resume'
+  | 'sources.name' | 'sources.url' | 'sources.cache' | 'sources.cacheHelp'
+  | 'sources.cacheHours' | 'sources.cacheForever' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
+  | 'detail.summaryOnly'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
   | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
   | 'foot.refreshing'
@@ -53,6 +57,13 @@ export const en = {
   'filter.readState': 'Read state',
   'filter.bySource': 'By source',
   'action.filter': 'Filter',
+  'action.fetchBody': 'Fetch the text',
+  'action.more': 'More actions',
+  'action.addTag': 'Tags…',
+  'detail.bodyStale': 'The saved copy is out of date — fetch it again?',
+  'tag.title': 'Tags',
+  'tag.placeholder': 'Tag name, then Enter',
+  'filter.byTag': 'By tag',
   'search.placeholder': 'Search titles, authors, sources…',
   'sort.title': 'Sort',
   'sort.newest': 'Newest first',
@@ -108,11 +119,16 @@ export const en = {
   'sources.never': 'Not fetched yet',
   'sources.cardHint': 'Subscription',
   'sources.name': 'Name',
+  'sources.cache': 'Keep fetched articles',
+  'sources.cacheHelp': 'A fetched article is served from the cache until this deadline; after that, opening it offers the fetch again. 0 means keep it until the storage budget evicts it.',
+  'sources.cacheHours': '{count} hours',
+  'sources.cacheForever': 'Until evicted',
   'sources.url': 'Feed address',
 
   'detail.incomplete': 'Limited length, content shown in part',
   'detail.readOriginal': 'Read the original',
   'detail.extractFailed': 'Could not extract the body locally — the page is larger than the host fetch cap.',
+  'detail.summaryOnly': 'This feed publishes only a summary for this entry — the full text lives on the original page.',
   'detail.alsoFrom': 'Also from this source',
   'detail.composerLabel': 'Current conversation draft',
   'detail.composerEmpty': '(empty)',
@@ -148,6 +164,13 @@ export const zh = {
   'filter.readState': '阅读状态',
   'filter.bySource': '按来源',
   'action.filter': '筛选',
+  'action.fetchBody': '抓取正文',
+  'action.more': '更多操作',
+  'action.addTag': '打标签…',
+  'detail.bodyStale': '存的正文已过期 —— 重新抓取？',
+  'tag.title': '标签',
+  'tag.placeholder': '标签名，回车确认',
+  'filter.byTag': '按标签',
   'search.placeholder': '搜索标题、作者、来源…',
   'sort.title': '排序',
   'sort.newest': '最新在前',
@@ -203,11 +226,16 @@ export const zh = {
   'sources.never': '尚未抓取',
   'sources.cardHint': '订阅源',
   'sources.name': '名称',
+  'sources.cache': '正文保留',
+  'sources.cacheHelp': '抓到的正文在这个期限前直接读缓存；过期后再打开会问你（这里问一次即可，页面上的按钮同样会提示）。0 = 一直留到存储预算淘汰它。',
+  'sources.cacheHours': '{count} 小时',
+  'sources.cacheForever': '留到被淘汰',
   'sources.url': '订阅地址',
 
   'detail.incomplete': '受限篇幅，内容未完整呈现',
   'detail.readOriginal': '阅读原文',
   'detail.extractFailed': '无法在本地提取正文 —— 页面超过宿主单次抓取的上限。',
+  'detail.summaryOnly': '这条订阅源只发布了摘要 —— 全文在原文页面上。',
   'detail.alsoFrom': '同一来源',
   'detail.composerLabel': '当前会话草稿',
   'detail.composerEmpty': '（空）',

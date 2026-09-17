@@ -15,6 +15,7 @@
 }
 
 .head {
+  min-width: 0;
   display: flex;
   flex: none;
   align-items: center;
@@ -65,6 +66,7 @@
 }
 
 .tools {
+  min-width: 0;
   display: flex;
   flex: none;
   align-items: center;
@@ -407,6 +409,7 @@
 }
 
 .bar {
+  min-width: 0;
   /* `--reader-gutter` minus the icon tool's own inner box, so the TITLE lands on
      the same left edge as the body text below it. */
   --reader-bar-pad: calc(var(--reader-gutter) - 10px);
@@ -1273,4 +1276,135 @@
   outline: none;
   border-color: var(--dsw-static-deepseek-500);
   background: var(--dsw-alias-bg-base);
+}
+
+/* ------------------------------------------------------------- entry tags */
+
+/* The tag editor under the article: chips the reader owns, plus the one input.
+   Sits in the same vertical rhythm as the rest of the detail furniture. */
+.tagEdit {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.tagEditLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+}
+
+.tagChipRemove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tagChipRemove:hover {
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+.tagAdd {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.tagAdd:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tagInput {
+  width: 150px;
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-static-deepseek-500);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11px;
+  outline: none;
+}
+
+/* The per-card action menu (right-click, or the card's own button). Floating,
+   anchored at the pointer, dismissed by the next action. */
+.cardMenu {
+  position: fixed;
+  z-index: 40;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.cardMenu button {
+  display: block;
+  width: 100%;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cardMenu button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The affordance the menu hangs off: quiet until the card is hovered. */
+.cardMenuButton {
+  position: absolute;
+  top: 6px;
+  right: 22px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.card:hover .cardMenuButton,
+.cardMenuButton:focus-visible {
+  opacity: 1;
+}
+
+.cardMenuButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
