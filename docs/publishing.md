@@ -8,7 +8,7 @@
 npm whoami                                    # 1. 确认账号是你以为的那个
 npm view <包名> version                        # 2. 线上最新版本;新版本必须更高(403/409 就是撞这个)
 pnpm --filter <包名> run build && pnpm --filter <包名> test   # 3. 构建和测试全绿
-pnpm exec tsx scripts/pack-dist.ts --package <包目录> --scope @khorsheed --version <新版本> --out /tmp/dist   # 4. 打包(会做 scope 重写和 files 校验)
+pnpm exec tsx scripts/pack-dist.ts --package <包目录> --scope @khorsheed --version <新版本> --out /tmp/dist --family auto   # 4. 打包(会做 scope 重写和 files 校验;--family auto 自动带上伴生边)
 tar -tzf /tmp/dist/<包>.tgz                    # 5. 检查 tarball:lib/、cordis.patch.yml、scripts/ 一个不能少
 ```
 
