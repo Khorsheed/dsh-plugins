@@ -16,7 +16,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   BUCKETS, INCIDENTAL_FACTORS, NAMED_FACTORS, bucketPhrase, distinctStates, factorPhrase,
-  factorValueText, isNamedFactor, preferredColumn, retryPhrase, shortHash, splitFactors, stagePhrase,
+  factorValueText, isNamedFactor, preferredColumn, retryPhrase, shortHash, shortenValue, splitFactors,
+  stagePhrase,
 } from '../src/client/vocab.ts'
 import { en, zh, type EvalKey } from '../src/client/locales.ts'
 
@@ -137,6 +138,15 @@ describe('the value and digest formatting', () => {
 
   it('falls back to the host’s label for the absent sentinel, which is not JSON', () => {
     expect(factorValueText(ABSENT, '—')).toEqual({ text: '—', title: '—' })
+  })
+
+  it('shortens a VALUE that happens to be a digest', () => {
+    // `home.sha` reaches the page twice — the matrix's folded list of derived
+    // fields, and the two-condition diff — and it is 64 hex characters.
+    expect(shortenValue('"' + 'a'.repeat(64) + '"')).toBe(`${'a'.repeat(12)}…`)
+    // A word is a word: nothing short or non-hex is touched.
+    expect(shortenValue('v4-flash')).toBe('v4-flash')
+    expect(shortenValue('"unrestricted"')).toBe('"unrestricted"')
   })
 
   it('shortens a digest to twelve and keeps a kind prefix', () => {

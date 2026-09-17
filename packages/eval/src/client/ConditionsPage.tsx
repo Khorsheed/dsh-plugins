@@ -42,7 +42,7 @@ import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { Chip, Detail, EmptyState, Field, Hash, Word, severityKey, severityTone } from './parts.tsx'
-import { factorPhrase } from './vocab.ts'
+import { factorPhrase, shortenValue } from './vocab.ts'
 import type { ConditionActionNote } from './store.ts'
 import css from './LabView.module.css'
 
@@ -200,8 +200,12 @@ function Diff(props: { diff: EvalConditionDiffView; t: LabViewProps['t'] }) {
               <span className={css.diffPath} title={entry.path}>
                 <Word phrase={factorPhrase(entry.path)} t={t} />
               </span>
-              <span className={css.diffValue}>{entry.a ?? <em className={css.dim}>{t('conditions.diffAbsent')}</em>}</span>
-              <span className={css.diffValue}>{entry.b ?? <em className={css.dim}>{t('conditions.diffAbsent')}</em>}</span>
+              <span className={css.diffValue} title={entry.a ?? undefined}>
+                {entry.a === null ? <em className={css.dim}>{t('conditions.diffAbsent')}</em> : shortenValue(entry.a)}
+              </span>
+              <span className={css.diffValue} title={entry.b ?? undefined}>
+                {entry.b === null ? <em className={css.dim}>{t('conditions.diffAbsent')}</em> : shortenValue(entry.b)}
+              </span>
             </div>
           ))}
         </div>

@@ -278,3 +278,19 @@ export function factorValueText(key: string, label: string): { text: string; tit
 export function distinctStates(reps: ReadonlyArray<{ state: string }>): string[] {
   return [...new Set(reps.map(rep => rep.state))].sort()
 }
+
+/**
+ * Shorten a VALUE that happens to be a digest.
+ *
+ * Condition values are short words (`v4-flash`, `unrestricted`) with one
+ * exception: `home.sha` is 64 hex characters, and it reaches the page twice —
+ * in the matrix's folded list of derived fields, and in the two-condition diff
+ * table. ui-spec §九 caps a hash at twelve wherever it is shown, so the same
+ * rule applies to a value that is one.
+ * @param text - the value as a person would read it.
+ * @returns the text, with a bare digest shortened.
+ */
+export function shortenValue(text: string): string {
+  const bare = text.replace(/^"|"$/g, '')
+  return /^[0-9a-f]{32,}$/i.test(bare) ? shortHash(bare) : text
+}

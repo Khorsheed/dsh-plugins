@@ -33,7 +33,7 @@ import type { EvalMatrixCell, EvalMatrixInvariant, EvalMatrixView } from '../typ
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { Chip, EmptyState, Section, Word, invariantTone, stageTone } from './parts.tsx'
-import { distinctStates, factorPhrase, factorValueText, splitFactors, stagePhrase } from './vocab.ts'
+import { distinctStates, factorPhrase, factorValueText, shortenValue, splitFactors, stagePhrase } from './vocab.ts'
 import css from './LabView.module.css'
 
 /** The dot glyphs, in the spec's own words: 实心已判 / 半心进行中 / 空心未起. */
@@ -233,7 +233,7 @@ function Incidental(props: { matrix: EvalMatrixView; paths: readonly string[]; t
             </span>
             <span className={css.dim}>
               {values
-                .map(value => `${value.conditions.join(', ')}: ${factorValueText(value.key, value.label).text}`)
+                .map(value => `${value.conditions.join(', ')}: ${shortenValue(factorValueText(value.key, value.label).text)}`)
                 .join(' · ')}
             </span>
           </div>
