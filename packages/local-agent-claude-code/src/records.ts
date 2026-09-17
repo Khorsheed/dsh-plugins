@@ -107,17 +107,36 @@ interface KeychainItem {
 }
 
 /**
- * A `security dump-keychain` timedate (`2026-09-01 02:03:04 +0000`) as epoch
- * ms; undefined when the shape is not recognized (the item then sorts as
- * oldest).
+ * A `security dump-keychain` timedate as epoch ms; undefined when the shape is
+ * not recognized (the item then sorts as oldest).
+ *
+ * The shape that matters is the COMPACT Zulu stamp `20260916040855Z`, because
+ * that is what the tool actually prints — with the attribute's trailing NUL
+ * rendered as a literal `\000` after the closing digit, so the match must not
+ * anchor at the end. Only the spaced `2026-09-01 02:03:04 +0000` form was
+ * parsed before, which no `security` build was observed to emit: every item
+ * fell to the `?? 0` default, the newest-first sort over all-equal keys
+ * degenerated to the dump's own order (a stable sort), and
+ * `readKeychainCredential` returned whichever usable item the dump happened to
+ * list first. A scoped home that had been logged in twice then kept serving the
+ * SUPERSEDED credential — the fresh login sat unread in the keychain while the
+ * runtime ran on a generation whose refresh token was already spent. The
+ * spaced form is still accepted in case some build does emit it.
  * @param text - the quoted timedate string from the dump.
  * @returns the epoch milliseconds, or undefined.
  */
 function keychainTimestamp(text: string): number | undefined {
-  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$/.exec(text.trim())
-  if (match === null) return undefined
-  const part = (index: number): number => Number(match[index])
-  const offsetMinutes = (part(8) * 60 + part(9)) * (match[7] === '+' ? 1 : -1)
+  const trimmed = text.trim()
+  const compact = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z/.exec(trimmed)
+  if (compact !== null) {
+    const at = (index: number): number => Number(compact[index])
+    const ms = Date.UTC(at(1), at(2) - 1, at(3), at(4), at(5), at(6))
+    return Number.isFinite(ms) ? ms : undefined
+  }
+  const spaced = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$/.exec(trimmed)
+  if (spaced === null) return undefined
+  const part = (index: number): number => Number(spaced[index])
+  const offsetMinutes = (part(8) * 60 + part(9)) * (spaced[7] === '+' ? 1 : -1)
   const ms = Date.UTC(part(1), part(2) - 1, part(3), part(4), part(5), part(6)) - offsetMinutes * 60_000
   return Number.isFinite(ms) ? ms : undefined
 }

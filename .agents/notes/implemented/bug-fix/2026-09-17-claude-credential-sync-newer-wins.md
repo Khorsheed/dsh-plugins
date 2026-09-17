@@ -57,6 +57,7 @@ The return value now answers "a usable credential is in the file after the call"
 - The keychain may now drift arbitrarily far behind the file. Harmless while the host CLI reads the file, and the stores re-converge on their own: once the file wins, the next host round refreshes from it and writes the keychain itself. A keychain write-back was considered and deferred (below).
 - A rare, real event is now visible in the log instead of reconstructible from a file mtime.
 - On a Linux host, where the keychain does not exist, a usable file is no longer reported as an unusable credential.
+- WHICH keychain item this reconcile compares against is decided by the service enumeration's newest-first ordering, and that ordering had a defect of its own — it never parsed the stamp `security` prints, so it returned whichever usable item the dump listed first. Newer-wins is only as good as the item it is handed; see [the keychain stamp ordering note](2026-09-17-keychain-stamp-ordering.md).
 
 ## Alternatives considered
 
@@ -83,6 +84,7 @@ Not covered by tests, and the reason it is not: a REAL rotation inside a unit ne
 - **The concurrent-refresh race remains.** Newer-wins removes the systematic resurrection, but two processes refreshing the same single-use token at the same moment still lose one chain. A host round overlapping a container round can still do this; the container path is serial per cell, so the window is small but real. Only the named-scope alternative removes it.
 - **`expiresAt` as the freshness key** assumes a refresh always mints a later access expiry. A blob missing the field falls back to keychain-wins; a file hand-edited to a future expiry would win wrongly, which only an operator can cause.
 - **A dead credential still reads as authenticated.** `credentialFileExpiry` returns the later of the access and refresh expiries, so a blob whose access token expired days ago but whose refresh expiry is weeks out reports authenticated until a round fails. Untouched here on purpose: tightening the probe would turn currently-ready scopes not-ready, which is a separate decision. Recorded as an observation.
+  One consequence was then measured: the login watch syncs and then probes, so a stale-but-"authenticated" blob makes the watch declare success and stop. On the instance this note came from it stopped 51 seconds BEFORE the fresh login reached the keychain — the file's write stamp preceded the new item's by that much — and nothing mirrored the real credential afterwards.
 
 ## Other harnesses
 
