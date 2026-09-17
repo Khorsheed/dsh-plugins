@@ -26,7 +26,9 @@ import type {
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import type { LabStartedRun } from './store.ts'
-import { Field, StartedRun, factorCell, listOrDash, snapshotCell } from './parts.tsx'
+import {
+  Chip, Detail, FactorCell, Field, StartedRun, listOrDash, severityKey, severityTone, snapshotCell,
+} from './parts.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
@@ -43,13 +45,18 @@ function lockKey(lock: EvalPlanCondition['lock']): EvalKey {
   return lock.matches ? 'review.lockOk' : 'review.lockStale'
 }
 
-/** One `ok / warn / error` line of the validate list. */
+/**
+ * One `ok / warn / error` line of the validate list.
+ *
+ * The diagnostic CODE is the host's handle on the check, not a word — it goes
+ * in the row's `title` (ui-spec §九), and the sentence beside the chip is what
+ * the reviewer reads.
+ */
 function CheckLine(props: { check: EvalPlanCheck; t: LabViewProps['t'] }) {
   const { check, t } = props
   return (
-    <div className={css.checkLine}>
-      <span className={css.checkSeverity} data-severity={check.severity}>{t(`severity.${check.severity}`)}</span>
-      <span className={css.mono}>{check.code}</span>
+    <div className={css.checkLine} title={check.code}>
+      <Chip tone={severityTone(check.severity)}>{t(severityKey(check.severity))}</Chip>
       <span className={css.checkMessage}>{check.message}</span>
     </div>
   )
@@ -70,7 +77,7 @@ function PlanFields(props: { row: EvalExperimentRow; digest: EvalPlanDigest; t: 
         {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}
         <div className={css.dim}>{listOrDash(digest.conditions)}</div>
       </Field>
-      <Field label={t('overview.factors')}>{factorCell(row, t)}</Field>
+      <Field label={t('overview.factors')}><FactorCell row={row} t={t} /></Field>
       <Field label={t('overview.judge')}>
         {digest.judge.conditions.length === 0
           ? t('overview.judgeNone')
@@ -154,7 +161,15 @@ export function PlanReviewPage(props: {
         <>
           {review.digest !== null && <PlanFields row={row} digest={review.digest} t={t} />}
           <Field label={t('review.planPath')}>
-            <span className={css.mono}>{review.planPath}</span>
+            {/* An absolute path is not page text (ui-spec §九); the file name
+                is what a reviewer says out loud, the path is for the person
+                who is about to open an editor. */}
+            <span className={css.mono} title={review.planPath}>
+              {review.planPath.split('/').pop() ?? review.planPath}
+            </span>
+            <Detail summary={t('error.details')}>
+              <div className={css.errorDetailLine}>{review.planPath}</div>
+            </Detail>
           </Field>
           <Field label={t('review.checks')}>
             {review.checks.length === 0
@@ -172,11 +187,11 @@ export function PlanReviewPage(props: {
               <div className={css.checks}>
                 {review.conditions.map(condition => (
                   <div key={`${condition.role}:${condition.id}`} className={css.checkLine}>
-                    <span className={condition.status === 'ready' ? css.ok : css.warning}>
+                    <Chip tone={condition.status === 'ready' ? 'ok' : 'warn'}>
                       {t(STATUS_KEY[condition.status] ?? 'conditions.unready')}
-                    </span>
+                    </Chip>
                     <span className={css.mono}>{condition.id}</span>
-                    <span className={css.dim}>{condition.role}</span>
+                    <span className={css.dim}>{t(condition.role === 'judge' ? 'role.judge' : 'role.player')}</span>
                     <span className={css.dim}>{t(lockKey(condition.lock))}</span>
                   </div>
                 ))}
@@ -215,7 +230,13 @@ export function PlanReviewPage(props: {
       )}
       {refusal !== null && (
         <Field label={t('review.refusal')}>
-          <pre className={css.pre}>{refusal}</pre>
+          {/* The readiness gate's own words. The run never reached `runCreate`,
+              so this text is the ONLY record of why — it is quoted verbatim
+              rather than summarized, and folded rather than printed (§九). */}
+          <div className={css.warning}>{t('review.refusalLead')}</div>
+          <Detail summary={t('review.refusalRaw')}>
+            <pre className={css.errorRaw}>{refusal}</pre>
+          </Detail>
         </Field>
       )}
       {started !== null && <StartedRun started={started} output={output} outputError={outputError} t={t} />}

@@ -310,7 +310,8 @@ export function NewExperimentDialog(props: {
             ))}
             <div className={css.dim}>
               {changedFields.length === 1
-                ? t('new.mintOneFactor', { field: changedFields[0] as string })
+                // The field's WORD, not the form's internal key (ui-spec §九).
+                ? t('new.mintOneFactor', { field: t(MINT_LABEL[changedFields[0] as MintField]) })
                 : t('new.mintFactors', { count: changedFields.length })}
             </div>
           </div>

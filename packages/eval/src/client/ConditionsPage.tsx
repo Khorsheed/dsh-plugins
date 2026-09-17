@@ -41,7 +41,8 @@ import type {
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Field } from './parts.tsx'
+import { Chip, Detail, EmptyState, Field, Hash, Word, severityKey, severityTone } from './parts.tsx'
+import { factorPhrase } from './vocab.ts'
 import type { ConditionActionNote } from './store.ts'
 import css from './LabView.module.css'
 
@@ -146,13 +147,16 @@ function ProvisionReport(props: { view: EvalConditionProvisionView; t: LabViewPr
         {view.written ? t('conditions.provisionWritten') : t('conditions.provisionRefused')}
       </div>
       {view.homeShaWritten && <div className={css.dim}>{t('conditions.provisionWroteBack')}</div>}
-      <div className={css.dim}>{t('conditions.provisionHome', { dir: view.homeDir, credential: view.credentialState })}</div>
+      {/* The scoped home is an absolute path: what it holds is the fact, where
+          it is belongs under «详情» (ui-spec §九). */}
+      <div className={css.dim}>{t('conditions.provisionCredential', { credential: view.credentialState })}</div>
+      <Detail summary={t('conditions.provisionHomeFold')}>
+        <div className={css.errorDetailLine}>{t('conditions.provisionHome', { dir: view.homeDir, credential: view.credentialState })}</div>
+      </Detail>
       {view.checks.map((check, index) => (
-        <div
-          key={`${check.code}-${String(index)}`}
-          className={check.severity === 'error' ? css.warning : check.severity === 'warn' ? css.dim : css.ok}
-        >
-          {check.severity === 'error' ? '✗' : check.severity === 'warn' ? '!' : '✓'} {check.message}
+        <div key={`${check.code}-${String(index)}`} className={css.checkLine} title={check.code}>
+          <Chip tone={severityTone(check.severity)}>{t(severityKey(check.severity))}</Chip>
+          <span className={css.checkMessage}>{check.message}</span>
         </div>
       ))}
     </Field>
@@ -190,8 +194,12 @@ function Diff(props: { diff: EvalConditionDiffView; t: LabViewProps['t'] }) {
             <span className={css.mono}>{diff.b.id}</span>
           </div>
           {diff.differences.map(entry => (
+            // The path is the diff's own handle on the field; §九 keeps it on
+            // hover and puts the field's NAME in the column.
             <div key={entry.path} className={css.diffRow} data-differs="">
-              <span className={css.diffPath}>{entry.path}</span>
+              <span className={css.diffPath} title={entry.path}>
+                <Word phrase={factorPhrase(entry.path)} t={t} />
+              </span>
               <span className={css.diffValue}>{entry.a ?? <em className={css.dim}>{t('conditions.diffAbsent')}</em>}</span>
               <span className={css.diffValue}>{entry.b ?? <em className={css.dim}>{t('conditions.diffAbsent')}</em>}</span>
             </div>
@@ -237,7 +245,7 @@ export function ConditionsPage(props: {
     <div className={css.overview}>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
       {error !== null && <ErrorState what={t('conditions.error')} message={error} t={t} />}
-      {view !== null && rows.length === 0 && <div className={css.empty}>{t('conditions.empty')}</div>}
+      {view !== null && rows.length === 0 && <EmptyState title={t('conditions.empty')} hint={t('conditions.emptyHint')} />}
       {rows.length > 0 && (
         <>
           <div className={css.actions}>
@@ -284,7 +292,10 @@ export function ConditionsPage(props: {
                 onPick(row.id)
               }}
             >
-              <span className={css.condId} title={row.sha ?? row.id}>{row.id}</span>
+              <span className={css.condId} title={row.sha ?? row.id}>
+                {row.id}
+                {row.sha !== null && <span className={css.condSha}><Hash value={row.sha} /></span>}
+              </span>
               <span>{row.harness ?? '—'}{row.drive === null ? '' : ` · ${row.drive}`}</span>
               <span className={css.mono}>{row.model ?? '—'}</span>
               <EndpointCell
@@ -299,8 +310,10 @@ export function ConditionsPage(props: {
               <span>{row.scope ?? <span className={css.dim}>{t('conditions.scopeDefault')}</span>}</span>
               <span>{row.preset ?? '—'}</span>
               <span className={css.dim}>{lockCell(row, t)}</span>
-              <span className={row.status === 'ready' ? css.ok : css.warning}>
-                {t(STATUS_KEY[row.status] ?? 'conditions.unready')}
+              <span>
+                <Chip tone={row.status === 'ready' ? 'ok' : 'warn'}>
+                  {t(STATUS_KEY[row.status] ?? 'conditions.unready')}
+                </Chip>
               </span>
               <span
                 className={css.condAction}
@@ -324,8 +337,11 @@ export function ConditionsPage(props: {
       {diff !== null && <Diff diff={diff} t={t} />}
       {view !== null && (
         <Field label={t('conditions.repo')}>
-          <span className={css.mono}>{view.repo}</span>
+          <span className={css.mono} title={view.repo}>{view.repo.split('/').filter(Boolean).pop() ?? view.repo}</span>
           {view.datasets.length > 0 && <span className={css.dim}> · {view.datasets.join(', ')}</span>}
+          <Detail summary={t('error.details')}>
+            <div className={css.errorDetailLine}>{view.repo}</div>
+          </Detail>
         </Field>
       )}
     </div>

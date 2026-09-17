@@ -7,6 +7,14 @@
  * ask the release gate, and export the bundle. It also opens the delegation's
  * child session through the host's own session controller, which is how a
  * person reads what the player actually did — a read, not an intervention.
+ *
+ * Every ledger token on this page goes through the word table (ui-spec §九):
+ * the bucket chips, the stage column, the attempt list and the retry category
+ * picker all showed mission's own English tokens before, which is the half of
+ * 「mixed (archived / ws-ready)」 that this page was responsible for. The
+ * VERIFY block is the one exception and stays verbatim on purpose — ui-spec §五
+ * asks for 「verify 原样输出」, and an exit code nobody translated is the whole
+ * reason the drawer is opened.
  */
 
 import type { ReactNode } from 'react'
@@ -15,13 +23,11 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalCellDetail, EvalCellsResult } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
+import { Chip, EmptyState, Hash, Word, bucketTone, stageTone } from './parts.tsx'
+import { BUCKETS, RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase } from './vocab.ts'
 import css from './LabView.module.css'
 
-/** mission's own retry vocabulary, restated (eval imports nothing from mission). */
-export const RETRY_CATEGORIES: readonly string[] = ['infrastructure', 'operator', 'outcome']
-
-/** The five buckets mission projects into, plus the all-chip. */
-const BUCKETS: readonly string[] = ['ready', 'scheduled', 'blocked', 'active', 'done']
+export { RETRY_CATEGORIES } from './vocab.ts'
 
 /** `47m`, `2h`, `3d` — the duration column's compact form. */
 function humanDuration(ms: number | null): string {
@@ -63,7 +69,9 @@ function CellDrawer(props: {
   return (
     <div className={css.drawer}>
       <div className={css.drawerBar}>
-        <span className={css.title}>{cell?.missionId ?? ''}</span>
+        <span className={css.title}>
+          {cell === null ? '' : t('drawer.title', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
+        </span>
         <span className={css.barSpacer} />
         <Button size="sm" onClick={onClose}>{t('drawer.close')}</Button>
       </div>
@@ -72,20 +80,26 @@ function CellDrawer(props: {
         {error !== null && <ErrorState what={t('drawer.error')} message={error} compact t={t} />}
         {cell !== null && (
           <>
-            <Field label={t('cells.col.cell')}>
-              {cell.task ?? '—'} × {cell.condition ?? '—'} × rep {cell.rep ?? '—'}
-              <div className={css.dim}>
-                {cell.bucket} · {cell.state} · attempt {cell.attempt} · {humanDuration(cell.inStateMs)}
-              </div>
-            </Field>
+            <div className={css.chipRow}>
+              <Chip tone={bucketTone(cell.bucket)} title={cell.bucket}>
+                <Word phrase={bucketPhrase(cell.bucket)} t={t} />
+              </Chip>
+              <Chip tone={stageTone(cell.state)} title={cell.state}>
+                <Word phrase={stagePhrase(cell.state)} t={t} />
+              </Chip>
+              <Chip>{t('drawer.attemptNo', { attempt: cell.attempt })}</Chip>
+              <Chip>{humanDuration(cell.inStateMs)}</Chip>
+            </div>
             <Field label={t('drawer.refs')}>
               {cell.refs.resource === null
                 ? <span className={css.dim}>{t('drawer.resourceNone')}</span>
                 : <span className={css.mono}>{cell.refs.resource}</span>}
-              {cell.refs.fingerprint !== null && <div className={css.dim}>{cell.refs.fingerprint}</div>}
+              {cell.refs.fingerprint !== null && (
+                <div className={css.dim}>{t('drawer.fingerprint')}: <Hash value={cell.refs.fingerprint} /></div>
+              )}
             </Field>
             <Field label={t('drawer.materialization')}>
-              <span className={css.mono}>{cell.materializationSha ?? '—'}</span>
+              <Hash value={cell.materializationSha} />
             </Field>
             <Field label={t('drawer.checkpoints')}>
               {(cell.attempts.find(attempt => attempt.attempt === cell.attempt)?.checkpoints ?? [])
@@ -108,9 +122,23 @@ function CellDrawer(props: {
             </Field>
             <Field label={t('drawer.attempts')}>
               {cell.attempts.map(attempt => (
-                <div key={attempt.attempt} className={css.dim}>
-                  #{attempt.attempt} {attempt.state ?? '—'}
-                  {attempt.retry !== null && ` · ${attempt.retry.category ?? ''}: ${attempt.retry.reason ?? ''}`}
+                <div key={attempt.attempt} className={css.annotationLine}>
+                  <span className={css.dim}>{t('drawer.attemptNo', { attempt: attempt.attempt })}</span>
+                  {attempt.state === null
+                    ? <span className={css.dim}>—</span>
+                    : (
+                      <Chip tone={stageTone(attempt.state)} title={attempt.state}>
+                        <Word phrase={stagePhrase(attempt.state)} t={t} />
+                      </Chip>
+                    )}
+                  {attempt.retry !== null && (
+                    <span className={css.dim}>
+                      {attempt.retry.category === null
+                        ? ''
+                        : <Word phrase={retryPhrase(attempt.retry.category)} t={t} title={attempt.retry.category} />}
+                      {attempt.retry.reason === null ? '' : `: ${attempt.retry.reason}`}
+                    </span>
+                  )}
                 </div>
               ))}
             </Field>
@@ -122,17 +150,20 @@ function CellDrawer(props: {
                     <div className={css.dim}>{run.where ?? '—'}</div>
                     {run.probes.map(probe => (
                       <div key={`${probe.probe ?? ''}:${probe.origin ?? ''}`} className={css.annotationLine}>
-                        <span className={probe.ok ? css.ok : css.warning}>{probe.outcome ?? '—'}</span>
+                        <Chip tone={probe.ok ? 'ok' : 'warn'} title={probe.outcome ?? undefined}>
+                          {t(probe.ok ? 'drawer.probeOk' : 'drawer.probeFailed')}
+                        </Chip>
                         <span className={css.mono}>{probe.probe ?? '—'}</span>
                         <span className={css.dim}>
-                          exit {probe.exitCode ?? '—'}
+                          {probe.outcome ?? '—'}
+                          {probe.exitCode === null ? '' : ` · exit ${probe.exitCode}`}
                           {probe.reason === null ? '' : ` · ${probe.reason}`}
                           {probe.error === null ? '' : ` · ${probe.error}`}
                         </span>
                       </div>
                     ))}
                     {/* Verbatim: the exit codes and skip reasons are exactly
-                        what this drawer is opened for. */}
+                        what this drawer is opened for (ui-spec §五). */}
                     <pre className={css.pre}>{run.raw}</pre>
                   </div>
                 ))}
@@ -152,7 +183,14 @@ function CellDrawer(props: {
                 aria-label={t('retry.category')}
                 onChange={(event) => { setCategory(event.target.value) }}
               >
-                {RETRY_CATEGORIES.map(entry => <option key={entry} value={entry}>{entry}</option>)}
+                {RETRY_CATEGORIES.map((entry) => {
+                  const phrase = retryPhrase(entry)
+                  return (
+                    <option key={entry} value={entry}>
+                      {phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)}
+                    </option>
+                  )
+                })}
               </select>
               <Input
                 value={reason}
@@ -201,11 +239,13 @@ export function CellsPage(props: {
 }) {
   const { cells, loading, error, bucket, onBucket, selection, t } = props
   const rows = cells?.rows ?? []
+  const counts = cells?.buckets ?? {}
   return (
     <div className={css.cellsPage}>
       <div className={css.matrixBar}>
         <button type="button" className={css.chip} aria-pressed={bucket === null} onClick={() => { onBucket(null) }}>
           {t('cells.bucketAll')}
+          {cells !== null && <span className={css.chipCount}>{cells.total}</span>}
         </button>
         {BUCKETS.map(entry => (
           <button
@@ -213,11 +253,14 @@ export function CellsPage(props: {
             type="button"
             className={css.chip}
             aria-pressed={bucket === entry}
+            title={entry}
             onClick={() => { onBucket(entry) }}
           >
-            {entry}
+            <Word phrase={bucketPhrase(entry)} t={t} />
+            <span className={css.chipCount}>{counts[entry] ?? 0}</span>
           </button>
         ))}
+        <span className={css.barSpacer} />
         {cells !== null && (
           <span className={css.dim}>{t('cells.matched', { matched: cells.matched, total: cells.total })}</span>
         )}
@@ -226,7 +269,13 @@ export function CellsPage(props: {
         <div className={css.cellsTable}>
           {error !== null && <ErrorState what={t('cells.error')} message={error} t={t} />}
           {cells === null && error === null && <div className={css.empty}>{t('cells.loading')}</div>}
-          {cells !== null && rows.length === 0 && <div className={css.empty}>{t('cells.empty')}</div>}
+          {cells !== null && rows.length === 0 && (
+            <EmptyState title={t('cells.empty')} hint={t('cells.emptyHint')}>
+              {bucket !== null && (
+                <Button size="sm" onClick={() => { onBucket(null) }}>{t('cells.emptyClear')}</Button>
+              )}
+            </EmptyState>
+          )}
           {rows.length > 0 && (
             <>
               <div className={css.cellsHead}>
@@ -246,8 +295,16 @@ export function CellsPage(props: {
                   <span className={css.colCell}>
                     {row.task ?? '—'} × {row.condition ?? '—'} × {row.rep ?? '—'}
                   </span>
-                  <span className={css.colBucket} data-bucket={row.bucket}>{row.bucket}</span>
-                  <span className={css.colStage}>{row.state}</span>
+                  <span className={css.colBucket}>
+                    <Chip tone={bucketTone(row.bucket)} title={row.bucket}>
+                      <Word phrase={bucketPhrase(row.bucket)} t={t} />
+                    </Chip>
+                  </span>
+                  <span className={css.colStage}>
+                    <Chip tone={stageTone(row.state)} title={row.state}>
+                      <Word phrase={stagePhrase(row.state)} t={t} />
+                    </Chip>
+                  </span>
                   <span className={css.colAttempt}>{row.attempt}</span>
                   <span className={css.colDuration}>{humanDuration(row.inStateMs)}</span>
                 </button>

@@ -386,7 +386,7 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     } else {
       warnings.push({
         code: 'HOME_SHA_DECLARED_STALE',
-        message: `the condition declares home.sha ${declaredHomeSha.slice(0, 12)}… but the scoped home hashes to ${report.home.sha}`
+        message: `the condition declares home.sha ${declaredHomeSha.slice(0, 12)}… but the scoped home hashes to ${report.home.sha.slice(0, 12)}…`
           + ' — the lock records what is actually there; correcting the declaration re-hashes the condition (home.sha is a factor), so provision again afterwards',
       })
     }
