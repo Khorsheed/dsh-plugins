@@ -1,6 +1,6 @@
 # preset 可见性收口：worktrees/canvas 右栏入口、slash 命令搬家与 local-agent 定性
 
-2026-09-17。状态：A1/A2/A3 已实施并部署 3080（merge `197a5af4`，deploy-3080 OK，canary PASS），验收观察中；A5 立项未动。
+2026-09-17。状态：A1/A2/A3 已实施并部署 3080（merge `197a5af4`，deploy-3080 OK，canary PASS），验收观察中；A5 已落地（2026-09-18，见下）。
 
 **3080 preset 治理（2026-09-18，协调者拍板）**：3080 的「开发模式」preset 曾本地补挂 mission/datasets/eval 三行（与本仓 web-dev 的 dev preset 漂移），导致评测 UI 出现在开发会话。处置：新建 `dsh-eval`（评测模式）preset（`~/.dsh-official/.agent-presets/dsh-eval/`，配方 = web-eval pack 的 eval preset：datasets-tool `authoring` + eval-tool，不挂 mission-tool 即 R6），dev preset 摘掉三行。名册 discovery 无缓存（`list()` 每次重读文件系统），立即生效无需重启；preset 建会话时锁定，存量会话不受影响。效果：开发模式新会话失去题集 chip / 任务 tab / 实验室 tab / 三个 slash，评测模式新会话全部获得。
 
@@ -45,9 +45,9 @@ host 复核（0.1.5 线）：`CommandDefinition` 无任何可见性谓词，clie
 
 结论：不动代码，规范文档的「slash 命令与设置卡」行随本次实施更新为此定性。
 
-### A5. writing preset 版本化（后续，不随本轮代码）
+### A5. writing preset 版本化（已落地，2026-09-18）
 
-`dsh-writing` preset 本体是 3080 user root 资产，不在任何 git 仓——preset 组合这个「唯一事实源」游离在版本控制外。建议 canvas 包自带 `presets/dsh-writing/` + install 脚本卸名册（唯一先例 `profiles/web-eval/scripts/install.sh:235-244`；host 无内建机制）。本轮只在 proposal 立项，不动 3080 资产。
+~~`dsh-writing` preset 本体是 3080 user root 资产，不在任何 git 仓~~ 已正本化：3080 名册里 prod 拥有的 preset 全部有 git 正本——`dsh-writing` 在 `profiles/web/presets/dsh-writing/`；`dsh-eval` 组合跟随 web-eval pack 的 eval preset；`dev` 归 web-dev pack 的 install/update 脚本。同步走 `profiles/web/scripts/sync-presets.sh`（幂等、备份、名册无缓存即时生效），规则写进 `profiles/web/README.md` 与 `docs/ops.md`「3080 的 preset 名册」节。提案原设想是 canvas 包自带 preset + install 脚本；落地时选了 3080 部署正本区（`profiles/web/`），因为 dsh-writing 是部署资产而非 canvas 包的资产。
 
 ## 验收标准
 
