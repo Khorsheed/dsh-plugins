@@ -88,6 +88,8 @@ interface BenchOptions {
   readonly ttlHours?: number
   /** Forces `getEntryBody` to answer with this error (the refusal paths). */
   readonly getEntryBodyError?: string
+  /** Entry ids the host reports as needing their full text. */
+  readonly backfillCandidates?: readonly string[]
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -134,6 +136,11 @@ function bench(options: BenchOptions = {}) {
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
     listTags: vi.fn(async () => ({ ok: true as const, value: { tags: options.tags ?? [], counts: options.tagCounts ?? {} } })),
+    listBackfillCandidates: vi.fn(async (entries: readonly { entryId: string }[]) => ({
+      ok: true as const,
+      value: { candidates: (options.backfillCandidates ?? []).filter(id => entries.some(entry => entry.entryId === id))
+        .map(id => ({ entryId: id, url: `https://example.com/${id}`, label: id })) },
+    })),
     getCachePolicy: vi.fn(async () => ({ ok: true as const, value: { ttlHours: options.ttlHours ?? 24, maxEntries: 500 } })),
     setCachePolicy: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     entryTags: vi.fn(async () => ({ ok: true as const, value: { tags: [] } })),
@@ -173,6 +180,7 @@ function bench(options: BenchOptions = {}) {
     updateSource: mocks.updateSource,
     removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: mocks.refresh,
+    listBackfillCandidates: mocks.listBackfillCandidates,
     listTags: mocks.listTags,
     getCachePolicy: mocks.getCachePolicy,
     setCachePolicy: mocks.setCachePolicy,
@@ -304,9 +312,9 @@ describe('a truncated body says so, and offers the way out', () => {
     // a source they added and can never open.
     const failedCards = await screen.findAllByRole('button', { name: /抓取失败的文章/ })
     fireEvent.click(failedCards[failedCards.length - 1] as HTMLElement)
-    expect(await screen.findByText(zh['detail.extractFailed'])).toBeTruthy()
-    // …and because the fetch never completed, the body is by definition partial.
-    expect(await screen.findByText(new RegExp(zh['detail.incomplete']))).toBeTruthy()
+    // "fetch failed" is a transport failure, so it is said in those terms —
+    // not as an extraction problem, which is what it used to claim.
+    expect(await screen.findByText(zh['sources.unreachable'])).toBeTruthy()
   })
 })
 
@@ -602,8 +610,9 @@ describe('a feed that publishes only a summary for some entries', () => {
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('只有摘要的一条'))
-    expect(await screen.findByText(zh['detail.summaryOnly'], { exact: false })).toBeTruthy()
-    // …and NOT the truncation note.
+    // The feed's own summary is shown as the body, and the view does NOT claim
+    // the payload was cut off — because it was not.
+    await waitFor(() => { expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('这是一段很短的摘要') })
     expect(screen.queryByText(new RegExp(zh['detail.incomplete']))).toBeNull()
   })
 
@@ -668,6 +677,24 @@ describe('a publisher that refuses automatic fetches', () => {
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /被拒的文章/ })).at(-1) as HTMLElement)
     expect(await screen.findByText(zh['sources.blocked'])).toBeTruthy()
-    expect(screen.queryByText(zh['detail.extractFailed'])).toBeNull()
+  })
+})
+
+describe('full text is filled in automatically', () => {
+  it('asks the host for the work list and fetches without any button', async () => {
+    // The agreed shape: no click, no "fetch the text" button — the package
+    // completes what the feeds only summarised, in the background.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '摘要文章', url: 'https://example.com/story' })],
+      failedIds: ['link-1'],
+      backfillCandidates: ['link:link-1'],
+    })
+    await ui.settle()
+    await waitFor(() => {
+      expect(ui.mocks.listBackfillCandidates).toHaveBeenCalled()
+      expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith('link:link-1', 'https://example.com/link:link-1')
+    })
+    // The reader never had to press anything.
+    expect(screen.queryByText(zh['action.fetchBody'])).toBeNull()
   })
 })

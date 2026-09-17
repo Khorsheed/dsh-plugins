@@ -35,7 +35,9 @@ export type ReaderKey =
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
   | 'sources.name' | 'sources.url' | 'sources.cache' | 'sources.cacheHelp'
-  | 'sources.cacheHours' | 'sources.cacheForever' | 'sources.blocked' | 'action.pause' | 'action.resume'
+  | 'sources.cacheHours' | 'sources.cacheForever' | 'sources.blocked'
+  | 'sources.unreachable' | 'sources.httpError' | 'detail.fetchFailed'
+  | 'state.backfilling' | 'detail.filledIn' | 'detail.filledInBadge' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
   | 'detail.summaryOnly'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
@@ -124,6 +126,9 @@ export const en = {
   'sources.cacheHours': '{count} hours',
   'sources.cacheForever': 'Until evicted',
   'sources.blocked': 'This publisher refuses automatic fetches (its page answers with a bot challenge), so only the feed’s own text can be shown.',
+  'sources.unreachable': 'The publisher’s page could not be reached at all (the request failed before any content arrived), so only the feed’s own text can be shown.',
+  'sources.httpError': 'The publisher answered with an error, so only the feed’s own text can be shown.',
+  'detail.fetchFailed': 'Could not fetch the full text — {reason}',
   'sources.url': 'Feed address',
 
   'detail.incomplete': 'Limited length, content shown in part',
@@ -139,6 +144,9 @@ export const en = {
   'foot.never': 'Not refreshed yet',
   'foot.unread': 'unread',
   'foot.refreshing': 'Refreshing…',
+  'state.backfilling': 'Filling in {done}/{total} full articles…',
+  'detail.filledIn': 'The full text was fetched automatically and is cached.',
+  'detail.filledInBadge': 'full text',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -232,6 +240,9 @@ export const zh = {
   'sources.cacheHours': '{count} 小时',
   'sources.cacheForever': '留到被淘汰',
   'sources.blocked': '这个站点拒绝自动抓取（原文地址对人以外的请求返回验证页），所以只能展示订阅源自己发布的内容。',
+  'sources.unreachable': '原文页面完全连不上（请求在拿到任何内容之前就失败了），所以只能展示订阅源自己发布的内容。',
+  'sources.httpError': '原文页面返回了错误状态，所以只能展示订阅源自己发布的内容。',
+  'detail.fetchFailed': '抓取全文失败 —— {reason}',
   'sources.url': '订阅地址',
 
   'detail.incomplete': '受限篇幅，内容未完整呈现',
@@ -247,6 +258,9 @@ export const zh = {
   'foot.never': '尚未刷新',
   'foot.unread': '未读',
   'foot.refreshing': '正在刷新…',
+  'state.backfilling': '正在补齐全文 {done}/{total}…',
+  'detail.filledIn': '全文是自动抓取并缓存的。',
+  'detail.filledInBadge': '已补全',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',

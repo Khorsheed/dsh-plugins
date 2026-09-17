@@ -217,6 +217,21 @@ export interface ReaderAddFailure {
   readonly reason: string
 }
 
+/**
+ * One entry the host would like full text for.
+ *
+ * The host decides WHICH entries need it (it owns the cache, the failures and
+ * the policy); the browser decides what the page says (it owns the DOM). This
+ * is the split that makes automatic backfill possible at all.
+ */
+export interface ReaderBackfillCandidate {
+  readonly entryId: string
+  readonly url: string
+  readonly label: string
+  /** Why a previous attempt failed, when one did (and when it is worth retrying). */
+  readonly lastError?: string
+}
+
 /** Per-source result of a refresh run. */
 export interface ReaderRefreshResult {
   readonly id: string

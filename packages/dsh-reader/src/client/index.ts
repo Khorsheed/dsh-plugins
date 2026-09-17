@@ -141,6 +141,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     refresh: ids => remote.refresh(ids === undefined ? {} : { ids }),
     getBodies: ids => remote.getBodies({ ids }),
     quoteToSideChat: request => remote.quoteToSideChat(request),
+    listBackfillCandidates: entries => remote.listBackfillCandidates({ entries }),
     getEntryBody: request => remote.getEntryBody(request),
     fetchEntryBody,
     entryTags: entryId => remote.entryTags({ entryId }),

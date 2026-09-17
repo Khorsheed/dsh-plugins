@@ -27,7 +27,7 @@
  *
  * @module @khorsheed/dsh-reader/client/ReaderPane
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   IconChevronLeftOutline14,
   IconCopyOutline16,
@@ -137,19 +137,29 @@ function whenLabel(t: ReaderPaneProps['t'], iso: string | undefined): string {
 }
 
 /**
- * Text as it reads, for comparing two representations of the same sentence.
+ * Turn a fetch/extraction failure into the sentence it deserves.
  *
- * The parser puts the feed's `<description>` into BOTH the card summary and the
- * body when the feed publishes no richer field, one of them reduced to plain
- * text and the other normalized to markup. Comparing the raw strings would
- * therefore never match; comparing the collapsed text does.
+ * The seam's reasons are distinguishable and the reader needs the distinction: a
+ * bot challenge is final, an unreachable host is not, and an unreadable
+ * extraction is a third thing again. Claiming "exceeds the fetch cap" for all
+ * three was measured wrong on the acceptance instance, whose recorded reason
+ * was `web fetch failed: TypeError: fetch failed`.
  *
- * @param value - plain text or normalized markup.
- * @returns its collapsed text.
+ * @param reason - the reason the host or the extractor reported.
+ * @param t - the namespace translator.
+ * @returns the reader-facing sentence.
  */
-function normalizeForCompare(value: string): string {
-  return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
+  if (/^HTTP (401|403)/.test(reason)) return t('sources.blocked')
+  if (/^HTTP \d{3}/.test(reason)) return t('sources.httpError')
+  if (/fetch failed|timed out|timeout|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network|socket/i.test(reason)) {
+    return t('sources.unreachable')
+  }
+  return t('detail.fetchFailed', { reason: reason.slice(0, 160) })
 }
+
+/** How many entries the automatic backfill fetches at once. */
+const BACKFILL_CONCURRENCY = 2
 
 /** The reader tab body. */
 export function ReaderPane(props: ReaderPaneProps): ReactNode {
@@ -172,9 +182,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const tags = useStore(s => s.tags)
   const tagCounts = useStore(s => s.tagCounts)
   const entryTagIds = useStore(s => s.entryTagIds)
-  const fetching = useStore(s => s.fetching)
-  const staleBodies = useStore(s => s.staleBodies)
   const cacheTtlHours = useStore(s => s.cacheTtlHours)
+  const backfill = useStore(s => s.backfill)
+  const backfilled = useStore(s => s.backfilled)
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
@@ -283,22 +293,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
   }, [actions, props, t])
 
+  const backfillRunning = useRef(false)
+  /** Entry ids this session already attempted, so a re-render cannot loop. */
+  const backfillTried = useRef(new Set<string>())
   useEffect(() => { void load() }, [load, rev])
-
-  // Any menu/panel dismisses on the next click outside it — the host's own
-  // menus behave that way, and a popover that outlives its context is a trap.
-  useEffect(() => {
-    if (cardMenu === null && cardTag === null && !filterOpen) return undefined
-    const dismiss = (event: MouseEvent): void => {
-      const target = event.target as HTMLElement | null
-      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"]') !== null) return
-      setCardMenu(null)
-      setCardTag(null)
-      setFilterOpen(false)
-    }
-    window.addEventListener('mousedown', dismiss)
-    return () => window.removeEventListener('mousedown', dismiss)
-  }, [cardMenu, cardTag, filterOpen])
 
   useEffect(() => {
     void props.listTags().then(result => {
@@ -356,18 +354,6 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
 
   const openEntry = openEntryId === null ? undefined : allEntries.find(entry => entry.id === openEntryId)
-  /**
-   * True when what the detail view is showing is only the feed's own summary.
-   *
-   * The parser files a feed's `<description>` as BOTH the card summary and the
-   * body when the feed publishes nothing richer, so a summary-only entry does
-   * render — which is exactly why "no html" was the wrong test for offering the
-   * fetch (measured: the OpenAI alignment feed's summaries are 149-338
-   * characters of `<description>`).
-   */
-  const bodyIsSummaryOnly = articleHtml !== null
-    && openEntry?.summary !== undefined
-    && normalizeForCompare(articleHtml) === normalizeForCompare(openEntry.summary)
   /** The source the strip is currently narrowing to, if any. */
   const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
   /** Sources whose payload could not be read whole — what the notice lists. */
@@ -515,11 +501,85 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [actions, props])
 
   /**
-   * Fetch the open entry's full article, extract it (this process) and show it.
+   * Fill in missing full text automatically, a slice per load.
    *
-   * Reached from the detail view when the feed published only a summary, or
-   * when a cached copy has outlived its deadline — never automatically, so one
-   * entry costs one request to the publisher.
+   * This is the package's answer to "the feed gave me a summary": the host says
+   * which entries lack text (and which are not worth a retry yet), this process
+   * fetches + extracts each one, and the wall marks what arrived. Two requests
+   * at a time, because this talks to other people's servers.
+   *
+   * @param entries - the entries currently on the wall.
+   */
+  const backfillBodies = useCallback(async (entries: readonly ReaderRow[]) => {
+    if (backfillRunning.current) return
+    const missing = entries.filter(row =>
+      row.entry.contentHtml === undefined
+      && row.entry.link !== undefined
+      && !backfillTried.current.has(row.entry.id))
+    if (missing.length === 0) return
+    backfillRunning.current = true
+    try {
+      const listed = await props.listBackfillCandidates(missing.map(row => ({
+        entryId: row.entry.id,
+        url: row.entry.link as string,
+        label: row.entry.title,
+        hasBody: false,
+      })))
+      if (!listed.ok) return
+      const queue = [...listed.value.candidates]
+      if (queue.length === 0) return
+      actions.setBackfill({ total: queue.length, done: 0 })
+      let filled = 0
+      const workers = Array.from({ length: Math.min(BACKFILL_CONCURRENCY, queue.length) }, async () => {
+        for (;;) {
+          const next = queue.shift()
+          if (next === undefined) return
+          backfillTried.current.add(next.entryId)
+          const result = await props.fetchEntryBody(next.entryId, next.url)
+          const got = result.html !== undefined
+          if (got) filled += 1
+          actions.noteBackfilled(next.entryId, got)
+        }
+      })
+      await Promise.all(workers)
+      // Deliberately no `actions.refresh()` here: the run updates the cards
+      // through `noteBackfilled`, and bumping `rev` would re-enter `load()`
+      // and start the whole thing over. Only the DETAIL view re-reads, and it
+      // does so when it mounts.
+    } finally {
+      backfillRunning.current = false
+      actions.setBackfill(null)
+    }
+  }, [actions, props])
+
+  // Automatic, after the wall has something to look at — never before, so the
+  // reader never waits on the network for a list they already had.
+  useEffect(() => {
+    if (loading || allEntries.length === 0) return
+    void backfillBodies(selectRows(allEntries, presentation, {
+      filter: 'all', query: '', unreadOnly: false, sort, read, tags: entryTagIds, now: new Date(),
+    }))
+  }, [loading, allEntries, presentation, sort, read, entryTagIds, backfillBodies])
+
+  // Any menu/panel dismisses on the next click outside it — the host's own
+  // menus behave that way, and a popover that outlives its context is a trap.
+  useEffect(() => {
+    if (cardMenu === null && cardTag === null && !filterOpen) return undefined
+    const dismiss = (event: MouseEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"]') !== null) return
+      setCardMenu(null)
+      setCardTag(null)
+      setFilterOpen(false)
+    }
+    window.addEventListener('mousedown', dismiss)
+    return () => window.removeEventListener('mousedown', dismiss)
+  }, [cardMenu, cardTag, filterOpen])
+
+
+
+  /**
+   * Fetch the open entry's full article, extract it (this process) and show it.
    */
   const fetchBody = useCallback(async (entryId: string, url: string) => {
     actions.setFetching(entryId, true)
@@ -743,10 +803,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           <div className={css.rule} />
           {articleError !== null && (
             <p className={css.incomplete}>
-              {/* A refusal is not an extraction failure: the page never arrived,
-                  and telling the reader to "retry" would be advice that cannot
-                  work. /^HTTP (401|403)/ is the seam's wording. */}
-              {/^HTTP (401|403)/.test(articleError) ? t('sources.blocked') : t('detail.extractFailed')}
+              {/* Say what ACTUALLY happened. The seam's reasons are distinguishable
+                  and the reader needs the distinction: a bot challenge is final,
+                  a dead network is not, and an unreadable extraction is a third
+                  thing again. The old copy claimed "exceeds the fetch cap" for
+                  all three, which was measured wrong on the acceptance instance
+                  (the recorded reason there was `web fetch failed: TypeError:
+                  fetch failed`). */}
+              {describeFetchFailure(articleError, t)}
             </p>
           )}
           {articleHtml !== null && articleHtml.length > 0 && (
@@ -760,22 +824,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               dangerouslySetInnerHTML={{ __html: articleHtml }}
             />
           )}
-          {/* Nothing to render yet: offer the fetch, once, on this entry. The
-              button is the whole reason this package is not a crawler — the
-              reader asks per article instead of us pre-fetching every summary. */}
-          {openEntry.link !== undefined && (articleHtml === null || bodyIsSummaryOnly || staleBodies[openEntry.id] === true) && (
-            <p className={css.incomplete}>
-              {t(staleBodies[openEntry.id] === true ? 'detail.bodyStale' : 'detail.summaryOnly')}{' '}
-              <button
-                type="button"
-                className={css.incompleteLink}
-                disabled={fetching[openEntry.id] === true}
-                onClick={() => { void fetchBody(openEntry.id, openEntry.link as string) }}
-              >
-                {fetching[openEntry.id] === true ? t('state.fetching') : t('action.fetchBody')}
-              </button>
-            </p>
-          )}
+          {/* There is no "fetch the text" button: full text is filled in
+              automatically after each refresh (see `backfill` below), and until
+              it arrives the reader sees the best text the feed itself carried.
+              A publisher that refuses us is explained, not offered a retry. */}
           {/* A feed may publish the full text for some entries and only a
               summary for others (measured: the OpenAI alignment feed is 155 to
               62,044 characters entry by entry). Nothing was truncated there, so
@@ -1211,6 +1263,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 <span className={css.tags}>
                   {(row.entry.tags ?? []).slice(0, 2).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
                   {row.entry.author !== undefined && <span className={css.author}>{row.entry.author}</span>}
+                  {backfilled[row.entry.id] === true && (
+                    <span className={css.tagOwned} title={t('detail.filledIn')}>{t('detail.filledInBadge')}</span>
+                  )}
                   {(entryTagIds[row.entry.id] ?? []).map(tagId => (
                     <span key={tagId} className={css.tagOwned}>
                       {tags.find(tag => tag.id === tagId)?.name ?? tagId}
@@ -1244,7 +1299,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         return (
           <div className={css.metaBar}>
             <span>
-              {refreshing
+              {backfill !== null
+                ? t('state.backfilling', { done: backfill.done, total: backfill.total })
+                : refreshing
                 ? t('foot.refreshing')
                 : lastRefreshAt === null
                   ? t('foot.never')

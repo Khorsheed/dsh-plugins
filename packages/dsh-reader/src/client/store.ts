@@ -66,6 +66,10 @@ export interface ReaderState {
   staleBodies: Record<string, true>
   /** The article cache policy, from the host. */
   cacheTtlHours: number
+  /** The automatic full-text backfill: how many are wanted, and how many are done. */
+  backfill: { total: number; done: number } | null
+  /** Entry ids whose body arrived from a backfill (the cards mark them). */
+  backfilled: Record<string, true>
   /** Which surface is up: the wall, one entry, or subscription management. */
   view: ReaderView
   /** Which slice of the list to show. */
@@ -104,6 +108,8 @@ export type ReaderActions = {
   setFetching: (draft: ReaderState, entryId: string, fetching: boolean) => void
   setStaleBody: (draft: ReaderState, entryId: string, stale: boolean) => void
   setCacheTtl: (draft: ReaderState, hours: number) => void
+  setBackfill: (draft: ReaderState, progress: { total: number; done: number } | null) => void
+  noteBackfilled: (draft: ReaderState, entryId: string, filled: boolean) => void
   setRefreshing: (draft: ReaderState, refreshing: boolean) => void
   /** Record that a refresh run finished, including one with failures. */
   noteRefreshed: (draft: ReaderState, at: string) => void
@@ -136,6 +142,8 @@ const INITIAL: ReaderState = {
   fetching: {},
   staleBodies: {},
   cacheTtlHours: 24,
+  backfill: null,
+  backfilled: {},
   view: 'list',
   // 'all' rather than 'today': a subscription's entries are usually NOT from
   // today (measured: the acceptance instance's feed's newest item was 8 days
@@ -192,6 +200,14 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
         d.staleBodies = next
       },
       setCacheTtl: (d, hours) => { d.cacheTtlHours = hours },
+      setBackfill: (d, progress) => { d.backfill = progress },
+      noteBackfilled: (d, entryId, filled) => {
+        d.backfilled = { ...d.backfilled, [entryId]: true }
+        // Done counting regardless: a failure also advances the run, and the
+        // card simply keeps showing the feed's own text.
+        if (d.backfill !== null) d.backfill = { ...d.backfill, done: Math.min(d.backfill.done + 1, d.backfill.total) }
+        if (!filled) delete d.backfilled[entryId]
+      },
       setRefreshing: (d, refreshing) => { d.refreshing = refreshing },
       noteRefreshed: (d, at) => {
         d.lastRefreshAt = at

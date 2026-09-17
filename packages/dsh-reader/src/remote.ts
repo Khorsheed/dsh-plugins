@@ -17,6 +17,7 @@ import type {
   ReaderAddOutcome,
   ReaderAddRefusal,
   ReaderAnnotationOutcome,
+  ReaderBackfillCandidate,
   ReaderEntryBodyView,
   ReaderBody,
   ReaderCapabilities,
@@ -114,6 +115,15 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   @Remote('storeEntryBody')
   storeEntryBody(request: { entryId: string; url: string; html: string; truncated?: boolean }): Promise<ReaderEntryBodyView> {
     return this.core.storeEntryBody(request)
+  }
+
+  /** Which entries still need their full text (the automatic backfill's work list). */
+  @Remote('listBackfillCandidates')
+  listBackfillCandidates(request: {
+    entries: readonly { entryId: string; url: string; label: string; hasBody: boolean }[]
+    limit?: number
+  }): Promise<{ candidates: ReaderBackfillCandidate[] }> {
+    return this.core.listBackfillCandidates(request)
   }
 
   /** The tag vocabulary, with how many entries carry each tag. */

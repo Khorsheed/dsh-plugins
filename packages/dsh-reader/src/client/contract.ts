@@ -21,6 +21,7 @@ import type {
   ReaderAddOutcome,
   ReaderAddRefusal,
   ReaderAnnotationOutcome,
+  ReaderBackfillCandidate,
   ReaderEntryBodyView,
   ReaderBody,
   ReaderCapabilities,
@@ -79,6 +80,16 @@ export interface ReaderPaneInjected {
   }) => Promise<RemoteResult<'ok' | 'unavailable'>>
   /* ---------------------------------------------------- bodies and tags */
 
+  /**
+   * The entries whose full text still has to be filled in (the automatic
+   * backfill's work list; the host owns the policy, this process owns the DOM).
+   */
+  listBackfillCandidates: (entries: readonly {
+    entryId: string
+    url: string
+    label: string
+    hasBody: boolean
+  }[]) => Promise<RemoteResult<{ candidates: ReaderBackfillCandidate[] }>>
   /**
    * What the host has for one entry: a fresh cached body, else the feed's own
    * payload, else nothing (plus why a previous fetch failed).

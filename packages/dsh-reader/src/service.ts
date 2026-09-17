@@ -35,6 +35,7 @@ import {
   type ReaderAddOutcome,
   type ReaderAddRefusal,
   type ReaderAnnotationOutcome,
+  type ReaderBackfillCandidate,
   type ReaderEntryAnnotation,
   type ReaderEntryBodyView,
   type ReaderBody,
@@ -47,6 +48,18 @@ import {
   type ReaderStateDoc,
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
+
+/**
+ * How many entries one automatic backfill run may fetch.
+ *
+ * A wall of 300 summary-only entries must not turn one refresh into 300
+ * requests to other people's servers; the run takes a slice and the next
+ * refresh takes the next one.
+ */
+export const BACKFILL_MAX_PER_RUN = 8
+
+/** How long a FAILED fetch is left alone before it may be retried (6 hours). */
+export const BACKFILL_RETRY_MS = 6 * 60 * 60 * 1000
 
 /** Cross-origin redirect hops the service will follow before giving up. */
 const MAX_REDIRECT_HOPS = 3
@@ -511,6 +524,46 @@ export class ReaderService {
       fetchedAt: body.fetchedAt,
       ...(body.truncated === true ? { truncated: true } : {}),
     }
+  }
+
+  /**
+   * Which entries still need their full text, and which may be retried.
+   *
+   * The host is the only side that can answer this: it holds the cache, the
+   * recorded failures and the policy. A failure is retried only after
+   * `BACKFILL_RETRY_MS` — an entry whose publisher refuses us must not be
+   * hammered once per refresh, which would make this a crawler with a grudge.
+   *
+   * @param request - the entries the caller is looking at (id, url, label) and
+   *   whether the caller already has full text for them (the feed's own payload).
+   * @returns the candidates, capped so one refresh cannot start a stampede.
+   */
+  async listBackfillCandidates(request: {
+    entries: readonly { entryId: string; url: string; label: string; hasBody: boolean }[]
+    limit?: number
+  }): Promise<{ candidates: ReaderBackfillCandidate[] }> {
+    const doc = await this.currentDoc()
+    const limit = Math.max(1, Math.min(request.limit ?? BACKFILL_MAX_PER_RUN, BACKFILL_MAX_PER_RUN))
+    const candidates: ReaderBackfillCandidate[] = []
+    const now = Date.now()
+    for (const entry of request.entries) {
+      if (entry.url === '') continue
+      if (entry.hasBody) continue
+      const annotation = doc.annotations?.[entry.entryId]
+      if (annotation?.body !== undefined && isFresh(annotation.body.expiresAt)) continue
+      if (annotation?.failedAt !== undefined) {
+        const failedAt = new Date(annotation.failedAt).getTime()
+        if (Number.isFinite(failedAt) && now - failedAt < BACKFILL_RETRY_MS) continue
+      }
+      candidates.push({
+        entryId: entry.entryId,
+        url: entry.url,
+        label: entry.label,
+        ...(annotation?.error === undefined ? {} : { lastError: annotation.error }),
+      })
+      if (candidates.length >= limit) break
+    }
+    return { candidates }
   }
 
   /** The tag vocabulary plus which entry ids carry each tag. */
