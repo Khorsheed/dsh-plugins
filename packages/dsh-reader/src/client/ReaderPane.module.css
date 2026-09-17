@@ -3,6 +3,8 @@
    splits Chinese from Latin deliberately (see the design's D5). */
 
 .root {
+  /* One gutter for every horizontal surface in the pane. */
+  --reader-gutter: 12px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -405,21 +407,33 @@
 }
 
 .bar {
+  /* `--reader-gutter` minus the icon tool's own inner box, so the TITLE lands on
+     the same left edge as the body text below it. */
+  --reader-bar-pad: calc(var(--reader-gutter) - 10px);
   display: flex;
   flex: none;
   align-items: center;
   gap: 2px;
-  padding: 6px 8px;
+  padding: 6px var(--reader-bar-pad);
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .barLabel {
-  /* Secondary pages carry the page's name, so it reads as a title, not as a
-     caption: the cards set their own titles at 13.5px. */
-  font-size: 13px;
+  /* A secondary page's name IS its title: same size as the tab label the host
+     renders for the pane, so opening "订阅管理" reads as a page and not as a
+     caption under the icons. It truncates rather than wrapping, because the
+     bar also carries the actions.
+     (An earlier revision declared `font-size` twice here — 13px then 10.5px —
+     so the title stayed caption-sized no matter what the first one said.) */
+  flex: 1;
+  min-width: 0;
   padding: 0 4px;
-  font-size: 10.5px;
-  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
 }
 
 .spacer {
@@ -429,7 +443,10 @@
 .detailBody {
   flex: 1;
   min-height: 0;
-  padding: 0 14px 22px;
+  /* The gutter is the SAME on every horizontal surface (bar, body, pane), so a
+     page's title, its kicker and its prose start on one left edge. Different
+     gutters here were what made the body look shifted right of its own title. */
+  padding: 0 var(--reader-gutter) 22px;
   overflow-y: auto;
 }
 
@@ -958,7 +975,7 @@
 .paneBody {
   flex: 1;
   min-height: 0;
-  padding: 12px 14px;
+  padding: 12px var(--reader-gutter);
   overflow-y: auto;
 }
 
