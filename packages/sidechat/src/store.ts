@@ -16,7 +16,13 @@
  * nowhere here.
  *
  * A composition without `ctx.fs` degrades to memory-only state: the service
- * keeps working, the mapping simply does not survive a restart.
+ * keeps working, the mapping simply does not survive a restart. The
+ * filesystem is captured through DEFERRED injection (`ctx.inject(['fs'])`,
+ * canvas's tools precedent) — an apply-time `ctx.get` races the fs service's
+ * own mount order and silently memory-only-degrades forever (the 3080
+ * persistence bug), while a package-level `inject = ['fs']` would pend the
+ * whole plugin away on a composition without one. When fs arrives late, the
+ * service is told to reload and flush its in-memory records to disk.
  *
  * @module @khorsheed/dsh-sidechat/store
  */
@@ -66,27 +72,51 @@ export class SideChatStoreError extends Error {
 }
 
 /**
- * The contexts document's IO core. Stateless apart from the borrowed context
- * (the mounted filesystem is probed once) and the state root it fences at.
+ * The contexts document's IO core. Stateless apart from the state root it
+ * fences at and the mounted filesystem it DEFERS to.
  */
 export class SideChatStore {
   /** The resolved state root (also the writable boundary of every fence). */
   readonly stateRoot: string
 
-  /** The mounted filesystem, or `undefined` when the composition mounts none. */
-  private readonly fs: Context['fs'] | undefined
+  /** The mounted filesystem, or `undefined` until it mounts (and forever, when none does). */
+  private fs: Context['fs'] | undefined
 
   /** The per-session policy home, captured only when the mounted filesystem actually confines. */
-  private readonly sandboxPolicy: SandboxPolicyService | undefined
+  private sandboxPolicy: SandboxPolicyService | undefined
+
+  /** The fs-arrival listener (the service resets its once-loaded flag on it). */
+  private fsReadyListener: (() => void) | undefined
 
   /**
-   * @param ctx - host context (the filesystem is probed, never injected).
+   * @param ctx - host context (the filesystem is DEFERRED to, never probed).
    * @param config - optional state-root override.
    */
   constructor(ctx: Context, config: { stateRoot?: string } = {}) {
     this.stateRoot = resolveSideChatStateRoot(config.stateRoot)
-    this.fs = ctx.get('fs')
-    this.sandboxPolicy = this.fs?.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy')
+    // Deferred injection, NOT an apply-time probe (canvas's tools precedent):
+    // the fs service's mount order is not ours to race — a constructor-time
+    // `ctx.get` silently loses it and memory-only-degrades the store forever
+    // (the 3080 persistence bug: contexts.json was never written). With fs
+    // already mounted the callback fires now; with none ever mounting the
+    // store stays memory-only by construction — deliberately NOT a package-
+    // level `inject = ['fs']`, which would pend the whole plugin away on a
+    // composition without a filesystem. sandboxPolicy rides its own deferred
+    // door inside, only when the arrived fs actually confines.
+    ctx.inject(['fs'], (fsCtx) => {
+      this.fs = fsCtx.get('fs') as Context['fs'] | undefined
+      if (this.fs?.sandboxMode !== undefined) {
+        fsCtx.inject(['sandboxPolicy'], (policyCtx) => {
+          this.sandboxPolicy = policyCtx.get('sandboxPolicy') as SandboxPolicyService | undefined
+        })
+      }
+      this.fsReadyListener?.()
+    })
+  }
+
+  /** Register the fs-arrival hook (called at most once, when fs first mounts). */
+  onFsReady(listener: () => void): void {
+    this.fsReadyListener = listener
   }
 
   /** Whether persistence is available at all (without it the service runs memory-only). */

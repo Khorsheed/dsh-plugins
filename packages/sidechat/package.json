@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-sidechat",
   "description": "侧边对话：全 preset 常驻的随身 Agent——右栏轻量聊天，每个 contextKey 绑定一个持久 agent 会话，引用是不透明文本块（普通会话消息动作「引用到侧边对话」，其他插件经 ctx.sideChat.openWith 供给）",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publishConfig": {
     "access": "public"
   },
