@@ -29,7 +29,7 @@ import type {
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Chip, Detail, EmptyState, Section, Word, invariantTone, stageTone } from './parts.tsx'
+import { Chip, Detail, EmptyState, Section, Word, invariantTone, stageTone, stamp } from './parts.tsx'
 import { stagePhrase } from './vocab.ts'
 import css from './LabView.module.css'
 
@@ -399,13 +399,20 @@ export function ReportPage(props: {
   /** lab's own list of containers this run still holds; null before it loads. */
   units: EvalRunUnitsView | null
   unitsError: string | null
+  /** Whether a one-click re-export is in flight. */
+  reexporting: boolean
   onFinalize: () => void
   onExport: () => void
+  /** Repeat the recorded export into a fresh directory, report included. */
+  onReexport: () => void
   /** Look for the bundle under this export directory instead. */
   onLookIn: (dir: string) => void
   t: LabViewProps['t']
 }) {
-  const { report, loading, error, finalizing, finalizeResult, units, unitsError, onFinalize, onExport, onLookIn, t } = props
+  const {
+    report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
+    onFinalize, onExport, onReexport, onLookIn, t,
+  } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
   // button asks once — the gate itself never forces, but the reader should
@@ -438,6 +445,17 @@ export function ReportPage(props: {
             </Button>
           )}
         <Button size="sm" onClick={onExport}>{t('action.export')}</Button>
+        {/* The repeat, beside the dialog that made the first one. It is
+            disabled with a reason rather than hidden: a reader who has just
+            written a final verdict looks here for it. */}
+        <Button
+          size="sm"
+          disabled={reexporting || report.reexportable !== true}
+          title={report.reexportable === true ? '' : t('report.reexportNeedsDialog')}
+          onClick={onReexport}
+        >
+          {reexporting ? t('report.reexporting') : t('report.reexport')}
+        </Button>
         {/* 回收 is the SAME walk as finalize — reclaiming a container IS its
             cell passing the gate — so it shares the in-flight flag and the
             action behind it, and differs only in what the reader came for. */}
@@ -496,6 +514,34 @@ export function ReportPage(props: {
                 attempts: report.counts.attempts, retries: report.counts.retries,
               })}
             </div>
+            {/* WHEN this bundle was written, and whether its report is inside
+                it. One quiet line, no path: the path is under «详情» below
+                (§九), and this is the fact a reader needs to judge the numbers
+                above it. */}
+            <div className={css.dim}>
+              {report.exportedAt === null
+                ? t('report.exportedAtUnknown')
+                : t('report.exportedAt', { at: stamp(report.exportedAt) })}
+              {report.summaryWritten && <> · {t('report.summaryIn')}</>}
+            </div>
+            {/* The whole of G17, said once: the export happens when the run
+                ends, the final verdicts are written afterwards from the judge
+                bench, and nothing carried them back — a reader found that out
+                by opening manifest.json. A sentence and the button that fixes
+                it, in the same seat. */}
+            {report.staleAfterFinal && (
+              <div className={css.blocked}>
+                <div>{t('report.staleAfterFinal', { final: stamp(report.lastHumanFinalAt) })}</div>
+                <div className={css.actions}>
+                  <Button size="sm" variant="primary" disabled={reexporting} onClick={onReexport}>
+                    {reexporting ? t('report.reexporting') : t('report.reexport')}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {!report.summaryWritten && !report.staleAfterFinal && (
+              <div className={css.dim}>{t('report.summaryMissing')}</div>
+            )}
             {/* The path and the shell line that reproduces this page belong to
                 whoever is at a terminal; §九 keeps both out of the page body. */}
             <Detail summary={t('report.whereFold')}>

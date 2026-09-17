@@ -20,7 +20,7 @@ import type {
 } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
-import { createLabViewStore } from '../src/client/store.ts'
+import { createLabViewStore, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS } from '../src/client/store.ts'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
@@ -636,5 +636,65 @@ describe('the conditions page', () => {
     expect(screen.getByText('error.unbound.fix')).toBeTruthy()
     expect(screen.getByText('conditions.error')).toBeTruthy()
     expect(screen.getByText('no dataset repository for this session')).toBeTruthy()
+  })
+})
+
+describe('after 批准并启动, the detail waits for the run itself (I5·T39 · G11)', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('the run-scoped sub-pages say 正在启动, never 未开始', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.plan')
+    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await waitFor(() => { expect(h.approvePlan).toHaveBeenCalled() })
+
+    fireEvent.click(screen.getByRole('button', { name: 'page.matrix' }))
+    // An approved run EXISTS — the receipt named it — so the 未开始 sentence
+    // the pages used to show was false as well as unhelpful.
+    expect(await screen.findByText('draft.starting')).toBeTruthy()
+    // The T63 empty seat, with the other sentence: 还没启动 would be false about
+    // a run the approval receipt already named.
+    expect(screen.queryByText('draft.notStarted')).toBeNull()
+  })
+
+  it('re-reads the list on its own until the ledger has the run, then stops', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.plan')
+    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await waitFor(() => { expect(h.approvePlan).toHaveBeenCalled() })
+    const afterApproval = h.fetchExperiments.mock.calls.length
+
+    // The wait: the row still has no run id, so the page asks again by itself
+    // — this is the Refresh press the walkthrough had to make.
+    await vi.advanceTimersByTimeAsync(START_FOLLOWUP_MS + 50)
+    await waitFor(() => { expect(h.fetchExperiments.mock.calls.length).toBeGreaterThan(afterApproval) })
+
+    // `runCreate` lands: the list now carries the run, and the wait ends.
+    h.fetchExperiments.mockResolvedValue({
+      ok: true,
+      value: { ...LIST, rows: [{ ...(LIST.rows[0] as EvalExperimentsResult['rows'][number]), id: 'run-20260914-zz', runId: 'run-20260914-zz', status: 'running' }] },
+    })
+    await vi.advanceTimersByTimeAsync(START_FOLLOWUP_MS + 50)
+    await waitFor(() => { expect(screen.queryByText('draft.starting')).toBeNull() })
+    const settled = h.fetchExperiments.mock.calls.length
+    await vi.advanceTimersByTimeAsync(START_FOLLOWUP_MS * 3)
+    expect(h.fetchExperiments.mock.calls.length).toBe(settled)
+  })
+
+  it('gives up after a bounded wait — a refused run never reaches the ledger', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.plan')
+    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await waitFor(() => { expect(h.approvePlan).toHaveBeenCalled() })
+
+    await vi.advanceTimersByTimeAsync(START_FOLLOWUP_MS * (START_FOLLOWUP_LIMIT + 4))
+    const stopped = h.fetchExperiments.mock.calls.length
+    await vi.advanceTimersByTimeAsync(START_FOLLOWUP_MS * 5)
+    expect(h.fetchExperiments.mock.calls.length).toBe(stopped)
   })
 })

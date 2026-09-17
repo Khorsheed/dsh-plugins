@@ -42,7 +42,7 @@ import {
   bucketTone, repoName, snapshotCell, stageTone, stamp, statusKey, statusTone, Word,
 } from './parts.tsx'
 import { PlanReviewPage } from './PlanReviewPage.tsx'
-import { LAB_PAGES } from './store.ts'
+import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS } from './store.ts'
 import { CellsPage } from './CellsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
@@ -220,7 +220,7 @@ export function LabView(props: LabViewProps) {
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
     provisionCondition, setConditionEndpoint,
     fetchDraftOptions, draftExperiment,
-    fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, openSession,
+    fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal,
   } = props
   const list = useStore(s => s.list)
@@ -281,6 +281,8 @@ export function LabView(props: LabViewProps) {
   const judgeDraft = useStore(s => s.judgeDraft)
   const judgeSubmitting = useStore(s => s.judgeSubmitting)
   const exportOpen = useStore(s => s.exportOpen)
+  const reexporting = useStore(s => s.reexporting)
+  const startFollowUps = useStore(s => s.startFollowUps)
   const notice = useStore(s => s.notice)
   const noticeError = useStore(s => s.noticeError)
   // A draft made in THIS visit, held until its row shows up in the refreshed
@@ -432,6 +434,32 @@ export function LabView(props: LabViewProps) {
   }, [startedJobId, refreshRev, actions, fetchRunOutput])
 
   /**
+   * WAIT for the approved run to reach the ledger — ui-spec step 5 → 6, and
+   * I5·T39's G11.
+   *
+   * `runStart` answers with the run id before `runCreate` has been called, so
+   * the refresh the approval fires reads a list that still has no run on this
+   * plan. Nothing re-read afterwards: the matrix and the cells sat on 未开始
+   * while the overview showed `Running`, and a person pressed Refresh to find
+   * out that everything was fine.
+   *
+   * Re-reading here, and only here: the effect arms while a run was started in
+   * this visit and its row still has no run id, and disarms the moment the id
+   * appears — a wait with an end, not a polling cadence. The counter bounds
+   * it, because a run the readiness gate refused never appears at all and its
+   * refusal is in the job log above, not in this list.
+   */
+  useEffect(() => {
+    if (started === null || openRunId !== null) return
+    if (startFollowUps >= START_FOLLOWUP_LIMIT) return
+    const timer = setTimeout(() => {
+      actions.countStartFollowUp()
+      actions.refresh()
+    }, START_FOLLOWUP_MS)
+    return () => { clearTimeout(timer) }
+  }, [started, openRunId, startFollowUps, actions])
+
+  /**
    * PROVISION one condition — ui-spec step 4, and a human's click.
    *
    * The whole action: the same call resolves the scoped home, checks the
@@ -524,6 +552,15 @@ export function LabView(props: LabViewProps) {
   // 退回修改 shows the experiment as a draft. The plan file is untouched: the
   // status is the reviewer's verdict on this page, not a new fact on disk.
   const shownStatus = sentBack && openRow !== undefined && openRow.runId === null ? 'draft' : openRow?.status
+
+  // What the four run-scoped sub-pages put in their empty seat when they have
+  // no run id yet. An approval in this visit means the run EXISTS — the receipt
+  // named it — so 还没启动 would be false there; it is the wait above that has
+  // not landed (I5·T39 · G11). Same component and same seat either way
+  // (ui-spec §九), only the two sentences differ.
+  const notStarted = started !== null
+    ? { title: 'draft.starting', hint: 'draft.startingHint' } as const
+    : { title: 'draft.notStarted', hint: 'draft.notStartedHint' } as const
 
   // The matrix, re-arranged whenever the reader moves a factor. The
   // arrangement is the host's — the browser only says what it wants.
@@ -707,6 +744,34 @@ export function LabView(props: LabViewProps) {
       }))
       // Released cells change the run's states, which the overview and the
       // matrix both show.
+      actions.refresh()
+    })
+  }
+
+  /**
+   * EXPORT AGAIN — the report page's and the judge bench's answer to "the
+   * final verdicts are not in the bundle" (I5·T39 · G17).
+   *
+   * One click because it repeats an export this run already recorded: the
+   * same layers, into a fresh directory beside the first, with the report
+   * written into it. Nothing guarded is widened here — mission re-checks the
+   * layer set against a fresh plan and refuses if one of them became guarded,
+   * which is when a reader goes to the dialog and confirms it on purpose.
+   */
+  const onReexport = (): void => {
+    if (openRunId === null) return
+    actions.setReexporting(true)
+    void reexportRun(sessionId, { runId: openRunId }).then((result) => {
+      actions.setReexporting(false)
+      if (!result.ok) {
+        actions.setNoticeError(result.error.message)
+        return
+      }
+      actions.setNotice(t('notice.reexported', { dir: result.value.bundleDir, count: result.value.files }))
+      // The report page looks in the directory the export landed in first, so
+      // the page a reader is standing on shows the NEW bundle, not the stale
+      // one they just replaced.
+      actions.setLookIn(result.value.bundleDir.replace(/\/[^/]+$/, ''))
       actions.refresh()
     })
   }
@@ -902,7 +967,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'matrix' && (
                 openRunId === null
-                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
+                  ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
                   : (
                     <MatrixPage
                       matrix={matrix}
@@ -918,7 +983,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'cells' && (
                 openRunId === null
-                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
+                  ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
                   : (
                     <CellsPage
                       cells={cells}
@@ -941,7 +1006,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'report' && (
                 openRunId === null
-                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
+                  ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
                   : (
                     <ReportPage
                       report={report}
@@ -951,8 +1016,10 @@ export function LabView(props: LabViewProps) {
                       finalizeResult={finalizeResult}
                       units={runUnits}
                       unitsError={runUnitsError}
+                      reexporting={reexporting}
                       onFinalize={onFinalize}
                       onExport={() => { actions.setExportOpen(true) }}
+                      onReexport={onReexport}
                       onLookIn={(dir) => { actions.setLookIn(dir) }}
                       t={t}
                     />
@@ -960,7 +1027,7 @@ export function LabView(props: LabViewProps) {
               )}
               {page === 'judging' && (
                 openRunId === null
-                  ? <EmptyState title={t('draft.notStarted')} hint={t('draft.notStartedHint')} />
+                  ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
                   : (
                     <JudgingPage
                       view={judge}
@@ -969,6 +1036,8 @@ export function LabView(props: LabViewProps) {
                       selection={judgeTicket}
                       draft={judgeDraft}
                       submitting={judgeSubmitting}
+                      reexporting={reexporting}
+                      onReexport={onReexport}
                       onPick={(ticket) => { actions.openJudgeCell(ticket) }}
                       onAnswer={(criterion, value) => { actions.setJudgeDraft(criterion, value) }}
                       onSubmit={onHumanFinal}

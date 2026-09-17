@@ -210,12 +210,19 @@ export function JudgingPage(props: {
   /** criterion id → the verdict being composed for the open cell. */
   draft: Record<string, { pass: boolean; evidence: string }>
   submitting: boolean
+  /** Whether a one-click re-export is in flight. */
+  reexporting: boolean
   onPick: (ticket: string | null) => void
   onAnswer: (criterion: string, value: { pass: boolean; evidence: string }) => void
   onSubmit: () => void
+  /** Repeat the run's recorded export so the bundle carries these verdicts. */
+  onReexport: () => void
   t: LabViewProps['t']
 }) {
-  const { view, loading, error, selection, draft, submitting, onPick, onAnswer, onSubmit, t } = props
+  const {
+    view, loading, error, selection, draft, submitting, reexporting,
+    onPick, onAnswer, onSubmit, onReexport, t,
+  } = props
 
   if (error !== null) return <ErrorState what={t('judge.error')} message={error} t={t} />
   if (view === null) return <div className={css.empty}>{t('judge.loading')}</div>
@@ -241,6 +248,22 @@ export function JudgingPage(props: {
           is in flight. */}
       {loading && <div className={css.dim}>{t('judge.loading')}</div>}
       {view.notes.map(note => <div key={note} className={css.note}>{note}</div>)}
+      {/* A verdict recorded here does NOT reach a bundle that was already
+          written, and the bundle is what every downstream number is read from.
+          Before I5·T60 nothing on either page said so and the fix was two
+          commands nobody mentioned (I5·T39 · G17). */}
+      {view.bundleStale && (
+        // Same seat and same shape as the report page's copy of this sentence
+        // (ui-spec §九: one component, not one per page).
+        <div className={css.blocked}>
+          <div>{t('judge.bundleStale')}</div>
+          <div className={css.actions}>
+            <Button size="sm" variant="primary" disabled={reexporting} onClick={onReexport}>
+              {reexporting ? t('judge.reexporting') : t('judge.reexport')}
+            </Button>
+          </div>
+        </div>
+      )}
       <Stats view={view} t={t} />
 
       {view.cells.length === 0

@@ -18,8 +18,8 @@ import type {
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
   EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
-  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalPlanRequest, EvalPlanReview, EvalReportRequest,
-  EvalRunOutputView, EvalRunReportView, EvalRunUnitsRequest, EvalRunUnitsView,
+  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalPlanRequest, EvalPlanReview, EvalReexportRequest,
+  EvalReportRequest, EvalRunOutputView, EvalRunReportView, EvalRunUnitsRequest, EvalRunUnitsView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
 
@@ -98,8 +98,20 @@ export interface LabViewInjected {
   releaseCheck: (sessionId: SessionId, request: EvalCellRequest) => Promise<RemoteResult<EvalCellReleaseResult>>
   /** The export dialog's plan step: which layers are guarded. */
   planExport: (sessionId: SessionId, request: EvalExportPlanRequest) => Promise<RemoteResult<EvalExportPlanView>>
-  /** The export dialog's confirm step; mission re-checks against a fresh plan. */
+  /**
+   * The export dialog's confirm step; mission re-checks against a fresh plan.
+   * ONE action since I5·T60: the bundle AND the report inside it, plus the
+   * run-level note that records where the bundle went.
+   */
   exportRun: (sessionId: SessionId, request: EvalExportRunRequest) => Promise<RemoteResult<EvalExportResultView>>
+  /**
+   * EXPORT AGAIN after a final verdict — the report page's and the judge
+   * bench's one-click repeat of the export this run already recorded, into a
+   * fresh directory beside it. It repeats and never widens: the layers are the
+   * recorded ones, nothing guarded is re-confirmed, and mission re-checks that
+   * against a fresh plan (I5·T39 · G17).
+   */
+  reexportRun: (sessionId: SessionId, request: EvalReexportRequest) => Promise<RemoteResult<EvalExportResultView>>
   /**
    * The report page: the four invariants, the paired differences, the
    * efficiency table and the judge numbers, read from the run's exported

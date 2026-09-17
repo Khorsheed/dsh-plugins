@@ -66,6 +66,8 @@ const DETAIL: EvalExperimentDetail = {
 const QUEUE: EvalJudgeQueueView = {
   runId: 'run-1',
   judgeCount: 2,
+  bundleStale: false,
+  lastExportAt: 1_700_000_000_000,
   notes: [],
   consistency: {
     multiSampled: 1,
@@ -148,6 +150,14 @@ function makeHarness(queue: EvalJudgeQueueView = QUEUE, written: EvalHumanFinalR
     fetchExperiment: vi.fn(async (): Promise<Result<EvalExperimentDetail>> => ({ ok: true, value: DETAIL })),
     fetchJudgeQueue: vi.fn(async (): Promise<Result<EvalJudgeQueueView>> => ({ ok: true, value: queue })),
     submitHumanFinal: vi.fn(async (): Promise<Result<EvalHumanFinalResult>> => ({ ok: true, value: written })),
+    reexportRun: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        bundleDir: '/out/re-20260917T142530Z/run-1-bundle', files: 9, exportedAt: 1_700_000_999_000,
+        summaryPath: '/out/re-20260917T142530Z/run-1-bundle/report/summary.md',
+        reportRows: 14, reportError: null, noteRecorded: true,
+      },
+    })),
   }
 }
 
@@ -162,6 +172,7 @@ function renderView(h: Harness) {
     fetchExperiment: h.fetchExperiment,
     fetchJudgeQueue: h.fetchJudgeQueue,
     submitHumanFinal: h.submitHumanFinal,
+    reexportRun: h.reexportRun,
     openSession: vi.fn(),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
@@ -382,5 +393,26 @@ describe('the agreement header', () => {
     pickCell(1)
     pickCell(2)
     expect(h.fetchJudgeQueue).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the bundle does not follow the verdicts written here (I5·T39 · G17)', () => {
+  it('says nothing while the bundle is newer than every final verdict', async () => {
+    const h = makeHarness()
+    await openBench(h)
+    await screen.findByText('judge.queue')
+    expect(screen.queryByText('judge.bundleStale')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'judge.reexport' })).toBeNull()
+  })
+
+  it('offers the repeat once a final verdict is newer than the bundle', async () => {
+    const h = makeHarness({ ...QUEUE, bundleStale: true })
+    await openBench(h)
+
+    // The sentence the walkthrough had to derive from manifest.json, on the
+    // page that causes it, with the action beside it.
+    expect(await screen.findByText('judge.bundleStale')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'judge.reexport' }))
+    await waitFor(() => { expect(h.reexportRun).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
   })
 })

@@ -78,6 +78,14 @@ export type EvalKey =
   | 'report.lookInGo'
   | 'report.counts'
   | 'report.cliHint'
+  | 'report.exportedAt'
+  | 'report.exportedAtUnknown'
+  | 'report.summaryIn'
+  | 'report.summaryMissing'
+  | 'report.staleAfterFinal'
+  | 'report.reexport'
+  | 'report.reexporting'
+  | 'report.reexportNeedsDialog'
   | 'report.toolOnlyNs'
   | 'report.invariants'
   | 'report.comparisonClosed'
@@ -141,6 +149,7 @@ export type EvalKey =
   | 'report.reclaimConfirm'
   | 'report.reclaimConfirmAsk'
   | 'notice.finalized'
+  | 'notice.reexported'
   | 'judge.loading'
   | 'judge.error'
   | 'judge.empty'
@@ -173,6 +182,9 @@ export type EvalKey =
   | 'judge.submit'
   | 'judge.submitting'
   | 'judge.submitBlocked'
+  | 'judge.bundleStale'
+  | 'judge.reexport'
+  | 'judge.reexporting'
   | 'judge.regrade'
   | 'judge.scoringWarning'
   | 'judge.stats'
@@ -312,6 +324,8 @@ export type EvalKey =
   | 'export.cancel'
   | 'export.close'
   | 'export.done'
+  | 'export.doneWithReport'
+  | 'export.doneNoReport'
   | 'export.error'
   | 'review.loading'
   | 'review.error'
@@ -424,6 +438,8 @@ export type EvalKey =
   | 'list.emptyAction'
   | 'draft.notStarted'
   | 'draft.notStartedHint'
+  | 'draft.starting'
+  | 'draft.startingHint'
   | 'overview.readinessRaw'
   | 'overview.metaRaw'
   | 'role.player'
@@ -618,6 +634,9 @@ export const en: Record<EvalKey, string> = {
   'judge.submit': 'Record human-final ({count})',
   'judge.submitting': 'Recording…',
   'judge.submitBlocked': 'Answer at least one criterion, with evidence, before recording.',
+  'judge.bundleStale': 'The exported bundle was written before these final verdicts, so it does not carry them. Export again to put them in it — the report goes with it, and the old directory is left alone.',
+  'judge.reexport': 'Export again',
+  'judge.reexporting': 'Exporting…',
   'judge.scoringWarning': 'Recording here makes human-final this cell\'s ONLY scoring source. The report scores each cell from the most authoritative namespace that has any verdict at all, so these {count} criteria — judged only by llm-draft ({criteria}) — would stop counting toward this cell\'s score. Answer them here too, or accept that the cell scores on the human criteria alone.',
   'judge.regrade': 'This cell already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
   'judge.stats': 'Agreement (live, from the ledger)',
@@ -757,6 +776,8 @@ export const en: Record<EvalKey, string> = {
   'export.cancel': 'Cancel',
   'export.close': 'Close',
   'export.done': 'exported {dir} ({count} files)',
+  'export.doneWithReport': 'exported {dir} ({count} files) — report written to {summary} ({rows} verdict row(s))',
+  'export.doneNoReport': 'exported {dir} ({count} files) — the report was NOT written beside it, so run `dsh-eval report {dir}` by hand',
   'export.error': 'Export failed',
   'report.loading': 'Reading the bundle…',
   'report.error': 'Failed to build the report',
@@ -767,6 +788,14 @@ export const en: Record<EvalKey, string> = {
   'report.lookInGo': 'Look here',
   'report.counts': '{rows} verdict row(s) · {missions} cell(s) · {attempts} attempt(s) · {retries} infrastructure retry/retries (aggregation uses each cell\'s current attempt)',
   'report.cliHint': 'Write it to disk',
+  'report.exportedAt': 'Bundle written {at}',
+  'report.exportedAtUnknown': 'Bundle write time unknown (no readable manifest.json)',
+  'report.summaryIn': 'report/summary.md is in the bundle',
+  'report.summaryMissing': 'This bundle carries no report/summary.md — it was exported before the export action wrote one. Export again to get it.',
+  'report.staleAfterFinal': 'This bundle is OLDER than the last final verdict ({final}), so the numbers above were computed without it. Export again: a fresh bundle and its report go into a new directory, and this one is left alone.',
+  'report.reexport': 'Export again',
+  'report.reexporting': 'Exporting…',
+  'report.reexportNeedsDialog': 'No earlier export is on record for this run, so there is nothing to repeat — use 导出 and choose the layers.',
   'report.toolOnlyNs': 'RED FLAG: every verdict in the expectedNs namespace `{ns}` was written by a `tool:` caller — the source disagrees with that namespace\'s contract, and conclusions resting on it are in doubt.',
   'report.invariants': 'The four invariants',
   'report.comparisonClosed': 'The comparison section is closed: {count} invariant(s) did not hold, so this run\u2019s cells are not comparable. Facts only below — no deltas, no ranking (architecture §5).',
@@ -830,6 +859,7 @@ export const en: Record<EvalKey, string> = {
   'report.reclaimConfirm': 'Yes, reclaim',
   'report.reclaimConfirmAsk': 'Reclaiming walks the SAME release gate finalize does: every archived cell goes archived → releasable → released and its container is destroyed there. A refused gate is recorded, never forced.',
   'notice.finalized': 'finalize: {released} released, {refused} gate-refused, {skipped} skipped; containers: {unitsReleased} reclaimed, {unitsHeld} still up',
+  'notice.reexported': 'exported again into {dir} ({count} files) — report written, and the previous bundle is untouched',
   'review.loading': 'Validating the plan…',
   'review.error': 'Failed to review the plan',
   'review.noPlan': 'This run records no plan document, so there is nothing to review — its run.meta is on the overview.',
@@ -974,6 +1004,11 @@ export const en: Record<EvalKey, string> = {
   'list.emptyHint': 'Draft one here, or ask the agent in chat for one — either way it lands in this list as a draft, and starting it is still a click on the plan-review page.',
   'draft.notStarted': 'Not started yet',
   'draft.notStartedHint': 'This page fills in once a human approves the plan and starts the run — go to Plan review.',
+  // The same seat, for a run that HAS been started: the approval receipt named
+  // it, so 还没启动 would be false here — it is the ledger that has not caught
+  // up yet, and this page catches up by itself (I5·T39 · G11).
+  'draft.starting': 'Starting it',
+  'draft.startingHint': 'The run is created and this page picks it up on its own in a moment — no need to refresh.',
   'overview.readinessRaw': 'Records and refusals, verbatim',
   'overview.metaRaw': 'run.meta, verbatim',
   'matrix.arrange': 'Column, bands and pins',
@@ -1117,6 +1152,9 @@ export const zh: Record<EvalKey, string> = {
   'judge.submit': '记入 human-final（{count} 条）',
   'judge.submitting': '记录中…',
   'judge.submitBlocked': '至少答一条判据并写上证据，才能记录。',
+  'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
+  'judge.reexport': '重新导出',
+  'judge.reexporting': '正在导出…',
   'judge.scoringWarning': '在这里记一条，human-final 就成为这个格子**唯一**的得分来源。报告按格取「有判定的最权威 ns」整体算分，所以这 {count} 条只有 llm-draft 判定的判据（{criteria}）将不再计入本格得分。要么在这里一并答掉，要么接受这一格只按人评的判据算分。',
   'judge.regrade': '这个格子已经有 human-final。再记一次是**追加**：报告按每条判据的最新值读数，先前那条仍留在账本里。',
   'judge.stats': '一致性（实时，来自账本）',
@@ -1256,6 +1294,8 @@ export const zh: Record<EvalKey, string> = {
   'export.cancel': '取消',
   'export.close': '关闭',
   'export.done': '已导出 {dir}（{count} 个文件）',
+  'export.doneWithReport': '已导出 {dir}（{count} 个文件）——报告写在 {summary}（判定行 {rows}）',
+  'export.doneNoReport': '已导出 {dir}（{count} 个文件）——报告没能一并写进去，请手动跑 `dsh-eval report {dir}`',
   'export.error': '导出失败',
   'report.loading': '正在读 bundle…',
   'report.error': '报告生成失败',
@@ -1266,6 +1306,14 @@ export const zh: Record<EvalKey, string> = {
   'report.lookInGo': '在这里找',
   'report.counts': '判定行 {rows} · 格子 {missions} · attempt {attempts} · 基础设施重试 {retries}（聚合只用各格最新 attempt）',
   'report.cliHint': '用 CLI 落盘',
+  'report.exportedAt': 'bundle 写于 {at}',
+  'report.exportedAtUnknown': 'bundle 的写入时间不明（manifest.json 读不到）',
+  'report.summaryIn': 'report/summary.md 已在 bundle 里',
+  'report.summaryMissing': '这份 bundle 里没有 report/summary.md——它是在「导出即写报告」之前导的。重新导出一次就有了。',
+  'report.staleAfterFinal': 'bundle 早于终评（最后一条终评在 {final}），上面的数字是没算终评算出来的。重新导出一次：新的 bundle 与报告进新目录，这一份不动。',
+  'report.reexport': '重新导出',
+  'report.reexporting': '正在导出…',
+  'report.reexportNeedsDialog': '这个 run 没有可重复的导出记录，先用「导出」选一次层。',
   'report.toolOnlyNs': '红字警告：expectedNs 中的 `{ns}` 的判定全部由 `tool:` 写入——判定来源与该 ns 的契约作者不符，相关结论效力存疑。',
   'report.invariants': '四条不变量',
   'report.comparisonClosed': '比较节未开：有 {count} 条不变量没成立，这个 run 的格子之间不可比。下面只有事实表，没有差值与名次（architecture §5）。',
@@ -1329,6 +1377,7 @@ export const zh: Record<EvalKey, string> = {
   'report.reclaimConfirm': '确认回收',
   'report.reclaimConfirmAsk': '回收走的就是 finalize 那条释放闸：每个 archived 格子走 archived → releasable → released，容器在这中间销毁。闸拒了就记下来，不强推。',
   'notice.finalized': 'finalize：{released} 释放、{refused} 被闸拒、{skipped} 跳过；容器：{unitsReleased} 已回收、{unitsHeld} 仍在',
+  'notice.reexported': '已重新导出到 {dir}（{count} 个文件）——报告一并写了，上一份 bundle 原样保留',
   'review.loading': '正在校验计划…',
   'review.error': '计划审阅加载失败',
   'review.noPlan': '这个 run 没有记录计划文件，无从审阅——它的 run.meta 在概览页。',
@@ -1473,6 +1522,8 @@ export const zh: Record<EvalKey, string> = {
   'list.emptyHint': '在这里起一个草稿，或者在会话里让 agent 起——两条路都落在这张列表里，都是草稿；启动仍是计划审阅页上的一次点击。',
   'draft.notStarted': '还没启动',
   'draft.notStartedHint': '人在计划审阅页批准并启动之后，这一页才有内容——去「计划审阅」。',
+  'draft.starting': '正在启动',
+  'draft.startingHint': 'run 已经建了，这一页稍后自己会拉到，不用点刷新。',
   'overview.readinessRaw': '就绪记录与拒绝原文',
   'overview.metaRaw': 'run.meta 原文',
   'matrix.arrange': '换列 · 分组 · 筛选',

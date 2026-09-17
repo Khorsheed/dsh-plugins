@@ -9,6 +9,11 @@
  * pluginInventory namespace, a pending/failed RPC, a missing or `broken`
  * preset group, and sessions with no preset at all.
  *
+ * "The CURRENT session's preset" means the nearest one in its PARENT
+ * chain since I5·T60: a member sub-session declares no preset of its own,
+ * so read alone it took the fail-open arm and showed every gated tab inside
+ * a player's transcript (I5·T39 · G13). See {@link effectivePresetOf}.
+ *
  * The criterion is PRESENCE of the companion row — the honest reading of "the
  * composition grants the agent the eval read tools". A session that merely has
  * eval runs in its ledger is not an escape: nothing about an existing run is
@@ -57,6 +62,48 @@ function presetOf(row: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+/** One session row's PARENT, when the host records one (member sub-sessions). */
+function parentOf(row: unknown): string | undefined {
+  const value = (row as { parentSessionId?: unknown } | undefined)?.parentSessionId
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/**
+ * The preset whose composition decides this session's chrome — the session's
+ * own, or the nearest ANCESTOR's when it declares none.
+ *
+ * A member sub-session is the case this exists for. The cells of an evaluation
+ * delegate into child sessions, and a condition that names no agent preset
+ * (`"preset": null`, which is most of them) produces a child with no
+ * `agentPreset` at all. Read alone, that session matched the fail-open arm and
+ * every gated tab appeared in it — including the ones its parent had
+ * correctly hidden, which is how a walkthrough of an evaluation found a
+ * Missions tab inside a player's own transcript while the main session had
+ * none (I5·T39 · G13).
+ *
+ * Walking to the parent is the honest reading of the criterion, not a special
+ * case for evaluations: the chrome asks "does this conversation's composition
+ * grant the tools", and a sub-session that inherited its parent's composition
+ * inherits the answer. A session with no parent and no preset still fails
+ * open, exactly as before. The walk is bounded and cycle-guarded — a ledger
+ * that somehow points a session at itself must not hang a tab strip.
+ * @param byId - the session-list snapshot's rows.
+ * @param sessionId - the session being rendered.
+ * @returns the deciding preset id, or undefined when nothing in the chain declares one.
+ */
+function effectivePresetOf(byId: Record<string, unknown>, sessionId: string): string | undefined {
+  const seen = new Set<string>()
+  let current: string | undefined = sessionId
+  while (current !== undefined && !seen.has(current)) {
+    seen.add(current)
+    const row: unknown = byId[current]
+    const preset = presetOf(row)
+    if (preset !== undefined) return preset
+    current = parentOf(row)
+  }
+  return undefined
+}
+
 /**
  * The session-chrome visibility controller: one inventory fetch per page
  * (composition data changes only with preset files, which a reload re-reads
@@ -94,7 +141,7 @@ export class EvalPresetVisibility implements EvalChromeVisibility {
 
   show(sessionId: SessionId | undefined): boolean {
     if (sessionId === undefined) return true
-    const preset = presetOf(this.ctx.sessions.list.getSnapshot().byId[sessionId])
+    const preset = effectivePresetOf(this.ctx.sessions.list.getSnapshot().byId, sessionId)
     if (preset === undefined) return true
     if (this.composition === null) return true
     const group = this.composition.agentPresets?.find(candidate => candidate.id === preset)

@@ -1,11 +1,13 @@
-/** The companion row: the five tools (four reads plus the one draft), the
+/** The companion row: the six tools (four reads plus the two writes), the
  * origin tag (this package, not the core), the `tool:eval` guidance section,
  * the `none` grant, and the silent degrade when the core service is absent. */
 import { describe, expect, it } from 'vitest'
 import { apply, type EvalToolConfig } from '../src/index.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
-const EVAL_TOOLS = ['eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_run_status', 'eval_cells']
+const EVAL_TOOLS = [
+  'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_repo_write', 'eval_run_status', 'eval_cells',
+]
 
 interface RegisteredTool {
   name: string
@@ -49,7 +51,7 @@ function mount(service: unknown, config?: EvalToolConfig): {
 }
 
 describe('eval-tool companion row', () => {
-  it('grants the five tools, tags them by this package, and adds the guidance section', () => {
+  it('grants the six tools, tags them by this package, and adds the guidance section', () => {
     const { tools, sections } = mount({})
     expect(tools.map(tool => tool.name).sort()).toEqual([...EVAL_TOOLS].sort())
     for (const tool of tools) {
@@ -65,7 +67,7 @@ describe('eval-tool companion row', () => {
     expect(sections[0]?.text).toContain('do not look for mission_run_list')
   })
 
-  it('names the one write in the guidance, and says in the same breath that it starts nothing', () => {
+  it('names the two writes in the guidance, and says in the same breath that starting is not one of them', () => {
     const { sections } = mount({})
     const text = sections[0]?.text ?? ''
     expect(text).toContain('eval_plan_draft')
@@ -76,6 +78,12 @@ describe('eval-tool companion row', () => {
     // A minted condition is always a copy — the discipline the whole
     // comparison rests on, stated where the model reads it.
     expect(text).toContain('always a COPY')
+    // The second write (I5·T60) and the door it is: the analysis draft's home,
+    // and never an item's material — said where the model reads it, so that
+    // reaching for `write` plus a sandbox escalation stops being the path.
+    expect(text).toContain('eval_repo_write')
+    expect(text).toContain('datasets/<set>/analysis/<path>')
+    expect(text).toContain('must not ask for a sandbox escalation')
   })
 
   it('grants neither tools nor a section under `none`', () => {

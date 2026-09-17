@@ -40,7 +40,7 @@ import type {
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
-  EvalMatrixRequest, EvalPlanRequest, EvalReportRequest, EvalRunUnitsRequest,
+  EvalMatrixRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -125,6 +125,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
         planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
         exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
+        // The repeat of a recorded export — the answer to "the final verdicts
+        // are not in the bundle" being a command line nobody mentioned.
+        reexportRun: (sid: SessionId, request: EvalReexportRequest) => remote.reexport(sid, request),
         fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
         finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
         fetchRunUnits: (sid: SessionId, request: EvalRunUnitsRequest) => remote.runUnits(sid, request),
