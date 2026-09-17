@@ -43,12 +43,30 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 
 Restart the host afterwards. Uninstalling does **not** delete `$DSH_HOME/state/canvas/` or any `灵感画布/` directory — your drafts and canvases are yours.
 
+## Scoping the session tools to a preset (0.4.2+)
+
+The two canvas tools (`canvas_propose_card` / `canvas_comment`) and their English guidance section live in a separate `./agent` composition entry instead of the profile root. The shipped `cordis.patch.yml` mounts it as a second row — **every session of every preset gets the tools** (the pre-0.4.2 status quo). To grant them to one mode only (e.g. `dsh-writing`):
+
+```yaml
+# <profile>/cordis.patch.yml: disable the root row
+- id: canvas-agent
+  disabled: true
+```
+
+```yaml
+# ~/.dsh-official/.agent-presets/dsh-writing/agent.cordis.yml: grant inside the preset
+- id: canvas-agent
+  name: "@khorsheed/dsh-canvas/agent"
+```
+
+**The two must never be live at once** (the tools would register twice under the same names — the local-agent family's established pattern). Sessions without the preset see no canvas guidance in their system prompt and no canvas_* tools in their catalog. When the entry probes no `canvasBoard` (the core row is not mounted) it only warns and registers nothing — the composition still loads.
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ complete — the right-Sidebar page-type tab (`ctx.sidebarRightTabs` + the keyed `sidebar.right.pane.tab`) exists from 0.1.5, so `minHost` moved up with it; older hosts have no right Sidebar seat, so stay on the previous release line there.
 - Source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 - **A web-surface plugin**: a headless profile has no browser consumer and this package contributes nothing there.
-- **The main-session canvas tools** register into the profile-root tools registry (origin tag carried); the target canvas resolves per session from the focused canvas (the one the right-Sidebar tab has open), and with no canvas open the tools answer a plain message instead of failing. **Chat depends on the side-chat plugin, non-fatally**: probed through `ctx.get('sideChat')` (a one-way edge, declared in the manifest's `dsh.references`); without it every chat entry hides and the board keeps working.
+- **The main-session canvas tools** register through the separate `./agent` composition entry (the shipped patch defaults to every session; preset-scoping above; origin tag carried); the target canvas resolves per session from the focused canvas (the one the right-Sidebar tab has open), and with no canvas open the tools answer a plain message instead of failing. **Chat depends on the side-chat plugin, non-fatally**: probed through `ctx.get('sideChat')` (a one-way edge, declared in the manifest's `dsh.references`); without it every chat entry hides and the board keeps working.
 - **v1 writes are fenced by the session that started the gesture.** All three write paths (new / save / archive) resolve the calling session's sandbox policy first, so the fence hangs on that session's own workspace rather than on the host process's directory. A read-only session therefore gets an explicit refusal (`that location is not writable`) instead of a silent write.
 - **v2 board and draft writes re-root the fence at the state dir.** A canvas is deployment-level state no session workspace can hold: writes still ride the mounted `ctx.fs` (version guards, atomic writes, the observation trail), the calling session resolves the **mode** and lends its id (a read-only deployment still denies), but the writable boundary is re-rooted at the plugin's own `$DSH_HOME/state/canvas` — a workspace-write fence around exactly that directory, never a bare `node:fs` bypass. When `DSH_HOME` is unset the state root falls back to `process.cwd()` (the datasets precedent). The canvas tools' writes ride the same fence (preferring the executing agent's own session).
 
@@ -88,7 +106,7 @@ Each `cards[]` entry: `{ id, kind, text, source?, status: proposed|kept|archived
 
 **Chat integration (M2)**: the agent-first `askAgent` verb probes `ctx.get('sideChat')` and calls `openWith({ contextKey: canvas:<id>, label: topic, systemPrompt, tools, refs })` — `prompt.ts` renders the segment as a pure function (topic and goal / the board summary / the grounding guardrail / the tool contract / lens semantics / the stats feedback section), and `tools.ts` builds the two `defineTool` definitions (the origin tag rides the documented no-import `Symbol.for('dsh.tool.origin')` property). The send rule: a free text wins, else a non-`ask` lens's template, else prime-only. The client asks from two places (the lens bar / comment "Follow up"); selection interactions belong to the quote plugin, with the `chatStatus` probe gating every chat entry; after a send it watches `remote.sidechat.getState` (structural mirror), touching the shared rev while the turn runs so ghost cards appear as the agent's tool calls land.
 
-**Main-session tools (M3)**: `tools.ts`'s `canvasMainSessionToolDefinitions` register through the profile-root `ctx.inject(['tools'])` (deferred — the datasets-tool precedent), with a `canvas:tools` prompt section; the target canvas is `ctx.canvasBoard.focusedCanvasId(session)` (reported by the tab through `focusCanvas`), and no focus answers a "no canvas open" message. The origin tag rides the same no-import path. The canvas does NOT hide by the session's preset (presets bind at session creation; the canvas is a cross-session space, so hiding by session preset means hiding forever) — visibility belongs to the profile / bundle install layer.
+**Main-session tools (M3; via `./agent` since 0.4.2)**: `tools.ts`'s `canvasMainSessionToolDefinitions` register from the `src/agent.ts` composition entry through `ctx.inject(['tools'])` (deferred — the datasets-tool precedent; the shipped patch mounts it at root, or a preset's `agent.cordis.yml` for scoping), with the English `canvas:tools` prompt section; the target canvas is `ctx.canvasBoard.focusedCanvasId(session)` (reported by the tab through `focusCanvas`), and no focus answers a "no canvas open" message. The origin tag rides the same no-import path. The canvas does NOT hide by the session's preset (presets bind at session creation; the canvas is a cross-session space, so hiding by session preset means hiding forever) — visibility belongs to the profile / bundle install layer.
 
 **v1 on-disk layout**
 
