@@ -69,6 +69,7 @@ import { WORKTREES_KIND, WORKTREES_TAB_ID, worktreesDefinition } from './definit
 import { en, NS, zh } from './locales.ts'
 import { OpenInAppProbe } from './open-in-app.ts'
 import { WorktreesController } from './panel-service.ts'
+import { RegistrationToggle, WorktreesTabVisibility } from './preset-visibility.ts'
 import { createLocalFilesStore } from './store-local.ts'
 import { createWorktreesStore, type DrawerMode } from './store.ts'
 
@@ -162,8 +163,22 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   // Stage one of the right-Sidebar registration: the page type itself (guide
   // entry, no address claims). The default band is 'extension', correct for a
-  // type shipped from outside the product.
-  ctx.effect(() => ctx.sidebarRightTabs.register(worktreesDefinition(t)), 'worktrees: tab type')
+  // type shipped from outside the product. The type registers exactly while
+  // the current session's preset composition grants the companion tool row —
+  // the registration-level sibling of the badge's gate (the guide enumerates
+  // registrations, so hidden means NOT registered; an opened tab is stored
+  // per session and a kind with no registrant renders the host's designed
+  // tab.unavailable fallback).
+  const tabVisibility = new WorktreesTabVisibility(ctx, pluginInventory, () => remote.badgeConfig())
+  ctx.effect(() => {
+    const toggle = new RegistrationToggle(
+      () => ctx.sidebarRightTabs.register(worktreesDefinition(t)),
+      () => tabVisibility.show(ctx.sessions.list.getSnapshot().current),
+    )
+    toggle.setReady(true)
+    const unsubscribe = tabVisibility.subscribe(() => { toggle.sync() })
+    return () => { unsubscribe(); toggle.setReady(false) }
+  }, 'worktrees: tab type visibility')
 
   // Stage two: the body under the type's id in the keyed pane seat.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({

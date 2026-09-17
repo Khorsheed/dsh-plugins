@@ -16,15 +16,12 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PluginInventorySnapshot, SessionSummary } from '../types.ts'
 import type { WorktreesBadgeProps } from './contract.ts'
+// The criterion's row constant lives with the tab's registration-level gate —
+// one constant, two enforcement levels of the same rule.
+import { WORKTREES_TOOL_ROW_MODULE } from './preset-visibility.ts'
 import css from './Badge.module.css'
 
-/**
- * The composition criterion's row: the companion package whose presence in
- * the current session's preset composition keeps the badge visible (the
- * mode-switcher proposal's "组合里有我的行" — the preset composition file
- * is the single source of truth, no registry to maintain).
- */
-const TOOL_ROW_MODULE = '@khorsheed/dsh-worktrees-tool'
+const TOOL_ROW_MODULE = WORKTREES_TOOL_ROW_MODULE
 
 /** The badge. */
 export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComposition, open, subscribeVersion, getVersion, useSessions, t }: WorktreesBadgeProps): ReactNode {

@@ -58,7 +58,12 @@ async function bench() {
     readLocalImage: record('readLocalImage'),
   })
   ctx.provide('locale', new LocaleRuntime(ctx))
-  ctx.provide('sessions', {})
+  ctx.provide('sessions', {
+    list: {
+      getSnapshot: () => ({ byId: {}, current: undefined }),
+      subscribe: () => () => {},
+    },
+  })
   ctx.provide('workspaces', { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } })
   // A fake tab-type registry recording registrations; the real registry's
   // ranking/coexistence rules are the host's own test coverage.
@@ -146,6 +151,9 @@ describe('worktrees browser plugin', () => {
     await injected.fetchSummary('s1' as never)
     await injected.fetchChanges('s1' as never)
     expect(b.calls).toEqual([
+      // The tab-visibility controller's one-per-page config fetch, kicked off
+      // at apply (the criterion's visiblePresets override input).
+      { method: 'badgeConfig', args: [] },
       { method: 'summary', args: ['s1'] },
       { method: 'changes', args: ['s1'] },
     ])

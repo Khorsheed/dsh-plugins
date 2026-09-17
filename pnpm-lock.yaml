@@ -2377,6 +2377,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-scope@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)))
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: 0.1.5-rc.1
+        version: 0.1.5-rc.1(e6d5dbd572e1c2af15da37b32d8a5bf9)
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-api-gateway@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-connection@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-host-directory-picker@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-session@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-scope@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2))))(@deepseek-ai/dsh-storage-domain@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-storage@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-typert-protocol@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-workspace@0.1.5-rc.1(0d21b8701233c0d1ccd262c73d8d4b61))
@@ -2410,6 +2413,9 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
+      '@deepseek-ai/dsh-session':
+        specifier: 0.1.5-rc.1
+        version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-scope@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)))
       '@deepseek-ai/dsh-tools':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(42bef068bdb77cea11b81bec106cd1d1)
