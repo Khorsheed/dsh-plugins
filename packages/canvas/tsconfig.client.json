@@ -19,6 +19,7 @@
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/paste-table.ts",
+    "src/client/preset-visibility.ts",
     "src/client/detail/CanvasDetailView.tsx",
     "src/client/space/BoardView.tsx",
     "src/client/space/CardTextarea.tsx",

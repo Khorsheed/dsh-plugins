@@ -180,6 +180,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(011efc65c149ca53f6af28580be53483)
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: 0.1.5-rc.1
+        version: 0.1.5-rc.1(e6d5dbd572e1c2af15da37b32d8a5bf9)
       '@deepseek-ai/dsh-client-locale':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
