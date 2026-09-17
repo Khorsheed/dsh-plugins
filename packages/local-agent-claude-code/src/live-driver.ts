@@ -536,7 +536,7 @@ export class ClaudeLiveDriver {
     // next spawn). The login watch's sync alone cannot keep a resident
     // runtime authenticatable across rotations. Best-effort: a missing grant
     // fails the turn with the CLI's own "Not logged in", not here.
-    await syncClaudeCredentialFile(spec.homeDir).catch(() => false)
+    await syncClaudeCredentialFile(spec.homeDir, message => { this.ctx.logger.warn(message) }).catch(() => false)
     // The member bridge rides the spawn argv (`--mcp-config` + `--allowedTools`),
     // exactly as in the exec path; the resident process serves one member, so
     // its token lives with the process.
