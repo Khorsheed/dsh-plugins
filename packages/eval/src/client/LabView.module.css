@@ -368,21 +368,36 @@
 }
 
 /* The endpoint editor replaces the cell in place rather than opening a dialog:
-   the value is one short word and the row it belongs to is the context. */
-.endpointEdit {
+   the value is one short word and the row it belongs to is the context.
+   It OVERLAYS the cells to its right while open — the column is sized for a
+   word, and an input plus two buttons squeezed into it leaves a text field two
+   characters wide (seen on the first real-instance pass). The selector is
+   written against `.condRow > span` on purpose: that rule clips every cell,
+   and it out-specifies a bare class. */
+.condRow > span.endpointEdit {
+  position: relative;
+  z-index: 1;
   display: flex;
   gap: 4px;
   align-items: center;
+  min-width: 300px;
   overflow: visible;
+  border-radius: 4px;
+  /* An OPAQUE surface, because this cell overlays the two beside it while it
+     is open. The token is the repository's surface alias — an invented one
+     resolves to nothing, which is transparent, which is how the Scope and
+     Preset values first showed through the open editor. */
+  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-l2));
+  box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
 }
 
 .endpointInput {
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 120px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
-  background: var(--dsw-alias-bg-l1);
-  padding: 1px 4px;
+  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-l2));
+  padding: 1px 6px;
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   font-family: var(--dsw-font-mono, monospace);

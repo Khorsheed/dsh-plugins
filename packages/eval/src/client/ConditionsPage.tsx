@@ -244,6 +244,11 @@ export function ConditionsPage(props: {
             <Button size="sm" onClick={() => { setNewNotice(true) }}>{t('conditions.new')}</Button>
           </div>
           {newNotice && <div className={css.notice}>{t('conditions.newPlaceholder')}</div>}
+          {/* Above the table, not below it: this is the answer to a button the
+              person just pressed, and a registry of a dozen conditions pushes
+              anything under it off the screen. */}
+          {actionError !== null && <div className={css.notice}>{actionError}</div>}
+          {provision !== null && <ProvisionReport view={provision} t={t} />}
           <div className={css.condHead}>
             <span>{t('conditions.col.id')}</span>
             <span>{t('conditions.col.harness')}</span>
@@ -310,8 +315,6 @@ export function ConditionsPage(props: {
           ))}
         </>
       )}
-      {actionError !== null && <div className={css.notice}>{actionError}</div>}
-      {provision !== null && <ProvisionReport view={provision} t={t} />}
       {diffError !== null && <div className={css.notice}>{t('conditions.diffError')}: {diffError}</div>}
       {diff !== null && <Diff diff={diff} t={t} />}
       {view !== null && (
