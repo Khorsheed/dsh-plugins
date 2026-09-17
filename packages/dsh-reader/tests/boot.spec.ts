@@ -43,6 +43,25 @@ async function boot(): Promise<Context> {
   return ctx
 }
 
+/**
+ * Boot with a scripted `web` seam mounted.
+ *
+ * `ctx.web.fetch` is the one host capability the reader cannot fake: the seam
+ * is probed structurally, so a plain object with a `fetch` method is the whole
+ * contract.
+ *
+ * @param fetch - what the seam answers or throws.
+ * @returns the booted context.
+ */
+async function bootWithWeb(fetch: (request: { url: string }) => Promise<unknown>): Promise<Context> {
+  const ctx = new Context()
+  contexts.push(ctx)
+  ctx.provide('web', { fetch } as never)
+  apply(ctx, { stateRoot: stateRoot() })
+  await ctx.fiber.await()
+  return ctx
+}
+
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -92,5 +111,63 @@ describe('the host half boots and provides its service', () => {
     expect(await service.addSource({ url: 'https://example.com/feed.xml' })).toBe('unsupported-content')
     // With no fs there is nothing to list, and that is an empty list, not an error.
     expect(await service.listSources()).toEqual({ sources: [] })
+  })
+})
+
+describe('a failed fetch keeps the seam’s reason', () => {
+  it('answers with the message the seam threw, not a bare verdict', async () => {
+    const ctx = await bootWithWeb(async () => {
+      throw new Error('connect ECONNREFUSED 127.0.0.1:9')
+    })
+    const service = ctx.get('reader') as ReaderService
+    const refusal = await service.addSource({ url: 'https://example.com/feed.xml' })
+    // The acceptance instance is where this mattered: the same class of
+    // transient failure showed as "failed" with nothing to diagnose.
+    expect(refusal).toEqual({ outcome: 'fetch-failed', reason: 'connect ECONNREFUSED 127.0.0.1:9' })
+  })
+
+  it('refuses a non-2xx response as unsupported content', async () => {
+    // A 404 is not a transport failure: the request completed and there is no
+    // source at that address, which is a different sentence in the UI.
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://example.com/missing.xml',
+      statusCode: 404,
+      body: { kind: 'html' as const, content: '<!doctype html><title>not found</title>' },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    expect(await service.addSource({ url: 'https://example.com/missing.xml' })).toBe('unsupported-content')
+  })
+
+  it('saves an ordinary web page as a single link, not a subscription', async () => {
+    // D15 by content: what comes back decides. An HTML page is the "saved
+    // article" path, which is the whole second half of this package's scope.
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://example.com/story',
+      statusCode: 200,
+      body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(40)}</p></article>` },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    expect(await service.addSource({ url: 'https://example.com/story' })).toMatchObject({
+      outcome: 'saved-link',
+      kind: 'link',
+    })
+  })
+
+  it('subscribes to a feed through the seam', async () => {
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://example.com/feed.xml',
+      statusCode: 200,
+      body: {
+        kind: 'text' as const,
+        content: '<rss version="2.0"><channel><title>hn</title><item><title>一条</title></item></channel></rss>',
+      },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://example.com/feed.xml' })
+    expect(outcome).toMatchObject({ outcome: 'subscribed', kind: 'rss' })
+    expect((await service.listSources()).sources).toHaveLength(1)
   })
 })

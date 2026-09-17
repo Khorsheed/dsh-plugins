@@ -257,6 +257,54 @@ describe('the add form reports the host verdict', () => {
     fireEvent.click(screen.getByText(zh['action.submit']))
     expect(await screen.findByText(zh['verdict.invalidUrl'])).toBeTruthy()
   })
+
+  it('shows the fetch seam’s own reason, not just the verdict', async () => {
+    // A bare "failed" is not a diagnosis: this is the line that lets a reader
+    // tell a dead feed from a machine with no egress.
+    const ui = bench({
+      addAnswer: { ok: true, value: { outcome: 'fetch-failed', reason: 'connect ECONNREFUSED 127.0.0.1:9' } },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://example.com/feed.xml' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    expect(await screen.findByText(zh['verdict.fetchFailed'])).toBeTruthy()
+    expect(screen.getByText('connect ECONNREFUSED 127.0.0.1:9')).toBeTruthy()
+  })
+})
+
+describe('every page that leaves the list carries the way back', () => {
+  it('returns from the add page to the card list', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+    })
+    await ui.settle()
+    expect(await screen.findByText('一条')).toBeTruthy()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    expect(await screen.findByText(zh['add.help'])).toBeTruthy()
+    // The list is gone while the add page is up…
+    expect(screen.queryByText('一条')).toBeNull()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    // …and the cards come back, not an empty column.
+    expect(await screen.findByText('一条')).toBeTruthy()
+    expect(screen.getByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
+  })
+
+  it('returns from the detail view to the card list', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一篇长文', description: `<p>${'正文。'.repeat(40)}</p>` }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('一篇长文'))
+    expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    // The placeholder is an attribute, not text: point at the input itself.
+    expect(await screen.findByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
+    expect(await screen.findByText('一篇长文')).toBeTruthy()
+  })
 })
 
 describe('quoting needs a body, and the side-chat gesture needs a composition', () => {

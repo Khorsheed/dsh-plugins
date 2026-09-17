@@ -132,7 +132,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [view, setView] = useState<View>('list')
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
-  const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string } | null>(null)
+  const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string } | null>(null)
   const [draft, setDraft] = useState('')
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -273,12 +273,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setVerdict(null)
     const result = await props.addSource(url)
     if (!result.ok) {
-      setVerdict({ kind: 'fetchFailed' })
+      // A transport-level failure: the host never answered, so the reason is
+      // whatever the wire layer said.
+      setVerdict({ kind: 'fetchFailed', reason: result.error.message })
       return
     }
     const value = result.value
     if (typeof value === 'string') {
       setVerdict({ kind: verdictForRefusal(value) })
+      return
+    }
+    if (value.outcome === 'fetch-failed') {
+      // The fetch failed with a reason of its own ("connect ECONNREFUSED …",
+      // "body over the seam's byte cap"). Showing it is the difference between
+      // a retry and a report nobody can act on.
+      setVerdict({ kind: 'fetchFailed', reason: value.reason })
       return
     }
     setVerdict({
@@ -309,8 +318,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /* ------------------------------------------------------------------ render */
 
-  const header = (
+  /**
+   * The pane's header.
+   *
+   * @param back - true on the add page, which owns the list and therefore needs
+   *   the way back. The list itself has nothing to go back TO, so it shows none.
+   */
+  const header = (back: boolean): ReactNode => (
     <div className={css.head}>
+      {back && (
+        <button
+          type="button"
+          className={css.tool}
+          title={t('action.back')}
+          onClick={() => { setView('list'); setVerdict(null) }}
+        >
+          <IconChevronLeftOutline14 size={14} />
+        </button>
+      )}
       <span className={css.headTitle}>
         <IconGlobeOutline14 size={14} />
         {t('tab.label')}
@@ -467,7 +492,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   if (view === 'add') {
     return (
       <div className={css.root}>
-        {header}
+        {header(true)}
         <div className={css.add}>
           <h2>{t('add.title')}</h2>
           <p>{t('add.help')}</p>
@@ -483,6 +508,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           {verdict !== null && (
             <div className={css.verdict}>
               <b>{t(VERDICT_KEY[verdict.kind], verdict.label === undefined ? {} : { label: verdict.label })}</b>
+              {/* The seam's own words, when the fetch failed. Without them the
+                  reader has a verdict and no diagnosis. */}
+              {verdict.reason !== undefined && (
+                <span className={css.verdictReason}>{verdict.reason}</span>
+              )}
             </div>
           )}
         </div>
@@ -492,7 +522,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   return (
     <div className={css.root}>
-      {header}
+      {header(false)}
       <div className={css.tools}>
         <div className={css.search}>
           {glyph('search', 12)}

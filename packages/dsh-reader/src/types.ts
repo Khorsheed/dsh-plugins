@@ -156,6 +156,21 @@ export type ReaderAddRefusal =
   | 'unsupported-content'
   | 'fetch-failed'
 
+/**
+ * The fetch itself failed, with the seam's own reason attached.
+ *
+ * A separate shape rather than one more string in {@link ReaderAddRefusal}:
+ * "the request did not complete" is a different conversation from "that URL
+ * cannot be a source", and only the first one has something to show the reader
+ * beyond the verdict. Without the reason the UI can only say "failed", which
+ * is not a diagnosis.
+ */
+export interface ReaderAddFailure {
+  readonly outcome: 'fetch-failed'
+  /** The fetch seam's message, verbatim — a refused connection, a timeout, a byte cap. */
+  readonly reason: string
+}
+
 /** Per-source result of a refresh run. */
 export interface ReaderRefreshResult {
   readonly id: string

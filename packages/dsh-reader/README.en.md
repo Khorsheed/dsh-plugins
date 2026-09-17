@@ -10,7 +10,7 @@ Fetching happens on the **host half** through the sanctioned `ctx.web` egress se
 | --- | --- |
 | List | One card per entry: source tile, title, summary, tags/author. Unread is a **dot** (7px) on the tile's corner — session-only, never persisted. The toolbar carries a search box, an unread-only toggle and three sort orders (newest/oldest/by source); all three are local predicates and cost no round trip |
 | Detail | Where a card leads. The body renders as DOM text — **that is exactly what makes passage quoting work**, and why this surface never hosts an iframe. Toolbar: back, copy link, open the original in the browser. Below the body, the other entries "also from this source" |
-| Add | Paste a feed address or any article link. **What comes back decides how it is stored** (D15): a feed becomes a subscription, a web page is saved as a single item — which is what stops a random web page from becoming a subscription that is forever empty |
+| Add | Paste a feed address or any article link. **What comes back decides how it is stored** (D15): a feed becomes a subscription, a web page is saved as a single item — which is what stops a random web page from becoming a subscription that is forever empty. When the fetch itself fails, the fetch seam's own words appear under the verdict instead of a bare "failed"; the back arrow returns to the list |
 
 **Click semantics (settled as option B)**: a card click opens the detail view. Most reading happens in dsh; when the body is too long or the reader wants the original, the detail view's own button goes to the browser. The trailing chevron is a cue that the card leads somewhere, not a control.
 

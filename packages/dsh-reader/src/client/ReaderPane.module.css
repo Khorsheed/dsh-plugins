@@ -363,6 +363,18 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* The fetch seam's own message, under the verdict. Monospaced because it is
+   transport text, not prose: it is read for the one word that names the cause. */
+.verdictReason {
+  display: block;
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 15px;
+  word-break: break-word;
+  opacity: 0.9;
+}
+
 /* -------------------------------------------------------------- detail view */
 
 .detail {

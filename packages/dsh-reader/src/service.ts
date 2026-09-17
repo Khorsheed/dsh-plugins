@@ -30,6 +30,7 @@ import { ReaderStore, ReaderStoreError, emptyStateDoc } from './store.ts'
 import {
   defaultSourceLabel,
   errorMessage,
+  type ReaderAddFailure,
   type ReaderAddOutcome,
   type ReaderAddRefusal,
   type ReaderBody,
@@ -79,6 +80,23 @@ interface FetchOutcome {
 
 /** Thrown when a payload cannot become a source. */
 class UnsupportedContent extends Error {}
+
+/**
+ * Thrown when the FETCH itself failed — a refused connection, a timeout, a
+ * response over the seam's byte cap. Carries the seam's own message: the
+ * difference between "the host has no egress" and "that host timed out" is the
+ * whole diagnosis, and a bare "failed" tells the reader neither.
+ */
+export class FetchFailure extends Error {
+  /**
+   * @param message - the seam's message, verbatim.
+   * @param cause - the original error, when there was one.
+   */
+  constructor(message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause })
+    this.name = 'FetchFailure'
+  }
+}
 
 /**
  * Classify a fetched payload as a feed or an article page.
@@ -150,7 +168,7 @@ export class ReaderService {
    * @param request - the pasted URL and an optional label.
    * @returns the decision, or a domain refusal.
    */
-  async addSource(request: { url: string; label?: string }): Promise<ReaderAddOutcome | ReaderAddRefusal> {
+  async addSource(request: { url: string; label?: string }): Promise<ReaderAddOutcome | ReaderAddRefusal | ReaderAddFailure> {
     const url = normalizeUrl(request.url)
     if (url === undefined) return 'invalid-url'
     const doc = await this.currentDoc()
@@ -160,7 +178,11 @@ export class ReaderService {
     try {
       fetched = await this.fetchFollowing(url)
     } catch (error) {
-      return error instanceof UnsupportedContent ? 'unsupported-content' : 'fetch-failed'
+      // The refusal keeps its reason. A bare `fetch-failed` cost a diagnosis
+      // round on the acceptance instance: the address that failed there had
+      // merely hit a transient network error, and the UI said only "failed".
+      if (error instanceof UnsupportedContent) return 'unsupported-content'
+      return { outcome: 'fetch-failed', reason: errorMessage(error) }
     }
 
     const feed = classifyPayload(fetched.raw) === 'feed'

@@ -17,6 +17,7 @@ import type {} from '@khorsheed/dsh-reader/remote'
 // Type-only: pulls ui-session's GlobalStandardProps merge (`useSessions`).
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
+  ReaderAddFailure,
   ReaderAddOutcome,
   ReaderAddRefusal,
   ReaderBody,
@@ -52,7 +53,7 @@ export interface ReaderPaneInjected {
   /** The configured sources, newest first. */
   listSources: () => Promise<RemoteResult<{ sources: ReaderSourceSummary[] }>>
   /** Add a feed or a pasted article; the host decides which by content. */
-  addSource: (url: string) => Promise<RemoteResult<ReaderAddOutcome | ReaderAddRefusal>>
+  addSource: (url: string) => Promise<RemoteResult<ReaderAddOutcome | ReaderAddRefusal | ReaderAddFailure>>
   /** Change a source's label/enabled flag, or the global refresh time. */
   updateSource: (request: {
     id: string

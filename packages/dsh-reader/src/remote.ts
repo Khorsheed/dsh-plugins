@@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { ReaderService } from './service.ts'
 import type {
+  ReaderAddFailure,
   ReaderAddOutcome,
   ReaderAddRefusal,
   ReaderBody,
@@ -58,7 +59,7 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
 
   /** Add a source; the host decides whether the URL is a feed or an article. */
   @Remote('addSource')
-  addSource(request: { url: string; label?: string }): Promise<ReaderAddOutcome | ReaderAddRefusal> {
+  addSource(request: { url: string; label?: string }): Promise<ReaderAddOutcome | ReaderAddRefusal | ReaderAddFailure> {
     return this.core.addSource(request)
   }
 
