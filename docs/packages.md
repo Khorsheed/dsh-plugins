@@ -69,7 +69,8 @@
 - **preset-composed-row**:模型工具行。由**安装它的 profile** 作为直接依赖引入(与 core 并列),
   它自己声明对 core 的依赖(companion → core,只保证模块可解析);再由 agent preset 的
   `agent.cordis.yml` 按名引用一行,按会话授予。它不出现在 `dsh.profile.bundles` 里,`dsh.bundle`
-  声明会把工具自动挂回 profile 根,正是工具拆分要移除的东西。
+  声明会把工具自动挂回 profile 根,正是工具拆分要移除的东西。配套 UI/提示词随此行的授予
+  自隐,判据与反模式见 [plugin-visibility.md](plugin-visibility.md)。
 - **provider-mounted-row**:家族内部共享行,由 provider 的 patch 挂载,或由 provisioner 落位。
 - **sub-profile-patch**:patch 只面向被 provision 出来的子 profile,由 provisioner 复制进该子
   profile 自己的 patch 层。
