@@ -183,7 +183,7 @@ dsh --profile web-eval --dump-config \
   | grep -c 'tools: none'                                              # → 3
 ```
 
-会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **33 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后是 33——最后这次是按增删算的，等 3171 重装后按实际清单复核），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
+会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **35 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后按增删算是 33；2026-09-17 3171 装到 `2c4476f8` 后实数 35 = 内建 21 + 插件 14：datasets 7、eval 5（含 T34 的 `eval_plan_draft`）、`subagent_dsh`、`list_capabilities`；没有 `mission_*`），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
 
 **这条钉的是默认值，不是可达集。** 随发行版的 标准 / 代码 / 极简 / cordis 四个预设仍在名册上：apps/cli 的 `composeProfile` 把随发行版的预设根作为最后一层 overlay 无条件写进 `roots`，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
 
