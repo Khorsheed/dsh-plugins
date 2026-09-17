@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**35**
-- 自挂载 bundle(`dsh.bundle.patch`):**28**
+- 包总数:**36**
+- 自挂载 bundle(`dsh.bundle.patch`):**29**
 - 组合组件(不自挂载,`dsh.composition.component`):**7** — `preset-composed-row` 5、`provider-mounted-row` 1、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**26**
+- 带浏览器半边(`dsh.client`):**27**
 - 整合 profile(默认安装单元):**3** — `web-basic`、`web-dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
