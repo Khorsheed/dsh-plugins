@@ -233,10 +233,10 @@ describe('the pane renders content, never an empty column', () => {
     // The source's name appears on its filter chip and in the card's meta
     // line: the chip is what proves the strip is populated.
     // The source list lives in the filter popover now (the sidebar is too
-    // narrow for a row of chips): open it and the source is there with its count.
+    // narrow for a row of chips): open it and the drill row names the page.
     fireEvent.click(screen.getByTitle(zh['action.filter']))
     expect(await screen.findByText(zh['filter.bySource'])).toBeTruthy()
-    expect(ui.container.querySelectorAll('[class*="filterRow"]').length).toBeGreaterThanOrEqual(3)
+    expect(ui.container.querySelectorAll('[class*="filterRow"]').length).toBeGreaterThanOrEqual(2)
     // The unread marker is a dot: an element with no glyph and no text.
     const dot = ui.container.querySelector('[class*="unread"]')
     expect(dot).not.toBeNull()
@@ -477,9 +477,12 @@ describe('the filter popover narrows the wall', () => {
     expect(screen.getByText('来自周刊的一条')).toBeTruthy()
     const before = ui.mocks.listSources.mock.calls.length
     fireEvent.click(screen.getByTitle(zh['action.filter']))
+    // The root page holds the read-state row and the source drill row only; the
+    // sources themselves are one level down (the cascading picker).
+    fireEvent.click(await screen.findByText(zh['filter.bySource']))
     const rows = ui.container.querySelectorAll('[class*="filterRow"]')
-    // rows: [unread only, all, source hn, source ruanyf]
-    fireEvent.click(rows[2] as HTMLElement)
+    // rows: [all, source hn, source ruanyf]
+    fireEvent.click(rows[1] as HTMLElement)
     await waitFor(() => { expect(screen.queryByText('来自周刊的一条')).toBeNull() })
     expect(screen.getByText('来自 HN 的一条')).toBeTruthy()
     // The filter is the same local predicate as typing: no round trip.
@@ -517,8 +520,9 @@ describe('an unreadable payload says so on the wall', () => {
     await ui.settle()
     // The complete item is on the wall…
     expect(await screen.findByText('完整的一条')).toBeTruthy()
-    // …the filter's row marks the source as incomplete…
+    // …the filter's source page marks the source as incomplete…
     fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(await screen.findByText(zh['filter.bySource']))
     expect(ui.container.querySelector('[class*="chipBroken"]')).not.toBeNull()
     fireEvent.click(screen.getByTitle(zh['action.filter']))
     // …and the notice names the cause with the way out.
@@ -696,6 +700,72 @@ describe('full text is filled in automatically', () => {
     })
     // The reader never had to press anything.
     expect(screen.queryByText(zh['action.fetchBody'])).toBeNull()
+  })
+})
+
+describe('the filter panel cascades into the source list', () => {
+  /** A wall with `count` subscriptions, named after their ids. */
+  function manySources(count: number) {
+    const ids = Array.from({ length: count }, (_, index) => `src${index}`)
+    return bench({
+      sources: ids.map(id => rssSource(id, { label: id })),
+      payloads: Object.fromEntries(ids.map(id => [id, feed(id, [{ title: `${id} 的一条` }])])),
+    })
+  }
+
+  it('keeps its root short, then searches and picks inside the source page', async () => {
+    const ui = manySources(9)
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
+    // Root = the read-state row + the drill row. The nine sources are NOT here:
+    // that is what keeps the panel usable as subscriptions accumulate.
+    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(2)
+    // …and the drill row carries the current value, so nothing is hidden.
+    expect(panel.querySelector('[class*="filterValue"]')?.textContent).toBe(zh['filter.all'])
+    fireEvent.click(screen.getByText(zh['filter.bySource']))
+    // The source page has its own search box (the list is unbounded)…
+    const search = await screen.findByPlaceholderText(zh['filter.searchSource'])
+    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(10)
+    fireEvent.change(search, { target: { value: 'src7' } })
+    const rows = panel.querySelectorAll('[class*="filterRow"]')
+    // …all + the one match.
+    expect(rows.length).toBe(2)
+    fireEvent.click(rows[1] as HTMLElement)
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#src7')
+    })
+  })
+
+  it('hides the search box while the list is short enough to read', async () => {
+    const ui = manySources(3)
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByText(zh['filter.bySource']))
+    expect(screen.queryByPlaceholderText(zh['filter.searchSource'])).toBeNull()
+    expect(ui.container.querySelectorAll('[class*="filterList"] [class*="filterRow"]').length).toBe(4)
+  })
+
+  it('says a search matched nothing instead of showing an empty list', async () => {
+    const ui = manySources(7)
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByText(zh['filter.bySource']))
+    fireEvent.change(await screen.findByPlaceholderText(zh['filter.searchSource']), { target: { value: 'zzz' } })
+    const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
+    expect(panel.querySelector('[class*="filterEmpty"]')?.textContent).toBe(zh['filter.noSourceMatch'])
+  })
+
+  it('returns to the root page without closing the panel', async () => {
+    const ui = manySources(7)
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByText(zh['filter.bySource']))
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    // Still open, back at the root: the read-state row is there and the source
+    // page's search box is gone.
+    expect(screen.getByText(zh['filter.unreadOnly'])).toBeTruthy()
+    expect(screen.queryByPlaceholderText(zh['filter.searchSource'])).toBeNull()
   })
 })
 

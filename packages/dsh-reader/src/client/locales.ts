@@ -18,6 +18,7 @@ export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
+  | 'filter.searchSource' | 'filter.noSourceMatch'
   | 'action.fetchBody' | 'detail.bodyStale' | 'action.more' | 'action.addTag'
   | 'tag.title' | 'tag.placeholder' | 'tag.hint' | 'tag.create' | 'tag.empty'
   | 'search.placeholder'
@@ -69,6 +70,8 @@ export const en = {
   'tag.create': 'Create “{name}”',
   'tag.empty': 'No tags yet — type a name to make the first one',
   'filter.byTag': 'By tag',
+  'filter.searchSource': 'Search sources…',
+  'filter.noSourceMatch': 'No source matches',
   'search.placeholder': 'Search titles, authors, sources…',
   'sort.title': 'Sort',
   'sort.newest': 'Newest first',
@@ -186,6 +189,8 @@ export const zh = {
   'tag.create': '新建「{name}」',
   'tag.empty': '还没有标签 —— 输入名字回车就能建第一个',
   'filter.byTag': '按标签',
+  'filter.searchSource': '搜索来源…',
+  'filter.noSourceMatch': '没有匹配的来源',
   'search.placeholder': '搜索标题、作者、来源…',
   'sort.title': '排序',
   'sort.newest': '最新在前',

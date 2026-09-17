@@ -1164,13 +1164,123 @@
   z-index: 20;
   min-width: 200px;
   max-width: 280px;
-  max-height: 60%;
-  overflow-y: auto;
+  /* Viewport units, NOT a percentage: the panel's containing block is the 26px
+     `.toolWrap` (that is what anchors it under its button), so `60%` used to
+     resolve to ~16px and the panel rendered as a one-row sliver with a
+     scrollbar (seen on the acceptance instance the day the anchor moved). Only
+     the list scrolls — the head and the search stay put. */
+  max-height: min(62vh, 440px);
+  display: flex;
+  flex-direction: column;
   padding: 6px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+/* The drilled-in page's header: back, what this page is, how many there are. */
+.filterPanelHead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 6px 2px;
+}
+
+.filterBack {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.filterBack:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.filterPanelTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The drill row's current value: right-aligned, ellipsised, never wider than
+   the label it belongs to. */
+.filterValue {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filterChevron {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The source page's own search box: the list it narrows is the only unbounded
+   one in the panel. */
+.filterSearch {
+  flex: none;
+  position: relative;
+  margin: 0 2px 4px;
+}
+
+.filterSearch svg {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.filterSearch input {
+  width: 100%;
+  height: 24px;
+  padding: 0 7px 0 21px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.filterSearch input:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.filterList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.filterEmpty {
+  padding: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .filterSection {

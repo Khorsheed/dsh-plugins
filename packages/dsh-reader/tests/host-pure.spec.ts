@@ -282,6 +282,13 @@ describe('the tool row cannot overlap itself', () => {
       expect(block).toMatch(/top:\s*calc\(100% \+ 4px\)/)
       expect(block).toMatch(/right:\s*0/)
     }
+    // A percentage max-height would resolve against the 26px `.toolWrap` the
+    // panel hangs inside rather than against the pane, and the filter panel
+    // rendered as a one-row sliver with a scrollbar until this moved to
+    // viewport units (observed on the acceptance instance, 2026-09-18).
+    const panel = /\.filterPanel\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(panel).toMatch(/max-height:\s*min\(62vh,\s*440px\)/)
+    expect(panel).not.toMatch(/max-height:\s*\d+%/)
   })
 })
 

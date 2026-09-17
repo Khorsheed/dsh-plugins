@@ -107,6 +107,14 @@ const TAG_PANEL_WIDTH = 236
 const TAG_PANEL_MAX_HEIGHT = 296
 
 /**
+ * How many sources it takes before the picker's own search box appears. Below
+ * it the list is short enough to read at a glance, and an input that filters
+ * three rows is noise; above it the list is unbounded and the box is the only
+ * way to reach a name without scrolling.
+ */
+const SOURCE_SEARCH_MIN = 6
+
+/**
  * The tag vocabulary, as rows: the card panel's checklist and the detail page's
  * inline editor both render this.
  *
@@ -266,6 +274,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
   const [filterOpen, setFilterOpen] = useState(false)
+  /** The filter panel's page: its root, or the drilled-in source list. */
+  const [filterPage, setFilterPage] = useState<'root' | 'source'>('root')
+  /** The source page's own search box (the list grows without bound). */
+  const [sourceFilter, setSourceFilter] = useState('')
   /** The entry whose card menu is open, plus where to anchor it. */
   const [cardMenu, setCardMenu] = useState<{ entryId: string; top: number; left: number } | null>(null)
   const [tagDraft, setTagDraft] = useState('')
@@ -425,6 +437,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const openEntry = openEntryId === null ? undefined : allEntries.find(entry => entry.id === openEntryId)
   /** The source the strip is currently narrowing to, if any. */
   const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
+  /** The active source's display name, for the filter panel's drill row. */
+  const activeSourceLabel = activeSource === null
+    ? null
+    : sources.find(source => source.id === activeSource)?.label ?? activeSource
+  /** The source page's list, narrowed by its own search box (name or address). */
+  const matchingSources = useMemo(() => {
+    const needle = sourceFilter.trim().toLowerCase()
+    if (needle === '') return sources
+    return sources.filter(source =>
+      source.label.toLowerCase().includes(needle) || source.url.toLowerCase().includes(needle))
+  }, [sources, sourceFilter])
   /** Sources whose payload could not be read whole — what the notice lists. */
   const brokenSources = sources.filter(source => parsed[source.id]?.incomplete === true || parsed[source.id]?.error !== undefined)
 
@@ -1213,59 +1236,119 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             type="button"
             className={`${css.tool} ${activeSource !== null || unreadOnly ? css.toolOn : ''}`}
             title={t('action.filter')}
-            onClick={() => { setSortOpen(false); setFilterOpen(open => !open) }}
+            onClick={() => {
+              setSortOpen(false)
+              // Every open starts at the panel's root, with the source page's
+              // search box empty: the panel is a place, not a form that keeps
+              // yesterday's state.
+              if (!filterOpen) { setFilterPage('root'); setSourceFilter('') }
+              setFilterOpen(!filterOpen)
+            }}
           >
             {glyph('funnel', 15)}
           </button>
           {filterOpen && (
-            <div className={css.filterPanel}>
-              <div className={css.filterSection}>{t('filter.readState')}</div>
-              <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
-                <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
-                <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
-              </button>
-              <div className={css.filterSection}>{t('filter.bySource')}</div>
-              <button
-                type="button"
-                className={css.filterRow}
-                onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
-              >
-                <span className={css.filterCheck}>{activeSource === null ? '✓' : ''}</span>
-                <span className={css.filterLabel}>{t('filter.all')}</span>
-                <span className={css.filterCount}>{allEntries.length}</span>
-              </button>
-              {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
-              {tags.map(tag => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  className={css.filterRow}
-                  onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
-                >
-                  <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
-                  <span className={css.filterLabel}>{tag.name}</span>
-                  <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
-                </button>
-              ))}
-              {sources.map(source => {
-                const group = parsed[source.id]
-                const broken = group?.error !== undefined || group?.incomplete === true
-                return (
+            <div
+              className={css.filterPanel}
+              onKeyDown={event => { if (event.key === 'Escape') setFilterOpen(false) }}
+            >
+              {filterPage === 'source' ? (
+                <>
+                  {/* The source page: the list that grows without bound, so it
+                      gets the panel's height, its own scroll AND its own search
+                      box. One level down keeps the root short no matter how many
+                      subscriptions accumulate (the cascading picker). */}
+                  <div className={css.filterPanelHead}>
+                    <button
+                      type="button"
+                      className={css.filterBack}
+                      title={t('action.back')}
+                      onClick={() => { setFilterPage('root'); setSourceFilter('') }}
+                    >
+                      <IconChevronLeftOutline14 size={12} />
+                    </button>
+                    <span className={css.filterPanelTitle}>{t('filter.bySource')}</span>
+                    <span className={css.filterCount}>{sources.length}</span>
+                  </div>
+                  {sources.length >= SOURCE_SEARCH_MIN && (
+                    <div className={css.filterSearch}>
+                      {glyph('search', 11)}
+                      <input
+                        autoFocus
+                        value={sourceFilter}
+                        placeholder={t('filter.searchSource')}
+                        onChange={event => setSourceFilter(event.target.value)}
+                      />
+                    </div>
+                  )}
+                  <div className={css.filterList}>
+                    <button
+                      type="button"
+                      className={css.filterRow}
+                      onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
+                    >
+                      <span className={css.filterCheck}>{activeSource === null ? '✓' : ''}</span>
+                      <span className={css.filterLabel}>{t('filter.all')}</span>
+                      <span className={css.filterCount}>{allEntries.length}</span>
+                    </button>
+                    {matchingSources.map(source => {
+                      const group = parsed[source.id]
+                      const broken = group?.error !== undefined || group?.incomplete === true
+                      return (
+                        <button
+                          key={source.id}
+                          type="button"
+                          className={css.filterRow}
+                          title={source.url}
+                          onClick={() => { actions.setQuery(sourceQuery(source.id)); setFilterOpen(false) }}
+                        >
+                          <span className={css.filterCheck}>{activeSource === source.id ? '✓' : ''}</span>
+                          <span className={css.filterLabel}>{source.label}</span>
+                          {broken
+                            ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
+                            : <span className={css.filterCount}>{group?.entries.length ?? 0}</span>}
+                        </button>
+                      )
+                    })}
+                    {matchingSources.length === 0 && (
+                      <div className={css.filterEmpty}>{t('filter.noSourceMatch')}</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={css.filterSection}>{t('filter.readState')}</div>
+                  <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
+                    <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
+                    <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
+                  </button>
+                  {/* The drill row carries the CURRENT value, so a narrowing
+                      filter is never hidden one level down: the reader sees
+                      "按来源 · OpenAI" without opening the list. */}
                   <button
-                    key={source.id}
                     type="button"
                     className={css.filterRow}
-                    title={source.url}
-                    onClick={() => { actions.setQuery(sourceQuery(source.id)); setFilterOpen(false) }}
+                    onClick={() => { setSourceFilter(''); setFilterPage('source') }}
                   >
-                    <span className={css.filterCheck}>{activeSource === source.id ? '✓' : ''}</span>
-                    <span className={css.filterLabel}>{source.label}</span>
-                    {broken
-                      ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
-                      : <span className={css.filterCount}>{group?.entries.length ?? 0}</span>}
+                    <span className={css.filterLabel}>{t('filter.bySource')}</span>
+                    <span className={css.filterValue}>{activeSourceLabel ?? t('filter.all')}</span>
+                    <span className={css.filterChevron}>{glyph('chevron', 12)}</span>
                   </button>
-                )
-              })}
+                  {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
+                  {tags.map(tag => (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      className={css.filterRow}
+                      onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
+                    >
+                      <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
+                      <span className={css.filterLabel}>{tag.name}</span>
+                      <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </span>
