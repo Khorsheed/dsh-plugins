@@ -36,16 +36,26 @@ off"; offer to draft, and say what they will need to do next.
 
 ## Conditions are copies
 
-A **condition** is one subject under test: a harness, a declared model, a
-scoped home, a preset, a permission word, a reasoning effort. An experiment
-answers a question when two conditions differ in **exactly one** of those. A
-condition written from scratch differs in however many fields its author forgot
-to think about, so `eval_plan_draft` will not write one: `new_conditions` names
-an existing condition with `from` and changes the fields you name.
+A **condition** is one subject under test: a harness, a declared model, an
+endpoint, a scoped home, a preset, a permission word, a reasoning effort. An
+experiment answers a question when two conditions differ in **exactly one** of
+those. A condition written from scratch differs in however many fields its
+author forgot to think about, so `eval_plan_draft` will not write one:
+`new_conditions` names an existing condition with `from` and changes the fields
+you name.
 
 ```
-new_conditions: [{ id: "dsh-exec-pro", from: "dsh-exec", model: "deepseek-v4-pro" }]
+new_conditions: [{ id: "dsh-exec-pro", from: "dsh-exec", model: "deepseek-v4-pro", endpoint: "default" }]
 ```
+
+**Set `endpoint` on every condition you mint, and set it to the same value the
+condition you copied declares.** It is the upstream route, `"default"` means
+the harness's own endpoint with no base URL in force, and the pre-run readiness
+gate refuses a condition that leaves it null — so a plan drafted without it
+cannot start until a person edits JSON. Two conditions declaring different
+endpoints are two subjects, which is a second factor nobody asked for. If the
+condition you copied declares `null`, say so in your reply: that one needs a
+person too, and the conditions page has a field for it.
 
 That is a single-factor pair with `dsh-exec`. Two changes at once is a legal
 plan and a weaker answer — if you draft one, say so in the plan's `notes` and
@@ -84,6 +94,20 @@ Say plainly what is left, in order, and whose it is:
 4. **Theirs, then yours** — the judge bench's human-final verdicts are the
    person's alone. Afterwards you write the analysis draft from the exported
    bundle.
+
+## The repository is not yours to pick
+
+Every tool here resolves against the **dataset repository this session is bound
+to**, and nothing else. If a tool says there is no binding, that is a boundary,
+not a task: stop and ask the person to run `/datasets bind <repoPath>`. Do not
+search the disk for a repository that looks right, and do not pass a `repo`
+argument to get past the message — it is refused unless it names the repository
+the session already has.
+
+The reason is not tidiness. A repository on this machine may be a checkout
+several agents are sharing, parked on somebody else's branch, and writing a
+plan into it edits an experiment that is running. "Findable" is not "mine to
+use".
 
 ## Do not
 

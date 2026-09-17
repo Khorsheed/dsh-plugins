@@ -267,6 +267,143 @@ describe('draftExperiment — a new condition is a copy', () => {
   })
 })
 
+describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
+  const UNIT = { image: 'eval-env:pinned', network: 'eval-net', user: '1000' }
+
+  it('fills unit.scopedHome and env.keys from the harness default when the plan runs in a container', async () => {
+    const { repo } = fixtureRepo()
+    const service = new EvalService()
+
+    const result = await service.draftExperiment(request({
+      repo,
+      unit: UNIT,
+      conditions: ['dsh-exec-pro'],
+      newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
+    }))
+
+    const minted = read(result.conditionPaths[0] as string)
+    // The source predates the container path and has no `unit` segment to
+    // copy; the six editable fields cannot express one, so a drafted container
+    // condition was unusable until someone hand-edited the JSON.
+    expect(minted['unit']).toEqual({ scopedHome: { container: '/creds/dsh', var: 'DSH_HOME' } })
+    // The variable must also be one the declaration admits to injecting, or
+    // the run refuses the pair with UNIT_SCOPED_HOME_VAR_UNDECLARED.
+    expect(minted['env']).toEqual({ keys: ['DEEPSEEK_API_KEY', 'DSH_HOME'] })
+    // And the copy says what was filled in and why, in the notes a reviewer reads.
+    expect(minted['notes']).toContain('/creds/dsh')
+  })
+
+  it('completes each harness from its own line of the table', async () => {
+    const { repo } = fixtureRepo()
+    const service = new EvalService()
+
+    const result = await service.draftExperiment(request({
+      repo,
+      unit: UNIT,
+      conditions: ['codex-unit'],
+      newConditions: [{ id: 'codex-unit', from: 'dsh-exec', harness: 'codex', permissions: 'workspace-write' }],
+    }))
+
+    expect(read(result.conditionPaths[0] as string)['unit'])
+      .toEqual({ scopedHome: { container: '/creds/codex', var: 'CODEX_HOME' } })
+  })
+
+  it('leaves a source that already declares one alone', async () => {
+    const { repo, dataset } = fixtureRepo()
+    writeJson(dataset, 'conditions/dsh-unit.json', {
+      ...DSH_EXEC,
+      env: { keys: ['DEEPSEEK_API_KEY', 'DSH_HOME'] },
+      unit: { scopedHome: { container: '/mnt/creds', var: 'DSH_HOME' } },
+    })
+    const service = new EvalService()
+
+    const result = await service.draftExperiment(request({
+      repo,
+      unit: UNIT,
+      conditions: ['dsh-unit-pro'],
+      newConditions: [{ id: 'dsh-unit-pro', from: 'dsh-unit', model: 'deepseek-v4-pro' }],
+    }))
+
+    // A copy carries the original's mount point over, default or not — the
+    // completion fills a HOLE, it does not normalize anybody's choice.
+    expect(read(result.conditionPaths[0] as string)['unit'])
+      .toEqual({ scopedHome: { container: '/mnt/creds', var: 'DSH_HOME' } })
+  })
+
+  it('fills nothing on the host path, and nothing for a harness the table has no line for', async () => {
+    const { repo } = fixtureRepo()
+    const service = new EvalService()
+
+    const host = await service.draftExperiment(request({
+      repo,
+      conditions: ['dsh-exec-pro'],
+      newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
+    }))
+    expect(read(host.conditionPaths[0] as string)['unit']).toBeUndefined()
+
+    const unknown = await service.draftExperiment(request({
+      repo,
+      name: 'other',
+      unit: UNIT,
+      conditions: ['mystery'],
+      newConditions: [{ id: 'mystery', from: 'dsh-exec', harness: 'some-other-cli' }],
+    }))
+    // Silence rather than a guessed mount point: validate then refuses the
+    // pair by name (UNIT_SCOPED_HOME_MISSING), which is a better answer than a
+    // credential directory nobody chose.
+    expect(read(unknown.conditionPaths[0] as string)['unit']).toBeUndefined()
+    expect(unknown.review.checks.some(check => check.code === 'UNIT_SCOPED_HOME_MISSING')).toBe(true)
+  })
+
+  it('a copy whose only change is the completion is still refused as changing nothing', async () => {
+    const { repo } = fixtureRepo()
+    const service = new EvalService()
+
+    // The completion is the copy being made runnable where the plan puts it,
+    // not a factor its author chose — so it must not satisfy the discipline
+    // that a new condition differs from its source.
+    await expect(service.draftExperiment(request({
+      repo,
+      unit: UNIT,
+      conditions: ['twin'],
+      newConditions: [{ id: 'twin', from: 'dsh-exec' }],
+    }))).rejects.toThrow(EvalDraftRefused)
+  })
+})
+
+describe('draftExperiment — model.endpoint, the seventh field (I5·T58 · G6)', () => {
+  it('sets the endpoint the readiness gate refuses a condition for leaving null', async () => {
+    const { repo } = fixtureRepo()
+    const service = new EvalService()
+
+    const result = await service.draftExperiment(request({
+      repo,
+      conditions: ['dsh-exec-pro'],
+      newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro', endpoint: 'default' }],
+    }))
+
+    const minted = read(result.conditionPaths[0] as string)
+    expect(minted['model']).toEqual({ declared: 'deepseek-v4-pro', endpoint: 'default' })
+    expect(minted['notes']).toContain('model.endpoint')
+  })
+
+  it('counts as the one changed field on its own', async () => {
+    const { repo } = fixtureRepo()
+    const service = new EvalService()
+
+    const result = await service.draftExperiment(request({
+      repo,
+      conditions: ['dsh-exec-routed'],
+      newConditions: [{ id: 'dsh-exec-routed', from: 'dsh-exec', endpoint: 'https://proxy.internal/v1' }],
+    }))
+
+    const minted = read(result.conditionPaths[0] as string)
+    expect(minted['model']).toEqual({ declared: 'deepseek-v4-flash', endpoint: 'https://proxy.internal/v1' })
+    // Two conditions differing only in where they route ARE two subjects.
+    expect(hashConditionDocument(minted)).not.toBe(hashConditionDocument(DSH_EXEC))
+  })
+})
+
 describe('draftExperiment — validate comes back verbatim', () => {
   it('answers with exactly the plan-review page\'s own projection', async () => {
     const { repo } = fixtureRepo()

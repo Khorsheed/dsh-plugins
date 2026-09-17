@@ -44,7 +44,9 @@ web-dev 场景包的开发模式 preset（`profiles/web-dev/presets/dev`）已�
 
 **I5·T35a 给它加了第二种模式**：不给 `run_id` 就改答「有哪些实验」——每个评测 run 与每份还没启动的 plan 各一行，带题库快照、条件数、矩阵大小、因子、状态与进度。列与实验室 tab 完全同源（core 的 `experiments` 投影，一份实现），两个面不可能各说各话；这是 T46 摘掉 `mission_run_list` 之后留下的缺口。先这么问拿到 run id，再带着它问逐格。
 
-**第五个工具 `eval_plan_draft` 是 I5·T34 加的，也是这一行唯一的写**：一次调用把 `plans/<名称>.json` 与它引用的新条件文件写进会话绑定题库的工作树，随即 validate，返回路径与结果。此前 agent 要先 `write` 两个文件再调 `eval_plan_validate`、自己拼契约；现在与界面的「新建实验」表单走**同一个服务面动词**（`ctx.dshEval.draftExperiment`），所以人建的草稿与 agent 建的草稿是同一份文件、落进同一个列表，实验室分不出是谁建的。新条件一律是**复制**：`new_conditions` 用 `from` 指一条现有条件，只改点名的字段（harness / 模型 / scope / preset / 权限 / 推理强度）——两条只差一个字段才是单因子配对，从零写的声明差的是作者没想到的那几个。把这个写交给模型是安全的，理由与其它写类动词不给的理由是同一条：草稿只是一份文件加一行「草稿」，它什么都没启动，人仍要读、要按按钮。
+**第五个工具 `eval_plan_draft` 是 I5·T34 加的，也是这一行唯一的写**：一次调用把 `plans/<名称>.json` 与它引用的新条件文件写进会话绑定题库的工作树，随即 validate，返回路径与结果。此前 agent 要先 `write` 两个文件再调 `eval_plan_validate`、自己拼契约；现在与界面的「新建实验」表单走**同一个服务面动词**（`ctx.dshEval.draftExperiment`），所以人建的草稿与 agent 建的草稿是同一份文件、落进同一个列表，实验室分不出是谁建的。新条件一律是**复制**：`new_conditions` 用 `from` 指一条现有条件，只改点名的字段（harness / 模型 / endpoint / scope / preset / 权限 / 推理强度，I5·T58 起七个）——两条只差一个字段才是单因子配对，从零写的声明差的是作者没想到的那几个。把这个写交给模型是安全的，理由与其它写类动词不给的理由是同一条：草稿只是一份文件加一行「草稿」，它什么都没启动，人仍要读、要按按钮。
+
+**`repo` 参数只认会话绑定**（I5·T58）：`eval_conditions` 与 `eval_plan_draft` 的 `repo` 只能复述本会话的 datasets 绑定，不是那一个即拒绝；会话没绑定则任何 `repo` 都拒绝，并提示让人 `/datasets bind`。这条收窄是因为那个参数原本是「让人来绑」这句报错的绕行道，而 agent 走过一次：它搜到一个多 agent 共用的检出，在别人的分支上写了三份文件。人的面（CLI 的 `--repo`、`/eval conditions --repo`）不受影响。
 
 ## Compatibility
 

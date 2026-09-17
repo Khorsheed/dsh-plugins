@@ -29,7 +29,12 @@
  * precisely because drafting is not starting: a draft is a file and a 草稿 row,
  * and every door to `runStart` stays on the human side of R1.
  *
- * Five of them WRITE, and every one is a human's click. `approve` is a click
+ * Seven of them WRITE, and every one is a human's click. `provisionCondition`
+ * and `setConditionEndpoint` (I5·T58) are the conditions page's two: the first
+ * turns a declaration into a real scoped home and locks it, the second fills
+ * in the one contract field the readiness gate refuses a condition for leaving
+ * null. Both were a terminal and a text editor before, which is why step 4 of
+ * the walkthrough cost six human actions where it should cost two. `approve` is a click
  * reaching the same `runStart` the slash command reaches — with the approving
  * session as the run's parent, exactly as `/eval run` resolves it. The
  * drawer's three are `retry` (a fresh attempt against an auditable reason),
@@ -64,6 +69,10 @@ import type {
   EvalCellsResult,
   EvalConditionDiffRequest,
   EvalConditionDiffView,
+  EvalConditionEndpointRequest,
+  EvalConditionEndpointView,
+  EvalConditionProvisionRequest,
+  EvalConditionProvisionView,
   EvalConditionsRequest,
   EvalConditionsView,
   EvalDraftOptionsRequest,
@@ -272,6 +281,41 @@ export class EvalRemoteService extends TypertRemoteService<never> {
       ...(request.repo === undefined ? {} : { repo: request.repo }),
       ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
     })
+  }
+
+  /**
+   * PROVISION one condition — ui-spec step 4's action, on the conditions page.
+   *
+   * A human's click, and never a model tool: provisioning materializes a
+   * scoped home and anchors what a subject IS, so it sits on the human side of
+   * R1 with 批准并启动 and 终评. It is also ONE click: the same call corrects
+   * the declaration's `home.sha` from what it measured and writes the lock
+   * against the corrected document, which is what the person used to do by
+   * copying a digest between a terminal and an editor (I5·T39 · G7).
+   * @param agent - the clicking session; its binding names the working copy.
+   * @param request - the set, the condition, and whether to keep the declaration.
+   * @returns what provision did, and the row as it now reads.
+   */
+  @Remote('provisionCondition')
+  provisionCondition(agent: Agent, request: EvalConditionProvisionRequest): Promise<EvalConditionProvisionView> {
+    return this.service.provisionCondition(request, { session: { id: String(agent.session.id) } })
+  }
+
+  /**
+   * SET one condition's `model.endpoint` — the only field of an existing
+   * declaration any face may change, and the conditions page is where.
+   *
+   * The readiness gate refuses a null endpoint, and until this verb the only
+   * way to fill it in was a text editor (I5·T39 · G6). It is a factor edit:
+   * the condition re-hashes, any lock beside it goes stale, and the answer
+   * says so rather than re-provisioning on the person's behalf.
+   * @param agent - the clicking session; its binding names the working copy.
+   * @param request - the set, the condition, and the value.
+   * @returns what changed, and the row as it now reads.
+   */
+  @Remote('setConditionEndpoint')
+  setConditionEndpoint(agent: Agent, request: EvalConditionEndpointRequest): Promise<EvalConditionEndpointView> {
+    return this.service.setConditionEndpoint(request, { session: { id: String(agent.session.id) } })
   }
 
   /**

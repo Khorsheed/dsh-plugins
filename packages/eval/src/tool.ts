@@ -26,6 +26,15 @@
  * used to fill, now through the same projection the 实验室 tab reads, so the
  * two surfaces cannot disagree about what exists.
  *
+ * The `repo` parameter of the two tools that take one is a RESTATEMENT of the
+ * session's dataset binding and nothing more: `agent: true` goes to the
+ * service with every call from this module, and there a repository that is not
+ * the bound one — or any repository at all in a session nobody bound — is
+ * refused with the bind command. It was an override until I5·T58, which is how
+ * an agent that had just been told to ask a person instead searched the disk,
+ * found a shared checkout, and wrote three files onto another branch of it
+ * (I5·T39 · G1).
+ *
  * Every tool is a thin adapter over {@link EvalService} — the service is the
  * body, the adapters only translate (the mission precedent). This module is
  * the core's `./tool` export: it BUILDS the definitions and registers
@@ -81,6 +90,7 @@ function mintArgument(entry: {
   from?: string
   harness?: string
   model?: string
+  endpoint?: string
   scope?: string
   preset?: string
   permissions?: string
@@ -99,6 +109,7 @@ function mintArgument(entry: {
     from: entry.from,
     ...(entry.harness === undefined ? {} : { harness: entry.harness }),
     ...(entry.model === undefined ? {} : { model: entry.model }),
+    ...(entry.endpoint === undefined ? {} : { endpoint: entry.endpoint }),
     ...(entry.scope === undefined ? {} : { scope: entry.scope }),
     ...(entry.preset === undefined ? {} : { preset: entry.preset }),
     ...(entry.permissions === undefined ? {} : { permissions: entry.permissions }),
@@ -127,9 +138,13 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'reports the `provisioned` snapshot: what the scoped home actually read back when it was provisioned. '
       + 'With `diff` set to two conditions instead, answers which FIELDS the two declarations differ on and '
       + 'what each side says — facts only, no recommendation about whether the pair is worth running. '
-      + 'Resolves against this session\'s bound dataset repository unless `repo` says otherwise.',
+      + 'Resolves against this session\'s bound dataset repository — the only one it can resolve against.',
     parameters: {
-      repo: { type: 'string', description: 'Dataset repository path. Omit to use the session\'s datasets binding.' },
+      repo: {
+        type: 'string',
+        description: 'Optional, and only ever a restatement of the session\'s datasets binding: a path that is not the '
+          + 'bound repository is refused, and so is any path in a session nobody has bound. Omit it.',
+      },
       dataset: { type: 'string', description: 'One dataset set (default: every set in the repository that declares conditions).' },
       diff: {
         type: 'array',
@@ -144,6 +159,7 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
     async execute(args, exec) {
       const session = sessionOf(exec)
       const scope = {
+        agent: true as const,
         ...(args.repo !== undefined ? { repo: args.repo } : {}),
         ...(args.dataset !== undefined ? { dataset: args.dataset } : {}),
         ...(session !== undefined ? { session } : {}),
@@ -196,11 +212,13 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'thing to hand a person. Files are written into the repository WORKING COPY and never committed. Nothing is '
       + 'ever overwritten: a name already taken is refused, so pick another. '
       + 'A new condition is always a COPY: `new_conditions` names an existing condition with `from` and changes some '
-      + 'of six fields (harness, model, scope, preset, permissions, reasoning). That is the whole discipline of the '
+      + 'of seven fields (harness, model, endpoint, scope, preset, permissions, reasoning). That is the whole discipline of the '
       + 'comparison — two conditions differing in ONE field are a single-factor pair, and a declaration written from '
       + 'scratch differs in however many fields its author forgot to think about. A copy that changes nothing is '
       + 'refused; home.sha is nulled on every copy (the scoped home is not provisioned yet) and the notes record '
-      + 'what was copied from what. Call eval_conditions first to see what there is to copy.',
+      + 'what was copied from what. On a plan that declares a unit_image, a copy whose source has no container segment '
+      + 'gets one filled in from its harness\'s default credential mount, recorded in the notes. '
+      + 'Call eval_conditions first to see what there is to copy.',
     parameters: {
       name: {
         type: 'string',
@@ -209,7 +227,11 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
           + 'usable one and must not already exist.',
       },
       dataset: { type: 'string', required: true, description: 'The dataset set to draft into (eval_conditions reports which sets exist).' },
-      repo: { type: 'string', description: 'Dataset repository path. Omit to use the session\'s datasets binding, which is the normal case.' },
+      repo: {
+        type: 'string',
+        description: 'Optional, and only ever a restatement of the session\'s datasets binding — a different path is '
+          + 'refused, and so is any path in a session nobody has bound. Omit it; the binding is where the draft goes.',
+      },
       commit: { type: 'string', description: 'Pin the dataset snapshot to this commit. Omit to let the run pin it at start, which is the usual shape.' },
       items: {
         type: 'array',
@@ -234,6 +256,14 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
             from: { type: 'string', description: 'The existing condition to copy, by id, in the same dataset set.' },
             harness: { type: 'string', description: 'New harness.name. Changing it nulls harness.version — that version was the other CLI\'s.' },
             model: { type: 'string', description: 'New model.declared.' },
+            endpoint: {
+              type: 'string',
+              description: 'New model.endpoint — the upstream route. "default" means the harness\'s own endpoint with no '
+                + 'base URL in force, which is what a condition on this instance usually wants; any other value is compared '
+                + 'against the scope\'s endpoint hostname when the human provisions it. Leaving it null makes the pre-run '
+                + 'readiness gate refuse the condition, and two conditions of one experiment must declare the SAME value or '
+                + 'the comparison has a second factor.',
+            },
             scope: { type: 'string', description: 'New scoped-home name. Two conditions differing only in scope are two subjects: they log in as two accounts.' },
             preset: { type: 'string', description: 'New agent-preset roster (only the dsh harness can be given one).' },
             permissions: { type: 'string', description: 'New permission word; each harness accepts its own subset.' },
@@ -314,7 +344,7 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
           }),
         ...(args.exports === undefined ? {} : { exports: args.exports }),
         ...(args.notes === undefined ? {} : { notes: args.notes }),
-      }, session === undefined ? {} : { session })) as unknown as JsonValue
+      }, { agent: true, ...(session === undefined ? {} : { session }) })) as unknown as JsonValue
     },
   }))
 
@@ -373,7 +403,7 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
         // Remote verb does — one implementation, so the tab and the model can
         // never report different experiments.
         const session = sessionOf(exec)
-        return (await service.experiments(session === undefined ? {} : { session })) as unknown as JsonValue
+        return (await service.experiments({ agent: true, ...(session === undefined ? {} : { session }) })) as unknown as JsonValue
       }
       return service.cells(args.run_id, {
         ...(args.bucket !== undefined ? { bucket: args.bucket } : {}),

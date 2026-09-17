@@ -8,6 +8,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import type { DatasetsViewInjected } from '../src/client/contract.ts'
+import type { BindingChipInjected } from '../src/client/BindingChip.tsx'
 import { DATASETS_TOOL_ROW_MODULE, type DatasetsPluginInventorySnapshot } from '../src/client/preset-visibility.ts'
 
 /** The composition answer used by the gate tests. */
@@ -80,10 +81,14 @@ async function bench(options: {
     } as never)
   }
   const slots = ctx.get('slots') as SlotRegistry
-  // The view ring as ui-conversation declares it in production.
+  // The view ring and the composer tool row, as ui-conversation declares them
+  // in production.
   slots.register({
     name: 'root',
-    children: { 'conversation.view': { kind: 'list', scope: 'session' } },
+    children: {
+      'conversation.view': { kind: 'list', scope: 'session' },
+      'conversation.input.left': { kind: 'list', scope: 'session' },
+    },
   } as never, () => null)
   return { ctx, slots, remote, remoteService, workspaces }
 }
@@ -104,6 +109,48 @@ describe('datasets client apply', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]!.options).toMatchObject({ id: 'datasets', order: 30 })
     expect(typeof entries[0]!.options.label).toBe('function')
+  })
+
+  it('registers the composer binding chip beside the tab (I5·T58 · G2)', async () => {
+    const { ctx, slots } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    // The receipt of `/datasets bind` had nowhere to appear in an empty
+    // session: the tab strip waits for the session to have content, and
+    // binding is the first thing done in a session that has none.
+    const entries = slots.entries('conversation.input.left')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.options).toMatchObject({ id: 'datasets-binding' })
+  })
+
+  it('the chip follows the tab\'s composition criterion, both ways', async () => {
+    const granted = await bench({ preset: 'dev', composition: DEV })
+    await granted.ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(granted.slots.entries('conversation.input.left')).toHaveLength(1)
+
+    const withheld = await bench({ preset: 'standard', composition: DEV })
+    await withheld.ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    // A session whose preset grants no dataset tools has no binding to speak
+    // of, so the chip goes with the tab rather than standing alone.
+    expect(withheld.slots.entries('conversation.input.left')).toHaveLength(0)
+  })
+
+  it('the chip\'s face reads the binding and subscribes to the session', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.input.left')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => BindingChipInjected)('s1')
+
+    await face.fetchBinding('s1' as SessionId)
+    expect(remote.binding).toHaveBeenCalledWith('s1')
+
+    // This host hands out no per-session handle, so the watch degrades to the
+    // session list rather than to a poll.
+    const stop = face.watchSession('s1' as SessionId, () => {})
+    expect(typeof stop).toBe('function')
+    stop()
   })
 
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {

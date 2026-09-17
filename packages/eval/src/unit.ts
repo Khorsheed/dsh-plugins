@@ -79,6 +79,44 @@ export interface ConditionUnitDecl {
   scopedHome: { container: string; var: string }
 }
 
+/**
+ * Where each harness reads its credentials from INSIDE a unit — one line per
+ * family, and the only place this repository writes those four pairs down.
+ *
+ * The pairs are not a preference. `var` is the variable each CLI actually
+ * honours for its config directory (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`,
+ * `KIMI_CODE_HOME`, `DSH_HOME`), and `container` is the mount point the
+ * orchestrator has used for that family since the container path existed, so a
+ * condition that omits the segment and one that spells it out run identically.
+ *
+ * It exists because a condition drafted from a source that predates the
+ * container path has no `unit` segment to copy, and the six fields a mint may
+ * change cannot express one — so on a plan that declares a unit, the draft was
+ * unable to produce a runnable condition at all and the person had to hand-edit
+ * JSON (I5·T39 · G4). {@link defaultConditionUnit} fills it from here.
+ *
+ * A harness absent from this table gets NOTHING filled in: the validate error
+ * naming `unit.scopedHome` is a better answer than a guessed mount point, and
+ * adding a fifth family is adding a line here.
+ */
+export const HARNESS_UNIT_SCOPED_HOMES: Readonly<Record<string, { container: string; var: string }>> = {
+  dsh: { container: '/creds/dsh', var: 'DSH_HOME' },
+  'claude-code': { container: '/creds/claude', var: 'CLAUDE_CONFIG_DIR' },
+  codex: { container: '/creds/codex', var: 'CODEX_HOME' },
+  kimi: { container: '/creds/kimi', var: 'KIMI_CODE_HOME' },
+}
+
+/**
+ * The `unit` segment a condition of this harness takes when it declares none.
+ * @param harness - the condition's `harness.name`.
+ * @returns the segment, or undefined for a harness this family has no line for.
+ */
+export function defaultConditionUnit(harness: string | null): ConditionUnitDecl | undefined {
+  if (harness === null) return undefined
+  const scopedHome = HARNESS_UNIT_SCOPED_HOMES[harness]
+  return scopedHome === undefined ? undefined : { scopedHome: { ...scopedHome } }
+}
+
 /** One cell's resolved unit inputs: everything `acquire` needs but the mission ids. */
 export interface CellUnitPlan {
   conditionId: string

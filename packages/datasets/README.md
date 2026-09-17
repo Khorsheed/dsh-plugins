@@ -79,13 +79,17 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 { repoPath: string, datasets?: string[], layers?: string[] }
 ```
 
-`datasets` 限定可见的数据集 id；`layers` 是层白名单。缺省字段即「全部」。白名单在**所有**工具读取路径上强制——`list`/`show` 按它过滤，`read` 越界即拒，`worktree_path` 与它求交（交集为空即报错；sparse-checkout 让被拒层目录在 worktree 里物理不存在）。
+`datasets` 限定可见的数据集 id；`layers` 是层白名单。`datasets` 缺省即「全部数据集」；**`layers` 缺省不是「全部层」**，是该数据集的 `modelFacing:true` 层（见下条）。白名单在**所有**工具读取路径上强制——`list`/`show` 按它过滤，`read` 越界即拒，`worktree_path` 与它求交（交集为空即报错；sparse-checkout 让被拒层目录在 worktree 里物理不存在）。
 
-**默认安全与边界对象**：绑定未显式写 `layers` 时，agent 的读取范围回退为该数据集的全部 `modelFacing:true` 层——敏感层要下发给 agent 必须显式列出；未声明敏感层的数据集行为不变（全部可见）。写路径（`put_item`）与 worktree 缺省跟随同一底线。白名单约束的对象是 **agent 工具与 worktree 物化**两条真边界；web tab 与 CLI 的读取动词是人的视图（operator scope），不受白名单与底线限制——敏感层对人照常展示并带「· 敏感」标记，树上另有「透传」分组把不受保护的内容显眼列出。
+**默认安全与边界对象**：绑定未显式写 `layers` 时，agent 的读取范围就是该数据集的全部 `modelFacing:true` 层——敏感层要下发给 agent 必须显式列出。这条底线自 I5·T58 起**无条件**生效：原先「数据集一个敏感层都没声明就整体不过滤」的分支去掉了，因为那让「没写白名单」在不同数据集上意味着两件不同的事（绑的人并不会去读 descriptor 才决定绑不绑），而不过滤的那一支还顺带放行了没有任何 `register` 条目认领的 item 级目录——恰恰是没人为其表过态的那些。写路径（`put_item`）与 worktree 缺省跟随同一底线。白名单约束的对象是 **agent 工具与 worktree 物化**两条真边界；web tab 与 CLI 的读取动词是人的视图（operator scope），不受白名单与底线限制——敏感层对人照常展示并带「· 敏感」标记，树上另有「透传」分组把不受保护的内容显眼列出。
 
 **为什么不是 session 事件**：初版把绑定存为 log-only `datasets/binding` session 事件，但 harness 的持久化读路径会拒绝重建「日志含有其生成的已知类型集之外的事件类型、且 envelope 未带 `ignorable: true`」的会话——下游（仓外）插件的事件类型按构造不在该集合内（注册面上游 deferred），而 `Session.append()` 无法设置该标记。本插件追加的任何自定义类型事件都会让会话在重启后不可读，因此绑定迁到插件自管存储（每次调用现读，所以 CLI 写存活会话的绑定也无竞争）。代价：fork 出的会话以未绑定开始；删除会话会留下一条孤儿记录。
 
-绑定**写入**是人的操作：会话存活时用 `/datasets bind`、web tab 的绑定条，或脚本里的 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。带显式 `repo` 参数的工具调用不依赖绑定（绑定存在时白名单仍然生效）；既无显式 repo 又无绑定又无配置默认时，工具明确报错并提示如何绑定。
+绑定**写入**是人的操作：会话存活时用 `/datasets bind`、web tab 的绑定条，或脚本里的 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。
+
+**`repo` 参数只认会话绑定**（I5·T58）：模型工具面的 `repo` 自此**只能复述**本会话的绑定（没绑定时则是插件配置的默认题库）——路径不是那一个即拒绝并点名两边；会话既没绑定、实例也没配默认，则任何 `repo` 都拒绝，回执写的是「让人来 `/datasets bind`」。比较按归一化路径做（展开 `~`、取 realpath、去尾斜杠），绑定记的写法与 agent 敲的写法不同也算同一个仓库。人的面不变：CLI 的 `--repo`、`/datasets` 与 tab 照旧可以指定。
+
+这条收窄来自一次真事：agent 在未绑定的会话里被工具如实告知「让人来绑」，它没有停下，而是用 glob 搜磁盘、找到一个多 agent 共用的检出，在别人的分支上写下三份文件——当时正在跑的评测计划就是这么被改的。「找得到」不等于「该在这个会话里用」。
 
 白名单是会话级约束，不是安全边界：同机的人可改绑定，有 shell 的 agent 可读原仓库。它防的是误取和流程串味，不防恶意。
 
@@ -137,7 +141,17 @@ dsh-datasets binding --session ID [--state-root DIR]
 /datasets unbind
 ```
 
+`bind` **不带 `--layers` 时绑的是「仅模型可见层」**，回执把这件事写出来；要开更多层（含敏感层）必须显式写 `--layers a,b`，回执随即点名开了哪几层。回执原先写的是「(all layers)」——与实际相反的一句话，读到的人会以为参考答案与评分 rubric 已经对规划 agent 打开了（I5·T39 · G3）。CLI 的 `dsh-datasets bind` 用同一句回执。
+
 命令声明了 free-form input（`input.hint`）。这不是装饰：不声明的话，能力较强的 composer 没有理由认为 `/datasets` 收参数——从补全条选中命令会提交一个空参调用，人敲的 `bind <path>` 留在消息体里，命令以 usage 行作答（T36 真机撞到的）。
+
+## composer 上的绑定 chip（I5·T58）
+
+浏览器半边在 composer 工具行（`conversation.input.left`）上挂一行只读 chip：**题集 · <仓库名> · 仅模型可见层**，未绑定时是虚线的「题集 · 未绑定」，完整路径与改绑命令在 title 里。
+
+它存在是因为 `/datasets bind` 的回执**没有地方显示**。绑定落了盘、题集 tab 也读得对，但 tab 条要等会话里有内容才出现，而绑定恰恰是会话还空着时做的第一件事——于是一条输出只有「成了」的命令，答进了当时还不存在的那块屏幕（走查缺口 G2）。composer 工具行从第一帧就在。
+
+chip **只读**：绑定是人的动作，已经有 slash 与 tab 两个入口，在 composer 里塞第三个只会让同一个决定多一个做法。它跟 tab 用同一条自隐判据（preset 组合里有没有 `@khorsheed/dsh-datasets-tool` 行），所以两者不可能对「这是不是一个题集会话」各说各话。刷新靠订阅本会话自身的快照并做节流：slash 命令起止各动一次会话，正是回执该出现的那一刻，而节流让一次流式回答不至于变成轮询。
 
 ## 题集 tab（web）
 

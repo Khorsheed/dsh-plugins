@@ -20,6 +20,8 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { canonicalJson } from './hash.ts'
 import type { ConditionDiff, ConditionsReport } from './read.ts'
+import type { ProvisionCheck } from './effective.ts'
+import type { ProvisionReport } from './provision.ts'
 import { expandHome, validatePlan, type ConditionResolution, type EvalDiagnostic } from './validate.ts'
 import type {
   EvalConditionDiffView, EvalConditionRow, EvalConditionsView, EvalExperimentUnit,
@@ -159,6 +161,55 @@ export async function reviewPlan(planPath: string): Promise<EvalPlanReview> {
   }
 }
 
+/**
+ * One field verdict as a page line.
+ *
+ * A field that AGREES earns an `ok` line, because a page that only rendered
+ * problems would show a clean provision as an empty one. A field the
+ * declaration left NULL does not: `severity` is null there only because there
+ * was nothing to compare against, and the pre-run readiness gate refuses the
+ * condition for exactly that — `model.endpoint` being the field it happens to
+ * most often. Calling it ✓ would put a tick beside the reason the condition
+ * will not run.
+ * @param row - one field's verdict from provision.
+ * @returns the line.
+ */
+function provisionCheckLine(row: ProvisionCheck): EvalPlanCheck {
+  if (row.severity === 'error') return { severity: 'error', code: 'EFFECTIVE_MISMATCH', message: `${row.field}: ${row.detail}` }
+  if (row.severity === 'warning') {
+    return {
+      severity: 'warn',
+      code: row.status === 'unknown' ? 'EFFECTIVE_UNCOMPARABLE' : 'EFFECTIVE_MISMATCH',
+      message: `${row.field}: ${row.detail}`,
+    }
+  }
+  if (row.status === 'unknown') return { severity: 'warn', code: 'UNRESOLVED_FIELD', message: `${row.field}: ${row.detail}` }
+  return {
+    severity: 'ok',
+    code: row.status === 'backfilled' ? 'EFFECTIVE_BACKFILLED' : 'EFFECTIVE_MATCH',
+    message: `${row.field}: ${row.detail}`,
+  }
+}
+
+/**
+ * One provision's report as the SAME flat `ok / warn / error` list the
+ * plan-review page draws — the field-by-field verdicts first, then the
+ * diagnostics provision raised.
+ *
+ * The shared shape is the point: a person reading «why is this condition not
+ * ready» on the conditions page and on the plan-review page is asking one
+ * question, and two renderings of one answer drift.
+ * @param report - what `conditions provision` produced.
+ * @returns the lines, most decisive first.
+ */
+export function provisionChecks(report: ProvisionReport): EvalPlanCheck[] {
+  return [
+    ...report.errors.map(checkOf('error')),
+    ...report.checks.map(provisionCheckLine),
+    ...report.warnings.map(checkOf('warn')),
+  ]
+}
+
 /** The conditions page's table, projected from the registry listing. */
 export function conditionsView(report: ConditionsReport): EvalConditionsView {
   const rows: EvalConditionRow[] = report.conditions.map(condition => ({
@@ -167,6 +218,7 @@ export function conditionsView(report: ConditionsReport): EvalConditionsView {
     harness: condition.harness.name,
     drive: condition.harness.drive,
     model: condition.model.declared,
+    endpoint: condition.model.endpoint,
     scope: condition.scope,
     preset: condition.preset,
     sha: condition.sha,
