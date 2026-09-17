@@ -432,46 +432,6 @@ describe('the whole-board version guard', () => {
   })
 })
 
-describe('CanvasBoardService.importV1', () => {
-  it('copies the pad read-only: cards become fragments, articles documents, sources point back', async () => {
-    const { fs, pad, board } = harness()
-    await pad.create({ dir: WS, kind: 'card', title: '雨伞的意象', content: '卡片正文' }, SESSION)
-    await pad.create({ dir: WS, kind: 'article', title: '第一章 雨夜', content: '文章正文' }, SESSION)
-    await pad.create({ dir: WS, kind: 'card', title: '归档的旧卡', content: '不进新画布' }, SESSION)
-    await pad.setArchived({ dir: WS, name: '卡片/归档的旧卡.md', archived: true }, SESSION)
-
-    const imported = await board.importV1({ dir: WS }, SESSION)
-    if (!imported.ok) throw new Error(`expected the import to land, got ${imported.error}`)
-    expect(imported.imported).toBe(2)
-    expect(imported.board.title).toBe('导入：ws')
-    expect(imported.board.attachedWorkspaces).toEqual([WS])
-    const byKind = Object.fromEntries(imported.board.cards.map(card => [card.kind, card]))
-    expect(byKind['fragment']).toMatchObject({
-      text: '卡片正文',
-      status: 'kept',
-      source: { type: 'file', ref: `${WS}/灵感画布/卡片/雨伞的意象.md`, title: '雨伞的意象' },
-    })
-    expect(byKind['document']).toMatchObject({
-      text: '文章正文',
-      source: { type: 'file', ref: `${WS}/灵感画布/文章/第一章 雨夜.md`, title: '第一章 雨夜' },
-    })
-    expect(imported.board.stats.kindCounts).toEqual({ fragment: 1, document: 1 })
-    // The pad itself is untouched — import is a read-only copy.
-    expect(await pad.read({ dir: WS, name: '卡片/雨伞的意象.md' })).toMatchObject({ ok: true, content: '卡片正文' })
-    expect((await pad.list(WS)).items).toHaveLength(2)
-    expect(fs.policies.every(policy => policy === undefined)).toBe(true)
-  })
-
-  it('honors an explicit title and reports a workspace with no pad items', async () => {
-    const { pad, board } = harness()
-    expect(await board.importV1({ dir: WS }, SESSION)).toEqual({ ok: false, error: 'missing' })
-    await pad.create({ dir: WS, kind: 'card', title: '雨伞的意象', content: '卡片正文' }, SESSION)
-    const imported = await board.importV1({ dir: WS, title: '我的主题画布' }, SESSION)
-    if (!imported.ok) throw new Error('expected the import to land')
-    expect(imported.board.title).toBe('我的主题画布')
-    expect(imported.imported).toBe(1)
-  })
-})
 
 describe('CanvasBoardService fencing', () => {
   it('re-roots the fence at the state dir: the session resolves mode and id, never the boundary', async () => {

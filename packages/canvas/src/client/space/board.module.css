@@ -231,13 +231,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.importBox {
-  margin: 4px 8px 8px;
-  padding: 10px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
-}
-
-.importNote {
+.formNote {
   font-size: 11.5px;
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
@@ -788,3 +782,57 @@
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
 }
+
+/* ---------------------------------------------------- dropdown primitives */
+
+/* The switcher dropdown's anchor and panel: absolute, so the topbar's
+   height never flexes to the menu's (the M3.1 topbar bug's whole shape). */
+.switcherMenu .listBody {
+  overflow-y: auto;
+  min-height: 0;
+}
+.switcherMenu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 280px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-elevation-prominent);
+  overflow: hidden;
+}
+.switcher {
+  position: relative;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+/* The menu's bottom "+ 新画布" row: a full-width action row, not a header. */
+.newCanvasRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: none;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 0;
+  background: transparent;
+  font-size: 12.5px;
+  font-family: var(--dsw-font-family);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.newCanvasRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+

@@ -14,7 +14,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  EvalApproveResult, EvalConditionDiffView, EvalConditionsView, EvalExperimentsResult,
+  EvalApproveResult, EvalConditionDiffView, EvalConditionEndpointView, EvalConditionProvisionView,
+  EvalConditionRow, EvalConditionsView, EvalExperimentsResult,
   EvalPlanReview, EvalRunOutputView,
 } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
@@ -99,6 +100,7 @@ const CONDITIONS: EvalConditionsView = {
       harness: 'dsh',
       drive: 'exec',
       model: 'deepseek-v4',
+      endpoint: 'default',
       scope: null,
       preset: 'bench',
       sha: 'a'.repeat(64),
@@ -114,6 +116,7 @@ const CONDITIONS: EvalConditionsView = {
       harness: 'codex',
       drive: 'exec',
       model: 'gpt-5.6-sol',
+      endpoint: null,
       scope: 'eval-b',
       preset: null,
       sha: 'b'.repeat(64),
@@ -129,6 +132,7 @@ const CONDITIONS: EvalConditionsView = {
       harness: 'kimi',
       drive: 'exec',
       model: 'kimi-k3',
+      endpoint: 'default',
       scope: null,
       preset: null,
       sha: 'd'.repeat(64),
@@ -151,6 +155,44 @@ const DIFF: EvalConditionDiffView = {
     { path: 'model.declared', a: '"deepseek-v4"', b: '"gpt-5.6-sol"' },
     { path: 'scope', a: null, b: '"eval-b"' },
   ],
+}
+
+/** `codex-exec` after one provision: the lock written, the condition ready. */
+const CODEX_READY: EvalConditionRow = {
+  ...(CONDITIONS.rows[1] as EvalConditionRow),
+  lock: { present: true, matches: true, homeSha: 'c'.repeat(64), provisionedAt: 1_760_000_100_000, cliVersion: '0.1.5' },
+  status: 'ready',
+  unresolved: [],
+  warnings: [],
+}
+
+const PROVISIONED: EvalConditionProvisionView = {
+  condition: 'codex-exec',
+  dataset: 'ds',
+  conditionPath: '/repo/datasets/ds/conditions/codex-exec.json',
+  homeDir: '/homes/codex@eval-b',
+  credentialState: 'present-unverified',
+  written: true,
+  homeShaWritten: true,
+  sha: 'e'.repeat(64),
+  homeSha: 'c'.repeat(64),
+  checks: [
+    { severity: 'ok', code: 'EFFECTIVE_MATCH', message: 'permissions: declaration and scope agree' },
+    { severity: 'warn', code: 'HOME_SHA_WRITTEN', message: 'the declaration was corrected and re-hashed' },
+  ],
+  row: CODEX_READY,
+}
+
+const ENDPOINT_SET: EvalConditionEndpointView = {
+  condition: 'codex-exec',
+  dataset: 'ds',
+  conditionPath: '/repo/datasets/ds/conditions/codex-exec.json',
+  before: null,
+  after: 'default',
+  sha: 'f'.repeat(64),
+  written: true,
+  lockStale: false,
+  row: { ...(CONDITIONS.rows[1] as EvalConditionRow), endpoint: 'default' },
 }
 
 const STARTED: EvalApproveResult = {
@@ -180,6 +222,8 @@ interface Harness {
   fetchPlanReview: ReturnType<typeof vi.fn>
   fetchConditions: ReturnType<typeof vi.fn>
   fetchConditionDiff: ReturnType<typeof vi.fn>
+  provisionCondition: ReturnType<typeof vi.fn>
+  setConditionEndpoint: ReturnType<typeof vi.fn>
   approvePlan: ReturnType<typeof vi.fn>
   fetchRunOutput: ReturnType<typeof vi.fn>
   fetchDraftOptions: ReturnType<typeof vi.fn>
@@ -194,6 +238,8 @@ function makeHarness(overrides: Partial<{ review: EvalPlanReview }> = {}): Harne
     fetchPlanReview: vi.fn(async (): Promise<Result<EvalPlanReview>> => ({ ok: true, value: overrides.review ?? REVIEW })),
     fetchConditions: vi.fn(async (): Promise<Result<EvalConditionsView>> => ({ ok: true, value: CONDITIONS })),
     fetchConditionDiff: vi.fn(async (): Promise<Result<EvalConditionDiffView>> => ({ ok: true, value: DIFF })),
+    provisionCondition: vi.fn(async (): Promise<Result<EvalConditionProvisionView>> => ({ ok: true, value: PROVISIONED })),
+    setConditionEndpoint: vi.fn(async (): Promise<Result<EvalConditionEndpointView>> => ({ ok: true, value: ENDPOINT_SET })),
     // The 新建实验 form has its own spec (NewExperiment.client.spec.tsx);
     // here the two verbs only have to exist, because the dialog mounts with
     // the view and reads them when it is opened.
@@ -214,6 +260,8 @@ function renderView(h: Harness) {
     fetchPlanReview: h.fetchPlanReview,
     fetchConditions: h.fetchConditions,
     fetchConditionDiff: h.fetchConditionDiff,
+    provisionCondition: h.provisionCondition,
+    setConditionEndpoint: h.setConditionEndpoint,
     fetchDraftOptions: h.fetchDraftOptions,
     draftExperiment: h.draftExperiment,
     approvePlan: h.approvePlan,
@@ -468,6 +516,91 @@ describe('the conditions page', () => {
 
     expect(screen.queryByText('conditions.diffCount {"count":3}')).toBeNull()
     expect(screen.getByText('conditions.pickOne')).toBeTruthy()
+  })
+
+  it('provisioning one row takes ONE click and the row turns ready (I5·T58 · G7)', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.conditions')
+    await screen.findByText('codex-exec')
+    expect(screen.getByText(/conditions.lockNone/)).toBeTruthy()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
+
+    await waitFor(() => {
+      expect(h.provisionCondition).toHaveBeenCalledWith('s1', { dataset: 'ds', condition: 'codex-exec' })
+    })
+    // One call, and the row is ready: the page never asks for a second
+    // provision and never asks the person to copy a hash anywhere.
+    expect(h.provisionCondition).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('conditions.provisionWritten')).toBeTruthy()
+    expect(screen.getByText('conditions.provisionWroteBack')).toBeTruthy()
+    await waitFor(() => { expect(screen.getAllByText('conditions.ready')).toHaveLength(2) })
+    // The check lines are the plan-review page's own shape, verbatim.
+    expect(screen.getByText(/the declaration was corrected and re-hashed/)).toBeTruthy()
+  })
+
+  it('a refused provision says so and leaves the row where it was', async () => {
+    const h = makeHarness()
+    h.provisionCondition.mockResolvedValue({
+      ok: false,
+      error: { code: 'EVAL_PROVISION', message: 'codex@eval-b reports credentialState "absent" — run /codex login' },
+    })
+    renderView(h)
+    await openPage(h, 'page.conditions')
+    await screen.findByText('codex-exec')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
+
+    expect(await screen.findByText(/conditions.provisionFailed: .*\/codex login/)).toBeTruthy()
+    expect(screen.getAllByText('conditions.unready')).toHaveLength(2)
+  })
+
+  it('the endpoint cell edits in place and writes the field the readiness gate wants (· G6)', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.conditions')
+    // `codex-exec` declares no endpoint; the cell says so rather than showing
+    // an empty column.
+    expect(await screen.findByText('conditions.endpointUnset')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointUnset' }))
+    fireEvent.change(screen.getByLabelText('conditions.col.endpoint'), { target: { value: 'default' } })
+    fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointSave' }))
+
+    await waitFor(() => {
+      expect(h.setConditionEndpoint).toHaveBeenCalledWith('s1', { dataset: 'ds', condition: 'codex-exec', endpoint: 'default' })
+    })
+    expect(await screen.findByText(/conditions.endpointWritten/)).toBeTruthy()
+    // Editing a row does not also pick it for the diff: the cell's own click
+    // stops there.
+    expect(h.fetchConditionDiff).not.toHaveBeenCalled()
+  })
+
+  it('reopening the endpoint cell shows the declaration, not the text a cancel threw away', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.conditions')
+    fireEvent.click(await screen.findByRole('button', { name: 'conditions.endpointUnset' }))
+    fireEvent.change(screen.getByLabelText('conditions.col.endpoint'), { target: { value: 'typo-i-changed-my-mind' } })
+    fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointCancel' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointUnset' }))
+
+    expect((screen.getByLabelText('conditions.col.endpoint') as HTMLInputElement).value).toBe('')
+    expect(h.setConditionEndpoint).not.toHaveBeenCalled()
+  })
+
+  it('says the lock went stale when the endpoint edit changed the subject', async () => {
+    const h = makeHarness()
+    h.setConditionEndpoint.mockResolvedValue({ ok: true, value: { ...ENDPOINT_SET, lockStale: true } })
+    renderView(h)
+    await openPage(h, 'page.conditions')
+    fireEvent.click(await screen.findByRole('button', { name: 'conditions.endpointUnset' }))
+    fireEvent.change(screen.getByLabelText('conditions.col.endpoint'), { target: { value: 'default' } })
+    fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointSave' }))
+
+    expect(await screen.findByText(/conditions.endpointLockStale/)).toBeTruthy()
   })
 
   it('新建条件 names the task that owns it — choosing a model IS minting a condition', async () => {

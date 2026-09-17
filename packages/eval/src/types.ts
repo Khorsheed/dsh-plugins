@@ -352,6 +352,13 @@ export interface EvalConditionRow {
   drive: string | null
   /** The DECLARED model; what a run observed lives in that run's annotations. */
   model: string | null
+  /**
+   * The DECLARED endpoint (`"default"` = the harness's own, no base URL in
+   * force); null while unresolved, which the pre-run readiness gate refuses.
+   * A column rather than a detail because it is the field a condition most
+   * often stalls on, and the page is where it gets corrected.
+   */
+  endpoint: string | null
   /** The named scoped home, or null for the harness's default one. */
   scope: string | null
   /** The agent-preset roster the condition runs under, or null for none. */
@@ -433,6 +440,84 @@ export interface EvalConditionDiffRequest {
   dataset?: string
 }
 
+/**
+ * Which condition the conditions page is provisioning. Named by set and id
+ * rather than by path: the page resolves against the session's binding like
+ * every other verb on it, and a browser that could name a PATH to write a lock
+ * into would be choosing the working copy — which is the human's binding
+ * decision, not the page's.
+ */
+export interface EvalConditionProvisionRequest {
+  /** The dataset set whose `conditions/` directory declares it. */
+  dataset: string
+  /** The condition id (its file stem). */
+  condition: string
+  /**
+   * Leave the declaration's `home.sha` alone instead of correcting it from
+   * what was measured. Absent = correct it, which is what makes «provision»
+   * one action rather than two (I5·T39 · G7).
+   */
+  keepDeclaration?: boolean
+}
+
+/** What one provision from the conditions page did. */
+export interface EvalConditionProvisionView {
+  condition: string
+  dataset: string
+  /** The declaration it ran against (absolute). */
+  conditionPath: string
+  /** The scoped home the condition resolved to; reading it materializes it. */
+  homeDir: string
+  /** The credential grade at provision time — `absent` prints the login command below. */
+  credentialState: string
+  /** Whether the lock was written; true means the condition is now ready. */
+  written: boolean
+  /** Whether this call corrected the declaration's `home.sha` and re-hashed it. */
+  homeShaWritten: boolean
+  /** The condition hash as the declaration now reads. */
+  sha: string
+  /** The scoped home's hash; null when the run stopped before hashing it. */
+  homeSha: string | null
+  /** Field verdicts and diagnostics, flattened for the page in contract order. */
+  checks: EvalPlanCheck[]
+  /** The registry row as it now reads; null when the listing could not be retaken. */
+  row: EvalConditionRow | null
+}
+
+/** Which condition's `model.endpoint` a human is setting, and to what. */
+export interface EvalConditionEndpointRequest {
+  dataset: string
+  condition: string
+  /**
+   * The upstream route. `"default"` is the harness's own endpoint with no base
+   * URL in force; empty or null declares "not resolved yet", which the
+   * readiness gate refuses.
+   */
+  endpoint: string | null
+}
+
+/** What one endpoint edit changed. */
+export interface EvalConditionEndpointView {
+  condition: string
+  dataset: string
+  /** The declaration that was written (absolute). */
+  conditionPath: string
+  before: string | null
+  after: string | null
+  /** The condition hash as the declaration now reads. */
+  sha: string
+  /** Whether anything was written — false when the value was already this. */
+  written: boolean
+  /**
+   * Whether a lock sits beside the declaration that this edit just made stale.
+   * `model.endpoint` is hash input, so the subject changed identity and the
+   * lock now anchors a document that no longer exists: provision again.
+   */
+  lockStale: boolean
+  /** The registry row as it now reads; null when the listing could not be retaken. */
+  row: EvalConditionRow | null
+}
+
 /** Which plan a human is approving, and on what terms. */
 export interface EvalApproveRequest {
   /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
@@ -485,6 +570,13 @@ export interface EvalDraftConditionRequest {
   harness?: string
   /** `model.declared`; null is the legal "not resolved yet" declaration. */
   model?: string | null
+  /**
+   * `model.endpoint` — the upstream route. `"default"` is the harness's own
+   * endpoint with no base URL in force; null is the "not resolved yet"
+   * declaration the readiness gate refuses, which is why the field is here at
+   * all (I5·T39 · G6).
+   */
+  endpoint?: string | null
   /** The named scoped home, or null for the harness's default one. */
   scope?: string | null
   /** The agent-preset roster, or null for none. */

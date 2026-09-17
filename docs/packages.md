@@ -18,7 +18,7 @@
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.0 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.1 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.95 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
@@ -45,7 +45,7 @@
 | `@khorsheed/dsh-room` | `packages/room` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.2 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |

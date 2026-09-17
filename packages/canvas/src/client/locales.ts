@@ -2,7 +2,7 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'tab.label': '画布详情',
+  'tab.label': '画布',
   'guide.description': '卡片详情阅读器——跟随画布空间的选中，渲染全文、评论与附件',
 
   'mode.edit': '编辑',
@@ -90,12 +90,6 @@ export const zh = {
   'time.months': '{n} 个月前',
   'time.years': '{n} 年前',
 
-  'import.toggle': '导入 v1 灵感画布',
-  'import.pick': '选择工作区…',
-  'import.found': '发现 {count} 条灵感，将只读复制进新画布',
-  'import.none': '这个工作区没有灵感画布',
-  'import.go': '导入为画布',
-  'import.done': '已导入 {count} 条到「{title}」，原目录未改动',
 
   'board.newCard': '新卡',
   'board.newCardPlaceholder': '写点什么…（⌘⏎ 建卡，Esc 取消）',
@@ -144,10 +138,8 @@ export const zh = {
   'lens.exemplify': '降一层',
   'lens.ask': '就此提问',
 
-  'chat.ask': '问 Agent',
   'chat.followup': '追问',
   'chat.followupText': '就这条评论继续追问：「{text}」',
-  'chat.selectionRef': '选区',
   'chat.unavailable': '聊天不可用（side-chat 未安装），卡板不受影响',
   'chat.askFailed': '提问失败：{message}',
 
@@ -189,7 +181,7 @@ export const zh = {
 
 /** English dictionary (same key set). */
 export const en: Record<keyof typeof zh, string> = {
-  'tab.label': 'Card detail',
+  'tab.label': 'Canvas',
   'guide.description': 'The card-detail reader — follows the canvas space selection with the full text, comments, and attachments',
 
   'mode.edit': 'Edit',
@@ -277,12 +269,6 @@ export const en: Record<keyof typeof zh, string> = {
   'time.months': '{n}mo ago',
   'time.years': '{n}y ago',
 
-  'import.toggle': 'Import a v1 pad',
-  'import.pick': 'Pick a workspace…',
-  'import.found': 'Found {count} items — copied read-only into a new canvas',
-  'import.none': 'This workspace has no v1 pad',
-  'import.go': 'Import as canvas',
-  'import.done': 'Imported {count} items into “{title}” — the pad was not touched',
 
   'board.newCard': 'New card',
   'board.newCardPlaceholder': 'Write something… (⌘⏎ adds the card, Esc cancels)',
@@ -331,10 +317,8 @@ export const en: Record<keyof typeof zh, string> = {
   'lens.exemplify': 'Give examples',
   'lens.ask': 'Ask about these',
 
-  'chat.ask': 'Ask agent',
   'chat.followup': 'Follow up',
   'chat.followupText': 'Follow up on this comment: "{text}"',
-  'chat.selectionRef': 'Selection',
   'chat.unavailable': 'Chat is unavailable (side-chat not installed) — the board is unaffected',
   'chat.askFailed': 'Ask failed: {message}',
 

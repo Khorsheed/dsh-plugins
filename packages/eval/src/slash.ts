@@ -22,7 +22,7 @@ const USAGE = `usage:
   /eval finalize <runId>
   /eval conditions list [--repo DIR] [--dataset ID]
   /eval conditions diff <a> <b> [--repo DIR] [--dataset ID]
-  /eval conditions provision <condition.json> --repo <working copy>
+  /eval conditions provision <condition.json> --repo <working copy> [--no-write-back]
 
   conditions provision is the ONE writer of conditions/<id>.lock.json. It
   resolves the condition's (harness, scope) to a real scoped home, refuses
@@ -32,6 +32,11 @@ const USAGE = `usage:
   the home, and writes the lock. permissions or model.endpoint disagreeing is
   an error and no lock is written. --repo names the WORKING COPY it may write
   into; nothing is committed.
+  It also CORRECTS the declaration's home.sha from what it measured and
+  re-hashes the condition, so one provision is what makes a condition ready.
+  --no-write-back leaves the declaration untouched instead and reports the
+  disagreement, which is the old two-step shape: copy the digest in by hand,
+  then provision again to refresh the lock.
   conditions list shows every declaration with its hash, lock state and
   provisioned snapshot. conditions diff prints which fields two declarations
   differ on and what each says — facts only, no recommendation.
@@ -240,8 +245,12 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
   const session = { id: String(invocation.agent.session.id) }
   const repo = flagOf(args, '--repo')
   const dataset = flagOf(args, '--dataset')
-  const unknown = [...args.switches]
+  const writeBack = !args.switches.has('--no-write-back')
+  const unknown = [...args.switches].filter(flag => flag !== '--no-write-back')
   if (unknown.length > 0) return { kind: 'error', text: `unknown option(s): ${unknown.join(' ')}\n\n${USAGE}` }
+  if (!writeBack && sub !== 'provision') {
+    return { kind: 'error', text: `--no-write-back is a provision option; conditions ${String(sub)} writes nothing\n\n${USAGE}` }
+  }
 
   if (sub === 'list') {
     if (rest.length > 0) return { kind: 'error', text: `conditions list takes no positional arguments\n\n${USAGE}` }
@@ -298,6 +307,7 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
     try {
       report = await service.provision(target, {
         repo,
+        ...(writeBack ? {} : { writeBack: false }),
         log: (message) => { if (message.startsWith('capability probe ')) probeLines.push(message) },
       })
     } catch (error) {
@@ -383,6 +393,10 @@ function renderProvision(report: Awaited<ReturnType<EvalService['provision']>>, 
   }
   if (report.home !== null) {
     body.push(`  home.sha: ${report.home.sha} (${report.home.files} config file(s) hashed, ${report.home.denied} skipped)`)
+  }
+  if (report.homeShaWritten) {
+    body.push(`  declaration corrected → ${report.conditionPath}`
+      + ` (condition ${String(report.shaBeforeWriteBack).slice(0, 12)}… → ${String(report.sha).slice(0, 12)}…)`)
   }
   const provisioned = (report.lock as { provisioned?: { capabilities?: { sha: string; skills?: number; tools?: number } } } | null)?.provisioned
   if (provisioned?.capabilities !== undefined) {

@@ -20,10 +20,10 @@
  * the plugin's own state. The store is read per call, so a CLI write to a
  * LIVE session's binding is race-free (the M1 offline-append race is gone).
  */
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { DatasetsError } from './dataset.ts'
+import { normalizeRepoPath } from './repo-path.ts'
 
 /** A session's dataset binding. Absent fields mean "everything in the repo". */
 export interface DatasetBinding {
@@ -53,40 +53,6 @@ interface BindingRecord {
  */
 export interface BindingSession {
   readonly id: string
-}
-
-/**
- * The canonical form of a bound repository path: a leading `~` expanded
- * against this user's home, the result made absolute, and — when the
- * directory is actually there — resolved through its symlinks.
- *
- * WHY the store holds this rather than what the human typed: a bound path is
- * consumed by `git -C`, by `readdir(<repo>/datasets)`, and by containment
- * checks comparing it against a session's realpath cwd. None of those expand
- * `~` (the shell does, and no shell is in the loop when the web tab writes a
- * binding), so a stored `~/x` reaches git as a literal directory named `~`
- * and the tab reports "not a git repository" about a repository that exists.
- * Resolving symlinks at the same time keeps `/tmp` vs `/private/tmp` from
- * making two names for one repository compare unequal.
- *
- * A path that does not exist yet keeps its absolute form rather than failing:
- * normalizing is not the existence check (`assertRepository` is), and a
- * binding to an unmounted volume must still round-trip.
- * @param raw - the path as typed, passed, or read back from an old record.
- * @returns the canonical path; '' stays '' for the caller's shape check.
- */
-export function normalizeRepoPath(raw: string): string {
-  const trimmed = raw.trim()
-  if (trimmed === '') return trimmed
-  const expanded = trimmed === '~' || trimmed.startsWith('~/')
-    ? join(homedir(), trimmed.slice(1))
-    : trimmed
-  const absolute = resolve(expanded)
-  try {
-    return realpathSync(absolute)
-  } catch {
-    return absolute
-  }
 }
 
 function isStringArray(value: unknown): value is string[] {

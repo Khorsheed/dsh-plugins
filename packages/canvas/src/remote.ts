@@ -21,8 +21,7 @@ import type { CanvasBoardService } from './store.ts'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
   BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
-  BoardImportResult,
-  BoardImportV1Request, BoardListResult, BoardMutationResult, BoardPatchCardRequest,
+  BoardListResult, BoardMutationResult, BoardPatchCardRequest,
   BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest, BoardReadOutcome,
   BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
@@ -174,17 +173,6 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('archiveCanvas')
   archiveCanvas(agent: Agent, request: BoardArchiveRequest): Promise<BoardMutationResult> {
     return this.board.archiveCanvas(request, agent.session)
-  }
-
-  /**
-   * Import one workspace's v1 pad as a new canvas (read-only; the pad is untouched).
-   * @param agent - the calling session's agent; its session fences the write.
-   * @param request - the workspace root and an optional canvas title.
-   * @returns the new board, its token, and how many items came over.
-   */
-  @Remote('importV1')
-  importV1(agent: Agent, request: BoardImportV1Request): Promise<BoardImportResult> {
-    return this.board.importV1(request, agent.session)
   }
 
   /**

@@ -6,6 +6,12 @@ export const NS = 'datasets'
 /** The 题集 tab dictionary key set (the source of truth for both locales). */
 export type DatasetsKey =
   | 'open'
+  | 'chip.label'
+  | 'chip.unbound'
+  | 'chip.unboundHint'
+  | 'chip.boundHint'
+  | 'chip.layersFloor'
+  | 'chip.layersNamed'
   | 'binding.none'
   | 'binding.repo'
   | 'binding.allDatasets'
@@ -173,6 +179,12 @@ export const zh: Record<DatasetsKey, string> = {
   'error.details': '详情',
   'error.detailsPath': '路径',
   'open': '题集',
+  'chip.label': '题集',
+  'chip.unbound': '未绑定',
+  'chip.unboundHint': '本会话还没绑题库。用 /datasets bind <题库路径> 绑一个，或在题集 tab 里导入。',
+  'chip.boundHint': '本会话绑定：{repo}（{layers}）。改绑用 /datasets bind <题库路径>。',
+  'chip.layersFloor': '仅模型可见层',
+  'chip.layersNamed': '层：{layers}',
   'binding.none': '本会话未绑定题库仓库',
   'binding.repo': '题库: {repo}',
   'binding.allDatasets': '全部题集',
@@ -320,6 +332,12 @@ export const en: Record<DatasetsKey, string> = {
   'error.details': 'Details',
   'error.detailsPath': 'Path',
   'open': 'Datasets',
+  'chip.label': 'Datasets',
+  'chip.unbound': 'not bound',
+  'chip.unboundHint': 'This session has no dataset repository. Bind one with /datasets bind <repoPath>, or import one in the Datasets tab.',
+  'chip.boundHint': 'Bound to {repo} ({layers}). Rebind with /datasets bind <repoPath>.',
+  'chip.layersFloor': 'model-facing layers',
+  'chip.layersNamed': 'layers: {layers}',
   'binding.none': 'No dataset repository bound to this session',
   'binding.repo': 'Repository: {repo}',
   'binding.allDatasets': 'all datasets',

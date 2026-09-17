@@ -102,18 +102,25 @@ export function expandHome(path: string): string {
 }
 
 /**
- * The canonical form of a dataset repository root: `~` expanded, made
- * absolute, and — when the directory is there — resolved through its
- * symlinks. Mirrors `normalizeRepoPath` in the datasets plugin on purpose;
- * the two are copies rather than an import because a client-facing plugin
- * never imports a sibling plugin.
+ * One dataset repository root reduced to its canonical form: `~` expanded,
+ * made absolute, trailing separator dropped, and resolved through symlinks
+ * when the directory is there.
  *
- * WHY every repo root goes through this: `readdir(<repo>/datasets)` does not
- * expand `~`, so a session bound to `~/x` made the conditions page report
- * "not a dataset repository" about a repository that exists (I5 walkthrough
- * gap G5).
+ * Two jobs, one answer. Comparison is one: the agent-facing `repo` parameter
+ * is only ever a restatement of the session's binding, and a binding recorded
+ * as a literal `~/…` and an argument an agent typed as an absolute path are
+ * the same repository and must not read as two. Consumption is the other:
+ * `readdir(<repo>/datasets)` does not expand `~`, so a session bound to `~/x`
+ * made the conditions page report "not a dataset repository" about a
+ * repository that exists (I5 walkthrough gap G5). A path that does not exist
+ * normalizes as far as it can rather than throwing — refusing to compare is
+ * not an improvement on comparing the text.
+ *
+ * Mirrors `normalizeRepoPath` in the datasets plugin on purpose; the two are
+ * copies rather than an import because a client-facing plugin never imports a
+ * sibling plugin.
  * @param path - the repository path as configured, passed, or bound.
- * @returns the canonical path; '' stays '' for the caller's shape check.
+ * @returns the canonical path; '' stays '' for the caller's own shape check.
  */
 export function normalizeRepoPath(path: string): string {
   const trimmed = path.trim()
@@ -124,6 +131,15 @@ export function normalizeRepoPath(path: string): string {
   } catch {
     return absolute
   }
+}
+
+/**
+ * Whether two repository paths name the same repository.
+ * @param a - one path, as written.
+ * @param b - the other.
+ */
+export function sameRepoPath(a: string, b: string): boolean {
+  return normalizeRepoPath(a) === normalizeRepoPath(b)
 }
 
 function isDirectory(path: string): boolean {

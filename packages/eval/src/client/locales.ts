@@ -362,10 +362,30 @@ export type EvalKey =
   | 'conditions.col.id'
   | 'conditions.col.harness'
   | 'conditions.col.model'
+  | 'conditions.col.endpoint'
   | 'conditions.col.scope'
   | 'conditions.col.preset'
   | 'conditions.col.lock'
   | 'conditions.col.ready'
+  | 'conditions.col.action'
+  | 'conditions.endpointUnset'
+  | 'conditions.endpointEdit'
+  | 'conditions.endpointPlaceholder'
+  | 'conditions.endpointSave'
+  | 'conditions.endpointCancel'
+  | 'conditions.endpointWritten'
+  | 'conditions.endpointUnchanged'
+  | 'conditions.endpointLockStale'
+  | 'conditions.endpointFailed'
+  | 'conditions.provision'
+  | 'conditions.provisioning'
+  | 'conditions.provisionHint'
+  | 'conditions.provisionResult'
+  | 'conditions.provisionWritten'
+  | 'conditions.provisionRefused'
+  | 'conditions.provisionWroteBack'
+  | 'conditions.provisionHome'
+  | 'conditions.provisionFailed'
   | 'conditions.scopeDefault'
   | 'conditions.lockOk'
   | 'conditions.lockStale'
@@ -782,6 +802,26 @@ export const en: Record<EvalKey, string> = {
   'conditions.col.preset': 'Preset',
   'conditions.col.lock': 'Lock',
   'conditions.col.ready': 'Ready',
+  'conditions.col.endpoint': 'Endpoint (declared)',
+  'conditions.col.action': '',
+  'conditions.endpointUnset': 'not set',
+  'conditions.endpointEdit': 'Click to set the declared endpoint',
+  'conditions.endpointPlaceholder': 'default',
+  'conditions.endpointSave': 'Save',
+  'conditions.endpointCancel': 'Cancel',
+  'conditions.endpointWritten': 'Endpoint of {id} is now {value}.',
+  'conditions.endpointUnchanged': 'Endpoint of {id} was already {value} — nothing written.',
+  'conditions.endpointLockStale': 'The endpoint is part of the condition hash, so the lock beside it is now stale — provision again.',
+  'conditions.endpointFailed': 'Could not set the endpoint',
+  'conditions.provision': 'Provision',
+  'conditions.provisioning': 'Provisioning…',
+  'conditions.provisionHint': 'Resolve this condition to a real scoped home, check it field by field, record the home hash in the declaration, and write the lock. One step: ready afterwards, or told why not.',
+  'conditions.provisionResult': 'Provision · {id}',
+  'conditions.provisionWritten': 'Lock written — this condition is ready.',
+  'conditions.provisionRefused': 'No lock written — this condition is not ready.',
+  'conditions.provisionWroteBack': 'home.sha was corrected in the declaration and the condition re-hashed, so this took one step rather than two.',
+  'conditions.provisionHome': 'Scoped home {dir} · credential {credential}',
+  'conditions.provisionFailed': 'Provision could not run',
   'conditions.scopeDefault': 'default',
   'conditions.lockOk': 'ok',
   'conditions.lockStale': 'stale',
@@ -1176,6 +1216,26 @@ export const zh: Record<EvalKey, string> = {
   'conditions.col.preset': 'preset',
   'conditions.col.lock': 'lock',
   'conditions.col.ready': '就绪',
+  'conditions.col.endpoint': 'model.endpoint',
+  'conditions.col.action': '',
+  'conditions.endpointUnset': '未填',
+  'conditions.endpointEdit': '点一下填写声明的 endpoint',
+  'conditions.endpointPlaceholder': 'default',
+  'conditions.endpointSave': '保存',
+  'conditions.endpointCancel': '取消',
+  'conditions.endpointWritten': '{id} 的 endpoint 已改为 {value}。',
+  'conditions.endpointUnchanged': '{id} 的 endpoint 本来就是 {value}，没有写入。',
+  'conditions.endpointLockStale': 'endpoint 进条件哈希，旁边那份 lock 因此过期了——再 provision 一次。',
+  'conditions.endpointFailed': 'endpoint 写入失败',
+  'conditions.provision': 'provision',
+  'conditions.provisioning': 'provision 中…',
+  'conditions.provisionHint': '把这条声明落到真的作用域家目录：逐字段核对、把 home 哈希写回声明、写 lock。一步走完——要么就绪，要么告诉你卡在哪。',
+  'conditions.provisionResult': 'provision · {id}',
+  'conditions.provisionWritten': 'lock 已写——这条条件就绪了。',
+  'conditions.provisionRefused': '没有写 lock——这条条件还不就绪。',
+  'conditions.provisionWroteBack': 'home.sha 已写回声明并重新算了条件哈希，所以这一步不用做两遍。',
+  'conditions.provisionHome': '作用域家目录 {dir} · 凭据 {credential}',
+  'conditions.provisionFailed': 'provision 没能跑起来',
   'conditions.scopeDefault': '默认',
   'conditions.lockOk': '有效',
   'conditions.lockStale': '过期',

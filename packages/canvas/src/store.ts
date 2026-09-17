@@ -21,7 +21,7 @@
  * @module @khorsheed/dsh-canvas
  */
 import { randomBytes } from 'node:crypto'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
@@ -39,7 +39,7 @@ import {
   type BoardAddCommentRequest, type BoardArchiveRequest, type BoardAskAgentOutcome,
   type BoardAskAgentRequest, type BoardCard, type BoardChatStatusResult, type BoardCreateRequest,
   type BoardFocusRequest, type BoardFocusResult,
-  type BoardImportResult, type BoardImportV1Request, type BoardListResult, type BoardMutationResult,
+  type BoardListResult, type BoardMutationResult,
   type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
   type BoardReadDraftOutcome, type BoardReadDraftRequest, type BoardReadOutcome, type BoardReadRequest,
   type BoardRef, type BoardWriteDraftRequest, type BoardWriteDraftResult,
@@ -411,18 +411,6 @@ export class CanvasBoardService {
   }
 
   /**
-   * Import one workspace's v1 pad (`<workspace>/灵感画布/`) as a new canvas:
-   * a read-only copy — the pad files are listed and read through the pad
-   * service (reads carry no fence) and are never written. Each active pad
-   * card becomes a fragment card, each article a document card, with the
-   * source file's absolute path on the card; the pad's archived items stay
-   * behind (they were hidden there too). The new canvas attaches the
-   * workspace it came from.
-   * @param request - the workspace root and an optional canvas title.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the new board, its token, and how many items came over.
-   */
-  /**
    * The agent's card entrance (`canvas_propose_card`): proposed and awaiting
    * the user's ✓/✗, createdBy agent. A question card starts OPEN even when
    * the proposal carries a rationale comment — exploring means work the user
@@ -589,44 +577,6 @@ export class CanvasBoardService {
     } catch (error) {
       return { ok: false, error: canvasErrorOf(error) }
     }
-  }
-
-  async importV1(request: BoardImportV1Request, session: Session): Promise<BoardImportResult> {
-    const listing = await this.ctx.canvasStore.list(request.dir)
-    if (listing.items.length === 0) return { ok: false, error: 'missing' }
-    const now = new Date().toISOString()
-    const cards: BoardCard[] = []
-    for (const item of listing.items) {
-      const outcome = await this.ctx.canvasStore.read({ dir: request.dir, name: item.name })
-      // An item that vanished mid-import is skipped, not fatal.
-      if (!outcome.ok) continue
-      cards.push({
-        id: makeBoardId('c', Date.now(), randomSuffix()),
-        kind: item.kind === 'card' ? 'fragment' : 'document',
-        text: outcome.content.slice(0, MAX_CARD_TEXT_LENGTH),
-        source: { type: 'file', ref: item.absolutePath, title: item.title },
-        status: 'kept',
-        comments: [],
-        createdBy: 'user',
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
-    const title = sanitizeCanvasTitle(request.title ?? '') ?? `导入：${basename(request.dir)}`
-    const board: CanvasBoard = {
-      id: makeBoardId('canvas', Date.now(), randomSuffix()),
-      title,
-      attachedWorkspaces: [request.dir],
-      chat: { sessionId: null },
-      cards,
-      stats: { ...emptyStats(now), kindCounts: computeKindCounts(cards) },
-      archivedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    }
-    const created = await this.writeNew(board, session)
-    if (!created.ok) return created
-    return { ...created, imported: cards.length }
   }
 }
 

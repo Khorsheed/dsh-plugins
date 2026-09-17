@@ -27,10 +27,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
   BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
-  BoardImportResult, BoardImportV1Request, BoardListResult, BoardMutationResult,
+  BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest,
   BoardReadOutcome, BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
-  CanvasListRequest, CanvasListResult,
 } from '../types.ts'
 import type {} from './locales.ts'
 import type { CanvasSelectionSource } from './space/selection.ts'
@@ -76,10 +75,6 @@ export interface CanvasTabInjected extends CanvasChatInjected {
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Archive a canvas from the switcher, or restore it (never a delete). */
   archiveCanvas: (sessionId: SessionId, request: BoardArchiveRequest) => Promise<RemoteResult<BoardMutationResult>>
-  /** Import one workspace's v1 pad as a new canvas (read-only). */
-  importV1: (sessionId: SessionId, request: BoardImportV1Request) => Promise<RemoteResult<BoardImportResult>>
-  /** One workspace's v1 pad listing (the import flow's probe and count). */
-  probeV1Pad: (request: CanvasListRequest) => Promise<RemoteResult<CanvasListResult>>
   /**
    * Open a file attachment in the official document preview
    * (`ctx.sidebarRight.openResource` over a `dsh-resource://file` address);
@@ -105,11 +100,13 @@ export interface CanvasTabInjected extends CanvasChatInjected {
   /** Write the canvas's draft (null token creates; else version-guarded). */
   writeDraft: (sessionId: SessionId, request: BoardWriteDraftRequest) => Promise<RemoteResult<BoardWriteDraftResult>>
   /**
-   * The wide-mode suggestion, fired once per session when the tab first
-   * shows: fullscreen the right panel and collapse the session list — the
-   * user's own controls own it from then on (never re-forced).
+   * The one-shot layout suggestion, fired once per session when the tab
+   * first shows: collapse the session list (M3.1 — the fullscreen suggestion
+   * is gone: the host's fullscreen hides the right panel's resize handle, so
+   * it can never be the default). The user's own controls own the layout
+   * from then on (never re-forced).
    */
-  suggestWideMode: (sessionId: SessionId, fullscreen: boolean) => void
+  suggestWideMode: (sessionId: SessionId) => void
   hooks: {
     /** The selection/freshness feed (open canvas, open card, board rev), bound by the slot renderer. */
     selection: CanvasSelectionSource

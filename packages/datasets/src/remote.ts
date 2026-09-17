@@ -11,7 +11,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { normalizeRepoPath, validateBinding, type DatasetBinding } from './binding.ts'
+import { validateBinding, type DatasetBinding } from './binding.ts'
+import { normalizeRepoPath } from './repo-path.ts'
 import type { DatasetOverview, ItemBrief } from './brief.ts'
 import type { SkeletonResult } from './scaffold.ts'
 import {

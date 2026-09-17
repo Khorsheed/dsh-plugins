@@ -93,7 +93,7 @@ Other plugins consume `ctx.get('mission')` — an in-process contract, never a s
 
 ## CLI
 
-`dsh-mission <command>` (or `node lib/cli.js`); every command takes `--data-dir DIR`. Exit codes: `0` ok / releasable, `1` failure / not releasable / lint errors, `2` usage.
+`dsh-mission <command>` (or `node lib/cli.js`); every command takes `--data-dir DIR`. Exit codes: `0` ok / releasable, `1` failure / not releasable / lint errors, `2` usage. Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
 
 ```sh
 dsh-mission run create --template t.json [--id ID] [--meta JSON]

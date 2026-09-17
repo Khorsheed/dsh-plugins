@@ -165,26 +165,32 @@ function makeAgentRec(id: string, cwd: string | undefined): FakeAgentRec {
 /** The fake agents registry: runs the create/resume setup like the real factory. */
 function fakeAgents() {
   const live = new Map<string, FakeAgentRec>()
-  const created: Array<{ sessionId: string; meta?: { cwd?: string; agentPreset?: string } }> = []
+  const created: Array<{ sessionId: string; meta?: { cwd?: string; agentPreset?: string }; agentOptions?: unknown }> = []
   const resumed: string[] = []
+  const resumedOpts: Array<{ agentOptions?: unknown }> = []
   let failCreate: Error | undefined
   let failResume: Error | undefined
   const agents = {
     get: (id: SessionId) => live.get(String(id))?.agent,
-    create: vi.fn(async (opts: { sessionId: SessionId; meta?: { cwd?: string; agentPreset?: string }; setup?: (ctx: unknown, agent: Agent) => Promise<void> }) => {
+    create: vi.fn(async (opts: { sessionId: SessionId; meta?: { cwd?: string; agentPreset?: string }; agentOptions?: unknown; setup?: (ctx: unknown, agent: Agent) => Promise<void> }) => {
       if (failCreate !== undefined) throw failCreate
       const rec = makeAgentRec(String(opts.sessionId), opts.meta?.cwd)
       await opts.setup?.(rec.scopeKit.scope, rec.agent)
       live.set(rec.id, rec)
-      created.push({ sessionId: rec.id, ...(opts.meta === undefined ? {} : { meta: opts.meta }) })
+      created.push({
+        sessionId: rec.id,
+        ...(opts.meta === undefined ? {} : { meta: opts.meta }),
+        ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
+      })
       return { agent: rec.agent, dispose: async () => { live.delete(rec.id) } }
     }),
-    resume: vi.fn(async (opts: { resumeSessionId: SessionId; setup?: (ctx: unknown, agent: Agent) => Promise<void> }) => {
+    resume: vi.fn(async (opts: { resumeSessionId: SessionId; agentOptions?: unknown; setup?: (ctx: unknown, agent: Agent) => Promise<void> }) => {
       if (failResume !== undefined) throw failResume
       const rec = makeAgentRec(String(opts.resumeSessionId), undefined)
       await opts.setup?.(rec.scopeKit.scope, rec.agent)
       live.set(rec.id, rec)
       resumed.push(rec.id)
+      resumedOpts.push({ ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }) })
       return { agent: rec.agent, dispose: async () => { live.delete(rec.id) } }
     }),
   }
@@ -193,6 +199,7 @@ function fakeAgents() {
     live,
     created,
     resumed,
+    resumedOpts,
     recOf: (id: string) => live.get(id),
     failNextCreate(error: Error): void { failCreate = error },
     failNextResume(error: Error): void { failResume = error },
@@ -215,7 +222,13 @@ interface Bench {
 }
 
 /** Mount the service over the full fake bench. */
-function bench(opts: { fs?: FakeFs | null; presets?: boolean; coldEvents?: SessionEvent[] } = {}): Bench {
+function bench(opts: {
+  fs?: FakeFs | null
+  presets?: boolean
+  coldEvents?: SessionEvent[]
+  callingHeader?: { provider: string; model: string; reasoningEffort?: string }
+  defaultModel?: { provider: string; model: string; reasoningEffort?: string }
+} = {}): Bench {
   const ctx = new Context()
   const fs = opts.fs === null ? undefined : (opts.fs ?? new FakeFs())
   const agentsKit = fakeAgents()
@@ -233,6 +246,11 @@ function bench(opts: { fs?: FakeFs | null; presets?: boolean; coldEvents?: Sessi
       mount: async () => {},
     } as never)
   }
+  if (opts.defaultModel !== undefined) {
+    ctx.provide('agentDefaultModel', {
+      currentSelection: () => ({ ...opts.defaultModel }),
+    } as never)
+  }
   ctx.provide('sessionPersistence', {
     open: async (id: string, _mode: string) => {
       persistence.opened.push(id)
@@ -246,7 +264,12 @@ function bench(opts: { fs?: FakeFs | null; presets?: boolean; coldEvents?: Sessi
   } as never)
   const callingEvents: SessionEvent[] = []
   const calling = {
-    session: { id: 's-main', header: { cwd: SOURCE_CWD }, snapshotEvents: () => [...callingEvents] },
+    session: {
+      id: 's-main',
+      header: { cwd: SOURCE_CWD },
+      snapshotEvents: () => [...callingEvents],
+      requestHeader: () => opts.callingHeader === undefined ? undefined : { config: { ...opts.callingHeader } },
+    },
   } as unknown as Agent
   const service = new SideChatService(ctx, { stateRoot: STATE_ROOT })
   return { service, fs: fs as FakeFs, agentsKit, sessions, calling, callingEvents, persistence }
@@ -485,6 +508,48 @@ describe('SideChatService — state, list, and the store fence', () => {
     const outcome = await service.send(calling, { contextKey: 'k', text: '问' })
     expect(outcome.ok).toBe(true)
     expect(await service.getState('k')).toMatchObject({ ok: true, state: { status: 'idle' } })
+  })
+})
+
+describe('SideChatService — the model route (the 3080 disappearing-message fix)', () => {
+  it('inherits the calling session\'s folded header route on create (provider, model, effort)', async () => {
+    const { service, agentsKit, calling } = bench({
+      callingHeader: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' },
+    })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(agentsKit.created[0]!.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' })
+  })
+
+  it('falls back to the probed agentDefaultModel when the calling session has no header', async () => {
+    const { service, agentsKit, calling } = bench({ defaultModel: { provider: 'deepseek', model: 'deepseek-v4' } })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(agentsKit.created[0]!.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-v4' })
+  })
+
+  it('prefers the calling header over the deployment default', async () => {
+    const { service, agentsKit, calling } = bench({
+      callingHeader: { provider: 'p-call', model: 'm-call' },
+      defaultModel: { provider: 'p-default', model: 'm-default' },
+    })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(agentsKit.created[0]!.agentOptions).toEqual({ provider: 'p-call', model: 'm-call' })
+  })
+
+  it('passes no agentOptions when neither route exists (the turn error then surfaces, never vanishes)', async () => {
+    const { service, agentsKit, calling } = bench()
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(agentsKit.created[0]!.agentOptions).toBeUndefined()
+  })
+
+  it('carries the route on cold resume as well (the seed route comes from options alone there)', async () => {
+    const fs = new FakeFs()
+    const first = bench({ fs })
+    await first.service.send(first.calling, { contextKey: 'k', text: '一' })
+    const second = bench({ fs, callingHeader: { provider: 'p2', model: 'm2' } })
+    const sent = await second.service.send(second.calling, { contextKey: 'k', text: '二' })
+    expect(sent.ok).toBe(true)
+    expect(second.agentsKit.resumed).toHaveLength(1)
+    expect(second.agentsKit.resumedOpts[0]!.agentOptions).toEqual({ provider: 'p2', model: 'm2' })
   })
 })
 

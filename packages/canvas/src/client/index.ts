@@ -173,7 +173,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ...chatFace,
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
-    probeV1Pad: request => requireRemote().list(request),
     openFile: (sessionId, cwd, path) => {
       try {
         ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, path))
@@ -188,32 +187,27 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
-    importV1: async (sessionId, request) => touchOnSuccess(await requireRemote().importV1(sessionId, request)),
     selectCard: (canvasId, cardId) => { selection.select(canvasId, cardId) },
     openCanvas: canvasId => { selection.openCanvas(canvasId) },
     clearCard: () => { selection.clearCard() },
     focusCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().focusCanvas(sessionId, request)),
     readDraft: request => requireRemote().readDraft(request),
     writeDraft: async (sessionId, request) => touchOnSuccess(await requireRemote().writeDraft(sessionId, request)),
-    // The wide-mode suggestion: one shot per session, through the probed
-    // layout face (the presentation is ui-sidebar-right's to report, so the
-    // canvas only SUGGESTS once — a user's own control re-asserts it after).
-    // The left session list collapses through the layout's own toggle, gated
-    // on the frame's collapsed marker (never a blind toggle).
-    suggestWideMode: (sessionId, fullscreen) => {
+    // The one-shot layout suggestion (M3.1): ONLY the session-list collapse
+    // — the fullscreen suggestion is gone (the host's fullscreen hides the
+    // right panel's resize handle, so it can never be a default suggestion;
+    // the user adjusts the width by hand and the layout remembers). Gated on
+    // the frame's collapsed marker: never a blind toggle, never re-forced.
+    suggestWideMode: (sessionId) => {
       if (wideSuggested.has(String(sessionId))) return
       wideSuggested.add(String(sessionId))
       try {
-        const layout = ctx.get('layout') as {
-          openRightbar?: (track: boolean, fullscreen: boolean) => void
-          toggleSidebar?: () => void
-        } | undefined
+        const layout = ctx.get('layout') as { toggleSidebar?: () => void } | undefined
         if (layout === undefined) return
-        if (!fullscreen) layout.openRightbar?.(true, true)
         const frame = document.querySelector('[data-side]')
         if (frame !== null && !frame.hasAttribute('data-sidebar-collapsed')) layout.toggleSidebar?.()
       } catch {
-        // A suggestion, never a failure: the user can fullscreen by hand.
+        // A suggestion, never a failure: the user can widen the panel by hand.
       }
     },
     hooks: { selection: selection.source },

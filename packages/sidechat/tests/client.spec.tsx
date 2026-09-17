@@ -27,7 +27,7 @@ type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; me
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
   zh[key].replace(/\{(\w+)\}/g, (match, name: string) => params?.[name] ?? match)) as SideChatViewProps['t']
 
-const EMPTY: SideChatState = { contextKey: 's-main', label: '主会话', status: 'new', refs: [], transcript: [] }
+const EMPTY: SideChatState = { contextKey: 's-main', label: '主会话', status: 'new', refs: [], transcript: [], lastError: null }
 
 const BUSY: SideChatState = {
   contextKey: 's-main',
@@ -39,6 +39,7 @@ const BUSY: SideChatState = {
     { kind: 'tool', name: 'read', state: 'done', time: 2 },
     { kind: 'assistant', text: '意思是**这样**。', time: 3 },
   ],
+  lastError: null,
 }
 
 interface ViewHarness {
@@ -158,6 +159,44 @@ describe('SideChatView', () => {
     const { mocks } = viewBench({ ...EMPTY, contextKey: 'canvas:c1', label: '画布 A' }, { contextKey: 'canvas:c1' })
     await waitFor(() => expect(mocks.getState).toHaveBeenCalledWith('canvas:c1'))
     await waitFor(() => expect(screen.getByText('画布 A')).toBeTruthy())
+  })
+
+  it('echoes the sent text optimistically while the projection catches up', async () => {
+    const { mocks } = viewBench(EMPTY)
+    // The wire answer's state has NO echo yet (the 1.2s poll window): the
+    // panel must append the user row locally instead of showing a lost send.
+    mocks.send.mockResolvedValue({ ok: true, value: { ok: true, state: { ...EMPTY, status: 'running' as const } } })
+    const input = await screen.findByPlaceholderText(zh['composer.placeholder'])
+    fireEvent.input(input, { target: { value: '乐观回声' } })
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
+    await waitFor(() => expect(screen.getByText('乐观回声')).toBeTruthy())
+  })
+
+  it('does not double the row when the wire answer already echoes the send', async () => {
+    const { mocks } = viewBench(EMPTY)
+    mocks.send.mockResolvedValue({
+      ok: true,
+      value: {
+        ok: true,
+        state: {
+          ...EMPTY,
+          status: 'running' as const,
+          transcript: [{ kind: 'user' as const, text: '已回声', refs: [], time: 7 }],
+        },
+      },
+    })
+    const input = await screen.findByPlaceholderText(zh['composer.placeholder'])
+    fireEvent.input(input, { target: { value: '已回声' } })
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
+    await waitFor(() => expect(screen.getAllByText('已回声')).toHaveLength(1))
+  })
+
+  it('shows the turn error bar and dismisses it', async () => {
+    viewBench({ ...BUSY, lastError: 'agent has no provider/model' })
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    expect(screen.getByText('agent has no provider/model')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['error.dismiss'] }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
   it('offers the dock entry only when the overlay seat exists, and opens the dock on the current context', async () => {

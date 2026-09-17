@@ -20,7 +20,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentSetup } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions, AgentSetup, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { FsError, type FsVersion } from '@deepseek-ai/dsh-fs'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
@@ -29,7 +29,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { composeSideAgent, inspectCold } from './agent-setup.ts'
 import { PACKAGE_NAME } from './invariant.ts'
-import { messageTextOf, projectTranscript } from './journal.ts'
+import { messageTextOf, projectTranscript, projectTurnError } from './journal.ts'
 import { SideChatStore } from './store.ts'
 import {
   foldRefsIntoText, MAX_REFS_PER_CONTEXT, refLabelOf, SIDECHAT_DEFAULT_SEGMENT, SIDECHAT_SECTION_NAME,
@@ -65,6 +65,9 @@ function renderSegment(segment: string | undefined): string {
     ? SIDECHAT_DEFAULT_SEGMENT
     : `${SIDECHAT_DEFAULT_SEGMENT}\n\n${segment}`
 }
+
+/** The agentDefaultModel face this package consumes (probed, never injected — the session-controller's own fallback). */
+export type AgentDefaultModelProbe = Pick<{ currentSelection(): ModelSelection }, 'currentSelection'>
 
 /** The live status overlay for one record (synchronous — the list verb's per-row read). */
 function liveStatusOf(agents: Context['agents'], record: SideChatContextRecord): SideChatStatus {
@@ -238,6 +241,43 @@ export class SideChatService {
   }
 
   /**
+   * The model route one new side session inherits. Without it the loop's
+   * `prepareRequest` throws `agent has no provider/model` BEFORE the user
+   * message reaches the journal — the turn dies silently and the sent
+   * message "disappears" (the 3080 bug; the durable inbox still claims it
+   * next turn, so no data repair is needed once the route exists). The
+   * chain: the CALLING session's own folded request header first (the user
+   * talks to the same model in the side chat as in the conversation), then
+   * the deployment default via the probed `agentDefaultModel` service
+   * (probe-with-degrade, never an inject), else nothing — and the turn
+   * error then surfaces through `lastError` instead of vanishing.
+   * @param calling - the calling session's agent, when a wire gesture carried one.
+   * @returns the agentOptions to pass create/resume, or undefined.
+   */
+  private agentOptionsOf(calling: Agent | undefined): AgentOptions | undefined {
+    const config = calling?.session.requestHeader?.()?.config
+    if (config !== undefined && config.provider !== '' && config.model !== '') {
+      return {
+        provider: config.provider,
+        model: config.model,
+        ...config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort },
+      }
+    }
+    const defaults = this.ctx.get('agentDefaultModel') as AgentDefaultModelProbe | undefined
+    const selection = typeof defaults?.currentSelection === 'function'
+      ? defaults.currentSelection()
+      : undefined
+    if (selection !== undefined && selection.provider !== '' && selection.model !== '') {
+      return {
+        provider: selection.provider,
+        model: selection.model,
+        ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+      }
+    }
+    return undefined
+  }
+
+  /**
    * Create or cold-resume one context's agent, deduped per context. A resume
    * failure (a torn or removed session log) falls through to a FRESH session
    * rather than erroring the gesture — the mapping is corrected, the lost
@@ -256,13 +296,21 @@ export class SideChatService {
   /** One creation/resume pass for one context (see {@link ensureAgent}). */
   private async spawnAgent(runtime: ContextRuntime, calling: Agent | undefined): Promise<Agent> {
     const composition = await composeSideAgent(this.ctx, runtime.record.agentPreset ?? this.config.agentPreset)
+    // The route MUST travel with both create and resume: resume rebuilds the
+    // agent world with no logged header yet, so the seed route comes from
+    // these options alone.
+    const agentOptions = this.agentOptionsOf(calling)
     const setup: AgentSetup = async (agentCtx, agent) => {
       if (composition.setup !== undefined) await composition.setup(agentCtx, agent)
       this.contribute(agentCtx, runtime)
     }
     if (runtime.record.sessionId !== undefined) {
       try {
-        const handle = await this.ctx.agents.resume({ resumeSessionId: SessionId(runtime.record.sessionId), setup })
+        const handle = await this.ctx.agents.resume({
+          resumeSessionId: SessionId(runtime.record.sessionId),
+          ...agentOptions === undefined ? {} : { agentOptions },
+          setup,
+        })
         this.handles.set(runtime.record.contextKey, handle)
         return handle.agent
       } catch (error) {
@@ -276,6 +324,7 @@ export class SideChatService {
         ...cwd === undefined ? {} : { cwd },
         ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
       },
+      ...agentOptions === undefined ? {} : { agentOptions },
       setup,
     })
     this.handles.set(runtime.record.contextKey, handle)
@@ -349,15 +398,19 @@ export class SideChatService {
     const { record } = runtime
     let status: SideChatStatus = 'new'
     let transcript: SideChatState['transcript'] = []
+    let lastError: string | null = null
     if (record.sessionId !== undefined) {
       const live = this.ctx.agents.get(SessionId(record.sessionId))
       if (live !== undefined) {
         status = live.status
-        transcript = projectTranscript(live.session.snapshotEvents())
+        const events = live.session.snapshotEvents()
+        transcript = projectTranscript(events)
+        lastError = projectTurnError(events)
       } else {
         status = 'cold'
         const cold = await inspectCold(this.ctx, SessionId(record.sessionId))
         transcript = cold === undefined ? [] : projectTranscript(cold.events)
+        lastError = cold === undefined ? null : projectTurnError(cold.events)
       }
     }
     return {
@@ -366,6 +419,7 @@ export class SideChatService {
       status,
       refs: record.refs,
       transcript,
+      lastError,
     }
   }
 

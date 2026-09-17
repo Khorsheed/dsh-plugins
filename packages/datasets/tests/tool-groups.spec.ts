@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { apply, Config, inject, toolsOfGroup } from '../src/index.ts'
+import { formatBindReceipt } from '../src/format.ts'
 import { datasetToolDefinitions } from '../src/tool.ts'
 
 const READ = [
@@ -36,6 +37,29 @@ function applyCore(): { provided: string[]; commands: RecordedCommand[]; plugins
   apply(ctx as never, { repo: '', worktreeRoot: '' })
   return { provided, commands, plugins }
 }
+
+describe('the /datasets bind receipt (I5·T58 · G3)', () => {
+  it('names the model-facing default instead of claiming all layers', () => {
+    const receipt = formatBindReceipt({ repoPath: '/repo' })
+    // The old sentence was "(all layers)", which a person reading it would
+    // take to mean the reference answers and the rubric were open to the
+    // planning agent. The default is the opposite of that.
+    expect(receipt).not.toContain('all layers')
+    expect(receipt).toContain('model-facing layers only')
+    expect(receipt).toContain('--layers')
+  })
+
+  it('names the layers a person opened on purpose, and says they are explicit', () => {
+    const receipt = formatBindReceipt({ repoPath: '/repo', layers: ['visible', 'grading'] })
+    expect(receipt).toContain('visible, grading')
+    expect(receipt).toContain('sensitive ones included')
+  })
+
+  it('carries the dataset whitelist when the binding has one', () => {
+    expect(formatBindReceipt({ repoPath: '/repo', datasets: ['alpha'] })).toContain('datasets: alpha')
+    expect(formatBindReceipt({ repoPath: '/repo' })).not.toContain('datasets:')
+  })
+})
 
 describe('the datasets core faces', () => {
   it('mounts the service, the slash command, and the Remote face without a tool registry', () => {

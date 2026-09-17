@@ -24,6 +24,7 @@
     "src/client/local-root.ts",
     "src/client/locales.ts",
     "src/client/open-in-app.ts",
+    "src/client/rendered-search.ts",
     "src/client/store-local.ts",
     "src/client/structured.tsx",
     "src/client/DetailPane.tsx",

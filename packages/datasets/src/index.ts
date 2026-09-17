@@ -20,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type { DatasetBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatList, formatShow, formatWarnings } from './format.ts'
+import { formatBindReceipt, formatList, formatShow, formatWarnings } from './format.ts'
 import { createDatasetsService, resolveScope, type DatasetsService } from './service.ts'
 import { DatasetsRemoteService } from './remote.ts'
 
@@ -78,7 +78,8 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     name: 'datasets',
     description:
       'Session dataset binding and browsing: /datasets list [dataset] | show <dataset> [item] | '
-      + 'bind <repoPath> [--datasets a,b] [--layers x,y] | unbind',
+      + 'bind <repoPath> [--datasets a,b] [--layers x,y] | unbind. '
+      + 'bind without --layers keeps the agent to each dataset\'s model-facing layers; naming layers opens exactly those.',
     // WITHOUT this descriptor a capable composer has no reason to believe the
     // command takes anything: picking `/datasets` from the completion strip
     // submits a bare invocation and leaves everything the human typed after it
@@ -124,12 +125,7 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
               ...(flags.layers !== undefined ? { layers: flags.layers } : {}),
             }
             const recorded = service.bind(session, binding)
-            return {
-              kind: 'success',
-              text: `bound ${recorded.repoPath}`
-                + `${recorded.datasets !== undefined ? ` datasets: ${recorded.datasets.join(', ')}` : ''}`
-                + `${recorded.layers !== undefined ? ` layers: ${recorded.layers.join(', ')}` : ' (all layers)'}`,
-            }
+            return { kind: 'success', text: formatBindReceipt(recorded) }
           }
           case 'unbind': {
             service.unbind(session)
