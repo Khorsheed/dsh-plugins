@@ -9,7 +9,7 @@
 - **profile（部署级）**：`web-basic` / `web-dev` / `web-eval` 是部署组合，决定插件**装不装、挂不挂**。一个实例只跑一个 profile。**运行时拿不到 profile 名**——host 和 client 的 ctx 上都没有 profile 标志，profile-boot 也不设环境变量。所以不存在「运行时判断当前 profile」这条路。
 - **preset（会话级）**：agent preset 是同实例内按会话授予的能力组合，**建会话时绑定并锁定**（存量会话永远保持创建时的 preset）；preset 的唯一选择点是建会话时的官方 chip——**不发起会话就不存在 preset 输入**。判据可读：会话的 preset id 从 `ctx.sessions.list` 投影读，preset 组合从官方 `pluginInventory` Remote 读。
 
-推论：**「按模式自隐」= 按会话 preset 自隐，且只对内容绑定会话的 surface 成立**（见「判据轴」）。
+推论：**「按模式自隐」= 按会话 preset 自隐，且只对内容或配套能力绑定会话的 surface 成立**（见「判据轴」）。
 
 ## 速查表
 
@@ -18,32 +18,36 @@
 | 工具注入（`ctx.tools.register`） | 会话级 | core/companion 拆分，工具行进 preset 的 `agent.cordis.yml`，官方原生授予 |
 | 提示词注入（`systemPrompt.section`） | 会话级 | 注册在伴生工具行里，随工具走（guidance 描述工具，所有权随注册） |
 | 会话级 UI（`conversation.view` tab、会话头徽标） | 会话级 | preset-visibility probe + RegistrationToggle / `return null`，**fail-open** |
-| 右栏 tab / panellist 入口，**内容绑定会话**（如 worktrees 的提交页） | 会话级 | 同上：preset 判据 + 注册级 toggle（host 注销语义支持，见第二层） |
-| 右栏 tab / panellist / 全局空间，**内容跨会话**（如 canvas 空间） | **安装层** | 没有也不该有运行时开关；装/不装由 profile 的 dependencies 决定 |
+| 右栏 tab / panellist 入口，**内容或配套能力绑定会话**（worktrees 提交页、canvas 写作工作台） | 会话级 | 同上：preset 判据 + 注册级 toggle（host 注销语义支持，见第二层）；授予路径枚举完整（根挂 ∪ preset 挂） |
+| slash 命令 | 会话级 | 注册**搬进伴生工具行**——命令落进 preset 的 scope 层，只对该 preset 会话可见（官方 `/goal` `/plan` 同款机制，零上游改动）；handler 加 roster 兜底守卫 |
+| 设置卡（实例级配置，如 provider 凭据） | **安装层** | 内容绑定实例而非会话；设置页是全局页（无当前会话），preset 判据对它无定义——常驻，装不装由 profile 决定 |
+| 全局空间等**内容跨会话且无会话级能力语义**的 surface | **安装层** | 没有也不该有运行时开关；装/不装由 profile 的 dependencies 决定 |
 | 实例级行为开关（如 `tools: all\|none`） | config 层 | profile patch 行带 config；web client 读不到自己 config，走 host → Remote |
 | 平台维度（web / headless） | manifest | `dsh.client.platform`，headless profile 不加载 client 半 |
 
 ## 判据轴：内容绑定谁，不看座位在哪
 
-一个 surface 能不能按 preset 自隐，取决于两个前提，**与座位无关**（会话内 tab 环还是框架级 sidebar 都一样）：
+一个 surface 能不能按 preset 自隐，取决于判据有没有**真值**且**语义自洽**，**与座位无关**（会话内 tab 环还是框架级 sidebar 都一样）：
 
-1. **内容绑定会话**。surface 展示的东西属于某个具体会话（worktrees 右栏 tab 展示当前会话的 worktree 提交页），「这个会话没授予我 → 入口对它无意义」才成立。内容跨会话（canvas 空间是部署级工作区，先于并跨越任何会话存在）则判据无定义——standard 会话的用户照样要看画布。
-2. **组合里有可 keyed 的行**。判据问「preset 组合里有没有我的伴生行」。worktrees-tool 真的被 dev preset 引用，判据有真值；纯 UI 包（canvas）在任何 preset 组合里都没有行，判据恒假，「自隐」即「永隐」——与存量会话无关，新会话也一样。
+1. **判据有真值：组合里有可 keyed 的行，且枚举了全部授予路径**。判据问「当前会话能触达我的能力吗」。伴生行只做 preset 挂载的包（`preset-composed-row` 形态，如 worktrees-tool）单查 preset 组即可；入口**可根挂也可 preset 挂**的包（canvas 的 `./agent` 行）必须双查（`entries` 根行 ∪ preset 组行）——只查 preset 组会让根挂部署永隐。
+2. **语义自洽：隐藏对未授予会话是正确体验**。入口配套的能力没被授予时入口无意义（worktrees tab 看不了提交页、canvas tab 用不了画布工具）。内容跨会话的 surface 要特别想清楚：canvas 空间内容跨会话，但入口语义是「触达画布工具」，未授予会话隐藏入口是（写作模式专属的）产品决策，由双查判据承载；连会话级能力语义都没有的全局空间，归安装层。
 
-canvas 2026-09-16 的 3080 事故两个前提都缺（无 keyed 行 + 跨会话工作区），叠加 preset 只在建会话时可选的事实——不发起会话就不存在 preset 输入——入口整体消失（回滚 note：`.agents/notes/implemented/feature/2026-09-16-canvas-preset-self-hide-reverted.md`）。**两个前提都满足的框架级入口（worktrees 右栏 tab 是样板）可以也应该自隐**；缺任何一个，归安装层。
+canvas 2026-09-16 的 3080 事故：当时 canvas 是纯 UI 包，任何 preset 组合里都没有行，判据恒假 → 永隐（回滚 note：`.agents/notes/implemented/feature/2026-09-16-canvas-preset-self-hide-reverted.md`）。0.4.2 工具化（`./agent` 入口）后判据有了真值，2026-09-17 以双查判据恢复自隐（`packages/canvas/src/client/preset-visibility.ts`）。**框架级入口可以自隐，前提是判据枚举全部授予路径**（worktrees 右栏 tab 单查样板、canvas 双查样板）。
 
 ## 第一层：安装层——部署意图与跨会话内容的归宿
 
 两类问题归安装层（那个 profile 装不装这个包，dependencies 决定，`dsh.profile.bundles` 随之）：
 
 1. **部署意图**：这个部署要不要这个插件。web-basic 与 web-dev 的差异就是这么来的。真的不想让某类部署看到，就从那个 profile 移除依赖。
-2. **内容跨会话的 surface**（canvas 空间这类部署级工作区）：preset 判据对它无定义（见「判据轴」），可见性只有安装层一个正确答案。
+2. **内容跨会话且无会话级能力语义的 surface**（全局状态面板、部署级工作区这类）：preset 判据对它无定义（见「判据轴」），可见性只有安装层一个正确答案。注意 canvas 右栏 tab **不在**此类——它的入口语义是「触达画布工具」，能力按会话授予，判据有定义（双查样板，见第二层）。
 
 host 没有声明式可见性：右栏 tab 注册表（harness `packages/client/ui-sidebar-right/src/client/tab-registry.ts:87-128`）只有 `id/kind/patterns/priority/canOpen/title/guide`，头注释明写「purely static … no runtime hook」；slot 注册（`ui-slots`）同样无任何 visibility 谓词（0.1.5 已复核）。`cordis.patch.yml` 的 `disabled: !!js` 表达式作用域读不到会话/preset 身份，只能做平台门。声明式 `visibleWhen` 是上游增强，见「上游边界」。
 
-## 第二层：会话级 preset 自隐——内容绑定会话的 surface
+## 第二层：会话级 preset 自隐——内容或配套能力绑定会话的 surface
 
-会话 chrome（`conversation.view` tab 环、会话头徽标这类**依附于某个具体会话**的 UI）可以也应该自隐；**内容绑定会话的框架级入口**（worktrees 右栏 tab 这类）同样适用——座位不决定能不能自隐，「判据轴」的两个前提决定。
+会话 chrome（`conversation.view` tab 环、会话头徽标这类**依附于某个具体会话**的 UI）可以也应该自隐；**能力可达性判据的框架级入口**（worktrees 右栏 tab 单查、canvas 右栏 tab 双查）同样适用——座位不决定能不能自隐，「判据轴」的两个前提决定。
+
+**双查判据（入口可根挂也可 preset 挂的包必须）**：`pluginInventory.list()` 的 `entries` 里有 enabled 的本包行 = 全会话授予（部署级常量，先于一切 per-session 问题）；否则才查当前会话的 preset 组。只查 preset 组会把根挂部署判成永隐——2026-09-16 canvas 事故的完整教训。样板：`packages/canvas/src/client/preset-visibility.ts`。
 
 **判据（唯一事实源）**：当前会话的 preset 组合里有没有我的伴生行。组合数据读官方 `pluginInventory.list()` Remote 的 `agentPresets` 组（preset 组合文件本身是事实源，**不自建注册表**）。伴生行常量是纯数据，声明在 package.json 的 `dsh.references`（`scripts/check-plugin-independence.ts` 机械强制，不许放进 dependency 字段形成反向边）。
 
@@ -74,11 +78,13 @@ host 没有声明式可见性：右栏 tab 注册表（harness `packages/client/
 - **提示词注入**：`systemPrompt.section` 注册在伴生工具行里，随工具授予（guidance 描述工具，所有权随注册）。不要在全局挂载的 core 里注册模式专属的 prompt 段。
 - **会话级 UI**：按第二节执行。已有样板：eval「实验室」tab（`packages/eval/src/client/index.ts:93-148`）。
 - **sidebar（右栏 tab / 左栏面板）**：按「判据轴」分流，不看座位——内容绑定会话且伴生行被某 preset 引用（worktrees 右栏 tab 是样板）→ 第二层判据 + 注册级 toggle；内容跨会话（canvas 空间）→ 安装层，不要加判据。「开发插件的 sidebar 在别的 profile 可见」的第一动作仍是检查那个 profile 的 dependencies。
-- **slash 命令与设置卡**：现状是无条件注册（已知缺口，local-agent 家族 UI 同列）。它们是会话内 affordance，未来接第二层的判据；新插件写 slash 命令时就带上判据，不要新增漏 UI 的拷贝。
+- **slash 命令**：注册**搬进伴生工具行**（`ctx.inject(['commands'], …)`），落进 preset 的 scope 层，只对该 preset 会话可见——官方 `/goal` `/plan` 的条件显隐同款机制，client 补全按会话拉取、preset 切换自动刷新，client 侧零接线。handler 里用 `agentPresets.composedPreset` + `compositionInventory()` 做兜底守卫（读不到一律放行）。不要在 profile 根注册模式专属 slash。样板：eval / datasets / mission（2026-09-17 搬家）。
+- **设置卡**：内容绑定**实例**（provider 凭据、实例开关），不是会话——preset 判据对它无定义，且设置页是全局页（无当前会话 → fail-open 恒显示）。常驻是刻意形态（local-agent 家族 4 张 provider 卡）；「这个部署不该有它」由 profile 装不装表达（web-basic 未装家族）。
 
 ## 反模式清单
 
-- ❌ 给**内容跨会话**的 surface（部署级工作区、全局空间）套会话 preset 判据（canvas 回滚，2026-09-16）；「任一会话授予过就显示」这类变体同样禁止——那是安装层穿了件查询的外衣。
+- ❌ 给**内容跨会话且无会话级能力语义**的 surface（全局空间、部署级状态面板）套会话 preset 判据；「任一会话授予过就显示」这类变体同样禁止——那是安装层穿了件查询的外衣。
+- ❌ 判据**不枚举全部授予路径**：入口可根挂也可 preset 挂时只查 preset 组，根挂部署即永隐（canvas 2026-09-16 事故的完整教训；当时组合里连行都没有，恒假）。双查样板：`packages/canvas/src/client/preset-visibility.ts`。
 - ❌ 组合里没有任何 preset 引用的行可 keyed 的纯 UI 包套组合判据——判据恒假，「自隐」即「永隐」，与新旧会话无关。
 - ❌ `ctx.inject` / 直接依赖 `remote.pluginInventory`（namespace 缺席会把插件 pend 死；必须 `ctx.get` 探测 + fail-open）。
 - ❌ 任何读不到判据的路径判「隐藏」（fail-closed）。
