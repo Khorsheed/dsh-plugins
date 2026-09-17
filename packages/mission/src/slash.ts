@@ -8,6 +8,15 @@
  * `slash:<sessionId>` in history). The status table rendering is shared with
  * the CLI ({@link renderStatus} / {@link rowLine}) — no duplicated logic.
  *
+ * The REGISTRATION no longer happens in this core: it moved to the companion
+ * `@khorsheed/dsh-mission-tool` row (preset-visibility rollout A3), which an
+ * agent preset mounts per session — registering from the preset's mount lands
+ * the command in that preset's scope layer, so only granted sessions see it
+ * (the official `/goal` `/plan` `/compact` shape). This module keeps the
+ * handler and the definition; {@link registerMissionSlash} is what the
+ * companion calls with its scoped context, and the grant backstop inside the
+ * handler is the second gate for the paths the scope layer cannot cover.
+ *
  * Export lives here with the same leak gate semantics as the CLI, adapted to
  * what a slash command honestly IS: a one-shot text invocation with NO
  * interactive confirmation channel. Guarded (modelFacing: false) layers need
@@ -307,16 +316,66 @@ async function exportCmd(service: MissionService, args: SlashArgs, extras: Slash
   return { kind: 'success', text: lines.join('\n') }
 }
 
+/** The companion row whose preset grant admits this command. */
+const TOOL_ROW_MODULE = '@khorsheed/dsh-mission-tool'
+
+/** The agentPresets slice the grant backstop reads (duck-typed; probed, never injected). */
+interface AgentPresetsProbe {
+  composedPreset(agentCtx: Context): string | undefined
+  compositionInventory(): Promise<readonly { id: string; broken?: string; rows: readonly { moduleName: string }[] }[]>
+}
+
+/**
+ * The execution backstop behind the preset-scope registration: refuse only
+ * when the session's preset composition is READABLE and names no companion
+ * row — a direct invocation in an ungranted session (a stale completion
+ * replayed, a root-mounted companion) gets an honest refusal instead of
+ * running. Every unreadable path fails OPEN — no roster service, no agent
+ * scope context, no joined preset, an inventory that throws, a missing or
+ * `broken` group — because the registration layer is the real gate and this
+ * guard must never condemn a grant it cannot see.
+ */
+async function slashGrantRefusal(invocation: CommandInvocation): Promise<CommandResult | null> {
+  try {
+    const agentCtx = invocation.agent.ctx as Context | undefined
+    if (agentCtx === undefined || agentCtx === null) return null
+    const presets = agentCtx.get('agentPresets') as AgentPresetsProbe | undefined | null
+    if (presets == null || typeof presets.composedPreset !== 'function' || typeof presets.compositionInventory !== 'function') return null
+    const presetId = presets.composedPreset(agentCtx)
+    if (presetId === undefined) return null
+    const inventory = await presets.compositionInventory()
+    const group = inventory.find(candidate => candidate.id === presetId)
+    if (group === undefined || group.broken !== undefined) return null
+    if (group.rows.some(row => row.moduleName === TOOL_ROW_MODULE)) return null
+    return {
+      kind: 'error',
+      text: `/mission is not granted to this session: its agent preset (${presetId}) composes no ${TOOL_ROW_MODULE} row. `
+        + 'The slash face moved to that companion row — run the command from a session whose preset grants it, '
+        + 'or name the row in this preset\'s agent.cordis.yml.',
+    }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Dispatch one `/mission` invocation. Usage problems answer with the usage
  * text; service failures (unknown run/mission, guard or lint refusal) surface
  * as error results — the slash face never throws across the registry.
+ *
+ * The preset-grant backstop runs first: the command is registered by the
+ * companion `@khorsheed/dsh-mission-tool` row under an agent preset, so only
+ * that preset's sessions can normally reach it; an invocation that arrives
+ * anyway is refused only when the session's preset composition is READABLE
+ * and names no companion row (every unreadable path fails open).
  */
 export async function handleMissionCommand(
   service: MissionService,
   invocation: CommandInvocation,
   extras?: SlashExtras,
 ): Promise<CommandResult> {
+  const refusal = await slashGrantRefusal(invocation)
+  if (refusal !== null) return refusal
   let tokens: string[]
   try {
     tokens = tokenize(invocation.rawInput)
@@ -367,7 +426,10 @@ export async function handleMissionCommand(
   }
 }
 
-/** Register the `/mission` slash command on the plugin context. */
+/** Register the `/mission` slash command on the given context. The caller's
+ * context decides the layer the command lands in: the companion row calls
+ * this with its preset-scoped context, so the command exists exactly for the
+ * sessions of every preset that names the row. */
 export function registerMissionSlash(ctx: Context, service: MissionService): void {
   // Optional integration: the datasets plugin's layer-visibility metadata for
   // the export leak gate. Probed per call with ctx.get — a composition without

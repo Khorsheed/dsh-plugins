@@ -1,6 +1,6 @@
 # preset 可见性收口：worktrees/canvas 右栏入口、slash 命令搬家与 local-agent 定性
 
-2026-09-17。状态：已与协调者确认矩阵（2026-09-17 会话），进入实施。
+2026-09-17。状态：A1/A2/A3 已实施（worktree `feat/preset-visibility-rollout`，commits `55d4d594` `602a410a` `eded618e`），待 3080 验收后关闭；A5 立项未动。
 
 ## 背景
 

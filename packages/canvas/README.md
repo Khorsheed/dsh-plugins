@@ -106,7 +106,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **聊天集成（M2）**：`askAgent` 动词（agent 优先）探测 `ctx.get('sideChat')`，命中则 `openWith({ contextKey: canvas:<id>, label: 主题, systemPrompt, tools, refs })`——`prompt.ts` 纯函数渲染系统提示段（主题与目标 / 板摘要 / grounding 护栏 / 工具契约 / 透镜语义 / stats 回授段），`tools.ts` 出两个 `defineTool` 定义（origin tag 走 `Symbol.for('dsh.tool.origin')` 免导入路径）。发送规则：自由文本优先，否则非 `ask` 透镜的模板文本，都没有则只 prime。客户端两处发起（透镜条 / 评论「追问」；选区交互归引用插件），`chatStatus` 探测门控制全部聊天入口的显隐；发送成功后监听 `remote.sidechat.getState`（结构镜像），running 期间定期 `touch()` 共享 rev，幽灵卡随工具调用落板即现。
 
-**主会话工具（M3；0.4.2 起经 `./agent` 入口）**：`tools.ts` 的 `canvasMainSessionToolDefinitions` 由 `src/agent.ts` 的 composition 入口经 `ctx.inject(['tools'])` 注册（deferred，datasets-tool 先例；出厂 patch 挂在根级、可挪进 preset 的 agent.cordis.yml），附英文 `canvas:tools` 系统提示段；目标画布 = `ctx.canvasBoard.focusedCanvasId(session)`（tab 经 `focusCanvas` 上报），无 focus 返回「没有打开的画布」说明文本。origin tag 同免导入路径。画布不做会话 preset 自隐（preset 绑定会话创建、画布是跨会话空间，自隐=永隐）；可见性由 profile / 整合包的安装层决定。
+**主会话工具（M3；0.4.2 起经 `./agent` 入口）**：`tools.ts` 的 `canvasMainSessionToolDefinitions` 由 `src/agent.ts` 的 composition 入口经 `ctx.inject(['tools'])` 注册（deferred，datasets-tool 先例；出厂 patch 挂在根级、可挪进 preset 的 agent.cordis.yml），附英文 `canvas:tools` 系统提示段；目标画布 = `ctx.canvasBoard.focusedCanvasId(session)`（tab 经 `focusCanvas` 上报），无 focus 返回「没有打开的画布」说明文本。origin tag 同免导入路径。右栏 tab 类型按「当前会话能否触达画布工具」做注册级自隐（双查判据：profile 根挂的 enabled `@khorsheed/dsh-canvas/agent` 行 = 全会话可见；否则当前会话 preset 组合含该行才可见——preset 挂载形态如 3080 的 dsh-writing 配方；一切读不到的路径 fail-open）。2026-09-16 事故的教训不在「入口按 preset 自隐」而在「判据只查 preset 组」：根挂形态下组合里没有任何行可 keyed，单查即永隐。
 
 **v1 磁盘布局**
 

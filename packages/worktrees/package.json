@@ -100,6 +100,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-api-workspace-controller": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-store": "^0.1.5-rc.1",
@@ -110,6 +111,7 @@
     "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
@@ -156,7 +158,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "The badge mounts the session header utilities slot (the 0.1.5 header corner is a single slot the shipped web composition already occupies with ui-sidebar-right's ExpandButton, and single-slot semantics are shadowing — same priority throws at registration, a different priority replaces the occupant — so the badge stays in the list slot). The changes/commits/repository view is a page-type right-Sidebar tab (kind `worktrees`, opened from the badge through `ctx.sidebarRight.openTab`); the local-files browser stays on the frame-wide shell.overlay slot. Both are web surfaces — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (show in folder) ride the official open-in-app host routes: a once-per-page GET /open-in-app/apps probe decides visibility (a host without the routes reads as no apps and the gestures stay hidden), and the gesture POSTs /open-in-app/open with a directory path. The `visiblePresets` badge gate reads the session's agent preset from the `agentPreset` session projection — sessions the projection cannot read keep the badge (fail-open); the config itself reaches the browser through the worktrees Remote (`badgeConfig`) because the web boot composes client entries without config.",
+      "notes": "The badge mounts the session header utilities slot (the 0.1.5 header corner is a single slot the shipped web composition already occupies with ui-sidebar-right's ExpandButton, and single-slot semantics are shadowing — same priority throws at registration, a different priority replaces the occupant — so the badge stays in the list slot). The changes/commits/repository view is a page-type right-Sidebar tab (kind `worktrees`, opened from the badge through `ctx.sidebarRight.openTab`); the local-files browser stays on the frame-wide shell.overlay slot. Both are web surfaces — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (show in folder) ride the official open-in-app host routes: a once-per-page GET /open-in-app/apps probe decides visibility (a host without the routes reads as no apps and the gestures stay hidden), and the gesture POSTs /open-in-app/open with a directory path. The `visiblePresets` badge+tab gate reads the session's agent preset from the `agentPreset` session projection — sessions the projection cannot read keep the badge (fail-open); the config itself reaches the browser through the worktrees Remote (`badgeConfig`) because the web boot composes client entries without config. The right-sidebar tab TYPE self-hides on the same criterion at the registration level (the guide enumerates registrations; opened tabs are stored per session and an unregistered kind renders the host's tab.unavailable fallback).",
       "verifiedHost": "0.1.5-rc.1"
     }
   }

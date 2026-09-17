@@ -28,11 +28,18 @@ import type {} from '@khorsheed/dsh-canvas/remote'
 // Type-only: pulls the ctx.sidebarRight/ctx.sidebarRightTabs service merges
 // and the right-Sidebar SlotMap seat ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+// Type-only: pulls the ctx.sessions service merge (ISessions) — the tab
+// type's preset-visibility criterion reads the current session.
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import type { CanvasChatInjected, CanvasRemote, CanvasTabInjected } from './contract.ts'
 import { CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
+import {
+  CanvasTabVisibility, RegistrationToggle, type CanvasPluginInventorySnapshot,
+} from './preset-visibility.ts'
 import { CanvasSelectionStore } from './space/selection.ts'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 
@@ -51,9 +58,10 @@ export type {
 export * from './paste-table.ts'
 
 /**
- * Required services: slots, the remote channel, the locale, and the
- * right-Sidebar faces (the tab-type registry and the navigation service the
- * tab's activation and attachment previews go through).
+ * Required services: slots, the remote channel, the locale, the right-Sidebar
+ * faces (the tab-type registry and the navigation service the tab's
+ * activation and attachment previews go through), and the session list (the
+ * tab type's preset-visibility criterion reads the current session).
  * `remote.canvas` is deliberately NOT an inject: this plugin both mounts the
  * namespace (through `$mount` below) and consumes it, and the Cordis
  * property proxy only resolves services declared in `inject` or provided by
@@ -61,7 +69,7 @@ export * from './paste-table.ts'
  * awaited and the namespace is then read back from the global store with
  * `ctx.get` (the ui-file-preview precedent).
  */
-export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs']
+export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs', 'sessions']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, then the
@@ -215,8 +223,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   // Stage one of the right-Sidebar registration: the page type itself (guide
   // entry, no address claims). The default band is 'extension', correct for a
-  // type shipped from outside the product.
-  ctx.effect(() => ctx.sidebarRightTabs.register(canvasDefinition(t)), 'canvas: tab type')
+  // type shipped from outside the product. The type registers exactly while
+  // the current session can reach the canvas tools — root-mounted agent row
+  // (the community default) OR the session's preset composition naming it
+  // (the writing-mode recipe); every unreadable path fails open. Hidden means
+  // NOT registered: the guide enumerates the registry, opened tabs are stored
+  // per session, and an unregistered kind renders the host's tab.unavailable
+  // fallback.
+  const pluginInventory = ctx.get('remote.pluginInventory') as {
+    list: () => Promise<RemoteResult<CanvasPluginInventorySnapshot>>
+  } | undefined
+  const tabVisibility = new CanvasTabVisibility(ctx, pluginInventory)
+  ctx.effect(() => {
+    const toggle = new RegistrationToggle(
+      () => ctx.sidebarRightTabs.register(canvasDefinition(t)),
+      () => tabVisibility.show(ctx.sessions.list.getSnapshot().current),
+    )
+    toggle.setReady(true)
+    const unsubscribe = tabVisibility.subscribe(() => { toggle.sync() })
+    return () => { unsubscribe(); toggle.setReady(false) }
+  }, 'canvas: tab type visibility')
 
   // Stage two: the tab body under the type's id in the keyed pane seat.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({

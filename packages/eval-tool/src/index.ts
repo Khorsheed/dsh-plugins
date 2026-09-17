@@ -1,13 +1,17 @@
 /**
- * The session-granted eval tools — the companion row of
- * `@khorsheed/dsh-eval` for agent-preset compositions. The row provides NO
- * service (the preset-mount isolate-realm rule forbids service rows), it only
- * registers the six model tools into the host tools registry and
- * contributes their guidance section, delegating to the global `ctx.dshEval`
- * service core the main plugin provides at the profile root — the official
- * tool-row shape (the shipped `tool-bash` rows work the same way). Granting is
- * therefore per-session: a preset names the row, its sessions get the tools;
- * every other preset's sessions do not.
+ * The session-granted eval tools AND the `/eval` slash face — the companion
+ * row of `@khorsheed/dsh-eval` for agent-preset compositions. The row
+ * provides NO service (the preset-mount isolate-realm rule forbids service
+ * rows); it registers the six model tools into the host tools registry,
+ * contributes their guidance section, and registers the `/eval` slash
+ * command into the preset's scope layer (preset-visibility rollout A3 — the
+ * official `/goal` `/plan` `/compact` shape: only the sessions of a preset
+ * naming this row see the command), all delegating to the global
+ * `ctx.dshEval` service core the main plugin provides at the profile root —
+ * the official tool-row shape (the shipped `tool-bash` rows work the same
+ * way). Granting is therefore per-session: a preset names the row, its
+ * sessions get the tools and the slash command; every other preset's
+ * sessions get neither.
  *
  * The package deliberately declares NO `dsh.bundle` patch: installing it as a
  * dependency only makes the module resolvable (a plain dependency, like
@@ -18,8 +22,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-// Type-only: pulls the core's `Context.dshEval` service augmentation.
-import type {} from '@khorsheed/dsh-eval'
+// The value import also pulls the core's `Context.dshEval` service
+// augmentation into the program.
+import { registerEvalSlash } from '@khorsheed/dsh-eval'
 import { evalToolDefinitions } from '@khorsheed/dsh-eval/tool'
 
 const PACKAGE_NAME = '@khorsheed/dsh-eval-tool'
@@ -41,8 +46,10 @@ export interface EvalToolConfig {
   /**
    * Whether this row grants the eval tools: `all` (the default) or `none`
    * (no tools and no guidance section — a deployment where the model must
-   * not even read conditions and runs). The eval service, the `/eval` slash
-   * face, and the CLI are the core's own and stay mounted either way.
+   * not even read conditions and runs). The eval service and the CLI are the
+   * core's own and stay mounted either way; the `/eval` slash command is
+   * THIS row's human face and registers at every tier — the `tools` key
+   * gates only the model face.
    *
    * `all` became FOUR tools with T46: an evaluation preset no longer
    * composes the mission tool row, and `eval_cells` is where the per-cell
@@ -90,20 +97,30 @@ const EVAL_PROMPT = `The eval_* tools are four reads and two writes. eval_condit
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: EvalToolConfig = {}): void {
-  // `none` grants nothing at all: no tools and no section (guidance about an
-  // absent tool is a wrong instruction, not a harmless one).
-  if ((config.tools ?? 'all') === 'none') return
   // NOT named `eval`: a ctx property of that name shadows the global `eval`
   // inside the loader's `with (ctx) { return eval(expr) }` !!js evaluation.
   const service = ctx.get('dshEval')
   if (service === undefined) {
     // Degrade, don't explode: the core plugin is not mounted in this profile,
-    // so there is nothing to delegate to. The service, CLI, and /eval slash
-    // faces are the core's own concern and unaffected; only the model tools
-    // stay absent.
-    ctx.logger.info(`${PACKAGE_NAME}: the global eval service is absent — the eval tools are not registered`)
+    // so there is nothing to delegate to. The service and CLI faces are the
+    // core's own concern and unaffected; only the model tools and the slash
+    // command stay absent.
+    ctx.logger.info(`${PACKAGE_NAME}: the global eval service is absent — the eval tools and /eval are not registered`)
     return
   }
+  // The `/eval` slash face moved here from the core (preset-visibility
+  // rollout A3): registering from this preset mount lands the command in the
+  // preset's scope layer, so exactly the granted sessions see it. The human
+  // face is NOT tiered — the `tools` key gates the model face only — so this
+  // registration stands ahead of the tier gate, through the same deferred
+  // door as the tools below (an apply-time probe would race the registry's
+  // own mount order and lose).
+  ctx.inject(['commands'], (commandCtx) => {
+    registerEvalSlash(commandCtx, service)
+  })
+  // `none` grants nothing at all: no tools and no section (guidance about an
+  // absent tool is a wrong instruction, not a harmless one).
+  if ((config.tools ?? 'all') === 'none') return
   // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
   // tools registry's own mount order on the real composition tree and loses,
   // silently never registering the tools. `ctx.inject` fires when the registry

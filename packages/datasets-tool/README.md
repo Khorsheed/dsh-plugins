@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-`@khorsheed/dsh-datasets` 的伴生工具行：模型可见的 8 个 `datasets_*` 工具与 `datasets:tools` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。服务（`ctx.datasets`）、CLI、`/datasets` slash 与题集 tab 都留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
+`@khorsheed/dsh-datasets` 的伴生工具行：模型可见的 8 个 `datasets_*` 工具与 `datasets:tools` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。`/datasets` slash 的注册自 preset 可见性收口（A3）起也归本行（落进 preset scope 层，handler 与定义留在 core）；服务（`ctx.datasets`）、CLI 与题集 tab 留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
 
 ## 形态：不自挂载的伴生包
 

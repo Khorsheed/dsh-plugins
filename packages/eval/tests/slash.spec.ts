@@ -274,3 +274,67 @@ describe('/eval run — --creds-root is gone (T20c)', () => {
     expect(result.text).toContain('exactly one plan path')
   })
 })
+
+describe('/eval grant backstop (A3)', () => {
+  const ROW = '@khorsheed/dsh-eval-tool'
+
+  /** Invoke `help` with an agent-scope ctx whose probe answers as given. */
+  function helpWith(presets: unknown): Promise<CommandResult> {
+    const agent = {
+      session: { id: 'sess-eval-slash' },
+      ctx: { get: (name: string) => (name === 'agentPresets' ? presets : undefined) },
+    }
+    return handleEvalCommand(new EvalService(), { rawInput: 'help', agent } as unknown as CommandInvocation)
+  }
+
+  /** A roster probe: the session joined `presetId`; the inventory answers `groups`. */
+  function roster(presetId: string | undefined, groups: unknown): unknown {
+    return {
+      composedPreset: () => presetId,
+      compositionInventory: () => Promise.resolve(groups),
+    }
+  }
+
+  it('refuses when the session preset is readable and names no companion row', async () => {
+    const result = await helpWith(roster('standard', [{ id: 'standard', rows: [] }]))
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain('/eval is not granted to this session')
+    expect(result.text).toContain(ROW)
+    expect(result.text).toContain('standard')
+  })
+
+  it('passes when the preset composition names the companion row', async () => {
+    const result = await helpWith(roster('eval', [{ id: 'eval', rows: [{ moduleName: ROW }] }]))
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('usage:')
+  })
+
+  it('fails open when the session joined no preset', async () => {
+    const result = await helpWith(roster(undefined, []))
+    expect(result.kind).toBe('success')
+  })
+
+  it('fails open when the roster service is absent', async () => {
+    const result = await helpWith(undefined)
+    expect(result.kind).toBe('success')
+  })
+
+  it('fails open when the inventory throws', async () => {
+    const throwing = {
+      composedPreset: () => 'standard',
+      compositionInventory: () => Promise.reject(new Error('unreadable')),
+    }
+    const result = await helpWith(throwing)
+    expect(result.kind).toBe('success')
+  })
+
+  it('fails open when the preset group is missing or broken', async () => {
+    expect((await helpWith(roster('ghost', [{ id: 'standard', rows: [] }]))).kind).toBe('success')
+    expect((await helpWith(roster('standard', [{ id: 'standard', broken: 'unreadable', rows: [] }]))).kind).toBe('success')
+  })
+
+  it('fails open when the agent carries no scope context (the plain invocation shape)', async () => {
+    const result = await handleEvalCommand(new EvalService(), invocation('help'))
+    expect(result.kind).toBe('success')
+  })
+})

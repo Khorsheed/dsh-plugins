@@ -69,7 +69,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 配置（均可选）：`repo`（调用既无显式 `repo` 会话也无绑定时的默认数据集仓库；缺省无）与 `worktreeRoot`（托管 worktree 根覆盖；缺省 `$DSH_HOME/state/datasets/worktrees`，否则 `<cwd>/.dsh-datasets/worktrees`）。`tools` 不再是本行的键：模型工具的分组配置搬到了伴生行 `@khorsheed/dsh-datasets-tool`，见[模型工具](#模型工具)。
 
-插件提供 `ctx.datasets` 服务供其他插件可选消费，提供 `/datasets` slash 命令，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。`datasets_*` 模型工具与 `datasets:tools` 提示词段归伴生行 `@khorsheed/dsh-datasets-tool`，由 agent preset 按会话授予——见[模型工具](#模型工具)。
+插件提供 `ctx.datasets` 服务供其他插件可选消费，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。`/datasets` slash 命令的**注册**自 preset 可见性收口（A3）起归伴生行——落进 preset 的 scope 层，只有授予会话可见；handler 与定义仍在本包，由伴生行调 `registerDatasetsSlash` 接入。`datasets_*` 模型工具与 `datasets:tools` 提示词段归伴生行 `@khorsheed/dsh-datasets-tool`，由 agent preset 按会话授予——见[模型工具](#模型工具)。
 
 ## 会话绑定
 

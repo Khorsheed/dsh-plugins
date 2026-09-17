@@ -5,8 +5,12 @@
  * layer whitelist is enforced on every read path. Three faces share one
  * service core: the `dsh-datasets` CLI, the `/datasets` slash command, and the
  * Typert Remote data face behind the web session tab (wire namespace
- * `datasets`). The model-tool face moved to the companion
- * `@khorsheed/dsh-datasets-tool`, which an agent preset grants per session.
+ * `datasets`) — of which only the CLI and the Remote face mount HERE: the
+ * slash command's registration moved to the companion
+ * `@khorsheed/dsh-datasets-tool` (preset-visibility rollout A3), which an
+ * agent preset mounts per session so only granted sessions see it; the
+ * handler and definition stay in `./slash.ts` for the companion to register.
+ * The model-tool face lives in the same companion.
  * The plugin never interprets descriptor
  * semantics and never copies content out of the repository.
  *
@@ -15,13 +19,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
-// Type-only: pulls the commands Context merge into the program.
-import type {} from '@deepseek-ai/dsh-commands'
-import type { DatasetBinding } from './binding.ts'
-import { DatasetsError } from './dataset.ts'
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatBindReceipt, formatList, formatShow, formatWarnings } from './format.ts'
-import { createDatasetsService, resolveScope, type DatasetsService } from './service.ts'
+import { createDatasetsService, type DatasetsService } from './service.ts'
 import { DatasetsRemoteService } from './remote.ts'
 
 /** Plugin configuration. */
@@ -49,124 +48,37 @@ declare module '@deepseek-ai/cordis' {
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'datasets'
 
-/** Required services: the command registry (the `/datasets` slash face). The
- * tool registry and the system-prompt assembly belong to the companion tool
- * row, which owns the model-tool face. */
-export const inject = ['commands']
+/**
+ * No required services: the `/datasets` slash face moved to the companion
+ * `@khorsheed/dsh-datasets-tool` row (its registration is what needed the
+ * command registry), and everything still here — the service, the Remote
+ * face — mounts unconditionally.
+ */
+export const inject = []
 
 /**
- * Mount the dataset service, the `/datasets` slash command, and the Remote
- * data face. The model tools are deliberately NOT registered here: they moved
- * to the companion `@khorsheed/dsh-datasets-tool`, which an agent preset
- * composes per session — the companion also carries the tool-guidance prompt
- * section.
+ * Mount the dataset service and the Remote data face. The `/datasets` slash
+ * command and the model tools are deliberately NOT registered here: both
+ * moved to the companion `@khorsheed/dsh-datasets-tool`, which an agent
+ * preset composes per session — the companion also carries the tool-guidance
+ * prompt section. The configured default repo rides the service
+ * (`service.defaultRepo`) so the companion's slash handler resolves the same
+ * scope fallback without seeing this plugin's config.
  * @param ctx - plugin context.
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: DatasetsPluginConfig): void {
+  const defaultRepo = config.repo ?? ''
   const service = createDatasetsService({
     worktreeRoot: resolveWorktreeRoot(config.worktreeRoot),
     bindingsRoot: join(resolveStateRoot(undefined), 'bindings'),
+    defaultRepo,
   })
   ctx.provide('datasets', service)
-  const defaultRepo = config.repo ?? ''
   // The web session tab's data face: the same service core behind a Typert
   // Remote (wire namespace `datasets`), session bindings resolved per call.
   ctx.plugin(DatasetsRemoteService, { defaultRepo })
-
-  ctx.commands.register({
-    name: 'datasets',
-    description:
-      'Session dataset binding and browsing: /datasets list [dataset] | show <dataset> [item] | '
-      + 'bind <repoPath> [--datasets a,b] [--layers x,y] | unbind. '
-      + 'bind without --layers keeps the agent to each dataset\'s model-facing layers; naming layers opens exactly those.',
-    // WITHOUT this descriptor a capable composer has no reason to believe the
-    // command takes anything: picking `/datasets` from the completion strip
-    // submits a bare invocation and leaves everything the human typed after it
-    // in the MESSAGE body, so `bind <path>` arrived here as an empty argument
-    // list and answered with the usage line (found during T36's live pass).
-    // Declaring the free-form input is what makes the composer forward the
-    // rest of the line; `rawInput` below is unchanged either way.
-    input: {
-      hint: 'list [dataset] | show <dataset> [item] | bind <repoPath> [--datasets a,b] [--layers x,y] | unbind',
-    },
-    handler: async (invocation) => {
-      const session = invocation.agent.session
-      const parts = invocation.rawInput.trim().split(/\s+/).filter(part => part !== '')
-      const verb = parts[0]
-      const flags = parseSlashFlags(parts.slice(1))
-      try {
-        switch (verb) {
-          case 'list': {
-            const scope = resolveScope({}, service.binding(session), defaultRepo)
-            const result = await service.list(scope, flags.positionals[0])
-            const warnings = result.kind === 'datasets'
-              ? result.datasets.flatMap(dataset => dataset.warnings)
-              : result.dataset.warnings
-            const suffix = warnings.length === 0 ? '' : `\n${formatWarnings(warnings)}`
-            return { kind: 'success', text: `${formatList(result)}${suffix}` }
-          }
-          case 'show': {
-            const dataset = flags.positionals[0]
-            if (dataset === undefined) return { kind: 'error', text: 'usage: /datasets show <dataset> [item]' }
-            const scope = resolveScope({}, service.binding(session), defaultRepo)
-            const result = await service.show(scope, dataset, flags.positionals[1])
-            const suffix = result.dataset.warnings.length === 0 ? '' : `\n${formatWarnings(result.dataset.warnings)}`
-            return { kind: 'success', text: `${formatShow(result)}${suffix}` }
-          }
-          case 'bind': {
-            const repoPath = flags.positionals[0]
-            if (repoPath === undefined) {
-              return { kind: 'error', text: 'usage: /datasets bind <repoPath> [--datasets a,b] [--layers x,y]' }
-            }
-            const binding: DatasetBinding = {
-              repoPath,
-              ...(flags.datasets !== undefined ? { datasets: flags.datasets } : {}),
-              ...(flags.layers !== undefined ? { layers: flags.layers } : {}),
-            }
-            const recorded = service.bind(session, binding)
-            return { kind: 'success', text: formatBindReceipt(recorded) }
-          }
-          case 'unbind': {
-            service.unbind(session)
-            return { kind: 'success', text: 'dataset binding cleared' }
-          }
-          default:
-            return {
-              kind: 'error',
-              text: 'usage: /datasets list [dataset] | show <dataset> [item] | bind <repoPath> [--datasets a,b] [--layers x,y] | unbind',
-            }
-        }
-      } catch (error) {
-        return { kind: 'error', text: error instanceof DatasetsError ? `${error.message} [${error.code}]` : String(error) }
-      }
-    },
-  })
 }
 
+export { handleDatasetsCommand, registerDatasetsSlash } from './slash.ts'
 export { datasetToolDefinitions, toolsOfGroup, type DatasetsToolGroup } from './tool.ts'
-
-/** Parsed slash flags: `--datasets a,b` / `--layers x,y` plus positionals. */
-function parseSlashFlags(args: readonly string[]): { positionals: string[]; datasets?: string[]; layers?: string[] } {
-  const positionals: string[] = []
-  let datasets: string[] | undefined
-  let layers: string[] | undefined
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i] ?? ''
-    if (arg === '--datasets' || arg === '--layers') {
-      const value = args[i + 1]
-      if (value === undefined) continue
-      i++
-      const list = value.split(',').map(entry => entry.trim()).filter(entry => entry !== '')
-      if (arg === '--datasets') datasets = list
-      else layers = list
-    } else {
-      positionals.push(arg)
-    }
-  }
-  return {
-    positionals,
-    ...(datasets !== undefined ? { datasets } : {}),
-    ...(layers !== undefined ? { layers } : {}),
-  }
-}
