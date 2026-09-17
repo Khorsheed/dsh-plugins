@@ -59,7 +59,7 @@
 .notice {
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
@@ -483,7 +483,7 @@
 }
 
 .exposureWithheld {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .exposureUnprotected {
@@ -545,7 +545,7 @@
 }
 
 .panelWarn {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -650,11 +650,11 @@
 }
 
 .chipTag[data-tone='warn'] {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .chipTag[data-tone='danger'] {
-  color: var(--dsw-alias-label-danger, #b3261e);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* A count riding on a chip. */
@@ -715,7 +715,7 @@
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   text-align: left;
 }
 

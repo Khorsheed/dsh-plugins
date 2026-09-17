@@ -70,11 +70,11 @@
 }
 
 .chipTag[data-tone='warn'] {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .chipTag[data-tone='danger'] {
-  color: var(--dsw-alias-label-danger, #b3261e);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* A count riding on a chip or a filter chip (`进行中 3`). */
@@ -98,7 +98,7 @@
   margin: 6px 12px 0;
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
@@ -222,7 +222,7 @@
 }
 
 .row:hover {
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .colName,
@@ -280,7 +280,7 @@
 }
 
 .mono {
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
 }
 
 .dim {
@@ -292,7 +292,7 @@
 }
 
 .warning {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .readiness {
@@ -315,9 +315,9 @@
   overflow: auto;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   font-size: 11px;
   line-height: 16px;
   white-space: pre-wrap;
@@ -397,11 +397,11 @@
 }
 
 .condRow:hover {
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .condRow[aria-pressed='true'] {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-interactive-bg-active);
   box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
 
@@ -449,7 +449,7 @@
      is open. The token is the repository's surface alias — an invented one
      resolves to nothing, which is transparent, which is how the Scope and
      Preset values first showed through the open editor. */
-  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-l2));
+  background: var(--dsw-alias-bg-layer-3);
   box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
 }
 
@@ -458,11 +458,11 @@
   min-width: 120px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
-  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-l2));
+  background: var(--dsw-alias-bg-layer-3);
   padding: 1px 6px;
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
-  font-family: var(--dsw-font-mono, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   line-height: 18px;
 }
 
@@ -498,14 +498,14 @@
 }
 
 .diffPath {
-  color: var(--dsw-alias-label-warning, #b8600a);
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  color: var(--dsw-alias-state-warn-label);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   overflow-wrap: anywhere;
 }
 
 .diffValue {
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -545,7 +545,7 @@
 .legend {
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
   line-height: 16px;
@@ -689,11 +689,11 @@
 
 /* The two warnings ui-spec §五 asks a cell to carry, as its edge. */
 .matrixCell[data-mismatch] {
-  border-color: var(--dsw-alias-label-danger, #b3261e);
+  border-color: var(--dsw-alias-state-error-primary);
 }
 
 .matrixCell[data-stuck] {
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .matrixDots {
@@ -721,7 +721,7 @@
 }
 
 .matrixDot[data-stuck] {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .matrixDot:focus-visible {
@@ -763,7 +763,7 @@
 /* An invariant that holds needs no sentence; one that does not is the reason
    the page was opened. */
 .summaryWhy {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -823,9 +823,16 @@
   cursor: pointer;
 }
 
-.cellsRow:hover,
-.rowSelected {
-  background: var(--dsw-alias-bg-l2);
+/* Hover is a hint, selection is a state: the design system has two fills for
+   exactly that, so the open row stays visible while the pointer moves away. */
+.cellsRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowSelected,
+.rowSelected:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+  box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
 
 .colCell,
@@ -932,7 +939,7 @@
 }
 
 .guardedTitle {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
   font-size: 12px;
   line-height: 18px;
 }
@@ -1021,9 +1028,9 @@
   flex-direction: column;
   gap: 6px;
   padding: 8px;
-  border: 1px solid var(--dsw-alias-label-warning, #b8600a);
+  border: 1px solid var(--dsw-alias-state-warn-label);
   border-radius: 8px;
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
   font-size: 12px;
   line-height: 18px;
 }
@@ -1144,18 +1151,18 @@
 }
 
 .queueRow:hover {
-  background: var(--dsw-alias-fill-hover, rgb(0 0 0 / 4%));
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .queueRow[aria-pressed='true'] {
-  background: var(--dsw-alias-fill-selected, rgb(0 0 0 / 8%));
+  background: var(--dsw-alias-interactive-bg-active);
 }
 
 /* The cell's whole blind name. Monospaced so a column of numbers lines up —
    the ordinal IS the identity here, and it has to be easy to call out. */
 .queueNo {
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1295,7 +1302,7 @@
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   text-align: left;
 }
 
