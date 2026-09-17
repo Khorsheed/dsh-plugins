@@ -200,7 +200,9 @@ describe('the 新建实验 form', () => {
     // The notice names the EXPERIMENT (the plan's file stem, since the row
     // that carries the name does not exist client-side yet) and the path, so
     // both are on screen and not only in the answer the RPC gave.
-    expect(screen.getByText(new RegExp(`notice\\.drafted .*"name":"i5-walk".*${PLAN_PATH}`))).toBeTruthy()
+    // The NAME, not the path: ui-spec §九 keeps absolute paths off page text,
+    // and the plan file is named under «详情» on the page this lands on.
+    expect(screen.getByText('notice.drafted {"name":"i5-walk"}')).toBeTruthy()
   })
 
   it('reports a draft validate rejected rather than hiding it — it is still a draft', async () => {

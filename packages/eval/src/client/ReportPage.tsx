@@ -29,14 +29,11 @@ import type {
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
+import { Chip, Detail, EmptyState, Section, Word, invariantTone, stageTone, stamp } from './parts.tsx'
+import { stagePhrase } from './vocab.ts'
 import css from './LabView.module.css'
 
 const DASH = '—'
-
-/** A timestamp a person reads, or the dash when there is none. */
-function stamp(at: number | null): string {
-  return at === null ? DASH : new Date(at).toLocaleString()
-}
 
 /** Integers stay integers; a mean keeps three decimals (summary.md's rule). */
 function fmtNum(value: number): string {
@@ -70,7 +67,7 @@ function JudgeTags(props: { judges: readonly EvalReportJudgeTag[]; t: LabViewPro
         <span key={judge.condition} className={css.judgeTag}>
           <span className={css.mono}>{judge.condition}</span>
           {judge.model !== null && <span className={css.dim}> · {judge.model}</span>}
-          {judge.selfJudged && <span className={css.selfJudged}> {t('report.selfJudged')}</span>}
+          {judge.selfJudged && <Chip tone="warn">{t('report.selfJudged')}</Chip>}
         </span>
       ))}
     </>
@@ -91,8 +88,7 @@ function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
   // sides — an empty pair of columns would read as "weight zero".
   const weighted = pair.rows.some(row => row.aWeighted !== null && row.bWeighted !== null)
   return (
-    <div className={css.reportSection}>
-      <div className={css.sectionTitle}>{t('report.pairTitle', { a: pair.a, b: pair.b })}</div>
+    <Section title={t('report.pairTitle', { a: pair.a, b: pair.b })}>
       <div className={css.dim}>{factorLine(pair, t)}</div>
       {pair.rows.length === 0
         ? <div className={css.dim}>{t('report.pairNoTasks')}</div>
@@ -141,7 +137,7 @@ function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
       {/* The rank verdict is the report's own sentence — including the one
           that refuses to rank, which is the sentence a reader must not lose. */}
       <div className={css.rankReason}>{t('report.rank')}: {pair.rankReason}</div>
-    </div>
+    </Section>
   )
 }
 
@@ -151,9 +147,7 @@ function Efficiency(props: { report: EvalRunReportView; t: LabViewProps['t'] }) 
   const models = [...new Set(report.efficiency.map(row => row.model).filter((model): model is string => model !== null))]
   const excluded = report.efficiencyExcluded
   return (
-    <div className={css.reportSection}>
-      <div className={css.sectionTitle}>{t('report.efficiency')}</div>
-      <div className={css.dim}>{t('report.efficiencyScope')}</div>
+    <Section title={t('report.efficiency')} meta={t('report.efficiencyScope')}>
       {report.efficiency.length === 0
         ? <div className={css.dim}>{t('report.efficiencyNone')}</div>
         : (
@@ -203,7 +197,7 @@ function Efficiency(props: { report: EvalRunReportView; t: LabViewProps['t'] }) 
             </div>
           </>
         )}
-    </div>
+    </Section>
   )
 }
 
@@ -212,8 +206,7 @@ function JudgeConsistency(props: { report: EvalRunReportView; t: LabViewProps['t
   const { report, t } = props
   const judge = report.judge
   return (
-    <div className={css.reportSection}>
-      <div className={css.sectionTitle}>{t('report.judge')}</div>
+    <Section title={t('report.judge')}>
       <div className={css.summaryRow}>
         <span className={css.summaryLabel}>{t('report.judgeSame')}</span>
         <span>{t('report.judgeSameValue', {
@@ -241,7 +234,7 @@ function JudgeConsistency(props: { report: EvalRunReportView; t: LabViewProps['t
         </span>
       </div>
       {judge.details.map(detail => <div key={detail} className={css.dim}>{detail}</div>)}
-    </div>
+    </Section>
   )
 }
 
@@ -310,20 +303,25 @@ function UnitsStrip(props: {
 function UnitsSection(props: { units: EvalRunUnitsView; t: LabViewProps['t'] }) {
   const { units, t } = props
   return (
-    <div className={css.reportSection}>
-      <div className={css.sectionTitle}>{t('report.unitsTitle')}</div>
+    <Section title={t('report.unitsTitle')}>
       {units.units.map(unit => (
         <div key={unit.id} className={css.checkLine}>
           <span className={css.mono}>{unit.resource}</span>
           <span className={css.dim}>{unit.missionId ?? DASH}</span>
-          <span className={unit.missionState === 'archived' ? css.warning : css.dim}>{unit.missionState ?? DASH}</span>
-          <span className={unit.running ? css.warning : css.dim}>
+          {unit.missionState === null
+            ? <span className={css.dim}>{DASH}</span>
+            : (
+              <Chip tone={stageTone(unit.missionState)} title={unit.missionState}>
+                <Word phrase={stagePhrase(unit.missionState)} t={t} />
+              </Chip>
+            )}
+          <Chip tone={unit.running ? 'warn' : 'neutral'}>
             {t(unit.running ? 'report.unitRunning' : 'report.unitStopped')}
-          </span>
+          </Chip>
         </div>
       ))}
       <div className={css.dim}>{t('report.unitsHint')}</div>
-    </div>
+    </Section>
   )
 }
 
@@ -331,10 +329,15 @@ function UnitsSection(props: { units: EvalRunUnitsView; t: LabViewProps['t'] }) 
 function FinalizeResult(props: { result: EvalFinalizeView; t: LabViewProps['t'] }) {
   const { result, t } = props
   const refused = result.cells.filter(cell => cell.action === 'refused')
-  const skips = Object.entries(result.skippedByState).map(([state, count]) => `${count} ${state}`).join(', ')
+  // The skipped cells, by the stage they were skipped AT — in the word table's
+  // vocabulary, because `3 ws-ready` is the English half of the sentence §九
+  // set out to remove.
+  const skips = Object.entries(result.skippedByState).map(([state, count]) => {
+    const phrase = stagePhrase(state)
+    return `${count} ${phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)}`
+  }).join('、')
   return (
-    <div className={css.reportSection}>
-      <div className={css.sectionTitle}>{t('report.finalizeResult')}</div>
+    <Section title={t('report.finalizeResult')}>
       <div>
         {t('report.finalizeCounts', {
           released: result.released, refused: result.refused, skipped: result.skipped, skips: skips === '' ? DASH : skips,
@@ -348,18 +351,38 @@ function FinalizeResult(props: { result: EvalFinalizeView; t: LabViewProps['t'] 
           ? t('report.finalizeUnits', { released: result.unitsReleased, held: result.unitsHeld.length })
           : t('report.finalizeUnitsUnknown')}
       </div>
+      {/* A gate's refusal is a host sentence written for whoever debugs it.
+          The FACT — which container, which cell, at which stage — is the page;
+          the sentence and the walk's log go under «详情» (ui-spec §九). */}
       {result.unitsHeld.map(held => (
-        <div key={held.id} className={css.warning}>
-          <span className={css.mono}>{held.resource}</span> · {held.reason}
+        <div key={held.id} className={css.checkLine}>
+          <Chip tone="warn">{t('report.unitHeldChip')}</Chip>
+          <span className={css.mono}>{held.resource}</span>
         </div>
       ))}
       {refused.map(cell => (
-        <div key={cell.missionId} className={css.warning}>
-          <span className={css.mono}>{cell.missionId}</span> · {cell.finalState} · {cell.reason ?? ''}
+        <div key={cell.missionId} className={css.checkLine}>
+          <Chip tone="warn">{t('report.refusedChip')}</Chip>
+          <span className={css.mono}>{cell.missionId}</span>
+          <Chip tone={stageTone(cell.finalState)} title={cell.finalState}>
+            <Word phrase={stagePhrase(cell.finalState)} t={t} />
+          </Chip>
         </div>
       ))}
-      {result.log.length > 0 && <pre className={css.pre}>{result.log.join('\n')}</pre>}
-    </div>
+      {(result.unitsHeld.length > 0 || refused.length > 0 || result.log.length > 0) && (
+        <Detail summary={t('report.finalizeRaw')}>
+          {result.unitsHeld.map(held => (
+            <div key={`raw:${held.id}`} className={css.errorDetailLine}>{held.resource}: {held.reason}</div>
+          ))}
+          {refused.map(cell => (
+            <div key={`raw:${cell.missionId}`} className={css.errorDetailLine}>
+              {cell.missionId}: {cell.reason ?? ''}
+            </div>
+          ))}
+          {result.log.length > 0 && <pre className={css.errorRaw}>{result.log.join('\n')}</pre>}
+        </Detail>
+      )}
+    </Section>
   )
 }
 
@@ -447,16 +470,19 @@ export function ReportPage(props: {
           // an empty page — and the directories that were looked in are what
           // tell a reader which of the two situations they are in.
           <div className={css.reportSection}>
-            <div className={css.sectionTitle}>{t('report.noBundle')}</div>
-            <div className={css.dim}>{report.refusal}</div>
-            {report.searched.length > 0 && (
-              <div className={css.dim}>
-                {t('report.searched')}: {report.searched.map(dir => `${dir}/${report.runId}-bundle`).join(', ')}
-              </div>
-            )}
-            <div className={css.actions}>
+            <EmptyState title={t('report.noBundle')} hint={t('report.noBundleHint')}>
               <Button size="sm" variant="primary" onClick={onExport}>{t('report.exportNow')}</Button>
-            </div>
+            </EmptyState>
+            {/* Where it looked, and what the host said about not finding it.
+                Absolute paths and a host sentence — both kept, both folded
+                (ui-spec §九); they are what tells a reader WHICH of the two
+                situations they are in. */}
+            <Detail summary={t('report.searched')}>
+              {report.refusal !== null && <div className={css.errorDetailLine}>{report.refusal}</div>}
+              {report.searched.map(dir => (
+                <div key={dir} className={css.errorDetailLine}>{dir}/{report.runId}-bundle</div>
+              ))}
+            </Detail>
             {/* A run started with `--out <dir>` records nothing about where
                 its bundle went: run.meta names the plan and the repository,
                 and the bundle is under neither. Without this box the page
@@ -478,63 +504,78 @@ export function ReportPage(props: {
         : (
           <>
             <div className={css.dim}>
-              <span className={css.mono}>{report.bundleDir}</span>
+              {/* The bundle's own name, not the path it happens to sit at. */}
+              <span className={css.mono} title={report.bundleDir}>
+                {(report.bundleDir ?? '').split('/').filter(Boolean).pop() ?? ''}
+              </span>
               {' · '}
               {t('report.counts', {
                 rows: report.counts.rows, missions: report.counts.missions,
                 attempts: report.counts.attempts, retries: report.counts.retries,
               })}
             </div>
-            {/* WHEN this bundle was written, and whether it still says what the
-                ledger says. The pair is the whole of G17: the export happens
-                when the run ends, the final verdicts are written afterwards
-                from the judge bench, and nothing carried them back — a reader
-                found it out by opening manifest.json. */}
+            {/* WHEN this bundle was written, and whether its report is inside
+                it. One quiet line, no path: the path is under «详情» below
+                (§九), and this is the fact a reader needs to judge the numbers
+                above it. */}
             <div className={css.dim}>
               {report.exportedAt === null
                 ? t('report.exportedAtUnknown')
                 : t('report.exportedAt', { at: stamp(report.exportedAt) })}
               {report.summaryWritten && <> · {t('report.summaryIn')}</>}
             </div>
+            {/* The whole of G17, said once: the export happens when the run
+                ends, the final verdicts are written afterwards from the judge
+                bench, and nothing carried them back — a reader found that out
+                by opening manifest.json. A sentence and the button that fixes
+                it, in the same seat. */}
             {report.staleAfterFinal && (
-              <div className={css.warning}>
-                {t('report.staleAfterFinal', { final: stamp(report.lastHumanFinalAt) })}
-                <span className={css.actions}>
+              <div className={css.blocked}>
+                <div>{t('report.staleAfterFinal', { final: stamp(report.lastHumanFinalAt) })}</div>
+                <div className={css.actions}>
                   <Button size="sm" variant="primary" disabled={reexporting} onClick={onReexport}>
                     {reexporting ? t('report.reexporting') : t('report.reexport')}
                   </Button>
-                </span>
+                </div>
               </div>
             )}
             {!report.summaryWritten && !report.staleAfterFinal && (
               <div className={css.dim}>{t('report.summaryMissing')}</div>
             )}
-            {report.cliHint !== null && (
-              <div className={css.dim}>
-                {t('report.cliHint')}: <span className={css.mono}>{report.cliHint}</span>
-              </div>
-            )}
+            {/* The path and the shell line that reproduces this page belong to
+                whoever is at a terminal; §九 keeps both out of the page body. */}
+            <Detail summary={t('report.whereFold')}>
+              <div className={css.errorDetailLine}>{report.bundleDir}</div>
+              {report.cliHint !== null && (
+                <div className={css.errorDetailLine}>{t('report.cliHint')}: {report.cliHint}</div>
+              )}
+            </Detail>
             {report.toolOnlyNs.map(ns => (
               <div key={ns} className={css.warning}>{t('report.toolOnlyNs', { ns })}</div>
             ))}
 
-            <div className={css.reportSection}>
-              <div className={css.sectionTitle}>{t('report.invariants')}</div>
+            <Section title={t('report.invariants')}>
               {report.invariants.map(check => (
-                <div key={check.id} className={css.invariantRow}>
-                  <span className={css.summaryStatus} data-status={check.status}>{t(`invariant.${check.status}`)}</span>
+                <div key={check.id} className={css.invariantRow} title={check.id}>
+                  <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
                   <span className={css.invariantTitle}>{check.title}</span>
                   {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
                 </div>
               ))}
-            </div>
+            </Section>
 
             {!report.comparisonAllowed
               ? (
                 <div className={css.blocked}>
-                  {t('report.comparisonClosed', {
-                    invariants: failing.map(check => `${check.title}（${t(`invariant.${check.status}`)}）`).join('、'),
-                  })}
+                  <div>{t('report.comparisonClosed', { count: failing.length })}</div>
+                  <div className={css.chipRow}>
+                    {failing.map(check => (
+                      <span key={check.id} className={css.summaryItem}>
+                        <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
+                        <span>{check.title}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )
               : report.singleCondition
@@ -547,10 +588,9 @@ export function ReportPage(props: {
             <JudgeConsistency report={report} t={t} />
 
             {report.notes.length > 0 && (
-              <div className={css.reportSection}>
-                <div className={css.sectionTitle}>{t('report.notes')}</div>
+              <Section title={t('report.notes')}>
                 {report.notes.map(note => <div key={note} className={css.dim}>{note}</div>)}
-              </div>
+              </Section>
             )}
           </>
         )}

@@ -196,8 +196,10 @@ describe('LabView list', () => {
     // The snapshot cell abbreviates the commit; a draft with none prints the set alone.
     expect(screen.getByText('ds @ c0ffee1')).toBeTruthy()
     expect(screen.getByText('ds')).toBeTruthy()
-    expect(screen.getByText('model.declared')).toBeTruthy()
-    expect(screen.getByText('reasoning.effort')).toBeTruthy()
+    // ui-spec §九: the factor column carries the field's WORD, never the
+    // dotted path — the path stays on the cell's title.
+    expect(screen.getByText('factor.model.declared')).toBeTruthy()
+    expect(screen.getByText('factor.reasoning.effort')).toBeTruthy()
     expect(screen.getByText('10/12')).toBeTruthy()
     // A draft has nothing expanded, so no progress and no start time.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
@@ -265,14 +267,19 @@ describe('LabView detail', () => {
     expect(screen.getByText('cond-a, cond-b')).toBeTruthy()
     expect(screen.getByText(/judge-a · overview.judgeSamples/)).toBeTruthy()
     expect(screen.getByText(/dataseek\/bench:1/)).toBeTruthy()
-    // The readiness block is verbatim: the failing probe's reason shows.
-    expect(screen.getByText('the scoped home holds no credential')).toBeTruthy()
+    // The readiness verdict is a chip on the page; the refusal SENTENCE is a
+    // host string, so ui-spec §九 keeps it under «详情» — still there, and
+    // still verbatim, which is the point (the ledger never saw this run).
     expect(screen.getByText('ready.failed')).toBeTruthy()
-    // Histograms and the leak warning.
-    expect(screen.getByText('done 10 · active 2')).toBeTruthy()
-    expect(screen.getByText('archived 10 · stage-2 2')).toBeTruthy()
+    expect(screen.getAllByText(/the scoped home holds no credential/).length).toBeGreaterThan(0)
+    expect(screen.getByText('overview.readinessRaw')).toBeTruthy()
+    // Histograms read through the word table, each chip carrying its count.
+    expect(screen.getByText('bucket.done')).toBeTruthy()
+    expect(screen.getByText('bucket.active')).toBeTruthy()
+    expect(screen.getByText('stage.archived')).toBeTruthy()
+    expect(screen.getByText('stage.stage-2')).toBeTruthy()
     expect(screen.getByText('7')).toBeTruthy()
-    expect(screen.getByText(/eval-run-3 · completed/)).toBeTruthy()
+    expect(screen.getByText('eval-run-3')).toBeTruthy()
   })
 
   it('a draft opens its overview from the row alone — no RPC, and it says why the run fields are missing', async () => {
@@ -299,7 +306,9 @@ describe('LabView detail', () => {
     fireEvent.click(await screen.findByText('effort-sweep'))
     for (const page of ['matrix', 'cells', 'report', 'judging']) {
       fireEvent.click(screen.getByRole('button', { name: `page.${page}` }))
-      expect(screen.getAllByText('overview.draftNotice').length).toBeGreaterThan(0)
+      // The empty seat says what is missing AND what produces it (§九).
+      expect(screen.getAllByText('draft.notStarted').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('draft.notStartedHint').length).toBeGreaterThan(0)
     }
   })
 

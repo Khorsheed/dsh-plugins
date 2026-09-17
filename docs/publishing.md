@@ -8,27 +8,40 @@
 npm whoami                                    # 1. 确认账号是你以为的那个
 npm view <包名> version                        # 2. 线上最新版本;新版本必须更高(403/409 就是撞这个)
 pnpm --filter <包名> run build && pnpm --filter <包名> test   # 3. 构建和测试全绿
-pnpm exec tsx scripts/pack-dist.ts --package <包目录> --scope @khorsheed --version <新版本> --out /tmp/dist   # 4. 打包(会做 scope 重写和 files 校验)
+pnpm exec tsx scripts/pack-dist.ts --package <包目录> --scope @khorsheed --version <新版本> --out /tmp/dist --family auto   # 4. 打包(会做 scope 重写和 files 校验;--family auto 自动带上伴生边)
 tar -tzf /tmp/dist/<包>.tgz                    # 5. 检查 tarball:lib/、cordis.patch.yml、scripts/ 一个不能少
 ```
 
 ## 发布与发布后验证
 
-```sh
-npm publish /tmp/dist/<包>.tgz --otp=<认证器 6 位动态码>
-npm view <包名> version                       # 确认线上版本已更新
+**认证现状（2026-09 起，旧 TOTP 指引全部作废）**：npm 已下线 6 位认证器（TOTP）注册，2FA 只剩 **security key（WebAuthn）**——Mac 上就是 Touch ID（npmjs.com → 头像 → Account → Two-Factor Authentication → security key）。恢复码只是兜底，**拿恢复码当 OTP 会触发 72 小时只读冻结**（已踩实）。GAT（颗粒度 token）的 bypass-2FA 已不能做账号/包管理动作，直发也将在 2027-01 取消（我们的 publish token 现已直接 EOTP）。
 
-# 消费者验证(必做,30 秒):装进一次性目录,import/跑一次入口
-T=$(mktemp -d) && cd "$T" && npm install <包名>@<新版本> \
-  && node -e "import('<包名>').then(m => console.log('ok'))"
+**现行发布流程：staged publishing（暂存 + 网页审批）**。暂存不需要 2FA，审批才需要（security key 点一下）：
+
+```sh
+# 0. 一次性登录（真实终端里跑，web 登录需要 TTY；会话凭证写入 ~/.npmrc）
+npm login --auth-type=web
+# 1. 暂存（npm CLI 必须 ≥11.15——本仓 npm 10 不行，用 npx npm@12；Node 22.21 会吃一条版本警告，无碍）
+npx npm@12 stage publish /tmp/dist/<包>.tgz     # 输出 staged id，不需要 2FA
+npx npm@12 stage list                            # 查看暂存队列与状态（validating → 可审批）
+# 2. 审批上线（维护者在网页上做）：npmjs.com → 头像 → Account → Staged Packages → 逐个 Approve，Touch ID 确认
+npm view <包名> version                          # 3. 确认线上版本已更新
+
+# 4. 消费者验证：装进一次性目录做结构与入口检查
+T=$(mktemp -d) && cd "$T" && npm init -y && npm install --legacy-peer-deps <包名>@<新版本> \
+  && ls node_modules/<包名>/lib node_modules/<包名>/cordis.patch.yml
 ```
+
+消费者验证注意：**纯 `npm install` 现在解析不动官方 peer**——官方包在 registry 上的最旧版本是 0.1.2-rc.1，且按 npm 的 prerelease 规则 `^0.1.0-rc.6` 不匹配 0.1.5-rc.x（prerelease 只匹配同版本三元组），所以消费者验证一律 `--legacy-peer-deps` 跳过 peer + 结构/入口检查；真实安装路径（`dsh plugin add`）由宿主解析官方依赖，不经 registry。peer 区间的修订（对齐上游实际发布线）留作下一波统一处理。
+
+**下一步：trusted publishing（GitHub Actions OIDC）**。方向是"推 tag → CI 出包并 stage → 网页审批"，token 彻底退出流程。配置 trusted publisher 属于账号管理动作，只能由维护者在网页上做（security key 挑战），见 [Trusted publishing for npm packages](https://docs.npmjs.com/trusted-publishers)。
 
 ## 失败对照表
 
 | 报错 | 原因 | 解法 |
 |---|---|---|
-| `requires a one-time password` | 账号开了 2FA | `npm publish --otp=<6 位动态码>`;过期就换新的重试。**不要把恢复码当日常 OTP**（见下行） |
-| 403 且账号页显示 "temporarily suspended due to a recent security-sensitive action" | npm 2026-06 起的防劫持冻结：**使用恢复码、换邮箱等敏感动作会触发 72 小时只读冻结**（安装/下载不受影响，发布/token 管理全停，到期自动解除） | 无捷径，等 72 小时；预防 = 日常发布只用认证器 TOTP 动态码，恢复码只留作真正的账号恢复。另注意 2026 年的新规：颗粒度 token（GAT）在强制 2FA 的账号上**不能直接发布**（bypass-2FA 也在收紧下线），发布用 `npm login --auth-type=web` 拿的 session token + TOTP |
+| `requires a one-time password`（EOTP） | 账号开了 2FA 且 npm 已无 TOTP | 不要找 6 位码了——走 staged publishing（见上文）：`npx npm@12 stage publish` 暂存 + 网页审批 |
+| 403 且账号页显示 "temporarily suspended due to a recent security-sensitive action" | npm 2026-06 起的防劫持冻结：**使用恢复码、换邮箱等敏感动作会触发 72 小时只读冻结**（安装/下载不受影响，发布/token 管理全停，到期自动解除） | 无捷径，等 72 小时；预防 = 恢复码只留作真正的账号恢复，日常发布走 staged + security key 审批 |
 | `403`(版本没变)/ `409` | 版本号 ≤ 线上已发布版本 | bump 版本再发;npm 不允许覆盖 |
 | `403`(包名从没发过) | 没有该 scope 的权限 | 只能发自己拥有的 scope(@khorsheed);@deepseek-ai 是官方 org,不要尝试 |
 | `Cannot resolve workspace protocol` | package.json 里残留 `workspace:*` 依赖 | 用 `scripts/pack-dist.ts` 打包(它会改写),不要直接对源目录 `npm publish` |

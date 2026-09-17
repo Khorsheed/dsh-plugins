@@ -38,6 +38,7 @@
     "src/client/DatasetList.tsx",
     "src/client/DatasetDetail.tsx",
     "src/client/SkeletonForm.tsx",
-    "src/client/parts.tsx"
+    "src/client/parts.tsx",
+    "src/client/vocab.ts"
   ]
 }
