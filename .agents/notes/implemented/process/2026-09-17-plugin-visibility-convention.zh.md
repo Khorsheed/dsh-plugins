@@ -1,4 +1,4 @@
-# Agent Note：插件可见性规范文档——三层分工，sidebar 没有 preset 开关
+# Agent Note：插件可见性规范文档——判据轴是内容，不是座位
 
 Status: implemented
 
@@ -12,9 +12,13 @@ Status: implemented
 
 约定收敛到一处：[docs/plugin-visibility.md](../../../docs/plugin-visibility.md)，AGENTS.md 的 Package conventions 指向它。文档钉死三条规则：
 
-1. **三层分工，由 surface 决定，不由口味决定。** 跨会话 surface（右栏 tab、panellist 行、全局空间）归安装层——不该显示入口的 profile 就不该装这个包；没有运行时开关，也不许临时造一个。会话级 chrome（`conversation.view` tab、会话头徽标）按官方 preset 组合数据自隐，一切读不到的路径 fail-open。实例级开关走行 config（经插件自己的 Remote 送达浏览器——web boot 组合 client entries 不带 config）。
-2. **sidebar 问题的答案是「不支持，且属刻意」。** host 的 tab 注册表与 slot API 没有任何可见性谓词（0.1.5 已复核）；把会话 preset 判据套在跨会话 surface 上等于永久隐藏，因为 preset 在建会话时绑定——这正是 canvas 回滚的根因，现从事故笔记升格为常备规则。声明式显隐留在上游诉求清单（mode-switcher 提案的可选 `visibleWhen` 增强）。
+1. **三层分工，由 surface 的内容绑定谁决定，不由口味或座位决定。** 内容绑定会话的 surface——会话 chrome（`conversation.view` tab、会话头徽标）以及渲染当前会话状态的框架级入口（worktrees 右栏 tab）——按官方 preset 组合数据自隐，一切读不到的路径 fail-open（含无会话的首页状态）。内容跨会话的 surface（canvas 空间这类部署级工作区）归安装层——不该显示入口的 profile 就不该装这个包。实例级开关走行 config（经插件自己的 Remote 送达浏览器——web boot 组合 client entries 不带 config）。
+2. **sidebar 的答案是「看内容」，不是「永远不行」。** host 的 tab 注册表与 slot API 没有任何可见性谓词（0.1.5 已复核），但 `register` 返回 disposer，且「类型已注销」是设计好的 fallback——`tab.unavailable`，host 注释明写「a kind with no registrant is a real state, not a defect」——已打开的 tab 按会话存储，未授予会话的布局里本就没有它。内容绑定会话、伴生行被某 preset 引用的右栏 tab 两个前提都满足，可以用同款注册级 toggle 自隐（worktrees 右栏 tab 是样板）。canvas 回滚的根因现在精确表述为：canvas **两个前提都不满足**——任何 preset 都不引用的纯 UI 包 + 跨会话工作区——叠加 preset 只在建会话时可选的事实：框架级 surface 在有会话之前没有 preset 输入。声明式显隐留在上游诉求清单（mode-switcher 提案的可选 `visibleWhen` 增强）。
 3. **模式保持内联拷贝。** 五份 preset-visibility 拷贝刻意不抽 helper——mode-switcher 提案 M3' 把抽取决策推迟到第 5 个新消费者出现，文档记录了这个拍板，免得有人提前「顺手整理」。
+
+## 修订记录（2026-09-17，当日）
+
+本 note 初版把判据轴画在**座位**上：「跨会话 surface（右栏 tab……）一律没有运行时开关」。协调者用 canvas 案例反驳——画布消失不是会话出了问题，而是框架级 surface 在有会话之前根本没有 preset 输入——并提出框架级 sidebar 入口应像 conversation tab 一样可门控。复核 host（`ui-sidebar-right` 的 tab 注册表：disposer 语义、按会话存储的已打开 tab、设计好的未注册类型 fallback）后确认：对内容绑定会话的 surface，机制成立。判据轴从座位改为内容，记入上文规则 1–2 与文档的「判据轴」一节。
 
 ## 放弃的替代方案
 
