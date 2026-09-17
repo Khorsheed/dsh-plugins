@@ -10,7 +10,7 @@ Status: implemented
 
 三件事必须同时成立，而它们都成立：
 
-1. **两个存储，单向同步。** macOS 上 OAuth 凭证同时在 keychain（按 config 目录路径哈希的条目）与 `<homeDir>/.credentials.json` 里。claude 2.1.236 起写 keychain、读文件，于是 `syncClaudeCredentialFile` 做的是 keychain → 文件这一个方向。它从四处被调用：exec spawn 点、live driver 常驻 spawn 点、`claudeAuthenticated`（于是每次状态读与每次就绪探针）、以及登录 watch。
+1. **两个存储，单向同步。** macOS 上 OAuth 凭证同时在 keychain（按 config 目录路径哈希的条目）与 `<homeDir>/.credentials.json` 里。claude 2.1.236 **当时**是写 keychain、读文件，于是 `syncClaudeCredentialFile` 做的是 keychain → 文件这一个方向。（CLI 自己用哪个存储后来查明是随版本变的，2.1.236 那个读法**不适用于当前 macOS**——见 Consequences 里的更正。）它从四处被调用：exec spawn 点、live driver 常驻 spawn 点、`claudeAuthenticated`（于是每次状态读与每次就绪探针）、以及登录 watch。
 2. **单元是同一个文件的第二个写者。** T20c 起容器轮 bind 挂的就是实例自己那个作用域目录（读写），`acquireSpecFor` 声明的正是这一条挂载。单元里没有 keychain，里面的 CLI 只能读写挂进来的文件：access token 过期 → 续期 → 轮换后的凭证经挂载落回宿主。
 3. **即使是容器轮，同步跑的也是宿主目录。** provider 构造的是 `env: delegationEnv({ CLAUDE_CONFIG_DIR: homeDir })`，里面是宿主路径；`containerExecSpawn` 只在 `docker exec -e` 转发那一层把它换成容器内路径。于是 spawn 前的 `syncClaudeCredentialFile(configDir)` 作用在宿主作用域目录上——而单元马上要经挂载读的就是这个文件。
 
@@ -54,16 +54,17 @@ Status: implemented
 ## Consequences
 
 - 容器轮可以轮换凭证，而宿主不会再把一个已消费的 token 递给下一轮。系统性的复活没有了。
-- keychain 现在可能落后文件任意远。只要宿主 CLI 读文件就无害，而且两个存储会自己重新收敛：文件赢过一次之后，下一轮宿主委派基于它续期并自行写 keychain。写回 keychain 的方案已评估并推迟（见下）。
+- keychain 现在可能落后文件任意远。
+- **一条本记录发布之后由实测得出的更正。** 上一行原本后面跟着的两句——「只要宿主 CLI 读文件就无害」「文件赢过一次之后两个存储会自己收敛」——在当前 macOS 上**都是错的**。实测 2.1.274：**宿主 CLI 读写的是 keychain**。它因此从不基于文件续期，两个存储不会收敛，且任一侧轮换都会直接作废另一侧的 token family。新者胜对所有**读文件**的一方（容器轮，以及本包自己的探针）仍然正确且必要，这一半已经活体验证过；它只是替 keychain 那一侧说不了话。答案不是写回，而是隔离——见[容器专用 scope 那份记录](2026-09-18-claude-container-scope.zh.md)。
 - 一件罕见而真实的事件现在在日志里看得见，而不必靠一个文件 mtime 去复原。
 - 在没有 keychain 的 Linux 宿主上，一份可用的文件不再被报成不可用的凭据。
 - 这次协调**拿哪一条 keychain 条目**来比，是由 service 枚举的「最新写入优先」排序决定的，而那个排序本身有缺陷——它从来没解析对 `security` 打印的印记格式，于是返回的是 dump 里恰好排在最前的那条可用条目。新者胜再好，也只能好到递给它的那条为止；见[keychain 印记排序那份记录](2026-09-17-keychain-stamp-ordering.md)。
 
 ## Alternatives considered
 
-**新者胜外加写回 keychain。** 文件领先时顺手推回 keychain（`security add-generic-password -U`），让 keychain 保持为一份可用的恢复副本。推迟：这个包至今只**读**过 keychain，写是一项新能力、带着自己的授权弹窗行为，而正确性并不需要它——两个存储会经下一次宿主续期自行收敛。若将来真要把 keychain 当恢复路径，再拿出来。
+**新者胜外加写回 keychain。** 文件领先时顺手推回 keychain（`security add-generic-password -U`），让 keychain 保持为一份可用的恢复副本。此处推迟，后来被**彻底否决**：`security` 只接受把密文作为 **argv** 传入（或交互式提示，headless 用不了），为堵一条凭据暴露路径而新开一条并不划算。见[容器专用 scope 那份记录](2026-09-18-claude-container-scope.zh.md)。
 
-**容器专用命名 scope。** T29 给每个条件一个 `scope` 字段，claude 的容器条件可以跑在 `claude-code@<scope>` 上，登录时同步一次、此后不再同步，单元成为唯一写者。它是唯一能彻底消除并发续期竞态的候选，也契合「每个 scope 各自 login」这条既有规矩。这次没走：每个容器 scope 要一次人工登录；那个 scope 的同步仍然必须被抑制，因为认证探针在每次状态读时都会协调，于是新者胜形状的工作照样躲不掉；而且评测侧目前根本没法给条件指定命名 scope——条件文件有这个字段，Remote 面却没有 `conditionsProvision`。记为那条路打通之后的后续项。
+**容器专用命名 scope。** T29 给每个条件一个 `scope` 字段，claude 的容器条件可以跑在 `claude-code@<scope>` 上，单元成为那次授权的唯一写者。这次没走，理由在**代价**上没错、在**必要性**上错了：每个容器 scope 确实要一次人工登录，新者胜形状的工作也确实照样躲不掉。它当时被记为后续项——而在宿主 CLI 被实测为读 keychain 之后，它成了定案，因为那时只有隔离才管用。见[容器专用 scope 那份记录](2026-09-18-claude-container-scope.zh.md)。
 
 **只读挂载、续期只留在内存。** 实测判死：同一轮在被拒绝写凭据的同时也被拒绝写 `projects/`，而评测的 `readClaudeTranscriptModel` 回读正是从挂载的宿主侧解析那些文件。claude 在只读目录下续期究竟如何，根本不必再去证。
 
@@ -81,7 +82,7 @@ Status: implemented
 
 ## Risks
 
-- **并发续期的竞态仍在。** 新者胜消除的是系统性的复活，但两个进程在同一时刻续同一个一次性 token，仍然会有一条链输掉。宿主轮与容器轮重叠时依然可能如此；容器路径每格是串行的，所以窗口小，但真实存在。只有命名 scope 那个备选能消除它。
+- **~~并发续期的竞态仍在。~~ 它根本不是竞态。** 本记录当初把「共用一次授权」说成一个狭窄的时间窗口；实测表明，那是**只要共用就必然发生**的结果。服务端在轮换时作废整个 token family，于是容器轮一旦续期就会杀掉宿主那一份，与两者是否在时间上重叠无关。只有命名 scope 的隔离能消除它，而它现在就是规矩——见[容器专用 scope 那份记录](2026-09-18-claude-container-scope.zh.md)。
 - **拿 `expiresAt` 当新旧判据**假设续期必然铸出更晚的 access 过期时间。缺这个字段的凭证退回 keychain 胜；被手工改成未来时间的文件会错误地获胜，而这只有操作者能造成。
 - **一份已死的凭据仍读作已认证。** `credentialFileExpiry` 取 access 与 refresh 两个过期时间里较晚的那个，于是一份 access 几天前就过期、refresh 还有几周的凭证，在某一轮真失败之前都报已认证。这里有意不碰：把探针收紧会让一些现在 ready 的 scope 变成 not ready，那是另一个决定。记为观察项。
   后来实测到它的一个后果：登录 watch 是先同步再探针，于是一份陈旧但「已认证」的凭证会让 watch 判定成功并收工。在本记录来源的那台实例上，它比全新登录写进 keychain **早了 51 秒**收工——文件的写入印记就早那么多——此后再没有任何东西把真正的凭证镜像进去。

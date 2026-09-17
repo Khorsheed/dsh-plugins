@@ -265,6 +265,89 @@ export function conditionUnitDiagnostics(conditionId: string, condition: unknown
   return diagnostics
 }
 
+/** The harness whose two credential stores make a shared scope unsafe. */
+const CLAUDE_HARNESS = 'claude-code'
+
+/** One condition as the scope guard needs it: who it is and which scope it names. */
+export interface ScopedConditionRef {
+  id: string
+  harnessName: string
+  /** The named scope, or undefined for the instance's DEFAULT scope. */
+  scope?: string
+}
+
+/**
+ * The claude container-scope discipline, as diagnostics.
+ *
+ * claude is the only harness in the family with TWO credential stores, and on
+ * macOS they are not the same one for every reader: measured on 2.1.274, the
+ * host CLI reads and writes the KEYCHAIN, while inside a unit — Linux, no
+ * keychain — it reads and writes the bind-mounted `.credentials.json`. One
+ * grant refreshed from both stores is one grant refreshed twice: the endpoint
+ * rotates single-use refresh tokens and invalidates the token FAMILY, so
+ * whichever side did not refresh last is left holding a dead token. That is
+ * not a race — it is the guaranteed outcome of sharing, and it was measured:
+ * a container round rotated the file, and the next host round answered
+ * "OAuth session expired and could not be refreshed" although the file's own
+ * access token was still hours from expiry.
+ *
+ * The rule is therefore a separation, not a reconcile: a claude condition that
+ * runs inside a unit gets its OWN named scope, which nothing on the host ever
+ * runs claude in. Two scopes are two independent grants, and one side's
+ * rotation cannot reach the other's family. An absent scope is the INSTANCE's
+ * default scope — the one `/claude-code` delegations and every status probe
+ * use — so "no scope" is the worst case, not a neutral one.
+ *
+ * Only claude-code is checked. codex pins `cli_auth_credentials_store = "file"`
+ * so host and unit share ONE store and therefore one chain; kimi has only the
+ * file; dsh injects an API key and never refreshes. None of them can fork.
+ * @param inUnits - the conditions this plan runs inside units (the players).
+ * @param onHost - the conditions that run on the host in the same plan. A judge
+ *   delegates from the orchestrator, so it is on the host even in a container
+ *   run; that is why it belongs here rather than beside the players.
+ * @returns diagnostics; empty means no claude grant is shared across the line.
+ */
+export function claudeScopeDiagnostics(
+  inUnits: readonly ScopedConditionRef[],
+  onHost: readonly ScopedConditionRef[],
+): EvalDiagnostic[] {
+  const diagnostics: EvalDiagnostic[] = []
+  const unitScopes = new Map<string, string[]>()
+  for (const condition of inUnits) {
+    if (condition.harnessName !== CLAUDE_HARNESS) continue
+    const scope = condition.scope
+    if (scope === undefined || scope === '') {
+      diagnostics.push({
+        code: 'CLAUDE_CONTAINER_SCOPE_MISSING',
+        message: `condition ${condition.id} (claude-code) runs inside a unit, so it must declare its own "scope"`
+          + ' — a named scope nothing on the host ever runs claude in. Inside a unit there is no keychain, so the CLI'
+          + ' rotates the grant in the bind-mounted credentials file, while the host CLI rotates the same grant in the'
+          + ' keychain; the endpoint invalidates the token family on rotation and the side that did not refresh is left'
+          + ' dead. Omitting the scope points this condition at the INSTANCE\'s default scope, which is exactly the one'
+          + ' the host uses. Give it one (e.g. "c-claude") and authorize it once with `/claude-code login --scope <name>`.',
+      })
+      continue
+    }
+    unitScopes.set(scope, [...(unitScopes.get(scope) ?? []), condition.id])
+  }
+  for (const condition of onHost) {
+    if (condition.harnessName !== CLAUDE_HARNESS) continue
+    if (condition.scope === undefined) continue
+    const shared = unitScopes.get(condition.scope)
+    if (shared === undefined) continue
+    diagnostics.push({
+      code: 'CLAUDE_CONTAINER_SCOPE_SHARED',
+      message: `condition ${condition.id} (claude-code) runs on the HOST but names scope ${JSON.stringify(condition.scope)},`
+        + ` which ${shared.length === 1 ? 'condition' : 'conditions'} ${shared.join(', ')}`
+        + ` ${shared.length === 1 ? 'already uses' : 'already use'} inside a unit`
+        + ' — one grant refreshed from the unit\'s credentials file and from the host\'s keychain. The endpoint'
+        + ' invalidates the token family on rotation, so the container round would silently kill this condition\'s'
+        + ' credential. Move it to the default scope, or to another scope that never enters a unit.',
+    })
+  }
+  return diagnostics
+}
+
 /**
  * Resolve one condition's cell unit plan.
  * @param planUnit - the plan's unit segment.

@@ -2735,7 +2735,9 @@ describe('runPlan — «环境一致» compares the environment class, not the u
   /** Four conditions differing ONLY in the scoped home each one mounts. */
   const HARNESSES = [
     { id: 'codex-unit', name: 'codex', permissions: 'danger-full-access', container: '/creds/codex', variable: 'CODEX_HOME' },
-    { id: 'claude-unit', name: 'claude-code', permissions: 'skip', container: '/creds/claude', variable: 'CLAUDE_CONFIG_DIR' },
+    // claude alone carries a scope: its two credential stores mean a
+    // container condition must own a scope no host-side claude ever uses.
+    { id: 'claude-unit', name: 'claude-code', permissions: 'skip', container: '/creds/claude', variable: 'CLAUDE_CONFIG_DIR', scope: 'c-claude' },
     { id: 'kimi-unit', name: 'kimi', permissions: 'auto-approve', container: '/creds/kimi', variable: 'KIMI_CODE_HOME' },
     { id: 'dsh-unit', name: 'dsh', permissions: 'unrestricted', container: '/creds/dsh', variable: 'DSH_HOME' },
   ]
@@ -2747,6 +2749,7 @@ describe('runPlan — «环境一致» compares the environment class, not the u
       writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', `${harness.id}.json`), `${JSON.stringify({
         ...base,
         harness: { name: harness.name, version: null, drive: 'exec' },
+        ...('scope' in harness ? { scope: (harness as { scope: string }).scope } : {}),
         // Every model declared null: four harnesses cannot share one, and the
         // subject invariant is not what this test is about.
         model: { declared: null, endpoint: null },
@@ -2754,8 +2757,9 @@ describe('runPlan — «环境一致» compares the environment class, not the u
         env: { keys: [harness.variable] },
         unit: { scopedHome: { container: harness.container, var: harness.variable } },
       }, null, 2)}\n`)
-      mkdirSync(join(homesRoot, harness.name), { recursive: true })
-      writeFileSync(join(homesRoot, harness.name, 'auth.json'), '{"written by /<harness> login": true}\n')
+      const homeName = 'scope' in harness ? `${harness.name}@${(harness as { scope: string }).scope}` : harness.name
+      mkdirSync(join(homesRoot, homeName), { recursive: true })
+      writeFileSync(join(homesRoot, homeName, 'auth.json'), '{"written by /<harness> login": true}\n')
     }
     return homesRoot
   }
