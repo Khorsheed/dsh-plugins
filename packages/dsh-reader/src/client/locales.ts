@@ -1,12 +1,19 @@
 /**
- * The reader's dictionaries. Keys are referenced as translation ids from the
- * pane and the tab definition, so adding a key here is what makes it usable.
+ * The inspiration space's dictionaries. Keys are referenced as translation ids
+ * from the pane and the tab definition, so adding a key here is what makes it
+ * usable.
+ *
+ * The namespace stays `reader`: the package name, the tab kind and the Remote
+ * namespace are stable identifiers, and renaming them would change a deployed
+ * loader row and the on-disk state root for a copy change. What the reader
+ * SEES is 「灵感空间」, which is what the surface became once saved links
+ * joined subscriptions — a wall of things you chose to keep.
  *
  * @module @khorsheed/dsh-reader/client/locales
  */
 export const NS = 'reader'
 
-/** The reader dictionary key set (the source of truth for both locales). */
+/** The inspiration space's dictionary key set (the source of truth for both locales). */
 export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
@@ -14,21 +21,25 @@ export type ReaderKey =
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
   | 'action.copyLink' | 'action.openExternal' | 'action.quote' | 'action.manage'
-  | 'action.remove' | 'action.submit'
+  | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel'
   | 'add.title' | 'add.help' | 'add.placeholder'
   | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.duplicate'
   | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
+  | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
+  | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
+  | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
   | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
+  | 'foot.refreshing'
   | 'quote.copied' | 'quote.copyFailed' | 'quote.quoted'
   | 'quote.toSideChat' | 'quote.sideChatUnavailable'
   | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
 
 export const en = {
-  'tab.label': 'Reader',
+  'tab.label': 'Inspiration',
   'tab.subtitle': 'Subscriptions and saved links',
   'guide.description': 'RSS/Atom subscriptions plus any article link you save',
 
@@ -44,17 +55,19 @@ export const en = {
 
   'action.refresh': 'Refresh all',
   'action.refreshOne': 'Refresh',
-  'action.add': 'Add a feed or link',
-  'action.back': 'Back to list',
+  'action.add': 'Add inspiration',
+  'action.back': 'Back',
   'action.copyLink': 'Copy link',
   'action.openExternal': 'Open in browser',
   'action.quote': 'Quote',
-  'action.manage': 'Manage sources',
+  'action.manage': 'Manage subscriptions',
   'action.remove': 'Remove',
   'action.submit': 'Fetch',
+  'action.done': 'Done',
+  'action.cancel': 'Cancel',
 
-  'add.title': 'Add',
-  'add.help': 'Paste a feed address or any article link. What comes back decides how it is stored: a feed becomes a subscription, a web page is saved as a single item.',
+  'add.title': 'Add inspiration',
+  'add.help': 'Paste a feed address or any article link. What comes back decides how it is stored: a feed is subscribed and refreshed on schedule, a web page is kept as a single item.',
   'add.placeholder': 'https://',
   'verdict.subscribed': 'Subscribed to {label} — it will refresh on schedule.',
   'verdict.savedLink': 'Saved this article — one item, no subscription.',
@@ -65,12 +78,25 @@ export const en = {
 
   'state.loading': 'Loading…',
   'state.emptyTitle': 'Nothing here yet',
-  'state.emptyBody': 'Add a feed address, or paste a link to an article you want to keep.',
+  'state.emptyBody': 'Collect your first inspiration: subscribe to a source, or paste a link you want to keep.',
   'state.noMatch': 'Nothing matches “{query}”.',
   'state.fetching': 'Fetching…',
   'state.incomplete': 'Incomplete',
   'state.error': 'Failed',
   'state.stale': 'Refresh failed: {message}',
+
+  'sources.title': 'Subscriptions',
+  'sources.count': '{count} sources',
+  'sources.empty': 'No subscriptions yet',
+  'sources.help': 'A subscription is fetched on schedule and its new entries land in the wall below. A saved link is one item and never refetches on its own.',
+  'sources.enabled': 'Updating',
+  'sources.disabled': 'Paused',
+  'sources.time': 'Daily refresh',
+  'sources.timeHelp': 'Local time, 24-hour. A missed window is caught up once at the next boot.',
+  'sources.failed': 'Last fetch failed',
+  'sources.items': '{count} items',
+  'sources.never': 'Not fetched yet',
+  'sources.cardHint': 'Subscription',
 
   'detail.incomplete': 'Limited length, content shown in part',
   'detail.readOriginal': 'Read the original',
@@ -83,6 +109,7 @@ export const en = {
   'foot.scheduled': 'daily {time}',
   'foot.never': 'Not refreshed yet',
   'foot.unread': 'unread',
+  'foot.refreshing': 'Refreshing…',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -98,7 +125,7 @@ export const en = {
 }
 
 export const zh = {
-  'tab.label': '阅读',
+  'tab.label': '灵感空间',
   'tab.subtitle': '订阅源与保存的链接',
   'guide.description': 'RSS/Atom 订阅，加上你保存的任意文章链接',
 
@@ -114,17 +141,19 @@ export const zh = {
 
   'action.refresh': '刷新全部',
   'action.refreshOne': '刷新',
-  'action.add': '新增订阅源或链接',
-  'action.back': '返回列表',
+  'action.add': '新增灵感',
+  'action.back': '返回',
   'action.copyLink': '复制链接',
   'action.openExternal': '在浏览器打开原文',
   'action.quote': '引用',
   'action.manage': '订阅管理',
   'action.remove': '删除',
   'action.submit': '抓取',
+  'action.done': '完成',
+  'action.cancel': '取消',
 
-  'add.title': '新增',
-  'add.help': '粘贴订阅源地址或任意文章链接。抓回来是什么，就按什么处理：是 feed 就订阅，是网页就只存这一篇。',
+  'add.title': '新增灵感',
+  'add.help': '粘贴订阅源地址或任意文章链接。抓回来是什么，就按什么处理：是 feed 就订阅、按计划刷新，是网页就只存这一篇。',
   'add.placeholder': 'https://',
   'verdict.subscribed': '已订阅《{label}》—— 会按计划自动刷新。',
   'verdict.savedLink': '已保存这篇 —— 只存这一条，不建订阅源。',
@@ -135,12 +164,25 @@ export const zh = {
 
   'state.loading': '加载中…',
   'state.emptyTitle': '还没有内容',
-  'state.emptyBody': '添加一个订阅源地址，或粘贴一篇你想留住的文章链接。',
+  'state.emptyBody': '新增你的第一个灵感：订阅一个源，或粘贴一篇你想留住的文章链接。',
   'state.noMatch': '没有匹配「{query}」的条目。',
   'state.fetching': '抓取中…',
   'state.incomplete': '未完整',
   'state.error': '失败',
   'state.stale': '刷新失败：{message}',
+
+  'sources.title': '订阅管理',
+  'sources.count': '{count} 个源',
+  'sources.empty': '还没有订阅源',
+  'sources.help': '订阅源会按计划抓取，新条目落进下面的灵感墙；保存的链接只有这一条，不会自己重抓。',
+  'sources.enabled': '更新中',
+  'sources.disabled': '已暂停',
+  'sources.time': '每日刷新时间',
+  'sources.timeHelp': '本地时间，24 小时制。错过的窗口会在下次启动时补刷一次。',
+  'sources.failed': '上次抓取失败',
+  'sources.items': '{count} 条',
+  'sources.never': '尚未抓取',
+  'sources.cardHint': '订阅源',
 
   'detail.incomplete': '受限篇幅，内容未完整呈现',
   'detail.readOriginal': '阅读原文',
@@ -153,6 +195,7 @@ export const zh = {
   'foot.scheduled': '每日 {time}',
   'foot.never': '尚未刷新',
   'foot.unread': '未读',
+  'foot.refreshing': '正在刷新…',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',
@@ -169,7 +212,7 @@ export const zh = {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The reader tab's copy. */
+    /** The inspiration space's copy. */
     'reader': ReaderKey
   }
 }

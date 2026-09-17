@@ -96,7 +96,14 @@ describe('the host half boots and provides its service', () => {
     const remote = ctx.get('readerRemote') as ReaderRemoteService | undefined
     expect(remote).toBeDefined()
     // Not just present: actually delegating to the core through the wire face.
-    expect(await (remote as ReaderRemoteService).capabilities()).toEqual(await ctx.get('reader').capabilities())
+    // Compared field by field: `capabilities()` derives `nextRefreshAt` from
+    // Date.now(), so two calls can legitimately differ by a millisecond.
+    const viaRemote = await (remote as ReaderRemoteService).capabilities()
+    const viaCore = await ctx.get('reader').capabilities()
+    expect(viaRemote.protocolVersion).toBe(viaCore.protocolVersion)
+    expect(viaRemote.hasFs).toBe(viaCore.hasFs)
+    expect(viaRemote.hasSideChat).toBe(viaCore.hasSideChat)
+    expect(typeof viaRemote.nextRefreshAt).toBe(typeof viaCore.nextRefreshAt)
   })
 
   it('persists state with native fs even when a SESSION-FENCED ctx.fs is mounted', async () => {

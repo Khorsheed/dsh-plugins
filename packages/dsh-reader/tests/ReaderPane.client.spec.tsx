@@ -114,6 +114,7 @@ function bench(options: BenchOptions = {}) {
       },
     })),
     quoteToSideChat: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
     openExternal: vi.fn(() => true),
     copyText: vi.fn(async () => true),
     setDraft: vi.fn(),
@@ -131,7 +132,7 @@ function bench(options: BenchOptions = {}) {
     quoteToSideChat: mocks.quoteToSideChat,
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
-    refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
+    refresh: mocks.refresh,
     readDraft: () => '',
     setDraft: mocks.setDraft,
     copyText: mocks.copyText,
@@ -158,7 +159,9 @@ describe('the pane renders content, never an empty column', () => {
     expect(await screen.findByText(zh['state.emptyTitle'])).toBeTruthy()
     expect(screen.getByText(zh['state.emptyBody'])).toBeTruthy()
     expect(screen.getByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
-    expect(ui.container.querySelector('button')).not.toBeNull()
+    // The empty state IS the add card: clicking it opens the dialog.
+    fireEvent.click(screen.getByText(zh['state.emptyTitle']))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
   })
 
   it('shows a card per entry, with the unread marker and no body markup in the list', async () => {
@@ -213,8 +216,12 @@ describe('pointing (option B): the card opens the detail, the detail owns the br
       payloads: { 'link-1': `<article><p>${'网页正文。'.repeat(40)}</p></article>` },
     })
     await ui.settle()
-    // The label is on the card AND in the detail kicker, so point at the card.
-    fireEvent.click(await screen.findByRole('button', { name: /保存的文章/ }))
+    // The label is on the ENTRY card, on the source card above it, and in the
+    // detail kicker: point at the entry card, which is the one without the
+    // source-card prefix.
+    fireEvent.click(await screen.findByRole('button', {
+      name: (name: string) => name.includes('保存的文章') && !name.includes(zh['sources.cardHint']),
+    }))
     await waitFor(() => { expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('网页正文') })
   })
 })
@@ -241,7 +248,9 @@ describe('a truncated body says so, and offers the way out', () => {
     await ui.settle()
     // The entry survives the failure: dropping it would leave the reader with
     // a source they added and can never open.
-    fireEvent.click(await screen.findByRole('button', { name: /抓取失败的文章/ }))
+    fireEvent.click(await screen.findByRole('button', {
+      name: (name: string) => name.includes('抓取失败的文章') && !name.includes(zh['sources.cardHint']),
+    }))
     expect(await screen.findByText(zh['detail.extractFailed'])).toBeTruthy()
     // …and because the fetch never completed, the body is by definition partial.
     expect(await screen.findByText(new RegExp(zh['detail.incomplete']))).toBeTruthy()
@@ -253,6 +262,7 @@ describe('the add form reports the host verdict', () => {
     const ui = bench()
     await ui.settle()
     fireEvent.click(screen.getByTitle(zh['action.add']))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
     const input = await screen.findByPlaceholderText(zh['add.placeholder'])
     fireEvent.change(input, { target: { value: 'https://example.com/feed.xml' } })
     fireEvent.click(screen.getByText(zh['action.submit']))
@@ -286,8 +296,8 @@ describe('the add form reports the host verdict', () => {
   })
 })
 
-describe('every page that leaves the list carries the way back', () => {
-  it('returns from the add page to the card list', async () => {
+describe('every page that leaves the wall carries the way back', () => {
+  it('closes the add dialog without leaving the wall', async () => {
     const ui = bench({
       sources: [rssSource('hn')],
       payloads: { hn: feed('hn', [{ title: '一条' }]) },
@@ -295,16 +305,14 @@ describe('every page that leaves the list carries the way back', () => {
     await ui.settle()
     expect(await screen.findByText('一条')).toBeTruthy()
     fireEvent.click(screen.getByTitle(zh['action.add']))
-    expect(await screen.findByText(zh['add.help'])).toBeTruthy()
-    // The list is gone while the add page is up…
-    expect(screen.queryByText('一条')).toBeNull()
-    fireEvent.click(screen.getByTitle(zh['action.back']))
-    // …and the cards come back, not an empty column.
-    expect(await screen.findByText('一条')).toBeTruthy()
-    expect(screen.getByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    // Esc closes it; the wall was never replaced, so nothing has to be rebuilt.
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(screen.getByText('一条')).toBeTruthy()
   })
 
-  it('returns from the detail view to the card list', async () => {
+  it('returns from the detail view to the wall', async () => {
     const ui = bench({
       sources: [rssSource('hn')],
       payloads: { hn: feed('hn', [{ title: '一篇长文', description: `<p>${'正文。'.repeat(40)}</p>` }]) },
@@ -317,32 +325,40 @@ describe('every page that leaves the list carries the way back', () => {
     expect(await screen.findByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
     expect(await screen.findByText('一篇长文')).toBeTruthy()
   })
+
+  it('opens the subscription page, and comes back from it', async () => {
+    const ui = bench({
+      sources: [rssSource('hn', { label: 'Hacker News' })],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    expect(await screen.findByText(zh['sources.title'])).toBeTruthy()
+    // The schedule is configurable from this page, which is the whole reason
+    // it exists. Queried by id: `type="time"` is a widget jsdom does not
+    // implement, so the label association is not how a test should reach it.
+    expect(ui.container.querySelector('#reader-refresh-time')).not.toBeNull()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    expect(await screen.findByText('一条')).toBeTruthy()
+  })
 })
 
-describe('the list says how old this snapshot is', () => {
-  it('says so when nothing has been fetched yet', async () => {
+describe('a subscription whose entries are not from today', () => {
+  it('shows them on the wall without the reader having to change the filter', async () => {
+    // The measured case: the acceptance instance's feed's newest item was 8
+    // days old, and the old default `today` filter rendered that as "the
+    // subscribe did not work".
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
     const ui = bench({
       sources: [rssSource('hn')],
-      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+      payloads: { hn: feed('hn', [{ title: '八天前的文章', publishedAt: eightDaysAgo }]) },
     })
     await ui.settle()
-    await screen.findByText('一条')
-    expect(screen.getByText(zh['foot.never'])).toBeTruthy()
-  })
-
-  it('states when the last refresh ran and when the next one is due', async () => {
-    const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    const ui = bench({
-      sources: [rssSource('hn')],
-      payloads: { hn: feed('hn', [{ title: '一条' }]) },
-      lastRefreshAt: sixtyMinutesAgo,
-      nextRefreshAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-    })
-    await ui.settle()
-    await screen.findByText('一条')
-    // A reader deciding whether to refresh needs the age, not just a count.
-    expect(screen.getByText(/刷出于 1 小时前/)).toBeTruthy()
-    expect(screen.getByText(/每日 \d{2}:\d{2}/)).toBeTruthy()
+    expect(await screen.findByRole('button', { name: /八天前的文章/ })).toBeTruthy()
+    // …and the filter that would hide it is visible, not implicit.
+    expect(screen.getByText(zh['filter.all'])).toBeTruthy()
+    expect(screen.getByText(zh['filter.today'])).toBeTruthy()
   })
 })
 

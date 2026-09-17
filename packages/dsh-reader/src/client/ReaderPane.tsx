@@ -1,25 +1,33 @@
 /**
- * The reader pane: the right-Sidebar tab body.
+ * The inspiration space: the right-Sidebar tab body.
  *
  * It is the only React surface this package ships, and it owns the whole
  * interaction the design settled on:
  *
- * - **the list** — one card per entry, with a search box, an unread-only
- *   toggle and a sort menu. All three are local predicates over entries this
- *   process parsed (design decision D14), so none of them costs a round trip.
- * - **the detail view** — clicking a card opens it. This is the reader's whole
- *   point: the body renders as DOM text, which is what makes passage quoting
- *   work (the QUOTE plugin's own selection menu sees it), and it is why the
- *   pane never hosts a sandboxed iframe.
- * - **the add form** — the host decides whether a pasted URL is a feed or an
- *   article from what comes back (D15); this surface only reports the verdict.
+ * - **the wall** — one card per entry, with a search box, an all/today filter,
+ *   an unread-only toggle and a sort menu. All four are local predicates over
+ *   entries this process parsed (design decision D14), so none of them costs a
+ *   round trip.
+ * - **the detail view** — clicking a card opens it. This is the whole point:
+ *   the body renders as DOM text, which is what makes passage quoting work
+ *   (the QUOTE plugin's own selection menu sees it), and it is why the pane
+ *   never hosts a sandboxed iframe.
+ * - **the add dialog** — an overlay in the members-tab idiom, because adding is
+ *   a momentary act and the wall should stay where it was behind it. The host
+ *   decides whether a pasted URL is a feed or an article from what comes back
+ *   (D15); this surface reports the verdict, plus the fetch seam's own words
+ *   when the fetch failed.
+ * - **the subscription page** — every source with its schedule, its pause
+ *   switch and its last-fetch status. It exists because "why am I not seeing
+ *   anything" and "stop refreshing this one" are questions about SOURCES, and
+ *   neither belongs on the wall.
  *
  * The browser has no XML parser on the host side to lean on, so the pane parses
  * payloads itself through `parse-rss` / `extract-article`.
  *
  * @module @khorsheed/dsh-reader/client/ReaderPane
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   IconChevronLeftOutline14,
   IconCopyOutline16,
@@ -42,9 +50,6 @@ import {
   type SourcePresentation,
 } from './selectors.ts'
 import css from './ReaderPane.module.css'
-
-/** The view the pane is showing. */
-type View = 'list' | 'add' | 'detail'
 
 /** One in-flight fetch's kind, for the verdict message. */
 type Verdict = 'subscribed' | 'savedLink' | 'duplicate' | 'invalidUrl' | 'unsupportedContent' | 'fetchFailed'
@@ -120,6 +125,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const articleTruncated = useStore(s => s.articleTruncated)
   const articleError = useStore(s => s.articleError)
   const openEntryId = useStore(s => s.openEntryId)
+  const view = useStore(s => s.view)
   const filter = useStore(s => s.filter)
   const query = useStore(s => s.query)
   const unreadOnly = useStore(s => s.unreadOnly)
@@ -127,17 +133,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const read = useStore(s => s.read)
   const lastRefreshAt = useStore(s => s.lastRefreshAt)
   const nextRefreshAt = useStore(s => s.nextRefreshAt)
+  const refreshing = useStore(s => s.refreshing)
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
 
-  const [view, setView] = useState<View>('list')
+  const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
   const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string } | null>(null)
   const [draft, setDraft] = useState('')
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
-  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
 
   /** Load the source list and parse whatever payloads the host is holding. */
   const load = useCallback(async () => {
@@ -223,8 +230,28 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       if (!result.ok) return
       setSideChatAvailable(result.value.hasSideChat)
       actions.setSchedule(result.value.lastRefreshAt, result.value.nextRefreshAt)
+      if (result.value.nextRefreshAt !== undefined) setTimeOfDay(clockOf(result.value.nextRefreshAt))
     })
   }, [actions, props, rev])
+
+  /**
+   * Fetch every enabled source now, then reload the wall.
+   *
+   * The reload is the point: a refresh that only replaced the host's stored
+   * payloads and never re-read them looked like a dead button on the
+   * acceptance instance, even though the fetch itself had succeeded.
+   */
+  const refreshAll = useCallback(async () => {
+    actions.setRefreshing(true)
+    try {
+      const result = await props.refresh()
+      actions.noteRefreshed(new Date().toISOString())
+      if (!result.ok) actions.setError(result.error.message)
+      else actions.refresh()
+    } finally {
+      actions.setRefreshing(false)
+    }
+  }, [actions, props])
 
   const presentation = useMemo(() => {
     const map = new Map<string, SourcePresentation>()
@@ -249,7 +276,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
     actions.openEntry(row.entry.id, row.sourceId)
-    setView('detail')
+    actions.setView('detail')
     if (row.entry.contentHtml !== undefined) {
       actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
       return
@@ -299,8 +326,47 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       label: value.label,
     })
     setDraftUrl('')
+    // Reload so the new entry is on the wall behind the dialog, not only in
+    // the host's state.
     actions.refresh()
   }, [actions, draftUrl, props])
+
+  /** Re-fetch one source from the subscription page. */
+  const refreshOne = useCallback(async (id: string) => {
+    actions.setRefreshing(true)
+    try {
+      const result = await props.refresh([id])
+      if (!result.ok) actions.setError(result.error.message)
+      else actions.refresh()
+    } finally {
+      actions.setRefreshing(false)
+    }
+  }, [actions, props])
+
+  /** Pause or resume one source from the subscription page. */
+  const toggleSource = useCallback(async (id: string, enabled: boolean) => {
+    const result = await props.updateSource({ id, enabled })
+    if (result.ok) actions.refresh()
+  }, [actions, props])
+
+  /** Drop one source (and everything it brought) from the subscription page. */
+  const removeSource = useCallback(async (id: string) => {
+    const result = await props.removeSource(id)
+    if (result.ok) {
+      actions.clearParsed()
+      actions.refresh()
+    }
+  }, [actions, props])
+
+  /** Move the daily refresh time. */
+  const setRefreshTime = useCallback(async (value: string) => {
+    setTimeOfDay(value)
+    // The host reports `invalid-time` for anything it cannot parse, and the
+    // input is a native time field, so a bad value only comes from a manual
+    // edit; keep the field's value and let the next handshake correct it.
+    await props.updateSource({ id: '', timeOfDay: value })
+    actions.refresh()
+  }, [actions, props])
 
   /** Quote the open entry (or a selection) into the conversation draft. */
   const quote = useCallback((explicit?: string) => {
@@ -325,8 +391,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /**
    * The pane's header.
    *
-   * @param back - true on the add page, which owns the list and therefore needs
-   *   the way back. The list itself has nothing to go back TO, so it shows none.
+   * @param back - true on a page that left the wall (detail, subscriptions),
+   *   which needs the way back. The wall itself shows none — there is nothing
+   *   behind it.
    */
   const header = (back: boolean): ReactNode => (
     <div className={css.head}>
@@ -335,7 +402,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           type="button"
           className={css.tool}
           title={t('action.back')}
-          onClick={() => { setView('list'); setVerdict(null) }}
+          onClick={() => { actions.setView('list'); actions.closeEntry() }}
         >
           <IconChevronLeftOutline14 size={14} />
         </button>
@@ -347,19 +414,82 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           {countUnread(rows)} {t('foot.unread')}
         </span>
       </span>
-      <button type="button" className={css.tool} title={t('action.refresh')} onClick={() => actions.refresh()}>
+      <button
+        type="button"
+        className={`${css.tool} ${refreshing ? css.toolSpinning : ''}`}
+        title={t('action.refresh')}
+        disabled={refreshing}
+        onClick={() => { void refreshAll() }}
+      >
         <IconRefreshOutline16 size={15} />
       </button>
       <button
         type="button"
         className={css.tool}
+        title={t('action.manage')}
+        onClick={() => { actions.closeEntry(); actions.setView('manage') }}
+      >
+        {glyph('filter', 15)}
+      </button>
+      <button
+        type="button"
+        className={css.tool}
         title={t('action.add')}
-        onClick={() => { setView('add'); setVerdict(null) }}
+        onClick={() => { setAddOpen(true); setVerdict(null) }}
       >
         <IconPlusOutline16 size={15} />
       </button>
     </div>
   )
+
+  /** The add dialog: overlay + centered card, Esc and overlay-click close. */
+  const dialog = addOpen && (
+    <div
+      className={css.overlay}
+      role="presentation"
+      onClick={event => { if (event.target === event.currentTarget) setAddOpen(false) }}
+    >
+      <div
+        className={css.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('add.title')}
+        onKeyDown={event => { if (event.key === 'Escape') setAddOpen(false) }}
+      >
+        <h2>{t('add.title')}</h2>
+        <p>{t('add.help')}</p>
+        <input
+          autoFocus
+          value={draftUrl}
+          placeholder={t('add.placeholder')}
+          onChange={event => setDraftUrl(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') void submit() }}
+        />
+        {verdict !== null && (
+          <div className={css.verdict}>
+            <b>{t(VERDICT_KEY[verdict.kind], verdict.label === undefined ? {} : { label: verdict.label })}</b>
+            {/* The seam's own words, when the fetch failed. Without them the
+                reader has a verdict and no diagnosis. */}
+            {verdict.reason !== undefined && (
+              <span className={css.verdictReason}>{verdict.reason}</span>
+            )}
+          </div>
+        )}
+        <div className={css.dialogActions}>
+          <button type="button" className={css.ghost} onClick={() => setAddOpen(false)}>
+            {verdict !== null && (verdict.kind === 'subscribed' || verdict.kind === 'savedLink')
+              ? t('action.done')
+              : t('action.cancel')}
+          </button>
+          <button type="button" className={css.submit} onClick={() => { void submit() }}>
+            {t('action.submit')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  /* ------------------------------------------------------------- detail view */
 
   if (view === 'detail' && openEntry !== undefined) {
     const source = presentation.get(openEntry.sourceId)
@@ -375,7 +505,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             type="button"
             className={css.tool}
             title={t('action.back')}
-            onClick={() => { setView('list'); actions.closeEntry() }}
+            onClick={() => { actions.setView('list'); actions.closeEntry() }}
           >
             <IconChevronLeftOutline14 size={14} />
           </button>
@@ -394,7 +524,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </button>
         </div>
 
-        <div className={css.detailBody} ref={bodyRef}>
+        <div className={css.detailBody}>
           <div className={css.kicker}>
             <span className={css.tile} style={{ background: source?.hue }}>{source?.tile}</span>
             <span>{source?.label}</span>
@@ -495,40 +625,110 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     )
   }
 
-  if (view === 'add') {
+  /* ------------------------------------------------------ subscriptions page */
+
+  if (view === 'manage') {
     return (
       <div className={css.root}>
-        {header(true)}
-        <div className={css.add}>
-          <h2>{t('add.title')}</h2>
-          <p>{t('add.help')}</p>
-          <input
-            value={draftUrl}
-            placeholder={t('add.placeholder')}
-            onChange={event => setDraftUrl(event.target.value)}
-            onKeyDown={event => { if (event.key === 'Enter') void submit() }}
-          />
-          <button type="button" className={css.submit} onClick={() => { void submit() }}>
-            {t('action.submit')}
+        <div className={css.bar}>
+          <button
+            type="button"
+            className={css.tool}
+            title={t('action.back')}
+            onClick={() => actions.setView('list')}
+          >
+            <IconChevronLeftOutline14 size={14} />
           </button>
-          {verdict !== null && (
-            <div className={css.verdict}>
-              <b>{t(VERDICT_KEY[verdict.kind], verdict.label === undefined ? {} : { label: verdict.label })}</b>
-              {/* The seam's own words, when the fetch failed. Without them the
-                  reader has a verdict and no diagnosis. */}
-              {verdict.reason !== undefined && (
-                <span className={css.verdictReason}>{verdict.reason}</span>
-              )}
-            </div>
-          )}
+          <span className={css.barLabel}>{t('sources.title')}</span>
+          <span className={css.spacer} />
+          <button type="button" className={css.tool} title={t('action.add')} onClick={() => setAddOpen(true)}>
+            <IconPlusOutline16 size={15} />
+          </button>
         </div>
+        <div className={css.paneBody}>
+          <p className={css.help}>{t('sources.help')}</p>
+          <div className={css.field}>
+            <label className={css.fieldLabel} htmlFor="reader-refresh-time">{t('sources.time')}</label>
+            <input
+              id="reader-refresh-time"
+              className={css.timeInput}
+              type="time"
+              value={timeOfDay}
+              onChange={event => { void setRefreshTime(event.target.value) }}
+            />
+            <span className={css.help}>{t('sources.timeHelp')}</span>
+          </div>
+          {sources.length === 0
+            ? <div className={css.state}>{t('sources.empty')}</div>
+            : (
+              <div className={css.sourceList}>
+                {sources.map(source => {
+                  const group = parsed[source.id]
+                  const failed = source.status === 'error'
+                  const when = relativeWhen(source.fetchedAt, new Date())
+                  return (
+                    <div key={source.id} className={css.sourceRow}>
+                      <span className={css.tile} style={{ background: hueForSource(source.label) }}>
+                        {tileForSource(source.label)}
+                      </span>
+                      <span className={css.sourceInfo}>
+                        <span className={css.sourceName}>{source.label}</span>
+                        <span className={css.sourceMeta}>
+                          {source.kind === 'rss' ? t('sources.items', { count: group?.entries.length ?? 0 }) : t('tab.subtitle')}
+                          {' · '}
+                          {source.fetchedAt === undefined
+                            ? t('sources.never')
+                            : t('foot.refreshedAt', { when: t(when.key, when.count === undefined ? {} : { count: when.count }) })}
+                          {' · '}
+                          {source.enabled ? t('sources.enabled') : t('sources.disabled')}
+                          {failed && <> {' · '}<span className={css.sourceFailed}>{t('sources.failed')}</span></>}
+                        </span>
+                        {failed && source.error !== undefined && (
+                          <span className={css.sourceError}>{source.error}</span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        className={css.rowAction}
+                        title={t('action.refreshOne')}
+                        onClick={() => { void refreshOne(source.id) }}
+                      >
+                        <IconRefreshOutline16 size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className={css.rowAction}
+                        onClick={() => { void toggleSource(source.id, !source.enabled) }}
+                      >
+                        {source.enabled ? t('sources.disabled') : t('sources.enabled')}
+                      </button>
+                      <button
+                        type="button"
+                        className={css.rowActionDanger}
+                        onClick={() => { void removeSource(source.id) }}
+                      >
+                        {t('action.remove')}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+        </div>
+        {dialog}
       </div>
     )
   }
 
+  /* ------------------------------------------------------------------- wall */
+
   return (
     <div className={css.root}>
       {header(false)}
+
+      {/* The tool row doubles as the answer to "why is this list empty?": the
+          filter and the unread toggle are the two things that hide entries, so
+          both stay visible as labelled controls rather than bare icons. */}
       <div className={css.tools}>
         <div className={css.search}>
           {glyph('search', 12)}
@@ -537,6 +737,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             placeholder={t('search.placeholder')}
             onChange={event => actions.setQuery(event.target.value)}
           />
+        </div>
+        <div className={css.segmented}>
+          {(['all', 'today'] as const).map(option => (
+            <button
+              key={option}
+              type="button"
+              className={filter === option ? css.segmentOn : css.segment}
+              onClick={() => actions.setFilter(option)}
+            >
+              {t(`filter.${option}`)}
+            </button>
+          ))}
         </div>
         <button
           type="button"
@@ -574,9 +786,60 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         {loading && <div className={css.state}>{t('state.loading')}</div>}
         {!loading && error !== null && <div className={css.state}><b>{t('state.error')}</b>{error}</div>}
         {!loading && error === null && sources.length === 0 && (
-          <div className={css.state}>
-            <b>{t('state.emptyTitle')}</b>
-            {t('state.emptyBody')}
+          // The empty state is the members tab's trailing dashed card, alone:
+          // adding is the one thing to do here, so the card IS the action.
+          <div className={css.sourceGrid}>
+            <button
+              type="button"
+              className={css.emptyCard}
+              onClick={() => { setAddOpen(true); setVerdict(null) }}
+            >
+              <span className={css.emptyTitle}>{t('state.emptyTitle')}</span>
+              <span className={css.emptyBody}>{t('state.emptyBody')}</span>
+            </button>
+          </div>
+        )}
+        {!loading && sources.length > 0 && (
+          <div className={css.sourceGrid}>
+            {sources.map(source => {
+              const group = parsed[source.id]
+              const failed = source.status === 'error'
+              return (
+                <button
+                  key={source.id}
+                  type="button"
+                  className={css.sourceCard}
+                  // Clicking a source card searches for it: the cheap way to
+                  // answer "what did this source bring me".
+                  onClick={() => actions.setQuery(query === source.label ? '' : source.label)}
+                >
+                  <span className={css.tile} style={{ background: hueForSource(source.label) }}>
+                    {tileForSource(source.label)}
+                  </span>
+                  <span className={css.sourceInfo}>
+                    {/* The prefix is not decoration: without it a source card
+                        and an entry card from that source share an accessible
+                        name ("Hacker News"), which is ambiguous to a screen
+                        reader and to every query in the tests. */}
+                    <span className={css.sourceName}>{t('sources.cardHint')} · {source.label}</span>
+                    <span className={css.sourceMeta}>
+                      {source.kind === 'rss'
+                        ? t('sources.items', { count: group?.entries.length ?? 0 })
+                        : t('tab.subtitle')}
+                      {failed && <> {' · '}<span className={css.sourceFailed}>{t('sources.failed')}</span></>}
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              className={css.addCard}
+              onClick={() => { setAddOpen(true); setVerdict(null) }}
+            >
+              <IconPlusOutline16 size={15} />
+              <span>{t('action.add')}</span>
+            </button>
           </div>
         )}
         {!loading && sources.length > 0 && rows.length === 0 && (
@@ -618,9 +881,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         return (
           <div className={css.metaBar}>
             <span>
-              {lastRefreshAt === null
-                ? t('foot.never')
-                : t('foot.refreshedAt', { when: t(when.key, when.count === undefined ? {} : { count: when.count }) })}
+              {refreshing
+                ? t('foot.refreshing')
+                : lastRefreshAt === null
+                  ? t('foot.never')
+                  : t('foot.refreshedAt', { when: t(when.key, when.count === undefined ? {} : { count: when.count }) })}
             </span>
             {nextRefreshAt !== null && (
               <>
@@ -631,6 +896,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </div>
         )
       })()}
+      {dialog}
     </div>
   )
 }

@@ -19,6 +19,9 @@ import type { ReaderEntry } from './parse-rss.ts'
 /** Which slice of the list the pane shows. */
 export type ReaderFilter = 'today' | 'all'
 
+/** Which surface the pane is showing. */
+export type ReaderView = 'list' | 'detail' | 'manage'
+
 /** How the list is ordered. */
 export type ReaderSort = 'newest' | 'oldest' | 'source'
 
@@ -45,6 +48,8 @@ export interface ReaderState {
   openEntryId: string | null
   /** The open entry's source id. */
   openSourceId: string | null
+  /** Which surface is up: the wall, one entry, or subscription management. */
+  view: ReaderView
   /** Which slice of the list to show. */
   filter: ReaderFilter
   /** The live search query. */
@@ -63,6 +68,8 @@ export interface ReaderState {
   loading: boolean
   /** A human-readable failure from the last round trip. */
   error: string | null
+  /** True while a refresh round trip is in flight (the wall stays visible). */
+  refreshing: boolean
   /** Bumped to force a reload of the same source set. */
   rev: number
 }
@@ -73,6 +80,10 @@ export type ReaderActions = {
   setParsed: (draft: ReaderState, parsed: ReaderParsedSource) => void
   clearParsed: (draft: ReaderState) => void
   openEntry: (draft: ReaderState, entryId: string, sourceId: string) => void
+  setView: (draft: ReaderState, view: ReaderView) => void
+  setRefreshing: (draft: ReaderState, refreshing: boolean) => void
+  /** Record that a refresh run finished, including one with failures. */
+  noteRefreshed: (draft: ReaderState, at: string) => void
   setArticle: (draft: ReaderState, html: string, truncated: boolean, error: string | null) => void
   closeEntry: (draft: ReaderState) => void
   setFilter: (draft: ReaderState, filter: ReaderFilter) => void
@@ -94,13 +105,19 @@ const INITIAL: ReaderState = {
   articleError: null,
   openEntryId: null,
   openSourceId: null,
-  filter: 'today',
+  view: 'list',
+  // 'all' rather than 'today': a subscription's entries are usually NOT from
+  // today (measured: the acceptance instance's feed's newest item was 8 days
+  // old), and a freshly subscribed source whose items the default filter hides
+  // reads as "the subscribe did not work".
+  filter: 'all',
   query: '',
   unreadOnly: false,
   sort: 'newest',
   read: {},
   lastRefreshAt: null,
   nextRefreshAt: null,
+  refreshing: false,
   loading: false,
   error: null,
   rev: 0,
@@ -126,6 +143,12 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
         d.error = null
       },
       clearParsed: (d) => { d.parsed = {} },
+      setView: (d, view) => { d.view = view },
+      setRefreshing: (d, refreshing) => { d.refreshing = refreshing },
+      noteRefreshed: (d, at) => {
+        d.lastRefreshAt = at
+        d.refreshing = false
+      },
       openEntry: (d, entryId, sourceId) => {
         d.openEntryId = entryId
         d.openSourceId = sourceId
@@ -142,6 +165,7 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       closeEntry: (d) => {
         d.openEntryId = null
         d.openSourceId = null
+        d.view = 'list'
         d.articleHtml = null
         d.articleTruncated = false
         d.articleError = null
