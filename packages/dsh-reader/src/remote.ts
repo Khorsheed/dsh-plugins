@@ -16,11 +16,14 @@ import type {
   ReaderAddFailure,
   ReaderAddOutcome,
   ReaderAddRefusal,
+  ReaderAnnotationOutcome,
+  ReaderEntryBodyView,
   ReaderBody,
   ReaderCapabilities,
   ReaderMutationOutcome,
   ReaderRefreshResult,
   ReaderSourceSummary,
+  ReaderTag,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -91,6 +94,79 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   @Remote('getBodies')
   async getBodies(request: { ids: string[] }): Promise<{ bodies: ReaderBody[] }> {
     return this.core.getBodies(request)
+  }
+
+  /* ------------------------------------------- entry bodies and reader tags */
+
+  /** What the detail view should render for one entry, and whether a fetch is worth offering. */
+  @Remote('getEntryBody')
+  getEntryBody(request: { entryId: string; url: string; feedHtml?: string }): Promise<ReaderEntryBodyView> {
+    return this.core.getEntryBody(request)
+  }
+
+  /** Fetch one entry's article (the network half; the browser extracts). */
+  @Remote('fetchEntryBody')
+  fetchEntryBody(request: { entryId: string; url: string }): Promise<{ entryId: string; url?: string; raw?: string; truncated?: boolean; error?: string }> {
+    return this.core.fetchEntryBody(request)
+  }
+
+  /** Cache the markup the browser extracted for one entry. */
+  @Remote('storeEntryBody')
+  storeEntryBody(request: { entryId: string; url: string; html: string; truncated?: boolean }): Promise<ReaderEntryBodyView> {
+    return this.core.storeEntryBody(request)
+  }
+
+  /** The tag vocabulary, with how many entries carry each tag. */
+  @Remote('listTags')
+  listTags(): Promise<{ tags: ReaderTag[]; counts: Record<string, number> }> {
+    return this.core.listTags()
+  }
+
+  /** Create a tag, or return the existing one with the same name. */
+  @Remote('createTag')
+  createTag(request: { name: string }): Promise<ReaderTag | ReaderAnnotationOutcome> {
+    return this.core.createTag(request)
+  }
+
+  /** Rename a tag without touching the entries that carry it. */
+  @Remote('renameTag')
+  renameTag(request: { id: string; name: string }): Promise<ReaderAnnotationOutcome> {
+    return this.core.renameTag(request)
+  }
+
+  /** Delete a tag and remove it from every entry. */
+  @Remote('deleteTag')
+  deleteTag(request: { id: string }): Promise<ReaderAnnotationOutcome> {
+    return this.core.deleteTag(request)
+  }
+
+  /** Add or remove one tag on one entry. */
+  @Remote('tagEntry')
+  tagEntry(request: { entryId: string; tagId: string; on: boolean }): Promise<ReaderAnnotationOutcome> {
+    return this.core.tagEntry(request)
+  }
+
+  /** The tags on one entry. */
+  @Remote('entryTags')
+  entryTags(request: { entryId: string }): Promise<{ tags: ReaderTag[] }> {
+    return this.core.entryTags(request)
+  }
+
+  /** Read or set how long a fetched body is served. */
+  @Remote('getCachePolicy')
+  getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number }> {
+    return this.core.getCachePolicy()
+  }
+
+  @Remote('setCachePolicy')
+  setCachePolicy(request: { ttlHours: number; maxEntries?: number }): Promise<ReaderAnnotationOutcome> {
+    return this.core.setCachePolicy(request)
+  }
+
+  /** Drop tags nothing references any more. */
+  @Remote('pruneTags')
+  pruneTags(): Promise<{ removed: number }> {
+    return this.core.pruneTags()
   }
 
   /** Forward a ref block to the side-chat service when one is composed. */

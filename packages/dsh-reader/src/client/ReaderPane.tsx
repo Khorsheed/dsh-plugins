@@ -47,6 +47,7 @@ import {
   hueForSource,
   selectRows,
   sourceQuery,
+  tagQuery,
   tileForSource,
   type ReaderRow,
   type SourcePresentation,
@@ -135,6 +136,21 @@ function whenLabel(t: ReaderPaneProps['t'], iso: string | undefined): string {
   return when.count === undefined ? t(when.key) : t(when.key, { count: when.count })
 }
 
+/**
+ * Text as it reads, for comparing two representations of the same sentence.
+ *
+ * The parser puts the feed's `<description>` into BOTH the card summary and the
+ * body when the feed publishes no richer field, one of them reduced to plain
+ * text and the other normalized to markup. Comparing the raw strings would
+ * therefore never match; comparing the collapsed text does.
+ *
+ * @param value - plain text or normalized markup.
+ * @returns its collapsed text.
+ */
+function normalizeForCompare(value: string): string {
+  return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+}
+
 /** The reader tab body. */
 export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const { sessionId, useStore, actions, t } = props
@@ -153,6 +169,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const lastRefreshAt = useStore(s => s.lastRefreshAt)
   const nextRefreshAt = useStore(s => s.nextRefreshAt)
   const refreshing = useStore(s => s.refreshing)
+  const tags = useStore(s => s.tags)
+  const tagCounts = useStore(s => s.tagCounts)
+  const entryTagIds = useStore(s => s.entryTagIds)
+  const fetching = useStore(s => s.fetching)
+  const staleBodies = useStore(s => s.staleBodies)
+  const cacheTtlHours = useStore(s => s.cacheTtlHours)
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
@@ -165,6 +187,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
   const [filterOpen, setFilterOpen] = useState(false)
+  /** The entry whose card menu is open, plus where to anchor it. */
+  const [cardMenu, setCardMenu] = useState<{ entryId: string; top: number; left: number } | null>(null)
+  const [tagDraft, setTagDraft] = useState('')
+  const [tagInputOpen, setTagInputOpen] = useState(false)
 
   /** Load the source list and parse whatever payloads the host is holding. */
   const load = useCallback(async () => {
@@ -258,6 +284,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   useEffect(() => { void load() }, [load, rev])
 
   useEffect(() => {
+    void props.listTags().then(result => {
+      if (result.ok) actions.setTags(result.value.tags, result.value.counts)
+    })
+    void props.getCachePolicy().then(result => {
+      if (result.ok) actions.setCacheTtl(result.value.ttlHours)
+    })
+  }, [actions, props, rev])
+
+  useEffect(() => {
     void props.capabilities().then(result => {
       if (!result.ok) return
       setSideChatAvailable(result.value.hasSideChat)
@@ -300,8 +335,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   const allEntries = useMemo(() => flattenEntries(parsed), [parsed])
   const rows = useMemo(() => selectRows(allEntries, presentation, {
-    filter, query, unreadOnly, sort, read, now: new Date(),
-  }), [allEntries, presentation, filter, query, unreadOnly, sort, read])
+    filter, query, unreadOnly, sort, read, tags: entryTagIds, now: new Date(),
+  }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
 
   const openEntry = openEntryId === null ? undefined : allEntries.find(entry => entry.id === openEntryId)
   /** The source the strip is currently narrowing to, if any. */
@@ -313,6 +348,31 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const open = useCallback(async (row: ReaderRow) => {
     actions.openEntry(row.entry.id, row.sourceId)
     actions.setView('detail')
+    void loadEntryTags(row.entry.id)
+    // A cached fetch outlives the feed's own payload, so the host is the one
+    // that knows whether there is full text: it returns the fresh cache, else
+    // the feed's body, else nothing plus the reason a previous fetch failed.
+    if (row.entry.link !== undefined) {
+      const view = await props.getEntryBody({
+        entryId: row.entry.id,
+        url: row.entry.link,
+        ...(row.entry.contentHtml === undefined ? {} : { feedHtml: row.entry.contentHtml }),
+      })
+      if (!view.ok) {
+        actions.setArticle('', false, view.error.message)
+      } else if (view.value.html !== undefined) {
+        actions.setArticle(view.value.html, view.value.truncated === true, null)
+        actions.setStaleBody(row.entry.id, view.value.fresh === false)
+      } else if (row.entry.contentHtml !== undefined) {
+        actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
+      } else {
+        // Nothing to show: keep the host's reason (a failed payload, a fetch
+        // that could not extract) so the view explains itself instead of
+        // looking like an article with no text.
+        actions.setArticle('', false, view.value.error ?? null)
+      }
+      return
+    }
     if (row.entry.contentHtml !== undefined) {
       actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
       return
@@ -424,6 +484,52 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     await props.updateSource({ id: '', timeOfDay: value })
     actions.refresh()
   }, [actions, props])
+
+  /**
+   * Fetch the open entry's full article, extract it (this process) and show it.
+   *
+   * Reached from the detail view when the feed published only a summary, or
+   * when a cached copy has outlived its deadline — never automatically, so one
+   * entry costs one request to the publisher.
+   */
+  const fetchBody = useCallback(async (entryId: string, url: string) => {
+    actions.setFetching(entryId, true)
+    try {
+      const result = await props.fetchEntryBody(entryId, url)
+      if (result.html !== undefined) {
+        actions.setArticle(result.html, result.truncated === true, null)
+      } else if (result.error !== undefined) {
+        actions.setArticle('', false, result.error)
+      }
+      actions.setStaleBody(entryId, result.cached === true && result.fresh === false)
+    } finally {
+      actions.setFetching(entryId, false)
+    }
+  }, [actions, props])
+
+  /** Reload the tags on one entry. */
+  const loadEntryTags = useCallback(async (entryId: string) => {
+    const result = await props.entryTags(entryId)
+    if (result.ok) actions.setEntryTags(entryId, result.value.tags.map(tag => tag.id))
+  }, [actions, props])
+
+  /** Toggle one tag on one entry. */
+  const toggleTag = useCallback(async (entryId: string, tagId: string, on: boolean) => {
+    const result = await props.tagEntry(entryId, tagId, on)
+    if (!result.ok) return
+    await loadEntryTags(entryId)
+    const listed = await props.listTags()
+    if (listed.ok) actions.setTags(listed.value.tags, listed.value.counts)
+  }, [actions, loadEntryTags, props])
+
+  /** Create a tag by name (or reuse the one that already has it) and apply it. */
+  const createAndTag = useCallback(async (entryId: string, name: string) => {
+    const created = await props.createTag(name)
+    if (!created.ok || typeof created.value === 'string') return
+    setTagDraft('')
+    setTagInputOpen(false)
+    await toggleTag(entryId, created.value.id, true)
+  }, [props, toggleTag])
 
   /** Quote the open entry (or a selection) into the conversation draft. */
   const quote = useCallback((explicit?: string) => {
@@ -613,6 +719,41 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               dangerouslySetInnerHTML={{ __html: articleHtml }}
             />
           )}
+          {/* Nothing to render yet: offer the fetch, once, on this entry. The
+              button is the whole reason this package is not a crawler — the
+              reader asks per article instead of us pre-fetching every summary. */}
+          {articleHtml === null && openEntry.link !== undefined && (
+            <p className={css.incomplete}>
+              {t(staleBodies[openEntry.id] === true ? 'detail.bodyStale' : 'detail.summaryOnly')}{' '}
+              <button
+                type="button"
+                className={css.incompleteLink}
+                disabled={fetching[openEntry.id] === true}
+                onClick={() => { void fetchBody(openEntry.id, openEntry.link as string) }}
+              >
+                {fetching[openEntry.id] === true ? t('state.fetching') : t('action.fetchBody')}
+              </button>
+            </p>
+          )}
+          {/* A feed may publish the full text for some entries and only a
+              summary for others (measured: the OpenAI alignment feed is 155 to
+              62,044 characters entry by entry). Nothing was truncated there, so
+              the cap note would be a lie — this says what actually happened. */}
+          {articleTruncated !== true && openEntry.truncated !== true && openEntry.partial !== true
+            && articleHtml !== null && articleHtml.length > 0
+            && openEntry.summary !== undefined
+            && normalizeForCompare(articleHtml) === normalizeForCompare(openEntry.summary) && (
+            <p className={css.incomplete}>
+              {t('detail.summaryOnly')}{' '}
+              <button
+                type="button"
+                className={css.incompleteLink}
+                onClick={() => { if (openEntry.link !== undefined) props.openExternal(openEntry.link) }}
+              >
+                {t('detail.readOriginal')}
+              </button>
+            </p>
+          )}
           {/* One line, at the end, only when the body is known to be partial. */}
           {(articleTruncated || openEntry.truncated === true) && (
             <p className={css.incomplete}>
@@ -626,6 +767,51 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               </button>
             </p>
           )}
+          <div className={css.tagEdit}>
+            <span className={css.tagEditLabel}>{t('tag.title')}</span>
+            {tags.filter(tag => (entryTagIds[openEntry.id] ?? []).includes(tag.id)).map(tag => (
+              <span key={tag.id} className={css.tagChip}>
+                {tag.name}
+                <button
+                  type="button"
+                  className={css.tagChipRemove}
+                  title={t('action.remove')}
+                  onClick={() => { void toggleTag(openEntry.id, tag.id, false) }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {tagInputOpen
+              ? (
+                <input
+                  autoFocus
+                  className={css.tagInput}
+                  list="reader-tag-vocabulary"
+                  value={tagDraft}
+                  placeholder={t('tag.placeholder')}
+                  onChange={event => setTagDraft(event.target.value)}
+                  onBlur={() => { setTagInputOpen(false); setTagDraft('') }}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' && tagDraft.trim().length > 0) {
+                      const existing = tags.find(tag => tag.name.toLowerCase() === tagDraft.trim().toLowerCase())
+                      if (existing === undefined) void createAndTag(openEntry.id, tagDraft.trim())
+                      else { setTagDraft(''); setTagInputOpen(false); void toggleTag(openEntry.id, existing.id, true) }
+                    }
+                    if (event.key === 'Escape') { setTagInputOpen(false); setTagDraft('') }
+                  }}
+                />
+              )
+              : (
+                <button type="button" className={css.tagAdd} onClick={() => setTagInputOpen(true)}>
+                  <IconPlusOutline16 size={12} />
+                </button>
+              )}
+            {/* The vocabulary, for autocomplete: typing "ai" must find "AI". */}
+            <datalist id="reader-tag-vocabulary">
+              {tags.map(tag => <option key={tag.id} value={tag.name} />)}
+            </datalist>
+          </div>
           {alsoFrom.length > 0 && (
             <div className={css.alsoFrom}>
               <div className={css.alsoFromLabel}>{t('detail.alsoFrom')}</div>
@@ -717,6 +903,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               onChange={event => { void setRefreshTime(event.target.value) }}
             />
             <span className={css.help}>{t('sources.timeHelp')}</span>
+          </div>
+          <div className={css.field}>
+            <label className={css.fieldLabel} htmlFor="reader-cache-ttl">{t('sources.cache')}</label>
+            <select
+              id="reader-cache-ttl"
+              className={css.timeInput}
+              value={String(cacheTtlHours)}
+              onChange={event => {
+                const hours = Number(event.target.value)
+                void props.setCachePolicy(hours).then(result => { if (result.ok) actions.setCacheTtl(hours) })
+              }}
+            >
+              {[12, 24, 168, 0].map(hours => (
+                <option key={hours} value={hours}>{t(hours === 0 ? 'sources.cacheForever' : 'sources.cacheHours', { count: hours }) }</option>
+              ))}
+            </select>
+            <span className={css.help}>{t('sources.cacheHelp')}</span>
           </div>
           {sources.length === 0
             ? <div className={css.state}>{t('sources.empty')}</div>
@@ -855,6 +1058,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             <span className={css.filterLabel}>{t('filter.all')}</span>
             <span className={css.filterCount}>{allEntries.length}</span>
           </button>
+          {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
+          {tags.map(tag => (
+            <button
+              key={tag.id}
+              type="button"
+              className={css.filterRow}
+              onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
+            >
+              <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
+              <span className={css.filterLabel}>{tag.name}</span>
+              <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
+            </button>
+          ))}
           {sources.map(source => {
             const group = parsed[source.id]
             const broken = group?.error !== undefined || group?.incomplete === true
@@ -937,7 +1153,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         {!loading && rows.length > 0 && (
           <div className={css.list}>
             {rows.map(row => (
-              <button key={row.entry.id} type="button" className={css.card} onClick={() => { void open(row) }}>
+              <div
+                key={row.entry.id}
+                className={css.card}
+                role="button"
+                tabIndex={0}
+                onClick={() => { void open(row) }}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') void open(row) }}
+                onContextMenu={event => {
+                  // The host's own row-menu gesture: right-click opens the
+                  // entry's actions without a click-through into the article.
+                  if (row.entry.link === undefined) return
+                  event.preventDefault()
+                  setCardMenu({ entryId: row.entry.id, top: event.clientY, left: event.clientX })
+                }}
+              >
                 <span className={css.tileWrap}>
                   <span className={css.tile} style={{ background: row.sourceHue }}>{row.sourceTile}</span>
                   {row.unread && <span className={css.unread} />}
@@ -955,8 +1185,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   {(row.entry.tags ?? []).slice(0, 2).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
                   {row.entry.author !== undefined && <span className={css.author}>{row.entry.author}</span>}
                 </span>
+                {row.entry.link !== undefined && (
+                  <button
+                    type="button"
+                    className={css.cardMenuButton}
+                    title={t('action.more')}
+                    onClick={event => {
+                      event.stopPropagation()
+                      const box = event.currentTarget.getBoundingClientRect()
+                      setCardMenu({ entryId: row.entry.id, top: box.bottom + 4, left: box.left })
+                    }}
+                  >
+                    {glyph('chevron', 12)}
+                  </button>
+                )}
                 <span className={css.chevron}>{glyph('chevron', 13)}</span>
-              </button>
+              </div>
             ))}
           </div>
         )}
@@ -981,6 +1225,33 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 <span className={css.sep}>·</span>
                 <span>{t('foot.scheduled', { time: clockOf(nextRefreshAt) })}</span>
               </>
+            )}
+          </div>
+        )
+      })()}
+      {cardMenu !== null && (() => {
+        const entry = allEntries.find(item => item.id === cardMenu.entryId)
+        if (entry === undefined) return null
+        return (
+          <div className={css.cardMenu} style={{ top: cardMenu.top, left: cardMenu.left }} role="menu">
+            {entry.contentHtml === undefined && entry.link !== undefined && (
+              <button
+                type="button"
+                onClick={() => { setCardMenu(null); void fetchBody(entry.id, entry.link as string) }}
+              >
+                {t('action.fetchBody')}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setCardMenu(null); actions.openEntry(entry.id, entry.sourceId); actions.setView('detail') }}
+            >
+              {t('action.addTag')}
+            </button>
+            {entry.link !== undefined && (
+              <button type="button" onClick={() => { setCardMenu(null); props.openExternal(entry.link as string) }}>
+                {t('action.openExternal')}
+              </button>
             )}
           </div>
         )

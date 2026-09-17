@@ -59,6 +59,8 @@ export function selectRows(
     readonly unreadOnly: boolean
     readonly sort: ReaderSort
     readonly read: Readonly<Record<string, true>>
+    /** The reader's own tag ids per entry — the third filter dimension. */
+    readonly tags?: Readonly<Record<string, readonly string[]>>
     readonly now: Date
   },
 ): ReaderRow[] {
@@ -69,7 +71,7 @@ export function selectRows(
     if (source === undefined) continue
     if (options.unreadOnly && options.read[entry.id] === true) continue
     if (options.filter === 'today' && !isToday(entry.publishedAt, options.now)) continue
-    if (query.length > 0 && !matches(entry, source, query)) continue
+    if (query.length > 0 && !matches(entry, source, query, options.tags ?? {})) continue
     rows.push({
       entry,
       sourceId: source.id,
@@ -121,9 +123,25 @@ export function sourceQuery(sourceId: string): string {
   return `#${sourceId}`
 }
 
+/**
+ * The query that selects everything carrying one tag.
+ *
+ * @param tagId - the tag to select.
+ * @returns the query string.
+ */
+export function tagQuery(tagId: string): string {
+  return `@${tagId}`
+}
+
 /** Whether an entry matches the query, across the fields a reader searches by. */
-function matches(entry: ReaderEntry, source: SourcePresentation, query: string): boolean {
+function matches(
+  entry: ReaderEntry,
+  source: SourcePresentation,
+  query: string,
+  tags: Readonly<Record<string, readonly string[]>>,
+): boolean {
   if (query.startsWith('#')) return query.slice(1) === entry.sourceId
+  if (query.startsWith('@')) return (tags[entry.id] ?? []).includes(query.slice(1))
   const haystack = [
     entry.title,
     entry.summary ?? '',

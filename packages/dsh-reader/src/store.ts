@@ -31,12 +31,22 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  DEFAULT_CACHE_POLICY,
+  type ReaderCachePolicy,
   MAX_BODY_CHARS_PER_SOURCE,
   MAX_TOTAL_BODY_CHARS,
   STATE_ROOT_SEGMENT,
+  type ReaderEntryAnnotation,
   type ReaderSource,
   type ReaderStateDoc,
+  type ReaderTag,
 } from './types.ts'
+
+/** How many tags one document may define (a vocabulary, not a folksonomy dump). */
+export const MAX_TAGS = 200
+
+/** How many entries may carry fetched bodies, before the newest-first eviction. */
+export const MAX_CACHED_BODIES = 500
 
 /** The state file name inside the plugin's state root. */
 export const READER_STATE_FILE_NAME = 'state.json'
@@ -114,6 +124,87 @@ export function normalizeStateDoc(value: unknown): ReaderStateDoc {
         : base.refresh.timeOfDay,
     },
     ...(typeof record.lastRefreshAt === 'string' ? { lastRefreshAt: record.lastRefreshAt } : {}),
+    ...(() => {
+      const cache = normalizeCachePolicy(record.cache)
+      return cache === undefined ? {} : { cache }
+    })(),
+    ...(() => {
+      const tags = normalizeTags(record.tags)
+      return Object.keys(tags).length > 0 ? { tags } : {}
+    })(),
+    ...(() => {
+      const annotations = normalizeAnnotations(record.annotations)
+      return Object.keys(annotations).length > 0 ? { annotations } : {}
+    })(),
+  }
+}
+
+/** The cache policy, coerced to something usable (absent = the default). */
+function normalizeCachePolicy(value: unknown): ReaderCachePolicy | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const ttlHours = typeof record.ttlHours === 'number' && Number.isFinite(record.ttlHours) && record.ttlHours >= 0
+    ? Math.min(record.ttlHours, 24 * 90)
+    : DEFAULT_CACHE_POLICY.ttlHours
+  const maxEntries = typeof record.maxEntries === 'number' && Number.isFinite(record.maxEntries) && record.maxEntries > 0
+    ? Math.min(Math.floor(record.maxEntries), 5_000)
+    : DEFAULT_CACHE_POLICY.maxEntries
+  return { ttlHours, maxEntries }
+}
+
+/** The tag vocabulary, dropping anything without an id and a name. */
+function normalizeTags(value: unknown): Record<string, ReaderTag> {
+  if (typeof value !== 'object' || value === null) return {}
+  const out: Record<string, ReaderTag> = {}
+  for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    const name = typeof record.name === 'string' ? record.name.trim() : ''
+    if (id.length === 0 || name.length === 0) continue
+    out[id] = {
+      id,
+      name: name.slice(0, 40),
+      createdAt: typeof record.createdAt === 'string' ? record.createdAt : new Date(0).toISOString(),
+    }
+    if (Object.keys(out).length >= MAX_TAGS) break
+  }
+  return out
+}
+
+/** The per-entry annotations, dropping entries that carry nothing. */
+function normalizeAnnotations(value: unknown): Record<string, ReaderEntryAnnotation> {
+  if (typeof value !== 'object' || value === null) return {}
+  const out: Record<string, ReaderEntryAnnotation> = {}
+  for (const [entryId, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (entryId.length === 0 || typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    const body = normalizeBody(record.body)
+    const tagIds = Array.isArray(record.tagIds)
+      ? [...new Set(record.tagIds.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+      : []
+    const annotation: ReaderEntryAnnotation = {
+      ...(body === undefined ? {} : { body }),
+      ...(tagIds.length > 0 ? { tagIds } : {}),
+      ...(typeof record.error === 'string' ? { error: record.error.slice(0, 500) } : {}),
+      ...(typeof record.failedAt === 'string' ? { failedAt: record.failedAt } : {}),
+    }
+    if (annotation.body === undefined && annotation.tagIds === undefined && annotation.error === undefined) continue
+    out[entryId] = annotation
+  }
+  return out
+}
+
+/** One cached body, when it carries the fields that make it one. */
+function normalizeBody(value: unknown): ReaderEntryAnnotation['body'] {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.html !== 'string' || record.html.length === 0) return undefined
+  return {
+    html: record.html,
+    fetchedAt: typeof record.fetchedAt === 'string' ? record.fetchedAt : new Date(0).toISOString(),
+    expiresAt: typeof record.expiresAt === 'string' ? record.expiresAt : new Date(0).toISOString(),
+    url: typeof record.url === 'string' ? record.url : '',
+    ...(record.truncated === true ? { truncated: true } : {}),
   }
 }
 
@@ -305,7 +396,7 @@ export class ReaderStore {
   async update(mutate: (doc: ReaderStateDoc) => ReaderStateDoc): Promise<ReaderStateDoc> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const { doc, version } = await this.read()
-      const next = boundPayloads(mutate(doc)).doc
+      const next = boundAnnotations(boundPayloads(mutate(doc)).doc).doc
       try {
         await this.write(next, version)
         return next
@@ -330,4 +421,57 @@ function errorMessage(error: unknown): string {
   const code = (error as { code?: string } | undefined)?.code
   const message = error instanceof Error ? error.message : String(error)
   return code === undefined ? message : `${code}: ${message}`
+}
+
+/**
+ * Bound the cached article bodies without touching what the reader authored.
+ *
+ * Newest-first: the article just fetched is the one being read, so the budget
+ * releases the older copies. Tags are NOT part of this budget — a tag is a
+ * sentence the reader wrote, and losing it to make room for a cached page would
+ * be the worst trade in this document.
+ *
+ * @param doc - the document to bound.
+ * @returns the bounded document, and whether anything was released.
+ */
+export function boundAnnotations(doc: ReaderStateDoc): { doc: ReaderStateDoc; changed: boolean } {
+  const annotations = doc.annotations
+  if (annotations === undefined) return { doc, changed: false }
+  const withBody = Object.entries(annotations).filter(([, entry]) => entry.body !== undefined)
+  const limit = Math.max(1, doc.cache?.maxEntries ?? MAX_CACHED_BODIES)
+  if (withBody.length <= limit) return { doc, changed: false }
+  const keep = new Set(
+    [...withBody]
+      .sort((a, b) => (b[1].body?.fetchedAt ?? '').localeCompare(a[1].body?.fetchedAt ?? ''))
+      .slice(0, limit)
+      .map(([entryId]) => entryId),
+  )
+  const next: Record<string, ReaderEntryAnnotation> = {}
+  for (const [entryId, entry] of Object.entries(annotations)) {
+    if (entry.body === undefined || keep.has(entryId)) { next[entryId] = entry; continue }
+    const { body: _released, ...rest } = entry
+    if (rest.tagIds === undefined && rest.error === undefined) continue
+    next[entryId] = rest
+  }
+  return { doc: { ...doc, annotations: next }, changed: true }
+}
+
+/**
+ * Drop tags nothing references any more.
+ *
+ * @param doc - the document to prune.
+ * @returns the pruned document, and how many tags went.
+ */
+export function pruneOrphanTags(doc: ReaderStateDoc): { doc: ReaderStateDoc; removed: number } {
+  const annotations = doc.annotations ?? {}
+  const used = new Set(Object.values(annotations).flatMap(entry => entry.tagIds ?? []))
+  const tags = doc.tags ?? {}
+  const kept: Record<string, ReaderTag> = {}
+  let removed = 0
+  for (const [id, tag] of Object.entries(tags)) {
+    if (used.has(id)) kept[id] = tag
+    else removed += 1
+  }
+  if (removed === 0) return { doc, removed }
+  return { doc: { ...doc, tags: kept }, removed }
 }

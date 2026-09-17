@@ -37,7 +37,10 @@ type AddAnswer = { ok: true; value: unknown } | { ok: false; error: { message: s
 /** One item for the feed fixture. */
 interface FeedItem {
   readonly title: string
+  /** The feed's short summary (its `<description>`). */
   readonly description?: string
+  /** The feed's full text (its `<content:encoded>`), when it publishes one. */
+  readonly body?: string
   readonly publishedAt?: string
 }
 
@@ -59,8 +62,12 @@ function feed(id: string, items: readonly FeedItem[]): string {
     <link>https://example.com/${id}/${encodeURIComponent(item.title)}</link>
     <pubDate>${item.publishedAt ?? published}</pubDate>
     <description>${item.description ?? `摘要：${item.title}`}</description>
+    ${item.body === undefined ? '' : `<content:encoded><![CDATA[${item.body}]]></content:encoded>`}
   </item>`).join('')
-  return `<rss version="2.0"><channel><title>${id}</title>${entries}</channel></rss>`
+  // The namespace declaration is not decoration: `<content:encoded>` with no
+  // `xmlns:content` is FATAL XML, which would make every one of these tests pass
+  // for the wrong reason.
+  return `<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>${id}</title>${entries}</channel></rss>`
 }
 
 interface BenchOptions {
@@ -75,6 +82,10 @@ interface BenchOptions {
   /** The handshake's freshness facts; omitted = "never refreshed yet". */
   readonly lastRefreshAt?: string
   readonly nextRefreshAt?: string
+  /** The tag vocabulary the host reports. */
+  readonly tags?: readonly { id: string; name: string; createdAt: string }[]
+  readonly tagCounts?: Record<string, number>
+  readonly ttlHours?: number
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -120,6 +131,28 @@ function bench(options: BenchOptions = {}) {
     setDraft: vi.fn(),
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
+    listTags: vi.fn(async () => ({ ok: true as const, value: { tags: options.tags ?? [], counts: options.tagCounts ?? {} } })),
+    getCachePolicy: vi.fn(async () => ({ ok: true as const, value: { ttlHours: options.ttlHours ?? 24, maxEntries: 500 } })),
+    setCachePolicy: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    entryTags: vi.fn(async () => ({ ok: true as const, value: { tags: [] } })),
+    createTag: vi.fn(async (name: string) => ({ ok: true as const, value: { id: `tag-${name}`, name, createdAt: 'now' } })),
+    tagEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    renameTag: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    deleteTag: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    pruneTags: vi.fn(async () => ({ ok: true as const, value: { removed: 0 } })),
+    fetchEntryBody: vi.fn(async (entryId: string) => ({ entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })),
+    getEntryBody: vi.fn(async (request: { entryId: string; url: string; feedHtml?: string }) => {
+      const sourceId = request.entryId.startsWith('link:') ? request.entryId.slice('link:'.length) : undefined
+      if (sourceId !== undefined && options.failedIds?.includes(sourceId) === true) {
+        return { ok: true as const, value: { entryId: request.entryId, cached: false, fresh: true, fromFeed: false, error: 'fetch failed' } }
+      }
+      return {
+        ok: true as const,
+        value: request.feedHtml === undefined
+          ? { entryId: request.entryId, cached: false, fresh: true, fromFeed: false }
+          : { entryId: request.entryId, cached: false, fresh: true, fromFeed: true, html: request.feedHtml },
+      }
+    }),
   }
 
   const props = {
@@ -135,6 +168,17 @@ function bench(options: BenchOptions = {}) {
     updateSource: mocks.updateSource,
     removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: mocks.refresh,
+    listTags: mocks.listTags,
+    getCachePolicy: mocks.getCachePolicy,
+    setCachePolicy: mocks.setCachePolicy,
+    entryTags: mocks.entryTags,
+    createTag: mocks.createTag,
+    tagEntry: mocks.tagEntry,
+    renameTag: mocks.renameTag,
+    deleteTag: mocks.deleteTag,
+    pruneTags: mocks.pruneTags,
+    getEntryBody: mocks.getEntryBody,
+    fetchEntryBody: mocks.fetchEntryBody,
     readDraft: () => '',
     setDraft: mocks.setDraft,
     copyText: mocks.copyText,
@@ -539,5 +583,69 @@ describe('the wall states how old its snapshot is', () => {
     await ui.settle()
     await screen.findByText('一条')
     expect(screen.getByText(zh['foot.never'])).toBeTruthy()
+  })
+})
+
+describe('a feed that publishes only a summary for some entries', () => {
+  it('says so instead of blaming the fetch cap', async () => {
+    // Measured on the OpenAI alignment feed: entry bodies run from ~150
+    // characters (a summary) to 62,044 (full text). Nothing was truncated
+    // there, so the cap note would be a lie.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '只有摘要的一条', description: '这是一段很短的摘要。' }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('只有摘要的一条'))
+    expect(await screen.findByText(zh['detail.summaryOnly'], { exact: false })).toBeTruthy()
+    // …and NOT the truncation note.
+    expect(screen.queryByText(new RegExp(zh['detail.incomplete']))).toBeNull()
+  })
+
+  it('does not say it for a full body', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '长文', description: '摘要一句', body: `<p>${'正文。'.repeat(60)}</p>` }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('长文'))
+    await waitFor(() => { expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('正文') })
+    expect(screen.queryByText(zh['detail.summaryOnly'], { exact: false })).toBeNull()
+  })
+})
+
+describe('tags', () => {
+  it('creates a tag on the open entry and offers it as a filter', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '可打标签', description: `<p>${'正文。'.repeat(40)}</p>` }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('可打标签'))
+    await screen.findByText(zh['tag.title'])
+    // The + opens the input; Enter creates the tag (or reuses it) and applies it.
+    fireEvent.click(ui.container.querySelector('[class*="tagAdd"]') as HTMLElement)
+    const input = ui.container.querySelector('[class*="tagInput"]') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '灵感' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(ui.mocks.createTag).toHaveBeenCalledWith('灵感') })
+    await waitFor(() => { expect(ui.mocks.tagEntry).toHaveBeenCalledWith(expect.any(String), 'tag-灵感', true) })
+  })
+
+  it('filters the wall by tag through the same query mechanism', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条', description: `<p>${'正文。'.repeat(40)}</p>` }]) },
+      tags: [{ id: 'tag-ai', name: 'AI', createdAt: 'x' }],
+      tagCounts: { 'tag-ai': 2 },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(await screen.findByText('AI'))
+    // Picking a tag writes the tag query, exactly like picking a source does.
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('@tag-ai')
+    })
   })
 })
