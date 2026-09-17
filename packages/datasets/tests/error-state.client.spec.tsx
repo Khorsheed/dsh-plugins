@@ -54,8 +54,10 @@ describe('the classifier answers to the host, not to a fixture string', () => {
 
   it('recognizes a path that is not on disk', async () => {
     const message = await failureOf(async () => await service().assertRepository('/nonexistent-dataset-repo-for-this-test'))
-    // git's own complaint about a missing cwd, whatever the platform words it as.
-    expect(['pathMissing', 'notGitRepo']).toContain(classifyError(message))
+    // Answered before git runs: git's own complaint about a cwd it cannot
+    // enter is "not a git repository" with an empty stderr, which would send
+    // the reader to fix the wrong thing.
+    expect(classifyError(message)).toBe('pathMissing')
   })
 
   it('recognizes a session with nothing bound', () => {

@@ -423,8 +423,19 @@ export interface DatasetsServiceOptions {
   bindingsRoot: string
 }
 
-/** Wrap a git failure as a domain error where the cause is clear. */
+/**
+ * Wrap a git failure as a domain error where the cause is clear.
+ *
+ * A path that is not on disk is answered BEFORE git runs. git's own complaint
+ * about a cwd it cannot enter is "not a git repository" with an empty stderr,
+ * which sends the reader off to check a repository that was never there —
+ * the tab's error seat maps each cause to its own fix, and this one's fix is
+ * not the same as a real non-repository's (I5·T62).
+ */
 async function toplevelOf(repo: string): Promise<string> {
+  if (!existsSync(repo)) {
+    throw new DatasetsError(`${repo} does not exist — no such file or directory`, 'FILE_NOT_FOUND')
+  }
   try {
     return await repoToplevel(repo)
   } catch (error) {
