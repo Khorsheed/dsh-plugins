@@ -12,6 +12,7 @@
  * unknown-cause copy in front of a user.
  */
 import { afterEach, describe, expect, it } from 'vitest'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup as unmount, render, screen } from '@testing-library/react'
 import { EvalService } from '../src/service.ts'
@@ -35,9 +36,19 @@ async function failureOf(run: () => Promise<unknown> | unknown): Promise<string>
 
 describe('the classifier answers to the host, not to a fixture string', () => {
   it('recognizes a repository that holds no datasets/', async () => {
+    // A directory that IS there and simply has no datasets/ — the other half
+    // of this pair is a path that is not there at all, and the two get
+    // different fixes.
     const repo = join(tmpTree(), 'not-a-dataset-repo')
+    mkdirSync(repo, { recursive: true })
     const message = await failureOf(() => new EvalService().conditions({ repo }))
     expect(classifyError(message)).toBe('notDatasetRepo')
+  })
+
+  it('recognizes a repository path that is not on disk at all', async () => {
+    const repo = join(tmpTree(), 'never-created')
+    const message = await failureOf(() => new EvalService().conditions({ repo }))
+    expect(classifyError(message)).toBe('pathMissing')
   })
 
   it('recognizes a session with nothing bound', async () => {
