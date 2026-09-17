@@ -32,6 +32,7 @@ export type ReaderKey =
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
+  | 'sources.name' | 'sources.url' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
   | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
@@ -67,6 +68,8 @@ export const en = {
   'action.quote': 'Quote',
   'action.manage': 'Manage subscriptions',
   'action.remove': 'Remove',
+  'action.pause': 'Pause',
+  'action.resume': 'Resume',
   'action.submit': 'Fetch',
   'action.done': 'Done',
   'action.cancel': 'Cancel',
@@ -104,6 +107,8 @@ export const en = {
   'sources.items': '{count} items',
   'sources.never': 'Not fetched yet',
   'sources.cardHint': 'Subscription',
+  'sources.name': 'Name',
+  'sources.url': 'Feed address',
 
   'detail.incomplete': 'Limited length, content shown in part',
   'detail.readOriginal': 'Read the original',
@@ -158,6 +163,8 @@ export const zh = {
   'action.quote': '引用',
   'action.manage': '订阅管理',
   'action.remove': '删除',
+  'action.pause': '暂停',
+  'action.resume': '恢复',
   'action.submit': '抓取',
   'action.done': '完成',
   'action.cancel': '取消',
@@ -195,6 +202,8 @@ export const zh = {
   'sources.items': '{count} 条',
   'sources.never': '尚未抓取',
   'sources.cardHint': '订阅源',
+  'sources.name': '名称',
+  'sources.url': '订阅地址',
 
   'detail.incomplete': '受限篇幅，内容未完整呈现',
   'detail.readOriginal': '阅读原文',

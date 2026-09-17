@@ -215,18 +215,24 @@ export class ReaderService {
     id: string
     enabled?: boolean
     label?: string
+    url?: string
     timeOfDay?: string
   }): Promise<ReaderMutationOutcome> {
     const doc = await this.currentDoc()
     if (!doc.sources.some(source => source.id === request.id)) return 'not-found'
     if (request.timeOfDay !== undefined && !/^\d{1,2}:\d{2}$/.test(request.timeOfDay)) return 'invalid-time'
+    // A URL edit is validated the same way an add is; an empty string means
+    // "back to the feed's own title", which the next fetch resolves.
+    const url = request.url === undefined || request.url === '' ? undefined : normalizeUrl(request.url)
+    if (request.url !== undefined && request.url !== '' && url === undefined) return 'invalid-url'
     await this.commit(current => ({
       ...current,
       sources: current.sources.map(source => source.id === request.id
         ? {
           ...source,
           ...(request.enabled !== undefined ? { enabled: request.enabled } : {}),
-          ...(request.label !== undefined ? { label: request.label } : {}),
+          ...(request.label !== undefined && request.label !== '' ? { label: request.label } : {}),
+          ...(url !== undefined ? { url, status: 'ok' as const } : {}),
         }
         : source),
       ...(request.timeOfDay !== undefined

@@ -414,6 +414,9 @@
 }
 
 .barLabel {
+  /* Secondary pages carry the page's name, so it reads as a title, not as a
+     caption: the cards set their own titles at 13.5px. */
+  font-size: 13px;
   padding: 0 4px;
   font-size: 10.5px;
   color: var(--dsw-alias-label-tertiary);
@@ -701,7 +704,13 @@
 /* ------------------------------------------------------------------ menus */
 
 .menu {
+  /* Anchored to the right edge like the filter panel: without an explicit
+     `right`, an absolutely positioned box uses its static position, which put
+     the sort menu at the ROOT's left edge (the whole pane's) instead of under
+     the button that opened it. */
   position: absolute;
+  top: 62px;
+  right: 10px;
   z-index: 20;
   min-width: 150px;
   padding: 4px;
@@ -996,7 +1005,7 @@
 
 .sourceRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
   padding: 9px 10px;
   border: 1px solid var(--dsw-alias-border-l1);
@@ -1010,6 +1019,7 @@
 
 .rowAction {
   flex: none;
+  margin-top: 2px;
   padding: 4px 9px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
@@ -1209,4 +1219,41 @@
   font-size: 11px;
   cursor: pointer;
   padding: 0;
+}
+
+/* The subscription editor: the name and the address of one source, editable in
+   place. Both are sized like the surrounding rows rather than like form
+   controls, because this page IS the form. */
+.sourceNameInput,
+.sourceUrlInput {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  min-width: 0;
+}
+
+.sourceNameInput {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sourceUrlInput {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sourceNameInput:hover,
+.sourceUrlInput:hover {
+  border-color: var(--dsw-alias-border-l1);
+}
+
+.sourceNameInput:focus,
+.sourceUrlInput:focus {
+  outline: none;
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-alias-bg-base);
 }

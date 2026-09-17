@@ -59,6 +59,7 @@ export interface ReaderPaneInjected {
     id: string
     enabled?: boolean
     label?: string
+    url?: string
     timeOfDay?: string
   }) => Promise<RemoteResult<ReaderMutationOutcome>>
   /** Drop a source. */

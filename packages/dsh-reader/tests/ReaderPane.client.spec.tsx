@@ -118,6 +118,8 @@ function bench(options: BenchOptions = {}) {
     openExternal: vi.fn(() => true),
     copyText: vi.fn(async () => true),
     setDraft: vi.fn(),
+    updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
   }
 
   const props = {
@@ -130,7 +132,7 @@ function bench(options: BenchOptions = {}) {
     addSource: mocks.addSource,
     capabilities: mocks.capabilities,
     quoteToSideChat: mocks.quoteToSideChat,
-    updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    updateSource: mocks.updateSource,
     removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: mocks.refresh,
     readDraft: () => '',
@@ -401,5 +403,141 @@ describe('quoting needs a body, and the side-chat gesture needs a composition', 
     const ui = await openedArticle(true)
     fireEvent.click(await screen.findByText(zh['quote.toSideChat']))
     expect(ui.mocks.quoteToSideChat).toHaveBeenCalledWith(expect.objectContaining({ contextKey: 's1' }))
+  })
+})
+
+describe('the filter popover narrows the wall', () => {
+  it('picks one source, and clears again', async () => {
+    const ui = bench({
+      sources: [rssSource('hn', { label: 'Hacker News' }), rssSource('ruanyf', { label: '阮一峰周刊' })],
+      payloads: {
+        hn: feed('hn', [{ title: '来自 HN 的一条' }]),
+        ruanyf: feed('ruanyf', [{ title: '来自周刊的一条' }]),
+      },
+    })
+    await ui.settle()
+    await screen.findByText('来自 HN 的一条')
+    expect(screen.getByText('来自周刊的一条')).toBeTruthy()
+    const before = ui.mocks.listSources.mock.calls.length
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    const rows = ui.container.querySelectorAll('[class*="filterRow"]')
+    // rows: [unread only, all, source hn, source ruanyf]
+    fireEvent.click(rows[2] as HTMLElement)
+    await waitFor(() => { expect(screen.queryByText('来自周刊的一条')).toBeNull() })
+    expect(screen.getByText('来自 HN 的一条')).toBeTruthy()
+    // The filter is the same local predicate as typing: no round trip.
+    expect(ui.mocks.listSources.mock.calls.length).toBe(before)
+    // …and its value is visible in the search box, which is how it is cleared.
+    const search = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    expect(search.value).toMatch(/^#/)
+    fireEvent.change(search, { target: { value: '' } })
+    expect(await screen.findByText('来自周刊的一条')).toBeTruthy()
+  })
+
+  it('offers the read-state filter in the same popover', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(await screen.findByText(zh['filter.unreadOnly']))
+    expect(screen.getByText('一条')).toBeTruthy()
+  })
+})
+
+describe('an unreadable payload says so on the wall', () => {
+  it('marks the source and explains the cap', async () => {
+    const truncatedFeed = '<rss version="2.0"><channel><title>probe</title>'
+      + '<item><title>完整的一条</title><link>https://example.com/a</link><description>正文</description></item>'
+      + '<item><title>被截断的一条</title><link>https://example.com/b</link><description>半'
+    const ui = bench({
+      sources: [rssSource('hn', { label: '超长 Feed' })],
+      payloads: { hn: truncatedFeed },
+      truncatedIds: ['hn'],
+    })
+    await ui.settle()
+    // The complete item is on the wall…
+    expect(await screen.findByText('完整的一条')).toBeTruthy()
+    // …the filter's row marks the source as incomplete…
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    expect(ui.container.querySelector('[class*="chipBroken"]')).not.toBeNull()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    // …and the notice names the cause with the way out.
+    expect(await screen.findByText(zh['state.incompleteReason'], { exact: false })).toBeTruthy()
+    fireEvent.click(screen.getAllByText(zh['detail.readOriginal'])[0] as HTMLElement)
+    expect(ui.mocks.openExternal).toHaveBeenCalled()
+  })
+})
+
+describe('a source is editable from the subscription page', () => {
+  it('saves an edited address and refetches it', async () => {
+    const ui = bench({
+      sources: [rssSource('hn', { label: 'Hacker News', url: 'https://example.com/hn.xml' })],
+      // The feed's own channel title IS the source's display name, which is
+      // what makes the assertion below meaningful (see the load path).
+      payloads: { hn: feed('Hacker News', [{ title: '一条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    await screen.findByText(zh['sources.title'])
+    // The name and the address are editable in place, and the row's button
+    // says what pressing it DOES rather than what the state is.
+    const name = screen.getByLabelText(zh['sources.name']) as HTMLInputElement
+    const url = screen.getByLabelText(zh['sources.url']) as HTMLInputElement
+    expect(name.value).toBe('Hacker News')
+    expect(url.value).toBe('https://example.com/hn.xml')
+    expect(screen.getByText(zh['action.pause'])).toBeTruthy()
+    fireEvent.change(url, { target: { value: 'https://example.com/other.xml' } })
+    fireEvent.blur(url)
+    await waitFor(() => {
+      expect(ui.mocks.updateSource).toHaveBeenCalledWith(expect.objectContaining({ id: 'hn', url: 'https://example.com/other.xml' }))
+    })
+    // A changed address re-fetches: the next payload is a different document.
+    await waitFor(() => { expect(ui.mocks.refresh).toHaveBeenCalledWith(['hn']) })
+  })
+})
+
+describe('the refresh button really refreshes', () => {
+  it('asks the host and re-reads the wall', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    const before = ui.mocks.getBodies.mock.calls.length
+    fireEvent.click(screen.getByTitle(zh['action.refresh']))
+    await waitFor(() => { expect(ui.mocks.refresh).toHaveBeenCalled() })
+    // The re-read is the point: the acceptance instance's fetch succeeded and
+    // the list never noticed, so the button looked dead.
+    await waitFor(() => { expect(ui.mocks.getBodies.mock.calls.length).toBeGreaterThan(before) })
+  })
+})
+
+describe('the wall states how old its snapshot is', () => {
+  it('reports the last refresh and the next one', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+      lastRefreshAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      nextRefreshAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    expect(screen.getByText(/刷出于 3 小时前/)).toBeTruthy()
+    expect(screen.getByText(/每日 \d{2}:\d{2}/)).toBeTruthy()
+  })
+
+  it('says so when nothing has been fetched yet', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    expect(screen.getByText(zh['foot.never'])).toBeTruthy()
   })
 })

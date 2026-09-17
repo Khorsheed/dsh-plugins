@@ -69,6 +69,7 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     id: string
     enabled?: boolean
     label?: string
+    url?: string
     timeOfDay?: string
   }): Promise<ReaderMutationOutcome> {
     return this.core.updateSource(request)

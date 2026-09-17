@@ -394,6 +394,27 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
   }, [actions, props])
 
+  /**
+   * Apply an edited URL and/or label to one source.
+   *
+   * A URL change is not a cosmetic edit: the next fetch is a different
+   * document, so the stored payload is replaced by the fetch that follows and
+   * the label falls back to the feed's own title when the editor clears it.
+   */
+  const saveSource = useCallback(async (id: string, url: string, label: string) => {
+    const result = await props.updateSource({
+      id,
+      url: url.trim(),
+      label: label.trim(),
+    })
+    if (!result.ok) {
+      actions.setError(result.error.message)
+      return
+    }
+    await props.refresh([id])
+    actions.refresh()
+  }, [actions, props])
+
   /** Move the daily refresh time. */
   const setRefreshTime = useCallback(async (value: string) => {
     setTimeOfDay(value)
@@ -711,7 +732,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                         {tileForSource(source.label)}
                       </span>
                       <span className={css.sourceInfo}>
-                        <span className={css.sourceName}>{source.label}</span>
+                        <input
+                          className={css.sourceNameInput}
+                          defaultValue={source.label}
+                          aria-label={t('sources.name')}
+                          placeholder={t('sources.name')}
+                          onBlur={event => {
+                            if (event.target.value !== source.label) void saveSource(source.id, source.url, event.target.value)
+                          }}
+                        />
+                        <input
+                          className={css.sourceUrlInput}
+                          defaultValue={source.url}
+                          aria-label={t('sources.url')}
+                          placeholder={t('sources.url')}
+                          onBlur={event => {
+                            if (event.target.value !== source.url) void saveSource(source.id, event.target.value, source.label)
+                          }}
+                        />
                         <span className={css.sourceMeta}>
                           {source.kind === 'rss' ? t('sources.items', { count: group?.entries.length ?? 0 }) : t('tab.subtitle')}
                           {' · '}
@@ -739,7 +777,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                         className={css.rowAction}
                         onClick={() => { void toggleSource(source.id, !source.enabled) }}
                       >
-                        {source.enabled ? t('sources.disabled') : t('sources.enabled')}
+                        {source.enabled ? t('action.pause') : t('action.resume')}
                       </button>
                       <button
                         type="button"
