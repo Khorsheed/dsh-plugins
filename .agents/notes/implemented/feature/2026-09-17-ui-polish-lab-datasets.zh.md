@@ -29,6 +29,8 @@ Status: implemented
 
 **两个 tab 共用同一套组件。** `Chip`（五档 tone）、`EmptyState`（一句话 + 下一步 + 自己的动作）、`Section`、`Detail` 与 `Word`，两个包里是同名 class、逐字相同的样式规则。chip 的底色是 `color-mix(in srgb, currentColor 12%, transparent)`，跟着 tone 走，明暗两套只有宿主 tokens 一处真相。两份样式表里没有自造的颜色与字号。
 
+**四个设计 token 根本不存在。** 界面规格 §九 第一条是「沿用宿主的设计 tokens」，还举了 `--dsw-alias-bg-l2` 当例子——而宿主主题包里没有这个别名，也没有 `--dsw-alias-label-warning`、`--dsw-alias-label-danger`、`--dsw-font-family-mono`、`--dsw-alias-fill-hover`、`--dsw-alias-fill-selected`、`--dsw-alias-state-success`。每一处都以两种方式失败：带兜底的冻成一个跟不了主题的写死颜色（琥珀 `#b8600a`、红 `#b3261e`、4% 黑），不带兜底的解析成空——所以 notice、note、`<pre>`、错误位、卡格底色在两套主题下**都没有背景**。现在换成主题包真有的：安静表面与 hover 用 `interactive-bg-hover`、选中用 `interactive-bg-active`（hover 是提示、选中是状态，设计系统本来就是两档），警告 `state-warn-label`、错误 `state-error-primary`、那一个浮层编辑器 `bg-layer-3`、等宽 `--ds-font-family-code`——最后这个正是 §九 自己点的名字，题集 tab 一直用对。
+
 **证据留着、折起来，既不打在页上也不摘要掉。** 就绪闸的拒绝原文、finalize 的走查日志与逐格拒绝原因、报告找 bundle 的说明、`run.meta`、就绪记录原文、计划文件的绝对路径、bundle 目录、题库根——全都够得着，全都在「详情」里或 `title` 上。这对拒绝原文最要紧：被闸拒的 run 根本到不了 `runCreate`，账本里一行都没有，那段话是唯一记着「为什么」的地方。唯一有意的例外是抽屉里的 verify 块——界面规格 §五 要求原样，它一个字没动。
 
 **两处哈希宽度是例外**（`matrix-view.ts` 打 16 位，`provision.ts` 有一处打全长），现在都是 12 位，与这一家其余地方一致。
@@ -40,6 +42,9 @@ Status: implemented
 - 工具条上的动作常驻，空态里那枚用自己的措辞（「新建第一个实验」，不是第二枚「新建实验」）。第一版是空态出现时把工具条那枚藏掉，重复确实少了，但读起来更差：加载时它在、答案回来时它消失。
 - `report.comparisonClosed` 换了形状——现在接一个数字，没成立的不变量以上面那张表同样的 chip 摆在旁边，而不是在宿主端拼成一句话。
 - 有一种情况多一次 RPC：宿主挑的列不是设计因子时，页面第一次打开会重拉一次矩阵。单因子的 run，以及字典序第一个恰好就是设计因子的 run，还是只拉一次。
+- 截图这一轮还长出第二道闸：两个包各一份 `tests/copy.spec.ts`，读 client 源码、收集每一处字面 `t('…')`，对着**两份**词典核，另外核两份词典的键集相同、同一条文案的占位符相同。client spec 用的是恒等 `t`（把键原样吐回来，正是缺键渲染出来的样子），所以这一类缺陷它们根本看不见。
+- 真机走一遍找出四处代码审查没找到的：概览与计划审阅仍打着题库的绝对路径、因子列把一行撑成三行、「条件数」列装不下「1（+1 判官）」、筛选 chip 的词与计数贴在一起。四处都改了；回报里的截图是改完之后的第二轮。
+- **记下不改（行为）**：composer 上的题集 chip 靠会话活动重读，slash 命令绑定的回执就是这么来的（T39·G2）。在 tab 自己的「导入题集」表单里绑定不会动会话，所以绑完之后 chip 仍写「未绑定」，直到下一条 slash 命令——两扇门里只有一扇会通知它。
 - **记下不改（数据面）**：`pivotMatrix` 的汇总句、`report` 的不变量明细与 `rankReason` 都是宿主端拼好的中文，英文界面下会中英混排。要修就得下发结构化字段、由浏览器半边组句——那是任务明确划到范围外的数据面改动。
 
 ## Testing
