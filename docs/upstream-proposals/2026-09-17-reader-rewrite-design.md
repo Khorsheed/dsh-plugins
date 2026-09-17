@@ -1,11 +1,12 @@
 # Reader 插件重写设计（定稿）
 
 Date: 2026-09-17
-Status: **定稿，待实施（S1 起）**
+Status: **已实施**（实现落在 `packages/dsh-reader`，决策记录见 `.agents/notes/implemented/feature/2026-09-17-reader-rewrite.md`）
 Branch: `feat/reader`（worktree `.worktrees/reader`）
 Package: **`@khorsheed/dsh-reader`**（原 `@khorsheed/dsh-rss-reader`，0.1.0，已废弃）
-Supersedes: `.agents/notes/proposed/feature/2026-09-17-rss-reader-legacy-note.md`（旧 note 声称
-"implemented"，但落地物是一个 `RssView` 直接 `return null` 的空壳 —— 已随包一并丢弃并归档为历史证据）
+Supersedes: `.agents/notes/proposed/feature/2026-09-17-rss-reader-legacy-note.md`（那份 proposal 描述的是
+旧 `@khorsheed/dsh-rss-reader` 的形态，而落地物是一个 `RssView` 直接 `return null` 的空壳 —— 旧包体已丢弃、
+该 proposal 已删除；实际决策记录在 `.agents/notes/implemented/feature/2026-09-17-reader-rewrite.md`）
 
 配套侦察报告（同目录，全部带 file:line 依据）：
 
