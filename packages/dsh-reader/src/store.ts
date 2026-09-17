@@ -1,29 +1,35 @@
 /**
- * The host-side state store: one version-guarded JSON document over the
- * mounted filesystem, holding the source list and, per source, the raw
- * payload of its last fetch plus that fetch's metadata.
+ * The host-side state store: one JSON document under the deployment's state
+ * root, holding the source list and, per source, the raw payload of its last
+ * fetch plus that fetch's metadata.
  *
- * Deliberately the same shape as the side-chat store, and for the same two
- * reasons it encodes:
+ * **Why plain `node:fs` and not `ctx.fs`.** `ctx.fs` is the SANDBOXED
+ * filesystem: every mutation is fenced by the calling session's policy, so a
+ * workspace-write session refuses a write to `$DSH_HOME/state` with
+ * `FS_SANDBOX_DENIED` — which is exactly what happened on the acceptance
+ * instance, where a subscription failed with
+ * `cannot write "…/state/dsh-reader/state.json": file access denied under
+ * workspace-write mode`. That fence is correct and must stay; the mistake is
+ * aiming a session-fenced capability at host-owned durable state. This
+ * package's state belongs to the DEPLOYMENT, not to whichever session happened
+ * to click "fetch", so it is written the way this repo's other host-state
+ * packages write theirs (`packages/lab/src/state.ts`): `node:fs`, atomic
+ * via a temporary file plus rename.
  *
- * - the filesystem is captured through **deferred** injection
- *   (`ctx.inject(['fs'], …)`) rather than an apply-time `ctx.get`. An
- *   apply-time probe races the fs service's own mount order and silently
- *   memory-only-degrades forever (a real shipped bug, the 3080 persistence
- *   incident), while a package-level `inject = ['fs']` would pend the whole
- *   plugin on a composition that has no filesystem at all.
- * - a missing document reads as empty; a **corrupt** one refuses rather than
- *   being overwritten, so a hand-edited file stays visible until its owner
- *   fixes it instead of being silently destroyed by the next refresh.
+ * The rest of the contract is unchanged and is why this file exists:
  *
- * Nothing here parses a feed. The document stores raw payloads, and the
- * browser half — the only side with a DOM parser — turns them into entries.
+ * - a missing document reads as empty, and a **corrupt** one refuses rather
+ *   than being overwritten, so a hand-edited file stays visible until its
+ *   owner fixes it instead of being silently destroyed by the next refresh;
+ * - an unwritable root degrades to memory-only instead of taking the plugin
+ *   down, because a composition must never fail for lack of a writable disk;
+ * - nothing here parses a feed. The document stores raw payloads, and the
+ *   browser half — the only side with a DOM parser — turns them into entries.
  *
  * @module @khorsheed/dsh-reader/store
  */
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
-import { FsError, type FsTarget, type FsVersion } from '@deepseek-ai/dsh-fs'
 import {
   MAX_BODY_CHARS_PER_SOURCE,
   MAX_TOTAL_BODY_CHARS,
@@ -46,7 +52,14 @@ export class ReaderStoreError extends Error {
 /** A read result: the document plus the token the next write must present. */
 export interface ReaderStoreRead {
   readonly doc: ReaderStateDoc
-  readonly version: FsVersion | null
+  /**
+   * The document's freshness token, or `null` when there is no file yet.
+   *
+   * Only this process writes the reader's state, so the token exists to make a
+   * same-process read-modify-write honest (an external editor between the two
+   * is detected) rather than to coordinate writers.
+   */
+  readonly version: string | null
 }
 
 /**
@@ -119,27 +132,29 @@ function normalizeSource(value: unknown): ReaderSource | undefined {
     id,
     kind,
     url,
+    label: typeof record.label === 'string' && record.label.length > 0 ? record.label : url,
     enabled: record.enabled !== false,
     addedAt: typeof record.addedAt === 'string' ? record.addedAt : new Date(0).toISOString(),
-    ...(typeof record.label === 'string' ? { label: record.label } : {}),
     ...(typeof record.fetchedAt === 'string' ? { fetchedAt: record.fetchedAt } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(typeof record.error === 'string' ? { error: record.error } : {}),
     ...(record.truncated === true ? { truncated: true } : {}),
     ...(typeof record.raw === 'string' ? { raw: record.raw } : {}),
+    ...(typeof record.timeOfDay === 'string' ? { timeOfDay: record.timeOfDay } : {}),
   }
 }
 
 /**
- * Trim raw payloads to the document's budgets, oldest fetch first.
+ * Bound the document's payload bytes without dropping a subscription.
  *
- * Entities rather than bytes because the payload arrives as text; the caps in
- * `types.ts` are sized for that. A single oversize payload is truncated to the
- * per-source cap and flagged, which is the same "incomplete, say so" contract
- * the fetch seam's own truncation uses.
+ * Newest-first: the freshest payload is the one the reader is most likely to
+ * open, so it survives and the oldest bodies are the ones released. Keeping
+ * every source row regardless is deliberate — a source whose body was evicted
+ * still refreshes, and dropping subscriptions to save space would be a silent
+ * data loss the reader never asked for.
  *
  * @param doc - the document to bound.
- * @returns the document and whether anything was cut.
+ * @returns the bounded document, and whether anything was released.
  */
 export function boundPayloads(doc: ReaderStateDoc): { doc: ReaderStateDoc; changed: boolean } {
   let changed = false
@@ -154,6 +169,9 @@ export function boundPayloads(doc: ReaderStateDoc): { doc: ReaderStateDoc; chang
     const raw = source.raw
     if (raw === undefined) continue
     if (raw.length > MAX_BODY_CHARS_PER_SOURCE) {
+      // Keep as much as the per-source budget allows and say it is partial:
+      // dropping the whole body would lose an article the reader just added,
+      // and the detail view already knows how to render a truncated body.
       trimmed.set(source.id, { ...source, raw: raw.slice(0, MAX_BODY_CHARS_PER_SOURCE), truncated: true })
       total += MAX_BODY_CHARS_PER_SOURCE
       changed = true
@@ -178,39 +196,47 @@ export function boundPayloads(doc: ReaderStateDoc): { doc: ReaderStateDoc; chang
   }
 }
 
-/** The store: owns the document, the version token, and the fs seam. */
+/** Native-fs state store: the deployment's document, not the session's. */
 export class ReaderStore {
-  private fs: Context['fs'] | undefined
-  private fsReadyListener: (() => void) | undefined
   private readonly stateRoot: string
+  private readonly file: string
+  /** Set once the root has proven unwritable; the service then goes memory-only. */
+  private unwritable: string | undefined
 
   /**
-   * @param ctx - owning context; the fs seam is captured by deferred injection.
    * @param config - optional state-root override.
    */
-  constructor(ctx: Context, config: { stateRoot?: string } = {}) {
+  constructor(config: { stateRoot?: string } = {}) {
     this.stateRoot = resolveReaderStateRoot(config.stateRoot)
-    // Deferred, never an apply-time probe — see the module note.
-    ctx.inject(['fs'], (fsCtx) => {
-      this.fs = fsCtx.get('fs') as Context['fs'] | undefined
-      this.fsReadyListener?.()
-    })
+    this.file = join(this.stateRoot, READER_STATE_FILE_NAME)
   }
 
-  /** Register the fs-arrival hook (fires at most once, when fs first mounts). */
-  onFsReady(listener: () => void): void {
-    this.fsReadyListener = listener
+  /** The absolute path of the state file (diagnostics and tests). */
+  get path(): string {
+    return this.file
   }
 
-  /** Whether persistence is available; without it the service runs memory-only. */
+  /** Why persistence is unavailable, when it is. */
+  get unavailableReason(): string | undefined {
+    return this.unwritable
+  }
+
+  /**
+   * Whether persistence is available.
+   *
+   * Probed by creating the state root, not by asking a capability: a
+   * read-only deployment (a container with no writable home) must degrade to
+   * memory-only, and that is only knowable by trying.
+   */
   get available(): boolean {
-    return this.fs !== undefined
-  }
-
-  /** The state-file target under the state root. */
-  private async target(): Promise<FsTarget> {
-    if (this.fs === undefined) throw new ReaderStoreError('reader: no filesystem is mounted', 'io')
-    return this.fs.resolve(join(this.stateRoot, READER_STATE_FILE_NAME))
+    if (this.unwritable !== undefined) return false
+    try {
+      mkdirSync(this.stateRoot, { recursive: true })
+      return true
+    } catch (error) {
+      this.unwritable = `${this.stateRoot}: ${errorMessage(error)}`
+      return false
+    }
   }
 
   /**
@@ -220,47 +246,58 @@ export class ReaderStore {
    * @throws ReaderStoreError when the file exists but does not parse.
    */
   async read(): Promise<ReaderStoreRead> {
-    if (this.fs === undefined) return { doc: emptyStateDoc(), version: null }
-    let target: FsTarget
+    if (!this.available) return { doc: emptyStateDoc(), version: null }
+    let text: string
     try {
-      target = await this.target()
+      text = readFileSync(this.file, 'utf8')
     } catch (error) {
-      if (error instanceof FsError) return { doc: emptyStateDoc(), version: null }
-      throw error
+      if (isMissing(error)) return { doc: emptyStateDoc(), version: null }
+      throw new ReaderStoreError(`reader: ${this.file} could not be read — ${errorMessage(error)}`, 'io')
     }
-    const info = await this.fs.stat(target)
-    if (info === undefined || info.type !== 'file') return { doc: emptyStateDoc(), version: null }
     try {
-      return { doc: normalizeStateDoc(JSON.parse(await this.fs.readText(target))), version: info.version }
+      return { doc: normalizeStateDoc(JSON.parse(text)), version: String(text.length) + ':' + String(statSync(this.file).mtimeMs) }
     } catch (error) {
-      if (error instanceof FsError) throw error
+      if (error instanceof ReaderStoreError) throw error
       // Refuse rather than clobber: the file is the user's subscriptions.
       throw new ReaderStoreError(
-        `reader: ${target.displayPath} does not parse — fix or remove it by hand`,
+        `reader: ${this.file} does not parse — fix or remove it by hand`,
         'corrupt',
       )
     }
   }
 
   /**
-   * Write the document under the version guard from the last read.
+   * Write the document atomically under the token from the last read.
    *
    * @param doc - the document to publish.
    * @param version - the token from the last read (`null` for the first write).
    * @returns the new freshness token.
    */
-  async write(doc: ReaderStateDoc, version: FsVersion | null): Promise<FsVersion> {
-    if (this.fs === undefined) throw new ReaderStoreError('reader: no filesystem is mounted', 'io')
-    const receipt = await this.fs.writeText(
-      await this.target(),
-      serializeStateDoc(doc),
-      version === null ? { kind: 'createIfAbsent' } : { kind: 'replaceIfVersion', version },
-    )
-    return receipt.version
+  async write(doc: ReaderStateDoc, version: string | null): Promise<string> {
+    if (!this.available) throw new ReaderStoreError('reader: no writable state root', 'io')
+    // A concurrent external edit between our read and write: refuse instead of
+    // publishing over a document we never saw. Only this process writes, so a
+    // mismatch means a hand edit, and the next read will surface it loudly.
+    if (version !== null) {
+      const current = await this.read()
+      if (current.version !== version) {
+        throw new ReaderStoreError(`reader: ${this.file} changed underneath this write`, 'io')
+      }
+    }
+    const temporary = `${this.file}.${process.pid}.tmp`
+    try {
+      writeFileSync(temporary, serializeStateDoc(doc))
+      renameSync(temporary, this.file)
+    } catch (error) {
+      rmSync(temporary, { force: true })
+      throw new ReaderStoreError(`reader: ${this.file} could not be written — ${errorMessage(error)}`, 'io')
+    }
+    const text = serializeStateDoc(doc)
+    return String(text.length) + ':' + String(statSync(this.file).mtimeMs)
   }
 
   /**
-   * Read-modify-write with the one stale-version retry the guard requires.
+   * Read-modify-write with the one concurrent-edit retry.
    *
    * @param mutate - pure function from the current document to the next one.
    * @returns the document that ended up on disk.
@@ -273,17 +310,24 @@ export class ReaderStore {
         await this.write(next, version)
         return next
       } catch (error) {
-        // A concurrent writer moved the version between our read and write.
+        // An external edit moved the document between our read and write.
         // One retry is the contract; a second failure is a real io problem.
-        if (attempt === 1 || !isStaleVersion(error)) throw error
+        if (attempt === 1 || !(error instanceof ReaderStoreError) || error.kind !== 'io') throw error
       }
     }
     /* v8 ignore next -- the loop either returns or throws */
-    throw new ReaderStoreError('reader: could not commit after a stale-version retry', 'io')
+    throw new ReaderStoreError('reader: could not commit after a concurrent-edit retry', 'io')
   }
 }
 
-/** Whether an fs failure is the stale-version guard firing. */
-function isStaleVersion(error: unknown): boolean {
-  return error instanceof FsError && (error as { code?: string }).code === 'FS_STALE_VERSION'
+/** Whether a native fs failure is "there is no file yet". */
+function isMissing(error: unknown): boolean {
+  return (error as { code?: string } | undefined)?.code === 'ENOENT'
+}
+
+/** A native fs failure's message, with its code, for the wire. */
+function errorMessage(error: unknown): string {
+  const code = (error as { code?: string } | undefined)?.code
+  const message = error instanceof Error ? error.message : String(error)
+  return code === undefined ? message : `${code}: ${message}`
 }

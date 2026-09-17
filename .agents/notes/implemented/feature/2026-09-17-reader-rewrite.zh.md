@@ -15,13 +15,14 @@ Status: implemented
 **宿主半**（`src/index.ts`、`service.ts`、`store.ts`、`schedule.ts`、`remote.ts`、`invariant.ts`）：`apply(ctx, config)` 构造 `ReaderService`、`ctx.provide('reader', …)`，再挂上薄薄一层 `ReaderRemoteService`（namespace `reader`，verb：`capabilities` / `listSources` / `addSource` / `updateSource` / `removeSource` / `refresh` / `getBodies` / `quoteToSideChat`）。
 
 - **出网走 `ctx.web.fetch`**，这是官方缝（宿主里没有名为 `fetch` 的服务可供探测）。这条缝把解码后的正文截到 100,000 字符且**静默截断**；它拒绝跨源重定向（`WEB_REDIRECT_BLOCKED`），所以本服务自己最多跟 3 跳，每跳重新进缝。
-- **持久化走 `ctx.fs`**，通过**延迟**的 `ctx.inject(['fs'], …)` 拿到，而不是 apply 时探测，这样晚挂载的文件系统仍会被接上；状态在 `$DSH_HOME/state/dsh-reader/state.json`（可用 `config.stateRoot` 覆盖），读容忍文件不存在、拒绝文件损坏，写是读-改-写并带一次 `FS_STALE_VERSION` 重试。**没有 `fs` 时文档只在内存里**，`capabilities()` 报 `hasFs: false`，不假装有持久化。
+- **持久化用 `node:fs`，刻意不走 `ctx.fs`**（验收时修正）。`ctx.fs` 是**沙箱**文件系统：每一次写都由**调用会话**的文件策略把关，workspace-write 会话写 `$DSH_HOME/state` 会被 `FS_SANDBOX_DENIED` 拒掉 —— 验收实例上就是这样让一次订阅失败的。这道栅栏是对的；错的是把「属于部署」的状态交给「属于会话」的能力。所以 store 用原子写（临时文件 + rename），和本仓库其它宿主态包一致（`packages/lab/src/state.ts`）。状态在 `$DSH_HOME/state/dsh-reader/state.json`（可用 `config.stateRoot` 覆盖），文件不存在读成空、损坏时拒绝而不是覆盖，目录不可写则降级为仅内存并让 `capabilities().hasFs === false`。
 - **刷新是插件自有的 `setTimeout`**（`schedule.ts` 做本地日历运算）。宿主没有 scheduler 服务，也没有 `ctx.on('dispose')`；`ctx.effect` 负责拆卸。错过的窗口在启动时补刷一次，而不是丢掉。
 - **payload 淘汰是"最新优先"**：`boundPayloads` 按新到旧遍历，超出单源（256 KiB）与总量（2 MiB）预算时丢最旧的正文、保留每一条源记录。第一版实现是从最旧开始遍历，结果留下上个月的正文、把刚抓到的挤掉——和设计正好相反。
 
 **浏览器半**（`src/client/`）：一个页面型侧栏 tab（自铸 kind `reader`，tab id `@khorsheed/dsh-reader`），按官方两阶段注册——`ctx.sidebarRightTabs.register(definition)` 注册类型，`ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({name, key, locale, store, inject}, ReaderPane))` 注册面板体——两者都挂在 `ctx.effect` 上。
 
 - **解析放在浏览器，因为宿主没有解析器**：那边 `globalThis.DOMParser === false`，所以 `parse-rss.ts`（按 `localName` 处理 RSS 2.0 / Atom、真正识别 `parsererror` 拒绝、处理 CDATA 与实体解码）和 `extract-article.ts`（readability 式块评分，语言相关的最小长度——拉丁 40 字、CJK 18 字——加白名单归一化）都在客户端。
+- **列表会说明这份快照有多旧**：卡片下方一行新鲜度（「刷出于 3 小时前 · 每日 10:00」），来自 `capabilities().lastRefreshAt` / `nextRefreshAt`，让读者自己决定要不要为一次刷新付一轮网络 —— 刷新确实会重新抓取每一条启用的源。
 - **面板要么渲染出内容，要么说明为什么渲染不出**：列表一卡一条，未读是来源瓷砖角上一个 7px **圆点**（会话级、不落盘，用浮层定位，所以读/未读不会让标题位移）；工具条的搜索 / 只看未读 / 排序都是本地谓词（D14）；详情页把归一化后的正文当 DOM 文本渲染——这正是 `@khorsheed/dsh-quote` 那个帧级选区菜单能覆盖它的原因，所以本包不自己造选区菜单；被截断的正文以一行「受限篇幅，内容未完整呈现」加一个「阅读原文」按钮收尾。
 - **没有任何东西按 preset 自隐**：安装层就是这个 tab 的模式可见性，所以这里不涉及 `pluginInventory` 探测。
 - **粘贴进来的 URL 是什么，由抓回来的内容决定**（D15）：feed 就变成订阅，网页就存成一条，都不靠 URL 形状去猜。
@@ -32,9 +33,10 @@ Status: implemented
 
 ## Testing
 
-五个套件共 81 条测试，其中两条是专为旧包那次事故写的：
+六个套件共 95 条测试，其中三条是专为本包已经发生过的事故写的：
 
 - `tests/boot.spec.ts` 在一个**真实的 Cordis `Context`** 上启动宿主半，断言 `ctx.get('reader')` 存在、Remote 面以自己的服务键挂载且真的在转发、以及一个没有 `fs`/`web`/`sideChat`/`quote` 的组合照样能启动。旧壳什么都没提供；这条断言在它身上必然失败。
+- `tests/boot.spec.ts` 还承载**会话栅栏文件系统的回归**：它挂上一个每个方法都抛 `FS_SANDBOX_DENIED` 的 `ctx.fs`，断言插件照样返回领域值（且从未碰过那个服务），并断言在一台宿主上添加的源能被同一个状态根上的第二台宿主看见。这个 bug 是在验收实例上暴露的；这里就是它被永久钉住的地方。
 - `tests/ReaderPane.client.spec.tsx` 在 jsdom 里用真实 store 实例和脚本化的宿主 payload 渲染面板，断言的是"内容真的到了 DOM 里"（空态、卡片、打开的正文），而不是"某个函数返回了东西"。
 - `host-pure.spec.ts` 覆盖刷新时钟、payload 分类器、URL 策略、状态归一化与淘汰边界；`parse-rss.spec.ts` 与 `extract-article.spec.ts` 跑在真实抓取的页面样本上；`selectors.spec.ts` 锁住过滤/搜索/排序谓词。
 

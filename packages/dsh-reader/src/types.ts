@@ -126,6 +126,12 @@ export interface ReaderCapabilities {
   readonly hasSideChat: boolean
   /** ISO-8601 timestamp of the next scheduled refresh, when one is armed. */
   readonly nextRefreshAt?: string
+  /**
+   * ISO-8601 timestamp of the last completed refresh run, when there was one.
+   * The list shows it so a reader can decide whether the snapshot is stale
+   * enough to be worth a fetch.
+   */
+  readonly lastRefreshAt?: string
 }
 
 /** Outcome of a mutating source verb. A domain refusal, never an exception. */

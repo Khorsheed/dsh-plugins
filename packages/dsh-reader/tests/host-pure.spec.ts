@@ -8,7 +8,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import { classifyPayload, normalizeUrl } from '../src/service.ts'
-import { boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ReaderStore, ReaderStoreError, boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
 import { delayUntilNext, isCatchUpDue, nextOccurrence, parseTimeOfDay, previousOccurrence } from '../src/schedule.ts'
 import { formatReaderRef, mergedDraft, provenanceOf, relativeWhen, absoluteDate } from '../src/client/quote.ts'
 import { MAX_BODY_CHARS_PER_SOURCE } from '../src/types.ts'
@@ -195,5 +198,56 @@ describe('ref formatting', () => {
     expect(relativeWhen(undefined, now)).toEqual({ key: 'when.justNow' })
     expect(absoluteDate('2026-09-10T09:00:00.000Z')).toBe('2026-09-10')
     expect(absoluteDate('nonsense')).toBeUndefined()
+  })
+})
+
+
+describe('the native state store', () => {
+  /** A throwaway state root. */
+  const root = (): string => mkdtempSync(join(tmpdir(), 'dsh-reader-store-'))
+
+  it('round-trips a document and leaves no temporary file behind', async () => {
+    const dir = root()
+    try {
+      const store = new ReaderStore({ stateRoot: dir })
+      expect(store.available).toBe(true)
+      expect((await store.read()).doc.sources).toEqual([])
+      const doc = { ...emptyStateDoc(), sources: [{ id: 'a', kind: 'rss' as const, url: 'https://example.com', label: 'a', enabled: true, addedAt: '2026-09-17T00:00:00.000Z', raw: '<rss/>' }] }
+      await store.update(() => doc)
+      expect((await store.read()).doc.sources).toHaveLength(1)
+      // The write is temp+rename, so the state root holds exactly one file.
+      expect(readdirSync(dir)).toEqual(['state.json'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reads a missing file as empty and refuses a corrupt one', async () => {
+    const dir = root()
+    try {
+      const store = new ReaderStore({ stateRoot: dir })
+      expect((await store.read()).doc.sources).toEqual([])
+      writeFileSync(join(dir, 'state.json'), '{ this is not json')
+      // Refuse rather than clobber: the file is the user's subscriptions.
+      await expect(store.update(doc => doc)).rejects.toBeInstanceOf(ReaderStoreError)
+      await expect(store.read()).rejects.toMatchObject({ kind: 'corrupt' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('degrades to memory-only when the state root cannot be created', () => {
+    // A file where a directory must be: mkdir fails, and the store must report
+    // that instead of throwing through a boot.
+    const parent = root()
+    try {
+      const file = join(parent, 'not-a-dir')
+      writeFileSync(file, 'x')
+      const store = new ReaderStore({ stateRoot: join(file, 'state') })
+      expect(store.available).toBe(false)
+      expect(store.unavailableReason).toContain('not-a-dir')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
   })
 })

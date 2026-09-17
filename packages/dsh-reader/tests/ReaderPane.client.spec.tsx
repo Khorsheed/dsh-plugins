@@ -72,6 +72,9 @@ interface BenchOptions {
   readonly failedIds?: readonly string[]
   readonly hasSideChat?: boolean
   readonly addAnswer?: AddAnswer
+  /** The handshake's freshness facts; omitted = "never refreshed yet". */
+  readonly lastRefreshAt?: string
+  readonly nextRefreshAt?: string
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -100,7 +103,16 @@ function bench(options: BenchOptions = {}) {
       },
     })),
     addSource: vi.fn(async () => options.addAnswer ?? { ok: true as const, value: { outcome: 'subscribed' as const, kind: 'rss' as const, id: 'new', label: '新源' } }),
-    capabilities: vi.fn(async () => ({ ok: true as const, value: { protocolVersion: 1 as const, hasFs: true, hasSideChat: options.hasSideChat ?? false } })),
+    capabilities: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        protocolVersion: 1 as const,
+        hasFs: true,
+        hasSideChat: options.hasSideChat ?? false,
+        ...(options.lastRefreshAt === undefined ? {} : { lastRefreshAt: options.lastRefreshAt }),
+        ...(options.nextRefreshAt === undefined ? {} : { nextRefreshAt: options.nextRefreshAt }),
+      },
+    })),
     quoteToSideChat: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     openExternal: vi.fn(() => true),
     copyText: vi.fn(async () => true),
@@ -304,6 +316,33 @@ describe('every page that leaves the list carries the way back', () => {
     // The placeholder is an attribute, not text: point at the input itself.
     expect(await screen.findByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
     expect(await screen.findByText('一篇长文')).toBeTruthy()
+  })
+})
+
+describe('the list says how old this snapshot is', () => {
+  it('says so when nothing has been fetched yet', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    expect(screen.getByText(zh['foot.never'])).toBeTruthy()
+  })
+
+  it('states when the last refresh ran and when the next one is due', async () => {
+    const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+      lastRefreshAt: sixtyMinutesAgo,
+      nextRefreshAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    // A reader deciding whether to refresh needs the age, not just a count.
+    expect(screen.getByText(/刷出于 1 小时前/)).toBeTruthy()
+    expect(screen.getByText(/每日 \d{2}:\d{2}/)).toBeTruthy()
   })
 })
 

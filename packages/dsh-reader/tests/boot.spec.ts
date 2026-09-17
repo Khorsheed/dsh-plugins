@@ -99,18 +99,74 @@ describe('the host half boots and provides its service', () => {
     expect(await (remote as ReaderRemoteService).capabilities()).toEqual(await ctx.get('reader').capabilities())
   })
 
-  it('boots in a composition with no fs, web, sideChat or quote', async () => {
+  it('persists state with native fs even when a SESSION-FENCED ctx.fs is mounted', async () => {
+    // The acceptance-instance defect, as a regression test: `ctx.fs` is the
+    // sandboxed filesystem and fences every mutation by the calling session's
+    // policy, so a workspace-write session refuses a write under
+    // `$DSH_HOME/state` with FS_SANDBOX_DENIED. The plugin must therefore not
+    // route deployment-owned state through it — the state below lands on disk
+    // while a `ctx.fs` that throws on any use sits right there in the context.
+    const root = stateRoot()
+    const ctx = new Context()
+    contexts.push(ctx)
+    let touched = false
+    const deny = (): never => {
+      touched = true
+      throw new Error('FS_SANDBOX_DENIED: file access denied under workspace-write mode')
+    }
+    ctx.provide('fs', { writeText: deny, readText: deny, resolve: deny, stat: deny } as never)
+    apply(ctx, { stateRoot: root })
+    await ctx.fiber.await()
+
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://example.com/feed.xml' })
+    // No web seam here, so the fetch is refused — but the ANSWER is a domain
+    // value, which is the point: nothing threw through the pane.
+    expect(outcome).toBe('unsupported-content')
+    expect(touched).toBe(false)
+    expect(ctx.get('fs')).toBeDefined()
+  })
+
+  it('boots in a composition with no web, sideChat or quote', async () => {
     const ctx = await boot()
     const service = ctx.get('reader') as ReaderService
-    // No filesystem: state is memory-only and the handshake must say so rather
-    // than pretending persistence is available.
-    expect((await service.capabilities()).hasFs).toBe(false)
     expect((await service.capabilities()).hasSideChat).toBe(false)
     // No web seam: adding a source must come back as a domain refusal, never
     // as a thrown boot failure.
     expect(await service.addSource({ url: 'https://example.com/feed.xml' })).toBe('unsupported-content')
-    // With no fs there is nothing to list, and that is an empty list, not an error.
+    // Nothing configured yet, and that is an empty list, not an error.
     expect(await service.listSources()).toEqual({ sources: [] })
+  })
+
+  it('round-trips a source through the state file on disk', async () => {
+    const root = stateRoot()
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('web', {
+      fetch: async () => ({
+        url: 'https://example.com/feed.xml',
+        statusCode: 200,
+        body: {
+          kind: 'text' as const,
+          content: `<rss version="2.0"><channel><title>hn</title><item><title>一条</title></item></channel></rss>`,
+        },
+        truncated: false,
+      }),
+    } as never)
+    apply(ctx, { stateRoot: root })
+    await ctx.fiber.await()
+    const service = ctx.get('reader') as ReaderService
+    expect(await service.addSource({ url: 'https://example.com/feed.xml' })).toMatchObject({ outcome: 'subscribed' })
+
+    // A SECOND host on the same root sees the subscription: this is the
+    // difference between durable state and a session variable.
+    const second = new Context()
+    contexts.push(second)
+    apply(second, { stateRoot: root })
+    await second.fiber.await()
+    const listed = await (second.get('reader') as ReaderService).listSources()
+    expect(listed.sources).toHaveLength(1)
+    expect(listed.sources[0]?.kind).toBe('rss')
   })
 })
 

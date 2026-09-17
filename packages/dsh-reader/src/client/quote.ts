@@ -114,6 +114,23 @@ export type RelativeWhenKey = 'when.justNow' | 'when.minutes' | 'when.hours' | '
  * @param now - the reference instant.
  * @returns a dictionary key plus its parameters, for the caller to translate.
  */
+/**
+ * The wall-clock time of an ISO-8601 instant, in the reader's own zone.
+ *
+ * The footer states when the next scheduled refresh is due as a time of day
+ * ("每日 10:00"), because that is how the schedule itself is configured — a
+ * relative "in 14 h" would be a different number every time you look at it.
+ *
+ * @param iso - the instant.
+ * @returns `HH:MM`, or an empty string when the value is unusable.
+ */
+export function clockOf(iso: string | undefined): string {
+  if (iso === undefined) return ''
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return ''
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+}
+
 export function relativeWhen(iso: string | undefined, now: Date): { key: RelativeWhenKey; count?: number } {
   if (iso === undefined) return { key: 'when.justNow' }
   const then = new Date(iso)

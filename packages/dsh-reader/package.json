@@ -64,8 +64,7 @@
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
-    "react": "^18.2.0",
-    "@deepseek-ai/dsh-fs": "^0.1.0-rc.6"
+    "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-api-remotes": {
@@ -94,9 +93,6 @@
     },
     "react": {
       "optional": true
-    },
-    "@deepseek-ai/dsh-fs": {
-      "optional": true
     }
   },
   "devDependencies": {
@@ -118,8 +114,7 @@
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
-    "vitest": "^3.0.0",
-    "@deepseek-ai/dsh-fs": "^0.1.5-rc.1"
+    "vitest": "^3.0.0"
   },
   "scripts": {
     "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
@@ -154,7 +149,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "A page-type right-Sidebar tab (minted kind `reader`) over a Typert Remote data face. Fetching runs on the HOST through the sanctioned `ctx.web` seam and state persists through `ctx.fs`; every optional capability is probed at apply time and degrades (no `fs` → memory-only state; no `sideChat` → the side-chat gesture hides; no `quote` → selection quoting is unavailable while the entry-level quote button still works). KNOWN LIMIT: the host fetch seam caps a decoded body at 100,000 chars and truncates silently, so articles larger than that cannot be extracted — the detail view falls back to a `查看更多请打开原文` notice (measured: Anthropic research pages, theverge.com, newyorker.com).",
+      "notes": "A page-type right-Sidebar tab (minted kind `reader`) over a Typert Remote data face. Fetching runs on the HOST through the sanctioned `ctx.web` seam; state is written with plain `node:fs` (atomic temp+rename) under `$DSH_HOME/state/dsh-reader`, NOT through `ctx.fs` — that service is the session-fenced sandboxed filesystem, so a workspace-write session refuses a write to the state root (observed on the acceptance instance). Every optional capability is probed at apply time and degrades (no `web` → domain refusals; no `sideChat` → the side-chat gesture hides; no `quote` → selection quoting is unavailable while the entry-level quote button still works). KNOWN LIMIT: the host fetch seam caps a decoded body at 100,000 chars and truncates silently, so articles larger than that cannot be extracted — the detail view falls back to a 「受限篇幅，内容未完整呈现」 notice with a 「阅读原文」 button (measured: Anthropic research pages, theverge.com, newyorker.com).",
       "verifiedHost": "0.1.5-rc.1"
     },
     "references": [

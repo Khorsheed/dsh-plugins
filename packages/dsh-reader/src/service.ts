@@ -132,14 +132,14 @@ export class ReaderService {
    */
   constructor(ctx: Context, config: { stateRoot?: string } = {}) {
     this.ctx = ctx
-    this.store = new ReaderStore(ctx, config)
+    this.store = new ReaderStore(config)
     ctx.effect(() => () => {
       this.disposed = true
       if (this.timer !== undefined) clearTimeout(this.timer)
     }, 'reader: daily refresh')
-    // A filesystem that mounts late should get the schedule armed against the
-    // real document, not against the empty one this constructor saw.
-    this.store.onFsReady(() => { void this.armSchedule() })
+    // The store resolves its own root against the deployment (native fs, not
+    // the session-fenced `ctx.fs` — see the store's module note), so the
+    // schedule can be armed immediately.
     void this.armSchedule()
   }
 
@@ -149,6 +149,7 @@ export class ReaderService {
     return {
       protocolVersion: 1,
       hasFs: this.store.available,
+      ...(doc.lastRefreshAt === undefined ? {} : { lastRefreshAt: doc.lastRefreshAt }),
       hasSideChat: this.sideChat() !== undefined,
       ...(doc.refresh.enabled
         ? { nextRefreshAt: new Date(Date.now() + delayUntilNext(new Date(), doc.refresh.timeOfDay)).toISOString() }

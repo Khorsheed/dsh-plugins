@@ -31,7 +31,7 @@ import {
 import type { ReaderPaneProps } from './contract.ts'
 import { extractArticle } from './extract-article.ts'
 import { parseFeed } from './parse-rss.ts'
-import { absoluteDate, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
+import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   countUnread,
   flattenEntries,
@@ -125,6 +125,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const unreadOnly = useStore(s => s.unreadOnly)
   const sort = useStore(s => s.sort)
   const read = useStore(s => s.read)
+  const lastRefreshAt = useStore(s => s.lastRefreshAt)
+  const nextRefreshAt = useStore(s => s.nextRefreshAt)
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
@@ -218,9 +220,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   useEffect(() => {
     void props.capabilities().then(result => {
-      if (result.ok) setSideChatAvailable(result.value.hasSideChat)
+      if (!result.ok) return
+      setSideChatAvailable(result.value.hasSideChat)
+      actions.setSchedule(result.value.lastRefreshAt, result.value.nextRefreshAt)
     })
-  }, [props])
+  }, [actions, props, rev])
 
   const presentation = useMemo(() => {
     const map = new Map<string, SourcePresentation>()
@@ -339,7 +343,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       <span className={css.headTitle}>
         <IconGlobeOutline14 size={14} />
         {t('tab.label')}
-        <span className={css.count}>{countUnread(rows)} {t('filter.unreadOnly')}</span>
+        <span className={css.count} title={t('filter.unreadOnly')}>
+          {countUnread(rows)} {t('foot.unread')}
+        </span>
       </span>
       <button type="button" className={css.tool} title={t('action.refresh')} onClick={() => actions.refresh()}>
         <IconRefreshOutline16 size={15} />
@@ -603,6 +609,28 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </div>
         )}
       </div>
+
+      {/* The snapshot's age. A reader deciding whether to press refresh needs
+          to know how stale this copy is, and a refresh really does go back to
+          the network — every enabled source is re-fetched. */}
+      {sources.length > 0 && (() => {
+        const when = relativeWhen(lastRefreshAt ?? undefined, new Date())
+        return (
+          <div className={css.metaBar}>
+            <span>
+              {lastRefreshAt === null
+                ? t('foot.never')
+                : t('foot.refreshedAt', { when: t(when.key, when.count === undefined ? {} : { count: when.count }) })}
+            </span>
+            {nextRefreshAt !== null && (
+              <>
+                <span className={css.sep}>·</span>
+                <span>{t('foot.scheduled', { time: clockOf(nextRefreshAt) })}</span>
+              </>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

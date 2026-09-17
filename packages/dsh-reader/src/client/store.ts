@@ -55,6 +55,10 @@ export interface ReaderState {
   sort: ReaderSort
   /** Source ids the user has opened (the session's read cursor). */
   read: Record<string, true>
+  /** When the host last completed a refresh run, from the handshake. */
+  lastRefreshAt: string | null
+  /** When the next scheduled refresh is due, from the handshake. */
+  nextRefreshAt: string | null
   /** Whether a host round trip is in flight. */
   loading: boolean
   /** A human-readable failure from the last round trip. */
@@ -76,6 +80,7 @@ export type ReaderActions = {
   toggleUnreadOnly: (draft: ReaderState) => void
   setSort: (draft: ReaderState, sort: ReaderSort) => void
   markRead: (draft: ReaderState, entryId: string) => void
+  setSchedule: (draft: ReaderState, lastRefreshAt: string | undefined, nextRefreshAt: string | undefined) => void
   setLoading: (draft: ReaderState, loading: boolean) => void
   setError: (draft: ReaderState, error: string | null) => void
   refresh: (draft: ReaderState) => void
@@ -94,6 +99,8 @@ const INITIAL: ReaderState = {
   unreadOnly: false,
   sort: 'newest',
   read: {},
+  lastRefreshAt: null,
+  nextRefreshAt: null,
   loading: false,
   error: null,
   rev: 0,
@@ -144,6 +151,10 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       toggleUnreadOnly: (d) => { d.unreadOnly = !d.unreadOnly },
       setSort: (d, sort) => { d.sort = sort },
       markRead: (d, entryId) => { d.read = { ...d.read, [entryId]: true } },
+      setSchedule: (d, lastRefreshAt, nextRefreshAt) => {
+        d.lastRefreshAt = lastRefreshAt ?? null
+        d.nextRefreshAt = nextRefreshAt ?? null
+      },
       setLoading: (d, loading) => { d.loading = loading },
       setError: (d, error) => {
         d.error = error

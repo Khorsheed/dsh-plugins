@@ -22,7 +22,7 @@ export type ReaderKey =
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
-  | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never'
+  | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
   | 'quote.copied' | 'quote.copyFailed' | 'quote.quoted'
   | 'quote.toSideChat' | 'quote.sideChatUnavailable'
   | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
@@ -80,8 +80,9 @@ export const en = {
   'detail.composerEmpty': '(empty)',
 
   'foot.refreshedAt': 'Refreshed {when}',
-  'foot.scheduled': 'Daily refresh at {time}',
+  'foot.scheduled': 'daily {time}',
   'foot.never': 'Not refreshed yet',
+  'foot.unread': 'unread',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -149,8 +150,9 @@ export const zh = {
   'detail.composerEmpty': '（空）',
 
   'foot.refreshedAt': '刷出于 {when}',
-  'foot.scheduled': '每日 {time} 自动刷新',
+  'foot.scheduled': '每日 {time}',
   'foot.never': '尚未刷新',
+  'foot.unread': '未读',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',
