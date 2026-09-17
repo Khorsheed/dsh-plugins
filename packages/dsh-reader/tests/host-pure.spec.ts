@@ -256,17 +256,59 @@ describe('the native state store', () => {
 describe('the tool row cannot overlap itself', () => {
   it('pins the flex constraints that the search box violated', () => {
     // jsdom has no layout engine, so this asserts the CONSTRAINT instead of a
-    // measured rectangle — which is exactly the level the bug lived at. Without
-    // `min-width: 0` on the flexed search box, its input's intrinsic width made
-    // it refuse to shrink and the segmented control was pushed under it,
-    // covering the 全部 button (observed on the acceptance instance).
+    // measured rectangle — which is exactly the level both bugs lived at.
+    // Without a floor under it, the flexed search box's input refuses to shrink
+    // and whatever sits beside it gets pushed out of the row (observed on the
+    // acceptance instance: the segmented control covered 全部).
     const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
     const search = /\.search\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
-    expect(search).toMatch(/min-width:\s*0/)
-    expect(search).toMatch(/flex:\s*1 1 auto/)
+    // `flex-basis: 0` (not `auto`): the field's width comes from the row's free
+    // space, never from its own content, and `min-width` is a real floor rather
+    // than 0 so the field cannot collapse into an unreadable sliver either.
+    expect(search).toMatch(/flex:\s*1 1 0/)
+    expect(search).toMatch(/min-width:\s*44px/)
     const input = /\.search input\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
     expect(input).toMatch(/min-width:\s*0/)
-    const segmented = /\.segmented\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
-    expect(segmented).toMatch(/flex:\s*0 0 auto/)
+    // Both icon tools share one non-shrinking box, so neither can be squeezed
+    // out by the other's state.
+    const toolWrap = /\.toolWrap\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(toolWrap).toMatch(/flex:\s*none/)
+    expect(toolWrap).toMatch(/position:\s*relative/)
+    // …and each popover is anchored to the button that opened it. The old panes
+    // were positioned at a magic `top: 62px` on the PANE — shorter than the
+    // toolbar itself, so opening the filter covered the sort button.
+    for (const pane of ['\\.menu', '\\.filterPanel']) {
+      const block = new RegExp(`${pane}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+      expect(block).toMatch(/top:\s*calc\(100% \+ 4px\)/)
+      expect(block).toMatch(/right:\s*0/)
+    }
+  })
+})
+
+describe('the article body follows the pane', () => {
+  it('does not cap prose at a measure the lists ignore', () => {
+    // The retired rule was `max-width: min(100%, 46em)` on paragraphs only, so
+    // prose stopped short while lists ran the full column: a ragged right edge
+    // that read as a layout bug on the acceptance instance. The sidebar IS the
+    // measure (decided with the user, 2026-09-18) — if a measure comes back, it
+    // has to come back for every block, not just `p`.
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    expect(css).not.toMatch(/\.articleZh p\s*\{[^}]*max-width/)
+    expect(css).not.toMatch(/\.articleEn p\s*\{[^}]*max-width/)
+  })
+})
+
+describe('the tag panel is placed from its own box', () => {
+  it('keeps the CSS box in step with the placement constants', () => {
+    // The panel is `position: fixed` and the pane decides above-vs-below from
+    // its size, so the two numbers live in different files on purpose. If they
+    // drift, the panel opens off-screen near the bottom of a short sidebar.
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    const panel = /\.cardTagPanel\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(panel).toMatch(/width:\s*236px/)
+    expect(panel).toMatch(/max-height:\s*296px/)
+    const pane = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.tsx'), 'utf8')
+    expect(pane).toMatch(/TAG_PANEL_WIDTH = 236/)
+    expect(pane).toMatch(/TAG_PANEL_MAX_HEIGHT = 296/)
   })
 })

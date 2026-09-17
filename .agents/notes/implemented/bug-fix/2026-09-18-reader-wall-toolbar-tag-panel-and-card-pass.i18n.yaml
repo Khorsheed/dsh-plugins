@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.md
+.agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.md: 58754761e66c38660fd2ff855f5da275133aec54
+.agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.zh.md: 85ca1f44e68e9dd2b60d1a6dede278d83e1ae4db

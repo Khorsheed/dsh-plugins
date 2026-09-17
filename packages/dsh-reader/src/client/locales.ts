@@ -19,7 +19,7 @@ export type ReaderKey =
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
   | 'action.fetchBody' | 'detail.bodyStale' | 'action.more' | 'action.addTag'
-  | 'tag.title' | 'tag.placeholder'
+  | 'tag.title' | 'tag.placeholder' | 'tag.hint' | 'tag.create' | 'tag.empty'
   | 'search.placeholder'
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
@@ -65,6 +65,9 @@ export const en = {
   'detail.bodyStale': 'The saved copy is out of date — fetch it again?',
   'tag.title': 'Tags',
   'tag.placeholder': 'Tag name, then Enter',
+  'tag.hint': 'Enter to add',
+  'tag.create': 'Create “{name}”',
+  'tag.empty': 'No tags yet — type a name to make the first one',
   'filter.byTag': 'By tag',
   'search.placeholder': 'Search titles, authors, sources…',
   'sort.title': 'Sort',
@@ -179,6 +182,9 @@ export const zh = {
   'detail.bodyStale': '存的正文已过期 —— 重新抓取？',
   'tag.title': '标签',
   'tag.placeholder': '标签名，回车确认',
+  'tag.hint': '回车确认',
+  'tag.create': '新建「{name}」',
+  'tag.empty': '还没有标签 —— 输入名字回车就能建第一个',
   'filter.byTag': '按标签',
   'search.placeholder': '搜索标题、作者、来源…',
   'sort.title': '排序',

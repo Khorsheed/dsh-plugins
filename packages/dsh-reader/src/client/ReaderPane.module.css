@@ -70,15 +70,29 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   padding: 8px 10px 6px;
 }
 
+/* One 26px box per icon tool, both of them AFTER the field. `flex: none` is the
+   whole point: the row is 26 + gap + field + gap + 26, and only the field gives
+   width back when the sidebar narrows, so neither tool can ever be squeezed out
+   by the other's state. Each tool also carries the popover's positioning
+   context, so a panel is anchored to the button that opened it. */
+.toolWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
 .search {
-  /* `min-width: 0` is load-bearing: without it the input's intrinsic width
-     refuses to shrink and the controls beside it get pushed out of the row. */
-  flex: 1 1 auto;
-  min-width: 0;
+  /* `flex: 1 1 0` (not `auto`): the field's width comes from the row's free
+     space, never from its own content, so a long placeholder or a `#source`
+     filter value cannot push the tools out of the row. The `min-width` floor is
+     what stops the reverse failure — a field collapsed into an unreadable
+     sliver on a narrow sidebar — while the input inside may still shrink. */
+  flex: 1 1 0;
+  min-width: 44px;
   position: relative;
 }
 
@@ -93,7 +107,6 @@
 
 .search input {
   min-width: 0;
-  width: 100%;
   width: 100%;
   height: 26px;
   padding: 0 8px 0 26px;
@@ -123,32 +136,55 @@
 
 .list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
+  gap: 8px;
 }
 
 /* ---------------------------------------------------------------- the card */
 
+/* A card is a surface, not a transparent row: the fill is the host's own card
+   value (ui-deliverables' `--deliverable-fill`: neutral-50 light, neutral-850
+   dark) and the hairline border separates neighbours in the grid. Hover keeps
+   the geometry and only lifts the tone, so scanning the wall never makes it
+   jump. */
 .card {
+  --reader-card-fill: var(--dsw-static-neutral-50, #fafafa);
+  --reader-card-hover: var(--dsw-static-neutral-100, #f5f5f5);
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 2px 9px;
   align-items: start;
-  padding: 8px 8px 8px 9px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
+  padding: 9px 9px 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--reader-card-fill);
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+:global(body[data-ds-dark-theme]) .card {
+  --reader-card-fill: var(--dsw-static-neutral-850, #212123);
+  --reader-card-hover: var(--dsw-static-neutral-800, #292929);
 }
 
 .card:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--reader-card-hover);
 }
 
 .card:active {
-  background: var(--dsw-alias-interactive-bg-active);
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--reader-card-hover);
+}
+
+/* A card is a `role="button"` with tabIndex 0, so it needs the ring every other
+   focusable thing in the host has; without it the wall is keyboard-navigable
+   but not keyboard-VISIBLE. */
+.card:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
 }
 
 /* The unread marker is a badge on the source tile's corner: an avatar badge is
@@ -224,6 +260,15 @@
   font-size: 12.5px;
   font-weight: 600;
   line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Unread is the state that earns ink: the title steps up to primary and gains a
+   touch of weight, on top of the 7px dot on the tile. Read entries go quieter
+   rather than away — the wall is a feed you keep, not an inbox you clear. */
+.card[data-unread] .title {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 650;
 }
 
 .summary {
@@ -243,19 +288,38 @@
   display: flex;
   grid-column: 2 / -1;
   align-items: center;
-  gap: 4px;
+  /* Wrapping is load-bearing now that a card is a bordered box: a long tag list
+     used to spill out of the card's edge, and a fixed-height row cannot say so. */
+  flex-wrap: wrap;
+  gap: 5px;
   min-width: 0;
-  margin-top: 5px;
+  margin-top: 6px;
+}
+
+/* One pill metric for both kinds of tag, so the row never jitters vertically and
+   the `+` affordance lines up with the pills it sits among. The feed's own
+   category is a filled chip; the reader's own tag is outlined and inked — told
+   apart by shape as well as by colour. */
+.tag,
+.tagOwned {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1;
 }
 
 .tag {
-  flex: none;
-  padding: 3px 6px;
-  border-radius: 5px;
   background: var(--dsw-alias-interactive-bg-active);
-  font-size: 10px;
-  line-height: 1;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.tagOwned {
+  border: 1px solid var(--dsw-static-deepseek-500);
+  color: var(--dsw-alias-label-primary);
 }
 
 .author {
@@ -494,10 +558,14 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Chinese and Latin need different leading, letter-spacing and measure. Latin
-   prose sits at 1.66 with a 62ch measure; Chinese at 1.78 with 40em, because
-   Han glyphs carry their own side bearing and read as a block without the extra
-   leading, while a wider measure makes Latin lines hard to track back. */
+/* Chinese and Latin need different leading and letter-spacing: Latin prose sits
+   at 1.66, Chinese at 1.78, because Han glyphs carry their own side bearing and
+   read as a block without the extra leading.
+   There is deliberately NO max-width here. A `min(100%, 46em)` measure used to
+   cap paragraphs while lists ran the full column, which left the body ragged on
+   the right — half a layout and half a typography rule, and the empty band read
+   as a bug. The pane is a sidebar: its width IS the measure, and the reader can
+   make it wider if they want to (decided with the user, 2026-09-18). */
 .articleZh {
   font-size: 13.5px;
   line-height: 1.78;
@@ -512,17 +580,6 @@
 
 .article p {
   margin: 0 0 12px;
-}
-
-.articleZh p {
-  /* A reading measure, but never narrower than the pane: on a wide sidebar the
-     old hard 40em left a third of the column empty, which reads as a layout
-     bug rather than as typography. */
-  max-width: min(100%, 46em);
-}
-
-.articleEn p {
-  max-width: min(100%, 72ch);
 }
 
 .article h1,
@@ -727,20 +784,20 @@
 /* ------------------------------------------------------------------ menus */
 
 .menu {
-  /* Anchored to the right edge like the filter panel: without an explicit
-     `right`, an absolutely positioned box uses its static position, which put
-     the sort menu at the ROOT's left edge (the whole pane's) instead of under
-     the button that opened it. */
+  /* Anchored to the button that opened it (`.toolWrap` is the positioning
+     context) and dropped just under it, so it can never cover the toolbar the
+     way the old pane-anchored `top: 62px` did — that value was shorter than the
+     toolbar, so the filter panel sat on top of the sort button. */
   position: absolute;
-  top: 62px;
-  right: 10px;
+  top: calc(100% + 4px);
+  right: 0;
   z-index: 20;
   min-width: 150px;
   padding: 4px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 9px;
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 6px 20px var(--dsw-alias-bg-mask-2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
 }
 
 .menu button {
@@ -1076,35 +1133,6 @@
 
 /* ------------------------------------------------------------ tool extras */
 
-/* The all/today pair stays visible as labelled segments, because a filter the
-   reader cannot see is indistinguishable from an empty list. */
-.segmented {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-}
-
-.segment,
-.segmentOn {
-  padding: 3px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.segmentOn {
-  background: var(--dsw-alias-interactive-bg-active, rgba(127, 127, 127, 0.22));
-  color: var(--dsw-alias-label-primary);
-}
-
 /* The refresh button's in-flight state: the icon turns rather than the list
    disappearing, so a refresh never looks like a dead button or a lost wall. */
 .toolSpinning svg {
@@ -1127,12 +1155,12 @@
 
 /* ------------------------------------------------------ the filter popover */
 
-/* Anchored under the toolbar, over the wall. A column of rows, because a
+/* Anchored under its own button, over the wall. A column of rows, because a
    sidebar has width for a list of names and not for a row of them. */
 .filterPanel {
   position: absolute;
-  top: 62px;
-  right: 10px;
+  top: calc(100% + 4px);
+  right: 0;
   z-index: 20;
   min-width: 200px;
   max-width: 280px;
@@ -1141,7 +1169,7 @@
   padding: 6px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
 }
 
@@ -1346,15 +1374,21 @@
 }
 
 .tagInput {
-  width: 150px;
-  padding: 3px 8px;
-  border: 1px solid var(--dsw-static-deepseek-500);
-  border-radius: 999px;
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 11px;
   outline: none;
+}
+
+/* One focus treatment for both tag inputs: the border turns accent, the box does
+   not grow a second one. */
+.tagInput:focus {
+  border-color: var(--dsw-alias-state-business-primary);
 }
 
 /* The per-card action menu (right-click, or the card's own button). Floating,
@@ -1389,40 +1423,6 @@
 }
 
 /* The affordance the menu hangs off: quiet until the card is hovered. */
-.cardMenuButton {
-  position: absolute;
-  top: 6px;
-  right: 22px;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  opacity: 0;
-  cursor: pointer;
-}
-
-.card:hover .cardMenuButton,
-.cardMenuButton:focus-visible {
-  opacity: 1;
-}
-
-.cardMenuButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-/* The reader's tags on a card, told apart from the feed's own categories. */
-.tagOwned {
-  padding: 1px 7px;
-  border: 1px solid var(--dsw-static-deepseek-500);
-  border-radius: 999px;
-  color: var(--dsw-alias-label-primary);
-  font-size: 10.5px;
-}
 
 /* The tag button lives in the tags row (where the entry's own tags are), and
    only surfaces on hover or focus so a wall of cards stays quiet. */
@@ -1455,10 +1455,140 @@
 .cardTagPanel {
   position: fixed;
   z-index: 40;
-  width: 210px;
-  max-height: 280px;
-  overflow-y: auto;
+  /* Keep the width and the height bound in step with TAG_PANEL_WIDTH /
+     TAG_PANEL_MAX_HEIGHT in the pane — they are what its placement is computed
+     from (below the card when there is room, above it when there is not). */
+  display: flex;
+  flex-direction: column;
+  width: 236px;
+  max-height: 296px;
   padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+/* The panel's own header: what this surface is, and the one key it takes. The
+   hint is right-aligned and quiet, so it reads as a reminder rather than copy. */
+.tagPanelHead {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 6px;
+}
+
+.tagPanelTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.tagPanelHint {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagPanelList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tagPanelEmpty {
+  padding: 4px 8px 8px;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* One vocabulary row: the check column is fixed so every name starts on the same
+   edge whether or not it is applied. */
+.tagRow,
+.tagCreate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tagRow:hover,
+.tagCreate:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tagRow[data-on] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.tagRowCheck {
+  flex: none;
+  width: 12px;
+  font-size: 11px;
+  color: var(--dsw-static-deepseek-500);
+}
+
+.tagRowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Creating is a first-class action in the vocabulary, not an error fallback:
+   it sits in the same list, with the same metrics, marked only by the glyph. */
+.tagCreate {
+  margin-top: 1px;
+  color: var(--dsw-static-deepseek-500);
+}
+
+/* The panel's field: the input keeps the panel's surface rather than carrying a
+   hard accent border of its own — the caret and the placeholder already say
+   where typing goes, and the old solid blue pill fought the list above it. */
+.tagPanelField {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagPanelField:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* The detail page's inline editor: the same rows, dropped into the page's flow
+   (a floating list inside a scrolling body would be clipped by it). */
+.tagEditField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+}
+
+.tagSuggest {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-2);
@@ -1467,6 +1597,13 @@
 
 .cardTagPanel .tagInput {
   width: 100%;
-  margin-top: 4px;
-  border-radius: 7px;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 11.5px;
+}
+
+.cardTagPanel .tagInput:focus {
+  border: 0;
 }

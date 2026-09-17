@@ -38,6 +38,7 @@ import {
   IconSettingsOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReaderPaneProps } from './contract.ts'
+import type { ReaderTag } from '../types.ts'
 import { extractArticle } from './extract-article.ts'
 import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
@@ -98,6 +99,74 @@ function isCjk(html: string): boolean {
   if (text.length === 0) return false
   const cjk = text.match(/[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g)
   return (cjk?.length ?? 0) / text.length > 0.2
+}
+
+/** The wall's tag panel box: the width it is clamped with, and the height
+ *  placement estimates from the vocabulary (its real height is bounded by CSS). */
+const TAG_PANEL_WIDTH = 236
+const TAG_PANEL_MAX_HEIGHT = 296
+
+/**
+ * The tag vocabulary, as rows: the card panel's checklist and the detail page's
+ * inline editor both render this.
+ *
+ * It replaces the native `<datalist>` those two inputs used to share. The
+ * browser draws that popup itself — outside the pane's surface, with no way to
+ * mark which tags are already on the entry, and with no way to offer the one
+ * action the vocabulary does not already contain: creating the name you typed.
+ *
+ * @param t - the namespace translator.
+ * @param tags - the whole vocabulary, in the host's order.
+ * @param applied - the tag ids already on this entry.
+ * @param draft - what the input currently holds; empty means "show everything".
+ * @param onToggle - apply or remove one tag.
+ * @param onCreate - make (or reuse) a tag from the typed name and apply it.
+ */
+function TagSuggestions({ t, tags, applied, draft, onToggle, onCreate }: {
+  readonly t: ReaderPaneProps['t']
+  readonly tags: readonly ReaderTag[]
+  readonly applied: readonly string[]
+  readonly draft: string
+  readonly onToggle: (tag: ReaderTag) => void
+  readonly onCreate: (name: string) => void
+}): ReactNode {
+  const name = draft.trim()
+  const needle = name.toLowerCase()
+  const suggested = needle === '' ? tags : tags.filter(tag => tag.name.toLowerCase().includes(needle))
+  const exact = tags.some(tag => tag.name.toLowerCase() === needle)
+  return (
+    <>
+      {suggested.map(tag => {
+        const on = applied.includes(tag.id)
+        return (
+          <button
+            key={tag.id}
+            type="button"
+            className={css.tagRow}
+            data-on={on || undefined}
+            // Keep the field focused: the detail editor closes on blur, and a
+            // mousedown that moves focus would dismiss the list mid-click.
+            onMouseDown={event => { event.preventDefault() }}
+            onClick={() => { onToggle(tag) }}
+          >
+            <span className={css.tagRowCheck}>{on ? '✓' : ''}</span>
+            <span className={css.tagRowName}>{tag.name}</span>
+          </button>
+        )
+      })}
+      {name !== '' && !exact && (
+        <button
+          type="button"
+          className={css.tagCreate}
+          onMouseDown={event => { event.preventDefault() }}
+          onClick={() => { onCreate(name) }}
+        >
+          <IconPlusOutline16 size={12} />
+          <span className={css.tagRowName}>{t('tag.create', { name })}</span>
+        </button>
+      )}
+    </>
+  )
 }
 
 /** The dictionary key each verdict message lives under. */
@@ -602,12 +671,28 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (result.ok) actions.setEntryTags(entryId, result.value.tags.map(tag => tag.id))
   }, [actions, props])
 
-  /** Open the tag panel for one card, without opening the article. */
+  /**
+   * Open the tag panel for one card, without opening the article.
+   *
+   * The panel is `position: fixed`, so its seat is decided here instead of by a
+   * CSS constant: below the card when the viewport has room for it, above the
+   * card when it does not, and never past either gutter. The previous version
+   * only knew `card.bottom + 4`, which opened a panel that ran off the bottom
+   * of a short sidebar.
+   */
   const openCardTag = useCallback((entryId: string) => {
     void loadEntryTags(entryId)
+    setTagDraft('')
     const box = document.querySelector(`[data-reader-entry="${entryId}"]`)?.getBoundingClientRect()
-    setCardTag({ entryId, top: (box?.bottom ?? 120) + 4, left: box?.left ?? 40 })
-  }, [loadEntryTags])
+    // 84px of chrome (header + input + padding) plus one row per tag; the head
+    // and the input are fixed here, so this is exact enough to choose a side.
+    const height = Math.min(TAG_PANEL_MAX_HEIGHT, 84 + tags.length * 30)
+    const left = Math.max(8, Math.min(box?.left ?? 40, window.innerWidth - TAG_PANEL_WIDTH - 8))
+    const below = (box?.bottom ?? 120) + 6
+    const above = (box?.top ?? 120) - height - 6
+    const top = below + height <= window.innerHeight - 8 || above < 8 ? below : above
+    setCardTag({ entryId, top, left })
+  }, [loadEntryTags, tags.length])
 
   /** Toggle one tag on one entry. */
   const toggleTag = useCallback(async (entryId: string, tagId: string, on: boolean) => {
@@ -862,33 +947,47 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             ))}
             {tagInputOpen
               ? (
-                <input
-                  autoFocus
-                  className={css.tagInput}
-                  list="reader-tag-vocabulary"
-                  value={tagDraft}
-                  placeholder={t('tag.placeholder')}
-                  onChange={event => setTagDraft(event.target.value)}
-                  onBlur={() => { setTagInputOpen(false); setTagDraft('') }}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter' && tagDraft.trim().length > 0) {
-                      const existing = tags.find(tag => tag.name.toLowerCase() === tagDraft.trim().toLowerCase())
-                      if (existing === undefined) void createAndTag(openEntry.id, tagDraft.trim())
-                      else { setTagDraft(''); setTagInputOpen(false); void toggleTag(openEntry.id, existing.id, true) }
-                    }
-                    if (event.key === 'Escape') { setTagInputOpen(false); setTagDraft('') }
-                  }}
-                />
+                <div className={css.tagEditField}>
+                  <input
+                    autoFocus
+                    className={css.tagInput}
+                    value={tagDraft}
+                    placeholder={t('tag.placeholder')}
+                    onChange={event => setTagDraft(event.target.value)}
+                    // A suggestion's mousedown is suppressed, so this fires only
+                    // when focus really left the editor.
+                    onBlur={() => { setTagInputOpen(false); setTagDraft('') }}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' && tagDraft.trim().length > 0) {
+                        const existing = tags.find(tag => tag.name.toLowerCase() === tagDraft.trim().toLowerCase())
+                        if (existing === undefined) void createAndTag(openEntry.id, tagDraft.trim())
+                        else { setTagDraft(''); setTagInputOpen(false); void toggleTag(openEntry.id, existing.id, true) }
+                      }
+                      if (event.key === 'Escape') { setTagInputOpen(false); setTagDraft('') }
+                    }}
+                  />
+                  {tagDraft.trim().length > 0 && (
+                    <div className={css.tagSuggest}>
+                      <TagSuggestions
+                        t={t}
+                        tags={tags}
+                        applied={entryTagIds[openEntry.id] ?? []}
+                        draft={tagDraft}
+                        onToggle={tag => {
+                          const on = (entryTagIds[openEntry.id] ?? []).includes(tag.id)
+                          void toggleTag(openEntry.id, tag.id, !on)
+                        }}
+                        onCreate={name => { void createAndTag(openEntry.id, name) }}
+                      />
+                    </div>
+                  )}
+                </div>
               )
               : (
                 <button type="button" className={css.tagAdd} onClick={() => setTagInputOpen(true)}>
                   <IconPlusOutline16 size={12} />
                 </button>
               )}
-            {/* The vocabulary, for autocomplete: typing "ai" must find "AI". */}
-            <datalist id="reader-tag-vocabulary">
-              {tags.map(tag => <option key={tag.id} value={tag.name} />)}
-            </datalist>
           </div>
           {alsoFrom.length > 0 && (
             <div className={css.alsoFrom}>
@@ -1094,14 +1193,6 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           plus one source), so a reader finds them all in one place instead of
           looking for a strip that scrolled out of view. */}
       <div className={css.tools}>
-        <button
-          type="button"
-          className={`${css.tool} ${activeSource !== null || unreadOnly ? css.toolOn : ''}`}
-          title={t('action.filter')}
-          onClick={() => { setSortOpen(false); setFilterOpen(open => !open) }}
-        >
-          {glyph('funnel', 15)}
-        </button>
         <div className={css.search}>
           {glyph('search', 12)}
           <input
@@ -1110,80 +1201,99 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             onChange={event => actions.setQuery(event.target.value)}
           />
         </div>
-        <button
-          type="button"
-          className={`${css.tool} ${sort === 'newest' ? '' : css.toolOn}`}
-          title={t('sort.title')}
-          onClick={() => { setFilterOpen(false); setSortOpen(open => !open) }}
-        >
-          {glyph('sort', 15)}
-        </button>
-      </div>
-      {filterOpen && (
-        <div className={css.filterPanel}>
-          <div className={css.filterSection}>{t('filter.readState')}</div>
-          <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
-            <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
-            <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
-          </button>
-          <div className={css.filterSection}>{t('filter.bySource')}</div>
+        {/* Both icon tools sit to the RIGHT of the field, each in its own fixed
+            26px box: the search field is the only thing that gives width back on
+            a narrow sidebar, so neither tool can squeeze the other out. Each
+            popover hangs inside its own button's wrapper, which is what anchors
+            it under the button that opened it — the old panes were positioned at
+            a magic `top: 62px` on the pane, a value shorter than the toolbar
+            itself, so opening the filter panel covered the sort button. */}
+        <span className={css.toolWrap}>
           <button
             type="button"
-            className={css.filterRow}
-            onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
+            className={`${css.tool} ${activeSource !== null || unreadOnly ? css.toolOn : ''}`}
+            title={t('action.filter')}
+            onClick={() => { setSortOpen(false); setFilterOpen(open => !open) }}
           >
-            <span className={css.filterCheck}>{activeSource === null ? '✓' : ''}</span>
-            <span className={css.filterLabel}>{t('filter.all')}</span>
-            <span className={css.filterCount}>{allEntries.length}</span>
+            {glyph('funnel', 15)}
           </button>
-          {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
-          {tags.map(tag => (
-            <button
-              key={tag.id}
-              type="button"
-              className={css.filterRow}
-              onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
-            >
-              <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
-              <span className={css.filterLabel}>{tag.name}</span>
-              <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
-            </button>
-          ))}
-          {sources.map(source => {
-            const group = parsed[source.id]
-            const broken = group?.error !== undefined || group?.incomplete === true
-            return (
+          {filterOpen && (
+            <div className={css.filterPanel}>
+              <div className={css.filterSection}>{t('filter.readState')}</div>
+              <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
+                <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
+                <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
+              </button>
+              <div className={css.filterSection}>{t('filter.bySource')}</div>
               <button
-                key={source.id}
                 type="button"
                 className={css.filterRow}
-                title={source.url}
-                onClick={() => { actions.setQuery(sourceQuery(source.id)); setFilterOpen(false) }}
+                onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
               >
-                <span className={css.filterCheck}>{activeSource === source.id ? '✓' : ''}</span>
-                <span className={css.filterLabel}>{source.label}</span>
-                {broken
-                  ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
-                  : <span className={css.filterCount}>{group?.entries.length ?? 0}</span>}
+                <span className={css.filterCheck}>{activeSource === null ? '✓' : ''}</span>
+                <span className={css.filterLabel}>{t('filter.all')}</span>
+                <span className={css.filterCount}>{allEntries.length}</span>
               </button>
-            )
-          })}
-        </div>
-      )}
-      {sortOpen && (
-        <div className={css.menu}>
-          {(['newest', 'oldest', 'source'] as const).map(option => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => { actions.setSort(option); setSortOpen(false) }}
-            >
-              <span>{t(`sort.${option}`)}</span>
-              {sort === option && <span className={css.check}>✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
+              {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
+              {tags.map(tag => (
+                <button
+                  key={tag.id}
+                  type="button"
+                  className={css.filterRow}
+                  onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
+                >
+                  <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
+                  <span className={css.filterLabel}>{tag.name}</span>
+                  <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
+                </button>
+              ))}
+              {sources.map(source => {
+                const group = parsed[source.id]
+                const broken = group?.error !== undefined || group?.incomplete === true
+                return (
+                  <button
+                    key={source.id}
+                    type="button"
+                    className={css.filterRow}
+                    title={source.url}
+                    onClick={() => { actions.setQuery(sourceQuery(source.id)); setFilterOpen(false) }}
+                  >
+                    <span className={css.filterCheck}>{activeSource === source.id ? '✓' : ''}</span>
+                    <span className={css.filterLabel}>{source.label}</span>
+                    {broken
+                      ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
+                      : <span className={css.filterCount}>{group?.entries.length ?? 0}</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </span>
+        <span className={css.toolWrap}>
+          <button
+            type="button"
+            className={`${css.tool} ${sort === 'newest' ? '' : css.toolOn}`}
+            title={t('sort.title')}
+            onClick={() => { setFilterOpen(false); setSortOpen(open => !open) }}
+          >
+            {glyph('sort', 15)}
+          </button>
+          {sortOpen && (
+            <div className={css.menu}>
+              {(['newest', 'oldest', 'source'] as const).map(option => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => { actions.setSort(option); setSortOpen(false) }}
+                >
+                  <span>{t(`sort.${option}`)}</span>
+                  {sort === option && <span className={css.check}>✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </span>
+      </div>
 
       <div className={css.scroll}>
         {loading && <div className={css.state}>{t('state.loading')}</div>}
@@ -1235,6 +1345,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 key={row.entry.id}
                 className={css.card}
                 data-reader-entry={row.entry.id}
+                // Read entries keep their place (never hidden), but they read a
+                // step quieter than unread ones: that hierarchy is what makes a
+                // wall of cards scannable, and it is the feed-reader habit.
+                data-unread={row.unread || undefined}
                 role="button"
                 tabIndex={0}
                 onClick={() => { if (cardMenu !== null || cardTag !== null) { setCardMenu(null); setCardTag(null); return } void open(row) }}
@@ -1318,35 +1432,42 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       })()}
       {cardTag !== null && (
         <div className={css.cardTagPanel} style={{ top: cardTag.top, left: cardTag.left }}>
-          <div className={css.filterSection}>{t('tag.title')}</div>
-          {tags.map(tag => {
-            const on = (entryTagIds[cardTag.entryId] ?? []).includes(tag.id)
-            return (
-              <button
-                key={tag.id}
-                type="button"
-                className={css.filterRow}
-                onClick={() => { void toggleTag(cardTag.entryId, tag.id, !on) }}
-              >
-                <span className={css.filterCheck}>{on ? '✓' : ''}</span>
-                <span className={css.filterLabel}>{tag.name}</span>
-              </button>
-            )
-          })}
-          <input
-            autoFocus
-            className={css.tagInput}
-            list="reader-tag-vocabulary"
-            placeholder={t('tag.placeholder')}
-            onChange={event => { setTagDraft(event.target.value) }}
-            onKeyDown={event => {
-              if (event.key !== 'Enter' || tagDraft.trim().length === 0) return
-              const name = tagDraft.trim()
-              const existing = tags.find(tag => tag.name.toLowerCase() === name.toLowerCase())
-              if (existing === undefined) void createAndTag(cardTag.entryId, name)
-              else { void toggleTag(cardTag.entryId, existing.id, true); setTagDraft('') }
-            }}
-          />
+          <div className={css.tagPanelHead}>
+            <span className={css.tagPanelTitle}>{t('tag.title')}</span>
+            <span className={css.tagPanelHint}>{t('tag.hint')}</span>
+          </div>
+          <div className={css.tagPanelList}>
+            {tags.length === 0 && <div className={css.tagPanelEmpty}>{t('tag.empty')}</div>}
+            <TagSuggestions
+              t={t}
+              tags={tags}
+              applied={entryTagIds[cardTag.entryId] ?? []}
+              draft={tagDraft}
+              onToggle={tag => {
+                const on = (entryTagIds[cardTag.entryId] ?? []).includes(tag.id)
+                void toggleTag(cardTag.entryId, tag.id, !on)
+              }}
+              onCreate={name => { void createAndTag(cardTag.entryId, name) }}
+            />
+          </div>
+          <div className={css.tagPanelField}>
+            <IconPlusOutline16 size={12} />
+            <input
+              autoFocus
+              className={css.tagInput}
+              value={tagDraft}
+              placeholder={t('tag.placeholder')}
+              onChange={event => { setTagDraft(event.target.value) }}
+              onKeyDown={event => {
+                if (event.key === 'Escape') { setTagDraft(''); setCardTag(null); return }
+                if (event.key !== 'Enter' || tagDraft.trim().length === 0) return
+                const name = tagDraft.trim()
+                const existing = tags.find(tag => tag.name.toLowerCase() === name.toLowerCase())
+                if (existing === undefined) void createAndTag(cardTag.entryId, name)
+                else { void toggleTag(cardTag.entryId, existing.id, true); setTagDraft('') }
+              }}
+            />
+          </div>
         </div>
       )}
       {cardMenu !== null && (() => {

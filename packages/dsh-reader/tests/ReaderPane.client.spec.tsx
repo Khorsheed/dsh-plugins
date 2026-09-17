@@ -698,3 +698,103 @@ describe('full text is filled in automatically', () => {
     expect(screen.queryByText(zh['action.fetchBody'])).toBeNull()
   })
 })
+
+describe('the toolbar keeps room for both of its tools', () => {
+  it('puts the field first, then the two icon tools in their own anchored wrappers', async () => {
+    const ui = bench()
+    await ui.settle()
+    const tools = ui.container.querySelector('[class*="tools"]') as HTMLElement
+    expect(tools).not.toBeNull()
+    // DOM order IS visual order (no `order` games): field, filter, sort. The
+    // field is the row's only flexible item, so a narrow sidebar gives width
+    // back from the input — never from a tool.
+    const children = [...tools.children]
+    expect(children[0]?.className).toContain('search')
+    expect(children[1]?.className).toContain('toolWrap')
+    expect(children[2]?.className).toContain('toolWrap')
+    expect(tools.querySelectorAll('button').length).toBe(2)
+    // Opening one anchors its panel inside that tool's own wrapper. The old
+    // pane-anchored `top: 62px` was shorter than the toolbar itself, so the
+    // filter panel sat on top of the sort button.
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
+    expect(panel.parentElement).toBe(children[1])
+    // …and the other tool is still in the row, outside the panel.
+    expect(children[2]?.querySelector('button')).not.toBeNull()
+  })
+})
+
+describe('the card tag panel', () => {
+  /** One card on the wall, with the vocabulary the host reports. */
+  async function wallWithVocabulary(tags: readonly { id: string; name: string; createdAt: string }[]) {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条', description: '<p>正文</p>' }]) },
+      tags,
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    fireEvent.click(ui.container.querySelector('[class*="tagOnCard"]') as HTMLElement)
+    return ui
+  }
+
+  it('lists the vocabulary, toggles it, and creates the name you typed', async () => {
+    const ui = await wallWithVocabulary([{ id: 'tag-ai', name: 'AI', createdAt: 'x' }])
+    const panel = ui.container.querySelector('[class*="cardTagPanel"]') as HTMLElement
+    expect(panel).not.toBeNull()
+    // The vocabulary is a checklist IN the panel: clicking a row applies it.
+    fireEvent.click(await screen.findByText('AI'))
+    await waitFor(() => { expect(ui.mocks.tagEntry).toHaveBeenCalledWith(expect.any(String), 'tag-ai', true) })
+    // Typing a name the vocabulary does not hold offers to create it, in place
+    // (this is what replaced the native datalist's unstyleable popup).
+    const input = panel.querySelector('[class*="tagInput"]') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '新标签' } })
+    fireEvent.click(await screen.findByText(t('tag.create', { name: '新标签' })))
+    await waitFor(() => { expect(ui.mocks.createTag).toHaveBeenCalledWith('新标签') })
+  })
+
+  it('offers to create the typed name instead of leaving an empty list', async () => {
+    const ui = await wallWithVocabulary([])
+    expect(await screen.findByText(zh['tag.empty'])).toBeTruthy()
+    const input = ui.container.querySelector('[class*="cardTagPanel"] [class*="tagInput"]') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '第一个' } })
+    fireEvent.click(await screen.findByText(t('tag.create', { name: '第一个' })))
+    await waitFor(() => { expect(ui.mocks.createTag).toHaveBeenCalledWith('第一个') })
+  })
+
+  it('closes on Escape and forgets the half-typed name', async () => {
+    const ui = await wallWithVocabulary([])
+    const input = ui.container.querySelector('[class*="cardTagPanel"] [class*="tagInput"]') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '半截' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => { expect(ui.container.querySelector('[class*="cardTagPanel"]')).toBeNull() })
+    // Reopening starts clean rather than resurrecting the abandoned draft.
+    fireEvent.click(ui.container.querySelector('[class*="tagOnCard"]') as HTMLElement)
+    const again = ui.container.querySelector('[class*="cardTagPanel"] [class*="tagInput"]') as HTMLInputElement
+    expect(again.value).toBe('')
+  })
+})
+
+describe('read state is visible without hiding anything', () => {
+  it('marks an unread card, and drops the mark once the entry is opened', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条', description: '<p>正文</p>' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('一条')
+    // The attribute is what the styles read for the title hierarchy; the dot is
+    // the at-a-glance marker.
+    const card = ui.container.querySelector('[data-reader-entry]') as HTMLElement
+    expect(card.hasAttribute('data-unread')).toBe(true)
+    expect(card.querySelector('[class*="unread"]')).not.toBeNull()
+    fireEvent.click(screen.getByText('一条'))
+    await screen.findByText(zh['detail.composerLabel'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      const back = ui.container.querySelector('[data-reader-entry]') as HTMLElement
+      expect(back.hasAttribute('data-unread')).toBe(false)
+      expect(back.querySelector('[class*="unread"]')).toBeNull()
+    })
+  })
+})
