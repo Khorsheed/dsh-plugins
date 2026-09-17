@@ -60,6 +60,7 @@ type Verdict = 'subscribed' | 'savedLink' | 'duplicate' | 'invalidUrl' | 'unsupp
 const STROKE: Readonly<Record<string, string>> = {
   search: 'M7 2.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6Zm3.4 8.2 3 3',
   filter: 'M2.6 3.4h10.8L9.2 8.3v4.1l-2.4-1.3V8.3z',
+  funnel: 'M2.6 3.4h10.8L9.2 8.3v4.1l-2.4-1.3V8.3z',
   sort: 'M4.6 3v10M2.4 10.8 4.6 13l2.2-2.2M11.4 13V3M9.2 5.2 11.4 3l2.2 2.2',
   chevron: 'M6.2 3.4 10.7 8l-4.5 4.6',
 }
@@ -118,6 +119,22 @@ function verdictForRefusal(refusal: string): Verdict {
   }
 }
 
+/**
+ * One "when" phrase, with its count filled in.
+ *
+ * `when.minutes` / `when.hours` / `when.days` are parameterized copy, so
+ * rendering the bare key prints `{count} d ago` at the reader. Every site that
+ * shows a relative time goes through here.
+ *
+ * @param t - the namespace translator.
+ * @param iso - the instant, when there is one.
+ * @returns the phrase.
+ */
+function whenLabel(t: ReaderPaneProps['t'], iso: string | undefined): string {
+  const when = relativeWhen(iso, new Date())
+  return when.count === undefined ? t(when.key) : t(when.key, { count: when.count })
+}
+
 /** The reader tab body. */
 export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const { sessionId, useStore, actions, t } = props
@@ -147,6 +164,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [draft, setDraft] = useState('')
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
+  const [filterOpen, setFilterOpen] = useState(false)
 
   /** Load the source list and parse whatever payloads the host is holding. */
   const load = useCallback(async () => {
@@ -201,6 +219,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         if (source.kind === 'rss') {
           const result = parseFeed(body.raw, source.id)
           const fetchedAt = source.fetchedAt
+          // A feed declares its own name, and that is what a reader recognises.
+          // The stored label is only the URL-derived fallback (the host cannot
+          // parse a feed — it has no XML parser), so the parsed title wins.
+          if (result.ok && result.feed.title !== undefined) {
+            actions.setSourceLabel(source.id, result.feed.title)
+          }
           actions.setParsed(result.ok
             ? {
               id: source.id,
@@ -602,7 +626,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 >
                   <span className={css.alsoFromTitle}>{entry.title}</span>
                   <span className={css.when}>
-                    {t(relativeWhen(entry.publishedAt, new Date()).key)}
+                    {whenLabel(t, entry.publishedAt)}
                   </span>
                 </button>
               ))}
@@ -744,6 +768,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       {/* The tool row doubles as the answer to "why is this list empty?": the
           filter and the unread toggle are the two things that hide entries, so
           both stay visible as labelled controls rather than bare icons. */}
+      {/* One toolbar row: search, filter, sort. The filter is a BUTTON rather
+          than a segmented control because the sidebar is narrow — a horizontal
+          list of sources wraps and squeezes the search box, and a source list
+          only grows. The popover holds every way to narrow the wall (read state
+          plus one source), so a reader finds them all in one place instead of
+          looking for a strip that scrolled out of view. */}
       <div className={css.tools}>
         <div className={css.search}>
           {glyph('search', 12)}
@@ -753,35 +783,61 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             onChange={event => actions.setQuery(event.target.value)}
           />
         </div>
-        <div className={css.segmented}>
-          {(['all', 'today'] as const).map(option => (
-            <button
-              key={option}
-              type="button"
-              className={filter === option ? css.segmentOn : css.segment}
-              onClick={() => actions.setFilter(option)}
-            >
-              {t(`filter.${option}`)}
-            </button>
-          ))}
-        </div>
         <button
           type="button"
-          className={`${css.tool} ${unreadOnly ? css.toolOn : ''}`}
-          title={t('filter.unreadOnly')}
-          onClick={() => actions.toggleUnreadOnly()}
+          className={`${css.tool} ${activeSource !== null || unreadOnly ? css.toolOn : ''}`}
+          title={t('action.filter')}
+          onClick={() => { setSortOpen(false); setFilterOpen(open => !open) }}
         >
-          {glyph('filter', 15)}
+          {glyph('funnel', 15)}
         </button>
         <button
           type="button"
           className={`${css.tool} ${sort === 'newest' ? '' : css.toolOn}`}
           title={t('sort.title')}
-          onClick={() => setSortOpen(open => !open)}
+          onClick={() => { setFilterOpen(false); setSortOpen(open => !open) }}
         >
           {glyph('sort', 15)}
         </button>
       </div>
+      {filterOpen && (
+        <div className={css.filterPanel}>
+          <div className={css.filterSection}>{t('filter.readState')}</div>
+          <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
+            <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
+            <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
+          </button>
+          <div className={css.filterSection}>{t('filter.bySource')}</div>
+          <button
+            type="button"
+            className={css.filterRow}
+            onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
+          >
+            <span className={css.filterCheck}>{activeSource === null ? '✓' : ''}</span>
+            <span className={css.filterLabel}>{t('filter.all')}</span>
+            <span className={css.filterCount}>{allEntries.length}</span>
+          </button>
+          {sources.map(source => {
+            const group = parsed[source.id]
+            const broken = group?.error !== undefined || group?.incomplete === true
+            return (
+              <button
+                key={source.id}
+                type="button"
+                className={css.filterRow}
+                title={source.url}
+                onClick={() => { actions.setQuery(sourceQuery(source.id)); setFilterOpen(false) }}
+              >
+                <span className={css.filterCheck}>{activeSource === source.id ? '✓' : ''}</span>
+                <span className={css.filterLabel}>{source.label}</span>
+                {broken
+                  ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
+                  : <span className={css.filterCount}>{group?.entries.length ?? 0}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
       {sortOpen && (
         <div className={css.menu}>
           {(['newest', 'oldest', 'source'] as const).map(option => (
@@ -811,46 +867,6 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             <span className={css.emptyTitle}>{t('state.emptyTitle')}</span>
             <span className={css.emptyBody}>{t('state.emptyBody')}</span>
           </button>
-        )}
-        {!loading && sources.length > 0 && (
-          // The wall is CONTENT first: the sources are a filter strip, not a
-          // destination. They answer "which of these did I keep", and picking
-          // one narrows the cards below — management lives behind the settings
-          // button, because it is the rarest thing a reader comes here to do.
-          <div className={css.strip}>
-            <button
-              type="button"
-              className={activeSource === null ? css.sourceChipOn : css.sourceChip}
-              onClick={() => actions.setQuery('')}
-            >
-              {t('filter.all')}
-              <span className={css.chipCount}>{allEntries.length}</span>
-            </button>
-            {sources.map(source => {
-              const group = parsed[source.id]
-              const broken = group?.error !== undefined || group?.incomplete === true
-              return (
-                <button
-                  key={source.id}
-                  type="button"
-                  className={activeSource === source.id ? css.sourceChipOn : css.sourceChip}
-                  title={source.url}
-                  onClick={() => actions.setQuery(activeSource === source.id ? '' : sourceQuery(source.id))}
-                >
-                  <span className={css.chipTile} style={{ background: hueForSource(source.label) }}>
-                    {tileForSource(source.label)}
-                  </span>
-                  {source.label}
-                  {broken
-                    ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
-                    : <span className={css.chipCount}>{group?.entries.length ?? 0}</span>}
-                </button>
-              )
-            })}
-            <button type="button" className={css.chipAdd} title={t('action.add')} onClick={() => { setAddOpen(true); setVerdict(null) }}>
-              <IconPlusOutline16 size={14} />
-            </button>
-          </div>
         )}
         {!loading && sources.length > 0 && brokenSources.length > 0 && (
           // "Why is this list short?" answered where the reader is looking,
@@ -892,7 +908,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   <span className={css.source}>{row.sourceLabel}</span>
                   <span className={css.sep}>·</span>
                   <span className={css.when}>
-                    {t(relativeWhen(row.entry.publishedAt, new Date()).key)}
+                    {whenLabel(t, row.entry.publishedAt)}
                   </span>
                 </span>
                 <span className={css.title}>{row.entry.title}</span>

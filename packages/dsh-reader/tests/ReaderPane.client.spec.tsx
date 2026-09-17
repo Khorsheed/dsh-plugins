@@ -173,7 +173,11 @@ describe('the pane renders content, never an empty column', () => {
     expect(await screen.findByText('第一条')).toBeTruthy()
     // The source's name appears on its filter chip and in the card's meta
     // line: the chip is what proves the strip is populated.
-    expect(ui.container.querySelectorAll('[class*="sourceChip"]').length).toBeGreaterThan(0)
+    // The source list lives in the filter popover now (the sidebar is too
+    // narrow for a row of chips): open it and the source is there with its count.
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    expect(await screen.findByText(zh['filter.bySource'])).toBeTruthy()
+    expect(ui.container.querySelectorAll('[class*="filterRow"]').length).toBeGreaterThanOrEqual(3)
     // The unread marker is a dot: an element with no glyph and no text.
     const dot = ui.container.querySelector('[class*="unread"]')
     expect(dot).not.toBeNull()
@@ -356,10 +360,10 @@ describe('a subscription whose entries are not from today', () => {
     })
     await ui.settle()
     expect(await screen.findByRole('button', { name: /八天前的文章/ })).toBeTruthy()
-    // …and the filter that WOULD hide it is visible, not implicit.
-    const all = screen.getAllByText(zh['filter.all'])
-    expect(all.length).toBeGreaterThan(0)
-    expect(screen.getByText(zh['filter.today'])).toBeTruthy()
+    // …and the default is visible as a control STATE, not implicit: the filter
+    // button is off (no source selected, not unread-only), which is what "all"
+    // means now that the filter lives in a popover.
+    expect(screen.getByTitle(zh['action.filter']).className).not.toContain('toolOn')
   })
 })
 
@@ -383,7 +387,9 @@ describe('quoting needs a body, and the side-chat gesture needs a composition', 
     fireEvent.click(screen.getByText(zh['action.quote']))
     const written = ui.mocks.setDraft.mock.calls[0]?.[0] as string | undefined
     expect(written).toContain('选中的一段')
-    expect(written).toContain('Hacker News')
+    // The provenance names the FEED (the fixture's channel title is `hn`), not
+    // the host's URL-derived label: a feed declares its own name.
+    expect(written).toContain('hn')
   })
 
   it('hides the side-chat action when no side chat is composed', async () => {

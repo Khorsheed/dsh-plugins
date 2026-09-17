@@ -99,6 +99,8 @@ export type ReaderActions = {
   setSort: (draft: ReaderState, sort: ReaderSort) => void
   markRead: (draft: ReaderState, entryId: string) => void
   setSchedule: (draft: ReaderState, lastRefreshAt: string | undefined, nextRefreshAt: string | undefined) => void
+  /** Replace one source's display label (the feed's own title, once parsed). */
+  setSourceLabel: (draft: ReaderState, id: string, label: string) => void
   setLoading: (draft: ReaderState, loading: boolean) => void
   setError: (draft: ReaderState, error: string | null) => void
   refresh: (draft: ReaderState) => void
@@ -182,6 +184,9 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       toggleUnreadOnly: (d) => { d.unreadOnly = !d.unreadOnly },
       setSort: (d, sort) => { d.sort = sort },
       markRead: (d, entryId) => { d.read = { ...d.read, [entryId]: true } },
+      setSourceLabel: (d, id, label) => {
+        d.sources = d.sources.map(source => source.id === id ? { ...source, label } : source)
+      },
       setSchedule: (d, lastRefreshAt, nextRefreshAt) => {
         d.lastRefreshAt = lastRefreshAt ?? null
         d.nextRefreshAt = nextRefreshAt ?? null

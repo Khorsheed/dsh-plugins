@@ -17,6 +17,7 @@ export const NS = 'reader'
 export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
+  | 'filter.readState' | 'filter.bySource' | 'action.filter'
   | 'search.placeholder'
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
@@ -48,6 +49,9 @@ export const en = {
   'filter.all': 'All',
   'filter.unreadOnly': 'Unread only',
   'filter.unreadOn': 'Showing unread only',
+  'filter.readState': 'Read state',
+  'filter.bySource': 'By source',
+  'action.filter': 'Filter',
   'search.placeholder': 'Search titles, authors, sources…',
   'sort.title': 'Sort',
   'sort.newest': 'Newest first',
@@ -136,6 +140,9 @@ export const zh = {
   'filter.all': '全部',
   'filter.unreadOnly': '只看未读',
   'filter.unreadOn': '只看未读',
+  'filter.readState': '阅读状态',
+  'filter.bySource': '按来源',
+  'action.filter': '筛选',
   'search.placeholder': '搜索标题、作者、来源…',
   'sort.title': '排序',
   'sort.newest': '最新在前',
