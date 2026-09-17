@@ -357,6 +357,8 @@ people. What the model can see is the JOB: `job_list` / `job_output` /
 
 ## slash and CLI
 
+Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
+
 ```sh
 dsh-eval validate <plan.json>             # validate a plan; JSON report on stdout
 dsh-eval run <plan.json> --dry-run        # offline rehearsal: validate + template + matrix + order

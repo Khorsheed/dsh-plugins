@@ -93,7 +93,7 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 
 ## CLI
 
-`dsh-mission <command>`（或 `node lib/cli.js`）；所有命令接受 `--data-dir DIR`。退出码：`0` 成功 / 可释放，`1` 失败 / 不可释放 / lint error，`2` 用法错误。
+`dsh-mission <command>`（或 `node lib/cli.js`）；所有命令接受 `--data-dir DIR`。退出码：`0` 成功 / 可释放，`1` 失败 / 不可释放 / lint error，`2` 用法错误。从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
 
 ```sh
 dsh-mission run create --template t.json [--id ID] [--meta JSON]
