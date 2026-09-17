@@ -1859,13 +1859,14 @@ I4 的目标是「同 harness 两条件的配对结果」。机制已齐：条�
 **补充（2026-09-17）**：
 
 ```text
-# T33c 补充：pilot D 一次 P0，只跑一次
+# T33c 补充：pilot D 一次 P0，只跑一次（与原文案冲突处以本段为准）
 
-1. 前置已满足：3171 在 2c4476f8（2026-09-17 14:51 由 T62 重装）；不自己动 3171 的停起。
-2. 两条 sub-dsh 条件（同工具、不同 preset / 技能）各填 scope（容器专用命名 scope，dsh 不需要人工授权）；T58 起 provision 会把实测 home.sha 写回条件文档并写 lock，每条 provision 一次即 ready，不再手抄哈希；endpoint 必填。
-3. 计划带 unit 段（抄 T39 那次的容器计划），P0 × 1 rep，走容器路径；跑前 docker ps -a 核单元容器在，缺省 finalize（不带 --keep-units）。
-4. 交：两 scope 各自 provision 的 lock、两条件 caps 哈希不同而环境一致、四条不变量、比较节；这是 I4 三条判据里唯一没在真机 run 上证过的，过了即收，不重跑。
-5. 题库改动走自己的 worktree、从 i1-walk 开分支，不碰别人的计划与条件；日志接 docs/i4-pilots-log.md；缺陷只记不修。通用提醒照旧。
+1. 前置已满足：3171 在 b97a6338（2026-09-17 由 T62 线重装，含 T58 / T59 / T33d / T55）；不自己动 3171 的停起。不与 T55 的探针同时跑（同一实例、同一 docker），等它那一轮释放后再起。
+2. 两条 sub-dsh 条件（同工具、不同 preset / 技能，dsh-lean / dsh-full 从 dsh-exec 复制）各填容器专用命名 scope；dsh 走 API key，命名 scope 不需要登录——原文案「各自 device-auth 登录」作废。T58 起 provision 会把实测 home.sha 写回条件文档并写 lock，每条 provision 一次即 ready，不再手抄哈希；endpoint 必填（从 dsh-exec 复制即带 default）。
+3. 计划带 unit 段（抄 T39 那次的容器计划），P0 × 1 rep，走容器路径；跑中 docker ps -a 核单元容器在、跑后归零。finalize 是缺省（T57），不带 --keep-units 即可——原文案「run --finalize」作废（该开关现在接受但无作用）。
+4. 交：两 scope 各自 provision 的 lock、两条件 caps 哈希不同而环境一致、四条不变量、比较节；「改技能正文不重 provision 就起 run」那一步照原文案做（就绪处被拒不花 token，重 provision 后通过）。这是 I4 三条判据里唯一没在真机 run 上证过的，过了即收，不重跑。原文案的「预算」一节不用再做（T33b 已估过，真题预算等上线后定）。
+5. 原文案里 T33d 那条「CLI 用真路径调」已随 T33d 合入作废，经 .bin 调用即可。
+6. 题库改动走自己的 worktree、从 i1-walk 开分支，不碰别人的计划与条件；日志接 docs/i4-pilots-log.md；缺陷只记不修。通用提醒照旧。
 ```
 
 
