@@ -58,7 +58,11 @@
   .sep{color:var(--fg-4);font-size:10.5px;flex:none}
   .ttl{grid-column:2/-1;display:flex;align-items:flex-start;gap:6px;min-width:0}
   .ttl .h{font-size:12.5px;line-height:17px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .ttl .u{flex:none;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:6px}
+  /* 未读：来源徽标右下角的小圆点（头像未读指示的通用形态） */
+  .tilewrap{grid-row:1/span 3;grid-column:1;position:relative;width:24px;height:24px}
+  .tilewrap .tile{grid-row:auto;grid-column:auto}
+  .tilewrap .u{position:absolute;right:-1px;bottom:-1px;width:7px;height:7px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 1.5px var(--bg)}
   .sum{grid-column:2/-1;margin-top:3px;font-size:11.5px;line-height:16px;color:var(--fg-2);
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .ctags{grid-column:2/-1;display:flex;gap:4px;align-items:center;margin-top:5px}
@@ -275,8 +279,9 @@ function svg(d,size){return '<svg width="'+size+'" height="'+size+'" viewBox="0 
 /* 工具条小图标按 16x16 网格、stroke=currentColor 画（宿主 uicons 的线重） */
 var S = {
   search:'M7 2.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6Zm3.4 8.2 3 3',
-  filter:'M2.4 4h11.2M4.4 8h7.2M6.6 12h2.8',
-  sort:'M4.6 3v10M2.4 10.8 4.6 13l2.2-2.2M11.4 13V3M9.2 5.2 11.4 3l2.2 2.2'
+  filter:'M2.6 3.4h10.8L9.2 8.3v4.1l-2.4-1.3V8.3z',
+  sort:'M4.6 3v10M2.4 10.8 4.6 13l2.2-2.2M11.4 13V3M9.2 5.2 11.4 3l2.2 2.2',
+  chev:'M6.2 3.4 10.7 8l-4.5 4.6'
 };
 function ssym(name,size){return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="'+S[name]+'"/></svg>'}
 function iconBtn(el,name,title,size){el.innerHTML=svg(P[name],size||15);el.title=title}
@@ -320,13 +325,14 @@ function renderList(){
     if(st.sort==='src'&&e.src!==lastSrc){lastSrc=e.src;html+='<div class="ghead">'+esc(e.src)+'</div>'}
     var isUnread=e.unread&&!st.read[e.id];
     html+='<div class="card" data-card="'+e.id+'">'
-      +'<div class="tile" style="background:'+e.hue+'">'+esc(e.tile)+'</div>'
+      +'<span class="tilewrap"><span class="tile" style="background:'+e.hue+'">'+esc(e.tile)+'</span>'
+        +(isUnread?'<span class="u"></span>':'')+'</span>'
       +'<div class="meta"><span class="src">'+esc(e.src)+'</span><span class="sep">·</span><span class="when">'+esc(e.when)+'</span></div>'
-      +'<div class="ttl">'+(isUnread?'<span class="u"></span>':'')+'<span class="h">'+esc(e.title)+'</span></div>'
+      +'<div class="ttl"><span class="h">'+esc(e.title)+'</span></div>'
       +'<div class="sum">'+esc(e.sum)+'</div>'
       +'<div class="ctags">'+(e.tags||[]).map(function(t){return '<span class="tag">'+esc(t)+'</span>'}).join('')
         +(e.author?'<span class="author">'+esc(e.author)+'</span>':'')+'</div>'
-      +'<span class="cv">'+ssym('filter',13)+'</span>'
+      +'<span class="cv">'+ssym('chev',13)+'</span>'
       +'</div>';
   });
   scroll.innerHTML=html;
@@ -446,7 +452,7 @@ qmenu.querySelectorAll('[data-q]').forEach(function(b){
   });
 });
 var HINTS={
- list:'<b>列表页</b>的新东西：搜索框（本地过滤标题/摘要/作者/来源）、<b>只看未读</b>、<b>排序</b>（最新 / 最早 / 按来源分组）、右上 <b>+</b> 新增。未读改成标题前的<b>圆点</b>。<br><br>点任意卡片看详情。',
+ list:'<b>列表页</b>的新东西：搜索框（本地过滤标题/摘要/作者/来源）、<b>只看未读</b>、<b>排序</b>（最新 / 最早 / 按来源分组）、右上 <b>+</b> 新增。未读是<b>来源徽标右下角的小圆点</b>，不再和标题、来源挤在一起；卡片右侧的角标是 chevron（点进去），不再是那个容易误读成筛选的三横图标。<br><br>点任意卡片看详情。',
  add:'<b>新增</b>：一个输入框，<b>抓回来是什么就按什么处理</b> —— 是 feed 就订阅，是网页就只存这一篇。这样你不用先回答"这地址到底是不是 RSS"，也不会因为粘了一个网页首页而建出一个 0 条的假订阅源。<br><br>试试点「抓取」，看两种判定结果。',
  detail:'<b>详情页</b>。正文里划选 → quote 插件的选区菜单（它就是那个 UI，本插件不自造）。<br><br>滚到底看 <b>受限篇幅</b> 那一行 —— 按你的要求改成一行文字 + 可点的「阅读原文」，不再是整块提示卡。'
 };

@@ -22,9 +22,7 @@
     "src/client/extract-article.ts",
     "src/client/quote.ts",
     "src/client/store.ts",
-    "src/client/ReaderCard.tsx",
-    "src/client/ReaderDetail.tsx",
-    "src/client/ReaderPane.tsx",
-    "src/client/ReaderPane.module.css"
+    "src/client/selectors.ts",
+    "src/client/ReaderPane.tsx"
   ]
 }

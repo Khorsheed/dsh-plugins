@@ -345,7 +345,7 @@ function serializeInline(node: Node): string {
       continue
     }
     if (child.nodeType !== 1 /* element */) continue
-    const tag = child.localName.toLowerCase()
+    const tag = (child as Element).localName.toLowerCase()
     if (DROP_TAGS.has(tag)) continue
     if (tag === 'br') {
       out += ' '

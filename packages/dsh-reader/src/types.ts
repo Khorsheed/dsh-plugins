@@ -129,7 +129,32 @@ export interface ReaderCapabilities {
 }
 
 /** Outcome of a mutating source verb. A domain refusal, never an exception. */
-export type ReaderMutationOutcome = 'ok' | 'not-found' | 'invalid-url' | 'duplicate' | 'unavailable'
+export type ReaderMutationOutcome =
+  | 'ok'
+  | 'not-found'
+  | 'invalid-url'
+  | 'invalid-time'
+  | 'duplicate'
+  | 'unavailable'
+
+/** What `addSource` decided a pasted URL was. */
+export interface ReaderAddOutcome {
+  readonly outcome: 'subscribed' | 'saved-link'
+  readonly kind: ReaderSourceKind
+  readonly id: string
+  readonly label: string
+}
+
+/**
+ * A refusal from `addSource`: the mutation outcomes that make sense for "turn
+ * this URL into a source", plus the two fetch-stage refusals that have no
+ * meaning for the other verbs. Kept as its own union so the wire type states
+ * exactly what this verb can answer.
+ */
+export type ReaderAddRefusal =
+  | Extract<ReaderMutationOutcome, 'invalid-url' | 'duplicate' | 'unavailable'>
+  | 'unsupported-content'
+  | 'fetch-failed'
 
 /** Per-source result of a refresh run. */
 export interface ReaderRefreshResult {

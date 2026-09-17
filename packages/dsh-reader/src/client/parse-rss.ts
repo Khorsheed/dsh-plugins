@@ -18,6 +18,10 @@ import {
   summarize,
   type ReaderEntry,
 } from '../types.ts'
+
+// Re-exported so consumers (the pane, the store, the selectors) can name the
+// parsed entry without also importing the wire vocabulary module.
+export type { ReaderEntry }
 import { normalizeRichText } from './extract-article.ts'
 
 /** A parsed feed: its own metadata plus one entry per item. */
