@@ -24,6 +24,28 @@ export function messageTextOf(content: readonly ContentBlock[]): string {
     .trim()
 }
 
+/**
+ * The context-injection forms the official UI classifies as
+ * context-provenance rows (ui-conversation's KnownContextForm) rather than
+ * user speech: AGENTS.md blocks, system-prompt snapshots, skill catalogs,
+ * notices, relays and recalls. A side-chat session's journal carries them
+ * like any conversation's, and rendering them as user bubbles paints whole
+ * `<system-reminder>` documents into the transcript (the 3080 screenshot).
+ */
+const CONTEXT_FORMS: ReadonlySet<string> = new Set(['instructions', 'catalog', 'snapshot', 'notice', 'relay', 'recall'])
+
+/**
+ * Whether one `user/message` event is a context injection rather than the
+ * user's own speech. Our own sends (`kind: 'plugin'`, no form) and ordinary
+ * human messages answer false and stay visible.
+ */
+function isContextInjection(source: unknown): boolean {
+  if (typeof source !== 'object' || source === null) return false
+  const probe = source as { kind?: unknown; form?: unknown }
+  if (probe.kind === 'agent-instructions') return true
+  return typeof probe.form === 'string' && CONTEXT_FORMS.has(probe.form)
+}
+
 /** One in-fold tool call, completed in place when its result event lands. */
 interface PendingTool {
   readonly index: number
@@ -41,6 +63,9 @@ export function projectTranscript(events: readonly SessionEvent[]): SideChatTran
   for (const event of events) {
     switch (event.type) {
       case 'user/message': {
+        // Context injections (AGENTS.md, snapshots, catalogs, …) are not the
+        // user's speech — the official UI classifies them the same way.
+        if (isContextInjection(event.data.source)) break
         const folded = messageTextOf(event.data.content)
         if (folded === '') break
         // Our own fold carries the quoted refs IN the durable text; lift them

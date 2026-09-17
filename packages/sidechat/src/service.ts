@@ -27,7 +27,7 @@ import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the ctx.systemPrompt service merge (the agent-scope section registration).
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { composeSideAgent, inspectCold } from './agent-setup.ts'
+import { composeSideAgent, inspectCold, type SideAgentComposition } from './agent-setup.ts'
 import { PACKAGE_NAME } from './invariant.ts'
 import { messageTextOf, projectTranscript, projectTurnError } from './journal.ts'
 import { SideChatStore } from './store.ts'
@@ -98,31 +98,48 @@ export class SideChatService {
    */
   constructor(private readonly ctx: Context, private readonly config: SideChatConfig = {}) {
     this.store = new SideChatStore(ctx, config)
+    // fs arriving LATE (the common mount order: the 3080 bug was it never
+    // being seen at all): allow one fresh ensureLoaded, which merges the disk
+    // document into memory and flushes any records created meanwhile back to
+    // disk. The memory-only warn flag resets too, so a composition where fs
+    // genuinely never mounts still warns on its first real write.
+    this.store.onFsReady(() => {
+      this.loaded = false
+      this.warnedMemoryOnly = false
+    })
   }
 
   /* ------------------------------------------------------------- the doc */
 
-  /** Log the memory-only degrade exactly once. */
+  /** Log the memory-only degrade exactly once per fs-absence window (writes only, never construction or reads). */
   private warnMemoryOnly(): void {
     if (this.warnedMemoryOnly) return
     this.warnedMemoryOnly = true
     this.ctx.logger.warn('sidechat: no filesystem is mounted — contexts live in memory only and are lost on restart')
   }
 
-  /** Load the persisted mapping into memory (once; a store failure reads as empty, logged). */
+  /**
+   * Load the persisted mapping into memory (once per fs-arrival window; a
+   * store failure reads as empty, logged). Memory stays authoritative for the
+   * keys it already holds (single-writer rule) — records created BEFORE fs
+   * arrived are kept and flushed back to disk on this reload.
+   */
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return
     this.loaded = true
-    if (!this.store.available) {
-      this.warnMemoryOnly()
-      return
-    }
+    if (!this.store.available) return
     try {
       const read = await this.store.read()
       this.docVersion = read.version
+      let merged = 0
       for (const record of read.doc.contexts) {
+        if (this.contexts.has(record.contextKey)) continue
         this.contexts.set(record.contextKey, { record, tools: new Map(), toolDisposers: new Map() })
+        merged += 1
       }
+      // Memory knows records disk does not (created before fs arrived): flush
+      // the union once so the fresh filesystem catches up with this window.
+      if (this.contexts.size > merged) await this.persist()
     } catch (error) {
       this.ctx.logger.warn(`sidechat: the contexts document could not be read: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -295,21 +312,24 @@ export class SideChatService {
 
   /** One creation/resume pass for one context (see {@link ensureAgent}). */
   private async spawnAgent(runtime: ContextRuntime, calling: Agent | undefined): Promise<Agent> {
-    const composition = await composeSideAgent(this.ctx, runtime.record.agentPreset ?? this.config.agentPreset)
     // The route MUST travel with both create and resume: resume rebuilds the
     // agent world with no logged header yet, so the seed route comes from
     // these options alone.
     const agentOptions = this.agentOptionsOf(calling)
-    const setup: AgentSetup = async (agentCtx, agent) => {
-      if (composition.setup !== undefined) await composition.setup(agentCtx, agent)
-      this.contribute(agentCtx, runtime)
-    }
+    const setupFor = (composition: SideAgentComposition): AgentSetup =>
+      async (agentCtx, agent) => {
+        if (composition.setup !== undefined) await composition.setup(agentCtx, agent)
+        this.contribute(agentCtx, runtime)
+      }
     if (runtime.record.sessionId !== undefined) {
       try {
+        // History was composed under the recorded preset — resume keeps it
+        // (the header's comment semantics: replay under what created it).
+        const composition = await composeSideAgent(this.ctx, runtime.record.agentPreset ?? this.config.agentPreset)
         const handle = await this.ctx.agents.resume({
           resumeSessionId: SessionId(runtime.record.sessionId),
           ...agentOptions === undefined ? {} : { agentOptions },
-          setup,
+          setup: setupFor(composition),
         })
         this.handles.set(runtime.record.contextKey, handle)
         return handle.agent
@@ -317,6 +337,14 @@ export class SideChatService {
         this.ctx.logger.warn(`sidechat: resuming "${runtime.record.contextKey}" failed, starting a fresh session: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
+    // CREATE: inherit the CALLING session's own preset first (a standard-mode
+    // conversation gets a standard-mode side chat; the deployment default
+    // happening to match was luck, not design), then the recorded preset,
+    // then the plugin config, then the deployment default.
+    const presetId = calling?.session.header.agentPreset
+      ?? runtime.record.agentPreset
+      ?? this.config.agentPreset
+    const composition = await composeSideAgent(this.ctx, presetId)
     const cwd = this.inheritCwd(runtime.record.contextKey, calling)
     const handle = await this.ctx.agents.create({
       sessionId: SessionId(randomUUID()),
@@ -325,7 +353,7 @@ export class SideChatService {
         ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
       },
       ...agentOptions === undefined ? {} : { agentOptions },
-      setup,
+      setup: setupFor(composition),
     })
     this.handles.set(runtime.record.contextKey, handle)
     runtime.record = {

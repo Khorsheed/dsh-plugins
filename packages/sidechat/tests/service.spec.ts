@@ -219,6 +219,7 @@ interface Bench {
   readonly calling: Agent
   readonly callingEvents: SessionEvent[]
   readonly persistence: { opened: string[] }
+  readonly resolveCalls: Array<string | undefined>
 }
 
 /** Mount the service over the full fake bench. */
@@ -227,6 +228,7 @@ function bench(opts: {
   presets?: boolean
   coldEvents?: SessionEvent[]
   callingHeader?: { provider: string; model: string; reasoningEffort?: string }
+  callingPreset?: string
   defaultModel?: { provider: string; model: string; reasoningEffort?: string }
 } = {}): Bench {
   const ctx = new Context()
@@ -234,6 +236,7 @@ function bench(opts: {
   const agentsKit = fakeAgents()
   const sessions = new Map<string, Session>()
   const persistence = { opened: [] as string[] }
+  const resolveCalls: Array<string | undefined> = []
   ctx.provide('agents', agentsKit.agents as never)
   ctx.provide('sessions', { get: (id: SessionId) => sessions.get(String(id)) } as never)
   if (fs !== undefined) {
@@ -242,7 +245,10 @@ function bench(opts: {
   }
   if (opts.presets === true) {
     ctx.provide('agentPresets', {
-      resolve: async (id: string | undefined) => ({ id: id ?? 'default-preset' }),
+      resolve: async (id: string | undefined) => {
+        resolveCalls.push(id)
+        return { id: id ?? 'default-preset' }
+      },
       mount: async () => {},
     } as never)
   }
@@ -266,13 +272,13 @@ function bench(opts: {
   const calling = {
     session: {
       id: 's-main',
-      header: { cwd: SOURCE_CWD },
+      header: { cwd: SOURCE_CWD, ...opts.callingPreset === undefined ? {} : { agentPreset: opts.callingPreset } },
       snapshotEvents: () => [...callingEvents],
       requestHeader: () => opts.callingHeader === undefined ? undefined : { config: { ...opts.callingHeader } },
     },
   } as unknown as Agent
   const service = new SideChatService(ctx, { stateRoot: STATE_ROOT })
-  return { service, fs: fs as FakeFs, agentsKit, sessions, calling, callingEvents, persistence }
+  return { service, fs: fs as FakeFs, agentsKit, sessions, calling, callingEvents, persistence, resolveCalls }
 }
 
 const DOC_PATH = join(STATE_ROOT, 'contexts.json')
@@ -509,6 +515,37 @@ describe('SideChatService — state, list, and the store fence', () => {
     expect(outcome.ok).toBe(true)
     expect(await service.getState('k')).toMatchObject({ ok: true, state: { status: 'idle' } })
   })
+
+  it('loads and flushes the mapping once fs arrives LATE (the 3080 persistence bug)', async () => {
+    // Boot with NO fs: the deferred inject has not fired, gestures run memory-only.
+    const ctx = new Context()
+    const agentsKit = fakeAgents()
+    const callingEvents: SessionEvent[] = []
+    ctx.provide('agents', agentsKit.agents as never)
+    ctx.provide('sessions', { get: () => undefined } as never)
+    ctx.provide('sessionPersistence', { open: async () => { throw new Error('none') } } as never)
+    const calling = {
+      session: { id: 's-main', header: { cwd: SOURCE_CWD }, snapshotEvents: () => [...callingEvents] },
+    } as unknown as Agent
+    const service = new SideChatService(ctx, { stateRoot: STATE_ROOT })
+
+    // Gesture one: memory-only (no contexts.json anywhere yet).
+    expect((await service.send(calling, { contextKey: 'k', text: '一' })).ok).toBe(true)
+    const fs = new FakeFs()
+    expect(fs.read(DOC_PATH)).toBeUndefined()
+
+    // fs mounts (the deferred door fires), and the next gesture reloads:
+    // the in-memory record flushes to disk.
+    ctx.provide('fs', fs as never)
+    ctx.provide('sandboxPolicy', fakeSandboxPolicy() as never)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(await service.listContexts()).toMatchObject({ items: [{ contextKey: 'k' }] })
+    expect(docOf(fs).contexts).toMatchObject([{ contextKey: 'k' }])
+
+    // And a "restart" over that disk finds the context again — persistence is real.
+    const second = bench({ fs })
+    expect(await second.service.listContexts()).toMatchObject({ items: [{ contextKey: 'k', status: 'cold' }] })
+  })
 })
 
 describe('SideChatService — the model route (the 3080 disappearing-message fix)', () => {
@@ -550,6 +587,45 @@ describe('SideChatService — the model route (the 3080 disappearing-message fix
     expect(sent.ok).toBe(true)
     expect(second.agentsKit.resumed).toHaveLength(1)
     expect(second.agentsKit.resumedOpts[0]!.agentOptions).toEqual({ provider: 'p2', model: 'm2' })
+  })
+})
+
+describe('SideChatService — preset inheritance', () => {
+  it('CREATE inherits the calling session\'s own header preset first', async () => {
+    const { service, agentsKit, calling, resolveCalls } = bench({ presets: true, callingPreset: 'dsh-standard' })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(resolveCalls).toEqual(['dsh-standard'])
+    expect(agentsKit.created[0]!.meta).toMatchObject({ agentPreset: 'dsh-standard' })
+  })
+
+  it('CREATE falls back to the recorded preset when the calling header names none', async () => {
+    const fs = new FakeFs()
+    fs.seed(DOC_PATH, JSON.stringify({
+      version: 1,
+      contexts: [{ contextKey: 'k', label: 'k', agentPreset: 'recorded-preset', refs: [], createdAt: 't', updatedAt: 't' }],
+    }))
+    const { service, agentsKit, calling, resolveCalls } = bench({ fs, presets: true })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(resolveCalls).toEqual(['recorded-preset'])
+    expect(agentsKit.created[0]!.meta).toMatchObject({ agentPreset: 'recorded-preset' })
+  })
+
+  it('CREATE resolves the deployment default when neither names a preset, and RESUME keeps the recorded one over the calling header', async () => {
+    // Create path with nothing to inherit: the default.
+    const first = bench({ presets: true })
+    await first.service.send(first.calling, { contextKey: 'k', text: '一' })
+    expect(first.resolveCalls).toEqual([undefined])
+    expect(first.agentsKit.created[0]!.meta).toMatchObject({ agentPreset: 'default-preset' })
+    // Resume path: the recorded preset wins even when the new calling session names another.
+    const fs = new FakeFs()
+    const seeded = bench({ fs, presets: true })
+    await seeded.service.send(seeded.calling, { contextKey: 'k', text: '一' })
+    const doc = docOf(fs)
+    expect(doc.contexts[0]!.agentPreset).toBe('default-preset')
+    const second = bench({ fs, presets: true, callingPreset: 'dsh-standard' })
+    await second.service.send(second.calling, { contextKey: 'k', text: '二' })
+    expect(second.agentsKit.resumed).toHaveLength(1)
+    expect(second.resolveCalls).toEqual(['default-preset'])
   })
 })
 

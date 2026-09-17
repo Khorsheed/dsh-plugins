@@ -123,6 +123,33 @@ describe('projectTranscript', () => {
     ])
     expect(rows).toEqual([{ kind: 'tool', name: 'bash', state: 'running', time: 1 }])
   })
+
+  it('skips context-injection user messages (the official context-provenance classes)', () => {
+    const injected = (id: string, text: string, source: Record<string, unknown>, time: number) => event('user/message', time, {
+      id, role: 'user', content: [{ type: 'text', text }], source,
+    })
+    const rows = projectTranscript([
+      injected('i1', '<system-reminder>AGENTS.md 整块</system-reminder>', { kind: 'agent-instructions', form: 'instructions' }, 1),
+      injected('i2', '系统提示快照', { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' }, 2),
+      injected('i3', '技能目录', { kind: 'skill-catalog', form: 'catalog' }, 3),
+      injected('i4', '一条通知', { kind: 'plugin', plugin: 'x', form: 'notice' }, 4),
+      injected('i5', '一次转发', { kind: 'plugin', plugin: 'x', form: 'relay' }, 5),
+      injected('i6', '一段回忆', { kind: 'plugin', plugin: 'x', form: 'recall' }, 6),
+      USER('真正的问题', 7),
+    ])
+    expect(rows).toEqual([{ kind: 'user', text: '真正的问题', refs: [], time: 7 }])
+  })
+
+  it('keeps our own plugin send (kind plugin with no form) and kind-only agent-instructions filtering', () => {
+    const rows = projectTranscript([
+      USER('我们自己的发送', 1),
+      event('user/message', 2, {
+        id: 'i1', role: 'user', content: [{ type: 'text', text: '无 form 的 instructions 来源' }],
+        source: { kind: 'agent-instructions' },
+      }),
+    ])
+    expect(rows).toEqual([{ kind: 'user', text: '我们自己的发送', refs: [], time: 1 }])
+  })
 })
 
 describe('projectTurnError', () => {
