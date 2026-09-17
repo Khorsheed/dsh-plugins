@@ -275,8 +275,12 @@ describe('EvalService export forwarding', () => {
     const svc = service({ exportRemote: remote })
     await expect(svc.exportRun({ id: 'agent' }, { runId: 'run-1', outDir: '/out', layers: ['grading'], confirmed: [] }))
       .rejects.toThrow(/export refused — guarded/)
+    // The bundle mission wrote, plus what eval adds around it (I5·T60): the
+    // report into the bundle and the run-level note beside it. Neither is on
+    // the gate's path — a directory that is not a real bundle simply reports
+    // why the report could not be rendered, and the export still stands.
     await expect(svc.exportRun({ id: 'agent' }, { runId: 'run-1', outDir: '/out', layers: ['grading'], confirmed: ['grading'] }))
-      .resolves.toEqual({ bundleDir: '/out/run-1-bundle', files: 9 })
+      .resolves.toMatchObject({ bundleDir: '/out/run-1-bundle', files: 9, reportRows: 0, noteRecorded: false })
   })
 
   it('refuses both steps when mission\'s Remote is not mounted', async () => {

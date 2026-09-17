@@ -37,6 +37,21 @@ export interface LabStartedRun {
  */
 export const LAB_PAGES = ['overview', 'plan', 'conditions', 'matrix', 'cells', 'report', 'judging'] as const
 
+/**
+ * How long the view waits for an approved run to reach the ledger before it
+ * stops re-reading: {@link START_FOLLOWUP_LIMIT} re-reads, one every
+ * {@link START_FOLLOWUP_MS}, so about a minute.
+ *
+ * A bound and not a poll. `runCreate` lands seconds after the approval
+ * answers, so the wait normally ends on the first or second tick; what it must
+ * not do is run forever on a run the readiness gate REFUSED, which never
+ * reaches the ledger at all and whose refusal is in the job log the overview
+ * already shows.
+ */
+export const START_FOLLOWUP_MS = 4000
+/** @see START_FOLLOWUP_MS */
+export const START_FOLLOWUP_LIMIT = 15
+
 /** One sub-page of an experiment's detail. */
 export type LabPage = typeof LAB_PAGES[number]
 
@@ -99,6 +114,18 @@ export interface LabViewState {
   approveError: string | null
   /** What the approval started; null until one succeeds in this visit. */
   started: LabStartedRun | null
+  /**
+   * How many times this visit has re-read the list WAITING for the started
+   * run to appear in the ledger (I5·T39 · G11).
+   *
+   * `runCreate` happens seconds after the approval answers, so the refresh the
+   * approval fires lands before the run exists and every run-scoped sub-page
+   * is left saying 未开始 until a person presses Refresh. The follow-up
+   * re-reads until the row carries a run id — and stops at
+   * {@link START_FOLLOWUP_LIMIT}, because a run the readiness gate REFUSED
+   * never appears at all and a wait with no end is a poll nobody asked for.
+   */
+  startFollowUps: number
   /** The started job's log, verbatim — where the readiness refusal is written. */
   output: EvalRunOutputView | null
   /** Human-readable job-log failure, or null. */
@@ -208,6 +235,8 @@ export interface LabViewState {
 
   /** Whether the export dialog is open. */
   exportOpen: boolean
+  /** Whether a one-click re-export is in flight (both buttons are disabled meanwhile). */
+  reexporting: boolean
   /** One-shot notice line (retry / release check / export outcomes), or null. */
   notice: string | null
   /**
@@ -239,6 +268,7 @@ export type LabViewActions = {
   setApproveRefusal: (draft: LabViewState, refusal: string | null) => void
   setApproveError: (draft: LabViewState, message: string | null) => void
   setStarted: (draft: LabViewState, started: LabStartedRun) => void
+  countStartFollowUp: (draft: LabViewState) => void
   setOutput: (draft: LabViewState, output: EvalRunOutputView) => void
   setOutputError: (draft: LabViewState, error: string | null) => void
   setConditions: (draft: LabViewState, conditions: EvalConditionsView) => void
@@ -281,6 +311,7 @@ export type LabViewActions = {
   setJudgeDraft: (draft: LabViewState, criterion: string, value: { pass: boolean; evidence: string }) => void
   setJudgeSubmitting: (draft: LabViewState, submitting: boolean) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
+  setReexporting: (draft: LabViewState, reexporting: boolean) => void
   setNotice: (draft: LabViewState, notice: string | null) => void
   setNoticeError: (draft: LabViewState, message: string | null) => void
 }
@@ -303,6 +334,7 @@ const INITIAL: LabViewState = {
   approveRefusal: null,
   approveError: null,
   started: null,
+  startFollowUps: 0,
   output: null,
   outputError: null,
   conditions: null,
@@ -344,6 +376,7 @@ const INITIAL: LabViewState = {
   judgeDraft: {},
   judgeSubmitting: false,
   exportOpen: false,
+  reexporting: false,
   notice: null,
   noticeError: null,
 }
@@ -357,11 +390,11 @@ const INITIAL: LabViewState = {
 const PER_EXPERIMENT: Pick<
   LabViewState,
   'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal' | 'approveError'
-  | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
+  | 'started' | 'startFollowUps' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
   | 'judge' | 'judgeError' | 'judgeTicket' | 'judgeSubmitting'
-  | 'exportOpen' | 'notice' | 'noticeError'
+  | 'exportOpen' | 'reexporting' | 'notice' | 'noticeError'
 > = {
   detail: null,
   detailError: null,
@@ -372,6 +405,7 @@ const PER_EXPERIMENT: Pick<
   approveRefusal: null,
   approveError: null,
   started: null,
+  startFollowUps: 0,
   output: null,
   outputError: null,
   matrixColumn: null,
@@ -395,6 +429,7 @@ const PER_EXPERIMENT: Pick<
   judgeTicket: null,
   judgeSubmitting: false,
   exportOpen: false,
+  reexporting: false,
   notice: null,
   noticeError: null,
 }
@@ -452,12 +487,16 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setApproveError: (d, message: string | null) => { d.approveError = message; d.approveRefusal = null },
       setStarted: (d, started: LabStartedRun) => {
         d.started = started
+        d.startFollowUps = 0
         d.approveRefusal = null
         d.approveError = null
         // An approved plan is no longer sent back, whatever the reviewer
         // pressed earlier in this visit.
         d.sentBack = false
       },
+      // One tick of the wait for the started run to reach the ledger. Counted
+      // rather than timed: the page only needs to know when to give up.
+      countStartFollowUp: (d) => { d.startFollowUps += 1 },
       setOutput: (d, output: EvalRunOutputView) => {
         d.output = output
         d.outputError = null
@@ -603,6 +642,7 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       },
       setJudgeSubmitting: (d, submitting: boolean) => { d.judgeSubmitting = submitting },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },
+      setReexporting: (d, reexporting: boolean) => { d.reexporting = reexporting },
       // One seat, two renderers: whichever kind of news arrives clears the other.
       setNotice: (d, notice: string | null) => { d.notice = notice; d.noticeError = null },
       setNoticeError: (d, message: string | null) => { d.noticeError = message; d.notice = null },

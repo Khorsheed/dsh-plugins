@@ -101,6 +101,7 @@ import type {
   EvalMatrixView,
   EvalPlanRequest,
   EvalPlanReview,
+  EvalReexportRequest,
   EvalReportRequest,
   EvalRunJobView,
   EvalRunOutputView,
@@ -469,7 +470,28 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    */
   @Remote('exportRun')
   exportRun(agent: Agent, request: EvalExportRunRequest): Promise<EvalExportResultView> {
-    return this.service.exportRun(agent, request)
+    return this.service.exportRun(agent, request, `tab:${String(agent.session.id)}`)
+  }
+
+  /**
+   * EXPORT AGAIN — the report page's and the judge bench's one-click repeat
+   * after a final verdict (I5·T39 · G17).
+   *
+   * The bundle is written when the run ends; `human-final` is written
+   * afterwards and never travels back into it. This repeats the export the
+   * run's own note recorded — same layers, same snapshot reference — into a
+   * fresh directory beside the first, writes the report into it, and records
+   * a new note. Nothing guarded is re-confirmed here: a repeat may only carry
+   * what a person already confirmed once, and mission re-checks that against a
+   * FRESH plan, so a layer that became guarded meanwhile refuses the call and
+   * sends the reader to the dialog.
+   * @param agent - owning live agent; recorded as `tab:<sessionId>` on the note.
+   * @param request - the run to export again.
+   * @returns the new bundle, its report, and the timestamps.
+   */
+  @Remote('reexport')
+  reexport(agent: Agent, request: EvalReexportRequest): Promise<EvalExportResultView> {
+    return this.service.reexportRun(agent, request, `tab:${String(agent.session.id)}`)
   }
 
   /**

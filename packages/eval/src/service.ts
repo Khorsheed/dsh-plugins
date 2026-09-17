@@ -39,12 +39,17 @@ import {
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
 import { conditionPathIn, setConditionEndpoint as writeConditionEndpoint } from './condition-edit.ts'
 import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './draft.ts'
+import { resolveRepoWrite, writeResolved, EvalWriteRefused, type RepoWriteResult } from './repo-write.ts'
 import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
 import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './review.ts'
 import { projectFinalize, runReportView } from './report-view.ts'
+import {
+  readExportState, recordExportNote, reexportDirOf,
+  type EvalExportNote,
+} from './export-note.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
@@ -58,7 +63,7 @@ import type {
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
   EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView,
-  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanReview, EvalRunReportView, EvalRunUnitsView,
+  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
 } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
@@ -163,6 +168,52 @@ export class EvalService {
    */
   report(bundleDir: string, options: { out?: string } = {}): Promise<ReportWrite> {
     return writeEvalReport(expandHome(bundleDir), options.out === undefined ? options : { out: expandHome(options.out) })
+  }
+
+  /**
+   * WRITE one text file into the session's bound dataset repository working
+   * tree — the analysis draft's door (ui-spec §六; I5·T39 · G16).
+   *
+   * The narrowest write in this family, and narrow on purpose. It resolves the
+   * repository exactly as every other agent-facing verb does (the binding, and
+   * `repo` may only restate it), then checks the path against a whitelist that
+   * lives in code and admits only the repository's pass-through areas — no
+   * item material, at any depth, whatever the binding admits for reading.
+   *
+   * The alternative it replaces was not a smaller grant made carefully; it was
+   * the largest grant there is, made once per markdown file: `write` reaching
+   * outside the session workspace asked a person to escalate the sandbox to
+   * `danger-full-access`. Nothing about the act needed that, so the act got a
+   * verb instead of the machine getting opened.
+   * @param options - the path (repository-relative), the text, and whether an
+   *   existing file may be replaced; `session` decides the repository.
+   * @throws {@link EvalReadRefused} when no repository resolves for this session.
+   * @throws {@link EvalWriteRefused} when the path is outside the door.
+   */
+  async writeRepoFile(options: {
+    path: string
+    content: string
+    overwrite?: boolean
+    repo?: string
+    session?: { id: string }
+    agent?: boolean
+  }): Promise<RepoWriteResult> {
+    const scope = this.resolveRepoScope({
+      ...(options.repo === undefined ? {} : { repo: options.repo }),
+      ...(options.session === undefined ? {} : { session: options.session }),
+      ...(options.agent === undefined ? {} : { agent: options.agent }),
+    })
+    if (scope instanceof EvalReadRefused) throw scope
+    if (options.content === '') {
+      throw new EvalWriteRefused(
+        `refusing to write an empty file at ${JSON.stringify(options.path)} — an empty analysis is not an analysis, `
+        + 'and a file created by accident is harder to notice than a call that failed.',
+      )
+    }
+    const target = await resolveRepoWrite(scope.repo, options.path, scope.datasets)
+    return await writeResolved(scope.repo, target, options.content, {
+      ...(options.overwrite === undefined ? {} : { overwrite: options.overwrite }),
+    })
   }
 
   /**
@@ -930,14 +981,139 @@ export class EvalService {
    * re-checks the `confirmed` list against a FRESH plan and refuses when a
    * guarded layer is unconfirmed — a dialog-stale confirmation never
    * authorizes a changed layer set, and that check stays on mission's side.
+   *
+   * ONE ACTION, two files since I5·T60: the bundle is mission's, and the
+   * report (`report/summary.md` + `results.jsonl` + `usage.jsonl`) is written
+   * into it here, by the same function `dsh-eval report` calls. The page used
+   * to export and then print a command line for the reader to go and run —
+   * which is how a walkthrough with every surface on screen still ended at a
+   * terminal (I5·T39 · G15). Where the bundle went is recorded as a run-level
+   * note in the same breath, because `run.meta` cannot say (I5·T53).
    * @param agent - the calling agent, passed through unchanged.
    * @param request - the export plus the confirmed guarded layers.
+   * @param by - caller tag recorded against the run's export note.
    * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
    */
-  exportRun(agent: unknown, request: EvalExportRunRequest): Promise<EvalExportResultView> {
+  async exportRun(agent: unknown, request: EvalExportRunRequest, by?: string): Promise<EvalExportResultView> {
     const remote = this.missionExport()
-    if (remote === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
-    return remote.exportRun(agent, request)
+    if (remote === undefined) throw MISSION_EXPORT_ABSENT
+    const exported = await remote.exportRun(agent, request)
+    return await this.completeExport(exported, request, by)
+  }
+
+  /**
+   * EXPORT AGAIN, after the final verdicts — the report page's and the judge
+   * bench's one-click repeat (I5·T39 · G17).
+   *
+   * The bundle is written when the run ends and the human-final verdicts are
+   * written afterwards, from a page the bundle knows nothing about. Nothing
+   * carried them in: the fix was to export a second time and re-run the report
+   * command, and neither surface said so. This verb repeats the export the
+   * run's own note recorded — the same layers, the same snapshot reference —
+   * into a FRESH directory beside the first, and writes the report into it.
+   *
+   * It repeats and never widens. The layers come from the note, so a re-export
+   * can only include what a person already confirmed; if one of them has since
+   * become guarded, mission's fail-closed gate refuses the whole call and the
+   * reader goes through the dialog, which is the only place a guarded layer is
+   * ever confirmed. The old directory is left exactly as it was — somebody may
+   * have quoted from it.
+   * @param agent - the calling agent, passed through to mission unchanged.
+   * @param request - the run to export again.
+   * @param by - caller tag recorded against the new export note.
+   * @throws {@link EvalReadRefused} when mission's Remote is absent, or when
+   *   this run has no recorded export to repeat.
+   */
+  async reexportRun(agent: unknown, request: EvalReexportRequest, by?: string): Promise<EvalExportResultView> {
+    const remote = this.missionExport()
+    if (remote === undefined) throw MISSION_EXPORT_ABSENT
+    const mission = this.requireMissionRead('export a run again')
+    const note = readExportState(mission, request.runId).note
+    if (note === null) {
+      throw new EvalReadRefused(
+        `run ${request.runId} records no earlier export to repeat — export it once from the dialog, `
+        + 'which is where the layers and the guarded-layer confirmations are chosen; every export after that can be repeated here.',
+      )
+    }
+    const repeated: EvalExportRunRequest = {
+      runId: request.runId,
+      outDir: reexportDirOf(note.outDir, Date.now()),
+      layers: [...note.layers],
+      ...(note.snapshotDir === null ? {} : { snapshotDir: note.snapshotDir }),
+      ...(note.snapshot === null
+        ? {}
+        : {
+          snapshot: {
+            repo: note.snapshot.repo,
+            commit: note.snapshot.commit,
+            ...(note.snapshot.dataset === null ? {} : { dataset: note.snapshot.dataset }),
+          },
+        }),
+      // Nothing guarded is re-confirmed here: a repeat may only carry what the
+      // first export already carried, and mission re-checks that against a
+      // FRESH plan. A layer that became guarded meanwhile refuses the call.
+      confirmed: [],
+    }
+    const exported = await remote.exportRun(agent, repeated)
+    return await this.completeExport(exported, repeated, by)
+  }
+
+  /**
+   * The half of an export that is eval's: write the report INTO the bundle,
+   * then record where the bundle went.
+   *
+   * Both are best-effort around an artifact that already exists. A bundle
+   * whose report could not be rendered is still a bundle, and a note that the
+   * ledger refused still leaves the directory on disk — so neither failure
+   * turns a completed export into an error. What happened travels in the
+   * answer instead, which is what lets the page say 「导出了，报告没写成」
+   * rather than either lying or throwing.
+   * @param exported - what mission's export answered.
+   * @param request - the export as it was made (the note's content).
+   * @param by - caller tag recorded against the note; defaults to `eval-export`.
+   */
+  private async completeExport(
+    exported: { bundleDir: string; files: number },
+    request: EvalExportRunRequest,
+    by?: string,
+  ): Promise<EvalExportResultView> {
+    const exportedAt = Date.now()
+    let summaryPath: string | null = null
+    let reportRows = 0
+    let reportError: string | null = null
+    try {
+      const written = await writeEvalReport(exported.bundleDir)
+      summaryPath = written.summaryPath
+      reportRows = written.rowCount
+    } catch (error) {
+      reportError = error instanceof Error ? error.message : String(error)
+    }
+    const note: EvalExportNote = {
+      outDir: request.outDir,
+      bundleDir: exported.bundleDir,
+      exportedAt,
+      layers: [...(request.layers ?? [])],
+      snapshotDir: request.snapshotDir ?? null,
+      snapshot: request.snapshot === undefined
+        ? null
+        : { repo: request.snapshot.repo, commit: request.snapshot.commit, dataset: request.snapshot.dataset ?? null },
+      summaryPath,
+      reportError,
+    }
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    const annotate = this.missionAnnotate()
+    const recorded = mission === undefined || annotate === undefined
+      ? { recorded: false, reason: 'no mission ledger in this composition' }
+      : await recordExportNote(annotate, mission, request.runId, note, by ?? 'eval-export')
+    return {
+      bundleDir: exported.bundleDir,
+      files: exported.files,
+      exportedAt,
+      summaryPath,
+      reportRows,
+      reportError,
+      noteRecorded: recorded.recorded,
+    }
   }
 
   /**
@@ -1308,6 +1484,8 @@ export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run.ts'
 export { EvalFinalizeRefused } from './finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
 export { EvalReadRefused } from './read.ts'
+export { EvalWriteRefused } from './repo-write.ts'
+export type { RepoWriteResult } from './repo-write.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'

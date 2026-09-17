@@ -2,7 +2,7 @@
  * The session-granted eval tools — the companion row of
  * `@khorsheed/dsh-eval` for agent-preset compositions. The row provides NO
  * service (the preset-mount isolate-realm rule forbids service rows), it only
- * registers the five model tools into the host tools registry and
+ * registers the six model tools into the host tools registry and
  * contributes their guidance section, delegating to the global `ctx.dshEval`
  * service core the main plugin provides at the profile root — the official
  * tool-row shape (the shipped `tool-bash` rows work the same way). Granting is
@@ -47,9 +47,12 @@ export interface EvalToolConfig {
    * `all` became FOUR tools with T46: an evaluation preset no longer
    * composes the mission tool row, and `eval_cells` is where the per-cell
    * detail its four read tools used to answer now comes from. It became FIVE
-   * with I5·T34: `eval_plan_draft` is the row's one write, and the only one
-   * it will have — drafting a plan starts nothing, which is exactly what
-   * every other write-class verb in this family does.
+   * with I5·T34: `eval_plan_draft` is the row's first write — drafting a plan
+   * starts nothing, which is exactly what every write-class verb in this row
+   * has in common. It became SIX with I5·T60: `eval_repo_write` puts the
+   * agent's analysis draft into the bound repository's pass-through areas,
+   * which is what the `write` tool could only do by having a person open the
+   * whole machine (I5·T39 · G16).
    */
   tools?: 'all' | 'none'
 }
@@ -77,11 +80,11 @@ interface PromptSections {
 }
 
 /** Cross-call guidance, registered beside the tools it describes. */
-const EVAL_PROMPT = `The eval_* tools are four reads and one draft. eval_conditions lists the conditions (subjects under test) a dataset repository declares, each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null. eval_plan_validate checks a dataseek.plan/1 document and reports errors (the plan cannot run) and warnings (not resolved yet). eval_plan_draft is the one tool here that writes: it drafts an experiment — plans/<name>.json plus any new condition files — into the session's bound dataset repository working copy and validates what it wrote, in one call. Use it instead of hand-writing those files; a new condition is always a COPY of one that exists with named fields changed, because two conditions differing in ONE field are a single-factor pair and a declaration written from scratch differs in however many fields its author forgot. eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it. eval_cells goes cell by cell instead — bucket, stage and time in it, attempt, the unit's resource and environment fingerprint, checkpoint names, annotation counts per namespace, and the delegation's child session — filterable by bucket / task / condition; called with NO run_id it lists the experiments themselves (every run plus every unstarted plan, with snapshot, matrix size, factors, status and progress), which is how you find a run id in the first place. Those five are the whole eval surface of this session: it grants no mission tools, so do not look for mission_run_list / mission_run_status / mission_list / mission_get — the experiment list and the cells are both eval_cells, and the run digest is eval_run_status. DRAFTING IS NOT STARTING. Starting a run is a HUMAN act: the person approves the plan in the 实验室 tab (计划审阅 › 批准并启动) or runs /eval run <plan.json> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Logging each harness in and provisioning its condition are theirs too, and so is the final verdict. Your part is drafting, reading and writing the analysis: draft plans and conditions with eval_plan_draft, report the paths and the validate result back, and stop there; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
+const EVAL_PROMPT = `The eval_* tools are four reads and two writes. eval_conditions lists the conditions (subjects under test) a dataset repository declares, each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null. eval_plan_validate checks a dataseek.plan/1 document and reports errors (the plan cannot run) and warnings (not resolved yet). eval_plan_draft is the first of the two that write: it drafts an experiment — plans/<name>.json plus any new condition files — into the session's bound dataset repository working copy and validates what it wrote, in one call. Use it instead of hand-writing those files; a new condition is always a COPY of one that exists with named fields changed, because two conditions differing in ONE field are a single-factor pair and a declaration written from scratch differs in however many fields its author forgot. eval_repo_write is the second: ONE text file into the bound repository's working copy, and only under docs/<path>, datasets/<set>/plans/<path>, datasets/<set>/conditions/<path> or datasets/<set>/analysis/<path>. That is where the analysis you write after reading a bundle belongs — beside the plan and the conditions it is about — and it is why you do not need the write tool for it and must not ask for a sandbox escalation to reach the dataset repository. The item material (datasets/<set>/items/…) is never writable through it: not the题面, not standards.yml, not a rubric, not an oracle. Anything else is refused with the path and the allowed list quoted back, and nothing is written. eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it. eval_cells goes cell by cell instead — bucket, stage and time in it, attempt, the unit's resource and environment fingerprint, checkpoint names, annotation counts per namespace, and the delegation's child session — filterable by bucket / task / condition; called with NO run_id it lists the experiments themselves (every run plus every unstarted plan, with snapshot, matrix size, factors, status and progress), which is how you find a run id in the first place. Those six are the whole eval surface of this session: it grants no mission tools, so do not look for mission_run_list / mission_run_status / mission_list / mission_get — the experiment list and the cells are both eval_cells, and the run digest is eval_run_status. DRAFTING IS NOT STARTING. Starting a run is a HUMAN act: the person approves the plan in the 实验室 tab (计划审阅 › 批准并启动) or runs /eval run <plan.json> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Logging each harness in and provisioning its condition are theirs too, and so is the final verdict. Your part is drafting, reading and writing the analysis: draft plans and conditions with eval_plan_draft, write the analysis with eval_repo_write, report the paths and the validate result back, and stop there; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
 
 
 /**
- * Plugin body: register the five tools and their guidance section when
+ * Plugin body: register the six tools and their guidance section when
  * the service core is present, degrade to a no-op when it is not.
  * @param ctx - Cordis context (the preset's agent-plane mount).
  * @param config - validated plugin config.

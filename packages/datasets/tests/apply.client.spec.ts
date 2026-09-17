@@ -42,6 +42,8 @@ async function bench(options: {
   connectionSeat?: 'rc' | 'alpha'
   preset?: string
   composition?: DatasetsPluginInventorySnapshot
+  /** A whole session list, for the parent-chain cases; overrides `preset`. */
+  rows?: Record<string, unknown>
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -68,9 +70,11 @@ async function bench(options: {
       hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
     } as never)
   // No preset on the row = the fail-open default; a named preset reads the composition.
+  const byId = options.rows
+    ?? (options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } })
   const list = createSnapshotStore({
-    ids: ['s1'],
-    byId: options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } },
+    ids: Object.keys(byId),
+    byId,
     current: 's1' as SessionId,
     phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
   })
@@ -168,6 +172,29 @@ describe('datasets client apply', () => {
 
   it('drops the tab registration in a session whose preset grants no dataset tools', async () => {
     const { ctx, slots } = await bench({ preset: 'standard', composition: DEV })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // I5·T39 · G13: a member sub-session of an evaluation declares no preset of
+  // its own, so read alone it took the fail-open arm and showed this tab
+  // inside a player's own transcript while the parent session hid it.
+  it('decides a member sub-session by its PARENT\'s preset composition', async () => {
+    const { ctx, slots } = await bench({
+      composition: DEV,
+      rows: { s1: { parentSessionId: 'main' } },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('hides in a member sub-session whose parent grants no datasets tools', async () => {
+    const { ctx, slots } = await bench({
+      composition: DEV,
+      rows: { s1: { parentSessionId: 'main' }, main: { projectionValues: { agentPreset: 'standard' } } },
+    })
     await ctx.plugin({ inject: [...inject], apply }).await()
     await settled()
     expect(slots.entries('conversation.view')).toHaveLength(0)

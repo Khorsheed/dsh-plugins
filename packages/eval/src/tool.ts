@@ -1,5 +1,5 @@
 /**
- * The model-tool face of the orchestrator — four reads and one draft.
+ * The model-tool face of the orchestrator — four reads and two writes.
  *
  * The agent appears twice in an evaluation: while a plan is being drafted and
  * while a bundle is being analysed. The second needs nothing but reads. The
@@ -9,13 +9,22 @@
  * is that same pair of files through the service verb the 新建实验 form uses,
  * validated in the same call.
  *
- * It is a write, and it is deliberately the ONLY one. Starting a run is a
- * human act (`/eval run`, or the plan-review page's 批准并启动), and every
- * other write-class verb — materialize, delegate, submit, transition,
- * annotate, archive, export, finalize — belongs to the orchestrator's service
- * face or to the human's CLI. Drafting is safe to hand a model for the reason
- * the others are not: a draft is a file and a 草稿 row, it starts nothing, and
- * a person still has to read it and press the button.
+ * It is a write, and starting a run is not: `/eval run` and the plan-review
+ * page's 批准并启动 are a human act, and every other write-class verb —
+ * materialize, delegate, submit, transition, annotate, archive, export,
+ * finalize — belongs to the orchestrator's service face or to the human's CLI.
+ * Drafting is safe to hand a model for the reason the others are not: a draft
+ * is a file and a 草稿 row, it starts nothing, and a person still has to read
+ * it and press the button.
+ *
+ * `eval_repo_write` is the second write (I5·T60), and the same shape of safe:
+ * one text file, into the bound repository's pass-through areas, never into an
+ * item's material. It exists because the agent's OTHER product — the analysis
+ * it writes after reading a bundle — lives in the dataset repository too, and
+ * the session's workspace is not that repository. The `write` tool reaching
+ * there asked a person to escalate the sandbox to `danger-full-access`: the
+ * whole machine, once per markdown file (I5·T39 · G16). A narrow verb is the
+ * grant that matches the act.
  *
  * `eval_cells` is the fourth (T46). An evaluation session no longer composes
  * the mission tool row, so the four mission read tools it used to carry for
@@ -49,7 +58,7 @@ import { expandHome } from './validate.ts'
 
 /** The names this module registers, in registration order. */
 export const EVAL_TOOL_NAMES: readonly string[] =
-  ['eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_run_status', 'eval_cells']
+  ['eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_repo_write', 'eval_run_status', 'eval_cells']
 
 /**
  * JSON pass-through output. The rendering is the whole document, pretty —
@@ -345,6 +354,51 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
         ...(args.exports === undefined ? {} : { exports: args.exports }),
         ...(args.notes === undefined ? {} : { notes: args.notes }),
       }, { agent: true, ...(session === undefined ? {} : { session }) })) as unknown as JsonValue
+    },
+  }))
+
+  definitions.push(defineTool({
+    name: 'eval_repo_write',
+    description:
+      'WRITE one text file into the session\'s bound dataset repository working copy — the analysis draft\'s door, and '
+      + 'the way to put a write beside the plan and the conditions it is about without asking a person to open the '
+      + 'whole machine. Use it for the analysis you write after reading a bundle (step 8), and for hand-fixing a '
+      + 'pass-through file; use eval_plan_draft for a plan or a condition, which it validates and this does not. '
+      + 'The path is RELATIVE to the bound repository and only these areas are writable: docs/<path>, '
+      + 'datasets/<set>/plans/<path>, datasets/<set>/conditions/<path>, datasets/<set>/analysis/<path>. '
+      + 'The item material (datasets/<set>/items/…) is never writable here — not the题面, not standards.yml, not a '
+      + 'rubric, not an oracle — whatever your read tools can see. Anything else is refused with the path and this '
+      + 'list quoted back, and nothing is written. Files land in the WORKING COPY and are never committed; nothing is '
+      + 'overwritten unless you pass overwrite, and an empty body is refused.',
+    parameters: {
+      path: {
+        type: 'string',
+        required: true,
+        description: 'Repository-relative path, e.g. docs/<experiment>-analysis.md or datasets/<set>/analysis/<name>.md. '
+          + 'Absolute paths, "~" and ".." are refused.',
+      },
+      content: { type: 'string', required: true, description: 'The file\'s full text (UTF-8). An empty body is refused.' },
+      overwrite: { type: 'boolean', description: 'Replace the file when it already exists. Default false — an existing path is refused instead.' },
+      repo: {
+        type: 'string',
+        description: 'Optional, and only ever a restatement of the session\'s datasets binding — a different path is '
+          + 'refused, and so is any path in a session nobody has bound. Omit it; the binding is where the write goes.',
+      },
+    },
+    output: jsonOutput(),
+    // Two writes at once may create the same parent directory and land in
+    // either order; the door is per-file, so serializing is the cheap answer.
+    isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      const session = sessionOf(exec)
+      return (await service.writeRepoFile({
+        path: args.path,
+        content: args.content,
+        ...(args.overwrite === undefined ? {} : { overwrite: args.overwrite }),
+        ...(args.repo === undefined ? {} : { repo: args.repo }),
+        agent: true,
+        ...(session === undefined ? {} : { session }),
+      })) as unknown as JsonValue
     },
   }))
 

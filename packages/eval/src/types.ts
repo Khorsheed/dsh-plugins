@@ -967,10 +967,34 @@ export interface EvalExportPlanView {
   attempts: number
 }
 
-/** The export outcome. */
+/**
+ * The export outcome — the bundle AND the report written into it.
+ *
+ * One action writes both since I5·T60. Before it, the page's 导出 wrote the
+ * bundle and the report page then printed a command line for the reader to go
+ * and run (`dsh-eval report <bundle>`), which is how a walkthrough that had
+ * everything on screen still ended at a terminal (I5·T39 · G15). The CLI verb
+ * stays — it is how a bundle from anywhere gets a report — but the page no
+ * longer needs it.
+ */
 export interface EvalExportResultView {
   bundleDir: string
   files: number
+  /** Epoch ms of the export; the field the staleness sentence compares. */
+  exportedAt: number
+  /** `report/summary.md` inside the bundle; null when the report could not be written. */
+  summaryPath: string | null
+  /** Verdict rows the written report carries. */
+  reportRows: number
+  /** Why no report was written beside the bundle; null when one was. */
+  reportError: string | null
+  /** Whether the run-level export note reached the ledger (the page's way back here). */
+  noteRecorded: boolean
+}
+
+/** Which run to export again, after the final verdicts (I5·T39 · G17). */
+export interface EvalReexportRequest {
+  runId: string
 }
 
 /** One run's answer for one dataset item — the 作答记录 of the item page (T47). */
@@ -1179,6 +1203,23 @@ export interface EvalRunReportView {
   refusal: string | null
   /** The `dsh-eval report` command that writes results.jsonl / summary.md to disk. */
   cliHint: string | null
+  /**
+   * When the bundle on screen was written (`manifest.json`'s own `exportedAt`),
+   * or null when the bundle carries no readable manifest.
+   */
+  exportedAt: number | null
+  /** The newest `human-final` verdict of the run, or null when none exists. */
+  lastHumanFinalAt: number | null
+  /**
+   * True when the bundle was exported BEFORE the last final verdict — the
+   * numbers on screen were computed without it, and a re-export is the fix
+   * (I5·T39 · G17).
+   */
+  staleAfterFinal: boolean
+  /** Whether `report/summary.md` is in the bundle (every export since T60 writes it). */
+  summaryWritten: boolean
+  /** Whether a recorded export can be repeated in one click (a note exists). */
+  reexportable: boolean
   invariants: EvalReportInvariant[]
   /** True only when all four invariants are established. */
   comparisonAllowed: boolean
@@ -1405,6 +1446,16 @@ export interface EvalJudgeQueueView {
   consistency: EvalReportJudgeConsistency
   /** How many judge conditions the run declared — the panel's size. */
   judgeCount: number
+  /**
+   * True when the run's newest recorded export predates its newest
+   * `human-final` — the verdicts written on THIS page are not in the bundle,
+   * and the numbers anyone reads out of it were computed without them
+   * (I5·T39 · G17). False when nothing was ever exported: a run with no bundle
+   * has no stale bundle, and the report page is where "export it" is said.
+   */
+  bundleStale: boolean
+  /** When the run's newest recorded export was made; null when none was. */
+  lastExportAt: number | null
   /** Degradations, each as a sentence: no data root, no conditions in meta, … */
   notes: string[]
 }

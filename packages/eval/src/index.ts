@@ -79,6 +79,10 @@ export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit }
 export { capabilityRefusal } from './readiness.ts'
 export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 export { EvalReadRefused } from './read.ts'
+/** The narrow dataset-repository write door (the analysis draft's; I5·T39 · G16). */
+export { EvalWriteRefused, REPO_WRITE_PREFIXES, REPO_WRITE_SET_DIRS, resolveRepoWrite, writeRepoFile } from './repo-write.ts'
+/** The run-level export note: where a run's bundle went, and when (I5·T53 / G17). */
+export { EXPORT_NOTE_KIND, readExportState, recordExportNote, recordExportNoteOn, reexportDirOf } from './export-note.ts'
 export type { ConditionHash, RunOptions, RunReport, RunCellReport, RunSubset } from './service.ts'
 export type {
   PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness, LockedCapabilities,

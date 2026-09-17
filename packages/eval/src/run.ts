@@ -66,6 +66,8 @@ import {
   type CellUnitPlan, type CredentialsCheck,
 } from './unit.ts'
 import { buildRubricWeightTable, writeRubricWeightTable } from './weights.ts'
+import { recordExportNoteOn } from './export-note.ts'
+import { writeEvalReport } from './report.ts'
 
 /** Thrown when a run is REFUSED before anything executes (data problems, missing services). */
 export class EvalRunRefused extends Error {
@@ -2253,13 +2255,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   let bundleDir: string | undefined
   let exportError: string | undefined
   try {
+    const exportedAt = now()
     const exported = faces.mission.exportRun({
       runId,
       outDir,
       layers: [{ name: 'visible', guarded: false }],
       snapshotDir: datasetRoot,
       snapshot: { repo: snapshot.repoPath, commit: snapshot.commit, dataset: plan.dataset.id },
-      now: now(),
+      now: exportedAt,
     })
     bundleDir = exported.bundleDir
     log(`bundle exported: ${exported.bundleDir} (${exported.files} files)`)
@@ -2271,6 +2274,39 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       tasks: plan.dataset.items,
       log,
     })
+    // The REPORT, into the bundle, by the same function `dsh-eval report`
+    // calls. It used to be a command line the reader had to go and run after
+    // the run had already finished, and the walkthrough duly ran it (I5·T39 ·
+    // G15); the bundle a run leaves behind now carries its own summary.md.
+    // Best-effort: a report that cannot be rendered does not unexport a bundle.
+    let summaryPath: string | null = null
+    let reportError: string | null = null
+    try {
+      const written = await writeEvalReport(exported.bundleDir)
+      summaryPath = written.summaryPath
+      log(`report written: ${written.summaryPath} (${written.rowCount} verdict row(s))`)
+    } catch (error) {
+      reportError = error instanceof Error ? error.message : String(error)
+      log(`report not written: ${reportError} — run \`dsh-eval report ${exported.bundleDir}\` by hand`)
+    }
+    // WHERE it went, on the run itself. `run.meta` names the plan and the
+    // repository and the bundle is under neither, so a run started with
+    // `--out <dir>` left no way back to its own artifact (I5·T53). The first
+    // cell carries the note; the report page scans for the newest.
+    const noteCell = ordered[0]?.missionId
+    if (noteCell !== undefined) {
+      const recorded = await recordExportNoteOn(faces.mission, noteCell, runId, {
+        outDir,
+        bundleDir: exported.bundleDir,
+        exportedAt,
+        layers: ['visible'],
+        snapshotDir: datasetRoot,
+        snapshot: { repo: snapshot.repoPath, commit: snapshot.commit, dataset: plan.dataset.id },
+        summaryPath,
+        reportError,
+      }, by)
+      if (!recorded.recorded) log(`export note not recorded: ${recorded.reason ?? 'unknown'}`)
+    }
   } catch (error) {
     exportError = error instanceof Error ? error.message : String(error)
     log(`export failed: ${exportError}`)

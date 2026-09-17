@@ -61,6 +61,11 @@ const REPORT: EvalRunReportView = {
   searched: [],
   refusal: null,
   cliHint: 'dsh-eval report /repo/exports/run-1-bundle',
+  exportedAt: 1_700_000_000_000,
+  lastHumanFinalAt: null,
+  staleAfterFinal: false,
+  summaryWritten: true,
+  reexportable: true,
   invariants: [
     { id: 'materialization', title: '题面一致', status: 'ok', details: ['4 格同一物化哈希'] },
     { id: 'fingerprint', title: '环境同构', status: 'ok', details: [] },
@@ -135,6 +140,9 @@ const NOT_EXPORTED: EvalRunReportView = {
   searched: ['/repo/exports'],
   refusal: 'no export bundle for run-1 yet — export it first (looked for run-1-bundle in: /repo/exports)',
   cliHint: null,
+  exportedAt: null,
+  summaryWritten: false,
+  reexportable: false,
   invariants: [],
   comparisonAllowed: false,
   pairs: [],
@@ -166,6 +174,17 @@ const FINALIZED: EvalFinalizeView = {
   }],
   unitsKnown: true,
   log: ['cell p0-cond-a-rep1: archived → releasable → released'],
+}
+
+/**
+ * The bundle a walkthrough actually had at step 8: exported when the run
+ * ended, and older than the final verdict written afterwards (I5·T39 · G17).
+ */
+const STALE: EvalRunReportView = {
+  ...REPORT,
+  exportedAt: 1_700_000_000_000,
+  lastHumanFinalAt: 1_700_000_900_000,
+  staleAfterFinal: true,
 }
 
 /** Two containers still up: one whose cell the gate refused, one already past it. */
@@ -201,7 +220,21 @@ function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView
       ok: true as const,
       value: { bundleDir: '/out/run-1-bundle', guardedLayers: [], expectedNs: ['script'], missions: 4, attempts: 5 },
     })),
-    exportRun: vi.fn(async () => ({ ok: true as const, value: { bundleDir: '/out/run-1-bundle', files: 9 } })),
+    exportRun: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        bundleDir: '/out/run-1-bundle', files: 9, exportedAt: 1_700_000_000_000,
+        summaryPath: '/out/run-1-bundle/report/summary.md', reportRows: 12, reportError: null, noteRecorded: true,
+      },
+    })),
+    reexportRun: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        bundleDir: '/out/re-20260917T142530Z/run-1-bundle', files: 9, exportedAt: 1_700_000_999_000,
+        summaryPath: '/out/re-20260917T142530Z/run-1-bundle/report/summary.md',
+        reportRows: 14, reportError: null, noteRecorded: true,
+      },
+    })),
   }
 }
 
@@ -219,6 +252,7 @@ function renderView(h: Harness) {
     fetchRunUnits: h.fetchRunUnits,
     planExport: h.planExport,
     exportRun: h.exportRun,
+    reexportRun: h.reexportRun,
     openSession: vi.fn(),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
@@ -470,5 +504,63 @@ describe('unreclaimed units', () => {
     expect(await screen.findByText('report.unitsUnknown')).toBeTruthy()
     expect(screen.queryByText('report.unitsNone')).toBeNull()
     expect(screen.queryByRole('button', { name: 'report.reclaim' })).toBeNull()
+  })
+})
+
+describe('how old the bundle is (I5·T39 · G17 / T60)', () => {
+  it('says when the bundle was written and that its report is inside it', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    // One line: when it was written, and that the report went in with it.
+    const line = await screen.findByText(/report\.exportedAt /)
+    expect(line.textContent).toContain('report.summaryIn')
+    expect(screen.queryByText(/report\.staleAfterFinal/)).toBeNull()
+  })
+
+  it('a bundle older than the last final verdict says so, with the button beside the sentence', async () => {
+    const h = makeHarness(STALE)
+    await openReport(h)
+
+    // The sentence names the time a reader would otherwise have to find by
+    // opening manifest.json themselves, which is how the gap was found.
+    const warning = await screen.findByText(/report\.staleAfterFinal /)
+    expect(warning.textContent).toContain('"final"')
+    const again = screen.getAllByRole('button', { name: 'report.reexport' })
+    expect(again.length).toBeGreaterThan(0)
+
+    fireEvent.click(again[again.length - 1] as HTMLElement)
+    await waitFor(() => { expect(h.reexportRun).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+    // The receipt names the NEW directory; the old bundle is not mentioned as
+    // gone, because it is not.
+    await screen.findByText(/notice\.reexported .*re-20260917T142530Z/)
+  })
+
+  it('a bundle written before the export action wrote reports offers to get one', async () => {
+    const h = makeHarness({ ...REPORT, summaryWritten: false })
+    await openReport(h)
+    expect(await screen.findByText('report.summaryMissing')).toBeTruthy()
+  })
+
+  it('offers no one-click repeat for a run with no recorded export', async () => {
+    const h = makeHarness({ ...REPORT, reexportable: false })
+    await openReport(h)
+    const again = await screen.findByRole('button', { name: 'report.reexport' })
+    expect((again as HTMLButtonElement).disabled).toBe(true)
+    expect(again.getAttribute('title')).toBe('report.reexportNeedsDialog')
+  })
+
+  it('the export dialog\'s receipt names the report it wrote, not just the bundle', async () => {
+    const h = makeHarness(NOT_EXPORTED)
+    await openReport(h)
+    fireEvent.click(await screen.findByRole('button', { name: 'report.exportNow' }))
+    fireEvent.change(await screen.findByLabelText('export.outDir'), { target: { value: '/out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'export.plan' }))
+    await waitFor(() => { expect(h.planExport).toHaveBeenCalled() })
+    fireEvent.click(screen.getByRole('button', { name: 'export.confirm' }))
+
+    await waitFor(() => { expect(h.exportRun).toHaveBeenCalled() })
+    // One action, two products (G15): the receipt says so rather than leaving
+    // the reader to run `dsh-eval report` and find out.
+    expect(await screen.findByText(/export\.doneWithReport .*summary\.md/)).toBeTruthy()
   })
 })

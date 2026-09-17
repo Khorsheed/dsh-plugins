@@ -46,6 +46,7 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { attemptDataDir } from './cell-detail.ts'
+import { readExportState } from './export-note.ts'
 import type { DatasetsFace, MissionAnnotateFace, MissionReadFace } from './faces.ts'
 import {
   buildDeidentifyRules, deidentify, humanCriteria, pickRubricPath,
@@ -279,6 +280,9 @@ export interface JudgeQueueInput {
 export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQueueView> {
   const { mission, datasets, runId } = input
   const status = mission.runStatus(runId)
+  // Where this run's bundle went and when, plus its newest final verdict —
+  // one ledger pass, shared with the report page's own freshness read.
+  const exportState = readExportState(mission, runId)
   const meta = benchMetaOf(status.run.meta)
   const notes: string[] = []
   const cells: EvalJudgeQueueCell[] = []
@@ -405,6 +409,15 @@ export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQ
     // they just performed.
     consistency: judgeConsistencyOf(consistencyCells),
     judgeCount: meta.judgeIds.length,
+    // The ledger's own two timestamps, not the bundle's: this page must be
+    // able to say "what you just wrote is not in the bundle" without reading
+    // a directory, and eval's export note carries when the export was made.
+    // The report page compares the manifest instead, which is the stricter
+    // source and the one the sentence with numbers in it uses.
+    bundleStale: exportState.note !== null
+      && exportState.lastHumanFinalAt !== null
+      && exportState.note.exportedAt < exportState.lastHumanFinalAt,
+    lastExportAt: exportState.note?.exportedAt ?? null,
     notes,
   }
 }

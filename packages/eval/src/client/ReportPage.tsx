@@ -33,6 +33,11 @@ import css from './LabView.module.css'
 
 const DASH = '—'
 
+/** A timestamp a person reads, or the dash when there is none. */
+function stamp(at: number | null): string {
+  return at === null ? DASH : new Date(at).toLocaleString()
+}
+
 /** Integers stay integers; a mean keeps three decimals (summary.md's rule). */
 function fmtNum(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3)
@@ -371,13 +376,20 @@ export function ReportPage(props: {
   /** lab's own list of containers this run still holds; null before it loads. */
   units: EvalRunUnitsView | null
   unitsError: string | null
+  /** Whether a one-click re-export is in flight. */
+  reexporting: boolean
   onFinalize: () => void
   onExport: () => void
+  /** Repeat the recorded export into a fresh directory, report included. */
+  onReexport: () => void
   /** Look for the bundle under this export directory instead. */
   onLookIn: (dir: string) => void
   t: LabViewProps['t']
 }) {
-  const { report, loading, error, finalizing, finalizeResult, units, unitsError, onFinalize, onExport, onLookIn, t } = props
+  const {
+    report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
+    onFinalize, onExport, onReexport, onLookIn, t,
+  } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
   // button asks once — the gate itself never forces, but the reader should
@@ -410,6 +422,17 @@ export function ReportPage(props: {
             </Button>
           )}
         <Button size="sm" onClick={onExport}>{t('action.export')}</Button>
+        {/* The repeat, beside the dialog that made the first one. It is
+            disabled with a reason rather than hidden: a reader who has just
+            written a final verdict looks here for it. */}
+        <Button
+          size="sm"
+          disabled={reexporting || report.reexportable !== true}
+          title={report.reexportable === true ? '' : t('report.reexportNeedsDialog')}
+          onClick={onReexport}
+        >
+          {reexporting ? t('report.reexporting') : t('report.reexport')}
+        </Button>
         {/* 回收 is the SAME walk as finalize — reclaiming a container IS its
             cell passing the gate — so it shares the in-flight flag and the
             action behind it, and differs only in what the reader came for. */}
@@ -462,6 +485,30 @@ export function ReportPage(props: {
                 attempts: report.counts.attempts, retries: report.counts.retries,
               })}
             </div>
+            {/* WHEN this bundle was written, and whether it still says what the
+                ledger says. The pair is the whole of G17: the export happens
+                when the run ends, the final verdicts are written afterwards
+                from the judge bench, and nothing carried them back — a reader
+                found it out by opening manifest.json. */}
+            <div className={css.dim}>
+              {report.exportedAt === null
+                ? t('report.exportedAtUnknown')
+                : t('report.exportedAt', { at: stamp(report.exportedAt) })}
+              {report.summaryWritten && <> · {t('report.summaryIn')}</>}
+            </div>
+            {report.staleAfterFinal && (
+              <div className={css.warning}>
+                {t('report.staleAfterFinal', { final: stamp(report.lastHumanFinalAt) })}
+                <span className={css.actions}>
+                  <Button size="sm" variant="primary" disabled={reexporting} onClick={onReexport}>
+                    {reexporting ? t('report.reexporting') : t('report.reexport')}
+                  </Button>
+                </span>
+              </div>
+            )}
+            {!report.summaryWritten && !report.staleAfterFinal && (
+              <div className={css.dim}>{t('report.summaryMissing')}</div>
+            )}
             {report.cliHint !== null && (
               <div className={css.dim}>
                 {t('report.cliHint')}: <span className={css.mono}>{report.cliHint}</span>
