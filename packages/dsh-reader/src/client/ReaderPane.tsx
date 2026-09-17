@@ -35,6 +35,7 @@ import {
   IconPlusOutline16,
   IconRefreshOutline16,
   IconRightUpOutline16,
+  IconSettingsOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReaderPaneProps } from './contract.ts'
 import { extractArticle } from './extract-article.ts'
@@ -429,7 +430,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         title={t('action.manage')}
         onClick={() => { actions.closeEntry(); actions.setView('manage') }}
       >
-        {glyph('filter', 15)}
+        {/* A host settings glyph, not the hand-rolled filter stroke: the filter
+            stroke is already the unread toggle's icon two buttons to the right,
+            and two different controls with one glyph is a coin flip. */}
+        <IconSettingsOutline16 size={15} />
       </button>
       <button
         type="button"
