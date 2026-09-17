@@ -363,7 +363,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **T58 / T33d 验收（2026-09-17）**：T58 合入 `db3176a5`，T33d 合入 `a526d55b`（两个 README sidecar 与 T58 冲突，按合并后的 README.en.md 重录；T33d 基于 b3ae78b4，主体无冲突）；合并态 eval 741、datasets 182、eval-tool 4、datasets-tool 5，T33d 的 gate --all 全绿；主检出里的 gate 在 package map 一步红是未提交的 `packages/dsh-rss-reader` 让 docs/packages.md 显得过期，与两条无关。T58 六条缺口的修法都接受；两件超出文案的：改 eval-planning SKILL.md（不改则 agent 起草永远把 endpoint 留 null，G6 的收益拿不到）接受；ui-spec §五 的条件页「人的动作」与新建实验的七个字段由协调者补上。第 4 步人介入 6 → 2 是从代码路径推的，不是重跑走查；3171 上的三条判据里两条在真工具面与真题库上验过（未绑定被拒的原文、bind 缺省下 grading / verify 两层 `[LAYER_NOT_ALLOWED]`），「一次 provision 变 ready」由 conditions-page.spec 用真服务 + 假门面钉住，真机等 T62 后条件页打得开再看。协调者核过一处：判官读 grading 走的是 run 循环的显式 `layers: ['grading']`，`effectiveLayers` 里显式白名单优先，不受 bind 缺省收紧影响。实施者在临时实例（3199）截了明暗两套图并靠它查出三处自己没看出来的问题——截图确实值回票价，但规则不变：切片不各自截，统一由 T63 交；临时实例里 local-agent 不认 dsh（unknown harness dsh）与改动无关，pilot D 在 3171 上跑。T33d 接手了 9/12 的残留 worktree，改法与文案一致沿用。**接下来**：T62 负责把 3171 重装到 main ≥ `a526d55b`（T58 + T59 + T33d 一起上去）；T60 文案已写（§三）；T33c 可发。
 
-**T62 / T55 验收（2026-09-17）**：T62 合入 `35b23bf7`，T55 第二步合入 `dbc76d7f`；主检出这次被别的会话 stage 的 rss-reader 包挡了两回（ort 遇脏索引即拒），协调者把那 18 个文件从索引拿出、文件原样留在工作区。T62：四种错误码的原文都是三段式，两份 ErrorState 只差类型名与注释举例；超文案两处（存在性先于 git、「不是题库」拆两句）接受，修法从此不说错话。T55：定案 (a) 新者胜（用户放行）；判定步没碰真凭据就把两件事定死——清空发生在单元侧、只读挂载是死路。**未闭环的一条**：完成判据第 4 条（容器轮 ready 后宿主轮仍 ready）要修复先装进 3171 再跑，顺序写在 §三 T55 补充；另一件：3171 默认 scope 的凭据文件 13:30 被写但装的是昨天的凭证，最自然的读法是用户的重登当场被旧同步拨回，要人跑一次 keychain 元数据核对才能坐实——修复装上之后再登一次就不会再被拨回。T63 自此可发，与 T60 并行。**3171 重装（2026-09-17 14:51，T62 收尾）**：`e0a37060` → `2c4476f8`，13 s 就绪，两个 tab 真机打开，35 个工具无 mission_*；T33c 与 T55 活体验收的前置至此满足，等用户核 keychain / 重登。**T55 二期（同日下午）**：keychain 核对暴露第二处缺陷——印记解析从未生效，「最新写入优先」是空操作，3171 上一直镜像 9/16 的旧代，status 却全程报已认证；修入 `a36cf6b6`（夹具先改、用例先红再改源码，回归证据干净），3171 要再装一次，T1 判别之后再做容器轮验收，接缝要 21:31 之后才碰得到。**T33c 受阻收口（2026-09-17）**：pilot D 在容器轮被机制顶住（单元不挂 preset 根，sub-dsh 解析不到 preset），宿主轮比较节不开；按「只留必要测试」不跑宿主轮凑三条，已有证据入题库日志，机制缺口立 T65（先方案），pilot D 的那一次 P0 由 T65 顺手跑。
+**T62 / T55 验收（2026-09-17）**：T62 合入 `35b23bf7`，T55 第二步合入 `dbc76d7f`；主检出这次被别的会话 stage 的 rss-reader 包挡了两回（ort 遇脏索引即拒），协调者把那 18 个文件从索引拿出、文件原样留在工作区。T62：四种错误码的原文都是三段式，两份 ErrorState 只差类型名与注释举例；超文案两处（存在性先于 git、「不是题库」拆两句）接受，修法从此不说错话。T55：定案 (a) 新者胜（用户放行）；判定步没碰真凭据就把两件事定死——清空发生在单元侧、只读挂载是死路。**未闭环的一条**：完成判据第 4 条（容器轮 ready 后宿主轮仍 ready）要修复先装进 3171 再跑，顺序写在 §三 T55 补充；另一件：3171 默认 scope 的凭据文件 13:30 被写但装的是昨天的凭证，最自然的读法是用户的重登当场被旧同步拨回，要人跑一次 keychain 元数据核对才能坐实——修复装上之后再登一次就不会再被拨回。T63 自此可发，与 T60 并行。**3171 重装（2026-09-17 14:51，T62 收尾）**：`e0a37060` → `2c4476f8`，13 s 就绪，两个 tab 真机打开，35 个工具无 mission_*；T33c 与 T55 活体验收的前置至此满足，等用户核 keychain / 重登。**T55 二期（同日下午）**：keychain 核对暴露第二处缺陷——印记解析从未生效，「最新写入优先」是空操作，3171 上一直镜像 9/16 的旧代，status 却全程报已认证；修入 `a36cf6b6`（夹具先改、用例先红再改源码，回归证据干净），3171 要再装一次，T1 判别之后再做容器轮验收，接缝要 21:31 之后才碰得到。**T33c 受阻收口（2026-09-17）**：pilot D 在容器轮被机制顶住（单元不挂 preset 根，sub-dsh 解析不到 preset），宿主轮比较节不开；按「只留必要测试」不跑宿主轮凑三条，已有证据入题库日志，机制缺口立 T65（先方案），pilot D 的那一次 P0 由 T65 顺手跑。**T63 验收（2026-09-17 晚）**：合入 `00828fcd`，合并态 eval 777 / datasets 203。协调者看了 8 张图（题集列表、实验室列表、矩阵明暗、报告、条件暗、判官台暗、格子暗）与核对表：矩阵页列头归条件、因子作副标题、随动字段折到底部一行、run 级汇总一行、状态词表一致、空态说下一步、宿主 tokens 都成立——还纠出 §九 举例里四个根本不存在的 token 名（bg-l2 / label-warning / label-danger / font-family-mono），这是「设计感弱」里最实的一条。两条进用户走查清单：条件页列头仍是键名（model.declared / model.endpoint / scope / preset / lock）与英文动作词 provision；几处列头是英文术语（canary / validate / attempt / rep），算不算「中英不混」由用户定。两条只记不改记 T66。**T60 回报同日到**（`4b7a4633`，一个提交，测试 eval 796 / eval-tool 4 / mission 134 / datasets 200）：与 T63 在 LabView.tsx / ReportPage.tsx 冲突，退回实施者并 main 按 graft 解后再合；写口形状选新工具 eval_repo_write（不扩 eval_plan_draft，三条理由成立：契约不同、起草不可并发、账本会记假话），mission 里 effectivePresetOf 那份同改按判据接受；活体验收定在 3171、不起新的容器轮——报告页导出 / 重新导出 / 终评用 T39 那个已 finalize 的 run，G11 用一次 dsh 单条件宿主轮 P0（分钟级），G16 在会话里直接试，G13 打开旧格子的成员子会话看 tab 条。**3171 重装到 `00828fcd` 由 T63 的实施者做**（21:31 T55 探针之前），用户走查两个 tab；T60 合入后再装一次。
 
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
@@ -388,12 +388,13 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T57 ✅ | 代码（小） | run 与单元回收：`/eval run` 与「批准并启动」缺省跑完过释放闸（G10，留一个「保留单元」开关）；finalize 后在报告页显示未回收单元数并给回收动作（G18）；撞 maxConcurrentUnits 时的原文点名是哪些 run 占着 | T38 | 合入 main `4a11d4ad`（2026-09-17，`e0a37060` + `b423ecf5`）；三格容器 run 单元逐格交替、始终只有一只、跑后归零，`run.meta.finalize: true`；`--keep-units` 行为同今天；报告页未回收计数与「回收」走同一条闸；代价写在 Consequences：没有判定来源的宿主 run 逐格多一条 finalize-refused 注解；题库 `t57-release-gate` 并入 i1-walk `350bd25`；3171 重装到 `e0a37060`、锚点快进、看门狗 14 秒就绪；eval 707 |
 | T58 ✅ | 代码 | 条件与绑定的最后一公里：未绑定会话里 `eval_*` / `datasets_*` 的 `repo` 参数收窄成只认会话绑定（G1）；`/datasets bind` 层缺省 visible（G3）；绑定路径归一化存 realpath（G5）；`model.endpoint` 进起草可改字段（G6）；provision 写回 `home.sha`（G7，或 lock 权威）；容器条件的 `unit` 段来源（G4）；绑定回执在空会话可见（G2） | T34 T36 | 合入 main `db3176a5`（2026-09-17，六提交：两包各自成提交 + 三条真机收尾）；G7 provision 缺省写回实测 home.sha、重算条件哈希、lock 锚改完后的文档（`--no-write-back` 保留两步形状）；G6 endpoint 成起草第七个可改字段并在条件页就地可改；G4 unit.ts 四行表补 unit.scopedHome 与 env.keys、补齐不计入「改了哪些字段」；G1 模型工具面的 repo 只能复述会话绑定（归一化路径比较，人的面不动）；G3 modelFacing 下限无条件、bind 回执点名缺省；G2 composer 只读 chip；G5 未碰（归 T62）；第 4 步人介入 6 → 2 是从代码路径推的；eval-planning SKILL.md 超文案范围改了（不改则 agent 起草永远把 endpoint 留 null）；真机截图查出并修了三处（自造 token、编辑器被裁、回执位置）；eval 741 / datasets 182 / eval-tool 4 / datasets-tool 5，gate 绿 |
 | T59 ✅ | 环境 + 代码（硬） | 选手在容器单元里没有 shell：sub-dsh 报「宿主无可用 sandbox 后端且无审批通道，bash 全部被拒」（G14）；查 headless 在单元里的 sandbox / approval 配置怎么落（permissions: unrestricted 应当到位），真题轮之前必须解决 | T33e | 合入 main `8dc26e97`（2026-09-17，`19e52e7f`）；两条报错都成立且互相独立（镜像无 bubblewrap、Landlock probe 返回 unusable；无头子 dsh 没有审批通道），但都不是缺陷——**真正的缺陷是 local-agent-dsh 没有权限旋钮**，子 profile 跑的是 dsh-base 的 workspace-write + ask，决策 3 在四家里少一个执行点，宿主上没人察觉是因为 macOS 有 Seatbelt；修法：`permissions` 配置键，provisioning 追加一层生成 patch 覆盖 sandbox-policy.mode 与 approval.policy，值落作用域目录（进 home.sha）不落 env；web-eval pack 钉 danger-full-access（与 codex 同一条纪律）；单元里 bash 修后成功原文；镜像未动；local-agent-dsh 188、local-agent 267 |
-| T60 | 代码 | 导出与终评：终评之后的再导出并标 bundle 的导出时间（G17）；报告页导出一并写盘 report（G15，与 T53 合并做）；详情页在 run 启动后自动拉一次（G11）；成员子会话 tab 的自隐判据（G13）；agent 写题库工作树的窄口（G16） | T38 T37 | 第 7、8 步的缺口清零 |
+| T60 | 代码 | 导出与终评：终评之后的再导出并标 bundle 的导出时间（G17）；报告页导出一并写盘 report（G15，与 T53 合并做）；详情页在 run 启动后自动拉一次（G11）；成员子会话 tab 的自隐判据（G13）；agent 写题库工作树的窄口（G16） | T38 T37 | **回报已到（2026-09-17，`4b7a4633` 一个提交）**：与 T63 在 LabView.tsx / ReportPage.tsx 冲突，退回实施者并 main 按 graft 解后再合；写口形状选新工具 eval_repo_write，mission 的 effectivePresetOf 同改按判据接受；活体验收定在 3171、不起新容器轮（见 §三 补充）；原判据：第 7、8 步的缺口清零 |
 | T62 ✅ | 代码（热修，小） | 两个 tab 打不开：绑定存字面 `~`，git 与 datasets 层不展开，题集列表与条件页整页报错（走查 G5，从 T58 提前拆出）；错误态改三段式（人话 + 修法 + 折叠的详情），页面不再直接渲染 error.message 与绝对路径 | 无 | 合入 main `35b23bf7`（2026-09-17，七提交，含实施者自己并入 main 的一次 graft）；绑定存规范路径（展开 ~、realpath、去尾斜杠），两包归一化函数合成 T58 的 repo-path.ts 一份，eval 读侧并进 validate.ts；两个 tab 22 处裸错误改三段式，四种码（路径不在盘上 / 不是题库缺 datasets/ / 未绑定 / 服务）各有人话 + 修法 + 折叠详情，中英两套；条件页 provision / endpoint 动作位也过错误态；datasets 先判存在性再跑 git，eval 把「不是题库」拆两句；datasets 198 / eval 756，gate 绿；**3171 已重装到 `2c4476f8`**（2026-09-17 14:51，e0a37060 → 2c4476f8，detached worktree 源码模式，看门狗通道停起、锚点快进、就绪 13 s；题集与条件页真机打开，旧绑定读一次自愈；默认会话 35 个工具，无 mission_*） |
-| T63 | 代码（界面收口） | 题集 + 实验室两个 tab 的整体设计与文案收口，一人从头到尾负责，按 ui-spec §九：沿用宿主 tokens、人话标签、列永远是条件名、状态词表、空态与错误态同一组件、矩阵页重做、报告与判官台同套样式；交付每页明暗两套截图 + 对照 ui-spec 的核对表，然后人验收 | T62 ✅ | **可发（2026-09-17，T62 已合入；与 T60 并行）**；用户点着验收，问题一轮收完 |
+| T63 ✅ | 代码（界面收口） | 题集 + 实验室两个 tab 的整体设计与文案收口，一人从头到尾负责，按 ui-spec §九：沿用宿主 tokens、人话标签、列永远是条件名、状态词表、空态与错误态同一组件、矩阵页重做、报告与判官台同套样式；交付每页明暗两套截图 + 对照 ui-spec 的核对表，然后人验收 | T62 ✅ | 合入 main `00828fcd`（2026-09-17，九提交，含并 main 一次）；两包各一份 vocab.ts 状态词表（账本阶段、五桶、重跑类别、条件叶子字段，中英各一套，查表全函数）；矩阵列头永远是条件 id、因子值作副标题，随动字段（home.sha / env.keys / unit.scopedHome.*）折到底部一行；mixed 状态从 cell.reps[].state 自己算；§九 举例里四个不存在的宿主 token 换成主题包真有的；文案闸 copy.spec 两包；24 张明暗截图 + 核对表在 scratch-screenshots/t63/；协调者看图验收通过，两条进用户走查清单（条件页列头仍是键名与英文 provision；英文术语列头）；两条只记不改记 T66；eval 777 / datasets 203；**待用户在 3171 上点着走查** |
 | T61 | 代码（低） | 容器轮里 member-bridge 行起不来（单元里 `DSH_MEMBER_BRIDGE_ENTRY` 为 SyntaxError），走 failOnStartupError: false 降级，每个容器轮 stderr 一段噪声；查该行在单元里该不该挂、不挂就别起 | T59 | 容器轮 stderr 干净 |
 | T64 | 观察 | claude 探针 credentialFileExpiry 取 access / refresh 较晚者，access 已过期、refresh 未过期的死凭据报已认证（T55 发现，lab 那份当时就是）；kimi credential-guard 的 .bak 还原可能重放已消费的 refresh token（同族，只在精确空壳上还原）；收紧会让现在 ready 的 scope 变 not ready，等 T55 活体验收过了再定；T55 二期量到具体后果：登录 watch 先同步再探针，比全新登录写进 keychain 早 51 秒就判成功收工，此后没有东西把真凭证镜像进去。另记：local-agent 发布组版本线不齐（claude-code rc.5、其余 rc.6，gate 只警告、--release 才致命），发布侧决定，npm 风控期先记着 | T55 | 方案 |
 | T65 | 代码（中，先方案） | 容器轮里 sub-dsh 要能解析 preset：单元只挂 scope 目录，roster 的 roots 指宿主 preset 根（T33c 受阻根因）；「preset / 技能作为因子」在产品里没有一条能打开比较的路径。候选：单元再挂一个只读 bind 把实例 preset 根挂到容器内同一绝对路径（T32b 守卫照旧）；或 provision 时快照进 scope、哈希改量快照 | T33c T32b | 两条只差 preset 的 sub-dsh 条件容器轮 ready、P0 一轮四条不变量 ✅、比较节打开（即 pilot D 收口） |
+| T66 | 代码（低） | T63 走查记下的两条：宿主端拼好的中文句子（pivotMatrix 汇总、report 不变量明细、rankReason）英文界面下中英混排，要下发结构化字段由浏览器半边组句；composer 的「题集」chip 只靠会话活动重读，题集 tab 表单里的绑定不通知它 | T63 | 英文界面无中文句子；tab 表单绑完 chip 立刻变 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -2585,7 +2586,7 @@ provision 写回与不写回；endpoint 进起草；unit 模板补齐；路径�
 
 **验收（2026-09-17）**：`fix/eval-conditions-last-mile`（`51b20d7c`、`c0acd947`、`fb6e70c9`、`a7b63128`、`1eb9e1b2`、`24aa40a3`）合入 main `db3176a5`。未绑定与指向别处的拒绝原文、bind 缺省下 `[LAYER_NOT_ALLOWED]` 原文、四行表与写回逻辑都齐；G5 按文案留给 T62。Agent Note：`.agents/notes/implemented/bug-fix/2026-09-17-eval-conditions-last-mile.md`。
 
-### T60 · 导出与终评：第 7、8 步的缺口清零（可发，含 T53；与 T62 可并行）
+### T60 · 导出与终评：第 7、8 步的缺口清零（回报已到 `4b7a4633`，待并 main 解与 T63 的冲突后合）
 
 ```text
 # 任务 T60：导出与终评——第 6、7、8 步的缺口清零
@@ -2652,7 +2653,17 @@ datasets 与 eval 测试全绿，gate 绿；3171 重装后题集列表与条件�
 
 **验收（2026-09-17）**：`fix/ui-binding-path-and-errors`（`824a5104`、`f6231fc5`、`5a2c2b49`、`58f7e163`、`d8e0c31e`、`758a3363`、`85e6fc75`）合入 main `35b23bf7`。两个 tab 修前修后的错误态文本原文齐，四种码中英两套。Agent Note：`.agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.md`。**重装（2026-09-17 14:51）**：3171 从 `e0a37060` 到 `2c4476f8`（跨 68 提交），从 detached worktree 以源码模式装（`pnpm install --offline --frozen-lockfile` 9.4 s 装全，24 成员 / 177 条 patch 行），停起经看门狗通道（stop marker → TERM → 端口干净），锚点 guard/eval-3171 `--ff-only` 到 `2c4476f8`，checkpoint / clear / record deployment 录绿，supervise 起，13 s 就绪（303 交换 + cookie 200）。真机：绑定表单输字面 `~` 落盘即规范路径；把记录手改回 `~` 再打开，列表照常且文件就地迁移（旧绑定读一次自愈）；条件页整页打开（t57-container-keep 三条件，dsh 两条 ready）；绑不存在的路径，两个 tab 的错误态四段原文与本任务回报一致。默认会话 35 个工具（内建 21 + 插件 14：datasets 7、eval 5、subagent_dsh、list_capabilities），无 mission_*；技能 4。claude / codex 登录没碰。看门狗日志末尾那行无时间戳的 unplanned exit recovered 是上一轮的历史行。
 
-### T63 · 界面整体收口：题集 + 实验室按视觉与文案基线重做（可发，2026-09-17 起：T62 已合入；与 T60 并行）
+**T60 补充（2026-09-17，回报已到后）**：
+
+```text
+# T60 补充：先并 main 解冲突，活体验收不起新容器轮
+
+1. T63 已合入 main 00828fcd，与本分支在 packages/eval/src/client/LabView.tsx、ReportPage.tsx（及两个 README sidecar）冲突。在本 worktree 并 main，按 graft 法解：T63 的词表 / 组件 / 样式是基线，本任务的新按钮与文案挂到它的组件与 locale 词典上，不 hunk 拼接；sidecar 按合并后的 README.en.md 重录。解完 gate、报新 commit，合并归协调者。
+2. 已定：写口形状取 eval_repo_write（不扩 eval_plan_draft），mission 的 effectivePresetOf 同改接受；ui-spec §五 §六 由协调者改。
+3. 活体验收在 3171（合入并重装后），不起新的容器轮：报告页「导出」与「重新导出」、终评后的标注用 T39 那个已 finalize 的 run；G11 起一次 dsh 单条件宿主轮 P0（分钟级、只证自动拉与「正在启动」）；G16 在会话里让 agent 写一份分析初稿进题库工作树、再让它写 items/ 被拒，贴原文；G13 打开旧格子的成员子会话看 tab 条。都贴文本原文，不要求截图。3171 的停起不动，不与 T55 的探针、T65 的 pilot D 同时占单元。
+```
+
+### T63 · 界面整体收口：题集 + 实验室按视觉与文案基线重做（已合入 `00828fcd`，2026-09-17；待用户在 3171 上走查）
 
 ```text
 # 任务 T63：两个 tab 的整体设计与文案收口——一个人从头到尾
@@ -2680,6 +2691,18 @@ ui-spec 全文（§九为准）；走查稿 scratch-storyboard/eval-flow-storybo
 
 ## 回报
 分支与 commit；Agent Note；gate；截图集与核对表。
+```
+
+**验收（2026-09-17）**：`feat/ui-polish-lab-datasets`（九提交）合入 main `00828fcd`。协调者按 §九 看图验收通过；截图与核对表在 scratch-screenshots/t63/（git 忽略）。Agent Note：`.agents/notes/implemented/feature/2026-09-17-ui-polish-lab-datasets.md`。
+
+**T63 补充（2026-09-17）**：
+
+```text
+# T63 补充：重装 3171，然后等用户走查
+
+1. 3171 重装到 main 00828fcd 归你：detached worktree（git worktree add --detach ../dsh-plugins-wt-install-3171 00828fcd）→ pnpm install --offline --frozen-lockfile → install.sh --source <该目录> --fresh → 看门狗通道停起 → 锚点 guard/eval-3171 --ff-only；21:31 之前做完（T55 那时要跑探针），不碰 claude / codex 登录。回报重装前后提交号与就绪用时。
+2. 用户走查两个 tab，问题记成清单一轮收完。协调者看图先记两条进清单：条件页列头仍是键名（model.declared / model.endpoint / scope / preset / lock）与英文动作词 provision，按 §九 换成人话（键名留 title）；几处列头是英文术语（canary / validate / attempt / rep）——等用户定要不要统一成中文。
+3. 走查清单收完一轮再报；T60 合入后 3171 还要装一次，那次可以一起收。通用提醒照旧。
 ```
 
 ## 四、验收规程

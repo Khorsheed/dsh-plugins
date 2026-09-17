@@ -64,8 +64,8 @@
 | 条件 | 条件列表与两条件 diff，只高亮不同项，lock 与就绪状态；provision 回执在表格上方 | **provision**（实测 home.sha 写回声明、重算条件哈希、写 lock，一步变 ready，T58）；就地改 endpoint（改了即新条件哈希，回执点名 lock 已过期，再 provision 由人点）；选模型即新建条件（回到新建实验） |
 | 矩阵 | 行永远是题，列是人选的因子，其余因子分组或筛选；格内固定四样：rep 圆点（实心已判 / 半心进行中 / 空心未起）、阶段或桶、卡格告警、哈希是否与同题其它格一致；底部 run 级汇总（物化哈希、环境指纹、未释放单元、判官一致性、卡格数） | 点格子打开格子详情 |
 | 格子 | 原 missions 队列按本 run 过滤：题 × 条件 × rep、桶、阶段、attempt、时长；右侧抽屉是格子详情——refs、检查点、子会话（打开成员子会话，可续聊不干预）、verify 原样输出、产物、注解计数 | 带原因重跑、释放检查、导出 bundle |
-| 报告 | 四条不变量、配对差值表、效率表、判官一致性；四条全 ok 前「报告」显示为「比较节未开」 | finalize（过释放闸）、导出（走原泄题闸对话框） |
-| 判官台 | 盲评队列、去指纹产物、llm-draft 与 human-final 并排、一致性统计 | 打分（human-final 的唯一写入口） |
+| 报告 | 四条不变量、配对差值表、效率表、判官一致性；四条全 ok 前「报告」显示为「比较节未开」；bundle 的导出时刻与最新一条 human-final 对照 | finalize（过释放闸）、导出（走原泄题闸对话框；一个动作把 bundle 与 report/summary.md 一起写盘，导出目录与时刻记成 run 级注解，T60）、bundle 早于最后一条终评时「重新导出」（进新目录，旧的不删） |
+| 判官台 | 盲评队列、去指纹产物、llm-draft 与 human-final 并排、一致性统计 | 打分（human-final 的唯一写入口）；bundle 早于最新终评时给「重新导出」（T60） |
 
 判官不是一行：它的判定是本格的 llm-draft 注解，带 `by` = 判官条件 id。
 
@@ -74,7 +74,7 @@
 | 包 · 档位 | 工具 | 备注 |
 |---|---|---|
 | datasets-tool · authoring | list · show · describe · read · snapshot · validate · put_item | 读只到绑定白名单内的可见层；`put_item` 即题目骨架；`worktree_path` 不给 |
-| eval-tool · all | eval_conditions · eval_plan_validate · eval_run_status · **eval_cells**（新） · **eval_plan_draft**（新） | 前四个按格子读投影，收编原 mission 四个读工具的用途；`eval_plan_draft` 是这一行唯一的写——写 plan 与新条件再 validate，与「新建实验」表单同一个服务面动词；没有 run / finalize / provision |
+| eval-tool · all | eval_conditions · eval_plan_validate · eval_run_status · **eval_cells**（新） · **eval_plan_draft**（新） · **eval_repo_write**（新，T60） | 前四个按格子读投影，收编原 mission 四个读工具的用途；`eval_plan_draft` 写 plan 与新条件再 validate，与「新建实验」表单同一个服务面动词；`eval_repo_write` 是第二个写——只写会话绑定仓库的 docs/ 与 datasets/<题集>/plans、conditions、analysis/，items/ 永不可写（不管绑定的读白名单开多大），越界即拒并回整张白名单（G16，agent 写分析初稿不再要沙箱升级）；没有 run / finalize / provision |
 | 预设自带 | read · write · edit · glob · grep · job_* · subagent · subagent_fork · web_search · skill · goal · todo · ask_user | 写 plan / condition / 分析初稿全靠 write |
 | 不在表上 | bash · pwsh · workflow · ralph · plan_mode · subagent_<harness> · 任何 lab 工具 · mission-tool | 决策 12 与 R6 |
 
