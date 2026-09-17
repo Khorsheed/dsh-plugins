@@ -171,6 +171,20 @@ On web profiles the plugin contributes a **`datasets` tab** to the conversation'
 
 **The error seat is three-part** (UI spec §九): one human sentence on what happened ("The bound dataset path is not a git repository"), one on how to fix it (with the command when there is one), and the raw exception plus the absolute path folded under Details — the page itself never renders `error.message` and never exposes a path. The cause is recovered from the message text (a domain code does not survive the Remote wire; the browser sees one of the gateway's three transport codes), so `tests/error-state.client.spec.tsx` feeds the host's REAL sentences to the real classifier: reword one host message and the test goes red before a user sees the unknown-cause copy. The lab tab uses a copy of the same implementation — a client bundle never imports a sibling plugin (UI spec §八).
 
+**Visual and copy pass, to ui-spec §九** (I5·T63, the same pass as the
+Experiments tab). Both tabs now share one implementation of the status chip
+(`Chip`), the empty seat (`EmptyState`), the section box and the «details»
+disclosure — each as a verbatim copy, because a client bundle never imports a
+sibling plugin (§八). What landed on this page: validate's result and the canary
+flag became chips instead of coloured text, with the diagnostic code moved to
+the row's `title` (the sentence stays on the page); every cell's BUCKET and
+STAGE in «作答记录» now read through the same word table the Experiments tab uses
+(`src/client/vocab.ts`) rather than as `done` / `archived`; the binding bar shows
+the repository's last path segment with the absolute path on its `title`; and
+each empty seat (unbound / no dataset / filter matched nothing / no answer
+record yet) carries a next-step sentence and its own action button, worded
+differently from the toolbar's so the two never read as one button duplicated.
+
 The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace `datasets`) over the same service core as the tools: `binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`. The read methods are the operator view — the binding supplies the repository path only; the whitelist and the modelFacing floor constrain the agent boundary (tools + worktree), never a human reading their own repository, so sensitive layers stay readable with a `· sensitive` marker while the genuinely unprotected passthrough zone and `item.json` are marked conspicuously. The one exception is the two judging reads behind `itemBrief`: they name their **one layer explicitly** (`layers: ['grading']` / `['verify']`) instead of taking the operator bypass — the page needs the answer key's shape (how many leaves, of which kind), and its bytes never go on the wire. The browser half mounts the namespace through the official `ctx.remote.$mount` channel; eval's namespace is probed with `ctx.get` on **every call** rather than once at mount — the two plugins `$mount` independently and neither may assume it loaded second.
 
 ## Compatibility

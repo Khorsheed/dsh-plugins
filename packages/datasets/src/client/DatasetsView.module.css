@@ -430,18 +430,6 @@
   line-height: 16px;
 }
 
-.cellWarn {
-  color: var(--dsw-alias-label-warning, #b8600a);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.cellError {
-  color: var(--dsw-alias-label-danger, #b3261e);
-  font-size: 11px;
-  line-height: 16px;
-}
-
 .cellMono {
   color: var(--dsw-alias-label-secondary);
   font-family: var(--ds-font-family-code);
@@ -621,18 +609,99 @@
   line-height: 16px;
 }
 
-/* A notice that carries errors rather than information — a MODIFIER beside
-   .notice (see .errorSeatCompact: `composes` does not survive this build). */
-.noticeError {
-  color: var(--dsw-alias-label-danger, #b3261e);
-}
-
 .noticeLine {
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
+}
+
+/* ── the chip (ui-spec §九's one status component) ────────────────────────
+   Every state word in this tab — validate's verdict, the canary flag, a
+   cell's bucket and stage in «作答记录» — is this one element with a tone. The
+   tone says what the state MEANS to a reader; the theme decides what that
+   looks like, so light and dark come from the host and nothing here invents a
+   colour. The 实验室 tab carries this rule verbatim, class for class.
+
+   `currentColor` at 12% is the fill: it follows whatever the tone set, so a
+   chip is legible on both surfaces without a second palette to keep in sync. */
+.chipTag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.chipTag[data-tone='ok'] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.chipTag[data-tone='busy'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipTag[data-tone='warn'] {
+  color: var(--dsw-alias-label-warning, #b8600a);
+}
+
+.chipTag[data-tone='danger'] {
+  color: var(--dsw-alias-label-danger, #b3261e);
+}
+
+/* A count riding on a chip. */
+.chipCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A line of chips. */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+/* The empty seat: what is not here, how to change that, and the button that
+   changes it (ui-spec §九). Identical to the 实验室 tab's. */
+.emptySeat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 12px;
+  padding: 16px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.emptyTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.emptyHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
 }
 
 /* ── the three-part error seat (ui-spec §九) ─────────────────────────────────
