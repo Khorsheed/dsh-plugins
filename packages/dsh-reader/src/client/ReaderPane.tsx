@@ -156,15 +156,41 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         return
       }
       for (const body of bodies.value.bodies) {
-        if (body.raw === undefined) continue
         const source = known.find(item => item.id === body.id)
         if (source === undefined) continue
+        // `truncated` is a property of the FETCH, not of the payload: the host
+        // seam caps a body at its size limit and says so on the envelope. It
+        // has to be carried onto the parsed entry here, because that flag is
+        // what the detail view's "content shown in part" note reads — and a
+        // source whose payload never arrived still needs the entry, or the
+        // detail view would show a blank page instead of the reason.
+        const cut = body.truncated === true
+        if (body.raw === undefined) {
+          if (source.kind === 'rss') {
+            actions.setParsed({ id: source.id, entries: [], error: body.error ?? t('detail.extractFailed') })
+          } else {
+            actions.setParsed({
+              id: source.id,
+              entries: [{
+                id: `link:${source.id}`,
+                sourceId: source.id,
+                title: source.label,
+                link: source.url,
+                // No payload at all: whatever the detail view can show is
+                // partial by definition, so it says so instead of pretending.
+                truncated: true,
+              }],
+              error: body.error ?? t('detail.extractFailed'),
+            })
+          }
+          continue
+        }
         // A feed is parsed as a feed; a saved link is its own single entry,
         // extracted here so opening it is instant (D7).
         if (source.kind === 'rss') {
           const result = parseFeed(body.raw, source.id)
           actions.setParsed(result.ok
-            ? { id: source.id, entries: result.feed.entries }
+            ? { id: source.id, entries: result.feed.entries.map(entry => cut ? { ...entry, truncated: true } : entry) }
             : { id: source.id, entries: [], error: result.error })
         } else {
           const extracted = extractArticle(body.raw, source.url)
@@ -178,7 +204,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               ...(extracted.ok ? { contentHtml: extracted.html } : {}),
               // Incompleteness comes from the FETCH, not from extraction: the
               // seam truncated the page, so whatever we extracted is partial.
-              ...(body.truncated === true ? { truncated: true } : {}),
+              ...(cut ? { truncated: true } : {}),
             }],
           })
         }
@@ -186,7 +212,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     } finally {
       actions.setLoading(false)
     }
-  }, [actions, props])
+  }, [actions, props, t])
 
   useEffect(() => { void load() }, [load, rev])
 

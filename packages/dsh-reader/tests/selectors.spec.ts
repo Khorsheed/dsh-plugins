@@ -58,6 +58,14 @@ describe('selectRows', () => {
     expect(rows.map(row => row.entry.id)).toEqual(['a'])
   })
 
+  it('keeps an undated saved link under the default today filter', () => {
+    // A saved article link carries no `publishedAt`; dropping it here would
+    // make the add-a-link flow produce a link the reader can never see.
+    const saved = entry({ id: 'link-1', sourceId: 's1', title: '保存的文章' })
+    const rows = selectRows([...entries, saved], sources, { ...base, filter: 'today' })
+    expect(rows.map(row => row.entry.id)).toEqual(['a', 'link-1'])
+  })
+
   it('matches the query across title, author, source and tags', () => {
     expect(selectRows(entries, sources, { ...base, query: 'sqlite' }).map(r => r.entry.id)).toEqual(['a'])
     // The author name also matches the SOURCE label, so both of that feed's
@@ -93,8 +101,11 @@ describe('isToday', () => {
   it('compares the local calendar day, not a 24h window', () => {
     expect(isToday(todayIso, today)).toBe(true)
     expect(isToday(yesterday, today)).toBe(false)
-    expect(isToday(undefined, today)).toBe(false)
-    expect(isToday('nonsense', today)).toBe(false)
+  })
+
+  it('keeps an entry the reader cannot date', () => {
+    expect(isToday(undefined, today)).toBe(true)
+    expect(isToday('nonsense', today)).toBe(true)
   })
 })
 

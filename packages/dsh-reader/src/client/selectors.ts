@@ -83,11 +83,23 @@ export function selectRows(
   return rows.slice(0, LIST_RENDER_LIMIT)
 }
 
-/** Whether an entry falls on the reference day in local time. */
+/**
+ * Whether an entry belongs in the "today" view.
+ *
+ * An entry with NO usable date is kept, not dropped. The default filter is
+ * `today`, and a saved article link carries no `publishedAt` at all — dropping
+ * undated entries would make the primary add-a-link flow produce a link the
+ * reader can never see. A date the reader cannot compare is likewise not
+ * evidence that the entry is old.
+ *
+ * @param iso - the feed-declared timestamp, when there is one.
+ * @param now - the reference day.
+ * @returns true when the entry is on that day, or carries no comparable date.
+ */
 export function isToday(iso: string | undefined, now: Date): boolean {
-  if (iso === undefined) return false
+  if (iso === undefined) return true
   const parsed = new Date(iso)
-  if (Number.isNaN(parsed.getTime())) return false
+  if (Number.isNaN(parsed.getTime())) return true
   return parsed.getFullYear() === now.getFullYear()
     && parsed.getMonth() === now.getMonth()
     && parsed.getDate() === now.getDate()
