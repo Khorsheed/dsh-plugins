@@ -86,7 +86,7 @@ const COPY: Readonly<Record<ErrorKind, { head: EvalKey | null; fix: EvalKey }>> 
 /** The error seat's props. */
 export interface ErrorStateProps {
   /**
-   * One human sentence for WHICH read failed («题集列表没读出来»). Shown as the
+   * One human sentence for WHICH read failed («条件列表没读出来»). Shown as the
    * headline when the cause is unrecognized, and inside the fold otherwise, so
    * a recognized cause still says what it happened to.
    */
