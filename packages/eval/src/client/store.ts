@@ -40,6 +40,19 @@ export const LAB_PAGES = ['overview', 'plan', 'conditions', 'matrix', 'cells', '
 /** One sub-page of an experiment's detail. */
 export type LabPage = typeof LAB_PAGES[number]
 
+/**
+ * What the condition page's action seat is currently saying: a receipt the
+ * person just earned, or a failure.
+ *
+ * Two shapes rather than one pre-joined sentence, because a failure has to
+ * reach the page as {what failed, raw message} for the error seat to fold the
+ * raw half away (ui-spec §九) — joining them here would put the host's English
+ * exception back on the page, which is what I5·T62 is removing.
+ */
+export type ConditionActionNote =
+  | { kind: 'receipt'; text: string }
+  | { kind: 'failure'; what: string; message: string }
+
 /** The view's state; fetched results are whole values, null until loaded. */
 export interface LabViewState {
   /** The list payload, or null before the first load. */
@@ -77,6 +90,13 @@ export interface LabViewState {
   approving: boolean
   /** The refusal an approval answered with, verbatim; null when none. */
   approveRefusal: string | null
+  /**
+   * The approval call's own FAILURE, as opposed to the gate's refusal above.
+   * A refusal is the mechanism working and is quoted verbatim (it is the only
+   * place a readiness verdict is written); a failure is an exception, and the
+   * page renders it through the three-part error seat (ui-spec §九).
+   */
+  approveError: string | null
   /** What the approval started; null until one succeeds in this visit. */
   started: LabStartedRun | null
   /** The started job's log, verbatim — where the readiness refusal is written. */
@@ -97,8 +117,8 @@ export interface LabViewState {
   conditionBusy: string | null
   /** What the last provision on this page answered, or null. */
   provision: EvalConditionProvisionView | null
-  /** Human-readable failure of the last provision or endpoint write, or null. */
-  conditionActionError: string | null
+  /** What the last provision or endpoint write had to say, or null. */
+  conditionAction: ConditionActionNote | null
   /** The condition whose endpoint field is open for editing, or null. */
   endpointEditing: string | null
   /** The one or two conditions picked for the diff, in pick order. */
@@ -190,6 +210,14 @@ export interface LabViewState {
   exportOpen: boolean
   /** One-shot notice line (retry / release check / export outcomes), or null. */
   notice: string | null
+  /**
+   * The same one-shot seat when the gesture FAILED: the raw failure message,
+   * which the page renders through the three-part error seat rather than
+   * printing (ui-spec §九). Kept apart from `notice` because that field holds
+   * sentences this tab wrote for a human, and this one holds a sentence the
+   * host wrote for whoever debugs it — the two cannot share a renderer.
+   */
+  noticeError: string | null
 }
 
 /** Annotation twin of the actions literal below (drift fails assignability at defineStore). */
@@ -209,6 +237,7 @@ export type LabViewActions = {
   sendBack: (draft: LabViewState) => void
   setApproving: (draft: LabViewState, approving: boolean) => void
   setApproveRefusal: (draft: LabViewState, refusal: string | null) => void
+  setApproveError: (draft: LabViewState, message: string | null) => void
   setStarted: (draft: LabViewState, started: LabStartedRun) => void
   setOutput: (draft: LabViewState, output: EvalRunOutputView) => void
   setOutputError: (draft: LabViewState, error: string | null) => void
@@ -217,7 +246,7 @@ export type LabViewActions = {
   setConditionsError: (draft: LabViewState, error: string | null) => void
   setConditionBusy: (draft: LabViewState, id: string | null) => void
   setProvision: (draft: LabViewState, provision: EvalConditionProvisionView | null) => void
-  setConditionActionError: (draft: LabViewState, error: string | null) => void
+  setConditionAction: (draft: LabViewState, note: ConditionActionNote | null) => void
   editEndpoint: (draft: LabViewState, id: string | null) => void
   applyConditionRow: (draft: LabViewState, row: EvalConditionRow) => void
   pickCondition: (draft: LabViewState, id: string) => void
@@ -253,6 +282,7 @@ export type LabViewActions = {
   setJudgeSubmitting: (draft: LabViewState, submitting: boolean) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setNotice: (draft: LabViewState, notice: string | null) => void
+  setNoticeError: (draft: LabViewState, message: string | null) => void
 }
 
 const INITIAL: LabViewState = {
@@ -271,6 +301,7 @@ const INITIAL: LabViewState = {
   sentBack: false,
   approving: false,
   approveRefusal: null,
+  approveError: null,
   started: null,
   output: null,
   outputError: null,
@@ -279,7 +310,7 @@ const INITIAL: LabViewState = {
   conditionsError: null,
   conditionBusy: null,
   provision: null,
-  conditionActionError: null,
+  conditionAction: null,
   endpointEditing: null,
   diffPair: [],
   diff: null,
@@ -314,6 +345,7 @@ const INITIAL: LabViewState = {
   judgeSubmitting: false,
   exportOpen: false,
   notice: null,
+  noticeError: null,
 }
 
 /**
@@ -324,12 +356,12 @@ const INITIAL: LabViewState = {
  */
 const PER_EXPERIMENT: Pick<
   LabViewState,
-  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal'
+  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal' | 'approveError'
   | 'started' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
   | 'judge' | 'judgeError' | 'judgeTicket' | 'judgeSubmitting'
-  | 'exportOpen' | 'notice'
+  | 'exportOpen' | 'notice' | 'noticeError'
 > = {
   detail: null,
   detailError: null,
@@ -338,6 +370,7 @@ const PER_EXPERIMENT: Pick<
   sentBack: false,
   approving: false,
   approveRefusal: null,
+  approveError: null,
   started: null,
   output: null,
   outputError: null,
@@ -363,6 +396,7 @@ const PER_EXPERIMENT: Pick<
   judgeSubmitting: false,
   exportOpen: false,
   notice: null,
+  noticeError: null,
 }
 
 /**
@@ -413,10 +447,13 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setReviewError: (d, error: string | null) => { d.reviewError = error },
       sendBack: (d) => { d.sentBack = true },
       setApproving: (d, approving: boolean) => { d.approving = approving },
-      setApproveRefusal: (d, refusal: string | null) => { d.approveRefusal = refusal },
+      // One seat, two renderers (see the two fields' docs).
+      setApproveRefusal: (d, refusal: string | null) => { d.approveRefusal = refusal; d.approveError = null },
+      setApproveError: (d, message: string | null) => { d.approveError = message; d.approveRefusal = null },
       setStarted: (d, started: LabStartedRun) => {
         d.started = started
         d.approveRefusal = null
+        d.approveError = null
         // An approved plan is no longer sent back, whatever the reviewer
         // pressed earlier in this visit.
         d.sentBack = false
@@ -435,12 +472,12 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setConditionBusy: (d, id: string | null) => { d.conditionBusy = id },
       setProvision: (d, provision: EvalConditionProvisionView | null) => {
         d.provision = provision
-        d.conditionActionError = null
+        d.conditionAction = null
       },
-      setConditionActionError: (d, error: string | null) => { d.conditionActionError = error },
+      setConditionAction: (d, note: ConditionActionNote | null) => { d.conditionAction = note },
       editEndpoint: (d, id: string | null) => {
         d.endpointEditing = id
-        d.conditionActionError = null
+        d.conditionAction = null
       },
       /**
        * Replace one row in place with what the write answered. A refetch would
@@ -566,7 +603,9 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       },
       setJudgeSubmitting: (d, submitting: boolean) => { d.judgeSubmitting = submitting },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },
-      setNotice: (d, notice: string | null) => { d.notice = notice },
+      // One seat, two renderers: whichever kind of news arrives clears the other.
+      setNotice: (d, notice: string | null) => { d.notice = notice; d.noticeError = null },
+      setNoticeError: (d, message: string | null) => { d.noticeError = message; d.notice = null },
     },
   })
 }

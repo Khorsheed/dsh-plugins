@@ -12,6 +12,7 @@
 import type { ReactNode } from 'react'
 import type { EvalExperimentRow, EvalExperimentStatus, EvalRunOutputView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import type { LabStartedRun } from './store.ts'
 import css from './LabView.module.css'
 
@@ -82,7 +83,7 @@ export function StartedRun(props: {
       </Field>
       <Field label={t('review.jobLog')}>
         {outputError !== null
-          ? <span className={css.warning}>{t('review.jobLogError')}: {outputError}</span>
+          ? <ErrorState what={t('review.jobLogError')} message={outputError} compact t={t} />
           : output === null || output.lines.length === 0
             ? <span className={css.dim}>{t('review.jobLogEmpty')}</span>
             : <pre className={css.pre}>{output.lines.join('\n')}</pre>}

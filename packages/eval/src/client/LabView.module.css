@@ -1136,3 +1136,88 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* ── the three-part error seat (ui-spec §九) ─────────────────────────────────
+   One human sentence, one fix, and the raw exception plus the path folded
+   under «详情». Host tokens only, so light and dark come from the theme. */
+.errorSeat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l2);
+  text-align: left;
+}
+
+/* The same seat inside a field or a strip rather than a page body. A MODIFIER
+   applied beside .errorSeat, not `composes: errorSeat` — this bundler drops
+   `composes` silently (the class maps to itself alone and the base rules never
+   arrive), so a composed variant renders as an unstyled box. */
+.errorSeatCompact {
+  margin: 4px 0;
+  padding: 6px 8px;
+}
+
+.errorHead {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.errorFix {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.errorDetails {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* A disclosure the theme styles rather than the browser: the default marker
+   sits on a different baseline in each engine. */
+.errorSummary {
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+}
+
+.errorSummary::-webkit-details-marker {
+  display: none;
+}
+
+.errorSummary::before {
+  content: '▸ ';
+}
+
+.errorDetails[open] .errorSummary::before {
+  content: '▾ ';
+}
+
+.errorDetailLine {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.errorRaw {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -41,6 +41,7 @@ import { Field, StartedRun, factorCell, snapshotCell, stamp, statusKey } from '.
 import { PlanReviewPage } from './PlanReviewPage.tsx'
 import { LAB_PAGES } from './store.ts'
 import { CellsPage } from './CellsPage.tsx'
+import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { JudgingPage } from './JudgingPage.tsx'
 import { MatrixPage } from './MatrixPage.tsx'
@@ -185,6 +186,7 @@ export function LabView(props: LabViewProps) {
   const sentBack = useStore(s => s.sentBack)
   const approving = useStore(s => s.approving)
   const approveRefusal = useStore(s => s.approveRefusal)
+  const approveError = useStore(s => s.approveError)
   const started = useStore(s => s.started)
   const output = useStore(s => s.output)
   const outputError = useStore(s => s.outputError)
@@ -193,7 +195,7 @@ export function LabView(props: LabViewProps) {
   const conditionsError = useStore(s => s.conditionsError)
   const conditionBusy = useStore(s => s.conditionBusy)
   const provision = useStore(s => s.provision)
-  const conditionActionError = useStore(s => s.conditionActionError)
+  const conditionAction = useStore(s => s.conditionAction)
   const endpointEditing = useStore(s => s.endpointEditing)
   const diffPair = useStore(s => s.diffPair)
   const diff = useStore(s => s.diff)
@@ -228,6 +230,7 @@ export function LabView(props: LabViewProps) {
   const judgeSubmitting = useStore(s => s.judgeSubmitting)
   const exportOpen = useStore(s => s.exportOpen)
   const notice = useStore(s => s.notice)
+  const noticeError = useStore(s => s.noticeError)
   // A draft made in THIS visit, held until its row shows up in the refreshed
   // list. The row does not exist client-side the moment the file lands, so
   // opening it by id immediately would drop the reader back to the list; the
@@ -391,7 +394,7 @@ export function LabView(props: LabViewProps) {
     void provisionCondition(sessionId, { dataset: row.dataset, condition: row.id }).then((result) => {
       actions.setConditionBusy(null)
       if (!result.ok) {
-        actions.setConditionActionError(`${t('conditions.provisionFailed')}: ${result.error.message}`)
+        actions.setConditionAction({ kind: 'failure', what: t('conditions.provisionFailed'), message: result.error.message })
         return
       }
       actions.setProvision(result.value)
@@ -413,7 +416,7 @@ export function LabView(props: LabViewProps) {
     void setConditionEndpoint(sessionId, { dataset: row.dataset, condition: row.id, endpoint }).then((result) => {
       actions.setConditionBusy(null)
       if (!result.ok) {
-        actions.setConditionActionError(`${t('conditions.endpointFailed')}: ${result.error.message}`)
+        actions.setConditionAction({ kind: 'failure', what: t('conditions.endpointFailed'), message: result.error.message })
         return
       }
       const value = result.value
@@ -421,7 +424,10 @@ export function LabView(props: LabViewProps) {
       const said = value.written
         ? t('conditions.endpointWritten', { id: value.condition, value: value.after ?? t('conditions.endpointUnset') })
         : t('conditions.endpointUnchanged', { id: value.condition, value: value.after ?? t('conditions.endpointUnset') })
-      actions.setConditionActionError(value.lockStale ? `${said} ${t('conditions.endpointLockStale')}` : said)
+      actions.setConditionAction({
+        kind: 'receipt',
+        text: value.lockStale ? `${said} ${t('conditions.endpointLockStale')}` : said,
+      })
       if (value.row !== null) actions.applyConditionRow(value.row)
     })
   }
@@ -438,7 +444,7 @@ export function LabView(props: LabViewProps) {
     void approvePlan(sessionId, { planPath, ...(keepUnits ? { keepUnits: true } : {}) }).then((result) => {
       actions.setApproving(false)
       if (!result.ok) {
-        actions.setApproveRefusal(result.error.message)
+        actions.setApproveError(result.error.message)
         return
       }
       const value = result.value
@@ -590,7 +596,7 @@ export function LabView(props: LabViewProps) {
         actions.setNotice(t('notice.retried', { id: missionId, attempt: result.value.attempt }))
         actions.refresh()
       } else {
-        actions.setNotice(result.error.message)
+        actions.setNoticeError(result.error.message)
       }
     })
   }
@@ -599,9 +605,11 @@ export function LabView(props: LabViewProps) {
     if (openRunId === null || cellSelection === null) return
     const missionId = cellSelection
     void releaseCheck(sessionId, { runId: openRunId, missionId }).then((result) => {
-      actions.setNotice(result.ok
-        ? t(result.value.releasable ? 'notice.releasable' : 'notice.notReleasable', { id: missionId })
-        : result.error.message)
+      if (result.ok) {
+        actions.setNotice(t(result.value.releasable ? 'notice.releasable' : 'notice.notReleasable', { id: missionId }))
+      } else {
+        actions.setNoticeError(result.error.message)
+      }
     })
   }
 
@@ -618,7 +626,7 @@ export function LabView(props: LabViewProps) {
     void finalizeRun(sessionId, { runId: openRunId }).then((result) => {
       actions.setFinalizing(false)
       if (!result.ok) {
-        actions.setNotice(result.error.message)
+        actions.setNoticeError(result.error.message)
         return
       }
       actions.setFinalizeResult(result.value)
@@ -657,7 +665,7 @@ export function LabView(props: LabViewProps) {
     void submitHumanFinal(sessionId, { runId: openRunId, ticket, verdicts }).then((result) => {
       actions.setJudgeSubmitting(false)
       if (!result.ok) {
-        actions.setNotice(result.error.message)
+        actions.setNoticeError(result.error.message)
         return
       }
       actions.setNotice(result.value.duplicate
@@ -691,12 +699,15 @@ export function LabView(props: LabViewProps) {
       </div>
       {draftNotice !== null && openRow === undefined && <div className={css.notice}>{draftNotice}</div>}
       {notice !== null && openRow !== undefined && <div className={css.notice}>{notice}</div>}
+      {noticeError !== null && openRow !== undefined && (
+        <ErrorState what={t('notice.failed')} message={noticeError} compact t={t} />
+      )}
       {openRow === undefined
         ? (
           <div className={css.body}>
             {loading && list === null && <div className={css.empty}>{t('list.loading')}</div>}
             {!loading && error !== null && list === null && (
-              <div className={css.empty}>{t('list.error')}: {error}</div>
+              <ErrorState what={t('list.error')} message={error} t={t} />
             )}
             {(list?.notes ?? []).map(note => <div key={note} className={css.note}>{note}</div>)}
             {list !== null && rows.length === 0 && <div className={css.empty}>{t('list.empty')}</div>}
@@ -761,7 +772,7 @@ export function LabView(props: LabViewProps) {
                 <>
                   {detailLoading && detail === null && <div className={css.empty}>{t('detail.loading')}</div>}
                   {detailError !== null && (
-                    <div className={css.empty}>{t('detail.error')}: {detailError}</div>
+                    <ErrorState what={t('detail.error')} message={detailError} t={t} />
                   )}
                   <Overview
                     row={openRow}
@@ -782,6 +793,7 @@ export function LabView(props: LabViewProps) {
                   sentBack={sentBack}
                   approving={approving}
                   refusal={approveRefusal}
+                  approveError={approveError}
                   started={started}
                   output={output}
                   outputError={outputError}
@@ -800,7 +812,7 @@ export function LabView(props: LabViewProps) {
                   diffError={diffError}
                   busy={conditionBusy}
                   provision={provision}
-                  actionError={conditionActionError}
+                  action={conditionAction}
                   editing={endpointEditing}
                   onPick={(id: string) => { actions.pickCondition(id) }}
                   onProvision={provisionRow}

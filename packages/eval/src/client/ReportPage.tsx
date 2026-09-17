@@ -28,6 +28,7 @@ import type {
   EvalFinalizeView, EvalReportJudgeTag, EvalReportPair, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 const DASH = '—'
@@ -263,7 +264,7 @@ function UnitsStrip(props: {
 }) {
   const { units, error, reclaiming, onReclaim, t } = props
   const [confirming, setConfirming] = useState(false)
-  if (error !== null) return <span className={css.warning}>{t('report.unitsError')}: {error}</span>
+  if (error !== null) return <ErrorState what={t('report.unitsError')} message={error} compact t={t} />
   if (units === null) return <span className={css.dim}>{t('report.unitsLoading')}</span>
   if (!units.available) {
     return <span className={css.dim} title={units.refusal ?? ''}>{t('report.unitsUnknown')}</span>
@@ -384,7 +385,7 @@ export function ReportPage(props: {
   const [confirming, setConfirming] = useState(false)
   const [dir, setDir] = useState('')
 
-  if (error !== null) return <div className={css.empty}>{t('report.error')}: {error}</div>
+  if (error !== null) return <ErrorState what={t('report.error')} message={error} t={t} />
   if (report === null) return <div className={css.empty}>{t('report.loading')}</div>
 
   const failing = report.invariants.filter(check => check.status !== 'ok')

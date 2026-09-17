@@ -12,7 +12,7 @@ import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
 import { writeEvalReport, type ReportWrite } from './report.ts'
 import { CONDITION_SCHEMA_ID } from './schema.ts'
 import {
-  conditionDiagnostics, expandHome, sameRepoPath, validatePlan,
+  conditionDiagnostics, expandHome, normalizeRepoPath, sameRepoPath, validatePlan,
   type EvalDiagnostic, type PlanValidation,
 } from './validate.ts'
 import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
@@ -269,6 +269,11 @@ export class EvalService {
    * writes into is a human's choice about a shared machine, not a parameter.
    * A composition that mounts no datasets service has no binding for anyone to
    * make, so an agent call there is refused too rather than falling through.
+   *
+   * BOTH sources are normalized on the way out: a binding written before the
+   * datasets plugin canonicalized `repoPath` still holds a literal `~`, and
+   * `readdir(<repo>/datasets)` does not expand it — this reader must not be
+   * the one that trips over it (I5 walkthrough gap G5).
    */
   private resolveRepoScope(
     options: { repo?: string; dataset?: string; session?: { id: string }; agent?: boolean },
@@ -296,9 +301,10 @@ export class EvalService {
       }
       // Past the checks the binding is the answer, whether or not the caller
       // also spelled it out: one resolved path, whichever way in.
-      return this.scopeOf(expandHome(bound), binding, options.dataset)
+      return this.scopeOf(normalizeRepoPath(bound), binding, options.dataset)
     }
-    const repo = asked !== undefined ? expandHome(asked) : binding?.repoPath
+    const source = asked ?? binding?.repoPath
+    const repo = source === undefined ? undefined : normalizeRepoPath(source)
     if (repo === undefined || repo === '') {
       return new EvalReadRefused(
         'no dataset repository: pass repo, or ask the human to bind one for this session (/datasets bind <repoPath>)',

@@ -12,7 +12,8 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  readBinding, validateBinding, writeBinding, type BindingSession, type DatasetBinding,
+  readBinding, validateBinding, writeBinding,
+  type BindingSession, type DatasetBinding,
 } from './binding.ts'
 import {
   assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir,
@@ -31,7 +32,7 @@ import {
   planDatasetSkeleton, planItemSkeleton, type SkeletonResult,
 } from './scaffold.ts'
 import { ensureWorktree, type ManagedWorktree } from './worktree.ts'
-import { sameRepoPath } from './repo-path.ts'
+import { normalizeRepoPath, sameRepoPath } from './repo-path.ts'
 
 /**
  * The effective visibility scope of one call: the resolved repository plus
@@ -103,6 +104,11 @@ export interface ScopeSelectors {
  * wrote three files onto somebody else's branch (I5·T39 · G1). Which
  * repository an evaluation reads and writes is a human's decision about a
  * shared machine, not an argument.
+ *
+ * Whichever source wins is normalized (`normalizeRepoPath`): a `~` typed into
+ * a tool argument or a config file reaches git as a literal directory name
+ * otherwise, and the three sources must not disagree about what one path
+ * means.
  * @param selectors - explicit per-call selectors.
  * @param binding - the session binding, when one exists.
  * @param defaultRepo - the plugin config's default repo ('' / undefined = none).
@@ -140,7 +146,7 @@ export function resolveScope(
         'REPO_NOT_BOUND',
       )
     }
-    return { repo: session, ...whitelists }
+    return { repo: normalizeRepoPath(session), ...whitelists }
   }
   const repo = asked ?? session
   if (repo === undefined) {
@@ -149,7 +155,7 @@ export function resolveScope(
       'NO_REPO',
     )
   }
-  return { repo, ...whitelists }
+  return { repo: normalizeRepoPath(repo), ...whitelists }
 }
 
 /** `datasets_list` result with a dataset selector: one dataset's items. */
@@ -417,8 +423,19 @@ export interface DatasetsServiceOptions {
   bindingsRoot: string
 }
 
-/** Wrap a git failure as a domain error where the cause is clear. */
+/**
+ * Wrap a git failure as a domain error where the cause is clear.
+ *
+ * A path that is not on disk is answered BEFORE git runs. git's own complaint
+ * about a cwd it cannot enter is "not a git repository" with an empty stderr,
+ * which sends the reader off to check a repository that was never there —
+ * the tab's error seat maps each cause to its own fix, and this one's fix is
+ * not the same as a real non-repository's (I5·T62).
+ */
 async function toplevelOf(repo: string): Promise<string> {
+  if (!existsSync(repo)) {
+    throw new DatasetsError(`${repo} does not exist — no such file or directory`, 'FILE_NOT_FOUND')
+  }
   try {
     return await repoToplevel(repo)
   } catch (error) {

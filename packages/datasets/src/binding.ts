@@ -23,10 +23,16 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatasetsError } from './dataset.ts'
+import { normalizeRepoPath } from './repo-path.ts'
 
 /** A session's dataset binding. Absent fields mean "everything in the repo". */
 export interface DatasetBinding {
-  /** Absolute path of the git repository holding the datasets. */
+  /**
+   * Absolute, `~`-free, symlink-resolved path of the git repository holding
+   * the datasets — see {@link normalizeRepoPath}. Every write goes through
+   * {@link validateBinding}, so a binding that reached the store is already
+   * in this form.
+   */
   repoPath: string
   /** Dataset-id whitelist; absent = every dataset in the repository. */
   datasets?: string[]
@@ -55,9 +61,14 @@ function isStringArray(value: unknown): value is string[] {
 
 /**
  * Validate a binding object (from a store record, CLI flags, or a tool
- * caller).
+ * caller) and put its `repoPath` in canonical form.
+ *
+ * Normalizing HERE rather than at each call site is what makes the guarantee
+ * hold: every write goes through this function, and so does every read (see
+ * {@link readBinding}), so no consumer has to remember to expand `~` and none
+ * of them can disagree about what the bound path means.
  * @param value - the candidate binding.
- * @returns the validated binding.
+ * @returns the validated binding, `repoPath` normalized.
  */
 export function validateBinding(value: unknown): DatasetBinding {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -77,7 +88,7 @@ export function validateBinding(value: unknown): DatasetBinding {
     throw new DatasetsError('binding "layers" must be an array of layer names', 'SHAPE_INVALID')
   }
   return {
-    repoPath,
+    repoPath: normalizeRepoPath(repoPath),
     ...(datasets !== undefined ? { datasets: [...datasets] } : {}),
     ...(layers !== undefined ? { layers: [...layers] } : {}),
   }
@@ -110,6 +121,12 @@ function bindingPath(root: string, sessionId: string): string {
  * Read a session's current binding from the store. A missing file means
  * unbound; a corrupt or shape-invalid file fails loud (a hand-edited store
  * must not silently drop the session's access governance).
+ *
+ * A record written before `repoPath` was normalized (a literal `~`, a
+ * trailing slash, a relative path) is migrated IN PLACE on this read: the
+ * caller gets the canonical path and the file stops being a trap for the next
+ * reader. The write-back is best effort — a store we may not write to still
+ * answers the read correctly.
  * @param root - the bindings root (`<stateRoot>/bindings`).
  * @param sessionId - the session.
  * @returns the binding, or undefined when none is in effect.
@@ -127,7 +144,16 @@ export function readBinding(root: string, sessionId: string): DatasetBinding | u
   if (typeof record !== 'object' || record === null || record.version !== 1) {
     throw new DatasetsError(`${path}: unknown binding record shape`, 'SHAPE_INVALID')
   }
-  return validateBinding(record.binding)
+  const stored = (record.binding as { repoPath?: unknown } | undefined)?.repoPath
+  const binding = validateBinding(record.binding)
+  if (stored !== binding.repoPath) {
+    try {
+      writeBinding(root, sessionId, binding)
+    } catch {
+      // Migration is a courtesy to the next reader, never this read's problem.
+    }
+  }
+  return binding
 }
 
 /**

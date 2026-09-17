@@ -292,6 +292,7 @@ export type EvalKey =
   | 'action.export'
   | 'retry.reason'
   | 'retry.category'
+  | 'notice.failed'
   | 'notice.retried'
   | 'notice.releasable'
   | 'notice.notReleasable'
@@ -350,6 +351,7 @@ export type EvalKey =
   | 'review.startedValue'
   | 'review.parentSession'
   | 'review.refusal'
+  | 'review.approveError'
   | 'review.jobLog'
   | 'review.jobLogEmpty'
   | 'review.jobLogError'
@@ -402,6 +404,21 @@ export type EvalKey =
   | 'conditions.diffError'
   | 'conditions.new'
   | 'conditions.newPlaceholder'
+  | 'error.notGitRepo'
+  | 'error.notGitRepo.fix'
+  | 'error.notDatasetRepo'
+  | 'error.notDatasetRepo.fix'
+  | 'error.pathMissing'
+  | 'error.pathMissing.fix'
+  | 'error.unbound'
+  | 'error.unbound.fix'
+  | 'error.serviceMissing'
+  | 'error.serviceMissing.fix'
+  | 'error.cancelled'
+  | 'error.cancelled.fix'
+  | 'error.unknownFix'
+  | 'error.details'
+  | 'error.detailsPath'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -412,6 +429,23 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary. */
 export const en: Record<EvalKey, string> = {
+  // The three-part error seat (ui-spec §九): one sentence on what happened,
+  // one on the fix; the raw text and the path stay folded under Details.
+  'error.notGitRepo': 'The bound dataset path is not a git repository',
+  'error.notGitRepo.fix': 'Bind the repository root instead: /datasets bind <path> --layers visible',
+  'error.notDatasetRepo': 'That repository holds no datasets (no datasets/ directory)',
+  'error.notDatasetRepo.fix': 'Bind the dataset repository’s root, or create datasets/ in it first',
+  'error.pathMissing': 'The bound dataset path is not on disk',
+  'error.pathMissing.fix': 'Check the directory is still there, then bind again: /datasets bind <path> --layers visible',
+  'error.unbound': 'This session has no dataset repository bound',
+  'error.unbound.fix': 'Bind one first: /datasets bind <path> --layers visible',
+  'error.serviceMissing': 'This instance is missing a service this page needs',
+  'error.serviceMissing.fix': 'A member is absent from the preset; install it and reopen this tab',
+  'error.cancelled': 'The request was cancelled',
+  'error.cancelled.fix': 'Try again',
+  'error.unknownFix': 'Try again; if it persists, send the raw text under Details to the maintainer',
+  'error.details': 'Details',
+  'error.detailsPath': 'Path',
   'open': 'Experiments',
   'list.title': 'Experiments',
   'list.new': 'New experiment',
@@ -622,6 +656,7 @@ export const en: Record<EvalKey, string> = {
   'action.export': 'Export bundle',
   'retry.reason': 'Reason for the re-run',
   'retry.category': 'Retry category',
+  'notice.failed': 'That action did not go through',
   'notice.retried': '{id}: attempt {attempt} opened',
   'notice.releasable': '{id}: releasable — its resources may be destroyed',
   'notice.notReleasable': '{id}: NOT releasable',
@@ -752,6 +787,7 @@ export const en: Record<EvalKey, string> = {
   'review.startedValue': 'job {jobId} · run {runId}',
   'review.parentSession': 'Parent session',
   'review.refusal': 'Refused',
+  'review.approveError': 'Could not send the approval',
   'review.jobLog': 'Run log (verbatim)',
   'review.jobLogEmpty': 'the run has emitted no line yet — refresh',
   'review.jobLogError': 'Failed to read the run log',
@@ -808,6 +844,22 @@ export const en: Record<EvalKey, string> = {
 
 /** 中文词典。 */
 export const zh: Record<EvalKey, string> = {
+  // 错误态三段式（ui-spec §九）：一句人话 + 一句修法，异常原文与路径折在「详情」里。
+  'error.notGitRepo': '绑定的题库路径不是 git 仓库',
+  'error.notGitRepo.fix': '改绑到仓库根目录：/datasets bind <路径> --layers visible',
+  'error.notDatasetRepo': '这个仓库里没有题集（缺 datasets/ 目录）',
+  'error.notDatasetRepo.fix': '改绑到题库仓库的根目录，或先在仓库里建出 datasets/',
+  'error.pathMissing': '绑定的题库路径在磁盘上找不到',
+  'error.pathMissing.fix': '确认目录还在，再重新绑定：/datasets bind <路径> --layers visible',
+  'error.unbound': '本会话还没绑定题库',
+  'error.unbound.fix': '先绑定题库：/datasets bind <路径> --layers visible',
+  'error.serviceMissing': '这台实例缺少本页要用的服务',
+  'error.serviceMissing.fix': '预设里少装了成员；补齐后重开这个 tab',
+  'error.cancelled': '这次请求被取消了',
+  'error.cancelled.fix': '再试一次',
+  'error.unknownFix': '再试一次；仍然不行就把「详情」里的原文发给维护者',
+  'error.details': '详情',
+  'error.detailsPath': '路径',
   'open': '实验室',
   'list.title': '实验',
   'list.new': '新建实验',
@@ -1018,6 +1070,7 @@ export const zh: Record<EvalKey, string> = {
   'action.export': '导出 bundle',
   'retry.reason': '重跑原因',
   'retry.category': '重跑类别',
+  'notice.failed': '这次操作没做成',
   'notice.retried': '{id}：已开 attempt {attempt}',
   'notice.releasable': '{id}：可释放——资源可以销毁',
   'notice.notReleasable': '{id}：不可释放',
@@ -1148,6 +1201,7 @@ export const zh: Record<EvalKey, string> = {
   'review.startedValue': 'job {jobId} · run {runId}',
   'review.parentSession': '父会话',
   'review.refusal': '被拒',
+  'review.approveError': '批准没发出去',
   'review.jobLog': '运行日志（原文）',
   'review.jobLogEmpty': '这个 run 还没有输出——刷新试试',
   'review.jobLogError': '运行日志读取失败',

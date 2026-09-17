@@ -102,23 +102,30 @@ export function expandHome(path: string): string {
 }
 
 /**
- * One repository path reduced to the form two of them can be COMPARED in:
- * `~` expanded, made absolute, trailing separator dropped, and resolved
- * through symlinks when the path exists on this machine.
+ * One dataset repository root reduced to its canonical form: `~` expanded,
+ * made absolute, trailing separator dropped, and resolved through symlinks
+ * when the directory is there.
  *
- * Comparison is the whole purpose — the agent-facing repo parameter is only
- * ever a restatement of the session's binding, and the two spellings reaching
- * that check are written by different hands: a binding recorded as a literal
- * `~/…` and an argument an agent typed as an absolute path are the same
- * repository and must not read as two (I5·T39 · G5 is the same mismatch seen
- * from the read side). A path that does not exist normalizes as far as it can
- * rather than throwing: refusing to compare is not an improvement on comparing
- * the text.
- * @param path - the path as its writer spelled it.
- * @returns the comparable form.
+ * Two jobs, one answer. Comparison is one: the agent-facing `repo` parameter
+ * is only ever a restatement of the session's binding, and a binding recorded
+ * as a literal `~/…` and an argument an agent typed as an absolute path are
+ * the same repository and must not read as two. Consumption is the other:
+ * `readdir(<repo>/datasets)` does not expand `~`, so a session bound to `~/x`
+ * made the conditions page report "not a dataset repository" about a
+ * repository that exists (I5 walkthrough gap G5). A path that does not exist
+ * normalizes as far as it can rather than throwing — refusing to compare is
+ * not an improvement on comparing the text.
+ *
+ * Mirrors `normalizeRepoPath` in the datasets plugin on purpose; the two are
+ * copies rather than an import because a client-facing plugin never imports a
+ * sibling plugin.
+ * @param path - the repository path as configured, passed, or bound.
+ * @returns the canonical path; '' stays '' for the caller's own shape check.
  */
 export function normalizeRepoPath(path: string): string {
-  const absolute = resolve(expandHome(path.trim()))
+  const trimmed = path.trim()
+  if (trimmed === '') return trimmed
+  const absolute = resolve(expandHome(trimmed))
   try {
     return realpathSync(absolute)
   } catch {

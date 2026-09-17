@@ -40,7 +40,9 @@ import type {
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
+import { ErrorState } from './ErrorState.tsx'
 import { Field } from './parts.tsx'
+import type { ConditionActionNote } from './store.ts'
 import css from './LabView.module.css'
 
 /** The readiness word of one row, keyed so the copy stays exhaustive. */
@@ -215,8 +217,8 @@ export function ConditionsPage(props: {
   busy: string | null
   /** What the last provision answered, or null. */
   provision: EvalConditionProvisionView | null
-  /** The last write's failure, or null. */
-  actionError: string | null
+  /** What the last write had to say — a receipt or a failure, or null. */
+  action: ConditionActionNote | null
   /** The condition whose endpoint is open for editing, or null. */
   editing: string | null
   onPick: (id: string) => void
@@ -226,7 +228,7 @@ export function ConditionsPage(props: {
   t: LabViewProps['t']
 }) {
   const {
-    view, loading, error, pair, diff, diffError, busy, provision, actionError, editing,
+    view, loading, error, pair, diff, diffError, busy, provision, action, editing,
     onPick, onProvision, onEditEndpoint, onSetEndpoint, t,
   } = props
   const [newNotice, setNewNotice] = useState(false)
@@ -234,7 +236,7 @@ export function ConditionsPage(props: {
   return (
     <div className={css.overview}>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
-      {error !== null && <div className={css.empty}>{t('conditions.error')}: {error}</div>}
+      {error !== null && <ErrorState what={t('conditions.error')} message={error} t={t} />}
       {view !== null && rows.length === 0 && <div className={css.empty}>{t('conditions.empty')}</div>}
       {rows.length > 0 && (
         <>
@@ -247,7 +249,10 @@ export function ConditionsPage(props: {
           {/* Above the table, not below it: this is the answer to a button the
               person just pressed, and a registry of a dozen conditions pushes
               anything under it off the screen. */}
-          {actionError !== null && <div className={css.notice}>{actionError}</div>}
+          {action?.kind === 'receipt' && <div className={css.notice}>{action.text}</div>}
+          {action?.kind === 'failure' && (
+            <ErrorState what={action.what} message={action.message} compact t={t} />
+          )}
           {provision !== null && <ProvisionReport view={provision} t={t} />}
           <div className={css.condHead}>
             <span>{t('conditions.col.id')}</span>
@@ -315,7 +320,7 @@ export function ConditionsPage(props: {
           ))}
         </>
       )}
-      {diffError !== null && <div className={css.notice}>{t('conditions.diffError')}: {diffError}</div>}
+      {diffError !== null && <ErrorState what={t('conditions.diffError')} message={diffError} compact t={t} />}
       {diff !== null && <Diff diff={diff} t={t} />}
       {view !== null && (
         <Field label={t('conditions.repo')}>

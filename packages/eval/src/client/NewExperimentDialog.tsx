@@ -23,6 +23,7 @@ import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalConditionRow, EvalDraftOptionsView, EvalDraftResult } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 /** The fields a minted condition may change (ui-spec §五's six, keyed for the form). */
@@ -228,7 +229,7 @@ export function NewExperimentDialog(props: {
       )}
     >
       <div className={css.newForm}>
-        {loadError !== null && <div className={css.warning}>{t('new.optionsError')}: {loadError}</div>}
+        {loadError !== null && <ErrorState what={t('new.optionsError')} message={loadError} compact t={t} />}
         {(options?.notes ?? []).map(note => <div key={note} className={css.note}>{note}</div>)}
 
         <Row label={t('new.name')}>
@@ -369,7 +370,11 @@ export function NewExperimentDialog(props: {
             placeholder={t('new.notesPlaceholder')} aria-label={t('new.notes')} />
         </Row>
         <div className={css.dim}>{t('new.notStarting')}</div>
-        {error !== null && <div ref={errorRef} className={css.warning}>{t('new.error')}: {error}</div>}
+        {error !== null && (
+          <div ref={errorRef}>
+            <ErrorState what={t('new.error')} message={error} compact t={t} />
+          </div>
+        )}
       </div>
     </Modal>
   )

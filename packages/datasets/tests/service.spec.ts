@@ -1,5 +1,5 @@
 /** Service core: whitelist enforcement on every read path, put_item discipline, fail-loud scoping. */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -78,8 +78,11 @@ describe('resolveScope', () => {
     const alias = join(root, 'alias')
     symlinkSync(real, alias)
     // The shape a binding recorded one way and an argument typed another way
-    // arrive in — comparing the text alone would read them as two.
-    expect(resolveScope({ repo: alias }, { repoPath: real }, undefined, { agent: true }).repo).toBe(real)
+    // arrive in — comparing the text alone would read them as two. What comes
+    // back is the canonical form of both (I5·T62), not either spelling: the
+    // scope's repo is handed to `git -C` and to `readdir`.
+    expect(resolveScope({ repo: alias }, { repoPath: real }, undefined, { agent: true }).repo)
+      .toBe(realpathSync(real))
     rmSync(root, { recursive: true, force: true })
   })
 })

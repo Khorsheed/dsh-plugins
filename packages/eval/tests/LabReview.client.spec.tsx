@@ -364,7 +364,11 @@ describe('the plan-review page', () => {
     await openPage(h, 'page.plan')
     fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
 
-    expect(await screen.findByText(/review.jobLogError: client api: dshEval\/runOutput/)).toBeTruthy()
+    // An unrecognized cause keeps the caller's own sentence as the headline,
+    // and the raw text stays readable under «详情» (ui-spec §九).
+    expect(await screen.findByText('review.jobLogError')).toBeTruthy()
+    expect(screen.getByText('error.unknownFix')).toBeTruthy()
+    expect(screen.getByText(/client api: dshEval\/runOutput/)).toBeTruthy()
   })
 
   it('a refused approval shows the refusal verbatim and starts nothing', async () => {
@@ -548,7 +552,12 @@ describe('the conditions page', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
 
-    expect(await screen.findByText(/conditions.provisionFailed: .*\/codex login/)).toBeTruthy()
+    // Three-part seat (ui-spec §九): the page says what happened and what to
+    // do, and the host's own sentence is inside the fold — not on the page.
+    expect(await screen.findByText('error.unknownFix')).toBeTruthy()
+    expect(screen.getByText('conditions.provisionFailed')).toBeTruthy()
+    const raw = screen.getByText(/credentialState "absent" — run \/codex login/)
+    expect(raw.closest('details')).not.toBeNull()
     expect(screen.getAllByText('conditions.unready')).toHaveLength(2)
   })
 
@@ -607,11 +616,16 @@ describe('the conditions page', () => {
     expect(screen.getByText('conditions.newPlaceholder')).toBeTruthy()
   })
 
-  it('a refused listing shows the reason instead of an empty table', async () => {
+  it('a refused listing names the cause and the fix, with the raw text folded away', async () => {
     const h = makeHarness()
     h.fetchConditions.mockResolvedValue({ ok: false, error: { code: 'REFUSED', message: 'no dataset repository for this session' } })
     renderView(h)
     await openPage(h, 'page.conditions')
-    expect(await screen.findByText('conditions.error: no dataset repository for this session')).toBeTruthy()
+    // Three parts, not the exception: what happened, how to fix it, and the
+    // host's own sentence under «详情».
+    expect(await screen.findByText('error.unbound')).toBeTruthy()
+    expect(screen.getByText('error.unbound.fix')).toBeTruthy()
+    expect(screen.getByText('conditions.error')).toBeTruthy()
+    expect(screen.getByText('no dataset repository for this session')).toBeTruthy()
   })
 })

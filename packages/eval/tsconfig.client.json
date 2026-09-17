@@ -16,6 +16,7 @@
   "files": [
     "src/client/CellsPage.tsx",
     "src/client/ConditionsPage.tsx",
+    "src/client/ErrorState.tsx",
     "src/client/ExportDialog.tsx",
     "src/client/JudgingPage.tsx",
     "src/client/LabView.tsx",

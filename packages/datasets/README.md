@@ -83,6 +83,8 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 **默认安全与边界对象**：绑定未显式写 `layers` 时，agent 的读取范围就是该数据集的全部 `modelFacing:true` 层——敏感层要下发给 agent 必须显式列出。这条底线自 I5·T58 起**无条件**生效：原先「数据集一个敏感层都没声明就整体不过滤」的分支去掉了，因为那让「没写白名单」在不同数据集上意味着两件不同的事（绑的人并不会去读 descriptor 才决定绑不绑），而不过滤的那一支还顺带放行了没有任何 `register` 条目认领的 item 级目录——恰恰是没人为其表过态的那些。写路径（`put_item`）与 worktree 缺省跟随同一底线。白名单约束的对象是 **agent 工具与 worktree 物化**两条真边界；web tab 与 CLI 的读取动词是人的视图（operator scope），不受白名单与底线限制——敏感层对人照常展示并带「· 敏感」标记，树上另有「透传」分组把不受保护的内容显眼列出。
 
+`repoPath` 存的是**规范路径**：写入时前导 `~` 展开、转绝对路径、存在则解到 realpath，读出时再过同一个函数，旧记录里的字面 `~` 在第一次读到时就地归一并写回。这不是洁癖——`git -C`、`readdir(<repo>/datasets)` 与包含性检查都不展开 `~`，而 web tab 写绑定时根本没有 shell 在回路里，所以存下字面 `~/…` 会让两个 tab 对一个存在的仓库报「不是 git 仓库」「不是题库」（I5 走查缺口 G5）。
+
 **为什么不是 session 事件**：初版把绑定存为 log-only `datasets/binding` session 事件，但 harness 的持久化读路径会拒绝重建「日志含有其生成的已知类型集之外的事件类型、且 envelope 未带 `ignorable: true`」的会话——下游（仓外）插件的事件类型按构造不在该集合内（注册面上游 deferred），而 `Session.append()` 无法设置该标记。本插件追加的任何自定义类型事件都会让会话在重启后不可读，因此绑定迁到插件自管存储（每次调用现读，所以 CLI 写存活会话的绑定也无竞争）。代价：fork 出的会话以未绑定开始；删除会话会留下一条孤儿记录。
 
 绑定**写入**是人的操作：会话存活时用 `/datasets bind`、web tab 的绑定条，或脚本里的 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。
@@ -166,6 +168,8 @@ web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「�
 **详情页**（题集 › 题目）：左边文件树，每个叶子带槽位与「谁看得到」（三种颜色：选手可见 / 不发给选手 / 不受保护），上方是槽位筛选 chip；右边四块——**选手将看到**（这道题可见层的文件 + 题集级题干的清单与字节数，题集级的单独标注；答案键漂进可见层会先出现在这张表里，这就是它的用途）、**可判性**（评估标准几条、各 kind 各几条、探针几个、题集级探针几个、阶段 schema 几个）、**作答记录**（各实验里这道题的格子；eval 缺席时整区隐藏）、以及选中文件的预览。预览交给官方阅读器 primitives——markdown 经官方 `MarkdownText` 管线（与 chat 同一个渲染器），JSON 经官方 `JsonTree`，其余经 `CodeBlock`；本包没有任何自研渲染器。动作是**题目骨架**、**导入题目**、**validate**。
 
 **写入都只进工作区，commit 仍是人的**（插件从不提交）。题目骨架按**这个题集自己的形状**落位：descriptor 的 `register` 已经为这个 item 说过话就落在注册路径上（`task.md` / `answers/rubric.yml` / `checks/probes/…`），没说过就走约定布局（`<层>/rubric.yml`）；已存在的文件一律不覆盖。占位的 `rubric.yml` 故意留空 `items: []`——`validate` 因此报 `RUBRIC_NO_ITEMS` 并指到那个文件，这是预期的下一步而不是缺陷。导入题目是**原样拷贝**一个已有题目目录，不重新归位任何文件：该题集的 `layers` 与 `register` 决定每个文件成为什么，落在层外的由 `validate` 如实报出。三个写动作都要求 operator 视图（tab 的按钮），agent 的起草路径仍是 `datasets_put_item`，受会话绑定约束。
+
+**错误态是三段式**（界面规格 §九）：一句人话说发生了什么（「绑定的题库路径不是 git 仓库」），一句说怎么修（能给命令就给命令），异常原文与绝对路径折在「详情」里——页面本身不渲染 `error.message`，也不裸露路径。原因从消息文本认出来（域内错误码过不了 Remote 线，到浏览器时只剩网关的三个传输码），所以 `tests/error-state.client.spec.tsx` 把宿主的真实句子喂给真实的分类器：改了宿主的措辞，测试先红，而不是用户先看到「说不清」。实验室 tab 用的是同一份实现的副本——客户端包不 import 兄弟插件（界面规格 §八）。
 
 tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`。读取方法是 operator 视图——绑定只提供仓库路径，白名单与 modelFacing 底线约束的是 agent 边界（工具 + worktree），不是看自己仓库的人；敏感层带「· 敏感」标记照常可读，真正没保护的透传区与 `item.json` 则显眼标出。唯一的例外是 `itemBrief` 背后那两次判定层读取：它们**显式指名单层**（`layers: ['grading']` / `['verify']`）而不是走 operator 旁路——页面要的是答案键的形状（几条、什么 kind），字节从不上线。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace；eval 的 namespace 在**每次调用时**用 `ctx.get` 探测，不在挂载时探一次——两个插件各自 `$mount`，谁先落地没有保证。
 

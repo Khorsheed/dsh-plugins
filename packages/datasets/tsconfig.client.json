@@ -31,6 +31,7 @@
     "src/client/locales.ts",
     "src/client/preview.tsx",
     "src/client/DatasetsView.tsx",
+    "src/client/ErrorState.tsx",
     "src/client/BindForm.tsx",
     "src/client/BindingChip.tsx",
     "src/client/preset-visibility.ts",

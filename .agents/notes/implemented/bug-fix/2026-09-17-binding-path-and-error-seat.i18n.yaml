@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.md
+.agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.md: ca83beab9d4c195c39e1061cd62cd04a7cb2d66c
+.agents/notes/implemented/bug-fix/2026-09-17-binding-path-and-error-seat.zh.md: 2fe8b8bae19a48be3b103691b1f1db1dd4b71954

@@ -13,7 +13,7 @@
  * what "ready" means.
  * @module @khorsheed/dsh-eval
  */
-import { statSync, type Dirent } from 'node:fs'
+import { existsSync, statSync, type Dirent } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
@@ -103,7 +103,11 @@ async function datasetsWithConditions(repo: string): Promise<string[]> {
   try {
     entries = await readdir(join(repo, 'datasets'), { withFileTypes: true })
   } catch {
-    throw new EvalReadRefused(`not a dataset repository (no datasets/ directory): ${repo}`)
+    // Which of the two it is decides which fix the page offers: create
+    // datasets/, or find the repository again (I5·T62).
+    throw new EvalReadRefused(existsSync(repo)
+      ? `not a dataset repository (no datasets/ directory): ${repo}`
+      : `dataset repository does not exist — no such file or directory: ${repo}`)
   }
   const found: string[] = []
   for (const entry of entries) {

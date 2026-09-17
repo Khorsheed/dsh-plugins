@@ -27,6 +27,7 @@ import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import type { LabStartedRun } from './store.ts'
 import { Field, StartedRun, factorCell, listOrDash, snapshotCell } from './parts.tsx'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 /** The readiness word of one condition, keyed so the copy stays exhaustive. */
@@ -123,6 +124,8 @@ export function PlanReviewPage(props: {
   sentBack: boolean
   approving: boolean
   refusal: string | null
+  /** The approval call's own failure (not the gate's refusal); three-part seat. */
+  approveError: string | null
   started: LabStartedRun | null
   output: EvalRunOutputView | null
   outputError: string | null
@@ -131,7 +134,9 @@ export function PlanReviewPage(props: {
   onSendBack: () => void
   t: LabViewProps['t']
 }) {
-  const { row, review, loading, error, sentBack, approving, refusal, started, output, outputError, t } = props
+  const {
+    row, review, loading, error, sentBack, approving, refusal, approveError, started, output, outputError, t,
+  } = props
   const [keepUnits, setKeepUnits] = useState(false)
   // A run whose meta records no plan document has nothing to review; its
   // run.meta is the overview's business, and inventing a review of a file
@@ -143,7 +148,7 @@ export function PlanReviewPage(props: {
   return (
     <div className={css.overview}>
       {loading && review === null && <div className={css.empty}>{t('review.loading')}</div>}
-      {error !== null && <div className={css.empty}>{t('review.error')}: {error}</div>}
+      {error !== null && <ErrorState what={t('review.error')} message={error} t={t} />}
       {sentBack && <div className={css.notice}>{t('review.sentBack')}</div>}
       {review !== null && (
         <>
@@ -204,6 +209,9 @@ export function PlanReviewPage(props: {
             <div className={css.notice}>{t('review.approveBlocked', { errors: review.errors })}</div>
           )}
         </>
+      )}
+      {approveError !== null && (
+        <ErrorState what={t('review.approveError')} message={approveError} compact t={t} />
       )}
       {refusal !== null && (
         <Field label={t('review.refusal')}>
