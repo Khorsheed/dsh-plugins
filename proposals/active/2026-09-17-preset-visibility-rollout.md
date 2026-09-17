@@ -1,6 +1,8 @@
 # preset 可见性收口：worktrees/canvas 右栏入口、slash 命令搬家与 local-agent 定性
 
-2026-09-17。状态：A1/A2/A3 已实施（worktree `feat/preset-visibility-rollout`，commits `55d4d594` `602a410a` `eded618e`），待 3080 验收后关闭；A5 立项未动。
+2026-09-17。状态：A1/A2/A3 已实施并部署 3080（merge `197a5af4`，deploy-3080 OK，canary PASS），验收观察中；A5 立项未动。
+
+**3080 preset 治理（2026-09-18，协调者拍板）**：3080 的「开发模式」preset 曾本地补挂 mission/datasets/eval 三行（与本仓 web-dev 的 dev preset 漂移），导致评测 UI 出现在开发会话。处置：新建 `dsh-eval`（评测模式）preset（`~/.dsh-official/.agent-presets/dsh-eval/`，配方 = web-eval pack 的 eval preset：datasets-tool `authoring` + eval-tool，不挂 mission-tool 即 R6），dev preset 摘掉三行。名册 discovery 无缓存（`list()` 每次重读文件系统），立即生效无需重启；preset 建会话时锁定，存量会话不受影响。效果：开发模式新会话失去题集 chip / 任务 tab / 实验室 tab / 三个 slash，评测模式新会话全部获得。
 
 ## 背景
 
