@@ -418,7 +418,7 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - 从 main 开 worktree，分支只改文案指明的目录；题库仓库是多 agent 共享检出，写操作一律 `git worktree add` 后再动，从 i1-walk 开，不在共享检出上 checkout。
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
 - Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
-- UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。UI 任务的回报必须附每页明暗两套截图，按 ui-spec §九 自查；协调者看图验收。
+- UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。UI 切片按 ui-spec §九 自查，回报里逐条说明落在哪一页；不要求每个切片各自截图（每次截图都得登录 + 发一条消息才进得到聊天界面，成本高），截图由界面收口任务（T63）统一交每页明暗两套，协调者与用户看图验收。
 - 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。解追加型冲突用 graft：从 base / ours / theirs 取原文，按稳定锚点把自己追加的整块插进 main 版本，不逐 hunk 拼 ours+theirs。
 - 并行任务写题库时各用各的 worktree，不碰别人分支上的 plan / condition；会话里的 agent 起草只认本会话绑定的题库（T58 之前尤其要盯：未绑定时它会拿 repo 参数自己挑一个）。
 ```
@@ -2439,6 +2439,41 @@ packages/local-agent-dsh-headless 的 cordis.patch.yml 与 agent-loader（sandbo
 5. 判官 notes 的旧口径照补充三改。通用提醒照旧。
 ```
 
+### T55 · claude 容器轮把实例登出——先方案后改（可发，第一步只交方案）
+
+```text
+# 任务 T55：claude 容器轮不能再把实例登出——先出方案
+
+## 背景
+T33e 四家容器就绪：claude 宿主轮 ready（12.0 s），容器轮 NOT READY，探针那一刻 .credentials.json 被清空（accessToken / refreshToken 空串、expiresAt=0），实例本体随之登出，人要重登。与题库 pilot-b-log G9 逐字吻合，机制是三件事凑齐：
+1. macOS 上 claude 的 OAuth 凭证有两个存储：keychain（按 CLAUDE_CONFIG_DIR 路径哈希的项）与 <homeDir>/.credentials.json。claude 2.1.236 起写 keychain、读文件，所以 provider 的 syncClaudeCredentialFile 在每次 spawn 前做 keychain → 文件这一个方向——容器轮也不例外，同步用的是宿主路径（claude-cli-provider.ts startClaudeCliRun 开头、live-driver.ts、records.ts claudeAuthenticated、index.ts 登录 watch）。
+2. T20c 起容器轮 bind 挂的就是实例自己那个作用域目录（rw）；容器里是 Linux、没有 keychain，claude 只认文件：access token 过期 → 拿 refresh token 续期 → 新凭证写进挂载的文件。
+3. 下一次 spawn 前的同步把 keychain 里的旧凭证盖回文件；再续期用的是已被消费的 refresh token → 被拒 → claude 清空文件 → 宿主也登出。
+dsh 用 API key 不续期，不受影响；kimi / codex 是否有同款分叉，方案里顺带核一句。
+
+## 先读
+题库 docs/pilot-b-log.md G9、docs/i4-pilots-log.md「claude：不是镜像的问题，是 G9 那条旧账」（都在 i1-walk 分支；题库是多 agent 共享检出，只读用 git show，不 checkout）；packages/local-agent-claude-code/src/records.ts（readKeychainCredential、syncClaudeCredentialFile、claudeAuthenticated、credentialFileExpiry）、claude-cli-provider.ts 的 startClaudeCliRun 开头与 containerScopedHome、live-driver.ts 的同一处同步、provision.ts 注释里的 #47661；packages/local-agent/src 的 homeDir(name, scope)（T29）；packages/eval/src/run.ts 的挂载源（faces.localAgent.homeDir(harness, scope) 那段）与 unit.ts 里 mounts 的 readonly 字段；T20c / T29 / T33e 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-claude-container-creds，分支 fix/claude-container-credential-fork。第一步只交方案（写成 packages/local-agent-claude-code 下的一份提案文档或 Agent Note 草稿，不改代码）；协调者定案后进第二步，只改 packages/local-agent-claude-code（必要时 packages/eval 的挂载 readonly 一行），README 双语 + sidecar。
+
+## 方案要回答的
+- 候选至少三个，各写机制、改哪里、代价、对宿主轮有无影响：
+  a. 同步改「新者胜」：spawn 前比较 keychain 与文件的 refresh token / expiresAt，文件更新就写回 keychain 而不是盖掉文件（keychain 只在 macOS 宿主有；Linux 宿主本来单存储）。
+  b. claude 容器条件用容器专用命名 scope（T29 的 scope 字段），该 scope 的同步在登录完成后一次性做完、spawn 前不再 keychain → 文件——容器成为这个 scope 唯一的写者。
+  c. 挂只读 + 容器内续期不写回：先证 claude 在只读目录下续期后的行为（在内存里用还是直接报错）；若报错则此路不通，写清楚。
+  d. 其它你看到的。
+- 推荐哪个，为什么；与通用提醒里的凭据规则（不复制凭据、只在 0600 文件与 keychain、每个 scope 各自 login）怎么对齐。
+- 验证方法：不能真等 token 过期——写清怎么在本机造「容器轮续期后宿主同步」这个时序（例如把文件里的 expiresAt 改到过去让容器轮主动续期），以及怎么证同一 scope 事后宿主轮仍 ready。凭据一个字节都不进日志与回报。
+- 与 T33f 的关系：T33f 是 dsh 两侧共用同一 scope 的愈合问题，降为观察项；本任务不碰它，但说一句 b 若采用是否顺带把 claude 的两侧共用也断掉。
+
+## 完成判据
+第一步：方案文档一份（候选 + 推荐 + 验证方法 + 代价），协调者定案。第二步：容器轮 claude 就绪 ready 之后，同一实例宿主轮 claude 仍 ready、/claude-code status 不掉；local-agent-claude-code 测试全绿，gate 绿。
+
+## 回报
+第一步：方案文档路径与一屏内的摘要。第二步：分支与 commit、Agent Note、gate、时序造法的原文（脱敏）。
+```
+
 ### T58 · 条件与绑定的最后一公里（可发）
 
 ```text
@@ -2492,10 +2527,10 @@ packages/datasets/src/binding.ts（repoPath 存法）、service.ts 与 remote.ts
 - 不改矩阵页等其它样式（归 T63）。
 
 ## 完成判据
-datasets 与 eval 测试全绿，gate 绿；3171 重装后题集列表与条件页能打开；人为绑一个不存在的路径，两个 tab 的错误态都是三段式；回报附截图（明暗各一）。
+datasets 与 eval 测试全绿，gate 绿；3171 重装后题集列表与条件页能打开；人为绑一个不存在的路径，两个 tab 的错误态都是三段式（贴渲染出来的文本原文即可，不要求截图——截图由 T63 统一交）。
 
 ## 回报
-分支与 commit；Agent Note；gate；两个 tab 修前修后截图。
+分支与 commit；Agent Note；gate；两个 tab 修前修后错误态的文本原文。
 ```
 
 ### T63 · 界面整体收口：题集 + 实验室按视觉与文案基线重做（可发，依赖 T62）
@@ -2519,7 +2554,7 @@ ui-spec 全文（§九为准）；走查稿 scratch-storyboard/eval-flow-storybo
 - 列表页：状态 chip 用词表；因子列显示人话（「模型」）而不是键名。
 - 报告页：未导出态一句话 + 按钮；不变量四行用同一组件；比较未开的原因一句人话。
 - 判官台与格子抽屉：同套组件。
-- 交付：每页明暗两套截图（题集列表 / 题目详情 / 实验室列表 / 新建实验 / 概览 / 计划审阅 / 条件 / 矩阵 / 格子 / 报告 / 判官台）+ 对照 ui-spec §九 的核对表（每条规则：哪页怎么落的）。
+- 交付：每页明暗两套截图（题集列表 / 题目详情 / 实验室列表 / 新建实验 / 概览 / 计划审阅 / 条件 / 矩阵 / 格子 / 报告 / 判官台）+ 对照 ui-spec §九 的核对表（每条规则：哪页怎么落的）。截图只在本任务统一截一次（登录、发一条消息进到聊天界面后逐页截），其它切片不各自截。
 
 ## 完成判据
 两包测试全绿，gate 绿；3171 重装后用户点着走一遍，截图与核对表在回报里；用户提的问题记成清单一轮收完。
