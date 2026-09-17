@@ -393,7 +393,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T63 ✅ | 代码（界面收口） | 题集 + 实验室两个 tab 的整体设计与文案收口，一人从头到尾负责，按 ui-spec §九：沿用宿主 tokens、人话标签、列永远是条件名、状态词表、空态与错误态同一组件、矩阵页重做、报告与判官台同套样式；交付每页明暗两套截图 + 对照 ui-spec 的核对表，然后人验收 | T62 ✅ | 合入 main `00828fcd`（2026-09-17，九提交，含并 main 一次）；两包各一份 vocab.ts 状态词表（账本阶段、五桶、重跑类别、条件叶子字段，中英各一套，查表全函数）；矩阵列头永远是条件 id、因子值作副标题，随动字段（home.sha / env.keys / unit.scopedHome.*）折到底部一行；mixed 状态从 cell.reps[].state 自己算；§九 举例里四个不存在的宿主 token 换成主题包真有的；文案闸 copy.spec 两包；24 张明暗截图 + 核对表在 scratch-screenshots/t63/；协调者看图验收通过，两条进用户走查清单（条件页列头仍是键名与英文 provision；英文术语列头）；两条只记不改记 T66；eval 777 / datasets 203；用户 2026-09-17 夜走查完毕：提了一整套信息架构级意见（四阶段导航、术语降维、CTA、向导、图表、并排盲评、色彩语义），这是规格缺口不是执行缺口 → ui-spec §五 v2 + T67；文案级的一轮收完见 §三 补充（二） |
 | T61 | 代码（低） | 容器轮里 member-bridge 行起不来（单元里 `DSH_MEMBER_BRIDGE_ENTRY` 为 SyntaxError），走 failOnStartupError: false 降级，每个容器轮 stderr 一段噪声；查该行在单元里该不该挂、不挂就别起 | T59 | 容器轮 stderr 干净 |
 | T64 | 观察 | claude 探针 credentialFileExpiry 取 access / refresh 较晚者，access 已过期、refresh 未过期的死凭据报已认证（T55 发现，lab 那份当时就是）；kimi credential-guard 的 .bak 还原可能重放已消费的 refresh token（同族，只在精确空壳上还原）；收紧会让现在 ready 的 scope 变 not ready，等 T55 活体验收过了再定；T55 二期量到具体后果：登录 watch 先同步再探针，比全新登录写进 keychain 早 51 秒就判成功收工，此后没有东西把真凭证镜像进去。另记：local-agent 发布组版本线不齐（claude-code rc.5、其余 rc.6，gate 只警告、--release 才致命），发布侧决定，npm 风控期先记着 | T55 | 方案 |
-| T65 | 代码（中，先方案） | 容器轮里 sub-dsh 要能解析 preset：单元只挂 scope 目录，roster 的 roots 指宿主 preset 根（T33c 受阻根因）；「preset / 技能作为因子」在产品里没有一条能打开比较的路径。候选：单元再挂一个只读 bind 把实例 preset 根挂到容器内同一绝对路径（T32b 守卫照旧）；或 provision 时快照进 scope、哈希改量快照 | T33c T32b | 两条只差 preset 的 sub-dsh 条件容器轮 ready、P0 一轮四条不变量 ✅、比较节打开（即 pilot D 收口） |
+| T65 | 代码（中，先方案） | 容器轮里 sub-dsh 要能解析 preset：单元只挂 scope 目录，roster 的 roots 指宿主 preset 根（T33c 受阻根因）；「preset / 技能作为因子」在产品里没有一条能打开比较的路径。**2026-09-18 改写**：roster 本来就扫 `<scoped home>/.agent-presets`（local-agent-dsh 的设计：往那里放目录就是 scope 自己的 preset），真正的阻碍是 T32b 的 scopeDefersToInstancePresets 守卫——scope 有自己的副本就拒量，把 roots 逼向单元不挂的实例根；preset 已正本化（6b8a919a：git 正本 → sync-presets.sh / pack 装到实例根）。推荐：provision 把实例根那份逐字节快照进 scope、量快照、守卫改成「快照 = 实例根」；挂载改法作备选；customSkillDirs 的绝对路径两侧怎么都成立要在方案里定 | T33c T32b | 两条只差 preset 的 sub-dsh 条件容器轮 ready、P0 一轮四条不变量 ✅、比较节打开（即 pilot D 收口） |
 | T66 | 代码（低） | T63 走查记下的两条：宿主端拼好的中文句子（pivotMatrix 汇总、report 不变量明细、rankReason）英文界面下中英混排，要下发结构化字段由浏览器半边组句；composer 的「题集」chip 只靠会话活动重读，题集 tab 表单里的绑定不通知它 | T63 | 英文界面无中文句子；tab 表单绑完 chip 立刻变 |
 | T67 | 代码（界面重构，两个里程碑） | 按 ui-spec §五 v2 重构实验室 tab：四阶段导航（实验设计 / 运行记录 / 结果对比 / 人工评估）、每页一个主动作、术语表、高级设置折叠、就绪徽章、同一网格跑前跑中两用、四步向导、运行记录详情（得分头部、时间轴、键值表、附件区）、结果对比（有效性校验 ✓/⚠ + 悬停、柱状图、格式化）、人工评估（同题并排各自打分、队列筛选、一致性通俗化）；协调者自己驱浏览器验收 | T63 T60 | 用户点着走一遍：每页知道自己在哪、下一步做什么 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
@@ -1955,21 +1955,26 @@ eval-env:pinned 是 2026-09-08（I3·T16）建的：dsh 闭包由 env/mk-dsh-clo
 ### T65 · 容器轮里 sub-dsh 要能解析 preset——pilot D 受阻的机制修复（可发，先方案后改）
 
 ```text
-# 任务 T65：容器轮里 sub-dsh 要能解析 preset——先方案
+# 任务 T65：容器轮里 sub-dsh 要能解析 preset——先方案（2026-09-18 改写）
 
 ## 背景
-T33c（pilot D）在容器轮上被顶住：单元只挂条件的 scope 目录，sub-dsh 子 profile 的 roster 里 roots 指向宿主的 preset 根（$DSH_HOME/.agent-presets），容器里解析不到 preset，两条只差 preset 的条件在容器轮起不来；宿主轮能起但环境指纹 unverifiable、比较节永远不开。结果是「preset / 技能作为因子」在产品里没有一条能打开比较的路径。T33c 已拿到：两份 lock、两 caps 哈希（4/3 与 5/3 技能/工具）、conditions diff 三字段、就绪拒绝原文、容器内根因原文。
+T33c（pilot D）在容器轮上被顶住：两条只差 preset 的 sub-dsh 条件在容器里解析不到 preset。表面原因是子 profile roster 的 roots 指向宿主的 preset 根（$DSH_HOME/.agent-presets），单元只挂 scope 目录；但根子不在 roster——local-agent-dsh 的 roster 缺省就扫 `<scoped home>/.agent-presets`（provision.ts 的注释原话：往那里放一个 preset 目录就是 scope 自己的 preset），宿主与单元都读得到，因为 scope 目录两侧就是同一个目录。真正把 roots 逼向实例根的是 T32b 的守卫 `scopeDefersToInstancePresets`（packages/eval/src/capability-probe.ts）：scope 里若有自己的 `<scope>/.agent-presets/<id>` 就拒绝量哈希，理由是「scope 的副本与实例根的副本不同就会量错」。守卫防的是漂移，代价是 preset 因子在容器轮走不通。结果是「preset / 技能作为因子」在产品里没有一条能打开比较的路径（宿主轮环境指纹 unverifiable、比较节不开）。
+
+两件新情况：① preset 已正本化（2026-09-18，`6b8a919a`）：3080 的名册从 git 正本经 sync-presets.sh 同步，dsh-eval 组合跟 web-eval pack 的 eval preset，3171 的实例根由 pack 安装写入——实例根是部署副本，正本在仓库里；② pilot D 的两个 preset（题库 env/presets/eval-lean、eval-full）的 `customSkillDirs` 写的是实例根下的绝对路径（`<dshHome>/.agent-presets/<id>/skills`），任何把 preset 搬进 scope 的做法都得让这个路径在宿主与单元两侧都成立。
+
+T33c 已拿到：两份 lock、两 caps 哈希（4/3 与 5/3 技能/工具）、conditions diff 三字段、就绪拒绝原文、容器内根因原文。
 
 ## 先读
-T33c 的日志（题库 i1-walk 分支 docs/i4-pilots-log.md pilot D 节，含容器内根因原文；只读用 git show，不 checkout）；packages/eval/src/unit.ts（AcquireSpec 的 mounts：现在恰好一个挂载，即 scoped home）与 run.ts 的挂载源那段；packages/local-agent-dsh/src/provision.ts（子 profile roster 的 roots 怎么写、preset 里 customSkillDirs 的绝对路径）；packages/eval/src/capability-probe.ts 与 T32 / T32b 的 Agent Note（哈希量的是实例根那份、「两边同一目录」守卫）；T20c / T29 / T59 的 Agent Note。
+T33c 的日志（题库 i1-walk 分支 docs/i4-pilots-log.md pilot D 节；只读用 git show，不 checkout）与题库 env/presets/ 下两个 preset 的原样；packages/local-agent-dsh/src/provision.ts（DshSubProfilePreset 的 roots / includeUserRoot 与注释、roster 行怎么写）；packages/eval/src/capability-probe.ts 全文（守卫、量哈希的路径、「silent-wrong-hash」那段）与 sub-profile.ts 的 readScopePreset；packages/eval/src/unit.ts（mounts 恰好一个）与 run.ts 挂载源；T32 / T32b 的 Agent Note；`6b8a919a` 与 profiles/web/scripts/sync-presets.sh（正本 → 实例根的规则）；T20c / T29 / T59 的 Agent Note。
 
 ## 分支
 从 main 开 worktree ../dsh-plugins-wt-unit-preset-root，分支 fix/unit-preset-root。第一步只交方案（Agent Note 树 proposed/ 下一份，一屏摘要）；协调者定案后改 packages/eval 与 packages/local-agent-dsh（README 双语 + sidecar）。
 
 ## 方案要回答的
-- 候选 a：单元再挂一个只读 bind——把实例的 preset 根挂到容器内同一绝对路径，roster 的 roots 与 preset 里的 customSkillDirs 原样解析，T32b「两边同一目录」守卫照旧成立；unit 段加一个可选字段声明它，或由 eval 从 local-agent 的 dsh 门面读到 preset 根自动挂。preset 根只有 agent.cordis.yml 与 SKILL.md，不含凭据，与决策 12 无冲突。
-- 候选 b：provision 时把 preset 快照进 scope 目录、roster 指容器内路径——caps 哈希改量快照，T32b 守卫要改语义；代价写清。
-- 其它你看到的。推荐哪个，为什么；宿主轮行为必须一字不变；环境指纹要不要记「挂了哪条路径」（哈希已在 caps 里）。
+- 推荐路线（快照进 scope，先证伪它再谈别的）：provision 时把实例根那份 preset 逐字节快照到 `<scope>/.agent-presets/<id>`，roster 不再写 roots（回到缺省：扫 scope 自己的目录）；capability probe 改量 scope 那份——它才是宿主与单元实际跑的那份；T32b 守卫改语义：provision 时「快照 ≠ 实例根」即拒（漂移仍被抓住），就绪检查再量 scope 那份、与 lock 不符即拒（过期即重 provision，照旧）；lock 里除哈希再记来源（实例根路径 + 内容哈希，正本化后可加 pack 版本）。eval 的挂载一行不改。
+- 必须回答 customSkillDirs：两个 preset 里是实例根下的绝对路径，快照后在宿主要指 `<scope>/.agent-presets/<id>/skills`、在单元里要指 `<unit.scopedHome.container>/.agent-presets/<id>/skills`，一个字面串两侧不可能都对。查 skill-filesystem / roster 认不认相对 preset 目录的路径或 `~` / DSH_HOME 展开；认就把快照改写成相对形式并把「preset 作因子必须用相对技能路径」写成规则（validate 拒绝绝对路径）；不认就写清是宿主线的活（交接项），并退到备选。
+- 备选：单元再挂一个只读 bind——把实例的 preset 根挂到容器内同一绝对路径，roster 与 customSkillDirs 原样解析，T32b 守卫照旧；unit 段加可选字段或由 eval 从 dsh 门面读到实例根自动挂；preset 根只有 agent.cordis.yml 与 SKILL.md，不含凭据。代价：eval 的 mount 契约从「恰好一个」变成两个、环境指纹要记这条挂载；正本一搬家就失效。
+- 其它你看到的。推荐哪个，为什么；宿主轮行为必须一字不变（非 preset 条件的 provision 逐字节不变）。
 
 ## 完成判据
 方案定案后：eval / local-agent-dsh 测试全绿，gate 绿；3171 上 pilot D 的两条 sub-dsh 条件在容器轮 ready，就绪检查再量的 caps 哈希与 lock 一致，P0 一轮四条不变量 ✅、比较节打开——这一次就是 pilot D 的收口，由本任务顺手跑（不与 T55 的探针同时）。
