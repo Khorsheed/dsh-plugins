@@ -206,11 +206,20 @@ export const STATE_ROOT_SEGMENT = 'dsh-reader'
 /** Default daily refresh time. */
 export const DEFAULT_REFRESH_TIME = '10:00'
 
-/** Per-source raw-payload budget in characters (the doc budget is 2 MiB total). */
-export const MAX_BODY_CHARS_PER_SOURCE = 256 * 1024
+/**
+ * Per-source raw-payload budget in characters.
+ *
+ * Sized to the HOST's egress cap rather than below it: a deployment can raise
+ * `web-fetch-http`'s `maxBodyChars` (the acceptance instance runs it at
+ * 2,000,000), and a per-source budget smaller than what the seam is willing to
+ * deliver would silently re-truncate every large feed here — the reader would
+ * pay for the fetch and still get half a document, with the note blaming the
+ * fetch. The fetch cap is the outer bound; this one must not be the inner one.
+ */
+export const MAX_BODY_CHARS_PER_SOURCE = 2 * 1024 * 1024
 
-/** Total raw-payload budget in characters across all sources. */
-export const MAX_TOTAL_BODY_CHARS = 2 * 1024 * 1024
+/** Total raw-payload budget in characters across all sources (newest kept). */
+export const MAX_TOTAL_BODY_CHARS = 12 * 1024 * 1024
 
 /**
  * Build a display label for a source from its URL: the registrable-ish host
