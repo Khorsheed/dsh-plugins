@@ -35,6 +35,10 @@ interface ChatSelectionOwnerProps {
 
 **文档预览（ui-sidebar-documentpreview）**：同样的选区动作位，owner props 带 `{ text, fileRef?, page?/anchor? }`。画布/文件预览等社区内容面可以照同一契约自实现，殊途同归。
 
+## 同族追加（2026-09-17，quote-anything 引用样式需求）
+
+**composer 任意位置引用 chip 插入。** 宿主 composer 已有结构化引用 chip（`ReferenceInsert = { source, ref, label, appearance?, clipboardText }`，`packages/client/ui-conversation/src/client/contract/input.ts:60`），但唯一插入路径是 `insertReference(ref, span)`——触发词（`#` 类）替换流程，需要一个已存在的 `TokenSpan`。社区场景是"把一段引用文本作为一个 chip 插到光标处"（引用样式，替代 `> ` markdown 引用块纯文本）。请开放一个不需 span 的插入面（形如 `insertChip(ref: ReferenceInsert): boolean`，插在 caret 处），或把 `insertReference` 的 span 放宽为可选（缺省=caret）。与选区 seam 同族：都是"内容进出会话"的官方通路，一并裁决命中率最高。
+
 ## 为什么值得上游收
 
 - **一个 seam 退掉一类 DOM anchor**：quote-anything（引用到会话/侧边对话）、message-tools（编辑/转发）、side-chat（转写引用）三个插件的选区需求全部收敛； seam 落地后社区侧按区域逐个退役 `window.getSelection()` 路径。

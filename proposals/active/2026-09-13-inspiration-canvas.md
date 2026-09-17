@@ -1,8 +1,8 @@
 # 灵感画布（inspiration-canvas）
 
 - **分类**：plugin
-- **状态**：planned
-- **最后更新**：2026-09-13（立项：v1 范围与界面定稿，见「方案」）
+- **状态**：planned（v2 重设计已立项为 [2026-09-16-canvas-space](2026-09-16-canvas-space.md)；本文件 M2–M4 路线以新提案为准，M1 已交付能力由 v2 继承或替代，逐项对照见新提案 §0.2）
+- **最后更新**：2026-09-16（2026-09-13 立项：v1 范围与界面定稿，见「方案」）
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived），关键词「灵感 / 画布 / canvas / 写作 / novel / 编辑器 / 草稿 / draft」——**无重复提案**。命中三处**相关**而非重复：
   - [mode-switcher](2026-08-26-mode-switcher.md)：已规划「novel 新建写作 preset」「内容以 novel pack 定义为准」。本提案是该 pack 的**第一个领域插件**，M2 起接入它的自隐约定。
   - [package-management](2026-08-21-package-management.md)：`dsh-novel` 整合包「等 1–2 个小说领域插件」——本插件是第一个。
