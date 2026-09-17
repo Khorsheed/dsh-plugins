@@ -57,6 +57,7 @@ The return value now answers "a usable credential is in the file after the call"
 - The keychain may now drift arbitrarily far behind the file. Harmless while the host CLI reads the file, and the stores re-converge on their own: once the file wins, the next host round refreshes from it and writes the keychain itself. A keychain write-back was considered and deferred (below).
 - A rare, real event is now visible in the log instead of reconstructible from a file mtime.
 - On a Linux host, where the keychain does not exist, a usable file is no longer reported as an unusable credential.
+- WHICH keychain item this reconcile compares against is decided by the service enumeration's newest-first ordering, and that ordering had a defect of its own — it never parsed the stamp `security` prints, so it returned whichever usable item the dump listed first. Newer-wins is only as good as the item it is handed; see [the keychain stamp ordering note](2026-09-17-keychain-stamp-ordering.md).
 
 ## Alternatives considered
 

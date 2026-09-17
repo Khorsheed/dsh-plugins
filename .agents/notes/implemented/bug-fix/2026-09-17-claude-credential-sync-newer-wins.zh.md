@@ -57,6 +57,7 @@ Status: implemented
 - keychain 现在可能落后文件任意远。只要宿主 CLI 读文件就无害，而且两个存储会自己重新收敛：文件赢过一次之后，下一轮宿主委派基于它续期并自行写 keychain。写回 keychain 的方案已评估并推迟（见下）。
 - 一件罕见而真实的事件现在在日志里看得见，而不必靠一个文件 mtime 去复原。
 - 在没有 keychain 的 Linux 宿主上，一份可用的文件不再被报成不可用的凭据。
+- 这次协调**拿哪一条 keychain 条目**来比，是由 service 枚举的「最新写入优先」排序决定的，而那个排序本身有缺陷——它从来没解析对 `security` 打印的印记格式，于是返回的是 dump 里恰好排在最前的那条可用条目。新者胜再好，也只能好到递给它的那条为止；见[keychain 印记排序那份记录](2026-09-17-keychain-stamp-ordering.md)。
 
 ## Alternatives considered
 
