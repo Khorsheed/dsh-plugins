@@ -146,6 +146,19 @@ export function stamp(at: number | null): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/**
+ * A repository's own name — its last path segment.
+ *
+ * ui-spec §九 keeps absolute paths off the page. The repository is named a
+ * dozen times in this tab and the name is what a person says out loud; the
+ * path belongs on a `title` and under «详情».
+ * @param path - the repository root, absolute or `~`-prefixed.
+ * @returns the last segment, or the path itself when it has none.
+ */
+export function repoName(path: string): string {
+  return path.replace(/\/+$/, '').split('/').filter(Boolean).pop() ?? path
+}
+
 /** `dataset @ abcdef1`; whichever half is missing simply does not print. */
 export function snapshotCell(row: EvalExperimentRow): string {
   const { datasetId, commit } = row.snapshot
@@ -169,10 +182,14 @@ export function FactorCell(props: { row: EvalExperimentRow; t: LabViewProps['t']
   if (row.conditions.length < 2) return <span className={css.dim}>{t('factors.single')}</span>
   if (row.factors.length === 0) return <span className={css.dim}>{t('factors.none')}</span>
   const { named, incidental } = splitFactors(row.factors)
-  const words = (named.length > 0 ? named : incidental)
+  const shown = named.length > 0 ? named : incidental
+  const words = shown.slice(0, FACTOR_WORDS)
     .map(path => factorPhrase(path))
     .map(phrase => (phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)))
-  const rest = named.length > 0 ? incidental.length : 0
+  // Everything the cell did not name: the designed factors past the third, plus
+  // every derived field. One row per experiment is the list's whole shape, and
+  // six words wrapped over three lines is not a row (ui-spec §五).
+  const rest = (shown.length - words.length) + (named.length > 0 ? incidental.length : 0)
   return (
     <span title={row.factors.join(', ')}>
       {words.join(' · ')}
@@ -180,6 +197,9 @@ export function FactorCell(props: { row: EvalExperimentRow; t: LabViewProps['t']
     </span>
   )
 }
+
+/** How many factor words fit a list row before the cell starts wrapping. */
+const FACTOR_WORDS = 3
 
 /** One labelled block of a page. */
 export function Field(props: { label: string; children: ReactNode }) {

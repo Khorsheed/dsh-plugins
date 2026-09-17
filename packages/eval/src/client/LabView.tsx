@@ -39,7 +39,7 @@ import type { LabViewProps } from './contract.ts'
 import { ConditionsPage } from './ConditionsPage.tsx'
 import {
   Chip, Detail, EmptyState, FactorCell, Field, StartedRun,
-  bucketTone, snapshotCell, stageTone, stamp, statusKey, statusTone, Word,
+  bucketTone, repoName, snapshotCell, stageTone, stamp, statusKey, statusTone, Word,
 } from './parts.tsx'
 import { PlanReviewPage } from './PlanReviewPage.tsx'
 import { LAB_PAGES } from './store.ts'
@@ -110,7 +110,9 @@ function Overview(props: {
       )}
       <Field label={t('overview.snapshot')}>
         <span className={css.mono}>{snapshotCell(row)}</span>
-        {row.snapshot.repo !== null && <span className={css.dim}> · {row.snapshot.repo}</span>}
+        {row.snapshot.repo !== null && (
+          <span className={css.dim} title={row.snapshot.repo}> · {repoName(row.snapshot.repo)}</span>
+        )}
       </Field>
       <Field label={t('overview.shape')}>
         {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}

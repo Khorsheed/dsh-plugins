@@ -41,7 +41,7 @@ import type {
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Chip, Detail, EmptyState, Field, Hash, Word, severityKey, severityTone } from './parts.tsx'
+import { Chip, Detail, EmptyState, Field, Hash, Word, repoName, severityKey, severityTone } from './parts.tsx'
 import { factorPhrase, shortenValue } from './vocab.ts'
 import type { ConditionActionNote } from './store.ts'
 import css from './LabView.module.css'
@@ -341,7 +341,7 @@ export function ConditionsPage(props: {
       {diff !== null && <Diff diff={diff} t={t} />}
       {view !== null && (
         <Field label={t('conditions.repo')}>
-          <span className={css.mono} title={view.repo}>{view.repo.split('/').filter(Boolean).pop() ?? view.repo}</span>
+          <span className={css.mono} title={view.repo}>{repoName(view.repo)}</span>
           {view.datasets.length > 0 && <span className={css.dim}> · {view.datasets.join(', ')}</span>}
           <Detail summary={t('error.details')}>
             <div className={css.errorDetailLine}>{view.repo}</div>

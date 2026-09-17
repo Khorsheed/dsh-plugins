@@ -27,7 +27,7 @@ import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import type { LabStartedRun } from './store.ts'
 import {
-  Chip, Detail, FactorCell, Field, StartedRun, listOrDash, severityKey, severityTone, snapshotCell,
+  Chip, Detail, FactorCell, Field, StartedRun, listOrDash, repoName, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
@@ -71,7 +71,9 @@ function PlanFields(props: { row: EvalExperimentRow; digest: EvalPlanDigest; t: 
     <>
       <Field label={t('overview.snapshot')}>
         <span className={css.mono}>{snapshotCell(row)}</span>
-        {digest.dataset.repo !== null && <span className={css.dim}> · {digest.dataset.repo}</span>}
+        {digest.dataset.repo !== null && (
+          <span className={css.dim} title={digest.dataset.repo}> · {repoName(digest.dataset.repo)}</span>
+        )}
       </Field>
       <Field label={t('overview.shape')}>
         {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}
