@@ -277,6 +277,11 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
   const element = node as Element
   const tag = element.localName.toLowerCase()
   if (DROP_TAGS.has(tag)) return ''
+  // Cloudflare's email obfuscation: the visible text is a placeholder that its
+  // own script decodes at runtime. We never run that script, so keeping the
+  // element would ship a literal "[email protected]" into the reader — a real
+  // artifact seen in the Chinese fixture. Drop it instead.
+  if (element.hasAttribute('data-cfemail') || (element.getAttribute('class') ?? '').includes('__cf_email__')) return ''
 
   if (tag === 'img') {
     const src = absolutize(element.getAttribute('src'), baseUrl)

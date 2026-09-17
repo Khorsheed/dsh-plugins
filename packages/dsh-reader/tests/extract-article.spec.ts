@@ -154,6 +154,19 @@ describe('normalizeRichText', () => {
     expect(out).toBe('<p><img src="https://example.com/img/a.png" alt="A"></p>')
   })
 
+  it('drops Cloudflare email-obfuscation placeholders', () => {
+    // The real artifact: a publisher behind Cloudflare ships an anchor whose
+    // text a script decodes at runtime. We strip scripts, so the placeholder
+    // must not survive into the reader.
+    const out = normalizeRichText(
+      '<p>Contact <a href="/cdn-cgi/l/email-protection" class="__cf_email__" '
+      + 'data-cfemail="671e0e01020900">[email&#160;protected]</a> for details.</p>',
+    )
+    expect(out).not.toContain('email')
+    expect(out).toContain('Contact')
+    expect(out).toContain('for details.')
+  })
+
   it('drops an image with no usable source', () => {
     expect(normalizeRichText('<p><img src="data:image/png;base64,AAAA"></p>')).toBe('<p></p>')
   })

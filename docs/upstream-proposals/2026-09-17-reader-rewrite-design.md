@@ -181,8 +181,40 @@ Supersedes: `.agents/notes/proposed/feature/2026-09-17-rss-reader-legacy-note.md
   （超宿主 10 万字符上限 / 需登录 / 抽取失败）时，D6 的提示块里直接给一个主按钮，让用户不必先
   点一次空详情。卡片尾部的图标是**悬停提示**而非第二个控件 —— 整张卡只有一个动作。
 - **详情页**：顶栏 `返回 / 复制链接 / 打开原文`；正文（D5 排版）；文末 D6 提示块。
-- **未读标记**：卡片左缘的竖条（`3×22px`，`--dsw-static-deepseek-500`）。它不是可点控件，
-  是"这条还没打开过"的状态标记；打开即消失，且按 D10 只在会话内有效。
+- **未读标记（用户 2026-09-17 定案）**：标题前的**圆点**（`6px`，`--dsw-static-deepseek-500`）——
+  比左缘竖条更符合"未读"的通用习惯。它不是可点控件，是状态标记；打开即消失，且按 D14 只在会话内有效。
+- **列表工具条（用户 2026-09-17 追加）**：搜索、排序、只看未读、新增按钮。
+  - **搜索**：对已解析的条目在内存里过滤（标题 / 摘要 / 作者 / 来源名），**不发网络请求** ——
+    条目本来就在客户端手上（D3），所以搜索是纯本地、零延迟的。
+  - **排序**：最新在前（默认）/ 最早在前 / 按来源分组。同样纯本地。
+  - **只看未读**：切换式筛选，与"今日 / 全部"是同一层的列表谓词。
+  - **新增按钮**：见 D15。
+- **详情页的完整性说明（用户 2026-09-17 定案）**：正文不完整时，**文末固定一行**：
+  「受限篇幅，内容未完整呈现」，后面跟一个**可点的「阅读原文」**，把用户送到系统浏览器。
+  它替代了此前"一整块提示卡"的设计 —— 一行文字更轻，不会把"读了一半"变成一次打断。
+
+### D14 — 搜索 / 筛选 / 排序都是客户端谓词
+
+条目是客户端解析出来的（D3），所以搜索、筛选、排序**全部在内存里完成**，不新增任何 wire verb，
+也不发网络请求。落地形态：`createReaderStore` 持有一份 `filter`（今日/全部、只看未读、来源）
+与一份 `sort`，组件从 store 的 snapshot 派生列表 —— 与 `ui-file-preview` 的 `listRequestRev`
+刷新计数是同一个模型。搜索匹配标题、摘要、作者与来源名；排序提供"最新在前 / 最早在前 / 按来源"。
+
+### D15 — 新增源：一个入口，按抓回来的内容自动判定
+
+用户要"订阅 RSS"和"粘贴一条链接进来"两件事。**不设两个入口去问用户**，因为用户自己也分不清 ——
+一个 https 地址可能是 feed，也可能是文章页。判定放在宿主：抓一次，看**响应内容**决定它是源还是条目。
+
+- 客户端一个 `+` → 一个输入框（URL）+ 提交。
+- 宿主 `addSource({ url })`：抓取 → 分类：
+  - `Content-Type` 是 `application/rss+xml` / `atom+xml` / `xml` / `text/xml`，或体首是
+    `<rss` / `<feed` / `<?xml` 且含 `<channel`/`<feed` → **订阅源**（`kind: 'rss'`，正常入库）；
+  - `Content-Type` 是 `text/html` → **单篇文章**（`kind: 'link'`，只这一条）；
+  - 其余（PDF、图片、JSON）→ 明确拒绝并说明，不静默建一条空源。
+- 返回里带上**判定结果**（`{ outcome: 'subscribed' | 'saved-link', kind, label }`），客户端据此
+  给一句不同的反馈（"已订阅《xxx》" / "已保存这篇"），而不是让用户猜刚才发生了什么。
+- 这一步同时消掉了原型里那个"粘贴框直接建源"的隐患：`http://host/` 的 HTML 首页**永远不会**被
+  当成一个 0 条的订阅源偷偷入库。
 
 ### D11 — 图标：源自带优先，否则字母块；**不接第三方 favicon**
 
@@ -280,7 +312,7 @@ interface ReaderEntry {
 |---|---|---|
 | `capabilities` | — | `{ protocolVersion: 1; hasFs: boolean; hasSideChat: boolean; nextRefreshAt?: string }` |
 | `listSources` | — | `{ sources: ReaderSourceSummary[] }` |
-| `addSource` | `{ url: string; label?: string }` | `'ok' \| 'invalid-url' \| 'duplicate' \| 'unavailable'` |
+| `addSource` | `{ url: string; label?: string }` | 判定结果联合：`{ outcome: 'subscribed' \| 'saved-link'; kind: 'rss' \| 'link'; id: string; label: string }` 或 `'invalid-url' \| 'duplicate' \| 'unsupported-content' \| 'fetch-failed'`（见 D15） |
 | `updateSource` | `{ id; enabled?; label?; timeOfDay? }` | `'ok' \| 'not-found' \| 'unavailable'` |
 | `removeSource` | `{ id: string }` | `'ok' \| 'not-found' \| 'unavailable'` |
 | `refresh` | `{ ids?: string[]; manual?: boolean }` | `{ results: Array<{ id; status: 'ok'\|'fetch-failed'\|'truncated'\|'unavailable'; message? }> }` |
@@ -305,6 +337,9 @@ interface ReaderEntry {
 | definition | id/kind/guide 字段，页面型 tab 不含 `patterns` |
 | **卡片渲染** | 挂载后断言来源名与标题**真的在 DOM 里** —— 这条就是能挡住旧壳 `return null` 的闸 |
 | **点卡片语义** | 点卡片进入详情页（**不是**打开浏览器）；详情页顶栏的「打开原文」触发宿主浏览器；抽不出正文时提示块里出现主按钮；未读数恰好减一 |
+| **搜索 / 筛选 / 排序** | 纯本地谓词：搜索命中标题/摘要/作者/来源名；只看未读与"今日"叠加；三种排序稳定（同键不抖动） |
+| **新增源判定** | 抓回 RSS/Atom → `subscribed`；抓回 HTML → `saved-link`；抓回 PDF/其他 → `unsupported-content` 且**不建空源**；重复 URL → `duplicate` |
+| **完整性说明** | 正文不完整时文末出现「受限篇幅，内容未完整呈现」且「阅读原文」可点；完整时**不出现** |
 | **划选引用** | 选区 → 引用块含出处；空白选区被拒；跨元素选区不抛错 |
 | **boot 集成** | 真 cordis Context + 假 remote/locale/slots/sidebarRightTabs → 断言类型进了 registry、body key 进了 `ctx.slots.entries('sidebar.right.pane.tab')`，并能干净 dispose |
 | 宿主服务 | 对 stub `ctx.web` / stub `ctx.fs` 做 fetch→persist→read 往返；截断拒绝；无 fs 内存降级 |
