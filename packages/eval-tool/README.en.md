@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The companion tool row of `@khorsheed/dsh-eval`: the four **read-only** model-facing tools (`eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`) and the `tool:eval` prompt section, **granted per session** — present only in sessions whose agent preset composition names it. The service face (`ctx.dshEval`), the CLI, and the `/eval` slash command stay in the core; this row lives in presets, never at the profile root. The third core/companion pair of the tool-row decoupling (M4'③, proposal 2026-08-26).
+The companion tool row of `@khorsheed/dsh-eval`: the four **read-only** model-facing tools (`eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`) and the `tool:eval` prompt section, **granted per session** — present only in sessions whose agent preset composition names it. Since the preset-visibility rollout (A3) the `/eval` slash command's registration also belongs to this row (landing in the preset's scope layer; the handler and definition stay in the core). The service face (`ctx.dshEval`) and the CLI stay in the core; this row lives in presets, never at the profile root. The third core/companion pair of the tool-row decoupling (M4'③, proposal 2026-08-26).
 
 ## Shape: a companion package that never self-mounts
 

@@ -349,6 +349,14 @@ export interface WorktreeOptions {
 
 /** The public service face (`ctx.datasets`). */
 export interface DatasetsService {
+  /**
+   * The plugin config's default repo (`''` = none) — the scope fallback the
+   * human faces (slash, Remote tab) resolve against when a call carries no
+   * explicit `repo` and the session has no binding. It rides the service so
+   * the companion row's slash face can reach it without seeing the core's
+   * plugin config.
+   */
+  readonly defaultRepo: string
   list(scope: DatasetScope, datasetId?: string, commit?: string): Promise<ListDatasetsResult | ListItemsResult>
   show(scope: DatasetScope, datasetId: string, itemId?: string, commit?: string): Promise<ShowResult>
   describe(scope: DatasetScope, datasetId: string, commit?: string): Promise<JsonObject>
@@ -421,6 +429,8 @@ export interface DatasetsServiceOptions {
   worktreeRoot: string
   /** Binding store root (`<stateRoot>/bindings`). */
   bindingsRoot: string
+  /** Plugin config's default repo (absent / `''` = none); surfaced as {@link DatasetsService.defaultRepo}. */
+  defaultRepo?: string
 }
 
 /**
@@ -614,6 +624,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
   }
 
   const service: DatasetsService = {
+    defaultRepo: options.defaultRepo ?? '',
     async list(scope, datasetId, commit) {
       const { repo, sha } = await resolveCommitAt(scope, commit)
       if (datasetId !== undefined) {

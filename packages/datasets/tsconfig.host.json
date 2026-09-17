@@ -20,6 +20,7 @@
     "src/rubric.ts",
     "src/scaffold.ts",
     "src/service.ts",
+    "src/slash.ts",
     "src/slots.ts",
     "src/tool.ts",
     "src/types.ts",

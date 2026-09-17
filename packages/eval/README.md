@@ -278,7 +278,7 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 
 ## 模型工具（四读一草，五个）
 
-**本包不再注册任何模型工具（BREAKING）**：下面这五个工具与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，由 agent preset 按会话授予。迁移两步：把伴生包作为依赖安装，并在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval-tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**伴生行**的工具面；服务面、CLI 与 `/eval` slash 仍归本包。
+**本包不再注册任何模型工具（BREAKING）**：下面这五个工具与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，由 agent preset 按会话授予。迁移两步：把伴生包作为依赖安装，并在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval-tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**伴生行**的工具面；服务面与 CLI 仍归本包，而 `/eval` slash 的**注册**自 preset 可见性收口（A3）起也归伴生行——落进 preset 的 scope 层，只有授予会话的补全列表可见（官方 `/goal` `/plan` 同款机制）；handler 与定义仍在本包 `src/slash.ts`，由伴生行带它的 scoped ctx 调 `registerEvalSlash` 接入，handler 内另有 roster 兜底守卫（读不到一律放行）。
 
 agent 在一次实验里只出现两次：规划期起草、分析期读结论。分析期不需要写；规划期要写的只有两类文件——plan 与它引用的条件。所以模型工具是**四个读加一个起草**，并且刻意没有第六个：能起 run 的 agent 就能起一次人没批准的 run，而起草起不动任何东西。
 
@@ -300,7 +300,7 @@ agent 在一次实验里只出现两次：规划期起草、分析期读结论�
 
 这条收窄不是洁癖。原先那个参数正是「让人来绑」那句报错的绕行道，而 agent 走了：被告知没有绑定之后，它用 glob 搜磁盘，找到一个多 agent 共用的检出，在别人的分支上写下三份文件——当时正在跑的 pilot 计划就是这么被改的（走查缺口 G1）。「找得到」不等于「该在这个会话里用」；评测往哪个题库读写，是人对一台共享机器的决定，不是一个参数。人的面不变：CLI 的 `--repo`、题集 tab、`/eval conditions --repo` 照旧。
 
-配置项 `tools: 'all' | 'none'`（缺省 `all`）随之搬到**伴生行**，本行不再有这个键。没有更细的分组，因为没有可分的：模型工具面一个写工具都不注册。`none`（或没有引用这一行）时模型看不到这五个工具，本包的服务面、CLI 与 `/eval` slash 照常。
+配置项 `tools: 'all' | 'none'`（缺省 `all`）随之搬到**伴生行**，本行不再有这个键。没有更细的分组，因为没有可分的：模型工具面一个写工具都不注册。`none`（或没有引用这一行）时模型看不到这五个工具；本包的服务面与 CLI 照常，`/eval` slash 随伴生行的 preset 授予显隐（`tools: none` 只关模型面，人类面不分层——行在 preset 里，命令就在）。
 
 工具注册走**延迟注入**（`ctx.inject(['tools'], …)`）而不是 apply 期的 `ctx.get('tools')` 探测：探测会和工具注册表自己的挂载顺序赛跑并且输，工具静默地一个都注册不上，还没有任何东西会说（room 与 worktrees 都踩过并修过同一处）。延迟注入在注册表出现时才触发，在没有注册表的组合里永不触发——那样的组合保留 slash、CLI 与服务面，绝不炸启动。`tool:eval` 提示词段同理走 `systemPrompt` 的延迟注入。
 
@@ -439,7 +439,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：
 
-- 五个工具与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，slash、CLI 与服务面照常，不炸启动；`tools: 'none'`（或没有引用这一行）只是让模型看不到这五个工具。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。浏览器半边（I5·T35a）的实验室 tab 按同一行自隐，判据读不到时失败开放；没有 `conversation.view` slot 的组合（TUI、headless）不注册它，服务面与 CLI 照常。矩阵的物化哈希要 mission 面报得出 `dataDir`，报不出就记「无法核验」；导出的两步要 mission 的 Remote 在场（没有 Typert 网关的组合就没有），不在场即整体拒绝——泄题闸绝不在 eval 这边重写一遍。
+- 五个工具与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，CLI 与服务面照常，不炸启动；`tools: 'none'`（或没有引用这一行）只是让模型看不到这五个工具。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。浏览器半边（I5·T35a）的实验室 tab 按同一行自隐，判据读不到时失败开放；没有 `conversation.view` slot 的组合（TUI、headless）不注册它，服务面与 CLI 照常。矩阵的物化哈希要 mission 面报得出 `dataDir`，报不出就记「无法核验」；导出的两步要 mission 的 Remote 在场（没有 Typert 网关的组合就没有），不在场即整体拒绝——泄题闸绝不在 eval 这边重写一遍。
 - 面向早于 T11 的 local-agent：委派 `cwd` 被忽略、子代理继承父会话 cwd，格子因收不到产出文件而如实拒绝（submission-rejected），不会错记；`delegationOf` 与 settled 回读均缺席时 `usage` 与 `model.observed` 记 null，「受试对象一致」在报告里降为不可核验，而不是假定成立。判官同样靠 `cwd` 收 `verdicts.json`，没有 cwd 时该样本按解析失败记，不会误判。
 - `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（I5）。
 - 没有 `ctx.lab` 的组合照常跑宿主路径；只有带 `unit` 段的 plan 会因为缺 lab 而被拒绝，并在拒绝语里点名。

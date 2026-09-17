@@ -9,11 +9,15 @@
  * originSession and every delegation's parent. There is deliberately no
  * run-class model tool. The three READ tools are not registered here either:
  * they live in the companion `@khorsheed/dsh-eval-tool`, which an agent preset
- * composes per session (its own config grants them or not). The `dsh-eval` CLI
+ * composes per session (its own config grants them or not) — and since the
+ * preset-visibility rollout (A3) the `/eval` slash REGISTRATION lives there
+ * too: only a preset naming the companion row shows the command to its
+ * sessions; the handler and definition stay in `./slash.ts` for the companion
+ * to register. The `dsh-eval` CLI
  * is dry-run-only (outside a session there is no live parent agent). The three upstream services
  * (datasets / mission / localAgent) are probed at run time with ctx.get and
  * a missing one is a refusal naming it, never a boot failure — the plugin
- * itself only requires the command registry for the slash face.
+ * itself requires no host service at all.
  *
  * @module @khorsheed/dsh-eval
  */
@@ -23,12 +27,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { EvalRemoteService } from './remote.ts'
 import { EvalService } from './service.ts'
-import { registerEvalSlash } from './slash.ts'
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'eval'
 
-/** Required services: the command registry (the `/eval` slash face). */
-export const inject = ['commands']
+/**
+ * No required services: the `/eval` slash face moved to the companion
+ * `@khorsheed/dsh-eval-tool` row (its registration is what needed the
+ * command registry), the run-job controller attaches through deferred
+ * injection, and the upstream evaluation services are probed per call.
+ */
+export const inject = []
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -40,16 +48,15 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Mount the eval service, its slash command, its Remote face, and the run-job
- * controller. The model tools are deliberately NOT registered here: they moved
- * to the companion `@khorsheed/dsh-eval-tool`, which an agent preset composes
- * per session.
+ * Mount the eval service, its Remote face, and the run-job controller. The
+ * `/eval` slash command and the model tools are deliberately NOT registered
+ * here: both moved to the companion `@khorsheed/dsh-eval-tool`, which an
+ * agent preset composes per session.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
   const service = new EvalService(ctx)
   ctx.provide('dshEval', service)
-  registerEvalSlash(ctx, service)
   // The Typert Remote face (wire namespace `dshEval`): start / watch / stop a
   // run from outside a browser — the CI door. It mounts through the plugin
   // seam like every other Remote, so a composition without the Typert
