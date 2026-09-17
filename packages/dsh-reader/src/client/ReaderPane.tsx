@@ -191,6 +191,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [cardMenu, setCardMenu] = useState<{ entryId: string; top: number; left: number } | null>(null)
   const [tagDraft, setTagDraft] = useState('')
   const [tagInputOpen, setTagInputOpen] = useState(false)
+  /** The entry whose tag panel is open on the wall (and where to anchor it). */
+  const [cardTag, setCardTag] = useState<{ entryId: string; top: number; left: number } | null>(null)
 
   /** Load the source list and parse whatever payloads the host is holding. */
   const load = useCallback(async () => {
@@ -283,6 +285,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   useEffect(() => { void load() }, [load, rev])
 
+  // Any menu/panel dismisses on the next click outside it — the host's own
+  // menus behave that way, and a popover that outlives its context is a trap.
+  useEffect(() => {
+    if (cardMenu === null && cardTag === null && !filterOpen) return undefined
+    const dismiss = (event: MouseEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"]') !== null) return
+      setCardMenu(null)
+      setCardTag(null)
+      setFilterOpen(false)
+    }
+    window.addEventListener('mousedown', dismiss)
+    return () => window.removeEventListener('mousedown', dismiss)
+  }, [cardMenu, cardTag, filterOpen])
+
   useEffect(() => {
     void props.listTags().then(result => {
       if (result.ok) actions.setTags(result.value.tags, result.value.counts)
@@ -339,6 +356,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
 
   const openEntry = openEntryId === null ? undefined : allEntries.find(entry => entry.id === openEntryId)
+  /**
+   * True when what the detail view is showing is only the feed's own summary.
+   *
+   * The parser files a feed's `<description>` as BOTH the card summary and the
+   * body when the feed publishes nothing richer, so a summary-only entry does
+   * render — which is exactly why "no html" was the wrong test for offering the
+   * fetch (measured: the OpenAI alignment feed's summaries are 149-338
+   * characters of `<description>`).
+   */
+  const bodyIsSummaryOnly = articleHtml !== null
+    && openEntry?.summary !== undefined
+    && normalizeForCompare(articleHtml) === normalizeForCompare(openEntry.summary)
   /** The source the strip is currently narrowing to, if any. */
   const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
   /** Sources whose payload could not be read whole — what the notice lists. */
@@ -512,6 +541,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const result = await props.entryTags(entryId)
     if (result.ok) actions.setEntryTags(entryId, result.value.tags.map(tag => tag.id))
   }, [actions, props])
+
+  /** Open the tag panel for one card, without opening the article. */
+  const openCardTag = useCallback((entryId: string) => {
+    void loadEntryTags(entryId)
+    const box = document.querySelector(`[data-reader-entry="${entryId}"]`)?.getBoundingClientRect()
+    setCardTag({ entryId, top: (box?.bottom ?? 120) + 4, left: box?.left ?? 40 })
+  }, [loadEntryTags])
 
   /** Toggle one tag on one entry. */
   const toggleTag = useCallback(async (entryId: string, tagId: string, on: boolean) => {
@@ -722,7 +758,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           {/* Nothing to render yet: offer the fetch, once, on this entry. The
               button is the whole reason this package is not a crawler — the
               reader asks per article instead of us pre-fetching every summary. */}
-          {articleHtml === null && openEntry.link !== undefined && (
+          {openEntry.link !== undefined && (articleHtml === null || bodyIsSummaryOnly || staleBodies[openEntry.id] === true) && (
             <p className={css.incomplete}>
               {t(staleBodies[openEntry.id] === true ? 'detail.bodyStale' : 'detail.summaryOnly')}{' '}
               <button
@@ -739,21 +775,6 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               summary for others (measured: the OpenAI alignment feed is 155 to
               62,044 characters entry by entry). Nothing was truncated there, so
               the cap note would be a lie — this says what actually happened. */}
-          {articleTruncated !== true && openEntry.truncated !== true && openEntry.partial !== true
-            && articleHtml !== null && articleHtml.length > 0
-            && openEntry.summary !== undefined
-            && normalizeForCompare(articleHtml) === normalizeForCompare(openEntry.summary) && (
-            <p className={css.incomplete}>
-              {t('detail.summaryOnly')}{' '}
-              <button
-                type="button"
-                className={css.incompleteLink}
-                onClick={() => { if (openEntry.link !== undefined) props.openExternal(openEntry.link) }}
-              >
-                {t('detail.readOriginal')}
-              </button>
-            </p>
-          )}
           {/* One line, at the end, only when the body is known to be partial. */}
           {(articleTruncated || openEntry.truncated === true) && (
             <p className={css.incomplete}>
@@ -1016,14 +1037,6 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           plus one source), so a reader finds them all in one place instead of
           looking for a strip that scrolled out of view. */}
       <div className={css.tools}>
-        <div className={css.search}>
-          {glyph('search', 12)}
-          <input
-            value={query}
-            placeholder={t('search.placeholder')}
-            onChange={event => actions.setQuery(event.target.value)}
-          />
-        </div>
         <button
           type="button"
           className={`${css.tool} ${activeSource !== null || unreadOnly ? css.toolOn : ''}`}
@@ -1032,6 +1045,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         >
           {glyph('funnel', 15)}
         </button>
+        <div className={css.search}>
+          {glyph('search', 12)}
+          <input
+            value={query}
+            placeholder={t('search.placeholder')}
+            onChange={event => actions.setQuery(event.target.value)}
+          />
+        </div>
         <button
           type="button"
           className={`${css.tool} ${sort === 'newest' ? '' : css.toolOn}`}
@@ -1156,9 +1177,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               <div
                 key={row.entry.id}
                 className={css.card}
+                data-reader-entry={row.entry.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => { void open(row) }}
+                onClick={() => { if (cardMenu !== null || cardTag !== null) { setCardMenu(null); setCardTag(null); return } void open(row) }}
                 onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') void open(row) }}
                 onContextMenu={event => {
                   // The host's own row-menu gesture: right-click opens the
@@ -1184,21 +1206,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 <span className={css.tags}>
                   {(row.entry.tags ?? []).slice(0, 2).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
                   {row.entry.author !== undefined && <span className={css.author}>{row.entry.author}</span>}
-                </span>
-                {row.entry.link !== undefined && (
-                  <button
-                    type="button"
-                    className={css.cardMenuButton}
-                    title={t('action.more')}
-                    onClick={event => {
-                      event.stopPropagation()
-                      const box = event.currentTarget.getBoundingClientRect()
-                      setCardMenu({ entryId: row.entry.id, top: box.bottom + 4, left: box.left })
-                    }}
+                  {(entryTagIds[row.entry.id] ?? []).map(tagId => (
+                    <span key={tagId} className={css.tagOwned}>
+                      {tags.find(tag => tag.id === tagId)?.name ?? tagId}
+                    </span>
+                  ))}
+                  {/* The reader's own tag affordance, in the row where the
+                      entry's tags already live — not buried in the detail view. */}
+                  <span
+                    className={css.tagOnCard}
+                    role="button"
+                    tabIndex={0}
+                    title={t('action.addTag')}
+                    onClick={event => { event.stopPropagation(); setCardMenu(null); openCardTag(row.entry.id) }}
+                    onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); openCardTag(row.entry.id) } }}
                   >
-                    {glyph('chevron', 12)}
-                  </button>
-                )}
+                    <IconPlusOutline16 size={11} />
+                  </span>
+                </span>
                 <span className={css.chevron}>{glyph('chevron', 13)}</span>
               </div>
             ))}
@@ -1229,6 +1254,39 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </div>
         )
       })()}
+      {cardTag !== null && (
+        <div className={css.cardTagPanel} style={{ top: cardTag.top, left: cardTag.left }}>
+          <div className={css.filterSection}>{t('tag.title')}</div>
+          {tags.map(tag => {
+            const on = (entryTagIds[cardTag.entryId] ?? []).includes(tag.id)
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                className={css.filterRow}
+                onClick={() => { void toggleTag(cardTag.entryId, tag.id, !on) }}
+              >
+                <span className={css.filterCheck}>{on ? '✓' : ''}</span>
+                <span className={css.filterLabel}>{tag.name}</span>
+              </button>
+            )
+          })}
+          <input
+            autoFocus
+            className={css.tagInput}
+            list="reader-tag-vocabulary"
+            placeholder={t('tag.placeholder')}
+            onChange={event => { setTagDraft(event.target.value) }}
+            onKeyDown={event => {
+              if (event.key !== 'Enter' || tagDraft.trim().length === 0) return
+              const name = tagDraft.trim()
+              const existing = tags.find(tag => tag.name.toLowerCase() === name.toLowerCase())
+              if (existing === undefined) void createAndTag(cardTag.entryId, name)
+              else { void toggleTag(cardTag.entryId, existing.id, true); setTagDraft('') }
+            }}
+          />
+        </div>
+      )}
       {cardMenu !== null && (() => {
         const entry = allEntries.find(item => item.id === cardMenu.entryId)
         if (entry === undefined) return null
@@ -1244,7 +1302,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             )}
             <button
               type="button"
-              onClick={() => { setCardMenu(null); actions.openEntry(entry.id, entry.sourceId); actions.setView('detail') }}
+              onClick={() => { setCardMenu(null); openCardTag(entry.id) }}
             >
               {t('action.addTag')}
             </button>

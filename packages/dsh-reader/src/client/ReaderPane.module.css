@@ -515,11 +515,14 @@
 }
 
 .articleZh p {
-  max-width: 40em;
+  /* A reading measure, but never narrower than the pane: on a wide sidebar the
+     old hard 40em left a third of the column empty, which reads as a layout
+     bug rather than as typography. */
+  max-width: min(100%, 46em);
 }
 
 .articleEn p {
-  max-width: 62ch;
+  max-width: min(100%, 72ch);
 }
 
 .article h1,
@@ -1323,10 +1326,13 @@
 }
 
 .tagAdd {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 22px;
   height: 22px;
+  padding: 0;
+  line-height: 0;
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: transparent;
@@ -1407,4 +1413,60 @@
 .cardMenuButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+/* The reader's tags on a card, told apart from the feed's own categories. */
+.tagOwned {
+  padding: 1px 7px;
+  border: 1px solid var(--dsw-static-deepseek-500);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 10.5px;
+}
+
+/* The tag button lives in the tags row (where the entry's own tags are), and
+   only surfaces on hover or focus so a wall of cards stays quiet. */
+.tagOnCard {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 0;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.card:hover .tagOnCard,
+.tagOnCard:focus-visible {
+  opacity: 1;
+}
+
+.tagOnCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The card's tag panel: a checklist of the vocabulary plus the one input. */
+.cardTagPanel {
+  position: fixed;
+  z-index: 40;
+  width: 210px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.cardTagPanel .tagInput {
+  width: 100%;
+  margin-top: 4px;
+  border-radius: 7px;
 }
