@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/client/contract.ts",
+    "src/client/definition.tsx",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/parse-rss.ts",
+    "src/client/extract-article.ts",
+    "src/client/quote.ts",
+    "src/client/store.ts",
+    "src/client/ReaderCard.tsx",
+    "src/client/ReaderDetail.tsx",
+    "src/client/ReaderPane.tsx",
+    "src/client/ReaderPane.module.css"
+  ]
+}
