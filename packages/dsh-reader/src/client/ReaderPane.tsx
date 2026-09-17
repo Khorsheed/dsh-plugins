@@ -46,6 +46,7 @@ import {
   flattenEntries,
   hueForSource,
   selectRows,
+  sourceQuery,
   tileForSource,
   type ReaderRow,
   type SourcePresentation,
@@ -199,9 +200,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // extracted here so opening it is instant (D7).
         if (source.kind === 'rss') {
           const result = parseFeed(body.raw, source.id)
+          const fetchedAt = source.fetchedAt
           actions.setParsed(result.ok
-            ? { id: source.id, entries: result.feed.entries.map(entry => cut ? { ...entry, truncated: true } : entry) }
-            : { id: source.id, entries: [], error: result.error })
+            ? {
+              id: source.id,
+              entries: result.feed.entries.map(entry => cut ? { ...entry, truncated: true } : entry),
+              ...(result.feed.incomplete === true ? { incomplete: true } : {}),
+              ...(fetchedAt === undefined ? {} : { fetchedAt }),
+            }
+            : { id: source.id, entries: [], error: result.error, ...(fetchedAt === undefined ? {} : { fetchedAt }) })
         } else {
           const extracted = extractArticle(body.raw, source.url)
           actions.setParsed({
@@ -273,6 +280,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read])
 
   const openEntry = openEntryId === null ? undefined : allEntries.find(entry => entry.id === openEntryId)
+  /** The source the strip is currently narrowing to, if any. */
+  const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
+  /** Sources whose payload could not be read whole — what the notice lists. */
+  const brokenSources = sources.filter(source => parsed[source.id]?.incomplete === true || parsed[source.id]?.error !== undefined)
 
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
@@ -792,62 +803,82 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         {!loading && error === null && sources.length === 0 && (
           // The empty state is the members tab's trailing dashed card, alone:
           // adding is the one thing to do here, so the card IS the action.
-          <div className={css.sourceGrid}>
-            <button
-              type="button"
-              className={css.emptyCard}
-              onClick={() => { setAddOpen(true); setVerdict(null) }}
-            >
-              <span className={css.emptyTitle}>{t('state.emptyTitle')}</span>
-              <span className={css.emptyBody}>{t('state.emptyBody')}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            className={css.emptyCard}
+            onClick={() => { setAddOpen(true); setVerdict(null) }}
+          >
+            <span className={css.emptyTitle}>{t('state.emptyTitle')}</span>
+            <span className={css.emptyBody}>{t('state.emptyBody')}</span>
+          </button>
         )}
         {!loading && sources.length > 0 && (
-          <div className={css.sourceGrid}>
+          // The wall is CONTENT first: the sources are a filter strip, not a
+          // destination. They answer "which of these did I keep", and picking
+          // one narrows the cards below — management lives behind the settings
+          // button, because it is the rarest thing a reader comes here to do.
+          <div className={css.strip}>
+            <button
+              type="button"
+              className={activeSource === null ? css.sourceChipOn : css.sourceChip}
+              onClick={() => actions.setQuery('')}
+            >
+              {t('filter.all')}
+              <span className={css.chipCount}>{allEntries.length}</span>
+            </button>
             {sources.map(source => {
               const group = parsed[source.id]
-              const failed = source.status === 'error'
+              const broken = group?.error !== undefined || group?.incomplete === true
               return (
                 <button
                   key={source.id}
                   type="button"
-                  className={css.sourceCard}
-                  // Clicking a source card searches for it: the cheap way to
-                  // answer "what did this source bring me".
-                  onClick={() => actions.setQuery(query === source.label ? '' : source.label)}
+                  className={activeSource === source.id ? css.sourceChipOn : css.sourceChip}
+                  title={source.url}
+                  onClick={() => actions.setQuery(activeSource === source.id ? '' : sourceQuery(source.id))}
                 >
-                  <span className={css.tile} style={{ background: hueForSource(source.label) }}>
+                  <span className={css.chipTile} style={{ background: hueForSource(source.label) }}>
                     {tileForSource(source.label)}
                   </span>
-                  <span className={css.sourceInfo}>
-                    {/* The prefix is not decoration: without it a source card
-                        and an entry card from that source share an accessible
-                        name ("Hacker News"), which is ambiguous to a screen
-                        reader and to every query in the tests. */}
-                    <span className={css.sourceName}>{t('sources.cardHint')} · {source.label}</span>
-                    <span className={css.sourceMeta}>
-                      {source.kind === 'rss'
-                        ? t('sources.items', { count: group?.entries.length ?? 0 })
-                        : t('tab.subtitle')}
-                      {failed && <> {' · '}<span className={css.sourceFailed}>{t('sources.failed')}</span></>}
-                    </span>
-                  </span>
+                  {source.label}
+                  {broken
+                    ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
+                    : <span className={css.chipCount}>{group?.entries.length ?? 0}</span>}
                 </button>
               )
             })}
-            <button
-              type="button"
-              className={css.addCard}
-              onClick={() => { setAddOpen(true); setVerdict(null) }}
-            >
-              <IconPlusOutline16 size={15} />
-              <span>{t('action.add')}</span>
+            <button type="button" className={css.chipAdd} title={t('action.add')} onClick={() => { setAddOpen(true); setVerdict(null) }}>
+              <IconPlusOutline16 size={14} />
             </button>
           </div>
         )}
+        {!loading && sources.length > 0 && brokenSources.length > 0 && (
+          // "Why is this list short?" answered where the reader is looking,
+          // once per affected source, with the way to the full text.
+          <div className={css.notice}>
+            {brokenSources.map(source => (
+              <div key={source.id} className={css.noticeRow}>
+                <span className={css.noticeText}>
+                  {t('state.incomplete')} · {source.label}
+                  {parsed[source.id]?.incomplete === true && <> — {t('state.incompleteReason')}</>}
+                </span>
+                <button
+                  type="button"
+                  className={css.noticeLink}
+                  onClick={() => props.openExternal(source.url)}
+                >
+                  {t('detail.readOriginal')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {!loading && sources.length > 0 && rows.length === 0 && (
-          <div className={css.state}>{t('state.noMatch', { query })}</div>
+          <div className={css.state}>
+            {/* An empty query is not a failed search. Saying "nothing matches
+                "" " told the reader nothing while a whole feed was unreadable. */}
+            {query.trim().length === 0 ? t('state.emptyWall') : t('state.noMatch', { query })}
+          </div>
         )}
         {!loading && rows.length > 0 && (
           <div className={css.list}>

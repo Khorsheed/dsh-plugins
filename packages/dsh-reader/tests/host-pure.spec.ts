@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { classifyPayload, normalizeUrl } from '../src/service.ts'
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ReaderStore, ReaderStoreError, boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
@@ -249,5 +249,24 @@ describe('the native state store', () => {
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
+  })
+})
+
+
+describe('the tool row cannot overlap itself', () => {
+  it('pins the flex constraints that the search box violated', () => {
+    // jsdom has no layout engine, so this asserts the CONSTRAINT instead of a
+    // measured rectangle — which is exactly the level the bug lived at. Without
+    // `min-width: 0` on the flexed search box, its input's intrinsic width made
+    // it refuse to shrink and the segmented control was pushed under it,
+    // covering the 全部 button (observed on the acceptance instance).
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    const search = /\.search\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(search).toMatch(/min-width:\s*0/)
+    expect(search).toMatch(/flex:\s*1 1 auto/)
+    const input = /\.search input\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(input).toMatch(/min-width:\s*0/)
+    const segmented = /\.segmented\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(segmented).toMatch(/flex:\s*0 0 auto/)
   })
 })

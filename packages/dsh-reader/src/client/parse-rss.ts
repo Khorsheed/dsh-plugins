@@ -30,6 +30,16 @@ export interface ParsedFeed {
   readonly title?: string
   /** Feed-declared icon (the publisher's own asset), when present. */
   readonly icon?: string
+  /**
+   * True when the payload was cut off and this feed is a salvage of it: the
+   * entries below are real, but they are not all of them.
+   */
+  readonly incomplete?: boolean
+  /**
+   * Why the payload is incomplete, in the parser's own words — the host seam's
+   * size cap, or a document that simply stops mid-tag.
+   */
+  readonly incompleteReason?: string
   readonly entries: readonly ReaderEntry[]
 }
 
@@ -70,9 +80,19 @@ export function parseFeed(raw: string, sourceId: string): ParseFeedResult {
   }
 
   // A `parsererror` element is how DOMParser reports every malformed document —
-  // including the one a reader meets most often, a payload cut off mid-tag.
+  // and the one a reader meets most often is not exotic at all: the host seam
+  // caps a payload at ~100,000 characters, and a cap that lands mid-tag makes
+  // the WHOLE document malformed. (Measured on the acceptance instance: a
+  // 646,905-character feed arrived as exactly 100,000 characters with one
+  // complete `<item>` and one cut in half — every entry was lost to one missing
+  // `</rss>`.)
+  //
+  // So a malformed document is not the end: what closed before the cut is
+  // still perfectly good XML, and it is recovered below.
   const parseError = doc.querySelector('parsererror')
   if (parseError !== null) {
+    const salvage = salvageDocument(trimmed, sourceId, `malformed XML: ${truncate(collapse(parseError.textContent ?? ''), 160)}`)
+    if (salvage !== undefined) return salvage
     return { ok: false, error: `malformed XML: ${truncate(collapse(parseError.textContent ?? ''), 160)}` }
   }
 
@@ -399,4 +419,234 @@ function errorMessage(error: unknown): string {
 /** Build an object with one optional key, or nothing when the value is absent. */
 function present<K extends string, V>(key: K, value: V | undefined): Record<K, V> | Record<string, never> {
   return value === undefined ? {} : { [key]: value } as Record<K, V>
+}
+
+/* --------------------------------------------------------------- salvage */
+
+/**
+ * Recover what the payload did manage to say, instead of reporting nothing.
+ *
+ * Complete `<item>` / `<entry>` blocks are re-parsed as fragments (they are
+ * valid XML on their own). The block the cut landed inside is repaired on a
+ * best-effort basis and returned as a PARTIAL entry, which is what makes the
+ * detail view's "content shown in part" note honest rather than decorative: the
+ * text exists, it simply stops early, and the note plus the original-page
+ * button are how the reader gets the rest.
+ *
+ * @param raw - the malformed payload.
+ * @param sourceId - owning source id.
+ * @param reason - the parser's complaint, carried onto the result.
+ * @returns the salvaged feed, or `undefined` when not even one entry was found.
+ */
+function salvageDocument(raw: string, sourceId: string, reason: string): ParseFeedResult | undefined {
+  const entries: ReaderEntry[] = []
+  const feedTitle = firstMatch(raw, /<title[^>]*>([\s\S]{0,300}?)<\/title>/i)
+  // The document's own root attributes carry the namespace declarations, and a
+  // fragment is only parseable with them: `<content:encoded>` inside the item
+  // makes the WHOLE fragment malformed XML when `xmlns:content` is missing —
+  // which is exactly how the first salvage attempt lost a complete 42 KB item.
+  const rootAttrs = /<rss[^>]*>/i.exec(raw)?.[0]?.replace(/^<rss/i, '').replace(/>$/, '')
+    ?? /<feed[^>]*>/i.exec(raw)?.[0]?.replace(/^<feed/i, '').replace(/>$/, '')
+    ?? ''
+
+  for (const tag of ['item', 'entry'] as const) {
+    // Complete blocks, in document order.
+    const complete = new RegExp(`<${tag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${tag}>`, 'gi')
+    const partial = new RegExp(`<${tag}(?:\\s[^>]*)?>[\\s\\S]*$`, 'i')
+    // Everything a complete block covers, so the trailing scan only looks at
+    // what is left after the last one.
+    let cursor = 0
+    for (const match of raw.matchAll(complete)) {
+      const entry = readEntryFragment(match[0], sourceId, false, rootAttrs)
+      if (entry !== undefined) entries.push(entry)
+      cursor = (match.index ?? 0) + match[0].length
+    }
+    const rest = raw.slice(cursor)
+    const trailing = partial.exec(rest)
+    if (trailing !== null) {
+      const entry = readEntryFragment(trailing[0], sourceId, true, rootAttrs)
+      if (entry !== undefined) entries.push(entry)
+    }
+    if (entries.length > 0) break
+  }
+
+  if (entries.length === 0) return undefined
+  return {
+    ok: true,
+    feed: {
+      ...present('title', feedTitle),
+      incomplete: true,
+      incompleteReason: reason,
+      entries,
+    },
+  }
+}
+
+/**
+ * Parse one entry fragment.
+ *
+ * A complete block is parsed as-is. A partial one is repaired first: every tag
+ * still open at the cut is closed, so the text before the cut stays readable
+ * instead of vanishing with the malformed markup.
+ *
+ * @param xml - the block's markup (complete or partial).
+ * @param sourceId - owning source id.
+ * @param partial - true when the block was cut off.
+ * @param rootAttrs - the document root's attributes (its namespace declarations).
+ * @returns the entry, or `undefined` when it carries no title and no link.
+ */
+function readEntryFragment(xml: string, sourceId: string, partial: boolean, rootAttrs: string): ReaderEntry | undefined {
+  // A complete block needs no repair. A cut-off one gets its still-open tags
+  // closed so the half before the cut survives as text.
+  const candidates = partial ? [repairMarkup(xml), xml] : [xml]
+  for (const candidate of candidates) {
+    const wrapped = `<root${rootAttrs}>${candidate}</root>`
+    let doc: Document
+    try {
+      doc = new DOMParser().parseFromString(wrapped, 'application/xml')
+    } catch {
+      continue
+    }
+    if (doc.querySelector('parsererror') !== null) continue
+    const element = doc.documentElement.firstElementChild
+    if (element === null) continue
+    const entry = readEntry(element, sourceId)
+    if (entry === undefined) continue
+    if (!partial) return entry
+    return { ...entry, partial: true }
+  }
+  if (!partial) return undefined
+  // The repair did not produce parseable XML (closing every open tag is not
+  // always enough). The fragment nevertheless states its own fields, and they
+  // are readable straight out of the markup — which is what keeps a cut-off
+  // entry openable instead of dropping it.
+  return readFragmentFields(xml, sourceId)
+}
+
+/**
+ * Read a cut-off fragment's fields out of its raw markup.
+ *
+ * Deliberately shallow: each field is the fragment's OWN element, matched
+ * without crossing `>` or `<`, and the body is the item-level description field
+ * (or the CDATA block it wraps). Nested markup inside the body cannot fake a
+ * match, because every pattern here stops at the next angle bracket.
+ *
+ * @param xml - the cut-off fragment.
+ * @param sourceId - owning source id.
+ * @returns the partial entry, or `undefined` when it names neither a title nor a link.
+ */
+function readFragmentFields(xml: string, sourceId: string): ReaderEntry | undefined {
+  const title = elementTextRaw(xml, 'title')
+  const link = elementTextRaw(xml, 'link') ?? /<link[^>]*href=["']([^"']+)["']/i.exec(xml)?.[1]
+  const displayTitle = title ?? link
+  if (displayTitle === undefined) return undefined
+
+  const summaryText = stripTags(decodeEntities(elementTextRaw(xml, 'description') ?? ''))
+  const body = salvageBody(xml)
+  return {
+    id: stableEntryId({ title: displayTitle, ...(link !== undefined ? { link } : {}) }),
+    sourceId,
+    title: displayTitle,
+    ...present('link', link),
+    ...present('author', elementTextRaw(xml, 'creator') ?? elementTextRaw(xml, 'author')),
+    ...present('publishedAt', readDateRaw(xml)),
+    // A short item description is a fine card excerpt; a long one is body text
+    // that happens to sit in the description field, and belongs in the detail
+    // view only.
+    ...(summaryText.length > 0 && summaryText.length <= 320 ? { summary: summaryText } : {}),
+    ...(body !== undefined ? { contentHtml: body } : {}),
+    partial: true,
+  }
+}
+
+/** One element's own text, read without crossing an angle bracket. */
+function elementTextRaw(xml: string, localName: string): string | undefined {
+  const match = new RegExp(`<${localName}[^>]*>([^<]*)<`, 'i').exec(xml)
+  const value = decodeEntities(match?.[1] ?? '').trim()
+  return value.length > 0 ? value : undefined
+}
+
+/** A fragment's date field, in whichever dialect it declares one. */
+function readDateRaw(xml: string): string | undefined {
+  for (const name of DATE_TAGS) {
+    const raw = elementTextRaw(xml, name)
+    if (raw === undefined) continue
+    const parsed = new Date(raw)
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString()
+  }
+  return undefined
+}
+
+/**
+ * The readable body a cut-off fragment still carries.
+ *
+ * Two shapes cover what publishers actually ship: markup that made it through
+ * the cut (normalized as usual), and a CDATA/CDATA-like block whose closing
+ * `]]>` survived even though the element that wraps it did not — the common
+ * shape for a feed whose item body is one long `<description><![CDATA[…]`.
+ *
+ * @param xml - the fragment.
+ * @returns normalized markup, or `undefined` when nothing readable is left.
+ */
+function salvageBody(xml: string): string | undefined {
+  // Every `<description` in the fragment, as prefixes of it. The item-level
+  // field is the EARLIEST one and therefore the LONGEST prefix — the cue that
+  // separates it from markup nested inside the body, which is full of its own
+  // `<figure><figcaption><description>`-shaped content.
+  const starts = [...xml.matchAll(/<description[^>]*>/gi)].map(match => match.index ?? 0)
+  const source = starts.length === 0 ? xml : xml.slice(Math.min(...starts))
+  const cdata = /<!\[CDATA\[([\s\S]*?)(?:\]\]>|$)/.exec(source)?.[1]
+  if (cdata !== undefined && cdata.trim().length > 0) {
+    const normalized = normalizeRichText(cdata)
+    if (normalized.length > 0) return normalized
+  }
+  const markup = /<(?:p|div|article|section)\b[\s\S]*$/i.exec(source)?.[0]
+  if (markup === undefined) return undefined
+  const repaired = repairMarkup(markup)
+  const normalized = normalizeRichText(repaired)
+  return normalized.length > 0 ? normalized : undefined
+}
+
+/**
+ * Close the tags a truncated fragment left open, so its readable half survives.
+ *
+ * Deliberately conservative: it only appends closers, never rewrites or drops
+ * text. If the result still does not parse, the caller falls back to reading
+ * the fragment's title and link out of the raw markup.
+ *
+ * @param xml - the fragment.
+ * @returns the fragment with closers appended.
+ */
+function repairMarkup(xml: string): string {
+  // 1. Drop a dangling `<` or a half-written tag at the very end.
+  let repaired = xml.replace(/<[^>]*$/, '')
+  // 2. Close an unterminated CDATA section — the common case for a feed whose
+  //    item body is one long CDATA block.
+  const cdataOpens = (repaired.match(/<!\[CDATA\[/g) ?? []).length
+  const cdataCloses = (repaired.match(/\]\]>/g) ?? []).length
+  for (let index = 0; index < cdataOpens - cdataCloses; index++) repaired += ']]>'
+  // 3. Trim back to the last `>`, so the scan below sees only whole tags.
+  const lastGt = repaired.lastIndexOf('>')
+  if (lastGt < 0) return repaired
+  repaired = repaired.slice(0, lastGt + 1)
+  // 4. Close every still-open element, innermost first.
+  const open: string[] = []
+  for (const match of repaired.matchAll(/<(\/?)([A-Za-z_][\w.:-]*)(?:\s[^>]*?)?(\/?)>/g)) {
+    const [, closing, name, selfClosing] = match
+    if (selfClosing === '/' || name === undefined || name.startsWith('!') || name.startsWith('?')) continue
+    if (closing === '/') {
+      const at = open.lastIndexOf(name)
+      if (at >= 0) open.splice(at, 1)
+    } else {
+      open.push(name)
+    }
+  }
+  return repaired + open.reverse().map(name => `</${name}>`).join('')
+}
+
+/** The first capture of a pattern, or `undefined`. */
+function firstMatch(text: string, pattern: RegExp): string | undefined {
+  const match = pattern.exec(text)
+  const value = match?.[1]?.trim()
+  return value !== undefined && value.length > 0 ? value : undefined
 }

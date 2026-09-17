@@ -71,6 +71,8 @@
 }
 
 .search {
+  min-width: 0;
+  flex: 1 1 auto;
   position: relative;
   flex: 1;
   min-width: 0;
@@ -86,6 +88,8 @@
 }
 
 .search input {
+  min-width: 0;
+  width: 100%;
   width: 100%;
   height: 26px;
   padding: 0 8px 0 26px;
@@ -1042,6 +1046,7 @@
 /* The all/today pair stays visible as labelled segments, because a filter the
    reader cannot see is indistinguishable from an empty list. */
 .segmented {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1085,4 +1090,137 @@
 .tool:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* ------------------------------------------------------- the source strip */
+
+/* The sources as a FILTER, not a destination: one scrolling row above the
+   cards. Management lives behind the settings button; this answers "which of
+   these did I keep" without pushing the content off the first screen. */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.sourceChip,
+.sourceChipOn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  max-width: 190px;
+  padding: 4px 9px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.sourceChip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.sourceChipOn {
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipTile {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.chipCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+}
+
+.chipBroken {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dsw-static-amber-500, #d9a441);
+  color: #1f2329;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.chipAdd {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.chipAdd:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The incompleteness notice: where the reader is looking, with the way out. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.noticeRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.noticeText {
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.noticeLink {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-static-deepseek-500);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
 }

@@ -22,6 +22,8 @@ Status: implemented
 **浏览器半**（`src/client/`）：一个页面型侧栏 tab（自铸 kind `reader`，tab id `@khorsheed/dsh-reader`），按官方两阶段注册——`ctx.sidebarRightTabs.register(definition)` 注册类型，`ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({name, key, locale, store, inject}, ReaderPane))` 注册面板体——两者都挂在 `ctx.effect` 上。
 
 - **解析放在浏览器，因为宿主没有解析器**：那边 `globalThis.DOMParser === false`，所以 `parse-rss.ts`（按 `localName` 处理 RSS 2.0 / Atom、真正识别 `parsererror` 拒绝、处理 CDATA 与实体解码）和 `extract-article.ts`（readability 式块评分，语言相关的最小长度——拉丁 40 字、CJK 18 字——加白名单归一化）都在客户端。
+- **被截断的 payload 是抢救，不是丢弃** —— 这是本包最严重的缺陷，在验收实例上暴露并当场修掉。出网缝按字符数截断，截在标签中间会让整份文档变成坏 XML，而解析器把它报成"没东西可展示"：一条 646 KB 的 feed 到手 100,000 字符，**产出 0 条**。现在会（a）把每个完整闭合的 `<item>`/`<entry>` 片段用**文档根上的命名空间声明**重新包装后再解析 —— 没有这些声明，带 `content:encoded` 的片段自己也是坏 XML，这正是"一条完整的 42 KB 条目也一起丢掉"的原因；（b）对被截断的那块做尽力修复；（c）修复仍无法产出 XML 时，直接从标记里读出片段自己的 title/link/date/description。被截断的条目标为 `partial`，已到达的正文照常渲染，墙上说明原因并给原文链接。同一份 payload 今天产出 **2 张卡**。
+- **墙是内容优先，订阅源是筛选器**（评审后纠偏）：条目卡片占第一屏；订阅源是它上方一行可滚动的筛选片，每片就是一个本地查询（`#<sourceId>`），搜索框也会显示并清掉它。上一版把来源卡片网格放在最前，用最宝贵的空间回答了最少被问的问题（管理）。
 - **对读者来说这个面叫「灵感空间」**（包名、tab kind、Remote namespace 都还是 `reader` —— 稳定标识；只有文案动了）。墙上按成员 tab 的卡片习惯做来源卡片网格，末尾是虚线新增卡片；空态就是那张虚线卡片本身、单独一张。
 - **新增是弹窗，不是页面**：成员 tab 邀请弹窗那套（透明遮罩 + 居中卡片，Esc / 点遮罩关闭），表头、空态卡片、墙尾虚线卡片三处都能打开。瞬时动作不该把它被唤起的墙替换掉。
 - **订阅管理页接管所有关于「源」的事**：单源条目数、上次抓取、暂停/恢复、删除、单源刷新，以及每日刷新时间。「为什么我什么都没看到」和「别再刷这个了」都是关于源的问题，所以它们从墙上搬走了。

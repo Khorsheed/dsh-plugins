@@ -31,6 +31,13 @@ export interface ReaderParsedSource {
   readonly entries: readonly ReaderEntry[]
   /** Why parsing produced nothing, when it did. */
   readonly error?: string
+  /**
+   * True when the payload was cut off by the host's fetch cap, so the entries
+   * here are a salvage rather than the whole feed.
+   */
+  readonly incomplete?: boolean
+  /** When the source was last fetched, for the "N 条 · 刷出于 …" line. */
+  readonly fetchedAt?: string
 }
 
 /** The pane's state. */

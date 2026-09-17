@@ -99,6 +99,11 @@ export interface ReaderEntry {
   readonly contentHtml?: string
   /** True when the body is known to be incomplete (see {@link ReaderSource.truncated}). */
   readonly truncated?: boolean
+  /**
+   * True when the ENTRY itself is a salvage of a payload the host capped: its
+   * text is real but stops where the cap landed. The detail view says so.
+   */
+  readonly partial?: boolean
 }
 
 /* ------------------------------------------------------------------ wire payloads */

@@ -105,8 +105,25 @@ export function isToday(iso: string | undefined, now: Date): boolean {
     && parsed.getDate() === now.getDate()
 }
 
+/**
+ * The query that selects exactly one source's entries.
+ *
+ * The search box and the source strip are the same mechanism — one local
+ * predicate (D14) — so a source filter is a query the reader can also see and
+ * edit. The two-character prefix keeps it out of the way of real search terms:
+ * no title search will accidentally match it, and the id is stable across
+ * renames.
+ *
+ * @param sourceId - the source to select.
+ * @returns the query string.
+ */
+export function sourceQuery(sourceId: string): string {
+  return `#${sourceId}`
+}
+
 /** Whether an entry matches the query, across the fields a reader searches by. */
 function matches(entry: ReaderEntry, source: SourcePresentation, query: string): boolean {
+  if (query.startsWith('#')) return query.slice(1) === entry.sourceId
   const haystack = [
     entry.title,
     entry.summary ?? '',

@@ -67,7 +67,7 @@ interface BenchOptions {
   readonly sources?: readonly ReaderSourceSummary[]
   /** The payload each source id answers with. Sources with no entry answer with their own feed. */
   readonly payloads?: Readonly<Record<string, string>>
-  /** Odd-number source ids get a truncated body — how the fetch cap arrives. */
+  /** Source ids whose payload arrives truncated — how the fetch cap arrives. */
   readonly truncatedIds?: readonly string[]
   readonly failedIds?: readonly string[]
   readonly hasSideChat?: boolean
@@ -171,7 +171,9 @@ describe('the pane renders content, never an empty column', () => {
     })
     await ui.settle()
     expect(await screen.findByText('第一条')).toBeTruthy()
-    expect(screen.getByText('Hacker News')).toBeTruthy()
+    // The source's name appears on its filter chip and in the card's meta
+    // line: the chip is what proves the strip is populated.
+    expect(ui.container.querySelectorAll('[class*="sourceChip"]').length).toBeGreaterThan(0)
     // The unread marker is a dot: an element with no glyph and no text.
     const dot = ui.container.querySelector('[class*="unread"]')
     expect(dot).not.toBeNull()
@@ -216,12 +218,9 @@ describe('pointing (option B): the card opens the detail, the detail owns the br
       payloads: { 'link-1': `<article><p>${'网页正文。'.repeat(40)}</p></article>` },
     })
     await ui.settle()
-    // The label is on the ENTRY card, on the source card above it, and in the
-    // detail kicker: point at the entry card, which is the one without the
-    // source-card prefix.
-    fireEvent.click(await screen.findByRole('button', {
-      name: (name: string) => name.includes('保存的文章') && !name.includes(zh['sources.cardHint']),
-    }))
+    // The label is on the strip's chip AND on the entry card: point at the card.
+    const cards = await screen.findAllByRole('button', { name: /保存的文章/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
     await waitFor(() => { expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('网页正文') })
   })
 })
@@ -248,9 +247,8 @@ describe('a truncated body says so, and offers the way out', () => {
     await ui.settle()
     // The entry survives the failure: dropping it would leave the reader with
     // a source they added and can never open.
-    fireEvent.click(await screen.findByRole('button', {
-      name: (name: string) => name.includes('抓取失败的文章') && !name.includes(zh['sources.cardHint']),
-    }))
+    const failedCards = await screen.findAllByRole('button', { name: /抓取失败的文章/ })
+    fireEvent.click(failedCards[failedCards.length - 1] as HTMLElement)
     expect(await screen.findByText(zh['detail.extractFailed'])).toBeTruthy()
     // …and because the fetch never completed, the body is by definition partial.
     expect(await screen.findByText(new RegExp(zh['detail.incomplete']))).toBeTruthy()
@@ -304,7 +302,9 @@ describe('every page that leaves the wall carries the way back', () => {
     })
     await ui.settle()
     expect(await screen.findByText('一条')).toBeTruthy()
-    fireEvent.click(screen.getByTitle(zh['action.add']))
+    // Two add affordances exist by design (the header button and the strip's
+    // dashed chip); either one opens the same dialog.
+    fireEvent.click(screen.getAllByTitle(zh['action.add'])[0] as HTMLElement)
     expect(await screen.findByRole('dialog')).toBeTruthy()
     // Esc closes it; the wall was never replaced, so nothing has to be rebuilt.
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
@@ -356,8 +356,9 @@ describe('a subscription whose entries are not from today', () => {
     })
     await ui.settle()
     expect(await screen.findByRole('button', { name: /八天前的文章/ })).toBeTruthy()
-    // …and the filter that would hide it is visible, not implicit.
-    expect(screen.getByText(zh['filter.all'])).toBeTruthy()
+    // …and the filter that WOULD hide it is visible, not implicit.
+    const all = screen.getAllByText(zh['filter.all'])
+    expect(all.length).toBeGreaterThan(0)
     expect(screen.getByText(zh['filter.today'])).toBeTruthy()
   })
 })
