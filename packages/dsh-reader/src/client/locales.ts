@@ -35,7 +35,7 @@ export type ReaderKey =
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
   | 'sources.name' | 'sources.url' | 'sources.cache' | 'sources.cacheHelp'
-  | 'sources.cacheHours' | 'sources.cacheForever' | 'action.pause' | 'action.resume'
+  | 'sources.cacheHours' | 'sources.cacheForever' | 'sources.blocked' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
   | 'detail.summaryOnly'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
@@ -123,6 +123,7 @@ export const en = {
   'sources.cacheHelp': 'A fetched article is served from the cache until this deadline; after that, opening it offers the fetch again. 0 means keep it until the storage budget evicts it.',
   'sources.cacheHours': '{count} hours',
   'sources.cacheForever': 'Until evicted',
+  'sources.blocked': 'This publisher refuses automatic fetches (its page answers with a bot challenge), so only the feed’s own text can be shown.',
   'sources.url': 'Feed address',
 
   'detail.incomplete': 'Limited length, content shown in part',
@@ -230,6 +231,7 @@ export const zh = {
   'sources.cacheHelp': '抓到的正文在这个期限前直接读缓存；过期后再打开会问你（这里问一次即可，页面上的按钮同样会提示）。0 = 一直留到存储预算淘汰它。',
   'sources.cacheHours': '{count} 小时',
   'sources.cacheForever': '留到被淘汰',
+  'sources.blocked': '这个站点拒绝自动抓取（原文地址对人以外的请求返回验证页），所以只能展示订阅源自己发布的内容。',
   'sources.url': '订阅地址',
 
   'detail.incomplete': '受限篇幅，内容未完整呈现',

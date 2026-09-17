@@ -705,7 +705,11 @@ export class ReaderService {
       try {
         const result = await web.fetch({ url: current })
         if (result.statusCode < 200 || result.statusCode >= 300) {
-          throw new UnsupportedContent(`HTTP ${result.statusCode}`)
+          throw new UnsupportedContent(
+            result.statusCode === 403 || result.statusCode === 401
+              ? `HTTP ${result.statusCode}: the site refuses non-browser requests, so its page cannot be read here — use the original page`
+              : `HTTP ${result.statusCode}`,
+          )
         }
         return { url: result.url, raw: result.body.content, truncated: result.truncated }
       } catch (error) {

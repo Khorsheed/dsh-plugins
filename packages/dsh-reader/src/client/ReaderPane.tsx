@@ -742,7 +742,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           )}
           <div className={css.rule} />
           {articleError !== null && (
-            <p className={css.incomplete}>{t('detail.extractFailed')}</p>
+            <p className={css.incomplete}>
+              {/* A refusal is not an extraction failure: the page never arrived,
+                  and telling the reader to "retry" would be advice that cannot
+                  work. /^HTTP (401|403)/ is the seam's wording. */}
+              {/^HTTP (401|403)/.test(articleError) ? t('sources.blocked') : t('detail.extractFailed')}
+            </p>
           )}
           {articleHtml !== null && articleHtml.length > 0 && (
             <div

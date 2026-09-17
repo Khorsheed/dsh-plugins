@@ -86,6 +86,8 @@ interface BenchOptions {
   readonly tags?: readonly { id: string; name: string; createdAt: string }[]
   readonly tagCounts?: Record<string, number>
   readonly ttlHours?: number
+  /** Forces `getEntryBody` to answer with this error (the refusal paths). */
+  readonly getEntryBodyError?: string
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -143,6 +145,9 @@ function bench(options: BenchOptions = {}) {
     fetchEntryBody: vi.fn(async (entryId: string) => ({ entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })),
     getEntryBody: vi.fn(async (request: { entryId: string; url: string; feedHtml?: string }) => {
       const sourceId = request.entryId.startsWith('link:') ? request.entryId.slice('link:'.length) : undefined
+      if (options.getEntryBodyError !== undefined) {
+        return { ok: true as const, value: { entryId: request.entryId, cached: false, fresh: true, fromFeed: false, error: options.getEntryBodyError } }
+      }
       if (sourceId !== undefined && options.failedIds?.includes(sourceId) === true) {
         return { ok: true as const, value: { entryId: request.entryId, cached: false, fresh: true, fromFeed: false, error: 'fetch failed' } }
       }
@@ -647,5 +652,22 @@ describe('tags', () => {
     await waitFor(() => {
       expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('@tag-ai')
     })
+  })
+})
+
+describe('a publisher that refuses automatic fetches', () => {
+  it('says the page blocked us instead of blaming extraction', async () => {
+    // Measured: openai.com answers 403 to every non-browser request (proxy or
+    // not), so our fetch never sees the article. The reader must be told THAT,
+    // because "could not extract" invites a retry that cannot work.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '被拒的文章', url: 'https://openai.com/index/x/' })],
+      failedIds: ['link-1'],
+      getEntryBodyError: 'HTTP 403: the site refuses non-browser requests',
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /被拒的文章/ })).at(-1) as HTMLElement)
+    expect(await screen.findByText(zh['sources.blocked'])).toBeTruthy()
+    expect(screen.queryByText(zh['detail.extractFailed'])).toBeNull()
   })
 })
