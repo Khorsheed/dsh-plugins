@@ -156,11 +156,11 @@ export { expandMatrix, orderCells, missionIdFor } from './matrix.ts'
 export type { EvalCell } from './matrix.ts'
 export { runPlan, evalVersion, defaultStateRoot } from './run.ts'
 export {
-  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, conditionUnitDiagnostics, conditionUnitOf,
+  acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, conditionOwnedComponents, conditionUnitDiagnostics, conditionUnitOf,
   describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   DSH_CONTAINER_NODE_OPTIONS, UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
 } from './unit.ts'
-export type { CellUnitPlan, ConditionOwnedComponents, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl } from './unit.ts'
+export type { CellUnitPlan, ConditionOwnedComponents, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl, ScopedConditionRef } from './unit.ts'
 export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.ts'
 export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
 export type { RunSubset as RunSubsetRecord } from './run.ts'

@@ -61,7 +61,7 @@ import { hostProbeExecutor, unitProbeExecutor, type ProbeExecutor } from './prob
 import { checkUnitEgress } from './egress.ts'
 import type { EgressCheckDecl } from './unit.ts'
 import {
-  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, describeAcquireSpec, egressCheckAbsentNote, planUnitDiagnostics,
+  acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, conditionOwnedComponents, describeAcquireSpec, egressCheckAbsentNote, planUnitDiagnostics,
   environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   type CellUnitPlan, type CredentialsCheck,
 } from './unit.ts'
@@ -1871,6 +1871,25 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     // that would check nothing. Refused rather than dropped — a run that
     // believes it was checked is the failure this whole change is about.
     problems.push(...planUnitDiagnostics(plan))
+    // claude's two credential stores: a condition running inside a unit must
+    // own its scope, because the unit rotates the grant in the mounted file
+    // while the host rotates the same grant in the keychain and the endpoint
+    // invalidates the family. The judges are the host side here — one
+    // delegates from the orchestrator, so it stays on the host even in a
+    // container run. Refused before any unit is acquired: the damage is a
+    // manual re-login, which no later step can undo.
+    problems.push(...claudeScopeDiagnostics(
+      conditions.map(condition => ({
+        id: condition.id,
+        harnessName: condition.harnessName,
+        ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+      })),
+      judges.map(judge => ({
+        id: judge.id,
+        harnessName: judge.harnessName,
+        ...(judge.scope === undefined ? {} : { scope: judge.scope }),
+      })),
+    ))
     if (problems.length > 0) {
       throw new EvalRunRefused(
         `the plan's unit segment cannot be satisfied for ${problems.length} condition(s) — nothing was executed`,
