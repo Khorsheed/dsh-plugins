@@ -351,9 +351,11 @@ describe('the efficiency table', () => {
     await screen.findByText('report.efficiency')
 
     expect(screen.getByText('report.col.activeMs')).toBeTruthy()
-    expect(screen.getByText('21.0 min')).toBeTruthy()
-    expect(screen.getByText('15.0 min')).toBeTruthy()
-    expect(screen.getByText('12,345')).toBeTruthy()
+    // ui-spec §九: durations in words, counts compacted. 1_260_000 ms is
+    // 21 minutes exactly, and 12_345 output tokens read as 12.3k.
+    expect(screen.getByText('dur.ms {"m":21,"s":0}')).toBeTruthy()
+    expect(screen.getByText('dur.ms {"m":15,"s":0}')).toBeTruthy()
+    expect(screen.getByText('12.3k')).toBeTruthy()
     // cond-b reported no tool-call accounting and no cacheRead: two dashes,
     // never two zeros — "nobody counted" is not "it used none".
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
@@ -369,8 +371,13 @@ describe('the judge numbers', () => {
     await openReport(h)
     await screen.findByText('report.judge')
 
-    expect(screen.getByText('report.judgeSameValue {"criteria":6,"agreement":"5/6","kappa":"0.640"}')).toBeTruthy()
-    expect(screen.getByText('report.judgeCrossValue {"criteria":3,"agreement":"2/3","kappa":"0.330"}')).toBeTruthy()
+    // ui-spec §九: the WORD a reader acts on, κ beside it. κ 0.64 is 中,
+    // κ 0.33 is 低 — and a 低 on the resampled judge earns the one piece of
+    // advice this page can give.
+    expect(screen.getByText('agreement.medium')).toBeTruthy()
+    expect(screen.getByText('agreement.low')).toBeTruthy()
+    expect(screen.getByText('report.judgeSampleCount {"criteria":6,"agreement":"5/6"}')).toBeTruthy()
+    expect(screen.getByText('report.judgeSampleCount {"criteria":3,"agreement":"2/3"}')).toBeTruthy()
     expect(screen.getByText('4/6')).toBeTruthy()
     // The self-judged count, read off its own row (a bare '2' also appears in
     // the pair table).

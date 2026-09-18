@@ -173,6 +173,8 @@ web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「�
 
 **视觉与文案按界面规格 §九 收口**（I5·T63，与实验室 tab 同一轮）。两个 tab 现在共用同一套写法：状态 chip（`Chip`）、空态（`EmptyState`）、区块、表格、「详情」折叠——各自一份逐字相同的副本，因为客户端包不 import 兄弟插件（§八）。落在这一页上的是：validate 结果与 canary 由带颜色的文字换成 chip，诊断 code 移到行的 `title`（页面上留句子）；「作答记录」里每个格子的**桶**与**阶段**走与实验室 tab 同一张状态词表（`src/client/vocab.ts`），不再是 `done` / `archived` 这样的英文标识；绑定栏只显示题库仓库的最后一段，整条绝对路径在 `title` 上；三处空态（没绑定 / 没有题集 / 筛选没命中 / 还没作答记录）各自带一句「下一步」和它自己的动作按钮，措辞与工具条上的那枚不同，免得读成同一枚按钮被复制了一遍。
 
+**术语表 v2 与色彩语义**（I5·T63 补二）：界面规格 §九 的三条新增也落在这一页上。列头里的英文术语换成人话——canary → 防泄标记、validate → 校验；快照 → 题库版本；「作答记录」里每条记录写成「{对比组} · 第 N 次」，rep → 次数。色彩收到五档（绿 = 完成 / 成功、蓝 = 进行中、灰 = 未开始、红 = 失败 / 阻塞、橙 = 警告），与实验室 tab 同一份 `stageTone` / `bucketTone`：**「已归档 / 可释放 / 已释放」是灰不是绿**——跑到尽头是「结束了」不是「成功了」，绿留给「已判」。
+
 tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`。读取方法是 operator 视图——绑定只提供仓库路径，白名单与 modelFacing 底线约束的是 agent 边界（工具 + worktree），不是看自己仓库的人；敏感层带「· 敏感」标记照常可读，真正没保护的透传区与 `item.json` 则显眼标出。唯一的例外是 `itemBrief` 背后那两次判定层读取：它们**显式指名单层**（`layers: ['grading']` / `['verify']`）而不是走 operator 旁路——页面要的是答案键的形状（几条、什么 kind），字节从不上线。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace；eval 的 namespace 在**每次调用时**用 `ctx.get` 探测，不在挂载时探一次——两个插件各自 `$mount`，谁先落地没有保证。
 
 ## Compatibility

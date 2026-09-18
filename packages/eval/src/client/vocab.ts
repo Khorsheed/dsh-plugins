@@ -294,3 +294,73 @@ export function shortenValue(text: string): string {
   const bare = text.replace(/^"|"$/g, '')
   return /^[0-9a-f]{32,}$/i.test(bare) ? shortHash(bare) : text
 }
+
+/* ───────────────── numbers and sentences (ui-spec §九, 2026-09-18) ────────── */
+
+/**
+ * A count a person reads at a glance: `31.5k`, `1.2M`.
+ *
+ * Token counts run to six figures and `toLocaleString` prints every one of
+ * them, which is how the efficiency table turned into a wall of digits. Below
+ * a thousand nothing is rounded — those numbers are small enough to mean
+ * something exactly (rounds, tool calls), and rounding them would hide a 1.
+ * @param value - the count, or null when nobody counted.
+ * @returns the compact form; an em dash for null (a dash is not a zero).
+ */
+export function compactCount(value: number | null): string {
+  if (value === null) return '—'
+  const abs = Math.abs(value)
+  if (abs < 1000) return String(value)
+  if (abs < 1_000_000) {
+    const k = value / 1000
+    return `${Math.abs(k) < 100 ? k.toFixed(1).replace(/\.0$/, '') : String(Math.round(k))}k`
+  }
+  const m = value / 1_000_000
+  return `${Math.abs(m) < 100 ? m.toFixed(1).replace(/\.0$/, '') : String(Math.round(m))}M`
+}
+
+/** A duration split into the two units a reader actually wants. */
+export interface DurationParts {
+  key: EvalKey
+  params: Record<string, number>
+}
+
+/**
+ * Split a duration into the largest two units that carry information.
+ *
+ * The phrase itself is the dictionary's — 「4 分 48 秒」 and `4m 48s` are not
+ * the same string with a different number in it, so the shape is chosen here
+ * and the words are chosen there.
+ * @param ms - the duration; null when the ledger does not say.
+ * @returns the key and parameters, or null for «—».
+ */
+export function durationParts(ms: number | null): DurationParts | null {
+  if (ms === null) return null
+  const total = Math.max(0, Math.round(ms / 1000))
+  if (total < 60) return { key: 'dur.s', params: { s: total } }
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return { key: 'dur.ms', params: { m: minutes, s: total % 60 } }
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return { key: 'dur.hm', params: { h: hours, m: minutes % 60 } }
+  return { key: 'dur.dh', params: { d: Math.floor(hours / 24), h: hours % 24 } }
+}
+
+/** How much two graders agree, as the word a reader acts on. */
+export type AgreementBand = 'high' | 'medium' | 'low'
+
+/**
+ * The band one κ falls in.
+ *
+ * The cut points are Landis & Koch's, collapsed to three: a grader reading
+ * this page decides one thing — whether to trust the verdicts or add a judge —
+ * and six bands do not help them decide it. κ itself stays on the hover, so
+ * nothing is rounded away.
+ * @param kappa - Cohen's κ, or null when there were not enough pairs.
+ * @returns the band, or null when there is no number to band.
+ */
+export function agreementBand(kappa: number | null): AgreementBand | null {
+  if (kappa === null || Number.isNaN(kappa)) return null
+  if (kappa >= 0.8) return 'high'
+  if (kappa >= 0.6) return 'medium'
+  return 'low'
+}

@@ -21,6 +21,7 @@
  * checkable fact and a blank box is how a grader's reasoning gets lost.
  */
 
+import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalJudgeCriterionRow, EvalJudgeDraftSample, EvalJudgeQueueCell, EvalJudgeQueueView,
@@ -223,13 +224,24 @@ export function JudgingPage(props: {
     view, loading, error, selection, draft, submitting, reexporting,
     onPick, onAnswer, onSubmit, onReexport, t,
   } = props
+  // The queue's own filter — view-local, because it narrows what THIS grader
+  // is looking at and nothing else on the page (or in the ledger) depends on
+  // it. Filtering never reorders: the seeded order IS part of the blind.
+  const [mode, setMode] = useState<'all' | 'ungraded' | 'graded'>('all')
+  const [task, setTask] = useState<string | null>(null)
 
   if (error !== null) return <ErrorState what={t('judge.error')} message={error} t={t} />
   if (view === null) return <div className={css.empty}>{t('judge.loading')}</div>
 
   const open = view.cells.find(cell => cell.ticket === selection) ?? null
-  const ungraded = view.cells.filter(cell => !cell.graded)
-  const graded = view.cells.filter(cell => cell.graded)
+  const shown = view.cells.filter(cell => (
+    (mode === 'all' || (mode === 'ungraded' ? !cell.graded : cell.graded))
+    && (task === null || cell.task === task)
+  ))
+  const ungraded = shown.filter(cell => !cell.graded)
+  const graded = shown.filter(cell => cell.graded)
+  // Offered only when the run has more than one item to pick between.
+  const tasks = [...new Set(view.cells.map(cell => cell.task).filter((v): v is string => v !== null))].sort()
   // Only answers with evidence are sendable — the host refuses a blank one,
   // and a button that could produce that refusal is a worse button.
   const answers = Object.entries(draft).filter(([, value]) => value.evidence.trim() !== '')
@@ -272,6 +284,44 @@ export function JudgingPage(props: {
           <div className={css.judgeColumns}>
             <div className={css.judgeQueue}>
               <div className={css.sectionTitle}>{t('judge.queue')}</div>
+              <div className={css.matrixBar}>
+                {([['all', 'judge.filterAll'], ['ungraded', 'judge.filterUngraded'], ['graded', 'judge.filterGraded']] as const)
+                  .map(([value, key]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={css.chip}
+                      aria-pressed={mode === value}
+                      onClick={() => { setMode(value) }}
+                    >
+                      {t(key)}
+                    </button>
+                  ))}
+              </div>
+              {tasks.length > 1 && (
+                <div className={css.matrixBar}>
+                  <span className={css.fieldLabel}>{t('judge.filterTask')}</span>
+                  <button
+                    type="button"
+                    className={css.chip}
+                    aria-pressed={task === null}
+                    onClick={() => { setTask(null) }}
+                  >
+                    {t('judge.filterAll')}
+                  </button>
+                  {tasks.map(entry => (
+                    <button
+                      key={entry}
+                      type="button"
+                      className={css.chip}
+                      aria-pressed={task === entry}
+                      onClick={() => { setTask(entry) }}
+                    >
+                      {entry}
+                    </button>
+                  ))}
+                </div>
+              )}
               <QueueGroup
                 label={t('judge.ungraded', { count: ungraded.length })}
                 cells={ungraded} selection={selection} onPick={onPick} t={t}

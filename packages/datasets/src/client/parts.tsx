@@ -95,18 +95,32 @@ export function stamp(at: number | null): string {
  */
 export type Tone = 'neutral' | 'ok' | 'busy' | 'warn' | 'danger'
 
-/** The tone of one projection bucket — only two of the five are loud. */
+/**
+ * The tone of one projection bucket (ui-spec §九's five: green = done, blue =
+ * in progress, grey = not started, red = failed/blocked, amber = warning).
+ */
 export function bucketTone(bucket: string): Tone {
-  if (bucket === 'blocked') return 'warn'
+  if (bucket === 'blocked') return 'danger'
   if (bucket === 'active') return 'busy'
   if (bucket === 'done') return 'ok'
+  // `ready` and `scheduled` are both «not started yet» — grey, not green.
   return 'neutral'
 }
 
-/** The tone of one ledger state: past the judge is settled, halted is loud. */
+/**
+ * The tone of one ledger state.
+ *
+ * ui-spec §九 fixes the five tones AND one thing that is easy to get wrong:
+ * 「已释放 / 已归档这类终态用灰」. A cell that has been archived and released is
+ * FINISHED, not successful — the run is over and nothing more will happen
+ * there, which reads as grey. Green is kept for the state that actually says
+ * something went well (已判: a verdict exists), so a column of green means
+ * «judged», not «reached the end of the pipeline».
+ */
 export function stageTone(state: string): Tone {
   if (state === 'halted') return 'warn'
-  if (state === 'released' || state === 'releasable' || state === 'archived' || state === 'judged') return 'ok'
+  if (state === 'judged') return 'ok'
+  if (state === 'archived' || state === 'releasable' || state === 'released') return 'neutral'
   if (state === 'pending') return 'neutral'
   return 'busy'
 }

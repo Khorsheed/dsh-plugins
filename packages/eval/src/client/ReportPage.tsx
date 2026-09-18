@@ -29,7 +29,10 @@ import type {
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Chip, Detail, EmptyState, Section, Word, invariantTone, stageTone, stamp } from './parts.tsx'
+import {
+  Agreement, Chip, Count, Detail, Duration, EmptyState, Section, Word,
+  invariantTone, stageTone, stamp,
+} from './parts.tsx'
 import { stagePhrase } from './vocab.ts'
 import css from './LabView.module.css'
 
@@ -38,18 +41,6 @@ const DASH = '—'
 /** Integers stay integers; a mean keeps three decimals (summary.md's rule). */
 function fmtNum(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3)
-}
-
-/** The same duration wording summary.md uses, so page and file agree. */
-function fmtMs(ms: number | null): string {
-  if (ms === null) return DASH
-  if (ms < 1000) return `${ms} ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
-  return `${(ms / 60_000).toFixed(1)} min`
-}
-
-function fmtCount(value: number | null): string {
-  return value === null ? DASH : value.toLocaleString('en-US')
 }
 
 /** `12/14`, or a dash when the run produced no such pair at all. */
@@ -170,12 +161,12 @@ function Efficiency(props: { report: EvalRunReportView; t: LabViewProps['t'] }) 
                   <tr key={row.condition}>
                     <th className={css.reportRowHead}>{row.condition}</th>
                     <td className={css.reportTd}>{row.model ?? DASH}</td>
-                    <td className={css.reportTd}>{fmtMs(row.activeMs)}</td>
-                    <td className={css.reportTd}>{fmtCount(row.rounds)}</td>
-                    <td className={css.reportTd}>{fmtCount(row.toolCalls)}</td>
-                    <td className={css.reportTd}>{fmtCount(row.outputTokens)}</td>
-                    <td className={css.reportTd}>{fmtCount(row.inputTokens)}</td>
-                    <td className={css.reportTd}>{fmtCount(row.cacheReadTokens)}</td>
+                    <td className={css.reportTd}><Duration ms={row.activeMs} t={t} /></td>
+                    <td className={css.reportTd}><Count value={row.rounds} /></td>
+                    <td className={css.reportTd}><Count value={row.toolCalls} /></td>
+                    <td className={css.reportTd}><Count value={row.outputTokens} /></td>
+                    <td className={css.reportTd}><Count value={row.inputTokens} /></td>
+                    <td className={css.reportTd}><Count value={row.cacheReadTokens} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -207,22 +198,32 @@ function JudgeConsistency(props: { report: EvalRunReportView; t: LabViewProps['t
   const judge = report.judge
   return (
     <Section title={t('report.judge')}>
+      {/* ui-spec §九: the WORD a reader acts on, κ beside it and the exact
+          value on the hover — 「评分者一致性：高（κ 0.85）」, not three numbers
+          in a row. The counts stay, quietly, because «high» over two pairs and
+          «high» over forty are not the same claim. */}
       <div className={css.summaryRow}>
         <span className={css.summaryLabel}>{t('report.judgeSame')}</span>
-        <span>{t('report.judgeSameValue', {
-          criteria: judge.multiSampled,
-          agreement: fmtAgreement(judge.llmAgreement),
-          kappa: judge.llmKappa === null ? DASH : judge.llmKappa.toFixed(3),
-        })}</span>
+        <Agreement kappa={judge.llmKappa} t={t} />
+        <span className={css.dim}>
+          {t('report.judgeSampleCount', {
+            criteria: judge.multiSampled, agreement: fmtAgreement(judge.llmAgreement),
+          })}
+        </span>
       </div>
       <div className={css.summaryRow}>
         <span className={css.summaryLabel}>{t('report.judgeCross')}</span>
-        <span>{t('report.judgeCrossValue', {
-          criteria: judge.crossJudged,
-          agreement: fmtAgreement(judge.crossAgreement),
-          kappa: judge.crossKappa === null ? DASH : judge.crossKappa.toFixed(3),
-        })}</span>
+        <Agreement kappa={judge.crossKappa} t={t} />
+        <span className={css.dim}>
+          {t('report.judgeSampleCount', {
+            criteria: judge.crossJudged, agreement: fmtAgreement(judge.crossAgreement),
+          })}
+        </span>
       </div>
+      {/* Low agreement is the one number on this page a reader can act on. */}
+      {judge.llmKappa !== null && judge.llmKappa < 0.6 && (
+        <div className={css.summaryWhy}>{t('judge.addJudge')}</div>
+      )}
       <div className={css.summaryRow}>
         <span className={css.summaryLabel}>{t('report.judgeHuman')}</span>
         <span>{fmtAgreement(judge.humanAgreement)}</span>
@@ -566,7 +567,7 @@ export function ReportPage(props: {
 
             {!report.comparisonAllowed
               ? (
-                <div className={css.blocked}>
+                <div className={css.notice}>
                   <div>{t('report.comparisonClosed', { count: failing.length })}</div>
                   <div className={css.chipRow}>
                     {failing.map(check => (

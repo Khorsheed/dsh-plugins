@@ -23,22 +23,11 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalCellDetail, EvalCellsResult } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Chip, EmptyState, Hash, Word, bucketTone, stageTone } from './parts.tsx'
+import { Chip, Duration, EmptyState, Hash, Word, bucketTone, stageTone } from './parts.tsx'
 import { BUCKETS, RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase } from './vocab.ts'
 import css from './LabView.module.css'
 
 export { RETRY_CATEGORIES } from './vocab.ts'
-
-/** `47m`, `2h`, `3d` — the duration column's compact form. */
-function humanDuration(ms: number | null): string {
-  if (ms === null) return '—'
-  const minutes = Math.floor(Math.max(0, ms) / 60_000)
-  if (minutes < 1) return '<1m'
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 48) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
-}
 
 /** One labelled block of the drawer. */
 function Field(props: { label: string; children: ReactNode }) {
@@ -88,7 +77,7 @@ function CellDrawer(props: {
                 <Word phrase={stagePhrase(cell.state)} t={t} />
               </Chip>
               <Chip>{t('drawer.attemptNo', { attempt: cell.attempt })}</Chip>
-              <Chip>{humanDuration(cell.inStateMs)}</Chip>
+              <Chip><Duration ms={cell.inStateMs} t={t} /></Chip>
             </div>
             <Field label={t('drawer.refs')}>
               {cell.refs.resource === null
@@ -280,8 +269,7 @@ export function CellsPage(props: {
             <>
               <div className={css.cellsHead}>
                 <span className={css.colCell}>{t('cells.col.cell')}</span>
-                <span className={css.colBucket}>{t('cells.col.bucket')}</span>
-                <span className={css.colStage}>{t('cells.col.stage')}</span>
+                <span className={css.colState}>{t('cells.col.state')}</span>
                 <span className={css.colAttempt}>{t('cells.col.attempt')}</span>
                 <span className={css.colDuration}>{t('cells.col.duration')}</span>
               </div>
@@ -295,18 +283,24 @@ export function CellsPage(props: {
                   <span className={css.colCell}>
                     {row.task ?? '—'} × {row.condition ?? '—'} × {row.rep ?? '—'}
                   </span>
-                  <span className={css.colBucket}>
-                    <Chip tone={bucketTone(row.bucket)} title={row.bucket}>
-                      <Word phrase={bucketPhrase(row.bucket)} t={t} />
-                    </Chip>
-                  </span>
-                  <span className={css.colStage}>
+                  {/* One 运行状态 column (ui-spec §九 术语表 v2). The STAGE is the
+                      specific fact and always shows; the bucket only adds
+                      something the stage cannot say — «阻塞» (a dependency is
+                      unmet) and «排期» (it is waiting for a clock). For every
+                      other bucket the stage already implies it, and two chips
+                      saying one thing is the noise this pass is removing. */}
+                  <span className={css.colState}>
                     <Chip tone={stageTone(row.state)} title={row.state}>
                       <Word phrase={stagePhrase(row.state)} t={t} />
                     </Chip>
+                    {(row.bucket === 'blocked' || row.bucket === 'scheduled') && (
+                      <Chip tone={bucketTone(row.bucket)} title={row.bucket}>
+                        <Word phrase={bucketPhrase(row.bucket)} t={t} />
+                      </Chip>
+                    )}
                   </span>
                   <span className={css.colAttempt}>{row.attempt}</span>
-                  <span className={css.colDuration}>{humanDuration(row.inStateMs)}</span>
+                  <span className={css.colDuration}><Duration ms={row.inStateMs} t={t} /></span>
                 </button>
               ))}
             </>

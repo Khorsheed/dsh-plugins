@@ -797,7 +797,7 @@
 .cellsHead,
 .cellsRow {
   display: grid;
-  grid-template-columns: minmax(160px, 2fr) 72px minmax(80px, 1fr) 64px 72px;
+  grid-template-columns: minmax(180px, 2fr) minmax(150px, 1.1fr) 72px 88px;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -837,8 +837,6 @@
 }
 
 .colCell,
-.colBucket,
-.colStage,
 .colAttempt,
 .colDuration {
   overflow: hidden;
@@ -855,10 +853,13 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Bucket and stage cells hold chips; clipping them to one text line would cut
-   the chip's rounded edge off. */
-.colBucket,
-.colStage {
+/* The one 运行状态 cell holds one or two chips; clipping it to a text line
+   would cut their rounded edges off. */
+.colState {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
   overflow: visible;
 }
 
