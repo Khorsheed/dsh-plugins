@@ -105,7 +105,12 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
   }
 
   const scriptFigures = dropScriptFigures(scored.element)
-  const normalized = normalizeElement(scored.element, baseUrl)
+  trimLeadingChrome(scored.element, doc)
+  // The title block is a custom element, so it has no tag of its own: the
+  // normalizer UNWRAPS it and its `<br>`s land at the front of the body. Four
+  // blank lines before the first paragraph is not content by any reading, and
+  // stripping the head of the string is independent of where they came from.
+  const normalized = normalizeElement(scored.element, baseUrl).replace(/^(?:\s|<br[^>]*>)+/i, "")
   const textLength = textLengthOf(scored.element)
   if (textLength < 120) {
     return { ok: false, error: `extracted body is too small (${textLength} chars)` }
@@ -117,6 +122,74 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     ...(scriptFigures === 0 ? {} : { scriptFigures }),
   }
 }
+
+/**
+ * Drop the page's own title block and masthead from the top of the body.
+ *
+ * Measured on the acceptance instance's transformer-circuits.pub paper: the
+ * extracted body opened with an empty logo link, the site name, the article
+ * title **twice** (the page carries two `<h1>`s), three `<br>`s, and only then
+ * the byline. The detail view already renders the entry title above the body,
+ * so the reader saw the same heading three times before any prose — reported as
+ * "why does it fetch repeated content at the start".
+ *
+ * Two narrow rules, both text-based: a top-level heading that repeats the
+ * document title (or the body's own first heading) goes, and the leading
+ * masthead (links and whitespace before the first heading or real paragraph)
+ * goes with it. Anything that carries prose stops the walk, so a byline,
+ * abstract or section heading is never touched.
+ *
+ * @param root - the element the body was extracted from (mutated in place).
+ * @param doc - the parsed document, for its title.
+ */
+function trimLeadingChrome(root: Element, doc: Document): void {
+  const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim()
+  const title = normalize(doc.title ?? '')
+  const firstHeading = root.querySelector('h1, h2, h3')
+  const ownTitle = firstHeading === null ? '' : normalize(firstHeading.textContent ?? '')
+  for (const heading of Array.from(root.querySelectorAll('h1, h2'))) {
+    const text = normalize(heading.textContent ?? '')
+    if (text.length === 0) continue
+    if (text === title || (ownTitle.length > 0 && text === ownTitle)) heading.remove()
+  }
+  // The masthead walk: drop leading nodes until something that IS content —
+  // a stop tag, a picture, or 40+ characters of prose. The site header on the
+  // measured page is a `<div>` holding a logo `<svg>` (no img), so pictures are
+  // counted by `img`/`figure`, never by `svg` alone.
+  let node = root.firstElementChild
+  while (node !== null) {
+    const next = node.nextElementSibling
+    const tag = node.localName
+    const text = normalize(node.textContent ?? '')
+    if (ROOT_STOPS.has(tag)) break
+    if (node.querySelector('img, picture, canvas, video, figure') !== null) break
+    if (text.length >= 40) break
+    node.remove()
+    node = next
+  }
+  // The page's title block is a custom element (`<d-title>`): it has no tag in
+  // the whitelist, so its leftovers are flattened INTO the body — and its own
+  // leading `<br>`s then become the body's first nodes. Trim them down the left
+  // spine, which is where "the article starts with four blank lines" comes from.
+  let spine: Element | null = root
+  while (spine !== null) {
+    let child = spine.firstElementChild
+    while (child !== null && child.localName === 'br') {
+      const following = child.nextElementSibling
+      child.remove()
+      child = following
+    }
+    spine = spine.firstElementChild
+  }
+}
+
+/**
+ * Tags that mean real content has begun; the masthead walk stops there.
+ *
+ * Deliberately excludes `div`/`section`/`header`: those are exactly the wrappers
+ * a masthead hides in, and a wrapper is judged by what it holds instead.
+ */
+const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'blockquote', 'pre', 'ul', 'ol'])
 
 /**
  * Remove figures whose picture is not in the markup, and count them.

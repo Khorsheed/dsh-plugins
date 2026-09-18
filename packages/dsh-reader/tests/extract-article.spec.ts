@@ -214,3 +214,31 @@ describe('figures the page draws at runtime', () => {
     expect(result.ok && result.scriptFigures).toBeUndefined()
   })
 })
+
+describe('the page title block does not come along', () => {
+  it('drops the repeated title, the masthead and the leading blanks', () => {
+    // Measured on transformer-circuits.pub: the extracted body opened with an
+    // empty logo link, the site name, the article title TWICE, four <br>s, and
+    // only then the byline — while the pane already renders the entry title.
+    const title = 'Verbalizable Representations Form a Global Workspace'
+    const html = `<html><head><title>${title}</title></head><body>`
+      + `<div class="article-header"><a href="https://example.com"><svg></svg></a>`
+      + `<a href="https://example.com">Example Thread</a></div>`
+      + `<d-article><d-title><h1>${title}</h1><h1>${title}</h1><br><br></d-title>`
+      + `<h3>Authors</h3><p>${'prose '.repeat(40)}</p></d-article></body></html>`
+    const result = extractArticle(html, 'https://example.com/paper/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('<h1>')
+    expect(result.html).not.toContain('Example Thread')
+    expect(result.html.startsWith('<h3>Authors</h3>')).toBe(true)
+  })
+
+  it('keeps a leading figure: a picture is content, not chrome', () => {
+    const html = `<html><head><title>T</title></head><body><article>`
+      + `<figure><img src="https://example.com/hero.png"><figcaption>Hero</figcaption></figure>`
+      + `<p>${'prose '.repeat(40)}</p></article></body></html>`
+    const result = extractArticle(html, 'https://example.com/')
+    expect(result.ok && result.html).toContain('hero.png')
+  })
+})

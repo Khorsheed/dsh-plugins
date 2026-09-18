@@ -39,6 +39,7 @@ export type ReaderKey =
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
   | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
+  | 'detail.bodyTooLarge'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
@@ -200,6 +201,7 @@ export const en = {
   'detail.filledIn': 'The full text was fetched automatically and cached. The card still shows the feed’s own summary — open it to read.',
   'detail.filledInBadge': 'Full text',
   'detail.scriptFigures': 'This page draws {count} of its figures with its own scripts, so a fetch cannot capture them —',
+  'detail.bodyTooLarge': 'This article is too large to keep, so it was not cached — it will be fetched again next time you open it.',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -357,6 +359,7 @@ export const zh = {
   'detail.filledIn': '全文是自动抓取并缓存的。卡片上仍是 feed 自己的摘要 —— 点开看全文。',
   'detail.filledInBadge': '已抓全文',
   'detail.scriptFigures': '这一页有 {count} 张插图由页面自己的脚本绘制，抓取时拿不到 ——',
+  'detail.bodyTooLarge': '这一篇太大，没有缓存 —— 下次打开这一条会重新抓取。',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',

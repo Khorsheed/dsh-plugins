@@ -1408,3 +1408,27 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     expect(screen.getByText(zh['detail.readOriginal'])).toBeTruthy()
   })
 })
+
+describe('a body too large to cache', () => {
+  it('says it was not kept', async () => {
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>超长论文</title>'
+          + '<link>https://example.com/huge</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: false,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>huge body</p>',
+      tooLarge: true,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /超长论文/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    expect(await screen.findByText(zh['detail.bodyTooLarge'])).toBeTruthy()
+  })
+})

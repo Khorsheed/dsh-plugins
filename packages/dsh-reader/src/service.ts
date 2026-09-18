@@ -42,6 +42,7 @@ import {
   isRetryablePreviewFailure,
   linkEntryId,
   DEFAULT_CACHE_POLICY,
+  MAX_CACHED_BODY_CHARS,
   type ReaderAddFailure,
   type ReaderAddOutcome,
   type ReaderAddRefusal,
@@ -589,6 +590,23 @@ export class ReaderService {
     if (html.length === 0) {
       await this.recordFetchFailure(request.entryId, 'empty extraction')
       return { entryId: request.entryId, cached: false, fresh: false, fromFeed: false, error: 'empty extraction' }
+    }
+    // A body past the cache budget is served to the caller that fetched it and
+    // deliberately not stored: the state document is one JSON file, rewritten
+    // whole on every mutation, and a handful of multi-megabyte articles would
+    // make every reader operation pay for them.
+    if (html.length > MAX_CACHED_BODY_CHARS) {
+      return {
+        entryId: request.entryId,
+        cached: false,
+        fresh: true,
+        fromFeed: false,
+        html,
+        tooLarge: true,
+        ...(request.scriptFigures === undefined || request.scriptFigures === 0
+          ? {}
+          : { scriptFigures: request.scriptFigures }),
+      }
     }
     const doc = await this.currentDoc()
     const ttlHours = doc.cache?.ttlHours ?? DEFAULT_CACHE_POLICY.ttlHours
