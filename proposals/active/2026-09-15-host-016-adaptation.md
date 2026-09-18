@@ -2,7 +2,7 @@
 
 - **分类**：plugin
 - **状态**：planned
-- **最后更新**：2026-09-15
+- **最后更新**：2026-09-18
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：host-015-adaptation（第一~三批已完成，第四批余量见该提案；本提案承接其 readByteRange 与 guard 租约两项欠账）、message-tools-projection-restore（本波子项，独立提案）、local-agent-dsh-sdk-resume（S8 仍堵，不排）、room-composer-parity / context-clearing（波后讨论，不进本波）。无「0.1.6 整体适配」提案，新建。
 - **官方依赖**：纯插件。所有切换走官方 0.1.6-alpha.1 已发布的扩展面，不含新 seam 请求。
 
@@ -53,7 +53,30 @@ terminal-controller（`terminalRemote` + 默认行进组合）、`permissionPres
 
 - 任何依赖 S2/S3/S4/S8/S10/S11/S13/S14/S15 的改造（未开闸，绕行保留）。
 - 流式评估（`assistant-stream` follow frames）、context-clearing 开工、room-composer-parity、local-agent-dsh-sdk-resume M1、terminal / permission / guide.entry 等新面消费——**本波完成后与用户对齐排期**，各自走提案。
-- inline-html-render / message-timeline / context-guard / ui-shortcuts / session-title-edit / whalesong 不动（0.1.6 无影响面）。
+- inline-html-render / message-timeline / context-guard / ui-shortcuts / session-title-edit / whalesong 不动（0.1.6 无影响面）。【2026-09-18 修订：此条被 alpha.2 推翻，见下节】
+
+## alpha.2 重钉（2026-09-18 用户拍板）
+
+官方 2026-09-17 未发 rc、改发 0.1.6-alpha.2（887 commits / 2622 文件，七路并行审计已完成）。用户拍板：**wave 目标从「alpha.1 基线等 rc」改为「直接适配 alpha.2 并上 3080 作固定版本」**；共享 `~/code/deepseek-harness` 检出与 3080 在用户明确放行前均不动，调试走 `~/code/deepseek-harness-alpha` 独立检出 + 本地实例。
+
+alpha.1 已适配的 breaking 六项在 alpha.2 复核**全部仍成立**（零返工）。alpha.2 新增 breaking 与处置：
+
+| # | breaking | 打中 | 处置 |
+|---|---|---|---|
+| 1 | `SessionSnapshot.queue` / `QueuedMessage` 删除，队列迁 `inbox` 投影 | room（RoomComposer）、mobile（MobileQueue/SubmissionFocus） | 迁 `useProjection('inbox')` 读 `InboxState['next-turn']`（投影 alpha.1 已有，双线兼容，0.1.5 探测回落） |
+| 2 | `conversation.chat.turnTail` chain→list：注册强制 `id`、`select` 失效 | ui-file-preview（抢占式注册） | **用户拍板：共存**——改 list 注册补 `id`，与官方 DeliverablesTail/PlanCards 并存对比效果，退役后定 |
+| 3 | `ISessions.open/openSubagent/clear` 与 `SessionListState.current/currentAddress` 删除 | room/eval/ui-shortcuts/mobile/mission/datasets/message-timeline 等 8 包 | 迁移 `ctx.uiWorkspace.openSession`；「当前会话」无公开 selection reader，root 级消费者（全局快捷键、chrome.show）需找新锚点——本波最大待解项 |
+| 4 | `SessionPendingInteractionSnapshot`→`SessionStatusSnapshot` | whalesong | 类型迁移，读取改 `.pendingInteraction` |
+| 5 | `settings.plugin.item` 槽删除 | context-guard（连带 capability-catalog 设置呈现路径） | 迁 `plugins.bundle.config` / `plugins.row.config` / `settings.plugins.tab` |
+| 6 | `ModelDirectory.select()` 不再 reject，返回 `RemoteResult` | room（RoomModelPicker 失败路径死）、message-tools（恒判成功） | 两处改判 `result.ok` |
+| 7 | `sessions.scope()/binding()` 对非 retained 代际收紧 | message-tools/quote/session-title-edit/mobile/room 各 1–5 处 | 逐个复验（`?.` 兜底语义已变） |
+| 8 | `data-composer-stats` DOM 锚删除 | mobile | 换锚或接受官方默认样式 |
+
+行为变化须知：hmr 默认开（profile 配置热重载，`watchUserPatches` 已删——ankh-guard 需对 alpha.2 重跑 preflight-drift 绊线）；resolution mode 默认 link→runtime（prod tgz 无感，link dev 实例需显式参数）；subagent 容量钳制 `maxActiveSubagents: 8` / `maxDepth: 1`（local-agent 家族知晓）；3080 宿主升 alpha.2 前确认 Node 在 22/24/26 矩阵。
+
+同波顺带优化（小项）：local-agent 成员会话侧栏聊天官方机制认领（零改动，README/发版说明）；inline-html-render `openLink` 探测改道 `openTab('browser')` 回落 `window.open`。
+
+alpha.2 修订上文「明确不做」清单：ui-shortcuts / message-timeline / context-guard / whalesong 在 alpha.2 均有影响面（上表 3/5/4 项）。S12 fold 组合语义 alpha.2 一字未改，projection 维持暗态；browser-pane 2026-09-18 闭卷（用官方 Sidebar Browser）；room-composer-parity 补「工厂路线」选项（见其提案）。
 
 ## 里程碑
 

@@ -1,8 +1,9 @@
 # 右栏内嵌浏览器（browser-pane）
 
 - **分类**：plugin
-- **状态**：planned
-- **最后更新**：2026-09-13（立项 + 两轮评审修订：路线定为「自托管实例打底」；provider 抽象与登录态路线后置；M0 探针先行。修订依据见「评审记录」）
+- **状态**：closed（放弃）
+- **最后更新**：2026-09-18
+- **关闭记录（2026-09-18）**：官方 0.1.6-alpha.2 交付 Sidebar Browser（`@deepseek-ai/dsh-client-ui-sidebar-browser`，随 web-app bundle 默认挂载）：右栏 iframe 沙箱浏览器 + chat 正文链接接管 + `openTab('browser')` 公共打开缝。用户拍板：**用官方 browser，自研 CDP 帧串流路线不做**。闭卷留档——两轮评审沉淀的 WS 帧协议 / 背压 / IME / 许可门设计仍有参考价值；「人机同视图 + 模型工具操作同一 context」是本提案独占、官方明确不做（其 README 自述 Model Experience: None）的差异场景，需求复燃可重开（M0 探针阈值表直接可用；注意官方已占用 `browser` kind 名，tab-registry 默认 extension 优先级会接管官方实现，重开时此为第一决策点）。
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 `proposed/`、`implemented/`、`rejected/`），关键词「浏览器 / browser / webview / CDP / iframe / screencast / 内嵌 / 框架」——**无重复提案**。命中四处**相关**而非重复：
   - [local-files-browser](../closed/2026-08-26-local-files-browser.md)（done，`@khorsheed/dsh-local-files`）：**右栏 tab 注册与视图骨架的实现先例**，本提案照抄其惯例。注意它是「文件浏览器」，与「网页浏览器」无关，只是词面撞车。
   - [file-view-html-rendering](2026-08-21-file-view-html-rendering.md)（in-progress）：`ui-file-preview` 的**沙箱 iframe + postMessage 能力桥**是"渲染不受信内容"的先例。本提案**不走 iframe**（见风险⑥），但复用它「内容是不可信的」这条边界约定。
