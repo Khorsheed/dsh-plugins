@@ -183,7 +183,7 @@ dsh-ankh-guard restart \
 
 以 cordis 插件挂载（base bundle）后，同一套能力以 `selfRestartGuard` 服务的形式供应用内闸门使用。配置：`maxAgeMinutes`（默认 10）、`stateDir`、`repoDir`、`reportRestartContext`（默认 `followup`）、`fallbackGraceMs`（默认 300000）。
 
-除 verify/record/canary 等闸门外，服务还暴露 `requestRestart({ start, profile, initiator })`——UI 级调用方（如 mode-switcher）的进程内重启触发缝：`initiator` 必填（发起会话的真实 id），端口从 launch 记录自知；无活 watchdog 走 `restart`，受监督走 `reconfigure` 事务 cutover（受监督下唯一安全的换命令通道），凭证/preflight/marker/lock 全套闸门与 CLI 同源，拒绝返回结构化 `{ accepted, stage, reason }` 且绝不停机。浏览器侧，除 cutover receipt 通道外还有 boot 代际通道：普通重启或崩溃救回后，打开的标签页经 handoff 长轮询发现进程 boot id 已变，自动全页刷新一次拿到新 bundle；仅前台持续失败约 5 秒后显示带重试按钮的轻量连接提示；只有确认的 cutover 使用重启遮罩。后台或离线时间不计入失败时长；回前台或恢复联网立即清除退避并重新轮询；挂起的请求在 35 秒后超时，过期响应不能触发刷新。
+除 verify/record/canary 等闸门外，服务还暴露 `requestRestart({ start, profile, initiator })`——UI 级调用方（如 mode-switcher）的进程内重启触发缝：`initiator` 必填（发起会话的真实 id），端口从 launch 记录自知；无活 watchdog 走 `restart`，受监督走 `reconfigure` 事务 cutover（受监督下唯一安全的换命令通道），凭证/preflight/marker/lock 全套闸门与 CLI 同源，拒绝返回结构化 `{ accepted, stage, reason }` 且绝不停机。浏览器侧，除 cutover receipt 通道外还有 boot 代际通道：普通重启或崩溃救回后，打开的标签页经 handoff 长轮询发现进程 boot id 已变，自动全页刷新一次拿到新 bundle；刷新前会等新进程的组合挂载完成（Web-server 座位与兄弟行共用，端口刚应答时 `/api` 路由 owner 可能还没挂上；Loader 结算前一律回 `waiting` 且不下发 boot id，标签页保持陈旧 id 继续问，就绪即刷）；仅前台持续失败约 5 秒后显示带重试按钮的轻量连接提示；只有确认的 cutover 使用重启遮罩。后台或离线时间不计入失败时长；回前台或恢复联网立即清除退避并重新轮询；挂起的请求在 35 秒后超时，过期响应不能触发刷新。
 
 ## Model Experience
 
