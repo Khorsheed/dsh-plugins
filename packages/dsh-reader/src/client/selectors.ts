@@ -100,6 +100,15 @@ export function selectRows(
     })
   }
   sortRows(rows, options.sort)
+  // Relevance before the chosen order, but only for a TEXT search: a phrase
+  // that appears in a title is what the reader meant, and leaving a title match
+  // buried under newer summary matches is how a search "returns the wrong
+  // things first". `#sourceId` / `@tagId` selectors are not ranked — every row
+  // matches them the same way. Array#sort is stable, so the chosen order is
+  // what the rows inside one tier keep.
+  if (query.length > 0 && !query.startsWith('#') && !query.startsWith('@')) {
+    rows.sort((a, b) => relevance(a.entry.title, query) - relevance(b.entry.title, query))
+  }
   return rows.slice(0, LIST_RENDER_LIMIT)
 }
 
@@ -149,6 +158,19 @@ export function sourceQuery(sourceId: string): string {
  */
 export function tagQuery(tagId: string): string {
   return `@${tagId}`
+}
+
+/**
+ * How directly a title answers a text query: 0 exact, 1 contains, 2 elsewhere.
+ *
+ * @param title - the entry title.
+ * @param query - the lower-cased query.
+ * @returns the tier, lowest first.
+ */
+function relevance(title: string, query: string): number {
+  const lower = title.toLowerCase()
+  if (lower === query) return 0
+  return lower.includes(query) ? 1 : 2
 }
 
 /** Whether an entry matches the query, across the fields a reader searches by. */

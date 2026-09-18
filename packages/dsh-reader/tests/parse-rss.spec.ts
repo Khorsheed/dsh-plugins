@@ -230,3 +230,29 @@ describe('decodeEntities', () => {
     expect(decodeEntities('&#xD800;x')).toBe('x')
   })
 })
+
+describe('a feed that publishes only a summary', () => {
+  const feedWith = (itemInner: string): string =>
+    `<rss version="2.0"><channel><title>c</title><item>${itemInner}</item></channel></rss>`
+
+  it('marks the description-derived body as summary-only', () => {
+    // A description IS rendered in the detail view (an empty page would be
+    // worse), but it is not the article: without the flag the entry looks
+    // complete and nothing ever fetches the page behind it.
+    const result = parseFeed(feedWith('<title>t</title><link>https://example.com/a</link><description>Only a summary here.</description>'), 's1')
+    expect(result.ok).toBe(true)
+    const entry = result.ok ? result.feed.entries[0] : undefined
+    expect(entry?.contentHtml).toContain('Only a summary here.')
+    expect(entry?.summaryOnly).toBe(true)
+  })
+
+  it('does not mark a real content body', () => {
+    const withNs = (inner: string): string =>
+      `<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>c</title><item>${inner}</item></channel></rss>`
+    const result = parseFeed(withNs('<title>t</title><link>https://example.com/a</link><content:encoded><![CDATA[<p>The whole article.</p>]]></content:encoded>'), 's1')
+    expect(result.ok).toBe(true)
+    const entry = result.ok ? result.feed.entries[0] : undefined
+    expect(entry?.contentHtml).toContain('The whole article.')
+    expect(entry?.summaryOnly).toBeUndefined()
+  })
+})

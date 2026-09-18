@@ -191,6 +191,17 @@ export interface ReaderEntry {
   readonly summary?: string
   /** Normalized article body for the detail view. */
   readonly contentHtml?: string
+  /**
+   * True when {@link contentHtml} is only the FEED's own summary.
+   *
+   * A feed that publishes no `content:encoded` / `<content>` still gets its
+   * description rendered in the detail view (an empty page would be worse), so
+   * the browser half has to be able to tell "the feed gave me its summary" from
+   * "this is the article" — otherwise the entry looks complete and nothing ever
+   * fetches the page behind it. The automatic backfill and opening an entry
+   * both treat this as a body still owed.
+   */
+  readonly summaryOnly?: boolean
   /** True when the body is known to be incomplete (see {@link ReaderSource.truncated}). */
   readonly truncated?: boolean
   /**

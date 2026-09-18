@@ -149,3 +149,20 @@ describe('source presentation', () => {
     expect(hueForSource('Hacker News')).toMatch(/^rgb\(/)
   })
 })
+
+describe('a text search ranks what it matched', () => {
+  it('puts a title match above a newer summary match', () => {
+    // Reported: searching a paper's title returned newer posts first, so the
+    // entry the reader meant sat at the bottom of the wall. Relevance comes
+    // before the chosen order; the order still decides inside one tier.
+    const titleMatch = entry({ id: 'title', sourceId: 's1', title: 'Verbalizable Representations Form a Global Workspace', publishedAt: '2026-08-01T00:00:00.000Z' })
+    const summaryMatch = entry({ id: 'summary', sourceId: 's1', title: 'Something else entirely', publishedAt: '2026-09-17T00:00:00.000Z', summary: 'inside OpenAI, agents explore verbalizable representations daily' })
+    const rows = selectRows([titleMatch, summaryMatch], sources, { ...base, query: 'verbalizable representations' })
+    expect(rows.map(row => row.entry.id)).toEqual(['title', 'summary'])
+  })
+
+  it('leaves a source selector unranked', () => {
+    const rows = selectRows(entries, sources, { ...base, query: '#s1' })
+    expect(rows.map(row => row.entry.id)).toEqual(['a'])
+  })
+})

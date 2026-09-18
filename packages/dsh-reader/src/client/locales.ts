@@ -38,7 +38,7 @@ export type ReaderKey =
   | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
-  | 'state.emptyWall' | 'state.incompleteReason'
+  | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
@@ -151,6 +151,7 @@ export const en = {
   'state.stale': 'Refresh failed: {message}',
   'state.emptyWall': 'No entries yet. Add a source, or press refresh.',
   'state.incompleteReason': 'the payload hit the host’s 100,000-character fetch cap, so only the part that arrived is shown',
+  'state.matches': '{count} matching “{query}”',
 
   'sources.title': 'Subscriptions',
   'sources.count': '{count} sources',
@@ -306,6 +307,7 @@ export const zh = {
   'state.stale': '刷新失败：{message}',
   'state.emptyWall': '还没有条目。新增一个订阅源，或按一下刷新。',
   'state.incompleteReason': '内容超过宿主 100,000 字符的抓取上限，只展示已经拿到的那部分',
+  'state.matches': '匹配「{query}」{count} 条',
 
   'sources.title': '订阅管理',
   'sources.count': '{count} 个源',
