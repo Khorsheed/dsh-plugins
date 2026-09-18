@@ -23,6 +23,7 @@
  * @module @khorsheed/dsh-local-agent-dsh
  */
 
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -37,7 +38,7 @@ import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { defaultPresetRoot, DEFAULT_SUB_PROFILE_NAME, provisionDshScope, USER_PRESET_DIR } from './provision.ts'
 import type { DshSubProfilePermissions } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -244,6 +245,16 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       liveBoundModel: childSessionId => currentLiveSwitch?.boundModel(childSessionId) ?? null,
       retireRuntime: childSessionId => currentLiveSwitch?.retireRuntime(childSessionId) ?? Promise.resolve(),
     })
+    /**
+     * This deployment's preset root — where a person or a pack installed the
+     * presets this instance offers, and the SOURCE every scope's own copy is
+     * taken from. Derived the way the roster derives it, from the settings
+     * service's harness home when there is one.
+     */
+    const instancePresetRoot = (): string => {
+      const home = (ctx.get?.('settings') as { home?: string } | undefined)?.home
+      return home === undefined ? defaultPresetRoot() : join(home, USER_PRESET_DIR)
+    }
     const harness: LocalAgentHarness = {
       name: 'dsh',
       displayName: 'dsh',
@@ -256,7 +267,20 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // lives inside the scoped home, so a scope needs its own. (The
       // credential does not: dsh authenticates through the host instance,
       // which is why `isAuthenticated` below reads no directory at all.)
-      provision: scopedHome => { provisionDshSubProfile(scopedHome, config) },
+      // `options.preset` is the per-condition input an evaluation's
+      // `conditions provision` hands in; the scope's own declaration answers
+      // for every other call, which is what makes a rostered preset survive
+      // a restart of this instance.
+      provision: (scopedHome, options) => {
+        const provisioned = provisionDshScope(scopedHome, config, {
+          ...(options?.preset === undefined ? {} : { preset: options.preset }),
+          presetRoot: instancePresetRoot(),
+        })
+        return {
+          ...(provisioned.preset === undefined ? {} : { preset: provisioned.preset }),
+          ...(provisioned.presetSnapshot === undefined ? {} : { presetSnapshot: provisioned.presetSnapshot }),
+        }
+      },
       isAuthenticated: async () => {
         try {
           return (await resolveApiKey(ctx, config)) !== undefined
@@ -323,7 +347,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       for (const dispose of disposers.splice(0)) dispose()
       if (!enabled) return
       // Idempotent: heals a deleted or drifted sub-profile before each round.
-      provisionDshSubProfile(homeDir, config)
+      provisionDshScope(homeDir, config, { presetRoot: instancePresetRoot() })
       disposers.push(ctx.localAgent.register(harness))
       // The live driver is settings-driven WITHIN this enabled generation:
       // the card's toggle (user layer over the YAML composition base) swaps

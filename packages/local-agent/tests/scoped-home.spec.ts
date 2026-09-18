@@ -134,6 +134,49 @@ describe('scoped homes: the directory', () => {
     expect(provisioned).toEqual([dir])
   })
 
+  it('provisionScope composes one scope deliberately: it waits, it takes options, and it answers', async () => {
+    // The difference from materialization is the whole reason it exists. A
+    // caller that asks for a preset needs the answer and needs the failure;
+    // materialization is a side effect of naming a directory and swallows
+    // both.
+    const homesRoot = tempDir('scope-provision-')
+    const { registry } = await mount(homesRoot)
+    const seen: Array<{ dir: string; preset?: string }> = []
+    registry.register(harness({
+      provision: async (dir, options) => {
+        await new Promise(resolve => setTimeout(resolve, 5))
+        seen.push({ dir, ...(options?.preset === undefined ? {} : { preset: options.preset }) })
+        return { preset: options?.preset ?? 'deployment-wide', presetSnapshot: { matchesSource: true } }
+      },
+    }))
+    const result = await registry.provisionScope('fake', 'eval-b', { preset: 'eval-lean' })
+    expect(result.homeDir).toBe(join(homesRoot, 'fake@eval-b'))
+    expect(result.preset).toBe('eval-lean')
+    expect(result.presetSnapshot).toEqual({ matchesSource: true })
+    // The materialization this call triggered ran first, with no options, and
+    // did not interleave with the deliberate one — both writers regenerate
+    // the same files.
+    expect(seen).toEqual([{ dir: result.homeDir }, { dir: result.homeDir, preset: 'eval-lean' }])
+  })
+
+  it('provisionScope propagates the harness failure rather than logging it away', async () => {
+    const { registry } = await mount(tempDir('scope-provision-fail-'))
+    registry.register(harness({
+      provision: (_dir, options) => {
+        if (options?.preset !== undefined) throw new Error(`no preset ${JSON.stringify(options.preset)} in this deployment`)
+      },
+    }))
+    await expect(registry.provisionScope('fake', 'eval-b', { preset: 'eval-lean' }))
+      .rejects.toThrow(/no preset "eval-lean"/)
+  })
+
+  it('provisionScope on a harness with no hook is a no-op that still resolves the directory', async () => {
+    const homesRoot = tempDir('scope-provision-none-')
+    const { registry } = await mount(homesRoot)
+    registry.register(harness())
+    expect(await registry.provisionScope('fake', 'eval-b')).toEqual({ homeDir: join(homesRoot, 'fake@eval-b') })
+  })
+
   it('leaves the default scope untouched: no provisioning hook, no new directory work', async () => {
     const homesRoot = tempDir('scope-default-')
     const { registry } = await mount(homesRoot)

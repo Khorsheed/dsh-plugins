@@ -19,7 +19,11 @@
       "sha": "2f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a4c6e80b1d3f5709a2c4e6",
       "preset": "eval-lean",
       "skills": 3,
-      "tools": 11
+      "tools": 11,
+      "source": "scope-snapshot",
+      "snapshot": {
+        "sha": "4c6e80b1d3f5709a2c4e62f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a"
+      }
     }
   }
 }

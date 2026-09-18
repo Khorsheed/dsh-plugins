@@ -48,7 +48,7 @@ import {
   registerMemberRun,
   resolveApiKey,
 } from './dsh-cli-provider.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
 import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
@@ -722,7 +722,7 @@ export class DshLiveDriver {
     }
 
     // Provisioning is idempotent; re-running heals a drifted sub-profile.
-    provisionDshSubProfile(spec.homeDir, this.config)
+    provisionDshScope(spec.homeDir, this.config)
     const apiKey = await resolveApiKey(this.ctx, this.config)
 
     const accepted: Promise<void> = (async () => {

@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev11** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev12** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator and the bind form's prefill derive from it. The `dataset-authoring` skill is also planned to derive from this protocol, but remains planned and is not yet distributed with `@khorsheed/dsh-datasets`. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -300,6 +300,9 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `scope` may be omitted, and omitting it means "run against this harness's default scoped home" — what every condition written before this field says. Naming one (a `[a-z0-9-]` NAME, never a path) runs the condition against `<homesRoot>/<harness>@<scope>` instead: a SIBLING of the default directory with its own login, its own session records and its own `delegations.jsonl`. Credentials are never copied into it. It IS part of the condition hash: two conditions differing only in `scope` are two SUBJECTS, because they log in as two accounts — which is how one run compares two logins of one harness (the factor I4's per-delegation model, per-condition provisioning and two-preset pilot all rest on). The readiness probe probes each condition's own scope, and a container cell mounts each condition's own directory. A scoped delegation is exec-only (the live drivers bind the default scoped home), and kimi's member bridge stays bound to the default scope too.
 - `preset` is meaningful only for a subject THIS family composes. Today that is `dsh` alone: the sub-profile inside its scoped home is written by the evaluation instance, and the preset roster is a layer of that same patch. The three external CLIs run their vendor's own composition, which this family cannot compose — a `preset` for one of them is a claim with no counterpart, so validate refuses it (`PRESET_NOT_FOR_HARNESS`) and the only legal value is `null`. Their equivalent is `skills.pack` (a skill pack materialized into the scoped home), which this family does not provision yet either; that is I6.
 - A non-null `preset` REQUIRES `capabilities` inside the lock's `provisioned` block: the CAPABILITY HASH capability-catalog computes over the provisioned environment (the canonical form keeps each skill's name/source/body-sha and each tool's name/channel/parameters — descriptions stay out, because rewording one must not mint a new subject). Without it the readiness gate refuses before spending a single delegation (`CAPABILITIES_NOT_PROVISIONED`): `preset` enters the condition hash, so two conditions differing only in preset are two subjects, and nobody measuring it leaves them two subjects on paper and one in fact. A record whose `preset` disagrees with the declaration is refused the same way — what was provisioned belongs to another subject.
+- `capabilities.source` says WHICH preset directory was measured. `scope-snapshot`: the scoped home keeps its own byte-identical copy (`<scoped home>/.agent-presets/<id>`), which is the only arrangement a container round can use — a unit bind-mounts the scoped home and nothing else, so a roster pointed at the deployment's preset root names a path the unit does not have. `instance-root`: the scope defers to the deployment's root — measurable, and resolvable only on the host path.
+- `scope-snapshot` also carries `capabilities.snapshot.sha`: the digest of EVERY file in that copy, `SKILL.md` included. It is not a second opinion about the capability face; it is the only evidence an OFFLINE reader has that the subject is still the one that was measured — `home.sha` hashes config-suffixed files by design and never moves when a skill body is edited, and the capability face needs a live catalog. The readiness gate and `validate` both re-check it and refuse a disagreement, naming `conditions provision`.
+- A preset used as a factor may NOT name an absolute path in its `agent.cordis.yml`. The same preset is read from three directories (the deployment's preset root, the scope's copy, the unit's mount point), so an absolute path is wrong in at least two of them — and wrong silently, since `skill-filesystem` treats a root it cannot read as an empty one. The form that travels is the loader's own expression, as the shipped `cordis` preset writes it: `!!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`, where `baseUrl` is the composition's own directory. A preset naming an absolute path is refused both where the copy is made and where it is measured.
 - `unit` may be omitted, and omitting it means "this condition only ever runs on the host". A plan that declares a `unit` REQUIRES it: `unit.scopedHome` says where this condition's credential directory is mounted inside the unit and which variable names it (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), and `var` must also appear in `env.keys` — the name that gets injected has to be a name the document admits to injecting, which validate enforces as an error. The HOST side of that directory is deliberately absent: the orchestrator mounts the evaluation instance's own scoped home for that harness — the one `/<harness> login` writes into, and the one the delegation read-back reads. Mounting a COPY fails silently: a containerized round writes its rollout into whatever was bound, while the read-back looks under `homeDir(<harness>)`, and two different directories produce no error at all — just a read-back that is empty forever.
 - `unit` IS part of the condition hash (only `notes` is not): where a subject reads its credentials from is a factor, not a comment. Adding `unit` to an existing condition changes its hash and stales its lock, which is a re-provision.
 - Example (fully resolved; the in-progress I1 hand-walked shape lives in the dataset repo's `conditions/dsh-exec.json`, its four null fields listed as warnings):
@@ -349,7 +352,7 @@ One condition = one harness + a model declaration + a permission word + one scop
 
 **Only provision writes this file.** A hand-written lock claims the scoped home was checked when nobody checked it, so provision is the sole writer: it resolves the condition's `(harness, scope)` to a scoped home (reading it materializes it), stops unless that scope's credential is present and prints the login command if it is not (`/<harness> login --scope <name>` — provision never logs in and never copies a credential), checks the declaration against that scope's effective settings field by field, then hashes the home and writes the lock.
 
-`provisioned` records that check, and is ADDITIVE in `/1`: a lock without it was written before provision existed, and validate reads that as "nobody ever checked" rather than as a violation. `preset` and `capabilities` are in turn additive WITHIN `provisioned`: a lock without them is a complete record of what provision checked at the time, not a broken one. `at` is when provision ran; `cliVersion` is the version the CLI reported then (back-filled into the lock when the condition declares `harness.version: null` — the condition document is never rewritten); `effective` is what that scope answered for the four fields, with `null` meaning the harness has no such knob at all (dsh has no permission knob, which is exactly why its permission word is `unrestricted`).
+`provisioned` records that check, and is ADDITIVE in `/1`: a lock without it was written before provision existed, and validate reads that as "nobody ever checked" rather than as a violation. `preset` and `capabilities` are in turn additive WITHIN `provisioned`, and `capabilities.source` and `capabilities.snapshot` are additive within `capabilities` (v1-rev12): a lock without them is a complete record of what provision checked at the time, not a broken one. `at` is when provision ran; `cliVersion` is the version the CLI reported then (back-filled into the lock when the condition declares `harness.version: null` — the condition document is never rewritten); `effective` is what that scope answered for the four fields, with `null` meaning the harness has no such knob at all (dsh has no permission knob, which is exactly why its permission word is `unrestricted`).
 
 The grading split is not arbitrary: `permissions` is the approval boundary (frozen decision 3) and `model.endpoint` is the upstream route (frozen decision 5), so those two ARE the subject under test — a disagreement is an error and NO lock is written. `harness.version`, `model.declared` and `reasoning.effort` disagreeing are warnings: a declared model differing from the harness default is normal since T30b (the declaration is the value REQUESTED per delegation), a missing reasoning knob is an honest absence, and a CLI version is a fact to record rather than to enforce. The comparable spellings of `model.endpoint` are `"default"` (no base URL in force) or the endpoint's URL or hostname (a URL is reduced to its host before comparing — a path can carry tenant ids, so the family only ever reports a hostname); a label like `"proxy"` names no endpoint anyone can check and reads as a mismatch.
 
@@ -481,6 +484,27 @@ validate re-checks with the same function: when a lock's `provisioned.effective`
             "tools": {
               "type": "integer",
               "description": "How many tools the face carries (a reader aid; the sha is the identity)."
+            },
+            "source": {
+              "enum": [
+                "scope-snapshot",
+                "instance-root"
+              ],
+              "description": "Where the measured preset directory lives relative to the scope. `scope-snapshot`: the scoped home keeps its own byte-identical copy, which is the arrangement a container round needs (a unit bind-mounts the scoped home and nothing else). `instance-root`: the scope defers to the deployment's preset root — measurable, and resolvable only on the host path."
+            },
+            "snapshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sha"
+              ],
+              "description": "The digest of the scope's own copy of the preset — EVERY file of it, SKILL.md included. Present only with source `scope-snapshot`. It is not a second opinion about the capability face: it is what lets the readiness gate and validate see, offline, that the subject is still the one that was measured. `home.sha` cannot — it hashes config-suffixed files by design, and a skill body is not one.",
+              "properties": {
+                "sha": {
+                  "type": "string",
+                  "description": "64-hex sha256 over the copy's `<relPath>\\0<content>\\0` stream, sorted by relPath."
+                }
+              }
             }
           }
         }
@@ -511,7 +535,7 @@ validate re-checks with the same function: when a lock's `provisioned.effective`
 }
 ```
 
-A sub-dsh condition carries two more lines — `provisioned.preset` is read back from the sub-profile that was written, and `capabilities.sha` is the `caps:` tag without its prefix:
+A sub-dsh condition carries a few more lines — `provisioned.preset` is read back from the sub-profile that was written, `capabilities.sha` is the `caps:` tag without its prefix, and `source` / `snapshot` say that the scope's own copy was the thing measured and what that copy hashed to:
 
 ```json
 {
@@ -535,7 +559,11 @@ A sub-dsh condition carries two more lines — `provisioned.preset` is read back
       "sha": "2f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a4c6e80b1d3f5709a2c4e6",
       "preset": "eval-lean",
       "skills": 3,
-      "tools": 11
+      "tools": 11,
+      "source": "scope-snapshot",
+      "snapshot": {
+        "sha": "4c6e80b1d3f5709a2c4e62f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a"
+      }
     }
   }
 }
