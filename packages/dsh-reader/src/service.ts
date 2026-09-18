@@ -512,6 +512,7 @@ export class ReaderService {
         fromFeed: false,
         fetchedAt: cached.fetchedAt,
         ...(cached.truncated === true ? { truncated: true } : {}),
+        ...(cached.scriptFigures === undefined ? {} : { scriptFigures: cached.scriptFigures }),
         ...(fresh && cached.url === request.url ? { html: cached.html } : {}),
       }
     }
@@ -582,6 +583,7 @@ export class ReaderService {
     url: string
     html: string
     truncated?: boolean
+    scriptFigures?: number
   }): Promise<ReaderEntryBodyView> {
     const html = request.html.trim()
     if (html.length === 0) {
@@ -601,6 +603,9 @@ export class ReaderService {
         : new Date(now.getTime() + ttlHours * 60 * 60 * 1000).toISOString(),
       url: request.url,
       ...(request.truncated === true ? { truncated: true } : {}),
+      ...(request.scriptFigures === undefined || request.scriptFigures === 0
+        ? {}
+        : { scriptFigures: request.scriptFigures }),
     }
     await this.commit(current => {
       const existing = current.annotations?.[request.entryId]
@@ -621,6 +626,7 @@ export class ReaderService {
       html: body.html,
       fetchedAt: body.fetchedAt,
       ...(body.truncated === true ? { truncated: true } : {}),
+      ...(body.scriptFigures === undefined ? {} : { scriptFigures: body.scriptFigures }),
     }
   }
 

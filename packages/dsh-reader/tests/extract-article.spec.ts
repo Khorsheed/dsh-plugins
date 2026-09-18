@@ -186,3 +186,31 @@ describe('normalizeInline', () => {
     expect(normalizeInline('<p>x</p><script>steal()</script>')).toBe('x')
   })
 })
+
+describe('figures the page draws at runtime', () => {
+  it('drops a caption-only figure and counts it', () => {
+    // Measured on transformer-circuits.pub: `<figure data-fignum="2">` holds an
+    // empty `<div class='intro-structural'>` and a caption; the illustration is
+    // painted by the page's scripts, which a fetch never runs. A caption under
+    // nothing reads as "the plugin lost my image".
+    const html = `<html><body><article><p>${'text '.repeat(60)}</p>`
+      + `<figure data-fignum="2"><div class="intro-structural"></div><figcaption>Figure 2: a picture drawn at runtime.</figcaption></figure>`
+      + `<figure><img src="./png/pic.png"><figcaption>Figure 3: a real image.</figcaption></figure>`
+      + `</article></body></html>`
+    const result = extractArticle(html, 'https://example.com/paper/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBe(1)
+    expect(result.html).not.toContain('drawn at runtime')
+    expect(result.html).toContain('a real image')
+    expect(result.html).toContain('https://example.com/paper/png/pic.png')
+  })
+
+  it('reports nothing when every figure has its picture', () => {
+    const html = `<html><body><article><p>${'text '.repeat(60)}</p>`
+      + `<figure><img src="https://example.com/a.png"><figcaption>cap</figcaption></figure>`
+      + `</article></body></html>`
+    const result = extractArticle(html, 'https://example.com/')
+    expect(result.ok && result.scriptFigures).toBeUndefined()
+  })
+})

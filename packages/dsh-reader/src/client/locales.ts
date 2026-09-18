@@ -38,7 +38,7 @@ export type ReaderKey =
   | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
-  | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches'
+  | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
@@ -197,8 +197,9 @@ export const en = {
   'foot.unread': 'unread',
   'foot.refreshing': 'Refreshing…',
   'state.backfilling': 'Filling in {done}/{total} full articles…',
-  'detail.filledIn': 'The full text was fetched automatically and is cached.',
-  'detail.filledInBadge': 'full text',
+  'detail.filledIn': 'The full text was fetched automatically and cached. The card still shows the feed’s own summary — open it to read.',
+  'detail.filledInBadge': 'Full text',
+  'detail.scriptFigures': 'This page draws {count} of its figures with its own scripts, so a fetch cannot capture them —',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -353,8 +354,9 @@ export const zh = {
   'foot.unread': '未读',
   'foot.refreshing': '正在刷新…',
   'state.backfilling': '正在补齐全文 {done}/{total}…',
-  'detail.filledIn': '全文是自动抓取并缓存的。',
-  'detail.filledInBadge': '已补全',
+  'detail.filledIn': '全文是自动抓取并缓存的。卡片上仍是 feed 自己的摘要 —— 点开看全文。',
+  'detail.filledInBadge': '已抓全文',
+  'detail.scriptFigures': '这一页有 {count} 张插图由页面自己的脚本绘制，抓取时拿不到 ——',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',
