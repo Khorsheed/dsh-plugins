@@ -8,7 +8,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { apply, inject } from '../src/client/index.ts'
 import { InviteAgentAction } from '../src/client/InviteAgentAction.tsx'
-import type { InviteAgentInjected, RoomComposerInjected } from '../src/client/slots.ts'
+import type { InviteAgentInjected, RoomComposerInjected, RoomSpeechInjected } from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
 
 afterEach(() => {
@@ -23,6 +23,8 @@ async function bench(options: {
   mountFails?: boolean
   /** Current session id and its cwd (undefined cwd = a session without one). */
   current?: { id: string; cwd?: string }
+  /** Provide a uiWorkspace stub (the openSession route); absent = the service-less degrade. */
+  uiWorkspace?: boolean
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -33,6 +35,8 @@ async function bench(options: {
       : vi.fn(async (): Promise<() => Promise<void>> => async () => {}),
   }
   ctx.provide('remote', remoteService as never)
+  const uiWorkspace = { openSession: vi.fn() }
+  if (options.uiWorkspace === true) ctx.provide('uiWorkspace', uiWorkspace as never)
   const remote = {
     invite: vi.fn(async () => ({ ok: true as const, value: { ok: true as const, value: { name: 'ada', pendingFirstTask: false } } })),
     listProviders: vi.fn(async () => ({ ok: true as const, value: { localAgentAvailable: true, providers: [] } })),
@@ -75,7 +79,7 @@ async function bench(options: {
       'conversation.input.dock': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
-  return { ctx, slots, remote, remoteService, sessions, conversationEvents }
+  return { ctx, slots, remote, remoteService, sessions, conversationEvents, uiWorkspace }
 }
 
 describe('room client apply', () => {
@@ -148,6 +152,26 @@ describe('room client apply', () => {
     const face = (entry.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
     await face.roomStore.ensure('room-1' as never)
     expect(select({ pendingInteraction: undefined, sessionId: 'room-1' })).toEqual({ room: true })
+  })
+
+  it('openSession routes through uiWorkspace and swallows its synchronous refusal (alpha.2)', async () => {
+    const { ctx, slots, uiWorkspace } = await bench({ uiWorkspace: true })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.chat.node').find(node => node.options.key === 'room-speech')!
+    const face = (entry.inject as unknown as () => RoomSpeechInjected)()
+    face.openSession('child-1' as never)
+    expect(uiWorkspace.openSession).toHaveBeenCalledWith('child-1')
+    // alpha.2's openSession throws synchronously on an unretainable target — the gesture degrades.
+    uiWorkspace.openSession.mockImplementation(() => { throw new Error('cannot retain') })
+    expect(() => { face.openSession('gone' as never) }).not.toThrow()
+  })
+
+  it('openSession degrades to a no-op without the uiWorkspace service', async () => {
+    const { ctx, slots } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.chat.node').find(node => node.options.key === 'room-speech')!
+    const face = (entry.inject as unknown as () => RoomSpeechInjected)()
+    expect(() => { face.openSession('child-1' as never) }).not.toThrow()
   })
 
   it('collapses every contribution on teardown', async () => {

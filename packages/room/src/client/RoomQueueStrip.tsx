@@ -15,7 +15,7 @@ import { IconChevronDownOutline14, IconChevronUpOutline14, IconQueueOutline14 } 
 import type { RoomComposerProps } from './slots.ts'
 import css from './RoomQueueStrip.module.css'
 
-/** One queued message, pre-selected by the composer from the session snapshot. */
+/** One queued message, pre-selected by the composer from the inbox projection (the legacy snapshot queue on 0.1.5). */
 export interface RoomQueueItem {
   readonly id: string
   readonly preview: string

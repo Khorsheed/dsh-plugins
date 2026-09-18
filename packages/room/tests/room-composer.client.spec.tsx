@@ -373,7 +373,7 @@ describe('RoomComposer inherited environment duties', () => {
     }
   })
 
-  it('renders the queued-messages strip from the session snapshot (count header over one)', async () => {
+  it('renders the queued-messages strip from the legacy snapshot queue on 0.1.5 hosts (count header over one)', async () => {
     await bench(vi.fn(), {
       session: {
         running: true,
@@ -394,7 +394,51 @@ describe('RoomComposer inherited environment duties', () => {
     expect(screen.queryByText('steering 不算')).toBeNull()
   })
 
-  it('renders a single queued message directly and nothing for an empty queue', async () => {
+  it('renders the queued-messages strip from the inbox projection on alpha.2 hosts', async () => {
+    const useProjection = ((key: string) => key === 'inbox'
+      ? {
+        'next-turn': [
+          { id: 'q1', content: [{ type: 'text', text: '第一条跟进' }], source: { kind: 'user' } },
+          // Attachment blocks drop out of the preview; other non-text blocks flatten to [type].
+          {
+            id: 'q2',
+            content: [
+              { type: 'text', text: '带图  跟进' },
+              { type: 'image', attachment: { attachmentId: 'a1' } },
+              { type: 'tool_reference' },
+            ],
+            source: { kind: 'user', rpcId: 'r2' },
+          },
+        ],
+        'next-step': [],
+      }
+      : undefined) as unknown as UseProjection
+    await bench(vi.fn(), {
+      // A legacy queue alongside the projection is shadowed — the projection wins.
+      session: { running: true, queue: [{ id: 'legacy', placement: 'queued', preview: '旧队列不应出现' }] },
+      useProjection,
+      t: makeTranslate(zh) as RoomComposerProps['t'],
+    })
+    const strip = screen.getByTestId('room-queue-strip')
+    expect(strip.textContent).toContain('2 条排队消息')
+    fireEvent.click(screen.getByRole('button', { name: /排队消息/ }))
+    expect(screen.getByText('第一条跟进')).toBeDefined()
+    expect(screen.getByText('带图 跟进 [tool_reference]')).toBeDefined()
+    expect(screen.queryByText('旧队列不应出现')).toBeNull()
+  })
+
+  it('a served-but-empty inbox projection hides the strip and shadows the legacy queue', async () => {
+    const useProjection = ((key: string) => key === 'inbox'
+      ? { 'next-turn': [], 'next-step': [] }
+      : undefined) as unknown as UseProjection
+    await bench(vi.fn(), {
+      session: { running: true, queue: [{ id: 'q1', placement: 'queued', preview: '旧队列' }] },
+      useProjection,
+    })
+    expect(screen.queryByTestId('room-queue-strip')).toBeNull()
+  })
+
+  it('renders a single legacy queued message directly and nothing for an empty queue', async () => {
     await bench(vi.fn(), {
       session: { running: true, queue: [{ id: 'q1', placement: 'queued', preview: '唯一一条' }] },
     })
@@ -426,8 +470,10 @@ function modelDirectory(over: Partial<RoomModelDirectoryState> = {}) {
   return {
     store,
     load: vi.fn(async () => store.getSnapshot()),
-    select: vi.fn(async (selection: RoomModelSelection) => {
+    // Promise<unknown>: the both-lines face (0.1.5 resolves void, alpha.2 a RemoteResult).
+    select: vi.fn(async (selection: RoomModelSelection): Promise<unknown> => {
       store.set({ ...store.getSnapshot(), current: selection })
+      return undefined
     }),
   }
 }
@@ -500,5 +546,29 @@ describe('RoomComposer main-agent model picker', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Model Two' }))
     expect(await screen.findByRole('alert')).toBeDefined()
     expect(screen.getByRole('alert').textContent).toBe(zh['composer.model.failed'])
+  })
+
+  it('surfaces a refused switch answered as a settled RemoteResult (alpha.2 semantics) and keeps the menu open', async () => {
+    const directory = modelDirectory()
+    directory.select.mockResolvedValue({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
+    await bench(vi.fn(), { modelDirectory: directory, t: makeTranslate(zh) as RoomComposerProps['t'] })
+    fireEvent.click(screen.getByRole('button', { name: zh['composer.model.picker'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(zh['composer.model.menu.model']) }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Model Two' }))
+    expect(await screen.findByRole('alert')).toBeDefined()
+    expect(screen.getByRole('alert').textContent).toBe(zh['composer.model.failed'])
+    // The failure branch never closes the menu (a mistaken close was the alpha.2 regression).
+    expect(screen.getByRole('menu')).toBeDefined()
+  })
+
+  it('a settled ok RemoteResult closes the menu (alpha.2 success)', async () => {
+    const directory = modelDirectory()
+    directory.select.mockResolvedValue({ ok: true, value: undefined })
+    await bench(vi.fn(), { modelDirectory: directory, t: makeTranslate(zh) as RoomComposerProps['t'] })
+    fireEvent.click(screen.getByRole('button', { name: zh['composer.model.picker'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(zh['composer.model.menu.model']) }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Model Two' }))
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

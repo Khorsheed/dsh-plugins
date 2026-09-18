@@ -39,7 +39,7 @@ import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
 import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition } from './nodes.ts'
-import { RoomStore } from './room-store.ts'
+import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomTaskLineView } from './RoomTaskLineView.tsx'
@@ -113,7 +113,19 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return { ok: true }
   }
 
-  const openSession = (sessionId: SessionId): void => { ctx.sessions.open(sessionId) }
+  // alpha.2 deleted sessions.open; uiWorkspace.openSession is the entry on
+  // both lines (0.1.5 navigation.ts:134, alpha.2 navigation.ts:161) and
+  // throws synchronously on a target the runtime cannot retain — a torn-down
+  // member session degrades to staying on the current view. Probed at
+  // gesture time like browseDirectory, never injected.
+  const openSession = (sessionId: SessionId): void => {
+    const uiWorkspace = ctx.get('uiWorkspace') as { openSession?: (target: SessionId) => void } | undefined
+    try {
+      uiWorkspace?.openSession?.(sessionId)
+    } catch {
+      // An unopenable target leaves the current view in place.
+    }
+  }
   // The official per-session model directories (ui-model-selection's public
   // client service, augmented onto Context by that plugin): the composer's
   // main-agent model picker resolves the SAME directory the official model
@@ -403,7 +415,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       label: () => t('view.members'),
       inject: (sessionId: SessionId): RoomMembersInjected => membersFace(sessionId),
     }, MembersView),
-    () => roomChrome.show(ctx.sessions.list.getSnapshot().current),
+    () => roomChrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
   )
   ctx.slots.inject('conversation.view', () => {
     membersToggle.setReady(true)

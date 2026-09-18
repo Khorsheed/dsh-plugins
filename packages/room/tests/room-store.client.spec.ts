@@ -15,8 +15,14 @@ const RUNNING_ROOM: RoomState = {
   runs: [{ member: 'ada', state: 'running', startedAt: 1 }],
 }
 
+/** The sessions-list double: the 0.1.5 `current` plus alpha.2's per-row retention (both read paths exercised). */
+interface ListDouble {
+  current: SessionId | undefined
+  byId: Record<SessionId, { id: SessionId; retainedBy?: { mainView?: number } }>
+}
+
 interface Bench {
-  list: ReturnType<typeof createSnapshotStore<{ current: SessionId | undefined }>>
+  list: ReturnType<typeof createSnapshotStore<ListDouble>>
   /** sessionId → the client session's live conversation feed (undefined = unbound). */
   live: Map<SessionId, ReturnType<typeof createSnapshotStore<{ tick: number }>>>
   gateway: RoomGateway & { isRoom: ReturnType<typeof vi.fn>; getState: ReturnType<typeof vi.fn> }
@@ -24,7 +30,7 @@ interface Bench {
 }
 
 function bench(): Bench {
-  const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
+  const list = createSnapshotStore<ListDouble>({ current: undefined, byId: {} })
   const live = new Map<SessionId, ReturnType<typeof createSnapshotStore<{ tick: number }>>>()
   const ctx = {
     sessions: {
@@ -98,6 +104,17 @@ describe('RoomStore', () => {
     const { list, store, gateway } = bench()
     const dispose = store.start()
     list.update((draft) => { draft.current = 'room-1' as SessionId })
+    await vi.waitFor(() => { expect(gateway.isRoom).toHaveBeenCalledWith({ sessionId: 'room-1' }) })
+    await vi.waitFor(() => { expect(store.isRoomCached('room-1' as SessionId)).toBe(true) })
+    dispose()
+  })
+
+  it('follows the alpha.2 main-view retention row when the legacy current is absent', async () => {
+    const { list, store, gateway } = bench()
+    const dispose = store.start()
+    list.update((draft) => {
+      draft.byId['room-1' as SessionId] = { id: 'room-1' as SessionId, retainedBy: { mainView: 1 } }
+    })
     await vi.waitFor(() => { expect(gateway.isRoom).toHaveBeenCalledWith({ sessionId: 'room-1' }) })
     await vi.waitFor(() => { expect(store.isRoomCached('room-1' as SessionId)).toBe(true) })
     dispose()
