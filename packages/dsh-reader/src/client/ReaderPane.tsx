@@ -1306,6 +1306,25 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [actions, props])
 
   /**
+   * Delete a tag from the vocabulary and from every entry carrying it.
+   *
+   * The vocabulary is the reader's own creation, so it has to be deletable —
+   * a tag that can only be made is a one-way door. Two follow-ups are not
+   * optional: the active narrowing is dropped when it was that tag (otherwise
+   * the wall keeps filtering by something that no longer exists), and the
+   * session's tag ids are pruned so no card keeps drawing a dead chip.
+   *
+   * @param tagId - the tag to delete.
+   */
+  const removeTag = useCallback(async (tagId: string) => {
+    const result = await props.deleteTag(tagId)
+    if (!result.ok) return
+    if (query.trim() === tagQuery(tagId)) actions.setQuery('')
+    actions.dropTag(tagId)
+    actions.refresh()
+  }, [actions, props, query])
+
+  /**
    * Open the tag panel for one card, without opening the article.
    *
    * The panel is `position: fixed`, so its seat is decided here instead of by a
@@ -1858,40 +1877,46 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         </div>
         <div className={css.paneBody}>
           <p className={css.help}>{t('sources.help')}</p>
-          <div className={css.field}>
-            <label className={css.fieldLabel} htmlFor="reader-refresh-time">{t('sources.time')}</label>
-            <input
-              id="reader-refresh-time"
-              className={css.timeInput}
-              type="time"
-              value={timeOfDay}
-              onChange={event => { void setRefreshTime(event.target.value) }}
-            />
-            <span className={css.help}>{t('sources.timeHelp')}</span>
-          </div>
-          <div className={css.field}>
-            <label className={css.fieldLabel} htmlFor="reader-cache-ttl">{t('sources.cache')}</label>
-            <select
-              id="reader-cache-ttl"
-              className={css.timeInput}
-              value={String(cacheTtlHours)}
-              onChange={event => {
-                const hours = Number(event.target.value)
-                void props.setCachePolicy(hours).then(result => { if (result.ok) actions.setCacheTtl(hours) })
-              }}
-            >
-              {[12, 24, 168, 0].map(hours => (
-                <option key={hours} value={hours}>{t(hours === 0 ? 'sources.cacheForever' : 'sources.cacheHours', { count: hours }) }</option>
-              ))}
-            </select>
-            <span className={css.help}>{t('sources.cacheHelp')}</span>
+          {/* One compact settings row instead of two full-width blocks: two
+              controls and their explanations should not own three lines of the
+              page each. The long help lives in the row's `title`, which is
+              where a reader looks for it the second time. */}
+          <div className={css.settingsRow}>
+            <label className={css.setting} htmlFor="reader-refresh-time" title={t('sources.timeHelp')}>
+              <span className={css.settingLabel}>{t('sources.time')}</span>
+              <input
+                id="reader-refresh-time"
+                className={css.settingControl}
+                type="time"
+                value={timeOfDay}
+                onChange={event => { void setRefreshTime(event.target.value) }}
+              />
+            </label>
+            <label className={css.setting} htmlFor="reader-cache-ttl" title={t('sources.cacheHelp')}>
+              <span className={css.settingLabel}>{t('sources.cache')}</span>
+              <select
+                id="reader-cache-ttl"
+                className={css.settingControl}
+                value={String(cacheTtlHours)}
+                onChange={event => {
+                  const hours = Number(event.target.value)
+                  void props.setCachePolicy(hours).then(result => { if (result.ok) actions.setCacheTtl(hours) })
+                }}
+              >
+                {[12, 24, 168, 0].map(hours => (
+                  <option key={hours} value={hours}>{t(hours === 0 ? 'sources.cacheForever' : 'sources.cacheHours', { count: hours }) }</option>
+                ))}
+              </select>
+            </label>
           </div>
           {/* The list grows one entry per pasted URL plus one per feed, and the
               two are different things: narrowing by kind and ordering by
               arrival is how "delete that link I added yesterday" is answered
-              without reading the whole list. */}
+              without reading the whole list. Grouped and labelled inline, so
+              the two rows read as two questions instead of eight loose chips. */}
           {sources.length > 0 && (
             <div className={css.manageTools}>
+              <span className={css.chipGroupLabel}>{t('filter.byKind')}</span>
               <div className={css.chipRow} role="group" aria-label={t('sources.kindFilter')}>
                 {(['all', ...READER_SOURCE_KINDS] as const).map(kind => (
                   <button
@@ -1910,6 +1935,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   </button>
                 ))}
               </div>
+              <span className={css.chipGroupLabel}>{t('sort.title')}</span>
               <div className={css.chipRow} role="group" aria-label={t('sort.title')}>
                 {(['added', 'name', 'fetched'] as const).map(option => (
                   <button
@@ -2036,6 +2062,20 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             placeholder={t('search.placeholder')}
             onChange={event => actions.setQuery(event.target.value)}
           />
+          {/* A field the reader typed into needs a way out that is not
+              select-all-then-delete: the × clears the whole narrowing, filter
+              values included (`#sourceId` / `@tagId` are just queries). */}
+          {query.length > 0 && (
+            <button
+              type="button"
+              className={css.searchClear}
+              title={t('action.clearSearch')}
+              aria-label={t('action.clearSearch')}
+              onClick={() => { actions.setQuery('') }}
+            >
+              ×
+            </button>
+          )}
         </div>
         {/* Both icon tools sit to the RIGHT of the field, each in its own fixed
             26px box: the search field is the only thing that gives width back on
@@ -2092,6 +2132,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                         placeholder={t('filter.searchSource')}
                         onChange={event => setSourceFilter(event.target.value)}
                       />
+                      {sourceFilter.length > 0 && (
+                        <button
+                          type="button"
+                          className={css.searchClear}
+                          title={t('action.clearSearch')}
+                          aria-label={t('action.clearSearch')}
+                          onClick={() => { setSourceFilter('') }}
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   )}
                   <div className={css.filterList}>
@@ -2177,16 +2228,30 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   ))}
                   {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
                   {tags.map(tag => (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      className={css.filterRow}
-                      onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
-                    >
-                      <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
-                      <span className={css.filterLabel}>{tag.name}</span>
-                      <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
-                    </button>
+                    <div key={tag.id} className={css.filterTagRow}>
+                      <button
+                        type="button"
+                        className={css.filterRow}
+                        onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
+                      >
+                        <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
+                        <span className={css.filterLabel}>{tag.name}</span>
+                        <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
+                      </button>
+                      {/* The vocabulary is the reader's own; a tag that can only
+                          be created is a one-way door. Deleting is quiet (the
+                          × sits at low contrast) but always visible: a control
+                          that appears only on hover is invisible on touch. */}
+                      <button
+                        type="button"
+                        className={css.filterTagDelete}
+                        title={t('filter.deleteTag')}
+                        aria-label={`${t('filter.deleteTag')}: ${tag.name}`}
+                        onClick={() => { void removeTag(tag.id) }}
+                      >
+                        ×
+                      </button>
+                    </div>
                   ))}
                 </>
               )}

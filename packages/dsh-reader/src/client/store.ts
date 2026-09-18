@@ -105,6 +105,8 @@ export type ReaderActions = {
   setView: (draft: ReaderState, view: ReaderView) => void
   setTags: (draft: ReaderState, tags: ReaderTag[], counts: Record<string, number>) => void
   setEntryTags: (draft: ReaderState, entryId: string, tagIds: string[]) => void
+  /** Drop a tag from the vocabulary, from every entry, and from the counts. */
+  dropTag: (draft: ReaderState, tagId: string) => void
   setFetching: (draft: ReaderState, entryId: string, fetching: boolean) => void
   setStaleBody: (draft: ReaderState, entryId: string, stale: boolean) => void
   setCacheTtl: (draft: ReaderState, hours: number) => void
@@ -186,6 +188,18 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       setTags: (d, tags, counts) => { d.tags = tags; d.tagCounts = counts },
       setEntryTags: (d, entryId, tagIds) => {
         d.entryTagIds = { ...d.entryTagIds, [entryId]: tagIds }
+      },
+      dropTag: (d, tagId) => {
+        // Three places hold a tag id, and a deleted tag must leave all of them
+        // or the wall keeps drawing a chip that can no longer be clicked.
+        d.tags = d.tags.filter(tag => tag.id !== tagId)
+        const { [tagId]: _dropped, ...counts } = d.tagCounts
+        d.tagCounts = counts
+        const entryTagIds: Record<string, string[]> = {}
+        for (const [entryId, ids] of Object.entries(d.entryTagIds)) {
+          entryTagIds[entryId] = ids.filter(id => id !== tagId)
+        }
+        d.entryTagIds = entryTagIds
       },
       setFetching: (d, entryId, fetching) => {
         const next = { ...d.fetching }

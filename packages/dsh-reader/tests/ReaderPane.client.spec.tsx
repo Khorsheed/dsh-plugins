@@ -1276,3 +1276,47 @@ describe('opening an entry with no body pays for one fetch', () => {
     expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
   })
 })
+
+describe('the search box clears itself, and tags can be deleted', () => {
+  it('clears the wall search from inside the field, and only while it has text', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    const input = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    // Nothing to clear, nothing shown: the × is a state, not decoration.
+    expect(screen.queryByTitle(zh['action.clearSearch'])).toBeNull()
+    fireEvent.change(input, { target: { value: '一条' } })
+    fireEvent.click(screen.getByTitle(zh['action.clearSearch']))
+    expect(input.value).toBe('')
+    expect(screen.queryByTitle(zh['action.clearSearch'])).toBeNull()
+  })
+
+  it('deletes a tag from the filter panel and drops its narrowing with it', async () => {
+    // A tag that can only be created is a one-way door: the vocabulary is the
+    // reader's own, so it has to be deletable where it is used — and a deleted
+    // tag must not stay the active filter.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+      tags: [{ id: 'tag-ai', name: 'AI', createdAt: 'x' }],
+      tagCounts: { 'tag-ai': 2 },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByText('AI'))
+    const input = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    await waitFor(() => { expect(input.value).toBe('@tag-ai') })
+
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByLabelText(`${zh['filter.deleteTag']}: AI`))
+    await waitFor(() => { expect(ui.mocks.deleteTag).toHaveBeenCalledWith('tag-ai') })
+    expect(input.value).toBe('')
+  })
+
+  it('keeps both settings controls in the compressed row', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    expect(ui.container.querySelector('#reader-refresh-time')).not.toBeNull()
+    expect(ui.container.querySelector('#reader-cache-ttl')).not.toBeNull()
+  })
+})
