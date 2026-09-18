@@ -45,6 +45,7 @@ import {
   linkEntryId,
   READER_SOURCE_KINDS,
   type ReaderPreviewFailureCode,
+  type ReaderRecentEntry,
   type ReaderSourceKind,
   type ReaderTag,
 } from '../types.ts'
@@ -96,6 +97,8 @@ const STROKE: Readonly<Record<string, string>> = {
   fetch: 'M8 2.6v8.2M4.8 7.8 8 11l3.2-3.2M3 13.4h10',
   check: 'M3.4 8.6 6.6 11.8 12.6 4.6',
   alert: 'M8 3.2v5.4M8 11.6v1.2',
+  // A clock, for 「最近阅读」: the page is about WHEN, not about state.
+  clock: 'M8 2.6a5.4 5.4 0 1 0 0 10.8A5.4 5.4 0 0 0 8 2.6Zm0 2.2v3.4l2.4 1.4',
 }
 
 /** Render one of the small stroke glyphs. */
@@ -312,6 +315,26 @@ function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
 /** How many entries the automatic backfill fetches at once. */
 const BACKFILL_CONCURRENCY = 2
 
+/**
+ * Rebuild one entry from a 「最近阅读」 record.
+ *
+ * The feed that published an entry may have rolled it out of its window, and
+ * the recent list keeps only the four fields it needs — so a row the wall no
+ * longer knows is reconstructed here rather than being dropped. `rowFor` then
+ * decides whether it can still be opened (its source must still exist).
+ *
+ * @param item - the stored record.
+ * @returns an entry shaped like the ones the wall parses.
+ */
+function entryFromRecent(item: ReaderRecentEntry): ReaderEntry {
+  return {
+    id: item.entryId,
+    sourceId: item.sourceId,
+    title: item.title,
+    ...(item.url === undefined ? {} : { link: item.url }),
+  }
+}
+
 /** The reader tab body. */
 export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const { sessionId, useStore, actions, t } = props
@@ -379,6 +402,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const restoredOpenRef = useRef<string | null>(null)
   /** A reading position waiting for its body to be on screen. */
   const pendingScrollRef = useRef<{ entryId: string; top: number } | null>(null)
+  /** True once the host's recent list has been read at least once. */
+  const recentLoadedRef = useRef(false)
 
   // Put the narrowing back before anything reads it. The restore of the OPEN
   // article is a separate step (it needs the entry list, which is still being
@@ -407,6 +432,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [scriptFigures, setScriptFigures] = useState(0)
   /** What the plugin holds per entry, as the host reports it (the 抓取 pills). */
   const fetchStates = useStore(s => s.fetchStates)
+  /** What the reader opened, as the host stores it (the 「最近阅读」 page). */
+  const recent = useStore(s => s.recent)
   const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
@@ -693,6 +720,44 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [actions, entryIds, props])
 
   /**
+   * Read the recent list from the host.
+   *
+   * Host-side state, so it is read when the page opens rather than mirrored in
+   * the pane: another tab (or the same reader on another device) may have read
+   * something since this pane last looked, and the pane's own write happens on
+   * every open anyway.
+   */
+  const refreshRecent = useCallback(async () => {
+    const result = await props.listRecent()
+    if (result.ok) {
+      actions.setRecent(result.value.entries)
+      recentLoadedRef.current = true
+    }
+  }, [actions, props])
+
+  // Read the list on mount AND whenever the page is showing. The mount read is
+  // what lets the detail view resolve an article the feed has rolled out of its
+  // window (the record is the only thing left that knows it); the page read
+  // covers the return from another panel, where the session snapshot restores
+  // the VIEW but can never restore host state.
+  useEffect(() => {
+    if (view === 'recent' || !recentLoadedRef.current) void refreshRecent()
+  }, [view, refreshRecent, rev])
+
+  /**
+   * Empty the recent list, here and on the host.
+   *
+   * The confirm-free gesture is deliberate: the list is a convenience, nothing
+   * in it is the reader's only copy of anything (the entries themselves live in
+   * the wall and on the sites), and a modal for "forget my history" would make
+   * the one action this page owns feel like a hazard.
+   */
+  const clearRecent = useCallback(async () => {
+    const result = await props.clearRecent()
+    if (result.ok) actions.setRecent([])
+  }, [actions, props])
+
+  /**
    * Turn stored raw payloads into bodies.
    *
    * This is what makes a fetch survive the page: the host writes the payload
@@ -729,7 +794,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     filter, query, unreadOnly, sort, read, tags: entryTagIds, now: new Date(),
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
 
-  const openEntry = openEntryId === null ? undefined : allEntries.find(entry => entry.id === openEntryId)
+  /**
+   * One entry by id: the wall's own parse first, the recent record as a fallback.
+   *
+   * The fallback is what lets the 「最近阅读」 page reopen an article the feed has
+   * rolled out of its window — the case this list exists for. Everything the
+   * detail view needs is the four stored fields plus the source row, which is
+   * still there as long as the reader kept the subscription.
+   */
+  const entryById = useCallback((id: string): ReaderEntry | undefined => {
+    const parsed = allEntries.find(entry => entry.id === id)
+    if (parsed !== undefined) return parsed
+    const item = recent.find(candidate => candidate.entryId === id)
+    return item === undefined ? undefined : entryFromRecent(item)
+  }, [allEntries, recent])
+
+  const openEntry = openEntryId === null ? undefined : entryById(openEntryId)
   /** The source the strip is currently narrowing to, if any. */
   const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
   /** The source KIND the search box is narrowing to, if any (`#rss` / `#link`). */
@@ -1218,6 +1298,26 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     actions.openEntry(row.entry.id, row.sourceId)
     actions.setView('detail')
     void loadEntryTags(row.entry.id)
+    // The recent list is the READER's record, so it is written on the same
+    // gesture that opens the article — including a reopen from that list, which
+    // is what moves an entry back to the top. Fire and forget: the page re-reads
+    // the host's copy when it opens, and a failure here must not stop the read.
+    const recorded: ReaderRecentEntry = {
+      entryId: row.entry.id,
+      sourceId: row.sourceId,
+      title: row.entry.title,
+      ...(row.entry.link === undefined ? {} : { url: row.entry.link }),
+      readAt: new Date().toISOString(),
+    }
+    // Mirrored locally as well, so the page is right the first time it is opened
+    // in this session instead of after another round trip.
+    actions.setRecent([recorded, ...recent.filter(item => item.entryId !== recorded.entryId)])
+    void props.recordRead({
+      entryId: recorded.entryId,
+      sourceId: recorded.sourceId,
+      title: recorded.title,
+      ...(recorded.url === undefined ? {} : { url: recorded.url }),
+    })
     // A cached fetch outlives the feed's own payload, so the host is the one
     // that knows whether there is full text: it returns the fresh cache, else
     // the feed's body, else nothing plus the reason a previous fetch failed.
@@ -1294,7 +1394,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const extracted = extractArticle(body.raw, row.entry.link ?? '')
     if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
     else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t, fetchBody])
+  }, [actions, props, t, fetchBody, recent])
 
   /* ------------------------------ coming back to where the reader already was */
 
@@ -1315,12 +1415,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       return
     }
     if (openEntryId !== wanted) { restoredOpenRef.current = wanted; return }
-    const entry = allEntries.find(candidate => candidate.id === wanted)
+    const entry = entryById(wanted)
     if (entry === undefined) {
-      // The list is still filling in (one payload per source) — only a COMPLETE
-      // load without the entry means the source is gone, and then the wall is
-      // the honest place to stand.
-      if (!loading) restoredOpenRef.current = wanted
+      // Two different "not there yet": the wall's parse is still filling in, or
+      // the recent list (which may be the only record of this entry) has not
+      // been read. Only a settled miss means the entry is gone for good, and
+      // then the wall is the honest place to stand.
+      if (!loading && recentLoadedRef.current) restoredOpenRef.current = wanted
       return
     }
     restoredOpenRef.current = wanted
@@ -1329,7 +1430,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const top = snapshotRef.current?.patch.scroll?.[wanted]
     if (top !== undefined) pendingScrollRef.current = { entryId: wanted, top }
     void open(row)
-  }, [allEntries, openEntryId, presentation, read, loading, open])
+  }, [allEntries, openEntryId, presentation, read, loading, open, entryById])
 
   /**
    * Put the reader back where they were inside the article.
@@ -2002,6 +2103,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             )}
           </span>
         )}
+      {/* The history entry, beside the settings one: both lead to a PAGE rather
+          than acting on the wall, and both are asked for in the same breath
+          ("where was that article I read"). The count is on the title, not in
+          the button — a badge here would fight the unread count already in the
+          header and would be wrong the moment an entry is opened. */}
+      <button
+        type="button"
+        className={css.tool}
+        title={t('action.recent')}
+        onClick={() => { actions.closeEntry(); actions.setView('recent') }}
+      >
+        {glyph('clock', 15)}
+      </button>
       <button
         type="button"
         className={css.tool}
@@ -2506,6 +2620,72 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }
 
   /* ------------------------------------------------------ subscriptions page */
+
+  if (view === 'recent') {
+    return (
+      <div className={css.root}>
+        <div className={css.bar}>
+          <button
+            type="button"
+            className={css.tool}
+            title={t('action.back')}
+            onClick={() => actions.setView('list')}
+          >
+            <IconChevronLeftOutline14 size={14} />
+          </button>
+          <span className={css.barLabel}>{t('recent.title')}</span>
+          <span className={css.spacer} />
+          {recent.length > 0 && (
+            <button
+              type="button"
+              className={css.tool}
+              title={t('recent.clearTitle')}
+              onClick={() => { void clearRecent() }}
+            >
+              <IconTrashOutline16 size={15} />
+            </button>
+          )}
+        </div>
+        <div className={css.paneBody}>
+          {recent.length === 0
+            ? <p className={css.help}>{t('recent.empty')}</p>
+            : (
+              <>
+                <p className={css.help}>{t('recent.help')}</p>
+                <div className={css.recentList}>
+                  {recent.map(item => {
+                    // The wall's own parse wins when the feed still publishes the
+                    // entry (it carries the real summary and body); the stored
+                    // record is the fallback, which is why this list outlives a
+                    // feed's rolling window at all.
+                    const row = rowFor(entryById(item.entryId) ?? entryFromRecent(item), presentation, read)
+                    const when = relativeWhen(item.readAt, new Date())
+                    const label = presentation.get(item.sourceId)?.label ?? item.sourceId
+                    return (
+                      <button
+                        key={item.entryId}
+                        type="button"
+                        className={css.recentRow}
+                        disabled={row === undefined}
+                        title={row === undefined ? t('recent.sourceGone') : item.title}
+                        onClick={() => { if (row !== undefined) void open(row) }}
+                      >
+                        <span className={css.recentTitle}>{item.title.length > 0 ? item.title : item.url ?? item.entryId}</span>
+                        <span className={css.recentMeta}>
+                          <span className={css.recentSource}>{label}</span>
+                          <span className={css.sep}>·</span>
+                          <span>{t(when.key, when.count === undefined ? {} : { count: when.count })}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+        </div>
+      </div>
+    )
+  }
 
   if (view === 'manage') {
     return (

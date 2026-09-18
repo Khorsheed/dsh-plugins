@@ -41,6 +41,7 @@ import {
   type ReaderEntryFetchRecord,
   type ReaderPreviewFailure,
   type ReaderPreviewFailureCode,
+  type ReaderRecentEntry,
   type ReaderSource,
   type ReaderStateDoc,
   type ReaderTag,
@@ -145,7 +146,57 @@ export function normalizeStateDoc(value: unknown): ReaderStateDoc {
       const annotations = normalizeAnnotations(record.annotations)
       return Object.keys(annotations).length > 0 ? { annotations } : {}
     })(),
+    ...(() => {
+      const recent = normalizeRecent(record.recent)
+      return recent.length > 0 ? { recent } : {}
+    })(),
   }
+}
+
+/**
+ * How many opened entries the recent list keeps.
+ *
+ * A bounded list is what makes the page useful: the question it answers is
+ * "what was I just reading", and a year of history answers it worse than the
+ * last hundred items. The cap is also what keeps `state.json` small, since this
+ * is the one table that grows with READING rather than with sources.
+ */
+export const MAX_RECENT_ENTRIES = 100
+
+/**
+ * The recent list, dropping anything without the two ids and a timestamp.
+ *
+ * The order is the file's, which is newest-first by construction (the service
+ * unshifts); a hand-edited file that disagrees still renders in its own order,
+ * which is the honest reading of what is on disk.
+ */
+function normalizeRecent(value: unknown): ReaderRecentEntry[] {
+  if (!Array.isArray(value)) return []
+  const out: ReaderRecentEntry[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const record = item as Record<string, unknown>
+    const entryId = typeof record.entryId === 'string' ? record.entryId.trim() : ''
+    const sourceId = typeof record.sourceId === 'string' ? record.sourceId.trim() : ''
+    const title = typeof record.title === 'string' ? record.title.trim() : ''
+    const readAt = typeof record.readAt === 'string' ? record.readAt : ''
+    // An entry with no title is still worth keeping — the reader may have
+    // opened something the feed never titled — but one with no IDs cannot be
+    // reopened, and one with no timestamp cannot be ordered.
+    if (entryId.length === 0 || sourceId.length === 0 || readAt.length === 0) continue
+    if (seen.has(entryId)) continue
+    seen.add(entryId)
+    out.push({
+      entryId,
+      sourceId,
+      title: title.slice(0, 300),
+      ...(typeof record.url === 'string' && record.url.length > 0 ? { url: record.url } : {}),
+      readAt,
+    })
+    if (out.length >= MAX_RECENT_ENTRIES) break
+  }
+  return out
 }
 
 /** The cache policy, coerced to something usable (absent = the default). */

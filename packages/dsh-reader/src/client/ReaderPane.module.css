@@ -1281,6 +1281,68 @@
   gap: 6px;
 }
 
+/* ------------------------------------------------------------ 最近阅读 page */
+
+.recentList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A row is a BUTTON, not a card: the reader is choosing something to reopen, and
+   a list of equal-weight rows is scanned faster than a grid of cards. It keeps
+   the source row's metric (same border, radius, padding) so the two pages feel
+   like one plugin. */
+.recentRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recentRow:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.recentRow:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.recentTitle {
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-primary);
+  /* One line: this list exists to FIND something in, and a wall of wrapped
+     titles is what makes "recently read" useless at a hundred items. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.recentSource {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sourceRow {
   display: flex;
   align-items: flex-start;

@@ -29,6 +29,8 @@ export type ReaderKey =
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
   | 'action.copyLink' | 'action.openExternal' | 'action.quote' | 'action.manage'
+  | 'action.recent' | 'recent.title' | 'recent.help' | 'recent.empty'
+  | 'recent.clearTitle' | 'recent.sourceGone'
   | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel' | 'action.clearSearch'
   | 'add.title' | 'add.help' | 'add.placeholder'
   | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.savedLinkNoPreview' | 'verdict.duplicate'
@@ -115,6 +117,12 @@ export const en = {
   'action.openExternal': 'Open in browser',
   'action.quote': 'Quote',
   'action.manage': 'Manage subscriptions',
+  'action.recent': 'Recently read',
+  'recent.title': 'Recently read',
+  'recent.help': 'What you opened, newest first. Click one to read it again.',
+  'recent.empty': 'Nothing read yet — open an article and it lands here.',
+  'recent.clearTitle': 'Clear this list',
+  'recent.sourceGone': 'Its source is gone, so this one can only be opened at its original address',
   'action.remove': 'Remove',
   'action.pause': 'Pause',
   'action.resume': 'Resume',
@@ -283,6 +291,12 @@ export const zh = {
   'action.openExternal': '在浏览器打开原文',
   'action.quote': '引用',
   'action.manage': '订阅管理',
+  'action.recent': '最近阅读',
+  'recent.title': '最近阅读',
+  'recent.help': '按打开时间倒序。点一条就能接着读。',
+  'recent.empty': '还没有读过任何一篇 —— 打开一篇文章，它就会出现在这里。',
+  'recent.clearTitle': '清空这份列表',
+  'recent.sourceGone': '它所属的源已经删掉了，这一条只能去原文地址打开',
   'action.remove': '删除',
   'action.pause': '暂停',
   'action.resume': '恢复',

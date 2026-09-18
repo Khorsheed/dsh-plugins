@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { apply, name } from '../src/index.ts'
 import { ReaderRemoteService } from '../src/remote.ts'
+import { MAX_RECENT_ENTRIES } from '../src/store.ts'
 import type { ReaderService } from '../src/service.ts'
 import { linkEntryId } from '../src/types.ts'
 
@@ -432,5 +433,72 @@ describe('a fetch the browser can walk away from', () => {
     const states = (await service.entryFetchStates({ entryIds: ['e1'] })).states
     expect(states.e1?.state).toBe('failed')
     expect(states.e1?.state === 'failed' ? states.e1.code : undefined).toBe('blocked')
+  })
+})
+
+describe('the recent list is the reader’s, and it outlives the process', () => {
+  it('puts the newest open first and moves a reopened entry back to the top', async () => {
+    const ctx = await boot()
+    const service = ctx.get('reader') as ReaderService
+    await service.recordRead({ entryId: 'e1', sourceId: 's1', title: '第一篇', url: 'https://example.com/1' })
+    await service.recordRead({ entryId: 'e2', sourceId: 's1', title: '第二篇', url: 'https://example.com/2' })
+    expect((await service.listRecent()).entries.map(entry => entry.entryId)).toEqual(['e2', 'e1'])
+    // Reopening is not a second row: it is the same entry, read again now.
+    await service.recordRead({ entryId: 'e1', sourceId: 's1', title: '第一篇（改过标题）', url: 'https://example.com/1' })
+    const entries = (await service.listRecent()).entries
+    expect(entries.map(entry => entry.entryId)).toEqual(['e1', 'e2'])
+    expect(entries[0]?.title).toBe('第一篇（改过标题）')
+    expect(entries[0]?.readAt >= entries[1]!.readAt).toBe(true)
+  })
+
+  it('refuses a record it could never reopen', async () => {
+    const ctx = await boot()
+    const service = ctx.get('reader') as ReaderService
+    expect(await service.recordRead({ entryId: '  ', sourceId: 's1', title: 'x' })).toEqual({ entries: 0 })
+    expect(await service.recordRead({ entryId: 'e1', sourceId: '', title: 'x' })).toEqual({ entries: 0 })
+    expect((await service.listRecent()).entries).toHaveLength(0)
+  })
+
+  it('caps the list, dropping the oldest read', async () => {
+    const ctx = await boot()
+    const service = ctx.get('reader') as ReaderService
+    for (let index = 0; index < MAX_RECENT_ENTRIES + 5; index += 1) {
+      await service.recordRead({ entryId: `e${String(index)}`, sourceId: 's1', title: `第 ${String(index)} 篇` })
+    }
+    const entries = (await service.listRecent()).entries
+    expect(entries).toHaveLength(MAX_RECENT_ENTRIES)
+    expect(entries[0]?.entryId).toBe(`e${String(MAX_RECENT_ENTRIES + 4)}`)
+    expect(entries.some(entry => entry.entryId === 'e0')).toBe(false)
+  })
+
+  it('survives a restart, and clearing it is durable too', async () => {
+    const root = stateRoot()
+    const first = new Context()
+    contexts.push(first)
+    apply(first, { stateRoot: root })
+    await first.fiber.await()
+    await (first.get('reader') as ReaderService).recordRead({
+      entryId: 'e1',
+      sourceId: 's1',
+      title: '读过的一篇',
+      url: 'https://example.com/1',
+    })
+
+    // A second host on the same root: "what was I reading" is a fact that has to
+    // outlive the process, unlike the pane's session memory.
+    const second = new Context()
+    contexts.push(second)
+    apply(second, { stateRoot: root })
+    await second.fiber.await()
+    const service = second.get('reader') as ReaderService
+    expect((await service.listRecent()).entries.map(entry => entry.entryId)).toEqual(['e1'])
+    expect(await service.clearRecent()).toEqual({ removed: 1 })
+    expect((await service.listRecent()).entries).toHaveLength(0)
+
+    const third = new Context()
+    contexts.push(third)
+    apply(third, { stateRoot: root })
+    await third.fiber.await()
+    expect((await (third.get('reader') as ReaderService).listRecent()).entries).toHaveLength(0)
   })
 })

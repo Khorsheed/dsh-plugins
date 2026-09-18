@@ -13,14 +13,14 @@
  * @module @khorsheed/dsh-reader/client/store
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { ReaderEntryFetchState, ReaderSourceSummary, ReaderTag } from '../types.ts'
+import type { ReaderEntryFetchState, ReaderRecentEntry, ReaderSourceSummary, ReaderTag } from '../types.ts'
 import type { ReaderEntry } from './parse-rss.ts'
 
 /** Which slice of the list the pane shows. */
 export type ReaderFilter = 'today' | 'all'
 
 /** Which surface the pane is showing. */
-export type ReaderView = 'list' | 'detail' | 'manage'
+export type ReaderView = 'list' | 'detail' | 'manage' | 'recent'
 
 /** How the list is ordered. */
 export type ReaderSort = 'newest' | 'oldest' | 'source'
@@ -72,6 +72,14 @@ export interface ReaderState {
   backfilled: Record<string, true>
   /** What the plugin holds per entry, as the host reports it. */
   fetchStates: Record<string, ReaderEntryFetchState>
+  /**
+   * The entries the reader opened, newest first, as the host stores them.
+   *
+   * Host state, not session state: "what was I reading" has to outlive a reload
+   * and a restart, and it is the one list that keeps a title after the feed has
+   * rolled the entry out of its window.
+   */
+  recent: ReaderRecentEntry[]
   /** Which surface is up: the wall, one entry, or subscription management. */
   view: ReaderView
   /** Which slice of the list to show. */
@@ -135,6 +143,8 @@ export type ReaderActions = {
   setCacheTtl: (draft: ReaderState, hours: number) => void
   setBackfill: (draft: ReaderState, progress: { total: number; done: number } | null) => void
   setFetchStates: (draft: ReaderState, states: Record<string, ReaderEntryFetchState>) => void
+  /** Replace the recent list with what the host reports. */
+  setRecent: (draft: ReaderState, entries: ReaderRecentEntry[]) => void
   noteBackfilled: (draft: ReaderState, entryId: string, filled: boolean) => void
   setRefreshing: (draft: ReaderState, refreshing: boolean) => void
   /** Record that a refresh run finished, including one with failures. */
@@ -171,6 +181,7 @@ const INITIAL: ReaderState = {
   backfill: null,
   backfilled: {},
   fetchStates: {},
+  recent: [],
   view: 'list',
   // 'all' rather than 'today': a subscription's entries are usually NOT from
   // today (measured: the acceptance instance's feed's newest item was 8 days
@@ -261,6 +272,7 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
           || Object.entries(next).some(([id, value]) => JSON.stringify(d.fetchStates[id]) !== JSON.stringify(value))
         if (changed) d.fetchStates = next
       },
+      setRecent: (d, entries) => { d.recent = entries },
       noteBackfilled: (d, entryId, filled) => {
         d.backfilled = { ...d.backfilled, [entryId]: true }
         // Done counting regardless: a failure also advances the run, and the

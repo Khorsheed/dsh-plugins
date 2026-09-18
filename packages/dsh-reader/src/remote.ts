@@ -23,6 +23,7 @@ import type {
   ReaderBody,
   ReaderCapabilities,
   ReaderMutationOutcome,
+  ReaderRecentEntry,
   ReaderRefreshResult,
   ReaderSourceSummary,
   ReaderTag,
@@ -203,6 +204,29 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   @Remote('pruneTags')
   pruneTags(): Promise<{ removed: number }> {
     return this.core.pruneTags()
+  }
+
+  /** Record that the reader opened one entry (the recent page's write half). */
+  @Remote('recordRead')
+  recordRead(request: {
+    entryId: string
+    sourceId: string
+    title: string
+    url?: string
+  }): Promise<{ entries: number }> {
+    return this.core.recordRead(request)
+  }
+
+  /** The entries the reader opened, newest first. */
+  @Remote('listRecent')
+  listRecent(): Promise<{ entries: ReaderRecentEntry[] }> {
+    return this.core.listRecent()
+  }
+
+  /** Forget every recent entry. */
+  @Remote('clearRecent')
+  clearRecent(): Promise<{ removed: number }> {
+    return this.core.clearRecent()
   }
 
   /** Forward a ref block to the side-chat service when one is composed. */
