@@ -21,6 +21,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { apply, name } from '../src/index.ts'
 import { ReaderRemoteService } from '../src/remote.ts'
 import type { ReaderService } from '../src/service.ts'
+import { linkEntryId } from '../src/types.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -127,9 +128,10 @@ describe('the host half boots and provides its service', () => {
 
     const service = ctx.get('reader') as ReaderService
     const outcome = await service.addSource({ url: 'https://example.com/feed.xml' })
-    // No web seam here, so the fetch is refused — but the ANSWER is a domain
-    // value, which is the point: nothing threw through the pane.
-    expect(outcome).toBe('unsupported-content')
+    // No web seam here, so nothing can be read — but the LINK still lands, with
+    // the reason recorded. That is the change this suite exists to hold: a URL
+    // the reader pasted is theirs even when this deployment cannot fetch it.
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link', failure: { code: 'unreachable' } })
     expect(touched).toBe(false)
     expect(ctx.get('fs')).toBeDefined()
   })
@@ -138,11 +140,11 @@ describe('the host half boots and provides its service', () => {
     const ctx = await boot()
     const service = ctx.get('reader') as ReaderService
     expect((await service.capabilities()).hasSideChat).toBe(false)
-    // No web seam: adding a source must come back as a domain refusal, never
-    // as a thrown boot failure.
-    expect(await service.addSource({ url: 'https://example.com/feed.xml' })).toBe('unsupported-content')
-    // Nothing configured yet, and that is an empty list, not an error.
-    expect(await service.listSources()).toEqual({ sources: [] })
+    // No web seam: adding must not throw a boot failure and must not lose the
+    // URL — it comes back as a saved link whose reason is classified.
+    expect(await service.addSource({ url: 'https://example.com/feed.xml' }))
+      .toMatchObject({ outcome: 'saved-link', kind: 'link', failure: { code: 'unreachable' } })
+    expect((await service.listSources()).sources).toHaveLength(1)
   })
 
   it('round-trips a source through the state file on disk', async () => {
@@ -185,13 +187,22 @@ describe('a failed fetch keeps the seam’s reason', () => {
     const service = ctx.get('reader') as ReaderService
     const refusal = await service.addSource({ url: 'https://example.com/feed.xml' })
     // The acceptance instance is where this mattered: the same class of
-    // transient failure showed as "failed" with nothing to diagnose.
-    expect(refusal).toEqual({ outcome: 'fetch-failed', reason: 'connect ECONNREFUSED 127.0.0.1:9' })
+    // transient failure showed as "failed" with nothing to diagnose. The
+    // message is kept verbatim AND classified, because the code picks the
+    // sentence while the message is what makes it diagnosable.
+    expect(refusal).toMatchObject({
+      outcome: 'saved-link',
+      kind: 'link',
+      failure: { code: 'unreachable', message: 'connect ECONNREFUSED 127.0.0.1:9' },
+    })
+    expect((await service.listSources()).sources).toHaveLength(1)
   })
 
-  it('refuses a non-2xx response as unsupported content', async () => {
+  it('keeps a 404 as a link and records the HTTP error', async () => {
     // A 404 is not a transport failure: the request completed and there is no
-    // source at that address, which is a different sentence in the UI.
+    // source at that address. It is still the reader's URL, so it is saved —
+    // with a code that says "the site answered an error", which is a different
+    // sentence from "could not connect".
     const ctx = await bootWithWeb(async () => ({
       url: 'https://example.com/missing.xml',
       statusCode: 404,
@@ -199,16 +210,20 @@ describe('a failed fetch keeps the seam’s reason', () => {
       truncated: false,
     }))
     const service = ctx.get('reader') as ReaderService
-    expect(await service.addSource({ url: 'https://example.com/missing.xml' })).toBe('unsupported-content')
+    expect(await service.addSource({ url: 'https://example.com/missing.xml' }))
+      .toMatchObject({ outcome: 'saved-link', kind: 'link', failure: { code: 'http' } })
+    expect((await service.listSources()).sources[0]?.hasBody).toBe(false)
   })
 
   it('saves an ordinary web page as a single link, not a subscription', async () => {
     // D15 by content: what comes back decides. An HTML page is the "saved
     // article" path, which is the whole second half of this package's scope.
+    // The body is long enough to be a page: a near-empty payload is classified
+    // as an interstitial instead of being stored as an article.
     const ctx = await bootWithWeb(async () => ({
       url: 'https://example.com/story',
       statusCode: 200,
-      body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(40)}</p></article>` },
+      body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(200)}</p></article>` },
       truncated: false,
     }))
     const service = ctx.get('reader') as ReaderService
@@ -216,6 +231,7 @@ describe('a failed fetch keeps the seam’s reason', () => {
       outcome: 'saved-link',
       kind: 'link',
     })
+    expect((await service.listSources()).sources[0]?.hasBody).toBe(true)
   })
 
   it('subscribes to a feed through the seam', async () => {
@@ -232,5 +248,84 @@ describe('a failed fetch keeps the seam’s reason', () => {
     const outcome = await service.addSource({ url: 'https://example.com/feed.xml' })
     expect(outcome).toMatchObject({ outcome: 'subscribed', kind: 'rss' })
     expect((await service.listSources()).sources).toHaveLength(1)
+  })
+})
+
+describe('a link that cannot be previewed is still a link', () => {
+  it('stores neither the challenge page nor a backfill debt', async () => {
+    // The measured case: an OpenReview PDF link answered `302 /challenge?…`
+    // with a 200 anti-bot page. The card must not BE that page, the detail view
+    // must explain itself, and the automatic backfill must not keep asking a
+    // wall it will never get past.
+    const requested = 'https://openreview.net/pdf?id=1lyagkzogH'
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://openreview.net/challenge?redirect=%2Fpdf%3Fid%3D1lyagkzogH',
+      statusCode: 200,
+      body: {
+        kind: 'html' as const,
+        content: '<!doctype html><html><title>Just a moment…</title><body>Checking your browser before accessing</body></html>',
+      },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    expect(await service.addSource({ url: requested })).toMatchObject({
+      outcome: 'saved-link',
+      kind: 'link',
+      failure: { code: 'blocked' },
+    })
+
+    const source = (await service.listSources()).sources[0]
+    expect(source).toMatchObject({ kind: 'link', hasBody: false, failure: { code: 'blocked' } })
+    const id = source?.id as string
+    // No payload was stored: the challenge page never becomes a body.
+    const bodies = await service.getBodies({ ids: [id] })
+    expect(bodies.bodies[0]?.raw).toBeUndefined()
+    expect(bodies.bodies[0]?.error).toBeDefined()
+
+    // The detail view's one call answers with the reason, not a blank article.
+    const entry = await service.getEntryBody({ entryId: linkEntryId(id), url: requested })
+    expect(entry.html).toBeUndefined()
+    expect(entry.error).toBeDefined()
+
+    // The retry policy keys off the SOURCE, not just the annotation: the saved
+    // link's entry carries the source's own (post-redirect) URL, and even an
+    // entry id the annotation table does not know is refused. A feed entry at
+    // the same URL is a different question and stays eligible — matched by the
+    // `kind` guard.
+    const savedUrl = source?.url as string
+    const candidates = await service.listBackfillCandidates({
+      entries: [
+        { entryId: linkEntryId(id), url: savedUrl, label: 'x', hasBody: false },
+        { entryId: `l:${savedUrl}`, url: savedUrl, label: 'x', hasBody: false },
+      ],
+    })
+    expect(candidates.candidates).toHaveLength(0)
+  })
+
+  it('clears the recorded failure when a manual refresh finally works', async () => {
+    // The reader's way out: the site may stop refusing us, or they may fix the
+    // address. Saving the link is only useful if that path exists.
+    let attempts = 0
+    const ctx = await bootWithWeb(async () => {
+      attempts += 1
+      if (attempts === 1) throw new Error('fetch failed: ECONNREFUSED 127.0.0.1:9')
+      return {
+        url: 'https://example.com/story',
+        statusCode: 200,
+        body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(200)}</p></article>` },
+        truncated: false,
+      }
+    })
+    const service = ctx.get('reader') as ReaderService
+    expect(await service.addSource({ url: 'https://example.com/story' }))
+      .toMatchObject({ failure: { code: 'unreachable' } })
+    const id = (await service.listSources()).sources[0]?.id as string
+
+    await service.refresh({ ids: [id] })
+
+    const after = (await service.listSources()).sources[0]
+    expect(after?.failure).toBeUndefined()
+    expect(after?.status).toBe('ok')
+    expect(after?.hasBody).toBe(true)
   })
 })

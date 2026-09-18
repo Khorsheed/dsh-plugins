@@ -25,6 +25,56 @@ export type ReaderSourceKind = 'rss' | 'link'
 export type ReaderFetchStatus = 'ok' | 'fetching' | 'error'
 
 /**
+ * Why a source has no previewable body.
+ *
+ * A saved link is a link the reader OWNS even when its body cannot be read
+ * here, so these are not add failures: they are the reason the card says
+ * "link only" and the detail view offers the original instead of a blank
+ * page. The set is deliberately small and each member has its own sentence —
+ * "collected but not previewable" with no cause is a worse answer than a
+ * wrong one, and the three real causes (a bot wall, a login wall, a
+ * non-web file) send the reader to different actions.
+ */
+export type ReaderPreviewFailureCode =
+  /** The site refuses non-browser requests, or answered with a bot challenge. */
+  | 'blocked'
+  /** The target sits behind an authentication wall (institutional proxy, SSO). */
+  | 'login'
+  /** The response is not a web page at all (a PDF or another file type). */
+  | 'unsupported-type'
+  /** The address hops to a different site, which the host seam refuses to follow. */
+  | 'redirected'
+  /** The page yielded nothing to read (an interstitial, an empty shell). */
+  | 'empty'
+  /** The request never completed: network, timeout, or a 5xx. The retryable one. */
+  | 'unreachable'
+  /** The address answered with an HTTP error status (404 and friends). */
+  | 'http'
+
+/**
+ * Whether an automatic retry is worth the request.
+ *
+ * Only a transport failure is: a bot wall, a login wall, a PDF and a 404 all
+ * answer the same way forever, so retrying them on a timer would be a crawler
+ * with a grudge rather than a reader. The manual refresh stays available.
+ *
+ * @param code - the recorded failure.
+ * @returns true when the entry may be retried automatically.
+ */
+export function isRetryablePreviewFailure(code: ReaderPreviewFailureCode): boolean {
+  return code === 'unreachable'
+}
+
+/** A recorded reason that a source has no previewable body. */
+export interface ReaderPreviewFailure {
+  readonly code: ReaderPreviewFailureCode
+  /** The seam's or the classifier's own words, kept for diagnosis. */
+  readonly message: string
+  /** When the failure was recorded (ISO-8601). */
+  readonly at: string
+}
+
+/**
  * One source of entries.
  *
  * A `link` source always holds exactly one entry (the article itself) and is
@@ -53,6 +103,15 @@ export interface ReaderSource {
    * consumer treats this as "incomplete" and says so rather than guessing.
    */
   readonly truncated?: boolean
+  /**
+   * Why this source has no previewable body, when it has none.
+   *
+   * A saved link keeps its identity and its URL even when the body cannot be
+   * read, so this is recorded instead of the source being dropped: losing a
+   * link the reader deliberately saved is a worse outcome than a card that
+   * says it can only be opened in a browser.
+   */
+  readonly failure?: ReaderPreviewFailure
   /** The last raw payload: feed XML for `rss`, article HTML for `link`. */
   readonly raw?: string
 }
@@ -150,11 +209,22 @@ export interface ReaderSourceSummary {
   readonly url: string
   readonly label: string
   readonly enabled: boolean
+  /**
+   * When the reader added it (ISO-8601).
+   *
+   * The browser needs this to order the wall and the management list by
+   * "when did this arrive": a saved link carries no publication date at all,
+   * so without this field it sorts as the oldest thing on the wall — which is
+   * exactly where a reader who just added it will not look.
+   */
+  readonly addedAt: string
   readonly fetchedAt?: string
   readonly status?: ReaderFetchStatus
   readonly error?: string
   readonly truncated?: boolean
   readonly hasBody: boolean
+  /** Present when this source has no previewable body (see {@link ReaderPreviewFailure}). */
+  readonly failure?: { readonly code: ReaderPreviewFailureCode; readonly message: string }
 }
 
 /** Capability handshake: what the browser may rely on in this composition. */
@@ -189,6 +259,14 @@ export interface ReaderAddOutcome {
   readonly kind: ReaderSourceKind
   readonly id: string
   readonly label: string
+  /**
+   * Present when the source was saved but its body cannot be previewed.
+   *
+   * The add still succeeded: the URL is a link the reader now owns. This is
+   * the verdict's reason, not a failure — which is why it rides the outcome
+   * instead of becoming one more refusal that loses the link.
+   */
+  readonly failure?: { readonly code: ReaderPreviewFailureCode; readonly message: string }
 }
 
 /**
@@ -310,6 +388,38 @@ export function stableEntryId(entry: { title: string; link?: string; guid?: stri
   if (link !== undefined && link.length > 0) return `l:${link}`
   return `h:${hash32(`${entry.title}\u0000${entry.link ?? ''}`).toString(36)}`
 }
+
+/**
+ * The entry id a saved link's single entry carries.
+ *
+ * A `link` source is exactly one entry, so the host must be able to name that
+ * entry when it records a per-entry annotation (the fetch failure the detail
+ * view reads). Both halves use this one function: a magic string duplicated
+ * across the process boundary is a bug waiting for a rename.
+ *
+ * @param sourceId - the link source's id.
+ * @returns the entry id the browser will build for it.
+ */
+export function linkEntryId(sourceId: string): string {
+  return `link:${sourceId}`
+}
+
+/**
+ * The query that selects every entry of one source KIND.
+ *
+ * The same local-predicate mechanism as a source or tag filter, so a kind
+ * narrowing is visible in the search box and can be cleared there. The prefix
+ * cannot collide with a real source id: ids are always `<kind>-<hash>`.
+ *
+ * @param kind - the source kind to select.
+ * @returns the query string.
+ */
+export function kindQuery(kind: ReaderSourceKind): string {
+  return `#${kind}`
+}
+
+/** The source kinds a kind query can name, for the predicate that reads one. */
+export const READER_SOURCE_KINDS: readonly ReaderSourceKind[] = ['rss', 'link']
 
 /**
  * Shorten a summary for a card, collapsing whitespace so multi-line feed

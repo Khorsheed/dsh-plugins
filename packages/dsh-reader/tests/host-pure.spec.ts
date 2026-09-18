@@ -7,7 +7,7 @@
  * *behaviour* are testable without booting anything.
  */
 import { describe, expect, it } from 'vitest'
-import { classifyPayload, normalizeUrl } from '../src/service.ts'
+import { classifyFetchFailure, classifyPayload, crossOriginRetarget, inspectPreview, MIN_PREVIEW_TEXT_CHARS, normalizeUrl } from '../src/service.ts'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -355,3 +355,94 @@ describe('the tag panel is placed from its own box', () => {
     expect(pane).toMatch(/TAG_PANEL_MAX_HEIGHT = 296/)
   })
 })
+
+describe('a saved link says why it has no preview', () => {
+  /** An error shaped like the harness's: the code is a PROPERTY, not text. */
+  const seamError = (message: string, code?: string): Error =>
+    Object.assign(new Error(message), code === undefined ? {} : { code })
+
+  const REDIRECT_REFUSAL = 'cross-origin redirect to https://login.ezproxy.obspm.fr is not followed automatically; retry against that URL directly'
+
+  it('classifies a cross-origin refusal to a login host as a login wall', () => {
+    // The regression this locks: the original detector searched the MESSAGE for
+    // the text `WEB_REDIRECT_BLOCKED`, which the host never puts there (it is
+    // `error.code`), so the whole follow path was dead and the reader got the
+    // seam's raw sentence. The URL that surfaced it was an institutional proxy
+    // hop: arxiv-org.ezproxy.obspm.fr → login.ezproxy.obspm.fr.
+    const failure = classifyFetchFailure(seamError(REDIRECT_REFUSAL, 'WEB_REDIRECT_BLOCKED'), '2026-09-18T00:00:00.000Z')
+    expect(failure.code).toBe('login')
+    expect(failure.message).toBe(REDIRECT_REFUSAL)
+  })
+
+  it('classifies a cross-origin refusal to an ordinary host as a move', () => {
+    const message = 'cross-origin redirect to https://www.example.com is not followed automatically; retry against that URL directly'
+    expect(classifyFetchFailure(seamError(message, 'WEB_REDIRECT_BLOCKED'), 'now').code).toBe('redirected')
+  })
+
+  it('reads the code where the host actually puts it', () => {
+    // Message-only lookalikes must NOT be treated as redirect refusals: driving
+    // the follow from free text is what made it fragile in the first place.
+    const message = 'cross-origin redirect to https://www.example.com is not followed automatically'
+    expect(crossOriginRetarget(seamError(message), 'http://www.example.com/feed')).toBeUndefined()
+  })
+
+  it('follows only the hop it can reconstruct — same host, new scheme', () => {
+    const message = 'cross-origin redirect to https://example.com is not followed automatically; retry against that URL directly'
+    // http → https on the same host keeps the path and query: that is the hop
+    // the refusal's origin-only message still describes faithfully.
+    expect(crossOriginRetarget(seamError(message, 'WEB_REDIRECT_BLOCKED'), 'http://example.com/feed.xml?x=1'))
+      .toBe('https://example.com/feed.xml?x=1')
+    // A different host has moved to another SITE; fetching its bare origin
+    // would file somebody else's home page under the reader's URL.
+    expect(crossOriginRetarget(seamError(message, 'WEB_REDIRECT_BLOCKED'), 'https://other.example.com/feed.xml'))
+      .toBeUndefined()
+  })
+
+  it('maps the remaining seam failures onto their own codes', () => {
+    expect(classifyFetchFailure(seamError('unsupported content type "application/pdf"', 'WEB_UNSUPPORTED_CONTENT_TYPE'), 'now').code)
+      .toBe('unsupported-type')
+    expect(classifyFetchFailure(seamError('HTTP 403: the site refuses non-browser requests', undefined), 'now').code)
+      .toBe('blocked')
+    expect(classifyFetchFailure(seamError('HTTP 404', undefined), 'now').code).toBe('http')
+    expect(classifyFetchFailure(seamError('no web capability is mounted'), 'now').code).toBe('unreachable')
+    expect(classifyFetchFailure(seamError('fetch failed: ECONNREFUSED'), 'now').code).toBe('unreachable')
+  })
+})
+
+describe('inspectPreview', () => {
+  const page = (text: string): string => `<!doctype html><html><body><p>${text}</p></body></html>`
+
+  it('leaves a real page alone', () => {
+    // Only a vanishingly small payload is second-guessed; an ordinary article
+    // must never be downgraded to a link-only card.
+    expect(inspectPreview(page('正'.repeat(MIN_PREVIEW_TEXT_CHARS)), 'https://example.com/a', 'https://example.com/a'))
+      .toBeUndefined()
+  })
+
+  it('recognizes a bot challenge that arrived as a 200', () => {
+    // Measured on the acceptance instance: an OpenReview PDF link answered
+    // `302 /challenge?redirect=…` with a 200 challenge page, so the status code
+    // said nothing and the card silently became that page.
+    const raw = '<!doctype html><html><title>Just a moment…</title><body>Checking your browser before accessing</body></html>'
+    const result = inspectPreview(raw, 'https://openreview.net/challenge?redirect=%2Fpdf%3Fid%3Dx', 'https://openreview.net/pdf?id=x')
+    expect(result?.code).toBe('blocked')
+  })
+
+  it('recognizes an authentication interstitial', () => {
+    const raw = '<html><head><title>Cookie Required</title></head><body><p>Licensing agreements for these databases require that access be extended only to authorized users.</p></body></html>'
+    expect(inspectPreview(raw, 'https://login.ezproxy.obspm.fr/connect', 'https://arxiv-org.ezproxy.obspm.fr/html/x')?.code)
+      .toBe('login')
+  })
+
+  it('falls back to empty when the page is just short', () => {
+    expect(inspectPreview(page('hi'), 'https://example.com/a', 'https://example.com/a')?.code).toBe('empty')
+  })
+
+  it('calls a cross-host hop that yields nothing a redirect', () => {
+    // No "login" wording anywhere, and the host changed: the classification
+    // must say the address moved rather than blame the page.
+    const raw = '<html><body><p>redirecting…</p></body></html>'
+    expect(inspectPreview(raw, 'https://other.example.com/x', 'https://example.com/x')?.code).toBe('redirected')
+  })
+})
+

@@ -23,8 +23,9 @@ const entry = (over: Partial<ReaderEntry> & { id: string; sourceId: string }): R
 })
 
 const sources: ReadonlyMap<string, SourcePresentation> = new Map([
-  ['s1', { id: 's1', label: 'Hacker News', tile: 'H', hue: 'rgb(41,41,41)' }],
-  ['s2', { id: 's2', label: '阮一峰周刊', tile: '阮', hue: 'rgb(84,85,87)' }],
+  ['s1', { id: 's1', label: 'Hacker News', tile: 'H', hue: 'rgb(41,41,41)', kind: 'rss', addedAt: '2026-09-01T00:00:00.000Z' }],
+  ['s2', { id: 's2', label: '阮一峰周刊', tile: '阮', hue: 'rgb(84,85,87)', kind: 'rss', addedAt: '2026-09-02T00:00:00.000Z' }],
+  ['s3', { id: 's3', label: '保存的文章', tile: '保', hue: 'rgb(65,118,230)', kind: 'link', addedAt: '2026-09-17T11:00:00.000Z' }],
 ])
 
 const today = new Date('2026-09-17T12:00:00.000Z')
@@ -94,6 +95,29 @@ describe('selectRows', () => {
   it('skips entries whose source is gone and keeps the rest', () => {
     const rows = selectRows([...entries, entry({ id: 'orphan', sourceId: 'gone' })], sources, base)
     expect(rows.map(row => row.entry.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('narrows by source KIND as well as by source id', () => {
+    // Both narrowings write a `#…` selector into the search box, so they share
+    // one mechanism — and the kind vocabulary cannot collide with a source id,
+    // which is always `<kind>-<hash>`.
+    const saved = entry({ id: 'link-1', sourceId: 's3', title: '保存的文章' })
+    const all = [...entries, saved]
+    expect(selectRows(all, sources, { ...base, query: '#link' }).map(r => r.entry.id)).toEqual(['link-1'])
+    expect(selectRows(all, sources, { ...base, query: '#rss' }).map(r => r.entry.id)).toEqual(['a', 'b', 'c'])
+    expect(selectRows(all, sources, { ...base, query: '#s1' }).map(r => r.entry.id)).toEqual(['a'])
+  })
+
+  it('dates an undated saved link by when its source was added', () => {
+    // Before this, a link the reader had JUST added sorted to the bottom of
+    // "newest first" (an entry with no date scored 0), which is the opposite of
+    // where they look for it.
+    const saved = entry({ id: 'link-1', sourceId: 's3', title: '保存的文章' })
+    const rows = selectRows([...entries, saved], sources, base)
+    // s3 was added 11:00 today, which lands it above the 08:00 entry.
+    expect(rows.map(row => row.entry.id)).toEqual(['link-1', 'a', 'b', 'c'])
+    expect(selectRows([...entries, saved], sources, { ...base, sort: 'oldest' }).map(r => r.entry.id))
+      .toEqual(['c', 'b', 'a', 'link-1'])
   })
 })
 

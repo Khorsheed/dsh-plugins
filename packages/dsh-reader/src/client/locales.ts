@@ -18,7 +18,7 @@ export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
-  | 'filter.searchSource' | 'filter.noSourceMatch'
+  | 'filter.searchSource' | 'filter.noSourceMatch' | 'filter.byKind'
   | 'action.translate' | 'translate.view' | 'translate.onlyTranslation' | 'translate.bilingual'
   | 'translate.onlyOriginal' | 'translate.retry' | 'translate.tip' | 'translate.preparing'
   | 'translate.working' | 'translate.local' | 'translate.failed' | 'translate.dismiss'
@@ -31,8 +31,11 @@ export type ReaderKey =
   | 'action.copyLink' | 'action.openExternal' | 'action.quote' | 'action.manage'
   | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel'
   | 'add.title' | 'add.help' | 'add.placeholder'
-  | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.duplicate'
+  | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.savedLinkNoPreview' | 'verdict.duplicate'
   | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'
+  | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
+  | 'preview.empty' | 'preview.unreachable' | 'preview.http'
+  | 'detail.linkOnlyBadge' | 'detail.removeLink'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
   | 'state.emptyWall' | 'state.incompleteReason'
@@ -42,6 +45,8 @@ export type ReaderKey =
   | 'sources.name' | 'sources.url' | 'sources.cache' | 'sources.cacheHelp'
   | 'sources.cacheHours' | 'sources.cacheForever' | 'sources.blocked'
   | 'sources.unreachable' | 'sources.httpError' | 'detail.fetchFailed'
+  | 'sources.kindRss' | 'sources.kindLink' | 'sources.kindFilter' | 'sources.noMatch'
+  | 'sources.sortAdded' | 'sources.sortName' | 'sources.sortFetched'
   | 'state.backfilling' | 'detail.filledIn' | 'detail.filledInBadge' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
   | 'detail.summaryOnly'
@@ -89,6 +94,7 @@ export const en = {
   'tag.create': 'Create “{name}”',
   'tag.empty': 'No tags yet — type a name to make the first one',
   'filter.byTag': 'By tag',
+  'filter.byKind': 'By type',
   'filter.searchSource': 'Search sources…',
   'filter.noSourceMatch': 'No source matches',
   'search.placeholder': 'Search titles, authors, sources…',
@@ -117,10 +123,20 @@ export const en = {
   'add.placeholder': 'https://',
   'verdict.subscribed': 'Subscribed to {label} — it will refresh on schedule.',
   'verdict.savedLink': 'Saved this article — one item, no subscription.',
+  'verdict.savedLinkNoPreview': 'Saved the link to {label} — no preview here: {reason}',
   'verdict.duplicate': 'That source is already in the list.',
   'verdict.invalidUrl': 'That is not an http(s) address.',
   'verdict.unsupportedContent': 'That address did not return a feed or an article.',
   'verdict.fetchFailed': 'Could not fetch that address.',
+  'preview.blocked': 'this site refuses automatic fetches (it answers with a bot challenge)',
+  'preview.login': 'this address is behind a login (an institutional proxy or single sign-on)',
+  'preview.unsupportedType': 'this address is not a web page (a PDF or another file)',
+  'preview.redirected': 'this address moves to another site, and the redirect cannot be followed here',
+  'preview.empty': 'this page has no readable text',
+  'preview.unreachable': 'the site could not be reached just now',
+  'preview.http': 'the site answered with an HTTP error',
+  'detail.linkOnlyBadge': 'Link only',
+  'detail.removeLink': 'Delete this link',
 
   'state.loading': 'Loading…',
   'state.emptyTitle': 'Nothing here yet',
@@ -153,12 +169,19 @@ export const en = {
   'sources.blocked': 'This publisher refuses automatic fetches (its page answers with a bot challenge), so only the feed’s own text can be shown.',
   'sources.unreachable': 'The publisher’s page could not be reached at all (the request failed before any content arrived), so only the feed’s own text can be shown.',
   'sources.httpError': 'The publisher answered with an error, so only the feed’s own text can be shown.',
+  'sources.kindRss': 'Feed',
+  'sources.kindLink': 'Saved link',
+  'sources.kindFilter': 'Filter by type',
+  'sources.noMatch': 'Nothing of that type.',
+  'sources.sortAdded': 'Added',
+  'sources.sortName': 'Name',
+  'sources.sortFetched': 'Fetched',
   'detail.fetchFailed': 'Could not fetch the full text — {reason}',
   'sources.url': 'Feed address',
 
   'detail.incomplete': 'Limited length, content shown in part',
   'detail.readOriginal': 'Read the original',
-  'detail.extractFailed': 'Could not extract the body locally — the page is larger than the host fetch cap.',
+  'detail.extractFailed': 'Could not extract a body from this page — open the original instead.',
   'detail.summaryOnly': 'This feed publishes only a summary for this entry — the full text lives on the original page.',
   'detail.alsoFrom': 'Also from this source',
   'detail.composerLabel': 'Current conversation draft',
@@ -223,6 +246,7 @@ export const zh = {
   'tag.create': '新建「{name}」',
   'tag.empty': '还没有标签 —— 输入名字回车就能建第一个',
   'filter.byTag': '按标签',
+  'filter.byKind': '按类型',
   'filter.searchSource': '搜索来源…',
   'filter.noSourceMatch': '没有匹配的来源',
   'search.placeholder': '搜索标题、作者、来源…',
@@ -251,10 +275,20 @@ export const zh = {
   'add.placeholder': 'https://',
   'verdict.subscribed': '已订阅《{label}》—— 会按计划自动刷新。',
   'verdict.savedLink': '已保存这篇 —— 只存这一条，不建订阅源。',
+  'verdict.savedLinkNoPreview': '已保存《{label}》的链接 —— 这里看不到内容：{reason}',
   'verdict.duplicate': '这个源已经在列表里了。',
   'verdict.invalidUrl': '这不是 http(s) 地址。',
   'verdict.unsupportedContent': '这个地址返回的既不是订阅源也不是网页。',
   'verdict.fetchFailed': '抓取失败。',
+  'preview.blocked': '这个站点拒绝自动抓取（返回的是验证页）',
+  'preview.login': '这个地址需要登录（机构代理或单点登录），本插件取不到正文',
+  'preview.unsupportedType': '这个地址不是网页（是 PDF 或其它文件）',
+  'preview.redirected': '这个地址会跳到另一个站点，跨站跳转在本地无法跟随',
+  'preview.empty': '这一页没有可读的正文',
+  'preview.unreachable': '刚才连不上这个站点',
+  'preview.http': '这个站点返回了 HTTP 错误',
+  'detail.linkOnlyBadge': '仅链接',
+  'detail.removeLink': '删除这条链接',
 
   'state.loading': '加载中…',
   'state.emptyTitle': '还没有内容',
@@ -287,12 +321,19 @@ export const zh = {
   'sources.blocked': '这个站点拒绝自动抓取（原文地址对人以外的请求返回验证页），所以只能展示订阅源自己发布的内容。',
   'sources.unreachable': '原文页面完全连不上（请求在拿到任何内容之前就失败了），所以只能展示订阅源自己发布的内容。',
   'sources.httpError': '原文页面返回了错误状态，所以只能展示订阅源自己发布的内容。',
+  'sources.kindRss': '订阅源',
+  'sources.kindLink': '保存的链接',
+  'sources.kindFilter': '按类型筛选',
+  'sources.noMatch': '这一类里还没有内容。',
+  'sources.sortAdded': '按添加时间',
+  'sources.sortName': '按名称',
+  'sources.sortFetched': '按抓取时间',
   'detail.fetchFailed': '抓取全文失败 —— {reason}',
   'sources.url': '订阅地址',
 
   'detail.incomplete': '受限篇幅，内容未完整呈现',
   'detail.readOriginal': '阅读原文',
-  'detail.extractFailed': '无法在本地提取正文 —— 页面超过宿主单次抓取的上限。',
+  'detail.extractFailed': '这一页抽不出正文 —— 点「阅读原文」打开它。',
   'detail.summaryOnly': '这条订阅源只发布了摘要 —— 全文在原文页面上。',
   'detail.alsoFrom': '同一来源',
   'detail.composerLabel': '当前会话草稿',

@@ -37,9 +37,17 @@ import {
   IconRefreshOutline16,
   IconRightUpOutline16,
   IconSettingsOutline16,
+  IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReaderPaneProps } from './contract.ts'
-import type { ReaderTag } from '../types.ts'
+import {
+  kindQuery,
+  linkEntryId,
+  READER_SOURCE_KINDS,
+  type ReaderPreviewFailureCode,
+  type ReaderSourceKind,
+  type ReaderTag,
+} from '../types.ts'
 import { extractArticle } from './extract-article.ts'
 import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
@@ -63,7 +71,7 @@ import {
 import css from './ReaderPane.module.css'
 
 /** One in-flight fetch's kind, for the verdict message. */
-type Verdict = 'subscribed' | 'savedLink' | 'duplicate' | 'invalidUrl' | 'unsupportedContent' | 'fetchFailed'
+type Verdict = 'subscribed' | 'savedLink' | 'savedLinkNoPreview' | 'duplicate' | 'invalidUrl' | 'unsupportedContent' | 'fetchFailed'
 
 /** A tiny stroke glyph set for the chrome the host has no icon for. */
 const STROKE: Readonly<Record<string, string>> = {
@@ -197,9 +205,10 @@ function TagSuggestions({ t, tags, applied, draft, onToggle, onCreate }: {
 }
 
 /** The dictionary key each verdict message lives under. */
-const VERDICT_KEY: Readonly<Record<Verdict, 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.duplicate' | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'>> = {
+const VERDICT_KEY: Readonly<Record<Verdict, 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.savedLinkNoPreview' | 'verdict.duplicate' | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'>> = {
   subscribed: 'verdict.subscribed',
   savedLink: 'verdict.savedLink',
+  savedLinkNoPreview: 'verdict.savedLinkNoPreview',
   duplicate: 'verdict.duplicate',
   invalidUrl: 'verdict.invalidUrl',
   unsupportedContent: 'verdict.unsupportedContent',
@@ -214,6 +223,36 @@ function verdictForRefusal(refusal: string): Verdict {
     case 'unsupported-content': return 'unsupportedContent'
     default: return 'fetchFailed'
   }
+}
+
+/** The dictionary key for each reason a link cannot be previewed. */
+const PREVIEW_KEY: Readonly<Record<ReaderPreviewFailureCode,
+  | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
+  | 'preview.empty' | 'preview.unreachable' | 'preview.http'>> = {
+  blocked: 'preview.blocked',
+  login: 'preview.login',
+  'unsupported-type': 'preview.unsupportedType',
+  redirected: 'preview.redirected',
+  empty: 'preview.empty',
+  unreachable: 'preview.unreachable',
+  http: 'preview.http',
+}
+
+/**
+ * Why this link has no body to show, in the reader's words.
+ *
+ * A recorded CODE is preferred over the raw message: the code is the host's
+ * classification (a bot wall, a login wall, a PDF) and each one sends the
+ * reader somewhere different, while the seam's message is diagnostic text
+ * written for whoever debugs this next.
+ *
+ * @param t - the namespace translator.
+ * @param code - the host's classification, when there is one.
+ * @param fallback - the message to show when there is no code.
+ * @returns the sentence.
+ */
+function previewReason(t: ReaderPaneProps['t'], code: ReaderPreviewFailureCode | undefined, fallback: string): string {
+  return code === undefined ? describeFetchFailure(fallback, t) : t(PREVIEW_KEY[code])
 }
 
 /**
@@ -288,7 +327,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
-  const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string } | null>(null)
+  const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string; code?: ReaderPreviewFailureCode } | null>(null)
   const [draft, setDraft] = useState('')
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
@@ -303,6 +342,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [tagInputOpen, setTagInputOpen] = useState(false)
   /** The entry whose tag panel is open on the wall (and where to anchor it). */
   const [cardTag, setCardTag] = useState<{ entryId: string; top: number; left: number } | null>(null)
+  /**
+   * The management list's own narrowing and order.
+   *
+   * Session state, like the wall's filter: it is where the reader is standing,
+   * not something the deployment should remember. Sorting by ADD TIME is the
+   * default because that is the question the page is usually asked — "I just
+   * added something and want to deal with it".
+   */
+  const [manageKind, setManageKind] = useState<'all' | ReaderSourceKind>('all')
+  const [manageSort, setManageSort] = useState<'added' | 'name' | 'fetched'>('added')
 
   /* ---------------------------------------------------- on-device translation */
 
@@ -376,9 +425,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       }
       const known = listed.value.sources
       actions.setSources(known)
-      const withBody = known.filter(source => source.hasBody)
-      if (withBody.length === 0) return
-      const bodies = await props.getBodies(withBody.map(source => source.id))
+      // Sources whose payload is wanted: the ones that have a body, PLUS every
+      // saved link — a link with no body is still a card the reader must see,
+      // and the host answers that request with the reason instead of a payload.
+      // (Asking only for sources with bodies made an unreadable link vanish from
+      // the wall entirely, which is a worse answer than "link only".)
+      const wanted = known.filter(source => source.hasBody || source.kind === 'link')
+      if (wanted.length === 0) return
+      const bodies = await props.getBodies(wanted.map(source => source.id))
       if (!bodies.ok) {
         actions.setError(bodies.error.message)
         return
@@ -400,7 +454,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             actions.setParsed({
               id: source.id,
               entries: [{
-                id: `link:${source.id}`,
+                id: linkEntryId(source.id),
                 sourceId: source.id,
                 title: source.label,
                 link: source.url,
@@ -437,7 +491,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           actions.setParsed({
             id: source.id,
             entries: [{
-              id: `link:${source.id}`,
+              id: linkEntryId(source.id),
               sourceId: source.id,
               title: source.label,
               link: source.url,
@@ -504,12 +558,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         label: source.label,
         tile: tileForSource(source.label),
         hue: hueForSource(source.label),
+        kind: source.kind,
+        addedAt: source.addedAt,
       })
     }
     return map
   }, [sources])
 
   const allEntries = useMemo(() => flattenEntries(parsed), [parsed])
+  /** How many entries each source kind contributes, for the filter panel. */
+  const kindCounts = useMemo(() => {
+    const counts: Record<ReaderSourceKind, number> = { rss: 0, link: 0 }
+    for (const entry of allEntries) {
+      const kind = presentation.get(entry.sourceId)?.kind
+      if (kind !== undefined) counts[kind] += 1
+    }
+    return counts
+  }, [allEntries, presentation])
   const rows = useMemo(() => selectRows(allEntries, presentation, {
     filter, query, unreadOnly, sort, read, tags: entryTagIds, now: new Date(),
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
@@ -517,9 +582,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const openEntry = openEntryId === null ? undefined : allEntries.find(entry => entry.id === openEntryId)
   /** The source the strip is currently narrowing to, if any. */
   const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
+  /** The source KIND the search box is narrowing to, if any (`#rss` / `#link`). */
+  const activeKind = READER_SOURCE_KINDS.find(kind => query.trim() === kindQuery(kind)) ?? null
+  /** The label for whichever narrowing the search box currently holds. */
+  const kindLabel = activeKind === null ? null : t(activeKind === 'link' ? 'sources.kindLink' : 'sources.kindRss')
   /** The active source's display name, for the filter panel's drill row. */
   const activeSourceLabel = activeSource === null
-    ? null
+    ? kindLabel
     : sources.find(source => source.id === activeSource)?.label ?? activeSource
   /** The source page's list, narrowed by its own search box (name or address). */
   const matchingSources = useMemo(() => {
@@ -530,6 +599,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [sources, sourceFilter])
   /** Sources whose payload could not be read whole — what the notice lists. */
   const brokenSources = sources.filter(source => parsed[source.id]?.incomplete === true || parsed[source.id]?.error !== undefined)
+  /** The management list: narrowed by kind, ordered by the chosen key. */
+  const manageSources = useMemo(() => {
+    const filtered = sources.filter(source => manageKind === 'all' || source.kind === manageKind)
+    const sorted = [...filtered]
+    // `?? ''` on the dates: the host always reports them, but a degraded or
+    // older host must not turn the subscription page into a crash — an empty
+    // key sorts last, which is the honest place for "unknown when".
+    if (manageSort === 'name') sorted.sort((a, b) => a.label.localeCompare(b.label))
+    else if (manageSort === 'fetched') sorted.sort((a, b) => (b.fetchedAt ?? '').localeCompare(a.fetchedAt ?? ''))
+    else sorted.sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''))
+    return sorted
+  }, [sources, manageKind, manageSort])
 
   /* --------------------------------------------------- the translation flow */
 
@@ -943,8 +1024,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       } else {
         // Nothing to show: keep the host's reason (a failed payload, a fetch
         // that could not extract) so the view explains itself instead of
-        // looking like an article with no text.
-        actions.setArticle('', false, view.value.error ?? null)
+        // looking like an article with no text. A saved link with no reason is
+        // its own case — this page was fetched but did not become a body — and
+        // saying so is what stops it rendering as a title over blank space. A
+        // FEED entry with no body yet stays silent on purpose: the automatic
+        // backfill is fetching it, and an error line there would be a lie.
+        actions.setArticle('', false, view.value.error ?? (row.sourceKind === 'link' ? t('detail.extractFailed') : null))
       }
       return
     }
@@ -992,6 +1077,20 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       setVerdict({ kind: 'fetchFailed', reason: value.reason })
       return
     }
+    if (value.failure !== undefined) {
+      // Saved, but there is no body to preview. This is NOT a failure verdict:
+      // the link is in the wall, and the sentence names the reason so the
+      // reader knows whether it is worth opening in a browser.
+      setVerdict({
+        kind: 'savedLinkNoPreview',
+        label: value.label,
+        reason: value.failure.message,
+        code: value.failure.code,
+      })
+      setDraftUrl('')
+      actions.refresh()
+      return
+    }
     setVerdict({
       kind: value.outcome === 'subscribed' ? 'subscribed' : 'savedLink',
       label: value.label,
@@ -1028,6 +1127,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       actions.refresh()
     }
   }, [actions, props])
+
+  /**
+   * Delete one saved link from wherever the reader is standing.
+   *
+   * A `link` source IS its single entry, so deleting the entry and deleting the
+   * source are the same act — which is why the detail view can offer it. A feed
+   * entry has no such button: the source would bring it back on the next
+   * refresh, so the honest verbs for it are the subscription ones.
+   *
+   * @param sourceId - the link source to drop.
+   */
+  const removeLink = useCallback(async (sourceId: string) => {
+    await removeSource(sourceId)
+    actions.closeEntry()
+  }, [actions, removeSource])
 
   /**
    * Apply an edited URL and/or label to one source.
@@ -1307,17 +1421,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         />
         {verdict !== null && (
           <div className={css.verdict}>
-            <b>{t(VERDICT_KEY[verdict.kind], verdict.label === undefined ? {} : { label: verdict.label })}</b>
+            <b>
+              {t(VERDICT_KEY[verdict.kind], verdict.kind === 'savedLinkNoPreview'
+                ? { label: verdict.label ?? '', reason: previewReason(t, verdict.code, verdict.reason ?? '') }
+                : verdict.label === undefined ? {} : { label: verdict.label })}
+            </b>
             {/* The seam's own words, when the fetch failed. Without them the
-                reader has a verdict and no diagnosis. */}
-            {verdict.reason !== undefined && (
+                reader has a verdict and no diagnosis. A classified link-only
+                verdict already carries its sentence above, so the raw message
+                would only repeat it in a second language. */}
+            {verdict.reason !== undefined && verdict.kind === 'fetchFailed' && (
               <span className={css.verdictReason}>{verdict.reason}</span>
             )}
           </div>
         )}
         <div className={css.dialogActions}>
           <button type="button" className={css.ghost} onClick={() => setAddOpen(false)}>
-            {verdict !== null && (verdict.kind === 'subscribed' || verdict.kind === 'savedLink')
+            {verdict !== null && (verdict.kind === 'subscribed' || verdict.kind === 'savedLink' || verdict.kind === 'savedLinkNoPreview')
               ? t('action.done')
               : t('action.cancel')}
           </button>
@@ -1333,6 +1453,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   if (view === 'detail' && openEntry !== undefined) {
     const source = presentation.get(openEntry.sourceId)
+    /** The host's own row for this entry's source: the failure code lives here. */
+    const sourceSummary = sources.find(item => item.id === openEntry.sourceId)
     const when = relativeWhen(openEntry.publishedAt, new Date())
     const date = absoluteDate(openEntry.publishedAt)
     const alsoFrom = allEntries
@@ -1430,6 +1552,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           >
             <IconRightUpOutline16 size={15} />
           </button>
+          {/* A saved link is one item, so deleting it HERE is honest. A feed
+              entry gets no such button: the next refresh would bring it back,
+              and a delete that undoes itself is a lie. */}
+          {sourceSummary?.kind === 'link' && (
+            <button
+              type="button"
+              className={`${css.tool} ${css.toolDanger}`}
+              title={t('detail.removeLink')}
+              onClick={() => { void removeLink(openEntry.sourceId) }}
+            >
+              <IconTrashOutline16 size={15} />
+            </button>
+          )}
         </div>
 
         <div className={css.detailBody}>
@@ -1494,8 +1629,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   thing again. The old copy claimed "exceeds the fetch cap" for
                   all three, which was measured wrong on the acceptance instance
                   (the recorded reason there was `web fetch failed: TypeError:
-                  fetch failed`). */}
-              {describeFetchFailure(articleError, t)}
+                  fetch failed`). When the host classified the failure, its CODE
+                  picks the sentence — the raw message stays for diagnosis only. */}
+              {previewReason(t, sourceSummary?.failure?.code, articleError)}
+              {openEntry.link !== undefined && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className={css.incompleteLink}
+                    onClick={() => { props.openExternal(openEntry.link as string) }}
+                  >
+                    {t('detail.readOriginal')}
+                  </button>
+                </>
+              )}
             </p>
           )}
           {articleHtml !== null && articleHtml.length > 0 && (
@@ -1612,6 +1760,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       sourceLabel: source?.label ?? '',
                       sourceTile: source?.tile ?? '·',
                       sourceHue: source?.hue ?? '',
+                      sourceAddedAt: source?.addedAt ?? '',
+                      sourceKind: source?.kind ?? 'rss',
                       unread: read[entry.id] !== true,
                     })
                   }}
@@ -1706,11 +1856,52 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             </select>
             <span className={css.help}>{t('sources.cacheHelp')}</span>
           </div>
+          {/* The list grows one entry per pasted URL plus one per feed, and the
+              two are different things: narrowing by kind and ordering by
+              arrival is how "delete that link I added yesterday" is answered
+              without reading the whole list. */}
+          {sources.length > 0 && (
+            <div className={css.manageTools}>
+              <div className={css.chipRow} role="group" aria-label={t('sources.kindFilter')}>
+                {(['all', ...READER_SOURCE_KINDS] as const).map(kind => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`${css.chip}${manageKind === kind ? ` ${css.chipOn}` : ''}`}
+                    aria-pressed={manageKind === kind}
+                    onClick={() => { setManageKind(kind) }}
+                  >
+                    {kind === 'all'
+                      ? t('filter.all')
+                      : t(kind === 'link' ? 'sources.kindLink' : 'sources.kindRss')}
+                    <span className={css.chipCount}>
+                      {kind === 'all' ? sources.length : sources.filter(source => source.kind === kind).length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className={css.chipRow} role="group" aria-label={t('sort.title')}>
+                {(['added', 'name', 'fetched'] as const).map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`${css.chip}${manageSort === option ? ` ${css.chipOn}` : ''}`}
+                    aria-pressed={manageSort === option}
+                    onClick={() => { setManageSort(option) }}
+                  >
+                    {t(option === 'added' ? 'sources.sortAdded' : option === 'name' ? 'sources.sortName' : 'sources.sortFetched')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {sources.length === 0
             ? <div className={css.state}>{t('sources.empty')}</div>
-            : (
+            : manageSources.length === 0
+              ? <div className={css.state}>{t('sources.noMatch')}</div>
+              : (
               <div className={css.sourceList}>
-                {sources.map(source => {
+                {manageSources.map(source => {
                   const group = parsed[source.id]
                   const failed = source.status === 'error'
                   const when = relativeWhen(source.fetchedAt, new Date())
@@ -1739,6 +1930,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                           }}
                         />
                         <span className={css.sourceMeta}>
+                          {t(source.kind === 'rss' ? 'sources.kindRss' : 'sources.kindLink')}
+                          {' · '}
                           {source.kind === 'rss' ? t('sources.items', { count: group?.entries.length ?? 0 }) : t('tab.subtitle')}
                           {' · '}
                           {source.fetchedAt === undefined
@@ -1749,7 +1942,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                           {failed && <> {' · '}<span className={css.sourceFailed}>{t('sources.failed')}</span></>}
                         </span>
                         {failed && source.error !== undefined && (
-                          <span className={css.sourceError}>{source.error}</span>
+                          // The classified reason, not the seam's raw sentence:
+                          // this line is read by the person deciding whether to
+                          // refresh, delete, or open the page themselves.
+                          <span className={css.sourceError}>
+                            {previewReason(t, source.failure?.code, source.error)}
+                          </span>
                         )}
                       </span>
                       <button
@@ -1819,7 +2017,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         <span className={css.toolWrap}>
           <button
             type="button"
-            className={`${css.tool} ${activeSource !== null || unreadOnly ? css.toolOn : ''}`}
+            className={`${css.tool} ${activeSource !== null || activeKind !== null || unreadOnly ? css.toolOn : ''}`}
             title={t('action.filter')}
             onClick={() => {
               setSortOpen(false)
@@ -1919,6 +2117,34 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                     <span className={css.filterValue}>{activeSourceLabel ?? t('filter.all')}</span>
                     <span className={css.filterChevron}>{glyph('chevron', 12)}</span>
                   </button>
+                  {/* By KIND, next to by-source: a saved link and a feed entry
+                      are two different things to look for, and "where is the
+                      link I just added" is not answerable from a source list
+                      once the wall has a few hundred cards. The value lands in
+                      the search box like every other narrowing here, so it is
+                      visible and clearable. */}
+                  <div className={css.filterSection}>{t('filter.byKind')}</div>
+                  <button
+                    type="button"
+                    className={css.filterRow}
+                    onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
+                  >
+                    <span className={css.filterCheck}>{query.trim() === '' ? '✓' : ''}</span>
+                    <span className={css.filterLabel}>{t('filter.all')}</span>
+                    <span className={css.filterCount}>{allEntries.length}</span>
+                  </button>
+                  {READER_SOURCE_KINDS.map(kind => (
+                    <button
+                      key={kind}
+                      type="button"
+                      className={css.filterRow}
+                      onClick={() => { actions.setQuery(kindQuery(kind)); setFilterOpen(false) }}
+                    >
+                      <span className={css.filterCheck}>{activeKind === kind ? '✓' : ''}</span>
+                      <span className={css.filterLabel}>{t(kind === 'link' ? 'sources.kindLink' : 'sources.kindRss')}</span>
+                      <span className={css.filterCount}>{kindCounts[kind]}</span>
+                    </button>
+                  ))}
                   {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
                   {tags.map(tag => (
                     <button
@@ -2105,6 +2331,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               const summaryText = wallOn && !peekSummary && card?.summary !== undefined ? card.summary : summary
               const originalTitle = wallOn && wallBoth && card?.title !== undefined ? row.entry.title : null
               const originalSummary = wallOn && wallBoth && card?.summary !== undefined ? summary : null
+              // A saved link with no body is a link and nothing more: the card
+              // says so, because the alternative — a card that opens onto an
+              // empty page — reads as a broken plugin rather than a site that
+              // refuses us. Feed entries are excluded: their missing body is
+              // the backfill's job and it is already marked when it arrives.
+              const rowSource = sources.find(item => item.id === row.sourceId)
+              const linkOnly = row.sourceKind === 'link' && row.entry.contentHtml === undefined
+              const linkOnlyReason = previewReason(
+                t,
+                rowSource?.failure?.code,
+                parsed[row.sourceId]?.error ?? t('detail.extractFailed'),
+              )
               // Only a field that actually has a translation can be peeked: an
               // untranslated (or Chinese) card keeps its ordinary hover.
               const peekable = (field: 'title' | 'summary'): boolean => wallOn && !wallBoth && card?.[field] !== undefined
@@ -2157,6 +2395,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   {row.entry.author !== undefined && <span className={css.author}>{row.entry.author}</span>}
                   {backfilled[row.entry.id] === true && (
                     <span className={css.tagOwned} title={t('detail.filledIn')}>{t('detail.filledInBadge')}</span>
+                  )}
+                  {linkOnly && (
+                    <span className={css.tagLinkOnly} title={linkOnlyReason}>{t('detail.linkOnlyBadge')}</span>
                   )}
                   {(entryTagIds[row.entry.id] ?? []).map(tagId => (
                     <span key={tagId} className={css.tagOwned}>
@@ -2252,6 +2493,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       {cardMenu !== null && (() => {
         const entry = allEntries.find(item => item.id === cardMenu.entryId)
         if (entry === undefined) return null
+        const entrySource = sources.find(item => item.id === entry.sourceId)
         return (
           <div className={css.cardMenu} style={{ top: cardMenu.top, left: cardMenu.left }} role="menu">
             {entry.contentHtml === undefined && entry.link !== undefined && (
@@ -2271,6 +2513,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             {entry.link !== undefined && (
               <button type="button" onClick={() => { setCardMenu(null); props.openExternal(entry.link as string) }}>
                 {t('action.openExternal')}
+              </button>
+            )}
+            {entrySource?.kind === 'link' && (
+              <button
+                type="button"
+                className={css.cardMenuDanger}
+                onClick={() => { setCardMenu(null); void removeSource(entry.sourceId) }}
+              >
+                {t('detail.removeLink')}
               </button>
             )}
           </div>
