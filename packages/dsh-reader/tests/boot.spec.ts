@@ -382,3 +382,55 @@ describe('a body too large to inline', () => {
     expect(onDisk.annotations.e1.body.file).toBeUndefined()
   })
 })
+
+describe('a fetch the browser can walk away from', () => {
+  it('stores the payload before answering, and extraction consumes it', async () => {
+    const root = stateRoot()
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.provide('web', {
+      fetch: async () => ({
+        url: 'https://example.com/paper',
+        statusCode: 200,
+        body: { kind: 'html' as const, content: `<article><p>${'prose '.repeat(60)}</p></article>` },
+        truncated: false,
+      }),
+    } as never)
+    apply(ctx, { stateRoot: root })
+    await ctx.fiber.await()
+    const service = ctx.get('reader') as ReaderService
+
+    const fetched = await service.fetchEntryBody({ entryId: 'e1', url: 'https://example.com/paper' })
+    expect(fetched.raw).toContain('prose')
+    expect(typeof fetched.rawFile).toBe('string')
+
+    // The payload survives the caller: a wall reopened later sees `raw` and can
+    // extract it without going back to the network.
+    expect(await service.entryFetchStates({ entryIds: ['e1'] })).toEqual({ states: { e1: { state: 'raw', at: expect.any(String) } } })
+    const stored = await service.getRawBody({ entryId: 'e1' })
+    expect(stored.raw).toBe(fetched.raw)
+    expect(stored.url).toBe('https://example.com/paper')
+    expect(readdirSync(join(root, 'bodies'))).toHaveLength(1)
+
+    // Storing the extraction consumes it: the state flips to ready and the raw
+    // file is swept.
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/paper', html: '<p>body</p>' })
+    expect((await service.entryFetchStates({ entryIds: ['e1'] })).states.e1?.state).toBe('ready')
+    expect(await service.getRawBody({ entryId: 'e1' })).toMatchObject({ error: 'no stored payload' })
+    expect(readdirSync(join(root, 'bodies'))).toHaveLength(0)
+  })
+
+  it('reports a failure with its classified reason', async () => {
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://example.com/x',
+      statusCode: 403,
+      body: { kind: 'html' as const, content: 'denied' },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    await service.fetchEntryBody({ entryId: 'e1', url: 'https://example.com/x' })
+    const states = (await service.entryFetchStates({ entryIds: ['e1'] })).states
+    expect(states.e1?.state).toBe('failed')
+    expect(states.e1?.state === 'failed' ? states.e1.code : undefined).toBe('blocked')
+  })
+})

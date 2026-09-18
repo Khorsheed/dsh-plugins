@@ -19,6 +19,7 @@ import type {
   ReaderAnnotationOutcome,
   ReaderBackfillCandidate,
   ReaderEntryBodyView,
+  ReaderEntryFetchState,
   ReaderBody,
   ReaderCapabilities,
   ReaderMutationOutcome,
@@ -107,7 +108,14 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
 
   /** Fetch one entry's article (the network half; the browser extracts). */
   @Remote('fetchEntryBody')
-  fetchEntryBody(request: { entryId: string; url: string }): Promise<{ entryId: string; url?: string; raw?: string; truncated?: boolean; error?: string }> {
+  fetchEntryBody(request: { entryId: string; url: string }): Promise<{
+    entryId: string
+    url?: string
+    raw?: string
+    rawFile?: string
+    truncated?: boolean
+    error?: string
+  }> {
     return this.core.fetchEntryBody(request)
   }
 
@@ -121,6 +129,18 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     scriptFigures?: number
   }): Promise<ReaderEntryBodyView> {
     return this.core.storeEntryBody(request)
+  }
+
+  /** What the plugin holds per entry: a body, a stored raw payload, or a failure. */
+  @Remote('entryFetchStates')
+  entryFetchStates(request: { entryIds: readonly string[] }): Promise<{ states: Record<string, ReaderEntryFetchState> }> {
+    return this.core.entryFetchStates(request)
+  }
+
+  /** A stored raw payload, so the browser can extract it later. */
+  @Remote('getRawBody')
+  getRawBody(request: { entryId: string }): Promise<{ entryId: string; raw?: string; url?: string; truncated?: boolean; error?: string }> {
+    return this.core.getRawBody(request)
   }
 
   /** Which entries still need their full text (the automatic backfill's work list). */

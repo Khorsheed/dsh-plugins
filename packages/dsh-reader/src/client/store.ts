@@ -13,7 +13,7 @@
  * @module @khorsheed/dsh-reader/client/store
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { ReaderSourceSummary, ReaderTag } from '../types.ts'
+import type { ReaderEntryFetchState, ReaderSourceSummary, ReaderTag } from '../types.ts'
 import type { ReaderEntry } from './parse-rss.ts'
 
 /** Which slice of the list the pane shows. */
@@ -70,6 +70,8 @@ export interface ReaderState {
   backfill: { total: number; done: number } | null
   /** Entry ids whose body arrived from a backfill (the cards mark them). */
   backfilled: Record<string, true>
+  /** What the plugin holds per entry, as the host reports it. */
+  fetchStates: Record<string, ReaderEntryFetchState>
   /** Which surface is up: the wall, one entry, or subscription management. */
   view: ReaderView
   /** Which slice of the list to show. */
@@ -111,6 +113,7 @@ export type ReaderActions = {
   setStaleBody: (draft: ReaderState, entryId: string, stale: boolean) => void
   setCacheTtl: (draft: ReaderState, hours: number) => void
   setBackfill: (draft: ReaderState, progress: { total: number; done: number } | null) => void
+  setFetchStates: (draft: ReaderState, states: Record<string, ReaderEntryFetchState>) => void
   noteBackfilled: (draft: ReaderState, entryId: string, filled: boolean) => void
   setRefreshing: (draft: ReaderState, refreshing: boolean) => void
   /** Record that a refresh run finished, including one with failures. */
@@ -146,6 +149,7 @@ const INITIAL: ReaderState = {
   cacheTtlHours: 24,
   backfill: null,
   backfilled: {},
+  fetchStates: {},
   view: 'list',
   // 'all' rather than 'today': a subscription's entries are usually NOT from
   // today (measured: the acceptance instance's feed's newest item was 8 days
@@ -215,6 +219,14 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       },
       setCacheTtl: (d, hours) => { d.cacheTtlHours = hours },
       setBackfill: (d, progress) => { d.backfill = progress },
+      setFetchStates: (d, states) => {
+        const next = { ...d.fetchStates, ...states }
+        // Same values, same object: a poll that learns nothing must not re-render
+        // the wall (and must not look like "something changed" to any effect).
+        const changed = Object.keys(next).length !== Object.keys(d.fetchStates).length
+          || Object.entries(next).some(([id, value]) => JSON.stringify(d.fetchStates[id]) !== JSON.stringify(value))
+        if (changed) d.fetchStates = next
+      },
       noteBackfilled: (d, entryId, filled) => {
         d.backfilled = { ...d.backfilled, [entryId]: true }
         // Done counting regardless: a failure also advances the run, and the

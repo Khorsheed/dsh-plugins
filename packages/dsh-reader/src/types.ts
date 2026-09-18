@@ -138,14 +138,50 @@ export interface ReaderStateDoc {
   readonly annotations?: Readonly<Record<string, ReaderEntryAnnotation>>
 }
 
+/**
+ * What the plugin holds for one entry: a body, a stored raw payload, or why not.
+ *
+ * `raw` is the state that makes a fetch resumable: the payload is on disk and the
+ * browser half has not extracted it yet, so closing the page costs nothing.
+ */
+export type ReaderEntryFetchState =
+  | { readonly state: 'none' }
+  | { readonly state: 'fetching'; readonly at: string }
+  | { readonly state: 'raw'; readonly at: string }
+  | { readonly state: 'ready'; readonly at?: string }
+  | {
+    readonly state: 'failed'
+    readonly at: string
+    readonly message: string
+    readonly code?: ReaderPreviewFailureCode
+  }
+
+/** The persisted twin of the in-flight/raw half of {@link ReaderEntryFetchState}. */
+export interface ReaderEntryFetchRecord {
+  readonly state: 'fetching' | 'raw'
+  readonly at: string
+  /** The `bodies/` file holding the raw payload, once it has been written. */
+  readonly rawFile?: string
+  /** The payload's character count (the document itself stays out of `state.json`). */
+  readonly chars?: number
+  /** Where the payload came from, so an edited URL is detectable. */
+  readonly url?: string
+  /** True when the seam capped the payload. */
+  readonly truncated?: boolean
+}
+
 /** One entry's reader-authored state (see the annotations section below). */
 export interface ReaderEntryAnnotation {
   /** The fetched full text, when one was asked for and arrived. */
   readonly body?: ReaderEntryBody
   /** Tag ids on this entry, in the order they were applied. */
   readonly tagIds?: readonly string[]
+  /** A fetch in flight, or a payload fetched and still waiting to be extracted. */
+  readonly fetch?: ReaderEntryFetchRecord
   /** Why the last fetch failed, so a retry is a decision and not a loop. */
   readonly error?: string
+  /** The classified reason, so the wall can show the same sentence as the detail. */
+  readonly failureCode?: ReaderPreviewFailureCode
   /** When that failure was recorded (ISO-8601). */
   readonly failedAt?: string
 }

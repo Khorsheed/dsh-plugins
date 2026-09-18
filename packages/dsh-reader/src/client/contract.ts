@@ -23,6 +23,7 @@ import type {
   ReaderAnnotationOutcome,
   ReaderBackfillCandidate,
   ReaderEntryBodyView,
+  ReaderEntryFetchState,
   ReaderBody,
   ReaderCapabilities,
   ReaderMutationOutcome,
@@ -80,6 +81,18 @@ export interface ReaderPaneInjected {
   }) => Promise<RemoteResult<'ok' | 'unavailable'>>
   /* ---------------------------------------------------- bodies and tags */
 
+  /** What the plugin holds per entry: a body, a stored payload, or a failure. */
+  entryFetchStates: (entryIds: readonly string[]) => Promise<RemoteResult<{ states: Record<string, ReaderEntryFetchState> }>>
+  /** Cache the markup this process extracted (the sweep's write half). */
+  storeEntryBody: (request: {
+    entryId: string
+    url: string
+    html: string
+    truncated?: boolean
+    scriptFigures?: number
+  }) => Promise<RemoteResult<ReaderEntryBodyView>>
+  /** A payload the host stored, so this process can extract it (late or never). */
+  getRawBody: (entryId: string) => Promise<RemoteResult<{ entryId: string; raw?: string; url?: string; truncated?: boolean; error?: string }>>
   /**
    * The entries whose full text still has to be filled in (the automatic
    * backfill's work list; the host owns the policy, this process owns the DOM).

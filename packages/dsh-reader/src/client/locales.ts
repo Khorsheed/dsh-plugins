@@ -39,6 +39,8 @@ export type ReaderKey =
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
   | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
+  | 'fetch.none' | 'fetch.fetching' | 'fetch.raw' | 'fetch.ready' | 'fetch.failed'
+  | 'fetch.noneTitle' | 'fetch.readyTitle' | 'fetch.failedTitle'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
@@ -200,6 +202,14 @@ export const en = {
   'detail.filledIn': 'The full text was fetched automatically and cached. The card still shows the feed’s own summary — open it to read.',
   'detail.filledInBadge': 'Full text',
   'detail.scriptFigures': 'This page draws {count} of its figures with its own scripts, so their pictures cannot be fetched — the captions are kept below —',
+  'fetch.none': 'Fetch',
+  'fetch.fetching': 'Fetching',
+  'fetch.raw': 'Storing',
+  'fetch.ready': 'Fetched',
+  'fetch.failed': 'Fetch failed',
+  'fetch.noneTitle': 'Fetch the article now — it keeps going when you leave this page',
+  'fetch.readyTitle': 'The full text is cached — open it to read',
+  'fetch.failedTitle': 'Fetch failed: {reason} — click to retry',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -357,6 +367,14 @@ export const zh = {
   'detail.filledIn': '全文是自动抓取并缓存的。卡片上仍是 feed 自己的摘要 —— 点开看全文。',
   'detail.filledInBadge': '已抓全文',
   'detail.scriptFigures': '这一页有 {count} 张插图由页面自己的脚本绘制，抓取时拿不到画面（图注保留在正文里）——',
+  'fetch.none': '抓取',
+  'fetch.fetching': '抓取中',
+  'fetch.raw': '待解析',
+  'fetch.ready': '已抓取',
+  'fetch.failed': '抓取失败',
+  'fetch.noneTitle': '现在就把这篇抓下来 —— 离开这个页面也不会停',
+  'fetch.readyTitle': '已有全文，点开就能读',
+  'fetch.failedTitle': '抓取失败：{reason} —— 点一下重试',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',
