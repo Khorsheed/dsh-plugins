@@ -208,6 +208,36 @@ describe('browser handoff client lifecycle', () => {
     dispose()
   })
 
+  it('holds a stale tab while the successor composition is still mounting', async () => {
+    const reload = vi.fn()
+    vi.stubGlobal('location', {
+      hash: '',
+      href: 'http://127.0.0.1:3080/session/one',
+      origin: 'http://127.0.0.1:3080',
+      reload,
+      replace: vi.fn(),
+    })
+    sessionStorage.setItem(BOOT_ID_KEY, '100:old')
+    const bodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      // The successor's Web-server seat answers before its rows mount: a hold
+      // that deliberately carries no boot id.
+      if (bodies.length === 1) return response(200, { state: 'waiting' })
+      return response(200, {
+        state: 'ready', action: 'reload', authentication: 'existing-cookie', bootId: '200:new',
+      })
+    }))
+
+    const dispose = apply({} as never)
+    await vi.waitFor(() => { expect(reload).toHaveBeenCalledOnce() })
+    // The held poll neither reloads nor teaches the successor's id — the tab
+    // re-asks with the same stale id until readiness lands, then reloads.
+    expect(bodies[1]?.knownBootId).toBe('100:old')
+    expect(reload).toHaveBeenCalledOnce()
+    dispose()
+  })
+
   it('shows a non-blocking retry notice only after sustained visible failure', async () => {
     vi.useFakeTimers()
     try {
