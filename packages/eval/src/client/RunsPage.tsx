@@ -30,8 +30,9 @@ import type { EvalCellDetail, EvalCellRow, EvalCellsResult, EvalMatrixView } fro
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { LiveGrid } from './Grid.tsx'
-import { Chip, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone } from './parts.tsx'
-import { RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictSourceOf } from './vocab.ts'
+import type { EvalKey } from './locales.ts'
+import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone } from './parts.tsx'
+import { RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf } from './vocab.ts'
 import { RUN_FILTERS, type RunFilter } from './store.ts'
 import css from './LabView.module.css'
 
@@ -55,7 +56,67 @@ export function passesFilter(row: Pick<EvalCellRow, 'state' | 'bucket'>, filter:
 
 export { RETRY_CATEGORIES } from './vocab.ts'
 
-/** One labelled block of the drawer. */
+/**
+ * How long each stage of one attempt took, from the ledger's own transition
+ * times.
+ *
+ * The ledger records WHEN each transition was applied, so a duration is the
+ * gap between one transition and the next — and the last state has no next,
+ * so it has no duration rather than an invented one running to «now». A
+ * transition the ledger did not time at all breaks the chain on both sides,
+ * which is reported as a segment with no duration rather than by silently
+ * measuring across the hole.
+ * @param history - applied transitions, oldest first.
+ * @returns one segment per state entered, in order.
+ */
+export function timelineOf(
+  history: ReadonlyArray<{ from: string; to: string; at: number | null }>,
+): Array<{ state: string; at: number | null; ms: number | null }> {
+  if (history.length === 0) return []
+  const first = history[0] as { from: string; at: number | null }
+  const segments = [{ state: first.from, at: null as number | null, ms: null as number | null }]
+  for (const [index, entry] of history.entries()) {
+    const next = history[index + 1]
+    const ms = entry.at === null || next === undefined || next.at === null ? null : next.at - entry.at
+    // The state it moved INTO started when the transition was applied.
+    segments.push({ state: entry.to, at: entry.at, ms })
+    // …and the state it moved OUT of ended there, so that is its length.
+    const previous = segments[segments.length - 2]
+    if (previous !== undefined && previous.at !== null && entry.at !== null) previous.ms = entry.at - previous.at
+  }
+  return segments
+}
+
+/**
+ * The ns → count map the verdict lookup takes, from the detail's own list.
+ *
+ * The LIST hands a cell its counts as a record and the DETAIL hands them as
+ * rows; the authority rule is one function either way, so the shapes are
+ * reconciled here rather than by teaching it two.
+ * @param cell - the open record.
+ * @returns ns → how many annotations the cell carries.
+ */
+function annotationCounts(cell: EvalCellDetail): Record<string, number> {
+  return Object.fromEntries(cell.annotations.map(ns => [ns.ns, ns.count]))
+}
+
+/** Artifacts carry mission's own `kind`; a person reads a name. */
+const ARTIFACT_KEYS: Readonly<Record<string, EvalKey>> = {
+  'materialization': 'artifact.materialization',
+  'archive': 'artifact.archive',
+  'verdicts': 'artifact.verdicts',
+  'log': 'artifact.log',
+}
+
+/** The word for one artifact kind; an unmapped kind keeps its token as a parameter. */
+function artifactPhrase(kind: string): { key: EvalKey; params?: Record<string, string> } {
+  const known = ARTIFACT_KEYS[kind]
+  if (known !== undefined) return { key: known }
+  if (/^stage/.test(kind)) return { key: 'artifact.stage' }
+  return { key: 'artifact.other', params: { kind } }
+}
+
+/** One labelled block of the record detail. */
 function Field(props: { label: string; children: ReactNode }) {
   return (
     <div className={css.field}>
@@ -65,8 +126,30 @@ function Field(props: { label: string; children: ReactNode }) {
   )
 }
 
-/** The cell drawer: what this cell is, what it did, and the three gestures. */
-function CellDrawer(props: {
+/** One row of the parameter table: a word, and the value behind it. */
+function Param(props: { label: string; children: ReactNode }) {
+  return (
+    <div className={css.paramRow}>
+      <span className={css.paramLabel}>{props.label}</span>
+      <span className={css.paramValue}>{props.children}</span>
+    </div>
+  )
+}
+
+/**
+ * ONE run record in full (ui-spec §五 v2): the verdict at the top, how long
+ * each stage took, the parameters it ran under, its artifacts, and the three
+ * human gestures.
+ *
+ * v1 put the mission id, the raw `kind` of every artifact and a JSON receipt
+ * on the page and left a reader to reconstruct the rest. What a person opens
+ * this for is three questions — did it work, where did the time go, and what
+ * did it actually run with — so those are the first three blocks, and the
+ * receipts (attempts, annotation namespaces, the verify output) stay below
+ * them, the verify output still verbatim because an exit code nobody
+ * translated is the whole reason the panel is opened.
+ */
+function RecordDetail(props: {
   cell: EvalCellDetail | null
   loading: boolean
   error: string | null
@@ -80,12 +163,20 @@ function CellDrawer(props: {
   const { cell, loading, error, onClose, onRetry, onRelease, onExport, onOpenSession, t } = props
   const [reason, setReason] = useState('')
   const [category, setCategory] = useState<string>(RETRY_CATEGORIES[0] as string)
+  const attempt = cell === null
+    ? undefined
+    : cell.attempts.find(entry => entry.attempt === cell.attempt)
+  const verdict = cell === null ? null : verdictSourceOf(annotationCounts(cell))
+  // 成功 / 异常 is the ledger's, not a judgement: `halted` is the one state
+  // that says this cell stopped rather than finished.
+  const halted = cell?.state === 'halted'
+  const segments = timelineOf(attempt?.history ?? [])
 
   return (
     <div className={css.drawer}>
       <div className={css.drawerBar}>
         <span className={css.title}>
-          {cell === null ? '' : t('drawer.title', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
+          {cell === null ? '' : t('record.head', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
         </span>
         <span className={css.barSpacer} />
         <Button size="sm" onClick={onClose}>{t('drawer.close')}</Button>
@@ -95,68 +186,120 @@ function CellDrawer(props: {
         {error !== null && <ErrorState what={t('drawer.error')} message={error} compact t={t} />}
         {cell !== null && (
           <>
-            <div className={css.chipRow}>
-              <Chip tone={bucketTone(cell.bucket)} title={cell.bucket}>
-                <Word phrase={bucketPhrase(cell.bucket)} t={t} />
-              </Chip>
+            {/* The head: the verdict this record carries, big, with where it
+                came from — and what the ledger says became of the cell. The
+                NUMBER is not here and says so; see `verdictSourceOf`. */}
+            <div className={css.recordHead}>
+              <span className={css.recordVerdict}>{t(verdictKey(verdict))}</span>
+              <Chip tone={halted ? 'danger' : 'ok'}>{t(halted ? 'record.failed' : 'record.ok')}</Chip>
               <Chip tone={stageTone(cell.state)} title={cell.state}>
                 <Word phrase={stagePhrase(cell.state)} t={t} />
               </Chip>
-              <Chip>{t('drawer.attemptNo', { attempt: cell.attempt })}</Chip>
-              <Chip><Duration ms={cell.inStateMs} t={t} /></Chip>
-            </div>
-            <Field label={t('drawer.refs')}>
-              {cell.refs.resource === null
-                ? <span className={css.dim}>{t('drawer.resourceNone')}</span>
-                : <span className={css.mono}>{cell.refs.resource}</span>}
-              {cell.refs.fingerprint !== null && (
-                <div className={css.dim}>{t('drawer.fingerprint')}: <Hash value={cell.refs.fingerprint} /></div>
+              {(cell.bucket === 'blocked' || cell.bucket === 'scheduled') && (
+                <Chip tone={bucketTone(cell.bucket)} title={cell.bucket}>
+                  <Word phrase={bucketPhrase(cell.bucket)} t={t} />
+                </Chip>
               )}
-            </Field>
-            <Field label={t('drawer.materialization')}>
-              <Hash value={cell.materializationSha} />
-            </Field>
-            <Field label={t('drawer.checkpoints')}>
-              {(cell.attempts.find(attempt => attempt.attempt === cell.attempt)?.checkpoints ?? [])
-                .map(checkpoint => checkpoint.name).join(' → ') || '—'}
-            </Field>
-            <Field label={t('drawer.artifacts')}>
-              {(cell.attempts.find(attempt => attempt.attempt === cell.attempt)?.artifacts ?? [])
-                .map(artifact => `${artifact.path} (${artifact.kind})`).join(', ') || '—'}
-            </Field>
-            <Field label={t('drawer.annotations')}>
-              {cell.annotations.length === 0
-                ? '—'
-                : cell.annotations.map(ns => (
-                  <div key={ns.ns} className={css.annotationLine}>
-                    <span className={css.mono}>{ns.ns}</span>
-                    <span>{ns.count}</span>
-                    <span className={css.dim}>{ns.latest ?? ''}{ns.by === null ? '' : ` · ${ns.by}`}</span>
+            </div>
+            {verdict !== null && <div className={css.dim}>{t('record.scoreWhere')}</div>}
+
+            <Field label={t('record.timeline')}>
+              {segments.length === 0
+                ? <span className={css.dim}>{t('record.timelineNone')}</span>
+                : (
+                  <div className={css.timeline}>
+                    {segments.map((segment, index) => (
+                      <div key={`${segment.state}:${String(index)}`} className={css.timelineRow}>
+                        <Chip tone={stageTone(segment.state)} title={segment.state}>
+                          <Word phrase={stagePhrase(segment.state)} t={t} />
+                        </Chip>
+                        <span className={css.dim}>
+                          {segment.ms === null ? '—' : <Duration ms={segment.ms} t={t} />}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
             </Field>
-            <Field label={t('drawer.attempts')}>
-              {cell.attempts.map(attempt => (
-                <div key={attempt.attempt} className={css.annotationLine}>
-                  <span className={css.dim}>{t('drawer.attemptNo', { attempt: attempt.attempt })}</span>
-                  {attempt.state === null
+
+            <Field label={t('record.params')}>
+              <div className={css.paramTable}>
+                <Param label={t('record.param.task')}>{cell.task ?? '—'}</Param>
+                <Param label={t('record.param.condition')}>{cell.condition ?? '—'}</Param>
+                <Param label={t('record.param.rep')}>{cell.rep ?? '—'}</Param>
+                <Param label={t('record.param.attempt')}>{cell.attempt}</Param>
+                <Param label={t('record.param.judge')}>{t(verdictKey(verdict))}</Param>
+                <Param label={t('record.param.material')}><Hash value={cell.materializationSha} /></Param>
+                <Param label={t('record.param.fingerprint')}><Hash value={cell.refs.fingerprint} /></Param>
+                <Param label={t('record.param.unit')}>
+                  {cell.refs.resource === null
+                    ? <span className={css.dim}>{t('drawer.resourceNone')}</span>
+                    : <span className={css.mono}>{cell.refs.resource}</span>}
+                </Param>
+                {/* Whatever else the ledger labelled this cell with, in its own
+                    words — the four above are the labels eval writes, and a
+                    dataset that labels more should not have them disappear. */}
+                {Object.entries(cell.labels)
+                  .filter(([key]) => !['task', 'condition', 'rep'].includes(key))
+                  .map(([key, value]) => <Param key={key} label={key}>{value}</Param>)}
+              </div>
+            </Field>
+
+            <Field label={t('record.attachments')}>
+              {(attempt?.artifacts ?? []).length === 0
+                ? <span className={css.dim}>{t('record.attachmentsNone')}</span>
+                : (
+                  <>
+                    {(attempt?.artifacts ?? []).map((artifact) => {
+                      const phrase = artifactPhrase(artifact.kind)
+                      return (
+                        // The PATH is the hover, the name is the row (§九).
+                        <div key={artifact.path} className={css.annotationLine} title={artifact.path}>
+                          <span>{phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)}</span>
+                          <span className={css.dim}>{artifact.path.split('/').pop() ?? artifact.path}</span>
+                        </div>
+                      )
+                    })}
+                    <div className={css.dim}>{t('record.filePending')}</div>
+                  </>
+                )}
+            </Field>
+
+            <Detail summary={t('drawer.attempts')}>
+              {cell.attempts.map(entry => (
+                <div key={entry.attempt} className={css.annotationLine}>
+                  <span className={css.dim}>{t('drawer.attemptNo', { attempt: entry.attempt })}</span>
+                  {entry.state === null
                     ? <span className={css.dim}>—</span>
                     : (
-                      <Chip tone={stageTone(attempt.state)} title={attempt.state}>
-                        <Word phrase={stagePhrase(attempt.state)} t={t} />
+                      <Chip tone={stageTone(entry.state)} title={entry.state}>
+                        <Word phrase={stagePhrase(entry.state)} t={t} />
                       </Chip>
                     )}
-                  {attempt.retry !== null && (
+                  {entry.retry !== null && (
                     <span className={css.dim}>
-                      {attempt.retry.category === null
+                      {entry.retry.category === null
                         ? ''
-                        : <Word phrase={retryPhrase(attempt.retry.category)} t={t} title={attempt.retry.category} />}
-                      {attempt.retry.reason === null ? '' : `: ${attempt.retry.reason}`}
+                        : <Word phrase={retryPhrase(entry.retry.category)} t={t} title={entry.retry.category} />}
+                      {entry.retry.reason === null ? '' : `: ${entry.retry.reason}`}
                     </span>
                   )}
                 </div>
               ))}
-            </Field>
+              {(attempt?.checkpoints ?? []).length > 0 && (
+                <div className={css.errorDetailLine}>
+                  {t('drawer.checkpoints')}: {(attempt?.checkpoints ?? []).map(checkpoint => checkpoint.name).join(' → ')}
+                </div>
+              )}
+              {cell.annotations.map(ns => (
+                <div key={ns.ns} className={css.annotationLine}>
+                  <span className={css.mono}>{ns.ns}</span>
+                  <span>{ns.count}</span>
+                  <span className={css.dim}>{ns.latest ?? ''}{ns.by === null ? '' : ` · ${ns.by}`}</span>
+                </div>
+              ))}
+            </Detail>
+
             <Field label={t('drawer.probes')}>
               {cell.probes.length === 0
                 ? <span className={css.dim}>{t('drawer.probesNone')}</span>
@@ -178,11 +321,12 @@ function CellDrawer(props: {
                       </div>
                     ))}
                     {/* Verbatim: the exit codes and skip reasons are exactly
-                        what this drawer is opened for (ui-spec §五). */}
+                        what this panel is opened for (ui-spec §五). */}
                     <pre className={css.pre}>{run.raw}</pre>
                   </div>
                 ))}
             </Field>
+
             <div className={css.drawerActions}>
               <Button
                 size="sm"
@@ -378,7 +522,7 @@ export function RunsPage(props: {
           {loading && cells !== null && <div className={css.dim}>{t('cells.loading')}</div>}
         </div>
         {selection !== null && (
-          <CellDrawer
+          <RecordDetail
             cell={props.cell}
             loading={props.cellLoading}
             error={props.cellError}

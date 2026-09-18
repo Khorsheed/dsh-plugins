@@ -212,30 +212,41 @@ async function openBench(h: Harness) {
   return view
 }
 
-/** Open cell N from the queue. */
-function pickCell(no: number) {
-  fireEvent.click(screen.getByText(`judge.cell {"no":${no}}`))
+/** Open one ITEM from the queue — its answers then render side by side. */
+function pickItem(task: string, count: number) {
+  fireEvent.click(screen.getByText(`judge.itemCount {"task":"${task}","count":${count}}`))
+}
+
+/** The evidence box of one criterion in one answer's column. */
+function evidenceOf(no: number, criterion: string) {
+  return screen.getByLabelText(`judge.column {"no":${no}} judge.evidence ${criterion}`)
 }
 
 afterEach(() => { cleanup() })
 
 describe('the blind queue', () => {
-  it('groups cells by whether they carry a verdict, and names them by ordinal', async () => {
+  it('queues by ITEM, and the answers to one item come up side by side', async () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    expect(screen.getByText('judge.ungraded {"count":1}')).toBeTruthy()
+    // One row per question, carrying how many answers it has and how many of
+    // them are graded — the grader picks a question, not a cell.
+    expect(screen.getByText('judge.itemCount {"task":"P0","count":2}')).toBeTruthy()
     expect(screen.getByText('judge.graded {"count":1}')).toBeTruthy()
-    // The cell's whole visible name is its number.
-    expect(screen.getByText('judge.cell {"no":1}')).toBeTruthy()
-    expect(screen.getByText('judge.cell {"no":2}')).toBeTruthy()
+
+    pickItem('P0', 2)
+    // Both answers, at once, each under its own seeded ordinal — the whole of
+    // a cell's visible name, and it says nothing about which arm produced it.
+    expect(screen.getByText('judge.column {"no":1}')).toBeTruthy()
+    expect(screen.getByText('judge.column {"no":2}')).toBeTruthy()
+    expect(screen.getByText('judge.sideBySide')).toBeTruthy()
   })
 
   it('renders no harness, model, condition or mission id anywhere in the DOM', async () => {
     const h = makeHarness()
     const view = await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
+    pickItem('P0', 2)
     const html = view.container.innerHTML
     // The run really used these; the bench is where they must not appear.
     // The report page is where the same run is read with its labels on.
@@ -251,13 +262,16 @@ describe('the blind queue', () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
-    expect(screen.getByText('stage1.md')).toBeTruthy()
+    pickItem('P0', 2)
+    // Both answers' material is on screen, each under its own column, so the
+    // same file name appears once per answer.
+    expect(screen.getAllByText('stage1.md')).toHaveLength(2)
     // The tokens judge.ts leaves behind — the grader sees the redaction, not
     // a silently rewritten document.
     expect(screen.getByText(/我是 <harness>，用 <model> 跑的/)).toBeTruthy()
     expect(screen.getByText('judge.scrubbed {"count":2}')).toBeTruthy()
-    expect(screen.getByText('judge.scrubbed {"count":0}')).toBeTruthy()
+    // Answer 1's second file and answer 2's only file were both clean.
+    expect(screen.getAllByText('judge.scrubbed {"count":0}')).toHaveLength(2)
   })
 })
 
@@ -266,47 +280,52 @@ describe('the criteria table', () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
+    pickItem('P0', 2)
     expect(screen.getByText('判官 A')).toBeTruthy()
     expect(screen.getByText('判官 B')).toBeTruthy()
     expect(screen.getByText('读着顺')).toBeTruthy()
     expect(screen.getByText('太像机器写的')).toBeTruthy()
+    // Answer 2's drafts are on screen too, in their own column.
     // 决策 9 disclosure travels to the bench too: a grader reading a
     // self-judged draft should know that is what they are reading.
     expect(screen.getByText('judge.selfJudged')).toBeTruthy()
     // H2 has no draft, and the row says so rather than showing a blank.
-    expect(screen.getByText('judge.draftsNone')).toBeTruthy()
+    expect(screen.getAllByText('judge.draftsNone').length).toBeGreaterThan(0)
   })
 
   it('marks polarity and veto, because pass always means the criterion HOLDS', async () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
-    expect(screen.getByText('judge.negative')).toBeTruthy()
-    expect(screen.getByText('judge.veto')).toBeTruthy()
-    expect(screen.getByText('judge.weight {"weight":2}')).toBeTruthy()
+    pickItem('P0', 2)
+    // Both answers carry the same rubric, so each marker is on screen once
+    // per column — the rows are per-answer forms, not one shared form.
+    // H2 (negative, veto, weighted) is answer 1's criterion; answer 2's rubric
+    // carries H1 alone. Each marker therefore belongs to the column whose
+    // rubric declares it — the rows are per-answer forms, not one shared form.
+    expect(screen.getAllByText('judge.negative')).toHaveLength(1)
+    expect(screen.getAllByText('judge.veto')).toHaveLength(1)
+    expect(screen.getAllByText('judge.weight {"weight":2}')).toHaveLength(1)
   })
 
   it('warns, before the button, which criteria a first verdict would drop from the score', async () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
+    pickItem('P0', 2)
     // The report scores a cell from ONE namespace, so the first human-final
-    // verdict takes the llm-draft-only criteria out of this cell's score. The
+    // verdict takes the llm-draft-only criteria out of that cell's score. The
     // bench cannot change that rule; it can refuse to let it happen quietly.
-    expect(screen.getByText('judge.scoringWarning {"count":1,"criteria":"H1"}')).toBeTruthy()
-    // A cell with nothing to lose says nothing.
-    pickCell(2)
-    expect(screen.queryByText(/judge\.scoringWarning/)).toBeNull()
+    // It is per COLUMN: answer 1 has something to lose and answer 2 does not,
+    // and side by side that difference has to stay visible.
+    expect(screen.getAllByText('judge.scoringWarning {"count":1,"criteria":"H1"}')).toHaveLength(1)
   })
 
   it('shows what a graded cell already carries, and warns that recording appends', async () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(2)
+    pickItem('P0', 2)
     expect(screen.getByText('judge.regrade')).toBeTruthy()
     expect(screen.getByText('judge.humanFinal')).toBeTruthy()
     expect(screen.getByText('之前已经判过')).toBeTruthy()
@@ -318,30 +337,32 @@ describe('the human-final write', () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
-    const submit = screen.getByRole('button', { name: 'judge.submit {"count":0}' })
+    pickItem('P0', 2)
+    const submit = screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":0}' })
     expect(submit.hasAttribute('disabled')).toBe(true)
-    expect(screen.getByText('judge.submitBlocked')).toBeTruthy()
+    expect(screen.getAllByText('judge.submitBlocked').length).toBe(2)
 
     // A verdict with no evidence is still not sendable: the protocol asks for
     // a checkable fact, and the host refuses a blank one anyway.
     fireEvent.click(screen.getAllByRole('button', { name: 'judge.pass' })[0] as HTMLElement)
-    expect(screen.getByRole('button', { name: 'judge.submit {"count":0}' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":0}' }).hasAttribute('disabled')).toBe(true)
 
-    fireEvent.change(screen.getByLabelText('judge.evidence H1'), { target: { value: '结论段是给人读的' } })
-    expect(screen.getByRole('button', { name: 'judge.submit {"count":1}' }).hasAttribute('disabled')).toBe(false)
+    fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '结论段是给人读的' } })
+    expect(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":1}' }).hasAttribute('disabled')).toBe(false)
+    // …and answer 2's button did not move: each column records on its own.
+    expect(screen.getByRole('button', { name: 'judge.submitOne {"no":2,"count":0}' }).hasAttribute('disabled')).toBe(true)
   })
 
   it('sends only the answered criteria, then re-reads the queue', async () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
+    pickItem('P0', 2)
     // Answer H1 only — H2 is left untouched, and an untouched criterion is
     // not a verdict of "does not hold".
     fireEvent.click(screen.getAllByRole('button', { name: 'judge.fail' })[0] as HTMLElement)
-    fireEvent.change(screen.getByLabelText('judge.evidence H1'), { target: { value: '读着像给模型写的' } })
-    fireEvent.click(screen.getByRole('button', { name: 'judge.submit {"count":1}' }))
+    fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '读着像给模型写的' } })
+    fireEvent.click(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":1}' }))
 
     await waitFor(() => {
       expect(h.submitHumanFinal).toHaveBeenCalledWith('s1', {
@@ -361,23 +382,31 @@ describe('the human-final write', () => {
     const h = makeHarness(QUEUE, { ...WRITTEN, added: false, duplicate: true, written: 0 })
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
+    pickItem('P0', 2)
     fireEvent.click(screen.getAllByRole('button', { name: 'judge.pass' })[0] as HTMLElement)
-    fireEvent.change(screen.getByLabelText('judge.evidence H1'), { target: { value: '同一句话' } })
-    fireEvent.click(screen.getByRole('button', { name: 'judge.submit {"count":1}' }))
+    fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '同一句话' } })
+    fireEvent.click(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":1}' }))
     expect(await screen.findByText('notice.humanFinalDuplicate {"no":1}')).toBeTruthy()
   })
 
-  it('drops a half-written answer when the grader moves to another cell', async () => {
+  it('keeps each column\'s half-written answer to itself, and drops them all on the next item', async () => {
     const h = makeHarness()
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
-    fireEvent.change(screen.getByLabelText('judge.evidence H1'), { target: { value: '写到一半' } })
-    // Evidence about cell 1 must not be submittable against cell 2.
-    pickCell(2)
-    expect((screen.getByLabelText('judge.evidence H1') as HTMLInputElement).value).toBe('')
-    expect(screen.getByRole('button', { name: 'judge.submit {"count":0}' }).hasAttribute('disabled')).toBe(true)
+    pickItem('P0', 2)
+    fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '写到一半' } })
+
+    // Evidence about answer 1 must not be submittable against answer 2 — the
+    // whole reason the drafts are keyed by ticket now that both are on screen.
+    expect((evidenceOf(2, 'H1') as HTMLInputElement).value).toBe('')
+    expect(screen.getByRole('button', { name: 'judge.submitOne {"no":2,"count":0}' }).hasAttribute('disabled')).toBe(true)
+
+    // Leaving the question drops every column's draft: a grader must not carry
+    // evidence to work they are no longer looking at. (One item in this
+    // fixture, so «leaving» is picking it again — the store clears on the
+    // selection, not on the id changing.)
+    pickItem('P0', 2)
+    expect((evidenceOf(1, 'H1') as HTMLInputElement).value).toBe('')
   })
 
   it('surfaces a refusal verbatim instead of pretending the verdict landed', async () => {
@@ -387,10 +416,10 @@ describe('the human-final write', () => {
     })
     await openBench(h)
     await screen.findByText('judge.queue')
-    pickCell(1)
+    pickItem('P0', 2)
     fireEvent.click(screen.getAllByRole('button', { name: 'judge.pass' })[0] as HTMLElement)
-    fireEvent.change(screen.getByLabelText('judge.evidence H1'), { target: { value: 'x' } })
-    fireEvent.click(screen.getByRole('button', { name: 'judge.submit {"count":1}' }))
+    fireEvent.change(evidenceOf(1, 'H1'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":1}' }))
     expect(await screen.findByText('判据 H1 缺证据：终评每条都要写清依据')).toBeTruthy()
   })
 })
@@ -412,8 +441,8 @@ describe('the agreement header', () => {
     // The effect writes `judge` and `judgeLoading`; either in its dependency
     // list would make the answer re-trigger the request whose cleanup then
     // drops it (T47's shape in the datasets tab). One call is the proof.
-    pickCell(1)
-    pickCell(2)
+    pickItem('P0', 2)
+    pickItem('P0', 2)
     expect(h.fetchJudgeQueue).toHaveBeenCalledTimes(1)
   })
 })

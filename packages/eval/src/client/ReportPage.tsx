@@ -33,7 +33,8 @@ import {
   Agreement, Chip, Count, Detail, Duration, EmptyState, Section, Word,
   invariantTone, stageTone, stamp,
 } from './parts.tsx'
-import { stagePhrase } from './vocab.ts'
+import { compactCount, durationParts, stagePhrase } from './vocab.ts'
+import type { EvalKey } from './locales.ts'
 import css from './LabView.module.css'
 
 const DASH = '—'
@@ -46,6 +47,85 @@ function fmtNum(value: number): string {
 /** `12/14`, or a dash when the run produced no such pair at all. */
 function fmtAgreement(value: { agreed: number; total: number } | null): string {
   return value === null ? DASH : `${value.agreed}/${value.total}`
+}
+
+/**
+ * Why one invariant affects the comparison — the hover ui-spec §五 v2 asks for.
+ *
+ * COPY, not data. The sentence is the same for every run an invariant can
+ * fail on, so it belongs in the dictionary (where it exists in both
+ * languages) rather than riding the projection as a host-composed Chinese
+ * string. The `details` beside it are the opposite kind of thing: those are
+ * this run's own facts and they come from the bundle.
+ * @param id - the invariant's stable id.
+ * @returns the dictionary key, or null for an id this tab has no sentence for.
+ */
+function invariantWhy(id: string): EvalKey | null {
+  if (id === 'materialization') return 'invariant.why.materialization'
+  if (id === 'fingerprint') return 'invariant.why.fingerprint'
+  if (id === 'subject') return 'invariant.why.subject'
+  if (id === 'procedure') return 'invariant.why.procedure'
+  return null
+}
+
+/** The three efficiency metrics the bars compare, in the order §五 v2 names them. */
+const CHART_METRICS = [
+  { key: 'activeMs', label: 'report.chart.activeMs' },
+  { key: 'outputTokens', label: 'report.chart.outputTokens' },
+  { key: 'cacheRead', label: 'report.chart.cacheRead' },
+] as const
+
+/**
+ * The efficiency table, seen at a glance.
+ *
+ * One bar group per metric, each scaled against the LARGEST value in its own
+ * metric: the three have no common unit (milliseconds, tokens, tokens read
+ * from a cache), so a shared scale would be a lie with a picture attached.
+ * The number stays beside its bar — the bar carries the ratio, the number
+ * carries the fact — and a metric nobody measured prints a sentence rather
+ * than a row of empty tracks. No charting library: this is three numbers per
+ * comparison group, and the host ships no chart primitive this tab may use.
+ * @param props - the report payload and the locale seat.
+ */
+function EfficiencyChart(props: { report: EvalRunReportView; t: LabViewProps['t'] }) {
+  const { report, t } = props
+  const valueOf = (row: EvalRunReportView['efficiency'][number], key: string): number | null => {
+    if (key === 'activeMs') return row.activeMs
+    if (key === 'outputTokens') return row.outputTokens
+    return row.cacheReadTokens
+  }
+  const shown = (key: string, value: number): string => {
+    if (key !== 'activeMs') return compactCount(value)
+    const parts = durationParts(value)
+    return parts === null ? '—' : t(parts.key, parts.params)
+  }
+  return (
+    <>
+      <div className={css.sectionTitle}><span>{t('report.chart')}</span></div>
+      {CHART_METRICS.map((metric) => {
+        const rows = report.efficiency
+          .map(row => ({ condition: row.condition, value: valueOf(row, metric.key) }))
+          .filter((row): row is { condition: string; value: number } => row.value !== null)
+        const max = Math.max(0, ...rows.map(row => row.value))
+        return (
+          <div key={metric.key} className={css.chartGroup}>
+            <div className={css.chartTitle}>{t(metric.label)}</div>
+            {rows.length === 0 || max === 0
+              ? <div className={css.dim}>{t('report.chartNone')}</div>
+              : rows.map(row => (
+                <div key={row.condition} className={css.chartRow}>
+                  <span className={css.chartLabel} title={row.condition}>{row.condition}</span>
+                  <span className={css.chartTrack}>
+                    <span className={css.chartBar} style={{ width: `${String(Math.round((row.value / max) * 100))}%` }} />
+                  </span>
+                  <span className={css.chartValue}>{shown(metric.key, row.value)}</span>
+                </div>
+              ))}
+          </div>
+        )
+      })}
+    </>
+  )
 }
 
 /** One judge tag, with the 自评 mark when its model is the cell's own. */
@@ -186,6 +266,7 @@ function Efficiency(props: { report: EvalRunReportView; t: LabViewProps['t'] }) 
                   detail: excluded.map(entry => `${entry.condition} ${entry.state} × ${entry.count}`).join('; '),
                 })}
             </div>
+            <EfficiencyChart report={report} t={t} />
           </>
         )}
     </Section>
@@ -556,13 +637,19 @@ export function ReportPage(props: {
             ))}
 
             <Section title={t('report.invariants')}>
-              {report.invariants.map(check => (
-                <div key={check.id} className={css.invariantRow} title={check.id}>
-                  <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
-                  <span className={css.invariantTitle}>{check.title}</span>
-                  {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
-                </div>
-              ))}
+              {report.invariants.map((check) => {
+                // The hover says why this check affects the COMPARISON — the
+                // one thing the title and the facts under it never said, and
+                // the reason a reader can act on a ⚠ instead of shrugging.
+                const why = invariantWhy(check.id)
+                return (
+                  <div key={check.id} className={css.invariantRow} title={why === null ? check.id : t(why)}>
+                    <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
+                    <span className={css.invariantTitle}>{check.title}</span>
+                    {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
+                  </div>
+                )
+              })}
             </Section>
 
             {!report.comparisonAllowed

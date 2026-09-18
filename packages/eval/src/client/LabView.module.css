@@ -1417,3 +1417,185 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* ── the run-record detail (ui-spec §五 v2) ───────────────────────────────
+   The head answers the question the panel is opened with — did this work —
+   before any field does. The verdict word is the biggest thing on it because
+   it is the only one a reader looks for twice. */
+.recordHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0 8px;
+}
+
+.recordVerdict {
+  color: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* One row per state the attempt entered, with how long it sat there. The
+   ledger's transition times are the source; a state it did not time prints a
+   dash rather than a number measured across the hole. */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timelineRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+/* A key-value table, not a JSON dump: the reason this panel stopped printing
+   `{"task":"P0",…}` at a person. */
+.paramTable {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.paramRow {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) minmax(0, 2fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.paramLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.paramValue {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+}
+
+/* ── the efficiency bars (ui-spec §五 v2) ─────────────────────────────────
+   CSS, not a charting library: three numbers per comparison group is a bar
+   chart's smallest useful case, and the host ships no chart primitive this
+   tab may use. Each row is scaled against the LARGEST value in its OWN
+   metric — the three have no common unit, so one shared scale would be a lie
+   with a picture attached. The number stays beside the bar: the bar carries
+   the ratio a reader sees at a glance, the number carries the fact. */
+.chartGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.chartTitle {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.chartRow {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr) minmax(64px, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.chartLabel {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartTrack {
+  overflow: hidden;
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chartBar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 5px;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.chartValue {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
+}
+
+/* ── the side-by-side bench (ui-spec §五 v2) ──────────────────────────────
+   One column per answer to the open item. They scroll sideways rather than
+   wrap: wrapping would put the fourth answer under the first and take away
+   the one thing this layout exists to give — reading them against each
+   other. */
+.bench {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.benchColumns {
+  display: flex;
+  overflow-x: auto;
+  gap: 12px;
+  align-items: flex-start;
+  padding-bottom: 4px;
+}
+
+.answerColumn {
+  display: flex;
+  flex: 0 0 340px;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 8px;
+  min-width: 0;
+}
+
+/* ── the wizard's stepper (ui-spec §五 v2) ────────────────────────────────
+   Where you are and how far there is to go — the thing one bare form of
+   twenty questions could not say. */
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  padding-bottom: 8px;
+}
+
+.stepDot {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.stepDot[data-done] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.stepDot[data-current] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}

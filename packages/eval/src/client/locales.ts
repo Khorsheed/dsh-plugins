@@ -144,12 +144,7 @@ export type EvalKey =
   | 'judge.empty'
   | 'judge.blindNotice'
   | 'judge.queue'
-  | 'judge.ungraded'
   | 'judge.graded'
-  | 'judge.cell'
-  | 'judge.cellTitle'
-  | 'judge.pick'
-  | 'judge.material'
   | 'judge.materialNone'
   | 'judge.scrubbed'
   | 'judge.criteria'
@@ -168,7 +163,6 @@ export type EvalKey =
   | 'judge.evidencePlaceholder'
   | 'judge.humanFinal'
   | 'judge.humanFinalNone'
-  | 'judge.submit'
   | 'judge.submitting'
   | 'judge.submitBlocked'
   | 'judge.bundleStale'
@@ -270,16 +264,12 @@ export type EvalKey =
   | 'drawer.close'
   | 'drawer.loading'
   | 'drawer.error'
-  | 'drawer.refs'
   | 'drawer.resourceNone'
   | 'drawer.checkpoints'
-  | 'drawer.artifacts'
-  | 'drawer.annotations'
   | 'drawer.attempts'
   | 'drawer.history'
   | 'drawer.probes'
   | 'drawer.probesNone'
-  | 'drawer.materialization'
   | 'drawer.openSession'
   | 'drawer.noSession'
   | 'drawer.releasable'
@@ -419,7 +409,6 @@ export type EvalKey =
   | 'judge.filterAll'
   | 'judge.filterUngraded'
   | 'judge.filterGraded'
-  | 'judge.filterTask'
   | 'judge.queueRow'
   | 'cells.col.state'
   | 'report.judgeSampleCount'
@@ -487,9 +476,7 @@ export type EvalKey =
   | 'matrix.emptyHint'
   | 'cells.emptyHint'
   | 'cells.emptyClear'
-  | 'drawer.title'
   | 'drawer.attemptNo'
-  | 'drawer.fingerprint'
   | 'drawer.probeOk'
   | 'drawer.probeFailed'
   | 'conditions.emptyHint'
@@ -555,6 +542,52 @@ export type EvalKey =
   | 'verdict.llm'
   | 'verdict.script'
   | 'verdict.hint'
+  | 'record.head'
+  | 'record.ok'
+  | 'record.failed'
+  | 'record.scoreWhere'
+  | 'record.timeline'
+  | 'record.timelineNone'
+  | 'record.params'
+  | 'record.attachments'
+  | 'record.attachmentsNone'
+  | 'record.filePending'
+  | 'record.param.task'
+  | 'record.param.condition'
+  | 'record.param.rep'
+  | 'record.param.attempt'
+  | 'record.param.material'
+  | 'record.param.fingerprint'
+  | 'record.param.unit'
+  | 'record.param.judge'
+  | 'artifact.materialization'
+  | 'artifact.archive'
+  | 'artifact.verdicts'
+  | 'artifact.stage'
+  | 'artifact.log'
+  | 'artifact.other'
+  | 'invariant.why.materialization'
+  | 'invariant.why.fingerprint'
+  | 'invariant.why.subject'
+  | 'invariant.why.procedure'
+  | 'report.chart'
+  | 'report.chart.activeMs'
+  | 'report.chart.outputTokens'
+  | 'report.chart.cacheRead'
+  | 'report.chartNone'
+  | 'judge.itemPick'
+  | 'judge.itemCount'
+  | 'judge.column'
+  | 'judge.submitOne'
+  | 'judge.sideBySide'
+  | 'new.step'
+  | 'new.step1'
+  | 'new.step2'
+  | 'new.step3'
+  | 'new.step4'
+  | 'new.back'
+  | 'new.next'
+  | 'new.stepBlocked'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -631,12 +664,7 @@ export const en: Record<EvalKey, string> = {
   'judge.empty': 'This experiment has no record to grade yet.',
   'judge.blindNotice': 'Blind review: the harness, the model and the arm are deliberately absent from this page. Records are numbered in the run\u2019s own (seeded) order, and the panel reads Judge A / Judge B. Unblinding happens on the results page.',
   'judge.queue': 'Queue',
-  'judge.ungraded': 'Not graded ({count})',
   'judge.graded': 'Graded ({count})',
-  'judge.cell': 'Record {no}',
-  'judge.cellTitle': '{task} · take {rep} (queue #{no})',
-  'judge.pick': 'Pick a record from the queue to grade it.',
-  'judge.material': 'De-fingerprinted artifacts',
   'judge.materialNone': 'This record archived none of the judged stage files — there is nothing to read, and a verdict on nothing would be a guess.',
   'judge.scrubbed': '{count} fingerprint(s) replaced',
   'judge.criteria': 'Criteria (kind: human)',
@@ -655,7 +683,6 @@ export const en: Record<EvalKey, string> = {
   'judge.evidencePlaceholder': 'A checkable fact, not an opinion',
   'judge.humanFinal': 'human-final on record',
   'judge.humanFinalNone': 'nothing recorded yet',
-  'judge.submit': 'Record human-final ({count})',
   'judge.submitting': 'Recording…',
   'judge.submitBlocked': 'Answer at least one criterion, with evidence, before recording.',
   'judge.bundleStale': 'The exported bundle was written before these final verdicts, so it does not carry them. Export again to put them in it — the report goes with it, and the old directory is left alone.',
@@ -757,16 +784,12 @@ export const en: Record<EvalKey, string> = {
   'drawer.close': 'Close',
   'drawer.loading': 'Loading the record…',
   'drawer.error': 'Failed to open the record',
-  'drawer.refs': 'Unit',
   'drawer.resourceNone': 'no unit (host path)',
   'drawer.checkpoints': 'Checkpoints',
-  'drawer.artifacts': 'Artifacts',
-  'drawer.annotations': 'Annotations',
   'drawer.attempts': 'Attempts',
   'drawer.history': 'Transitions',
   'drawer.probes': 'Verify output (verbatim)',
   'drawer.probesNone': 'this cell recorded no probe run',
-  'drawer.materialization': 'Item material',
   'drawer.openSession': 'Open the child session',
   'drawer.noSession': 'this attempt recorded no child session — nothing to open',
   'drawer.releasable': 'releasable — its resources may be destroyed',
@@ -1031,9 +1054,7 @@ export const en: Record<EvalKey, string> = {
   'matrix.emptyHint': 'No record survives the current pins. Clear them under «Column, bands and pins», or check the plan review.',
   'cells.emptyHint': 'No record of this experiment is in that state right now.',
   'cells.emptyClear': 'Show every state',
-  'drawer.title': '{task} × {condition} × take {rep}',
   'drawer.attemptNo': 'attempt {attempt}',
-  'drawer.fingerprint': 'fingerprint',
   'drawer.probeOk': 'passed',
   'drawer.probeFailed': 'did not pass',
   'conditions.emptyHint': 'The bound repository declares no arm yet. Minting one is part of 新建实验 — go back to the list and press it.',
@@ -1060,7 +1081,6 @@ export const en: Record<EvalKey, string> = {
   'judge.filterAll': 'All',
   'judge.filterUngraded': 'Not graded',
   'judge.filterGraded': 'Graded',
-  'judge.filterTask': 'Item',
   'judge.queueRow': '{task} · take {rep}',
   'cells.col.state': 'Run state',
   'report.judgeSampleCount': '{criteria} criterion(s) with pairs · agreed {agreement}',
@@ -1122,6 +1142,55 @@ export const en: Record<EvalKey, string> = {
   'verdict.llm': 'Judge draft',
   'verdict.script': 'Script',
   'verdict.hint': 'Which verdict source this cell carries. The scores themselves are computed from the exported bundle — they are on the results page.',
+
+  // ── the record detail, the validity hovers, the side-by-side
+  //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
+  'record.head': '{task} × {condition} · rep {rep}',
+  'record.ok': 'Finished',
+  'record.failed': 'Stopped',
+  'record.scoreWhere': 'The scores are computed from the exported bundle — they are on the results page.',
+  'record.timeline': 'Stage timeline',
+  'record.timelineNone': 'The ledger recorded no transition times for this attempt.',
+  'record.params': 'Parameters',
+  'record.attachments': 'Attachments',
+  'record.attachmentsNone': 'This attempt recorded no artifacts.',
+  'record.filePending': 'Preview and download need a host file service this tab does not have yet; the path is here so it can be opened from a terminal.',
+  'record.param.task': 'Item',
+  'record.param.condition': 'Comparison group',
+  'record.param.rep': 'Rep',
+  'record.param.attempt': 'Attempt',
+  'record.param.material': 'Item material',
+  'record.param.fingerprint': 'Environment fingerprint',
+  'record.param.unit': 'Unit',
+  'record.param.judge': 'Verdict source',
+  'artifact.materialization': 'Item material',
+  'artifact.archive': 'Archived workspace',
+  'artifact.verdicts': 'Verdicts',
+  'artifact.stage': 'Stage submission',
+  'artifact.log': 'Run log',
+  'artifact.other': '{kind}',
+  'invariant.why.materialization': 'Why it matters: every group has to have been given the same item, byte for byte. If they were not, the run asked different questions, and a difference between the answers is not a result.',
+  'invariant.why.fingerprint': 'Why it matters: the cells have to have run in the same class of environment. If they did not, the difference carries the machine as well as the subject.',
+  'invariant.why.subject': 'Why it matters: the model each cell actually ran has to be the one it declared. If it is not, this comparison is between something other than what it says it is.',
+  'invariant.why.procedure': 'Why it matters: the run has to record which orchestrator version and which plan produced it. Without that nobody can reproduce it or check it.',
+  'report.chart': 'Efficiency at a glance',
+  'report.chart.activeMs': 'Active time',
+  'report.chart.outputTokens': 'Output tokens',
+  'report.chart.cacheRead': 'Cache read',
+  'report.chartNone': 'Nothing was measured for this one.',
+  'judge.itemPick': 'Pick an item to grade',
+  'judge.itemCount': '{task} · {count} answer(s)',
+  'judge.column': 'Answer {no}',
+  'judge.submitOne': 'Record {count} verdict(s) for answer {no}',
+  'judge.sideBySide': 'The answers to one item, side by side and de-identified, in the run’s own seeded order. Each one is graded on its own — this is not a choice between them.',
+  'new.step': 'Step {step} of 4',
+  'new.step1': 'Dataset and items',
+  'new.step2': 'Comparison groups',
+  'new.step3': 'Judges, reps and budget',
+  'new.step4': 'Environment and confirm',
+  'new.back': 'Back',
+  'new.next': 'Next',
+  'new.stepBlocked': 'Fill this step in before going on.',
 }
 
 /** 中文词典。 */
@@ -1191,12 +1260,7 @@ export const zh: Record<EvalKey, string> = {
   'judge.empty': '这次实验还没有可评的记录。',
   'judge.blindNotice': '盲评：本页刻意不出现 harness、模型与对比组。记录按这次实验自己的（种子）顺序编号，判官只显示判官 A / 判官 B。揭盲在结果对比页。',
   'judge.queue': '队列',
-  'judge.ungraded': '未评（{count}）',
   'judge.graded': '已评（{count}）',
-  'judge.cell': '第 {no} 条',
-  'judge.cellTitle': '{task} · 第 {rep} 次（队列第 {no} 条）',
-  'judge.pick': '从左边队列里选一条开始评。',
-  'judge.material': '去指纹产物',
   'judge.materialNone': '这条记录没有归档被判阶段的文件——没有可读的东西，对着空白下判定是猜。',
   'judge.scrubbed': '替换掉 {count} 处指纹',
   'judge.criteria': '判据（kind: human）',
@@ -1215,7 +1279,6 @@ export const zh: Record<EvalKey, string> = {
   'judge.evidencePlaceholder': '写可核对的事实，不写观感',
   'judge.humanFinal': '已有 human-final',
   'judge.humanFinalNone': '还没有记录',
-  'judge.submit': '记入 human-final（{count} 条）',
   'judge.submitting': '记录中…',
   'judge.submitBlocked': '至少答一条判据并写上证据，才能记录。',
   'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
@@ -1317,16 +1380,12 @@ export const zh: Record<EvalKey, string> = {
   'drawer.close': '关闭',
   'drawer.loading': '读这条记录…',
   'drawer.error': '这条记录没打开',
-  'drawer.refs': '单元',
   'drawer.resourceNone': '没有单元（宿主路径）',
   'drawer.checkpoints': '检查点',
-  'drawer.artifacts': '产物',
-  'drawer.annotations': '注解',
   'drawer.attempts': '尝试',
   'drawer.history': '状态迁移',
   'drawer.probes': 'verify 原样输出',
   'drawer.probesNone': '这一格没有记录探针运行',
-  'drawer.materialization': '题面',
   'drawer.openSession': '打开子会话',
   'drawer.noSession': '这次 attempt 没有记录子会话——没有可打开的',
   'drawer.releasable': '可释放——资源可以销毁',
@@ -1588,9 +1647,7 @@ export const zh: Record<EvalKey, string> = {
   'matrix.emptyHint': '当前筛选下没有记录。到「换列 · 分组 · 筛选」里清掉筛选，或去计划审阅页看这次实验展开了什么。',
   'cells.emptyHint': '这次实验现在没有记录落在这个状态里。',
   'cells.emptyClear': '看全部状态',
-  'drawer.title': '{task} × {condition} × 第 {rep} 次',
   'drawer.attemptNo': '第 {attempt} 次尝试',
-  'drawer.fingerprint': '环境指纹',
   'drawer.probeOk': '通过',
   'drawer.probeFailed': '未通过',
   'conditions.emptyHint': '绑定的题库里还没有对比组。新建对比组在「新建实验」表单里——回到实验室列表点它。',
@@ -1617,7 +1674,6 @@ export const zh: Record<EvalKey, string> = {
   'judge.filterAll': '全部',
   'judge.filterUngraded': '未评',
   'judge.filterGraded': '已评',
-  'judge.filterTask': '按题',
   'judge.queueRow': '{task} · 第 {rep} 次',
   'cells.col.state': '运行状态',
   'report.judgeSampleCount': '{criteria} 条判据有配对 · 一致 {agreement}',
@@ -1679,4 +1735,53 @@ export const zh: Record<EvalKey, string> = {
   'verdict.llm': '判官初判',
   'verdict.script': '脚本判定',
   'verdict.hint': '这格带的是哪一种判定。分数本身是从导出的 bundle 里算的，在结果对比页。',
+
+  // ── the record detail, the validity hovers, the side-by-side
+  //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
+  'record.head': '{task} × {condition} · 第 {rep} 次',
+  'record.ok': '成功',
+  'record.failed': '异常',
+  'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
+  'record.timeline': '阶段时间轴',
+  'record.timelineNone': '账本没记这次尝试的转移时间。',
+  'record.params': '参数配置',
+  'record.attachments': '附件',
+  'record.attachmentsNone': '这次尝试没记下产物。',
+  'record.filePending': '预览和下载要宿主的文件服务，这个 tab 还没有；路径放在这里，可以从终端打开。',
+  'record.param.task': '题',
+  'record.param.condition': '对比组',
+  'record.param.rep': '次',
+  'record.param.attempt': '尝试次数',
+  'record.param.material': '题面物化',
+  'record.param.fingerprint': '环境指纹',
+  'record.param.unit': '单元',
+  'record.param.judge': '判定来源',
+  'artifact.materialization': '题面物化',
+  'artifact.archive': '归档工作区',
+  'artifact.verdicts': '判定记录',
+  'artifact.stage': '阶段提交',
+  'artifact.log': '评测日志',
+  'artifact.other': '{kind}',
+  'invariant.why.materialization': '为什么影响比较：各组拿到的题面必须逐字节相同。不同，这次 run 就是问了不同的问题，答案之间的差值不是结果。',
+  'invariant.why.fingerprint': '为什么影响比较：各格必须跑在同一类环境里。不是，差值里混进来的就是机器，而不只是被试。',
+  'invariant.why.subject': '为什么影响比较：每一格实际跑的模型必须就是它声明的那个。不是，这份对比比的就不是它说的那两个东西。',
+  'invariant.why.procedure': '为什么影响比较：这次 run 得记下是哪版编排器、按哪份计划跑的。记不下，谁都复现不了，也核对不了。',
+  'report.chart': '效率一眼看',
+  'report.chart.activeMs': '活跃时长',
+  'report.chart.outputTokens': '输出 token',
+  'report.chart.cacheRead': 'cache read',
+  'report.chartNone': '这一项没量到。',
+  'judge.itemPick': '先选一道题',
+  'judge.itemCount': '{task} · {count} 份作答',
+  'judge.column': '第 {no} 份',
+  'judge.submitOne': '记第 {no} 份的 {count} 条判定',
+  'judge.sideBySide': '同一道题的各份作答并排在这里，已去指纹，按 run 自己的种子顺序编号。每一份各自打分——这不是二选一。',
+  'new.step': '第 {step} 步 / 共 4 步',
+  'new.step1': '题库与题目',
+  'new.step2': '对比组',
+  'new.step3': '判官、次数与预算',
+  'new.step4': '环境与确认',
+  'new.back': '上一步',
+  'new.next': '下一步',
+  'new.stepBlocked': '这一步填完才能往下走。',
 }

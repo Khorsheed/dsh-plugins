@@ -250,14 +250,26 @@ export interface LabViewState {
   judge: EvalJudgeQueueView | null
   judgeLoading: boolean
   judgeError: string | null
-  /** The queue entry being graded, by ticket; null while the queue is showing. */
-  judgeTicket: string | null
   /**
-   * The grader's in-progress answers for the open cell: criterion id → the
-   * verdict being composed. Cleared when the cell changes or a submission
-   * lands, so a half-written answer never follows a grader to the next cell.
+   * The ITEM being graded, or null while the queue is showing.
+   *
+   * An item and not a cell since I5·T67: ui-spec §五 v2 puts the answers to
+   * one item side by side, because a grader reading four answers to the same
+   * question applies one standard to all four, and reading them one page at a
+   * time is how a standard drifts between the first and the last.
    */
-  judgeDraft: Record<string, { pass: boolean; evidence: string }>
+  judgeTask: string | null
+  /**
+   * The grader's in-progress answers: ticket → criterion id → the verdict
+   * being composed.
+   *
+   * Keyed by TICKET because several answers are on screen at once and each is
+   * graded on its own (the verdict contract is unchanged: one score per
+   * cell, never a choice between cells). Cleared when the item changes or a
+   * submission lands, so a half-written answer never follows a grader to the
+   * next question.
+   */
+  judgeDraft: Record<string, Record<string, { pass: boolean; evidence: string }>>
   /** Whether a human-final submission is in flight (the button is disabled meanwhile). */
   judgeSubmitting: boolean
 
@@ -335,8 +347,9 @@ export type LabViewActions = {
   setJudge: (draft: LabViewState, view: EvalJudgeQueueView) => void
   setJudgeLoading: (draft: LabViewState, loading: boolean) => void
   setJudgeError: (draft: LabViewState, error: string | null) => void
-  openJudgeCell: (draft: LabViewState, ticket: string | null) => void
-  setJudgeDraft: (draft: LabViewState, criterion: string, value: { pass: boolean; evidence: string }) => void
+  openJudgeTask: (draft: LabViewState, task: string | null) => void
+  setJudgeDraft: (draft: LabViewState, ticket: string, criterion: string, value: { pass: boolean; evidence: string }) => void
+  clearJudgeDraft: (draft: LabViewState, ticket: string) => void
   setJudgeSubmitting: (draft: LabViewState, submitting: boolean) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setReexporting: (draft: LabViewState, reexporting: boolean) => void
@@ -400,7 +413,7 @@ const INITIAL: LabViewState = {
   judge: null,
   judgeLoading: false,
   judgeError: null,
-  judgeTicket: null,
+  judgeTask: null,
   judgeDraft: {},
   judgeSubmitting: false,
   exportOpen: false,
@@ -421,7 +434,7 @@ const PER_EXPERIMENT: Pick<
   | 'started' | 'startFollowUps' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'runFilter' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
-  | 'judge' | 'judgeError' | 'judgeTicket' | 'judgeSubmitting'
+  | 'judge' | 'judgeError' | 'judgeTask' | 'judgeSubmitting'
   | 'exportOpen' | 'reexporting' | 'notice' | 'noticeError'
 > = {
   detail: null,
@@ -454,7 +467,7 @@ const PER_EXPERIMENT: Pick<
   lookIn: null,
   judge: null,
   judgeError: null,
-  judgeTicket: null,
+  judgeTask: null,
   judgeSubmitting: false,
   exportOpen: false,
   reexporting: false,
@@ -658,16 +671,23 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       },
       setJudgeLoading: (d, loading: boolean) => { d.judgeLoading = loading },
       setJudgeError: (d, error: string | null) => { d.judgeError = error },
-      openJudgeCell: (d, ticket: string | null) => {
-        d.judgeTicket = ticket
-        // A half-written answer belongs to the cell it was written against:
-        // carrying it to the next one would let a grader submit evidence
-        // about work they are no longer looking at.
+      openJudgeTask: (d, task: string | null) => {
+        d.judgeTask = task
+        // A half-written answer belongs to the question it was written
+        // against: carrying it to the next item would let a grader submit
+        // evidence about work they are no longer looking at.
         d.judgeDraft = {}
         d.judgeSubmitting = false
       },
-      setJudgeDraft: (d, criterion: string, value: { pass: boolean; evidence: string }) => {
-        d.judgeDraft = { ...d.judgeDraft, [criterion]: value }
+      setJudgeDraft: (d, ticket: string, criterion: string, value: { pass: boolean; evidence: string }) => {
+        d.judgeDraft = { ...d.judgeDraft, [ticket]: { ...(d.judgeDraft[ticket] ?? {}), [criterion]: value } }
+      },
+      // One answer's verdicts landed; the others on screen are still being
+      // written and must survive it.
+      clearJudgeDraft: (d, ticket: string) => {
+        const next = { ...d.judgeDraft }
+        delete next[ticket]
+        d.judgeDraft = next
       },
       setJudgeSubmitting: (d, submitting: boolean) => { d.judgeSubmitting = submitting },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },

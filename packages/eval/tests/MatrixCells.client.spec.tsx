@@ -386,24 +386,45 @@ describe('the cells page and its drawer', () => {
     expect(screen.getByText('verdict.none')).toBeTruthy()
   })
 
-  it('clicking a row opens the drawer with the unit, checkpoints, annotations and the verify output verbatim', async () => {
+  it('opens ONE record: the verdict, the timeline, the parameters, the attachments — and verify verbatim', async () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await waitFor(() => { expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-codex-a-rep1' }) })
 
-    expect(await screen.findByText('unit-b')).toBeTruthy()
+    // The head answers «did this work» before any field does (ui-spec §五 v2).
+    // 成功 / 异常 is the LEDGER's: `halted` is the state that says it stopped.
+    expect(await screen.findByText('record.ok')).toBeTruthy()
+    // The verdict SOURCE, in the head and in the parameter table; the number
+    // is on the results page and the panel says so.
+    expect(screen.getAllByText('verdict.script').length).toBe(2)
+    expect(screen.getByText('record.scoreWhere')).toBeTruthy()
+
+    // The timeline, from the ledger's own transition times.
+    expect(screen.getByText('record.timeline')).toBeTruthy()
+    expect(screen.getAllByText('stage.judged').length).toBeGreaterThan(0)
+
+    // A key-value table, not a JSON dump.
+    expect(screen.getByText('record.param.material')).toBeTruthy()
     expect(screen.getByText('deadbeef')).toBeTruthy()
-    expect(screen.getByText('stage1 → archive')).toBeTruthy()
-    expect(screen.getByText('archive/workspace (archive)')).toBeTruthy()
+    expect(screen.getByText('record.param.unit')).toBeTruthy()
+    expect(screen.getByText('unit-b')).toBeTruthy()
+
+    // Artifacts named in words, with the path on the hover — and the one
+    // honest sentence about what this tab still cannot do with them.
+    expect(screen.getByText('artifact.archive')).toBeTruthy()
+    expect(screen.getByText('workspace')).toBeTruthy()
+    expect(screen.getByText('record.filePending')).toBeTruthy()
+
     // The probe line AND the raw payload — a summary would drop the exit code.
     // ui-spec §五 keeps verify verbatim; only the verdict word is ours.
     expect(screen.getByText('drawer.probeFailed')).toBeTruthy()
     expect(screen.getByText(/probe-skipped/)).toBeTruthy()
     expect(screen.getByText(/not applicable this round/)).toBeTruthy()
     expect(screen.getByText(/"kind": "probes"/)).toBeTruthy()
-    // The retry that opened attempt 2 is on the record, in the word table's
-    // vocabulary rather than mission's own token.
+    // The receipts — attempts, checkpoints, annotation namespaces — are kept
+    // and folded, with the retry still in the word table's vocabulary.
+    expect(screen.getByText(/drawer\.checkpoints.*stage1 → archive/)).toBeTruthy()
     expect(screen.getAllByText('retry.cat.infrastructure').length).toBeGreaterThan(0)
     expect(screen.getByText(/the container died mid-round/)).toBeTruthy()
   })

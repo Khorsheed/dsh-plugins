@@ -118,7 +118,7 @@ export function LabView(props: LabViewProps) {
   const judge = useStore(s => s.judge)
   const judgeLoading = useStore(s => s.judgeLoading)
   const judgeError = useStore(s => s.judgeError)
-  const judgeTicket = useStore(s => s.judgeTicket)
+  const judgeTask = useStore(s => s.judgeTask)
   const judgeDraft = useStore(s => s.judgeDraft)
   const judgeSubmitting = useStore(s => s.judgeSubmitting)
   const exportOpen = useStore(s => s.exportOpen)
@@ -667,20 +667,22 @@ export function LabView(props: LabViewProps) {
   }
 
   /**
-   * Record the open cell's human-final verdicts — ui-spec step 8, and the one
+   * Record ONE answer's human-final verdicts — ui-spec step 8, and the one
    * write in this tab with no model-facing twin anywhere in the family.
    *
-   * Only answered criteria are sent (an untouched criterion is not a verdict
-   * of "false"), and the ledger is append-only, so a second pass over the
-   * same cell adds rather than replaces. The queue is re-read afterwards
-   * because the cell has just moved from 未评 to 已评 and the agreement
-   * numbers at the top have just changed.
+   * One answer and not the open item: several are on screen at once since
+   * I5·T67 and each is graded on its own, so the ticket comes from the column
+   * that was submitted. Only answered criteria are sent (an untouched
+   * criterion is not a verdict of "false"), and the ledger is append-only, so
+   * a second pass over the same cell adds rather than replaces. Only THAT
+   * column's composed answers are cleared — the ones beside it are still
+   * being written.
+   * @param ticket - the answer whose button was pressed.
    */
-  const onHumanFinal = (): void => {
-    if (openRunId === null || judgeTicket === null) return
-    const ticket = judgeTicket
+  const onHumanFinal = (ticket: string): void => {
+    if (openRunId === null) return
     const cellNo = judge?.cells.find(cell => cell.ticket === ticket)?.cellNo ?? 0
-    const verdicts = Object.entries(judgeDraft)
+    const verdicts = Object.entries(judgeDraft[ticket] ?? {})
       .filter(([, value]) => value.evidence.trim() !== '')
       .map(([criterion, value]) => ({ criterion, pass: value.pass, evidence: value.evidence.trim() }))
     if (verdicts.length === 0) return
@@ -694,10 +696,9 @@ export function LabView(props: LabViewProps) {
       actions.setNotice(result.value.duplicate
         ? t('notice.humanFinalDuplicate', { no: cellNo })
         : t('notice.humanFinal', { no: cellNo, count: result.value.written, by: result.value.by }))
-      // Clears the composed answers with the selection, then re-reads: the
-      // cell's group, its recorded verdicts and the header's agreement
-      // numbers all changed with this write.
-      actions.openJudgeCell(null)
+      // The recorded verdicts, this cell's queue group and the header's
+      // agreement numbers all changed with this write.
+      actions.clearJudgeDraft(ticket)
       actions.refresh()
     })
   }
@@ -918,13 +919,13 @@ export function LabView(props: LabViewProps) {
                       view={judge}
                       loading={judgeLoading}
                       error={judgeError}
-                      selection={judgeTicket}
+                      selection={judgeTask}
                       draft={judgeDraft}
                       submitting={judgeSubmitting}
                       reexporting={reexporting}
                       onReexport={onReexport}
-                      onPick={(ticket) => { actions.openJudgeCell(ticket) }}
-                      onAnswer={(criterion, value) => { actions.setJudgeDraft(criterion, value) }}
+                      onPick={(task) => { actions.openJudgeTask(task) }}
+                      onAnswer={(ticket, criterion, value) => { actions.setJudgeDraft(ticket, criterion, value) }}
                       onSubmit={onHumanFinal}
                       t={t}
                     />
