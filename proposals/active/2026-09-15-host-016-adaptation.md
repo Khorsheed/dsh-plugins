@@ -78,6 +78,12 @@ alpha.1 已适配的 breaking 六项在 alpha.2 复核**全部仍成立**（零�
 
 alpha.2 修订上文「明确不做」清单：ui-shortcuts / message-timeline / context-guard / whalesong 在 alpha.2 均有影响面（上表 3/5/4 项）。S12 fold 组合语义 alpha.2 一字未改，projection 维持暗态；browser-pane 2026-09-18 闭卷（用官方 Sidebar Browser）；room-composer-parity 补「工厂路线」选项（见其提案）。
 
+### 遗留与放行条件（2026-09-18 晚，用户拍板）
+
+- **3080 合线等官方 rc**：适配已完成（wave 分支全量 build/test 绿、本地实例冒烟通过），但用户体验 alpha.2 后判定该版本问题仍多，拍板 **rc 发布前不合 3080、不动共享检出**；wave 分支（feat/host-016-adaptation）保持全绿待 rc 复验后重钉收尾。
+- **ankh-guard 测试生命周期分支不并入 wave**：`fix/ankh-guard-test-lifecycle` 与 main 两点 diff 达 1680 文件 / +1.7万 / −19万行（基于过期树，合并即大面积回滚，含 skills/self-upgrade 内容被删）；其真实价值为顶部 5 提交（2 test + 3 docs），由 owner rebase 到当前 main 后再合。wave 已记录 EADDRINUSE watchdog 测试在 gate 并发下（load>11）flake 两次、安静环境连绿两次——该分支（正 owns 此 spec）合并后 gate 即全绿；其 preflight-runner.ts 与 wave 的三代际探测修复（3d88a3a8）需在合并时协调。
+- **3080 宿主升 0.1.6 前置验证项**：ankh-guard `runPreflight` 的 boot 路径在 0.1.6 线未挂 `PluginPackages`（runtime 解析代际不进试启动），含裸 specifier 的 profile 条目会被 preflight 误报 FAIL（方向偏严、非放行坏树）；当前 profile 全是 `file:` tgz + 官方 bundle 不触发，但 3080 宿主升 0.1.6 前必须实测 preflight 或补齐挂载（补齐需与上一条的在飞分支协调）。
+
 ## 里程碑
 
 - **M1** 基线绿（devDeps/lockfile 0.1.6-alpha.1，全量 build+test 红单收敛）。
