@@ -45,6 +45,7 @@ export function sidechatDefinition(t: TranslateNS<'sidechat'>): SidebarRightTabD
     kind: SIDECHAT_KIND,
     title: () => t('tab.label'),
     guide: [{
+      id: SIDECHAT_KIND,
       order: 50,
       title: () => t('tab.label'),
       description: () => t('guide.description'),

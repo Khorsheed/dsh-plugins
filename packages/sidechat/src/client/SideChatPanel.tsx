@@ -23,7 +23,7 @@ import {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  IconChevronDownOutline14, IconSendOutline16, MarkdownText, type MarkdownLabels,
+  IconChevronDownOutline14, IconSendOutline14, MarkdownText, type MarkdownLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SideChatContextSummary, SideChatListResult, SideChatSendOutcome,
@@ -365,7 +365,7 @@ export function SideChatPanel({
           disabled={sessionId === undefined}
           onClick={() => { void doSend() }}
         >
-          <IconSendOutline16 />
+          <IconSendOutline14 />
         </button>
       </div>
       {error !== null && <div className={css.error} role="status">{error}</div>}

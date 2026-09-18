@@ -39,6 +39,7 @@ export function readerDefinition(t: TranslateNS<'reader'>): SidebarRightTabDefin
     kind: READER_KIND,
     title: () => t('tab.label'),
     guide: [{
+      id: READER_KIND,
       order: 60,
       title: () => t('tab.label'),
       description: () => t('guide.description'),
