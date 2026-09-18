@@ -7,8 +7,10 @@
  * id, the change-history renderer into `ctx.documentPreviews` (builtin band —
  * listed in the document tab's dropdown, never the default) plus the keyed
  * `sidebar.right.tab.document` seat, and the per-turn file row into the
- * turnTail chain at default priority (no more `priority: -1` preemption — the
- * official deliverables row elects first). Registration disposal rides the
+ * turnTail slot. turnTail re-kinded chain → list at 0.1.6-alpha.2: the
+ * default bench declares the list (the row registers a plain `id` entry and
+ * coexists with the official cards); a chain-declared bench drives the 0.1.5
+ * fallback (select + priority -1 preemption). Registration disposal rides the
  * plugin fiber (HMR safety).
  */
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -28,7 +30,7 @@ import type { FilePreviewTabInjected, FilePreviewTurnRowInjected } from '../src/
 const sid = (k: string): SessionId => k as SessionId
 
 /** Boot the plugin over fake faces; the filePreview Remote records calls. */
-async function bench(opts: { documentPreviews?: boolean; host?: boolean } = {}) {
+async function bench(opts: { documentPreviews?: boolean; host?: boolean; turnTailKind?: 'list' | 'chain'; officialTail?: boolean } = {}) {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const list = vi.fn(async (...args: unknown[]) => {
@@ -96,15 +98,25 @@ async function bench(opts: { documentPreviews?: boolean; host?: boolean } = {}) 
   }
   await ctx.plugin(SlotRegistry).await()
   // Declare the target slots (normally declared by ui-sidebar-right /
-  // ui-sidebar-documentpreview / ui-chat).
+  // ui-sidebar-documentpreview / ui-chat). turnTail is list-kind since
+  // 0.1.6-alpha.2; `turnTailKind: 'chain'` reproduces the 0.1.5 declaration.
   ctx.slots.register({
     name: 'root',
     children: {
       'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
       'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' },
-      'conversation.chat.turnTail': { kind: 'chain', scope: 'session', owner: {} },
+      'conversation.chat.turnTail': { kind: opts.turnTailKind ?? 'list', scope: 'session', owner: {} },
     },
   } as never, (() => null) as never)
+  // An official-card stand-in, registered before the plugin applies: the
+  // deliverables row's registration shape on the list-kind slot.
+  if (opts.officialTail === true && (opts.turnTailKind ?? 'list') === 'list') {
+    ctx.slots.register({
+      name: 'conversation.chat.turnTail',
+      id: '@deepseek-ai/dsh-client-ui-deliverables',
+      inject: () => ({}),
+    } as never, (() => null) as never)
+  }
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return { ctx, fiber, host, calls, list, turnFiles, reveal, openExternal, mount, registered, previews, openTab }
@@ -181,12 +193,14 @@ describe('ui-file-preview browser plugin', () => {
     expect(entry?.options).toMatchObject({ key: FILE_PREVIEW_ID })
     expect(entry?.locale).toBe('filePreview')
     expect(entry?.store).toBeTruthy()
-    // The turn row: priority -1, explicitly BEFORE the official deliverables
-    // entry (default 0) — the chain elects ascending, so our product table
-    // claims every turn and the official row never mounts (product decision).
+    // The turn row on the list-kind slot: a plain entry under the package id
+    // — no select, no priority; every entry renders and the row self-hides
+    // without data (coexistence, user decision 2026-09-18).
     const { entry: turnEntry } = turnApi(b)
     expect(turnEntry).toBeTruthy()
-    expect(turnEntry?.options.priority).toBe(-1)
+    expect(turnEntry?.options).toMatchObject({ id: FILE_PREVIEW_ID })
+    expect(turnEntry?.options.priority).toBeUndefined()
+    expect(turnEntry?.select).toBeUndefined()
     expect(turnEntry?.locale).toBe('filePreview')
     // The change-history renderer: builtin band (never the default), cheapest
     // loading mode, body in the keyed document seat.
@@ -199,6 +213,31 @@ describe('ui-file-preview browser plugin', () => {
     expect(historyEntry?.options).toMatchObject({ key: FILE_HISTORY_ID })
     expect(historyEntry?.locale).toBe('filePreview')
     expect(historyInjected?.listFiles).toBeTypeOf('function')
+    await b.fiber.dispose()
+  })
+
+  it('coexists with the official cards on the list-kind turnTail slot', async () => {
+    const b = await bench({ officialTail: true })
+    const entries = b.ctx.slots.entries('conversation.chat.turnTail')
+    // Both entries render (list semantics): the official card keeps its
+    // earlier registration slot, ours appends at the default priority.
+    expect(entries.map(entry => entry.options.id)).toEqual([
+      '@deepseek-ai/dsh-client-ui-deliverables',
+      FILE_PREVIEW_ID,
+    ])
+    await b.fiber.dispose()
+  })
+
+  it('falls back to the preemptive chain registration on a 0.1.5 (chain-kind) host', async () => {
+    const b = await bench({ turnTailKind: 'chain' })
+    const { entry } = turnApi(b)
+    expect(entry).toBeTruthy()
+    // The 0.1.5 shape: the select claims every turn and priority -1 elects
+    // ascending, ahead of the official deliverables entry's default 0.
+    expect(entry?.options.priority).toBe(-1)
+    expect(entry?.select).toBeTypeOf('function')
+    expect(entry?.options.id).toBeUndefined()
+    expect(entry?.locale).toBe('filePreview')
     await b.fiber.dispose()
   })
 
@@ -264,7 +303,7 @@ describe('ui-file-preview browser plugin', () => {
     await ctx2.plugin(SlotRegistry).await()
     ctx2.slots.register({
       name: 'root',
-      children: { 'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' }, 'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'chain', scope: 'session', owner: {} } },
+      children: { 'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' }, 'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'list', scope: 'session', owner: {} } },
     } as never, (() => null) as never)
     const fiber = ctx2.plugin({ inject: [...inject], apply })
     await fiber.await()

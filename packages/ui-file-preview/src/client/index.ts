@@ -7,18 +7,23 @@
  * change-history renderer in that document tab (the toolbar dropdown's
  * 「改动记录」 entry — the per-write diff stepping the official renderers
  * have no counterpart for), and a per-turn mutation card in the
- * `conversation.chat.turnTail` chain at default priority — the official
- * deliverables row elects first, so the card renders exactly the turns
- * official data misses (the bash captures the host half collects, S2). The
- * filePreview Remote is mounted here through the official `ctx.remote.$mount`
- * channel, so the plugin distributes as an independent package with no edits
- * to core packages. Composing this plugin out of cordis.yml removes every
- * surface it adds.
+ * `conversation.chat.turnTail` slot (the bash captures the host half
+ * collects, S2). The filePreview Remote is mounted here through the official
+ * `ctx.remote.$mount` channel, so the plugin distributes as an independent
+ * package with no edits to core packages. Composing this plugin out of
+ * cordis.yml removes every surface it adds.
+ *
+ * turnTail re-kinded at 0.1.6-alpha.2 (chain election → list rendering): the
+ * card now renders alongside the official deliverables and plan cards (user
+ * decision 2026-09-18, superseding the 2026-09-11 replacement) and self-hides
+ * on turns without files. On a 0.1.5 host the slot is still the election
+ * chain; the registration probes the declaration kind and keeps the old
+ * preemptive shape (select + priority -1) there.
  *
  * Retired at the 0.1.5-rc.1 move (seam registry S1): the conversation.view
- * tab, the shell.overlay drawer, the mention capture-phase DOM interception,
- * and the turnTail `priority: -1` preemption — the right-Sidebar resource
- * routing (openResource + the tab-type registry) covers all three openings.
+ * tab, the shell.overlay drawer, and the mention capture-phase DOM
+ * interception — the right-Sidebar resource routing (openResource + the
+ * tab-type registry) covers all three openings.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -215,23 +220,38 @@ export function installFilePreviewSurfaces(
     }),
   }, FilePreviewTab)), 'ui-file-preview: tab body'))
 
-  disposers.push(ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-    name: 'conversation.chat.turnTail',
-    // Priority -1: the chain elects the first non-null select in ASCENDING
-    // priority order (ui-slots ChainSelect contract), and the official
-    // deliverables entry carries the default 0 — so this card claims every
-    // turn and the official row never mounts while this plugin is composed.
-    // Deliberate product decision (2026-09-11): the turn's compact product
-    // table REPLACES the official deliverables row (its presented card never
-    // collapses and its spacing reads wrong); the S1-era preemption returns
-    // in table form.
-    priority: -1,
-    select: selectTurnFiles,
-    locale: NS,
-    inject: (): FilePreviewTurnRowInjected => ({
+  // The turn card. Probe the declared slot kind inside inject (the callback
+  // only runs once the slot exists): a 0.1.6-alpha.2+ host declares a LIST —
+  // register a plain entry under the package id and coexist with the official
+  // deliverables/plan cards, the row returning null until its fetch settles
+  // (user decision 2026-09-18: coexist, compare, then decide retirement); a
+  // 0.1.5 host declares the election CHAIN — keep the old preemptive shape
+  // (select claims every turn; priority -1 elects ascending, ahead of the
+  // official entry's default 0). The alpha.2 KindOptions for this key carry no
+  // chain fields, so the chain-branch call is duck-typed through `never` (the
+  // escape the spec bench already uses); the list branch stays fully typed and
+  // is what checks TurnFileRow's props contract.
+  disposers.push(ctx.slots.inject('conversation.chat.turnTail', () => {
+    const injectRow = (): FilePreviewTurnRowInjected => ({
       turnFiles: (sessionId: SessionId, turn: number) => turnFilesLoader(sessionId, turn),
-    }),
-  }, TurnFileRow)))
+    })
+    const spec = ctx.slots.spec('conversation.chat.turnTail') as { kind?: string } | undefined
+    if (spec?.kind === 'chain') {
+      return ctx.slots.register({
+        name: 'conversation.chat.turnTail',
+        priority: -1,
+        select: selectTurnFiles,
+        locale: NS,
+        inject: injectRow,
+      } as never, TurnFileRow as never)
+    }
+    return ctx.slots.register({
+      name: 'conversation.chat.turnTail',
+      id: FILE_PREVIEW_ID,
+      locale: NS,
+      inject: injectRow,
+    }, TurnFileRow)
+  }))
 
   // The change-history document renderer: metadata into the registry, the
   // body into the keyed document seat. `priority: 'builtin'` keeps the

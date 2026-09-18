@@ -1,17 +1,14 @@
 /** TurnFileRow: the turn's product table — every file the turn created or
- * edited, as a compact table replacing the official deliverables row (user
- * decision 2026-09-11: the official presented card's spacing/density read
- * wrong and never collapses; this table is the single turn-tail surface).
+ * edited, as a compact table in the `conversation.chat.turnTail` slot.
  *
  * The paths come from the host `filePreview.turnFiles` RPC — the single
  * source of truth (write/edit calls, Code Mode dispatches, render-intent
  * paths, and bash captures all land here), fetched once per session through
- * the turn-files cache. The entry registers at priority -1 — deliberately
- * BEFORE the official deliverables entry (default 0): the chain elects the
- * first non-null select in ascending priority order (ui-slots ChainSelect
- * contract), and this card's unconditional claim means the official row never
- * mounts while this plugin is composed (the preemption retired at the S1 move
- * returns as a product decision, in table form).
+ * the turn-files cache. 0.1.6-alpha.2 re-kinded the slot chain → list, so
+ * the table renders alongside the official deliverables and plan cards (user
+ * decision 2026-09-18, superseding the 2026-09-11 replacement); on a 0.1.5
+ * host the registration keeps the old chain preemption instead. Either way
+ * the row itself decides visibility from its data.
  *
  * Density: up to three products render as plain rows; beyond that the card
  * collapses to a "N 个产物" summary row that expands in place. Every file
@@ -35,7 +32,7 @@ const COLLAPSE_OVER = 3
 
 /**
  * Render one turn's products as a compact table, fetched from the host.
- * @param props - session standard kit (sessionId), the chain owner (turn,
+ * @param props - session standard kit (sessionId), the turn-tail owner (turn,
  *   openFile), the injected turn-files loader, and the locale seat.
  */
 export function TurnFileRow(props: FilePreviewTurnRowProps) {
@@ -55,8 +52,8 @@ export function TurnFileRow(props: FilePreviewTurnRowProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, turn, turnFiles])
-  // Data not arrived, or nothing to show: the card stays invisible (the chain
-  // claims every turn; visibility is decided here).
+  // Data not arrived, or nothing to show: the card stays invisible (on the
+  // list-kind slot every entry renders; visibility is decided here).
   if (files === null || files.length === 0) return null
   const collapsible = files.length > COLLAPSE_OVER
   const showing = !collapsible || expanded
