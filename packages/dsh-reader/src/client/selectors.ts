@@ -113,6 +113,37 @@ export function selectRows(
 }
 
 /**
+ * The row for one entry, when its source is still known.
+ *
+ * `selectRows` builds rows for the LIST; the detail view needs the same row for
+ * one entry it was told to reopen (a restored reading position), and rebuilding
+ * the row by hand there would be a second, drifting copy of this mapping.
+ *
+ * @param entry - the entry to present.
+ * @param sources - presentation metadata per source id.
+ * @param read - the session's read cursor.
+ * @returns the row, or `undefined` when the entry's source is gone.
+ */
+export function rowFor(
+  entry: ReaderEntry,
+  sources: ReadonlyMap<string, SourcePresentation>,
+  read: Readonly<Record<string, true>>,
+): ReaderRow | undefined {
+  const source = sources.get(entry.sourceId)
+  if (source === undefined) return undefined
+  return {
+    entry,
+    sourceId: source.id,
+    sourceLabel: source.label,
+    sourceTile: source.tile,
+    sourceHue: source.hue,
+    sourceAddedAt: source.addedAt,
+    sourceKind: source.kind,
+    unread: read[entry.id] !== true,
+  }
+}
+
+/**
  * Whether an entry belongs in the "today" view.
  *
  * An entry with NO usable date is kept, not dropped. The default filter is

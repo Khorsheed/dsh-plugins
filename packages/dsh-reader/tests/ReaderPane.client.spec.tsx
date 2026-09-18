@@ -25,8 +25,9 @@ import type { ReaderPaneProps } from '../src/client/contract.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
+import { forgetSession, forgetTranslators } from '../src/client/session.ts'
 import { UNIT_SEPARATOR } from '../src/client/translate.ts'
-import type { ReaderBody, ReaderSourceSummary } from '../src/types.ts'
+import type { ReaderBody, ReaderEntryFetchState, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -103,6 +104,14 @@ interface BenchOptions {
   readonly ttlHours?: number
   /** Forces `getEntryBody` to answer with this error (the refusal paths). */
   readonly getEntryBodyError?: string
+  /**
+   * Entry ids the host already holds a fetched body for, and that body. This is
+   * the `cached: true, fromFeed: false` answer — an entry whose fetch happened
+   * earlier (in another visit, or before the pane was remounted).
+   */
+  readonly cachedBodies?: Readonly<Record<string, string>>
+  /** What `entryFetchStates` answers per entry id (default: `none`). */
+  readonly fetchStates?: Readonly<Record<string, ReaderEntryFetchState>>
   /** Entry ids the host reports as needing their full text. */
   readonly backfillCandidates?: readonly string[]
 }
@@ -155,7 +164,7 @@ function bench(options: BenchOptions = {}) {
     entryFetchStates: vi.fn(async (entryIds: readonly string[]) => ({
       ok: true as const,
       value: {
-        states: Object.fromEntries(entryIds.map(id => [id, { state: 'none' as const }])),
+        states: Object.fromEntries(entryIds.map(id => [id, options.fetchStates?.[id] ?? { state: 'none' as const }])),
       },
     })),
     getRawBody: vi.fn(async (entryId: string) => ({ ok: true as const, value: { entryId } })),
@@ -184,6 +193,10 @@ function bench(options: BenchOptions = {}) {
       }
       if (sourceId !== undefined && options.failedIds?.includes(sourceId) === true) {
         return { ok: true as const, value: { entryId: request.entryId, cached: false, fresh: true, fromFeed: false, error: 'fetch failed' } }
+      }
+      const cached = options.cachedBodies?.[request.entryId]
+      if (cached !== undefined) {
+        return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: cached } }
       }
       return {
         ok: true as const,
@@ -266,7 +279,15 @@ function installTranslator(over: { availability?: string; createThrows?: string;
 // The quoting case installs a `getSelection` spy, and the translation gesture
 // reads the selection (a click that ends a drag must not fold the sentence), so
 // every test starts from a clean slate.
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  // "Where the reader was" is module state and every case here renders the SAME
+  // session id: without this, one case's open article (and its narrowing, and
+  // its cached translator) would be restored into the next one.
+  forgetSession('s1')
+  forgetTranslators()
+})
 
 describe('the pane renders content, never an empty column', () => {
   it('paints its empty state and its toolbar on the first frame', async () => {
@@ -1395,6 +1416,68 @@ describe('a feed that publishes only a summary still gets its article', () => {
   })
 })
 
+describe('an article that is already fetched is not fetched again', () => {
+  /** The measured feed shape: a summary, no full text — so a body is OWED. */
+  const summaryFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>已经抓过的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+
+  it('shows the cached body without a request, so the translation on screen survives', async () => {
+    // The reported bug: a summary-only feed keeps saying a full text is owed
+    // even after one was fetched, so opening the article replaced its DOM (and
+    // the reader's translation) with the same bytes from the network.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      cachedBodies: { 'g:https://example.com/paper': '<p>已经抓下来的正文</p>' },
+      fetchStates: { 'g:https://example.com/paper': { state: 'ready' } },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /已经抓过的论文/ }))[0] as HTMLElement)
+    expect(await screen.findByText('已经抓下来的正文')).toBeTruthy()
+    // The feed-summary notice is gone: what is on screen is no longer the feed's
+    // summary, and no fetch was made to get here.
+    expect(screen.queryByText(zh['detail.summaryOnly'])).toBeNull()
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('still pays one fetch when the entry has never been fetched', async () => {
+    // The other half of the rule: "the host holds a body" is what skips the
+    // fetch, not "the entry is old".
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /已经抓过的论文/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+  })
+
+  it('fetches again from the detail view\'s own button', async () => {
+    // Where a reader asks for a fresh copy: the site changed, or the extraction
+    // came back thin the first time. Entering the article no longer does this.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      cachedBodies: { 'g:https://example.com/paper': '<p>旧正文</p>' },
+      fetchStates: { 'g:https://example.com/paper': { state: 'ready' } },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /已经抓过的论文/ }))[0] as HTMLElement)
+    // The cached body is on screen before anything could have been fetched for it.
+    expect(await screen.findByText('旧正文')).toBeTruthy()
+    const button = await screen.findByRole('button', { name: new RegExp(zh['detail.refetch']) })
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    fireEvent.click(button)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.fetchEntryBody.mock.calls[0]?.[0]).toBe('g:https://example.com/paper')
+    expect(await screen.findByText('fetched')).toBeTruthy()
+  })
+})
+
 describe('the detail view owns up to figures it cannot fetch', () => {
   it('counts script-drawn figures and points at the original', async () => {
     // A feed entry with a link and no body: the fetch path supplies the body,
@@ -1478,5 +1561,80 @@ describe('the card says what the plugin holds, and fetches on demand', () => {
     await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalled() })
     const stored = ui.mocks.storeEntryBody.mock.calls[0]?.[0] as { html: string }
     expect(stored.html).toContain('prose')
+  })
+})
+
+describe('coming back to the pane puts the reader where they were', () => {
+  /**
+   * The host unmounts the whole right sidebar when another main panel takes
+   * over (the side chat is the everyday case), and the store is created per
+   * mount — so this block renders the pane, lets the reader set something up,
+   * unmounts it and renders a SECOND pane over the same session id.
+   */
+  const english = (): string =>
+    feed('hn', [{
+      title: 'An English article',
+      description: 'First sentence here. Second sentence here.',
+    }, { title: 'Another article', description: 'Different text entirely.' }])
+
+  it('restores the open article and the wall\'s narrowing', async () => {
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    const search = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'An English article' } })
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    first.unmount()
+
+    // The pane is gone and comes back: no state crosses over except this
+    // module's memory of where the reader was standing.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    // The ARTICLE is back — not just the id, and not the wall.
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // …and so is the search that narrowed the wall behind it. The box lives on
+    // the wall, so it takes the back button to see it.
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('An English article')
+    })
+  })
+
+  it('turns the globe back on from a session this page already built', async () => {
+    installTranslator()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    first.unmount()
+
+    // No click on the globe this time: `Translator.create()` would need user
+    // activation, so the ONLY way this can work is the page's session cache.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    expect(screen.getByText(zh['translate.tip'])).toBeTruthy()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('opens the entry again without asking the host for a body it already has', async () => {
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // The feed published the text itself (`contentHtml`), so the restore costs
+    // no network call at all.
+    expect(second.mocks.fetchEntryBody).not.toHaveBeenCalled()
   })
 })

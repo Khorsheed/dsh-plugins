@@ -62,6 +62,7 @@ import {
   flattenEntries,
   LIST_RENDER_LIMIT,
   hueForSource,
+  rowFor,
   selectRows,
   sourceQuery,
   tagQuery,
@@ -69,6 +70,16 @@ import {
   type ReaderRow,
   type SourcePresentation,
 } from './selectors.ts'
+import {
+  cachedTranslator,
+  forgetTranslation,
+  patchSession,
+  readSession,
+  rememberScroll,
+  rememberTranslation,
+  rememberTranslator,
+  type ReaderSessionSnapshot,
+} from './session.ts'
 import css from './ReaderPane.module.css'
 
 /** One in-flight fetch's kind, for the verdict message. */
@@ -319,6 +330,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const bodyFetching = useStore(s => (s.openEntryId === null ? false : s.fetching[s.openEntryId] === true))
   const openEntryId = useStore(s => s.openEntryId)
+  const openSourceId = useStore(s => s.openSourceId)
   const view = useStore(s => s.view)
   const filter = useStore(s => s.filter)
   const query = useStore(s => s.query)
@@ -337,6 +349,55 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
+
+  /* ------------------------------------------- where this pane already was */
+
+  /**
+   * Where this pane stood before the host unmounted it.
+   *
+   * The right sidebar unmounts whenever another main panel takes over (hopping
+   * to the side chat is the everyday case: `RightbarRoot` renders only while no
+   * other panel is active), and this store is created per mount — so the open
+   * article, the reading position, the wall's narrowing and the fact that a
+   * translation was on all used to be gone on the way back. `client/session.ts`
+   * holds them in module memory; this is the one read of it, taken per session
+   * id so a different session never inherits another's view.
+   */
+  const snapshotRef = useRef<{ session: string; patch: Partial<ReaderSessionSnapshot> } | null>(null)
+  if (snapshotRef.current === null || snapshotRef.current.session !== sessionId) {
+    snapshotRef.current = { session: sessionId, patch: readSession(sessionId) }
+  }
+  /** The store's first render happens BEFORE the hydration below lands. */
+  const hydrateStartedRef = useRef(false)
+  /** The mirror effect is skipped once, so a pre-hydration render cannot erase the record. */
+  const mirrorStartedRef = useRef(false)
+  /** The entry whose translation record has already been honoured (once per open). */
+  const restoredTranslationRef = useRef<string | null>(null)
+  /** The entry the pane ITSELF opened, so the restore below never re-opens it. */
+  const openedRef = useRef<string | null>(null)
+  /** The entry the restore has dealt with, whether or not it could be reopened. */
+  const restoredOpenRef = useRef<string | null>(null)
+  /** A reading position waiting for its body to be on screen. */
+  const pendingScrollRef = useRef<{ entryId: string; top: number } | null>(null)
+
+  // Put the narrowing back before anything reads it. The restore of the OPEN
+  // article is a separate step (it needs the entry list, which is still being
+  // parsed), and it lives next to `open()`.
+  useEffect(() => {
+    hydrateStartedRef.current = true
+    const patch = snapshotRef.current?.patch
+    if (patch === undefined) return
+    actions.hydrate({
+      ...(patch.view === undefined ? {} : { view: patch.view }),
+      ...(patch.openEntryId === undefined ? {} : { openEntryId: patch.openEntryId }),
+      ...(patch.openSourceId === undefined ? {} : { openSourceId: patch.openSourceId }),
+      ...(patch.filter === undefined ? {} : { filter: patch.filter }),
+      ...(patch.query === undefined ? {} : { query: patch.query }),
+      ...(patch.sort === undefined ? {} : { sort: patch.sort }),
+      ...(patch.unreadOnly === undefined ? {} : { unreadOnly: patch.unreadOnly }),
+      ...(patch.read === undefined ? {} : { read: patch.read }),
+    })
+  }, [actions])
 
   /**
    * Figures the open body's page draws with its own scripts, which a fetch
@@ -389,6 +450,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [tipDismissed, setTipDismissed] = useState(false)
   /** The rendered article, so the segmentation can be applied to it. */
   const articleRef = useRef<HTMLDivElement | null>(null)
+  /** The detail view's scroller, which is where a reading position lives. */
+  const detailRef = useRef<HTMLDivElement | null>(null)
   /** The live segmentation, or null while the article is untouched. */
   const builtRef = useRef<BuiltArticle | null>(null)
   /** The running translation's cancel flag. */
@@ -419,12 +482,31 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const wallPendingRef = useRef<Set<string>>(new Set())
   const wallRunningRef = useRef(false)
   const wallCancelRef = useRef<{ cancelled: boolean } | null>(null)
-  /** One translator per source language, reused across passes. */
-  const wallSessionsRef = useRef<Map<string, TranslatorSessionLike>>(new Map())
   /** The wall's scroll container, so cards are observed where they appear. */
   const wallRef = useRef<HTMLDivElement | null>(null)
   /** The rows the observer resolves ids against (kept fresh for the pass). */
   const rowsRef = useRef<readonly ReaderRow[]>([])
+
+  /**
+   * Mirror "where the reader is" into the session memory.
+   *
+   * One write for the whole crossing rather than a call at every gesture: the
+   * values ARE the state, so a new field only has to be named here to be
+   * remembered. The FIRST run is skipped because the hydration lands after it in
+   * the same commit — without the skip, mounting would overwrite the record with
+   * the store's defaults before it had ever been read back.
+   */
+  useEffect(() => {
+    if (!mirrorStartedRef.current) { mirrorStartedRef.current = true; return }
+    if (!hydrateStartedRef.current) return
+    patchSession(sessionId, {
+      view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+      wallOn, wallBoth, cardTranslations,
+    })
+  }, [
+    sessionId, view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+    wallOn, wallBoth, cardTranslations,
+  ])
 
   /** The class names `translate.ts` decorates the article with. */
   const translateClasses = useMemo<TranslateClasses>(
@@ -770,10 +852,25 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     setPackProgress(null)
     setTranslateError(null)
-  }, [])
+    // The reader asked for the original: that is the state a return to this
+    // entry should find, not a translation that switches itself back on.
+    if (openEntryId !== null) forgetTranslation(sessionId, openEntryId)
+  }, [openEntryId, sessionId])
 
-  /** Create the translator (downloading the pack if needed) and translate. */
-  const startTranslation = useCallback(async (initialView: TranslationView) => {
+  /**
+   * Get the article translated, reusing a session this page already built.
+   *
+   * The `Translator` API demands user activation for `create()`, so a session
+   * that exists is the ONLY way a translation can be restored after the sidebar
+   * remounted without a click. `client/session.ts` holds those sessions for the
+   * whole page (the wall and the detail view share them), and this function
+   * checks there first: a cache hit skips the pack phase entirely.
+   *
+   * @param initialView - the view to show once the first units exist.
+   * @param sourceOverride - the source language to build for, when the caller is
+   * restoring a translation rather than starting one from the detected language.
+   */
+  const startTranslation = useCallback(async (initialView: TranslationView, sourceOverride?: string) => {
     const api = translator
     const container = articleRef.current
     if (api === null || container === null) return
@@ -781,18 +878,26 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     cancelRef.current = cancel
     setTranslateError(null)
     setTranslateProgress(null)
-    setTranslatePhase('pack')
-    setPackProgress(0)
     // The source candidates: what the browser's detector said, then the script
     // heuristic's answer. The targets: every Chinese spelling the API accepts.
-    const sources = translationSource === 'en' ? ['en'] : [translationSource, 'en']
-    const outcome: SessionOutcome = await createSession(api, {
-      sources,
-      targets: TARGET_CANDIDATES,
-      monitor: monitor => {
-        monitor.addEventListener('downloadprogress', event => { setPackProgress(event.loaded) })
-      },
-    })
+    const sourceLanguage = sourceOverride ?? translationSource
+    const sources = sourceLanguage === 'en' ? ['en'] : [sourceLanguage, 'en']
+    const existing = cachedTranslator(sources, TARGET_CANDIDATES)
+    if (existing !== undefined) {
+      setTranslatePhase('working')
+    } else {
+      setTranslatePhase('pack')
+      setPackProgress(0)
+    }
+    const outcome: SessionOutcome = existing === undefined
+      ? await createSession(api, {
+        sources,
+        targets: TARGET_CANDIDATES,
+        monitor: monitor => {
+          monitor.addEventListener('downloadprogress', event => { setPackProgress(event.loaded) })
+        },
+      })
+      : { ok: true, session: existing, sourceLanguage, targetLanguage: TARGET_CANDIDATES[0] as string }
     setPackProgress(null)
     if (!outcome.ok) {
       // Say WHICH pair was asked for: the browser's own message names neither
@@ -813,6 +918,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       return
     }
     const session = outcome.session
+    rememberTranslator(sources, TARGET_CANDIDATES, session)
     if (cancel.cancelled) { setTranslatePhase('idle'); return }
     const built = buildArticle(container, translateClasses)
     if (built === null) {
@@ -828,6 +934,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateView(initialView)
     setTranslatePhase('working')
     setView(built, initialView, translateClasses)
+    // Recorded BEFORE the run: the record is what makes a remounted pane turn
+    // the globe back on, and the sentence memory makes the re-run cheap.
+    if (openEntryId !== null) rememberTranslation(sessionId, openEntryId, initialView, sourceLanguage)
     const result = await runTranslation({
       built,
       session,
@@ -847,15 +956,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     // Re-paint once the first units exist, so the translated typography applies.
     setView(built, initialView, translateClasses)
-  }, [translator, translationSource, translateClasses, t])
+  }, [translator, translationSource, translateClasses, t, openEntryId, sessionId])
 
   /** Apply one view to a finished translation. */
   const applyView = useCallback((next: TranslationView) => {
     setTranslateView(next)
     if (next !== 'orig') lastViewRef.current = next
+    if (openEntryId !== null) rememberTranslation(sessionId, openEntryId, next, translationSource)
     const built = builtRef.current
     if (built !== null) setView(built, next, translateClasses)
-  }, [translateClasses])
+  }, [translateClasses, openEntryId, sessionId, translationSource])
 
   /** A menu choice: it also starts the translation when there is none yet. */
   const pickView = useCallback((next: TranslationView) => {
@@ -945,18 +1055,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     return () => { cancelled = true }
   }, [view, translator, wallAvailability])
 
-  /** A translator for one source language, created once and reused. */
+  /**
+   * A translator for one source language, created once and reused.
+   *
+   * The cache is the page's, not this mount's (`client/session.ts`): a session
+   * the wall built is the one the detail view can restore for free, and it is
+   * the only way a translation survives the sidebar being unmounted — Chrome
+   * demands user activation for `create()`.
+   */
   const wallSession = useCallback(async (language: string): Promise<TranslatorSessionLike | null> => {
     const api = translator
     if (api === null) return null
-    const cached = wallSessionsRef.current.get(language)
+    const sources = language === 'en' ? ['en'] : [language, 'en']
+    const cached = cachedTranslator(sources, TARGET_CANDIDATES)
     if (cached !== undefined) return cached
-    const outcome: SessionOutcome = await createSession(api, {
-      sources: language === 'en' ? ['en'] : [language, 'en'],
-      targets: TARGET_CANDIDATES,
-    })
+    const outcome: SessionOutcome = await createSession(api, { sources, targets: TARGET_CANDIDATES })
     if (!outcome.ok) return null
-    wallSessionsRef.current.set(language, outcome.session)
+    rememberTranslator(sources, TARGET_CANDIDATES, outcome.session)
     return outcome.session
   }, [translator])
 
@@ -1099,6 +1214,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
+    openedRef.current = row.entry.id
     actions.openEntry(row.entry.id, row.sourceId)
     actions.setView('detail')
     void loadEntryTags(row.entry.id)
@@ -1121,15 +1237,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         actions.setArticle(view.value.html, view.value.truncated === true, null)
         setScriptFigures(view.value.scriptFigures ?? 0)
         actions.setStaleBody(row.entry.id, view.value.fresh === false)
-        if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
+        // `html` here is either the FEED's own payload or a body this plugin
+        // already fetched and cached — and only the first one owes a fetch.
+        //
+        // Re-fetching a cached body was the bug behind "entering the article
+        // again makes me translate it all over again": a summary-only feed
+        // kept `summaryOwed` true forever, so every look at an article that
+        // had already been fetched replaced its DOM (and its translation) with
+        // the same text from the network. The body is paid for once; the
+        // detail view's own 「重新抓取」 is how a reader asks again.
+        if (summaryOwed && view.value.fromFeed === true) void fetchBody(row.entry.id, row.entry.link as string)
       } else if (row.entry.contentHtml !== undefined) {
         actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
         setScriptFigures(0)
-        // The feed published a summary and nothing else: show it immediately
-        // (better than an empty page) and fetch the real text behind it. This
-        // is the branch that used to end the story — the summary looked like
-        // an article body, so neither the backfill nor this view ever asked
-        // the site for the rest.
+        // The host holds no body at all, and the feed published a summary: show
+        // it immediately (better than an empty page) and fetch the real text
+        // behind it.
         if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
       } else {
         // Nothing cached, nothing from the feed, and no recorded reason.
@@ -1172,6 +1295,96 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
     else actions.setArticle('', truncated, extracted.error)
   }, [actions, props, t, fetchBody])
+
+  /* ------------------------------ coming back to where the reader already was */
+
+  /**
+   * Re-open the article the pane had on screen when the sidebar went away.
+   *
+   * Only the LIST came back with the store snapshot; bodies are host state, so
+   * the page has to be re-established by the same call a tap makes — which
+   * answers from the host's cache and does not fetch. Waiting for the parsed
+   * entries is what makes this safe: until they arrive there is nothing to open.
+   */
+  useEffect(() => {
+    if (allEntries.length === 0) return
+    const wanted = snapshotRef.current?.patch.openEntryId
+    if (wanted === undefined || wanted === null) return
+    if (restoredOpenRef.current === wanted || openedRef.current === wanted) {
+      restoredOpenRef.current = wanted
+      return
+    }
+    if (openEntryId !== wanted) { restoredOpenRef.current = wanted; return }
+    const entry = allEntries.find(candidate => candidate.id === wanted)
+    if (entry === undefined) {
+      // The list is still filling in (one payload per source) — only a COMPLETE
+      // load without the entry means the source is gone, and then the wall is
+      // the honest place to stand.
+      if (!loading) restoredOpenRef.current = wanted
+      return
+    }
+    restoredOpenRef.current = wanted
+    const row = rowFor(entry, presentation, read)
+    if (row === undefined) return
+    const top = snapshotRef.current?.patch.scroll?.[wanted]
+    if (top !== undefined) pendingScrollRef.current = { entryId: wanted, top }
+    void open(row)
+  }, [allEntries, openEntryId, presentation, read, loading, open])
+
+  /**
+   * Put the reader back where they were inside the article.
+   *
+   * Applied to the SCROLLER and only once the body it belongs to is on screen:
+   * an offset set earlier clamps against a shorter page and is lost.
+   */
+  useEffect(() => {
+    const pending = pendingScrollRef.current
+    if (pending === null || pending.entryId !== openEntryId) return
+    const scroller = detailRef.current
+    if (scroller === null || articleHtml === null) return
+    scroller.scrollTop = pending.top
+    pendingScrollRef.current = null
+  }, [openEntryId, articleHtml])
+
+  /**
+   * Remember the reading position as it moves.
+   *
+   * Deliberately unthrottled: the write is one shallow spread of a small record,
+   * and a throttle that drops the trailing event is exactly how a reading
+   * position ends up one scroll behind the reader.
+   */
+  const onDetailScroll = useCallback(() => {
+    const scroller = detailRef.current
+    if (scroller === null || openEntryId === null) return
+    rememberScroll(sessionId, openEntryId, scroller.scrollTop)
+  }, [openEntryId, sessionId])
+
+  /** A new open is a new article: the translation record gets a fresh chance. */
+  useEffect(() => { restoredTranslationRef.current = null }, [openEntryId])
+
+  /**
+   * Turn the globe back on for an entry that was translated before the sidebar
+   * went away.
+   *
+   * Only when a translator session for that pair is ALREADY built (the page's
+   * cache): `Translator.create()` needs user activation, so a restore that had
+   * to build one would fail with an error the reader never asked for. No session
+   * means no restore — the record stays, and the reader's next click on the
+   * globe costs nothing because the same cache answers it.
+   */
+  useEffect(() => {
+    if (view !== 'detail' || openEntryId === null) return
+    if (articleHtml === null || articleHtml.length === 0) return
+    if (translatePhase !== 'idle') return
+    if (restoredTranslationRef.current === openEntryId) return
+    const wanted = snapshotRef.current?.patch.translationView?.[openEntryId]
+    if (wanted === undefined) return
+    const source = snapshotRef.current?.patch.translationSource?.[openEntryId] ?? translationSource
+    const sources = source === 'en' ? ['en'] : [source, 'en']
+    if (cachedTranslator(sources, TARGET_CANDIDATES) === undefined) return
+    restoredTranslationRef.current = openEntryId
+    void startTranslation(wanted, source)
+  }, [view, openEntryId, articleHtml, translatePhase, translationSource, startTranslation])
 
   /** Submit the add form and report the host's verdict. */
   const submit = useCallback(async () => {
@@ -1389,6 +1602,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const result = await props.entryTags(entryId)
     if (result.ok) actions.setEntryTags(entryId, result.value.tags.map(tag => tag.id))
   }, [actions, props])
+
+  /**
+   * Fetch this entry's article again, from the detail view.
+   *
+   * The same call the card's pill makes, with one addition: the translation
+   * record is dropped first. The body is about to be a different DOM, and a
+   * record that outlived it would switch the globe back on over text it was
+   * never built for.
+   *
+   * @param entry - the entry on screen.
+   */
+  const refetchEntry = useCallback(async (entry: ReaderEntry) => {
+    if (entry.link === undefined) return
+    forgetTranslation(sessionId, entry.id)
+    restoredTranslationRef.current = entry.id
+    await startFetch(entry)
+  }, [sessionId, startFetch])
 
   /**
    * Delete a tag from the vocabulary and from every entry carrying it.
@@ -1990,7 +2220,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           )}
         </div>
 
-        <div className={css.detailBody}>
+        <div className={css.detailBody} ref={detailRef} onScroll={onDetailScroll}>
           <div className={css.kicker}>
             <span className={css.tile} style={{ background: source?.hue }}>{source?.tile}</span>
             <span>{source?.label}</span>
@@ -1999,9 +2229,27 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             {openEntry.author !== undefined && (<><span className={css.sep}>·</span><span>{openEntry.author}</span></>)}
           </div>
           <h1 className={css.detailTitle}>{openEntry.title}</h1>
-          {(openEntry.tags ?? []).length > 0 && (
+          {/* The entry's tags, and next to them the one gesture that belongs to
+              the ENTRY rather than to its source: fetch the article again.
+              Opening an article that was already fetched no longer costs a
+              request (the cached body is shown as it stands), so this is how a
+              reader asks for a fresh copy — after the site changed, or when the
+              extraction came back thin the first time. */}
+          {((openEntry.tags ?? []).length > 0 || openEntry.link !== undefined) && (
             <div className={css.tagRow}>
               {(openEntry.tags ?? []).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
+              {openEntry.link !== undefined && (
+                <button
+                  type="button"
+                  className={css.refetch}
+                  disabled={bodyFetching}
+                  title={t('detail.refetchTitle')}
+                  onClick={() => { void refetchEntry(openEntry) }}
+                >
+                  {glyph('fetch', 11)}
+                  <span>{bodyFetching ? t('detail.refetching') : t('detail.refetch')}</span>
+                </button>
+              )}
             </div>
           )}
           <div className={css.rule} />

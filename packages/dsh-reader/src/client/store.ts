@@ -98,11 +98,32 @@ export interface ReaderState {
   rev: number
 }
 
+/**
+ * The fields a pane can bring back when it remounts inside one page.
+ *
+ * Deliberately narrow: only "where the reader was looking" crossings the host's
+ * own `state.json` does not already hold (see `client/session.ts`). Host-owned
+ * facts (sources, parsed payloads, fetch states) are re-read on mount, never
+ * restored, so the pane can never show a stale copy of what the host knows.
+ */
+export interface ReaderSessionRestore {
+  readonly view?: ReaderView
+  readonly openEntryId?: string | null
+  readonly openSourceId?: string | null
+  readonly filter?: ReaderFilter
+  readonly query?: string
+  readonly sort?: ReaderSort
+  readonly unreadOnly?: boolean
+  readonly read?: Record<string, true>
+}
+
 /** Annotation twin of the actions literal below. */
 export type ReaderActions = {
   setSources: (draft: ReaderState, sources: ReaderSourceSummary[]) => void
   setParsed: (draft: ReaderState, parsed: ReaderParsedSource) => void
   clearParsed: (draft: ReaderState) => void
+  /** Bring back the session-local narrowing this pane had before it unmounted. */
+  hydrate: (draft: ReaderState, restore: ReaderSessionRestore) => void
   openEntry: (draft: ReaderState, entryId: string, sourceId: string) => void
   setView: (draft: ReaderState, view: ReaderView) => void
   setTags: (draft: ReaderState, tags: ReaderTag[], counts: Record<string, number>) => void
@@ -188,6 +209,19 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
         d.error = null
       },
       clearParsed: (d) => { d.parsed = {} },
+      hydrate: (d, restore) => {
+        // Field by field, so an absent key keeps the store's own default (and so
+        // a session snapshot from an older revision can never inject `undefined`
+        // into a field the UI dereferences).
+        if (restore.view !== undefined) d.view = restore.view
+        if (restore.openEntryId !== undefined) d.openEntryId = restore.openEntryId
+        if (restore.openSourceId !== undefined) d.openSourceId = restore.openSourceId
+        if (restore.filter !== undefined) d.filter = restore.filter
+        if (restore.query !== undefined) d.query = restore.query
+        if (restore.sort !== undefined) d.sort = restore.sort
+        if (restore.unreadOnly !== undefined) d.unreadOnly = restore.unreadOnly
+        if (restore.read !== undefined) d.read = restore.read
+      },
       setView: (d, view) => { d.view = view },
       setTags: (d, tags, counts) => { d.tags = tags; d.tagCounts = counts },
       setEntryTags: (d, entryId, tagIds) => {
