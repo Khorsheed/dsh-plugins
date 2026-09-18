@@ -65,6 +65,13 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* The destructive tool in a toolbar: same box as its neighbours, ink-only
+   difference, so it is legible without turning the bar into alarm. */
+.toolDanger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger, var(--dsw-alias-interactive-bg-hover));
+  color: var(--dsw-static-red-600, #d54941);
+}
+
 .tools {
   min-width: 0;
   display: flex;
@@ -366,6 +373,22 @@
 .tagOwned {
   border: 1px solid var(--dsw-static-deepseek-500);
   color: var(--dsw-alias-label-primary);
+}
+
+/* "Link only": a saved link whose body cannot be read here. Same pill metric as
+   the tags beside it (so the row never jitters), but dashed and quiet — it is a
+   statement about the card, not one of the reader's own labels. */
+.tagLinkOnly {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px dashed var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+  line-height: 1;
 }
 
 .author {
@@ -1123,6 +1146,52 @@
   font-size: 12px;
 }
 
+/* The management page's own narrowing row: two chip groups (kind, order) above
+   the list. It wraps, because the pane is narrow and a chip row that overflows
+   sideways hides the very control the reader came for. */
+.manageTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipOn {
+  border-color: transparent;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+}
+
 .sourceList {
   display: flex;
   flex-direction: column;
@@ -1576,6 +1645,11 @@
 
 .cardMenu button:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The one destructive row in the card menu. */
+.cardMenu .cardMenuDanger {
+  color: var(--dsw-static-red-600, #d54941);
 }
 
 /* The affordance the menu hangs off: quiet until the card is hovered. */

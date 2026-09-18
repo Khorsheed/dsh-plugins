@@ -47,7 +47,17 @@ interface FeedItem {
 
 /** A source as the host reports it, with every field the pane reads. */
 function rssSource(id: string, over: Partial<ReaderSourceSummary> = {}): ReaderSourceSummary {
-  return { id, kind: 'rss', url: `https://example.com/${id}.xml`, label: id, enabled: true, hasBody: true, ...over }
+  return {
+    id,
+    kind: 'rss',
+    url: `https://example.com/${id}.xml`,
+    label: id,
+    enabled: true,
+    // The host always reports when a source was added; the pane sorts by it.
+    addedAt: '2026-09-17T10:00:00.000Z',
+    hasBody: true,
+    ...over,
+  }
 }
 
 /**
@@ -131,6 +141,7 @@ function bench(options: BenchOptions = {}) {
     })),
     quoteToSideChat: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
+    removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     openExternal: vi.fn(() => true),
     copyText: vi.fn(async () => true),
     setDraft: vi.fn(),
@@ -179,7 +190,7 @@ function bench(options: BenchOptions = {}) {
     capabilities: mocks.capabilities,
     quoteToSideChat: mocks.quoteToSideChat,
     updateSource: mocks.updateSource,
-    removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    removeSource: mocks.removeSource,
     refresh: mocks.refresh,
     listBackfillCandidates: mocks.listBackfillCandidates,
     listTags: mocks.listTags,
@@ -343,6 +354,122 @@ describe('a truncated body says so, and offers the way out', () => {
     // "fetch failed" is a transport failure, so it is said in those terms —
     // not as an extraction problem, which is what it used to claim.
     expect(await screen.findByText(zh['sources.unreachable'])).toBeTruthy()
+  })
+})
+
+describe('a saved link with no body says so, and can be deleted', () => {
+  /** A link the host saved but could not read, as the summary reports it. */
+  const unreadableLink = (code: 'blocked' | 'login' | 'unsupported-type' | 'redirected' | 'empty' | 'http' = 'blocked') =>
+    rssSource('link-1', {
+      kind: 'link',
+      label: '只能打开原文的链接',
+      url: 'https://openreview.net/pdf?id=1lyagkzogH',
+      hasBody: false,
+      status: 'error',
+      error: 'the site answered a bot challenge instead of the page',
+      failure: { code, message: 'the site answered a bot challenge instead of the page' },
+    })
+
+  it('marks the card link-only, with the host’s reason on the badge', async () => {
+    const ui = bench({ sources: [unreadableLink()] })
+    await ui.settle()
+    const badge = await screen.findByText(zh['detail.linkOnlyBadge'])
+    expect(badge.getAttribute('title')).toBe(zh['preview.blocked'])
+  })
+
+  it('uses the code for the sentence, so a login wall is not called a bot wall', async () => {
+    const ui = bench({ sources: [unreadableLink('login')] })
+    await ui.settle()
+    expect((await screen.findByText(zh['detail.linkOnlyBadge'])).getAttribute('title')).toBe(zh['preview.login'])
+  })
+
+  it('explains a saved link whose page could not be extracted at all', async () => {
+    // The payload arrived and the source is not marked failed, so no reason was
+    // recorded anywhere — opening it used to render the title over blank space.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '抽不出正文的页面', url: 'https://example.com/empty' })],
+      payloads: { 'link-1': '' },
+    })
+    await ui.settle()
+    const cards = await screen.findAllByRole('button', { name: /抽不出正文的页面/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    // The sentence shares its paragraph with the 阅读原文 button (and the card
+    // badge repeats it in a tooltip), so match loosely and require at least one.
+    expect((await screen.findAllByText(/抽不出正文/)).length).toBeGreaterThan(0)
+  })
+
+  it('offers delete for a saved link, and never for a feed entry', async () => {
+    // A saved link IS one item, so deleting it here is honest; a feed entry
+    // would come back on the next refresh, and a delete that undoes itself is
+    // a lie the UI must not tell.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '保存的文章', url: 'https://example.com/story' })],
+      payloads: { 'link-1': `<html><body><article><p>${'正文。'.repeat(200)}</p></article></body></html>` },
+    })
+    await ui.settle()
+    const cards = await screen.findAllByRole('button', { name: /保存的文章/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    fireEvent.click(await screen.findByTitle(zh['detail.removeLink']))
+    await waitFor(() => { expect(ui.mocks.removeSource).toHaveBeenCalledWith('link-1') })
+  })
+
+  it('reports a saved-but-unreadable link as saved, naming the reason', async () => {
+    const ui = bench({
+      addAnswer: {
+        ok: true,
+        value: {
+          outcome: 'saved-link',
+          kind: 'link',
+          id: 'new',
+          label: '被拒的文章',
+          failure: { code: 'unsupported-type', message: 'unsupported content type "application/pdf"' },
+        },
+      },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://openreview.net/pdf?id=x' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    const expected = zh['verdict.savedLinkNoPreview']
+      .replace('{label}', '被拒的文章')
+      .replace('{reason}', zh['preview.unsupportedType'])
+    expect(await screen.findByText(expected)).toBeTruthy()
+    // Saved is not failed: the dialog confirms and the field clears.
+    expect((input as HTMLInputElement).value).toBe('')
+  })
+})
+
+describe('the subscription page narrows and orders its own list', () => {
+  const feedSource = (id: string, addedAt: string) =>
+    rssSource(id, { label: id, addedAt, hasBody: true })
+
+  it('filters by kind and sorts by when things arrived', async () => {
+    // The page mixes feeds and saved links, and "delete the link I added
+    // yesterday" is not answerable without both against a long list.
+    const ui = bench({
+      sources: [
+        feedSource('订阅甲', '2026-09-01T00:00:00.000Z'),
+        rssSource('保存的链接', { kind: 'link', label: '保存的链接', addedAt: '2026-09-18T00:00:00.000Z', url: 'https://example.com/a' }),
+      ],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    expect(await screen.findByText(zh['sources.title'])).toBeTruthy()
+
+    // Sorted by arrival, newest first: the link was added a day after the feed.
+    const names = (): string[] => Array.from(
+      ui.container.querySelectorAll('[class*="sourceRow"] [class*="sourceNameInput"]'),
+    ).map(node => (node as HTMLInputElement).value)
+    await waitFor(() => { expect(names()).toEqual(['保存的链接', '订阅甲']) })
+
+    // Narrowing to saved links leaves exactly that one row.
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${zh['sources.kindLink']}`) }))
+    await waitFor(() => { expect(names()).toEqual(['保存的链接']) })
+
+    // …and the kind the reader did not ask for is not what "all" means.
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${zh['sources.kindRss']}`) }))
+    await waitFor(() => { expect(names()).toEqual(['订阅甲']) })
   })
 })
 
@@ -746,9 +873,10 @@ describe('the filter panel cascades into the source list', () => {
     await ui.settle()
     fireEvent.click(screen.getByTitle(zh['action.filter']))
     const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
-    // Root = the read-state row + the drill row. The nine sources are NOT here:
-    // that is what keeps the panel usable as subscriptions accumulate.
-    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(2)
+    // Root = read state (2 rows) + the source drill row + the type rows
+    // (all / feed / saved link). The nine sources are NOT here: that is what
+    // keeps the panel usable as subscriptions accumulate.
+    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(5)
     // …and the drill row carries the current value, so nothing is hidden.
     expect(panel.querySelector('[class*="filterValue"]')?.textContent).toBe(zh['filter.all'])
     fireEvent.click(screen.getByText(zh['filter.bySource']))

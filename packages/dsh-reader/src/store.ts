@@ -37,10 +37,17 @@ import {
   MAX_TOTAL_BODY_CHARS,
   STATE_ROOT_SEGMENT,
   type ReaderEntryAnnotation,
+  type ReaderPreviewFailure,
+  type ReaderPreviewFailureCode,
   type ReaderSource,
   type ReaderStateDoc,
   type ReaderTag,
 } from './types.ts'
+
+/** The failure codes the document may carry, for normalization. */
+const PREVIEW_FAILURE_CODES: ReadonlySet<string> = new Set<ReaderPreviewFailureCode>([
+  'blocked', 'login', 'unsupported-type', 'redirected', 'empty', 'unreachable', 'http',
+])
 
 /** How many tags one document may define (a vocabulary, not a folksonomy dump). */
 export const MAX_TAGS = 200
@@ -219,6 +226,7 @@ function normalizeSource(value: unknown): ReaderSource | undefined {
   const status = record.status === 'ok' || record.status === 'fetching' || record.status === 'error'
     ? record.status
     : undefined
+  const failure = normalizePreviewFailure(record.failure)
   return {
     id,
     kind,
@@ -230,8 +238,31 @@ function normalizeSource(value: unknown): ReaderSource | undefined {
     ...(status !== undefined ? { status } : {}),
     ...(typeof record.error === 'string' ? { error: record.error } : {}),
     ...(record.truncated === true ? { truncated: true } : {}),
+    ...(failure === undefined ? {} : { failure }),
     ...(typeof record.raw === 'string' ? { raw: record.raw } : {}),
     ...(typeof record.timeOfDay === 'string' ? { timeOfDay: record.timeOfDay } : {}),
+  }
+}
+
+/**
+ * One recorded preview failure, or `undefined` when the record is not one.
+ *
+ * An unknown code is dropped rather than trusted: the union is what the
+ * browser switches on, and a code this build does not know would render as a
+ * missing sentence instead of a diagnosis.
+ *
+ * @param value - the persisted field.
+ * @returns the normalized failure, or `undefined`.
+ */
+function normalizePreviewFailure(value: unknown): ReaderPreviewFailure | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const code = record.code
+  if (typeof code !== 'string' || !PREVIEW_FAILURE_CODES.has(code)) return undefined
+  return {
+    code: code as ReaderPreviewFailureCode,
+    message: typeof record.message === 'string' ? record.message.slice(0, 500) : '',
+    at: typeof record.at === 'string' ? record.at : new Date(0).toISOString(),
   }
 }
 

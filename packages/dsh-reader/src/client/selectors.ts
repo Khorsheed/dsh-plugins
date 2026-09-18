@@ -10,6 +10,7 @@
  */
 import type { ReaderEntry } from './parse-rss.ts'
 import type { ReaderFilter, ReaderSort } from './store.ts'
+import { kindQuery, READER_SOURCE_KINDS, type ReaderSourceKind } from '../types.ts'
 
 /** How many entries the pane will show before it stops rendering cards. */
 export const LIST_RENDER_LIMIT = 300
@@ -21,6 +22,10 @@ export interface ReaderRow {
   readonly sourceLabel: string
   readonly sourceTile: string
   readonly sourceHue: string
+  /** When the source was added — the time key for an entry that has no date. */
+  readonly sourceAddedAt: string
+  /** The source kind, so a card knows whether "link only" can apply to it. */
+  readonly sourceKind: ReaderSourceKind
   /** True for an entry this session has not opened yet. */
   readonly unread: boolean
 }
@@ -31,6 +36,17 @@ export interface SourcePresentation {
   readonly label: string
   readonly tile: string
   readonly hue: string
+  /** The kind, so a kind query can narrow the wall without a second lookup. */
+  readonly kind: ReaderSourceKind
+  /**
+   * When the reader added this source.
+   *
+   * A saved link has no publication date, so this is the only date it has —
+   * and the wall's time sort falls back to it. Without the fallback a
+   * freshly added link sorts as the oldest card on the wall, which is exactly
+   * where the reader who just added it does not look.
+   */
+  readonly addedAt: string
 }
 
 /** Every parsed entry, flattened in source order. */
@@ -78,6 +94,8 @@ export function selectRows(
       sourceLabel: source.label,
       sourceTile: source.tile,
       sourceHue: source.hue,
+      sourceAddedAt: source.addedAt,
+      sourceKind: source.kind,
       unread: options.read[entry.id] !== true,
     })
   }
@@ -140,7 +158,14 @@ function matches(
   query: string,
   tags: Readonly<Record<string, readonly string[]>>,
 ): boolean {
-  if (query.startsWith('#')) return query.slice(1) === entry.sourceId
+  if (query.startsWith('#')) {
+    const selector = query.slice(1)
+    // A kind selector first: source ids are always `<kind>-<hash>`, so
+    // `#link` can never be one, and the two vocabularies stay disjoint.
+    const kind = READER_SOURCE_KINDS.find(candidate => kindQuery(candidate) === query)
+    if (kind !== undefined) return source.kind === kind
+    return selector === entry.sourceId
+  }
   if (query.startsWith('@')) return (tags[entry.id] ?? []).includes(query.slice(1))
   const haystack = [
     entry.title,
@@ -152,12 +177,25 @@ function matches(
   return haystack.includes(query)
 }
 
+/**
+ * When a row belongs on a time-ordered wall.
+ *
+ * An entry's own date wins; a saved link has none at all, so it falls back to
+ * when the SOURCE was added. An entry with neither (a hand-made link entry
+ * from a source whose document predates `addedAt`) sorts as `0`, i.e. last,
+ * which is the old behaviour and still deterministic.
+ *
+ * @param row - the row to date.
+ * @returns milliseconds, or `0` when the row carries no comparable date.
+ */
+function timeOf(row: ReaderRow): number {
+  const iso = row.entry.publishedAt ?? row.sourceAddedAt
+  const parsed = iso === undefined ? Number.NaN : new Date(iso).getTime()
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 /** Sort in place: newest first, oldest first, or grouped by source. */
 function sortRows(rows: ReaderRow[], sort: ReaderSort): void {
-  const timeOf = (row: ReaderRow): number => {
-    const parsed = row.entry.publishedAt === undefined ? Number.NaN : new Date(row.entry.publishedAt).getTime()
-    return Number.isNaN(parsed) ? 0 : parsed
-  }
   if (sort === 'newest') {
     rows.sort((a, b) => timeOf(b) - timeOf(a))
     return

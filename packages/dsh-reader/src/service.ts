@@ -14,10 +14,19 @@
  *   article, so the browser half reports "incomplete" rather than guessing.
  * - **The provider follows same-origin redirects only** — a cross-origin hop is
  *   refused with `WEB_REDIRECT_BLOCKED` by design (each new origin must be
- *   validated afresh). Real feeds redirect cross-origin constantly, so the
- *   service follows those hops ITSELF, re-entering the seam for each one: the
- *   new origin is validated by the host, so the SSRF control is preserved
- *   rather than bypassed. The final URL becomes the source's canonical URL.
+ *   validated afresh), and the refusal names the target ORIGIN alone, never the
+ *   path it was headed for. So the service re-enters the seam only for a hop it
+ *   can reconstruct faithfully — the same host under a different scheme or port
+ *   (`http://host/feed` → `https://host/feed`, the common upgrade). A hop that
+ *   changes the HOST is reported as such instead of being followed to the bare
+ *   origin, which would fetch some other page and file it under the reader's
+ *   URL. The final URL becomes the source's canonical URL.
+ * - **A failed fetch is still a saved link.** A URL the reader pasted is one
+ *   they own; the classification below records WHY there is no readable body
+ *   (bot wall, login wall, non-web file, redirect to another site, empty page,
+ *   transport error) instead of discarding the URL, and only the transport
+ *   failure is retried automatically. Losing the link is worse than a card
+ *   that says it can only be opened in a browser.
  *
  * With no filesystem mounted the service stays fully functional in memory
  * (sources still add, refresh and search) and simply does not survive a
@@ -30,6 +39,8 @@ import { ReaderStore, ReaderStoreError, emptyStateDoc } from './store.ts'
 import {
   defaultSourceLabel,
   errorMessage,
+  isRetryablePreviewFailure,
+  linkEntryId,
   DEFAULT_CACHE_POLICY,
   type ReaderAddFailure,
   type ReaderAddOutcome,
@@ -41,6 +52,8 @@ import {
   type ReaderBody,
   type ReaderCapabilities,
   type ReaderMutationOutcome,
+  type ReaderPreviewFailure,
+  type ReaderPreviewFailureCode,
   type ReaderRefreshResult,
   type ReaderSource,
   type ReaderSourceSummary,
@@ -184,6 +197,13 @@ export class ReaderService {
   /**
    * Add a source, deciding what it is from what comes back.
    *
+   * The one rule this method exists to enforce: **a URL the reader pasted is
+   * never thrown away.** A fetch that fails, a bot challenge, a login wall and
+   * a PDF all end the same way — a `link` source that exists, carries the
+   * reason it has no previewable body, and can be opened, tagged, refreshed
+   * manually or deleted. Only a URL that cannot be a source at all
+   * (`invalid-url`) or one already present (`duplicate`) is refused.
+   *
    * @param request - the pasted URL and an optional label.
    * @returns the decision, or a domain refusal.
    */
@@ -193,20 +213,32 @@ export class ReaderService {
     const doc = await this.currentDoc()
     if (doc.sources.some(source => sameTarget(source.url, url))) return 'duplicate'
 
+    const now = new Date().toISOString()
     let fetched: FetchOutcome
     try {
       fetched = await this.fetchFollowing(url)
     } catch (error) {
-      // The refusal keeps its reason. A bare `fetch-failed` cost a diagnosis
-      // round on the acceptance instance: the address that failed there had
-      // merely hit a transient network error, and the UI said only "failed".
-      if (error instanceof UnsupportedContent) return 'unsupported-content'
-      return { outcome: 'fetch-failed', reason: errorMessage(error) }
+      return await this.saveLinkOnly({ url, ...(request.label === undefined ? {} : { label: request.label }) }, classifyFetchFailure(error, now), now)
     }
 
     const feed = classifyPayload(fetched.raw) === 'feed'
+    if (!feed) {
+      // A page that fetched fine can still have nothing to read: a bot
+      // challenge, a login interstitial, an empty shell. Classify BEFORE the
+      // payload is stored, so a challenge page never becomes the card's body —
+      // which is exactly how an OpenReview PDF link became a card showing
+      // somebody's anti-bot page.
+      const problem = inspectPreview(fetched.raw, fetched.url, url)
+      if (problem !== undefined) {
+        return await this.saveLinkOnly(
+          { url: fetched.url, ...(request.label === undefined ? {} : { label: request.label }) },
+          { code: problem.code, message: problem.message, at: now },
+          now,
+        )
+      }
+    }
+
     const label = request.label ?? defaultSourceLabel(fetched.url)
-    const now = new Date().toISOString()
     const source: ReaderSource = {
       id: `${feed ? 'rss' : 'link'}-${hash(fetched.url)}`,
       kind: feed ? 'rss' : 'link',
@@ -221,6 +253,52 @@ export class ReaderService {
     }
     await this.commit(current => ({ ...current, sources: [source, ...current.sources] }))
     return { outcome: feed ? 'subscribed' : 'saved-link', kind: source.kind, id: source.id, label }
+  }
+
+  /**
+   * Persist a link the reader owns even though its body cannot be previewed.
+   *
+   * Two records, because two consumers ask different questions: the SOURCE
+   * carries the failure so the wall can mark the card and the backfill can
+   * leave a permanent wall alone, while the ENTRY annotation carries it so
+   * `getEntryBody` — the one call the detail view makes — explains itself
+   * instead of answering with a blank article.
+   *
+   * @param request - the final URL and an optional label.
+   * @param failure - the classified reason, with its timestamp.
+   * @param now - the commit instant.
+   * @returns the add outcome the browser reports.
+   */
+  private async saveLinkOnly(
+    request: { url: string; label?: string },
+    failure: ReaderPreviewFailure,
+    now: string,
+  ): Promise<ReaderAddOutcome> {
+    const label = request.label ?? defaultSourceLabel(request.url)
+    const source: ReaderSource = {
+      // A failed fetch has no content to classify, so the source is a `link`:
+      // claiming "subscription" for something never read as a feed would be a
+      // guess dressed as a fact.
+      id: `link-${hash(request.url)}`,
+      kind: 'link',
+      url: request.url,
+      label,
+      enabled: true,
+      addedAt: now,
+      fetchedAt: now,
+      status: 'error',
+      error: failure.message,
+      failure,
+    }
+    await this.commit(current => ({ ...current, sources: [source, ...current.sources] }))
+    await this.recordFetchFailure(linkEntryId(source.id), failure.message)
+    return {
+      outcome: 'saved-link',
+      kind: 'link',
+      id: source.id,
+      label,
+      failure: { code: failure.code, message: failure.message },
+    }
   }
 
   /**
@@ -296,8 +374,27 @@ export class ReaderService {
       const fetchedAt = new Date().toISOString()
       try {
         const fetched = await this.fetchFollowing(source.url)
+        // The same classification the add performs: a refresh that comes back
+        // with a challenge page or a PDF must not replace a good body with it,
+        // and must record why there is nothing to read.
+        const problem = source.kind === 'link' ? inspectPreview(fetched.raw, fetched.url, source.url) : undefined
+        if (problem !== undefined) {
+          const failure: ReaderPreviewFailure = { code: problem.code, message: problem.message, at: fetchedAt }
+          patches.set(source.id, {
+            // Keep the last-known-good payload: a site that starts refusing us
+            // must not erase the article the reader already had.
+            ...withoutFailure({ ...source, url: fetched.url, ...(source.raw === undefined ? {} : { raw: source.raw }) }),
+            fetchedAt,
+            status: 'error',
+            error: failure.message,
+            failure,
+          })
+          await this.recordFetchFailure(linkEntryId(source.id), failure.message)
+          results.push({ id: source.id, status: 'unavailable', message: failure.message })
+          continue
+        }
         patches.set(source.id, {
-          ...source,
+          ...withoutFailure(source),
           url: fetched.url,
           raw: fetched.raw,
           fetchedAt,
@@ -310,7 +407,7 @@ export class ReaderService {
           ...(fetched.truncated ? { message: "payload hit the fetch seam's size cap" } : {}),
         })
       } catch (error) {
-        const message = errorMessage(error)
+        const failure = classifyFetchFailure(error, fetchedAt)
         // A failed refresh keeps the previous payload (last-known-good) and
         // records why: a transient network error must not erase the reader's
         // copy of an article.
@@ -319,12 +416,13 @@ export class ReaderService {
           ...(previous ?? source),
           fetchedAt,
           status: 'error',
-          error: message,
+          error: failure.message,
+          failure,
         })
         results.push({
           id: source.id,
           status: error instanceof UnsupportedContent ? 'unavailable' : 'fetch-failed',
-          message,
+          message: failure.message,
         })
       }
     }
@@ -549,6 +647,15 @@ export class ReaderService {
     for (const entry of request.entries) {
       if (entry.url === '') continue
       if (entry.hasBody) continue
+      // A reason that will answer the same way forever — a bot wall, a login
+      // wall, a PDF, a 404 — is not retried on a timer: that is a crawler with
+      // a grudge, not a reader. The manual refresh in the subscription page
+      // stays available, and it clears the recorded failure on success. The
+      // match is restricted to `link` sources: a saved link's single entry
+      // carries the source's own URL, and a same-URL feed entry must not
+      // inherit somebody else's verdict.
+      const source = doc.sources.find(item => item.kind === 'link' && sameTarget(item.url, entry.url))
+      if (source?.failure !== undefined && !isRetryablePreviewFailure(source.failure.code)) continue
       const annotation = doc.annotations?.[entry.entryId]
       if (annotation?.body !== undefined && isFresh(annotation.body.expiresAt)) continue
       if (annotation?.failedAt !== undefined) {
@@ -745,7 +852,15 @@ export class ReaderService {
   }
 
   /**
-   * Fetch a URL, following cross-origin redirects manually.
+   * Fetch a URL, following the cross-origin hops that can be reconstructed.
+   *
+   * The seam refuses a cross-origin hop and names only the target ORIGIN, so
+   * there is exactly one hop this method can follow without inventing a URL:
+   * a same-host scheme/port change, which keeps the path and query
+   * (`http://host/feed` → `https://host/feed`). A hop to a DIFFERENT host is
+   * re-thrown untouched — the caller classifies it, and the reader is told the
+   * address moves to another site rather than being served some other page
+   * under the URL they pasted.
    *
    * @param url - the initial URL.
    * @returns the final URL and its decoded payload.
@@ -766,10 +881,8 @@ export class ReaderService {
         }
         return { url: result.url, raw: result.body.content, truncated: result.truncated }
       } catch (error) {
-        const target = crossOriginTarget(error)
+        const target = crossOriginRetarget(error, current)
         if (target === undefined) throw error
-        // The seam refused a cross-origin hop; follow it here so the new origin
-        // still goes through the host's public-address validation.
         current = target
       }
     }
@@ -828,11 +941,164 @@ function hash(input: string): string {
   return (value >>> 0).toString(36)
 }
 
-/** Pull the validated target origin out of a cross-origin redirect refusal. */
-function crossOriginTarget(error: unknown): string | undefined {
+/**
+ * The next URL a cross-origin refusal can be followed to — or `undefined`.
+ *
+ * The host seams throw a `WEB_REDIRECT_BLOCKED` error whose CODE is a property
+ * and whose message names only the target origin. The original implementation
+ * tested the message for the code text, which it never contains, so the whole
+ * follow path was dead code and every cross-origin redirect surfaced as a raw
+ * seam error. This reads the code where it actually lives.
+ *
+ * @param error - the value the seam threw.
+ * @param current - the URL whose request was refused.
+ * @returns the same path and query on the new origin, when the HOST is
+ *   unchanged (a scheme or port upgrade); otherwise `undefined`.
+ */
+export function crossOriginRetarget(error: unknown, current: string): string | undefined {
+  if (errorCode(error) !== 'WEB_REDIRECT_BLOCKED') return undefined
+  const origin = /cross-origin redirect to (\S+)/i.exec(errorMessage(error))?.[1]
+  if (origin === undefined) return undefined
+  let target: URL
+  let from: URL
+  try {
+    target = new URL(origin)
+    from = new URL(current)
+  } catch {
+    return undefined
+  }
+  if (target.hostname !== from.hostname) return undefined
+  return `${target.origin}${from.pathname}${from.search}`
+}
+
+/**
+ * The machine-readable code a harness error carries.
+ *
+ * @param error - any thrown value.
+ * @returns the code when it has one, else `undefined`.
+ */
+function errorCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | undefined)?.code
+  return typeof code === 'string' ? code : undefined
+}
+
+/** Marker words a bot wall leaves on an otherwise empty page. */
+const BOT_WALL_PATTERN = /just a moment|checking your browser|cf-chl|cf_chl|attention required|unusual traffic|captcha|verifying you are human|enable javascript and cookies|access denied|are you a robot|验证码|人机验证|访问验证|安全验证/
+
+/** Marker words an authentication interstitial leaves behind. */
+const LOGIN_WALL_PATTERN = /cookie required|requires? cookies|sign in|sign-in|log in|login|please log|single sign|sso|qurl=|ezproxy|shibboleth|访问权限|请登录|登录后/
+
+/** Hosts whose NAME alone says the hop is an authentication wall. */
+const LOGIN_HOST_PATTERN = /(^|[.-])(login|sso|auth|signin|idp|cas)([.-]|$)/i
+
+/**
+ * The smallest amount of visible text that still counts as a readable page.
+ *
+ * Deliberately small: this only runs on a freshly fetched page, and its job is
+ * to catch interstitials — a bot challenge, a cookie notice, an empty shell —
+ * not to judge whether an article is long enough to be worth reading.
+ */
+export const MIN_PREVIEW_TEXT_CHARS = 200
+
+/**
+ * Whether a fetched page can be previewed at all, and why not when it cannot.
+ *
+ * The host has no DOM, so this is a deliberately crude reading of the payload:
+ * strip script/style/tags, count what is left, and only when that is
+ * vanishingly small look for the words a wall leaves behind. A page with real
+ * text is never second-guessed.
+ *
+ * @param raw - the decoded payload.
+ * @param finalUrl - where the fetch actually landed.
+ * @param requestedUrl - the URL the reader pasted.
+ * @returns the reason when there is nothing to preview, else `undefined`.
+ */
+export function inspectPreview(
+  raw: string,
+  finalUrl: string,
+  requestedUrl: string,
+): { code: ReaderPreviewFailureCode; message: string } | undefined {
+  const text = visibleTextLength(raw)
+  if (text >= MIN_PREVIEW_TEXT_CHARS) return undefined
+  const haystack = `${finalUrl}\n${raw.slice(0, 8000)}`.toLowerCase()
+  const host = hostOf(finalUrl)
+  if (BOT_WALL_PATTERN.test(haystack)) {
+    return { code: 'blocked', message: `the site answered a bot challenge instead of the page (${finalUrl})` }
+  }
+  if (LOGIN_WALL_PATTERN.test(haystack) || LOGIN_HOST_PATTERN.test(host)) {
+    return { code: 'login', message: `the page is an authentication interstitial (${finalUrl})` }
+  }
+  if (hostOf(requestedUrl) !== host) {
+    return { code: 'redirected', message: `the address redirected to ${finalUrl}, which yielded no readable page` }
+  }
+  return { code: 'empty', message: `the page yielded ${text} characters of text (${finalUrl})` }
+}
+
+/**
+ * Classify a thrown fetch failure into the reason the reader sees.
+ *
+ * Everything here is per-case diagnosable: the seam's own message is kept
+ * verbatim, and only the CODE decides which sentence the browser shows and
+ * whether an automatic retry is allowed.
+ *
+ * @param error - the value the fetch threw.
+ * @param at - the failure instant (ISO-8601).
+ * @returns the recorded failure.
+ */
+export function classifyFetchFailure(error: unknown, at: string): ReaderPreviewFailure {
   const message = errorMessage(error)
-  if (!/WEB_REDIRECT_BLOCKED/i.test(message)) return undefined
-  return /cross-origin redirect to (\S+)/i.exec(message)?.[1]
+  const code = errorCode(error)
+  if (code === 'WEB_UNSUPPORTED_CONTENT_TYPE' || /unsupported content type/i.test(message)) {
+    return { code: 'unsupported-type', message, at }
+  }
+  if (code === 'WEB_REDIRECT_BLOCKED' || /cross-origin redirect/i.test(message)) {
+    // A hop to a host whose name says "login" is a login wall, not merely a
+    // move: the reader's next action differs (sign in elsewhere vs paste the
+    // destination URL).
+    const origin = /cross-origin redirect to (\S+)/i.exec(message)?.[1]
+    const loginish = origin !== undefined && LOGIN_HOST_PATTERN.test(hostOf(origin))
+    return { code: loginish ? 'login' : 'redirected', message, at }
+  }
+  const status = /\bHTTP (\d{3})\b/.exec(message)?.[1]
+  if (status === '401' || status === '403') return { code: 'blocked', message, at }
+  if (status !== undefined) return { code: 'http', message, at }
+  return { code: 'unreachable', message, at }
+}
+
+/** The host of a URL, or an empty string when it cannot be parsed. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * How much visible text a payload carries.
+ *
+ * Script, style and markup are stripped; entities collapse to a single space.
+ * This is a measurement, not a parser: its only job is to separate "a page"
+ * from "an interstitial that is technically HTML".
+ *
+ * @param raw - the decoded payload.
+ * @returns the visible character count.
+ */
+export function visibleTextLength(raw: string): number {
+  return raw
+    .replace(/<script[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style\s*>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .length
+}
+
+/** The same source with any recorded preview failure removed. */
+function withoutFailure(source: ReaderSource): ReaderSource {
+  const { failure: _removed, ...rest } = source
+  return rest
 }
 
 /** Project one source into the browser-facing summary. */
@@ -843,11 +1109,15 @@ function summarize(source: ReaderSource): ReaderSourceSummary {
     url: source.url,
     label: source.label ?? defaultSourceLabel(source.url),
     enabled: source.enabled,
+    addedAt: source.addedAt,
     hasBody: source.raw !== undefined,
     ...(source.fetchedAt !== undefined ? { fetchedAt: source.fetchedAt } : {}),
     ...(source.status !== undefined ? { status: source.status } : {}),
     ...(source.error !== undefined ? { error: source.error } : {}),
     ...(source.truncated === true ? { truncated: true } : {}),
+    ...(source.failure === undefined
+      ? {}
+      : { failure: { code: source.failure.code, message: source.failure.message } }),
   }
 }
 
