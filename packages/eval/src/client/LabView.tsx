@@ -9,23 +9,25 @@
  * time. Its one action is 新建实验, which opens the draft form (I5·T34) — the
  * same service verb `eval_plan_draft` reaches, so a plan a person fills in and
  * a plan an agent drafts in one sentence arrive in this list as the same row.
- * The detail is the seven-tab shell the spec fixes, and all seven are built:
- * OVERVIEW (snapshot, matrix shape, factors, judge, environment, the readiness
- * records verbatim, the run.meta digest), PLAN REVIEW (validate line by line
- * and the two human buttons), CONDITIONS (the registry and the two-condition
- * diff), MATRIX, CELLS, REPORT and the JUDGE BENCH.
+ * The detail is the FOUR-STAGE shell ui-spec §五 v2 fixes — 实验设计 / 运行记录
+ * / 结果对比 / 人工评估 — and each stage carries one primary action, chosen by
+ * the experiment's own status (see {@link stageAction}). v1 had seven sub-pages
+ * and the walkthrough's verdict on them was that every one was a correctly
+ * labelled pile of fields with nothing to do on it; the four here are the four
+ * things a person does, and the bar above them says which one is next.
  *
  * The report page (T38) is fetched the same lazy way, and for a stronger
  * reason: it reads a mission export BUNDLE off disk and analyzes it, which is
  * the most expensive read in the tab and means nothing until the run has been
  * exported at all.
  *
- * A DRAFT's overview is rendered from the list row: there is no run to fetch,
- * and the row already carries the plan digest. Only a started experiment
- * spends an RPC. The plan review and the conditions registry are fetched
- * LAZILY, when their tab is opened: a validate walks the dataset tree, and
- * spending one on every visit to the overview would make the cheap page pay
- * for the expensive one.
+ * A DRAFT's design page is rendered from the list row plus the plan review:
+ * there is no run to fetch, and the row already carries the shape. The review
+ * IS fetched on the design stage — it is what that stage is about, and the
+ * primary action ('批准并启动') may not be offered until validate has spoken.
+ * Everything else stays lazy: the report reads a bundle off disk and the
+ * judge queue scrubs every archived artifact, and neither is a read to spend
+ * on a visit to the design page.
  *
  * Visual language follows the missions and datasets tabs: compact rows,
  * hairline separators, tokenized colors, official primitives throughout.
@@ -34,181 +36,21 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalDraftResult, EvalExperimentDetail, EvalExperimentRow } from '../types.ts'
+import type { EvalDraftResult } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
-import { ConditionsPage } from './ConditionsPage.tsx'
+import { DesignPage } from './DesignPage.tsx'
 import {
-  Chip, Detail, EmptyState, FactorCell, Field, StartedRun,
-  bucketTone, repoName, snapshotCell, stageTone, stamp, statusKey, statusTone, Word,
+  Chip, EmptyState, FactorCell, snapshotCell, stageAction, stamp, statusKey, statusTone,
 } from './parts.tsx'
-import { PlanReviewPage } from './PlanReviewPage.tsx'
-import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS } from './store.ts'
-import { CellsPage } from './CellsPage.tsx'
+import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
+import { RunsPage } from './RunsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { JudgingPage } from './JudgingPage.tsx'
-import { MatrixPage } from './MatrixPage.tsx'
 import { NewExperimentDialog } from './NewExperimentDialog.tsx'
 import { ReportPage } from './ReportPage.tsx'
-import { bucketPhrase, preferredColumn, stagePhrase } from './vocab.ts'
+import { preferredColumn } from './vocab.ts'
 import css from './LabView.module.css'
-
-/**
- * A `token → count` histogram as chips in the word table's own vocabulary.
- *
- * The tokens are mission's (`ws-ready`, `done`) and the page is not allowed to
- * print them (ui-spec §九), so each one becomes a chip carrying its word, its
- * count and — on hover — the token a person greps the ledger with.
- * @param props - the counts, which table to read them through, and the locale seat.
- */
-function Histogram(props: {
-  counts: Record<string, number>
-  kind: 'bucket' | 'stage'
-  t: LabViewProps['t']
-}) {
-  const { counts, kind, t } = props
-  const entries = Object.entries(counts).filter(([, count]) => count > 0)
-  if (entries.length === 0) return <span className={css.dim}>—</span>
-  return (
-    <span className={css.chipRow}>
-      {entries.map(([token, count]) => (
-        <Chip key={token} tone={kind === 'bucket' ? bucketTone(token) : stageTone(token)} title={token}>
-          <Word phrase={kind === 'bucket' ? bucketPhrase(token) : stagePhrase(token)} t={t} />
-          <span className={css.chipCount}>{count}</span>
-        </Chip>
-      ))}
-    </span>
-  )
-}
-
-/**
- * The overview page. Everything it shows about the PLAN comes from the list
- * row (a draft has nothing else); everything about the RUN comes from the
- * detail payload, which a draft simply does not have — until an approval in
- * this visit starts one, and then the job's ids and its log are all there is
- * until the mission ledger catches up.
- */
-function Overview(props: {
-  row: EvalExperimentRow
-  detail: EvalExperimentDetail | null
-  started: Parameters<typeof StartedRun>[0]['started'] | null
-  output: Parameters<typeof StartedRun>[0]['output']
-  outputError: string | null
-  t: LabViewProps['t']
-}) {
-  const { row, detail, started, output, outputError, t } = props
-  // A STARTED experiment knows how many cells it really has; the product is
-  // only the shape a plan implies, and a subset run (`--only` / `--max-cells`)
-  // legitimately has fewer. Prefer the fact over the arithmetic.
-  const cells = row.progress?.total ?? row.items * row.conditions.length * row.reps
-  const meta = detail?.meta ?? null
-  const judgeSamples = meta?.judge.samples ?? null
-  return (
-    <div className={css.overview}>
-      {detail === null && row.runId === null && started === null && (
-        <div className={css.notice}>{t('overview.draftNotice')}</div>
-      )}
-      <Field label={t('overview.snapshot')}>
-        <span className={css.mono}>{snapshotCell(row)}</span>
-        {row.snapshot.repo !== null && (
-          <span className={css.dim} title={row.snapshot.repo}> · {repoName(row.snapshot.repo)}</span>
-        )}
-      </Field>
-      <Field label={t('overview.shape')}>
-        {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}
-        <div className={css.dim}>{row.conditions.join(', ') || '—'}</div>
-      </Field>
-      <Field label={t('overview.factors')}><FactorCell row={row} t={t} /></Field>
-      <Field label={t('overview.judge')}>
-        {row.judges.length === 0
-          ? t('overview.judgeNone')
-          : `${row.judges.join(', ')}${judgeSamples === null ? '' : ` · ${t('overview.judgeSamples', { samples: judgeSamples })}`}`}
-      </Field>
-      <Field label={t('overview.environment')}>
-        {row.unit === null
-          ? t('overview.environmentHost')
-          : (
-            <span className={css.mono}>
-              {row.unit.image}
-              {row.unit.network !== null && ` · network ${row.unit.network}`}
-              {row.unit.user !== null && ` · user ${row.unit.user}`}
-            </span>
-          )}
-      </Field>
-      {row.validation !== null && (
-        <Field label={t('overview.validation')}>
-          {row.validation.ok
-            ? t('overview.validationOk')
-            : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
-        </Field>
-      )}
-      {started !== null && <StartedRun started={started} output={output} outputError={outputError} t={t} />}
-      {detail !== null && (
-        <>
-          <Field label={t('overview.buckets')}><Histogram counts={detail.buckets} kind="bucket" t={t} /></Field>
-          <Field label={t('overview.states')}><Histogram counts={detail.states} kind="stage" t={t} /></Field>
-          {detail.unreleased.length > 0 && (
-            <Field label={t('overview.unreleased')}>
-              <span className={css.warning}>{detail.unreleased.join(', ')}</span>
-            </Field>
-          )}
-          {detail.job !== null && (
-            <Field label={t('overview.job')}>
-              <span className={css.mono}>{detail.job.jobId}</span>
-              <span className={css.dim}> · {detail.job.status}</span>
-              {/* The job's own line is the host's sentence about a background
-                  process — English, and sometimes a path. It is evidence, so
-                  it is kept; §九 keeps it folded rather than on the page. */}
-              {detail.job.detail !== null && (
-                <Detail summary={t('error.details')}>
-                  <pre className={css.errorRaw}>{detail.job.detail}</pre>
-                </Detail>
-              )}
-            </Field>
-          )}
-          <Field label={t('overview.readiness')}>
-            {detail.readiness.length === 0
-              ? t('overview.readinessNone')
-              : (
-                <div className={css.readiness}>
-                  {detail.readiness.map(line => (
-                    <div key={`${line.condition}:${line.role}:${line.startedAt}`} className={css.readinessLine}>
-                      <Chip tone={line.ok ? 'ok' : 'danger'}>{line.ok ? t('ready.ok') : t('ready.failed')}</Chip>
-                      <span className={css.mono}>{line.condition}</span>
-                      <span className={css.dim}>
-                        {t(line.role === 'judge' ? 'role.judge' : 'role.player')} · {line.harness} · {line.provider}
-                      </span>
-                    </div>
-                  ))}
-                  {/* The refusal sentence and the records verbatim: written by
-                      the host for whoever debugs it, and the only place a
-                      refused run's reason exists (the ledger never saw it). §九
-                      keeps both under «详情» rather than on the page. */}
-                  <Detail summary={t('overview.readinessRaw')}>
-                    {detail.readiness.filter(line => line.reason !== null).map(line => (
-                      <div key={`why:${line.condition}:${line.startedAt}`} className={css.errorDetailLine}>
-                        {line.condition}: {line.reason}
-                      </div>
-                    ))}
-                    <pre className={css.errorRaw}>{JSON.stringify(detail.readiness, null, 2)}</pre>
-                  </Detail>
-                </div>
-              )}
-          </Field>
-          {meta !== null && (
-            <Field label={t('overview.meta')}>
-              {/* A JSON document is not a page (ui-spec §九). The facts a
-                  reader needs are the fields above; this is the receipt. */}
-              <Detail summary={t('overview.metaRaw')}>
-                <pre className={css.errorRaw}>{JSON.stringify(meta, null, 2)}</pre>
-              </Detail>
-            </Field>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
 
 /**
  * The lab tab body.
@@ -230,7 +72,6 @@ export function LabView(props: LabViewProps) {
   const selection = useStore(s => s.selection)
   const page = useStore(s => s.page)
   const detail = useStore(s => s.detail)
-  const detailLoading = useStore(s => s.detailLoading)
   const detailError = useStore(s => s.detailError)
   const review = useStore(s => s.review)
   const reviewLoading = useStore(s => s.reviewLoading)
@@ -258,7 +99,7 @@ export function LabView(props: LabViewProps) {
   const matrix = useStore(s => s.matrix)
   const matrixLoading = useStore(s => s.matrixLoading)
   const matrixError = useStore(s => s.matrixError)
-  const cellsBucket = useStore(s => s.cellsBucket)
+  const runFilter = useStore(s => s.runFilter)
   const cells = useStore(s => s.cells)
   const cellsLoading = useStore(s => s.cellsLoading)
   const cellsError = useStore(s => s.cellsError)
@@ -277,7 +118,7 @@ export function LabView(props: LabViewProps) {
   const judge = useStore(s => s.judge)
   const judgeLoading = useStore(s => s.judgeLoading)
   const judgeError = useStore(s => s.judgeError)
-  const judgeTicket = useStore(s => s.judgeTicket)
+  const judgeTask = useStore(s => s.judgeTask)
   const judgeDraft = useStore(s => s.judgeDraft)
   const judgeSubmitting = useStore(s => s.judgeSubmitting)
   const exportOpen = useStore(s => s.exportOpen)
@@ -292,6 +133,9 @@ export function LabView(props: LabViewProps) {
   // shown over the list meanwhile.
   const [newOpen, setNewOpen] = useState(false)
   const [drafted, setDrafted] = useState<EvalDraftResult | null>(null)
+  // The 保留单元 debugging switch. Visit-local like the two above: it is a
+  // property of THIS approval, not of the plan on disk.
+  const [keepUnits, setKeepUnits] = useState(false)
 
   // Fetch the list on mount and whenever refreshRev moves.
   useEffect(() => {
@@ -347,9 +191,8 @@ export function LabView(props: LabViewProps) {
     const row = (list?.rows ?? []).find(entry => entry.planPath === drafted.planPath)
     if (row === undefined) return
     actions.open(row.id)
-    // `open` lands on the overview and clears the per-experiment notice, so
-    // the page and the sentence are set after it, never before.
-    actions.setPage('plan')
+    // `open` already lands on 实验设计 and clears the per-experiment notice, so
+    // the sentence is set after it, never before.
     if (draftNotice !== null) actions.setNotice(draftNotice)
     setDrafted(null)
   }, [list, drafted, draftNotice, actions])
@@ -369,10 +212,12 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, openRunId, refreshRev, actions, fetchExperiment])
 
-  // The plan review, fetched when its tab is open: validate walks the dataset
-  // tree, so it is paid for by the page that asked for it.
+  // The plan review, fetched on the DESIGN stage: it is what that stage shows
+  // (the shape, the checks, the readiness), and the stage bar cannot offer
+  // 批准并启动 before validate has spoken. Still gated on the page, so the
+  // dataset walk is not spent by a reader who went straight to the report.
   useEffect(() => {
-    if (page !== 'plan' || planPath === null) return
+    if (page !== 'design' || planPath === null) return
     let cancelled = false
     actions.setReviewLoading(true)
     void fetchPlanReview(sessionId, { planPath }).then((result) => {
@@ -384,10 +229,11 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, page, planPath, refreshRev, actions, fetchPlanReview])
 
-  // The condition registry, likewise — it is the REPOSITORY's, so it is not
-  // re-read when the open experiment changes, only when its tab is opened.
+  // The comparison-group registry, likewise — it is the REPOSITORY's, so it is
+  // not re-read when the open experiment changes, only when the design stage
+  // that shows it is opened.
   useEffect(() => {
-    if (page !== 'conditions') return
+    if (page !== 'design') return
     let cancelled = false
     actions.setConditionsLoading(true)
     void fetchConditions(sessionId, {}).then((result) => {
@@ -542,16 +388,28 @@ export function LabView(props: LabViewProps) {
         runId: value.runId,
         parentSessionId: value.parentSessionId ?? '',
       })
-      // Land on the overview, where the run's own fields appear as the ledger
-      // fills in, and refresh the list so the row leaves 待批准.
-      actions.setPage('overview')
+      // STAY on 实验设计. The job's log is rendered here and a readiness
+      // refusal is written NOWHERE else — the run never reaches `runCreate`,
+      // so the ledger holds nothing for it. Walking the reader to 运行记录
+      // automatically would land them on an empty grid with the reason they
+      // are about to look for left behind on the page they left. The stage bar
+      // offers 看运行记录 the moment the status turns, which is one click and
+      // the reader's own.
       actions.refresh()
     })
   }
 
   // 退回修改 shows the experiment as a draft. The plan file is untouched: the
   // status is the reviewer's verdict on this page, not a new fact on disk.
-  const shownStatus = sentBack && openRow !== undefined && openRow.runId === null ? 'draft' : openRow?.status
+  //
+  // An approval made in THIS visit outranks both. `runStart` answers before
+  // `runCreate`, so the list row still reads 待批准 for a few seconds after the
+  // run exists — and a primary action that says 批准并启动 over a run that is
+  // already going is the one mislabelled button in this bar that could do
+  // real damage.
+  const shownStatus = started !== null
+    ? 'running' as const
+    : (sentBack && openRow !== undefined && openRow.runId === null ? 'draft' as const : openRow?.status)
 
   // What the four run-scoped sub-pages put in their empty seat when they have
   // no run id yet. An approval in this visit means the run EXISTS — the receipt
@@ -567,7 +425,7 @@ export function LabView(props: LabViewProps) {
   const matrixGroupKey = matrixGroupBy.join(',')
   const matrixFilterKey = JSON.stringify(matrixFilter)
   useEffect(() => {
-    if (openRunId === null || page !== 'matrix') return
+    if (openRunId === null || page !== 'runs') return
     let cancelled = false
     actions.setMatrixLoading(true)
     void fetchMatrix(sessionId, {
@@ -602,20 +460,20 @@ export function LabView(props: LabViewProps) {
 
   // The cell list.
   useEffect(() => {
-    if (openRunId === null || page !== 'cells') return
+    if (openRunId === null || page !== 'runs') return
     let cancelled = false
     actions.setCellsLoading(true)
-    void fetchCells(sessionId, {
-      runId: openRunId,
-      ...(cellsBucket === null ? {} : { bucket: cellsBucket }),
-    }).then((result) => {
+    // No bucket on the wire: the five filters are applied in the browser over
+    // the whole run (see `passesFilter`), so this reads the run once and the
+    // counts beside the chips count one population.
+    void fetchCells(sessionId, { runId: openRunId }).then((result) => {
       if (cancelled) return
       actions.setCellsLoading(false)
       if (result.ok) actions.setCells(result.value)
       else actions.setCellsError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [sessionId, openRunId, page, refreshRev, cellsBucket, actions, fetchCells])
+  }, [sessionId, openRunId, page, refreshRev, actions, fetchCells])
 
   // The open cell's drawer.
   useEffect(() => {
@@ -638,7 +496,7 @@ export function LabView(props: LabViewProps) {
   // bundle went, so without that the page would call an exported bundle
   // 未导出.
   useEffect(() => {
-    if (openRunId === null || page !== 'report') return
+    if (openRunId === null || page !== 'compare') return
     let cancelled = false
     actions.setReportLoading(true)
     void fetchReport(sessionId, {
@@ -661,7 +519,7 @@ export function LabView(props: LabViewProps) {
   // `refreshRev` is in the list, so the finalize walk's own refresh re-reads
   // the count — which is the whole point of showing it after a walk.
   useEffect(() => {
-    if (openRunId === null || page !== 'report') return
+    if (openRunId === null || page !== 'compare') return
     let cancelled = false
     void fetchRunUnits(sessionId, { runId: openRunId }).then((result) => {
       if (cancelled) return
@@ -680,7 +538,7 @@ export function LabView(props: LabViewProps) {
   // the cleanup then cancels the request that produced it (the shape T47 hit
   // in the datasets tab). The refresh counter is the only re-fetch lever.
   useEffect(() => {
-    if (openRunId === null || page !== 'judging') return
+    if (openRunId === null || page !== 'review') return
     let cancelled = false
     actions.setJudgeLoading(true)
     void fetchJudgeQueue(sessionId, { runId: openRunId }).then((result) => {
@@ -691,6 +549,38 @@ export function LabView(props: LabViewProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, openRunId, page, refreshRev, actions, fetchJudgeQueue])
+
+  /**
+   * The stage bar: the ONE action this experiment's state asks for.
+   *
+   * Three of the six verbs move the reader to the stage that holds the work,
+   * one re-reads, and 批准并启动 is the human act itself (ui-spec R1) —
+   * pressed here rather than hunted for on a sub-page, which is the whole
+   * complaint v1 answered with a definition list. It is DISABLED with its
+   * reason beside it while validate reports errors: a button that could only
+   * produce a refusal is a worse button than one that says why it is off.
+   */
+  const action = stageAction(shownStatus ?? openRow?.status ?? 'draft')
+  // The review's own count once it has landed; the LIST row's before that —
+  // the row carries validate's verdict without an RPC, and a primary action
+  // that is briefly enabled on a plan validate already rejected is a button
+  // that can only produce a refusal.
+  const validation = review === null
+    ? (openRow?.validation ?? null)
+    : { ok: review.ok, errors: review.errors }
+  const blockedBy = action.verb === 'approve' && validation !== null && !validation.ok ? validation.errors : null
+
+  const runAction = (): void => {
+    if (action.verb === 'approve') {
+      approve(keepUnits)
+      return
+    }
+    if (action.verb === 'refresh') {
+      actions.refresh()
+      return
+    }
+    actions.setPage(action.verb satisfies LabPage)
+  }
 
   // ── the drawer's three human gestures ──────────────────────────────────
   const onRetry = (reason: string, category: string): void => {
@@ -777,20 +667,22 @@ export function LabView(props: LabViewProps) {
   }
 
   /**
-   * Record the open cell's human-final verdicts — ui-spec step 8, and the one
+   * Record ONE answer's human-final verdicts — ui-spec step 8, and the one
    * write in this tab with no model-facing twin anywhere in the family.
    *
-   * Only answered criteria are sent (an untouched criterion is not a verdict
-   * of "false"), and the ledger is append-only, so a second pass over the
-   * same cell adds rather than replaces. The queue is re-read afterwards
-   * because the cell has just moved from 未评 to 已评 and the agreement
-   * numbers at the top have just changed.
+   * One answer and not the open item: several are on screen at once since
+   * I5·T67 and each is graded on its own, so the ticket comes from the column
+   * that was submitted. Only answered criteria are sent (an untouched
+   * criterion is not a verdict of "false"), and the ledger is append-only, so
+   * a second pass over the same cell adds rather than replaces. Only THAT
+   * column's composed answers are cleared — the ones beside it are still
+   * being written.
+   * @param ticket - the answer whose button was pressed.
    */
-  const onHumanFinal = (): void => {
-    if (openRunId === null || judgeTicket === null) return
-    const ticket = judgeTicket
+  const onHumanFinal = (ticket: string): void => {
+    if (openRunId === null) return
     const cellNo = judge?.cells.find(cell => cell.ticket === ticket)?.cellNo ?? 0
-    const verdicts = Object.entries(judgeDraft)
+    const verdicts = Object.entries(judgeDraft[ticket] ?? {})
       .filter(([, value]) => value.evidence.trim() !== '')
       .map(([criterion, value]) => ({ criterion, pass: value.pass, evidence: value.evidence.trim() }))
     if (verdicts.length === 0) return
@@ -804,10 +696,9 @@ export function LabView(props: LabViewProps) {
       actions.setNotice(result.value.duplicate
         ? t('notice.humanFinalDuplicate', { no: cellNo })
         : t('notice.humanFinal', { no: cellNo, count: result.value.written, by: result.value.by }))
-      // Clears the composed answers with the selection, then re-reads: the
-      // cell's group, its recorded verdicts and the header's agreement
-      // numbers all changed with this write.
-      actions.openJudgeCell(null)
+      // The recorded verdicts, this cell's queue group and the header's
+      // agreement numbers all changed with this write.
+      actions.clearJudgeDraft(ticket)
       actions.refresh()
     })
   }
@@ -911,86 +802,80 @@ export function LabView(props: LabViewProps) {
                 </button>
               ))}
             </div>
+            {/* The stage bar (ui-spec §五 v2): what is true right now, and the
+                ONE thing to do about it. Every stage carries it, so a reader
+                who lands anywhere in this shell can answer «下一步做什么»
+                without reading the page. */}
+            <div className={css.stageBar}>
+              <span className={css.stageHint}>{t(action.hint)}</span>
+              <span className={css.barSpacer} />
+              {blockedBy !== null && <span className={css.warning}>{t('cta.blocked', { errors: blockedBy })}</span>}
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={approving || blockedBy !== null}
+                onClick={runAction}
+              >
+                {approving && action.verb === 'approve' ? t('cta.waiting') : t(action.cta)}
+              </Button>
+            </div>
             <div className={css.body}>
-              {page === 'overview' && (
+              {page === 'design' && (
                 <>
-                  {detailLoading && detail === null && <div className={css.empty}>{t('detail.loading')}</div>}
                   {detailError !== null && (
                     <ErrorState what={t('detail.error')} message={detailError} t={t} />
                   )}
-                  <Overview
+                  <DesignPage
                     row={openRow}
                     detail={detail}
+                    review={review}
+                    reviewLoading={reviewLoading}
+                    reviewError={reviewError}
+                    conditions={conditions}
+                    conditionsLoading={conditionsLoading}
+                    conditionsError={conditionsError}
+                    conditionBusy={conditionBusy}
+                    provision={provision}
+                    conditionAction={conditionAction}
+                    endpointEditing={endpointEditing}
+                    pair={diffPair}
+                    diff={diff}
+                    diffError={diffError}
+                    sentBack={sentBack}
                     started={started}
                     output={output}
                     outputError={outputError}
+                    refusal={approveRefusal}
+                    approveError={approveError}
+                    keepUnits={keepUnits}
+                    onKeepUnits={setKeepUnits}
+                    onSendBack={() => { actions.sendBack() }}
+                    onRecheck={() => { actions.refresh() }}
+                    onPick={(id: string) => { actions.pickCondition(id) }}
+                    onProvision={provisionRow}
+                    onEditEndpoint={(id: string | null) => { actions.editEndpoint(id) }}
+                    onSetEndpoint={setEndpoint}
+                    onAddGroup={() => { setNewOpen(true) }}
                     t={t}
                   />
                 </>
               )}
-              {page === 'plan' && (
-                <PlanReviewPage
-                  row={openRow}
-                  review={review}
-                  loading={reviewLoading}
-                  error={reviewError}
-                  sentBack={sentBack}
-                  approving={approving}
-                  refusal={approveRefusal}
-                  approveError={approveError}
-                  started={started}
-                  output={output}
-                  outputError={outputError}
-                  onApprove={approve}
-                  onSendBack={() => { actions.sendBack() }}
-                  t={t}
-                />
-              )}
-              {page === 'conditions' && (
-                <ConditionsPage
-                  view={conditions}
-                  loading={conditionsLoading}
-                  error={conditionsError}
-                  pair={diffPair}
-                  diff={diff}
-                  diffError={diffError}
-                  busy={conditionBusy}
-                  provision={provision}
-                  action={conditionAction}
-                  editing={endpointEditing}
-                  onPick={(id: string) => { actions.pickCondition(id) }}
-                  onProvision={provisionRow}
-                  onEditEndpoint={(id: string | null) => { actions.editEndpoint(id) }}
-                  onSetEndpoint={setEndpoint}
-                  t={t}
-                />
-              )}
-              {page === 'matrix' && (
+              {page === 'runs' && (
                 openRunId === null
                   ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
                   : (
-                    <MatrixPage
+                    <RunsPage
                       matrix={matrix}
-                      loading={matrixLoading}
-                      error={matrixError}
+                      matrixLoading={matrixLoading}
+                      matrixError={matrixError}
                       onColumn={(factor) => { actions.setMatrixColumn(factor) }}
                       onToggleGroup={(factor) => { actions.toggleMatrixGroup(factor) }}
                       onFilter={(factor, value) => { actions.setMatrixFilter(factor, value) }}
-                      onOpenCell={(missionId) => { actions.setPage('cells'); actions.openCell(missionId) }}
-                      t={t}
-                    />
-                  )
-              )}
-              {page === 'cells' && (
-                openRunId === null
-                  ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
-                  : (
-                    <CellsPage
                       cells={cells}
                       loading={cellsLoading}
                       error={cellsError}
-                      bucket={cellsBucket}
-                      onBucket={(bucket) => { actions.setCellsBucket(bucket) }}
+                      filter={runFilter}
+                      onSetFilter={(entry: RunFilter) => { actions.setRunFilter(entry) }}
                       selection={cellSelection}
                       cell={cell}
                       cellLoading={cellLoading}
@@ -1000,11 +885,12 @@ export function LabView(props: LabViewProps) {
                       onRelease={onRelease}
                       onExport={() => { actions.setExportOpen(true) }}
                       onOpenSession={(childId) => { openSession(childId as SessionId) }}
+                      onAddGroup={() => { setNewOpen(true) }}
                       t={t}
                     />
                   )
               )}
-              {page === 'report' && (
+              {page === 'compare' && (
                 openRunId === null
                   ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
                   : (
@@ -1025,7 +911,7 @@ export function LabView(props: LabViewProps) {
                     />
                   )
               )}
-              {page === 'judging' && (
+              {page === 'review' && (
                 openRunId === null
                   ? <EmptyState title={t(notStarted.title)} hint={t(notStarted.hint)} />
                   : (
@@ -1033,13 +919,13 @@ export function LabView(props: LabViewProps) {
                       view={judge}
                       loading={judgeLoading}
                       error={judgeError}
-                      selection={judgeTicket}
+                      selection={judgeTask}
                       draft={judgeDraft}
                       submitting={judgeSubmitting}
                       reexporting={reexporting}
                       onReexport={onReexport}
-                      onPick={(ticket) => { actions.openJudgeCell(ticket) }}
-                      onAnswer={(criterion, value) => { actions.setJudgeDraft(criterion, value) }}
+                      onPick={(task) => { actions.openJudgeTask(task) }}
+                      onAnswer={(ticket, criterion, value) => { actions.setJudgeDraft(ticket, criterion, value) }}
                       onSubmit={onHumanFinal}
                       t={t}
                     />

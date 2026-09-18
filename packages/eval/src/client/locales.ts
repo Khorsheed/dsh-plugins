@@ -37,15 +37,11 @@ export type EvalKey =
   | 'conditions.withJudges'
   | 'factors.none'
   | 'factors.single'
-  | 'page.overview'
-  | 'page.plan'
-  | 'page.conditions'
-  | 'page.matrix'
-  | 'page.cells'
-  | 'page.report'
-  | 'page.judging'
+  | 'page.design'
+  | 'page.runs'
+  | 'page.compare'
+  | 'page.review'
   | 'detail.back'
-  | 'detail.loading'
   | 'detail.error'
   | 'overview.snapshot'
   | 'overview.shape'
@@ -57,18 +53,11 @@ export type EvalKey =
   | 'overview.environment'
   | 'overview.environmentHost'
   | 'overview.readiness'
-  | 'overview.readinessNone'
   | 'overview.meta'
-  | 'overview.buckets'
-  | 'overview.states'
-  | 'overview.unreleased'
   | 'overview.job'
-  | 'overview.draftNotice'
   | 'overview.validation'
   | 'overview.validationOk'
   | 'overview.validationFailed'
-  | 'ready.ok'
-  | 'ready.failed'
   | 'report.loading'
   | 'report.error'
   | 'report.noBundle'
@@ -155,12 +144,7 @@ export type EvalKey =
   | 'judge.empty'
   | 'judge.blindNotice'
   | 'judge.queue'
-  | 'judge.ungraded'
   | 'judge.graded'
-  | 'judge.cell'
-  | 'judge.cellTitle'
-  | 'judge.pick'
-  | 'judge.material'
   | 'judge.materialNone'
   | 'judge.scrubbed'
   | 'judge.criteria'
@@ -179,7 +163,6 @@ export type EvalKey =
   | 'judge.evidencePlaceholder'
   | 'judge.humanFinal'
   | 'judge.humanFinalNone'
-  | 'judge.submit'
   | 'judge.submitting'
   | 'judge.submitBlocked'
   | 'judge.bundleStale'
@@ -275,24 +258,18 @@ export type EvalKey =
   | 'cells.loading'
   | 'cells.error'
   | 'cells.empty'
-  | 'cells.matched'
-  | 'cells.bucketAll'
   | 'cells.col.cell'
   | 'cells.col.attempt'
   | 'cells.col.duration'
   | 'drawer.close'
   | 'drawer.loading'
   | 'drawer.error'
-  | 'drawer.refs'
   | 'drawer.resourceNone'
   | 'drawer.checkpoints'
-  | 'drawer.artifacts'
-  | 'drawer.annotations'
   | 'drawer.attempts'
   | 'drawer.history'
   | 'drawer.probes'
   | 'drawer.probesNone'
-  | 'drawer.materialization'
   | 'drawer.openSession'
   | 'drawer.noSession'
   | 'drawer.releasable'
@@ -336,27 +313,18 @@ export type EvalKey =
   | 'review.stages'
   | 'review.budget'
   | 'review.budgetValue'
-  | 'review.expectedNs'
   | 'review.retry'
   | 'review.retryDefault'
   | 'review.exports'
   | 'review.exportsDefault'
   | 'review.items'
-  | 'review.notes'
   | 'review.checks'
   | 'review.checksNone'
-  | 'review.conditions'
-  | 'review.lockOk'
-  | 'review.lockStale'
-  | 'review.lockNone'
   | 'severity.ok'
   | 'severity.warn'
   | 'severity.error'
-  | 'review.approve'
   | 'review.keepUnits'
   | 'review.keepUnitsHint'
-  | 'review.approving'
-  | 'review.approveBlocked'
   | 'review.sendBack'
   | 'review.sentBack'
   | 'review.started'
@@ -414,8 +382,6 @@ export type EvalKey =
   | 'conditions.diffCount'
   | 'conditions.diffAbsent'
   | 'conditions.diffError'
-  | 'conditions.new'
-  | 'conditions.newPlaceholder'
   | 'error.notGitRepo'
   | 'error.notGitRepo.fix'
   | 'error.notDatasetRepo'
@@ -443,7 +409,6 @@ export type EvalKey =
   | 'judge.filterAll'
   | 'judge.filterUngraded'
   | 'judge.filterGraded'
-  | 'judge.filterTask'
   | 'judge.queueRow'
   | 'cells.col.state'
   | 'report.judgeSampleCount'
@@ -454,9 +419,7 @@ export type EvalKey =
   | 'draft.notStartedHint'
   | 'draft.starting'
   | 'draft.startingHint'
-  | 'overview.readinessRaw'
   | 'overview.metaRaw'
-  | 'role.player'
   | 'role.judge'
   | 'stage.pending'
   | 'stage.ws-ready'
@@ -513,9 +476,7 @@ export type EvalKey =
   | 'matrix.emptyHint'
   | 'cells.emptyHint'
   | 'cells.emptyClear'
-  | 'drawer.title'
   | 'drawer.attemptNo'
-  | 'drawer.fingerprint'
   | 'drawer.probeOk'
   | 'drawer.probeFailed'
   | 'conditions.emptyHint'
@@ -530,6 +491,103 @@ export type EvalKey =
   | 'report.refusedChip'
   | 'judge.emptyHint'
   | 'judge.pickHint'
+  | 'cta.draft'
+  | 'cta.draftHint'
+  | 'cta.pending'
+  | 'cta.pendingHint'
+  | 'cta.running'
+  | 'cta.runningHint'
+  | 'cta.judging'
+  | 'cta.judgingHint'
+  | 'cta.done'
+  | 'cta.doneHint'
+  | 'cta.refused'
+  | 'cta.refusedHint'
+  | 'cta.cancelled'
+  | 'cta.cancelledHint'
+  | 'cta.blocked'
+  | 'cta.waiting'
+  | 'design.scale'
+  | 'design.groups'
+  | 'design.grid'
+  | 'design.advanced'
+  | 'design.advancedHint'
+  | 'design.planned'
+  | 'design.single'
+  | 'design.addGroup'
+  | 'design.addGroupHint'
+  | 'design.notes'
+  | 'design.verdictSources'
+  | 'design.gridHint'
+  | 'design.bind'
+  | 'design.noRepo'
+  | 'design.noRepoHint'
+  | 'design.bindTitle'
+  | 'design.bindWhere'
+  | 'design.bindShape'
+  | 'ready.badge'
+  | 'ready.recheck'
+  | 'ready.pending'
+  | 'ready.failedCount'
+  | 'ready.rawFold'
+  | 'runs.filter.all'
+  | 'runs.filter.active'
+  | 'runs.filter.done'
+  | 'runs.filter.failed'
+  | 'runs.filter.blocked'
+  | 'runs.col.verdict'
+  | 'runs.filtered'
+  | 'verdict.none'
+  | 'verdict.human'
+  | 'verdict.llm'
+  | 'verdict.script'
+  | 'verdict.hint'
+  | 'record.head'
+  | 'record.ok'
+  | 'record.failed'
+  | 'record.scoreWhere'
+  | 'record.timeline'
+  | 'record.timelineNone'
+  | 'record.params'
+  | 'record.attachments'
+  | 'record.attachmentsNone'
+  | 'record.filePending'
+  | 'record.param.task'
+  | 'record.param.condition'
+  | 'record.param.rep'
+  | 'record.param.attempt'
+  | 'record.param.material'
+  | 'record.param.fingerprint'
+  | 'record.param.unit'
+  | 'record.param.judge'
+  | 'artifact.materialization'
+  | 'artifact.archive'
+  | 'artifact.verdicts'
+  | 'artifact.stage'
+  | 'artifact.log'
+  | 'artifact.other'
+  | 'invariant.why.materialization'
+  | 'invariant.why.fingerprint'
+  | 'invariant.why.subject'
+  | 'invariant.why.procedure'
+  | 'report.chart'
+  | 'report.chart.activeMs'
+  | 'report.chart.outputTokens'
+  | 'report.chart.cacheRead'
+  | 'report.chartNone'
+  | 'judge.itemPick'
+  | 'judge.itemCount'
+  | 'judge.column'
+  | 'judge.submitOne'
+  | 'judge.sideBySide'
+  | 'new.step'
+  | 'new.step1'
+  | 'new.step2'
+  | 'new.step3'
+  | 'new.step4'
+  | 'new.back'
+  | 'new.next'
+  | 'new.stepBlocked'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -584,15 +642,7 @@ export const en: Record<EvalKey, string> = {
   'conditions.withJudges': '{count} (+{judges} judge)',
   'factors.none': 'none',
   'factors.single': 'one arm only',
-  'page.overview': 'Overview',
-  'page.plan': 'Plan review',
-  'page.conditions': 'Conditions',
-  'page.matrix': 'Grid',
-  'page.cells': 'Run records',
-  'page.report': 'Report',
-  'page.judging': 'Human review',
   'detail.back': 'Back to the list',
-  'detail.loading': 'Loading the experiment…',
   'detail.error': 'Failed to open the experiment',
   'overview.snapshot': 'Dataset version',
   'overview.shape': 'Experiment size',
@@ -604,29 +654,17 @@ export const en: Record<EvalKey, string> = {
   'overview.environment': 'Environment',
   'overview.environmentHost': 'host path (no unit segment)',
   'overview.readiness': 'Readiness check',
-  'overview.readinessNone': 'the run recorded no readiness probe',
   'overview.meta': 'run.meta',
-  'overview.buckets': 'Run state',
-  'overview.states': 'Stage breakdown',
-  'overview.unreleased': 'Holding a resource, not released',
   'overview.job': 'Background job',
-  'overview.draftNotice': 'Not started yet: readiness, run.meta and the cell histograms appear once a human approves and starts it.',
   'overview.validation': 'Validate',
   'overview.validationOk': 'ok',
   'overview.validationFailed': '{errors} error(s), {warnings} warning(s)',
-  'ready.ok': 'ok',
-  'ready.failed': 'failed',
   'judge.loading': 'Loading the judging queue…',
   'judge.error': 'Failed to open the judging queue',
   'judge.empty': 'This experiment has no record to grade yet.',
   'judge.blindNotice': 'Blind review: the harness, the model and the arm are deliberately absent from this page. Records are numbered in the run\u2019s own (seeded) order, and the panel reads Judge A / Judge B. Unblinding happens on the results page.',
   'judge.queue': 'Queue',
-  'judge.ungraded': 'Not graded ({count})',
   'judge.graded': 'Graded ({count})',
-  'judge.cell': 'Record {no}',
-  'judge.cellTitle': '{task} · take {rep} (queue #{no})',
-  'judge.pick': 'Pick a record from the queue to grade it.',
-  'judge.material': 'De-fingerprinted artifacts',
   'judge.materialNone': 'This record archived none of the judged stage files — there is nothing to read, and a verdict on nothing would be a guess.',
   'judge.scrubbed': '{count} fingerprint(s) replaced',
   'judge.criteria': 'Criteria (kind: human)',
@@ -645,7 +683,6 @@ export const en: Record<EvalKey, string> = {
   'judge.evidencePlaceholder': 'A checkable fact, not an opinion',
   'judge.humanFinal': 'human-final on record',
   'judge.humanFinalNone': 'nothing recorded yet',
-  'judge.submit': 'Record human-final ({count})',
   'judge.submitting': 'Recording…',
   'judge.submitBlocked': 'Answer at least one criterion, with evidence, before recording.',
   'judge.bundleStale': 'The exported bundle was written before these final verdicts, so it does not carry them. Export again to put them in it — the report goes with it, and the old directory is left alone.',
@@ -741,24 +778,18 @@ export const en: Record<EvalKey, string> = {
   'cells.loading': 'Loading the run records…',
   'cells.error': 'Failed to load the run records',
   'cells.empty': 'No run record matches this filter',
-  'cells.matched': '{matched}/{total} record(s)',
-  'cells.bucketAll': 'All',
   'cells.col.cell': 'Item × arm × take',
   'cells.col.attempt': 'Attempts',
   'cells.col.duration': 'In state',
   'drawer.close': 'Close',
   'drawer.loading': 'Loading the record…',
   'drawer.error': 'Failed to open the record',
-  'drawer.refs': 'Unit',
   'drawer.resourceNone': 'no unit (host path)',
   'drawer.checkpoints': 'Checkpoints',
-  'drawer.artifacts': 'Artifacts',
-  'drawer.annotations': 'Annotations',
   'drawer.attempts': 'Attempts',
   'drawer.history': 'Transitions',
   'drawer.probes': 'Verify output (verbatim)',
   'drawer.probesNone': 'this cell recorded no probe run',
-  'drawer.materialization': 'Item material',
   'drawer.openSession': 'Open the child session',
   'drawer.noSession': 'this attempt recorded no child session — nothing to open',
   'drawer.releasable': 'releasable — its resources may be destroyed',
@@ -883,27 +914,18 @@ export const en: Record<EvalKey, string> = {
   'review.stages': 'Stages',
   'review.budget': 'Budget per cell',
   'review.budgetValue': '{minutes} active minute(s) · {turns} turn(s)',
-  'review.expectedNs': 'Expected verdict sources',
   'review.retry': 'Infrastructure retries per cell',
   'review.retryDefault': 'plan default',
   'review.exports': 'Bundle export directory',
   'review.exportsDefault': '<dataset repo>/exports',
   'review.items': 'Items',
-  'review.notes': 'Author notes',
   'review.checks': 'Validate',
   'review.checksNone': 'validate reported nothing at all — the plan document could not be read',
-  'review.conditions': 'Arms and readiness',
-  'review.lockOk': 'lock ok',
-  'review.lockStale': 'LOCK STALE',
-  'review.lockNone': 'no lock',
   'severity.ok': 'ok',
   'severity.warn': 'warn',
   'severity.error': 'error',
-  'review.approve': 'Approve and start',
   'review.keepUnits': 'Keep the units',
   'review.keepUnitsHint': "Every cell will stop at 'archived' and keep its container for you to open. Nothing is released until you finalize the run, so a matrix larger than lab's unit ceiling cannot finish this way.",
-  'review.approving': 'Starting…',
-  'review.approveBlocked': 'validate found {errors} error(s) — fix them and refresh; nothing can be started over a plan whose conditions do not resolve',
   'review.sendBack': 'Send back for changes',
   'review.sentBack': 'Sent back for changes. This is a note on this page only: the plan file is unchanged, and the experiment is shown as a draft until it validates again.',
   'review.started': 'Started',
@@ -961,13 +983,10 @@ export const en: Record<EvalKey, string> = {
   'conditions.diffCount': '{count} field(s) differ',
   'conditions.diffAbsent': 'absent',
   'conditions.diffError': 'Failed to diff the two arms',
-  'conditions.new': 'New arm',
-  'conditions.newPlaceholder': 'Choosing a model IS minting a condition, so minting one lives in the 新建实验 form: go back to the list, press it, and open 新建条件 there — it copies a condition you pick and changes the field you name, together with the plan that uses it. Turning the declaration into a real scoped home is still yours: /eval conditions provision.',
 
   // ── the word table (ui-spec §九) ────────────────────────────────────────
   // Every internal token this tab shows resolves through one of the four
   // groups below, so the same fact reads the same on every page.
-  'role.player': 'player',
   'role.judge': 'judge',
   'stage.pending': 'Not started',
   'stage.ws-ready': 'Workspace ready',
@@ -1021,7 +1040,6 @@ export const en: Record<EvalKey, string> = {
   // up yet, and this page catches up by itself (I5·T39 · G11).
   'draft.starting': 'Starting it',
   'draft.startingHint': 'The run is created and this page picks it up on its own in a moment — no need to refresh.',
-  'overview.readinessRaw': 'Records and refusals, verbatim',
   'overview.metaRaw': 'run.meta, verbatim',
   'matrix.arrange': 'Column, bands and pins',
   'matrix.columnIs': 'Columns separate the arms by',
@@ -1036,9 +1054,7 @@ export const en: Record<EvalKey, string> = {
   'matrix.emptyHint': 'No record survives the current pins. Clear them under «Column, bands and pins», or check the plan review.',
   'cells.emptyHint': 'No record of this experiment is in that state right now.',
   'cells.emptyClear': 'Show every state',
-  'drawer.title': '{task} × {condition} × take {rep}',
   'drawer.attemptNo': 'attempt {attempt}',
-  'drawer.fingerprint': 'fingerprint',
   'drawer.probeOk': 'passed',
   'drawer.probeFailed': 'did not pass',
   'conditions.emptyHint': 'The bound repository declares no arm yet. Minting one is part of 新建实验 — go back to the list and press it.',
@@ -1065,10 +1081,116 @@ export const en: Record<EvalKey, string> = {
   'judge.filterAll': 'All',
   'judge.filterUngraded': 'Not graded',
   'judge.filterGraded': 'Graded',
-  'judge.filterTask': 'Item',
   'judge.queueRow': '{task} · take {rep}',
   'cells.col.state': 'Run state',
   'report.judgeSampleCount': '{criteria} criterion(s) with pairs · agreed {agreement}',
+
+  // ── the four stages, their one action each, and the run-record
+  //    vocabulary (ui-spec §五 v2, I5·T67) ─────────────────────────────────
+  'page.design': 'Design',
+  'page.runs': 'Run records',
+  'page.compare': 'Results',
+  'page.review': 'Human review',
+  'cta.draft': 'Validate it',
+  'cta.draftHint': 'A draft on disk. Validate it to find out whether it can be approved.',
+  'cta.pending': 'Approve and start',
+  'cta.pendingHint': 'Validate passed. Approving starts the run — the readiness gate is checked first.',
+  'cta.running': 'See run records',
+  'cta.runningHint': 'The cells are running. The run records show each one as it lands.',
+  'cta.judging': 'Go to human review',
+  'cta.judgingHint': 'Every cell has run. The final verdict is yours to record.',
+  'cta.done': 'See results',
+  'cta.doneHint': 'The report is out. The results page holds the comparison.',
+  'cta.refused': 'Check again',
+  'cta.refusedHint': 'The readiness gate refused this run. The reason is under Details below.',
+  'cta.cancelled': 'See run records',
+  'cta.cancelledHint': 'This run was cancelled. Whatever it recorded is still in the run records.',
+  'cta.blocked': 'Validate reports {errors} error(s) — fix the plan first.',
+  'cta.waiting': 'Starting…',
+  'design.scale': 'Scale and variables',
+  'design.groups': 'Comparison groups and readiness',
+  'design.grid': 'Planned grid',
+  'design.gridHint': 'Rows are items, columns are comparison groups — the same grid the run records fill in.',
+  'design.advanced': 'Advanced settings',
+  'design.advancedHint': 'Order, stages, per-cell budget, verdict sources, environment, and the author’s note.',
+  'design.planned': '{reps} planned',
+  'design.single': 'Only one comparison group — add another to have anything to compare.',
+  'design.addGroup': 'Add a comparison group',
+  'design.addGroupHint': 'Copy an existing group and change one field; the wizard writes both it and the plan.',
+  'design.notes': 'Author’s note',
+  'design.verdictSources': 'Verdict sources',
+  'design.bind': 'Bind a dataset',
+  'design.noRepo': 'This session has no dataset bound',
+  'design.noRepoHint': 'An experiment is designed against a dataset — items, comparison groups and plans all live in one.',
+  'design.bindTitle': 'Bind a dataset',
+  'design.bindWhere': 'Binding is a person’s act and it is made in the datasets tab: open it and use its import action, which takes a directory or a repository and a commit, validates it, and binds it to this session.',
+  'design.bindShape': 'What it takes: a git repository organized by the dataset protocol — a dataset.json naming its layers, items under items/, and the conditions/ and plans/ directories this tab writes into.',
+  'ready.badge': 'Environment ready',
+  'ready.recheck': 'Check again',
+  'ready.pending': 'Not checked yet — readiness is probed when the run starts.',
+  'ready.failedCount': '{count} of {total} comparison groups are not ready',
+  'ready.rawFold': 'Readiness records, verbatim',
+  'runs.filter.all': 'All',
+  'runs.filter.active': 'Running',
+  'runs.filter.done': 'Done',
+  'runs.filter.failed': 'Failed',
+  'runs.filter.blocked': 'Blocked',
+  'runs.col.verdict': 'Score',
+  'runs.filtered': '{matched} of {total}',
+  'verdict.none': 'Not judged',
+  'verdict.human': 'Final verdict',
+  'verdict.llm': 'Judge draft',
+  'verdict.script': 'Script',
+  'verdict.hint': 'Which verdict source this cell carries. The scores themselves are computed from the exported bundle — they are on the results page.',
+
+  // ── the record detail, the validity hovers, the side-by-side
+  //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
+  'record.head': '{task} × {condition} · rep {rep}',
+  'record.ok': 'Finished',
+  'record.failed': 'Stopped',
+  'record.scoreWhere': 'The scores are computed from the exported bundle — they are on the results page.',
+  'record.timeline': 'Stage timeline',
+  'record.timelineNone': 'The ledger recorded no transition times for this attempt.',
+  'record.params': 'Parameters',
+  'record.attachments': 'Attachments',
+  'record.attachmentsNone': 'This attempt recorded no artifacts.',
+  'record.filePending': 'Preview and download need a host file service this tab does not have yet; the path is here so it can be opened from a terminal.',
+  'record.param.task': 'Item',
+  'record.param.condition': 'Comparison group',
+  'record.param.rep': 'Rep',
+  'record.param.attempt': 'Attempt',
+  'record.param.material': 'Item material',
+  'record.param.fingerprint': 'Environment fingerprint',
+  'record.param.unit': 'Unit',
+  'record.param.judge': 'Verdict source',
+  'artifact.materialization': 'Item material',
+  'artifact.archive': 'Archived workspace',
+  'artifact.verdicts': 'Verdicts',
+  'artifact.stage': 'Stage submission',
+  'artifact.log': 'Run log',
+  'artifact.other': '{kind}',
+  'invariant.why.materialization': 'Why it matters: every group has to have been given the same item, byte for byte. If they were not, the run asked different questions, and a difference between the answers is not a result.',
+  'invariant.why.fingerprint': 'Why it matters: the cells have to have run in the same class of environment. If they did not, the difference carries the machine as well as the subject.',
+  'invariant.why.subject': 'Why it matters: the model each cell actually ran has to be the one it declared. If it is not, this comparison is between something other than what it says it is.',
+  'invariant.why.procedure': 'Why it matters: the run has to record which orchestrator version and which plan produced it. Without that nobody can reproduce it or check it.',
+  'report.chart': 'Efficiency at a glance',
+  'report.chart.activeMs': 'Active time',
+  'report.chart.outputTokens': 'Output tokens',
+  'report.chart.cacheRead': 'Cache read',
+  'report.chartNone': 'Nothing was measured for this one.',
+  'judge.itemPick': 'Pick an item to grade',
+  'judge.itemCount': '{task} · {count} answer(s)',
+  'judge.column': 'Answer {no}',
+  'judge.submitOne': 'Record {count} verdict(s) for answer {no}',
+  'judge.sideBySide': 'The answers to one item, side by side and de-identified, in the run’s own seeded order. Each one is graded on its own — this is not a choice between them.',
+  'new.step': 'Step {step} of 4',
+  'new.step1': 'Dataset and items',
+  'new.step2': 'Comparison groups',
+  'new.step3': 'Judges, reps and budget',
+  'new.step4': 'Environment and confirm',
+  'new.back': 'Back',
+  'new.next': 'Next',
+  'new.stepBlocked': 'Fill this step in before going on.',
 }
 
 /** 中文词典。 */
@@ -1116,15 +1238,7 @@ export const zh: Record<EvalKey, string> = {
   'conditions.withJudges': '{count}（+{judges} 判官）',
   'factors.none': '无',
   'factors.single': '单个对比组',
-  'page.overview': '概览',
-  'page.plan': '计划审阅',
-  'page.conditions': '对比组',
-  'page.matrix': '网格',
-  'page.cells': '运行记录',
-  'page.report': '报告',
-  'page.judging': '人工评估',
   'detail.back': '回到列表',
-  'detail.loading': '加载实验…',
   'detail.error': '实验打开失败',
   'overview.snapshot': '题库版本',
   'overview.shape': '实验规模',
@@ -1136,29 +1250,17 @@ export const zh: Record<EvalKey, string> = {
   'overview.environment': '环境',
   'overview.environmentHost': '宿主路径（没有 unit 段）',
   'overview.readiness': '就绪检查',
-  'overview.readinessNone': '这个 run 没有记录就绪检查',
   'overview.meta': 'run.meta',
-  'overview.buckets': '运行状态',
-  'overview.states': '阶段明细',
-  'overview.unreleased': '持有单元未释放',
   'overview.job': '后台作业',
-  'overview.draftNotice': '还没启动：就绪检查、run.meta 与运行状态分布要等人批准并启动之后才有。',
   'overview.validation': '校验',
   'overview.validationOk': '通过',
   'overview.validationFailed': '{errors} 个错误，{warnings} 条警告',
-  'ready.ok': '通过',
-  'ready.failed': '未通过',
   'judge.loading': '人工评估加载中…',
   'judge.error': '人工评估打不开',
   'judge.empty': '这次实验还没有可评的记录。',
   'judge.blindNotice': '盲评：本页刻意不出现 harness、模型与对比组。记录按这次实验自己的（种子）顺序编号，判官只显示判官 A / 判官 B。揭盲在结果对比页。',
   'judge.queue': '队列',
-  'judge.ungraded': '未评（{count}）',
   'judge.graded': '已评（{count}）',
-  'judge.cell': '第 {no} 条',
-  'judge.cellTitle': '{task} · 第 {rep} 次（队列第 {no} 条）',
-  'judge.pick': '从左边队列里选一条开始评。',
-  'judge.material': '去指纹产物',
   'judge.materialNone': '这条记录没有归档被判阶段的文件——没有可读的东西，对着空白下判定是猜。',
   'judge.scrubbed': '替换掉 {count} 处指纹',
   'judge.criteria': '判据（kind: human）',
@@ -1177,7 +1279,6 @@ export const zh: Record<EvalKey, string> = {
   'judge.evidencePlaceholder': '写可核对的事实，不写观感',
   'judge.humanFinal': '已有 human-final',
   'judge.humanFinalNone': '还没有记录',
-  'judge.submit': '记入 human-final（{count} 条）',
   'judge.submitting': '记录中…',
   'judge.submitBlocked': '至少答一条判据并写上证据，才能记录。',
   'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
@@ -1273,24 +1374,18 @@ export const zh: Record<EvalKey, string> = {
   'cells.loading': '读运行记录…',
   'cells.error': '运行记录没读出来',
   'cells.empty': '这个筛选下没有运行记录',
-  'cells.matched': '{matched}/{total} 条记录',
-  'cells.bucketAll': '全部',
   'cells.col.cell': '题 × 对比组 × 次',
   'cells.col.attempt': '尝试次数',
   'cells.col.duration': '在态时长',
   'drawer.close': '关闭',
   'drawer.loading': '读这条记录…',
   'drawer.error': '这条记录没打开',
-  'drawer.refs': '单元',
   'drawer.resourceNone': '没有单元（宿主路径）',
   'drawer.checkpoints': '检查点',
-  'drawer.artifacts': '产物',
-  'drawer.annotations': '注解',
   'drawer.attempts': '尝试',
   'drawer.history': '状态迁移',
   'drawer.probes': 'verify 原样输出',
   'drawer.probesNone': '这一格没有记录探针运行',
-  'drawer.materialization': '题面',
   'drawer.openSession': '打开子会话',
   'drawer.noSession': '这次 attempt 没有记录子会话——没有可打开的',
   'drawer.releasable': '可释放——资源可以销毁',
@@ -1415,27 +1510,18 @@ export const zh: Record<EvalKey, string> = {
   'review.stages': '阶段',
   'review.budget': '每格预算',
   'review.budgetValue': '{minutes} 活跃分钟 · {turns} 轮',
-  'review.expectedNs': '期望的判定来源',
   'review.retry': '每格基础设施重试',
   'review.retryDefault': '按缺省',
   'review.exports': 'bundle 导出目录',
   'review.exportsDefault': '<题库>/exports',
   'review.items': '题目',
-  'review.notes': '作者备注',
   'review.checks': '校验',
   'review.checksNone': 'validate 什么都没报——计划文件读不出来',
-  'review.conditions': '对比组与就绪',
-  'review.lockOk': 'lock 有效',
-  'review.lockStale': 'lock 过期',
-  'review.lockNone': '没有 lock',
   'severity.ok': '通过',
   'severity.warn': '警告',
   'severity.error': '错误',
-  'review.approve': '批准并启动',
   'review.keepUnits': '保留单元',
   'review.keepUnitsHint': '每条运行记录跑完停在「已归档」，容器留着给你打开。不 finalize 就不会释放，记录数超过 lab 的单元上限时这样跑不完。',
-  'review.approving': '正在启动…',
-  'review.approveBlocked': '校验有 {errors} 个错误——改掉再刷新；对比组都解析不出来的计划不能启动。',
   'review.sendBack': '退回修改',
   'review.sentBack': '已退回修改。这只是本页上的一段备注：计划文件没有改动，实验按草稿显示，直到它重新通过 validate。',
   'review.started': '已启动',
@@ -1493,13 +1579,10 @@ export const zh: Record<EvalKey, string> = {
   'conditions.diffCount': '{count} 个字段不同',
   'conditions.diffAbsent': '无此字段',
   'conditions.diffError': '两个对比组的差异没算出来',
-  'conditions.new': '新建对比组',
-  'conditions.newPlaceholder': '选模型即新建对比组，所以新建对比组在「新建实验」表单里：回到实验室列表点「新建实验」，在里面开「新建对比组」——它把你选的那个复制一份、只改你填的字段，和用它的 plan 一起写出来。把声明落成真的作用域家目录仍是人的事：/eval conditions provision。',
 
   // ── 状态词表（ui-spec §九）──────────────────────────────────────────────
   // 这个 tab 上出现的每个内部标识都经下面四组之一落成一个词，同一件事在
   // 每一页的写法相同。
-  'role.player': '选手',
   'role.judge': '判官',
   'stage.pending': '待起',
   'stage.ws-ready': '工作区就绪',
@@ -1550,7 +1633,6 @@ export const zh: Record<EvalKey, string> = {
   'draft.notStartedHint': '人在计划审阅页批准并启动之后，这一页才有内容——去「计划审阅」。',
   'draft.starting': '正在启动',
   'draft.startingHint': 'run 已经建了，这一页稍后自己会拉到，不用点刷新。',
-  'overview.readinessRaw': '就绪记录与拒绝原文',
   'overview.metaRaw': 'run.meta 原文',
   'matrix.arrange': '换列 · 分组 · 筛选',
   'matrix.columnIs': '列按这个对比变量区分对比组：',
@@ -1565,9 +1647,7 @@ export const zh: Record<EvalKey, string> = {
   'matrix.emptyHint': '当前筛选下没有记录。到「换列 · 分组 · 筛选」里清掉筛选，或去计划审阅页看这次实验展开了什么。',
   'cells.emptyHint': '这次实验现在没有记录落在这个状态里。',
   'cells.emptyClear': '看全部状态',
-  'drawer.title': '{task} × {condition} × 第 {rep} 次',
   'drawer.attemptNo': '第 {attempt} 次尝试',
-  'drawer.fingerprint': '环境指纹',
   'drawer.probeOk': '通过',
   'drawer.probeFailed': '未通过',
   'conditions.emptyHint': '绑定的题库里还没有对比组。新建对比组在「新建实验」表单里——回到实验室列表点它。',
@@ -1594,8 +1674,114 @@ export const zh: Record<EvalKey, string> = {
   'judge.filterAll': '全部',
   'judge.filterUngraded': '未评',
   'judge.filterGraded': '已评',
-  'judge.filterTask': '按题',
   'judge.queueRow': '{task} · 第 {rep} 次',
   'cells.col.state': '运行状态',
   'report.judgeSampleCount': '{criteria} 条判据有配对 · 一致 {agreement}',
+
+  // ── the four stages, their one action each, and the run-record
+  //    vocabulary (ui-spec §五 v2, I5·T67) ─────────────────────────────────
+  'page.design': '实验设计',
+  'page.runs': '运行记录',
+  'page.compare': '结果对比',
+  'page.review': '人工评估',
+  'cta.draft': '去校验',
+  'cta.draftHint': '这是一份落盘的草稿。先校验，才知道能不能批准。',
+  'cta.pending': '批准并启动',
+  'cta.pendingHint': '校验已通过。批准即启动，启动前先过就绪检查。',
+  'cta.running': '看运行记录',
+  'cta.runningHint': '格子正在跑，运行记录里逐格落地。',
+  'cta.judging': '去人工评估',
+  'cta.judgingHint': '格子都跑完了，终评是你的事。',
+  'cta.done': '看结果',
+  'cta.doneHint': '报告已出，对比在结果页。',
+  'cta.refused': '重新检查',
+  'cta.refusedHint': '就绪检查拒绝了这次启动，原因在下面的「详情」里。',
+  'cta.cancelled': '看运行记录',
+  'cta.cancelledHint': '这次运行已取消；已经记下的东西仍在运行记录里。',
+  'cta.blocked': '校验有 {errors} 条错误，先改计划。',
+  'cta.waiting': '正在启动…',
+  'design.scale': '实验规模与对比变量',
+  'design.groups': '对比组与就绪',
+  'design.grid': '计划网格',
+  'design.gridHint': '行是题、列是对比组——和运行记录里那张是同一个网格。',
+  'design.advanced': '高级设置',
+  'design.advancedHint': '顺序、阶段、每格预算、判定来源、环境，以及作者备注。',
+  'design.planned': '计划 {reps} 次',
+  'design.single': '只有一个对比组，添加对比组才能比较。',
+  'design.addGroup': '添加对比组',
+  'design.addGroupHint': '从一个已有对比组复制，改一个字段；向导会把它和计划一起写出来。',
+  'design.notes': '作者备注',
+  'design.verdictSources': '判定来源',
+  'design.bind': '绑定题库',
+  'design.noRepo': '本会话还没绑定题库',
+  'design.noRepoHint': '实验是对着题库设计的——题目、对比组、计划都住在题库里。',
+  'design.bindTitle': '绑定题库',
+  'design.bindWhere': '绑定是人的动作，在题集 tab 里做：打开它，用导入题集指一个目录或一个仓库加 commit，校验通过即绑定到本会话。',
+  'design.bindShape': '它要的东西：一个按题库协议组织的 git 仓库——dataset.json 声明层，题目在 items/ 下，还有本 tab 要写入的 conditions/ 与 plans/ 两个目录。',
+  'ready.badge': '环境就绪',
+  'ready.recheck': '重新检查',
+  'ready.pending': '还没做就绪检查——启动时才探。',
+  'ready.failedCount': '{total} 个对比组里有 {count} 个未就绪',
+  'ready.rawFold': '就绪检查原文',
+  'runs.filter.all': '全部',
+  'runs.filter.active': '运行中',
+  'runs.filter.done': '完成',
+  'runs.filter.failed': '失败',
+  'runs.filter.blocked': '阻塞',
+  'runs.col.verdict': '得分',
+  'runs.filtered': '{matched} / {total}',
+  'verdict.none': '未判',
+  'verdict.human': '终评',
+  'verdict.llm': '判官初判',
+  'verdict.script': '脚本判定',
+  'verdict.hint': '这格带的是哪一种判定。分数本身是从导出的 bundle 里算的，在结果对比页。',
+
+  // ── the record detail, the validity hovers, the side-by-side
+  //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
+  'record.head': '{task} × {condition} · 第 {rep} 次',
+  'record.ok': '成功',
+  'record.failed': '异常',
+  'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
+  'record.timeline': '阶段时间轴',
+  'record.timelineNone': '账本没记这次尝试的转移时间。',
+  'record.params': '参数配置',
+  'record.attachments': '附件',
+  'record.attachmentsNone': '这次尝试没记下产物。',
+  'record.filePending': '预览和下载要宿主的文件服务，这个 tab 还没有；路径放在这里，可以从终端打开。',
+  'record.param.task': '题',
+  'record.param.condition': '对比组',
+  'record.param.rep': '次',
+  'record.param.attempt': '尝试次数',
+  'record.param.material': '题面物化',
+  'record.param.fingerprint': '环境指纹',
+  'record.param.unit': '单元',
+  'record.param.judge': '判定来源',
+  'artifact.materialization': '题面物化',
+  'artifact.archive': '归档工作区',
+  'artifact.verdicts': '判定记录',
+  'artifact.stage': '阶段提交',
+  'artifact.log': '评测日志',
+  'artifact.other': '{kind}',
+  'invariant.why.materialization': '为什么影响比较：各组拿到的题面必须逐字节相同。不同，这次 run 就是问了不同的问题，答案之间的差值不是结果。',
+  'invariant.why.fingerprint': '为什么影响比较：各格必须跑在同一类环境里。不是，差值里混进来的就是机器，而不只是被试。',
+  'invariant.why.subject': '为什么影响比较：每一格实际跑的模型必须就是它声明的那个。不是，这份对比比的就不是它说的那两个东西。',
+  'invariant.why.procedure': '为什么影响比较：这次 run 得记下是哪版编排器、按哪份计划跑的。记不下，谁都复现不了，也核对不了。',
+  'report.chart': '效率一眼看',
+  'report.chart.activeMs': '活跃时长',
+  'report.chart.outputTokens': '输出 token',
+  'report.chart.cacheRead': 'cache read',
+  'report.chartNone': '这一项没量到。',
+  'judge.itemPick': '先选一道题',
+  'judge.itemCount': '{task} · {count} 份作答',
+  'judge.column': '第 {no} 份',
+  'judge.submitOne': '记第 {no} 份的 {count} 条判定',
+  'judge.sideBySide': '同一道题的各份作答并排在这里，已去指纹，按 run 自己的种子顺序编号。每一份各自打分——这不是二选一。',
+  'new.step': '第 {step} 步 / 共 4 步',
+  'new.step1': '题库与题目',
+  'new.step2': '对比组',
+  'new.step3': '判官、次数与预算',
+  'new.step4': '环境与确认',
+  'new.back': '上一步',
+  'new.next': '下一步',
+  'new.stepBlocked': '这一步填完才能往下走。',
 }

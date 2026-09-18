@@ -155,29 +155,64 @@ async function openForm(h: Harness): Promise<void> {
   await screen.findByText('P0')
 }
 
+/** The four steps are the wizard's whole shape; this is step ①'s own gate. */
+
 /** Fill the minimum a draft needs: a name, a set, an item, a condition, a stage. */
+/** Walk the wizard's four steps, answering each with the least it accepts. */
 function fillMinimum(): void {
+  // ① dataset and items
   fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'i5-walk' } })
   fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'ds' } })
   fireEvent.click(screen.getByText('P0').previousSibling as Element)
-  fireEvent.click(screen.getByText('stage1').previousSibling as Element)
+  next()
+  // ② comparison groups
   fireEvent.click(screen.getByText('dsh-exec · dsh / deepseek-v4-flash').previousSibling as Element)
+  next()
+  // ③ judges, reps and stages
+  fireEvent.click(screen.getByText('stage1').previousSibling as Element)
+  next()
+  // ④ environment and confirm — every field has a default (ui-spec §五 v2)
+}
+
+/** Press 下一步. */
+function next(): void {
+  fireEvent.click(screen.getByRole('button', { name: 'new.next' }))
 }
 
 afterEach(() => { cleanup() })
 
 describe('the 新建实验 form', () => {
-  it('fills its pickers from what the repository holds', async () => {
+  it('asks four steps in order, and each one is filled from what the repository holds', async () => {
     const h = makeHarness()
     await openForm(h)
 
-    // The items and stages are the SET's, and the conditions are the
-    // registry's — a person cannot invent an item id here, which is the whole
-    // reason these are pickers rather than text fields.
+    // ① The items are the SET's — a person cannot invent an item id here,
+    // which is the whole reason these are pickers rather than text fields.
+    expect(screen.getByText('new.step {"step":1}')).toBeTruthy()
     expect(screen.getByText('P1')).toBeTruthy()
-    expect(screen.getByText('stage2')).toBeTruthy()
+    // …and the step will not be left until it has what it needs.
+    expect(screen.getByRole('button', { name: 'new.next' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'i5-walk' } })
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'ds' } })
+    fireEvent.click(screen.getByText('P0').previousSibling as Element)
+    next()
+
+    // ② the comparison groups, from the registry.
+    expect(screen.getByText('new.step {"step":2}')).toBeTruthy()
     expect(screen.getByText('dsh-exec · dsh / deepseek-v4-flash')).toBeTruthy()
     expect(h.fetchConditions).toHaveBeenCalledWith('s1', {})
+    fireEvent.click(screen.getByText('dsh-exec · dsh / deepseek-v4-flash').previousSibling as Element)
+    next()
+
+    // ③ judges, reps, stages and the per-cell budget.
+    expect(screen.getByText('new.step {"step":3}')).toBeTruthy()
+    expect(screen.getByText('stage2')).toBeTruthy()
+
+    // Back never discards: the answers live above the steps.
+    fireEvent.click(screen.getByRole('button', { name: 'new.back' }))
+    expect(screen.getByText('new.step {"step":2}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'new.back' }))
+    expect((screen.getByLabelText('new.name') as HTMLInputElement).value).toBe('i5-walk')
   })
 
   it('sends ui-spec §五\'s fields and lands on the plan-review page', async () => {
@@ -191,10 +226,10 @@ describe('the 新建实验 form', () => {
     expect(h.draftExperiment.mock.calls[0]?.[1]).toMatchObject({
       name: 'i5-walk', dataset: 'ds', items: ['P0'], stages: ['stage1'], conditions: ['dsh-exec'],
     })
-    // Step 2 hands the reader to step 3: the plan-review page, where 批准并启动
-    // is — and the form itself has no approve verb at all.
+    // Step 2 hands the reader to step 3: 实验设计, where 批准并启动 is — and the
+    // wizard itself has no approve verb at all.
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'page.plan' }).getAttribute('aria-pressed')).toBe('true')
+      expect(screen.getByRole('button', { name: 'page.design' }).getAttribute('aria-pressed')).toBe('true')
     })
     expect(h.approvePlan).not.toHaveBeenCalled()
     // The notice names the EXPERIMENT (the plan's file stem, since the row
@@ -226,15 +261,24 @@ describe('the 新建实验 form', () => {
     fireEvent.click(screen.getByRole('button', { name: 'new.save' }))
 
     expect(await screen.findByText(/already exists/)).toBeTruthy()
-    // Still on the form, so the person can change the name rather than losing
-    // everything they typed.
-    expect(screen.getByLabelText('new.name')).toBeTruthy()
+    // Still on the last step with the wizard open, so the person can walk back
+    // and change the name rather than losing everything they typed.
+    expect(screen.getByText('new.step {"step":4}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'new.back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'new.back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'new.back' }))
+    expect((screen.getByLabelText('new.name') as HTMLInputElement).value).toBe('i5-walk')
   })
 
   it('新建条件 sends a COPY: the source, and only the fields typed into', async () => {
     const h = makeHarness()
     await openForm(h)
-    fillMinimum()
+    // Minting lives on step ②, so the walk stops there, mints, and goes on.
+    fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'i5-walk' } })
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'ds' } })
+    fireEvent.click(screen.getByText('P0').previousSibling as Element)
+    next()
+    fireEvent.click(screen.getByText('dsh-exec · dsh / deepseek-v4-flash').previousSibling as Element)
     fireEvent.click(screen.getByRole('button', { name: 'new.mintOpen' }))
     fireEvent.change(screen.getByLabelText('new.mintId'), { target: { value: 'dsh-exec-pro' } })
     fireEvent.change(screen.getByLabelText('new.mintFrom'), { target: { value: 'dsh-exec' } })
@@ -243,6 +287,9 @@ describe('the 新建实验 form', () => {
     // One field changed is a single-factor pair, and the form says so before
     // the person saves.
     expect(screen.getByText(/new\.mintOneFactor/)).toBeTruthy()
+    next()
+    fireEvent.click(screen.getByText('stage1').previousSibling as Element)
+    next()
     fireEvent.click(screen.getByRole('button', { name: 'new.save' }))
 
     await waitFor(() => { expect(h.draftExperiment).toHaveBeenCalled() })
@@ -255,12 +302,13 @@ describe('the 新建实验 form', () => {
     expect(Object.keys(mint as object).sort()).toEqual(['from', 'id', 'model'])
   })
 
-  it('will not save until a name, a set, an item, a stage and a condition are all chosen', async () => {
+  it('will not save until a name, a set, an item, a stage and a comparison group are all chosen', async () => {
     const h = makeHarness()
     await openForm(h)
-
-    const save = screen.getByRole('button', { name: 'new.save' })
-    expect(save.hasAttribute('disabled')).toBe(true)
+    // The wizard gates step by step, so «cannot save yet» is «cannot get to
+    // the last step yet»: 保存草稿并 validate does not exist until then.
+    expect(screen.queryByRole('button', { name: 'new.save' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'new.next' }).hasAttribute('disabled')).toBe(true)
     fillMinimum()
     expect(screen.getByRole('button', { name: 'new.save' }).hasAttribute('disabled')).toBe(false)
   })

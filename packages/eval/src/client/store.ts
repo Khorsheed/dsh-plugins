@@ -1,10 +1,9 @@
 /**
  * The lab tab's transient store: the experiment list, which row is open, which
- * of the detail's seven sub-pages is showing, each built sub-page's own
- * payload, and — for the matrix — how the reader arranged it. Module level
- * exports the factory only: a module-level handle would pin the store's
- * identity in the module cache (a de-facto singleton surviving plugin
- * reloads).
+ * of the detail's FOUR STAGES is showing, each stage's own payload, and — for
+ * the grid — how the reader arranged it. Module level exports the factory
+ * only: a module-level handle would pin the store's identity in the module
+ * cache (a de-facto singleton surviving plugin reloads).
  */
 import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
@@ -31,11 +30,20 @@ export interface LabStartedRun {
 }
 
 /**
- * The detail's sub-pages, in the tab order ui-spec §五 fixes. All seven have
- * bodies as of I5·T37 — `overview` (T35a), `plan` / `conditions` (T36),
- * `matrix` / `cells` (T35b), `report` (T38) and `judging` (T37).
+ * The detail's four STAGES, in the order ui-spec §五 v2 fixes them — the shape
+ * of the work rather than the shape of the data.
+ *
+ * v1 had seven sub-pages and each one was a correct label over a pile of
+ * fields: the overview and the plan review were very nearly the same
+ * definition list, and neither had an action. The four here are the four
+ * things a person actually does, in the order they do them, and each one
+ * carries ONE primary action (see {@link LabViewState.page} and the stage bar).
+ *
+ * The merge: 实验设计 absorbs the old overview + plan review + conditions;
+ * 运行记录 absorbs the matrix (now the grid at its top) + cells; 结果对比 is
+ * the report; 人工评估 is the judge bench.
  */
-export const LAB_PAGES = ['overview', 'plan', 'conditions', 'matrix', 'cells', 'report', 'judging'] as const
+export const LAB_PAGES = ['design', 'runs', 'compare', 'review'] as const
 
 /**
  * How long the view waits for an approved run to reach the ledger before it
@@ -52,8 +60,18 @@ export const START_FOLLOWUP_MS = 4000
 /** @see START_FOLLOWUP_MS */
 export const START_FOLLOWUP_LIMIT = 15
 
-/** One sub-page of an experiment's detail. */
+/** One stage of an experiment's detail. */
 export type LabPage = typeof LAB_PAGES[number]
+
+/**
+ * The run-record list's five filters (ui-spec §五 v2). 「失败」 is a ledger
+ * STATE (`halted`) and the other three are mission buckets; the list applies
+ * all five the same way so the counts beside them count one population.
+ */
+export const RUN_FILTERS = ['all', 'active', 'done', 'failed', 'blocked'] as const
+
+/** @see RUN_FILTERS */
+export type RunFilter = typeof RUN_FILTERS[number]
 
 /**
  * What the condition page's action seat is currently saying: a receipt the
@@ -166,8 +184,18 @@ export interface LabViewState {
   matrixLoading: boolean
   matrixError: string | null
 
-  /** The cells page's bucket filter, or null for every bucket. */
-  cellsBucket: string | null
+  /**
+   * The run-record list's filter — ui-spec §五 v2's five: 全部 / 运行中 / 完成 /
+   * 失败 / 阻塞.
+   *
+   * Applied in the BROWSER over the whole run's rows rather than by re-asking
+   * the host per bucket. Two of the five are not buckets at all (「失败」 is the
+   * `halted` ledger state, which mission projects into `done`), so a
+   * server-side bucket filter could answer three of them and would have to
+   * fetch everything for the other two anyway — and the counts beside the
+   * chips would then be counting different populations.
+   */
+  runFilter: RunFilter
   /** The cell list, or null before the first load. */
   cells: EvalCellsResult | null
   cellsLoading: boolean
@@ -222,14 +250,26 @@ export interface LabViewState {
   judge: EvalJudgeQueueView | null
   judgeLoading: boolean
   judgeError: string | null
-  /** The queue entry being graded, by ticket; null while the queue is showing. */
-  judgeTicket: string | null
   /**
-   * The grader's in-progress answers for the open cell: criterion id → the
-   * verdict being composed. Cleared when the cell changes or a submission
-   * lands, so a half-written answer never follows a grader to the next cell.
+   * The ITEM being graded, or null while the queue is showing.
+   *
+   * An item and not a cell since I5·T67: ui-spec §五 v2 puts the answers to
+   * one item side by side, because a grader reading four answers to the same
+   * question applies one standard to all four, and reading them one page at a
+   * time is how a standard drifts between the first and the last.
    */
-  judgeDraft: Record<string, { pass: boolean; evidence: string }>
+  judgeTask: string | null
+  /**
+   * The grader's in-progress answers: ticket → criterion id → the verdict
+   * being composed.
+   *
+   * Keyed by TICKET because several answers are on screen at once and each is
+   * graded on its own (the verdict contract is unchanged: one score per
+   * cell, never a choice between cells). Cleared when the item changes or a
+   * submission lands, so a half-written answer never follows a grader to the
+   * next question.
+   */
+  judgeDraft: Record<string, Record<string, { pass: boolean; evidence: string }>>
   /** Whether a human-final submission is in flight (the button is disabled meanwhile). */
   judgeSubmitting: boolean
 
@@ -288,7 +328,7 @@ export type LabViewActions = {
   setMatrix: (draft: LabViewState, matrix: EvalMatrixView) => void
   setMatrixLoading: (draft: LabViewState, loading: boolean) => void
   setMatrixError: (draft: LabViewState, error: string | null) => void
-  setCellsBucket: (draft: LabViewState, bucket: string | null) => void
+  setRunFilter: (draft: LabViewState, filter: RunFilter) => void
   setCells: (draft: LabViewState, cells: EvalCellsResult) => void
   setCellsLoading: (draft: LabViewState, loading: boolean) => void
   setCellsError: (draft: LabViewState, error: string | null) => void
@@ -307,8 +347,9 @@ export type LabViewActions = {
   setJudge: (draft: LabViewState, view: EvalJudgeQueueView) => void
   setJudgeLoading: (draft: LabViewState, loading: boolean) => void
   setJudgeError: (draft: LabViewState, error: string | null) => void
-  openJudgeCell: (draft: LabViewState, ticket: string | null) => void
-  setJudgeDraft: (draft: LabViewState, criterion: string, value: { pass: boolean; evidence: string }) => void
+  openJudgeTask: (draft: LabViewState, task: string | null) => void
+  setJudgeDraft: (draft: LabViewState, ticket: string, criterion: string, value: { pass: boolean; evidence: string }) => void
+  clearJudgeDraft: (draft: LabViewState, ticket: string) => void
   setJudgeSubmitting: (draft: LabViewState, submitting: boolean) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setReexporting: (draft: LabViewState, reexporting: boolean) => void
@@ -322,7 +363,7 @@ const INITIAL: LabViewState = {
   error: null,
   refreshRev: 0,
   selection: null,
-  page: 'overview',
+  page: 'design',
   detail: null,
   detailLoading: false,
   detailError: null,
@@ -353,7 +394,7 @@ const INITIAL: LabViewState = {
   matrix: null,
   matrixLoading: false,
   matrixError: null,
-  cellsBucket: null,
+  runFilter: 'all',
   cells: null,
   cellsLoading: false,
   cellsError: null,
@@ -372,7 +413,7 @@ const INITIAL: LabViewState = {
   judge: null,
   judgeLoading: false,
   judgeError: null,
-  judgeTicket: null,
+  judgeTask: null,
   judgeDraft: {},
   judgeSubmitting: false,
   exportOpen: false,
@@ -391,9 +432,9 @@ const PER_EXPERIMENT: Pick<
   LabViewState,
   'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal' | 'approveError'
   | 'started' | 'startFollowUps' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
-  | 'cellsBucket' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
+  | 'runFilter' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
-  | 'judge' | 'judgeError' | 'judgeTicket' | 'judgeSubmitting'
+  | 'judge' | 'judgeError' | 'judgeTask' | 'judgeSubmitting'
   | 'exportOpen' | 'reexporting' | 'notice' | 'noticeError'
 > = {
   detail: null,
@@ -411,7 +452,7 @@ const PER_EXPERIMENT: Pick<
   matrixColumn: null,
   matrix: null,
   matrixError: null,
-  cellsBucket: null,
+  runFilter: 'all',
   cells: null,
   cellsError: null,
   cellSelection: null,
@@ -426,7 +467,7 @@ const PER_EXPERIMENT: Pick<
   lookIn: null,
   judge: null,
   judgeError: null,
-  judgeTicket: null,
+  judgeTask: null,
   judgeSubmitting: false,
   exportOpen: false,
   reexporting: false,
@@ -451,9 +492,10 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       refresh: (d) => { d.refreshRev += 1 },
       open: (d, id: string | null) => {
         d.selection = id
-        // Opening an experiment always lands on the overview: the sub-page is
-        // a property of the visit, not of the experiment.
-        d.page = 'overview'
+        // Opening an experiment always lands on 实验设计: the stage is a
+        // property of the visit, not of the experiment, and the design stage
+        // is the one that reads as an answer to «what is this run».
+        d.page = 'design'
         Object.assign(d, PER_EXPERIMENT)
         // Fresh instances, never the constant's: assigning them would alias
         // one array and one object across every experiment the visit opens.
@@ -580,10 +622,10 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setMatrixLoading: (d, loading: boolean) => { d.matrixLoading = loading },
       setMatrixError: (d, error: string | null) => { d.matrixError = error },
 
-      setCellsBucket: (d, bucket: string | null) => {
-        d.cellsBucket = bucket
-        d.cells = null
-      },
+      // The filter narrows rows already in hand, so it does NOT drop the
+      // payload: blanking the list to re-read the same cells is a spinner
+      // where a person expected a subset.
+      setRunFilter: (d, filter: RunFilter) => { d.runFilter = filter },
       setCells: (d, cells: EvalCellsResult) => {
         d.cells = cells
         d.cellsError = null
@@ -629,16 +671,23 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       },
       setJudgeLoading: (d, loading: boolean) => { d.judgeLoading = loading },
       setJudgeError: (d, error: string | null) => { d.judgeError = error },
-      openJudgeCell: (d, ticket: string | null) => {
-        d.judgeTicket = ticket
-        // A half-written answer belongs to the cell it was written against:
-        // carrying it to the next one would let a grader submit evidence
-        // about work they are no longer looking at.
+      openJudgeTask: (d, task: string | null) => {
+        d.judgeTask = task
+        // A half-written answer belongs to the question it was written
+        // against: carrying it to the next item would let a grader submit
+        // evidence about work they are no longer looking at.
         d.judgeDraft = {}
         d.judgeSubmitting = false
       },
-      setJudgeDraft: (d, criterion: string, value: { pass: boolean; evidence: string }) => {
-        d.judgeDraft = { ...d.judgeDraft, [criterion]: value }
+      setJudgeDraft: (d, ticket: string, criterion: string, value: { pass: boolean; evidence: string }) => {
+        d.judgeDraft = { ...d.judgeDraft, [ticket]: { ...(d.judgeDraft[ticket] ?? {}), [criterion]: value } }
+      },
+      // One answer's verdicts landed; the others on screen are still being
+      // written and must survive it.
+      clearJudgeDraft: (d, ticket: string) => {
+        const next = { ...d.judgeDraft }
+        delete next[ticket]
+        d.judgeDraft = next
       },
       setJudgeSubmitting: (d, submitting: boolean) => { d.judgeSubmitting = submitting },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },

@@ -240,8 +240,30 @@ function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView
 
 type Harness = ReturnType<typeof makeHarness>
 
+/**
+ * The design stage is where an experiment OPENS (ui-spec §五 v2), so its two
+ * reads fire on the way to whatever this file is actually about. Neither is
+ * under test here: the stubs exist so the stage that is passed through has
+ * something to render.
+ */
+const DESIGN_STUBS = {
+  fetchPlanReview: async () => ({
+    ok: true as const,
+    value: {
+      planPath: '/repo/plans/p.json', schema: 'dataseek.plan/1', ok: true, errors: 0, warnings: 0,
+      digest: null, checks: [], conditions: [],
+    },
+  }),
+  fetchConditions: async () => ({
+    ok: true as const,
+    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [] },
+  }),
+  fetchConditionDiff: async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } }),
+}
+
 function renderView(h: Harness) {
   const props = {
+    ...DESIGN_STUBS,
     sessionId: 's1' as SessionId,
     useStore: hookOf(h.instance),
     actions: h.actions,
@@ -265,7 +287,7 @@ function renderView(h: Harness) {
 async function openReport(h: Harness) {
   renderView(h)
   fireEvent.click(await screen.findByText('t31-judge-panel'))
-  fireEvent.click(screen.getByRole('button', { name: 'page.report' }))
+  fireEvent.click(screen.getByRole('button', { name: 'page.compare' }))
   await waitFor(() => { expect(h.fetchReport).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
 }
 
@@ -287,6 +309,13 @@ describe('the four invariants', () => {
     expect(screen.getAllByText('invariant.ok')).toHaveLength(2)
     expect(screen.getAllByText('invariant.violated')).toHaveLength(2)
     expect(screen.getAllByText('invariant.unverifiable')).toHaveLength(2)
+    // …and each row explains, on hover, WHY it affects the comparison —
+    // COPY keyed by the invariant's id, so it exists in both languages (a
+    // host-composed Chinese detail string could not).
+    expect(screen.getByTitle('invariant.why.materialization')).toBeTruthy()
+    expect(screen.getByTitle('invariant.why.fingerprint')).toBeTruthy()
+    expect(screen.getByTitle('invariant.why.subject')).toBeTruthy()
+    expect(screen.getByTitle('invariant.why.procedure')).toBeTruthy()
     // The details are what make a status a finding rather than an opinion.
     expect(screen.getByText('两格指纹不同：lab-env:aaaa / lab-env:bbbb')).toBeTruthy()
     expect(screen.getByText('无委派记录')).toBeTruthy()
@@ -352,16 +381,41 @@ describe('the efficiency table', () => {
 
     expect(screen.getByText('report.col.activeMs')).toBeTruthy()
     // ui-spec §九: durations in words, counts compacted. 1_260_000 ms is
-    // 21 minutes exactly, and 12_345 output tokens read as 12.3k.
-    expect(screen.getByText('dur.ms {"m":21,"s":0}')).toBeTruthy()
-    expect(screen.getByText('dur.ms {"m":15,"s":0}')).toBeTruthy()
-    expect(screen.getByText('12.3k')).toBeTruthy()
+    // 21 minutes exactly, and 12_345 output tokens read as 12.3k. Each number
+    // is on screen twice — once in the table and once beside its bar, which
+    // is what the bars are FOR (the ratio at a glance, the fact beside it).
+    expect(screen.getAllByText('dur.ms {"m":21,"s":0}')).toHaveLength(2)
+    expect(screen.getAllByText('dur.ms {"m":15,"s":0}')).toHaveLength(2)
+    expect(screen.getAllByText('12.3k')).toHaveLength(2)
     // cond-b reported no tool-call accounting and no cacheRead: two dashes,
     // never two zeros — "nobody counted" is not "it used none".
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
     // Two models on the table, so the cross-model caveat is in force.
     expect(screen.getByText('report.tokensCrossModel')).toBeTruthy()
     expect(screen.getByText('report.excluded {"total":1,"detail":"cond-b halted × 1"}')).toBeTruthy()
+  })
+
+  it('draws the three metrics as bars, each scaled inside its OWN metric', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    await screen.findByText('report.chart')
+
+    // The three ui-spec §五 v2 names, and nothing summed across them: they
+    // have no common unit, so one shared scale would be a lie with a picture
+    // attached.
+    expect(screen.getByText('report.chart.activeMs')).toBeTruthy()
+    expect(screen.getByText('report.chart.outputTokens')).toBeTruthy()
+    expect(screen.getByText('report.chart.cacheRead')).toBeTruthy()
+    // cond-a is the longest of the two, so its bar is the full track and
+    // cond-b's is the ratio between them (900_000 / 1_260_000 = 71%).
+    const bars = document.querySelectorAll<HTMLElement>('[class*="chartBar"]')
+    expect(bars[0]?.style.width).toBe('100%')
+    expect(bars[1]?.style.width).toBe('71%')
+    // cond-b reported no cacheRead, so the cache-read group carries ONE bar
+    // rather than a zero-length one: «nobody counted» is not «it used none»,
+    // and a bar is the one shape that cannot say the difference.
+    expect(screen.getAllByText('54.3k')).toHaveLength(2)
+    expect(bars).toHaveLength(5)
   })
 })
 

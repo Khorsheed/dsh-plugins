@@ -18,8 +18,11 @@ import {
   BUCKETS, INCIDENTAL_FACTORS, NAMED_FACTORS, bucketPhrase, distinctStates, factorPhrase,
   agreementBand, compactCount, durationParts,
   factorValueText, isNamedFactor, preferredColumn, retryPhrase, shortHash, shortenValue, splitFactors,
+  verdictKey, verdictSourceOf,
   stagePhrase,
 } from '../src/client/vocab.ts'
+import { passesFilter, timelineOf } from '../src/client/RunsPage.tsx'
+import { byItem } from '../src/client/JudgingPage.tsx'
 import { en, zh, type EvalKey } from '../src/client/locales.ts'
 
 /** Every key the table can produce must exist in BOTH dictionaries. */
@@ -204,5 +207,99 @@ describe('numbers and sentences (ui-spec §九, 2026-09-18)', () => {
     for (const band of ['high', 'medium', 'low'] as const) {
       expect(bothHave(`agreement.${band}`), band).toBe(true)
     }
+  })
+})
+
+describe('the verdict source (I5·T67)', () => {
+  it('reads the report\'s own authority order: human-final > llm-draft > script', () => {
+    expect(verdictSourceOf({ 'script': 3, 'llm-draft': 2, 'human-final': 1 })).toBe('human-final')
+    expect(verdictSourceOf({ 'script': 3, 'llm-draft': 2 })).toBe('llm-draft')
+    expect(verdictSourceOf({ 'script': 3 })).toBe('script')
+  })
+
+  it('a namespace with nothing in it is not a verdict, and neither is another namespace', () => {
+    // `orchestrator` is on nearly every cell and says nothing about judging;
+    // a zero count is the ledger having created the namespace, not a verdict.
+    expect(verdictSourceOf({ orchestrator: 12 })).toBeNull()
+    expect(verdictSourceOf({ 'llm-draft': 0 })).toBeNull()
+    expect(verdictSourceOf({})).toBeNull()
+  })
+
+  it('every source has a word in both dictionaries, and so does «not judged»', () => {
+    for (const source of ['human-final', 'llm-draft', 'script'] as const) {
+      expect(bothHave(verdictKey(source)), source).toBe(true)
+    }
+    expect(bothHave(verdictKey(null))).toBe(true)
+  })
+})
+
+describe('the run-record filter (ui-spec §五 v2\'s five)', () => {
+  it('「失败」 is the halted STATE, which mission projects into the done bucket', () => {
+    const halted = { state: 'halted', bucket: 'done' }
+    expect(passesFilter(halted, 'failed')).toBe(true)
+    // …and it is therefore NOT «完成»: a cell that stopped is finished, and
+    // reading it as a success is the whole reason this is not a bucket filter.
+    expect(passesFilter(halted, 'done')).toBe(false)
+    expect(passesFilter(halted, 'all')).toBe(true)
+  })
+
+  it('the other three are the buckets they name', () => {
+    expect(passesFilter({ state: 'archived', bucket: 'done' }, 'done')).toBe(true)
+    expect(passesFilter({ state: 'stage-2', bucket: 'active' }, 'active')).toBe(true)
+    expect(passesFilter({ state: 'pending', bucket: 'blocked' }, 'blocked')).toBe(true)
+    expect(passesFilter({ state: 'pending', bucket: 'ready' }, 'active')).toBe(false)
+  })
+})
+
+describe('the stage timeline (I5·T67)', () => {
+  it('measures each state from the transition that entered it to the one that left', () => {
+    const segments = timelineOf([
+      { from: 'pending', to: 'ws-ready', at: 1_000 },
+      { from: 'ws-ready', to: 'stage-1', at: 4_000 },
+      { from: 'stage-1', to: 'archived', at: 9_000 },
+    ])
+    expect(segments.map(s => s.state)).toEqual(['pending', 'ws-ready', 'stage-1', 'archived'])
+    expect(segments.map(s => s.ms)).toEqual([null, 3_000, 5_000, null])
+  })
+
+  it('the LAST state has no duration — it has not been left yet', () => {
+    // Running it to «now» would make the panel re-measure on every render and
+    // report a number the ledger never recorded.
+    const segments = timelineOf([{ from: 'judged', to: 'archived', at: 60 }])
+    expect(segments).toHaveLength(2)
+    expect(segments[1]?.ms).toBeNull()
+  })
+
+  it('an untimed transition breaks the chain on both sides rather than measuring across the hole', () => {
+    const segments = timelineOf([
+      { from: 'pending', to: 'ws-ready', at: 1_000 },
+      { from: 'ws-ready', to: 'stage-1', at: null },
+      { from: 'stage-1', to: 'archived', at: 9_000 },
+    ])
+    expect(segments.map(s => s.ms)).toEqual([null, null, null, null])
+  })
+
+  it('no history is no timeline, not an empty one with invented rows', () => {
+    expect(timelineOf([])).toEqual([])
+  })
+})
+
+describe('the bench queue, grouped by item (I5·T67)', () => {
+  const cell = (ticket: string, task: string | null, graded: boolean) =>
+    ({ ticket, task, graded } as unknown as Parameters<typeof byItem>[0][number])
+
+  it('gathers the answers to one question and counts how many are graded', () => {
+    const items = byItem([cell('a', 'P0', true), cell('b', 'F2', false), cell('c', 'P0', false)])
+    expect(items.map(item => item.task)).toEqual(['P0', 'F2'])
+    expect(items[0]?.cells.map(entry => entry.ticket)).toEqual(['a', 'c'])
+    expect(items[0]?.graded).toBe(1)
+    expect(items[1]?.graded).toBe(0)
+  })
+
+  it('never reorders inside an item — the seeded order IS part of the blind', () => {
+    // Consecutive numbers must say nothing about which arm produced a cell,
+    // so grouping gathers and does not sort.
+    const items = byItem([cell('c', 'P0', true), cell('a', 'P0', false), cell('b', 'P0', true)])
+    expect(items[0]?.cells.map(entry => entry.ticket)).toEqual(['c', 'a', 'b'])
   })
 })

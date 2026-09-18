@@ -1,8 +1,18 @@
 /**
- * The judge bench (ui-spec §五, step 8): the blind queue on the left, the
- * de-fingerprinted artifacts in the middle, the criteria table on the right —
- * every llm-draft sample beside the box a person types their own verdict
- * into — and the run's agreement numbers across the top.
+ * 人工评估 (ui-spec §五 v2, step 8): the items on the left, and the answers to
+ * ONE item side by side on the right — de-fingerprinted, numbered in the run's
+ * own seeded order, each with its own criteria form and its own button.
+ *
+ * Side by side because a grader reading four answers to the same question
+ * applies one standard to all four, and reading them one page at a time is
+ * exactly how a standard drifts between the first answer and the last. v1
+ * made a person click 「格子 1」, 「格子 2」 in turn and hold the last one in
+ * their head.
+ *
+ * It is NOT a choice between the answers. The verdict contract is unchanged —
+ * one score per cell, written against that cell's own criteria — so every
+ * column carries a full form and records on its own. Putting them beside each
+ * other changes what a grader can SEE, not what the ledger receives.
  *
  * BLIND is the page's whole shape, and it is enforced one layer down: the
  * payload this file renders contains no condition id, no harness, no model
@@ -73,36 +83,35 @@ function Stats(props: { view: EvalJudgeQueueView; t: LabViewProps['t'] }) {
   )
 }
 
-/** One queue group: the cells that still need a verdict, or the ones that have one. */
-function QueueGroup(props: {
-  label: string
-  cells: readonly EvalJudgeQueueCell[]
-  selection: string | null
-  onPick: (ticket: string) => void
-  t: LabViewProps['t']
-}) {
-  const { label, cells, selection, onPick, t } = props
-  return (
-    <>
-      <div className={css.queueGroup}>{label}</div>
-      {cells.map(cell => (
-        <button
-          key={cell.ticket}
-          type="button"
-          className={css.queueRow}
-          aria-pressed={selection === cell.ticket}
-          onClick={() => { onPick(cell.ticket) }}
-        >
-          {/* The cell's whole visible identity: an ordinal and the item. No
-              condition, no harness, no model — and no mission id, which would
-              carry the condition inside it. */}
-          <span className={css.queueNo}>{t('judge.cell', { no: cell.cellNo })}</span>
-          <span className={css.queueTask}>{cell.task ?? DASH}</span>
-          <span className={css.dim}>rep {cell.rep ?? DASH}</span>
-        </button>
-      ))}
-    </>
-  )
+/** One item in the queue: how many answers it has, and how many are graded. */
+interface QueueItem {
+  task: string
+  cells: EvalJudgeQueueCell[]
+  graded: number
+}
+
+/**
+ * Group the blind queue by item, keeping the run's seeded order inside each.
+ *
+ * The order is part of the blind — consecutive numbers say nothing about
+ * which cells share a comparison group — so grouping never sorts the cells,
+ * only gathers them.
+ * @param cells - the queue, in the run's own order.
+ * @returns one entry per item, in first-appearance order.
+ */
+export function byItem(cells: readonly EvalJudgeQueueCell[]): QueueItem[] {
+  const items: QueueItem[] = []
+  for (const cell of cells) {
+    const task = cell.task ?? DASH
+    let entry = items.find(candidate => candidate.task === task)
+    if (entry === undefined) {
+      entry = { task, cells: [], graded: 0 }
+      items.push(entry)
+    }
+    entry.cells.push(cell)
+    if (cell.graded) entry.graded += 1
+  }
+  return items
 }
 
 /** Every llm-draft value on record for one criterion, by blind panel label. */
@@ -129,6 +138,8 @@ function Drafts(props: { drafts: readonly EvalJudgeDraftSample[]; t: LabViewProp
 
 /** One criterion: what the rubric asks, what the judges said, what the person says. */
 function CriterionRow(props: {
+  /** Which answer this row belongs to — several are on screen at once. */
+  no: number
   criterion: EvalJudgeCriterionRow
   drafts: readonly EvalJudgeDraftSample[]
   recorded: { pass: boolean; evidence: string | null } | undefined
@@ -136,7 +147,7 @@ function CriterionRow(props: {
   onAnswer: (value: { pass: boolean; evidence: string }) => void
   t: LabViewProps['t']
 }) {
-  const { criterion, drafts, recorded, answer, onAnswer, t } = props
+  const { no, criterion, drafts, recorded, answer, onAnswer, t } = props
   const evidence = answer?.evidence ?? ''
   return (
     <div className={css.criterionRow}>
@@ -190,7 +201,9 @@ function CriterionRow(props: {
           value={evidence}
           onChange={(event) => { onAnswer({ pass: answer?.pass ?? true, evidence: event.target.value }) }}
           placeholder={t('judge.evidencePlaceholder')}
-          aria-label={`${t('judge.evidence')} ${criterion.id}`}
+          // The answer's own number is in the label: side by side, four boxes
+          // named 「证据 H1」 are four boxes a screen reader cannot tell apart.
+          aria-label={`${t('judge.column', { no })} ${t('judge.evidence')} ${criterion.id}`}
         />
         {answer === undefined && <span className={css.dim}>{t('judge.unanswered')}</span>}
       </div>
@@ -199,23 +212,120 @@ function CriterionRow(props: {
 }
 
 /**
- * The judge bench body.
- * @param props - the blind queue, the open cell's draft answers, and the one write.
+ * One answer's column: the material, the criteria, and its own button.
+ * @param props - the blind cell, this column's draft answers, and the write.
+ */
+function AnswerColumn(props: {
+  cell: EvalJudgeQueueCell
+  draft: Record<string, { pass: boolean; evidence: string }>
+  /**
+   * Whether ANY column's submission is in flight. Shared on purpose: a write
+   * lands and the queue is re-read, so every column beside it is about to be
+   * replaced — letting a second one send against the material it is holding
+   * would record a verdict about a version of the page that is already gone.
+   */
+  submitting: boolean
+  onAnswer: (criterion: string, value: { pass: boolean; evidence: string }) => void
+  onSubmit: () => void
+  t: LabViewProps['t']
+}) {
+  const { cell, draft, submitting, onAnswer, onSubmit, t } = props
+  const recordedByCriterion = new Map<string, { pass: boolean; evidence: string | null }>()
+  for (const verdict of cell.humanFinal) {
+    // Append-only means a criterion can carry several; the latest is the one
+    // the report reads, so it is the one shown beside the input.
+    recordedByCriterion.set(verdict.criterion, { pass: verdict.pass, evidence: verdict.evidence })
+  }
+  // Only answers with evidence are sendable — the host refuses a blank one,
+  // and a button that could produce that refusal is a worse button.
+  const answers = Object.entries(draft).filter(([, value]) => value.evidence.trim() !== '')
+  return (
+    <div className={css.answerColumn}>
+      <div className={css.sectionTitle}>
+        <span>{t('judge.column', { no: cell.cellNo })}</span>
+        <span className={css.sectionMeta}>rep {cell.rep ?? DASH}</span>
+      </div>
+      {cell.graded && <div className={css.notice}>{t('judge.regrade')}</div>}
+      {/* The cost of the first verdict on this answer. The report scores a
+          cell from ONE namespace — the most authoritative that has any
+          verdict — so a single human answer here drops every llm-draft-only
+          criterion from this cell's score. The bench cannot change that rule
+          without moving every report ever produced; what it can do is refuse
+          to let a person spend it unknowingly. */}
+      {cell.draftOnlyCriteria.length > 0 && (
+        <div className={css.blocked}>
+          {t('judge.scoringWarning', {
+            count: cell.draftOnlyCriteria.length,
+            criteria: cell.draftOnlyCriteria.join(', '),
+          })}
+        </div>
+      )}
+
+      <div className={css.judgeMaterial}>
+        {cell.materials.length === 0
+          ? <div className={css.dim}>{t('judge.materialNone')}</div>
+          : cell.materials.map(material => (
+            <div key={material.path}>
+              <div className={css.materialHead}>
+                <span className={css.mono}>{material.path}</span>
+                <span className={css.dim}>{t('judge.scrubbed', { count: material.replacements })}</span>
+              </div>
+              {/* The stage file VERBATIM, after scrubbing: a summary would
+                  hide exactly what a verdict has to rest on. */}
+              <pre className={css.pre}>{material.text}</pre>
+            </div>
+          ))}
+      </div>
+
+      {cell.criteria.length === 0
+        ? <div className={css.dim}>{t('judge.criteriaNone', { reason: cell.criteriaNote ?? DASH })}</div>
+        : cell.criteria.map(criterion => (
+          <CriterionRow
+            key={criterion.id}
+            no={cell.cellNo}
+            criterion={criterion}
+            drafts={cell.drafts.filter(sample => sample.criterion === criterion.id)}
+            recorded={recordedByCriterion.get(criterion.id)}
+            answer={draft[criterion.id]}
+            onAnswer={(value) => { onAnswer(criterion.id, value) }}
+            t={t}
+          />
+        ))}
+      {cell.criteria.length > 0 && (
+        <div className={css.actions}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={submitting || answers.length === 0}
+            onClick={onSubmit}
+          >
+            {submitting ? t('judge.submitting') : t('judge.submitOne', { no: cell.cellNo, count: answers.length })}
+          </Button>
+          {answers.length === 0 && <span className={css.dim}>{t('judge.submitBlocked')}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The human-review body.
+ * @param props - the blind queue, the open item's draft answers, and the write.
  */
 export function JudgingPage(props: {
   view: EvalJudgeQueueView | null
   loading: boolean
   error: string | null
-  /** The open cell's ticket, or null while the queue is showing. */
+  /** The open ITEM, or null while the queue is showing. */
   selection: string | null
-  /** criterion id → the verdict being composed for the open cell. */
-  draft: Record<string, { pass: boolean; evidence: string }>
+  /** ticket → criterion id → the verdict being composed. */
+  draft: Record<string, Record<string, { pass: boolean; evidence: string }>>
   submitting: boolean
   /** Whether a one-click re-export is in flight. */
   reexporting: boolean
-  onPick: (ticket: string | null) => void
-  onAnswer: (criterion: string, value: { pass: boolean; evidence: string }) => void
-  onSubmit: () => void
+  onPick: (task: string | null) => void
+  onAnswer: (ticket: string, criterion: string, value: { pass: boolean; evidence: string }) => void
+  onSubmit: (ticket: string) => void
   /** Repeat the run's recorded export so the bundle carries these verdicts. */
   onReexport: () => void
   t: LabViewProps['t']
@@ -228,29 +338,15 @@ export function JudgingPage(props: {
   // is looking at and nothing else on the page (or in the ledger) depends on
   // it. Filtering never reorders: the seeded order IS part of the blind.
   const [mode, setMode] = useState<'all' | 'ungraded' | 'graded'>('all')
-  const [task, setTask] = useState<string | null>(null)
 
   if (error !== null) return <ErrorState what={t('judge.error')} message={error} t={t} />
   if (view === null) return <div className={css.empty}>{t('judge.loading')}</div>
 
-  const open = view.cells.find(cell => cell.ticket === selection) ?? null
-  const shown = view.cells.filter(cell => (
-    (mode === 'all' || (mode === 'ungraded' ? !cell.graded : cell.graded))
-    && (task === null || cell.task === task)
+  const items = byItem(view.cells)
+  const shown = items.filter(item => (
+    mode === 'all' || (mode === 'ungraded' ? item.graded < item.cells.length : item.graded === item.cells.length)
   ))
-  const ungraded = shown.filter(cell => !cell.graded)
-  const graded = shown.filter(cell => cell.graded)
-  // Offered only when the run has more than one item to pick between.
-  const tasks = [...new Set(view.cells.map(cell => cell.task).filter((v): v is string => v !== null))].sort()
-  // Only answers with evidence are sendable — the host refuses a blank one,
-  // and a button that could produce that refusal is a worse button.
-  const answers = Object.entries(draft).filter(([, value]) => value.evidence.trim() !== '')
-  const recordedByCriterion = new Map<string, { pass: boolean; evidence: string | null }>()
-  for (const verdict of open?.humanFinal ?? []) {
-    // Append-only means a criterion can carry several; the latest is the one
-    // the report reads, so it is the one shown beside the input.
-    recordedByCriterion.set(verdict.criterion, { pass: verdict.pass, evidence: verdict.evidence })
-  }
+  const open = items.find(item => item.task === selection) ?? null
 
   return (
     <div className={css.judgePage}>
@@ -298,114 +394,39 @@ export function JudgingPage(props: {
                     </button>
                   ))}
               </div>
-              {tasks.length > 1 && (
-                <div className={css.matrixBar}>
-                  <span className={css.fieldLabel}>{t('judge.filterTask')}</span>
-                  <button
-                    type="button"
-                    className={css.chip}
-                    aria-pressed={task === null}
-                    onClick={() => { setTask(null) }}
-                  >
-                    {t('judge.filterAll')}
-                  </button>
-                  {tasks.map(entry => (
-                    <button
-                      key={entry}
-                      type="button"
-                      className={css.chip}
-                      aria-pressed={task === entry}
-                      onClick={() => { setTask(entry) }}
-                    >
-                      {entry}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <QueueGroup
-                label={t('judge.ungraded', { count: ungraded.length })}
-                cells={ungraded} selection={selection} onPick={onPick} t={t}
-              />
-              <QueueGroup
-                label={t('judge.graded', { count: graded.length })}
-                cells={graded} selection={selection} onPick={onPick} t={t}
-              />
+              {shown.map(item => (
+                <button
+                  key={item.task}
+                  type="button"
+                  className={css.queueRow}
+                  aria-pressed={selection === item.task}
+                  onClick={() => { onPick(item.task) }}
+                >
+                  <span className={css.queueTask}>{t('judge.itemCount', { task: item.task, count: item.cells.length })}</span>
+                  <span className={css.dim}>{t('judge.graded', { count: item.graded })}</span>
+                </button>
+              ))}
             </div>
 
             {open === null
-              ? <EmptyState title={t('judge.pick')} hint={t('judge.pickHint')} />
+              ? <EmptyState title={t('judge.itemPick')} hint={t('judge.pickHint')} />
               : (
-                <>
-                  <div className={css.judgeMaterial}>
-                    <div className={css.sectionTitle}>{t('judge.material')}</div>
-                    {open.materials.length === 0
-                      ? <div className={css.dim}>{t('judge.materialNone')}</div>
-                      : open.materials.map(material => (
-                        <div key={material.path}>
-                          <div className={css.materialHead}>
-                            <span className={css.mono}>{material.path}</span>
-                            <span className={css.dim}>{t('judge.scrubbed', { count: material.replacements })}</span>
-                          </div>
-                          {/* The stage file VERBATIM, after scrubbing: a
-                              summary would hide exactly what a verdict has to
-                              rest on. */}
-                          <pre className={css.pre}>{material.text}</pre>
-                        </div>
-                      ))}
+                <div className={css.bench}>
+                  <div className={css.dim}>{t('judge.sideBySide')}</div>
+                  <div className={css.benchColumns}>
+                    {open.cells.map(cell => (
+                      <AnswerColumn
+                        key={cell.ticket}
+                        cell={cell}
+                        draft={draft[cell.ticket] ?? {}}
+                        submitting={submitting}
+                        onAnswer={(criterion, value) => { onAnswer(cell.ticket, criterion, value) }}
+                        onSubmit={() => { onSubmit(cell.ticket) }}
+                        t={t}
+                      />
+                    ))}
                   </div>
-
-                  <div className={css.judgeCriteria}>
-                    <div className={css.sectionTitle}>
-                      {t('judge.cellTitle', { no: open.cellNo, task: open.task ?? DASH, rep: open.rep ?? DASH })}
-                    </div>
-                    {open.graded && <div className={css.notice}>{t('judge.regrade')}</div>}
-                    {/* The cost of the first verdict on this cell. The report
-                        scores a cell from ONE namespace — the most
-                        authoritative that has any verdict — so a single human
-                        answer here drops every llm-draft-only criterion from
-                        this cell's score. The bench cannot change that rule
-                        without moving every report ever produced; what it can
-                        do is refuse to let a person spend it unknowingly. */}
-                    {open.draftOnlyCriteria.length > 0 && (
-                      <div className={css.blocked}>
-                        {t('judge.scoringWarning', {
-                          count: open.draftOnlyCriteria.length,
-                          criteria: open.draftOnlyCriteria.join(', '),
-                        })}
-                      </div>
-                    )}
-                    {open.criteria.length === 0
-                      ? (
-                        <div className={css.dim}>
-                          {t('judge.criteriaNone', { reason: open.criteriaNote ?? DASH })}
-                        </div>
-                      )
-                      : open.criteria.map(criterion => (
-                        <CriterionRow
-                          key={criterion.id}
-                          criterion={criterion}
-                          drafts={open.drafts.filter(sample => sample.criterion === criterion.id)}
-                          recorded={recordedByCriterion.get(criterion.id)}
-                          answer={draft[criterion.id]}
-                          onAnswer={(value) => { onAnswer(criterion.id, value) }}
-                          t={t}
-                        />
-                      ))}
-                    {open.criteria.length > 0 && (
-                      <div className={css.actions}>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          disabled={submitting || answers.length === 0}
-                          onClick={onSubmit}
-                        >
-                          {submitting ? t('judge.submitting') : t('judge.submit', { count: answers.length })}
-                        </Button>
-                        {answers.length === 0 && <span className={css.dim}>{t('judge.submitBlocked')}</span>}
-                      </div>
-                    )}
-                  </div>
-                </>
+                </div>
               )}
           </div>
         )}

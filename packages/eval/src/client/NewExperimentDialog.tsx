@@ -1,6 +1,15 @@
 /**
- * The 新建实验 form — ui-spec §五's one list action, and step 2 of the
+ * The 新建实验 WIZARD — ui-spec §五 v2's one list action, and step 2 of the
  * eight-step flow for the person who does not want to write JSON.
+ *
+ * Four steps since I5·T67 (① dataset and items ② comparison groups ③ judges,
+ * reps and budget ④ environment and confirm), because one bare form asked
+ * twenty questions at once with no order and no sense of how far along you
+ * were, and the first two of them decide what the rest can even offer. Every
+ * step goes back; nothing is written until the last one. The wizard is only
+ * a way of COLLECTING — the same `draftExperiment` verb receives the same
+ * document at the end, so a plan filled in here and a plan an agent drafts in
+ * one sentence are still the same file in the same list.
  *
  * It is the same verb the agent's `eval_plan_draft` calls. That is the whole
  * design: a plan drafted here and a plan drafted in one sentence in the
@@ -123,6 +132,7 @@ export function NewExperimentDialog(props: {
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [step, setStep] = useState(1)
   const errorRef = useRef<HTMLDivElement | null>(null)
 
   // A refusal lands at the BOTTOM of a form that scrolls, so on a long one it
@@ -161,9 +171,17 @@ export function NewExperimentDialog(props: {
   const mintedName = mintOpen ? mintId.trim() : ''
   const changedFields = MINT_FIELDS.filter(field => mint[field].trim() !== '')
 
-  const canSubmit = name.trim() !== '' && setId !== '' && items.length > 0 && stages.length > 0
-    && (conditions.length > 0 || mintedName !== '')
-    && (!mintOpen || (mintedName !== '' && mintFrom.trim() !== '' && changedFields.length > 0))
+  // What each step needs before it may be left. The LAST step has no gate of
+  // its own — everything it holds has a default (ui-spec §五 v2) — so the
+  // submit guard is the conjunction of the three before it.
+  const stepOk: Readonly<Record<number, boolean>> = {
+    1: name.trim() !== '' && setId !== '' && items.length > 0,
+    2: (conditions.length > 0 || mintedName !== '')
+      && (!mintOpen || (mintedName !== '' && mintFrom.trim() !== '' && changedFields.length > 0)),
+    3: stages.length > 0,
+    4: true,
+  }
+  const canSubmit = [1, 2, 3].every(entry => stepOk[entry] === true)
 
   const submit = (): void => {
     setBusy(true)
@@ -222,9 +240,25 @@ export function NewExperimentDialog(props: {
       footer={(
         <>
           <Button size="sm" onClick={onClose}>{t('new.cancel')}</Button>
-          <Button size="sm" variant="primary" disabled={busy || !canSubmit} onClick={submit}>
-            {busy ? t('new.saving') : t('new.save')}
-          </Button>
+          {/* Every step goes back, and back never discards: the answers live
+              above this component's steps, not inside them. */}
+          <Button size="sm" disabled={step === 1} onClick={() => { setStep(step - 1) }}>{t('new.back')}</Button>
+          {step < 4
+            ? (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={stepOk[step] !== true}
+                onClick={() => { setStep(step + 1) }}
+              >
+                {t('new.next')}
+              </Button>
+            )
+            : (
+              <Button size="sm" variant="primary" disabled={busy || !canSubmit} onClick={submit}>
+                {busy ? t('new.saving') : t('new.save')}
+              </Button>
+            )}
         </>
       )}
     >
@@ -232,6 +266,19 @@ export function NewExperimentDialog(props: {
         {loadError !== null && <ErrorState what={t('new.optionsError')} message={loadError} compact t={t} />}
         {(options?.notes ?? []).map(note => <div key={note} className={css.note}>{note}</div>)}
 
+        {/* Where you are, and how far there is to go. */}
+        <div className={css.stepper}>
+          {([1, 2, 3, 4] as const).map(entry => (
+            <span key={entry} className={css.stepDot} data-current={step === entry ? '' : undefined} data-done={entry < step ? '' : undefined}>
+              {t(`new.step${entry}`)}
+            </span>
+          ))}
+          <span className={css.barSpacer} />
+          <span className={css.dim}>{t('new.step', { step })}</span>
+        </div>
+
+        {step === 1 && (
+        <>
         <Row label={t('new.name')}>
           <Input value={name} onChange={(e) => { setName(e.target.value) }}
             placeholder={t('new.namePlaceholder')} aria-label={t('new.name')} />
@@ -264,6 +311,11 @@ export function NewExperimentDialog(props: {
             empty={t('new.itemsEmpty')}
           />
         </Row>
+        </>
+        )}
+
+        {step === 2 && (
+        <>
         <Row label={t('new.conditions')}>
           <PickList
             ids={available.map(row => row.id)}
@@ -316,6 +368,11 @@ export function NewExperimentDialog(props: {
             </div>
           </div>
         )}
+        </>
+        )}
+
+        {step === 3 && (
+        <>
         <Row label={t('new.judges')}>
           <PickList
             ids={available.map(row => row.id)}
@@ -341,18 +398,23 @@ export function NewExperimentDialog(props: {
         <Row label={t('new.reps')}>
           <Input value={reps} onChange={(e) => { setReps(e.target.value) }} aria-label={t('new.reps')} />
         </Row>
+        <Row label={t('new.budget')}>
+          <Input value={activeMinutes} onChange={(e) => { setActiveMinutes(e.target.value) }}
+            placeholder={t('new.activeMinutes')} aria-label={t('new.activeMinutes')} />
+          <Input value={turns} onChange={(e) => { setTurns(e.target.value) }}
+            placeholder={t('new.turns')} aria-label={t('new.turns')} />
+        </Row>
+        </>
+        )}
+
+        {step === 4 && (
+        <>
         <Row label={t('new.seed')}>
           <Input value={seed} onChange={(e) => { setSeed(e.target.value) }} aria-label={t('new.seed')} />
           <label className={css.guardedItem}>
             <input type="checkbox" checked={interleave} onChange={(e) => { setInterleave(e.target.checked) }} />
             <span>{t('new.interleave')}</span>
           </label>
-        </Row>
-        <Row label={t('new.budget')}>
-          <Input value={activeMinutes} onChange={(e) => { setActiveMinutes(e.target.value) }}
-            placeholder={t('new.activeMinutes')} aria-label={t('new.activeMinutes')} />
-          <Input value={turns} onChange={(e) => { setTurns(e.target.value) }}
-            placeholder={t('new.turns')} aria-label={t('new.turns')} />
         </Row>
         <Row label={t('new.unit')}>
           <Input value={unitImage} onChange={(e) => { setUnitImage(e.target.value) }}
@@ -371,6 +433,9 @@ export function NewExperimentDialog(props: {
             placeholder={t('new.notesPlaceholder')} aria-label={t('new.notes')} />
         </Row>
         <div className={css.dim}>{t('new.notStarting')}</div>
+        </>
+        )}
+        {step < 4 && stepOk[step] !== true && <div className={css.dim}>{t('new.stepBlocked')}</div>}
         {error !== null && (
           <div ref={errorRef}>
             <ErrorState what={t('new.error')} message={error} compact t={t} />

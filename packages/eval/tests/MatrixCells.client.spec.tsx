@@ -109,7 +109,7 @@ const CELLS: EvalCellsResult = {
     {
       missionId: 'p0-codex-a-rep1', task: 'P0', condition: 'codex-a', rep: 1, state: 'archived', bucket: 'done',
       attempt: 2, inStateMs: 120_000, refs: { resource: 'unit-b', fingerprint: null }, checkpoints: ['stage1'],
-      annotations: { orchestrator: 4 }, childSessionId: 'child-c',
+      annotations: { orchestrator: 4, 'llm-draft': 2 }, childSessionId: 'child-c',
     },
     {
       missionId: 'p0-codex-b-rep1', task: 'P0', condition: 'codex-b', rep: 1, state: 'stage-2', bucket: 'active',
@@ -182,8 +182,30 @@ function makeHarness() {
 type Harness = ReturnType<typeof makeHarness>
 
 /** Everything but the locale seat — shared with the real-dictionary render below. */
+/**
+ * The design stage is where an experiment OPENS (ui-spec §五 v2), so its two
+ * reads fire on the way to whatever this file is actually about. Neither is
+ * under test here: the stubs exist so the stage that is passed through has
+ * something to render.
+ */
+const DESIGN_STUBS = {
+  fetchPlanReview: async () => ({
+    ok: true as const,
+    value: {
+      planPath: '/repo/plans/p.json', schema: 'dataseek.plan/1', ok: true, errors: 0, warnings: 0,
+      digest: null, checks: [], conditions: [],
+    },
+  }),
+  fetchConditions: async () => ({
+    ok: true as const,
+    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [] },
+  }),
+  fetchConditionDiff: async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } }),
+}
+
 function propsOf(h: Harness) {
   return {
+    ...DESIGN_STUBS,
     sessionId: 's1' as SessionId,
     useSession: undefined,
     useInput: undefined,
@@ -237,7 +259,7 @@ afterEach(() => { cleanup() })
 describe('the matrix page', () => {
   it('renders rows as items, the chosen factor as the columns, and the dots per rep', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.matrix')
+    await openPage(h, 'page.runs')
     await waitFor(() => { expect(h.fetchMatrix).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
 
     expect(screen.getByText('matrix.task')).toBeTruthy()
@@ -250,10 +272,13 @@ describe('the matrix page', () => {
     expect(screen.getByText(/factor\.scope\s+b/)).toBeTruthy()
     // Which factor separates the columns is said once, in words, above the table.
     expect(screen.getByText(/matrix\.columnIs/)).toBeTruthy()
-    // The row header is the item, and each cell's stage comes from the word table.
+    // The row header is the item, and each seat's stage comes from the word
+    // table. The grid and the run-record list are ONE page now (ui-spec §五
+    // v2), so each state word is on screen twice — in the seat and in the
+    // row — which is the merge working, not a duplicate rendering.
     expect(screen.getByText('P0')).toBeTruthy()
-    expect(screen.getByText('stage.archived')).toBeTruthy()
-    expect(screen.getByText('stage.stage-2')).toBeTruthy()
+    expect(screen.getAllByText('stage.archived').length).toBe(2)
+    expect(screen.getAllByText('stage.stage-2').length).toBe(2)
     // One dot per rep, labelled so a reader (and a screen reader) can tell them apart.
     expect(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-a".*"stage":"stage\.archived"/)).toBeTruthy()
     expect(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-b".*"stage":"stage\.stage-2"/)).toBeTruthy()
@@ -268,7 +293,7 @@ describe('the matrix page', () => {
       ok: true,
       value: { ...MATRIX, factors: ['env.keys', 'home.sha', 'model.declared'], column: 'env.keys' },
     })
-    await openPage(h, 'page.matrix')
+    await openPage(h, 'page.runs')
     await waitFor(() => {
       expect(h.fetchMatrix).toHaveBeenLastCalledWith('s1', { runId: 'run-1', column: 'model.declared' })
     })
@@ -276,7 +301,7 @@ describe('the matrix page', () => {
 
   it('shows the two per-cell warnings and the run-level summary', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.matrix')
+    await openPage(h, 'page.runs')
     await screen.findByText('matrix.task')
     // The two warnings are chips now; the sentence rides on the chip's title.
     expect(screen.getByText('matrix.hashMismatchChip')).toBeTruthy()
@@ -291,7 +316,7 @@ describe('the matrix page', () => {
 
   it('re-arranges when the reader moves the column factor', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.matrix')
+    await openPage(h, 'page.runs')
     await screen.findByText('matrix.task')
     openArrange()
     // A factor is offered twice — as the column and as a band — so the first
@@ -305,7 +330,7 @@ describe('the matrix page', () => {
 
   it('bands the rows by a remaining factor', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.matrix')
+    await openPage(h, 'page.runs')
     await screen.findByText('matrix.task')
     openArrange()
     // `harness.name` is not the column here, so it is offered as a band.
@@ -318,7 +343,7 @@ describe('the matrix page', () => {
 
   it('clicking a rep dot opens that cell on the cells page', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.matrix')
+    await openPage(h, 'page.runs')
     await screen.findByText('matrix.task')
     fireEvent.click(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-a"/))
     await waitFor(() => {
@@ -328,43 +353,85 @@ describe('the matrix page', () => {
 })
 
 describe('the cells page and its drawer', () => {
-  it('lists the run\'s cells and filters by bucket', async () => {
+  it('lists the run\'s records and applies the five filters in the browser', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.cells')
+    await openPage(h, 'page.runs')
     await waitFor(() => { expect(h.fetchCells).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
-    expect(screen.getByText('cells.matched {"matched":2,"total":2}')).toBeTruthy()
-    // The bucket chips carry the word and the run's own count for it.
-    fireEvent.click(screen.getByRole('button', { name: /^bucket\.active/ }))
+    expect(screen.getByText('runs.filtered {"matched":2,"total":2}')).toBeTruthy()
+    expect(screen.getByText('P0 × codex-a × 1')).toBeTruthy()
+    expect(screen.getByText('P0 × codex-b × 1')).toBeTruthy()
+
+    // ui-spec §五 v2's five, and they narrow rows already in hand: one read
+    // per run, so the counts beside the chips count one population and
+    // 「失败」 (the `halted` STATE, which mission projects into `done`) can be
+    // one of them at all.
+    fireEvent.click(screen.getByRole('button', { name: /^runs\.filter\.active/ }))
     await waitFor(() => {
-      expect(h.fetchCells).toHaveBeenLastCalledWith('s1', { runId: 'run-1', bucket: 'active' })
+      expect(screen.queryByText('P0 × codex-a × 1')).toBeNull()
     })
+    expect(screen.getByText('P0 × codex-b × 1')).toBeTruthy()
+    expect(screen.getByText('runs.filtered {"matched":1,"total":2}')).toBeTruthy()
+    expect(h.fetchCells).toHaveBeenCalledTimes(1)
   })
 
-  it('clicking a row opens the drawer with the unit, checkpoints, annotations and the verify output verbatim', async () => {
+  it('says which verdict source each record carries — in the row AND in its grid seat', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.cells')
+    await openPage(h, 'page.runs')
+    await waitFor(() => { expect(h.fetchCells).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+
+    // 有判定即显示 (ui-spec §五 v2), and the grid reads it off the list's own
+    // payload — one read, no projection field, no second scoring rule.
+    expect(screen.getAllByText('verdict.llm')).toHaveLength(2)
+    // A record with nothing recorded says so rather than showing a blank.
+    expect(screen.getByText('verdict.none')).toBeTruthy()
+  })
+
+  it('opens ONE record: the verdict, the timeline, the parameters, the attachments — and verify verbatim', async () => {
+    const h = makeHarness()
+    await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await waitFor(() => { expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-codex-a-rep1' }) })
 
-    expect(await screen.findByText('unit-b')).toBeTruthy()
+    // The head answers «did this work» before any field does (ui-spec §五 v2).
+    // 成功 / 异常 is the LEDGER's: `halted` is the state that says it stopped.
+    expect(await screen.findByText('record.ok')).toBeTruthy()
+    // The verdict SOURCE, in the head and in the parameter table; the number
+    // is on the results page and the panel says so.
+    expect(screen.getAllByText('verdict.script').length).toBe(2)
+    expect(screen.getByText('record.scoreWhere')).toBeTruthy()
+
+    // The timeline, from the ledger's own transition times.
+    expect(screen.getByText('record.timeline')).toBeTruthy()
+    expect(screen.getAllByText('stage.judged').length).toBeGreaterThan(0)
+
+    // A key-value table, not a JSON dump.
+    expect(screen.getByText('record.param.material')).toBeTruthy()
     expect(screen.getByText('deadbeef')).toBeTruthy()
-    expect(screen.getByText('stage1 → archive')).toBeTruthy()
-    expect(screen.getByText('archive/workspace (archive)')).toBeTruthy()
+    expect(screen.getByText('record.param.unit')).toBeTruthy()
+    expect(screen.getByText('unit-b')).toBeTruthy()
+
+    // Artifacts named in words, with the path on the hover — and the one
+    // honest sentence about what this tab still cannot do with them.
+    expect(screen.getByText('artifact.archive')).toBeTruthy()
+    expect(screen.getByText('workspace')).toBeTruthy()
+    expect(screen.getByText('record.filePending')).toBeTruthy()
+
     // The probe line AND the raw payload — a summary would drop the exit code.
     // ui-spec §五 keeps verify verbatim; only the verdict word is ours.
     expect(screen.getByText('drawer.probeFailed')).toBeTruthy()
     expect(screen.getByText(/probe-skipped/)).toBeTruthy()
     expect(screen.getByText(/not applicable this round/)).toBeTruthy()
     expect(screen.getByText(/"kind": "probes"/)).toBeTruthy()
-    // The retry that opened attempt 2 is on the record, in the word table's
-    // vocabulary rather than mission's own token.
+    // The receipts — attempts, checkpoints, annotation namespaces — are kept
+    // and folded, with the retry still in the word table's vocabulary.
+    expect(screen.getByText(/drawer\.checkpoints.*stage1 → archive/)).toBeTruthy()
     expect(screen.getAllByText('retry.cat.infrastructure').length).toBeGreaterThan(0)
     expect(screen.getByText(/the container died mid-round/)).toBeTruthy()
   })
 
   it('re-runs with a reason and a category, and refuses to send a blank one', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.cells')
+    await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await screen.findByText('unit-b')
 
@@ -389,7 +456,7 @@ describe('the cells page and its drawer', () => {
 
   it('asks the release gate and reports its answer', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.cells')
+    await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await screen.findByText('unit-b')
     fireEvent.click(screen.getByRole('button', { name: 'action.release' }))
@@ -401,7 +468,7 @@ describe('the cells page and its drawer', () => {
 
   it('opens the delegation\'s child session through the host, and disables the button without one', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.cells')
+    await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await screen.findByText('unit-b')
     fireEvent.click(screen.getByRole('button', { name: 'drawer.openSession' }))
@@ -420,7 +487,7 @@ describe('the cells page and its drawer', () => {
 describe('the export dialog', () => {
   it('walks plan → per-guarded-layer confirmation → export, and cannot export before the plan', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.cells')
+    await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await screen.findByText('unit-b')
     fireEvent.click(screen.getByRole('button', { name: 'action.export' }))
@@ -454,7 +521,7 @@ describe('the export dialog', () => {
 
   it('editing a field after the check drops the confirmations — they belonged to the layer set they were ticked on', async () => {
     const h = makeHarness()
-    await openPage(h, 'page.cells')
+    await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await screen.findByText('unit-b')
     fireEvent.click(screen.getByRole('button', { name: 'action.export' }))
