@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-19-reader-session-memory.md
+.agents/notes/implemented/feature/2026-09-19-reader-session-memory.md: 270e8c07a0026049668523100b85c64fd006ad0c
+.agents/notes/implemented/feature/2026-09-19-reader-session-memory.zh.md: 61e2b57d07733d8db922418b2fb22d37d8a4d8ab

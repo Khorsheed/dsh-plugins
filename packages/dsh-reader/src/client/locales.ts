@@ -36,6 +36,7 @@ export type ReaderKey =
   | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
   | 'preview.empty' | 'preview.unreachable' | 'preview.http'
   | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
+  | 'detail.refetch' | 'detail.refetching' | 'detail.refetchTitle'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
   | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
@@ -141,6 +142,9 @@ export const en = {
   'preview.http': 'the site answered with an HTTP error',
   'detail.linkOnlyBadge': 'Link only',
   'detail.fetchingBody': 'Fetching the full text…',
+  'detail.refetch': 'Fetch again',
+  'detail.refetching': 'Fetching…',
+  'detail.refetchTitle': 'Fetch this article again — what is on screen is the copy fetched earlier',
   'detail.removeLink': 'Delete this link',
 
   'state.loading': 'Loading…',
@@ -306,6 +310,9 @@ export const zh = {
   'preview.http': '这个站点返回了 HTTP 错误',
   'detail.linkOnlyBadge': '仅链接',
   'detail.fetchingBody': '正在抓取正文…',
+  'detail.refetch': '重新抓取',
+  'detail.refetching': '抓取中',
+  'detail.refetchTitle': '重新抓取这篇正文 —— 现在看到的是之前抓下来的版本',
   'detail.removeLink': '删除这条链接',
 
   'state.loading': '加载中…',
