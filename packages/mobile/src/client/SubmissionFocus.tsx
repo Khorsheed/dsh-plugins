@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { queuedRows } from './queue.ts'
+import type { LegacyQueuedMessage, MobileInboxState } from './queue.ts'
 
 type Receipt = { id: string; text: string }
 const textOf = (content: unknown): string => Array.isArray(content) ? content.map(b => b?.type === 'text' ? b.text : '').join('') : ''
@@ -54,9 +56,12 @@ export class SubmissionFocus {
   dispose() { this.attempt = undefined; this.doc.removeEventListener('pointerdown', this.click, true); this.doc.removeEventListener('keydown', this.key, true) }
 }
 
-export function MobileSubmissionFocus({ useConversation, useSession }: PropsRuntime<'conversation.session.header.actions'>) {
+export function MobileSubmissionFocus({ useConversation, useSession, useProjection }: PropsRuntime<'conversation.session.header.actions'>) {
   const receipts = useConversation(s => JSON.stringify(acceptedMessages((s.views as { get(key: string): unknown }).get('chat'))))
-  const queue = useSession(s => s.queue)
+  // Same dual-line queue read as MobileQueue: alpha.2's inbox projection, else the 0.1.5 snapshot queue.
+  const legacyQueue = useSession(s => (s as { queue?: readonly LegacyQueuedMessage[] }).queue)
+  const inbox = (useProjection === undefined ? undefined : useProjection('inbox')) as unknown as MobileInboxState | undefined
+  const queue = useMemo(() => queuedRows(legacyQueue, inbox), [legacyQueue, inbox])
   const controller = useRef<SubmissionFocus>()
   useEffect(() => { const focus = new SubmissionFocus(document); controller.current = focus; return () => focus.dispose() }, [])
   useEffect(() => { controller.current?.update([...JSON.parse(receipts) as Receipt[], ...queue.map(row => ({ id: `queue:${row.id}`, text: textOf(row.content) }))]) }, [receipts, queue])

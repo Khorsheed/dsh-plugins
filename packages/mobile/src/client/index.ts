@@ -7,7 +7,7 @@ import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
 import { MobilePresentation } from './presentation.ts'
 import { DirectoryFlow, MobileDirectoryOverlay } from './DirectoryFlow.tsx'
 import { MobileDirectory, installMobileDirectoryPicker } from './directory.ts'
-import { MobileNavigation } from './navigation.ts'
+import { MobileNavigation, mainSessionId } from './navigation.ts'
 import { MobileWelcome } from './MobileSeats.tsx'
 import { MobileSubmissionFocus } from './SubmissionFocus.tsx'
 import { MobileTools } from './MobileTools.tsx'
@@ -72,7 +72,8 @@ export function apply(ctx: Context): void {
     let remove: (() => void) | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const refresh = () => {
-      const current = navigation.getSnapshot()?.sessions.list.getSnapshot().current
+      const list = navigation.getSnapshot()?.sessions.list.getSnapshot()
+      const current = list === undefined ? undefined : mainSessionId(list)
       if (!presentation.getSnapshot().active || !current || !rooms.get(current)) return
       clearTimeout(timer)
       timer = setTimeout(() => {

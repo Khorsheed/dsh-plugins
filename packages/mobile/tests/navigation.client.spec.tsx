@@ -17,7 +17,10 @@ function row(id: string, more: Partial<SessionSummary> = {}): SessionSummary {
   return { id, displayTitle: id, blank: false, running: false, updatedAt: 1, ...more } as SessionSummary
 }
 function list(rows: SessionSummary[], current?: string): SessionListState {
-  return { ids: rows.map(r => r.id), byId: Object.fromEntries(rows.map(r => [r.id, r])), current, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined } as SessionListState
+  const byId = Object.fromEntries(rows.map(r => [r.id, r]))
+  // alpha.2 marks the main-view session as a per-row retain count; 0.1.5 carried the list's own `current`.
+  if (current !== undefined && byId[current]) byId[current] = { ...byId[current], retainedBy: { mainView: 1 } }
+  return { ids: rows.map(r => r.id), byId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} } as SessionListState
 }
 function fixture() {
   const state = list([row('one', { title: 'First draft', cwd: '/home/user/project' }), row('two', { title: 'Second draft', updatedAt: 2 })])
@@ -69,6 +72,10 @@ describe('mobile session navigation', () => {
     const original = [...state.ids]
     expect(recentSessions(state, ['archived'], '').map(r => r.id)).toEqual(['fork', 'current', 'new', 'old'])
     expect(state.ids).toEqual(original)
+  })
+  it('keeps the selected blank visible through the 0.1.5 list `current` read as well', () => {
+    const state = { ...list([row('current', { blank: true, updatedAt: 2 }), row('new', { updatedAt: 1 })]), current: 'current' } as SessionListState
+    expect(recentSessions(state, [], '').map(r => r.id)).toEqual(['current', 'new'])
   })
   it('filters metadata and delegates selection to the official navigation owner exactly once', () => {
     const f = fixture()
