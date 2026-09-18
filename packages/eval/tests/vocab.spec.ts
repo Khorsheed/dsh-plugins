@@ -18,8 +18,10 @@ import {
   BUCKETS, INCIDENTAL_FACTORS, NAMED_FACTORS, bucketPhrase, distinctStates, factorPhrase,
   agreementBand, compactCount, durationParts,
   factorValueText, isNamedFactor, preferredColumn, retryPhrase, shortHash, shortenValue, splitFactors,
+  verdictKey, verdictSourceOf,
   stagePhrase,
 } from '../src/client/vocab.ts'
+import { passesFilter } from '../src/client/RunsPage.tsx'
 import { en, zh, type EvalKey } from '../src/client/locales.ts'
 
 /** Every key the table can produce must exist in BOTH dictionaries. */
@@ -204,5 +206,46 @@ describe('numbers and sentences (ui-spec §九, 2026-09-18)', () => {
     for (const band of ['high', 'medium', 'low'] as const) {
       expect(bothHave(`agreement.${band}`), band).toBe(true)
     }
+  })
+})
+
+describe('the verdict source (I5·T67)', () => {
+  it('reads the report\'s own authority order: human-final > llm-draft > script', () => {
+    expect(verdictSourceOf({ 'script': 3, 'llm-draft': 2, 'human-final': 1 })).toBe('human-final')
+    expect(verdictSourceOf({ 'script': 3, 'llm-draft': 2 })).toBe('llm-draft')
+    expect(verdictSourceOf({ 'script': 3 })).toBe('script')
+  })
+
+  it('a namespace with nothing in it is not a verdict, and neither is another namespace', () => {
+    // `orchestrator` is on nearly every cell and says nothing about judging;
+    // a zero count is the ledger having created the namespace, not a verdict.
+    expect(verdictSourceOf({ orchestrator: 12 })).toBeNull()
+    expect(verdictSourceOf({ 'llm-draft': 0 })).toBeNull()
+    expect(verdictSourceOf({})).toBeNull()
+  })
+
+  it('every source has a word in both dictionaries, and so does «not judged»', () => {
+    for (const source of ['human-final', 'llm-draft', 'script'] as const) {
+      expect(bothHave(verdictKey(source)), source).toBe(true)
+    }
+    expect(bothHave(verdictKey(null))).toBe(true)
+  })
+})
+
+describe('the run-record filter (ui-spec §五 v2\'s five)', () => {
+  it('「失败」 is the halted STATE, which mission projects into the done bucket', () => {
+    const halted = { state: 'halted', bucket: 'done' }
+    expect(passesFilter(halted, 'failed')).toBe(true)
+    // …and it is therefore NOT «完成»: a cell that stopped is finished, and
+    // reading it as a success is the whole reason this is not a bucket filter.
+    expect(passesFilter(halted, 'done')).toBe(false)
+    expect(passesFilter(halted, 'all')).toBe(true)
+  })
+
+  it('the other three are the buckets they name', () => {
+    expect(passesFilter({ state: 'archived', bucket: 'done' }, 'done')).toBe(true)
+    expect(passesFilter({ state: 'stage-2', bucket: 'active' }, 'active')).toBe(true)
+    expect(passesFilter({ state: 'pending', bucket: 'blocked' }, 'blocked')).toBe(true)
+    expect(passesFilter({ state: 'pending', bucket: 'ready' }, 'active')).toBe(false)
   })
 })

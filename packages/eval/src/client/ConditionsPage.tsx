@@ -1,6 +1,13 @@
 /**
- * The detail's CONDITIONS page (ui-spec §五, step 4): the registry of subjects
- * the dataset repository declares, and the diff of any two of them.
+ * The COMPARISON-GROUP table — section ② of 实验设计 (ui-spec §五 v2): the
+ * subjects this experiment runs, whether each can run at all, and the diff of
+ * any two of them.
+ *
+ * It was its own sub-page in v1, which is why the conditions a plan used and
+ * the plan that used them were never on screen together. It is a section now,
+ * filtered by `only` to the groups THIS experiment names — the repository's
+ * other declarations are not what a reader is deciding about, and a registry
+ * of a dozen pushes the planned grid off the screen.
  *
  * The table's columns are the things that make two runs different subjects
  * rather than two samples of one — harness, declared model, scope, preset —
@@ -13,11 +20,11 @@
  * fields are the experiment's intended factor, because deciding that depends
  * on things no file knows.
  *
- * 新建条件 POINTS rather than forms. Choosing a model IS minting a condition
- * (ui-spec §五), so the place to do it is the 新建实验 form on the list, which
- * mints the condition and the plan that uses it in one write (I5·T34). A
- * second form here would be a second way to write the same file, and the two
- * would drift.
+ * Minting POINTS rather than forms. Choosing a model IS minting a comparison
+ * group (ui-spec §五), so the place to do it is the 新建实验 wizard's step ②,
+ * which mints the group and the plan that uses it in one write (I5·T34); the
+ * grid section's 添加对比组 goes there. A second form here would be a second
+ * way to write the same file, and the two would drift.
  *
  * Two things this page DOES write, both added by I5·T58 and both a human's
  * click on one row. **provision** turns the declaration into a real scoped
@@ -215,10 +222,10 @@ function Diff(props: { diff: EvalConditionDiffView; t: LabViewProps['t'] }) {
 }
 
 /**
- * The conditions page.
+ * The comparison-group table.
  * @param props - the registry payload, the picked pair and its diff.
  */
-export function ConditionsPage(props: {
+export function ConditionsTable(props: {
   view: EvalConditionsView | null
   loading: boolean
   error: string | null
@@ -233,6 +240,13 @@ export function ConditionsPage(props: {
   action: ConditionActionNote | null
   /** The condition whose endpoint is open for editing, or null. */
   editing: string | null
+  /**
+   * The group ids this experiment names. The registry holds every declaration
+   * in the repository and only these are the experiment's subjects.
+   */
+  only: readonly string[]
+  /** Which of them judge rather than play — the one thing the columns cannot say. */
+  judges: readonly string[]
   onPick: (id: string) => void
   onProvision: (row: EvalConditionRow) => void
   onEditEndpoint: (id: string | null) => void
@@ -240,24 +254,20 @@ export function ConditionsPage(props: {
   t: LabViewProps['t']
 }) {
   const {
-    view, loading, error, pair, diff, diffError, busy, provision, action, editing,
+    view, loading, error, pair, diff, diffError, busy, provision, action, editing, only, judges,
     onPick, onProvision, onEditEndpoint, onSetEndpoint, t,
   } = props
-  const [newNotice, setNewNotice] = useState(false)
-  const rows = view?.rows ?? []
+  const rows = (view?.rows ?? []).filter(row => only.includes(row.id))
   return (
-    <div className={css.overview}>
+    <>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
       {error !== null && <ErrorState what={t('conditions.error')} message={error} t={t} />}
       {view !== null && rows.length === 0 && <EmptyState title={t('conditions.empty')} hint={t('conditions.emptyHint')} />}
       {rows.length > 0 && (
         <>
-          <div className={css.actions}>
-            <span className={css.dim}>{pair.length === 1 ? t('conditions.pickOne') : t('conditions.pickHint')}</span>
-            <span className={css.barSpacer} />
-            <Button size="sm" onClick={() => { setNewNotice(true) }}>{t('conditions.new')}</Button>
-          </div>
-          {newNotice && <div className={css.notice}>{t('conditions.newPlaceholder')}</div>}
+          {rows.length > 1 && (
+            <div className={css.dim}>{pair.length === 1 ? t('conditions.pickOne') : t('conditions.pickHint')}</div>
+          )}
           {/* Above the table, not below it: this is the answer to a button the
               person just pressed, and a registry of a dozen conditions pushes
               anything under it off the screen. */}
@@ -298,6 +308,10 @@ export function ConditionsPage(props: {
             >
               <span className={css.condId} title={row.sha ?? row.id}>
                 {row.id}
+                {/* A judge is a subject like any other — same declaration,
+                    same lock, same readiness gate — and nothing else in this
+                    table would say which one it is. */}
+                {judges.includes(row.id) && <Chip>{t('role.judge')}</Chip>}
                 {row.sha !== null && <span className={css.condSha}><Hash value={row.sha} /></span>}
               </span>
               <span>{row.harness ?? '—'}{row.drive === null ? '' : ` · ${row.drive}`}</span>
@@ -340,14 +354,11 @@ export function ConditionsPage(props: {
       {diffError !== null && <ErrorState what={t('conditions.diffError')} message={diffError} compact t={t} />}
       {diff !== null && <Diff diff={diff} t={t} />}
       {view !== null && (
-        <Field label={t('conditions.repo')}>
-          <span className={css.mono} title={view.repo}>{repoName(view.repo)}</span>
-          {view.datasets.length > 0 && <span className={css.dim}> · {view.datasets.join(', ')}</span>}
-          <Detail summary={t('error.details')}>
-            <div className={css.errorDetailLine}>{view.repo}</div>
-          </Detail>
-        </Field>
+        <Detail summary={t('conditions.repo')}>
+          <div className={css.errorDetailLine}>{repoName(view.repo)} — {view.repo}</div>
+          {view.datasets.length > 0 && <div className={css.errorDetailLine}>{view.datasets.join(', ')}</div>}
+        </Detail>
       )}
-    </div>
+    </>
   )
 }

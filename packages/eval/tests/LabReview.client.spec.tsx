@@ -273,7 +273,7 @@ function renderView(h: Harness) {
   return render(<LabView {...props} />)
 }
 
-/** Open the one draft and switch to a sub-page. */
+/** Open the one draft and switch to a stage. */
 async function openPage(h: Harness, tab: string): Promise<void> {
   fireEvent.click(await screen.findByText('effort-sweep'))
   fireEvent.click(screen.getByRole('button', { name: tab }))
@@ -290,14 +290,18 @@ function pick(id: string): void {
 afterEach(() => { cleanup() })
 
 describe('the plan-review page', () => {
-  it('fetches the review only when its tab is opened, then shows the plan and validate line by line', async () => {
+  it('reads the review when the design stage opens, then shows the plan and validate line by line', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('effort-sweep'))
-    // The overview costs no review: validate walks the dataset tree.
+    // The LIST costs no review: validate walks the dataset tree, and a reader
+    // looking at their experiments has not asked for one.
+    await screen.findByText('effort-sweep')
     expect(h.fetchPlanReview).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'page.plan' }))
+    // Opening an experiment lands on 实验设计, and the review IS that stage
+    // (ui-spec §五 v2): the shape, the checks and the readiness are what it
+    // shows, and the stage bar cannot offer 批准并启动 before validate speaks.
+    fireEvent.click(screen.getByText('effort-sweep'))
     await waitFor(() => { expect(h.fetchPlanReview).toHaveBeenCalledWith('s1', { planPath: PLAN_PATH }) })
 
     // The kv block: snapshot, shape, factors, judge and samples, order, stages.
@@ -306,6 +310,10 @@ describe('the plan-review page', () => {
     // own order; the dotted paths stay on the cell's title.
     expect(screen.getByText(/factor\.model\.declared · factor\.harness\.name/)).toBeTruthy()
     expect(screen.getByText(/judge-a · overview.judgeSamples/)).toBeTruthy()
+    // Seed, stages, budget, items and the author's note are settings a reader
+    // needs once: ui-spec §五 v2 folds them under 高级设置 rather than smearing
+    // them across the page (the note kept its line breaks on the way).
+    expect(screen.getByText('design.advanced')).toBeTruthy()
     expect(screen.getByText('review.orderValue {"seed":7}')).toBeTruthy()
     expect(screen.getByText('stage-1, stage-2')).toBeTruthy()
     expect(screen.getByText('review.budgetValue {"minutes":30,"turns":40}')).toBeTruthy()
@@ -313,28 +321,34 @@ describe('the plan-review page', () => {
     expect(screen.getByText('first effort sweep')).toBeTruthy()
 
     // validate, one line per diagnostic, each carrying its severity and code.
+    // Only the lines that need READING are on the page; a clean check is not
+    // news, so the passing ones sit under the fold.
     expect(screen.getByText('severity.warn')).toBeTruthy()
     expect(screen.getAllByText('severity.ok')).toHaveLength(2)
+    expect(screen.getByText('review.checks')).toBeTruthy()
     // The diagnostic code is the host's handle on the check, not a word:
     // ui-spec §九 keeps it on the row's title and the sentence on the page.
     expect(screen.getByTitle('COMMIT_UNRESOLVED')).toBeTruthy()
-    // The condition list carries the readiness word and the lock state.
-    expect(screen.getAllByText('conditions.ready').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('conditions.unready')).toBeTruthy()
-    expect(screen.getByText('review.lockNone')).toBeTruthy()
+    // The readiness BADGE replaces the old per-row word: one chip when every
+    // group passed, a cross and a count when they did not (ui-spec §五 v2).
+    expect(screen.getByText(/ready\.failedCount/)).toBeTruthy()
+
   })
 
-  it('批准并启动 approves the plan, lands on the overview, and shows the job, the run and the log VERBATIM', async () => {
+  it('批准并启动 approves the plan, stays put, and shows the job, the run and the log VERBATIM', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.plan')
-    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await openPage(h, 'page.design')
+    fireEvent.click(await screen.findByRole('button', { name: 'cta.pending' }))
 
     await waitFor(() => { expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: PLAN_PATH }) })
-    // Landed on the overview, and the ids are there before the ledger has the run.
+    // STAYS on 实验设计: a readiness refusal is written only in the job log
+    // below, and walking the reader to an empty grid would leave the reason
+    // behind. The stage bar turns to 看运行记录 instead, one click away.
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'page.overview' }).getAttribute('aria-pressed')).toBe('true')
+      expect(screen.getByRole('button', { name: 'page.design' }).getAttribute('aria-pressed')).toBe('true')
     })
+    expect(await screen.findByRole('button', { name: 'cta.running' })).toBeTruthy()
     expect(await screen.findByText('review.startedValue {"jobId":"eval-run-9","runId":"run-20260914-zz"}')).toBeTruthy()
     // The readiness refusal exists ONLY in the job log — the run never reached
     // runCreate, so no ledger row for it will ever exist.
@@ -345,7 +359,7 @@ describe('the plan-review page', () => {
   it('保留单元 is off by default and carries into the approval when ticked', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.plan')
+    await openPage(h, 'page.design')
     const box = await screen.findByRole('checkbox', { name: 'review.keepUnits' })
     // Off unless someone ticks it: left on, every cell's container would
     // survive the run and the matrix would stop at lab's ceiling (T33b).
@@ -354,7 +368,7 @@ describe('the plan-review page', () => {
 
     fireEvent.click(box)
     expect(screen.getByText('review.keepUnitsHint')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'review.approve' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cta.pending' }))
 
     await waitFor(() => {
       expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: PLAN_PATH, keepUnits: true })
@@ -365,8 +379,8 @@ describe('the plan-review page', () => {
     const h = makeHarness()
     h.fetchRunOutput.mockRejectedValue(new Error('client api: dshEval/runOutput expected 2 argument(s), got 1'))
     renderView(h)
-    await openPage(h, 'page.plan')
-    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await openPage(h, 'page.design')
+    fireEvent.click(await screen.findByRole('button', { name: 'cta.pending' }))
 
     // An unrecognized cause keeps the caller's own sentence as the headline,
     // and the raw text stays readable under «详情» (ui-spec §九).
@@ -389,8 +403,8 @@ describe('the plan-review page', () => {
       } satisfies EvalApproveResult,
     })
     renderView(h)
-    await openPage(h, 'page.plan')
-    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await openPage(h, 'page.design')
+    fireEvent.click(await screen.findByRole('button', { name: 'cta.pending' }))
 
     // The gate's own words are the ONLY record of why (the run never reached
     // `runCreate`), so they are kept verbatim — under «详情», per §九.
@@ -413,11 +427,11 @@ describe('the plan-review page', () => {
       },
     })
     renderView(h)
-    await openPage(h, 'page.plan')
+    await openPage(h, 'page.design')
 
-    const approve = await screen.findByRole('button', { name: 'review.approve' })
+    const approve = await screen.findByRole('button', { name: 'cta.pending' })
     expect(approve.hasAttribute('disabled')).toBe(true)
-    expect(screen.getByText('review.approveBlocked {"errors":2}')).toBeTruthy()
+    expect(screen.getByText('cta.blocked {"errors":2}')).toBeTruthy()
     fireEvent.click(approve)
     expect(h.approvePlan).not.toHaveBeenCalled()
   })
@@ -425,7 +439,7 @@ describe('the plan-review page', () => {
   it('退回修改 is a note on the page: the status reads 草稿 and no verb is called', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.plan')
+    await openPage(h, 'page.design')
     await screen.findByRole('button', { name: 'review.sendBack' })
     expect(screen.getByText('status.pending-approval')).toBeTruthy()
 
@@ -444,41 +458,79 @@ describe('the plan-review page', () => {
     })
     renderView(h)
     fireEvent.click(await screen.findByText('effort-sweep'))
-    fireEvent.click(screen.getByRole('button', { name: 'page.plan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'page.design' }))
 
     expect(screen.getByText('review.noPlan')).toBeTruthy()
     expect(h.fetchPlanReview).not.toHaveBeenCalled()
   })
 })
 
-describe('the conditions page', () => {
-  it('lists every condition with its scope, preset, lock and readiness', async () => {
+describe('the planned grid', () => {
+  it('draws the experiment BEFORE it runs — items down, comparison groups across, 计划 n 次 in every seat', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
+    await screen.findByText('design.grid')
+
+    // 4 items × 2 groups, each seat carrying the reps the plan asks for. v1
+    // had nothing here at all: the shape of an experiment was an arithmetic
+    // expression until the run made it a picture, which is too late to change
+    // it (ui-spec §五 v2).
+    expect(screen.getAllByText('design.planned {"reps":2}')).toHaveLength(8)
+    for (const item of ['p0-001', 'p0-002', 'f2-001', 'f3-001']) {
+      expect(screen.getByText(item)).toBeTruthy()
+    }
+    // ui-spec §九: the heading is the group, the comparison VARIABLE's value
+    // is the subtitle — not a repeat of the harness the table already spells
+    // out one section above.
+    expect(screen.getByText(/factor\.model\.declared\s+deepseek-v4/)).toBeTruthy()
+    expect(screen.getByText(/factor\.model\.declared\s+gpt-5\.6-sol/)).toBeTruthy()
+  })
+})
+
+describe('the conditions page', () => {
+  it('lists THIS experiment\'s comparison groups with their scope, preset, lock and readiness', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.design')
 
     await waitFor(() => { expect(h.fetchConditions).toHaveBeenCalledWith('s1', {}) })
-    expect(await screen.findByText('dsh-exec')).toBeTruthy()
-    expect(screen.getByText('codex-exec')).toBeTruthy()
+    // The group id is on the table row AND on the planned grid's column
+    // heading — the two halves of section ② (ui-spec §五 v2).
+    expect((await screen.findAllByText('dsh-exec')).length).toBe(2)
+    // codex-exec is the one that is NOT ready, so it is named a third time —
+    // on its own red cross in the readiness badge.
+    expect(screen.getAllByText('codex-exec').length).toBe(3)
     expect(screen.getByText('dsh · exec')).toBeTruthy()
     expect(screen.getByText('deepseek-v4')).toBeTruthy()
+    // `kimi-exec` is declared in the repository and this experiment does not
+    // use it: a registry of everything on a page about ONE comparison is the
+    // data-dumping v2 removes.
+    expect(screen.queryByText('kimi-exec')).toBeNull()
     // An unnamed scope prints as the default one rather than as a blank cell.
-    expect(screen.getAllByText('conditions.scopeDefault')).toHaveLength(2)
+    expect(screen.getByText('conditions.scopeDefault')).toBeTruthy()
     expect(screen.getByText('eval-b')).toBeTruthy()
     expect(screen.getByText('bench')).toBeTruthy()
     expect(screen.getByText('conditions.lockOk')).toBeTruthy()
     expect(screen.getByText(/conditions.lockNone/)).toBeTruthy()
-    // A lock present but no longer matching its declaration, and no home hash:
-    // both facts are on the one cell, because either one alone misleads.
-    expect(screen.getByText('conditions.lockStale · conditions.homeUnhashed')).toBeTruthy()
     expect(screen.getByText('conditions.ready')).toBeTruthy()
-    expect(screen.getAllByText('conditions.unready')).toHaveLength(2)
+    expect(screen.getByText('conditions.unready')).toBeTruthy()
+  })
+
+  it('a stale lock and an unhashed home are said on the ONE cell — either alone misleads', async () => {
+    // kimi-exec carries both, and it takes part in this experiment here.
+    const h = makeHarness({
+      review: { ...REVIEW, digest: { ...REVIEW.digest!, conditions: ['dsh-exec', 'kimi-exec'] } },
+    })
+    renderView(h)
+    await openPage(h, 'page.design')
+    expect(await screen.findByText('conditions.lockStale · conditions.homeUnhashed')).toBeTruthy()
   })
 
   it('picking two conditions diffs them, and the table carries ONLY the differing fields', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     await screen.findByText('conditions.pickHint')
     pick('dsh-exec')
     expect(screen.getByText('conditions.pickOne')).toBeTruthy()
@@ -498,10 +550,14 @@ describe('the conditions page', () => {
     expect(screen.getByText('"gpt-5.6-sol"')).toBeTruthy()
   })
 
-  it('picking a third condition drops the older of the two rather than refusing', async () => {
-    const h = makeHarness()
+  it('picking a third comparison group drops the older of the two rather than refusing', async () => {
+    // Three groups in the plan, because the table shows THIS experiment's
+    // subjects and a chain of comparisons is what the drop rule is for.
+    const h = makeHarness({
+      review: { ...REVIEW, digest: { ...REVIEW.digest!, conditions: ['dsh-exec', 'codex-exec', 'kimi-exec'] } },
+    })
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     await screen.findByText('conditions.pickHint')
     pick('dsh-exec')
     pick('codex-exec')
@@ -515,7 +571,7 @@ describe('the conditions page', () => {
   it('picking a picked condition unpicks it, and the diff goes with it', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     await screen.findByText('conditions.pickHint')
     pick('dsh-exec')
     pick('codex-exec')
@@ -530,7 +586,7 @@ describe('the conditions page', () => {
   it('provisioning one row takes ONE click and the row turns ready (I5·T58 · G7)', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     await screen.findByText('codex-exec')
     expect(screen.getByText(/conditions.lockNone/)).toBeTruthy()
 
@@ -556,7 +612,7 @@ describe('the conditions page', () => {
       error: { code: 'EVAL_PROVISION', message: 'codex@eval-b reports credentialState "absent" — run /codex login' },
     })
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     await screen.findByText('codex-exec')
 
     fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
@@ -567,13 +623,15 @@ describe('the conditions page', () => {
     expect(screen.getByText('conditions.provisionFailed')).toBeTruthy()
     const raw = screen.getByText(/credentialState "absent" — run \/codex login/)
     expect(raw.closest('details')).not.toBeNull()
-    expect(screen.getAllByText('conditions.unready')).toHaveLength(2)
+    // The row did not move: it is still the one unready group of the two this
+    // experiment runs.
+    expect(screen.getAllByText('conditions.unready')).toHaveLength(1)
   })
 
   it('the endpoint cell edits in place and writes the field the readiness gate wants (· G6)', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     // `codex-exec` declares no endpoint; the cell says so rather than showing
     // an empty column.
     expect(await screen.findByText('conditions.endpointUnset')).toBeTruthy()
@@ -594,7 +652,7 @@ describe('the conditions page', () => {
   it('reopening the endpoint cell shows the declaration, not the text a cancel threw away', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     fireEvent.click(await screen.findByRole('button', { name: 'conditions.endpointUnset' }))
     fireEvent.change(screen.getByLabelText('conditions.col.endpoint'), { target: { value: 'typo-i-changed-my-mind' } })
     fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointCancel' }))
@@ -609,7 +667,7 @@ describe('the conditions page', () => {
     const h = makeHarness()
     h.setConditionEndpoint.mockResolvedValue({ ok: true, value: { ...ENDPOINT_SET, lockStale: true } })
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     fireEvent.click(await screen.findByRole('button', { name: 'conditions.endpointUnset' }))
     fireEvent.change(screen.getByLabelText('conditions.col.endpoint'), { target: { value: 'default' } })
     fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointSave' }))
@@ -617,19 +675,27 @@ describe('the conditions page', () => {
     expect(await screen.findByText(/conditions.endpointLockStale/)).toBeTruthy()
   })
 
-  it('新建条件 names the task that owns it — choosing a model IS minting a condition', async () => {
-    const h = makeHarness()
+  it('添加对比组 opens the wizard — choosing a model IS minting a comparison group', async () => {
+    // A single-group experiment: the one that has nothing to compare, and the
+    // one ui-spec §五 v2 puts the invitation on.
+    const h = makeHarness({
+      review: { ...REVIEW, digest: { ...REVIEW.digest!, conditions: ['dsh-exec'] } },
+    })
     renderView(h)
-    await openPage(h, 'page.conditions')
-    fireEvent.click(await screen.findByRole('button', { name: 'conditions.new' }))
-    expect(screen.getByText('conditions.newPlaceholder')).toBeTruthy()
+    await openPage(h, 'page.design')
+    expect(await screen.findByText('design.single')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'design.addGroup' }))
+    // The wizard, not a second form: minting a group and writing the plan that
+    // uses it is ONE write, and a form here would be a second way to make it.
+    expect(await screen.findByText('new.title')).toBeTruthy()
   })
 
   it('a refused listing names the cause and the fix, with the raw text folded away', async () => {
     const h = makeHarness()
     h.fetchConditions.mockResolvedValue({ ok: false, error: { code: 'REFUSED', message: 'no dataset repository for this session' } })
     renderView(h)
-    await openPage(h, 'page.conditions')
+    await openPage(h, 'page.design')
     // Three parts, not the exception: what happened, how to fix it, and the
     // host's own sentence under «详情».
     expect(await screen.findByText('error.unbound')).toBeTruthy()
@@ -645,11 +711,11 @@ describe('after 批准并启动, the detail waits for the run itself (I5·T39 ·
   it('the run-scoped sub-pages say 正在启动, never 未开始', async () => {
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.plan')
-    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await openPage(h, 'page.design')
+    fireEvent.click(await screen.findByRole('button', { name: 'cta.pending' }))
     await waitFor(() => { expect(h.approvePlan).toHaveBeenCalled() })
 
-    fireEvent.click(screen.getByRole('button', { name: 'page.matrix' }))
+    fireEvent.click(screen.getByRole('button', { name: 'page.runs' }))
     // An approved run EXISTS — the receipt named it — so the 未开始 sentence
     // the pages used to show was false as well as unhelpful.
     expect(await screen.findByText('draft.starting')).toBeTruthy()
@@ -662,8 +728,8 @@ describe('after 批准并启动, the detail waits for the run itself (I5·T39 ·
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.plan')
-    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await openPage(h, 'page.design')
+    fireEvent.click(await screen.findByRole('button', { name: 'cta.pending' }))
     await waitFor(() => { expect(h.approvePlan).toHaveBeenCalled() })
     const afterApproval = h.fetchExperiments.mock.calls.length
 
@@ -688,8 +754,8 @@ describe('after 批准并启动, the detail waits for the run itself (I5·T39 ·
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const h = makeHarness()
     renderView(h)
-    await openPage(h, 'page.plan')
-    fireEvent.click(await screen.findByRole('button', { name: 'review.approve' }))
+    await openPage(h, 'page.design')
+    fireEvent.click(await screen.findByRole('button', { name: 'cta.pending' }))
     await waitFor(() => { expect(h.approvePlan).toHaveBeenCalled() })
 
     await vi.advanceTimersByTimeAsync(START_FOLLOWUP_MS * (START_FOLLOWUP_LIMIT + 4))

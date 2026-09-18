@@ -1,56 +1,66 @@
 /**
- * The matrix sub-page (ui-spec §五 and §九): rows are always the item, the
- * columns are always CONDITIONS, and every cell carries the same four things —
- * the rep dots, the stage word, the stuck warning, and whether its item
- * material agrees with the rest of its row. Under it, the run-level summary as
- * one band.
+ * The GRID — one component, two lives (ui-spec §五 v2).
  *
- * Three things the I5 walkthrough found here, and what replaced them.
+ * Rows are items, columns are comparison groups, and the SAME table is drawn
+ * twice in the life of an experiment: on 实验设计 before anything runs, where
+ * each seat says 「计划 n 次」, and at the top of 运行记录 while it runs, where
+ * the seat says what that cell is doing, whether it has a verdict, and what is
+ * wrong with it. v1 had a whole sub-page for the second one and nothing at all
+ * for the first, so the shape of an experiment was invisible until it was too
+ * late to change it. Two renderers over one table would drift; one table with
+ * two kinds of seat cannot.
  *
- * **The columns were factor VALUES.** A column headed `["DEEPSEEK_API_KEY",
- * "DSH_HOME"]` is what that looks like when the value is an array. ui-spec §九
- * fixes the heading as the condition id — the thing a person names when they
- * talk about the run — with the factor value as its subtitle, which is where
- * `v4-flash` belongs. The pivot is unchanged: a column still IS a factor
- * value, and {@link EvalMatrixColumn.conditions} already said which conditions
- * carry it. Only the heading changed sides.
+ * What the columns are is settled and does not vary with the life stage
+ * (ui-spec §九): the heading is the comparison group's id — the thing a person
+ * names out loud — and the factor value rides underneath as a subtitle.
  *
- * **Every differing key was offered as a factor.** The pivot reports what
- * varies, honestly and without choosing (`conditionFactors`), so a run varying
- * the model also varies `home.sha`, `env.keys` and `unit.scopedHome.var`. Four
- * of those are derived from the other one, and a reader cannot hold a derived
- * field fixed. {@link splitFactors} keeps the designed factors as controls and
- * folds the rest into one line at the bottom — shown, named, never a chip.
- *
- * **The arrangement bar was always there.** A single-factor experiment has
- * nothing to arrange, so it gets no bar at all; a multi-factor one gets one
- * disclosure, closed, because choosing the column is a rare act and the matrix
- * is what the page is for.
+ * The arrangement controls, the run-level summary and the derived-field fold
+ * belong to the LIVE grid only and travel with it here, unchanged from the
+ * matrix page they came from: a single-factor experiment gets no arrangement
+ * bar at all, and the derived fields are named at the bottom rather than
+ * offered as controls.
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { EvalMatrixCell, EvalMatrixInvariant, EvalMatrixView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
-import { ErrorState } from './ErrorState.tsx'
 import { Chip, EmptyState, Section, Word, invariantTone, stageTone } from './parts.tsx'
-import { distinctStates, factorPhrase, factorValueText, shortenValue, splitFactors, stagePhrase } from './vocab.ts'
+import {
+  distinctStates, factorPhrase, factorValueText, shortenValue, splitFactors, stagePhrase,
+  verdictKey, type VerdictSource,
+} from './vocab.ts'
 import css from './LabView.module.css'
 
 /** The dot glyphs, in the spec's own words: 实心已判 / 半心进行中 / 空心未起. */
 const DOTS: Readonly<Record<string, string>> = { filled: '●', half: '◐', empty: '○' }
 
-/** One invariant of the summary band: the verdict word, and why when it is not ok. */
-function Invariant(props: { label: string; value: EvalMatrixInvariant; t: LabViewProps['t'] }) {
-  const { label, value, t } = props
-  return (
-    <span className={css.summaryItem} title={value.detail}>
-      <span className={css.summaryLabel}>{label}</span>
-      <Chip tone={invariantTone(value.status)}>{t(`invariant.${value.status}`)}</Chip>
-    </span>
-  )
+/** One column of the grid: the comparison group, and what separates it. */
+export interface GridColumn {
+  /** Stable key (the pivot's column key, or the group id before a run). */
+  key: string
+  /** The heading — always a comparison group id (ui-spec §九). */
+  title: string
+  /** The factor value under it; null when nothing separates the columns. */
+  sub: ReactNode | null
+  /** The whole value for the heading's hover. */
+  hint?: string | undefined
 }
 
-/** The stage word of one cell: the state its reps agree on, or 「多态」. */
+/**
+ * One seat of the grid. `planned` is what a plan implies, `live` is what the
+ * ledger says — the two shapes the same table is filled with.
+ */
+export type GridCell =
+  | { kind: 'planned'; reps: number }
+  | { kind: 'live'; cell: EvalMatrixCell }
+
+/** One row of the grid: an item, and one seat per column (null where nothing ran). */
+export interface GridRow {
+  task: string
+  cells: Array<GridCell | null>
+}
+
+/** The stage word of one live seat: the state its reps agree on, or 「多态」. */
 function StageChip(props: { cell: EvalMatrixCell; t: LabViewProps['t'] }) {
   const { cell, t } = props
   const states = distinctStates(cell.reps)
@@ -66,14 +76,21 @@ function StageChip(props: { cell: EvalMatrixCell; t: LabViewProps['t'] }) {
   return <Chip tone="busy" title={states.join(' / ')}>{t('stage.mixed', { states: words.join(' / ') })}</Chip>
 }
 
-/** One (item × column) cell: the dots, the stage, and the two warnings. */
-function MatrixCellBody(props: {
+/** One LIVE seat: the dots, the run state, the verdict when there is one, the warnings. */
+function LiveSeat(props: {
   cell: EvalMatrixCell
   stuckMinutes: number
+  verdictOf: (missionId: string) => VerdictSource | null
   onOpen: (missionId: string) => void
   t: LabViewProps['t']
 }) {
-  const { cell, stuckMinutes, onOpen, t } = props
+  const { cell, stuckMinutes, verdictOf, onOpen, t } = props
+  // 有判定即显示 (ui-spec §五 v2). The SOURCE, not a number — see
+  // `verdictSourceOf`'s note on why this projection has no score to show.
+  const sources = cell.reps.map(rep => verdictOf(rep.missionId)).filter((v): v is VerdictSource => v !== null)
+  const verdict = sources.includes('human-final')
+    ? 'human-final'
+    : sources.includes('llm-draft') ? 'llm-draft' : sources[0] ?? null
   return (
     <div
       className={css.matrixCell}
@@ -102,6 +119,11 @@ function MatrixCellBody(props: {
         })}
       </div>
       <StageChip cell={cell} t={t} />
+      {verdict !== null && (
+        <Chip tone={verdict === 'human-final' ? 'ok' : 'neutral'} title={t('verdict.hint')}>
+          {t(verdictKey(verdict))}
+        </Chip>
+      )}
       {/* The two warnings ui-spec §九 keeps as chips rather than as sentences:
           the sentence is on the chip's title, the colour is the signal. */}
       {cell.hashMismatch && <Chip tone="danger" title={t('matrix.hashMismatch')}>{t('matrix.hashMismatchChip')}</Chip>}
@@ -114,6 +136,130 @@ function MatrixCellBody(props: {
         </Chip>
       )}
     </div>
+  )
+}
+
+/** One PLANNED seat: what the plan says will happen here, and nothing more. */
+function PlannedSeat(props: { reps: number; t: LabViewProps['t'] }) {
+  return (
+    <div className={css.matrixCell}>
+      <Chip>{props.t('design.planned', { reps: props.reps })}</Chip>
+    </div>
+  )
+}
+
+/**
+ * The grid itself.
+ * @param props - the columns, the rows, and (for live seats) the stuck
+ *   threshold, the verdict lookup and the drawer opener.
+ */
+export function RunGrid(props: {
+  columns: readonly GridColumn[]
+  rows: readonly GridRow[]
+  label?: string | undefined
+  stuckMinutes?: number
+  verdictOf?: (missionId: string) => VerdictSource | null
+  onOpenCell?: (missionId: string) => void
+  t: LabViewProps['t']
+}) {
+  const {
+    columns, rows, label, stuckMinutes = 0,
+    verdictOf = () => null, onOpenCell = () => {}, t,
+  } = props
+  return (
+    <div className={css.matrixGroup}>
+      {label !== undefined && label !== '' && <div className={css.matrixGroupLabel}>{label}</div>}
+      <table className={css.matrixTable}>
+        <thead>
+          <tr>
+            <th className={css.matrixCorner}>{t('matrix.task')}</th>
+            {columns.map(column => (
+              <th key={column.key} className={css.matrixHead} title={column.hint}>
+                {/* ui-spec §九: the heading is the comparison group, always. */}
+                <div className={css.matrixHeadId}>{column.title}</div>
+                {column.sub !== null && <div className={css.matrixHeadFactor}>{column.sub}</div>}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => (
+            <tr key={row.task}>
+              <th className={css.matrixRowHead}>{row.task}</th>
+              {row.cells.map((cell, index) => (
+                <td key={columns[index]?.key ?? String(index)} className={css.matrixTd}>
+                  {cell === null
+                    ? <span className={css.dim}>—</span>
+                    : cell.kind === 'planned'
+                      ? <PlannedSeat reps={cell.reps} t={t} />
+                      : (
+                        <LiveSeat
+                          cell={cell.cell}
+                          stuckMinutes={stuckMinutes}
+                          verdictOf={verdictOf}
+                          onOpen={onOpenCell}
+                          t={t}
+                        />
+                      )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/**
+ * The PLANNED grid's model: every item against every comparison group, each
+ * seat carrying the rep count the plan asks for.
+ * @param items - the item ids the plan names.
+ * @param groups - the comparison group ids, in plan order.
+ * @param reps - independent samples per cell.
+ * @returns the rows to hand {@link RunGrid}.
+ */
+export function plannedRows(
+  items: readonly string[],
+  groups: readonly string[],
+  reps: number,
+): GridRow[] {
+  return items.map(task => ({
+    task,
+    cells: groups.map((): GridCell => ({ kind: 'planned', reps })),
+  }))
+}
+
+/**
+ * The LIVE grid's columns, from the pivot.
+ * @param matrix - the arranged matrix payload.
+ * @param t - the locale seat.
+ * @returns one column per pivot column, headed by its comparison groups.
+ */
+export function liveColumns(matrix: EvalMatrixView, t: LabViewProps['t']): GridColumn[] {
+  const columnPhrase = matrix.column === null ? null : factorPhrase(matrix.column)
+  const factorWord = columnPhrase === null
+    ? ''
+    : (columnPhrase.params === undefined ? t(columnPhrase.key) : t(columnPhrase.key, columnPhrase.params))
+  return matrix.columns.map((column) => {
+    const shown = factorValueText(column.key, column.label)
+    return {
+      key: column.key,
+      title: column.conditions.length === 0 ? t('matrix.noCondition') : column.conditions.join(' · '),
+      sub: columnPhrase === null ? null : <>{factorWord} {shown.text}</>,
+      hint: column.conditions.join(', '),
+    }
+  })
+}
+
+/** One invariant of the summary band: the verdict word, and why when it is not ok. */
+function Invariant(props: { label: string; value: EvalMatrixInvariant; t: LabViewProps['t'] }) {
+  const { label, value, t } = props
+  return (
+    <span className={css.summaryItem} title={value.detail}>
+      <span className={css.summaryLabel}>{label}</span>
+      <Chip tone={invariantTone(value.status)}>{t(`invariant.${value.status}`)}</Chip>
+    </span>
   )
 }
 
@@ -172,7 +318,7 @@ function Arrange(props: {
         )}
         {/* The filter pins a REMAINING factor to one value. The column's own
             factor is never offered: pinning it would collapse the comparison
-            to a single column, which is the opposite of what the page is for. */}
+            to a single column, which is the opposite of what the grid is for. */}
         {others.map((factor) => {
           const values = matrix.factorValues.find(entry => entry.factor === factor)?.values ?? []
           if (values.length < 2) return null
@@ -244,32 +390,30 @@ function Incidental(props: { matrix: EvalMatrixView; paths: readonly string[]; t
 }
 
 /**
- * The matrix page body.
- * @param props - the arranged matrix, the reader's controls, and the drawer opener.
+ * The LIVE grid in full: the arrangement bar, the banded tables, and the
+ * run-level summary under them.
+ * @param props - the matrix payload, the reader's controls, the verdict
+ *   lookup and the drawer opener.
  */
-export function MatrixPage(props: {
-  matrix: EvalMatrixView | null
+export function LiveGrid(props: {
+  matrix: EvalMatrixView
   loading: boolean
-  error: string | null
+  verdictOf: (missionId: string) => VerdictSource | null
   onColumn: (factor: string) => void
   onToggleGroup: (factor: string) => void
   onFilter: (factor: string, value: string | null) => void
   onOpenCell: (missionId: string) => void
   t: LabViewProps['t']
 }) {
-  const { matrix, loading, error, onColumn, onToggleGroup, onFilter, onOpenCell, t } = props
+  const { matrix, loading, verdictOf, onColumn, onToggleGroup, onFilter, onOpenCell, t } = props
   const [legendOpen, setLegendOpen] = useState(false)
-  if (error !== null) return <ErrorState what={t('matrix.error')} message={error} t={t} />
-  if (matrix === null) return <div className={css.empty}>{t('matrix.loading')}</div>
-
   const stuckMinutes = Math.round(matrix.stuckMs / 60_000)
   const { named, incidental } = splitFactors(matrix.factors)
-  // The column's own word, shown as a quiet line when there is nothing to
-  // arrange — the reader still has to know what separates the columns.
+  const columns = liveColumns(matrix, t)
   const columnPhrase = matrix.column === null ? null : factorPhrase(matrix.column)
 
   return (
-    <div className={css.matrixPage}>
+    <>
       <div className={css.matrixTop}>
         {matrix.factors.length === 0
           ? <span className={css.dim}>{t('matrix.noFactor')}</span>
@@ -300,50 +444,22 @@ export function MatrixPage(props: {
           t={t}
         />
       )}
-
       {matrix.groups.every(group => group.rows.length === 0)
         ? <EmptyState title={t('matrix.empty')} hint={t('matrix.emptyHint')} />
         : matrix.groups.map(group => (
-          <div key={group.key} className={css.matrixGroup}>
-            {group.label !== '' && <div className={css.matrixGroupLabel}>{group.label}</div>}
-            <table className={css.matrixTable}>
-              <thead>
-                <tr>
-                  <th className={css.matrixCorner}>{t('matrix.task')}</th>
-                  {matrix.columns.map((column) => {
-                    const shown = factorValueText(column.key, column.label)
-                    return (
-                      <th key={column.key} className={css.matrixHead} title={column.conditions.join(', ')}>
-                        {/* ui-spec §九: the heading is the condition, always. */}
-                        <div className={css.matrixHeadId}>
-                          {column.conditions.length === 0 ? t('matrix.noCondition') : column.conditions.join(' · ')}
-                        </div>
-                        {columnPhrase !== null && (
-                          <div className={css.matrixHeadFactor} title={shown.title}>
-                            <Word phrase={columnPhrase} t={t} /> {shown.text}
-                          </div>
-                        )}
-                      </th>
-                    )
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {group.rows.map(row => (
-                  <tr key={row.task}>
-                    <th className={css.matrixRowHead}>{row.task}</th>
-                    {row.cells.map((cell, index) => (
-                      <td key={matrix.columns[index]?.key ?? String(index)} className={css.matrixTd}>
-                        {cell === null
-                          ? <span className={css.dim}>—</span>
-                          : <MatrixCellBody cell={cell} stuckMinutes={stuckMinutes} onOpen={onOpenCell} t={t} />}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <RunGrid
+            key={group.key}
+            columns={columns}
+            label={group.label}
+            rows={group.rows.map(row => ({
+              task: row.task,
+              cells: row.cells.map((cell): GridCell | null => (cell === null ? null : { kind: 'live', cell })),
+            }))}
+            stuckMinutes={stuckMinutes}
+            verdictOf={verdictOf}
+            onOpenCell={onOpenCell}
+            t={t}
+          />
         ))}
 
       <Section title={t('summary.title')}>
@@ -377,6 +493,6 @@ export function MatrixPage(props: {
         )}
         <Incidental matrix={matrix} paths={incidental} t={t} />
       </Section>
-    </div>
+    </>
   )
 }

@@ -17,13 +17,15 @@
  */
 
 import type { ReactNode } from 'react'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalExperimentRow, EvalExperimentStatus, EvalRunOutputView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import type { EvalKey } from './locales.ts'
 import type { LabStartedRun } from './store.ts'
 import {
-  agreementBand, compactCount, durationParts, factorPhrase, shortHash, splitFactors, type Phrase,
+  agreementBand, compactCount, durationParts, factorPhrase, shortHash, splitFactors, verdictKey,
+  verdictSourceOf, type Phrase,
 } from './vocab.ts'
 import css from './LabView.module.css'
 
@@ -337,4 +339,105 @@ export function invariantTone(status: string): Tone {
   if (status === 'ok') return 'ok'
   if (status === 'violated') return 'danger'
   return 'warn'
+}
+
+/* ─────────── the stage bar and the readiness badge (ui-spec §五 v2) ───────── */
+
+/**
+ * What ONE primary action does. The stage bar never branches on the verb:
+ * three of the six move the reader to another stage, one re-reads, and two are
+ * the human acts (ui-spec R1) the page already owned.
+ */
+export type StageVerb = 'design' | 'runs' | 'compare' | 'review' | 'refresh' | 'approve'
+
+/** One experiment status, said as a sentence and a button. */
+export interface StageAction {
+  /** What is true right now, in one sentence. */
+  hint: EvalKey
+  /** The button's own word. */
+  cta: EvalKey
+  /** What pressing it does. */
+  verb: StageVerb
+}
+
+/**
+ * The state machine ui-spec §五 v2 fixes: 草稿 → 去 validate, 待批准 →
+ * 批准并启动, 运行中 → 看运行记录, 评估中 → 去人工评估, 已完成 → 看结果,
+ * 被拒 → 重新检查.
+ *
+ * A table and not a chain of conditionals, because the whole complaint it
+ * answers was that every page looked the same whatever the experiment was
+ * doing: the mapping from state to «what now» is the page's content, so it is
+ * written down once, exhaustively, where it can be read.
+ */
+const STAGE_ACTIONS: Readonly<Record<EvalExperimentStatus, StageAction>> = {
+  'draft': { hint: 'cta.draftHint', cta: 'cta.draft', verb: 'design' },
+  'pending-approval': { hint: 'cta.pendingHint', cta: 'cta.pending', verb: 'approve' },
+  'running': { hint: 'cta.runningHint', cta: 'cta.running', verb: 'runs' },
+  'judging': { hint: 'cta.judgingHint', cta: 'cta.judging', verb: 'review' },
+  'done': { hint: 'cta.doneHint', cta: 'cta.done', verb: 'compare' },
+  'refused': { hint: 'cta.refusedHint', cta: 'cta.refused', verb: 'refresh' },
+  'cancelled': { hint: 'cta.cancelledHint', cta: 'cta.cancelled', verb: 'runs' },
+}
+
+/**
+ * The one action this experiment's state asks for.
+ * @param status - the experiment's status as the page is showing it.
+ * @returns the sentence, the button word, and what the button does.
+ */
+export function stageAction(status: EvalExperimentStatus): StageAction {
+  return STAGE_ACTIONS[status] ?? STAGE_ACTIONS.draft
+}
+
+/**
+ * The readiness badge (ui-spec §五 v2): one chip when every comparison group
+ * passed, and a red cross per group when they did not.
+ *
+ * The RECORDS are not the badge. A reader glancing at this page is asking one
+ * question — can this run start — and six paragraphs of probe output is how
+ * v1 answered it. The records are kept, verbatim, under the fold beside it,
+ * because a refused run's reason exists nowhere else.
+ * @param props - each group's readiness verdict and the re-read action.
+ */
+export function ReadyBadge(props: {
+  rows: ReadonlyArray<{ id: string; ok: boolean; note?: string | undefined }>
+  onRecheck: () => void
+  t: LabViewProps['t']
+}) {
+  const { rows, onRecheck, t } = props
+  if (rows.length === 0) return <span className={css.dim}>{t('ready.pending')}</span>
+  const failed = rows.filter(row => !row.ok)
+  if (failed.length === 0) return <Chip tone="ok">✓ {t('ready.badge')}</Chip>
+  return (
+    <div className={css.readiness}>
+      <div className={css.readinessLine}>
+        <Chip tone="danger">{t('ready.failedCount', { count: failed.length, total: rows.length })}</Chip>
+        <Button size="sm" onClick={onRecheck}>{t('ready.recheck')}</Button>
+      </div>
+      {failed.map(row => (
+        <div key={row.id} className={css.readinessLine}>
+          <Chip tone="danger">✗</Chip>
+          <span className={css.mono}>{row.id}</span>
+          {row.note !== undefined && row.note !== '' && <span className={css.dim}>{row.note}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Which verdict source a cell carries, as the chip the run records are
+ * scanned for. Green only for a final verdict — a judge's draft is a reading,
+ * not a decision.
+ * @param props - the ns → count map of one cell, and the locale seat.
+ */
+export function VerdictChip(props: { annotations: Readonly<Record<string, number>>; t: LabViewProps['t'] }) {
+  const { annotations, t } = props
+  const source = verdictSourceOf(annotations)
+  if (source === null) return <span className={css.dim}>{t('verdict.none')}</span>
+  return (
+    <Chip tone={source === 'human-final' ? 'ok' : 'neutral'} title={t('verdict.hint')}>
+      {t(verdictKey(source))}
+    </Chip>
+  )
 }

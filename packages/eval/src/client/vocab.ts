@@ -364,3 +364,49 @@ export function agreementBand(kappa: number | null): AgreementBand | null {
   if (kappa >= 0.6) return 'medium'
   return 'low'
 }
+
+/* ───────────────── the verdict source (ui-spec §五 v2, I5·T67) ───────────── */
+
+/** The three namespaces a verdict can be written in, most authoritative first. */
+export type VerdictSource = 'human-final' | 'llm-draft' | 'script'
+
+/**
+ * The verdict AUTHORITY order the report scores by: a cell is scored from ONE
+ * namespace, the most authoritative that has anything to say.
+ */
+const VERDICT_ORDER: readonly VerdictSource[] = ['human-final', 'llm-draft', 'script']
+
+/** Each source's word — one dictionary entry per source, no key arithmetic. */
+const VERDICT_KEYS: Readonly<Record<VerdictSource, EvalKey>> = {
+  'human-final': 'verdict.human',
+  'llm-draft': 'verdict.llm',
+  'script': 'verdict.script',
+}
+
+/**
+ * Which verdict source a cell carries, by the report's own authority rule.
+ *
+ * What this is NOT: the score. The cell projection carries how MANY verdicts
+ * each namespace holds, never their values, and the number a reader compares
+ * is `report.ts`'s — polarity from the rubric, one namespace per cell,
+ * majority over samples, weights where the rubric carries them. Computing a
+ * second one here from the live ledger would give the run records a number
+ * that can disagree with the results page about the same cell, which is worse
+ * than not showing one. The source IS shown, because 「这格判了没有、谁判的」 is
+ * a fact this projection does hold, and it is what the run-record list is
+ * scanned for.
+ * @param annotations - ns → how many annotations the cell carries.
+ * @returns the most authoritative source with anything recorded, or null.
+ */
+export function verdictSourceOf(annotations: Readonly<Record<string, number>>): VerdictSource | null {
+  return VERDICT_ORDER.find(ns => (annotations[ns] ?? 0) > 0) ?? null
+}
+
+/**
+ * The word for one verdict source.
+ * @param source - the namespace, or null when the cell carries no verdict.
+ * @returns the dictionary key to render.
+ */
+export function verdictKey(source: VerdictSource | null): EvalKey {
+  return source === null ? 'verdict.none' : VERDICT_KEYS[source]
+}

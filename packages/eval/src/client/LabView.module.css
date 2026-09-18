@@ -142,6 +142,39 @@
   outline-offset: 1px;
 }
 
+/* ── the stage bar (ui-spec §五 v2) ───────────────────────────────────────
+   One line under the tab strip on every stage: what is true right now, and
+   the ONE action it asks for. It sits between the tabs and the body — above
+   the fold at every scroll position, because «下一步做什么» is the question
+   this whole pass exists to answer. */
+.stageBar {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l2);
+}
+
+.stageHint {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The author's note keeps the line breaks it was written with (ui-spec §五
+   v2); it is prose, not a value, so it does not get the mono treatment. */
+.notesBlock {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+}
+
 .body {
   flex: 1;
   min-height: 0;
@@ -797,7 +830,7 @@
 .cellsHead,
 .cellsRow {
   display: grid;
-  grid-template-columns: minmax(180px, 2fr) minmax(150px, 1.1fr) 72px 88px;
+  grid-template-columns: minmax(180px, 2fr) minmax(150px, 1.1fr) minmax(76px, 0.7fr) 88px 72px;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -842,6 +875,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Holds a chip, like .colState: clipping it would cut the rounded edge off. */
+.colVerdict {
+  display: flex;
+  align-items: center;
+  overflow: visible;
 }
 
 .colCell {

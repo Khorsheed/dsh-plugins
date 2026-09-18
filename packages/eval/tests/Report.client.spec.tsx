@@ -240,8 +240,30 @@ function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView
 
 type Harness = ReturnType<typeof makeHarness>
 
+/**
+ * The design stage is where an experiment OPENS (ui-spec §五 v2), so its two
+ * reads fire on the way to whatever this file is actually about. Neither is
+ * under test here: the stubs exist so the stage that is passed through has
+ * something to render.
+ */
+const DESIGN_STUBS = {
+  fetchPlanReview: async () => ({
+    ok: true as const,
+    value: {
+      planPath: '/repo/plans/p.json', schema: 'dataseek.plan/1', ok: true, errors: 0, warnings: 0,
+      digest: null, checks: [], conditions: [],
+    },
+  }),
+  fetchConditions: async () => ({
+    ok: true as const,
+    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [] },
+  }),
+  fetchConditionDiff: async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } }),
+}
+
 function renderView(h: Harness) {
   const props = {
+    ...DESIGN_STUBS,
     sessionId: 's1' as SessionId,
     useStore: hookOf(h.instance),
     actions: h.actions,
@@ -265,7 +287,7 @@ function renderView(h: Harness) {
 async function openReport(h: Harness) {
   renderView(h)
   fireEvent.click(await screen.findByText('t31-judge-panel'))
-  fireEvent.click(screen.getByRole('button', { name: 'page.report' }))
+  fireEvent.click(screen.getByRole('button', { name: 'page.compare' }))
   await waitFor(() => { expect(h.fetchReport).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
 }
 

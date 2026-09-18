@@ -194,7 +194,7 @@ describe('the 新建实验 form', () => {
     // Step 2 hands the reader to step 3: the plan-review page, where 批准并启动
     // is — and the form itself has no approve verb at all.
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'page.plan' }).getAttribute('aria-pressed')).toBe('true')
+      expect(screen.getByRole('button', { name: 'page.design' }).getAttribute('aria-pressed')).toBe('true')
     })
     expect(h.approvePlan).not.toHaveBeenCalled()
     // The notice names the EXPERIMENT (the plan's file stem, since the row
