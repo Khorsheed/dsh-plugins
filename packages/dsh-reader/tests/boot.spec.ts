@@ -14,7 +14,7 @@
  * that must survive is the one that has none of them.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -330,29 +330,55 @@ describe('a link that cannot be previewed is still a link', () => {
   })
 })
 
-describe('an article too large to keep', () => {
-  it('serves the body but does not put it in the state document', async () => {
-    const ctx = await boot()
+describe('a body too large to inline', () => {
+  it('is written to its own file, served on the next read, and swept when evicted', async () => {
+    const root = stateRoot()
+    const ctx = new Context()
+    contexts.push(ctx)
+    apply(ctx, { stateRoot: root })
+    await ctx.fiber.await()
     const service = ctx.get('reader') as ReaderService
-    const html = `<p>${'x'.repeat(4 * 1024 * 1024 + 1)}</p>`
-    const view = await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/big', html })
-    expect(view.tooLarge).toBe(true)
-    expect(view.html).toBe(html)
-    // Nothing was committed: reopening the entry will fetch it again rather
-    // than pay for a multi-megabyte JSON document on every reader operation.
+
+    // 300 KB of markup: over the inline threshold, so the document keeps the
+    // file name and its size instead of the text.
+    const html = `<p>${'x'.repeat(300 * 1024)}</p>`
+    const stored = await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/big', html })
+    expect(stored.html).toBe(html)
+
+    const onDisk = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8'))
+    const body = onDisk.annotations.e1.body
+    expect(body.html).toBeUndefined()
+    expect(typeof body.file).toBe('string')
+    expect(body.chars).toBe(html.length)
+    expect(readFileSync(join(root, 'bodies', body.file), 'utf8')).toBe(html)
+
+    // The cache serves it without re-fetching, exactly like an inline body.
     const again = await service.getEntryBody({ entryId: 'e1', url: 'https://example.com/big' })
-    expect(again.cached).toBe(false)
-    expect(again.html).toBeUndefined()
+    expect(again.cached).toBe(true)
+    expect(again.html).toBe(html)
+
+    // Evicting the body takes its file with it.
+    await service.setCachePolicy({ ttlHours: 24, maxEntries: 1 })
+    await service.storeEntryBody({ entryId: 'e2', url: 'https://example.com/two', html })
+    await service.storeEntryBody({ entryId: 'e3', url: 'https://example.com/three', html })
+    // `maxEntries: 1` keeps the newest body only, and the sweep takes the files
+    // of everything the document let go.
+    const files = readdirSync(join(root, 'bodies'))
+    expect(files).toHaveLength(1)
+    expect(files).not.toContain(body.file)
   })
 
-  it('still caches a body under the budget', async () => {
-    const ctx = await boot()
+  it('still inlines a body under the threshold', async () => {
+    const root = stateRoot()
+    const ctx = new Context()
+    contexts.push(ctx)
+    apply(ctx, { stateRoot: root })
+    await ctx.fiber.await()
     const service = ctx.get('reader') as ReaderService
     const html = '<p>small enough</p>'
-    const view = await service.storeEntryBody({ entryId: 'e2', url: 'https://example.com/small', html })
-    expect(view.cached).toBe(true)
-    expect(view.tooLarge).toBeUndefined()
-    const again = await service.getEntryBody({ entryId: 'e2', url: 'https://example.com/small' })
-    expect(again.html).toBe(html)
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/small', html })
+    const onDisk = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8'))
+    expect(onDisk.annotations.e1.body.html).toBe(html)
+    expect(onDisk.annotations.e1.body.file).toBeUndefined()
   })
 })

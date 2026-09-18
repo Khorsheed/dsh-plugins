@@ -28,7 +28,8 @@
  *
  * @module @khorsheed/dsh-reader/store
  */
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   DEFAULT_CACHE_POLICY,
@@ -205,13 +206,25 @@ function normalizeAnnotations(value: unknown): Record<string, ReaderEntryAnnotat
 function normalizeBody(value: unknown): ReaderEntryAnnotation['body'] {
   if (typeof value !== 'object' || value === null) return undefined
   const record = value as Record<string, unknown>
-  if (typeof record.html !== 'string' || record.html.length === 0) return undefined
+  const inline = typeof record.html === 'string' && record.html.length > 0
+  // A large body lives in `bodies/` and the document keeps its file name: a body
+  // with neither the markup nor a file is not a body.
+  const file = typeof record.file === 'string' && record.file.length > 0 ? record.file : undefined
+  if (!inline && file === undefined) return undefined
   return {
-    html: record.html,
+    ...(inline ? { html: record.html as string } : {}),
+    ...(file === undefined ? {} : { file }),
+    ...(typeof record.chars === 'number' && Number.isFinite(record.chars) ? { chars: record.chars } : {}),
     fetchedAt: typeof record.fetchedAt === 'string' ? record.fetchedAt : new Date(0).toISOString(),
     expiresAt: typeof record.expiresAt === 'string' ? record.expiresAt : new Date(0).toISOString(),
     url: typeof record.url === 'string' ? record.url : '',
     ...(record.truncated === true ? { truncated: true } : {}),
+    // Without this the script-figure note survived exactly one read: the body is
+    // normalized on EVERY load, so a field the normalizer forgets is a field the
+    // document silently loses.
+    ...(typeof record.scriptFigures === 'number' && Number.isFinite(record.scriptFigures)
+      ? { scriptFigures: record.scriptFigures }
+      : {}),
   }
 }
 
@@ -318,10 +331,14 @@ export function boundPayloads(doc: ReaderStateDoc): { doc: ReaderStateDoc; chang
   }
 }
 
+/** Sub-directory holding bodies too large to inline in the document. */
+export const READER_BODIES_DIR = 'bodies'
+
 /** Native-fs state store: the deployment's document, not the session's. */
 export class ReaderStore {
   private readonly stateRoot: string
   private readonly file: string
+  private readonly bodiesDir: string
   /** Set once the root has proven unwritable; the service then goes memory-only. */
   private unwritable: string | undefined
 
@@ -331,6 +348,86 @@ export class ReaderStore {
   constructor(config: { stateRoot?: string } = {}) {
     this.stateRoot = resolveReaderStateRoot(config.stateRoot)
     this.file = join(this.stateRoot, READER_STATE_FILE_NAME)
+    this.bodiesDir = join(this.stateRoot, READER_BODIES_DIR)
+  }
+
+  /**
+   * Write one body to its own file, atomically, and return the file's name.
+   *
+   * The name is a digest of the entry id: entry ids are URLs, and a document
+   * carrying an absolute path (or a path derived from remote text) is a
+   * directory-traversal waiting to happen.
+   *
+   * @param entryId - the entry the body belongs to.
+   * @param html - the normalized body markup.
+   * @returns the file name to store in the document.
+   */
+  writeBody(entryId: string, html: string): string {
+    const name = `${bodyFileName(entryId)}.html`
+    mkdirSync(this.bodiesDir, { recursive: true })
+    const target = join(this.bodiesDir, name)
+    const temporary = `${target}.${process.pid}.tmp`
+    try {
+      writeFileSync(temporary, html)
+      renameSync(temporary, target)
+    } catch (error) {
+      rmSync(temporary, { force: true })
+      throw new ReaderStoreError(`reader: ${target} could not be written — ${errorMessage(error)}`, 'io')
+    }
+    return name
+  }
+
+  /**
+   * Read one body file.
+   *
+   * @param name - the file name recorded in the document.
+   * @returns the markup, or `undefined` when the file is gone or unreadable.
+   */
+  readBody(name: string): string | undefined {
+    try {
+      return readFileSync(join(this.bodiesDir, name), 'utf8')
+    } catch {
+      // A body file the reader deleted by hand is not an error: the entry simply
+      // has no cache, and the next open fetches it again.
+      return undefined
+    }
+  }
+
+  /**
+   * Delete body files the document no longer references.
+   *
+   * Eviction (`maxEntries`), tag edits that drop an annotation, and a hand-edited
+   * document all release bodies by REMOVING them from the JSON — which would
+   * otherwise leave their files on disk forever. Best-effort by design: a failed
+   * sweep must never fail the commit that triggered it.
+   *
+   * @param doc - the document that was just written.
+   * @returns how many files were removed.
+   */
+  pruneBodies(doc: ReaderStateDoc): number {
+    const referenced = new Set<string>()
+    for (const annotation of Object.values(doc.annotations ?? {})) {
+      if (annotation.body?.file !== undefined) referenced.add(annotation.body.file)
+    }
+    let names: string[]
+    try {
+      names = readdirSync(this.bodiesDir)
+    } catch {
+      return 0
+    }
+    let removed = 0
+    for (const name of names) {
+      if (referenced.has(name)) continue
+      try {
+        // Anything unreferenced goes, including a half-written `.tmp` from a
+        // crashed process.
+        rmSync(join(this.bodiesDir, name), { force: true })
+        removed += 1
+      } catch {
+        // Leave it; the next commit sweeps again.
+      }
+    }
+    return removed
   }
 
   /** The absolute path of the state file (diagnostics and tests). */
@@ -430,6 +527,10 @@ export class ReaderStore {
       const next = boundAnnotations(boundPayloads(mutate(doc)).doc).doc
       try {
         await this.write(next, version)
+        // Bodies the document no longer names are files nobody can reach: the
+        // sweep runs here because this is the only place the new document is
+        // known to be on disk.
+        this.pruneBodies(next)
         return next
       } catch (error) {
         // An external edit moved the document between our read and write.
@@ -443,6 +544,11 @@ export class ReaderStore {
 }
 
 /** Whether a native fs failure is "there is no file yet". */
+/** The bare file name one entry's body lives under. */
+function bodyFileName(entryId: string): string {
+  return createHash('sha1').update(entryId).digest('hex').slice(0, 32)
+}
+
 function isMissing(error: unknown): boolean {
   return (error as { code?: string } | undefined)?.code === 'ENOENT'
 }
