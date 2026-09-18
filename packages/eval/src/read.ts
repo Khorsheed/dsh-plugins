@@ -24,6 +24,7 @@ import {
   expandHome,
   resolveConditionReadiness,
   unresolvedFields,
+  type ConditionReadinessOptions,
   type ConditionResolution,
   type EvalDiagnostic,
   type LockProvisionRecord,
@@ -143,15 +144,21 @@ async function conditionIds(datasetRoot: string): Promise<string[]> {
  * @param repo - the dataset repository root (already `~`-expanded).
  * @param only - restrict to these dataset sets; omit to scan every set that
  *   has a `conditions/` directory.
+ * @param options - the optional scoped-home resolver: with one, a condition
+ *   whose preset copy was edited after provision reads stale here too.
  * @throws {@link EvalReadRefused} when `repo` is not a dataset repository.
  */
-export async function listConditions(repo: string, only?: readonly string[]): Promise<ConditionsReport> {
+export async function listConditions(
+  repo: string,
+  only?: readonly string[],
+  options: ConditionReadinessOptions = {},
+): Promise<ConditionsReport> {
   const datasets = only !== undefined && only.length > 0 ? [...only] : await datasetsWithConditions(repo)
   const conditions: ConditionSummary[] = []
   for (const dataset of datasets) {
     const datasetRoot = join(repo, 'datasets', dataset)
     for (const id of await conditionIds(datasetRoot)) {
-      const { entry, document, errors, warnings } = await resolveConditionReadiness(id, datasetRoot)
+      const { entry, document, errors, warnings } = await resolveConditionReadiness(id, datasetRoot, options)
       const harness = isPlainObject(document?.['harness']) ? document['harness'] : undefined
       const model = isPlainObject(document?.['model']) ? document['model'] : undefined
       conditions.push({

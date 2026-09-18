@@ -97,6 +97,24 @@ readSubProfilePreset(scopedHome)   // 'eval-lean'——生成的层也是可解�
 
 preset 目录从哪来：子 dsh 以 `DSH_HOME=<作用域目录>` 启动，所以 roster 自带的用户根就是 `<作用域目录>/.agent-presets`——把一份 preset 目录放在那里，这个 scope 就有了自己的 preset（`roots` / `includeShippedRoot` / `includeUserRoot` 可另行指定）。roster 模块**不软链**：它是官方包，本来就在 dsh 安装锚点的闭包里、与 `@deepseek-ai/dsh-base` 并列。链第二份会给它第二份 `@deepseek-ai/cordis`，而 cordis 按实例身份做服务查找与类型判断，症状是静默的服务缺失而不是报错（与上文「双文件系统契约」里 bundle 那一节同一个坑）。锚点里真没有它的部署会拿到 loader 自己那句「模块解析不了」，比这一步能说的更准。preset id 只接受 `[a-z0-9][a-z0-9-]*`（它是目录名）。撤掉 `preset` 再 provision 一次，这一层原样消失。
 
+**scope 自带 preset 副本（容器轮唯一可行的形态）。** 上面那条把 preset 目录放进 `<作用域目录>/.agent-presets` 的做法，`provisionDshScope` 把它变成一条可核对的流程——而且它是**容器轮唯一跑得通的形态**：一个评测单元 bind 挂进去的只有 scoped home，roster 若把 `roots` 指向部署的 preset 根，那条路径在单元里根本不存在，子 dsh 起不来（`preset "eval-lean" not found`）。副本放在 scope 自己的用户根上，宿主是 `<scope>/.agent-presets/<id>`、单元里是 `/creds/dsh/.agent-presets/<id>`——同一个目录，因为单元挂的就是 scope。
+
+```ts
+import { provisionDshScope, readScopeSubProfile } from '@khorsheed/dsh-local-agent-dsh/provision'
+
+// 显式请求：从部署的 preset 根重新同步副本，并把决定持久化进 scope
+provisionDshScope(scopedHome, config, { preset: 'eval-lean', presetRoot })
+readScopeSubProfile(scopedHome)   // { preset: 'eval-lean' }
+// 之后任何一次 provisioning（重启后的 materialize、宿主轮的自愈）都不必再被告知
+provisionDshScope(scopedHome, config, { presetRoot })
+```
+
+三件事值得单独说：
+
+- **preset 从哪儿解析出来**：*显式参数 → `<作用域目录>/sub-profile.json` → 插件 config*。中间那一档不是可选的便利：本模块**整份重写** `cordis.patch.yml`，而注册表在每个新宿主进程里第一次有人点名该 scope 时会重新 provision 它——手写进 patch 的 roster 层会就这样静默消失，下一次回读报「这个 scope 没有可读的 roster」。scope 自己那份声明是它活下来的方式，也是「两个 scope 各 roster 一个 preset」在一个**实例级** config 上唯一表达得出来的方式。
+- **副本什么时候刷新**：只有带显式 `preset` 参数的那一次（评测的 `conditions provision`）会从部署的 preset 根重新同步。其余任何一次 provisioning 只在副本**不存在**时才复制，存在就原样留着并**报告**它是否仍与源逐字节相同——run 底下的受试对象不许被任何东西挪动。
+- **作因子的 preset 不得写绝对路径**：同一份 preset 会被从三个目录读到（部署的 preset 根、scope 的副本、单元里的挂载点），绝对路径至少在其中两处是错的，而且 `skill-filesystem` 把读不到的根当空根，所以错得静音。要相对就用 loader 自己的表达式，官方 `cordis` preset 的写法：`!!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`——`baseUrl` 是该组合文件自己的目录。带绝对路径的 preset 在快照这一步就被拒，消息里带这句写法。
+
 **权限边界（`permissions`）。** 子 dsh 跑 bash 时的文件效应边界与审批策略，由 provisioning 多写一层 patch：两条**覆盖**行钉住 `sandbox-policy` 的 `mode` 与 `user-approval` 的 `policy`（两者按 dsh-base 自己的 `permission-presets` 表配对——`danger-full-access` 配 `never`，另两档配 `ask`；分开钉两个插件而让它们漂开，等于造一个跑不进去也问不到人的边界）。不写这一项就一层都不写，子 dsh 跑 dsh-base 组成的 `workspace-write` + `ask`——与本字段出现之前逐字节相同。
 
 ```ts

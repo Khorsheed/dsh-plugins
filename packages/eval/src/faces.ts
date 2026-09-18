@@ -399,6 +399,41 @@ export interface LocalAgentFace {
    * it could compare nothing.
    */
   effectiveSettings?(harness: string, scope?: string): Promise<LocalAgentEffectiveSettingsFace | undefined>
+  /**
+   * Provision one scope deliberately, with the per-condition inputs the
+   * condition document carries, and report what the scope now holds.
+   *
+   * The registry materializes a scope once per host process with no options
+   * and swallows failures — right for "somebody named a scope", wrong for
+   * "this condition's subject must compose preset X". This verb is the
+   * deliberate one: it waits, it propagates the failure, and what it returns
+   * is a read-back.
+   *
+   * OPTIONAL on the face for the same reason as the three above: a facade
+   * that predates it leaves provision reading back whatever is already in
+   * the scope, which is exactly the behaviour every preset condition had
+   * before the verb existed.
+   */
+  provisionScope?(
+    harness: string,
+    scope?: string,
+    options?: { preset?: string },
+  ): Promise<LocalAgentScopeProvisionedFace>
+}
+
+/** What {@link LocalAgentFace.provisionScope} reports back. */
+export interface LocalAgentScopeProvisionedFace {
+  /** The scoped home that was provisioned. */
+  homeDir: string
+  /** The preset the scope's composition now rosters, when it rosters one. */
+  preset?: string
+  /**
+   * The scope's own copy of that preset, when the harness keeps one.
+   * `matchesSource` is the whole claim: the copy is byte-for-byte the
+   * deployment's own preset directory — which is what lets a fingerprint
+   * taken against the deployment's copy describe the scope's.
+   */
+  presetSnapshot?: { matchesSource: boolean }
 }
 
 /**

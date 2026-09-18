@@ -21,6 +21,14 @@
  * scope directory IS the capability face: two scopes whose rosters name two
  * presets are two subjects, and the difference is a file a person can read.
  *
+ * Where the preset DIRECTORY lives is the scope's business too. The roster
+ * derives a user root of `<$DSH_HOME>/.agent-presets` and the sub-dsh runs
+ * with `DSH_HOME` pointed at the scoped home, so a scope that keeps its own
+ * copy there is resolved identically on the host and inside an evaluation
+ * unit (which bind-mounts the scope, and nothing else). `provisionDshScope`
+ * below is the entry that puts the copy there, records what the scope
+ * composes in a file of its own, and rosters it with no `roots` at all.
+ *
  * It may also carry a PERMISSION BOUNDARY: one appended patch layer pinning
  * `sandbox-policy`'s mode and `user-approval`'s policy to one of dsh's own
  * three permission presets. Without it the sub-dsh runs whatever `dsh-base`
@@ -44,8 +52,10 @@
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, isAbsolute, join } from 'node:path'
+import yaml from 'js-yaml'
 
 /** Default name of the sub-dsh profile under the scoped home. */
 export const DEFAULT_SUB_PROFILE_NAME = 'headless-local-agent-dsh'
@@ -388,4 +398,373 @@ export function provisionDshSubProfile(homeDir: string, config: DshSubProfileCon
   mkdirSync(dirname(bundleLink), { recursive: true })
   ensureSymlink(bundleLink, bundleDir)
   return profileDir
+}
+
+// ── the scope's own preset ───────────────────────────────────────────────
+
+/**
+ * The preset root a harness home derives — the roster's own rule, spelled
+ * here because this module has to write into it.
+ */
+export const USER_PRESET_DIR = '.agent-presets'
+
+/** The file that makes a preset directory a preset (the roster's rule). */
+const PRESET_COMPOSITION_FILE = 'agent.cordis.yml'
+
+/**
+ * The scope's own declaration of what its sub-profile composes.
+ *
+ * A FILE in the scope directory, for the third time and the same reason as
+ * the roster layer and the permission boundary: a scoped home bind-mounted
+ * into an evaluation unit carries its own composition with it, and nothing
+ * has to ride the spawn env or be baked into an image.
+ *
+ * It exists because the plugin's own `config` is instance-global — one
+ * deployment, one answer — while a preset is a property of the SUBJECT. Two
+ * scopes rostering two presets was therefore unexpressible, and the only way
+ * to build it was to hand-append the roster layer to each scope's patch. That
+ * hand edit does not survive: this module regenerates the patch WHOLE, and
+ * the registry re-provisions a scope the first time anything names it in a
+ * fresh host process — so the roster silently disappears on the next restart,
+ * and the next read-back reports a scope that rosters nothing.
+ */
+export const SCOPE_SUB_PROFILE_FILENAME = 'sub-profile.json'
+
+/** What {@link SCOPE_SUB_PROFILE_FILENAME} may say. */
+export interface DshScopeSubProfile {
+  /** The preset id this scope's sub-dsh composes. */
+  preset?: string
+}
+
+/**
+ * Read one scope's own sub-profile declaration.
+ *
+ * Degrades to `undefined` for every unreadable shape — no file, unparsable
+ * JSON, a `preset` that is not a usable id — because the caller's next step
+ * is the plugin-level config, and a scope whose declaration is junk must fall
+ * back to the deployment's answer rather than fail to provision at all.
+ * @param homeDir - the harness scoped home.
+ * @returns the declaration, or undefined when the scope declares nothing usable.
+ */
+export function readScopeSubProfile(homeDir: string): DshScopeSubProfile | undefined {
+  let text: string
+  try {
+    text = readFileSync(join(homeDir, SCOPE_SUB_PROFILE_FILENAME), 'utf8')
+  } catch {
+    return undefined
+  }
+  let document: unknown
+  try {
+    document = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) return undefined
+  const preset = (document as Record<string, unknown>)['preset']
+  if (typeof preset !== 'string' || !SUB_PROFILE_PRESET_ID_RE.test(preset)) return undefined
+  return { preset }
+}
+
+/**
+ * Record one scope's sub-profile declaration, so the next provisioning of
+ * that scope reproduces it without being told. Idempotent — a file that
+ * already says this is left untouched.
+ * @param homeDir - the harness scoped home.
+ * @param declaration - what the scope composes.
+ */
+export function writeScopeSubProfile(homeDir: string, declaration: DshScopeSubProfile): void {
+  const path = join(homeDir, SCOPE_SUB_PROFILE_FILENAME)
+  const content = JSON.stringify(declaration, undefined, 2) + '\n'
+  if (existsSync(path) && readFileSync(path, 'utf8') === content) return
+  mkdirSync(homeDir, { recursive: true })
+  writeFileSync(path, content)
+}
+
+/**
+ * A YAML schema that keeps `!!js` expressions as their SOURCE TEXT.
+ *
+ * The loader evaluates those expressions; this module only reads them, and
+ * evaluating one here would run preset text as code inside the host process.
+ * Keeping the source is what lets {@link compositionAbsolutePaths} see an
+ * absolute path hidden inside one.
+ */
+const EXPRESSION_SCHEMA = yaml.DEFAULT_SCHEMA.extend(
+  (['scalar', 'sequence', 'mapping'] as const).map(kind => new yaml.Type('tag:yaml.org,2002:js', {
+    kind,
+    construct: (data: unknown) => ({ __jsExpr: typeof data === 'string' ? data : '' }),
+  })),
+)
+
+/** A quoted absolute path inside an expression's source text. */
+const QUOTED_ABSOLUTE_RE = /(['"])(\/[^'"\n]*)\1/g
+
+/**
+ * Every absolute filesystem path a preset composition names.
+ *
+ * An absolute path is the one thing in a composition that cannot be true in
+ * two places at once, and a preset used as an evaluation factor is copied:
+ * it is read on the host from the deployment's preset root, again from the
+ * scope's own copy, and a third time inside a unit where the scope is bound
+ * at a different mount point. `skill-filesystem` resolves each
+ * `customSkillDirs` entry with `resolve()`, so an absolute entry is taken as
+ * written and a bare relative one resolves against the process's cwd —
+ * neither travels.
+ *
+ * What does travel is the loader's own expression form, which the shipped
+ * `cordis` preset already uses:
+ *
+ * ```yaml
+ * customSkillDirs:
+ *   - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+ * ```
+ *
+ * `baseUrl` is the composition's own directory (the include rewrites it), so
+ * the root resolves wherever the preset is installed.
+ *
+ * Unparsable YAML reports NO findings: the loader is the authority on whether
+ * a composition loads, and refusing a preset because this reader could not
+ * parse it would be this module overruling it.
+ * @param text - the `agent.cordis.yml` content.
+ * @returns the offending literals, in document order, deduplicated.
+ */
+export function compositionAbsolutePaths(text: string): string[] {
+  let document: unknown
+  try {
+    document = yaml.load(text, { schema: EXPRESSION_SCHEMA })
+  } catch {
+    return []
+  }
+  const found: string[] = []
+  const add = (value: string): void => {
+    if (!found.includes(value)) found.push(value)
+  }
+  const walk = (value: unknown): void => {
+    if (typeof value === 'string') {
+      if (isAbsolute(value) || value.startsWith('file:///')) add(value)
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item)
+      return
+    }
+    if (typeof value !== 'object' || value === null) return
+    const expression = (value as Record<string, unknown>)['__jsExpr']
+    if (typeof expression === 'string') {
+      for (const match of expression.matchAll(QUOTED_ABSOLUTE_RE)) {
+        const literal = match[2]
+        if (literal !== undefined) add(literal)
+      }
+      return
+    }
+    for (const item of Object.values(value as Record<string, unknown>)) walk(item)
+  }
+  walk(document)
+  return found
+}
+
+/** Every regular file under `dir`, as posix-ish relative paths, sorted. */
+function presetTreeFiles(dir: string): string[] | undefined {
+  const files: string[] = []
+  const walk = (absDir: string, rel: string): boolean => {
+    let entries
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true })
+    } catch {
+      return false
+    }
+    for (const entry of entries) {
+      const relChild = rel === '' ? entry.name : `${rel}/${entry.name}`
+      // A symlink is refused rather than followed: it does not survive the
+      // bind mount into a unit, and the scoped home's own hash counts one as
+      // skipped — a preset half of which is not hashed is not a subject.
+      if (entry.isSymbolicLink()) return false
+      if (entry.isDirectory()) {
+        if (!walk(join(absDir, entry.name), relChild)) return false
+        continue
+      }
+      if (!entry.isFile()) return false
+      files.push(relChild)
+    }
+    return true
+  }
+  if (!walk(dir, '')) return undefined
+  return files.sort()
+}
+
+/**
+ * Whether two preset directories are the same directory, byte for byte.
+ *
+ * This is the whole claim the evaluation rests on: a capability face carries
+ * no filesystem path, so the fingerprint taken against the deployment's copy
+ * describes the scope's copy exactly when the two hold the same bytes.
+ * @param a - one preset directory.
+ * @param b - the other.
+ * @returns true when both hold the same files with the same contents.
+ */
+export function presetTreesEqual(a: string, b: string): boolean {
+  const left = presetTreeFiles(a)
+  const right = presetTreeFiles(b)
+  if (left === undefined || right === undefined) return false
+  if (left.length !== right.length || left.some((name, index) => name !== right[index])) return false
+  return left.every(name => {
+    try {
+      return readFileSync(join(a, name)).equals(readFileSync(join(b, name)))
+    } catch {
+      return false
+    }
+  })
+}
+
+/** Copy one preset directory onto another, replacing whatever was there. */
+function mirrorPresetTree(source: string, target: string): void {
+  const files = presetTreeFiles(source)
+  if (files === undefined) {
+    throw new Error(`provision-dsh: preset directory ${source} is not a plain tree of files`
+      + ' (a symlink or a device node cannot be copied into a scope — an evaluation unit resolves neither)')
+  }
+  rmSync(target, { recursive: true, force: true })
+  for (const name of files) {
+    const destination = join(target, name)
+    mkdirSync(dirname(destination), { recursive: true })
+    copyFileSync(join(source, name), destination)
+  }
+}
+
+/** What {@link snapshotScopePreset} did. */
+export interface DshScopePresetSnapshot {
+  /** The scope's copy of the preset directory. */
+  dir: string
+  /** Whether that copy is byte-for-byte the deployment's own. */
+  matchesSource: boolean
+  /** Whether this call wrote it. */
+  copied: boolean
+}
+
+/**
+ * Give one scope its own copy of a preset, from the deployment's preset root.
+ *
+ * The copy is what makes a preset reachable on BOTH paths. The roster derives
+ * a user root of `<$DSH_HOME>/.agent-presets`, and the sub-dsh runs with
+ * `DSH_HOME` pointed at the scoped home — which is `<scope>/.agent-presets`
+ * on the host and `/creds/dsh/.agent-presets` inside an evaluation unit,
+ * one directory, because the unit binds the scope. A roster pointed at the
+ * deployment's root instead resolves on the host and names a path the unit
+ * does not have.
+ *
+ * `refresh` is the difference between provisioning a condition and healing a
+ * scope. A deliberate provision re-syncs from the deployment's copy, because
+ * that is the moment a new lock is minted and an edited preset should be
+ * picked up. Every other provisioning leaves an existing copy alone: nothing
+ * may move the subject under a run.
+ * @param homeDir - the harness scoped home.
+ * @param presetRoot - the deployment's preset root.
+ * @param id - the preset id (a directory name in both roots).
+ * @param options - `refresh` re-syncs an existing copy.
+ * @returns where the copy is and whether it matches the source.
+ * @throws when the source is missing, is not a preset, or names an absolute path.
+ */
+export function snapshotScopePreset(
+  homeDir: string,
+  presetRoot: string,
+  id: string,
+  options: { refresh?: boolean } = {},
+): DshScopePresetSnapshot {
+  if (!SUB_PROFILE_PRESET_ID_RE.test(id)) {
+    throw new Error(`provision-dsh: preset id ${JSON.stringify(id)} must match ${String(SUB_PROFILE_PRESET_ID_RE)} (it is a directory name)`)
+  }
+  const source = join(presetRoot, id)
+  const composition = join(source, PRESET_COMPOSITION_FILE)
+  if (!existsSync(composition)) {
+    throw new Error(`provision-dsh: no preset ${JSON.stringify(id)} in ${presetRoot}`
+      + ` (expected ${join(id, PRESET_COMPOSITION_FILE)}) — install it into this deployment's preset root before a scope can compose it`)
+  }
+  const offenders = compositionAbsolutePaths(readFileSync(composition, 'utf8'))
+  if (offenders.length > 0) {
+    throw new Error(`provision-dsh: preset ${JSON.stringify(id)} names absolute path(s) ${offenders.map(path => JSON.stringify(path)).join(', ')}`
+      + ' — a preset that is copied into a scope and bind-mounted into a unit is read from three different directories,'
+      + ' so an absolute path is wrong in at least two of them. Use the loader expression the shipped `cordis` preset uses:'
+      + ' !!js "process.getBuiltinModule(\'node:url\').fileURLToPath(new URL(\'skills/\', baseUrl))"')
+  }
+  const dir = join(homeDir, USER_PRESET_DIR, id)
+  if (existsSync(dir) && options.refresh !== true) {
+    return { dir, matchesSource: presetTreesEqual(source, dir), copied: false }
+  }
+  if (existsSync(dir) && presetTreesEqual(source, dir)) {
+    return { dir, matchesSource: true, copied: false }
+  }
+  mirrorPresetTree(source, dir)
+  return { dir, matchesSource: true, copied: true }
+}
+
+/**
+ * The deployment's own preset root, when the caller names no other.
+ *
+ * The roster's own derivation, repeated here because the provisioning paths
+ * that heal a scope (a host round, a live runtime) have no settings service
+ * in reach: the harness home from the environment, else the installation
+ * default.
+ */
+export function defaultPresetRoot(): string {
+  return join(process.env['DSH_HOME'] ?? join(homedir(), '.dsh-official'), USER_PRESET_DIR)
+}
+
+/** Per-scope inputs {@link provisionDshScope} takes. */
+export interface DshScopeProvisionOptions {
+  /**
+   * The preset this scope composes. Present, it is authoritative: it is
+   * persisted into the scope's own declaration and its copy is re-synced from
+   * the deployment's preset root. Absent, the scope's declaration decides.
+   */
+  preset?: string
+  /** The deployment's preset root; defaults to `<$DSH_HOME>/.agent-presets`. */
+  presetRoot?: string
+}
+
+/** What {@link provisionDshScope} left in the scope. */
+export interface DshScopeProvisioned {
+  /** The sub-profile directory. */
+  profileDir: string
+  /** The preset the sub-profile now rosters, when it rosters one. */
+  preset?: string
+  /** The scope's own copy of that preset, when it keeps one. */
+  presetSnapshot?: { matchesSource: boolean }
+}
+
+/**
+ * Provision one scope: its own preset copy, its declaration, and the
+ * sub-profile that rosters it.
+ *
+ * The preset resolves in one order, and the order is the decision: the
+ * CALLER's explicit request, then the SCOPE's own declaration, then the
+ * deployment's plugin config. The first is how a condition says which subject
+ * this scope is; the second is how that survives a restart; the third is the
+ * deployment-wide answer every scope had before either existed.
+ *
+ * A scope-owned preset rosters with NO `roots`. The roster's derived user
+ * root is exactly the scope's copy on both paths, so leaving the roots alone
+ * is what gives the host and the unit one resolution rule instead of two.
+ * @param homeDir - the harness scoped home.
+ * @param config - the deployment's sub-profile config.
+ * @param options - per-scope inputs.
+ * @returns what the scope now composes.
+ */
+export function provisionDshScope(
+  homeDir: string,
+  config: DshSubProfileConfig = {},
+  options: DshScopeProvisionOptions = {},
+): DshScopeProvisioned {
+  const requested = options.preset
+  const declared = requested ?? readScopeSubProfile(homeDir)?.preset
+  if (requested !== undefined) writeScopeSubProfile(homeDir, { preset: requested })
+  let snapshot: DshScopePresetSnapshot | undefined
+  if (declared !== undefined) {
+    snapshot = snapshotScopePreset(homeDir, options.presetRoot ?? defaultPresetRoot(), declared, { refresh: requested !== undefined })
+  }
+  const preset: DshSubProfilePreset | undefined = declared === undefined ? config.preset : { id: declared }
+  const profileDir = provisionDshSubProfile(homeDir, { ...config, ...(preset === undefined ? {} : { preset }) })
+  return {
+    profileDir,
+    ...(preset === undefined ? {} : { preset: preset.id }),
+    ...(snapshot === undefined ? {} : { presetSnapshot: { matchesSource: snapshot.matchesSource } }),
+  }
 }

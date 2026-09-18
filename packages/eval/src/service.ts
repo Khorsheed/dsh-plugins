@@ -130,9 +130,35 @@ export class EvalService {
    * Validate a plan document against `dataseek.plan/1` and resolve what it
    * references (condition declarations, locks, stage schemas). Data problems
    * come back as diagnostics, never as throws.
+   *
+   * Running inside a live instance, this one can do a little more than the
+   * offline CLI: the local-agent facade resolves each condition's scoped
+   * home, so a lock whose preset copy was edited after provision reads STALE
+   * here rather than `ready`. Without the facade it is exactly the offline
+   * validation.
    */
   validatePlan(planPath: string): Promise<PlanValidation> {
-    return validatePlan(expandHome(planPath))
+    return validatePlan(expandHome(planPath), this.scopeHomeDirResolver())
+  }
+
+  /**
+   * The scoped-home resolver the read verbs hand to validation, or `{}` in a
+   * composition with no local-agent facade. Never throws: a facade that
+   * cannot answer leaves the freshness check unrun, which is the same thing
+   * as not having one.
+   */
+  private scopeHomeDirResolver(): { scopeHomeDir?: (harness: string, scope?: string) => string | undefined } {
+    const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
+    if (typeof localAgent?.homeDir !== 'function') return {}
+    return {
+      scopeHomeDir: (harness: string, scope?: string): string | undefined => {
+        try {
+          return localAgent.homeDir?.(harness, scope)
+        } catch {
+          return undefined
+        }
+      },
+    }
   }
 
   /**
@@ -233,7 +259,7 @@ export class EvalService {
   ): Promise<ConditionsReport> {
     const scope = this.resolveRepoScope(options)
     if (scope instanceof EvalReadRefused) return Promise.reject(scope)
-    return listConditions(scope.repo, scope.datasets)
+    return listConditions(scope.repo, scope.datasets, this.scopeHomeDirResolver())
   }
 
   /**

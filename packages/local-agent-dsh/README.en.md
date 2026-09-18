@@ -96,6 +96,24 @@ readSubProfilePreset(scopedHome)   // 'eval-lean' — the generated layer is a p
 
 Where the preset directories come from: the sub-dsh launches with `DSH_HOME=<scoped home>`, so the roster's own user root is `<scoped home>/.agent-presets` — drop a preset directory there and that scope has a preset of its own (`roots` / `includeShippedRoot` / `includeUserRoot` override the derived roots). The roster module is deliberately **not** symlinked: it is an official package, already in the dsh installation anchor's closure beside `@deepseek-ai/dsh-base`. A linked second copy would give it a second `@deepseek-ai/cordis`, and cordis does service lookup and type checks by instance identity — the symptom is silently missing services, not an error (the same trap the dual-filesystem contract above describes for the bundle). A deployment whose anchor genuinely lacks it gets the loader's own "cannot resolve" message, which names the module better than this step could. A preset id must match `[a-z0-9][a-z0-9-]*` (it is a directory name). Re-provision without `preset` and the layer disappears again.
 
+**The scope's own copy of the preset (the only arrangement a container round can use).** `provisionDshScope` turns "drop a preset directory in `<scoped home>/.agent-presets`" into a checkable procedure — and it is the **only** arrangement a container round can use: an evaluation unit bind-mounts the scoped home and nothing else, so a roster whose `roots` name the deployment's preset root names a path the unit does not have and the sub-dsh will not start (`preset "eval-lean" not found`). A copy in the scope's own user root is `<scope>/.agent-presets/<id>` on the host and `/creds/dsh/.agent-presets/<id>` inside the unit — one directory, because the unit binds the scope.
+
+```ts
+import { provisionDshScope, readScopeSubProfile } from '@khorsheed/dsh-local-agent-dsh/provision'
+
+// Explicit request: re-sync the copy from the deployment's preset root and persist the decision
+provisionDshScope(scopedHome, config, { preset: 'eval-lean', presetRoot })
+readScopeSubProfile(scopedHome)   // { preset: 'eval-lean' }
+// Every later provisioning (a restart's materialization, a host round's self-heal) needs no telling
+provisionDshScope(scopedHome, config, { presetRoot })
+```
+
+Three things worth stating on their own:
+
+- **Where the preset resolves from**: *explicit argument → `<scoped home>/sub-profile.json` → plugin config*. The middle one is not a convenience. This module regenerates `cordis.patch.yml` WHOLE, and the registry re-provisions a scope the first time anything names it in a fresh host process — so a roster layer hand-appended to the patch silently disappears there, and the next read-back reports a scope that rosters nothing. The scope's own declaration is how it survives, and it is also the only way "two scopes rostering two presets" is expressible at all on a config that is **instance-global**.
+- **When the copy is refreshed**: only by the call that carries an explicit `preset` (the evaluation's `conditions provision`). Every other provisioning copies only when the directory is ABSENT, and otherwise leaves it alone and REPORTS whether it still matches the source byte for byte. Nothing may move the subject under a run.
+- **A preset used as a factor may not name an absolute path**: the same preset is read from three directories (the deployment's preset root, the scope's copy, the unit's mount point), so an absolute path is wrong in at least two of them — and wrong silently, since `skill-filesystem` treats a root it cannot read as an empty one. The form that travels is the loader's own expression, as the shipped `cordis` preset writes it: `!!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`, where `baseUrl` is the composition's own directory. A preset naming one is refused at the snapshot, with that idiom in the message.
+
 **Permission boundary (`permissions`).** The file-effect boundary a sub-dsh's bash calls run under, and the approval policy a denied call escalates through, written by provisioning as one more patch layer: two **override** rows pinning `sandbox-policy`'s `mode` and `user-approval`'s `policy` (paired by dsh-base's own `permission-presets` table — `danger-full-access` with `never`, the other two with `ask`; pinning two plugins separately and letting them drift apart builds a boundary nobody can run inside and nobody can be asked about). Leave the key unset and no layer is written at all: the sub-dsh runs dsh-base's `workspace-write` + `ask`, byte for byte the behavior before this field existed.
 
 ```ts

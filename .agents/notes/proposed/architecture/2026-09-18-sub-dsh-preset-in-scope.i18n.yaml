@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record: the git blob hash of each side as of the
-# last confirmed-consistent state. Both languages carry equal authority; after
-# editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-18-sub-dsh-preset-in-scope.md
-.agents/notes/proposed/architecture/2026-09-18-sub-dsh-preset-in-scope.md: 447749f2b3e147dcd854d1bebf92ede10ce7e6a9
-.agents/notes/proposed/architecture/2026-09-18-sub-dsh-preset-in-scope.zh.md: d5adccbbb83bc3b233ec4178a3c70b20703d81b5
