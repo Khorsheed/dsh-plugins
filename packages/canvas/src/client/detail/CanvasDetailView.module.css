@@ -373,3 +373,23 @@
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
 }
+
+/* The sandboxed HTML render (strict CSP, no network; the bridge sizes it). */
+.htmlFrame {
+  width: 100%;
+  min-height: 200px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* The format tag beside the kind tag (only HTML today). */
+.formatTag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  padding: 1px 8px;
+}

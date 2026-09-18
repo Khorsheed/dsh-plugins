@@ -138,6 +138,11 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'datasets-tool': ['@khorsheed/dsh-datasets'],
   'eval-tool': ['@khorsheed/dsh-eval'],
   'ui-file-preview': ['@khorsheed/dsh-file-preview'],
+  // canvas → inline-html-render: the card detail renders HTML cards through
+  // inline-html-render's SOURCE-plane helpers (buildCardSrcDoc/attachBridge),
+  // bundled by tsdown — a compile-time edge with zero runtime coupling (the
+  // renderer package need not be installed for canvas to work).
+  'canvas': ['@khorsheed/dsh-inline-html-render'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

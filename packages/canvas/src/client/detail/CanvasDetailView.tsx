@@ -26,6 +26,9 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
+import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/srcdoc.ts'
+import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import {
   documentHeadingOf,
   type BoardAskAgentRequest, type BoardCard, type BoardMutationResult, type CanvasBoard, type CanvasError,
@@ -60,6 +63,29 @@ function messageOf(error: unknown): string {
 /** Fallback for a minimal composition without ui-session. */
 const useNoSessions = ((selector: (snapshot: { byId: Record<string, never> }) => unknown) =>
   selector({ byId: {} })) as unknown as CanvasDetailProps['useSessions']
+
+/**
+ * The sandboxed HTML frame (the strict card CSP, no network, the capability
+ * bridge for link/copy/height). Both helpers come from inline-html-render's
+ * SOURCE plane — bundled into this client, zero runtime coupling.
+ */
+function HtmlFrame({ html }: { html: string }): ReactNode {
+  const frameRef = useRef<HTMLIFrameElement | null>(null)
+  useEffect(() => {
+    const frame = frameRef.current
+    if (frame === null) return
+    return attachBridge(frame)
+  }, [])
+  return (
+    <iframe
+      ref={frameRef}
+      className={css.htmlFrame}
+      sandbox="allow-scripts"
+      srcDoc={buildCardSrcDoc(html)}
+      title="HTML"
+    />
+  )
+}
 
 /** The card-detail reader. */
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
@@ -224,7 +250,11 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const KindIcon = KIND_ICONS[card.kind]
   const proposed = card.status === 'proposed'
   const archived = card.status === 'archived'
-  const heading = card.kind === 'document' ? documentHeadingOf(card.text) : undefined
+  const format = detectCardFormat(card.text)
+  // An html document's heading is its <title>, never the doctype opener.
+  const heading = card.kind === 'document'
+    ? (format === 'html' ? (htmlTitleOf(card.text) !== undefined ? { title: htmlTitleOf(card.text)!, body: '' } : undefined) : documentHeadingOf(card.text))
+    : undefined
   const created = Date.parse(card.createdAt)
   const updated = Date.parse(card.updatedAt)
 
@@ -250,6 +280,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         )}
         {heading !== undefined && <div className={css.title}>{heading.title}</div>}
         <div className={css.meta}>
+          {detectCardFormat(card.text) === 'html' && (
+            <span className={css.formatTag}>{t('detail.formatHtml')}</span>
+          )}
           {card.kind === 'question' && card.question !== undefined && (
             <span className={css.qState} data-state={card.question.state}>
               <span className={css.qDot} />
@@ -341,7 +374,11 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         ) : null}
         {mode === 'render' || mode === 'split' ? (
           <div className={css.renderPane}>
-            <MarkdownText text={card.text} labels={markdownLabels} />
+            {detectCardFormat(card.text) === 'html' ? (
+              <HtmlFrame key={card.id} html={card.text} />
+            ) : (
+              <MarkdownText text={card.text} labels={markdownLabels} />
+            )}
           </div>
         ) : null}
       </div>

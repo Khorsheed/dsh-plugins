@@ -31,6 +31,7 @@ import {
   type BoardCard, type BoardCardKind, type BoardCardStatus, type CanvasBoard, type CanvasLensId,
 } from '../../types.ts'
 import type {} from '../locales.ts'
+import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { CardTextarea } from './CardTextarea.tsx'
 import css from './board.module.css'
 
@@ -148,6 +149,19 @@ function CardSummary({ t, card }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
 }): ReactNode {
+  // Format wins over kind: an HTML card renders a compact placeholder on the
+  // board (the full sandbox render is the detail page's), never the raw markup.
+  if (detectCardFormat(card.text) === 'html') {
+    return (
+      <div className={css.cardText}>
+        <div className={css.htmlPlaceholder}>
+          <IconCodeOutline16 size={12} />
+          <span>{htmlTitleOf(card.text) ?? t('card.htmlDocument')}</span>
+          <span className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</span>
+        </div>
+      </div>
+    )
+  }
   const long = isLongCardText(card.text)
   // Document cards lead with their derived heading (never the raw `#` opener)
   // and summarize the body that remains after it.
