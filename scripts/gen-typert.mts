@@ -129,6 +129,11 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     name: '@khorsheed/dsh-canvas',
     hostConfigs: ['tsconfig.host.json'],
   },
+  {
+    dir: 'packages/quote',
+    name: '@khorsheed/dsh-quote',
+    hostConfigs: ['tsconfig.host.json'],
+  },
 ]
 
 interface RemoteArtifact {

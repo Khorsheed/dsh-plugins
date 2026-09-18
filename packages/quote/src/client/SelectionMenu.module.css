@@ -1,0 +1,53 @@
+/* The floating selection quote menu: a small card beside the selection,
+ * visually aligned with the official Menu dropdown (menu surface, r12-ish
+ * radius, elevation-prominent shadow, interactive hover rows). Fixed in the
+ * viewport (the overlay layer is click-through; the card opts back in). */
+.root {
+  position: fixed;
+  z-index: 1100;
+  box-sizing: border-box;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--dsw-specific-menu);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent);
+  pointer-events: auto;
+  user-select: none;
+}
+
+/* Action row (the official Menu cell: gap 8 between icon and label, r10,
+ * 14/22 primary label). */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.item:active {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.item svg {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}

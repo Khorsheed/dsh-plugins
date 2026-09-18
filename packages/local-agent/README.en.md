@@ -12,6 +12,7 @@ Run locally installed coding-agent CLIs — Kimi Code, Codex, Claude Code — fr
 - **Slash commands** — `/<harness> login|sessions|status|logout`, with the device-code login URL in the reply.
 - **A settings card per provider** — Settings → Plugins → 可配置插件: the auth status dot (visible on the collapsed header), web login/sign-out, and the hot-swappable resident-mode (live) toggle with mirror granularity; cards compose this package's shared `ProviderAuthBlock`.
 - **Subagent delegation** — hand work to a local CLI and resume it later, even across host restarts.
+- **Member sessions continue in the sidebar (host 0.1.6+)** — the official subagent directory gained an "Open in sidebar" row action: member sessions are one-shot subagents, so opened aside, this family's MemberComposer is elected as the writable composer — a zero-change benefit of this package; 0.1.5 hosts have no such entry and behave as before.
 - **Several logins per harness (named scopes)** — `/<harness> login --scope <name>` opens a second scoped home at `<homesRoot>/<harness>@<name>`: its own login, its own session records, its own `delegations.jsonl`, and nothing copied from the default one. An evaluation can therefore compare two accounts of one harness in a single run.
 
 ## Install

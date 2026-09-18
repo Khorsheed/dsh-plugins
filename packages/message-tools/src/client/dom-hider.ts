@@ -21,11 +21,25 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
-import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { chatSourceOf, type ChatSlice } from './chat-hook.ts'
 import { MESSAGE_TOOLS_PLUGIN, messageToolsOp } from '../marker.ts'
 import { foldHiddenRanges, isSeqHidden, type RestoredMessageData } from './withdrawn-node.ts'
+
+/** Pre-0.1.6 SessionListState carried the main-view selection as `current`. */
+type LegacyCurrent = { current?: SessionId }
+
+/**
+ * The main-view session: host 0.1.6-alpha.2 dropped SessionListState.current
+ * for the retainedBy.mainView count on each summary (the label is ui-session's
+ * declaration merge, read here as a plain duck-typed count so this package
+ * needs no ui-session edge), with the legacy field as the older-host fallback.
+ */
+const mainSessionId = (list: SessionListState): SessionId | undefined =>
+  Object.values(list.byId ?? {}).find(session =>
+    ((session.retainedBy as Record<string, number> | undefined)?.mainView ?? 0) > 0)?.id
+  ?? (list as LegacyCurrent).current
 
 /**
  * Flow keys of every chat node inside a hidden span. The withdrawal divider
@@ -209,7 +223,7 @@ export function installDomHider(ctx: Context, options: DomHiderOptions = {}): ()
   }
 
   const bindCurrent = (): void => {
-    const current = ctx.sessions.list.getSnapshot().current
+    const current = mainSessionId(ctx.sessions.list.getSnapshot())
     if (current === activeSession && stopSession !== undefined) return
     stopSession?.()
     stopSession = undefined

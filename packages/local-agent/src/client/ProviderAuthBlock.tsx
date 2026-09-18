@@ -33,6 +33,20 @@ function harnessLabel(id: string): string {
   return KNOWN_HARNESSES.find(harness => harness.id === id)?.label ?? id
 }
 
+/** Pre-0.1.6 SessionListState carried the main-view selection as `current`. */
+type LegacyCurrent = { current?: SessionId }
+
+/**
+ * The main-view session: host 0.1.6-alpha.2 dropped SessionListState.current
+ * for the retainedBy.mainView count on each summary (the label is ui-session's
+ * declaration merge, read here as a plain duck-typed count so this package
+ * needs no ui-session edge), with the legacy field as the older-host fallback.
+ */
+const mainSessionId = (list: SessionListState): SessionId | undefined =>
+  Object.values(list.byId ?? {}).find(session =>
+    ((session.retainedBy as Record<string, number> | undefined)?.mainView ?? 0) > 0)?.id
+  ?? (list as LegacyCurrent).current
+
 /** Per-harness view state: the last status, its capability flags, and the login prompt. */
 interface HarnessView {
   status: 'checking' | 'authenticated' | 'anonymous' | 'unavailable'
@@ -90,7 +104,7 @@ export interface ProviderAuthBlockProps extends ProviderAuthInjected, PropsLocal
  * @returns the block content (head row, prompts, and the login toast).
  */
 export function ProviderAuthBlock({ harness, useSessions, status, runCommand, actions, t }: ProviderAuthBlockProps) {
-  const sessionId = useSessions((state: SessionListState) => state.current)
+  const sessionId = useSessions((state: SessionListState) => mainSessionId(state))
   const [view, setView] = useState<HarnessView>({ status: 'checking' })
   /** The login start time while the device-code login is still pending. */
   const [pendingSince, setPendingSince] = useState<number | undefined>(undefined)

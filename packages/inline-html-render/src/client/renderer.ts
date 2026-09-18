@@ -23,7 +23,7 @@
  */
 
 import { buildCardSrcDoc } from './srcdoc.ts'
-import { attachBridge } from './bridge.ts'
+import { attachBridge, type BridgeCapabilities } from './bridge.ts'
 
 /** Info string that marks a fence as an inline card. */
 export const CARD_INFO_STRING = 'dsh-card'
@@ -85,9 +85,10 @@ function readCardHtml(block: HTMLElement): string {
  * Render one card block: read the HTML, build a sandboxed srcDoc, insert the
  * iframe after the block, hide the block, and attach the capability bridge.
  * @param block - the rendered `dsh-card` block.
+ * @param capabilities - wired host capabilities handed to the bridge.
  * @returns a {@link MountedCard} or null when the block had no content.
  */
-function mountCard(block: HTMLElement): MountedCard | null {
+function mountCard(block: HTMLElement, capabilities: BridgeCapabilities): MountedCard | null {
   const html = readCardHtml(block)
   if (html.trim() === '') return null
   const frame = document.createElement('iframe')
@@ -111,7 +112,7 @@ function mountCard(block: HTMLElement): MountedCard | null {
   block.style.display = 'none'
   block.setAttribute(PROCESSED_ATTR, '')
 
-  const disposeBridge = attachBridge(frame)
+  const disposeBridge = attachBridge(frame, capabilities)
   frame.setAttribute(BRIDGE_ATTR, '')
   const dispose = (): void => {
     disposeBridge()
@@ -156,12 +157,12 @@ function dropOrphanFrames(root: ParentNode, mounted: Set<MountedCard>): void {
 }
 
 /** Reconcile: swap every unprocessed, settled `dsh-card` block under `root`, then drop orphans. */
-export function reconcile(root: ParentNode): MountedCard[] {
+export function reconcile(root: ParentNode, capabilities: BridgeCapabilities = {}): MountedCard[] {
   const mounted: MountedCard[] = []
   for (const block of findCardBlocks(root)) {
     if (block.hasAttribute(PROCESSED_ATTR)) continue
     if (isStreaming(block)) continue
-    const card = mountCard(block)
+    const card = mountCard(block, capabilities)
     if (card !== null) mounted.push(card)
   }
   return mounted
@@ -179,9 +180,10 @@ const CHAT_ROOT = '[data-conversation-scroll]'
 
 /**
  * Install the inline-card renderer over the document.
+ * @param capabilities - wired host capabilities handed to every card's bridge.
  * @returns a {@link CardRenderer} whose `dispose` tears everything down.
  */
-export function installCardRenderer(): CardRenderer {
+export function installCardRenderer(capabilities: BridgeCapabilities = {}): CardRenderer {
   // jsdom lacks requestAnimationFrame; fall back to a macrotask so the plugin
   // never throws headless (and tests run synchronously via `run`).
   const nextFrame: (cb: () => void) => void = typeof requestAnimationFrame === 'function'
@@ -199,7 +201,7 @@ export function installCardRenderer(): CardRenderer {
     // Scope to the chat pane when present; fall back to the whole document so
     // a not-yet-mounted chat (or headless test) still sees a first pass.
     const root: ParentNode = document.querySelector(CHAT_ROOT) ?? document.body
-    for (const card of reconcile(root)) mounted.add(card)
+    for (const card of reconcile(root, capabilities)) mounted.add(card)
     dropOrphanFrames(root, mounted)
   }
 
