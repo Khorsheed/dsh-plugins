@@ -927,6 +927,19 @@ describe('the wall translates its cards', () => {
     expect(screen.getByText('完全中文的卡片')).toBeTruthy()
     expect(screen.getByText('中文摘要。')).toBeTruthy()
     expect(screen.queryByText(/译：完全中文的卡片/)).toBeNull()
+    // Hovering the card's own surface (blank space, tile, chevron) must NOT flip
+    // anything — the reader had to tiptoe around the wall otherwise.
+    const card = ui.container.querySelector('[data-reader-entry]') as HTMLElement
+    fireEvent.mouseOver(card)
+    expect(screen.getByText('译：English card title')).toBeTruthy()
+    // Hovering the TRANSLATED TEXT peeks that ONE field back…
+    const titleSpan = screen.getByText('译：English card title')
+    fireEvent.mouseOver(titleSpan)
+    await waitFor(() => { expect(screen.getByText('English card title')).toBeTruthy() })
+    // …and the summary of the same card stays translated.
+    expect(screen.getByText('译：An English summary sentence.')).toBeTruthy()
+    fireEvent.mouseOut(titleSpan, { relatedTarget: document.body })
+    await waitFor(() => { expect(screen.getByText('译：English card title')).toBeTruthy() })
     // Switching the wall's translation off puts the originals back.
     fireEvent.click(globe)
     await waitFor(() => { expect(screen.getByText('English card title')).toBeTruthy() })

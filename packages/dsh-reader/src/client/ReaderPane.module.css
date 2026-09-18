@@ -295,10 +295,13 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* The original under a translated field, in the wall's side-by-side view. This
-   is the ONE state that makes the grid taller, and it does so deliberately: it
-   is a mode the reader picks, not a hover that follows the pointer. */
-.cardOrig {
+/* The original under a translated field, in the wall's side-by-side view. It
+   keeps the FIELD's own typography — a title's original reads as a title — and
+   is told apart by ink and weight instead of by shrinking to caption size: the
+   reader asked for the title's format to be preserved. This is also the ONE
+   state that makes the grid taller, and it does so deliberately: it is a mode
+   the reader picks, not a hover that follows the pointer. */
+.cardOrigTitle {
   display: -webkit-box;
   grid-column: 2 / -1;
   min-width: 0;
@@ -307,8 +310,23 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
-  font-size: 10.5px;
-  line-height: 15px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.cardOrigSummary {
+  display: -webkit-box;
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: 2px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
 }
 

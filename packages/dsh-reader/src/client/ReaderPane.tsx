@@ -335,8 +335,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /** Translated card fields, by entry id. */
   const [cardTranslations, setCardTranslations] = useState<Record<string, { title?: string; summary?: string }>>({})
   const [wallProgress, setWallProgress] = useState<{ done: number; total: number } | null>(null)
-  /** The card under the pointer: in translation-only view it peeks the original. */
-  const [hoverCard, setHoverCard] = useState<string | null>(null)
+  /**
+   * The translated FIELD under the pointer, in the translation-only view.
+   *
+   * Not the card: hovering a card's blank space, tile or chevron must leave the
+   * translation alone — the reader asked for exactly that, because flipping a
+   * whole card on any pointer contact made the wall feel like it had to be
+   * tiptoed around.
+   */
+  const [hoverField, setHoverField] = useState<{ id: string; field: 'title' | 'summary' } | null>(null)
   /** Entries whose fields still need translating (filled by the observer). */
   const wallPendingRef = useRef<Set<string>>(new Set())
   const wallRunningRef = useRef(false)
@@ -2090,20 +2097,30 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               // the CSS), because Chinese and English wrap differently: swapping
               // languages must not resize the card or shift the grid.
               const card = cardTranslations[row.entry.id]
-              const peeking = wallOn && !wallBoth && hoverCard === row.entry.id
-              const titleText = wallOn && !peeking && card?.title !== undefined ? card.title : row.entry.title
+              const hovered = hoverField?.id === row.entry.id ? hoverField.field : null
+              const peekTitle = wallOn && !wallBoth && hovered === 'title' && card?.title !== undefined
               const summary = row.entry.summary
-              const summaryText = wallOn && !peeking && card?.summary !== undefined ? card.summary : summary
+              const peekSummary = wallOn && !wallBoth && hovered === 'summary' && card?.summary !== undefined
+              const titleText = wallOn && !peekTitle && card?.title !== undefined ? card.title : row.entry.title
+              const summaryText = wallOn && !peekSummary && card?.summary !== undefined ? card.summary : summary
               const originalTitle = wallOn && wallBoth && card?.title !== undefined ? row.entry.title : null
               const originalSummary = wallOn && wallBoth && card?.summary !== undefined ? summary : null
+              // Only a field that actually has a translation can be peeked: an
+              // untranslated (or Chinese) card keeps its ordinary hover.
+              const peekable = (field: 'title' | 'summary'): boolean => wallOn && !wallBoth && card?.[field] !== undefined
+              const hoverProps = (field: 'title' | 'summary'): { onMouseEnter?: () => void; onMouseLeave?: () => void } =>
+                peekable(field)
+                  ? {
+                    onMouseEnter: () => { setHoverField({ id: row.entry.id, field }) },
+                    onMouseLeave: () => { setHoverField(current => (current?.id === row.entry.id && current.field === field ? null : current)) },
+                  }
+                  : {}
               return (
               <div
                 key={row.entry.id}
                 className={css.card}
                 data-reader-entry={row.entry.id}
                 data-translated={wallOn && card !== undefined ? '1' : undefined}
-                onMouseEnter={() => { if (wallOn && !wallBoth) setHoverCard(row.entry.id) }}
-                onMouseLeave={() => { setHoverCard(current => (current === row.entry.id ? null : current)) }}
                 // Read entries keep their place (never hidden), but they read a
                 // step quieter than unread ones: that hierarchy is what makes a
                 // wall of cards scannable, and it is the feed-reader habit.
@@ -2131,10 +2148,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                     {whenLabel(t, row.entry.publishedAt)}
                   </span>
                 </span>
-                <span className={css.title}>{titleText}</span>
-                {originalTitle !== null && <span className={css.cardOrig}>{originalTitle}</span>}
-                {summary !== undefined && <span className={css.summary}>{summaryText}</span>}
-                {originalSummary !== null && <span className={css.cardOrig}>{originalSummary}</span>}
+                <span className={css.title} {...hoverProps('title')}>{titleText}</span>
+                {originalTitle !== null && <span className={css.cardOrigTitle}>{originalTitle}</span>}
+                {summary !== undefined && <span className={css.summary} {...hoverProps('summary')}>{summaryText}</span>}
+                {originalSummary !== null && <span className={css.cardOrigSummary}>{originalSummary}</span>}
                 <span className={css.tags}>
                   {(row.entry.tags ?? []).slice(0, 2).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
                   {row.entry.author !== undefined && <span className={css.author}>{row.entry.author}</span>}
