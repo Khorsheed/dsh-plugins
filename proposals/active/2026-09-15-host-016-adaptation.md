@@ -81,8 +81,9 @@ alpha.2 修订上文「明确不做」清单：ui-shortcuts / message-timeline /
 ### 遗留与放行条件（2026-09-18 晚，用户拍板）
 
 - **3080 合线等官方 rc**：适配已完成（wave 分支全量 build/test 绿、本地实例冒烟通过），但用户体验 alpha.2 后判定该版本问题仍多，拍板 **rc 发布前不合 3080、不动共享检出**；wave 分支（feat/host-016-adaptation）保持全绿待 rc 复验后重钉收尾。
-- **ankh-guard 测试生命周期分支不并入 wave**：`fix/ankh-guard-test-lifecycle` 与 main 两点 diff 达 1680 文件 / +1.7万 / −19万行（基于过期树，合并即大面积回滚，含 skills/self-upgrade 内容被删）；其真实价值为顶部 5 提交（2 test + 3 docs），由 owner rebase 到当前 main 后再合。wave 已记录 EADDRINUSE watchdog 测试在 gate 并发下（load>11）flake 两次、安静环境连绿两次——该分支（正 owns 此 spec）合并后 gate 即全绿；其 preflight-runner.ts 与 wave 的三代际探测修复（3d88a3a8）需在合并时协调。
+- **ankh-guard 测试生命周期分支已删除（2026-09-18，用户确认无人维护）**：`fix/ankh-guard-test-lifecycle`（tip `480f3cdb`，2026-09-05 后静默）与 main 两点 diff 达 1680 文件 / +1.7万 / −19万行（过期树，合并即大面积回滚）；其首个 test 提交单独 cherry-pick 即与 main 冲突 6 文件（main 已自长出等效机制 `e2f6f042`），无抢救价值；tip SHA 在此留档（配套 docs 分支 `docs/ankh-guard-test-lifecycle-proposal` tip `e1abf97e`），两个 worktree 与两条分支已删。遗留：EADDRINUSE watchdog 测试在 gate 并发下（load>11）的 flake 在 main 上无人认领——wave 实测安静环境连绿两次、与 alpha.2 无关；rc 波 gate 若再 flake 按此记录现修（tolerance 级调整即可，无需复活分支）。wave 的三代际探测修复（3d88a3a8）与该分支无涉，不受影响。
 - **3080 宿主升 0.1.6 前置验证项**：ankh-guard `runPreflight` 的 boot 路径在 0.1.6 线未挂 `PluginPackages`（runtime 解析代际不进试启动），含裸 specifier 的 profile 条目会被 preflight 误报 FAIL（方向偏严、非放行坏树）；当前 profile 全是 `file:` tgz + 官方 bundle 不触发，但 3080 宿主升 0.1.6 前必须实测 preflight 或补齐挂载（补齐需与上一条的在飞分支协调）。
+- **rc 复核项：形态 C「家族 bundle」按新外部 bundle 模型复审**（2026-09-18 用户要求记录）。我们的 profile 目前 = 官方 bundle + 24 个独立 @khorsheed 行（单成员 bundle 合法但缺套件层）；alpha.2 官方化了 `dsh.profile.bundles` 清单、`OPTIONAL_BUNDLES`（可选 bundle 默认关 + 安装引导）与外部 bundle 隔离——`proposals/active/2026-08-21-package-management.md` 形态 C 薄元包此前卡在 `reconcilePlugins` 只调和直接依赖，rc 发布后按新模型复审可落地性（含「一个插件属于哪些 profile」的跨 profile 展示诉求）。
 
 ## 里程碑
 
