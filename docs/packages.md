@@ -23,7 +23,7 @@
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-datasets-tool` | `packages/datasets-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.3.0 | bundle | — | — | 0.1.5-rc.1 | web-basic, web-dev, web-eval |

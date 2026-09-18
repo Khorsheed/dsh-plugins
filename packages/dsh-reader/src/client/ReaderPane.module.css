@@ -1717,3 +1717,216 @@
 .cardTagPanel .tagInput:focus {
   border: 0;
 }
+
+/* ------------------------------------------------- on-device translation */
+
+/* The article is segmented in place by `translate.ts`, which creates these
+   elements itself — so the class names are handed to it from this module (no
+   global CSS, no hashed-name guessing on either side). A "unit" is one
+   sentence; clicking it reveals that sentence's original underneath its
+   block. */
+.unit {
+  border-radius: 3px;
+  /* The clone matters: a sentence that wraps across lines must not lose its
+     background on the second line. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+
+.unit:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.unit[data-open] {
+  box-shadow: inset 0 -2px 0 var(--dsw-alias-border-l3);
+}
+
+/* In the original-only view the whole article is already English: the units are
+   just containers again, so they stop advertising a gesture that would do
+   nothing visible. */
+.article[data-reader-translated='orig'] .unit {
+  cursor: text;
+}
+
+.article[data-reader-translated='orig'] .unit:hover {
+  background: transparent;
+}
+
+/* Translated prose is Chinese: it takes the CJK leading/letter-spacing the
+   article's own script detection chose before translation (which was Latin). */
+.article[data-reader-translated='trans'],
+.article[data-reader-translated='both'] {
+  font-size: 13.5px;
+  line-height: 1.78;
+  letter-spacing: 0.005em;
+}
+
+.reveal {
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+}
+
+.revealLine {
+  margin: 0 0 5px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.revealLine:last-child {
+  margin-bottom: 0;
+}
+
+/* The globe and its caret: one toggle plus the view menu, the omnibox idiom. */
+.translateWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.translateCaret {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.translateCaret:hover,
+.translateCaret[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.translateMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: -30px;
+  z-index: 30;
+  width: 232px;
+  padding: 5px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.translateMenuHead {
+  padding: 5px 8px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.translateMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.translateMenuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.translateCheck {
+  width: 12px;
+  flex: none;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11px;
+}
+
+.translateMenuLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The language-pack download and the translation itself share one line, so the
+   reader always knows why the text is changing. */
+.translateStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 5px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-active);
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.translateStatus b {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.translateBar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l1);
+  overflow: hidden;
+}
+
+.translateBar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dsw-static-deepseek-500);
+  transition: width 200ms ease;
+}
+
+/* The one-time hint: how the click gesture is discovered. Dismissable, and it
+   never comes back for the session. */
+.translateTip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 5px 9px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.translateTip button {
+  margin-left: auto;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.translateTip button:hover {
+  color: var(--dsw-alias-label-primary);
+}

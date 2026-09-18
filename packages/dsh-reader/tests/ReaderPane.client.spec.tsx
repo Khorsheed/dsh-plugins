@@ -25,6 +25,7 @@ import type { ReaderPaneProps } from '../src/client/contract.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
+import { UNIT_SEPARATOR } from '../src/client/translate.ts'
 import type { ReaderBody, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
@@ -865,6 +866,121 @@ describe('read state is visible without hiding anything', () => {
       const back = ui.container.querySelector('[data-reader-entry]') as HTMLElement
       expect(back.hasAttribute('data-unread')).toBe(false)
       expect(back.querySelector('[class*="unread"]')).toBeNull()
+    })
+  })
+})
+
+describe('on-device translation', () => {
+  /** The page global the pane probes, scripted per test. */
+  function installTranslator(over: { availability?: string; createThrows?: string; mangled?: boolean } = {}) {
+    const api = {
+      availability: vi.fn(async () => over.availability ?? 'available'),
+      create: vi.fn(async () => {
+        if (over.createThrows !== undefined) throw new Error(over.createThrows)
+        return {
+          inputQuota: 10_000,
+          measureInputUsage: async (text: string) => text.length,
+          translate: async (payload: string) =>
+            payload
+              .split(UNIT_SEPARATOR)
+              .map(part => `译：${part}`)
+              .join(over.mangled === true ? ' ' : UNIT_SEPARATOR),
+        }
+      }),
+    }
+    ;(globalThis as unknown as { Translator?: unknown }).Translator = api
+    return api
+  }
+
+  /** One English article, opened, its body on screen. */
+  async function opened(body: string) {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一篇长文', description: body }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('一篇长文'))
+    await screen.findByText(zh['action.quote'])
+    return ui
+  }
+
+  afterEach(() => { delete (globalThis as unknown as { Translator?: unknown }).Translator })
+
+  it('translates in place, reveals one sentence at a time, and switches views', async () => {
+    const api = installTranslator()
+    const ui = await opened('<p>First sentence here. Second sentence here.</p>')
+    const globe = await screen.findByTitle(zh['action.translate'])
+    // The tip only exists once there is a translation to explain.
+    expect(screen.queryByText(zh['translate.tip'])).toBeNull()
+    fireEvent.click(globe)
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    const units = ui.container.querySelectorAll('[data-reader-unit]')
+    expect(units.length).toBe(2)
+    expect(screen.getByText(zh['translate.tip'])).toBeTruthy()
+    // Clicking a sentence opens exactly its own original under the block…
+    fireEvent.click(units[0] as HTMLElement)
+    expect(ui.container.querySelector('[data-reader-reveal]')?.textContent).toBe('First sentence here.')
+    expect(units[0]?.getAttribute('data-open')).toBe('1')
+    // …and clicking it again takes it away.
+    fireEvent.click(units[0] as HTMLElement)
+    expect(ui.container.querySelector('[data-reader-reveal]')).toBeNull()
+    // The caret menu switches the view; original-only keeps the segmentation
+    // but shows the source text again.
+    fireEvent.click(ui.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['translate.onlyOriginal']))
+    await waitFor(() => {
+      const article = ui.container.querySelector('[class*="article"]')
+      expect(article?.textContent).toContain('First sentence here.')
+      expect(article?.textContent).not.toContain('译：')
+    })
+    // …and the globe flips it back without translating anything again.
+    fireEvent.click(screen.getByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+  })
+
+  it('hides the globe when the browser has no translator', async () => {
+    const ui = await opened('<p>First sentence here. Second sentence here.</p>')
+    // Nothing to click: an offer that cannot work is worse than no offer.
+    expect(screen.queryByTitle(zh['action.translate'])).toBeNull()
+    expect(ui.container.querySelector('[data-reader-unit]')).toBeNull()
+  })
+
+  it('hides it when the browser says the pair is unavailable', async () => {
+    installTranslator({ availability: 'unavailable' })
+    await opened('<p>First sentence here. Second sentence here.</p>')
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.translate'])).toBeNull() })
+  })
+
+  it('hides it for a body that is already Chinese', async () => {
+    installTranslator()
+    await opened('<p>这是一段中文正文。这是第二句。</p>')
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.translate'])).toBeNull() })
+  })
+
+  it('says why the pack or the model failed, and leaves the body alone', async () => {
+    installTranslator({ createThrows: 'no language pack available' })
+    const ui = await opened('<p>First sentence here. Second sentence here.</p>')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    expect(await screen.findByText(zh['translate.failed'].replace('{reason}', 'no language pack available'))).toBeTruthy()
+    // The article is exactly as the host sent it: no spans, no half-translation.
+    expect(ui.container.querySelector('[data-reader-unit]')).toBeNull()
+    expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('First sentence here.')
+  })
+
+  it('keeps the text aligned when the batch separator does not survive', async () => {
+    installTranslator({ mangled: true })
+    const ui = await opened('<p>First sentence here. Second sentence here.</p>')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      const article = ui.container.querySelector('[class*="article"]')?.textContent ?? ''
+      // The fallback re-sends unit by unit, so both sentences still get their
+      // OWN translation rather than a merged one.
+      expect(article).toContain('译：First sentence here.')
+      expect(article).toContain('译：Second sentence here.')
     })
   })
 })

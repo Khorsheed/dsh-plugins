@@ -19,6 +19,10 @@ export type ReaderKey =
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
   | 'filter.searchSource' | 'filter.noSourceMatch'
+  | 'action.translate' | 'translate.view' | 'translate.onlyTranslation' | 'translate.bilingual'
+  | 'translate.onlyOriginal' | 'translate.retry' | 'translate.tip' | 'translate.preparing'
+  | 'translate.working' | 'translate.local' | 'translate.failed' | 'translate.dismiss'
+  | 'translate.nothing' | 'translate.failedAll'
   | 'action.fetchBody' | 'detail.bodyStale' | 'action.more' | 'action.addTag'
   | 'tag.title' | 'tag.placeholder' | 'tag.hint' | 'tag.create' | 'tag.empty'
   | 'search.placeholder'
@@ -63,6 +67,20 @@ export const en = {
   'action.fetchBody': 'Fetch the text',
   'action.more': 'More actions',
   'action.addTag': 'Tags…',
+  'action.translate': 'Translate',
+  'translate.view': 'Translation view',
+  'translate.onlyTranslation': 'Translation only',
+  'translate.bilingual': 'Side by side',
+  'translate.onlyOriginal': 'Original only',
+  'translate.retry': 'Translate again',
+  'translate.tip': 'Click any sentence to see its original; click again to hide it',
+  'translate.preparing': 'Preparing the Chinese language pack',
+  'translate.working': 'Translating',
+  'translate.local': 'On-device · Chinese (Simplified)',
+  'translate.failed': 'Translation stopped: {reason}',
+  'translate.failedAll': 'No batch came back — try again from the globe menu',
+  'translate.nothing': 'Nothing in this body to translate',
+  'translate.dismiss': 'Dismiss',
   'detail.bodyStale': 'The saved copy is out of date — fetch it again?',
   'tag.title': 'Tags',
   'tag.placeholder': 'Tag name, then Enter',
@@ -182,6 +200,20 @@ export const zh = {
   'action.fetchBody': '抓取正文',
   'action.more': '更多操作',
   'action.addTag': '打标签…',
+  'action.translate': '翻译',
+  'translate.view': '翻译视图',
+  'translate.onlyTranslation': '只看译文',
+  'translate.bilingual': '双语对照',
+  'translate.onlyOriginal': '只看原文',
+  'translate.retry': '重新翻译',
+  'translate.tip': '点任意一句可看原文，再点收起',
+  'translate.preparing': '正在准备中文语言包',
+  'translate.working': '翻译中',
+  'translate.local': '浏览器本地 · 中文（简体）',
+  'translate.failed': '翻译中断：{reason}',
+  'translate.failedAll': '各批次都没翻出来 —— 可从地球菜单里重试',
+  'translate.nothing': '这段正文里没有可翻译的散文',
+  'translate.dismiss': '不再提示',
   'detail.bodyStale': '存的正文已过期 —— 重新抓取？',
   'tag.title': '标签',
   'tag.placeholder': '标签名，回车确认',

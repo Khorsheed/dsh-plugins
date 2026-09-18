@@ -29,6 +29,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  IconChevronDownOutline14,
   IconChevronLeftOutline14,
   IconCopyOutline16,
   IconGlobeOutline14,
@@ -42,6 +43,10 @@ import type { ReaderTag } from '../types.ts'
 import { extractArticle } from './extract-article.ts'
 import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
+import {
+  buildArticle, detectTranslator, restoreArticle, runTranslation, segmentAt, setView, toggleSegment,
+  type BuiltArticle, type TranslateClasses, type TranslationAvailability, type TranslationView, type TranslatorLike,
+} from './translate.ts'
 import {
   countUnread,
   flattenEntries,
@@ -113,6 +118,17 @@ const TAG_PANEL_MAX_HEIGHT = 296
  * way to reach a name without scrolling.
  */
 const SOURCE_SEARCH_MIN = 6
+
+/** The one target language this milestone ships. The menu, the session and the
+ *  surface all take it as a parameter; only the language picker itself is deferred. */
+const TRANSLATION_TARGET = 'zh'
+
+/** The globe's menu, in the order it renders (view id + dictionary key). */
+const TRANSLATION_VIEWS = [
+  { view: 'trans', key: 'translate.onlyTranslation' },
+  { view: 'both', key: 'translate.bilingual' },
+  { view: 'orig', key: 'translate.onlyOriginal' },
+] as const
 
 /**
  * The tag vocabulary, as rows: the card panel's checklist and the detail page's
@@ -285,6 +301,36 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /** The entry whose tag panel is open on the wall (and where to anchor it). */
   const [cardTag, setCardTag] = useState<{ entryId: string; top: number; left: number } | null>(null)
 
+  /* ---------------------------------------------------- on-device translation */
+
+  /** The page's Translator API, read once: no API means no button at all. */
+  const translator = useMemo<TranslatorLike | null>(() => detectTranslator(), [])
+  const [translateAvailability, setTranslateAvailability] = useState<TranslationAvailability | null>(null)
+  const [translatePhase, setTranslatePhase] = useState<'idle' | 'pack' | 'working' | 'ready' | 'failed'>('idle')
+  const [translateView, setTranslateView] = useState<TranslationView>('trans')
+  const [packProgress, setPackProgress] = useState<number | null>(null)
+  const [translateProgress, setTranslateProgress] = useState<{ done: number; total: number } | null>(null)
+  const [translateError, setTranslateError] = useState<string | null>(null)
+  const [translateMenu, setTranslateMenu] = useState(false)
+  const [tipDismissed, setTipDismissed] = useState(false)
+  /** The rendered article, so the segmentation can be applied to it. */
+  const articleRef = useRef<HTMLDivElement | null>(null)
+  /** The live segmentation, or null while the article is untouched. */
+  const builtRef = useRef<BuiltArticle | null>(null)
+  /** The running translation's cancel flag. */
+  const cancelRef = useRef<{ cancelled: boolean } | null>(null)
+  /** The last translation view, so turning the globe back on returns to it. */
+  const lastViewRef = useRef<TranslationView>('trans')
+  /** The class names `translate.ts` decorates the article with. */
+  const translateClasses = useMemo<TranslateClasses>(
+    () => ({
+      unit: css.unit ?? 'dsh-reader-unit',
+      reveal: css.reveal ?? 'dsh-reader-reveal',
+      line: css.revealLine ?? 'dsh-reader-reveal-line',
+    }),
+    [],
+  )
+
   /** Load the source list and parse whatever payloads the host is holding. */
   const load = useCallback(async () => {
     actions.setLoading(true)
@@ -450,6 +496,190 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [sources, sourceFilter])
   /** Sources whose payload could not be read whole — what the notice lists. */
   const brokenSources = sources.filter(source => parsed[source.id]?.incomplete === true || parsed[source.id]?.error !== undefined)
+
+  /* --------------------------------------------------- the translation flow */
+
+  /**
+   * The source language of the open body. The reader's own script heuristic
+   * answers it: a body that reads mostly as Han/Kana/Hangul is already the
+   * target, and translating Chinese into Chinese is not a feature.
+   */
+  const translationSource = articleHtml !== null && isCjk(articleHtml) ? TRANSLATION_TARGET : 'en'
+  /**
+   * Whether the globe belongs on this article at all. Three ways it does not:
+   * the browser has no Translator API, the pair is unavailable on this device,
+   * or the body is already the target language. All three hide the control
+   * rather than offering one that cannot work — the pass's own degradation rule.
+   */
+  const translationOffered = translator !== null
+    && translateAvailability !== null
+    && translateAvailability !== 'unavailable'
+    && translationSource !== TRANSLATION_TARGET
+
+  // Ask the browser about this pair once per opened article. The probe is
+  // async, so the control appears only after the browser has answered.
+  useEffect(() => {
+    if (view !== 'detail' || translator === null || articleHtml === null || articleHtml.length === 0) return undefined
+    if (translationSource === TRANSLATION_TARGET) { setTranslateAvailability('unavailable'); return undefined }
+    let cancelled = false
+    void (async () => {
+      try {
+        const answer = await translator.availability({
+          sourceLanguage: translationSource,
+          targetLanguage: TRANSLATION_TARGET,
+        })
+        if (!cancelled) setTranslateAvailability(answer as TranslationAvailability)
+      } catch {
+        if (!cancelled) setTranslateAvailability('unavailable')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [view, translator, articleHtml, translationSource])
+
+  // A new body means a new DOM: the old segmentation dies with the old element,
+  // so this effect is the only owner of that lifecycle.
+  useEffect(() => {
+    if (cancelRef.current !== null) cancelRef.current.cancelled = true
+    cancelRef.current = null
+    const built = builtRef.current
+    if (built !== null) restoreArticle(built.root)
+    builtRef.current = null
+    setTranslatePhase('idle')
+    setTranslateView('trans')
+    setTranslateProgress(null)
+    setPackProgress(null)
+    setTranslateError(null)
+    setTranslateMenu(false)
+  }, [openEntryId, articleHtml])
+
+  // Leaving the pane must not leave spans behind in a DOM React will reuse.
+  useEffect(() => () => {
+    if (cancelRef.current !== null) cancelRef.current.cancelled = true
+    const built = builtRef.current
+    if (built !== null) restoreArticle(built.root)
+    builtRef.current = null
+  }, [])
+
+  /** Stop the run and put the article back exactly as the host sent it. */
+  const cancelTranslation = useCallback(() => {
+    if (cancelRef.current !== null) cancelRef.current.cancelled = true
+    cancelRef.current = null
+    const built = builtRef.current
+    if (built !== null) restoreArticle(built.root)
+    builtRef.current = null
+    setTranslatePhase('idle')
+    setTranslateProgress(null)
+    setPackProgress(null)
+    setTranslateError(null)
+  }, [])
+
+  /** Create the translator (downloading the pack if needed) and translate. */
+  const startTranslation = useCallback(async (initialView: TranslationView) => {
+    const api = translator
+    const container = articleRef.current
+    if (api === null || container === null) return
+    const cancel = { cancelled: false }
+    cancelRef.current = cancel
+    setTranslateError(null)
+    setTranslateProgress(null)
+    setTranslatePhase('pack')
+    setPackProgress(0)
+    let session
+    try {
+      session = await api.create({
+        sourceLanguage: translationSource,
+        targetLanguage: TRANSLATION_TARGET,
+        monitor: monitor => {
+          monitor.addEventListener('downloadprogress', event => { setPackProgress(event.loaded) })
+        },
+      })
+    } catch (error) {
+      // The pack download or the model refused: say why, and leave the article
+      // alone. No half-translated page, no silent button.
+      cancelRef.current = null
+      setTranslatePhase('failed')
+      setPackProgress(null)
+      setTranslateError(t('translate.failed', { reason: (error instanceof Error ? error.message : String(error)).slice(0, 160) }))
+      return
+    }
+    setPackProgress(null)
+    if (cancel.cancelled) { setTranslatePhase('idle'); return }
+    const built = buildArticle(container, translateClasses)
+    if (built === null) {
+      // Nothing in this body is prose the browser can translate (all code, an
+      // empty body): say so instead of spinning forever.
+      cancelRef.current = null
+      setTranslatePhase('failed')
+      setTranslateError(t('translate.nothing'))
+      return
+    }
+    builtRef.current = built
+    lastViewRef.current = initialView
+    setTranslateView(initialView)
+    setTranslatePhase('working')
+    setView(built, initialView, translateClasses)
+    const result = await runTranslation({
+      built,
+      session,
+      cancelled: () => cancel.cancelled,
+      onProgress: (done, total) => { setTranslateProgress({ done, total }) },
+    })
+    if (cancel.cancelled) return
+    cancelRef.current = null
+    if (result.total > 0 && result.done === 0) {
+      // Every batch failed: keep the original text, explain, offer the retry in
+      // the menu. The spans stay segmented so a retry reuses them.
+      setTranslatePhase('failed')
+      setTranslateError(t('translate.failedAll'))
+      return
+    }
+    setTranslatePhase('ready')
+    setTranslateProgress(null)
+    // Re-paint once the first units exist, so the translated typography applies.
+    setView(built, initialView, translateClasses)
+  }, [translator, translationSource, translateClasses, t])
+
+  /** Apply one view to a finished translation. */
+  const applyView = useCallback((next: TranslationView) => {
+    setTranslateView(next)
+    if (next !== 'orig') lastViewRef.current = next
+    const built = builtRef.current
+    if (built !== null) setView(built, next, translateClasses)
+  }, [translateClasses])
+
+  /** A menu choice: it also starts the translation when there is none yet. */
+  const pickView = useCallback((next: TranslationView) => {
+    setTranslateMenu(false)
+    if (translatePhase === 'ready' || translatePhase === 'pack' || translatePhase === 'working') {
+      applyView(next)
+      return
+    }
+    setTranslateView(next)
+    void startTranslation(next)
+  }, [translatePhase, applyView, startTranslation])
+
+  /** The globe: start, cancel, or flip between the translation and the original. */
+  const toggleGlobe = useCallback(() => {
+    if (translatePhase === 'pack' || translatePhase === 'working') { cancelTranslation(); return }
+    if (translatePhase === 'ready') {
+      applyView(translateView === 'orig' ? lastViewRef.current : 'orig')
+      return
+    }
+    void startTranslation(translateView === 'orig' ? lastViewRef.current : translateView)
+  }, [translatePhase, translateView, cancelTranslation, applyView, startTranslation])
+
+  /** Clicking a translated sentence reveals its own original. */
+  const onArticleClick = useCallback((event: { target: EventTarget | null }) => {
+    // Only a finished translation: mid-run a reveal would just duplicate the
+    // original text that is still on screen.
+    if (translatePhase !== 'ready') return
+    const built = builtRef.current
+    if (built === null) return
+    const segment = segmentAt(built, event.target)
+    if (segment === null) return
+    toggleSegment(built, segment, translateClasses)
+  }, [translateClasses, translatePhase])
+
 
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
@@ -656,17 +886,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   // Any menu/panel dismisses on the next click outside it — the host's own
   // menus behave that way, and a popover that outlives its context is a trap.
   useEffect(() => {
-    if (cardMenu === null && cardTag === null && !filterOpen) return undefined
+    if (cardMenu === null && cardTag === null && !filterOpen && !translateMenu) return undefined
     const dismiss = (event: MouseEvent): void => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"]') !== null) return
+      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"], [class*="translateWrap"]') !== null) return
       setCardMenu(null)
       setCardTag(null)
       setFilterOpen(false)
+      setTranslateMenu(false)
     }
     window.addEventListener('mousedown', dismiss)
     return () => window.removeEventListener('mousedown', dismiss)
-  }, [cardMenu, cardTag, filterOpen])
+  }, [cardMenu, cardTag, filterOpen, translateMenu])
 
 
 
@@ -868,6 +1099,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const alsoFrom = allEntries
       .filter(entry => entry.sourceId === openEntry.sourceId && entry.id !== openEntry.id)
       .slice(0, 3)
+    /** How far the pack download, or the translation, has come. */
+    const statusPercent = translatePhase === 'pack'
+      ? Math.round((packProgress ?? 0) * 100)
+      : translateProgress !== null && translateProgress.total > 0
+        ? Math.round((translateProgress.done / translateProgress.total) * 100)
+        : 0
     return (
       <div className={css.root}>
         <div className={css.bar}>
@@ -881,6 +1118,68 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </button>
           <span className={css.barLabel}>{openEntry.title}</span>
           <span className={css.spacer} />
+          {/* The globe is a switch, not a verb: lit means this body is showing a
+              translation, dark means it is showing the original — and the caret
+              holds the view (translation only / side by side / original).
+              Everything is hidden when the browser has no Translator API, the
+              pair is unavailable, or the body is already Chinese: an offer that
+              cannot work is worse than no offer. */}
+          {translationOffered && (
+            <span className={css.translateWrap}>
+              <button
+                type="button"
+                className={`${css.tool}${translatePhase === 'pack' || translatePhase === 'working' ? ` ${css.toolSpinning}` : ''}${translatePhase === 'ready' && translateView !== 'orig' ? ` ${css.toolOn}` : ''}`}
+                title={t('action.translate')}
+                aria-pressed={translatePhase === 'ready' && translateView !== 'orig'}
+                onClick={toggleGlobe}
+              >
+                <IconGlobeOutline14 size={15} />
+              </button>
+              <button
+                type="button"
+                className={css.translateCaret}
+                aria-expanded={translateMenu}
+                title={t('translate.view')}
+                onClick={() => { setTranslateMenu(open => !open) }}
+              >
+                <IconChevronDownOutline14 size={10} />
+              </button>
+              {translateMenu && (
+                <div className={css.translateMenu} role="menu">
+                  <div className={css.translateMenuHead}>{t('translate.local')}</div>
+                  {TRANSLATION_VIEWS.map(item => (
+                    <button
+                      key={item.view}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={translateView === item.view}
+                      className={css.translateMenuItem}
+                      onClick={() => { pickView(item.view) }}
+                    >
+                      <span className={css.translateCheck}>{translateView === item.view ? '✓' : ''}</span>
+                      <span className={css.translateMenuLabel}>{t(item.key)}</span>
+                    </button>
+                  ))}
+                  {(translatePhase === 'ready' || translatePhase === 'failed') && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={css.translateMenuItem}
+                      onClick={() => {
+                        setTranslateMenu(false)
+                        if (builtRef.current !== null) restoreArticle(builtRef.current.root)
+                        builtRef.current = null
+                        void startTranslation(lastViewRef.current)
+                      }}
+                    >
+                      <span className={css.translateCheck} />
+                      <span className={css.translateMenuLabel}>{t('translate.retry')}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </span>
+          )}
           <button type="button" className={css.tool} title={t('action.copyLink')} onClick={() => { void copyLink() }}>
             <IconCopyOutline16 size={15} />
           </button>
@@ -909,6 +1208,45 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             </div>
           )}
           <div className={css.rule} />
+          {/* One line while the browser prepares or translates, with the cancel
+              it needs; it disappears the moment the text is fully translated. */}
+          {(translatePhase === 'pack' || translatePhase === 'working') && (
+            <div className={css.translateStatus}>
+              <span>
+                {translatePhase === 'pack'
+                  ? t('translate.preparing')
+                  : <><b>{t('translate.working')}</b>{translateProgress !== null ? ` ${translateProgress.done}/${translateProgress.total}` : ''}</>}
+              </span>
+              <span className={css.translateBar}>
+                <i style={{ width: `${String(statusPercent)}%` }} />
+              </span>
+              <button type="button" className={css.incompleteLink} onClick={cancelTranslation}>
+                {t('action.cancel')}
+              </button>
+            </div>
+          )}
+          {translatePhase === 'failed' && translateError !== null && (
+            <div className={css.translateStatus} data-failed="true">
+              {translateError}
+              <button type="button" className={css.incompleteLink} onClick={cancelTranslation}>
+                {t('action.done')}
+              </button>
+            </div>
+          )}
+          {/* The click gesture has no other affordance, so it is taught once. */}
+          {translatePhase === 'ready' && !tipDismissed && (
+            <div className={css.translateTip}>
+              {t('translate.tip')}
+              <button
+                type="button"
+                title={t('translate.dismiss')}
+                aria-label={t('translate.dismiss')}
+                onClick={() => { setTipDismissed(true) }}
+              >
+                ×
+              </button>
+            </div>
+          )}
           {articleError !== null && (
             <p className={css.incomplete}>
               {/* Say what ACTUALLY happened. The seam's reasons are distinguishable
@@ -928,6 +1266,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               // and event attributes are already gone, and every URL that
               // survives has been scheme-checked. Re-sanitizing here would mean
               // a second implementation of the same policy.
+              //
+              // `translate.ts` decorates THIS subtree in place when the reader
+              // asks for a translation (text nodes only), so the click handler
+              // is delegation: the sentences it creates are not React's.
+              ref={articleRef}
+              onClick={onArticleClick}
               className={`${css.article} ${isCjk(articleHtml) ? css.articleZh : css.articleEn}`}
               dangerouslySetInnerHTML={{ __html: articleHtml }}
             />
