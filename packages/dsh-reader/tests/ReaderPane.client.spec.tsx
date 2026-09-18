@@ -27,7 +27,7 @@ import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
 import { forgetSession, forgetTranslators } from '../src/client/session.ts'
 import { UNIT_SEPARATOR } from '../src/client/translate.ts'
-import type { ReaderBody, ReaderEntryFetchState, ReaderSourceSummary } from '../src/types.ts'
+import type { ReaderBody, ReaderEntryFetchState, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -114,6 +114,8 @@ interface BenchOptions {
   readonly fetchStates?: Readonly<Record<string, ReaderEntryFetchState>>
   /** Entry ids the host reports as needing their full text. */
   readonly backfillCandidates?: readonly string[]
+  /** What the host's 「最近阅读」 list holds, newest first. */
+  readonly recent?: readonly ReaderRecentEntry[]
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -185,6 +187,9 @@ function bench(options: BenchOptions = {}) {
     renameTag: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     deleteTag: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     pruneTags: vi.fn(async () => ({ ok: true as const, value: { removed: 0 } })),
+    recordRead: vi.fn(async () => ({ ok: true as const, value: { entries: 1 } })),
+    listRecent: vi.fn(async () => ({ ok: true as const, value: { entries: [...(options.recent ?? [])] } })),
+    clearRecent: vi.fn(async () => ({ ok: true as const, value: { removed: (options.recent ?? []).length } })),
     fetchEntryBody: vi.fn(async (entryId: string) => ({ entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })),
     getEntryBody: vi.fn(async (request: { entryId: string; url: string; feedHtml?: string }) => {
       const sourceId = request.entryId.startsWith('link:') ? request.entryId.slice('link:'.length) : undefined
@@ -233,6 +238,9 @@ function bench(options: BenchOptions = {}) {
     renameTag: mocks.renameTag,
     deleteTag: mocks.deleteTag,
     pruneTags: mocks.pruneTags,
+    recordRead: mocks.recordRead,
+    listRecent: mocks.listRecent,
+    clearRecent: mocks.clearRecent,
     getEntryBody: mocks.getEntryBody,
     fetchEntryBody: mocks.fetchEntryBody,
     readDraft: () => '',
@@ -1636,5 +1644,102 @@ describe('coming back to the pane puts the reader where they were', () => {
     // The feed published the text itself (`contentHtml`), so the restore costs
     // no network call at all.
     expect(second.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+})
+
+describe('the 最近阅读 page', () => {
+  const recentItem = (entryId: string, over: Partial<ReaderRecentEntry> = {}): ReaderRecentEntry => ({
+    entryId,
+    sourceId: 'hn',
+    title: `读过的 ${entryId}`,
+    url: `https://example.com/${entryId}`,
+    readAt: '2026-09-19T09:00:00.000Z',
+    ...over,
+  })
+
+  it('records every open, with the source and the URL', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /一条/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.recordRead).toHaveBeenCalledTimes(1) })
+    const request = ui.mocks.recordRead.mock.calls[0]?.[0] as { entryId: string; sourceId: string; title: string; url?: string }
+    expect(request.sourceId).toBe('hn')
+    expect(request.title).toBe('一条')
+    expect(request.url).toContain('example.com')
+  })
+
+  it('lists what the host holds, newest first, and reopens one by clicking it', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }, { title: '第二条' }]) },
+      recent: [
+        // The id the pane's own parser gives this item (no guid in the fixture,
+        // so the link is the id): this row points at a REAL entry on the wall.
+        recentItem(`l:https://example.com/hn/${encodeURIComponent('第二条')}`, { title: '第二条' }),
+        recentItem('older', { title: '更早读过的一篇' }),
+      ],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    // The host's copy is what the page renders — the pane mirrors nothing.
+    expect(await screen.findByText('最近阅读')).toBeTruthy()
+    expect(await screen.findByText('第二条')).toBeTruthy()
+    expect(screen.getByText('更早读过的一篇')).toBeTruthy()
+    // …and the second one, whose entry the feed still publishes, opens again.
+    fireEvent.click(screen.getByText('第二条'))
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    expect(ui.mocks.recordRead).toHaveBeenCalledWith(expect.objectContaining({ title: '第二条' }))
+  })
+
+  it('shows an entry the feed no longer publishes, rebuilt from the record', async () => {
+    // A feed's window rolls over: the recent list is the only place left that
+    // knows the reader read this article, and its URL still opens it.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }]) },
+      recent: [recentItem('gone-entry', { title: '已经滚出订阅窗口的一篇' })],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    expect(await screen.findByText('已经滚出订阅窗口的一篇')).toBeTruthy()
+    fireEvent.click(screen.getByText('已经滚出订阅窗口的一篇'))
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+  })
+
+  it('cannot reopen an entry whose source was deleted, and says why', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }]) },
+      recent: [recentItem('orphan', { sourceId: 'deleted-source', title: '源已经删掉的一篇' })],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    const row = (await screen.findByText('源已经删掉的一篇')).closest('button') as HTMLButtonElement
+    expect(row.disabled).toBe(true)
+    expect(row.getAttribute('title')).toBe(zh['recent.sourceGone'])
+  })
+
+  it('empties the list, and keeps the empty state', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }]) },
+      recent: [recentItem('e1', { title: '读过的一篇' })],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    expect(await screen.findByText('读过的一篇')).toBeTruthy()
+    fireEvent.click(screen.getByTitle(zh['recent.clearTitle']))
+    await waitFor(() => { expect(ui.mocks.clearRecent).toHaveBeenCalledTimes(1) })
+    expect(await screen.findByText(zh['recent.empty'])).toBeTruthy()
+    expect(screen.queryByText('读过的一篇')).toBeNull()
+  })
+
+  it('says so when nothing has been read yet', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '第一条' }]) } })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    expect(await screen.findByText(zh['recent.empty'])).toBeTruthy()
+    // Nothing to clear, so the destructive affordance is not rendered at all.
+    expect(screen.queryByTitle(zh['recent.clearTitle'])).toBeNull()
   })
 })

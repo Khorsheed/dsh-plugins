@@ -28,6 +28,7 @@ import type {
   ReaderCapabilities,
   ReaderMutationOutcome,
   ReaderRefreshResult,
+  ReaderRecentEntry,
   ReaderSourceSummary,
   ReaderTag,
 } from '../types.ts'
@@ -131,6 +132,17 @@ export interface ReaderPaneInjected {
   deleteTag: (id: string) => Promise<RemoteResult<ReaderAnnotationOutcome>>
   /** Drop tags nothing references any more. */
   pruneTags: () => Promise<RemoteResult<{ removed: number }>>
+  /** Record that the reader opened one entry (the 「最近阅读」 page's write half). */
+  recordRead: (request: {
+    entryId: string
+    sourceId: string
+    title: string
+    url?: string
+  }) => Promise<RemoteResult<{ entries: number }>>
+  /** The entries the reader opened, newest first. */
+  listRecent: () => Promise<RemoteResult<{ entries: ReaderRecentEntry[] }>>
+  /** Forget every recent entry. */
+  clearRecent: () => Promise<RemoteResult<{ removed: number }>>
   /** Read / set the article cache policy. */
   getCachePolicy: () => Promise<RemoteResult<{ ttlHours: number; maxEntries: number }>>
   setCachePolicy: (ttlHours: number, maxEntries?: number) => Promise<RemoteResult<ReaderAnnotationOutcome>>

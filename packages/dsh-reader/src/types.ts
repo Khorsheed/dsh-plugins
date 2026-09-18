@@ -136,6 +136,32 @@ export interface ReaderStateDoc {
    * body can live — the sources hold raw payloads, not per-entry markup.
    */
   readonly annotations?: Readonly<Record<string, ReaderEntryAnnotation>>
+  /**
+   * What the reader opened, newest first (the 「最近阅读」 page).
+   *
+   * Persisted, unlike the pane's session memory: "what was I reading" is a fact
+   * about the reader's own behaviour that has to outlive a reload and a restart,
+   * and it holds no third-party text — a title and a URL the reader already
+   * asked for. It is NOT the read cursor (that stays per session, in the pane).
+   */
+  readonly recent?: readonly ReaderRecentEntry[]
+}
+
+/**
+ * One entry the reader opened, as the 「最近阅读」 page lists it.
+ *
+ * The title and URL are stored rather than looked up because the feed that
+ * published the entry may have rolled it out of its window: a recent list that
+ * silently drops yesterday's article is not a record of what was read.
+ */
+export interface ReaderRecentEntry {
+  readonly entryId: string
+  readonly sourceId: string
+  readonly title: string
+  /** The article URL, for reopening an entry the feed no longer publishes. */
+  readonly url?: string
+  /** When it was opened (ISO-8601). */
+  readonly readAt: string
 }
 
 /**

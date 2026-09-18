@@ -35,7 +35,7 @@
  * @module @khorsheed/dsh-reader/service
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { ReaderStore, ReaderStoreError, emptyStateDoc } from './store.ts'
+import { MAX_RECENT_ENTRIES, ReaderStore, ReaderStoreError, emptyStateDoc } from './store.ts'
 import {
   defaultSourceLabel,
   errorMessage,
@@ -56,6 +56,7 @@ import {
   type ReaderEntryFetchState,
   type ReaderPreviewFailure,
   type ReaderPreviewFailureCode,
+  type ReaderRecentEntry,
   type ReaderRefreshResult,
   type ReaderSource,
   type ReaderSourceSummary,
@@ -919,6 +920,70 @@ export class ReaderService {
       else removed += 1
     }
     if (removed > 0) await this.commit(current => ({ ...current, tags: kept }))
+    return { removed }
+  }
+
+  /**
+   * Record that the reader opened one entry.
+   *
+   * One row per ENTRY (not per source): the question the recent page answers is
+   * about the articles that were read, and an RSS entry has no source-level
+   * page to point at. Reopening an entry moves it to the top rather than
+   * duplicating it, and the list is capped — see `MAX_RECENT_ENTRIES`.
+   *
+   * The write is deliberately not batched: opening is a human-paced gesture,
+   * and a queue that had not flushed yet would lose the item on a restart.
+   *
+   * @param request - the entry, its source, and what to call it in the list.
+   * @returns how many entries the list holds afterwards.
+   */
+  async recordRead(request: {
+    entryId: string
+    sourceId: string
+    title: string
+    url?: string
+  }): Promise<{ entries: number }> {
+    const entryId = request.entryId.trim()
+    const sourceId = request.sourceId.trim()
+    if (entryId.length === 0 || sourceId.length === 0) {
+      return { entries: (await this.currentDoc()).recent?.length ?? 0 }
+    }
+    const title = request.title.trim().slice(0, 300)
+    const url = request.url === undefined || request.url.length === 0 ? undefined : request.url
+    const readAt = new Date().toISOString()
+    await this.commit(current => {
+      const kept = (current.recent ?? []).filter(item => item.entryId !== entryId)
+      return {
+        ...current,
+        recent: [{ entryId, sourceId, title, ...(url === undefined ? {} : { url }), readAt }, ...kept]
+          .slice(0, MAX_RECENT_ENTRIES),
+      }
+    })
+    return { entries: (await this.currentDoc()).recent?.length ?? 0 }
+  }
+
+  /**
+   * The entries the reader opened, newest first.
+   *
+   * @returns the recent list as the page renders it.
+   */
+  async listRecent(): Promise<{ entries: ReaderRecentEntry[] }> {
+    const doc = await this.currentDoc()
+    return { entries: [...(doc.recent ?? [])] }
+  }
+
+  /**
+   * Forget every recent entry.
+   *
+   * The reader's own list is theirs to erase: a "recently read" page that can
+   * only grow is one nobody wants to open in company.
+   *
+   * @returns how many entries were dropped.
+   */
+  async clearRecent(): Promise<{ removed: number }> {
+    const doc = await this.currentDoc()
+    const removed = doc.recent?.length ?? 0
+    if (removed > 0) await this.commit(current => ({ ...current, recent: [] }))
     return { removed }
   }
 

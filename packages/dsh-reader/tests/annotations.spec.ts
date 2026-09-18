@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   MAX_CACHED_BODIES,
+  MAX_RECENT_ENTRIES,
   boundAnnotations,
   emptyStateDoc,
   normalizeStateDoc,
@@ -119,5 +120,63 @@ describe('the document keeps the reader’s own state apart from the feeds', () 
     const doc = normalizeStateDoc({ sources: [] })
     expect(doc.cache).toBeUndefined()
     expect(emptyStateDoc().cache).toBeUndefined()
+  })
+})
+
+describe('the recent list', () => {
+  const item = (entryId: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    entryId,
+    sourceId: 's1',
+    title: `文章 ${entryId}`,
+    url: `https://example.com/${entryId}`,
+    readAt: '2026-09-19T10:00:00.000Z',
+    ...over,
+  })
+
+  it('drops records that cannot be reopened or ordered', () => {
+    // The file is user-editable state, and a recent entry is only useful if it
+    // knows what to reopen (both ids) and when it was read.
+    const doc = normalizeStateDoc({
+      sources: [],
+      recent: [
+        item('ok'),
+        item('no-source', { sourceId: '' }),
+        item('no-entry', { entryId: '  ' }),
+        item('no-time', { readAt: 42 }),
+        'not-an-object',
+        item('no-title', { title: '', url: 'https://example.com/x' }),
+        item('no-url', { url: undefined }),
+      ],
+    })
+    expect(doc.recent?.map(entry => entry.entryId)).toEqual(['ok', 'no-title', 'no-url'])
+    // A missing url is legal (an entry opened from a feed body alone).
+    expect(doc.recent?.[2]?.url).toBeUndefined()
+  })
+
+  it('keeps one row per entry and keeps the file order', () => {
+    const doc = normalizeStateDoc({ sources: [], recent: [item('a'), item('b'), item('a')] })
+    expect(doc.recent?.map(entry => entry.entryId)).toEqual(['a', 'b'])
+  })
+
+  it('caps the list at MAX_RECENT_ENTRIES', () => {
+    const recent = Array.from({ length: MAX_RECENT_ENTRIES + 25 }, (_, index) => item(`e${String(index)}`))
+    const doc = normalizeStateDoc({ sources: [], recent })
+    expect(doc.recent).toHaveLength(MAX_RECENT_ENTRIES)
+    expect(doc.recent?.[0]?.entryId).toBe('e0')
+    expect(doc.recent?.at(-1)?.entryId).toBe(`e${String(MAX_RECENT_ENTRIES - 1)}`)
+  })
+
+  it('round-trips the list through the disk document', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-reader-recent-'))
+    try {
+      const store = new ReaderStore({ stateRoot: dir })
+      await store.update(current => ({ ...current, recent: [item('e1'), item('e2')] }))
+      const { doc } = await store.read()
+      expect(doc.recent?.map(entry => entry.entryId)).toEqual(['e1', 'e2'])
+      expect(doc.recent?.[0]?.title).toBe('文章 e1')
+      expect(doc.recent?.[0]?.readAt).toBe('2026-09-19T10:00:00.000Z')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
