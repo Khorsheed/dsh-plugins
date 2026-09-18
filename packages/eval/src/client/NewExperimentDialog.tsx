@@ -118,7 +118,10 @@ export function NewExperimentDialog(props: {
   const [reps, setReps] = useState('1')
   const [seed, setSeed] = useState(String(new Date().getFullYear() * 10000 + (new Date().getMonth() + 1) * 100 + new Date().getDate()))
   const [interleave, setInterleave] = useState(true)
-  const [activeMinutes, setActiveMinutes] = useState('60')
+  // The plan template's own numbers, so step ③ arrives filled in the way
+  // step ④ does (I5·T67 · W13) and a person who has nothing to say about the
+  // budget can walk past it.
+  const [activeMinutes, setActiveMinutes] = useState('30')
   const [turns, setTurns] = useState('10')
   const [unitImage, setUnitImage] = useState('')
   const [unitNetwork, setUnitNetwork] = useState('')
@@ -435,7 +438,14 @@ export function NewExperimentDialog(props: {
         <div className={css.dim}>{t('new.notStarting')}</div>
         </>
         )}
-        {step < 4 && stepOk[step] !== true && <div className={css.dim}>{t('new.stepBlocked')}</div>}
+        {/* The generic hint is for a step with something left to fill in. A
+            set that declares no stage schemas leaves step ③ with nothing to
+            pick at all, and the PickList above already says so — repeating
+            「填完才能往下走」 under it would be telling a person to do
+            something they cannot (W13). */}
+        {step < 4 && stepOk[step] !== true && !(step === 3 && (chosen?.stages ?? []).length === 0) && (
+          <div className={css.dim}>{t('new.stepBlocked')}</div>
+        )}
         {error !== null && (
           <div ref={errorRef}>
             <ErrorState what={t('new.error')} message={error} compact t={t} />

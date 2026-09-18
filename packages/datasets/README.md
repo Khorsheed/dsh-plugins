@@ -175,6 +175,8 @@ web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「�
 
 **术语表 v2 与色彩语义**（I5·T63 补二）：界面规格 §九 的三条新增也落在这一页上。列头里的英文术语换成人话——canary → 防泄标记、validate → 校验；快照 → 题库版本；「作答记录」里每条记录写成「{对比组} · 第 N 次」，rep → 次数。色彩收到五档（绿 = 完成 / 成功、蓝 = 进行中、灰 = 未开始、红 = 失败 / 阻塞、橙 = 警告），与实验室 tab 同一份 `stageTone` / `bucketTone`：**「已归档 / 可释放 / 已释放」是灰不是绿**——跑到尽头是「结束了」不是「成功了」，绿留给「已判」。
 
+**五档颜色真的落到 tokens 了**（I5·T67 补，走查 W3）：`stageTone` / `bucketTone` 选的 tone 一直是对的，painted 的却不是——`ok` 用了品牌蓝 `--dsw-alias-state-business-primary`，`busy` 用了正文色 `--dsw-alias-label-primary`，于是「完成」是蓝的、「进行中」是灰的。现在 `ok` → `--dsw-alias-state-success-primary`、`busy` → `--dsw-alias-state-business-primary`。两个 tab 的 chip 是**手抄的两份**（§八），所以两份一起改；eval 的 `tests/tones.spec.ts` 读**两份样式表**把这条钉住——chip 的颜色是样式表里的一个 token，jsdom 既不加载样式表也不算 computed style，客户端用例照不到它。
+
 tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`。读取方法是 operator 视图——绑定只提供仓库路径，白名单与 modelFacing 底线约束的是 agent 边界（工具 + worktree），不是看自己仓库的人；敏感层带「· 敏感」标记照常可读，真正没保护的透传区与 `item.json` 则显眼标出。唯一的例外是 `itemBrief` 背后那两次判定层读取：它们**显式指名单层**（`layers: ['grading']` / `['verify']`）而不是走 operator 旁路——页面要的是答案键的形状（几条、什么 kind），字节从不上线。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace；eval 的 namespace 在**每次调用时**用 `ctx.get` 探测，不在挂载时探一次——两个插件各自 `$mount`，谁先落地没有保证。
 
 ## Compatibility

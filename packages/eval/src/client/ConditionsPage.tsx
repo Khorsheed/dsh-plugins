@@ -257,15 +257,22 @@ export function ConditionsTable(props: {
     view, loading, error, pair, diff, diffError, busy, provision, action, editing, only, judges,
     onPick, onProvision, onEditEndpoint, onSetEndpoint, t,
   } = props
-  const rows = (view?.rows ?? []).filter(row => only.includes(row.id))
+  const declared = (view?.rows ?? []).filter(row => only.includes(row.id))
+  // A group the plan NAMES and the repository does not declare used to be
+  // filtered away silently, so an experiment with two absent players showed a
+  // one-row table and said nothing about the other two (I5·T67 · W12). It is
+  // a row now, carrying the one fact there is about it.
+  const absent = only.filter(id => !declared.some(row => row.id === id))
   return (
     <>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
       {error !== null && <ErrorState what={t('conditions.error')} message={error} t={t} />}
-      {view !== null && rows.length === 0 && <EmptyState title={t('conditions.empty')} hint={t('conditions.emptyHint')} />}
-      {rows.length > 0 && (
+      {view !== null && declared.length === 0 && absent.length === 0 && (
+        <EmptyState title={t('conditions.empty')} hint={t('conditions.emptyHint')} />
+      )}
+      {(declared.length > 0 || absent.length > 0) && (
         <>
-          {rows.length > 1 && (
+          {declared.length > 1 && (
             <div className={css.dim}>{pair.length === 1 ? t('conditions.pickOne') : t('conditions.pickHint')}</div>
           )}
           {/* Above the table, not below it: this is the answer to a button the
@@ -287,7 +294,7 @@ export function ConditionsTable(props: {
             <span>{t('conditions.col.ready')}</span>
             <span>{t('conditions.col.action')}</span>
           </div>
-          {rows.map(row => (
+          {declared.map(row => (
             // A div rather than a button: the row now holds an input and a
             // button of its own, and interactive content inside a <button> is
             // invalid HTML that browsers resolve by hoisting the children out
@@ -347,6 +354,23 @@ export function ConditionsTable(props: {
                   {busy === row.id ? t('conditions.provisioning') : t('conditions.provision')}
                 </Button>
               </span>
+            </div>
+          ))}
+          {absent.map(id => (
+            // Not pickable and not provisionable: there is no declaration to
+            // diff or to turn into a scoped home. The row exists so the group
+            // is COUNTED — an experiment naming a subject nobody has is a
+            // fact about the experiment, not an empty space in a table.
+            <div key={`absent/${id}`} className={css.condRow} data-absent="">
+              <span className={css.condId} title={id}>{id}</span>
+              <span className={css.dim}>—</span>
+              <span className={css.dim}>—</span>
+              <span className={css.dim}>—</span>
+              <span className={css.dim}>—</span>
+              <span className={css.dim}>—</span>
+              <span className={css.dim}>—</span>
+              <span><Chip tone="danger">{t('conditions.missing')}</Chip></span>
+              <span className={css.dim}>—</span>
             </div>
           ))}
         </>

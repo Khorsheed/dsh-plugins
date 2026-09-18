@@ -261,21 +261,26 @@ function AnswerColumn(props: {
         </div>
       )}
 
-      <div className={css.judgeMaterial}>
-        {cell.materials.length === 0
-          ? <div className={css.dim}>{t('judge.materialNone')}</div>
-          : cell.materials.map(material => (
-            <div key={material.path}>
-              <div className={css.materialHead}>
-                <span className={css.mono}>{material.path}</span>
-                <span className={css.dim}>{t('judge.scrubbed', { count: material.replacements })}</span>
-              </div>
-              {/* The stage file VERBATIM, after scrubbing: a summary would
-                  hide exactly what a verdict has to rest on. */}
-              <pre className={css.pre}>{material.text}</pre>
-            </div>
-          ))}
-      </div>
+      {/* The material is what a verdict RESTS on, and it is thousands of lines
+          of stage json and markdown. Above the criteria it pushed the scoring
+          boxes so far down that two columns never showed their forms at the
+          same scroll position — which is the one thing side by side exists to
+          give (I5·T67 · W9). Folded, the header still carries the file and how
+          many fingerprints were scrubbed, so a grader can see the redaction
+          ran without opening anything. */}
+      {cell.materials.length === 0
+        ? <div className={css.dim}>{t('judge.materialNone')}</div>
+        : cell.materials.map(material => (
+          <details key={material.path} className={css.errorDetails}>
+            <summary className={css.errorSummary}>
+              <span className={css.mono}>{material.path}</span>
+              <span className={css.dim}> {t('judge.scrubbed', { count: material.replacements })}</span>
+            </summary>
+            {/* The stage file VERBATIM, after scrubbing: a summary would
+                hide exactly what a verdict has to rest on. */}
+            <pre className={css.pre}>{material.text}</pre>
+          </details>
+        ))}
 
       {cell.criteria.length === 0
         ? <div className={css.dim}>{t('judge.criteriaNone', { reason: cell.criteriaNote ?? DASH })}</div>

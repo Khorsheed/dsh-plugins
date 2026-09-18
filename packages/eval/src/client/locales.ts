@@ -588,6 +588,14 @@ export type EvalKey =
   | 'new.back'
   | 'new.next'
   | 'new.stepBlocked'
+  | 'runs.settled'
+  | 'error.planUnreadable'
+  | 'error.planUnreadable.fix'
+  | 'why.endpoint'
+  | 'why.homeSha'
+  | 'why.lock'
+  | 'why.file'
+  | 'why.other'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -742,7 +750,7 @@ export const en: Record<EvalKey, string> = {
   'new.egress': 'egress check argv, space separated',
   'new.notes': 'Notes',
   'new.notesPlaceholder': 'What this comparison is for, and what it cannot settle',
-  'new.notStarting': 'Saving drafts and validates. Starting is 批准并启动 on the plan-review page; logging the harnesses in and provisioning their conditions come first, and both are yours.',
+  'new.notStarting': 'Saving drafts and validates. Starting is 批准并启动 on the Design stage; logging the harnesses in and provisioning their comparison groups come first, and both are yours.',
   'new.save': 'Save draft and validate',
   'new.saving': 'Saving…',
   'new.cancel': 'Cancel',
@@ -881,7 +889,7 @@ export const en: Record<EvalKey, string> = {
   'report.judgeHuman': 'llm-draft vs human-final',
   'report.judgeSelf': 'Self-judged criteria',
   'report.notes': 'Notes and reservations',
-  'report.finalize': 'finalize',
+  'report.finalize': 'Close out',
   'report.finalizeConfirm': 'Yes, walk the gate',
   'report.finalizeConfirmAsk': 'finalize walks EVERY archived cell of this run through the release gate (archived → releasable → released). A refused gate is recorded, never forced.',
   'report.finalizeCancel': 'Cancel',
@@ -904,7 +912,7 @@ export const en: Record<EvalKey, string> = {
   'notice.finalized': 'finalize: {released} released, {refused} gate-refused, {skipped} skipped; containers: {unitsReleased} reclaimed, {unitsHeld} still up',
   'notice.reexported': 'exported again into {dir} ({count} files) — report written, and the previous bundle is untouched',
   'review.loading': 'Validating the plan…',
-  'review.error': 'Failed to review the plan',
+  'review.error': 'Failed to read the plan',
   'review.noPlan': 'This run records no plan document, so there is nothing to review — its run.meta is on the overview.',
   'review.planPath': 'Plan document',
   'review.order': 'Order',
@@ -1032,9 +1040,9 @@ export const en: Record<EvalKey, string> = {
   'factor.other': 'Other field',
   'factors.plusIncidental': '+{count} more',
   'list.emptyAction': 'Create the first experiment',
-  'list.emptyHint': 'Draft one here, or ask the agent in chat for one — either way it lands in this list as a draft, and starting it is still a click on the plan-review page.',
+  'list.emptyHint': 'Draft one here, or ask the agent in chat for one — either way it lands in this list as a draft, and starting it is still a click on the Design stage.',
   'draft.notStarted': 'Not started yet',
-  'draft.notStartedHint': 'This page fills in once a human approves the plan and starts the run — go to Plan review.',
+  'draft.notStartedHint': 'This page fills in once a human approves the plan and starts the run — go to Design.',
   // The same seat, for a run that HAS been started: the approval receipt named
   // it, so 还没启动 would be false here — it is the ledger that has not caught
   // up yet, and this page catches up by itself (I5·T39 · G11).
@@ -1051,7 +1059,7 @@ export const en: Record<EvalKey, string> = {
   'matrix.stuckChip': 'stuck {minutes} min',
   'matrix.incidental': '{count} more field(s) vary with the arms',
   'matrix.incidentalHint': 'These follow from the variables above — the credential variable a harness dictates, the digest of a provisioned home — so they are reported rather than offered as a column.',
-  'matrix.emptyHint': 'No record survives the current pins. Clear them under «Column, bands and pins», or check the plan review.',
+  'matrix.emptyHint': 'No record survives the current pins. Clear them under «Column, bands and pins», or check the Design stage.',
   'cells.emptyHint': 'No record of this experiment is in that state right now.',
   'cells.emptyClear': 'Show every state',
   'drawer.attemptNo': 'attempt {attempt}',
@@ -1135,7 +1143,7 @@ export const en: Record<EvalKey, string> = {
   'runs.filter.done': 'Done',
   'runs.filter.failed': 'Failed',
   'runs.filter.blocked': 'Blocked',
-  'runs.col.verdict': 'Score',
+  'runs.col.verdict': 'Verdict',
   'runs.filtered': '{matched} of {total}',
   'verdict.none': 'Not judged',
   'verdict.human': 'Final verdict',
@@ -1191,6 +1199,16 @@ export const en: Record<EvalKey, string> = {
   'new.back': 'Back',
   'new.next': 'Next',
   'new.stepBlocked': 'Fill this step in before going on.',
+
+  // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
+  'runs.settled': 'This record is finished — nothing is elapsing here. How long it took is on its timeline.',
+  'error.planUnreadable': 'The plan document is not there any more',
+  'error.planUnreadable.fix': 'Its dataset working tree was probably deleted. Re-create the working tree, or read the run from its run records and results — a finished run keeps its own copy of what the plan said.',
+  'why.endpoint': 'the endpoint is not resolved',
+  'why.homeSha': 'the home digest was never written back',
+  'why.lock': 'no lock beside the declaration',
+  'why.file': 'the declaration file is not there',
+  'why.other': 'validate refused it — the reason is under Details',
 }
 
 /** 中文词典。 */
@@ -1326,7 +1344,7 @@ export const zh: Record<EvalKey, string> = {
   'new.judgeSamples': '每格采样数',
   'new.stages': '阶段',
   'new.stagesEmpty': '这个题集没有阶段 schema',
-  'new.reps': 'rep',
+  'new.reps': '次数',
   'new.seed': '顺序 seed',
   'new.interleave': '交错（同一对比组的运行记录不连着排）',
   'new.budget': '预算',
@@ -1338,8 +1356,8 @@ export const zh: Record<EvalKey, string> = {
   'new.egress': '出网自检 argv，空格分隔',
   'new.notes': '备注',
   'new.notesPlaceholder': '这次比较是为了回答什么，又答不了什么',
-  'new.notStarting': '保存＝起草并校验。启动是计划审阅页的「批准并启动」；在那之前还要人去登录各家、给对比组准备环境。',
-  'new.save': '保存草稿并 validate',
+  'new.notStarting': '保存＝起草并校验。启动是实验设计页的「批准并启动」；在那之前还要人去登录各家、给对比组准备环境。',
+  'new.save': '保存草稿并校验',
   'new.saving': '保存中…',
   'new.cancel': '取消',
   'new.error': '草稿没写成',
@@ -1451,7 +1469,7 @@ export const zh: Record<EvalKey, string> = {
   'report.col.task': '题',
   'report.col.delta': 'Δ 得分',
   'report.col.weightedDelta': 'Δ 加权',
-  'report.col.deltas': '逐 rep Δ',
+  'report.col.deltas': '逐次 Δ',
   'report.col.n': 'n',
   'report.col.judges': '判官',
   'report.col.condition': '对比组',
@@ -1477,7 +1495,7 @@ export const zh: Record<EvalKey, string> = {
   'report.judgeHuman': '判官初评与人工终评',
   'report.judgeSelf': '自评判据数',
   'report.notes': '附注与保留条款',
-  'report.finalize': 'finalize',
+  'report.finalize': '终评收口',
   'report.finalizeConfirm': '确认走闸',
   'report.finalizeConfirmAsk': 'finalize 会把这次实验每一条已归档的运行记录走一遍释放闸（已归档 → 可释放 → 已释放），过闸的销毁其容器。要继续吗？',
   'report.finalizeCancel': '取消',
@@ -1500,7 +1518,7 @@ export const zh: Record<EvalKey, string> = {
   'notice.finalized': 'finalize：{released} 释放、{refused} 被闸拒、{skipped} 跳过；容器：{unitsReleased} 已回收、{unitsHeld} 仍在',
   'notice.reexported': '已重新导出到 {dir}（{count} 个文件）——报告一并写了，上一份 bundle 原样保留',
   'review.loading': '正在校验计划…',
-  'review.error': '计划审阅加载失败',
+  'review.error': '计划读取失败',
   'review.noPlan': '这个 run 没有记录计划文件，无从审阅——它的 run.meta 在概览页。',
   'review.planPath': '计划文件',
   'review.order': '顺序',
@@ -1628,9 +1646,9 @@ export const zh: Record<EvalKey, string> = {
   'factor.other': '其它字段',
   'factors.plusIncidental': '另 {count} 项',
   'list.emptyAction': '新建第一个实验',
-  'list.emptyHint': '在这里起一个草稿，或者在会话里让 agent 起——两条路都落在这张列表里，都是草稿；启动仍是计划审阅页上的一次点击。',
+  'list.emptyHint': '在这里起一个草稿，或者在会话里让 agent 起——两条路都落在这张列表里，都是草稿；启动仍是实验设计页上的一次点击。',
   'draft.notStarted': '还没启动',
-  'draft.notStartedHint': '人在计划审阅页批准并启动之后，这一页才有内容——去「计划审阅」。',
+  'draft.notStartedHint': '人在实验设计页批准并启动之后，这一页才有内容——去「实验设计」。',
   'draft.starting': '正在启动',
   'draft.startingHint': 'run 已经建了，这一页稍后自己会拉到，不用点刷新。',
   'overview.metaRaw': 'run.meta 原文',
@@ -1644,7 +1662,7 @@ export const zh: Record<EvalKey, string> = {
   'matrix.stuckChip': '卡住 {minutes} 分钟',
   'matrix.incidental': '另有 {count} 项字段随对比组而变',
   'matrix.incidentalHint': '它们是上面那些对比变量带出来的——harness 决定凭据变量名，家目录落地才有指纹——所以只报告，不做成列或筛选。',
-  'matrix.emptyHint': '当前筛选下没有记录。到「换列 · 分组 · 筛选」里清掉筛选，或去计划审阅页看这次实验展开了什么。',
+  'matrix.emptyHint': '当前筛选下没有记录。到「换列 · 分组 · 筛选」里清掉筛选，或回实验设计页看这次实验展开了什么。',
   'cells.emptyHint': '这次实验现在没有记录落在这个状态里。',
   'cells.emptyClear': '看全部状态',
   'drawer.attemptNo': '第 {attempt} 次尝试',
@@ -1728,7 +1746,7 @@ export const zh: Record<EvalKey, string> = {
   'runs.filter.done': '完成',
   'runs.filter.failed': '失败',
   'runs.filter.blocked': '阻塞',
-  'runs.col.verdict': '得分',
+  'runs.col.verdict': '判定',
   'runs.filtered': '{matched} / {total}',
   'verdict.none': '未判',
   'verdict.human': '终评',
@@ -1784,4 +1802,14 @@ export const zh: Record<EvalKey, string> = {
   'new.back': '上一步',
   'new.next': '下一步',
   'new.stepBlocked': '这一步填完才能往下走。',
+
+  // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
+  'runs.settled': '这条记录已经结束了，没有在走的时长。它花了多久看时间轴。',
+  'error.planUnreadable': '计划文件不在了',
+  'error.planUnreadable.fix': '多半是它那个题库工作树被删了。重建工作树，或者直接从运行记录与结果对比读这次 run——跑完的 run 自己留了一份计划说了什么。',
+  'why.endpoint': '端点未解析',
+  'why.homeSha': '家目录指纹未写回',
+  'why.lock': '声明旁边没有锁',
+  'why.file': '声明文件不在',
+  'why.other': '校验没过——原因在「详情」里',
 }

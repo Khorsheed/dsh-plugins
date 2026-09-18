@@ -61,12 +61,16 @@
   white-space: nowrap;
 }
 
+/* ui-spec §九's five: 绿 = 完成 / 成功, 蓝 = 进行中, 灰 = 未开始, 红 = 失败 /
+   阻塞, 橙 = 警告. `ok` took the BRAND blue and `busy` took the body label
+   colour, so a finished run read blue and a running one read grey — the two
+   colours the rule is most specific about, both wrong (I5·T67 · W3). */
 .chipTag[data-tone='ok'] {
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .chipTag[data-tone='busy'] {
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .chipTag[data-tone='warn'] {
@@ -427,6 +431,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A group the plan names and the repository does not declare. It is not a
+   pick target and not provisionable, so it does not take the row's hover or
+   its pressed state — it is there to be COUNTED (I5·T67 · W12). */
+.condRow[data-absent] {
+  cursor: default;
+}
+
+.condRow[data-absent]:hover {
+  background: transparent;
 }
 
 .condRow:hover {
@@ -1138,9 +1153,14 @@
 
 /* Queue · artifacts · criteria. The artifacts column is the widest because it
    is the one a grader actually reads; the queue only has to hold a number. */
+/* TWO columns: the item queue, and the answers to the open item. It was three
+   while the material and the criteria were separate panes; after I5·T67 put
+   the criteria inside each answer the third column sat empty and squeezed the
+   answers into 509 px of a 1134 px page — two columns of 358 px, the second
+   one half off the edge behind a scrollbar macOS does not draw (W8). */
 .judgeColumns {
   display: grid;
-  grid-template-columns: minmax(150px, 180px) minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(150px, 180px) minmax(0, 1fr);
   gap: 10px;
   align-items: start;
   min-width: 0;
@@ -1446,11 +1466,37 @@
   gap: 2px;
 }
 
+/* The state word, a bar as long as the state lasted, and the duration.
+   The chip used to be the whole first track and grid items stretch by
+   default, so every row carried an equal-length coloured bar that looked like
+   a progress indicator and expressed nothing (W7). The bar is now real: each
+   segment is scaled against the LONGEST segment of this same record, so the
+   row a reader is looking for — where the time went — is the widest one. */
 .timelineRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.timelineChip {
+  justify-self: start;
+}
+
+.timelineTrack {
+  overflow: hidden;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.timelineBar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 3px;
+  background: var(--dsw-alias-state-business-primary);
 }
 
 /* A key-value table, not a JSON dump: the reason this panel stopped printing
@@ -1564,7 +1610,10 @@
 
 .answerColumn {
   display: flex;
-  flex: 0 0 340px;
+  /* Grows into the room the third column used to waste, and never shrinks
+     below a width an answer can be read at. */
+  flex: 1 1 320px;
+  min-width: 320px;
   flex-direction: column;
   gap: 6px;
   border: 1px solid var(--dsw-alias-border-l2);

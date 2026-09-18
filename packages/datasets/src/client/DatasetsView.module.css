@@ -641,12 +641,17 @@
   white-space: nowrap;
 }
 
+/* ui-spec §九's five, the same two corrections the lab tab's copy took
+   (I5·T67 · W3): `ok` had the BRAND blue and `busy` the body label colour, so
+   「完成」 read blue and 「进行中」 read grey. The two tabs carry one chip by
+   hand (§八: a client bundle never imports a sibling plugin), so they are
+   corrected together or they drift. */
 .chipTag[data-tone='ok'] {
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .chipTag[data-tone='busy'] {
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .chipTag[data-tone='warn'] {
