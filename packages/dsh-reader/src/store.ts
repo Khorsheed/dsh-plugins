@@ -38,6 +38,7 @@ import {
   MAX_TOTAL_BODY_CHARS,
   STATE_ROOT_SEGMENT,
   type ReaderEntryAnnotation,
+  type ReaderEntryFetchRecord,
   type ReaderPreviewFailure,
   type ReaderPreviewFailureCode,
   type ReaderSource,
@@ -190,16 +191,48 @@ function normalizeAnnotations(value: unknown): Record<string, ReaderEntryAnnotat
     const tagIds = Array.isArray(record.tagIds)
       ? [...new Set(record.tagIds.filter((id): id is string => typeof id === 'string' && id.length > 0))]
       : []
+    const fetch = normalizeFetch(record.fetch)
+    const failureCode = PREVIEW_FAILURE_CODES.has(String(record.failureCode))
+      ? (record.failureCode as ReaderPreviewFailureCode)
+      : undefined
     const annotation: ReaderEntryAnnotation = {
       ...(body === undefined ? {} : { body }),
+      ...(fetch === undefined ? {} : { fetch }),
       ...(tagIds.length > 0 ? { tagIds } : {}),
       ...(typeof record.error === 'string' ? { error: record.error.slice(0, 500) } : {}),
+      ...(failureCode === undefined ? {} : { failureCode }),
       ...(typeof record.failedAt === 'string' ? { failedAt: record.failedAt } : {}),
     }
-    if (annotation.body === undefined && annotation.tagIds === undefined && annotation.error === undefined) continue
+    // A `fetch` record alone is a real annotation: it is what says "the payload
+    // is on disk waiting to be extracted". Dropping it here lost every stored
+    // payload on the next read.
+    if (annotation.body === undefined && annotation.fetch === undefined && annotation.tagIds === undefined
+      && annotation.error === undefined) continue
     out[entryId] = annotation
   }
   return out
+}
+
+/**
+ * One in-flight or stored-raw record, when it carries the fields that make it one.
+ *
+ * @param value - the persisted field.
+ * @returns the normalized record, or `undefined`.
+ */
+function normalizeFetch(value: unknown): ReaderEntryFetchRecord | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const state = record.state === 'fetching' || record.state === 'raw' ? record.state : undefined
+  if (state === undefined) return undefined
+  const rawFile = typeof record.rawFile === 'string' && record.rawFile.length > 0 ? record.rawFile : undefined
+  return {
+    state,
+    at: typeof record.at === 'string' ? record.at : new Date(0).toISOString(),
+    ...(rawFile === undefined ? {} : { rawFile }),
+    ...(typeof record.chars === 'number' && Number.isFinite(record.chars) ? { chars: record.chars } : {}),
+    ...(typeof record.url === 'string' ? { url: record.url } : {}),
+    ...(record.truncated === true ? { truncated: true } : {}),
+  }
 }
 
 /** One cached body, when it carries the fields that make it one. */
@@ -408,6 +441,9 @@ export class ReaderStore {
     const referenced = new Set<string>()
     for (const annotation of Object.values(doc.annotations ?? {})) {
       if (annotation.body?.file !== undefined) referenced.add(annotation.body.file)
+      // A fetched-but-not-yet-extracted payload is referenced too: deleting it
+      // would throw away a download the reader waited for.
+      if (annotation.fetch?.rawFile !== undefined) referenced.add(annotation.fetch.rawFile)
     }
     let names: string[]
     try {

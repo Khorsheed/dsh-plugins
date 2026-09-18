@@ -49,7 +49,7 @@ import {
   type ReaderTag,
 } from '../types.ts'
 import { extractArticle } from './extract-article.ts'
-import { parseFeed } from './parse-rss.ts'
+import { parseFeed, type ReaderEntry } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
@@ -60,6 +60,7 @@ import {
 import {
   countUnread,
   flattenEntries,
+  LIST_RENDER_LIMIT,
   hueForSource,
   selectRows,
   sourceQuery,
@@ -81,6 +82,9 @@ const STROKE: Readonly<Record<string, string>> = {
   sort: 'M4.6 3v10M2.4 10.8 4.6 13l2.2-2.2M11.4 13V3M9.2 5.2 11.4 3l2.2 2.2',
   chevron: 'M6.2 3.4 10.7 8l-4.5 4.6',
   close: 'M4.4 4.4 11.6 11.6 M11.6 4.4 4.4 11.6',
+  fetch: 'M8 2.6v8.2M4.8 7.8 8 11l3.2-3.2M3 13.4h10',
+  check: 'M3.4 8.6 6.6 11.8 12.6 4.6',
+  alert: 'M8 3.2v5.4M8 11.6v1.2',
 }
 
 /** Render one of the small stroke glyphs. */
@@ -340,6 +344,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * (cached or fresh), so reopening an entry shows the same note.
    */
   const [scriptFigures, setScriptFigures] = useState(0)
+  /** What the plugin holds per entry, as the host reports it (the 抓取 pills). */
+  const fetchStates = useStore(s => s.fetchStates)
   const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
@@ -591,6 +597,52 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
     return counts
   }, [allEntries, presentation])
+  /** One sweep at a time: the wall can re-render while an extraction runs. */
+  const sweepRunning = useRef(false)
+
+  /** The entry ids currently on the wall, for the fetch-state round trip. */
+  const entryIds = useMemo(() => allEntries.map(entry => entry.id), [allEntries])
+
+  /** Ask the host what it holds for the entries on screen. */
+  const refreshFetchStates = useCallback(async () => {
+    if (entryIds.length === 0) return
+    const result = await props.entryFetchStates(entryIds.slice(0, LIST_RENDER_LIMIT))
+    if (result.ok) actions.setFetchStates(result.value.states)
+  }, [actions, entryIds, props])
+
+  /**
+   * Turn stored raw payloads into bodies.
+   *
+   * This is what makes a fetch survive the page: the host writes the payload
+   * before it answers, so a browser that went away leaves work here instead of
+   * losing the download. Two at a time, like every other network path here.
+   */
+  const sweepRaw = useCallback(async () => {
+    if (sweepRunning.current) return
+    const raws = allEntries.filter(entry => fetchStates[entry.id]?.state === 'raw').slice(0, 2)
+    if (raws.length === 0) return
+    sweepRunning.current = true
+    try {
+      for (const entry of raws) {
+        const stored = await props.getRawBody(entry.id)
+        if (!stored.ok || stored.value.raw === undefined) continue
+        const url = stored.value.url ?? entry.link ?? ''
+        const extracted = extractArticle(stored.value.raw, url)
+        if (!extracted.ok) continue
+        await props.storeEntryBody({
+          entryId: entry.id,
+          url,
+          html: extracted.html,
+          ...(stored.value.truncated === true ? { truncated: true } : {}),
+          ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
+        })
+      }
+    } finally {
+      sweepRunning.current = false
+      await refreshFetchStates()
+    }
+  }, [allEntries, fetchStates, props, refreshFetchStates])
+
   const rows = useMemo(() => selectRows(allEntries, presentation, {
     filter, query, unreadOnly, sort, read, tags: entryTagIds, now: new Date(),
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
@@ -1322,6 +1374,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
 
 
+  /** Fetch one entry without opening it: the card's own 抓取 action. */
+  const startFetch = useCallback(async (entry: ReaderEntry) => {
+    if (entry.link === undefined) return
+    actions.setFetchStates({ [entry.id]: { state: 'fetching', at: new Date().toISOString() } })
+    // `fetchBody` is the same call the detail view makes on open — the host
+    // stores the payload first, so leaving the page does not cancel it.
+    await fetchBody(entry.id, entry.link)
+    await refreshFetchStates()
+  }, [actions, fetchBody, refreshFetchStates])
+
   /** Reload the tags on one entry. */
   const loadEntryTags = useCallback(async (entryId: string) => {
     const result = await props.entryTags(entryId)
@@ -1731,6 +1793,31 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       </button>
     </div>
   )
+
+  /** Load the states once the wall knows which entries it is showing. */
+  useEffect(() => { void refreshFetchStates() }, [refreshFetchStates, rev])
+
+  /**
+   * Keep the states fresh while anything is in flight, and drain stored payloads.
+   *
+   * The effect depends on the BOOLEAN alone and reaches the callbacks through
+   * refs. Depending on the callbacks themselves made this a loop: a poll
+   * replaces `fetchStates`, which recreates `sweepRaw` (it closes over them),
+   * which re-runs this effect, which polls again — a render cycle that never
+   * settles and a test suite that never finishes.
+   */
+  const inFlight = Object.values(fetchStates).some(state => state.state === 'fetching' || state.state === 'raw')
+  const pollRef = useRef<() => void>(() => {})
+  pollRef.current = () => {
+    void refreshFetchStates()
+    void sweepRaw()
+  }
+  useEffect(() => {
+    if (!inFlight) return undefined
+    void pollRef.current()
+    const timer = setInterval(() => { pollRef.current() }, 2000)
+    return () => { clearInterval(timer) }
+  }, [inFlight])
 
   /** The add dialog: overlay + centered card, Esc and overlay-click close. */
   const dialog = addOpen && (
@@ -2547,6 +2634,45 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       {tags.find(tag => tag.id === tagId)?.name ?? tagId}
                     </span>
                   ))}
+                  {/* 抓取, where the reader sees the card: one click stores the
+                      article so opening it later is instant. The host writes the
+                      payload before it answers, so leaving the page does not
+                      cancel it — the state pill is what says so. */}
+                  {row.entry.link !== undefined && (() => {
+                    const state = fetchStates[row.entry.id]?.state ?? 'none'
+                    const failure = fetchStates[row.entry.id]
+                    const labelKey = state === 'none' ? 'fetch.none'
+                      : state === 'fetching' ? 'fetch.fetching'
+                        : state === 'raw' ? 'fetch.raw'
+                          : state === 'ready' ? 'fetch.ready' : 'fetch.failed'
+                    const title = state === 'ready'
+                      ? t('fetch.readyTitle')
+                      : state === 'failed'
+                        ? t('fetch.failedTitle', {
+                          reason: failure?.state === 'failed' ? previewReason(t, failure.code, failure.message) : '',
+                        })
+                        : t('fetch.noneTitle')
+                    return (
+                      <span
+                        className={`${css.fetchPill} ${css[`fetchPill_${state === 'raw' ? 'fetching' : state}`] ?? ''}`}
+                        role="button"
+                        tabIndex={0}
+                        title={title}
+                        onClick={event => {
+                          event.stopPropagation()
+                          if (state !== 'ready') void startFetch(row.entry)
+                        }}
+                        onKeyDown={event => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return
+                          event.stopPropagation()
+                          if (state !== 'ready') void startFetch(row.entry)
+                        }}
+                      >
+                        {glyph(state === 'ready' ? 'check' : state === 'failed' ? 'alert' : 'fetch', 10)}
+                        <span>{t(labelKey)}</span>
+                      </span>
+                    )
+                  })()}
                   {/* The reader's own tag affordance, in the row where the
                       entry's tags already live — not buried in the detail view. */}
                   <span

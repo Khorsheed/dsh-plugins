@@ -152,6 +152,17 @@ function bench(options: BenchOptions = {}) {
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
     listTags: vi.fn(async () => ({ ok: true as const, value: { tags: options.tags ?? [], counts: options.tagCounts ?? {} } })),
+    entryFetchStates: vi.fn(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: {
+        states: Object.fromEntries(entryIds.map(id => [id, { state: 'none' as const }])),
+      },
+    })),
+    getRawBody: vi.fn(async (entryId: string) => ({ ok: true as const, value: { entryId } })),
+    storeEntryBody: vi.fn(async (request: { entryId: string; url: string; html: string }) => ({
+      ok: true as const,
+      value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: request.html },
+    })),
     listBackfillCandidates: vi.fn(async (entries: readonly { entryId: string }[]) => ({
       ok: true as const,
       value: { candidates: (options.backfillCandidates ?? []).filter(id => entries.some(entry => entry.entryId === id))
@@ -196,6 +207,9 @@ function bench(options: BenchOptions = {}) {
     updateSource: mocks.updateSource,
     removeSource: mocks.removeSource,
     refresh: mocks.refresh,
+    entryFetchStates: mocks.entryFetchStates,
+    getRawBody: mocks.getRawBody,
+    storeEntryBody: mocks.storeEntryBody,
     listBackfillCandidates: mocks.listBackfillCandidates,
     listTags: mocks.listTags,
     getCachePolicy: mocks.getCachePolicy,
@@ -1409,3 +1423,60 @@ describe('the detail view owns up to figures it cannot fetch', () => {
   })
 })
 
+
+describe('the card says what the plugin holds, and fetches on demand', () => {
+  async function wallWithStates(state: 'none' | 'ready' | 'raw' | 'failed') {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    // The state must be in place BEFORE the pane's first round trip: the pane
+    // only polls while something is in flight, so a late mock is never read.
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: {
+        states: Object.fromEntries(entryIds.map(id => [id, state === 'failed'
+          ? { state, at: '2026-09-19T00:00:00.000Z', message: 'HTTP 403', code: 'blocked' }
+          : { state }])),
+      },
+    }))
+    await ui.settle()
+    await screen.findByText('一条')
+    await waitFor(() => { expect(ui.mocks.entryFetchStates).toHaveBeenCalled() })
+    return ui
+  }
+
+  it('shows 抓取 when nothing is held, and fetches on click', async () => {
+    const ui = await wallWithStates('none')
+    const pill = await screen.findByText(zh['fetch.none'])
+    fireEvent.click(pill)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('example.com')) })
+  })
+
+  it('shows 已抓取 when the body is cached', async () => {
+    await wallWithStates('ready')
+    expect(await screen.findByText(zh['fetch.ready'])).toBeTruthy()
+  })
+
+  it('explains a failure and retries on click', async () => {
+    const ui = await wallWithStates('failed')
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    expect(pill.getAttribute('title')).toContain(zh['preview.blocked'])
+    fireEvent.click(pill)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+  })
+
+  it('extracts a payload the host stored while the page was away', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: { states: Object.fromEntries(entryIds.map(id => [id, { state: 'raw' as const, at: '2026-09-19T00:00:00.000Z' }])) },
+    }))
+    ui.mocks.getRawBody.mockImplementation(async (entryId: string) => ({
+      ok: true as const,
+      value: { entryId, raw: `<article><p>${'prose '.repeat(60)}</p></article>`, url: 'https://example.com/a' },
+    }))
+    await ui.settle()
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalled() })
+    const stored = ui.mocks.storeEntryBody.mock.calls[0]?.[0] as { html: string }
+    expect(stored.html).toContain('prose')
+  })
+})

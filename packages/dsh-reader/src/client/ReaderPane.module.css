@@ -1749,6 +1749,41 @@
 
 /* The tag button lives in the tags row (where the entry's own tags are), and
    only surfaces on hover or focus so a wall of cards stays quiet. */
+/* 抓取 state, in the card's tag row: a pill whose colour IS the state — grey
+   (not fetched; click to fetch), blue (in flight, or fetched and waiting to be
+   stored), green (the full text is cached), red (failed; the tooltip says why). */
+.fetchPill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fetchPill:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+
+.fetchPill_fetching {
+  border-color: var(--dsw-alias-state-business-primary, #4a7cf6);
+  color: var(--dsw-alias-state-business-primary, #4a7cf6);
+}
+
+.fetchPill_ready {
+  border-color: var(--dsw-static-green-600, #2f9e44);
+  color: var(--dsw-static-green-600, #2f9e44);
+}
+
+.fetchPill_failed {
+  border-color: var(--dsw-static-red-600, #d54941);
+  color: var(--dsw-static-red-600, #d54941);
+}
+
 .tagOnCard {
   display: inline-flex;
   align-items: center;

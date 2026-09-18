@@ -53,6 +53,7 @@ import {
   type ReaderBody,
   type ReaderCapabilities,
   type ReaderMutationOutcome,
+  type ReaderEntryFetchState,
   type ReaderPreviewFailure,
   type ReaderPreviewFailureCode,
   type ReaderRefreshResult,
@@ -559,19 +560,129 @@ export class ReaderService {
       await this.recordFetchFailure(request.entryId, 'invalid-url')
       return { entryId: request.entryId, error: 'invalid-url' }
     }
+    await this.markFetching(request.entryId)
     try {
       const fetched = await this.fetchFollowing(url)
+      // The raw payload is written to disk BEFORE the caller gets it, so a
+      // browser that goes away mid-request does not cost the reader the
+      // download: the next visit finds the stored payload and extracts it.
+      const rawFile = await this.storeRaw(request.entryId, fetched.raw, fetched.url, fetched.truncated)
       return {
         entryId: request.entryId,
         url: fetched.url,
         raw: fetched.raw,
+        ...(rawFile === undefined ? {} : { rawFile }),
         ...(fetched.truncated ? { truncated: true } : {}),
       }
     } catch (error) {
-      const message = errorMessage(error)
-      await this.recordFetchFailure(request.entryId, message)
-      return { entryId: request.entryId, error: message }
+      const failure = classifyFetchFailure(error, new Date().toISOString())
+      await this.recordFetchFailure(request.entryId, failure.message, failure.code)
+      return { entryId: request.entryId, error: failure.message }
     }
+  }
+
+  /**
+   * Which entries have a body, a stored raw payload, or a recorded failure.
+   *
+   * The wall needs this per ENTRY (entries come from the browser's parse of a
+   * feed), so it cannot ride the source summaries. `raw` means "fetched, not yet
+   * extracted" — the browser half turns those into bodies on its next load.
+   *
+   * @param request - the entry ids the caller is showing.
+   * @returns one state per requested id.
+   */
+  async entryFetchStates(request: { entryIds: readonly string[] }): Promise<{ states: Record<string, ReaderEntryFetchState> }> {
+    const doc = await this.currentDoc()
+    const states: Record<string, ReaderEntryFetchState> = {}
+    const now = Date.now()
+    for (const entryId of request.entryIds) {
+      const annotation = doc.annotations?.[entryId]
+      if (annotation?.body !== undefined && isFresh(annotation.body.expiresAt)) {
+        states[entryId] = { state: 'ready', ...(annotation.body.fetchedAt === undefined ? {} : { at: annotation.body.fetchedAt }) }
+        continue
+      }
+      const fetch = annotation?.fetch
+      if (fetch?.state === 'raw') {
+        states[entryId] = { state: 'raw', at: fetch.at }
+        continue
+      }
+      if (fetch?.state === 'fetching' && isRecent(fetch.at, now, FETCH_STALE_MS)) {
+        states[entryId] = { state: 'fetching', at: fetch.at }
+        continue
+      }
+      if (annotation?.error !== undefined && annotation.failedAt !== undefined) {
+        states[entryId] = {
+          state: 'failed',
+          at: annotation.failedAt,
+          message: annotation.error,
+          ...(annotation.failureCode === undefined ? {} : { code: annotation.failureCode }),
+        }
+        continue
+      }
+      states[entryId] = { state: 'none' }
+    }
+    return { states }
+  }
+
+  /**
+   * Hand back a stored raw payload so the browser can extract it.
+   *
+   * @param request - the entry whose payload is wanted.
+   * @returns the payload, or why there is none.
+   */
+  async getRawBody(request: { entryId: string }): Promise<{ entryId: string; raw?: string; url?: string; truncated?: boolean; error?: string }> {
+    const doc = await this.currentDoc()
+    const annotation = doc.annotations?.[request.entryId]
+    const file = annotation?.fetch?.state === 'raw' ? annotation.fetch.rawFile : undefined
+    if (file === undefined) return { entryId: request.entryId, error: 'no stored payload' }
+    const raw = this.store.readBody(file)
+    if (raw === undefined) return { entryId: request.entryId, error: 'stored payload is gone' }
+    return {
+      entryId: request.entryId,
+      raw,
+      ...(annotation?.fetch?.url === undefined ? {} : { url: annotation.fetch.url }),
+      ...(annotation?.fetch?.truncated === true ? { truncated: true } : {}),
+    }
+  }
+
+  /** Record that a fetch is in flight, so a wall reopened later can say so. */
+  private async markFetching(entryId: string): Promise<void> {
+    await this.commit(current => ({
+      ...current,
+      annotations: { ...current.annotations, [entryId]: { ...current.annotations?.[entryId], fetch: { state: 'fetching', at: new Date().toISOString() } } },
+    }))
+  }
+
+  /**
+   * Store one raw payload for later extraction.
+   *
+   * @param entryId - the entry it belongs to.
+   * @param raw - the payload.
+   * @returns the file name, or `undefined` when the deployment has no fs.
+   */
+  private async storeRaw(entryId: string, raw: string, url: string, truncated: boolean): Promise<string | undefined> {
+    if (!this.store.available) return undefined
+    const file = this.store.writeBody(`${entryId}#raw`, raw)
+    await this.commit(current => ({
+      ...current,
+      annotations: {
+        ...current.annotations,
+        [entryId]: {
+          ...current.annotations?.[entryId],
+          fetch: {
+            state: 'raw',
+            at: new Date().toISOString(),
+            rawFile: file,
+            chars: raw.length,
+            // The URL and the cap flag travel with the payload: the extraction
+            // pass needs both, and it runs in a browser that never saw the fetch.
+            url,
+            ...(truncated ? { truncated: true } : {}),
+          },
+        },
+      },
+    }))
+    return file
   }
 
   /**
@@ -620,6 +731,8 @@ export class ReaderService {
     await this.commit(current => {
       const existing = current.annotations?.[request.entryId]
       const tagIds = existing?.tagIds
+      // The stored raw payload has been consumed: the fetch record goes with it,
+      // so the wall now reads `ready` from the body alone.
       return {
         ...current,
         annotations: {
@@ -809,15 +922,33 @@ export class ReaderService {
     return { removed }
   }
 
-  /** Record why a fetch produced nothing, so the retry is a decision. */
-  private async recordFetchFailure(entryId: string, error: string): Promise<void> {
-    await this.commit(current => ({
-      ...current,
-      annotations: {
-        ...current.annotations,
-        [entryId]: { ...current.annotations?.[entryId], error, failedAt: new Date().toISOString() },
-      },
-    }))
+  /**
+   * Record why a fetch produced nothing, so the retry is a decision.
+   *
+   * The failure also carries its classified CODE when there is one: the wall's
+   * card button explains a red state with the same sentence the detail view
+   * uses, instead of the seam's raw words.
+   *
+   * @param entryId - the entry.
+   * @param error - the message to keep, verbatim.
+   * @param code - the classified reason, when one was derived.
+   */
+  private async recordFetchFailure(entryId: string, error: string, code?: ReaderPreviewFailureCode): Promise<void> {
+    await this.commit(current => {
+      const { fetch: _cleared, ...rest } = current.annotations?.[entryId] ?? {}
+      return {
+        ...current,
+        annotations: {
+          ...current.annotations,
+          [entryId]: {
+            ...rest,
+            error,
+            ...(code === undefined ? {} : { failureCode: code }),
+            failedAt: new Date().toISOString(),
+          },
+        },
+      }
+    })
   }
 
   /* --------------------------------------------------------------- internals */
@@ -1168,6 +1299,15 @@ function cleanupAnnotations(
     out[entryId] = (entry.tagIds ?? []).length > 0 ? entry : withoutTags(entry)
   }
   return out
+}
+
+/** How old a `fetching` record may be before it is treated as abandoned. */
+const FETCH_STALE_MS = 10 * 60 * 1000
+
+/** Whether an ISO instant is recent enough to still mean "in flight". */
+function isRecent(iso: string, now: number, windowMs: number): boolean {
+  const at = new Date(iso).getTime()
+  return Number.isFinite(at) && now - at <= windowMs
 }
 
 /** Whether a cache deadline is still in the future. */
