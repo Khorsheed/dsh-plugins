@@ -55,7 +55,8 @@ export function toolsOfGroup(group: DatasetsToolGroup): readonly string[] {
 
 const COMMON_REPO_PARAM = {
   type: 'string',
-  description: 'Dataset repository path. Omit to use the session binding (or the configured default).',
+  description: 'Optional, and only ever a restatement of the session\'s dataset binding: a path that is not the bound '
+    + 'repository is refused, and so is any path in a session nobody has bound. Omit it.',
 } as const
 
 const COMMON_DATASET_PARAM = {
@@ -92,11 +93,16 @@ export function datasetToolDefinitions(
 ): ToolDefinition[] {
   const { defaultRepo, group } = options
   const definitions: ToolDefinition[] = []
-  /** Scope for one tool call: explicit args first, then the session binding. */
+  /**
+   * Scope for one tool call: the session's binding, and `repo` only as a
+   * restatement of it. `agent: true` is what makes the difference — the CLI
+   * and the tab resolve the same way minus that flag, and there `repo` is
+   * still a human's override (I5·T58 · G1).
+   */
   const scopeFor = (exec: { agent?: { session: import('./binding.ts').BindingSession } }, args: { repo?: string }): DatasetScope => {
     const session = exec.agent?.session
     const binding = session === undefined ? undefined : service.binding(session)
-    return resolveScope(args, binding, defaultRepo)
+    return resolveScope(args, binding, defaultRepo, { agent: true })
   }
 
   /** Error text for tool failures (the registry reports thrown messages). */

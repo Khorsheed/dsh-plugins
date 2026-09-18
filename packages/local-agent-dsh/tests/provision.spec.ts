@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_SUB_PROFILE_NAME, presetRosterLayer, provisionDshSubProfile, readSubProfilePreset, resolveHeadlessBundleDir,
+  DEFAULT_SUB_PROFILE_NAME, permissionBoundaryLayer, presetRosterLayer, provisionDshSubProfile,
+  readSubProfilePermissions, readSubProfilePreset, resolveHeadlessBundleDir,
 } from '../src/provision.ts'
 
 /** A stand-in headless bundle directory carrying a patch to provision. */
@@ -161,5 +162,84 @@ describe('preset roster layer', () => {
     // The headless bundle IS linked: it is a @khorsheed package the dsh
     // installation does not carry.
     expect(lstatSync(join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')).isSymbolicLink()).toBe(true)
+  })
+})
+
+describe('permission boundary layer', () => {
+  it('writes no layer at all when the deployment pins no boundary', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const profileDir = provisionDshSubProfile(home, { headlessBundleDir: bundleDir })
+    // Byte for byte the bundle's own patch: dsh-base's workspace-write + ask
+    // survive untouched, which is the pre-T59 behavior every host scope keeps.
+    expect(readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')).toBe('- id: local-agent-dsh-headless-runner\n')
+    expect(permissionBoundaryLayer(undefined)).toBe('')
+    expect(readSubProfilePermissions(home)).toBeUndefined()
+  })
+
+  it('pins both rows — sandbox mode and the approval policy its preset pairs with', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const profileDir = provisionDshSubProfile(home, {
+      headlessBundleDir: bundleDir,
+      permissions: 'danger-full-access',
+    })
+    const patch = readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')
+    expect(patch.startsWith('- id: local-agent-dsh-headless-runner\n')).toBe(true)
+    expect(patch).toContain("  name: '@deepseek-ai/dsh-sandbox-policy'")
+    expect(patch).toContain('    mode: danger-full-access')
+    expect(patch).toContain("  name: '@deepseek-ai/dsh-user-approval'")
+    // Escalating past a denied call needs an approval channel a headless
+    // sub-dsh does not have; the pair moves together or the boundary is a
+    // sandbox nobody can run inside and nobody can be asked about.
+    expect(patch).toContain('    policy: never')
+    expect(readSubProfilePermissions(home)).toBe('danger-full-access')
+  })
+
+  it('a confining preset keeps ask — the pairing comes from dsh-base own table', () => {
+    for (const mode of ['read-only', 'workspace-write'] as const) {
+      const layer = permissionBoundaryLayer(mode)
+      expect(layer).toContain(`    mode: ${mode}`)
+      expect(layer).toContain('    policy: ask')
+    }
+  })
+
+  it('re-states workspaceRoot, because a patch config REPLACES rather than merges', () => {
+    expect(permissionBoundaryLayer('workspace-write')).toContain('    workspaceRoot: !!js process.cwd()')
+  })
+
+  it('refuses a mode outside dsh own three-word vocabulary', () => {
+    expect(() => permissionBoundaryLayer('unrestricted' as never)).toThrow(/must be one of/)
+  })
+
+  it('stacks after the preset roster, and both layers survive together', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const profileDir = provisionDshSubProfile(home, {
+      headlessBundleDir: bundleDir,
+      preset: { id: 'eval-lean' },
+      permissions: 'danger-full-access',
+    })
+    const patch = readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')
+    expect(patch.indexOf("'@deepseek-ai/dsh-agent-presets'")).toBeLessThan(patch.indexOf("'@deepseek-ai/dsh-sandbox-policy'"))
+    expect(readSubProfilePreset(home)).toBe('eval-lean')
+    expect(readSubProfilePermissions(home)).toBe('danger-full-access')
+  })
+
+  it('is idempotent, and re-provisioning drops the layer again when the pin is withdrawn', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir, permissions: 'danger-full-access' })
+    const patchPath = join(home, 'profiles', DEFAULT_SUB_PROFILE_NAME, 'cordis.patch.yml')
+    const first = readFileSync(patchPath, 'utf8')
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir, permissions: 'danger-full-access' })
+    expect(readFileSync(patchPath, 'utf8')).toBe(first)
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir })
+    expect(readSubProfilePermissions(home)).toBeUndefined()
+  })
+
+  it('reads back nothing from a sub-profile that was never provisioned', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    expect(readSubProfilePermissions(home)).toBeUndefined()
   })
 })

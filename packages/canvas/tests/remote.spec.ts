@@ -15,12 +15,16 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasRemoteService } from '../src/remote.ts'
 import type { CanvasService } from '../src/service.ts'
+import type { CanvasBoardService } from '../src/store.ts'
 import type {
+  BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentRequest, BoardCreateRequest,
+  BoardPatchCardRequest, BoardPutCardRequest,
   CanvasArchiveRequest, CanvasCreateRequest, CanvasWriteRequest,
 } from '../src/types.ts'
 
 const WS = '/ws'
 const NAME = '文章/第一章 雨夜.md'
+const CANVAS_ID = 'canvas_01234567abcdefgh'
 
 const CREATE: CanvasCreateRequest = { dir: WS, kind: 'article', title: '第一章 雨夜', content: '' }
 const WRITE: CanvasWriteRequest = { dir: WS, name: NAME, content: 'a', version: '1' }
@@ -35,7 +39,21 @@ interface Seen {
   session: unknown
 }
 
-/** Mount the Remote over a recording store core in a bare context. */
+/** A bare board receipt the fake board hands back for every mutation. */
+function boardReceipt() {
+  const now = '2026-09-16T00:00:00.000Z'
+  return {
+    ok: true as const,
+    board: {
+      id: CANVAS_ID, title: '主题', attachedWorkspaces: [], chat: { sessionId: null },
+      cards: [], stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: now },
+      archivedAt: null, createdAt: now, updatedAt: now,
+    },
+    version: '2',
+  }
+}
+
+/** Mount the Remote over recording service cores in a bare context. */
 async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dispose: () => Promise<void> }> {
   const seen: Seen[] = []
   const receipt = {
@@ -54,8 +72,23 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
     write: async (_request: CanvasWriteRequest, session: Session) => { seen.push({ method: 'write', session }); return { ...receipt, operation: 'update' as const } },
     setArchived: async (_request: CanvasArchiveRequest, session: Session) => { seen.push({ method: 'setArchived', session }); return { ok: true as const } },
   }
+  const board = {
+    listCanvases: async () => ({ items: [] }),
+    createCanvas: async (_request: BoardCreateRequest, session: Session) => { seen.push({ method: 'createCanvas', session }); return boardReceipt() },
+    readBoard: async () => ({ ok: false as const, error: 'missing' as const }),
+    putCard: async (_request: BoardPutCardRequest, session: Session) => { seen.push({ method: 'putCard', session }); return boardReceipt() },
+    patchCard: async (_request: BoardPatchCardRequest, session: Session) => { seen.push({ method: 'patchCard', session }); return boardReceipt() },
+    addComment: async (_request: BoardAddCommentRequest, session: Session) => { seen.push({ method: 'addComment', session }); return boardReceipt() },
+    archiveCanvas: async (_request: BoardArchiveRequest, session: Session) => { seen.push({ method: 'archiveCanvas', session }); return boardReceipt() },
+    askAgent: async (_request: BoardAskAgentRequest, session: Session) => { seen.push({ method: 'askAgent', session }); return { ok: true as const, contextKey: `canvas:${CANVAS_ID}`, sent: true } },
+    chatAvailable: () => ({ available: true }),
+    focusCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'focusCanvas', session }); return { ok: true as const } },
+    readDraft: async () => ({ ok: true as const, content: '', version: null }),
+    writeDraft: async (_request: { canvasId: string; content: string; version: string | null }, session: Session) => { seen.push({ method: 'writeDraft', session }); return { ok: true as const, version: '3' } },
+  }
   const ctx = new Context()
   ctx.provide('canvasStore', store as unknown as CanvasService)
+  ctx.provide('canvasBoard', board as unknown as CanvasBoardService)
   const fiber = ctx.plugin(CanvasRemoteService, {})
   await fiber.await()
   return {
@@ -84,6 +117,41 @@ describe('CanvasRemoteService', () => {
     const { remote, dispose } = await bench()
     expect(await remote.list({ dir: WS })).toEqual({ items: [], archived: [] })
     expect(await remote.read({ dir: WS, name: NAME })).toEqual({ ok: false, error: 'missing' })
+    await dispose()
+  })
+})
+
+describe('CanvasRemoteService — the canvas space verbs', () => {
+  it('forwards the calling agent\'s session on every mutating board verb', async () => {
+    const { remote, seen, dispose } = await bench()
+    const agent = { session: SESSION } as unknown as Agent
+    expect(await remote.createCanvas(agent, { title: '主题' })).toMatchObject({ ok: true })
+    expect(await remote.putCard(agent, { canvasId: CANVAS_ID, kind: 'fragment', text: 'x' })).toMatchObject({ ok: true })
+    expect(await remote.patchCard(agent, { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })).toMatchObject({ ok: true })
+    expect(await remote.addComment(agent, { canvasId: CANVAS_ID, cardId: 'c_1', text: 'x' })).toMatchObject({ ok: true })
+    expect(await remote.archiveCanvas(agent, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
+    expect(await remote.askAgent(agent, { canvasId: CANVAS_ID, lens: 'challenge' })).toMatchObject({ ok: true, sent: true })
+    expect(await remote.focusCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
+    expect(await remote.writeDraft(agent, { canvasId: CANVAS_ID, content: 'x', version: null })).toEqual({ ok: true, version: '3' })
+    expect(seen).toEqual([
+      { method: 'createCanvas', session: SESSION },
+      { method: 'putCard', session: SESSION },
+      { method: 'patchCard', session: SESSION },
+      { method: 'addComment', session: SESSION },
+      { method: 'archiveCanvas', session: SESSION },
+      { method: 'askAgent', session: SESSION },
+      { method: 'focusCanvas', session: SESSION },
+      { method: 'writeDraft', session: SESSION },
+    ])
+    await dispose()
+  })
+
+  it('serves the board reads without an agent', async () => {
+    const { remote, dispose } = await bench()
+    expect(await remote.listCanvases()).toEqual({ items: [] })
+    expect(await remote.readBoard({ canvasId: CANVAS_ID })).toEqual({ ok: false, error: 'missing' })
+    expect(await remote.chatStatus()).toEqual({ available: true })
+    expect(await remote.readDraft({ canvasId: CANVAS_ID })).toEqual({ ok: true, content: '', version: null })
     await dispose()
   })
 })

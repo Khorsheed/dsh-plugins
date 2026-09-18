@@ -130,8 +130,18 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
+    dir: 'packages/sidechat',
+    name: '@khorsheed/dsh-sidechat',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
     dir: 'packages/quote',
     name: '@khorsheed/dsh-quote',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
+    dir: 'packages/dsh-reader',
+    name: '@khorsheed/dsh-reader',
     hostConfigs: ['tsconfig.host.json'],
   },
 ]

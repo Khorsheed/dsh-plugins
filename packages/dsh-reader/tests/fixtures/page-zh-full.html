@@ -1,0 +1,3358 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" id="sixapart-standard" lang="zh-CN">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="generator" content="Movable Type  5.2.2" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--link rel="stylesheet" href="http://www.ruanyifeng.com/blog/styles.css" type="text/css" /-->
+<link rel="start" href="https://www.ruanyifeng.com/blog/" title="Home" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="https://feeds.feedburner.com/ruanyifeng" />
+<script type="text/javascript" src="https://www.ruanyifeng.com/blog/mt.js"></script>
+<script type="text/javascript" src="/blog/advertisements.js"></script>
+<!--
+<rdf:RDF xmlns="http://web.resource.org/cc/"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<Work rdf:about="http://www.ruanyifeng.com/blog/2011/07/formula_online_generator.html">
+<dc:title>数学公式生成器</dc:title>
+<dc:description>上一篇文章《数学常数e的含义》，有很多数学公式。...</dc:description>
+<dc:creator>阮一峰</dc:creator>
+<dc:date>2011-07-11T22:12:13+08:00</dc:date>
+<license rdf:resource="http://creativecommons.org/licenses/by-nc-nd/3.0/" />
+</Work>
+<License rdf:about="http://creativecommons.org/licenses/by-nc-nd/3.0/">
+</License>
+</rdf:RDF>
+-->
+
+<style>
+body {
+  background-color: #f5f5d5;
+}
+
+#container::before {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  background: rgba(0,0,0,0.1);
+  text-align: center;
+  content: "本站显示不正常，可能因为您使用了广告拦截器。";
+}
+
+</style>
+<script>
+function loadjscssfile(filename, filetype){
+    if (filetype=="js"){ //if filename is a external JavaScript file
+        var fileref=document.createElement('script')
+        fileref.setAttribute("type","text/javascript")
+        fileref.setAttribute("src", filename)
+    }
+    else if (filetype=="css"){ //if filename is an external CSS file
+        var fileref=document.createElement("link")
+        fileref.setAttribute("rel", "stylesheet")
+        fileref.setAttribute("type", "text/css")
+        fileref.setAttribute("href", filename)
+    }
+    if (typeof fileref!="undefined")
+        document.getElementsByTagName("head")[0].appendChild(fileref)
+}
+//loadjscssfile("http://www.ruanyifeng.com/blog/styles.css", "css");
+loadjscssfile('/static/themes/theme_scrapbook/theme_scrapbook.min.css', "css");
+
+
+function checker() {
+  if (/mobile|android/i.test(navigator.userAgent)) return; 
+  window.comments && window.comments.setAttribute("style", "!important");
+  // var img = document.querySelector('img[src^="http://www.ruanyifeng.com/blog/images"]');
+  var img = document.querySelector('a > img[src*="wangbase.com/blogimg/asset/"]');
+  var isAdblocker = (typeof adblock === 'undefined');
+  if (
+    /*isAdblocker || */
+    (img && window.getComputedStyle(img).display === 'none') ||
+    (img && window.getComputedStyle(img.parentElement).display === 'none')
+  ){
+    var sponsor = document.querySelector('#main-content');
+    var prompt = document.createElement('div');
+    prompt.style = 'border: 1px solid #c6c6c6;border-radius: 4px;background-color: #f5f2f0;padding: 15px; font-size: 14px;';
+    prompt.innerHTML = '<p>您使用了广告拦截器，导致本站内容无法显示。</p><p>请将 www.ruanyifeng.com 加入白名单，解除广告屏蔽后，刷新页面。谢谢。</p>';
+    sponsor.parentNode.replaceChild(prompt, sponsor);
+    // document.querySelector('#main-content').innerHTML = '';
+  }
+}
+
+setTimeout(checker, 1000);
+</script>
+    
+    <link rel="prev" href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-304.html" title="科技爱好者周刊（第 304 期）：最受欢迎的颜色" />
+    <link rel="next" href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-306.html" title="科技爱好者周刊（第 306 期）：信息就像糖一样上瘾" />
+    
+    <title>科技爱好者周刊（第 305 期）：随机数，这是一个问题 - 阮一峰的网络日志</title>
+</head>
+<body id="scrapbook" class="mt-entry-archive one-column">
+<script>
+if (/mobile/i.test(navigator.userAgent) || /android/i.test(navigator.userAgent)) document.body.classList.add('mobile');
+
+/*
+window.addEventListener('load', function(event) {
+  setTimeout(function () {
+    hab('#sup-post-2');
+    hab('#cre-inner');
+  }, 1000);
+});
+*/
+</script>
+    <div id="container">
+        <div id="container-inner">
+
+            <div id="header">
+    <div id="header-inner">
+        <div id="header-content">
+
+
+            <div id="header-name">阮一峰的网络日志 <span id="site_location"> » <a href="https://www.ruanyifeng.com/blog/" accesskey="1">首页</a></span><span id="site_archive"> » <a href="https://www.ruanyifeng.com/blog/archives.html">档案</a></span>
+</div>
+
+<div id="google_search">
+<!-- SiteSearch Google -->
+<form action="https://www.baidu.com/s" target="_blank" method="get" id="cse-search-box">
+  <div>
+  <input type="text" size="20" name="origin" class="searchbox" id="sbi" value="" />
+  <input type="hidden" name="wd" value="" />
+  <!--input type="image" src="/static/themes/theme_scrapbook/images/top_search_submit.gif" class="searchbox_submit" value="" alt="搜索" name="sa" onclick="this.form.wd.value = this.form.origin.value + ' inurl:www.ruanyifeng.com/blog'" /-->
+  <input type="image" src="/static/themes/theme_scrapbook/images/top_search_submit.gif" class="searchbox_submit" value="" alt="搜索" name="sa" onclick="this.form.wd.value = this.form.origin.value + ' 阮一峰'" />
+</div>
+</form>
+
+<!-- SiteSearch Google -->
+</div>
+<div id="feed_icon">
+<a href="/feed.html?utm_source=" title="订阅Feed">
+<!--img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAUzSURBVHjavFdbbFRVFF3nPjoz7dTWTittaW0jUDRAUqaNojyqREnEQKgfUj9MqqAmhqRt/OCD4CuY+Kckoh+aiGKC+gMJbdHoRysJ8dkhhmJLNdDKtJU+6GMK87j3Hs85d2Z6HzNtMYWb3Dn3NWftvfba+5xNYDl+e6Fkj6yqb/oDRbWq14vlPBLRKCITkxf0ROLt+hNjp1PPSRK4kA3vF1dXNRcWlyA2OQU9eos9opAkAiKxD+XkKO6t15aRWO7J/MgmAZU8MEgexgZHMX518Dh72sYMmVKShnxWuWHdHtxKIDIYTgMuDzgfmSOIQkYMpdUF8OY92Hytt4/jvkg47czzU16iQovM3QFwmNck+Yyduu7D6NA0Z6JR4THntFs9V4tWQg6Ui3s6MwKDncsFTnXKLJhDSeUK3AgPtyhccDzmVs999buRt/1Vm4i0od+hX7+MRG87jPGB/w1u8FPj9xEw7McVrnYuOCvtpjTth3J/nTg99c8LRhKhr6D3dTB5R24bXFwbMXBsyZzeoXaycEpJ95TB09AGX/NpqLVNtw8urnVzLvHjFNxiFqRy2OOHuqUVnue+ACkoWzo4O6lGzTmuHq6nPvY2m9rVqjrIK2rMEKxqyG5NPAKt+wjo0LklgfNxJkZMA3KJvqRUk3z5UFY3QH14P0h+WUY79HPvgv7VuSg4ZRGY1YgZgqXmORccF17sy2ehnf9AeO085K2HQFbtXBScj0LcpgF2cN+WV+DZ/LJQu6gD4R7oV7pBJwbSgtMvfiPoVp56DySwxm7EtkMs1WdAB7qzggsDJKQYsHucSkOudrkiCPWR/fA2nYCn8SNIK4NptSMyAu3sAdDRkIsJdfth0LzSrODUoPNZ4KI9SxJI5UHk7D4GdQfz2us31c7CoHMjRkKuDPHseCMrONVhNcDJwMJpKFVvg9L4OaTiNWm1x789KCqkrXhVBiEz0WYCT2nAzQAD1/vaETv1GrRfP4Vx5cfMNcDPwvP0h0DhanPym7OIf/+O67vcJ1/PCJ4KgdzaUP6Wz+dU+5yIL6fV+PsHGAOdwlPpvvUOyeeAVGyCdqkDNB6DPjsBSrnndfOGevOh3RhGItxvA+fX1CtbGFhgYUFkFMZPR6F1HnClHq8HyubWtJexX06CRmdt33hrd7nA7SFY4qoGpnYuOKcRykPPgDCBcsHx9Iv+fNL2PueBehCWUfYQIIMGLOCcOmXDXsh1+yCt35tUPfvzGFuSvzvoinXOxqa02qOhM6733nVP2MAdaej2XN11DPKjLZCD+yBvahGCo7JfTKAN9UD7s8Oe9zUNIhz8fWI8DG2k38WCFdxugANcXrvTVd1IEbuv3Jour7Hzn7jLMBNfKs7R3i67gRVrbeCOEDhinmWhAatsqdquM2XzHZINhK2cqTjHr/XZdVJUbgN3MWAVXKbSyg9jesRW2xP9di+lwrL5ojM3m2H/kG9hwcIA37c71W6wJdW2J2S5nrjYbq/t1AHAhJsKQeyfPvf6IMJgghPJhFZ4x0KlfLFvt22du45Au/A1SOlGc0P672XXwhLtOcM0kTTEMMd0qkVmMNXxMd/tsedUjInr4SQDgOfeXMSiN0FCL5WHah4L1qqYXPJOJlttd+a5M+YpcG5poLYKQ5f+6JJ4r8bbJYP47hq4r7QAs9PjYNhHJd4o8l5taiwuOpa7AS4XKqI/5NjJbTnaWK92nLdLuhQAJayRNMiygXPBeQN+Qbvu0zDc3y+aUzhbkGR73sI7ljvUnndx2q3t+X8CDAD66FtrIL864AAAAABJRU5ErkJggg==" alt="" style="border: 0pt none;" /-->
+<img src="https://cdn.beekka.com/blogimg/asset/202107/bg2021072117.png" alt="" style="border: 0pt none;" />
+</a></div>
+
+        </div>
+    </div>
+</div>
+
+
+
+            <div id="content">
+                <div id="content-inner">
+
+
+                    <div id="alpha">
+                        <div id="alpha-inner">
+
+
+                            <div id="entry-2421" class="entry-asset asset hentry">
+                                <div class="asset-header">
+<div class="asset-nav entry-nav">
+
+<div class="entry-location">
+<ul>
+<li>上一篇：<a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-304.html" title="科技爱好者周刊（第 304 期）：最受欢迎的颜色">科技爱好者周刊（第&nbsp;3</a></li>
+<li>下一篇：<a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-306.html" title="科技爱好者周刊（第 306 期）：信息就像糖一样上瘾">科技爱好者周刊（第&nbsp;3</a></li>
+</ul>
+</div>
+
+
+    
+                                    <div class="entry-categories">
+                                        <p>分类<span class="delimiter">：</span></p>
+                                        <ul>
+                                            <li><a href="https://www.ruanyifeng.com/blog/weekly/" rel="tag">周刊</a></li>
+                                        </ul>
+                                    </div>
+    
+
+
+                                            
+<div class="entry-location-mobile" style="float: right;">
+<ul>
+<li><a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-304.html" title="科技爱好者周刊（第 304 期）：最受欢迎的颜色">⇐&nbsp;</a></li>
+<li><a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-306.html" title="科技爱好者周刊（第 306 期）：信息就像糖一样上瘾">&nbsp;⇒</a></li>
+</ul>
+</div>
+
+</div>
+</div>
+
+                          
+<article class="hentry">
+                                    <h1 id="page-title" class="asset-name entry-title">科技爱好者周刊（第 305 期）：随机数，这是一个问题</h1>
+
+<div class="asset-meta">
+                                        
+
+                                            <p class="vcard author">作者： <a class="fn url" href="https://www.ruanyifeng.com">阮一峰</a></p>
+                                    <p>日期： <a href="https://www.ruanyifeng.com/blog/2024/06/"><abbr class="published" title="2024-06-21T08:13:05+08:00">2024年6月21日</abbr></a></p>
+
+
+</div>
+
+
+
+
+
+
+
+
+
+
+                                
+                                <div class="asset-content entry-content" id="main-content">
+
+                                    <!-- div class="asset-body" -->
+                                        <p>这里记录每周值得分享的科技内容，周五发布。</p>
+
+                                    <!-- /div -->
+
+
+                                    <!-- div id="more" class="asset-more" -->
+                                        <p>本杂志<a href="https://github.com/ruanyf/weekly">开源</a>，欢迎<a href="https://github.com/ruanyf/weekly/issues">投稿</a>。另有<a href="https://github.com/ruanyf/weekly/issues/4550">《谁在招人》</a>服务，发布程序员招聘信息。合作请<a href="/cdn-cgi/l/email-protection#ccb5a5aaa9a2abe2beb9ada28caba1ada5a0e2afa3a1">邮件联系</a>（<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="671e0e01020900491512060927000a060e0b4904080a">[email&#160;protected]</a>）。</p>
+
+<h2>封面图</h2>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061403.webp" alt="" title="" /></p>
+
+<p>重庆"悦来江湾"公交车站，由几块巨石组成，象征当地江边的鹅卵石。（<a href="http://www.cqyuelai.com/yuelai_content/2023-09/21/content_10592221.htm">via</a>）</p>
+
+<h2>随机数，这是一个问题</h2>
+
+<p>今天谈谈，怎么生成真正的随机数。</p>
+
+<p>这个问题超难，但有一些很有趣的内容。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061814.webp" alt="" title="" /></p>
+
+<p>首先，编程语言提供的随机数，是伪随机数。</p>
+
+<p>V8 引擎的官网有<a href="https://v8.dev/blog/math-random">一篇文章</a>（下图），特别提醒大家这一点。它内置的随机数不是真随机数，而是伪随机数。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061606.webp" alt="" title="" /></p>
+
+<p>所谓伪随机数，并非真的随机，而是算法得到的。只要初始的种子值相同，算法会给出一样的结果。</p>
+
+<p>JavaScript 和许多其他语言，都有这个问题。所以，遇到特别强调随机的场合，都不应该使用语言内置的随机数生成器。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061815.webp" alt="" title="" /></p>
+
+<p>真随机数需要满足三个条件。</p>
+
+<blockquote>
+  <p><strong>（1）无法预测。</strong> 随机数不能被猜到，所以必须非常大，否则会被暴力破解。</p>
+
+<p><strong>（2）不能重复。</strong> 每次生成的随机数，不能是一样的。</p>
+
+<p><strong>（3）均匀分布。</strong> 随机数必须平均散布在所有区间，不能集中在某些区间。</p>
+</blockquote>
+
+<p><strong>一般来说，只有通过硬件，才能得到真随机数</strong>，单纯的软件算法做不到。</p>
+
+<p>科学家绞尽脑汁，想出各种办法，通过硬件生成随机数。</p>
+
+<p>著名的 <a href="https://www.random.org/">Random.org</a> 就是专门生成一个随机数的网站。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061816.webp" alt="" title="" /></p>
+
+<p>它在全世界部署了多个无线电接收器，专门监听大气无线电波（即大气噪音，可以理解成大气的布朗运动），通过随机的无线电信号来生成随机数。下图是它的早期硬件设备。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061817.webp" alt="" title="" /></p>
+
+<p>因为有硬件支出，使用它的随机数，需要付费。所以，大家可以看到，真随机数是有成本的，不是跑一下程序就可以了。</p>
+
+<p>世界最大的 CDN 服务商 Cloudflare ，为了得到真随机数，做得更绝。</p>
+
+<p>它的三个办公室，每个都有<a href="https://blog.cloudflare.com/harnessing-office-chaos">不一样</a>的随机数生成装置。</p>
+
+<p><strong>（1）旧金山总部</strong>。一进门就有一堵墙，放满了几十盏熔岩灯。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202403/bg2024031204.webp" alt="" title="" /></p>
+
+<p>熔岩灯内部是融化的蜡，每时每刻都在变化着形状。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061818.webp" alt="" title="" /></p>
+
+<p>需要随机数的时候，就对着这堵墙拍一张照片。每张照片都是不一样的，然后计算照片的哈希，将其作为种子值，计算得到一个随机数。</p>
+
+<p><strong>（2）伦敦办公室。</strong> 那里有一面"单摆墙"，放满了各种单摆装置。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202403/bg2024031205.webp" alt="" title="" /></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202403/bg2024031206.webp" alt="" title="" /></p>
+
+<p>单摆和它们的影子，每时每刻都在摆动。每次照片的哈希也是不一样的，可以作为随机数的种子值。</p>
+
+<p><strong>（3）奥斯汀办公室。</strong> 那里的天花板，挂了很多彩色的反光片。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202403/bg2024031207.webp" alt="" title="" /></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202403/bg2024031208.webp" alt="" title="" /></p>
+
+<p>这些反光片对空气流动十分敏感，开门、关门、空调、温度、湿度，都会让其转动，反射出不同颜色的光。因此，也可以用来当作随机数的种子值。</p>
+
+<h2>下周五，稀土开发者大会</h2>
+
+<p>过去一个月，周刊一直在预热今年的"稀土开发者大会"。</p>
+
+<p>它的开幕时间就是下周五（6月28日）。</p>
+
+<p>作为今年的大活动，所有日程安排现在都出来了。下图就是<strong>主论坛和10个分论坛的 70 多场演讲题目</strong>。</p>
+
+<p><a href="https://cdn.beekka.com/blogimg/asset/202406/bg2024062005.webp"><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024062004.webp" alt="" title="" /></a></p>
+
+<p>点击看<a href="https://cdn.beekka.com/blogimg/asset/202406/bg2024062005.webp">大图</a>，都是技术热点和前沿领域。演讲者是来自全球的技术专家和第一线的主力工程师。</p>
+
+<p>另外，大会还有外场的 AI 活动，一共4个特色展区，可以接触众多国内头部 AI 公司的展台，参与各种互动小游戏，赢取纪念品。这部分是免费的。</p>
+
+<p>活动详情可以点击<a href="https://conf.juejin.cn/xdc2024/?utm_source=ryf">这个链接</a>，或者扫描上方海报的二维码，购买内场演讲票，或者领取免费的外场票，以及预约现场直播。</p>
+
+<h2>科技动态</h2>
+
+<p>1、<a href="https://www.wsj.com/science/space-astronomy/boeing-sent-two-astronauts-into-space-now-it-needs-to-get-them-home-99d96633">Starliner 飞船</a></p>
+
+<p>美国宇航局最近遇到了一件尴尬的事情。</p>
+
+<p>波音公司的 Starliner 飞船（下图），将两名宇航员送入国际空间站以后，却回不来了。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061906.webp" alt="" title="" /></p>
+
+<p>飞船发射后，出现了氦气泄漏和推进器故障。迟迟没有找到原因，美国宇航局就不敢用它把宇航员送回来。</p>
+
+<p>本次任务原定8天，现在已经20天了。目前暂定6月26日返航，但可能再次推迟。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061907.webp" alt="" title="" /></p>
+
+<p>好在国际空间站有4个月的食物储备，不至于有物资问题。</p>
+
+<p>本次飞行是 Starliner 飞船首次执行任务，就搞成这样。实在不行的话，只能再派一艘飞船去把人接回来。</p>
+
+<p>2、<a href="https://www.nhm.ac.uk/discover/news/2024/june/face-ancient-australian-giga-goose-revealed-after-fossil-skull-found.html">澳大利亚巨型鹅</a></p>
+
+<p>澳大利亚与其他大陆隔绝，存在着许多奇特动物。</p>
+
+<p>科学家很早就知道，澳大利亚有过一种巨型鹅（下图最右侧），大小跟鸵鸟相仿，身高超过2米，体重240公斤，但是已经在45000年前灭绝了。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061501.webp" alt="" title="" /></p>
+
+<p>那时正好是第一批人类来到澳大利亚，所以科学家猜测，它的灭绝与人类有关。人类可能大规模捕杀这种鹅，毕竟它不会飞，又跑得慢。</p>
+
+<p>以前，这种鹅只出土过零星的化石，最近终于出土了第一个完整头骨。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061502.webp" alt="" title="" /></p>
+
+<p>科学家画出它的还原像，大家看看，这种地球已经不存在的巨型鹅长什么样。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061503.webp" alt="" title="" /></p>
+
+<p>3、<a href="https://x.com/soren_iverson/status/1801253187602788424">眼球监控</a></p>
+
+<p>一位国外网友，在推特上贴出一张图片。</p>
+
+<p>他在手机上看 Youtube 视频，结果跳出了这个提示。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061506.webp" alt="" title="" /></p>
+
+<p>意思是，系统发现，他的眼球没有注视广告，所以重新播放一次广告。</p>
+
+<p>这张图应该是伪造的，不过技术上很简单。只要播放广告时，启动摄像头，就能识别镜头前有没有人，眼球看哪里。</p>
+
+<p>我怀疑，这种场景会变成现实。以后，付费用户正常使用，免费用户必须通过眼球监控，确保正在注视广告。</p>
+
+<p>4、<a href="https://globalvoices.org/2024/06/13/the-ingenious-network-tree-defying-gazas-connectivity-blockade/">上网篮</a></p>
+
+<p>加沙地区由于战争原因，互联网服务已经完全中断了。</p>
+
+<p>一个国际组织为了帮助那里的人民上网，想出了一个解决办法。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061504.webp" alt="" title="" /></p>
+
+<p>他们先在其他国家购买了一批 eSIM 卡，将参数传给当地人。因为 eSIM 是虚拟卡，只要填入参数，就能开通，相对容易。</p>
+
+<p>然后，当地人把手机连上充电宝，放在一个篮子里，带到边境地区，挂在高处。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061505.webp" alt="" title="" /></p>
+
+<p>通过 eSIM 卡，手机可以连上领国的 4G 网络，这时打开手机热点，那么在篮子下面的人，就都能上网了。</p>
+
+<h2>文章</h2>
+
+<p>1、<a href="https://www.36kr.com/p/2826590796843272">AI 芯片的未来，未必是 GPU</a>（中文）</p>
+
+<p>本文认为，加速计算未必只能通过 GPU 实现，FPGA 或 ASIC 或许是更优的底层计算设备。</p>
+
+<p>2、<a href="https://medium.com/@ideatocode/what-i-learned-as-an-artist-writing-my-own-blog-engine-for-10-years-straight-0cb8297e7712">我编写自己的博客引擎的10年</a>（英文）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202404/bg2024040801.webp" alt="" title="" /></p>
+
+<p>作者为自己写了一个博客引擎，坚持了10年，他讲述在这个过程中学到的东西和体会。</p>
+
+<p>3、<a href="https://www.joshwcomeau.com/react/folding-the-dom/">CSS 的 3D 折叠效果</a>（英文）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202404/bg2024040601.webp" alt="" title="" /></p>
+
+<p>本文介绍如何使用 CSS 实现 3D 的页面折叠动画效果（上图）。</p>
+
+<p>4、<a href="https://pncnmnp.github.io/blogs/fibonacci-hashing.html">随机歌单的算法</a>（英文）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202312/bg2023121001.webp" alt="" title="" /></p>
+
+<p>本文介绍 Spotify 生成随机歌单的算法，要求是同一个歌手的歌曲不能连续播放。</p>
+
+<p>5、<a href="https://www.asianometry.com/p/whats-next-for-asml">ASML 总部访问记</a>（英文）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061702.webp" alt="" title="" /></p>
+
+<p>作者访问荷兰光刻机公司 ASML 总部，在埃因霍温市的郊区，这里是他的见闻。</p>
+
+<p>6、<a href="https://lazamar.github.io/virtual-dom/">200行 JavaScript 代码实现虚拟 DOM</a>（英文）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202405/bg2024052205.webp" alt="" title="" /></p>
+
+<p>虚拟 DOM 是很多 JS 框架的底层基础，本文演示怎么自己从头实现它。</p>
+
+<h2>工具</h2>
+
+<p>1、<a href="https://github.com/porsager/postgres">Postgres.js</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202310/bg2023101401.webp" alt="" title="" /></p>
+
+<p>Node.js 和 Deno 的 PostgreSQL 客户端，类似软件还有 <a href="https://jawj.github.io/zapatos/">Zapatos</a>。</p>
+
+<p>2、<a href="https://opencclint.vercel.app/">OpenccLint</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061601.webp" alt="" title="" /></p>
+
+<p>一个基于 OpenCC 的繁简体中文转换工具，支持编辑器和命令行界面。（<a href="https://github.com/ruanyf/weekly/issues/4629">@hddhyq</a> 投稿）</p>
+
+<p>3、<a href="https://github.com/kangpeiqin/bilivideo_down">BiliVideoDown</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061604.webp" alt="" title="" /></p>
+
+<p>一款基于 Flutter 的桌面端 B 站视频下载器，代码开源。（<a href="https://github.com/ruanyf/weekly/issues/4640">@kangpeiqin</a> 投稿）</p>
+
+<p>4、<a href="https://gitee.com/howcode/aq-chat-server">AQChat</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061605.webp" alt="" title="" /></p>
+
+<p>一款匿名的在线聊天软件，用户可以自由登录、创建房间、会话和传输文件，体验 <a href="https://aqchat.run/">demo</a>。链接是后端代码，另有 <a href="https://gitee.com/howcode/aq-chat">Web 端</a>和<a href="https://gitee.com/ghosthhf/aqchat-mobile">移动端</a>。（<a href="https://github.com/ruanyf/weekly/issues/4643">@howcodes</a> 投稿）</p>
+
+<p>5、<a href="https://voicer.hellogeek.work/">Voicer</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061808.webp" alt="" title="" /></p>
+
+<p>一个 Chrome 浏览器插件，用来语音朗读网页文本。（<a href="https://github.com/ruanyf/weekly/issues/4647">@wang-jianliang</a> 投稿）</p>
+
+<p>6、<a href="https://www.1txm.com/barcode">易条形</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061810.webp" alt="" title="" /></p>
+
+<p>一个在线的条形码生成器。（<a href="https://github.com/ruanyf/weekly/issues/4651">@FZliweiliang</a> 投稿）</p>
+
+<p>7、<a href="https://scienhub.com/templates">ScienHub</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061812.webp" alt="" title="" /></p>
+
+<p>LaTex 在线编辑器，提供很多实用的模板。（<a href="https://github.com/ruanyf/weekly/issues/4657">@tc1989tc</a> 投稿）</p>
+
+<p>8、<a href="https://github.com/qqAys/trash.sh">trash.sh</a></p>
+
+<p>rm 命令的简单替代品，提供一个删除文件的回收站。（<a href="https://github.com/ruanyf/weekly/issues/4658">@qqAys</a> 投稿）</p>
+
+<p>9、<a href="https://cloud.myfont.bid/">我的字体</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061813.webp" alt="" title="" /></p>
+
+<p>一个制作个人手写字体的在线工具。（<a href="https://github.com/ruanyf/weekly/issues/4659">@harbor2009</a> 投稿）</p>
+
+<p>10、<a href="https://github.com/chengfengfengwang/lingo-link/blob/main/README_ZH-CN.md">lingo link</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024062001.webp" alt="" title="" /></p>
+
+<p>一个开源的浏览器插件，支持划词翻译、AI 翻译、生词标记。（<a href="https://github.com/ruanyf/weekly/issues/4670">@chengfengfengwang</a> 投稿）</p>
+
+<h2>AI 相关</h2>
+
+<p>1、<a href="https://lunaai.video/">Luma AI Video Generator</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061602.webp" alt="" title="" /></p>
+
+<p>Luma AI 视频生成器免费在线使用。（<a href="https://github.com/ruanyf/weekly/issues/4628">@sunnyjingliu</a> 投稿）</p>
+
+<p>2、<a href="https://stablediffusion3.net/zh-CN">Stable Diffusion 3 AI 图像生成器</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061603.webp" alt="" title="" /></p>
+
+<p>免费使用 Stable Diffusion 3，通过文本生成图像，无需注册。（<a href="https://github.com/ruanyf/weekly/issues/4637">@ddewfrefref</a> 投稿）</p>
+
+<p>3、<a href="https://elevenlabs.io/">Generative Voice AI</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202310/bg2023101615.webp" alt="" title="" /></p>
+
+<p>一个文字转语音的服务，支持中文，免费账户每月可以转10000字（约10分钟音频）。</p>
+
+<p>4、<a href="https://github.com/luyu0279/BrainyAI">BrainyAI</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061809.webp" alt="" title="" /></p>
+
+<p>一个开源的 Chrome 插件，在侧边栏加载 AI 模型，是类似产品 <a href="https://sider.ai/">Sider AI</a>, <a href="https://monica.im/">Monica</a>, <a href="https://www.getmerlin.in/">Merlin</a>, 和 <a href="https://www.maxai.me/">MaxAI</a> 的免费替代品。（<a href="https://github.com/ruanyf/weekly/issues/4648">@luyu0279</a> 投稿）</p>
+
+<p>5、<a href="https://www.rockai.online/">Rock AI</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061908.webp" alt="" title="" /></p>
+
+<p>该网站托管了一些开源 AI 模型，可以免费调用。（<a href="https://github.com/ruanyf/weekly/issues/4668">@hellokidder</a> 投稿）</p>
+
+<p>6、<a href="https://chrome-ai.cc/">Chrome AI</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061811.webp" alt="" title="" /></p>
+
+<p>使用 chrome 内置 AI 模型搭建的本地聊天工具。（<a href="https://github.com/ruanyf/weekly/issues/4655">@zengkan0703</a> 投稿）</p>
+
+<p>7、<a href="https://www.sheshbabu.com/posts/system-wide-text-summarization-using-ollama-and-applescript/">mac 电脑的本地文本总结</a>（英文）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061512.webp" alt="" title="" /></p>
+
+<p>本文介绍如何在 mac 电脑上，架设本地的 Ollama 模型，用它建立一个快捷方式，自动对打开的网页进行内容总结。</p>
+
+<h2>资源</h2>
+
+<p>1、<a href="https://tonsky.me/blog/unicode/">开发者必须了解的 Unicode 知识</a>（2023版）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202310/bg2023100210.webp" alt="" title="" /></p>
+
+<p>这篇长文介绍最新的 Unicode 知识。</p>
+
+<p>2、<a href="https://www.loadership.com/">loadership</a></p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202401/bg2024012002.webp" alt="" title="" /></p>
+
+<p>该网站可以定制纯 CSS 的页面加载动画（loader）。</p>
+
+<p>3、<a href="https://github.com/federico-busato/Modern-CPP-Programming">现代 C++ 编程</a>（Modern C++ Programming）</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202311/bg2023112902.webp" alt="" title="" /></p>
+
+<p>一个开源的 C++ 英文教程。</p>
+
+<h2>图片</h2>
+
+<p>1、<a href="https://www.snopes.com/fact-check/magic-roundabout-photo/">奇怪的环岛</a></p>
+
+<p>英国有一个奇怪的环岛，分成内圈和外圈，它们之间还分布着5个小环岛。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061703.webp" alt="" title="" /></p>
+
+<p>它的内圈是逆时针方向，外圈是顺时针方向。</p>
+
+<p>从外圈进入内圈，或者从内圈进入外圈，都必须通过5个小环岛。</p>
+
+<p>下图是当地的交通指示牌。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024061704.webp" alt="" title="" /></p>
+
+<p>这个环岛建于1972年，多年没有发生过重大的交通事故。</p>
+
+<p>2、<a href="https://en.wikipedia.org/wiki/Elbe_Tunnel_(1911">易北河隧道</a>)</p>
+
+<p>易北河流经德国汉堡市中心。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202210/bg2022101409.webp" alt="" title="" /></p>
+
+<p>1911年，汉堡市政府在河底挖了一条426米的隧道，方便两岸的交通。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202210/bg2022101410.webp" alt="" title="" /></p>
+
+<p>这条隧道的奇特之处，就是没有引道。行人和车辆必须使用升降机，进入和离开隧道。下图两侧的黄色垂直通道，就是升降机。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202210/bg2022101412.webp" alt="" title="" /></p>
+
+<p>下图是车辆升降机的入口。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202210/bg2022101411.webp" alt="" title="" /></p>
+
+<p>这个隧道直到今天还在使用，甚至还在里面开过音乐会。下图是在升降机底部仰望出口。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202210/bg2022101413.webp" alt="" title="" /></p>
+
+<h2>文摘</h2>
+
+<p>1、<a href="https://tratt.net/laurie/blog/2023/how_big_should_a_programming_language_be.html">编程语言应该多大？</a></p>
+
+<p>编程语言有小有大。</p>
+
+<p>一些语言只提供最核心的功能，另一些语言无所不包。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024062002.webp" alt="" title="" /></p>
+
+<p>还有一些语言，开始时很小，后来不断添加功能，变得越来越大，甚至庞大到难以使用。</p>
+
+<p>Python 语言的初始版本很小，前几个版本故意保持这种特色，添加功能的建议都被明确拒绝，理由是它们会使语言太大。</p>
+
+<p>某个时刻（也许是在 Python 1.6 和 Python 2.0 之间），事情发生了变化：功能建议不会因为使语言变大而被拒绝，只会因为没有解决重要问题而被拒绝。</p>
+
+<p>从此以后，Python 就走向了庞大语言的道路。</p>
+
+<p><img src="https://cdn.beekka.com/blogimg/asset/202406/bg2024062003.webp" alt="" title="" /></p>
+
+<p>在我看来，一旦语言的设计者不再担心语言的大小，这种语言的无限制增长是不可避免的。</p>
+
+<p>很多语言都是如此。尽管 Java 从来都不是小型语言，但在泛型添加到 Java 1.5 之前，它的变化相当小。泛型似乎是 Java 大型语言之旅的起点。</p>
+
+<p>JavaScript 本来是一个周末设计出来的小型语言，现在变成了一种相当庞大的语言。</p>
+
+<p>Rust 是一种已经很大的语言，但它正在考虑添加更多功能，变得更大。</p>
+
+<p>为什么那么多语言都走上了变大的道路？</p>
+
+<p>我的看法是，因为没有一种编程语言是完美的，总有不能很好支持的用例。许多情况下，添加新功能有助于更好地支持这些用例。</p>
+
+<p>由于潜在用例是无限的，因此我们总是加入新的设计，让语言变得"更好"，副作用就是每次都让语言变得更大一点。</p>
+
+<h2>言论</h2>
+
+<p>1、</p>
+
+<p>拉斯维加斯正在举行一年一度的电子表格 Excel 世界锦标赛，它有一个其他比赛都没有的特点，那就是毫无趣味。</p>
+
+<p>-- <a href="https://www.theverge.com/c/24133822/microsoft-excel-spreadsheet-competition-championship">《Excel 世界锦标赛》</a></p>
+
+<p>2、</p>
+
+<p>哈勃望远镜确定，宇宙的准确年龄是138亿年。那就是我们这个世界的起源，在这之前是什么，没人知道。</p>
+
+<p>--<a href="https://www.esa.int/Science_Exploration/Space_Science/Webb/Webb_Hubble_confirm_Universe_s_expansion_rate">《韦伯望远镜提供的新线索》</a> </p>
+
+<p>3、</p>
+
+<p>农活忙不过来。</p>
+
+<p>-- <a href="https://github.com/dylanaraps">@dylanaraps</a>，Kiss Linux 的创始人，他的 GitHub 主页上只留了这一句话，项目已经两年多不更新了</p>
+
+<p>4、</p>
+
+<p>我不记得读过的书，就像不记得吃过的饭一样；即便如此，它们还是造就了我。</p>
+
+<p>-- <a href="https://blog.jim-nielsen.com/2024/you-are-what-you-read/">爱默生</a></p>
+
+<p>5、</p>
+
+<p>早期，民航客机的驾驶舱最多有五名成员。由于导航和通信的自动化，导航员和无线电操作员率先被淘汰。然后，飞行工程师也被淘汰了，只剩下两名飞行员。</p>
+
+<p>随着飞行员成本的飙升，航空公司开始要求，只有一个飞行员的窄体飞机，副驾驶员被淘汰只是时间问题。</p>
+
+<p>最终，仅剩的一个飞行员也会被淘汰，以后的飞机主要靠自动驾驶，再配上一名能够有限控制飞机的地面操作员。</p>
+
+<p>-- <a href="https://airfactsjournal.com/2024/06/the-last-pilot/">《最后的飞行员》</a></p>
+
+<h2>往年回顾</h2>
+
+<p>2023：<a href="https://www.ruanyifeng.com/blog/2023/06/weekly-issue-258.html">卡马克的猫</a></p>
+
+<p>2022：<a href="https://www.ruanyifeng.com/blog/2022/05/weekly-issue-208.html">晋升制度的问题</a></p>
+
+<p>2021：<a href="https://www.ruanyifeng.com/blog/2021/05/weekly-issue-158.html">内容渠道的贬值</a></p>
+
+<p>2020：<a href="https://www.ruanyifeng.com/blog/2020/05/weekly-issue-108.html">阵地战与奇袭战</a></p>
+
+<p>（完）</p>
+
+                                    <!-- /div -->
+
+                                </div>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script type="text/javascript" src="/newwindow.js"></script>
+                                <div class="asset-footer">
+
+<h3>文档信息</h3>
+<ul>
+<li>版权声明：自由转载-非商用-非衍生-保持署名（<a href="http://creativecommons.org/licenses/by-nc-nd/3.0/deed.zh">创意共享3.0许可证</a>）</li>
+<li>发表日期： <abbr class="published" title="2024-06-21T08:13:05+08:00">2024年6月21日</abbr></li>
+
+</ul>
+                                </div>
+</article>
+                            </div>
+
+
+<div id="related_entries">
+<h2>相关文章</h2>
+<ul>
+
+<li><strong>2026.01.23: <a href="https://www.ruanyifeng.com/blog/2026/01/weekly-issue-382.html">科技爱好者周刊（第 382 期）：独立软件的黄昏</a></strong>
+
+                           <div class="entry-body">
+                              这里记录每周值得分享的科技内容，周五发布。
+
+                           </div>
+
+</li>
+
+ 
+<li><strong>2026.01.16: <a href="https://www.ruanyifeng.com/blog/2026/01/weekly-issue-381.html">科技爱好者周刊（第 381 期）：中国 AI 大模型领导者在想什么</a></strong>
+
+                           <div class="entry-body">
+                              这里记录每周值得分享的科技内容，周五发布。
+
+                           </div>
+
+</li>
+
+ 
+<li><strong>2026.01.09: <a href="https://www.ruanyifeng.com/blog/2026/01/weekly-issue-380.html">科技爱好者周刊（第 380 期）：为什么人们拥抱"不对称收益"</a></strong>
+
+                           <div class="entry-body">
+                              这里记录每周值得分享的科技内容，周五发布。
+
+                           </div>
+
+</li>
+
+ 
+<li><strong>2025.12.26: <a href="https://www.ruanyifeng.com/blog/2025/12/weekly-issue-379.html">科技爱好者周刊（第 379 期）：《硅谷钢铁侠》摘录</a></strong>
+
+                           <div class="entry-body">
+                              这里记录每周值得分享的科技内容，周五发布。（[通知] 下周元旦假期，周刊休息。）
+
+                           </div>
+
+</li>
+
+ 
+</ul>
+</div>
+
+
+
+                    
+
+                    <div id="comments" class="comments">
+
+
+    
+    
+        
+    <h2 class="comments-header">留言（70条）</h2>
+
+    <div id="comments-content" class="comments-content" style="clear: left;">
+        
+        <div id="comment-442808" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">涛</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442808">
+            <p>用 UUID 做随机数的种子, 可以做到真随机吗?</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  8:39 AM">2024年6月21日 08:39</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442808">#</a>
+ | <a href="#comment-text" title="引用涛的这条留言" onclick="return CommentQuote('comment-quote-442808','涛');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442809" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">第二季度营商环境</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442809">
+            <p>math.random()和彩票摇奖号码哪个数更随机呢</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  8:41 AM">2024年6月21日 08:41</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442809">#</a>
+ | <a href="#comment-text" title="引用第二季度营商环境的这条留言" onclick="return CommentQuote('comment-quote-442809','第二季度营商环境');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442810" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">难得自然萌</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442810">
+            <blockquote>
+<pre>引用第二季度营商环境的发言：</pre>
+
+<p>math.random()和彩票摇奖号码哪个数更随机呢</p>
+
+</blockquote>
+
+<p>math.random()和彩票摇奖号码都是伪随机</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  8:59 AM">2024年6月21日 08:59</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442810">#</a>
+ | <a href="#comment-text" title="引用难得自然萌的这条留言" onclick="return CommentQuote('comment-quote-442810','难得自然萌');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442811" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Jerry</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442811">
+            <p>我不记得读过的书，就像不记得吃过的饭一样；即便如此，它们还是造就了我。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:03 AM">2024年6月21日 09:03</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442811">#</a>
+ | <a href="#comment-text" title="引用Jerry的这条留言" onclick="return CommentQuote('comment-quote-442811','Jerry');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442812" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">黑羽</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442812">
+            <p>（2）不能重复。 每次生成的随机数，不能是一样的。</p>
+
+<p>（3）均匀分布。 随机数必须平均散布在所有区间，不能集中在某些区间。</p>
+
+<p>感觉上面两个条件，反而不像随机了，而是人工刻意生成的</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:06 AM">2024年6月21日 09:06</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442812">#</a>
+ | <a href="#comment-text" title="引用黑羽的这条留言" onclick="return CommentQuote('comment-quote-442812','黑羽');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442814" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">PunkSerris</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442814">
+            <p>农活忙不过来。<br />
+程序员的最终归宿是种田哈哈</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:21 AM">2024年6月21日 09:21</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442814">#</a>
+ | <a href="#comment-text" title="引用PunkSerris的这条留言" onclick="return CommentQuote('comment-quote-442814','PunkSerris');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442815" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Allen</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442815">
+            <p>1、随机数：无线电信号一定是随机的？<br />
+2、眼球监控：如果真这样了，还不如强制必须购买广告里的产品才能继续观看。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:22 AM">2024年6月21日 09:22</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442815">#</a>
+ | <a href="#comment-text" title="引用Allen的这条留言" onclick="return CommentQuote('comment-quote-442815','Allen');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442816" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">miracles</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442816">
+            <blockquote>
+<pre>引用涛的发言：</pre>
+
+<p>用 UUID 做随机数的种子, 可以做到真随机吗?</p>
+
+</blockquote>
+
+<p>UUID是怎么来的呢</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:22 AM">2024年6月21日 09:22</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442816">#</a>
+ | <a href="#comment-text" title="引用miracles的这条留言" onclick="return CommentQuote('comment-quote-442816','miracles');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442818" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">lucas</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442818">
+            <blockquote>
+<pre>引用难得自然萌的发言：</pre>
+
+<p>math.random()和彩票摇奖号码都是伪随机????</p>
+
+</blockquote>
+
+<p>看过彩票开奖直播嘛？ 好像都是用的数字彩球，也算是硬件的随机数吧</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:31 AM">2024年6月21日 09:31</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442818">#</a>
+ | <a href="#comment-text" title="引用lucas的这条留言" onclick="return CommentQuote('comment-quote-442818','lucas');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442819" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">JackyLove</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442819">
+            <p>（2）不能重复。 每次生成的随机数，不能是一样的。</p>
+
+<p>这个是“数很大”和“均匀分布”带来的结果，而不是条件吧。</p>
+
+<p>真要撞大运了，也可能两次随机到一样的。程序不可能去控制（也不应该控制）“不重复”。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:34 AM">2024年6月21日 09:34</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442819">#</a>
+ | <a href="#comment-text" title="引用JackyLove的这条留言" onclick="return CommentQuote('comment-quote-442819','JackyLove');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442820" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">李星阳</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442820">
+            <p>“仅剩的一个飞行员也会被淘汰” 到了这一天，想必科学相当昌明了，</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:35 AM">2024年6月21日 09:35</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442820">#</a>
+ | <a href="#comment-text" title="引用李星阳的这条留言" onclick="return CommentQuote('comment-quote-442820','李星阳');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442821" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">HA</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442821">
+            <blockquote>
+<pre>引用涛的发言：</pre>
+
+<p>用 UUID 做随机数的种子, 可以做到真随机吗?</p>
+
+</blockquote>
+
+<p>UUID也是伪随机数。想要得到真随机，必须保证这个生成过程中某一步是真随机真无法预测的。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:36 AM">2024年6月21日 09:36</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442821">#</a>
+ | <a href="#comment-text" title="引用HA的这条留言" onclick="return CommentQuote('comment-quote-442821','HA');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442822" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">天天</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442822">
+            <p>> 重庆"悦来江湾"公交车站，由几块巨石组成，象征当地江边的鹅卵石。</p>
+
+<p>会不会塌下来砸死人？ </p>
+
+<p>君子不立于危墙之下</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  9:36 AM">2024年6月21日 09:36</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442822">#</a>
+ | <a href="#comment-text" title="引用天天的这条留言" onclick="return CommentQuote('comment-quote-442822','天天');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442824" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">面向未来</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442824">
+            <p>大环岛里还有五个小环岛，这能发生事故才怪啊！走完一遍怕是要好久好久！</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:02 AM">2024年6月21日 10:02</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442824">#</a>
+ | <a href="#comment-text" title="引用面向未来的这条留言" onclick="return CommentQuote('comment-quote-442824','面向未来');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442825" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">wonderful</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442825">
+            <blockquote>
+<pre>引用涛的发言：</pre>
+
+<p>用 UUID 做随机数的种子, 可以做到真随机吗?</p>
+
+</blockquote>
+
+<p>都是伪随机，做不到真随机吧，像文章中提到的真随机的条件，感觉真的难</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:09 AM">2024年6月21日 10:09</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442825">#</a>
+ | <a href="#comment-text" title="引用wonderful的这条留言" onclick="return CommentQuote('comment-quote-442825','wonderful');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442826" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Have taken up farming.</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442826">
+            <p>Have taken up farming. 已经从事农业了吧。<br />
+</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:10 AM">2024年6月21日 10:10</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442826">#</a>
+ | <a href="#comment-text" title="引用Have taken up farming.的这条留言" onclick="return CommentQuote('comment-quote-442826','Have taken up farming.');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442827" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">皮皮仔</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442827">
+            <p>建议阮师傅把 AI 模块去掉，只保留可能出现的“至少令人觉得有新意的 AI”。<br />
+AI 当然很重要，全世界都在搞，现在好像不关注 AI 就像不务正业。<br />
+如果新 AI 出来了，你不能聊两句，就算落伍了。</p>
+
+<p>但我认为看周刊的同学们，更多的是看一些“有趣”的东西，<br />
+而现在每天都冒出奇形怪状的 AI，<br />
+说实话，用处肯定也是有的，但并不有趣。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:12 AM">2024年6月21日 10:12</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442827">#</a>
+ | <a href="#comment-text" title="引用皮皮仔的这条留言" onclick="return CommentQuote('comment-quote-442827','皮皮仔');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442828" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">SanJuan</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442828">
+            <blockquote>
+<pre>引用涛的发言：</pre>
+
+<p>用 UUID 做随机数的种子, 可以做到真随机吗?</p>
+
+</blockquote>
+
+<p>UUID基于一些确定的信息和伪随机数生成，用它作为种子，能提高随机的质量，但生成的还是伪随机</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:14 AM">2024年6月21日 10:14</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442828">#</a>
+ | <a href="#comment-text" title="引用SanJuan的这条留言" onclick="return CommentQuote('comment-quote-442828','SanJuan');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442829" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">bestcoder</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442829">
+            <p>去掉驾驶舱的好处是巨大的。因为驾驶舱本身就是一种兼容人的设计，对飞行没有一点益处。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:40 AM">2024年6月21日 10:40</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442829">#</a>
+ | <a href="#comment-text" title="引用bestcoder的这条留言" onclick="return CommentQuote('comment-quote-442829','bestcoder');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442830" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Nutcracker</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442830">
+            <blockquote>
+<pre>引用涛的发言：</pre>
+
+<p>用 UUID 做随机数的种子, 可以做到真随机吗?</p>
+
+</blockquote>
+
+<p>设备的 UUID 是根据硬件编码生成的，理论上对于云端来说就是真随机，因为不会存在完全相同的两部设备。但是前提是你可以拿到通过硬件生成的 UUID，像 Android 和 iOS 现在对开发者应该都只提供虚拟的 UUID 了。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:43 AM">2024年6月21日 10:43</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442830">#</a>
+ | <a href="#comment-text" title="引用Nutcracker的这条留言" onclick="return CommentQuote('comment-quote-442830','Nutcracker');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442831" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Gold</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442831">
+            <p>《奇怪的环岛》 ，可能没有发生大事故，但感觉会很堵或者通行很慢，一般人都搞不明白，车速自然就降了下来</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:51 AM">2024年6月21日 10:51</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442831">#</a>
+ | <a href="#comment-text" title="引用Gold的这条留言" onclick="return CommentQuote('comment-quote-442831','Gold');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442832" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">匿名匿名匿名</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442832">
+            <blockquote>
+<pre>引用lucas的发言：</pre>
+
+<p>看过彩票开奖直播嘛？ 好像都是用的数字彩球，也算是硬件的随机数吧</p>
+
+</blockquote>
+
+<blockquote>
+<pre>引用黑羽的发言：</pre>
+
+<p>（2）不能重复。 每次生成的随机数，不能是一样的。</p>
+
+<p>（3）均匀分布。 随机数必须平均散布在所有区间，不能集中在某些区间。</p>
+
+<p>感觉上面两个条件，反而不像随机了，而是人工刻意生成的</p>
+
+</blockquote>
+
+<p>很多人包括我，是怀疑彩票的随机性的，说是直播，但是根本排除不了录播的可能性。比如国内的彩票机构，事后爆出过太多贪腐案件、自导自演、内部消化巨大奖池的事情了。</p>
+
+<p>不讲彩票的社会性，只说技术实现的话，数字小球的掉落 应该是属于硬件随机。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:55 AM">2024年6月21日 10:55</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442832">#</a>
+ | <a href="#comment-text" title="引用匿名匿名匿名的这条留言" onclick="return CommentQuote('comment-quote-442832','匿名匿名匿名');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442833" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">潭渊</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442833">
+            <p>很多人纠结【伪随机】这个名字，其实【伪随机】!=【不随机】。<br />
+想一想，给我们一串数字，比如 114514,1919,810，我们用什么判断这串数字随机还是不随机？<br />
+随机数字往往有几个特征：<br />
+1. 不可预测，我们很难在其中发现规律，因此无法预测下一个数字是什么；<br />
+2. 分布均匀，随着数字越来越多，在指定的范围内分布都是均匀的，不会偏向某个区间；<br />
+其实，只要程序生成的数字满足这些条件，我们其实没有办法判断这些数字到底是程序生成的伪随机数，还是真随机数。也就是说，只要伪随机数满足这些要求，就可以把伪随机数当成真随机数来用。</p>
+
+<p>举个例子，Python 标准库 random 模块使用梅森旋转算法（Mersenne Twister）生成随机数，周期长达 2^19937-1，有 6002 位数，宇宙年龄在这种量级面前也不值一提了；该算法分布均匀，快速高效，完全能够满足一般情况下对随机数的需求。</p>
+
+<p>对于实际应用场景来说，简单的随机有时并不能满足需求。比如游戏中的暴击，如果用固定的暴击概率，就会造成多次不触发暴击和连续触发暴击的比例很大，不符合玩家的预期。</p>
+
+<p>再回到刚才提到的随机数【分布均匀】的特征，人们对【分布均匀】的理解并非统计上的频率固定，而是时间序列上的均匀，比如抛硬币，两面的概率都是 50%，人们的预期会是一次正面一次反面，偶尔会有两三次连续正面和反面，超过5次连续正面或反面看起来就不随机了。但根据简单的计算，连续抛5次，都是正面或反面的概率高达1/16。</p>
+
+<p>对于固定概率、多次触发的场景，更合适的算法还是累计概率。如设定的暴击率是 20%，那用户预期的频率就是平均 5 次攻击触发一次暴击，可以设定第 8 次攻击必定触发暴击，同时设定第一次攻击的暴击概率为 10%，之后每次攻击增加 12.86%，这样第 8 次攻击的暴击概率就是 100%。这样就更符合人们的预期，也减少了极端情况的比例。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:00 AM">2024年6月21日 11:00</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442833">#</a>
+ | <a href="#comment-text" title="引用潭渊的这条留言" onclick="return CommentQuote('comment-quote-442833','潭渊');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442834" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">胡一淳</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442834">
+            <blockquote>
+<pre>引用黑羽的发言：</pre>
+
+<p>（2）不能重复。 每次生成的随机数，不能是一样的。</p>
+
+<p>（3）均匀分布。 随机数必须平均散布在所有区间，不能集中在某些区间。</p>
+
+<p>感觉上面两个条件，反而不像随机了，而是人工刻意生成的</p>
+
+</blockquote>
+
+<p>不能重复的意思是用相同的种子在相同的时间生成，不会产生相同的结果。<br />
+均匀分布是指概率分布均匀，不是指生成结果均匀。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:07 AM">2024年6月21日 11:07</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442834">#</a>
+ | <a href="#comment-text" title="引用胡一淳的这条留言" onclick="return CommentQuote('comment-quote-442834','胡一淳');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442835" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">胡一淳</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442835">
+            <p>伪随机是一种算法，伪随机也可使用真随机数。</p>
+
+<p>伪随机很多是为了照顾用户直觉体验，使随机事件的方差减小，即排除正态分布极端情况的发生。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:10 AM">2024年6月21日 11:10</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442835">#</a>
+ | <a href="#comment-text" title="引用胡一淳的这条留言" onclick="return CommentQuote('comment-quote-442835','胡一淳');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442836" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">shift</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442836">
+            <p>我不记得读过的书，就像不记得吃过的饭一样；即便如此，它们还是造就了我。<br />
+</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:13 AM">2024年6月21日 11:13</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442836">#</a>
+ | <a href="#comment-text" title="引用shift的这条留言" onclick="return CommentQuote('comment-quote-442836','shift');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442837" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">小民同学</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442837">
+            <p>“我不记得读过的书，就像不记得吃过的饭一样；即便如此，它们还是造就了我。”<br />
+很喜欢这句话艾默生的这句话，感悟很深。<br />
+让我明白了小时候一直不明白的，为什么要读书，读书的意义是什么！<br />
+</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:19 AM">2024年6月21日 11:19</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442837">#</a>
+ | <a href="#comment-text" title="引用小民同学的这条留言" onclick="return CommentQuote('comment-quote-442837','小民同学');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442838" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">vethenc</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442838">
+            <p>引用：<br />
+对于固定概率、多次触发的场景，更合适的算法还是累计概率。如设定的暴击率是 20%，那用户预期的频率就是平均 5 次攻击触发一次暴击，可以设定第 8 次攻击必定触发暴击，同时设定第一次攻击的暴击概率为 10%，之后每次攻击增加 12.86%，这样第 8 次攻击的暴击概率就是 100%。这样就更符合人们的预期，也减少了极端情况的比例。</p>
+
+<p><br />
+感觉应该是双控。首先每次暴击几率都是默认的固定值，不是逐次提高爆率，那样会大大出现连爆的几率，不符合预期。其次控制一个暴击保底，如果前N-1次没有出现暴击，那么第N次必定暴击。已出现暴击则最后不保底。类似抽奖保底的那种。是不是更能符合人们预期。感觉这样更符合你描述的效果。第1次就出暴击是人品，多次暴击或连爆是运气，至少出现一次是预期底线。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:22 AM">2024年6月21日 11:22</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442838">#</a>
+ | <a href="#comment-text" title="引用vethenc的这条留言" onclick="return CommentQuote('comment-quote-442838','vethenc');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442839" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">随便看看</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442839">
+            <p>上面给个方案只是产生“种子”，保证种子的随机就可以了，这样可以保证随机数不可预测、序列是乱序。</p>
+
+<p>另外，matrix 说，愚蠢的人类，哪有随机，都是code</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:22 AM">2024年6月21日 11:22</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442839">#</a>
+ | <a href="#comment-text" title="引用随便看看的这条留言" onclick="return CommentQuote('comment-quote-442839','随便看看');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442841" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">zc</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442841">
+            <p>看了“开发者必须了解的 Unicode 知识”的中文版，内容很多，有选择地看了一些。这个 tonsky 在原始博客还写过一些其他类似 CSS 对齐问题的详细的现状分析。他的博客页面也是很有个性，总有一堆假的鼠标光标在乱飞。</p>
+
+<p>Luma 那个居然可以不注册账号就生成视频，几分钟生成一个 5 秒的。有明显的边界模糊问题，不过凑数看看还可以。</p>
+
+<p>Excel 大赛那个文章很长，网页比较有特色，但看起来费劲就没看。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:43 AM">2024年6月21日 11:43</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442841">#</a>
+ | <a href="#comment-text" title="引用zc的这条留言" onclick="return CommentQuote('comment-quote-442841','zc');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442842" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">慕楚</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442842">
+            <p>所以现在明白了，赌场的各种机器都是伪随机数！怎么想方设法的少留痕迹来榨干你的每一个硬币！</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:47 AM">2024年6月21日 11:47</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442842">#</a>
+ | <a href="#comment-text" title="引用慕楚的这条留言" onclick="return CommentQuote('comment-quote-442842','慕楚');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442845" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">刘郎</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442845">
+            <p>项目好多，不错的也好多  我来试试看</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 12:36 PM">2024年6月21日 12:36</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442845">#</a>
+ | <a href="#comment-text" title="引用刘郎的这条留言" onclick="return CommentQuote('comment-quote-442845','刘郎');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442847" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">xx</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442847">
+            <p>怎么做到每周都能搜集到这么多有趣的信息呢</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  1:15 PM">2024年6月21日 13:15</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442847">#</a>
+ | <a href="#comment-text" title="引用xx的这条留言" onclick="return CommentQuote('comment-quote-442847','xx');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442849" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">王书硕</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442849">
+            <p>随机数那段挺有意思。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  1:19 PM">2024年6月21日 13:19</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442849">#</a>
+ | <a href="#comment-text" title="引用王书硕的这条留言" onclick="return CommentQuote('comment-quote-442849','王书硕');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442850" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">rammiah</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442850">
+            <p>linux提供了/dev/random生成真随机，/dev/urandom类似伪随机</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  2:17 PM">2024年6月21日 14:17</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442850">#</a>
+ | <a href="#comment-text" title="引用rammiah的这条留言" onclick="return CommentQuote('comment-quote-442850','rammiah');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442851" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">凌linguistic</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442851">
+            <blockquote>
+<pre>引用皮皮仔的发言：</pre>
+
+<p>建议阮师傅把 AI 模块去掉，只保留可能出现的“至少令人觉得有新意的 AI”。<br />
+AI 当然很重要，全世界都在搞，现在好像不关注 AI 就像不务正业。<br />
+如果新 AI 出来了，你不能聊两句，就算落伍了。</p>
+
+</blockquote>
+
+<p>确实，可以单独开一个文章，去向AI感兴趣得同学去介绍，周刊篇幅可以小篇幅带过</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  2:20 PM">2024年6月21日 14:20</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442851">#</a>
+ | <a href="#comment-text" title="引用凌linguistic的这条留言" onclick="return CommentQuote('comment-quote-442851','凌linguistic');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442852" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">大宇</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442852">
+            <blockquote>
+<pre>引用Have taken up farming.的发言：</pre>
+
+<p>Have taken up farming. 已经从事农业了吧。</p>
+
+</blockquote>
+
+<p>这个是老外对『码农』的婉转表达吧？</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  2:45 PM">2024年6月21日 14:45</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442852">#</a>
+ | <a href="#comment-text" title="引用大宇的这条留言" onclick="return CommentQuote('comment-quote-442852','大宇');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442854" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">parkgo</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442854">
+            <p>环岛没发生过重大交通事故，是不是因为大家都开的慢，哈哈哈！</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  2:58 PM">2024年6月21日 14:58</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442854">#</a>
+ | <a href="#comment-text" title="引用parkgo的这条留言" onclick="return CommentQuote('comment-quote-442854','parkgo');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442855" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">parkgo</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442855">
+            <blockquote>
+<pre>引用lucas的发言：</pre>
+
+<p>看过彩票开奖直播嘛？ 好像都是用的数字彩球，也算是硬件的随机数吧</p>
+
+</blockquote>
+
+<p>彩票必然不是随机，连伪随机都不是，如果真的是随机，一定有不少大规模中奖的时候，彩票中心早破产了，猜想是通过计算得来的，计算出总中奖金额最少的那一串数，至于视频直播嘛，眼见不一定为实</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  3:08 PM">2024年6月21日 15:08</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442855">#</a>
+ | <a href="#comment-text" title="引用parkgo的这条留言" onclick="return CommentQuote('comment-quote-442855','parkgo');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442857" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">kkk</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442857">
+            <p>随机数这个话题，感觉就像一个年经贴。。隔一年会被程序员拿出来讨论一下。</p>
+
+<p>自打我从 新浪游戏论坛 开始，就有清华高人在讨论 这个了。。记得以前里面还有一个 专门做 随机数算法的人。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  4:18 PM">2024年6月21日 16:18</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442857">#</a>
+ | <a href="#comment-text" title="引用kkk的这条留言" onclick="return CommentQuote('comment-quote-442857','kkk');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442858" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">kkk</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442858">
+            <p>其实上面几种通过实时拍照的图片HASH后作为随机数种子的方法。。我觉的还是不错的。。成本极低。。</p>
+
+<p>不过呢。。想想20年前。。要通过实时图片生成HASH，也不算一件容易的事情呢。。。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  4:24 PM">2024年6月21日 16:24</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442858">#</a>
+ | <a href="#comment-text" title="引用kkk的这条留言" onclick="return CommentQuote('comment-quote-442858','kkk');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442859" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">kkk</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442859">
+            <p>真 随机数 这些与现实连接的 解决方法，让我感觉 只有 上帝 才能产生 真随机数。。。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  4:25 PM">2024年6月21日 16:25</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442859">#</a>
+ | <a href="#comment-text" title="引用kkk的这条留言" onclick="return CommentQuote('comment-quote-442859','kkk');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442860" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">solitas</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442860">
+            <p>没有飞行员的客机谁敢坐？</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  5:13 PM">2024年6月21日 17:13</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442860">#</a>
+ | <a href="#comment-text" title="引用solitas的这条留言" onclick="return CommentQuote('comment-quote-442860','solitas');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442861" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">zhang</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442861">
+            <p>“宇宙的准确年龄是138亿年”<br />
+我瞬间就想到复联4开头的场景，钢铁侠在宇宙中漂泊的场景<br />
+138亿年前是什么，如果有一天能知道，那一定很棒</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  5:17 PM">2024年6月21日 17:17</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442861">#</a>
+ | <a href="#comment-text" title="引用zhang的这条留言" onclick="return CommentQuote('comment-quote-442861','zhang');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442862" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">180554</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442862">
+            <p>YouTube搞那种广告倒不太可能，毕竟他们的广告装个插件也就能跳过了，如果要搞这种事，那么他们早就把跳广告插件干掉了。<br />
+但是国内平台日前倒是有个图，“检测到当前屏幕前超过两人，请购买家庭会员”。不知真假，但我觉得还是爱优腾干出这事来的概率更大。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024  6:00 PM">2024年6月21日 18:00</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442862">#</a>
+ | <a href="#comment-text" title="引用180554的这条留言" onclick="return CommentQuote('comment-quote-442862','180554');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442866" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">colin</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442866">
+            <p>量子力学不是有测不准原理，通过微观物理能造就真随机吗</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 10:47 PM">2024年6月21日 22:47</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442866">#</a>
+ | <a href="#comment-text" title="引用colin的这条留言" onclick="return CommentQuote('comment-quote-442866','colin');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442867" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">匿名</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442867">
+            <blockquote>
+<pre>引用皮皮仔的发言：</pre>
+
+<p>建议阮师傅把 AI 模块去掉，只保留可能出现的“至少令人觉得有新意的 AI”。</p>
+
+</blockquote>
+
+<p>对于新加入的朋友来讲，能立刻从最新的文章中了解到现在科技的流行趋势，是一件挺有趣的事情</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 21, 2024 11:09 PM">2024年6月21日 23:09</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442867">#</a>
+ | <a href="#comment-text" title="引用匿名的这条留言" onclick="return CommentQuote('comment-quote-442867','匿名');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442868" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">lzl</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442868">
+            <p>C++的random库提供了基于硬件的真随机数生成器std::random_device, 在linux环境下中使用了/dev/random。<br />
+但熵池信息不足时其速度急剧下降, 可以用std::random_device{}() ^ time(0)作为伪随机数生成器的种子</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 22, 2024  9:26 AM">2024年6月22日 09:26</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442868">#</a>
+ | <a href="#comment-text" title="引用lzl的这条留言" onclick="return CommentQuote('comment-quote-442868','lzl');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442869" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">xIa</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442869">
+            <p>随机数还不简单，只要足够大+不可复现就是真随机了呗。<br />
+取100个国家的网址，根据ping通的情况（是否ping通/延迟大小等）返回值，最后合计在一起加个密。<br />
+再加个时间戳保证唯一性，完事了。<br />
+</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 22, 2024 10:25 AM">2024年6月22日 10:25</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442869">#</a>
+ | <a href="#comment-text" title="引用xIa的这条留言" onclick="return CommentQuote('comment-quote-442869','xIa');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442876" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">FrankMa</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442876">
+            <blockquote>
+<pre>引用xIa的发言：</pre>
+
+<p>随机数还不简单，只要足够大+不可复现就是真随机了呗。<br />
+取100个国家的网址，根据ping通的情况（是否ping通/延迟大小等）返回值，最后合计在一起加个密。<br />
+再加个时间戳保证唯一性，完事了。</p>
+
+</blockquote>
+
+<p>兄弟这个满足不了第三点, 也是伪随机数</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 22, 2024  9:03 PM">2024年6月22日 21:03</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442876">#</a>
+ | <a href="#comment-text" title="引用FrankMa的这条留言" onclick="return CommentQuote('comment-quote-442876','FrankMa');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442879" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">CMango</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442879">
+            <p>以后，付费用户正常使用，免费用户必须通过眼球监控，确保正在注视广告。<br />
+那要先过隐私权限这一关，否则不能启用摄像头 hhhh</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 23, 2024  5:13 PM">2024年6月23日 17:13</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442879">#</a>
+ | <a href="#comment-text" title="引用CMango的这条留言" onclick="return CommentQuote('comment-quote-442879','CMango');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442882" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">阿诺</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442882">
+            <p>没有人担心封面图里面的公交站哪天塌了会轧死人吗？</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 24, 2024  5:24 AM">2024年6月24日 05:24</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442882">#</a>
+ | <a href="#comment-text" title="引用阿诺的这条留言" onclick="return CommentQuote('comment-quote-442882','阿诺');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442883" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">young</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442883">
+            <p>那个公交车站 那个弧度感觉下雨天不友好</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 24, 2024 10:02 AM">2024年6月24日 10:02</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442883">#</a>
+ | <a href="#comment-text" title="引用young的这条留言" onclick="return CommentQuote('comment-quote-442883','young');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442885" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Ben </span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442885">
+            <p>每次我用当前的时间的秒数以及后面5位数字作为种子，这样就足够随机了，除非你遍历1000000个可能性 （如果你知道我的服务器的秒数）。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 25, 2024  1:29 AM">2024年6月25日 01:29</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442885">#</a>
+ | <a href="#comment-text" title="引用Ben 的这条留言" onclick="return CommentQuote('comment-quote-442885','Ben ');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442886" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Ben </span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442886">
+            <blockquote>
+<pre>引用Nutcracker的发言：</pre>
+
+<p>理论上对于云端来说就是真随机</p>
+
+</blockquote>
+
+<p>你这句话给了我灵感。对着云照个相，用它的 hash值来作为种子，就得到真随机了。<br />
+</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 25, 2024  1:32 AM">2024年6月25日 01:32</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442886">#</a>
+ | <a href="#comment-text" title="引用Ben 的这条留言" onclick="return CommentQuote('comment-quote-442886','Ben ');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442887" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">NA</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442887">
+            <p>旧金山总部。一共是100盏，5行每行20盏。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 25, 2024  1:57 AM">2024年6月25日 01:57</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442887">#</a>
+ | <a href="#comment-text" title="引用NA的这条留言" onclick="return CommentQuote('comment-quote-442887','NA');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442890" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">J.K</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442890">
+            <p>眼球监控。第一联想就是黑镜里的一集，主角在房间内玩游戏时弹出广告，广告（成人电影推荐）可以选择消费货币跳过，或是接受观看。当接受观看时，它要求是严格的。一）不允许闭眼或没有直视。否则会闪红光和发出噪音，直到再次直视，二）不允许离开这个环境，房间被锁，直到观看结束。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 25, 2024 10:17 AM">2024年6月25日 10:17</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442890">#</a>
+ | <a href="#comment-text" title="引用J.K的这条留言" onclick="return CommentQuote('comment-quote-442890','J.K');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442894" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">xuewuchen</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442894">
+            <p>那如果是这样的话，我有个想法，不如每次生成随机数都调用一下摄像头，用摄像头拍摄一定次数的照片。然后将照片拍摄的时间+照片内容进行哈希计算，是不是理论上也可以得出随机数了。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 26, 2024 11:43 AM">2024年6月26日 11:43</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442894">#</a>
+ | <a href="#comment-text" title="引用xuewuchen的这条留言" onclick="return CommentQuote('comment-quote-442894','xuewuchen');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442900" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Easterlings</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442900">
+            <p>真的有可能拍出完全一样的照片吗</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 27, 2024  4:49 PM">2024年6月27日 16:49</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442900">#</a>
+ | <a href="#comment-text" title="引用Easterlings的这条留言" onclick="return CommentQuote('comment-quote-442900','Easterlings');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442901" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Simon</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442901">
+            <blockquote>
+<pre>引用天天的发言：</pre>
+
+<p>&gt; 重庆"悦来江湾"公交车站，由几块巨石组成，象征当地江边的鹅卵石。</p>
+
+<p>会不会塌下来砸死人？ </p>
+
+<p>君子不立于危墙之下</p>
+
+</blockquote>
+
+<p>我也看了害怕，不是不相信方案，是不相信施工质量</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 27, 2024  4:59 PM">2024年6月27日 16:59</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442901">#</a>
+ | <a href="#comment-text" title="引用Simon的这条留言" onclick="return CommentQuote('comment-quote-442901','Simon');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442957" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">xp132</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442957">
+            <p>这个眼球注视的功能,如果带个墨镜会发生什么?</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="June 29, 2024 12:04 AM">2024年6月29日 00:04</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442957">#</a>
+ | <a href="#comment-text" title="引用xp132的这条留言" onclick="return CommentQuote('comment-quote-442957','xp132');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442966" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">bysir</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442966">
+            <p>如果是只是通过拍照来获取不同的种子，那是不是不用这么麻烦？相机本身就会受到各种电子噪音的干扰而形成造点，有这些不可预测的造点那么计算出来的 Hash 也肯定不一样。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="July  1, 2024 10:39 AM">2024年7月 1日 10:39</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442966">#</a>
+ | <a href="#comment-text" title="引用bysir的这条留言" onclick="return CommentQuote('comment-quote-442966','bysir');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-442968" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Hello</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-442968">
+            <p>单个混沌摆可以生成随机数吗</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="July  1, 2024  4:38 PM">2024年7月 1日 16:38</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-442968">#</a>
+ | <a href="#comment-text" title="引用Hello的这条留言" onclick="return CommentQuote('comment-quote-442968','Hello');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-443013" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">xiaolong</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-443013">
+            <p>1911年，汉堡市政府在河底挖了一条426米的隧道，方便两岸的交通。<br />
+   ----此时，中国可能连一辆自行车都没有</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="July  4, 2024 10:35 PM">2024年7月 4日 22:35</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-443013">#</a>
+ | <a href="#comment-text" title="引用xiaolong的这条留言" onclick="return CommentQuote('comment-quote-443013','xiaolong');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-443014" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">xiaolong</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-443014">
+            <blockquote>
+<pre>引用阿诺的发言：</pre>
+
+<p>没有人担心封面图里面的公交站哪天塌了会轧死人吗？</p>
+
+</blockquote>
+
+<p>应该是用水泥模仿的石头，里面是空心的。公园厘常见这种结构。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="July  4, 2024 10:38 PM">2024年7月 4日 22:38</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-443014">#</a>
+ | <a href="#comment-text" title="引用xiaolong的这条留言" onclick="return CommentQuote('comment-quote-443014','xiaolong');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-443134" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">六翼</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-443134">
+            <p>感觉“均匀分布”这一条非常难啊<br />
+比如那些拍照取HASH的，怎么证明其均匀呢……</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="July 12, 2024 10:07 AM">2024年7月12日 10:07</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-443134">#</a>
+ | <a href="#comment-text" title="引用六翼的这条留言" onclick="return CommentQuote('comment-quote-443134','六翼');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-443241" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">八页</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-443241">
+            <p>uuid的目的，可能更多的是唯一性，而不是随机性</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="July 19, 2024  9:55 AM">2024年7月19日 09:55</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-443241">#</a>
+ | <a href="#comment-text" title="引用八页的这条留言" onclick="return CommentQuote('comment-quote-443241','八页');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-443314" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Tacenda</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-443314">
+            <p>环岛对游客和骑行者不友好</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="July 21, 2024  8:16 PM">2024年7月21日 20:16</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-443314">#</a>
+ | <a href="#comment-text" title="引用Tacenda的这条留言" onclick="return CommentQuote('comment-quote-443314','Tacenda');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-443529" class="comment">
+    <div  class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Hu</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-443529">
+            <blockquote>
+<pre>引用HA的发言：</pre>
+
+<p>UUID也是伪随机数。想要得到真随机，必须保证这个生成过程中某一步是真随机真无法预测的。</p>
+
+</blockquote>
+
+<p>经典力学都是可预测的，比如抛硬币，只要知道了硬币参数，抛出时的速度角度，地面硬度等，也是可以计算出结果的。无非就是场景越复杂，计算量越大而已。所以说计算机里的随机数生成和现实的抛硬币并没有什么区别。要真随机的话，还得看量子力学，那才是真的无法预测。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="August  5, 2024  9:39 AM">2024年8月 5日 09:39</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-443529">#</a>
+ | <a href="#comment-text" title="引用Hu的这条留言" onclick="return CommentQuote('comment-quote-443529','Hu');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    
+        
+        <div id="comment-443530" class="comment">
+    <div id="comment-last" class="inner">
+        <div class="comment-header">
+            <div class="asset-meta">
+<p>
+                <span class="byline">
+                    
+
+                    <span class="vcard author">Hu</span>
+
+ 说：
+                </span>
+</p>
+            </div>
+        </div>
+        <div class="comment-content" id="comment-quote-443530">
+            <blockquote>
+<pre>引用xiaolong的发言：</pre>
+
+<p>1911年，汉堡市政府在河底挖了一条426米的隧道，方便两岸的交通。<br />
+ ----此时，中国可能连一辆自行车都没有</p>
+
+</blockquote>
+
+<p>自行车还是有的，溥仪就喜欢骑自行车，还把皇宫的门槛锯了。</p>
+        </div>
+<div class="comment-footer">
+<div class="comment-footer-inner">
+<p>
+                   <abbr class="published" title="August  5, 2024  9:41 AM">2024年8月 5日 09:41</abbr>
+ | <a href="https://www.ruanyifeng.com/blog/2024/06/weekly-issue-305.html#comment-443530">#</a>
+ | <a href="#comment-text" title="引用Hu的这条留言" onclick="return CommentQuote('comment-quote-443530','Hu');">引用</a>
+</p>
+</div>
+</div>
+    </div>
+</div>
+        
+    </div>
+        
+    
+
+
+    
+    
+    <div class="comments-open" id="comments-open">
+        <h2 class="comments-open-header">我要发表看法</h2>
+        <div class="comments-open-content">
+
+        
+            <div id="comment-greeting"></div>
+
+            <form method="post" action="https://www.ruanyifeng.com/cgi-bin/mtos/mt-comments.cgi" name="comments_form" id="comments-form" onsubmit="return pleaseWait();">
+                <input type="hidden" name="static" value="1" />
+                <input type="hidden" name="entry_id" value="2421" />
+                <input type="hidden" name="__lang" value="en" />
+                <input type="hidden" name="parent_id" value="" id="comment-parent-id" />
+                <input type="hidden" name="armor" value="1" />
+                <input type="hidden" name="preview" value="" />
+                <input type="hidden" name="sid" value="" />
+                <div id="comments-open-data">
+            <div id="comments-open-text">
+                    <p><label for="comment-text">您的留言
+                    （HTML标签部分可用）</label></p>
+                    <p><textarea id="comment-text" name="text" rows="10" cols="50"></textarea></p>
+                </div>
+                    <div id="comment-form-name">
+                        <p><label for="comment-author">您的大名：</label></p>
+                        <p><input id="comment-author" name="author" size="30" value="" />  <span class="hint"> &laquo;-必填</span></p>
+                    </div>
+                    <div id="comment-form-email">
+                        <p><label for="comment-email">电子邮件：</label></p>
+                        <p><input id="comment-email" name="email" size="30" value="" />  <span class="hint"> &laquo;-必填，不公开</span></p>
+                    </div>
+                    <div id="comment-form-url">
+                        <p><label for="comment-url">个人网址：</label></p>
+                        <p><input id="comment-url" name="url" size="30" value="" />  <span class="hint"> &laquo;-我信任你，不会填写广告链接</span></p>
+                    </div>
+                    <div id="comment-form-remember-me">
+                        <p>
+                        <label for="comment-bake-cookie">记住个人信息？</label><input type="checkbox" id="comment-bake-cookie" name="bakecookie" onclick="!this.checked?forgetMe(document.comments_form):rememberMe(document.comments_form)" value="1" accesskey="r" /></p>
+                    </div>
+                </div>
+                    <div id="comment-form-reply" style="display:none">
+                    <input type="checkbox" id="comment-reply" name="comment_reply" value="" onclick="mtSetCommentParentID()" />
+                    <label for="comment-reply" id="comment-reply-label"></label>
+                </div>
+                <div id="comments-open-captcha"></div>
+                <div id="comments-open-footer">
+<div id="wait" style="display:none;">
+<p><strong>正在发表您的评论，请稍候</strong></p>
+<p>
+<input type="text" name="percent" size="3" style="font-family:Arial; color:black;text-align:center; border-width:medium; border-style:none;">           
+<input type="text" name="chart" size="46" style="font-family:Arial;font-weight:bolder; color:black; padding:0px; border-style:none;">
+</p>
+</div>
+
+                    <p><input type="submit" accesskey="s" name="post" id="comment-submit" value="发表" />  <span class="hint"> &laquo;- 点击按钮</span></p>
+                </div>
+            </form>
+
+
+        </div>
+    </div>
+
+    
+
+
+</div>
+
+
+
+
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        <script type="text/javascript" src="https://www.ruanyifeng.com/blog/js/prism.js"></script>
+        <script type="text/javascript" src="/blog/checker.js"></script> 
+            <div id="footer">
+<div id="footer-inner">
+  <div id="footer-content">
+
+      
+<!--
+      <section> 
+     </section>
+  <p><a title="Instagram" target="_blank" href="http://instagram.com/ruanyf">Instagram</a></p>
+       <p><a title="订阅" href="https://app.feedblitz.com/f/f.fbz?Sub=348868" target="_blank">邮件订阅</a></p>
+  
+       <h2>Feed</h2>
+       <p><a title="FeedBurner" href="http://feeds.feedburner.com/ruanyifeng" target="_blank">FeedBurner</a></p>
+       <p><a title="atom.xml" href="http://www.ruanyifeng.com/blog/atom.xml" target="_blank">atom.xml</a></p>
+     
+      <p>支付宝：<a title="支付宝" href="alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fwww.ruanyifeng.com%2Fblog" target="_blank">yifeng.ruan@gmail.com</a></p>
+-->
+
+     <section>
+<!--
+       <h2>授权方式</h2>
+       <p><a title="许可证" href="http://creativecommons.org/licenses/by-nc-nd/3.0/deed.zh" target="_blank">自由转载-非商用-非衍生-保持署名</a></p>
+       <h2>微信公号</h2>
+       <h2>社交帐号</h2>
+       <h2>联系方式</h2>
+     -->
+       <p><img src="https://cdn.beekka.com/blogimg/asset/202001/bg2020013101.jpg" alt="微信扫描"></p>
+       <p>
+         <a title="微博" href="http://weibo.com/ruanyf" target="_blank">Weibo</a> | 
+         <a title="Twitter" target="_blank" href="https://twitter.com/ruanyf">Twitter</a> |
+         <a title="GitHub" target="_blank" href="https://github.com/ruanyf">GitHub</a>
+       </p>
+     
+     <p>Email: <a title="电子邮件" href="/cdn-cgi/l/email-protection#374e5e51525950194542565977505a565e5b1954585a" target="_blank"><span class="__cf_email__" data-cfemail="89f0e0efece7eea7fbfce8e7c9eee4e8e0e5a7eae6e4">[email&#160;protected]</span></a></p>
+     </section>
+  
+  
+
+
+  </div>
+</div>
+</div>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+function insertLine(e,t){for(var n=0;n<t;n++)e.parentNode.insertBefore(document.createElement("p"),e)}function getImg(){if(!window["main-content"])return!1;for(var e,t=Array.prototype.slice.call(window["main-content"].getElementsByTagName("img")),n=0;n<t.length;n++){if("display: none !important;"===(e=t[n]).getAttribute("style"))return e;if(n===t.length-1)return!1}}function toObjectUrl(e,t){return fetch(e).then(e=>e.blob()).then(e=>{t(URL.createObjectURL(e))})}function toDataURL(e,t){var n=new XMLHttpRequest;n.open("get",e),n.responseType="blob",n.onload=function(){var e=new FileReader;e.onload=function(){t(this.result)},e.readAsDataURL(n.response)},n.send()}setTimeout(function(){var e=getImg();e&&(insertLine(e.parentNode,2),toObjectUrl(e.src,function(t){var n=document.createElement("p"),r=document.createElement("img");r.src=t,n.appendChild(r),e.parentNode.parentNode.insertBefore(n,e.parentNode)}))},3e3);
+</script>                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+
+
+<script type="text/javascript" src="/blog/stats.js"></script>
+<script>
+var supportImg = document.querySelector('#support-img');
+
+if (supportImg && _hmt) {
+  _hmt.push(['_trackEvent', 'banner', 'load']);
+  supportImg.addEventListener('click', function () {
+    _hmt.push(['_trackEvent', 'banner', 'click']);
+  }, false);
+}
+
+var homepageImg = document.querySelector('#homepage_sponsor');
+if (homepageImg && _hmt) {
+  _hmt.push(['_trackEvent', 'homepage-banner', 'load']);
+  homepageImg.addEventListener('click', function () {
+    _hmt.push(['_trackEvent', 'homepage-banner', 'click']);
+  }, false);
+}
+</script>
+
+
+
+        </div>
+    </div>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"9d597acca856497f9d2e99af87452aa4","r":1,"spa":2}' crossorigin="anonymous"></script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3c630cb6e13d5b7',t:'MTc4OTYyNzk3Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

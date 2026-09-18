@@ -2,16 +2,21 @@
  * The web-eval profile scripts' preflight: it must run BEFORE anything is
  * written.
  *
- * Both scripts replace two things whole — the profile template and the agent
- * preset directory under `$DSH_HOME/.agent-presets` — and both used to reach
- * their first `dsh` call only after doing so (install.sh also after building
- * and packing every member). On a machine missing its preconditions that
- * meant minutes of work and a replaced preset before the failure. These
- * fixtures run each script against a temporary `$DSH_HOME` with a marker file
- * in the preset directory and assert the marker is still there.
+ * Both scripts replace three things whole — the profile template, the agent
+ * preset directory under `$DSH_HOME/.agent-presets`, and (since I5·T34) the
+ * skill directories under `$DSH_HOME/skills` — and both used to reach their
+ * first `dsh` call only after doing so (install.sh also after building and
+ * packing every member). On a machine missing its preconditions that meant
+ * minutes of work and a replaced preset before the failure. These fixtures run
+ * each script against a temporary `$DSH_HOME` with a marker file in the preset
+ * directory and assert the marker is still there.
+ *
+ * The second describe is not about preflight at all: it pins what the pack
+ * SHIPS, because a skill that teaches the drafting verb is only apparatus if
+ * the installer actually carries it to the root `dsh-skill-filesystem` scans.
  */
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -103,5 +108,56 @@ describe('web-eval update.sh preflight', () => {
     expect(result.stderr).toContain('preflight failed — nothing has been written')
     expect(readFileSync(marker, 'utf8')).toContain("the operator's installed preset")
     expect(readFileSync(pinned, 'utf8')).toBe('# the installed patch layer\n')
+  })
+})
+
+describe('what the web-eval pack ships outside the profile directory', () => {
+  const SKILL_ROOT = join(PROFILE, 'skills')
+
+  it('both scripts install every skills/ directory the pack holds, and into the root the provider scans', () => {
+    const shipped = readdirSync(SKILL_ROOT, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+    expect(shipped).toEqual(['eval-planning'])
+
+    for (const script of ['install.sh', 'update.sh']) {
+      const text = readFileSync(join(PROFILE, 'scripts', script), 'utf8')
+      const declared = /^SKILL_IDS="([^"]*)"$/m.exec(text)?.[1]?.split(/\s+/).filter(Boolean).sort()
+      // A skill in the clone that no script lists simply never arrives — the
+      // same failure mode PROFILE_FILES' whitelist has, and the reason both
+      // lists are pinned rather than globbed.
+      expect(declared, `${script} SKILL_IDS`).toEqual(shipped)
+      // `$DSH_HOME/skills` is dsh-skill-filesystem's `user-dsh` root. Anywhere
+      // else and the skill is on disk and in nobody's catalog.
+      expect(text).toContain('SKILL_ROOT="$DSH_HOME/skills"')
+    }
+  })
+
+  it('every shipped skill has the frontmatter the provider requires', () => {
+    for (const name of readdirSync(SKILL_ROOT, { withFileTypes: true }).filter(entry => entry.isDirectory())) {
+      // Directory bundles resolve as `<name>/SKILL.md` and nothing else is
+      // discovered — a nested one is silently invisible.
+      const body = readFileSync(join(SKILL_ROOT, name.name, 'SKILL.md'), 'utf8')
+      const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(body)?.[1]
+      expect(frontmatter, `${name.name}: no frontmatter`).toBeTruthy()
+      // `name` must be kebab-case and match the directory; `description` is
+      // required. A rejected spelling drops the WHOLE skill with a warning, so
+      // the model catalog cannot tell it from one that was never written.
+      expect(frontmatter).toMatch(new RegExp(`^name: ${name.name}$`, 'm'))
+      expect(name.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      expect(frontmatter).toMatch(/^description: \S/m)
+    }
+  })
+
+  it('the eval-planning skill teaches the drafting verb and keeps the starting verbs the human\'s', () => {
+    const body = readFileSync(join(SKILL_ROOT, 'eval-planning/SKILL.md'), 'utf8')
+    expect(body).toContain('eval_plan_draft')
+    // R1, in the words the agent reads: drafting is not starting, and a
+    // condition is always a copy.
+    expect(body).toContain('You draft. They decide.')
+    expect(body).toContain('/eval conditions provision')
+    expect(body).toContain('批准并启动')
+    expect(body).toMatch(/Do not write `plans\/\*\.json`/)
   })
 })

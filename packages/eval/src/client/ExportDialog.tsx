@@ -12,12 +12,19 @@
  *
  * A minimal build of its own rather than a copy of mission's component: the
  * browser half imports nothing from sibling packages (ui-spec R2 and §八).
+ *
+ * Since I5·T60 the confirm step is ONE action with two products: mission
+ * writes the bundle and eval writes `report/summary.md` into it, by the same
+ * function `dsh-eval report` calls. The receipt says which files landed, so
+ * the page never again ends with a command line for the reader to go and run
+ * (I5·T39 · G15).
  */
 
 import { useState } from 'react'
 import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalExportPlanView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import css from './LabView.module.css'
 
 /**
@@ -96,7 +103,21 @@ export function ExportDialog(props: {
       // The DIRECTORY, not the bundle: it is where the report page looks for
       // `<runId>-bundle` next, and this dialog is the only place a reader can
       // name one the plan never mentions.
-      onDone(t('export.done', { dir: result.value.bundleDir, count: result.value.files }), outDir.trim())
+      //
+      // The receipt names the REPORT too, because one action now writes both
+      // (I5·T60). When it could not be written the receipt says so and prints
+      // the command — a bundle without its summary is still a bundle, and a
+      // silent half-success is what sent a reader to a terminal to find out.
+      const written = result.value
+      onDone(
+        written.reportError === null
+          ? t('export.doneWithReport', {
+            dir: written.bundleDir, count: written.files,
+            summary: written.summaryPath ?? '', rows: written.reportRows,
+          })
+          : t('export.doneNoReport', { dir: written.bundleDir, count: written.files }),
+        outDir.trim(),
+      )
       onClose()
     })
   }
@@ -136,7 +157,7 @@ export function ExportDialog(props: {
           placeholder={t('export.snapshotCommit')} aria-label={t('export.snapshotCommit')} />
         <Input value={dataset} onChange={(e) => { setDataset(e.target.value); invalidate() }}
           placeholder={t('export.snapshotDataset')} aria-label={t('export.snapshotDataset')} />
-        {error !== null && <div className={css.warning}>{t('export.error')}: {error}</div>}
+        {error !== null && <ErrorState what={t('export.error')} message={error} compact t={t} />}
         {plan !== null && guarded.length > 0 && (
           <div className={css.guardedBox}>
             <div className={css.guardedTitle}>{t('export.guardedTitle')}</div>

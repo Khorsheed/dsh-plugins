@@ -44,6 +44,8 @@ export const ITEM_METADATA = 'item.json'
 /** Stable error codes for dataset domain failures. */
 export type DatasetsErrorCode =
   | 'NO_REPO'
+  /** A model tool named a repository that is not this session's (I5·T58 · G1). */
+  | 'REPO_NOT_BOUND'
   | 'NOT_A_REPO'
   | 'DATASET_NOT_FOUND'
   | 'ITEM_NOT_FOUND'

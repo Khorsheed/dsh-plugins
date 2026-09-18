@@ -13,7 +13,7 @@
  * what "ready" means.
  * @module @khorsheed/dsh-eval
  */
-import { statSync, type Dirent } from 'node:fs'
+import { existsSync, statSync, type Dirent } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
@@ -48,8 +48,12 @@ export interface ConditionSummary {
   /** The dataset set whose `conditions/` directory declares it. */
   dataset: string
   harness: { name: string | null; version: string | null; drive: string | null }
-  /** The DECLARED model (decision 5); what a run observed lives in the run's annotations. */
-  model: { declared: string | null }
+  /**
+   * The DECLARED model and endpoint (decision 5); what a run observed lives in
+   * the run's annotations. `endpoint` is listed because the readiness gate
+   * refuses a null one, so it is the field a condition most often stalls on.
+   */
+  model: { declared: string | null; endpoint: string | null }
   /**
    * The named scoped home this condition logs in as, or null for the harness's
    * default one. Part of the hash: two conditions differing only in scope are
@@ -99,7 +103,11 @@ async function datasetsWithConditions(repo: string): Promise<string[]> {
   try {
     entries = await readdir(join(repo, 'datasets'), { withFileTypes: true })
   } catch {
-    throw new EvalReadRefused(`not a dataset repository (no datasets/ directory): ${repo}`)
+    // Which of the two it is decides which fix the page offers: create
+    // datasets/, or find the repository again (I5·T62).
+    throw new EvalReadRefused(existsSync(repo)
+      ? `not a dataset repository (no datasets/ directory): ${repo}`
+      : `dataset repository does not exist — no such file or directory: ${repo}`)
   }
   const found: string[] = []
   for (const entry of entries) {
@@ -154,7 +162,7 @@ export async function listConditions(repo: string, only?: readonly string[]): Pr
           version: stringOrNull(harness?.['version']),
           drive: stringOrNull(harness?.['drive']),
         },
-        model: { declared: stringOrNull(model?.['declared']) },
+        model: { declared: stringOrNull(model?.['declared']), endpoint: stringOrNull(model?.['endpoint']) },
         scope: stringOrNull(document?.['scope']),
         preset: stringOrNull(document?.['preset']),
         sha: entry.sha,

@@ -5,6 +5,15 @@
  * every delegation. The handler is a thin adapter over `EvalService.run` —
  * the same kernel the CLI's dry-run prints.
  *
+ * The REGISTRATION no longer happens in this core: it moved to the companion
+ * `@khorsheed/dsh-eval-tool` row (preset-visibility rollout A3), which an
+ * agent preset mounts per session — registering from the preset's mount lands
+ * the command in that preset's scope layer, so only granted sessions see it
+ * (the official `/goal` `/plan` `/compact` shape). This module keeps the
+ * handler and the definition; {@link registerEvalSlash} is what the companion
+ * calls with its scoped context, and the grant backstop inside the handler is
+ * the second gate for the paths the scope layer cannot cover.
+ *
  * There is deliberately no run-class MODEL tool: starting a run stays a
  * person's decision, and the write-class verbs (materialize, submit,
  * transition, archive, export) are the orchestrator's service face, not
@@ -17,12 +26,12 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type { EvalService } from './service.ts'
 
 const USAGE = `usage:
-  /eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--finalize] [--out DIR]
+  /eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--keep-units] [--out DIR]
            [--retries N] [--only id,id] [--max-cells N] [--ignore-readiness]
   /eval finalize <runId>
   /eval conditions list [--repo DIR] [--dataset ID]
   /eval conditions diff <a> <b> [--repo DIR] [--dataset ID]
-  /eval conditions provision <condition.json> --repo <working copy>
+  /eval conditions provision <condition.json> --repo <working copy> [--no-write-back]
 
   conditions provision is the ONE writer of conditions/<id>.lock.json. It
   resolves the condition's (harness, scope) to a real scoped home, refuses
@@ -32,6 +41,11 @@ const USAGE = `usage:
   the home, and writes the lock. permissions or model.endpoint disagreeing is
   an error and no lock is written. --repo names the WORKING COPY it may write
   into; nothing is committed.
+  It also CORRECTS the declaration's home.sha from what it measured and
+  re-hashes the condition, so one provision is what makes a condition ready.
+  --no-write-back leaves the declaration untouched instead and reports the
+  disagreement, which is the old two-step shape: copy the digest in by hand,
+  then provision again to refresh the lock.
   conditions list shows every declaration with its hash, lock state and
   provisioned snapshot. conditions diff prints which fields two declarations
   differ on and what each says — facts only, no recommendation.
@@ -56,26 +70,32 @@ const USAGE = `usage:
   its cells are recorded as skipped. --only and --max-cells run part of the
   matrix and record the subset in run.meta. Every cell is judged before it is
   archived (the item's probes write script verdicts; the plan's judge
-  conditions write double-sampled llm-draft ones). The default run stops at
-  'archived'; --finalize attempts releasable → released, which the archive
-  gate allows once verdicts/ is non-empty.
+  conditions write double-sampled llm-draft ones), and then walks
+  releasable → released — the archive gate allows that once verdicts/ is
+  non-empty, and a refusal is recorded against the cell, never forced.
+  --keep-units stops every cell at 'archived' instead and keeps its container
+  for debugging. (--finalize is still accepted; it asks for the default.)
 
   A plan that declares a unit segment runs every cell inside a container. Each
   condition's harness mounts THIS instance's own scoped home (the directory
   /<harness> login writes into) at the container path the condition declares,
   so a round's rollout lands where the delegation read-back reads it. Log in
   on this instance; nothing is staged or copied. The container path is serial,
-  and without --finalize each cell's container survives the run — the release
-  gate is the only destroy path, and a cell that stopped at 'archived' has not
-  passed it.
+  and each cell's unit is destroyed as that cell passes the release gate — the
+  gate is the only destroy path, so the run holds one unit at a time whatever
+  the matrix's size. With --keep-units every container survives the run, and a
+  matrix larger than lab's maxConcurrentUnits then cannot finish.
 
   Before the run is created, every condition the plan names is probed with one
   minimal delegation — the judge conditions included, because a judge that
   cannot be delegated to costs the whole round's llm-draft verdicts.
 
-  finalize is the re-entry point for a run that already stopped at 'archived':
-  it walks every archived cell through the same gate and lists every cell that
-  was not archived with its state. It never forces a refused gate.`
+  finalize is the re-entry point for a run that stopped at 'archived' — after
+  --keep-units, after a cancel, after a gate refusal somebody has since fixed.
+  It walks every archived cell through the same gate, destroys that cell's
+  container on the way through, and lists every cell that was not archived
+  with its state. It never forces a refused gate, and it reports any container
+  still up afterwards with the reason.`
 
 /** Parsed slash input: positional tokens, `--flag value` pairs, bare `--switches`. */
 interface SlashArgs {
@@ -234,8 +254,12 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
   const session = { id: String(invocation.agent.session.id) }
   const repo = flagOf(args, '--repo')
   const dataset = flagOf(args, '--dataset')
-  const unknown = [...args.switches]
+  const writeBack = !args.switches.has('--no-write-back')
+  const unknown = [...args.switches].filter(flag => flag !== '--no-write-back')
   if (unknown.length > 0) return { kind: 'error', text: `unknown option(s): ${unknown.join(' ')}\n\n${USAGE}` }
+  if (!writeBack && sub !== 'provision') {
+    return { kind: 'error', text: `--no-write-back is a provision option; conditions ${String(sub)} writes nothing\n\n${USAGE}` }
+  }
 
   if (sub === 'list') {
     if (rest.length > 0) return { kind: 'error', text: `conditions list takes no positional arguments\n\n${USAGE}` }
@@ -292,6 +316,7 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
     try {
       report = await service.provision(target, {
         repo,
+        ...(writeBack ? {} : { writeBack: false }),
         log: (message) => { if (message.startsWith('capability probe ')) probeLines.push(message) },
       })
     } catch (error) {
@@ -378,6 +403,10 @@ function renderProvision(report: Awaited<ReturnType<EvalService['provision']>>, 
   if (report.home !== null) {
     body.push(`  home.sha: ${report.home.sha} (${report.home.files} config file(s) hashed, ${report.home.denied} skipped)`)
   }
+  if (report.homeShaWritten) {
+    body.push(`  declaration corrected → ${report.conditionPath}`
+      + ` (condition ${String(report.shaBeforeWriteBack).slice(0, 12)}… → ${String(report.sha).slice(0, 12)}…)`)
+  }
   const provisioned = (report.lock as { provisioned?: { capabilities?: { sha: string; skills?: number; tools?: number } } } | null)?.provisioned
   if (provisioned?.capabilities !== undefined) {
     const face = provisioned.capabilities
@@ -412,15 +441,69 @@ async function handleFinalize(service: EvalService, args: SlashArgs): Promise<Co
     .filter(([, count]) => count > 0)
     .map(([category, count]) => `${count} ${SKIP_CATEGORY_LABEL[category] ?? category}跳过`)
   if (skipSummary.length > 0) body.push(`  跳过: ${skipSummary.join('、')}`)
+  // The container half, and it is said even when it is zero: a walk that
+  // reports only cells reads as "and the containers went away", which is the
+  // reading G18 was.
+  body.push(report.unitsKnown
+    ? `  单元: ${report.unitsReleased} 个已回收, ${report.unitsHeld.length} 个仍在`
+    : '  单元: 未知（这个组合没有挂 lab，容器没被碰过）')
+  for (const held of report.unitsHeld) {
+    body.push(`  ⚠ ${held.resource} 仍在 — ${held.reason}`)
+  }
   for (const cell of report.cells) {
     const suffix = cell.action === 'released'
       ? 'archived → released'
       : cell.action === 'refused'
         ? `gate refused at ${cell.finalState} — ${cell.reason ?? 'unknown'}`
         : `skipped (${cell.state})`
-    body.push(`  ${cell.missionId}: ${suffix}`)
+    const unit = cell.unit === undefined
+      ? ''
+      : cell.unit.released ? `（单元 ${cell.unit.resource} 已回收）` : `（单元 ${cell.unit.resource} 未回收：${cell.unit.reason ?? 'unknown'}）`
+    body.push(`  ${cell.missionId}: ${suffix}${unit}`)
   }
   return { kind: 'success', text: body.join('\n') }
+}
+
+/** The companion row whose preset grant admits this command. */
+const TOOL_ROW_MODULE = '@khorsheed/dsh-eval-tool'
+
+/** The agentPresets slice the grant backstop reads (duck-typed; probed, never injected). */
+interface AgentPresetsProbe {
+  composedPreset(agentCtx: Context): string | undefined
+  compositionInventory(): Promise<readonly { id: string; broken?: string; rows: readonly { moduleName: string }[] }[]>
+}
+
+/**
+ * The execution backstop behind the preset-scope registration: refuse only
+ * when the session's preset composition is READABLE and names no companion
+ * row — a direct invocation in an ungranted session (a stale completion
+ * replayed, a root-mounted companion) gets an honest refusal instead of
+ * running. Every unreadable path fails OPEN — no roster service, no agent
+ * scope context, no joined preset, an inventory that throws, a missing or
+ * `broken` group — because the registration layer is the real gate and this
+ * guard must never condemn a grant it cannot see.
+ */
+async function slashGrantRefusal(invocation: CommandInvocation): Promise<CommandResult | null> {
+  try {
+    const agentCtx = invocation.agent.ctx as Context | undefined
+    if (agentCtx === undefined || agentCtx === null) return null
+    const presets = agentCtx.get('agentPresets') as AgentPresetsProbe | undefined | null
+    if (presets == null || typeof presets.composedPreset !== 'function' || typeof presets.compositionInventory !== 'function') return null
+    const presetId = presets.composedPreset(agentCtx)
+    if (presetId === undefined) return null
+    const inventory = await presets.compositionInventory()
+    const group = inventory.find(candidate => candidate.id === presetId)
+    if (group === undefined || group.broken !== undefined) return null
+    if (group.rows.some(row => row.moduleName === TOOL_ROW_MODULE)) return null
+    return {
+      kind: 'error',
+      text: `/eval is not granted to this session: its agent preset (${presetId}) composes no ${TOOL_ROW_MODULE} row. `
+        + 'The slash face moved to that companion row — run the command from a session whose preset grants it, '
+        + 'or name the row in this preset\'s agent.cordis.yml.',
+    }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -430,6 +513,8 @@ async function handleFinalize(service: EvalService, args: SlashArgs): Promise<Co
  *   run's parentSessionId).
  */
 export async function handleEvalCommand(service: EvalService, invocation: CommandInvocation): Promise<CommandResult> {
+  const refusal = await slashGrantRefusal(invocation)
+  if (refusal !== null) return refusal
   let tokens: string[]
   try {
     tokens = tokenize(invocation.rawInput)
@@ -489,7 +574,9 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
     parentSessionId,
     ...(concurrency !== undefined ? { concurrency } : {}),
     dryRun: args.switches.has('--dry-run'),
-    finalize: args.switches.has('--finalize'),
+    // --finalize asked for what is now the default; it stays accepted so a
+    // saved command does not start failing.
+    keepUnits: args.switches.has('--keep-units'),
     ...(flagOf(args, '--out') !== undefined ? { exportsDir: flagOf(args, '--out') as string } : {}),
     ...(retries !== undefined ? { retryInfrastructure: retries } : {}),
     ...(only.length > 0 ? { only } : {}),
@@ -547,12 +634,15 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
   }
 }
 
-/** Register the `/eval` command on the host's command registry. */
+/** Register the `/eval` command on the given context. The caller's context
+ * decides the layer the command lands in: the companion row calls this with
+ * its preset-scoped context, so the command exists exactly for the sessions
+ * of every preset that names the row. */
 export function registerEvalSlash(ctx: Context, service: EvalService): void {
   ctx.commands.register({
     name: 'eval',
-    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session (dry-run validates and prints the order without executing); /eval finalize <runId> walks an already-archived run through the release gate; /eval conditions list|diff|provision reads the condition registry and writes the one lock that anchors it.',
-    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId> | conditions list|diff|provision' },
+    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session and walks every cell through the release gate as it finishes (dry-run validates and prints the order without executing; --keep-units stops at archived and keeps the containers); /eval finalize <runId> walks an already-archived run through that gate and reclaims its units; /eval conditions list|diff|provision reads the condition registry and writes the one lock that anchors it.',
+    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--keep-units] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId> | conditions list|diff|provision' },
     handler: (invocation: CommandInvocation) => handleEvalCommand(service, invocation),
   })
 }

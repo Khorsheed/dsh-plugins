@@ -37,8 +37,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
   EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
-  EvalConditionsRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
-  EvalExportRunRequest, EvalFinalizeRequest, EvalMatrixRequest, EvalPlanRequest, EvalReportRequest,
+  EvalConditionEndpointRequest, EvalConditionProvisionRequest,
+  EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
+  EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
+  EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
+  EvalMatrixRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -131,6 +134,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
         fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
         fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
+        provisionCondition: (sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(sid, request),
+        setConditionEndpoint: (sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(sid, request),
+        // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
+        // a draft a person fills in and a draft an agent makes in one
+        // sentence are the same file in the same list.
+        fetchDraftOptions: (sid: SessionId, request: EvalDraftOptionsRequest) => remote.draftOptions(sid, request),
+        draftExperiment: (sid: SessionId, request: EvalDraftRequest) => remote.newExperiment(sid, request),
         approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
         // The cursor is passed EXPLICITLY even though the verb defaults it:
         // the gateway's client proxy enforces exact positional arity, so a
@@ -144,9 +154,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
         planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
         exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
+        // The repeat of a recorded export — the answer to "the final verdicts
+        // are not in the bundle" being a command line nobody mentioned.
+        reexportRun: (sid: SessionId, request: EvalReexportRequest) => remote.reexport(sid, request),
         fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
         finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
-        // The host's own navigation face: the drawer OPENS the player's
+        fetchRunUnits: (sid: SessionId, request: EvalRunUnitsRequest) => remote.runUnits(sid, request),
+        fetchJudgeQueue: (sid: SessionId, request: EvalJudgeQueueRequest) => remote.judgeQueue(sid, request),
+        // The one write with no model-facing twin anywhere in this family
+        // (ui-spec R1): the final verdict is a person's, and the toolset has
+        // no path to the verb on the other side of this line.
+        submitHumanFinal: (sid: SessionId, request: EvalHumanFinalRequest) => remote.humanFinal(sid, request),
+        // The host's own session controller: the drawer OPENS the player's
         // child session so a person can read the transcript; the member
         // composer and dock there are local-agent's, not this tab's.
         openSession: (childSessionId: SessionId) => {

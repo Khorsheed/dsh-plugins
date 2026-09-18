@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { validateBinding, type DatasetBinding } from './binding.ts'
+import { normalizeRepoPath } from './repo-path.ts'
 import type { DatasetOverview, ItemBrief } from './brief.ts'
 import type { SkeletonResult } from './scaffold.ts'
 import {
@@ -119,15 +120,15 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * fails loud (NOT_A_REPO); a repository with no datasets/ answers an
    * empty list.
    * @param agent - owning live agent (lookup convention; the session binding is not consulted).
-   * @param request - the candidate path (whitespace/trailing-slash normalized).
+   * @param request - the candidate path (`~`/whitespace/trailing-slash normalized).
    * @returns the canonical repo path and its dataset summaries.
    */
   @Remote('previewRepo')
   async previewRepo(agent: Agent, request: PreviewRepoRequest): Promise<PreviewRepoResult> {
     void agent
-    // The binder sees the canonical toplevel (a trailing slash or a nested
-    // path binds what was previewed).
-    const repo = await this.datasets.assertRepository(request.path.trim().replace(/\/+$/, ''))
+    // The binder sees the canonical toplevel (a `~`, a trailing slash, or a
+    // nested path binds what was previewed).
+    const repo = await this.datasets.assertRepository(normalizeRepoPath(request.path))
     const result = await this.datasets.list({ repo, operator: true })
     if (result.kind !== 'datasets') throw new Error('previewRepo: list without a dataset selector must list datasets')
     return { repo, datasets: result.datasets }

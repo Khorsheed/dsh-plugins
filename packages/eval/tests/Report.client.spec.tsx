@@ -15,7 +15,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  EvalExperimentDetail, EvalExperimentsResult, EvalFinalizeView, EvalRunReportView,
+  EvalExperimentDetail, EvalExperimentsResult, EvalFinalizeView, EvalRunReportView, EvalRunUnitsView,
 } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
@@ -61,6 +61,11 @@ const REPORT: EvalRunReportView = {
   searched: [],
   refusal: null,
   cliHint: 'dsh-eval report /repo/exports/run-1-bundle',
+  exportedAt: 1_700_000_000_000,
+  lastHumanFinalAt: null,
+  staleAfterFinal: false,
+  summaryWritten: true,
+  reexportable: true,
   invariants: [
     { id: 'materialization', title: '题面一致', status: 'ok', details: ['4 格同一物化哈希'] },
     { id: 'fingerprint', title: '环境同构', status: 'ok', details: [] },
@@ -135,6 +140,9 @@ const NOT_EXPORTED: EvalRunReportView = {
   searched: ['/repo/exports'],
   refusal: 'no export bundle for run-1 yet — export it first (looked for run-1-bundle in: /repo/exports)',
   cliHint: null,
+  exportedAt: null,
+  summaryWritten: false,
+  reexportable: false,
   invariants: [],
   comparisonAllowed: false,
   pairs: [],
@@ -150,13 +158,55 @@ const FINALIZED: EvalFinalizeView = {
   skipped: 0,
   skippedByState: {},
   cells: [
-    { missionId: 'p0-cond-a-rep1', state: 'archived', action: 'released', finalState: 'released', reason: null },
-    { missionId: 'p0-cond-b-rep1', state: 'archived', action: 'refused', finalState: 'archived', reason: 'verdicts/ is empty' },
+    {
+      missionId: 'p0-cond-a-rep1', state: 'archived', action: 'released', finalState: 'released', reason: null,
+      unit: { id: 'u1', resource: 'dsh-lab-u1', released: true, reason: null },
+    },
+    { missionId: 'p0-cond-b-rep1', state: 'archived', action: 'refused', finalState: 'archived', reason: 'verdicts/ is empty', unit: null },
   ],
+  unitsReleased: 3,
+  unitsHeld: [{
+    id: 'u2',
+    resource: 'dsh-lab-u2',
+    missionId: 'p0-cond-b-rep1',
+    missionState: 'archived',
+    reason: 'the archive gate refused its cell, so nothing authorized the destroy',
+  }],
+  unitsKnown: true,
   log: ['cell p0-cond-a-rep1: archived → releasable → released'],
 }
 
-function makeHarness(report: EvalRunReportView = REPORT) {
+/**
+ * The bundle a walkthrough actually had at step 8: exported when the run
+ * ended, and older than the final verdict written afterwards (I5·T39 · G17).
+ */
+const STALE: EvalRunReportView = {
+  ...REPORT,
+  exportedAt: 1_700_000_000_000,
+  lastHumanFinalAt: 1_700_000_900_000,
+  staleAfterFinal: true,
+}
+
+/** Two containers still up: one whose cell the gate refused, one already past it. */
+const UNITS_HELD: EvalRunUnitsView = {
+  runId: 'run-1',
+  available: true,
+  units: [
+    { id: 'u2', resource: 'dsh-lab-u2', running: true, missionId: 'p0-cond-b-rep1', missionState: 'archived' },
+    { id: 'u3', resource: 'dsh-lab-u3', running: true, missionId: 'p0-cond-c-rep1', missionState: 'released' },
+  ],
+  refusal: null,
+}
+
+/** A composition with no lab: the count is unknown, and must never render as 0. */
+const UNITS_UNAVAILABLE: EvalRunUnitsView = {
+  runId: 'run-1',
+  available: false,
+  units: [],
+  refusal: 'no lab service: this composition runs no containers, so there is nothing to hold or reclaim',
+}
+
+function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView = { runId: 'run-1', available: true, units: [], refusal: null }) {
   const instance = createLabViewStore().create()
   return {
     instance,
@@ -165,18 +215,55 @@ function makeHarness(report: EvalRunReportView = REPORT) {
     fetchExperiment: vi.fn(async (): Promise<Result<EvalExperimentDetail>> => ({ ok: true, value: DETAIL })),
     fetchReport: vi.fn(async (): Promise<Result<EvalRunReportView>> => ({ ok: true, value: report })),
     finalizeRun: vi.fn(async (): Promise<Result<EvalFinalizeView>> => ({ ok: true, value: FINALIZED })),
+    fetchRunUnits: vi.fn(async (): Promise<Result<EvalRunUnitsView>> => ({ ok: true, value: units })),
     planExport: vi.fn(async () => ({
       ok: true as const,
       value: { bundleDir: '/out/run-1-bundle', guardedLayers: [], expectedNs: ['script'], missions: 4, attempts: 5 },
     })),
-    exportRun: vi.fn(async () => ({ ok: true as const, value: { bundleDir: '/out/run-1-bundle', files: 9 } })),
+    exportRun: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        bundleDir: '/out/run-1-bundle', files: 9, exportedAt: 1_700_000_000_000,
+        summaryPath: '/out/run-1-bundle/report/summary.md', reportRows: 12, reportError: null, noteRecorded: true,
+      },
+    })),
+    reexportRun: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        bundleDir: '/out/re-20260917T142530Z/run-1-bundle', files: 9, exportedAt: 1_700_000_999_000,
+        summaryPath: '/out/re-20260917T142530Z/run-1-bundle/report/summary.md',
+        reportRows: 14, reportError: null, noteRecorded: true,
+      },
+    })),
   }
 }
 
 type Harness = ReturnType<typeof makeHarness>
 
+/**
+ * The design stage is where an experiment OPENS (ui-spec §五 v2), so its two
+ * reads fire on the way to whatever this file is actually about. Neither is
+ * under test here: the stubs exist so the stage that is passed through has
+ * something to render.
+ */
+const DESIGN_STUBS = {
+  fetchPlanReview: async () => ({
+    ok: true as const,
+    value: {
+      planPath: '/repo/plans/p.json', schema: 'dataseek.plan/1', ok: true, errors: 0, warnings: 0,
+      digest: null, checks: [], conditions: [],
+    },
+  }),
+  fetchConditions: async () => ({
+    ok: true as const,
+    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [] },
+  }),
+  fetchConditionDiff: async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } }),
+}
+
 function renderView(h: Harness) {
   const props = {
+    ...DESIGN_STUBS,
     sessionId: 's1' as SessionId,
     useStore: hookOf(h.instance),
     actions: h.actions,
@@ -184,8 +271,10 @@ function renderView(h: Harness) {
     fetchExperiment: h.fetchExperiment,
     fetchReport: h.fetchReport,
     finalizeRun: h.finalizeRun,
+    fetchRunUnits: h.fetchRunUnits,
     planExport: h.planExport,
     exportRun: h.exportRun,
+    reexportRun: h.reexportRun,
     openSession: vi.fn(),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
@@ -198,7 +287,7 @@ function renderView(h: Harness) {
 async function openReport(h: Harness) {
   renderView(h)
   fireEvent.click(await screen.findByText('t31-judge-panel'))
-  fireEvent.click(screen.getByRole('button', { name: 'page.report' }))
+  fireEvent.click(screen.getByRole('button', { name: 'page.compare' }))
   await waitFor(() => { expect(h.fetchReport).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
 }
 
@@ -211,13 +300,22 @@ describe('the four invariants', () => {
     await screen.findByText('report.invariants')
 
     expect(screen.getByText('题面一致')).toBeTruthy()
-    expect(screen.getByText('环境同构')).toBeTruthy()
     expect(screen.getByText('受试可辨')).toBeTruthy()
-    expect(screen.getByText('流程同形')).toBeTruthy()
+    // The two that did not hold are named twice on purpose: once in the list
+    // of four, once beside the closed comparison section that cites them.
+    expect(screen.getAllByText('环境同构').length).toBe(2)
+    expect(screen.getAllByText('流程同形').length).toBe(2)
     // Three statuses, each said in its own word — never collapsed to pass/fail.
     expect(screen.getAllByText('invariant.ok')).toHaveLength(2)
-    expect(screen.getByText('invariant.violated')).toBeTruthy()
-    expect(screen.getByText('invariant.unverifiable')).toBeTruthy()
+    expect(screen.getAllByText('invariant.violated')).toHaveLength(2)
+    expect(screen.getAllByText('invariant.unverifiable')).toHaveLength(2)
+    // …and each row explains, on hover, WHY it affects the comparison —
+    // COPY keyed by the invariant's id, so it exists in both languages (a
+    // host-composed Chinese detail string could not).
+    expect(screen.getByTitle('invariant.why.materialization')).toBeTruthy()
+    expect(screen.getByTitle('invariant.why.fingerprint')).toBeTruthy()
+    expect(screen.getByTitle('invariant.why.subject')).toBeTruthy()
+    expect(screen.getByTitle('invariant.why.procedure')).toBeTruthy()
     // The details are what make a status a finding rather than an opinion.
     expect(screen.getByText('两格指纹不同：lab-env:aaaa / lab-env:bbbb')).toBeTruthy()
     expect(screen.getByText('无委派记录')).toBeTruthy()
@@ -236,9 +334,9 @@ describe('the comparison gate', () => {
     const h = makeHarness(BLOCKED)
     await openReport(h)
 
-    expect(await screen.findByText(
-      'report.comparisonClosed {"invariants":"环境同构（invariant.violated）、流程同形（invariant.unverifiable）"}',
-    )).toBeTruthy()
+    // ui-spec §九: one human sentence for WHY it is closed, and the invariants
+    // that closed it beside it as the same chips the list above uses.
+    expect(await screen.findByText('report.comparisonClosed {"count":2}')).toBeTruthy()
     // Not one number from the pair table reaches the page: the host sent none.
     expect(screen.queryByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toBeNull()
     expect(screen.queryByText('report.col.delta')).toBeNull()
@@ -282,15 +380,42 @@ describe('the efficiency table', () => {
     await screen.findByText('report.efficiency')
 
     expect(screen.getByText('report.col.activeMs')).toBeTruthy()
-    expect(screen.getByText('21.0 min')).toBeTruthy()
-    expect(screen.getByText('15.0 min')).toBeTruthy()
-    expect(screen.getByText('12,345')).toBeTruthy()
+    // ui-spec §九: durations in words, counts compacted. 1_260_000 ms is
+    // 21 minutes exactly, and 12_345 output tokens read as 12.3k. Each number
+    // is on screen twice — once in the table and once beside its bar, which
+    // is what the bars are FOR (the ratio at a glance, the fact beside it).
+    expect(screen.getAllByText('dur.ms {"m":21,"s":0}')).toHaveLength(2)
+    expect(screen.getAllByText('dur.ms {"m":15,"s":0}')).toHaveLength(2)
+    expect(screen.getAllByText('12.3k')).toHaveLength(2)
     // cond-b reported no tool-call accounting and no cacheRead: two dashes,
     // never two zeros — "nobody counted" is not "it used none".
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
     // Two models on the table, so the cross-model caveat is in force.
     expect(screen.getByText('report.tokensCrossModel')).toBeTruthy()
     expect(screen.getByText('report.excluded {"total":1,"detail":"cond-b halted × 1"}')).toBeTruthy()
+  })
+
+  it('draws the three metrics as bars, each scaled inside its OWN metric', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    await screen.findByText('report.chart')
+
+    // The three ui-spec §五 v2 names, and nothing summed across them: they
+    // have no common unit, so one shared scale would be a lie with a picture
+    // attached.
+    expect(screen.getByText('report.chart.activeMs')).toBeTruthy()
+    expect(screen.getByText('report.chart.outputTokens')).toBeTruthy()
+    expect(screen.getByText('report.chart.cacheRead')).toBeTruthy()
+    // cond-a is the longest of the two, so its bar is the full track and
+    // cond-b's is the ratio between them (900_000 / 1_260_000 = 71%).
+    const bars = document.querySelectorAll<HTMLElement>('[class*="chartBar"]')
+    expect(bars[0]?.style.width).toBe('100%')
+    expect(bars[1]?.style.width).toBe('71%')
+    // cond-b reported no cacheRead, so the cache-read group carries ONE bar
+    // rather than a zero-length one: «nobody counted» is not «it used none»,
+    // and a bar is the one shape that cannot say the difference.
+    expect(screen.getAllByText('54.3k')).toHaveLength(2)
+    expect(bars).toHaveLength(5)
   })
 })
 
@@ -300,8 +425,13 @@ describe('the judge numbers', () => {
     await openReport(h)
     await screen.findByText('report.judge')
 
-    expect(screen.getByText('report.judgeSameValue {"criteria":6,"agreement":"5/6","kappa":"0.640"}')).toBeTruthy()
-    expect(screen.getByText('report.judgeCrossValue {"criteria":3,"agreement":"2/3","kappa":"0.330"}')).toBeTruthy()
+    // ui-spec §九: the WORD a reader acts on, κ beside it. κ 0.64 is 中,
+    // κ 0.33 is 低 — and a 低 on the resampled judge earns the one piece of
+    // advice this page can give.
+    expect(screen.getByText('agreement.medium')).toBeTruthy()
+    expect(screen.getByText('agreement.low')).toBeTruthy()
+    expect(screen.getByText('report.judgeSampleCount {"criteria":6,"agreement":"5/6"}')).toBeTruthy()
+    expect(screen.getByText('report.judgeSampleCount {"criteria":3,"agreement":"2/3"}')).toBeTruthy()
     expect(screen.getByText('4/6')).toBeTruthy()
     // The self-judged count, read off its own row (a bare '2' also appears in
     // the pair table).
@@ -315,10 +445,14 @@ describe('a run with no bundle', () => {
     const h = makeHarness(NOT_EXPORTED)
     await openReport(h)
 
+    // ui-spec §九: one sentence, one next step. Where it looked and what the
+    // host said about not finding it are kept, folded under «详情».
     expect(await screen.findByText('report.noBundle')).toBeTruthy()
-    expect(screen.getByText(NOT_EXPORTED.refusal as string)).toBeTruthy()
-    expect(screen.getByText('report.searched: /repo/exports/run-1-bundle')).toBeTruthy()
+    expect(screen.getByText('report.noBundleHint')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'report.exportNow' })).toBeTruthy()
+    expect(screen.getByText('report.searched')).toBeTruthy()
+    expect(screen.getByText(NOT_EXPORTED.refusal as string)).toBeTruthy()
+    expect(screen.getByText('/repo/exports/run-1-bundle')).toBeTruthy()
     // Nothing is claimed about a bundle that does not exist.
     expect(screen.queryByText('report.invariants')).toBeNull()
     // finalize is not offered over a run whose evidence is not exported.
@@ -375,6 +509,9 @@ describe('finalize', () => {
     expect(screen.getByText('p0-cond-b-rep1')).toBeTruthy()
     expect(screen.getByText(/verdicts\/ is empty/)).toBeTruthy()
     expect(screen.getByText(/archived → releasable → released/)).toBeTruthy()
+    // The container half of the walk, on screen rather than in `docker ps`.
+    expect(screen.getByText('report.finalizeUnits {"released":3,"held":1}')).toBeTruthy()
+    expect(screen.getByText(/nothing authorized the destroy/)).toBeTruthy()
   })
 
   it('cancelling the confirmation walks nothing', async () => {
@@ -384,5 +521,113 @@ describe('finalize', () => {
     fireEvent.click(screen.getByRole('button', { name: 'report.finalizeCancel' }))
     expect(h.finalizeRun).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'report.finalize' })).toBeTruthy()
+  })
+})
+
+/* ─────────── T57 · G18: the containers this run has not let go ─────────── */
+
+describe('unreclaimed units', () => {
+  it('counts them at the top and lists each with the cell state that decides what can end it', async () => {
+    const h = makeHarness(REPORT, UNITS_HELD)
+    await openReport(h)
+    await waitFor(() => { expect(h.fetchRunUnits).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+
+    expect(await screen.findByText('report.unitsHeld {"count":2}')).toBeTruthy()
+    expect(screen.getByText('dsh-lab-u2')).toBeTruthy()
+    expect(screen.getByText('dsh-lab-u3')).toBeTruthy()
+    // The field the reader acts on: 已归档 is one 回收 can still take,
+    // 已释放 is past every gate. Both through the word table (§九).
+    expect(screen.getByText('stage.archived')).toBeTruthy()
+    expect(screen.getByText('stage.released')).toBeTruthy()
+  })
+
+  it('回收 asks once, then walks the SAME gate finalize walks', async () => {
+    const h = makeHarness(REPORT, UNITS_HELD)
+    await openReport(h)
+    await screen.findByText('report.unitsHeld {"count":2}')
+
+    fireEvent.click(screen.getByRole('button', { name: 'report.reclaim' }))
+    expect(screen.getByText('report.reclaimConfirmAsk')).toBeTruthy()
+    expect(h.finalizeRun).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'report.reclaimConfirm' }))
+    // One verb, not two: reclaiming a container IS its cell passing the gate,
+    // so there is no second path that could skip the ledger.
+    await waitFor(() => { expect(h.finalizeRun).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+  })
+
+  it('offers no 回收 when nothing is held', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    expect(await screen.findByText('report.unitsNone')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'report.reclaim' })).toBeNull()
+  })
+
+  it('says UNKNOWN, not zero, on a composition with no lab', async () => {
+    const h = makeHarness(REPORT, UNITS_UNAVAILABLE)
+    await openReport(h)
+    // A confident 0 here would read as "nothing is up" about an instance that
+    // never looked — the reading this strip exists to prevent.
+    expect(await screen.findByText('report.unitsUnknown')).toBeTruthy()
+    expect(screen.queryByText('report.unitsNone')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'report.reclaim' })).toBeNull()
+  })
+})
+
+describe('how old the bundle is (I5·T39 · G17 / T60)', () => {
+  it('says when the bundle was written and that its report is inside it', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    // One line: when it was written, and that the report went in with it.
+    const line = await screen.findByText(/report\.exportedAt /)
+    expect(line.textContent).toContain('report.summaryIn')
+    expect(screen.queryByText(/report\.staleAfterFinal/)).toBeNull()
+  })
+
+  it('a bundle older than the last final verdict says so, with the button beside the sentence', async () => {
+    const h = makeHarness(STALE)
+    await openReport(h)
+
+    // The sentence names the time a reader would otherwise have to find by
+    // opening manifest.json themselves, which is how the gap was found.
+    const warning = await screen.findByText(/report\.staleAfterFinal /)
+    expect(warning.textContent).toContain('"final"')
+    const again = screen.getAllByRole('button', { name: 'report.reexport' })
+    expect(again.length).toBeGreaterThan(0)
+
+    fireEvent.click(again[again.length - 1] as HTMLElement)
+    await waitFor(() => { expect(h.reexportRun).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+    // The receipt names the NEW directory; the old bundle is not mentioned as
+    // gone, because it is not.
+    await screen.findByText(/notice\.reexported .*re-20260917T142530Z/)
+  })
+
+  it('a bundle written before the export action wrote reports offers to get one', async () => {
+    const h = makeHarness({ ...REPORT, summaryWritten: false })
+    await openReport(h)
+    expect(await screen.findByText('report.summaryMissing')).toBeTruthy()
+  })
+
+  it('offers no one-click repeat for a run with no recorded export', async () => {
+    const h = makeHarness({ ...REPORT, reexportable: false })
+    await openReport(h)
+    const again = await screen.findByRole('button', { name: 'report.reexport' })
+    expect((again as HTMLButtonElement).disabled).toBe(true)
+    expect(again.getAttribute('title')).toBe('report.reexportNeedsDialog')
+  })
+
+  it('the export dialog\'s receipt names the report it wrote, not just the bundle', async () => {
+    const h = makeHarness(NOT_EXPORTED)
+    await openReport(h)
+    fireEvent.click(await screen.findByRole('button', { name: 'report.exportNow' }))
+    fireEvent.change(await screen.findByLabelText('export.outDir'), { target: { value: '/out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'export.plan' }))
+    await waitFor(() => { expect(h.planExport).toHaveBeenCalled() })
+    fireEvent.click(screen.getByRole('button', { name: 'export.confirm' }))
+
+    await waitFor(() => { expect(h.exportRun).toHaveBeenCalled() })
+    // One action, two products (G15): the receipt says so rather than leaving
+    // the reader to run `dsh-eval report` and find out.
+    expect(await screen.findByText(/export\.doneWithReport .*summary\.md/)).toBeTruthy()
   })
 })

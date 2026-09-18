@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -166,7 +166,14 @@ describe('keychain credential sync', () => {
     return `Claude Code-credentials-${createHash('sha256').update(home).digest('hex').slice(0, 8)}`
   }
 
-  /** A `security dump-keychain` rendering of the given items (metadata only). */
+  /**
+   * A `security dump-keychain` rendering of the given items (metadata only).
+   * The stamp is written EXACTLY as the tool prints it — a compact Zulu
+   * `YYYYMMDDHHMMSSZ` whose trailing NUL renders as a literal `\000` — because
+   * a fixture in a shape `security` never emits is a fixture that proves
+   * nothing. `mdat` may also be given in the spaced `2026-09-01 00:00:00
+   * +0000` form, which the parser still accepts.
+   */
   function dumpKeychainOutput(items: ReadonlyArray<{ acct: string; svce: string; mdat: string }>): string {
     return items.map((item) => [
       'keychain: "/home/user/Library/Keychains/login.keychain-db"',
@@ -174,7 +181,7 @@ describe('keychain credential sync', () => {
       'class: "genp"',
       'attributes:',
       `    "acct"<blob>="${item.acct}"`,
-      `    "mdat"<timedate>=0x3245584546494b45  "${item.mdat}"`,
+      `    "mdat"<timedate>=0x3245584546494b45  "${item.mdat}${/^\d{14}Z$/.test(item.mdat) ? String.raw`\000` : ''}"`,
       `    "svce"<blob>="${item.svce}"`,
     ].join('\n')).join('\n')
   }
@@ -203,10 +210,10 @@ describe('keychain credential sync', () => {
     stubKeychainMulti(dumpKeychainOutput([
       // The shell is the NEWER write — an unscoped `-w` read returns it first,
       // which was the shipped bug. Usability, not recency, must win.
-      { acct: 'unknown', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
-      { acct: 'tester', svce: service, mdat: '2026-08-01 00:00:00 +0000' },
+      { acct: 'unknown', svce: service, mdat: '20260901000000Z' },
+      { acct: 'tester', svce: service, mdat: '20260801000000Z' },
       // An unrelated service's item is ignored by the enumeration.
-      { acct: 'other', svce: 'unrelated-service', mdat: '2026-09-02 00:00:00 +0000' },
+      { acct: 'other', svce: 'unrelated-service', mdat: '20260902000000Z' },
     ]), { unknown: shell, tester: real })
     try {
       await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
@@ -224,13 +231,96 @@ describe('keychain credential sync', () => {
     const older = JSON.stringify({ claudeAiOauth: { accessToken: 'old-tok', expiresAt: Date.now() + 1_000_000 } })
     const newer = JSON.stringify({ claudeAiOauth: { accessToken: 'new-tok', expiresAt: Date.now() + 3_600_000 } })
     stubKeychainMulti(dumpKeychainOutput([
-      { acct: 'old', svce: service, mdat: '2026-08-01 00:00:00 +0000' },
-      { acct: 'new', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+      { acct: 'old', svce: service, mdat: '20260801000000Z' },
+      { acct: 'new', svce: service, mdat: '20260901000000Z' },
     ]), { old: older, new: newer })
     try {
       await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
       const { readFile } = await import('node:fs/promises')
       await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(newer)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  it('reads the compact Zulu stamp security actually prints, trailing NUL and all', async () => {
+    const home = tempHome('claude-sync-realstamp-')
+    const service = serviceFor(home)
+    // Transcribed from a real `security dump-keychain` rather than synthesized:
+    // the hex is the ASCII of the quoted stamp and the attribute's trailing NUL
+    // prints as a literal \000 after the closing digit. The parser used to
+    // accept only a spaced `2026-09-16 04:08:55 +0000` form that no observed
+    // build emits, so every stamp fell back to 0, the newest-first sort over
+    // equal keys degenerated to dump order, and the FIRST usable item won. On a
+    // scoped home logged in twice that served the superseded credential while
+    // the fresh login sat unread.
+    const dump = [
+      'keychain: "/home/user/Library/Keychains/login.keychain-db"',
+      'version: 512',
+      'class: "genp"',
+      'attributes:',
+      '    "acct"<blob>="unknown"',
+      '    "cdat"<timedate>=0x32303236303931303035323030305A00  "20260910052000Z\\000"',
+      '    "mdat"<timedate>=0x32303236303931363034303835355A00  "20260916040855Z\\000"',
+      `    "svce"<blob>="${service}"`,
+      'keychain: "/home/user/Library/Keychains/login.keychain-db"',
+      'version: 512',
+      'class: "genp"',
+      'attributes:',
+      '    "acct"<blob>="owner"',
+      '    "mdat"<timedate>=0x32303236303931373035333132305A00  "20260917053120Z\\000"',
+      `    "svce"<blob>="${service}"`,
+    ].join('\n')
+    // Both are usable, and the SUPERSEDED one is listed first — exactly the
+    // ordering the real dump had.
+    const superseded = JSON.stringify({ claudeAiOauth: { accessToken: 'superseded-tok', expiresAt: Date.now() + 1_000 } })
+    const fresh = JSON.stringify({ claudeAiOauth: { accessToken: 'fresh-tok', expiresAt: Date.now() + 3_600_000 } })
+    stubKeychainMulti(dump, { unknown: superseded, owner: fresh })
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(fresh)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  it('still accepts the spaced stamp form and orders it against the compact one', async () => {
+    const home = tempHome('claude-sync-mixedstamp-')
+    const service = serviceFor(home)
+    // The legacy branch is kept for a build that might emit the spaced form.
+    // Listing it NEWER than the compact one proves it is still parsed, and that
+    // the two forms land on one comparable scale rather than two.
+    const older = JSON.stringify({ claudeAiOauth: { accessToken: 'compact-tok', expiresAt: Date.now() + 1_000 } })
+    const newer = JSON.stringify({ claudeAiOauth: { accessToken: 'spaced-tok', expiresAt: Date.now() + 3_600_000 } })
+    stubKeychainMulti(dumpKeychainOutput([
+      { acct: 'compact', svce: service, mdat: '20260801000000Z' },
+      { acct: 'spaced', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+    ]), { compact: older, spaced: newer })
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(newer)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  it('sorts an unparseable stamp as oldest instead of letting dump order decide', async () => {
+    const home = tempHome('claude-sync-badstamp-')
+    const service = serviceFor(home)
+    // The guard against the regression this suite just fixed: a stamp nobody
+    // can parse must not win merely by being printed first.
+    const unstamped = JSON.stringify({ claudeAiOauth: { accessToken: 'unstamped-tok', expiresAt: Date.now() + 1_000 } })
+    const stamped = JSON.stringify({ claudeAiOauth: { accessToken: 'stamped-tok', expiresAt: Date.now() + 3_600_000 } })
+    stubKeychainMulti(dumpKeychainOutput([
+      { acct: 'unstamped', svce: service, mdat: 'not-a-timedate' },
+      { acct: 'stamped', svce: service, mdat: '20260801000000Z' },
+    ]), { unstamped, stamped })
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(stamped)
     } finally {
       restoreExec()
     }
@@ -242,7 +332,7 @@ describe('keychain credential sync', () => {
     const shell = JSON.stringify({ claudeAiOauth: { accessToken: '', refreshToken: '', expiresAt: 0 } })
     writeFileSync(join(home, '.credentials.json'), shell)
     stubKeychainMulti(dumpKeychainOutput([
-      { acct: 'unknown', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+      { acct: 'unknown', svce: service, mdat: '20260901000000Z' },
     ]), { unknown: shell })
     try {
       await expect(syncClaudeCredentialFile(home)).resolves.toBe(false)
@@ -261,15 +351,159 @@ describe('keychain credential sync', () => {
     const real = JSON.stringify({ claudeAiOauth: { accessToken: 'real-tok', expiresAt: Date.now() + 3_600_000 } })
     writeFileSync(join(home, '.credentials.json'), real)
     stubKeychainMulti(dumpKeychainOutput([
-      { acct: 'unknown', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+      { acct: 'unknown', svce: service, mdat: '20260901000000Z' },
     ]), { unknown: shell })
     try {
-      await expect(syncClaudeCredentialFile(home)).resolves.toBe(false)
+      // The answer is about the FILE, not about the keychain: a usable file
+      // with nothing usable in the keychain is a working credential (it is the
+      // only store a Linux host has at all).
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
       const { readFile } = await import('node:fs/promises')
       await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(real)
     } finally {
       restoreExec()
     }
+  })
+
+  /**
+   * Newer wins. The credentials file is not this process's private mirror: a
+   * containerized round bind-mounts the scoped home read-write and the CLI
+   * inside the unit rotates the grant in place, so an unconditional mirror is
+   * the one participant that can hand the next run an already-spent refresh
+   * token. Each case below is one row of that decision.
+   */
+  describe('newer wins', () => {
+    const hour = 3_600_000
+
+    /** A usable blob at a given access expiry; the token names its generation. */
+    function credential(generation: string, expiresAt: number): string {
+      return JSON.stringify({
+        claudeAiOauth: {
+          accessToken: `${generation}-access`,
+          refreshToken: `${generation}-refresh`,
+          expiresAt,
+          refreshTokenExpiresAt: Date.now() + 30 * 24 * hour,
+        },
+      })
+    }
+
+    it('keeps a file that is AHEAD of the keychain and says so', async () => {
+      const home = tempHome('claude-sync-ahead-')
+      // What a containerized round leaves behind: the unit refreshed the grant
+      // and wrote generation 2 through the bind mount, while the host keychain
+      // still holds generation 1. Mirroring 1 back is the logout bug.
+      const rotated = credential('unit', Date.now() + 8 * hour)
+      const stale = credential('host', Date.now() + 1 * hour)
+      writeFileSync(join(home, '.credentials.json'), rotated)
+      stubKeychain(stale)
+      const warnings: string[] = []
+      try {
+        await expect(syncClaudeCredentialFile(home, m => warnings.push(m))).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(rotated)
+      } finally {
+        restoreExec()
+      }
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('AHEAD of the keychain')
+      // The warn channel reports expiries, never token material: neither
+      // store's tokens may appear anywhere in the line.
+      for (const token of ['unit-access', 'unit-refresh', 'host-access', 'host-refresh']) {
+        expect(warnings[0]).not.toContain(token)
+      }
+    })
+
+    it('writes the keychain blob when the keychain is ahead of the file', async () => {
+      const home = tempHome('claude-sync-behind-')
+      // The ordinary host rotation: the CLI refreshed into the keychain and
+      // left the file behind. This direction must keep working exactly as it
+      // did, or every host round runs on an expired access token.
+      const fresh = credential('host2', Date.now() + 8 * hour)
+      writeFileSync(join(home, '.credentials.json'), credential('host1', Date.now() + 1 * hour))
+      stubKeychain(fresh)
+      const warnings: string[] = []
+      try {
+        await expect(syncClaudeCredentialFile(home, m => warnings.push(m))).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(fresh)
+      } finally {
+        restoreExec()
+      }
+      expect(warnings).toEqual([])
+    })
+
+    it('writes the keychain blob when either side carries no access expiry', async () => {
+      const home = tempHome('claude-sync-noexpiry-')
+      // No expiry is no evidence, and guessing the file is newer would strand
+      // a scope on a credential nothing can refresh. The fallback is the
+      // pre-newer-wins behavior: the keychain writes.
+      const blob = JSON.stringify({ claudeAiOauth: { accessToken: 'keychain-tok' } })
+      writeFileSync(join(home, '.credentials.json'), credential('file', Date.now() + 8 * hour))
+      stubKeychain(blob)
+      try {
+        await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(blob)
+      } finally {
+        restoreExec()
+      }
+    })
+
+    it('never lets an unusable file win, however late its expiry', async () => {
+      const home = tempHome('claude-sync-shell-ahead-')
+      // A cleared credential carries whatever expiry the CLI left in it. It is
+      // still debris, and the keychain still heals it.
+      const shell = JSON.stringify({
+        claudeAiOauth: { accessToken: '', refreshToken: '', expiresAt: Date.now() + 99 * hour },
+      })
+      const real = credential('keychain', Date.now() + 1 * hour)
+      writeFileSync(join(home, '.credentials.json'), shell)
+      stubKeychain(real)
+      const warnings: string[] = []
+      try {
+        await expect(syncClaudeCredentialFile(home, m => warnings.push(m))).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(real)
+      } finally {
+        restoreExec()
+      }
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('cleared credential')
+    })
+
+    it('does not rewrite the file when both stores hold the same blob', async () => {
+      const home = tempHome('claude-sync-same-')
+      const blob = credential('same', Date.now() + 8 * hour)
+      const file = join(home, '.credentials.json')
+      writeFileSync(file, blob)
+      // Backdate so any write at all moves the stamp.
+      const past = new Date(Date.now() - 60_000)
+      utimesSync(file, past, past)
+      const before = statSync(file).mtimeMs
+      stubKeychain(blob)
+      try {
+        await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      } finally {
+        restoreExec()
+      }
+      expect(statSync(file).mtimeMs).toBe(before)
+    })
+
+    it('leaves a rotated file alone across the authentication probe too', async () => {
+      const home = tempHome('claude-sync-probe-')
+      // The probe is the clobber site the spawn sites do not cover: it runs on
+      // every status read and every readiness check.
+      const rotated = credential('unit', Date.now() + 8 * hour)
+      writeFileSync(join(home, '.credentials.json'), rotated)
+      stubKeychain(credential('host', Date.now() + 1 * hour))
+      try {
+        await expect(claudeAuthenticated(home)).resolves.toBe(true)
+        const { readFile } = await import('node:fs/promises')
+        await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(rotated)
+      } finally {
+        restoreExec()
+      }
+    })
   })
 })
 

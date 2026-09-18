@@ -50,6 +50,8 @@ async function bench(options: {
   composition?: EvalPluginInventorySnapshot
   /** Publish the 0.1.5-shaped list (top-level `current`, no per-row retention). */
   legacyCurrent?: boolean
+  /** A whole session list, for the parent-chain cases; overrides `preset`. */
+  rows?: Record<string, unknown>
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -63,13 +65,21 @@ async function bench(options: {
   const remote = remoteStub()
   ctx.provide('remote.dshEval', remote as never)
   // No preset on the row = the fail-open default; a named preset reads the
-  // composition. The on-screen session: 0.1.6-alpha.2 reads the row's
-  // main-view retention count; `legacyCurrent` exercises the 0.1.5
-  // `current` fallback instead.
-  const row = options.preset === undefined ? {} : { projectionValues: { agentPreset: options.preset } }
+  // composition; `rows` supplies a whole list for the parent-chain cases.
+  // The on-screen session: 0.1.6-alpha.2 reads the row's main-view retention
+  // count; `legacyCurrent` exercises the 0.1.5 `current` fallback instead.
+  const byId = options.rows
+    ?? (options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } })
   const list = createSnapshotStore(options.legacyCurrent === true
-    ? { ids: ['s1'], byId: { s1: { id: 's1', ...row } }, current: 's1' as SessionId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
-    : { ids: ['s1'], byId: { s1: { id: 's1', ...row, retainedBy: { mainView: 1 } } }, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+    ? { ids: Object.keys(byId), byId, current: 's1' as SessionId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
+    : {
+        ids: Object.keys(byId),
+        byId: Object.fromEntries(Object.entries(byId).map(([id, row]) => [
+          id,
+          { id, ...(row as Record<string, unknown>), ...(id === 's1' ? { retainedBy: { mainView: 1 } } : {}) },
+        ])),
+        phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+      })
   ctx.provide('sessions', { list } as never)
   if (options.composition !== undefined) {
     ctx.provide('remote.pluginInventory', {
@@ -127,6 +137,48 @@ describe('eval client apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
     await settled()
     expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // I5·T39 · G13. A cell of an evaluation delegates into a child session, and
+  // a condition that names no agent preset (most of them: `"preset": null`)
+  // produces one with no `agentPreset` at all. Read alone that session took
+  // the fail-open arm, so every gated tab appeared inside a player's own
+  // transcript — including the ones the parent had correctly hidden.
+  it('decides a member sub-session by its PARENT\'s preset composition', async () => {
+    const { ctx, slots } = await bench({
+      composition: PRESETS,
+      rows: { s1: { parentSessionId: 'main' }, main: { projectionValues: { agentPreset: 'standard' } } },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  it('shows the tab in a member sub-session whose parent grants the row', async () => {
+    const { ctx, slots } = await bench({
+      composition: PRESETS,
+      rows: { s1: { parentSessionId: 'main' }, main: { projectionValues: { agentPreset: 'eval' } } },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('a session with no preset and no parent still fails open', async () => {
+    const { ctx, slots } = await bench({ composition: PRESETS, rows: { s1: {} } })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('a parent chain that points at itself does not hang the strip', async () => {
+    const { ctx, slots } = await bench({
+      composition: PRESETS,
+      rows: { s1: { parentSessionId: 'loop' }, loop: { parentSessionId: 's1' } },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
   it('keeps the tab when the composition cannot be read (fail-open)', async () => {

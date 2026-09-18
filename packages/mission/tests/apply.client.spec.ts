@@ -45,6 +45,8 @@ async function bench(options: {
   composition?: MissionPluginInventorySnapshot
   /** Publish the 0.1.5-shaped list (top-level `current`, no per-row retention). */
   legacyCurrent?: boolean
+  /** A whole session list, for the parent-chain cases; overrides `preset`. */
+  rows?: Record<string, unknown>
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -58,13 +60,21 @@ async function bench(options: {
   const remote = remoteStub()
   ctx.provide('remote.mission', remote as never)
   // No preset on the row = the fail-open default; a named preset reads the
-  // composition. The on-screen session: 0.1.6-alpha.2 reads the row's
-  // main-view retention count; `legacyCurrent` exercises the 0.1.5
-  // `current` fallback instead.
-  const row = options.preset === undefined ? {} : { projectionValues: { agentPreset: options.preset } }
+  // composition; `rows` supplies a whole list for the parent-chain cases.
+  // The on-screen session: 0.1.6-alpha.2 reads the row's main-view retention
+  // count; `legacyCurrent` exercises the 0.1.5 `current` fallback instead.
+  const byId = options.rows
+    ?? (options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } })
   const list = createSnapshotStore(options.legacyCurrent === true
-    ? { ids: ['s1'], byId: { s1: { id: 's1', ...row } }, current: 's1' as SessionId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
-    : { ids: ['s1'], byId: { s1: { id: 's1', ...row, retainedBy: { mainView: 1 } } }, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+    ? { ids: Object.keys(byId), byId, current: 's1' as SessionId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
+    : {
+        ids: Object.keys(byId),
+        byId: Object.fromEntries(Object.entries(byId).map(([id, row]) => [
+          id,
+          { id, ...(row as Record<string, unknown>), ...(id === 's1' ? { retainedBy: { mainView: 1 } } : {}) },
+        ])),
+        phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+      })
   ctx.provide('sessions', { list } as never)
   if (options.composition !== undefined) {
     ctx.provide('remote.pluginInventory', {
@@ -119,6 +129,29 @@ describe('mission client apply', () => {
 
   it('drops the tab registration in a session whose preset grants no mission tools', async () => {
     const { ctx, slots } = await bench({ preset: 'standard', composition: DEV })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // I5·T39 · G13: a member sub-session of an evaluation declares no preset of
+  // its own, so read alone it took the fail-open arm and showed this tab
+  // inside a player's own transcript while the parent session hid it.
+  it('decides a member sub-session by its PARENT\'s preset composition', async () => {
+    const { ctx, slots } = await bench({
+      composition: DEV,
+      rows: { s1: { parentSessionId: 'main' } },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('hides in a member sub-session whose parent grants no mission tools', async () => {
+    const { ctx, slots } = await bench({
+      composition: DEV,
+      rows: { s1: { parentSessionId: 'main' }, main: { projectionValues: { agentPreset: 'standard' } } },
+    })
     await ctx.plugin({ inject: [...inject], apply }).await()
     await settled()
     expect(slots.entries('conversation.view')).toHaveLength(0)

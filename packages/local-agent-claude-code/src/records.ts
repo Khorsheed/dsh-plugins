@@ -107,17 +107,36 @@ interface KeychainItem {
 }
 
 /**
- * A `security dump-keychain` timedate (`2026-09-01 02:03:04 +0000`) as epoch
- * ms; undefined when the shape is not recognized (the item then sorts as
- * oldest).
+ * A `security dump-keychain` timedate as epoch ms; undefined when the shape is
+ * not recognized (the item then sorts as oldest).
+ *
+ * The shape that matters is the COMPACT Zulu stamp `20260916040855Z`, because
+ * that is what the tool actually prints — with the attribute's trailing NUL
+ * rendered as a literal `\000` after the closing digit, so the match must not
+ * anchor at the end. Only the spaced `2026-09-01 02:03:04 +0000` form was
+ * parsed before, which no `security` build was observed to emit: every item
+ * fell to the `?? 0` default, the newest-first sort over all-equal keys
+ * degenerated to the dump's own order (a stable sort), and
+ * `readKeychainCredential` returned whichever usable item the dump happened to
+ * list first. A scoped home that had been logged in twice then kept serving the
+ * SUPERSEDED credential — the fresh login sat unread in the keychain while the
+ * runtime ran on a generation whose refresh token was already spent. The
+ * spaced form is still accepted in case some build does emit it.
  * @param text - the quoted timedate string from the dump.
  * @returns the epoch milliseconds, or undefined.
  */
 function keychainTimestamp(text: string): number | undefined {
-  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$/.exec(text.trim())
-  if (match === null) return undefined
-  const part = (index: number): number => Number(match[index])
-  const offsetMinutes = (part(8) * 60 + part(9)) * (match[7] === '+' ? 1 : -1)
+  const trimmed = text.trim()
+  const compact = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z/.exec(trimmed)
+  if (compact !== null) {
+    const at = (index: number): number => Number(compact[index])
+    const ms = Date.UTC(at(1), at(2) - 1, at(3), at(4), at(5), at(6))
+    return Number.isFinite(ms) ? ms : undefined
+  }
+  const spaced = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$/.exec(trimmed)
+  if (spaced === null) return undefined
+  const part = (index: number): number => Number(spaced[index])
+  const offsetMinutes = (part(8) * 60 + part(9)) * (spaced[7] === '+' ? 1 : -1)
   const ms = Date.UTC(part(1), part(2) - 1, part(3), part(4), part(5), part(6)) - offsetMinutes * 60_000
   return Number.isFinite(ms) ? ms : undefined
 }
@@ -231,35 +250,93 @@ async function readCredentialExpiry(homeDir: string): Promise<number | undefined
 }
 
 /**
- * Mirror the keychain credential into `<homeDir>/.credentials.json`. Claude
- * 2.1.236 on macOS WRITES the scoped login to the hashed keychain entry but
- * READS the credentials file at runtime (the same write/read split as the
- * Linux #47661 bug) — a login that lands only in the keychain still answers
- * "Not logged in". Called from the login watch so a completed login becomes
- * readable; idempotent and content-compare before write. Only a USABLE blob
- * (non-empty token, see `readKeychainCredential`) is mirrored; with none in
- * the keychain, a file holding an empty-token shell — debris from an earlier
- * first-match read — is REMOVED, so the runtime says "Not logged in" instead
- * of the misleading "OAuth session expired".
- * @param homeDir - the `claude-code` harness's scoped home.
- * @returns true when the file holds the current keychain credential after the call.
+ * The ACCESS-token expiry (epoch ms) of a credential blob — the freshness key
+ * the sync compares the two stores on. Deliberately not
+ * {@link credentialFileExpiry}: that one answers "is this credential still
+ * usable" and takes the LATER of the two expiries, so two generations of one
+ * grant share a refresh expiry and compare equal. A refresh always mints a
+ * later ACCESS expiry, which is exactly what tells the generations apart.
+ * @param text - the raw credential JSON.
+ * @returns the access-token expiry, or undefined when absent or unparseable.
  */
-export async function syncClaudeCredentialFile(homeDir: string): Promise<boolean> {
+function credentialAccessExpiry(text: string): number | undefined {
+  try {
+    const access = (JSON.parse(text) as { claudeAiOauth?: { expiresAt?: unknown } }).claudeAiOauth?.expiresAt
+    return typeof access === 'number' ? access : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Reconcile the keychain credential with `<homeDir>/.credentials.json`,
+ * NEWER WINS. Claude 2.1.236 on macOS WRITES the scoped login to the hashed
+ * keychain entry but READS the credentials file at runtime (the same
+ * write/read split as the Linux #47661 bug) — a login that lands only in the
+ * keychain still answers "Not logged in", so the file has to be kept current.
+ *
+ * The file is not this process's private mirror, though: a containerized
+ * round bind-mounts this very directory read-write (the unit has no keychain,
+ * so the CLI inside it reads and writes the file), and the pre-spawn sync runs
+ * against the HOST path moments before the unit reads it through the mount.
+ * An unconditional mirror therefore makes this function the one participant
+ * that can move the credential chain BACKWARD: it hands the next run a refresh
+ * token the other writer already spent, the endpoint rejects it, and the CLI
+ * answers by CLEARING the file — which logs the instance out, because that
+ * file is the instance's credential. So the keychain blob is written only when
+ * it is not older than the file's. Undefined expiry on either side keeps the
+ * pre-newer-wins behavior (the keychain writes), and a file that is not USABLE
+ * never wins.
+ *
+ * Only a USABLE blob (non-empty token, see `readKeychainCredential`) is
+ * mirrored; with none in the keychain, a file holding an empty-token shell —
+ * debris from an earlier first-match read, or a cleared credential — is
+ * REMOVED, so the runtime says "Not logged in" instead of the misleading
+ * "OAuth session expired". Idempotent and content-compare before write.
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @param log - warn channel for the two decisions that used to be silent.
+ * @returns true when a usable credential is in the file after the call.
+ */
+export async function syncClaudeCredentialFile(
+  homeDir: string,
+  log?: (message: string) => void,
+): Promise<boolean> {
   const file = join(homeDir, '.credentials.json')
+  let existing: string | undefined
+  try {
+    existing = await readFile(file, 'utf8')
+  } catch {
+    // Absent or unreadable: the keychain decides alone.
+  }
+  const fileUsable = existing !== undefined && credentialUsable(existing)
   const blob = await readKeychainCredential(homeDir)
   if (blob === undefined) {
-    try {
-      const existing = await readFile(file, 'utf8')
-      if (!credentialUsable(existing)) await rm(file, { force: true })
-    } catch {
-      // Absent or unreadable: nothing to heal.
-    }
-    return false
+    // A usable file with nothing in the keychain is the only credential there
+    // is (a Linux host stores nowhere else) — left exactly as it stands.
+    if (existing !== undefined && !fileUsable) await rm(file, { force: true })
+    return fileUsable
   }
-  try {
-    if ((await readFile(file, 'utf8')).trim() === blob) return true
-  } catch {
-    // Absent or unreadable: fall through to the write.
+  if (existing !== undefined && existing.trim() === blob) return true
+  if (fileUsable) {
+    const fileExpiry = credentialAccessExpiry(existing as string)
+    const blobExpiry = credentialAccessExpiry(blob)
+    if (fileExpiry !== undefined && blobExpiry !== undefined && fileExpiry > blobExpiry) {
+      // The other writer is ahead. Said out loud because it is rare, because
+      // it is the signature of a containerized round having rotated the grant,
+      // and because reconstructing the previous occurrence took a file mtime
+      // and a pilot log. Expiries only — never token material.
+      log?.(`local-agent-claude-code: ${homeDir}/.credentials.json is AHEAD of the keychain`
+        + ` (file access expiry ${new Date(fileExpiry).toISOString()},`
+        + ` keychain ${new Date(blobExpiry).toISOString()}) — keeping the file;`
+        + ' something else refreshed this grant (a containerized round mounts this directory read-write)')
+      return true
+    }
+  }
+  if (existing !== undefined && !fileUsable) {
+    log?.(`local-agent-claude-code: ${homeDir}/.credentials.json held a cleared credential`
+      + ' (both tokens empty) and is being restored from the keychain'
+      + ` (access expiry ${new Date(credentialAccessExpiry(blob) ?? 0).toISOString()});`
+      + ' if the next round fails to authenticate, this grant was already spent and the scope needs a fresh login')
   }
   await writeFile(file, blob, { mode: 0o600 })
   return true
@@ -303,14 +380,18 @@ function credentialFileExpiry(text: string): number | undefined {
  * CLI to probe auth is avoided; the platform differences are documented in
  * the README.
  * @param homeDir - the `claude-code` harness's scoped home.
+ * @param log - warn channel handed to the credential reconcile below.
  * @returns true when a completed login is recorded and not locally expired.
  */
-export async function claudeAuthenticated(homeDir: string): Promise<boolean> {
+export async function claudeAuthenticated(homeDir: string, log?: (message: string) => void): Promise<boolean> {
   // The runtime reads `.credentials.json` first (claude 2.1.236 writes the
   // keychain but reads the file) — and a CLI run refreshes the KEYCHAIN copy
-  // without touching the file, so mirror keychain→file before judging, or a
-  // refreshed credential still reads expired.
-  await syncClaudeCredentialFile(homeDir)
+  // without touching the file, so reconcile keychain↔file before judging, or a
+  // refreshed credential still reads expired. Newer wins: this probe runs on
+  // every status read and every readiness check, so an unconditional mirror
+  // here would undo a containerized round's refresh just as surely as the
+  // spawn sites would.
+  await syncClaudeCredentialFile(homeDir, log)
   let fileExpiry: number | undefined
   let filePresent = false
   try {

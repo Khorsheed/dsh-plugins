@@ -59,7 +59,7 @@
 .notice {
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
@@ -430,18 +430,6 @@
   line-height: 16px;
 }
 
-.cellWarn {
-  color: var(--dsw-alias-label-warning, #b8600a);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.cellError {
-  color: var(--dsw-alias-label-danger, #b3261e);
-  font-size: 11px;
-  line-height: 16px;
-}
-
 .cellMono {
   color: var(--dsw-alias-label-secondary);
   font-family: var(--ds-font-family-code);
@@ -495,7 +483,7 @@
 }
 
 .exposureWithheld {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .exposureUnprotected {
@@ -557,7 +545,7 @@
 }
 
 .panelWarn {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -621,16 +609,182 @@
   line-height: 16px;
 }
 
-/* A notice that carries errors rather than information. */
-.noticeError {
-  composes: notice;
-  color: var(--dsw-alias-label-danger, #b3261e);
-}
-
 .noticeLine {
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code);
   font-size: 11px;
   line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+/* ── the chip (ui-spec §九's one status component) ────────────────────────
+   Every state word in this tab — validate's verdict, the canary flag, a
+   cell's bucket and stage in «作答记录» — is this one element with a tone. The
+   tone says what the state MEANS to a reader; the theme decides what that
+   looks like, so light and dark come from the host and nothing here invents a
+   colour. The 实验室 tab carries this rule verbatim, class for class.
+
+   `currentColor` at 12% is the fill: it follows whatever the tone set, so a
+   chip is legible on both surfaces without a second palette to keep in sync. */
+.chipTag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.chipTag[data-tone='ok'] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.chipTag[data-tone='busy'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipTag[data-tone='warn'] {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.chipTag[data-tone='danger'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* A count riding on a chip. */
+.chipCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A line of chips. */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+/* The empty seat: what is not here, how to change that, and the button that
+   changes it (ui-spec §九). Identical to the 实验室 tab's. */
+.emptySeat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 12px;
+  padding: 16px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.emptyTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.emptyHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+}
+
+/* ── the three-part error seat (ui-spec §九) ─────────────────────────────────
+   One human sentence, one fix, and the raw exception plus the path folded
+   under «详情». Host tokens only, so light and dark come from the theme. */
+.errorSeat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  text-align: left;
+}
+
+/* The same seat inside a field or a strip rather than a page body. A MODIFIER
+   applied beside .errorSeat, not `composes: errorSeat` — this bundler drops
+   `composes` silently (the class maps to itself alone and the base rules never
+   arrive), so a composed variant renders as an unstyled box. */
+.errorSeatCompact {
+  margin: 4px 0;
+  padding: 6px 8px;
+}
+
+.errorHead {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.errorFix {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.errorDetails {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* A disclosure the theme styles rather than the browser: the default marker
+   sits on a different baseline in each engine. */
+.errorSummary {
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+}
+
+.errorSummary::-webkit-details-marker {
+  display: none;
+}
+
+.errorSummary::before {
+  content: '▸ ';
+}
+
+.errorDetails[open] .errorSummary::before {
+  content: '▾ ';
+}
+
+.errorDetailLine {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.errorRaw {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

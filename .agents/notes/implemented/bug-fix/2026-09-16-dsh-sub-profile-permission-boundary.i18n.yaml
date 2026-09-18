@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-16-dsh-sub-profile-permission-boundary.md
+.agents/notes/implemented/bug-fix/2026-09-16-dsh-sub-profile-permission-boundary.md: 79ae5db320ae4dfefa75b6d876fd1e02be96bd94
+.agents/notes/implemented/bug-fix/2026-09-16-dsh-sub-profile-permission-boundary.zh.md: 435009811c9166c362e83c6c58b196289ec5bdfb

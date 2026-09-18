@@ -17,7 +17,13 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasService } from './service.ts'
+import type { CanvasBoardService } from './store.ts'
 import type {
+  BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
+  BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardListResult, BoardMutationResult, BoardPatchCardRequest,
+  BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest, BoardReadOutcome,
+  BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
   CanvasListRequest, CanvasListResult, CanvasReadOutcome, CanvasReadRequest,
   CanvasWriteRequest, CanvasWriteResult,
@@ -37,7 +43,7 @@ export interface CanvasRemoteConfig {}
  * The pad's wire namespace: the browser calls `remote.canvas.*`.
  */
 export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig> {
-  static inject = ['canvasStore']
+  static inject = ['canvasStore', 'canvasBoard']
 
   /**
    * @param ctx - host context carrying the pad service core.
@@ -49,6 +55,10 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
 
   private get store(): CanvasService {
     return this.ctx.canvasStore
+  }
+
+  private get board(): CanvasBoardService {
+    return this.ctx.canvasBoard
   }
 
   /** List one workspace's pad: active items plus the archive set. */
@@ -94,6 +104,121 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('setArchived')
   setArchived(agent: Agent, request: CanvasArchiveRequest): Promise<CanvasArchiveResult> {
     return this.store.setArchived(request, agent.session)
+  }
+
+  /* ------------------------------------------------------ the canvas space (v2, M1) */
+
+  /** List every canvas the deployment holds (archived included; the client groups). */
+  @Remote('listCanvases')
+  listCanvases(): Promise<BoardListResult> {
+    return this.board.listCanvases()
+  }
+
+  /**
+   * Create one canvas (a topic, optionally with workspaces attached).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - topic title and optional attached workspace paths.
+   * @returns the new board and its first freshness token, or the failure code.
+   */
+  @Remote('createCanvas')
+  createCanvas(agent: Agent, request: BoardCreateRequest): Promise<BoardMutationResult> {
+    return this.board.createCanvas(request, agent.session)
+  }
+
+  /** Read one board with the freshness token a later mutation must present. */
+  @Remote('readBoard')
+  readBoard(request: BoardReadRequest): Promise<BoardReadOutcome> {
+    return this.board.readBoard(request)
+  }
+
+  /**
+   * Add one user card (createdBy user, straight to kept).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, kind, text, and optional source.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('putCard')
+  putCard(agent: Agent, request: BoardPutCardRequest): Promise<BoardMutationResult> {
+    return this.board.putCard(request, agent.session)
+  }
+
+  /**
+   * Edit one card: text, a status transition, or a question-state transition.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, card id, and the fields to change.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('patchCard')
+  patchCard(agent: Agent, request: BoardPatchCardRequest): Promise<BoardMutationResult> {
+    return this.board.patchCard(request, agent.session)
+  }
+
+  /**
+   * Comment on one card.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, card id, text, and the author (default user).
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('addComment')
+  addComment(agent: Agent, request: BoardAddCommentRequest): Promise<BoardMutationResult> {
+    return this.board.addComment(request, agent.session)
+  }
+
+  /**
+   * Archive a canvas from the space list, or restore it (never a delete).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id and the target archived state.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('archiveCanvas')
+  archiveCanvas(agent: Agent, request: BoardArchiveRequest): Promise<BoardMutationResult> {
+    return this.board.archiveCanvas(request, agent.session)
+  }
+
+  /**
+   * Ask the canvas's agent through the side-chat seam (prime the context, and
+   * send when there is a text to send).
+   * @param agent - the calling session's agent; its session primes the context.
+   * @param request - canvas id, optional lens, selected card ids, free text, extra refs.
+   * @returns the contextKey and whether a message was sent, or the failure code.
+   */
+  @Remote('askAgent')
+  askAgent(agent: Agent, request: BoardAskAgentRequest): Promise<BoardAskAgentOutcome> {
+    return this.board.askAgent(request, agent.session)
+  }
+
+  /** The chat seam's availability probe (the client's chat-entry gate). */
+  @Remote('chatStatus')
+  chatStatus(): Promise<BoardChatStatusResult> {
+    return Promise.resolve(this.board.chatAvailable())
+  }
+
+  /**
+   * Mark the canvas this session's tab has open (the main-session tools' target).
+   * @param agent - the calling session's agent; its session records the focus.
+   * @param request - the canvas id.
+   * @returns the receipt, or the failure code.
+   */
+  @Remote('focusCanvas')
+  focusCanvas(agent: Agent, request: BoardFocusRequest): Promise<BoardFocusResult> {
+    return this.board.focusCanvas(request, agent.session)
+  }
+
+  /** Read the canvas's draft (an absent draft reads as empty with a null token). */
+  @Remote('readDraft')
+  readDraft(request: BoardReadDraftRequest): Promise<BoardReadDraftOutcome> {
+    return this.board.readDraft(request)
+  }
+
+  /**
+   * Write the canvas's draft (null token creates; else version-guarded).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, content, and the token the caller holds.
+   * @returns the new freshness token, or the failure code.
+   */
+  @Remote('writeDraft')
+  writeDraft(agent: Agent, request: BoardWriteDraftRequest): Promise<BoardWriteDraftResult> {
+    return this.board.writeDraft(request, agent.session)
   }
 }
 

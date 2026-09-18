@@ -1,0 +1,70 @@
+# Agent Note: the reader wall's toolbar, tag panel and cards — a UI pass on the four defects the first hand-off left
+
+Status: implemented
+
+## Problem
+
+The acceptance instance (3080, 2026-09-18) showed four defects on the wall, all reported by the user against the running pane:
+
+1. **Opening the filter covered the sort button.** Both popovers were `position: absolute; top: 62px; right: 10px` relative to the PANE, and 62px is shorter than the toolbar row itself (the 43px header plus the 40px tool row), so the panel was painted over the lower half of the toolbar — including the sort button at that end. The row's own order made it worse: the filter button sat LEFT of the search field and sort sat right, so the two tools were the two ends of a row whose middle item was the only flexible one.
+2. **The card tag popover was the ugliest surface in the pane.** It was a bare stack of `filterRow`s plus a native `<datalist>` for the vocabulary. The browser draws that popup itself: it cannot follow the pane's surface, it cannot mark which tags are already on the entry, and it cannot offer the one action the vocabulary does not already contain — creating the name you just typed.
+3. **A card did not read as a card.** Cards were transparent rows on the pane's own background, so neighbours in the two-column grid blurred together; the feed's own category pill and the reader's own tag pill had different metrics, so the tag row jittered; that row could not wrap and spilled past the card's edge; and a card is `role="button" tabIndex={0}` with no `:focus-visible` ring at all — keyboard-navigable but not keyboard-visible.
+4. **Prose stopped short of the lists it sat between.** Paragraphs were capped by `max-width: min(100%, 46em)` (CJK) / `min(100%, 72ch)` (Latin) while `ul`/`ol` ran the full column, so the body had a ragged right edge — the user read that band of empty space as a layout bug, and asked for prose that follows the sidebar like the lists do.
+
+## Decision
+
+**The toolbar is field-first, with both icon tools in their own non-shrinking boxes to its right, and each popover anchored to the button that opened it.** DOM order is visual order — search field, filter, sort — so keyboard order matches what the reader sees. `.search` is `flex: 1 1 0` with a `min-width: 44px` floor: its width comes from the row's free space, never from its own content, so a long placeholder or a `#source` query cannot push a tool out, and the field itself cannot collapse to a sliver. Each tool is wrapped in `.toolWrap { position: relative; flex: none }`, which makes the button the popover's positioning context: the panels are `top: calc(100% + 4px); right: 0`, so a panel opens under its own button by construction rather than by a number that has to track the toolbar's padding. The three popovers (filter, sort, tag) also stopped disagreeing about their chrome — one radius, one border, one surface (`--dsw-alias-bg-layer-2`) and one shadow.
+
+**The tag vocabulary is a shared component, not a `datalist`.** `TagSuggestions` renders one row per tag (a fixed check column so every name starts on the same edge, `data-on` for the applied state), plus a "create the typed name" row whenever the draft has no exact match. The card's panel is now header (title + the Enter hint) / scrollable checklist / input field, and the detail page's inline editor renders the same rows in its own flow — a floating list inside a scrolling body would be clipped by it. Both inputs keep the panel's surface instead of a solid accent pill; the accent moves to the field's `:focus-within` border. Escape closes the panel and forgets the half-typed draft (reopening starts clean), and the panel's seat is computed in the pane — below the card when the viewport has room, above it when it does not, clamped to both gutters — instead of `card.bottom + 4` pointing off the bottom of a short sidebar.
+
+**The filter panel is a two-page picker, and its height is a viewport rule.** The root page holds the read-state row and a drill row per list that can grow without bound: `按来源` carries the *current* value on its own row and opens a source page whose list owns the panel's height, its own scroll and its own search box (which appears once the list passes six entries). Selecting a source closes the panel with the query in the search box, exactly as before, and a back button returns to the root without closing. This is the deliberate answer to "subscriptions will keep accumulating": the panel's first page is now a fixed handful of rows regardless of how many feeds exist, and the one unbounded list is the only thing that scrolls. The panel's `max-height` is `min(62vh, 440px)` — viewport units, never a percentage: its containing block is the 26px `.toolWrap` that anchors it under its button, and the day the anchor moved, the old `60%` silently resolved to ~16px and shipped a one-row sliver with a scrollbar (the second acceptance-instance report against this pass). Percentages describe the containing block, and the containing block here is a button, not the pane.
+
+**A card is a surface, and read state is legible without hiding anything.** The fill is the host's own card value (`--dsw-static-neutral-50` light / `850` dark, applied through one component variable with a `:global(body[data-ds-dark-theme])` override), the border is `--dsw-alias-border-l1` at rest and `l2` on hover over a 120ms background/border transition, the radius is 12 and the grid column minimum dropped to 264px with an 8px gap so a narrow sidebar still fits one column comfortably. Unread entries ink their title (`data-unread` → `--dsw-alias-label-primary` at weight 650) on top of the existing 7px tile dot; read entries keep their place and go quieter. Both pill kinds share one metric (18px tall, 999px radius, 10.5px) and the row wraps, so a long tag list can no longer spill outside the card. A card carries `:focus-visible` with the host's list-row ring (`--dsw-alias-brand-primary`). The dead `.cardMenuButton`, `.segmented`, `.segment` and `.segmentOn` rules went with the pass — the floating card button and the all/today segmented control were retired in earlier revisions and only their CSS was left behind.
+
+**The article has no reading measure: the sidebar is the measure.** The two `max-width` rules on paragraphs were removed outright (the user chose this over capping every block to the same measure), so prose and lists share one right edge and the body fills whatever width the reader has given the pane. `packages/dsh-reader/tests/host-pure.spec.ts` pins the absence, so a measure that comes back has to come back for every block rather than for `p` alone.
+
+## Testing
+
+The pane's render suite grew nine cases and the CSS-invariant suite two: `ReaderPane.client.spec.tsx` asserts the toolbar's DOM order and that the filter panel's parent is the filter tool's own wrapper (the structural fact the old magic number got wrong); that the filter panel's root holds only the read-state and drill rows while the source page carries the search box, the narrowed list, the empty-match sentence and a back button that does not close the panel; that the card panel lists the vocabulary / toggles it / offers to create the typed name / says why an empty vocabulary is empty / forgets a draft on Escape; and that an unread card carries `data-unread` and loses it once the entry is opened. `host-pure.spec.ts` — which already pinned the flex constraints of this row, because a search box had once pushed a control out of it — now pins the new set (`flex: 1 1 0`, the `min-width` floor, `.toolWrap`'s `position: relative` and `flex: none`, both panels' `top: calc(100% + 4px)`, the filter panel's viewport `max-height` with no percentage left anywhere), the article's missing measure, and that the tag panel's CSS box stays in step with the placement constants the pane computes from.
+
+`pnpm --filter @khorsheed/dsh-reader test`: 133 passed, 8 files. The bundle was rebuilt (tsc + tsdown) and the new CSS and components verified present in `lib/client.js`.
+
+## Alternatives considered
+
+**Correct the panes' magic `top` instead of adding a wrapper.** Rejected: `top: 62px` failed precisely because it was a hand-maintained number describing another element's height. A corrected constant would have to track the header's padding, the tool row's padding and both icons forever, and would break silently the next time any of them changed. Making the button the positioning context removes the class of bug rather than its current instance.
+
+**Keep the filter button left of the field and only move the popovers.** Rejected: the user's report was explicitly about the two tools being squeezed and asked for the buttons to sit together right of the field. Leaving one control on each side also keeps two different widths flanking the only flexible item, which is what the earlier search-box incident was made of.
+
+**Make the popovers full-pane-width sheets anchored under the toolbar.** Rejected: the filter panel is a list of names — a sheet would cover the wall it is narrowing, and the tag panel would cover the card it belongs to. Both panels are 200–236px wide lists by design.
+
+**Keep the source list flat and just add a search box to it.** Rejected: the panel's height would again be a function of the subscription count, and the read-state and tag controls would drift further down as feeds accumulate — the exact growth the cascade bounds. The drill row keeps the panel's first page a fixed handful of rows.
+
+**Move the source list onto its own page of the pane (a view switch).** Rejected: filtering is a momentary narrowing, not a destination. Replacing the wall with a picker page hides the thing being filtered while the reader is choosing.
+
+**Cap the flat list at N rows with a "…and 42 more" affordance.** Rejected: it hides names the reader may be looking for and offers no way to reach them; a search box plus a scroll reaches every name without truncating the list.
+
+**Keep `max-height: 60%` and give the panel a pane-level positioning context again.** Rejected: the anchoring that puts a panel under its own button is what stops it covering the other tool, so the containing block cannot go back to the pane. Viewport units describe the space the panel actually has, and a test now rejects a percentage here.
+
+**Keep the native `datalist`, restyle the panel around it.** Rejected: the popup is browser-drawn in both Chrome and Safari — it cannot take the pane's surface, cannot show which tags are already applied, and in Chrome renders as a light system list inside a dark pane. It also cannot express "create this name", which is the action a reader with an empty vocabulary needs first.
+
+**Open the tag panel as a modal dialog.** Rejected: tagging is a small, repeated, multi-tag gesture on one card. A modal would block the wall on every tag, and its overlay would fight the popover's own dismiss-on-outside-click idiom.
+
+**Fix the ragged right edge by capping lists to the paragraphs' measure instead.** Rejected by the user when asked directly: on a sidebar the pane's own width is already a comfortable measure, capping every block would have left the same empty band on the right just with straight edges, and the reader can narrow the pane when they want a shorter line. The rejected direction remains a one-line change, which is why the absence is pinned by a test rather than left to drift.
+
+**Use `--dsw-alias-bg-layer-1` for the card fill.** Rejected: in light mode every alias layer resolves to the same white as the sidebar, so the card would have kept a fill nobody can see. The host's own card component reaches for the static neutral (`--deliverable-fill`) with a dark-theme override, and this follows it.
+
+## Consequences
+
+- The card fill is the pane's first use of a static neutral plus a `:global(body[data-ds-dark-theme])` block. That is a deliberate exception to "alias tokens only", taken from the host's own card component: the silent alternative was a fill that only exists in dark mode.
+- The tag panel's box is described twice — `TAG_PANEL_WIDTH` / `TAG_PANEL_MAX_HEIGHT` in the pane (which computes the seat) and `width` / `max-height` in the module (which caps the box). A test pins the pair; without it they would drift and reopen the panel off-screen.
+- The panel's place is chosen from an ESTIMATE of its height (84px of chrome plus one row per tag). Opening upward near the bottom of a short sidebar can therefore leave a slightly larger gap above the card than the panel needs; the alternative was a layout-effect measurement and a second render on every open.
+- Removing the measure means a deliberately very wide pane now gives very long lines. That is the user's explicit call, and it is reversible in one place.
+- The reading-measure removal also deleted the only place the two scripts' typographic difference was expressed in a width; the CJK/Latin split now governs leading and letter-spacing only.
+- The wall's toolbar keeps its three controls in one row at any width, and the popovers can no longer cover either tool — the defect that prompted the pass cannot recur without deleting `.toolWrap`.
+- Narrowing by source now costs one extra click (drill row → list), bought back by a first page that never grows; tags stay on the root page because a vocabulary is normally short. If tags ever accumulate the same way, the same drill row applies to them.
+- The source page's search box appears at six entries (`SOURCE_SEARCH_MIN`). Below that an input that filters three rows is noise; above it, it is the only way to reach a name without scrolling. The threshold is a constant precisely so the judgement is written down once.
+- Moving a popover under its own button silently changed what its percentages resolve against. The lesson is recorded in the CSS comment and pinned by a test: in this pane, a popover's sizes are viewport- or pixel-based, never `%`.
+
+## Related
+
+- [the reader rewrite](../feature/2026-09-17-reader-rewrite.md) owns the wall/detail/management split, the fetch and persistence seams, and the filter-is-a-popover decision this pass re-laid out.

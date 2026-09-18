@@ -36,14 +36,60 @@
   white-space: nowrap;
 }
 
-.statusPill {
+/* ── the chip (ui-spec §九's one status component) ────────────────────────
+   Every state word in this tab — experiment status, cell stage, bucket,
+   validate severity, invariant verdict, the self-judged mark — is this one
+   element with a tone. The tone says what the state MEANS to a reader; the
+   theme decides what that looks like, so light and dark come from the host
+   and nothing here invents a colour (§九). The 题集 tab carries the identical
+   rule under the identical class name.
+
+   `currentColor` at 12% is the fill: it follows whatever the tone set, so a
+   chip is legible on both surfaces without a second palette to keep in sync. */
+.chipTag {
+  display: inline-flex;
   flex: none;
-  padding: 0 7px;
-  border-radius: 3px;
-  background: var(--dsw-alias-bg-l2);
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
-  line-height: 20px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.chipTag[data-tone='ok'] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.chipTag[data-tone='busy'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipTag[data-tone='warn'] {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.chipTag[data-tone='danger'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* A count riding on a chip or a filter chip (`进行中 3`). */
+.chipCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A line of chips — the bucket histogram, the drawer's head, the failing
+   invariants under a closed comparison section. */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
 }
 
 .notice,
@@ -52,7 +98,7 @@
   margin: 6px 12px 0;
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
@@ -96,6 +142,39 @@
   outline-offset: 1px;
 }
 
+/* ── the stage bar (ui-spec §五 v2) ───────────────────────────────────────
+   One line under the tab strip on every stage: what is true right now, and
+   the ONE action it asks for. It sits between the tabs and the body — above
+   the fold at every scroll position, because «下一步做什么» is the question
+   this whole pass exists to answer. */
+.stageBar {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l2);
+}
+
+.stageHint {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The author's note keeps the line breaks it was written with (ui-spec §五
+   v2); it is prose, not a value, so it does not get the mono treatment. */
+.notesBlock {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+}
+
 .body {
   flex: 1;
   min-height: 0;
@@ -110,12 +189,45 @@
   line-height: 18px;
 }
 
+/* The empty seat: what is not here, how to change that, and the button that
+   changes it. Shared with the 题集 tab, class for class (ui-spec §九). */
+.emptySeat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 16px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.emptyTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.emptyHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+}
+
 .tableHead,
 .row {
   display: grid;
   grid-template-columns:
-    minmax(120px, 1.4fr) minmax(120px, 1fr) 72px 56px 48px
-    minmax(140px, 1.2fr) 84px 72px 116px;
+    minmax(120px, 1.4fr) minmax(120px, 1fr) 96px 48px 44px
+    minmax(150px, 1.2fr) 84px 64px 116px;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -143,7 +255,7 @@
 }
 
 .row:hover {
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .colName,
@@ -168,18 +280,10 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.colStatus[data-status='done'] {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.colStatus[data-status='running'],
-.colStatus[data-status='judging'] {
-  color: var(--dsw-alias-state-business-primary);
-}
-
-.colStatus[data-status='refused'],
-.colStatus[data-status='cancelled'] {
-  color: var(--dsw-alias-label-warning, #b8600a);
+/* The status cell holds a chip, so it must not clip it to one text line. */
+.colStatus,
+.colFactors {
+  white-space: normal;
 }
 
 .overview {
@@ -209,7 +313,7 @@
 }
 
 .mono {
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
 }
 
 .dim {
@@ -221,7 +325,7 @@
 }
 
 .warning {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .readiness {
@@ -244,9 +348,9 @@
   overflow: auto;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   font-size: 11px;
   line-height: 16px;
   white-space: pre-wrap;
@@ -285,35 +389,14 @@
   white-space: pre-wrap;
 }
 
-.checkSeverity {
-  flex: none;
-  min-width: 40px;
-  padding: 0 6px;
-  border-radius: 3px;
-  background: var(--dsw-alias-bg-l2);
-  color: var(--dsw-alias-label-tertiary);
-  font: var(--dsw-font-xxs-12);
-  line-height: 18px;
-  text-align: center;
-}
-
-.checkSeverity[data-severity='ok'] {
-  color: var(--dsw-alias-state-business-primary);
-}
-
-.checkSeverity[data-severity='warn'],
-.checkSeverity[data-severity='error'] {
-  color: var(--dsw-alias-label-warning, #b8600a);
-}
-
 /* The condition registry: condition · harness · model · scope · preset · lock
    · ready. Picked rows are aria-pressed, so the semantics carry the styling. */
 .condHead,
 .condRow {
   display: grid;
   grid-template-columns:
-    minmax(120px, 1.2fr) minmax(88px, 0.9fr) minmax(120px, 1.2fr)
-    minmax(72px, 0.7fr) minmax(72px, 0.7fr) minmax(120px, 1fr) 72px;
+    minmax(150px, 1.4fr) minmax(88px, 0.9fr) minmax(120px, 1.2fr) minmax(96px, 1fr)
+    minmax(64px, 0.6fr) minmax(64px, 0.6fr) minmax(112px, 0.9fr) 64px minmax(88px, 0.8fr);
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -347,16 +430,73 @@
 }
 
 .condRow:hover {
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .condRow[aria-pressed='true'] {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-interactive-bg-active);
   box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
 
 .condId {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
   color: var(--dsw-alias-label-primary);
+}
+
+/* The declaration's digest, shortened (ui-spec §九); the whole value is on the
+   row's own title. */
+.condSha {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* The provision cell: its own click target, so pressing it never also toggles
+   the row's diff pick. */
+.condAction {
+  display: flex;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+/* The endpoint editor replaces the cell in place rather than opening a dialog:
+   the value is one short word and the row it belongs to is the context.
+   It OVERLAYS the cells to its right while open — the column is sized for a
+   word, and an input plus two buttons squeezed into it leaves a text field two
+   characters wide (seen on the first real-instance pass). The selector is
+   written against `.condRow > span` on purpose: that rule clips every cell,
+   and it out-specifies a bare class. */
+.condRow > span.endpointEdit {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 300px;
+  overflow: visible;
+  border-radius: 4px;
+  /* An OPAQUE surface, because this cell overlays the two beside it while it
+     is open. The token is the repository's surface alias — an invented one
+     resolves to nothing, which is transparent, which is how the Scope and
+     Preset values first showed through the open editor. */
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+}
+
+.endpointInput {
+  flex: 1 1 auto;
+  min-width: 120px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-3);
+  padding: 1px 6px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  line-height: 18px;
 }
 
 .diffHead {
@@ -391,14 +531,14 @@
 }
 
 .diffPath {
-  color: var(--dsw-alias-label-warning, #b8600a);
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  color: var(--dsw-alias-state-warn-label);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   overflow-wrap: anywhere;
 }
 
 .diffValue {
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -424,9 +564,66 @@
   align-items: center;
 }
 
+/* The matrix's own strip: what separates the columns, and the legend toggle.
+   One quiet line, because a single-factor run has nothing to arrange and the
+   table is what the page is for (ui-spec §九). */
+.matrixTop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-height: 20px;
+}
+
+.legend {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* «换列 / 分组 / 筛选», closed by default and present only when there is more
+   than one designed factor (ui-spec §九). */
+.arrange {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.arrangeSummary {
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+}
+
+.arrangeSummary::-webkit-details-marker {
+  display: none;
+}
+
+.arrangeSummary::before {
+  content: '▸ ';
+}
+
+.arrange[open] .arrangeSummary::before {
+  content: '▾ ';
+}
+
+.arrangeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+}
+
 .chip {
   display: inline-flex;
   flex: none;
+  gap: 4px;
   align-items: center;
   height: 20px;
   padding: 0 7px;
@@ -491,6 +688,22 @@
   white-space: nowrap;
 }
 
+/* ui-spec §九: the heading IS the condition id, and the factor value is its
+   subtitle — never the other way round, and never a JSON array. */
+.matrixHeadId {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.matrixHeadFactor {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
 .matrixRowHead {
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
@@ -500,20 +713,21 @@
 .matrixCell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 96px;
-  padding: 2px;
+  gap: 3px;
+  align-items: flex-start;
+  min-width: 108px;
+  padding: 4px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 /* The two warnings ui-spec §五 asks a cell to carry, as its edge. */
 .matrixCell[data-mismatch] {
-  border-color: var(--dsw-alias-label-danger, #b3261e);
+  border-color: var(--dsw-alias-state-error-primary);
 }
 
 .matrixCell[data-stuck] {
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .matrixDots {
@@ -541,28 +755,12 @@
 }
 
 .matrixDot[data-stuck] {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .matrixDot:focus-visible {
   outline: 1px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
-}
-
-.matrixStage {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-  overflow-wrap: anywhere;
-}
-
-.summary {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
 }
 
 .summaryRow {
@@ -575,21 +773,44 @@
 }
 
 .summaryLabel {
-  min-width: 92px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
 }
 
-.summaryStatus[data-status='ok'] {
-  color: var(--dsw-alias-state-business-primary);
+/* The run-level footer as ONE band (ui-spec §九): six facts on a line that
+   wraps, each one a label and a chip. */
+.summaryBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
 }
 
-.summaryStatus[data-status='violated'] {
-  color: var(--dsw-alias-label-danger, #b3261e);
+.summaryItem {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 12px;
+  line-height: 18px;
 }
 
-.summaryStatus[data-status='unverifiable'] {
-  color: var(--dsw-alias-label-warning, #b8600a);
+/* An invariant that holds needs no sentence; one that does not is the reason
+   the page was opened. */
+.summaryWhy {
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+/* The fields that vary because another field does — folded, named, never a
+   control (ui-spec §九). */
+.incidentalRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin-top: 4px;
 }
 
 /* ── the cells page and its drawer ──────────────────────────────────────── */
@@ -609,7 +830,7 @@
 .cellsHead,
 .cellsRow {
   display: grid;
-  grid-template-columns: minmax(160px, 2fr) 72px minmax(80px, 1fr) 64px 72px;
+  grid-template-columns: minmax(180px, 2fr) minmax(150px, 1.1fr) minmax(76px, 0.7fr) 88px 72px;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -636,19 +857,31 @@
   cursor: pointer;
 }
 
-.cellsRow:hover,
-.rowSelected {
-  background: var(--dsw-alias-bg-l2);
+/* Hover is a hint, selection is a state: the design system has two fills for
+   exactly that, so the open row stays visible while the pointer moves away. */
+.cellsRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowSelected,
+.rowSelected:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+  box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
 
 .colCell,
-.colBucket,
-.colStage,
 .colAttempt,
 .colDuration {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Holds a chip, like .colState: clipping it would cut the rounded edge off. */
+.colVerdict {
+  display: flex;
+  align-items: center;
+  overflow: visible;
 }
 
 .colCell {
@@ -660,12 +893,14 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.colBucket[data-bucket='done'] {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.colBucket[data-bucket='blocked'] {
-  color: var(--dsw-alias-label-warning, #b8600a);
+/* The one 运行状态 cell holds one or two chips; clipping it to a text line
+   would cut their rounded edges off. */
+.colState {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  overflow: visible;
 }
 
 /* The drawer is a pane beside the table rather than an overlay: the reader
@@ -746,7 +981,7 @@
 }
 
 .guardedTitle {
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
   font-size: 12px;
   line-height: 18px;
 }
@@ -788,19 +1023,30 @@
 }
 
 .sectionTitle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   font-weight: 600;
   line-height: 18px;
 }
 
+.sectionMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
 /* One invariant: the verdict word, its title, and the facts under both — a
    status that carried no facts would be an opinion. */
 .invariantRow {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: auto 1fr;
   gap: 4px 8px;
-  align-items: baseline;
+  align-items: center;
   font-size: 12px;
   line-height: 18px;
 }
@@ -820,10 +1066,13 @@
 /* The comparison section's stand-in when an invariant closed it. Bordered
    like a section, because the absence IS the section. */
 .blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px;
-  border: 1px solid var(--dsw-alias-label-warning, #b8600a);
+  border: 1px solid var(--dsw-alias-state-warn-label);
   border-radius: 8px;
-  color: var(--dsw-alias-label-warning, #b8600a);
+  color: var(--dsw-alias-state-warn-label);
   font-size: 12px;
   line-height: 18px;
 }
@@ -869,18 +1118,484 @@
   margin-right: 8px;
 }
 
-/* 决策 9: a judge may be a player, and the report DISCLOSES it per cell
-   rather than dropping the verdict. The mark has to be visible at a glance,
-   because it is the reason a delta may not mean what it looks like. */
-.selfJudged {
-  color: var(--dsw-alias-label-warning, #b8600a);
-  font-weight: 600;
-}
-
 .rankReason {
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   font-weight: 600;
   line-height: 18px;
   overflow-wrap: anywhere;
+}
+
+/* ───────────────── the judge bench (ui-spec §五, step 8) ──────────────── */
+
+.judgePage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+  min-width: 0;
+}
+
+/* Queue · artifacts · criteria. The artifacts column is the widest because it
+   is the one a grader actually reads; the queue only has to hold a number. */
+.judgeColumns {
+  display: grid;
+  grid-template-columns: minmax(150px, 180px) minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+/* Narrow panes stack rather than squeeze: a de-fingerprinted stage file is
+   unreadable in a 90px column, and an unreadable artifact is a guessed
+   verdict. */
+@media (width <= 900px) {
+  .judgeColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.judgeQueue,
+.judgeMaterial,
+.judgeCriteria {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.judgeMaterial {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.queueGroup {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  padding-top: 4px;
+}
+
+.queueRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.queueRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.queueRow[aria-pressed='true'] {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+/* The cell's whole blind name. Monospaced so a column of numbers lines up —
+   the ordinal IS the identity here, and it has to be easy to call out. */
+.queueNo {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.queueTask {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.materialHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding-top: 4px;
+}
+
+.criterionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  min-width: 0;
+}
+
+.criterionHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.criterionDrafts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* The two verdict buttons and the evidence box on one line, the box taking
+   whatever is left: evidence is the field that must not feel optional. */
+.criterionAnswer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding-top: 2px;
+  min-width: 0;
+}
+
+.criterionAnswer > *:nth-child(3) {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* ── the 新建实验 form (ui-spec §五, step 2) ─────────────────────────────── */
+
+/* No min-width: the modal decides how wide it is, and a form that insists on
+   being wider is not scrolled — it is CLIPPED, which cost this slice a round
+   of acceptance (half of every condition label and the second budget field
+   were off the right edge). Everything below shrinks or wraps instead. */
+.newForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 60vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Label ABOVE the field, not beside it: a side label costs ~100px of a narrow
+   dialog, and the widest things here are condition labels (`id · harness /
+   model`) that need every pixel. */
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.formLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.formField {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The three multi-selects (题目 / 条件 / 阶段). Capped and scrollable: a
+   dataset set with fifty items must not push the save button off screen. */
+.pickList {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  min-width: 0;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 4px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}
+
+/* A long label wraps within the row rather than pushing the row wider. */
+.pickList .guardedItem {
+  align-items: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pickList .guardedItem > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── the three-part error seat (ui-spec §九) ─────────────────────────────────
+   One human sentence, one fix, and the raw exception plus the path folded
+   under «详情». Host tokens only, so light and dark come from the theme. */
+.errorSeat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  text-align: left;
+}
+
+/* The same seat inside a field or a strip rather than a page body. A MODIFIER
+   applied beside .errorSeat, not `composes: errorSeat` — this bundler drops
+   `composes` silently (the class maps to itself alone and the base rules never
+   arrive), so a composed variant renders as an unstyled box. */
+.errorSeatCompact {
+  margin: 4px 0;
+  padding: 6px 8px;
+}
+
+.errorHead {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.errorFix {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.errorDetails {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* A disclosure the theme styles rather than the browser: the default marker
+   sits on a different baseline in each engine. */
+.errorSummary {
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+}
+
+.errorSummary::-webkit-details-marker {
+  display: none;
+}
+
+.errorSummary::before {
+  content: '▸ ';
+}
+
+.errorDetails[open] .errorSummary::before {
+  content: '▾ ';
+}
+
+.errorDetailLine {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.errorRaw {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── the run-record detail (ui-spec §五 v2) ───────────────────────────────
+   The head answers the question the panel is opened with — did this work —
+   before any field does. The verdict word is the biggest thing on it because
+   it is the only one a reader looks for twice. */
+.recordHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0 8px;
+}
+
+.recordVerdict {
+  color: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* One row per state the attempt entered, with how long it sat there. The
+   ledger's transition times are the source; a state it did not time prints a
+   dash rather than a number measured across the hole. */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timelineRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+/* A key-value table, not a JSON dump: the reason this panel stopped printing
+   `{"task":"P0",…}` at a person. */
+.paramTable {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.paramRow {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) minmax(0, 2fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.paramLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.paramValue {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+}
+
+/* ── the efficiency bars (ui-spec §五 v2) ─────────────────────────────────
+   CSS, not a charting library: three numbers per comparison group is a bar
+   chart's smallest useful case, and the host ships no chart primitive this
+   tab may use. Each row is scaled against the LARGEST value in its OWN
+   metric — the three have no common unit, so one shared scale would be a lie
+   with a picture attached. The number stays beside the bar: the bar carries
+   the ratio a reader sees at a glance, the number carries the fact. */
+.chartGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.chartTitle {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.chartRow {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr) minmax(64px, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.chartLabel {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartTrack {
+  overflow: hidden;
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chartBar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 5px;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.chartValue {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
+}
+
+/* ── the side-by-side bench (ui-spec §五 v2) ──────────────────────────────
+   One column per answer to the open item. They scroll sideways rather than
+   wrap: wrapping would put the fourth answer under the first and take away
+   the one thing this layout exists to give — reading them against each
+   other. */
+.bench {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.benchColumns {
+  display: flex;
+  overflow-x: auto;
+  gap: 12px;
+  align-items: flex-start;
+  padding-bottom: 4px;
+}
+
+.answerColumn {
+  display: flex;
+  flex: 0 0 340px;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 8px;
+  min-width: 0;
+}
+
+/* ── the wizard's stepper (ui-spec §五 v2) ────────────────────────────────
+   Where you are and how far there is to go — the thing one bare form of
+   twenty questions could not say. */
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  padding-bottom: 8px;
+}
+
+.stepDot {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.stepDot[data-done] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.stepDot[data-current] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
 }

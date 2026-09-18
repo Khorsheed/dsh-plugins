@@ -19,10 +19,22 @@
  * 3. read that scope's effective settings and check the declaration field by
  *    field ({@link checkAgainstEffective}). `permissions` and `model.endpoint`
  *    disagreeing is an ERROR and no lock is written;
- * 4. hash the scoped home's config content (`home.sha`);
+ * 4. hash the scoped home's config content (`home.sha`) and WRITE IT BACK into
+ *    the declaration when it disagrees ({@link ProvisionOptions.writeBack});
  * 5. measure the provisioned environment's CAPABILITY FACE, when the
  *    condition declares a `preset` ({@link ProvisionOptions.capabilities});
  * 6. write the lock.
+ *
+ * Step 4 used to stop at the hash. `home.sha` is hash input like every other
+ * contract field, so a declaration saying null while the home hashes to
+ * `29217f21…` is not ready — and the only way to make it ready was to copy the
+ * digest out of the warning by hand and provision a SECOND time, because the
+ * first lock had anchored the pre-edit condition hash. One human action, taken
+ * twice, with a 64-character transcription in the middle (I5·T39 · G7). The
+ * write-back closes it: the declaration is corrected, the condition is
+ * re-hashed, and the lock minted below anchors the document as it now reads.
+ * `writeBack: false` keeps the old two-step shape for a caller that wants the
+ * declaration left alone.
  *
  * Step 5 is a HOOK rather than a built-in, and that is a boundary worth
  * stating: measuring a sub-dsh's capability face means booting its
@@ -76,6 +88,14 @@ export interface ProvisionReport {
   sha: string
   /** The scoped home's config hash; null when the check stopped before step 4. */
   home: HomeHash | null
+  /** Whether this provision corrected `home.sha` in the declaration (step 4). */
+  homeShaWritten: boolean
+  /**
+   * The condition hash BEFORE the write-back corrected the declaration, or
+   * null when nothing was written. `sha` above is always the hash of the
+   * document as it now reads — which is what the lock anchors.
+   */
+  shaBeforeWriteBack: string | null
   /** The field-by-field verdicts, in contract order. */
   checks: ProvisionCheck[]
   /** Whether the lock was written. */
@@ -161,6 +181,17 @@ export interface ProvisionOptions {
    * refuses it later.
    */
   capabilities?: CapabilityProbe
+  /**
+   * Correct the declaration's `home.sha` from the measurement before minting
+   * the lock. DEFAULT TRUE: leaving it stale is what made a condition take two
+   * provisions to become ready (see the module doc). Only the declaration's
+   * `home.sha` is ever touched, only when it disagrees with what was measured,
+   * and only inside the `repo` working copy — nothing is committed.
+   *
+   * `false` restores the pre-T58 behavior: the disagreement is reported as a
+   * warning and the document is left exactly as it was.
+   */
+  writeBack?: boolean
   now?: () => number
   log?: (message: string) => void
 }
@@ -180,6 +211,7 @@ export interface ProvisionOptions {
  */
 export async function provisionCondition(conditionPath: string, options: ProvisionOptions): Promise<ProvisionReport> {
   const now = options.now ?? ((): number => Date.now())
+  const writeBack = options.writeBack ?? true
   const log = options.log ?? ((): void => {})
   const conditionAbs = resolve(expandHome(conditionPath))
   const repo = resolve(expandHome(options.repo))
@@ -215,7 +247,9 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   const harness = stringOrNull(harnessSection['name']) ?? ''
   const scope = stringOrNull(document['scope'])
   const named = `${harness}${scope === null ? '' : `@${scope}`}`
-  const sha = hashConditionDocument(document)
+  // Re-taken after a write-back: the lock must anchor the document as it ends
+  // up on disk, not as it was read.
+  let sha = hashConditionDocument(document)
   const errors: EvalDiagnostic[] = []
   const warnings: EvalDiagnostic[] = []
 
@@ -239,6 +273,8 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     credentialState: 'unknown',
     sha,
     home: null,
+    homeShaWritten: false,
+    shaBeforeWriteBack: null,
     checks: [],
     written: false,
     lock: null,
@@ -310,18 +346,50 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     throw new EvalProvisionRefused(`cannot hash the scoped home ${homeDir}: ${error instanceof Error ? error.message : String(error)}`)
   }
   const declaredHomeSha = stringOrNull((isPlainObject(document['home']) ? document['home'] : {})['sha'])
-  if (declaredHomeSha === null) {
-    warnings.push({
-      code: 'HOME_SHA_UNDECLARED',
-      message: `the condition declares home.sha null; the scoped home hashes to ${report.home.sha}`
-        + ' — write that into the declaration to make the condition ready (provision records it in the lock but never rewrites the condition document)',
-    })
-  } else if (declaredHomeSha !== report.home.sha) {
-    warnings.push({
-      code: 'HOME_SHA_DECLARED_STALE',
-      message: `the condition declares home.sha ${declaredHomeSha.slice(0, 12)}… but the scoped home hashes to ${report.home.sha}`
-        + ' — the lock records what is actually there; correcting the declaration re-hashes the condition (home.sha is a factor), so provision again afterwards',
-    })
+  if (declaredHomeSha !== report.home.sha) {
+    if (writeBack) {
+      // The correction, and the re-hash that has to follow it. `home.sha` is
+      // hash input, so the document that comes out of this is a different
+      // condition from the one that went in — and the lock below must anchor
+      // the one that is now on disk. Writing the lock against the pre-edit sha
+      // is precisely the stale-lock state the second provision existed to fix.
+      const home = isPlainObject(document['home']) ? { ...document['home'] } : {}
+      home['sha'] = report.home.sha
+      document['home'] = home
+      try {
+        await writeFile(conditionAbs, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+      } catch (error) {
+        throw new EvalProvisionRefused(
+          `cannot write home.sha back into ${conditionAbs}: ${error instanceof Error ? error.message : String(error)}`
+          + ' — provision with --no-write-back to leave the declaration alone and copy the digest in by hand',
+        )
+      }
+      report.shaBeforeWriteBack = sha
+      sha = hashConditionDocument(document)
+      report.sha = sha
+      report.homeShaWritten = true
+      warnings.push({
+        code: 'HOME_SHA_WRITTEN',
+        message: `the condition declared home.sha ${declaredHomeSha === null ? 'null' : `${declaredHomeSha.slice(0, 12)}…`}`
+          + ` and the scoped home hashes to ${report.home.sha}`
+          + ' — the declaration was corrected and re-hashed, so the lock below anchors the condition as it now reads'
+          + ` (condition ${report.shaBeforeWriteBack.slice(0, 12)}… → ${sha.slice(0, 12)}…; run with --no-write-back to leave the document alone)`,
+      })
+      log(`provision ${id}: home.sha written back → ${conditionAbs}`
+        + ` (condition ${report.shaBeforeWriteBack.slice(0, 12)}… → ${sha.slice(0, 12)}…)`)
+    } else if (declaredHomeSha === null) {
+      warnings.push({
+        code: 'HOME_SHA_UNDECLARED',
+        message: `the condition declares home.sha null; the scoped home hashes to ${report.home.sha}`
+          + ' — write that into the declaration to make the condition ready (this provision was asked not to rewrite the condition document)',
+      })
+    } else {
+      warnings.push({
+        code: 'HOME_SHA_DECLARED_STALE',
+        message: `the condition declares home.sha ${declaredHomeSha.slice(0, 12)}… but the scoped home hashes to ${report.home.sha.slice(0, 12)}…`
+          + ' — the lock records what is actually there; correcting the declaration re-hashes the condition (home.sha is a factor), so provision again afterwards',
+      })
+    }
   }
 
   // ── 5. the provisioned environment's capability face ──────────────────

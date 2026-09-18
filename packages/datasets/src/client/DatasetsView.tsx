@@ -26,10 +26,16 @@ import type { DatasetBinding, DatasetOverviewRow, ListItemsResult } from '../typ
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
 import { DatasetList } from './DatasetList.tsx'
-import { snapshotCell } from './parts.tsx'
+import { ErrorState } from './ErrorState.tsx'
+import { Chip, EmptyState, snapshotCell } from './parts.tsx'
 import { SkeletonForm } from './SkeletonForm.tsx'
 import { itemKey, type DatasetsForm } from './store.ts'
 import css from './DatasetsView.module.css'
+
+/** A repository's own name — its last path segment (ui-spec §九 keeps the rest on a title). */
+function repoName(path: string): string {
+  return path.replace(/\/+$/, '').split('/').filter(Boolean).pop() ?? path
+}
 
 /** The dataset row the detail page is about, synthesized when the list has not answered yet. */
 function rowOf(rows: readonly DatasetOverviewRow[] | undefined, id: string): DatasetOverviewRow {
@@ -280,10 +286,13 @@ export function DatasetsView(props: DatasetsViewProps) {
           {binding !== null
             ? (
               <>
+                {/* ui-spec §九: an absolute path is not page text. The bar
+                    shows the repository's own name and keeps the path on its
+                    title, where the person who needs it will look. */}
                 <span className={css.bindingRepo} title={binding.repoPath}>
                   {page === 'detail' && detailRow !== null
-                    ? `${detailRow.id} · ${overviewValue === null ? binding.repoPath : snapshotCell(overviewValue.repo, overviewValue.commit)}`
-                    : t('binding.repo', { repo: binding.repoPath })}
+                    ? `${detailRow.id} · ${overviewValue === null ? repoName(binding.repoPath) : snapshotCell(overviewValue.repo, overviewValue.commit)}`
+                    : t('binding.repo', { repo: repoName(binding.repoPath) })}
                 </span>
                 <span className={css.bindingScope}>
                   {binding.datasets !== undefined ? binding.datasets.join(', ') : t('binding.allDatasets')}
@@ -328,17 +337,25 @@ export function DatasetsView(props: DatasetsViewProps) {
             </>
           )}
         </div>
-        {notice !== null && !bindOpen && form === null && <div className={css.notice}>{notice}</div>}
+        {notice !== null && !bindOpen && form === null && (
+          <ErrorState what={t('notice.failed')} message={notice} path={binding?.repoPath} compact t={t} />
+        )}
         {validatedRow !== undefined && (
-          <div className={validatedRow.errors.length > 0 ? css.noticeError : css.notice}>
-            {validatedRow.errors.length === 0
-              ? t('detail.validateOk', { warnings: validatedRow.warnings.length })
-              : t('detail.validateFound', {
-                errors: validatedRow.errors.length,
-                warnings: validatedRow.warnings.length,
-              })}
+          <div className={css.notice}>
+            <span className={css.chipRow}>
+              <Chip tone={validatedRow.errors.length > 0 ? 'danger' : 'ok'}>
+                {validatedRow.errors.length === 0
+                  ? t('detail.validateOk', { warnings: validatedRow.warnings.length })
+                  : t('detail.validateFound', {
+                    errors: validatedRow.errors.length,
+                    warnings: validatedRow.warnings.length,
+                  })}
+              </Chip>
+            </span>
+            {/* validate's own sentences, each with its code on the row's title
+                rather than printed in front of it (ui-spec §九). */}
             {validatedRow.errors.slice(0, 3).map(error => (
-              <div key={error.message} className={css.noticeLine}>{error.code}: {error.message}</div>
+              <div key={error.message} className={css.noticeLine} title={error.code}>{error.message}</div>
             ))}
           </div>
         )}
@@ -379,15 +396,27 @@ export function DatasetsView(props: DatasetsViewProps) {
       </div>
       {page === 'list' && (
         <>
-          {bindingLoaded && binding === null && <div className={css.empty}>{t('list.unbound')}</div>}
+          {/* Unbound is the tab's FIRST screen for a new session: ui-spec §九
+              wants the next step on it, and the button that takes it. */}
+          {bindingLoaded && binding === null && (
+            <EmptyState title={t('list.unbound')} hint={t('list.unboundHint')}>
+              <Button size="sm" variant="primary" onClick={() => { setBindOpen(true) }}>
+                {t('list.unboundAction')}
+              </Button>
+            </EmptyState>
+          )}
           {listLoading && overviewValue === null && binding !== null && (
             <div className={css.empty}>{t('list.loading')}</div>
           )}
           {!listLoading && listError !== null && overviewValue === null && (
-            <div className={css.empty}>{t('list.error')}: {listError}</div>
+            <ErrorState what={t('list.error')} message={listError} path={binding?.repoPath} t={t} />
           )}
           {overviewValue !== null && overviewValue.datasets.length === 0 && (
-            <div className={css.empty}>{t('list.empty')}</div>
+            <EmptyState title={t('list.empty')} hint={t('list.emptyHint')}>
+              <Button size="sm" variant="primary" onClick={() => { openForm('newDataset') }}>
+                {t('list.emptyAction')}
+              </Button>
+            </EmptyState>
           )}
           {overviewValue !== null && overviewValue.datasets.length > 0 && (
             <DatasetList

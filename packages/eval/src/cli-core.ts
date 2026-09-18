@@ -34,10 +34,18 @@ const USAGE = `dsh-eval <verb> [options]
   run <plan.json> --instance URL    Start a run ON a running instance through its
                   [--token T]       Remote face and follow the log to the end: the CI
                   [--no-follow]     door (no browser needed). The plan path is resolved
-                                    ON THE INSTANCE. --token (or \$DSH_TOKEN) carries the
+                  [--keep-units]    ON THE INSTANCE. --token (or \$DSH_TOKEN) carries the
                                     instance's launch token; --no-follow prints the job
                                     and run ids and returns. Stopping it is job_kill on
                                     the instance — the one cancel path there is.
+                                    Every cell walks the release gate as it
+                                    finishes, so a container run holds one unit
+                                    at a time; --keep-units stops each cell at
+                                    'archived' and keeps its container for
+                                    debugging (a matrix larger than lab's
+                                    maxConcurrentUnits cannot finish that way).
+                                    --finalize is accepted and means what the
+                                    default already does.
   run <plan.json> --dry-run         Offline rehearsal: validate, generate the
                                     run template, expand the matrix, print the
                                     seeded execution order. [--only id,id] and
@@ -53,14 +61,18 @@ const USAGE = `dsh-eval <verb> [options]
                                     parent agent to delegate through.
   finalize <runId>                  Walk every 'archived' cell of a run through
                                     archived → releasable → released, the same
-                                    gate /eval run --finalize takes, and list
-                                    every cell that was not archived with its
-                                    state. A refused gate is recorded, never
+                                    gate a run takes as each cell finishes, and
+                                    list every cell that was not archived with
+                                    its state. A refused gate is recorded, never
                                     forced. Outside a host there is no mission
                                     service, so this drives the dsh-mission CLI
                                     in a child process: [--data-dir DIR] picks
                                     the ledger, [--mission-cli PATH] (or
-                                    $DSH_MISSION_CLI) the binary.
+                                    $DSH_MISSION_CLI) the binary. That child
+                                    process is a ledger, not a lab, so this face
+                                    releases no CONTAINER: reclaiming those is
+                                    /eval finalize on the instance, or the
+                                    report page's 回收 button.
   template <manifest.yml>           Print the run template generated from a
                                     dataset-suite manifest (stages, guards,
                                     archive gate) as stdout JSON. [--stages
@@ -209,8 +221,12 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const instance = values.get('--instance')?.[0]
         const noFollow = switches.has('--no-follow')
         switches.delete('--no-follow')
-        const finalize = switches.has('--finalize')
+        // Accepted and ignored: --finalize asked for what is now the default,
+        // and failing a script that still passes it would be a refusal with
+        // nothing behind it.
         switches.delete('--finalize')
+        const keepUnits = switches.has('--keep-units')
+        switches.delete('--keep-units')
         const ignoreReadiness = switches.has('--ignore-readiness')
         switches.delete('--ignore-readiness')
         const unknown = [...switches, ...leftovers]
@@ -224,7 +240,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           const request = {
             plan: planPath,
             ...(dryRun ? { dryRun: true } : {}),
-            ...(finalize ? { finalize: true } : {}),
+            ...(keepUnits ? { keepUnits: true } : {}),
             ...(ignoreReadiness ? { ignoreReadiness: true } : {}),
             ...(values.get('--out')?.[0] === undefined ? {} : { out: values.get('--out')?.[0] as string }),
             ...(numberOption(values, '--concurrency') === undefined ? {} : { concurrency: numberOption(values, '--concurrency') as number }),
@@ -298,6 +314,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const skips = Object.entries(report.skippedByState).map(([state, count]) => `${count} ${state}`).join(', ')
         io.stderr(`dsh-eval: finalize ${report.runId} — ${report.released} released, ${report.refused} gate-refused, `
           + `${report.skipped} skipped${skips === '' ? '' : ` (${skips})`}\n`)
+        // Said every time, because silence here would read as "and the
+        // containers are gone" — which is exactly what this face cannot do.
+        io.stderr('dsh-eval: containers were not touched (no lab on this face) —'
+          + ` run /eval finalize ${report.runId} on the instance to reclaim the units\n`)
         // A refused gate is a real outcome the operator must see, not a
         // crash: exit 1 so a script notices, with the per-cell reasons above.
         return report.refused > 0 ? 1 : 0

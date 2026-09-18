@@ -3,7 +3,7 @@
  * --dry-run` works anywhere (the offline kernel needs no host); a live run
  * outside a host context is refused, honestly.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { handleEvalCommand } from '../src/slash.ts'
 import { EvalService } from '../src/service.ts'
 
@@ -42,6 +42,69 @@ describe('/eval', () => {
     const result = await handleEvalCommand(new EvalService(), invocation(`run ${T1_PLAN}`))
     expect(result.kind).toBe('error')
     expect(result.text).toContain('no host context')
+  })
+})
+
+describe('/eval conditions provision — the write-back and the way back (I5·T58 · G7)', () => {
+  /** A service whose provision only records what it was asked for. */
+  function recordingService(): { service: EvalService; calls: Array<Record<string, unknown>> } {
+    const calls: Array<Record<string, unknown>> = []
+    const service = new EvalService()
+    vi.spyOn(service, 'provision').mockImplementation((conditionPath, options) => {
+      calls.push({ conditionPath, ...options })
+      return Promise.resolve({
+        condition: 'c1',
+        conditionPath,
+        lockPath: `${conditionPath.replace(/\.json$/, '')}.lock.json`,
+        repo: options.repo,
+        harness: 'dsh',
+        scope: null,
+        homeDir: '/homes/dsh',
+        credentialState: 'present-unverified',
+        sha: 'a'.repeat(64),
+        home: { sha: 'b'.repeat(64), files: 3, denied: 0 },
+        homeShaWritten: options.writeBack !== false,
+        shaBeforeWriteBack: options.writeBack === false ? null : 'c'.repeat(64),
+        checks: [],
+        written: true,
+        lock: null,
+        errors: [],
+        warnings: [],
+      })
+    })
+    return { service, calls }
+  }
+
+  it('corrects the declaration by default and says so in the reply', async () => {
+    const { service, calls } = recordingService()
+    const result = await handleEvalCommand(service, invocation('conditions provision /repo/datasets/ds/conditions/c1.json --repo /repo'))
+
+    expect(result.kind).toBe('success')
+    expect(calls[0]).not.toHaveProperty('writeBack')
+    expect(result.text).toContain('declaration corrected')
+  })
+
+  it('--no-write-back asks for the old two-step shape', async () => {
+    const { service, calls } = recordingService()
+    const result = await handleEvalCommand(
+      service,
+      invocation('conditions provision /repo/datasets/ds/conditions/c1.json --repo /repo --no-write-back'),
+    )
+
+    expect(result.kind).toBe('success')
+    expect(calls[0]).toMatchObject({ writeBack: false })
+    expect(result.text).not.toContain('declaration corrected')
+  })
+
+  it('refuses --no-write-back on a verb that writes nothing, and still refuses an unknown switch', async () => {
+    const { service } = recordingService()
+    const misplaced = await handleEvalCommand(service, invocation('conditions list --no-write-back'))
+    expect(misplaced.kind).toBe('error')
+    expect(misplaced.text).toContain('--no-write-back is a provision option')
+
+    const unknown = await handleEvalCommand(service, invocation('conditions provision c1.json --repo /repo --rewrite-everything'))
+    expect(unknown.kind).toBe('error')
+    expect(unknown.text).toContain('unknown option(s)')
   })
 })
 
@@ -131,6 +194,9 @@ describe('/eval finalize', () => {
     expect(result.text).toContain('1 released（已终结）跳过、1 中断（未走到 archived）跳过、1 pending（未开跑）跳过')
     expect(result.text).toContain('cell-a: archived → released')
     expect(result.text).toContain('cell-c: skipped (stage-2)')
+    // The container half is said even here, where there is no lab to ask:
+    // silence would read as "and the containers are gone" (T39 · G18).
+    expect(result.text).toContain('单元: 未知')
   })
 
   it('refuses honestly when the composition has no mission service', async () => {
@@ -171,6 +237,33 @@ describe('/eval run — the subset flags', () => {
   })
 })
 
+describe('/eval run — the 保留单元 switch (T57)', () => {
+  /** Drive the run verb and report what options it was handed. */
+  async function optionsOf(input: string): Promise<Record<string, unknown>> {
+    const service = new EvalService()
+    // Rejecting is enough: the switch is parsed before the run is reached, so
+    // the call's arguments are the whole fact under test.
+    const run = vi.spyOn(service, 'run').mockRejectedValue(new Error('not run here'))
+    await handleEvalCommand(service, invocation(input))
+    return (run.mock.calls[0]?.[1] ?? {}) as Record<string, unknown>
+  }
+
+  it('is off unless asked: a plain run walks the release gate', async () => {
+    expect(await optionsOf(`run ${T1_PLAN} --wait`)).toMatchObject({ keepUnits: false })
+  })
+
+  it('--keep-units reaches the kernel', async () => {
+    expect(await optionsOf(`run ${T1_PLAN} --wait --keep-units`)).toMatchObject({ keepUnits: true })
+  })
+
+  it('--finalize is still accepted — it asks for what the default already does', async () => {
+    // A saved command or a script that still passes it must not start failing
+    // over a flag whose meaning became the default.
+    const options = await optionsOf(`run ${T1_PLAN} --wait --finalize`)
+    expect(options).toMatchObject({ keepUnits: false })
+  })
+})
+
 describe('/eval run — --creds-root is gone (T20c)', () => {
   it('no longer takes a credentials root: the mount source is the instance\'s own scoped home', async () => {
     // It used to be a value flag. Now it is an unknown switch, and its value
@@ -179,5 +272,69 @@ describe('/eval run — --creds-root is gone (T20c)', () => {
     const result = await handleEvalCommand(new EvalService(), invocation('run plan.json --creds-root /tmp/creds'))
     expect(result.kind).toBe('error')
     expect(result.text).toContain('exactly one plan path')
+  })
+})
+
+describe('/eval grant backstop (A3)', () => {
+  const ROW = '@khorsheed/dsh-eval-tool'
+
+  /** Invoke `help` with an agent-scope ctx whose probe answers as given. */
+  function helpWith(presets: unknown): Promise<CommandResult> {
+    const agent = {
+      session: { id: 'sess-eval-slash' },
+      ctx: { get: (name: string) => (name === 'agentPresets' ? presets : undefined) },
+    }
+    return handleEvalCommand(new EvalService(), { rawInput: 'help', agent } as unknown as CommandInvocation)
+  }
+
+  /** A roster probe: the session joined `presetId`; the inventory answers `groups`. */
+  function roster(presetId: string | undefined, groups: unknown): unknown {
+    return {
+      composedPreset: () => presetId,
+      compositionInventory: () => Promise.resolve(groups),
+    }
+  }
+
+  it('refuses when the session preset is readable and names no companion row', async () => {
+    const result = await helpWith(roster('standard', [{ id: 'standard', rows: [] }]))
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain('/eval is not granted to this session')
+    expect(result.text).toContain(ROW)
+    expect(result.text).toContain('standard')
+  })
+
+  it('passes when the preset composition names the companion row', async () => {
+    const result = await helpWith(roster('eval', [{ id: 'eval', rows: [{ moduleName: ROW }] }]))
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('usage:')
+  })
+
+  it('fails open when the session joined no preset', async () => {
+    const result = await helpWith(roster(undefined, []))
+    expect(result.kind).toBe('success')
+  })
+
+  it('fails open when the roster service is absent', async () => {
+    const result = await helpWith(undefined)
+    expect(result.kind).toBe('success')
+  })
+
+  it('fails open when the inventory throws', async () => {
+    const throwing = {
+      composedPreset: () => 'standard',
+      compositionInventory: () => Promise.reject(new Error('unreadable')),
+    }
+    const result = await helpWith(throwing)
+    expect(result.kind).toBe('success')
+  })
+
+  it('fails open when the preset group is missing or broken', async () => {
+    expect((await helpWith(roster('ghost', [{ id: 'standard', rows: [] }]))).kind).toBe('success')
+    expect((await helpWith(roster('standard', [{ id: 'standard', broken: 'unreadable', rows: [] }]))).kind).toBe('success')
+  })
+
+  it('fails open when the agent carries no scope context (the plain invocation shape)', async () => {
+    const result = await handleEvalCommand(new EvalService(), invocation('help'))
+    expect(result.kind).toBe('success')
   })
 })

@@ -2,7 +2,7 @@
 
 - **分类**：plugin
 - **状态**：planned
-- **最后更新**：2026-09-05
+- **最后更新**：2026-09-18
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`(含 archived)。最近邻:room 设计 note(2026-08-18-room-multi-agent-conversation,其 L157「composer 接管=继承全部环境职责」只列了 todo 条/排队条/Stop/pending 让出——正是本提案要补的缺口)、`local-agent-member-channel`(可写 composer)、`local-agent-member-dispatch-reliability`(本提案的兄弟提案,派发可靠/流式/排队态,不涉及输入面)。无既有 composer 对齐意图,新建。
 - **官方依赖**：纯插件。宿主输入机(`useInput` / `inputActions` / `conversation.input.for(sessionId)`)与 `conversation.input.*`/`conversation.composer.dock` 坑位均官方已暴露,room 只在自己包内把这层接上。零 harness 改动。
 
@@ -59,6 +59,14 @@
 
 > 也可反向评估:room 是否根本不值得接管 composer,而是作为**官方 composer 的行为增强**(chain 上低优先级读取/挂件)叠加——但 room 的 @ 寻址与 dock 接管需要替换官方提交目标,故大概率仍需接管;接管时以上述对齐为准。
 
+### 工厂路线（2026-09-18 用户拍板补充，跟官方路线适配）
+
+0.1.6-alpha.2 官方交付 `conversation.content` Component Factory(`renderFactorySlot('conversation.content', { variant: 'embedded', phase, hero }, { slots: { views: <RoomView> } })`,先例 = 官方 ui-subagent 侧栏聊天):官方 Conversation 正文 + 完整 InputBar(含全部 `conversation.input.*` 坑位)可被任意呈现宿主实例化。room 视图内嵌它,room 特有件(@ 成员菜单、dock 双胶囊、任务条、统计行、RoomQueueStrip)改挂 `conversation.input.dock` / `conversation.composer.dock` / left / right(session scope,可按 roomChrome 自隐)——M1+M2 大部分变零自绘。
+
+边界(不变):@ 成员寻址的提交分流官方仍无重定向缝(`InputActions` 五方法 alpha.2 一字未动),embed 路线下仍需在 submit 前拦截分流;MemberComposer 维持自绘的裁定续存。工厂 occurrence 继承渲染位置 Session、不可独立寻址别的会话——room 嵌自己会话无碍。
+
+开工时先做对比 spike:落回输入机自绘对齐 vs 工厂嵌入,按「room 特有件挂载成本 × 视觉一致性 × 后续官方跟随成本」裁定主线,结果记入实现记录。
+
 ## 里程碑
 
 - **M1**：RoomComposer 落回输入机(读草稿/occurrences/imageIds/phase,输入写回),@ 菜单平移。撤回回填、草稿持久化、undo/redo 先恢复。
@@ -68,6 +76,8 @@
 ## 实现记录
 
 (实施时登记:相关 Agent Note / PR / 包名;建议交叉引用 note 2026-08-18-room-multi-agent-conversation L157 与提案 local-agent-member-dispatch-reliability)
+
+- 2026-09-15:用户拍板推进,rc 波次收尾后开工(新 worktree,避开 room 家族在飞所有权窗口);member composer 维持自绘的边界确认见「风险 / 放弃的东西」。
 
 ## 验收标准(done 判定,绑定可插拔交付)
 
@@ -82,3 +92,4 @@
 - 不完整的接管会**静默藏掉官方面**(设计 note 已警示):对齐必须逐项验收,不能只做视觉对齐。
 - room 特有 `@` 菜单的 caret 依赖输入机 caret(输入机不暴露 caret,需 DOM `selectionStart` 维持)。
 - 现阶段不扩大:不重构 composer 为通用组件、不动宿主;仅 room 自包内对齐。
+- **MemberComposer 不进本提案**:成员是外部 CLI,官方输入机 `InputActions.submit()` 焊死宿主管线(contract/input.ts 实测只有 setDraft/addAttachments/removeAttachment/pruneAttachments/submit,无重定向缝),成员消息必须走 promptMember Remote;斜杠/引用/图片属成员通道能力,归 member-channel/dispatch 提案射程;草稿持久化/undo-redo/busy 排队体验子集并到 member-dispatch-reliability。

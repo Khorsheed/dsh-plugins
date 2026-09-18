@@ -507,6 +507,24 @@ export interface MissionActionFace {
 }
 
 /**
+ * The ONE mission write the JUDGE BENCH makes: append a `human-final`
+ * annotation (I5·T37). Separate from {@link MissionActionFace} because the
+ * drawer's two gestures and the bench's one are granted independently — a
+ * composition may mount a ledger that can be read and annotated but whose
+ * retry path is absent — and separate from {@link MissionFace} because the
+ * bench is not the run loop and must not be able to transition, submit, or
+ * set refs.
+ *
+ * Narrow on purpose: this interface is the entire surface through which
+ * `human-final` can be written in this family, and keeping it to one verb is
+ * how ui-spec R1 (终评是人的) stays a structural fact rather than a rule
+ * someone has to remember.
+ */
+export interface MissionAnnotateFace {
+  annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
+}
+
+/**
  * mission's own Remote service, host-side — the ONE place the bundle export's
  * leak gate lives.
  *
@@ -679,6 +697,23 @@ export interface LabPopulateResult {
  * `status` is a human/CLI surface, and the loop reads the mission ledger
  * rather than asking the provider what state a cell is in.
  */
+/**
+ * One row of {@link LabFace.status} — a unit lab is holding right now. This is
+ * the LIVE truth about containers, as opposed to mission's `unreleased`, which
+ * is the ledger's belief about which cells hold a resource. The two disagree
+ * in exactly the case worth reporting: a cell the ledger has already released
+ * whose container is still up.
+ */
+export interface LabUnitRow {
+  id: string
+  resource: string
+  running: boolean
+  /** The mission this unit was acquired for; absent for a unit bound to none. */
+  missionId?: string
+  /** The run this unit was acquired for; absent for a unit bound to none. */
+  runId?: string
+}
+
 export interface LabFace {
   acquire(spec: LabAcquireSpec): Promise<LabUnitInfo>
   populate(unitId: string, options: {
@@ -699,7 +734,14 @@ export interface LabFace {
    * protects (the readiness probe unit, which is bound to no mission).
    */
   release(unitId: string, options?: { force?: boolean }): Promise<void>
-  status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean }>>
+  /**
+   * Every unit lab currently holds. The two BINDING fields are what make this
+   * answer usable from here: `runId` and `missionId` are what the orchestrator
+   * wrote at acquire, so a caller can ask "which of these are mine" without
+   * lab having to know what a run is. Both stay optional — a unit acquired
+   * outside a run (the readiness probe's) carries neither.
+   */
+  status(unitId?: string): Promise<LabUnitRow[]>
   /**
    * Hash a component set — the same rule `acquire` uses, as a pure function.
    * The orchestrator asks it what the ENVIRONMENT CLASS hashes to: the unit's

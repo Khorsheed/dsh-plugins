@@ -12,11 +12,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   EvalApproveRequest, EvalApproveResult, EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
-  EvalConditionDiffView, EvalConditionsRequest, EvalConditionsView, EvalExperimentDetail,
+  EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
+  EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionsRequest, EvalConditionsView,
+  EvalDraftOptionsRequest, EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentDetail,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
-  EvalFinalizeRequest, EvalFinalizeView, EvalPlanRequest, EvalPlanReview, EvalReportRequest,
-  EvalRunOutputView, EvalRunReportView,
+  EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
+  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalPlanRequest, EvalPlanReview, EvalReexportRequest,
+  EvalReportRequest, EvalRunOutputView, EvalRunReportView, EvalRunUnitsRequest, EvalRunUnitsView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
 
@@ -28,11 +31,16 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
  * experiment's overview, the plan review, the condition registry and its diff,
  * the matrix, the cell list and one cell in full.
  *
- * Five of them WRITE, and every one is a human's click. `approvePlan` is
- * ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
+ * Seven of them WRITE, and every one is a human's click. `draftExperiment` is
+ * ui-spec step 2 — the 新建实验 form, and the ONE write this face shares with a
+ * model tool (`eval_plan_draft` reaches the same service verb), because
+ * drafting starts nothing. `approvePlan` is ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
  * two-step bundle export. `finalizeRun` is the report page's — the same
- * release gate, walked over every archived cell of the run. The judging desk
- * arrives with T37.
+ * release gate, walked over every archived cell of the run, and the same call
+ * behind its 回收 action. `submitHumanFinal`
+ * is the judge bench's, and the ONLY door the `human-final` namespace has:
+ * ui-spec R1 says 终评是人的, and it holds because no model-facing tool in this
+ * family reaches the verb behind this field.
  */
 export interface LabViewInjected {
   /** Every experiment: the runs eval started, plus the unstarted plans (one RPC). */
@@ -45,7 +53,31 @@ export interface LabViewInjected {
   fetchConditions: (sessionId: SessionId, request: EvalConditionsRequest) => Promise<RemoteResult<EvalConditionsView>>
   /** Two conditions, field by field — only what differs. */
   fetchConditionDiff: (sessionId: SessionId, request: EvalConditionDiffRequest) => Promise<RemoteResult<EvalConditionDiffView>>
-  /** Approve a plan and start it (the ONE write this face carries). */
+  /**
+   * PROVISION one condition: resolve its scoped home, check the declaration
+   * against it, correct `home.sha` in the declaration and write the lock. One
+   * action — the condition is ready afterwards, or the answer says why not.
+   */
+  provisionCondition: (sessionId: SessionId, request: EvalConditionProvisionRequest) => Promise<RemoteResult<EvalConditionProvisionView>>
+  /**
+   * SET one condition's declared `model.endpoint` — the only field of an
+   * existing declaration any face may change, and a factor edit: the condition
+   * re-hashes and any lock beside it goes stale.
+   */
+  setConditionEndpoint: (sessionId: SessionId, request: EvalConditionEndpointRequest) => Promise<RemoteResult<EvalConditionEndpointView>>
+  /**
+   * What the 新建实验 form's pickers may offer: the dataset sets this session
+   * can draft into, with the items and stage schemas each one holds.
+   */
+  fetchDraftOptions: (sessionId: SessionId, request: EvalDraftOptionsRequest) => Promise<RemoteResult<EvalDraftOptionsView>>
+  /**
+   * DRAFT an experiment: write the plan and any new condition into the bound
+   * repository's working copy and validate them. A write, not a start — the
+   * result carries the plan-review page's own payload, and the button that
+   * starts anything is on that page.
+   */
+  draftExperiment: (sessionId: SessionId, request: EvalDraftRequest) => Promise<RemoteResult<EvalDraftResult>>
+  /** Approve a plan and start it (the one write that reaches `runStart`). */
   approvePlan: (sessionId: SessionId, request: EvalApproveRequest) => Promise<RemoteResult<EvalApproveResult>>
   /**
    * A started run's job log from the top, verbatim. Session-less on purpose:
@@ -66,8 +98,20 @@ export interface LabViewInjected {
   releaseCheck: (sessionId: SessionId, request: EvalCellRequest) => Promise<RemoteResult<EvalCellReleaseResult>>
   /** The export dialog's plan step: which layers are guarded. */
   planExport: (sessionId: SessionId, request: EvalExportPlanRequest) => Promise<RemoteResult<EvalExportPlanView>>
-  /** The export dialog's confirm step; mission re-checks against a fresh plan. */
+  /**
+   * The export dialog's confirm step; mission re-checks against a fresh plan.
+   * ONE action since I5·T60: the bundle AND the report inside it, plus the
+   * run-level note that records where the bundle went.
+   */
   exportRun: (sessionId: SessionId, request: EvalExportRunRequest) => Promise<RemoteResult<EvalExportResultView>>
+  /**
+   * EXPORT AGAIN after a final verdict — the report page's and the judge
+   * bench's one-click repeat of the export this run already recorded, into a
+   * fresh directory beside it. It repeats and never widens: the layers are the
+   * recorded ones, nothing guarded is re-confirmed, and mission re-checks that
+   * against a fresh plan (I5·T39 · G17).
+   */
+  reexportRun: (sessionId: SessionId, request: EvalReexportRequest) => Promise<RemoteResult<EvalExportResultView>>
   /**
    * The report page: the four invariants, the paired differences, the
    * efficiency table and the judge numbers, read from the run's exported
@@ -75,8 +119,29 @@ export interface LabViewInjected {
    * an error — "not exported yet" is a state with a button.
    */
   fetchReport: (sessionId: SessionId, request: EvalReportRequest) => Promise<RemoteResult<EvalRunReportView>>
-  /** Walk every archived cell of the run through the release gate (a human's click). */
+  /**
+   * Walk every archived cell of the run through the release gate, destroying
+   * each passing cell's container on the way (a human's click). The report
+   * page's finalize button AND its 回收 action are this one call: reclaiming a
+   * container IS the cell passing its gate.
+   */
   finalizeRun: (sessionId: SessionId, request: EvalFinalizeRequest) => Promise<RemoteResult<EvalFinalizeView>>
+  /**
+   * The containers lab still holds for this run — lab's own list, not the
+   * ledger's belief about which cells hold a resource. A read; it is what the
+   * report page's 未回收 count is drawn from.
+   */
+  fetchRunUnits: (sessionId: SessionId, request: EvalRunUnitsRequest) => Promise<RemoteResult<EvalRunUnitsView>>
+  /**
+   * The judge bench's BLIND queue: the run's cells as ordinal + ticket, their
+   * de-identified material, the rubric's human criteria, and every verdict
+   * already on record. No condition, harness or model is in this payload —
+   * blindness is a property of what crosses the wire, not of what the page
+   * chooses to render.
+   */
+  fetchJudgeQueue: (sessionId: SessionId, request: EvalJudgeQueueRequest) => Promise<RemoteResult<EvalJudgeQueueView>>
+  /** Record one cell's human-final verdicts — append-only, tagged by session. */
+  submitHumanFinal: (sessionId: SessionId, request: EvalHumanFinalRequest) => Promise<RemoteResult<EvalHumanFinalResult>>
   /**
    * Open the delegation's child session in the host's own session controller.
    * READ the player's transcript — the member composer and dock are

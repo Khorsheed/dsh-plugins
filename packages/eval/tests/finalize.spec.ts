@@ -7,9 +7,9 @@
  * mid-stage cells and cells that never started, all at once.
  */
 import { describe, expect, it } from 'vitest'
-import { finalizeRun, EvalFinalizeRefused, skipCategoryOf } from '../src/finalize.ts'
+import { finalizeRun, EvalFinalizeRefused, skipCategoryOf, type FinalizeUnitsFace } from '../src/finalize.ts'
 import { parseMissionRow } from '../src/mission-cli.ts'
-import type { MissionFinalizeFace } from '../src/faces.ts'
+import type { LabUnitRow, MissionFinalizeFace } from '../src/faces.ts'
 
 /** A ledger of `id → state`, with the release edges and the archive gate. */
 class FakeLedger implements MissionFinalizeFace {
@@ -149,6 +149,170 @@ describe('finalizeRun — a refused gate', () => {
     const report = await finalizeRun(ledger, 'run-half')
     expect(report.cells[0]?.action).toBe('refused')
     expect(report.cells[0]?.finalState).toBe('releasable')
+  })
+})
+
+/**
+ * A lab whose `release` consults the SAME gate the real one does — the ledger
+ * this walk is moving. That is what makes the ORDER assertions mean something:
+ * a destroy attempted after `released` is refused here exactly as it would be
+ * on a host, which is the bug this face exists to pin.
+ */
+class FakeUnits implements FinalizeUnitsFace {
+  readonly released: string[] = []
+  constructor(
+    private readonly rows: LabUnitRow[],
+    private readonly states: Map<string, string>,
+    /** Units whose destroy fails at the provider, however the gate answers. */
+    private readonly broken: ReadonlySet<string> = new Set(),
+  ) {}
+
+  async status(): Promise<readonly LabUnitRow[]> {
+    return this.rows.filter(row => !this.released.includes(row.id))
+  }
+
+  async release(unitId: string, options?: { force?: boolean }): Promise<void> {
+    const row = this.rows.find(entry => entry.id === unitId)
+    if (row === undefined) throw new Error(`fake lab: unknown unit ${unitId}`)
+    if (options?.force !== true && row.missionId !== undefined && this.states.get(row.missionId) !== 'releasable') {
+      throw new Error(
+        `lab: release of ${unitId} refused — mission ${row.missionId} is not in a releasable state;`
+        + ' archive and pass its gate first',
+      )
+    }
+    if (this.broken.has(unitId)) throw new Error(`docker: could not remove ${row.resource}`)
+    this.released.push(unitId)
+  }
+}
+
+describe('finalizeRun — the containers (T57)', () => {
+  it('destroys each passing cell\'s unit BETWEEN the two transitions, where the gate says yes', async () => {
+    const states = new Map([['cell-a', 'archived'], ['cell-b', 'archived']])
+    const ledger = new FakeLedger(states)
+    const units = new FakeUnits([
+      { id: 'u1', resource: 'dsh-lab-u1', running: true, missionId: 'cell-a', runId: 'run-1' },
+      { id: 'u2', resource: 'dsh-lab-u2', running: true, missionId: 'cell-b', runId: 'run-1' },
+    ], states)
+
+    const report = await finalizeRun(ledger, 'run-1', { units })
+
+    // The gate accepted both destroys, which is only possible at `releasable`:
+    // the same face refuses at `archived` and at `released`.
+    expect(units.released).toEqual(['u1', 'u2'])
+    expect(report.unitsReleased).toBe(2)
+    expect(report.unitsHeld).toEqual([])
+    expect(report.unitsKnown).toBe(true)
+    expect(report.cells.map(cell => cell.unit)).toEqual([
+      { id: 'u1', resource: 'dsh-lab-u1', released: true },
+      { id: 'u2', resource: 'dsh-lab-u2', released: true },
+    ])
+  })
+
+  it('leaves a refused cell\'s container up, and says the gate is why', async () => {
+    const states = new Map([['cell-empty', 'archived'], ['cell-ok', 'archived']])
+    const ledger = new FakeLedger(states, new Set(['cell-empty']))
+    const units = new FakeUnits([
+      { id: 'u1', resource: 'dsh-lab-u1', running: true, missionId: 'cell-empty', runId: 'run-1' },
+      { id: 'u2', resource: 'dsh-lab-u2', running: true, missionId: 'cell-ok', runId: 'run-1' },
+    ], states)
+
+    const report = await finalizeRun(ledger, 'run-1', { units })
+
+    expect(units.released).toEqual(['u2'])
+    expect(report.unitsReleased).toBe(1)
+    expect(report.unitsHeld).toEqual([{
+      id: 'u1',
+      resource: 'dsh-lab-u1',
+      missionId: 'cell-empty',
+      missionState: 'archived',
+      reason: 'the archive gate refused its cell, so nothing authorized the destroy',
+    }])
+  })
+
+  it('reports a container whose cell is already past the gate as a human\'s call, and does not force it', async () => {
+    // The G18 shape: a run finalized by the walk that only moved the ledger.
+    // Nothing non-forcing can end these containers, and the report says so
+    // instead of leaving them to `docker ps`.
+    const states = new Map([['cell-done', 'released']])
+    const ledger = new FakeLedger(states)
+    const units = new FakeUnits(
+      [{ id: 'u9', resource: 'dsh-lab-u9', running: true, missionId: 'cell-done', runId: 'run-1' }],
+      states,
+    )
+
+    const report = await finalizeRun(ledger, 'run-1', { units })
+
+    expect(units.released).toEqual([])
+    expect(report.unitsHeld[0]?.reason).toContain('already past the gate')
+    expect(report.unitsHeld[0]?.reason).toContain('dsh-lab release u9 --force')
+  })
+
+  it('never strands a cell mid-gate when the destroy itself fails', async () => {
+    const states = new Map([['cell-a', 'archived']])
+    const ledger = new FakeLedger(states)
+    const units = new FakeUnits(
+      [{ id: 'u1', resource: 'dsh-lab-u1', running: true, missionId: 'cell-a', runId: 'run-1' }],
+      states,
+      new Set(['u1']),
+    )
+
+    const report = await finalizeRun(ledger, 'run-1', { units })
+
+    // The ledger fact is true and recorded: the cell DID pass its gate. Left
+    // at `releasable` instead, no later walk would ever move it — finalize
+    // acts on `archived` and would skip it as `interrupted` forever.
+    expect(states.get('cell-a')).toBe('released')
+    expect(report.released).toBe(1)
+    expect(report.unitsReleased).toBe(0)
+    expect(report.cells[0]?.unit).toMatchObject({ released: false, reason: expect.stringContaining('could not remove') })
+    // The retention is on the cell, in the same ns and shape the run loop
+    // writes it in.
+    expect(ledger.annotations).toEqual([{
+      missionId: 'cell-a',
+      ns: 'orchestrator',
+      payload: expect.objectContaining({ kind: 'unit-retained', unit: 'u1' }),
+    }])
+  })
+
+  it('touches no unit of another run, and ignores one bound to no mission', async () => {
+    const states = new Map([['cell-a', 'archived']])
+    const ledger = new FakeLedger(states)
+    const units = new FakeUnits([
+      { id: 'u1', resource: 'dsh-lab-u1', running: true, missionId: 'cell-a', runId: 'run-1' },
+      { id: 'u2', resource: 'dsh-lab-u2', running: true, missionId: 'someone-elses', runId: 'run-2' },
+      { id: 'u3', resource: 'dsh-lab-u3', running: true, runId: 'run-1' },
+    ], states)
+
+    const report = await finalizeRun(ledger, 'run-1', { units })
+
+    expect(units.released).toEqual(['u1'])
+    // u2 belongs to another run and is not even listed; u3 is this run's but
+    // bound to no cell, so no gate covers it and it is reported, not destroyed.
+    expect(report.unitsHeld.map(held => held.id)).toEqual(['u3'])
+    expect(report.unitsHeld[0]?.reason).toBe('it is bound to no cell of this run')
+  })
+
+  it('without a unit face the walk moves the ledger only, and says the list is unknown', async () => {
+    const ledger = new FakeLedger(new Map([['cell-a', 'archived']]))
+    const report = await finalizeRun(ledger, 'run-1')
+    expect(report.released).toBe(1)
+    // Not zero: the CLI face drives a ledger in a child process and has no lab
+    // at all, and a confident `0 held` from there would be a lie.
+    expect(report.unitsKnown).toBe(false)
+    expect(report.unitsHeld).toEqual([])
+  })
+
+  it('survives a lab that cannot be asked, and still walks the gate', async () => {
+    const ledger = new FakeLedger(new Map([['cell-a', 'archived']]))
+    const lines: string[] = []
+    const broken: FinalizeUnitsFace = {
+      status: () => Promise.reject(new Error('docker daemon is not running')),
+      release: () => Promise.reject(new Error('unreachable')),
+    }
+    const report = await finalizeRun(ledger, 'run-1', { units: broken, log: (line) => { lines.push(line) } })
+    expect(report.released).toBe(1)
+    expect(report.unitsKnown).toBe(false)
+    expect(lines.join('\n')).toContain('docker daemon is not running')
   })
 })
 

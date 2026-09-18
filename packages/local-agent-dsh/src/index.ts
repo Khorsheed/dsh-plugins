@@ -38,6 +38,7 @@ import { LiveDriverSwitch } from './live-switch.ts'
 import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import type { DshSubProfilePermissions } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-dsh'
@@ -58,6 +59,20 @@ export interface LocalAgentDshConfig {
   cliLaunch?: string[]
   /** Override the headless bundle directory the sub-profile symlinks to. */
   headlessBundleDir?: string
+  /**
+   * The sub-dsh's permission boundary: the sandbox mode every confined call
+   * runs under, paired with the approval policy `dsh-base`'s own preset table
+   * pairs it with. Provisioning writes it into the scope's sub-profile as a
+   * patch layer, so a scoped home carries its own boundary — including into a
+   * container unit that bind-mounts it.
+   *
+   * Absent — the default — writes no layer at all: the sub-dsh runs whatever
+   * `dsh-base` composes (`workspace-write` plus `ask`), byte for byte the
+   * behavior before this key existed. Pin `danger-full-access` only where
+   * something else IS the boundary (an evaluation unit, a disposable
+   * container); on a developer's machine the sub-dsh shares the real home.
+   */
+  permissions?: DshSubProfilePermissions
   /**
    * Live driver: keep one resident sub-dsh serve process per member and drive
    * turns over the family wire (runtime-level interrupt, push-mode mirror)
@@ -97,6 +112,7 @@ export const Config: z<LocalAgentDshConfig> = z.object({
   apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
   cliLaunch: z.array(z.string()),
   headlessBundleDir: z.string(),
+  permissions: z.union([z.const('read-only'), z.const('workspace-write'), z.const('danger-full-access')]),
   model: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
@@ -248,10 +264,15 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
           return false
         }
       },
-      // The eval snapshot. No sandbox or permission field: a headless sub-dsh
-      // has no such knob (the web-eval frozen baseline calls this harness
-      // unrestricted — absence IS the honest condition-hash input). The
-      // endpoint is the host instance's model config, which this provider
+      // The eval snapshot. `sandbox` is the sub-profile's pinned permission
+      // boundary, reported exactly when one is configured: absence still
+      // means "this scope pins no boundary and runs what dsh-base composes",
+      // which is the honest condition-hash input for every deployment that
+      // never asked for one. Until T59 there was no knob to report at all,
+      // and the dsh rounds inside an evaluation unit paid for it — bash
+      // refused every call because the unit has no sandbox backend and a
+      // headless sub-dsh has no approval channel.
+      // The endpoint is the host instance's model config, which this provider
       // never overrides, so no custom endpoint is ever pinned. The model is
       // the host's default selection the sub-dsh inherits (the headless agent
       // loader reads the same service), reported as `provider/model`; a
@@ -276,6 +297,12 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
           // file records the knob rather than leaving the fairest-to-compare
           // difference between the four harnesses invisible.
           containerNodeOptions: CONTAINER_NODE_OPTIONS,
+          // The CONFIGURED boundary, not a read-back of the sub-profile: this
+          // key is what provisioning writes, and it is in force for the very
+          // first round of a scope whose directory the hook has not
+          // materialized yet. Same shape as codex, which reports the sandbox
+          // policy its own config key puts on every argv.
+          ...config.permissions !== undefined ? { sandbox: config.permissions } : {},
           ...model !== undefined ? { model } : {},
           ...cliVersion !== undefined ? { cliVersion } : {},
         }

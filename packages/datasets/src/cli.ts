@@ -23,12 +23,13 @@
  *   bind / unbind    — write a session's binding (the plugin-owned store is
  *     read per call, so binding a LIVE session is race-free)
  */
+import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readBinding, validateBinding, writeBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
+import { formatBindReceipt, formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from './service.ts'
 import { pruneManagedWorktrees } from './worktree.ts'
 
@@ -58,7 +59,10 @@ flags:
   --item I           item id
   --layer L          layer name (read)
   --path P           layer-relative file path (read)
-  --layers a,b       layer selection (worktree path) / binding whitelist (bind)
+  --layers a,b       layer selection (worktree path) / binding whitelist (bind).
+                     Omitted on bind = the agent sees each dataset's
+                     model-facing layers and nothing else; naming layers opens
+                     exactly those, sensitive ones included.
   --datasets a,b     binding dataset whitelist (bind)
   --session ID       session id (bind/unbind/binding)
   --worktree-root DIR  managed worktree root (default: $DSH_HOME/state/datasets/worktrees)
@@ -218,7 +222,7 @@ export async function runCli(
           ...(csv(flags['layers']) !== undefined ? { layers: csv(flags['layers']) } : {}),
         })
         writeBinding(bindingsRoot, session, binding)
-        io.stdout(`bound session ${session} to ${binding.repoPath}\n`)
+        io.stdout(`${formatBindReceipt(binding)} (session ${session})\n`)
         return 0
       }
       case 'unbind': {
@@ -251,8 +255,18 @@ function usageError(io: CliIo, message: string): number {
 }
 
 // Direct invocation (`tsx src/cli.ts ...`) vs import by tests.
-const entry = process.argv[1]
-if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+// Node resolves an ESM main module to its REAL path, so `import.meta.url` is
+// the resolved file while `process.argv[1]` is the path as it was typed.
+// Invoked through a symlink — pnpm's `.bin/<name>` link above all — the two
+// never match, and the body below silently never runs: exit 0, no output,
+// nothing to tell the caller the CLI did nothing. Resolve argv[1] the same
+// way before comparing. A path that cannot be resolved keeps its literal
+// form, which is exactly what the comparison used before.
+let entryPath = process.argv[1]
+if (entryPath !== undefined) {
+  try { entryPath = realpathSync(entryPath) } catch { /* unresolvable — compare the literal path */ }
+}
+if (entryPath !== undefined && import.meta.url === pathToFileURL(entryPath).href) {
   void runCli(process.argv.slice(2), {
     stdout: line => process.stdout.write(line),
     stderr: line => process.stderr.write(line),

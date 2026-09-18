@@ -1,13 +1,26 @@
-# canvas bundle patch: inserts the plugin row into the composing profile, so
+# canvas bundle patch: inserts the plugin rows into the composing profile, so
 # `dsh plugin --profile <name> add @khorsheed/dsh-canvas` reconciles it into the
-# bundles layer. The row is a bare mount — the host half provides the
-# `canvasStore` service and mounts its Remote face; the browser half is
-# discovered through the package.json `dsh.client` block.
+# bundles layer. The first row is a bare mount — the host half provides the
+# `canvasStore`/`canvasBoard` services and mounts its Remote face; the browser
+# half is discovered through the package.json `dsh.client` block.
 #
 # NOTE: a composition must mount this row id exactly once. Official images
 # mount no canvas row, so plugin-adding this package is the install path there;
 # a composition that already mounts the id by other means must NOT also add it
 # — a duplicate loader entry id fails boot.
+#
+# The second row mounts the `./agent` composition entry: the two main-session
+# canvas tools (canvas_propose_card / canvas_comment) and their guidance
+# section, live for EVERY session — the community default, and the pre-0.4.2
+# status quo. To scope the tools to one preset instead (e.g. writing mode
+# only): disable this row in the profile's cordis.patch.yml with
+# `- id: canvas-agent, disabled: true` and add a row named
+# `@khorsheed/dsh-canvas/agent` to that preset's own agent.cordis.yml. THE TWO
+# MUST NEVER BE LIVE AT ONCE — the tools would register twice under the same
+# names (the local-agent family's documented root-disabled + preset-granted
+# pattern).
 - insert:
     - id: canvas
       name: "@khorsheed/dsh-canvas"
+    - id: canvas-agent
+      name: "@khorsheed/dsh-canvas/agent"

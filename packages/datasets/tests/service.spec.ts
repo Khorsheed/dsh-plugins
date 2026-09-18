@@ -1,5 +1,5 @@
 /** Service core: whitelist enforcement on every read path, put_item discipline, fail-loud scoping. */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -43,6 +43,48 @@ describe('resolveScope', () => {
     expect(scope.layers).toEqual(['visible'])
     expect(scope.datasets).toEqual(['alpha'])
   })
+
+  // I5·T58 · G1: the parameter was a way around the refusal that tells the
+  // agent to ask a person, and an agent used it to write into a checkout
+  // several agents share.
+  it('for an AGENT caller the repo argument may only restate the session\'s own repository', () => {
+    const bound = { repoPath: '/bound' }
+    expect(resolveScope({ repo: '/bound' }, bound, undefined, { agent: true }).repo).toBe('/bound')
+    expect(resolveScope({}, bound, undefined, { agent: true }).repo).toBe('/bound')
+    // A trailing separator is the same directory, not a second one.
+    expect(resolveScope({ repo: '/bound/' }, bound, undefined, { agent: true }).repo).toBe('/bound')
+    expect(() => resolveScope({ repo: '/somewhere-else' }, bound, undefined, { agent: true }))
+      .toThrowError(/is not this session's dataset repository/)
+  })
+
+  it('an unbound session gives an agent no repository at all, however the argument is spelled', () => {
+    expect(() => resolveScope({ repo: '/anywhere' }, undefined, undefined, { agent: true }))
+      .toThrowError(/not this session's to read/)
+    expect(() => resolveScope({}, undefined, undefined, { agent: true }))
+      .toThrowError(/\/datasets bind/)
+    // The instance-wide configured repository IS a human's decision, so it
+    // still answers for a session nobody bound — and the argument may restate
+    // that one too.
+    expect(resolveScope({}, undefined, '/default', { agent: true }).repo).toBe('/default')
+    expect(resolveScope({ repo: '/default' }, undefined, '/default', { agent: true }).repo).toBe('/default')
+    expect(() => resolveScope({ repo: '/other' }, undefined, '/default', { agent: true }))
+      .toThrowError(/REPO_NOT_BOUND|is not this session's dataset repository/)
+  })
+
+  it('a bound repository spelled through a symlink is still the same repository', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-datasets-alias-'))
+    const real = join(root, 'real')
+    mkdirSync(real, { recursive: true })
+    const alias = join(root, 'alias')
+    symlinkSync(real, alias)
+    // The shape a binding recorded one way and an argument typed another way
+    // arrive in — comparing the text alone would read them as two. What comes
+    // back is the canonical form of both (I5·T62), not either spelling: the
+    // scope's repo is handed to `git -C` and to `readdir`.
+    expect(resolveScope({ repo: alias }, { repoPath: real }, undefined, { agent: true }).repo)
+      .toBe(realpathSync(real))
+    rmSync(root, { recursive: true, force: true })
+  })
 })
 
 describe('modelFacing default floor (no explicit binding whitelist)', () => {
@@ -76,9 +118,12 @@ describe('modelFacing default floor (no explicit binding whitelist)', () => {
     expect(ok.content).toBe('hidden notes v1\n')
   })
 
-  it('a dataset with no sensitive declaration behaves exactly as before (all layers, undeclared included)', async () => {
+  it('a dataset that declares nothing sensitive is still floored at its modelFacing layers', async () => {
     repo = makeFixtureRepo()
-    // beta declares a single visible layer — nothing is sensitive.
+    // beta declares a single visible layer and nothing sensitive. The floor
+    // used to switch OFF for such a dataset and answer "unfiltered", which
+    // made "no whitelist" mean two different things depending on a descriptor
+    // the binder never read (I5·T58 · G3). It now means one thing.
     const result = await service().list(bare(), 'beta')
     if (result.kind !== 'items') throw new Error('expected items result')
     expect(Object.keys(result.items[0]?.layers ?? {})).toEqual(['visible'])

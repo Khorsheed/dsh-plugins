@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<style>
+  /* 宿主 token 解析值（ui-theme/src/styles/design-platform.css，light）。
+     实现时必须写 token 名，映射表见 2026-09-17-reader-prototype-notes.md */
+  :root{
+    --bg:rgb(255,255,255); --bg-plat:rgb(245,246,247); --bg-active:rgb(235,238,242); --bg-tile:rgb(225,229,238);
+    --fg:rgb(15,17,21); --fg-2:rgb(97,102,107); --fg-3:rgb(129,133,140); --fg-4:rgb(173,178,184);
+    --line-1:rgba(0,0,0,.04); --line-2:rgba(0,0,0,.10); --line-3:rgba(0,0,0,.12);
+    --hover:rgba(38,49,72,.06); --active:rgba(38,49,72,.10);
+    --accent:rgb(65,118,230); --warn:rgb(245,158,11);
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:transparent;color:var(--fg);font-family:var(--font);-webkit-font-smoothing:antialiased}
+  .row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+  .panel{position:relative;display:flex;flex-direction:column;width:380px;height:626px;background:var(--bg);
+    border:1px solid var(--line-2);border-radius:12px;overflow:hidden}
+  .ib{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;
+    border:0;border-radius:50%;background:transparent;color:var(--fg-2);cursor:pointer}
+  .ib:hover{background:var(--hover);color:var(--fg)}
+  .ib:active{background:var(--active)}
+  .ib.on{background:var(--bg-active);color:var(--fg)}
+  .lb{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line-2);background:var(--bg);color:var(--fg);
+    font-family:var(--font);font-size:11px;line-height:1;padding:5px 9px;border-radius:7px;cursor:pointer}
+  .lb:hover{background:var(--hover)}
+
+  .head{flex:none;display:flex;align-items:center;gap:2px;padding:8px 8px 8px 10px;border-bottom:1px solid var(--line-2)}
+  .head .t{flex:1;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+  .head .n{font-size:10.5px;font-weight:400;color:var(--fg-3)}
+  .bar{flex:none;display:flex;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid var(--line-2)}
+  .bar .sp{flex:1}
+  .bar .lbl{font-size:10.5px;color:var(--fg-3);padding:0 4px}
+
+  /* 工具条：搜索 + 只看未读 + 排序 */
+  .tools{flex:none;display:flex;align-items:center;gap:5px;padding:8px 10px 6px}
+  .sbox{flex:1;min-width:0;position:relative}
+  .sbox svg{position:absolute;left:7px;top:50%;transform:translateY(-50%);color:var(--fg-4);pointer-events:none}
+  .sbox input{width:100%;height:26px;padding:0 8px 0 26px;font-family:var(--font);font-size:11.5px;color:var(--fg);
+    background:var(--bg);border:1px solid var(--line-2);border-radius:7px;outline:none}
+  .sbox input::placeholder{color:var(--fg-4)}
+  .sbox input:focus{border-color:var(--accent)}
+
+  .scroll{flex:1;min-height:0;overflow-y:auto;padding:2px 8px 10px}
+  .scroll::-webkit-scrollbar{width:8px}
+  .scroll::-webkit-scrollbar-thumb{background:rgb(229,229,229);border-radius:4px}
+  .card{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2px 9px;padding:8px 8px 8px 9px;
+    border:1px solid transparent;border-radius:10px;cursor:pointer}
+  .card:hover{background:var(--hover)}
+  .card:active{background:var(--active)}
+  .tile{grid-row:1/span 3;grid-column:1;width:24px;height:24px;border-radius:6px;display:grid;place-items:center;
+    font-size:10.5px;font-weight:700;color:#fff}
+  .meta{grid-column:2;display:flex;align-items:baseline;gap:6px;min-width:0}
+  .src{font-size:10.5px;color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .when{font-size:10.5px;color:var(--fg-3);flex:none;font-variant-numeric:tabular-nums}
+  .sep{color:var(--fg-4);font-size:10.5px;flex:none}
+  .ttl{grid-column:2/-1;display:flex;align-items:flex-start;gap:6px;min-width:0}
+  .ttl .h{font-size:12.5px;line-height:17px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  /* 未读：来源徽标右下角的小圆点（头像未读指示的通用形态） */
+  .tilewrap{grid-row:1/span 3;grid-column:1;position:relative;width:24px;height:24px}
+  .tilewrap .tile{grid-row:auto;grid-column:auto}
+  .tilewrap .u{position:absolute;right:-1px;bottom:-1px;width:7px;height:7px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 1.5px var(--bg)}
+  .sum{grid-column:2/-1;margin-top:3px;font-size:11.5px;line-height:16px;color:var(--fg-2);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ctags{grid-column:2/-1;display:flex;gap:4px;align-items:center;margin-top:5px}
+  .tag{flex:none;font-size:10px;line-height:1;color:var(--fg-3);background:var(--bg-active);padding:3px 6px;border-radius:5px}
+  .author{font-size:10px;color:var(--fg-4)}
+  .cv{grid-column:3;grid-row:1;margin-top:2px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+    border-radius:6px;color:var(--fg-4)}
+  .card:hover .cv{background:var(--bg-active);color:var(--fg-2)}
+  .ghead{font-size:10.5px;font-weight:600;letter-spacing:.04em;color:var(--fg-3);padding:10px 2px 4px}
+  .none{font-size:11.5px;line-height:18px;color:var(--fg-3);padding:22px 8px}
+
+  /* 新增源 */
+  .add{display:none;flex:1;min-height:0;flex-direction:column;padding:12px 12px 0}
+  .add.show{display:flex}
+  .add h2{margin:0 0 4px;font-size:13.5px;font-weight:700}
+  .add p{margin:0 0 12px;font-size:11px;line-height:17px;color:var(--fg-3)}
+  .add input{width:100%;height:30px;padding:0 9px;font-family:var(--font);font-size:12px;color:var(--fg);
+    background:var(--bg);border:1px solid var(--line-2);border-radius:8px;outline:none;margin-bottom:8px}
+  .add input:focus{border-color:var(--accent)}
+  .add .go{align-self:flex-start;border:0;background:var(--fg);color:var(--bg);font-family:var(--font);font-size:11.5px;
+    padding:7px 13px;border-radius:8px;cursor:pointer}
+  .add .go:hover{opacity:.88}
+  .verdict{display:none;margin-top:12px;padding:9px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--bg-plat);
+    font-size:11px;line-height:17px;color:var(--fg-2)}
+  .verdict.show{display:block}
+  .verdict b{color:var(--fg)}
+
+  /* 详情页 */
+  .detail{display:none;flex:1;min-height:0;flex-direction:column}
+  .detail.show{display:flex}
+  .dbody{flex:1;min-height:0;overflow-y:auto;padding:0 14px 22px}
+  .dbody::-webkit-scrollbar{width:8px}
+  .dbody::-webkit-scrollbar-thumb{background:rgb(229,229,229);border-radius:4px}
+  .kicker{display:flex;align-items:center;gap:6px;margin:14px 0 8px;font-size:10.5px;color:var(--fg-3)}
+  .kicker .tile{width:16px;height:16px;border-radius:4px;font-size:9px;grid-row:auto;grid-column:auto}
+  h1{font-size:17px;line-height:1.4;font-weight:700;letter-spacing:-.005em;margin:0 0 9px}
+  .tagrow{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px}
+  .rule{height:1px;background:var(--line-2);margin:0 0 16px}
+  .art{color:var(--fg-2)}
+  .art[lang="zh"]{font-size:13.5px;line-height:1.78;letter-spacing:.005em}
+  .art[lang="en"]{font-size:13.5px;line-height:1.66;letter-spacing:-.003em}
+  .art p{margin:0 0 12px}
+  .art[lang="en"] p{max-width:62ch}
+  .art[lang="zh"] p{max-width:40em}
+  .art h2{margin:24px 0 9px;font-size:15px;line-height:1.45;font-weight:700;color:var(--fg)}
+  .art blockquote{margin:0 0 12px;padding:2px 0 2px 11px;border-left:3px solid var(--line-3)}
+  .art a{color:var(--accent);text-decoration:none}
+  .art a:hover{text-decoration:underline;text-underline-offset:2px}
+  .art strong{font-weight:650;color:var(--fg)}
+  /* 完整性说明：一行，不是一块卡片 */
+  .cut{margin:18px 0 0;padding-top:12px;border-top:1px solid var(--line-2);font-size:11px;line-height:17px;color:var(--fg-3)}
+  .cut a{color:var(--accent);text-decoration:none;cursor:pointer}
+  .cut a:hover{text-decoration:underline;text-underline-offset:2px}
+  .next{margin-top:22px}
+  .next .lbl{font-size:10.5px;font-weight:600;letter-spacing:.04em;color:var(--fg-3);margin-bottom:6px}
+  .nextrow{display:flex;gap:8px;align-items:baseline;padding:7px 0;border-top:1px solid var(--line-1);font-size:11.5px;color:var(--fg-2);cursor:pointer}
+  .nextrow:hover{color:var(--fg)}
+  .nextrow .x{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nextrow .w{flex:none;font-size:10.5px;color:var(--fg-4)}
+
+  .composer{flex:none;border-top:1px solid var(--line-2);background:var(--bg-plat);padding:7px 10px}
+  .composer .lbl{font-size:10px;color:var(--fg-3);margin-bottom:4px}
+  .composer .txt{font-size:11px;line-height:16px;color:var(--fg-2);white-space:pre-wrap;word-break:break-word;max-height:50px;overflow-y:auto}
+  .composer .txt.ph{color:var(--fg-4)}
+  .foot{flex:none;display:flex;gap:6px;align-items:center;padding:6px 10px;border-top:1px solid var(--line-2);
+    background:var(--bg-plat);font-size:10.5px;color:var(--fg-3)}
+
+  /* quote 插件的选区菜单：这是**它自己的 UI**，本插件不自造（D13） */
+  .qmenu{position:absolute;display:none;z-index:9}
+  .qmenu.show{display:block}
+  .qmenu .box{display:flex;gap:2px;padding:3px;border-radius:9px;background:rgb(33,33,35);box-shadow:0 4px 14px rgba(0,0,0,.24)}
+  .qmenu button{border:0;background:transparent;color:#fff;font-family:var(--font);font-size:11px;padding:4px 8px;
+    border-radius:6px;cursor:pointer;white-space:nowrap}
+  .qmenu button:hover{background:rgba(255,255,255,.16)}
+
+  .menu{position:absolute;display:none;z-index:20;background:var(--bg);border:1px solid var(--line-2);border-radius:9px;
+    box-shadow:0 6px 20px rgba(0,0,0,.12);padding:4px;min-width:150px}
+  .menu.show{display:block}
+  .menu button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;
+    color:var(--fg);font-family:var(--font);font-size:11.5px;padding:6px 8px;border-radius:6px;cursor:pointer;text-align:left}
+  .menu button:hover{background:var(--hover)}
+  .menu .ck{color:var(--accent)}
+  .tip{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);background:rgb(33,33,35);color:#fff;font-size:11px;
+    padding:5px 10px;border-radius:999px;font-family:var(--font);pointer-events:none;opacity:0;transition:opacity .16s;z-index:99;white-space:nowrap}
+  .tip.show{opacity:1}
+  .seg{display:inline-flex;padding:2px;border-radius:999px;background:var(--bg-active)}
+  .seg button{border:0;background:transparent;color:var(--fg-2);font-family:var(--font);font-size:11.5px;line-height:1;
+    padding:5px 10px;border-radius:999px;cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--bg);color:var(--fg);font-weight:600}
+  .hint{font-size:10.5px;line-height:18px;color:var(--fg-3)}
+  .hint b{color:var(--fg);font-weight:600}
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="panel" id="panel">
+    <div class="head" id="head">
+      <span class="t"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" id="globe"></svg><span>阅读</span><span class="n" id="unreadN">0 未读</span></span>
+      <button class="ib" id="refresh" title="刷新全部"></button>
+      <button class="ib" id="addBtn" title="新增订阅源或链接"></button>
+    </div>
+
+    <div class="tools" id="tools">
+      <div class="sbox"><span id="searchIcon"></span><input id="search" placeholder="搜索标题、作者、来源…"></div>
+      <button class="ib" id="unreadOnly" title="只看未读"></button>
+      <button class="ib" id="sortBtn" title="排序"></button>
+    </div>
+
+    <div class="scroll" id="scroll"></div>
+
+    <div class="add" id="addPane">
+      <h2>新增</h2>
+      <p>粘贴订阅源地址或任意文章链接。抓回来是什么，就按什么处理：是 feed 就订阅，是网页就只存这一篇。</p>
+      <input id="url" placeholder="https://">
+      <button class="go" id="submit">抓取</button>
+      <div class="verdict" id="verdict"></div>
+    </div>
+
+    <div class="detail" id="detail">
+      <div class="bar" id="dbar">
+        <button class="ib" id="back" title="返回列表"></button>
+        <span class="lbl">条目详情</span><span class="sp"></span>
+        <button class="ib" id="copy" title="复制链接"></button>
+        <button class="ib" id="open" title="在浏览器打开原文"></button>
+      </div>
+      <div class="dbody" id="dbody"></div>
+    </div>
+
+    <div class="composer" id="composer" style="display:none">
+      <div class="lbl">当前会话草稿</div>
+      <div class="txt ph" id="draft">（空）</div>
+    </div>
+    <div class="foot" id="foot"><span>刷出于 2 小时前 · 每日 10:00 自动刷新</span></div>
+
+    <div class="qmenu" id="qmenu"><div class="box"><button data-q="conv">引用到当前会话</button><button data-q="copy">复制</button></div></div>
+    <div class="menu" id="sortMenu"></div>
+  </div>
+
+  <div style="width:262px;padding-top:2px">
+    <div class="seg" style="margin-bottom:10px">
+      <button id="tabList" aria-pressed="true">列表</button>
+      <button id="tabAdd" aria-pressed="false">新增</button>
+      <button id="tabDetail" aria-pressed="false">详情</button>
+    </div>
+    <p class="hint" id="hint"></p>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+/* 宿主 ui-primitives 的真实 icon path（内联是因为卡片无法 import） */
+var P = {
+  globe:'M7.00018 0.353516C10.6708 0.353535 13.6468 3.32958 13.6469 7.00018C13.6468 10.6708 10.6708 13.6468 7.00018 13.6469C3.32957 13.6468 0.353535 10.6708 0.353516 7.00018C0.353535 3.32957 3.32957 0.353531 7.00018 0.353516ZM5.44643 7.59661C5.49463 8.97506 5.70762 10.191 6.02136 11.0793C6.20141 11.5891 6.40328 11.9585 6.59898 12.1889C6.79501 12.4196 6.93213 12.454 7.00018 12.454C7.06822 12.454 7.20533 12.4197 7.40138 12.1889C7.59708 11.9585 7.79895 11.589 7.979 11.0793C8.29274 10.191 8.50574 8.97506 8.55394 7.59661H5.44643ZM9.74679 7.59661C9.69813 9.0828 9.46952 10.4391 9.1029 11.477C9.0206 11.7099 8.92818 11.9316 8.82797 12.1388C10.7613 11.4511 12.1925 9.70496 12.4218 7.59661H9.74679ZM5.1706 1.8616C3.23814 2.54963 1.80876 4.29604 1.5795 6.40376H4.25357C4.30224 4.91756 4.53083 3.56129 4.89746 2.5234C4.97968 2.29066 5.07051 2.0686 5.1706 1.8616ZM7.00018 1.54637C6.93213 1.54638 6.79503 1.5807 6.59898 1.81145C6.40332 2.04177 6.20139 2.41058 6.02136 2.92012C5.70754 3.80851 5.49461 5.02499 5.44643 6.40376H8.55394C8.50575 5.025 8.29282 3.80851 7.979 2.92012C7.79898 2.41059 7.59705 2.04177 7.40138 1.81145C7.20531 1.58067 7.06823 1.54637 7.00018 1.54637Z',
+  refresh:'M7.92136 0.349152C10.3744 0.349234 12.5564 1.5052 13.9557 3.29894L15.1281 2.12759C15.3303 1.92546 15.6767 2.06943 15.6767 2.35538V5.53923C15.6766 5.71626 15.5329 5.85976 15.3559 5.86002H12.171C11.8854 5.8597 11.7426 5.51465 11.9443 5.31249L12.9641 4.29056C11.8237 2.74305 9.98908 1.74106 7.92136 1.74097C4.46436 1.74097 1.66233 4.543 1.66233 8C1.66233 11.457 4.46436 14.259 7.92136 14.259C11.3782 14.2589 14.1804 11.4569 14.1804 8H15.5722C15.5722 12.2251 12.1465 15.6507 7.92136 15.6508C3.69614 15.6508 0.270508 12.2252 0.270508 8C0.270508 3.77478 3.69614 0.349152 7.92136 0.349152Z',
+  plus:'M8.64453 1.5V7.34961H14.5V8.65039H8.64453V14.5H7.34473V8.65039H1.5V7.34961H7.34473V1.5H8.64453Z',
+  copy:'M6.14929 4.02032C7.11197 4.02032 7.87983 4.02016 8.49597 4.07598C9.12128 4.13269 9.65792 4.25188 10.1415 4.53106C10.7202 4.8653 11.2008 5.3459 11.535 5.92462C11.8142 6.40818 11.9334 6.94481 11.9901 7.57012C12.0459 8.18625 12.0458 8.95419 12.0458 9.9168C12.0458 10.8795 12.0459 11.6473 11.9901 12.2635C11.9334 12.8888 11.8142 13.4254 11.535 13.909C11.2008 14.4877 10.7202 14.9683 10.1415 15.3025C9.65792 15.5817 9.12128 15.7009 8.49597 15.7576C7.87984 15.8134 7.11196 15.8133 6.14929 15.8133C5.18667 15.8133 4.41874 15.8134 3.80261 15.7576C3.1773 15.7009 2.64067 15.5817 2.1571 15.3025C1.5784 14.9683 1.09778 14.4877 0.76355 13.909C0.484366 13.4254 0.365184 12.8888 0.308472 12.2635C0.252649 11.6473 0.252808 10.8795 0.252808 9.9168C0.252808 8.95418 0.252664 8.18625 0.308472 7.57012C0.365184 6.94481 0.484366 6.40818 0.76355 5.92462C1.09777 5.34589 1.57839 4.86529 2.1571 4.53106C2.64067 4.25188 3.1773 4.13269 3.80261 4.07598C4.41874 4.02017 5.18666 4.02032 6.14929 4.02032ZM6.14929 5.37774C5.16181 5.37774 4.46634 5.37761 3.92566 5.42657C3.39434 5.47472 3.07859 5.56574 2.83582 5.70587C2.4632 5.92106 2.15354 6.2307 1.93835 6.60333C1.79823 6.8461 1.70721 7.16185 1.65906 7.69317C1.6101 8.23385 1.61023 8.92933 1.61023 9.9168C1.61023 10.9043 1.61009 11.5998 1.65906 12.1404C1.70721 12.6717 1.79823 12.9875 1.93835 13.2303C2.15356 13.6029 2.46321 13.9126 2.83582 14.1277C3.07859 14.2679 3.39434 14.3589 3.92566 14.407C4.46634 14.456 5.16182 14.4559 6.14929 14.4559C7.13682 14.4559 7.83224 14.456 8.37292 14.407C8.90425 14.3589 9.21999 14.2679 9.46277 14.1277C9.83535 13.9126 10.145 13.6029 10.3602 13.2303C10.5004 12.9875 10.5914 12.6717 10.6395 12.1404C10.6885 11.5998 10.6884 10.9043 10.6884 9.9168C10.6884 8.92934 10.6885 8.23384 10.6395 7.69317C10.5914 7.16185 10.5004 6.8461 10.3602 6.60333C10.1451 6.23071 9.83536 5.92107 9.46277 5.70587C9.21999 5.56574 8.90424 5.47472 8.37292 5.42657C7.83224 5.3776 7.13682 5.37774 6.14929 5.37774ZM9.80164 0.367975C10.7638 0.367975 11.5314 0.36788 12.1473 0.423639C12.7726 0.480307 13.3093 0.598759 13.7928 0.877741C14.3717 1.21192 14.8521 1.69355 15.1864 2.27227C15.4655 2.75574 15.5857 3.29164 15.6425 3.9168C15.6983 4.53301 15.6971 5.3016 15.6971 6.26446V7.82989C15.6971 8.29264 15.6989 8.58993 15.6649 8.84844C15.4668 10.3525 14.401 11.5738 12.9833 11.9988V10.5467C13.6973 10.1903 14.2105 9.49662 14.3192 8.67169C14.3387 8.52347 14.3407 8.3358 14.3407 7.82989V6.26446C14.3407 5.27706 14.3398 4.58149 14.2909 4.04083C14.2428 3.50968 14.1526 3.19372 14.0126 2.95098C13.7974 2.57849 13.4876 2.26869 13.1151 2.05352C12.8724 1.91347 12.5564 1.82237 12.0253 1.77423C11.4847 1.72528 10.7888 1.7254 9.80164 1.7254H7.71472C6.7562 1.72558 5.92665 2.27697 5.52332 3.07891H4.07019C4.54221 1.51132 5.9932 0.368186 7.71472 0.367975H9.80164Z',
+  rightUp:'M11.3822 6.28945C11.3822 6.02863 11.3815 5.81352 11.3781 5.63184L3.7875 13.2238L3.24336 12.6797L2.69922 12.1342L10.2898 4.54219C10.1083 4.53884 9.89281 4.53945 9.63223 4.53945H4.2332V3H9.63223C10.14 3 10.5838 2.99932 10.9434 3.03828C11.317 3.07882 11.6907 3.16965 12.0275 3.41426C12.2118 3.5481 12.3749 3.70992 12.5088 3.89414C12.7536 4.23123 12.8443 4.60576 12.8848 4.97969C12.9237 5.3392 12.923 5.78179 12.923 6.28945V11.6898H11.3822V6.28945Z',
+  back:'M8.5 2.15137L8.07617 2.57617L5.34863 5.30273C5.09294 5.55843 4.86618 5.78438 4.70215 5.98828C4.53117 6.20088 4.38244 6.44405 4.33398 6.75C4.30778 6.91565 4.30778 7.08435 4.33398 7.25C4.38244 7.55595 4.53117 7.79912 4.70215 8.01172C4.86618 8.21561 5.09294 8.44157 5.34863 8.69727L8.07617 11.4238L8.5 11.8486L9.34863 11L8.92383 10.5762L6.19727 7.84863C5.92268 7.57405 5.75151 7.40124 5.6377 7.25977C5.53096 7.12709 5.52187 7.07728 5.51953 7.0625C5.51297 7.02105 5.51297 6.97895 5.51953 6.9375C5.52187 6.92272 5.53096 6.87291 5.6377 6.74023C5.75152 6.59876 5.92268 6.42595 6.19727 6.15137L8.92383 3.42383L9.34863 3L8.5 2.15137Z',
+  filter:'M11.2426 4.80473V6.10551H4.75819V4.80473H11.2426ZM9.40858 7.84478V9.14557H4.75819V7.84478H9.40858ZM9.23438 0.546389C10.1941 0.546389 10.9683 0.544914 11.5859 0.611819C12.2161 0.680096 12.7634 0.825745 13.2393 1.17139C13.5172 1.3733 13.7619 1.61812 13.9639 1.896C14.3096 2.37183 14.4551 2.91922 14.5234 3.54932C14.5903 4.16686 14.5889 4.94133 14.5889 5.90088V10.0981C14.5889 11.0576 14.5903 11.8321 14.5234 12.4497C14.4552 13.0798 14.3094 13.6272 13.9639 14.103C13.7619 14.381 13.5172 14.6257 13.2393 14.8276C12.7633 15.1734 12.2163 15.3189 11.5859 15.3872C10.9683 15.4541 10.1942 15.4536 9.23438 15.4536H6.76563C5.80591 15.4536 5.03168 15.4541 4.41407 15.3872C3.78385 15.3189 3.23665 15.1734 2.76074 14.8276C2.48291 14.6257 2.23802 14.3809 2.03614 14.103C1.69066 13.6272 1.54483 13.0798 1.47657 12.4497C1.40973 11.8321 1.41114 11.0576 1.41114 10.0981V5.90088C1.41113 4.94132 1.40966 4.16686 1.47657 3.54932C1.54488 2.91921 1.69042 2.37184 2.03614 1.896C2.2381 1.61807 2.4828 1.37333 2.76074 1.17139C3.23665 0.825682 3.78386 0.680109 4.41407 0.611819C5.03168 0.544905 5.80591 0.546389 6.76563 0.546389H9.23438Z'
+};
+var ART_Z = '<div class="art" lang="zh">'
+ + '<p>这里记录每周值得分享的科技内容，周五发布。</p>'
+ + '<h2>随机数，这是一个问题</h2>'
+ + '<p>今天谈谈，怎么生成真正的随机数。这个问题超难，但有一些很有趣的内容。</p>'
+ + '<p>首先，编程语言提供的随机数，是伪随机数。<a href="#">V8 引擎的官网</a>特别提醒大家这一点：它内置的随机数不是真随机数，而是由算法得到的。</p>'
+ + '<p>所谓伪随机数，并非真的随机，而是算法得到的。只要初始的种子值相同，算法会给出一样的结果。</p>'
+ + '<blockquote><strong>（1）无法预测。</strong> 随机数不能被猜到，所以必须非常大，否则会被暴力破解。<strong>（2）不能重复。</strong> 每次生成的随机数，不能是一样的。<strong>（3）均匀分布。</strong> 随机数必须平均散布在所有区间。</blockquote>'
+ + '<p><strong>一般来说，只有通过硬件，才能得到真随机数</strong>，单纯的软件算法做不到。著名的 <a href="#">Random.org</a> 在全世界部署了多个无线电接收器，专门监听大气无线电波，通过随机的无线电信号来生成随机数。</p>'
+ + '</div>';
+var ART_EN = '<div class="art" lang="en">'
+ + '<p><em>Anthropic’s Frontier Red Team developed new evaluations to measure AI capabilities in tactical intelligence targeting and conventional weapons development.</em></p>'
+ + '<p>Cybersecurity and biorisk are among the <a href="#">best-studied</a> domains of risk from misuse of AI. But most of modern conflict occurs in more conventional realms.</p>'
+ + '<h2>Models as targeters</h2>'
+ + '<p>In an intelligence agency, the core job of a targeter is to find and fix people and things. “Find” means identifying targets of interest and building enough of a picture to know who or what they are and why they matter.</p>'
+ + '</div>';
+
+var E = [
+ {id:'e2',tile:'阮',hue:'rgb(84,85,87)',src:'阮一峰的网络日志',when:'5 小时前',date:'2024 年 6 月 21 日',author:'阮一峰',
+  tags:['周刊'],unread:true,ts:5,
+  title:'科技爱好者周刊（第 305 期）：随机数，这是一个问题',
+  sum:'本周话题：怎么生成真正的随机数。另有 Cloudflare 的熔岩灯、单摆墙与反光片。',
+  body:ART_Z,truncated:true,mine:['如何写一个不会过期的 README','昨天']},
+ {id:'e1',tile:'A',hue:'rgb(217,119,87)',src:'Anthropic Research',when:'2 小时前',date:'2026 年 9 月 10 日',author:'Frontier Red Team',
+  tags:['research','evals'],unread:true,ts:2,
+  title:'Measuring AI capabilities in intelligence targeting and conventional weapons',
+  sum:'Frontier Red Team developed new evaluations to measure AI capabilities in tactical intelligence targeting.',
+  body:ART_EN,truncated:false,mine:['Identity correlation and classification','2 小时前']},
+ {id:'e4',tile:'HN',hue:'rgb(41,41,41)',src:'Hacker News',when:'昨天',date:'2026 年 9 月 16 日',author:'',tags:['database'],unread:true,ts:26,
+  title:'SQLite is not a toy database',
+  sum:'从底层看 SQLite 究竟做了什么，以及它为什么一直稳坐默认嵌入式存储的位置。',
+  body:'<div class="art" lang="zh"><p>从底层看 SQLite 究竟做了什么，以及它为什么一直稳坐默认嵌入式存储的位置。</p></div>',truncated:false,mine:[]},
+ {id:'e6',tile:'V',hue:'rgb(220,38,38)',src:'The Verge',when:'2 天前',date:'2026 年 9 月 15 日',author:'',tags:[],unread:false,ts:50,
+  title:'The quiet death of the RSS reader',
+  sum:'页面体积超过 90 万字符，本地正文抽取无法完成。',
+  body:'<div class="art" lang="zh"><p>我们只抓到了这个页面开头的一小段。剩下的部分超过宿主单次抓取的上限，没有落到本地。</p></div>',
+  truncated:true,mine:[]},
+ {id:'e5',tile:'S',hue:'rgb(151,157,166)',src:'Simon Willison',when:'2 天前',date:'2026 年 9 月 15 日',author:'Simon Willison',tags:['tools'],unread:false,ts:52,
+  title:'Everything I built in the last quarter',
+  sum:'A round-up of the small tools, each one a single file, and what they had in common.',
+  body:'<div class="art" lang="en"><p>A round-up of the small tools, each one a single file, and what they had in common.</p></div>',truncated:false,mine:[]}
+];
+
+var panel=document.getElementById('panel'),scroll=document.getElementById('scroll'),detail=document.getElementById('detail'),
+    dbody=document.getElementById('dbody'),dbar=document.getElementById('dbar'),composer=document.getElementById('composer'),
+    draft=document.getElementById('draft'),qmenu=document.getElementById('qmenu'),tip=document.getElementById('tip'),
+    tools=document.getElementById('tools'),addPane=document.getElementById('addPane'),head=document.getElementById('head'),
+    sortMenu=document.getElementById('sortMenu');
+var st={view:'list',q:'',unreadOnly:false,sort:'new',openId:null,read:{}},tipT=null;
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function byId(x){for(var i=0;i<E.length;i++)if(E[i].id===x)return E[i];return null}
+function flash(m){tip.textContent=m;tip.classList.add('show');clearTimeout(tipT);tipT=setTimeout(function(){tip.classList.remove('show')},1500)}
+function svg(d,size){return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 16 16" fill="none"><path d="'+d+'" fill="currentColor"/></svg>'}
+/* 工具条小图标按 16x16 网格、stroke=currentColor 画（宿主 uicons 的线重） */
+var S = {
+  search:'M7 2.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6Zm3.4 8.2 3 3',
+  filter:'M2.6 3.4h10.8L9.2 8.3v4.1l-2.4-1.3V8.3z',
+  sort:'M4.6 3v10M2.4 10.8 4.6 13l2.2-2.2M11.4 13V3M9.2 5.2 11.4 3l2.2 2.2',
+  chev:'M6.2 3.4 10.7 8l-4.5 4.6'
+};
+function ssym(name,size){return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="'+S[name]+'"/></svg>'}
+function iconBtn(el,name,title,size){el.innerHTML=svg(P[name],size||15);el.title=title}
+function symBtn(el,name,title,size){el.innerHTML=ssym(name,size||15);el.title=title}
+
+iconBtn(document.getElementById('globe'),'globe',14);document.getElementById('globe').setAttribute('width','14');
+iconBtn(document.getElementById('refresh'),'refresh','刷新全部');
+iconBtn(document.getElementById('addBtn'),'plus','新增订阅源或链接');
+symBtn(document.getElementById('unreadOnly'),'filter','只看未读');
+symBtn(document.getElementById('sortBtn'),'sort','排序');
+iconBtn(document.getElementById('copy'),'copy','复制链接');
+iconBtn(document.getElementById('open'),'rightUp','在浏览器打开原文');
+iconBtn(document.getElementById('back'),'back','返回列表',14);
+document.getElementById('searchIcon').innerHTML=ssym('search',12);
+document.getElementById('globe').setAttribute('viewBox','0 0 16 16');
+
+function visibleList(){
+  var q=st.q.trim().toLowerCase();
+  var rows=E.filter(function(e){
+    if(st.unreadOnly&&!(!st.read[e.id]&&e.unread))return false;
+    if(!q)return true;
+    return (e.title+' '+e.sum+' '+(e.author||'')+' '+e.src).toLowerCase().indexOf(q)>=0;
+  });
+  if(st.sort==='new')rows.sort(function(a,b){return a.ts-b.ts});
+  else if(st.sort==='old')rows.sort(function(a,b){return b.ts-a.ts});
+  else rows.sort(function(a,b){return a.src===b.src?a.ts-b.ts:(a.src<b.src?-1:1)});
+  return rows;
+}
+function renderList(){
+  var rows=visibleList();
+  var unread=E.filter(function(e){return e.unread&&!st.read[e.id]}).length;
+  document.getElementById('unreadN').textContent=unread+' 未读';
+  document.getElementById('unreadOnly').className='ib'+(st.unreadOnly?' on':'');
+  document.getElementById('sortBtn').className='ib'+(st.sort!=='new'?' on':'');
+  if(!rows.length){
+    scroll.innerHTML='<div class="none">'+(st.q?'没有匹配「'+esc(st.q)+'」的条目。':'没有条目。')+'</div>';
+    return;
+  }
+  var html='',lastSrc=null;
+  rows.forEach(function(e){
+    if(st.sort==='src'&&e.src!==lastSrc){lastSrc=e.src;html+='<div class="ghead">'+esc(e.src)+'</div>'}
+    var isUnread=e.unread&&!st.read[e.id];
+    html+='<div class="card" data-card="'+e.id+'">'
+      +'<span class="tilewrap"><span class="tile" style="background:'+e.hue+'">'+esc(e.tile)+'</span>'
+        +(isUnread?'<span class="u"></span>':'')+'</span>'
+      +'<div class="meta"><span class="src">'+esc(e.src)+'</span><span class="sep">·</span><span class="when">'+esc(e.when)+'</span></div>'
+      +'<div class="ttl"><span class="h">'+esc(e.title)+'</span></div>'
+      +'<div class="sum">'+esc(e.sum)+'</div>'
+      +'<div class="ctags">'+(e.tags||[]).map(function(t){return '<span class="tag">'+esc(t)+'</span>'}).join('')
+        +(e.author?'<span class="author">'+esc(e.author)+'</span>':'')+'</div>'
+      +'<span class="cv">'+ssym('chev',13)+'</span>'
+      +'</div>';
+  });
+  scroll.innerHTML=html;
+  scroll.querySelectorAll('[data-card]').forEach(function(c){
+    c.addEventListener('click',function(){showDetail(c.getAttribute('data-card'))});
+  });
+}
+function detailHtml(e){
+  var tags=(e.tags||[]).map(function(t){return '<span class="tag">'+esc(t)+'</span>'}).join('');
+  var mine=(e.mine&&e.mine.length)
+    ?'<div class="next"><div class="lbl">同一来源</div>'+e.mine.map(function(m){
+      return '<div class="nextrow"><span class="x">'+esc(m[0])+'</span><span class="w">'+esc(m[1])+'</span></div>'}).join('')+'</div>':'';
+  // 一行完整性说明，不是一整块提示卡
+  var cut=e.truncated
+    ?'<div class="cut">受限篇幅，内容未完整呈现 —— <a data-open-origin>阅读原文</a></div>':'';
+  return '<div class="kicker"><span class="tile" style="width:16px;height:16px;border-radius:4px;font-size:9px;background:'+e.hue+'">'+esc(e.tile)+'</span>'
+    +'<span>'+esc(e.src)+'</span><span class="sep">·</span><span>'+esc(e.date)+'</span>'
+    +(e.author?'<span class="sep">·</span><span>'+esc(e.author)+'</span>':'')+'</div>'
+    +'<h1>'+esc(e.title)+'</h1>'
+    +(tags?'<div class="tagrow">'+tags+'</div>':'<div style="height:8px"></div>')
+    +'<div class="rule"></div>'+e.body+cut+mine;
+}
+function showDetail(id){
+  var e=byId(id);if(!e)return;
+  st.openId=id;st.read[id]=true;st.view='detail';
+  dbody.innerHTML=detailHtml(e);dbody.scrollTop=0;
+  dbar.style.display='';detail.classList.add('show');dbody.style.display='';
+  head.style.display='none';tools.style.display='none';scroll.style.display='none';
+  addPane.classList.remove('show');composer.style.display='';document.getElementById('foot').style.display='';
+  renderList();
+}
+function showList(){
+  st.openId=null;st.view='list';qmenu.classList.remove('show');
+  dbar.style.display='none';detail.classList.remove('show');dbody.style.display='';
+  head.style.display='';tools.style.display='flex';scroll.style.display='';
+  addPane.classList.remove('show');composer.style.display='none';document.getElementById('foot').style.display='';
+  renderList();
+}
+function showAdd(){
+  st.view='add';st.openId=null;qmenu.classList.remove('show');
+  dbar.style.display='none';detail.classList.remove('show');
+  head.style.display='';tools.style.display='none';scroll.style.display='none';
+  addPane.classList.add('show');composer.style.display='none';
+  document.getElementById('verdict').classList.remove('show');
+}
+document.getElementById('back').addEventListener('click',showList);
+document.getElementById('copy').addEventListener('click',function(){flash('已复制链接')});
+document.getElementById('open').addEventListener('click',function(){flash('在浏览器打开原文')});
+document.getElementById('addBtn').addEventListener('click',showAdd);
+panel.addEventListener('click',function(ev){
+  var a=ev.target.closest('[data-open-origin]');
+  if(a){flash('在浏览器打开原文');return}
+});
+document.getElementById('refresh').addEventListener('click',function(){flash('已刷新 5 个源 · 新增 2 条')});
+document.getElementById('search').addEventListener('input',function(){st.q=this.value;renderList()});
+document.getElementById('unreadOnly').addEventListener('click',function(){st.unreadOnly=!st.unreadOnly;renderList()});
+document.getElementById('sortBtn').addEventListener('click',function(ev){
+  ev.stopPropagation();
+  var items=[['new','最新在前'],['old','最早在前'],['src','按来源分组']];
+  sortMenu.innerHTML=items.map(function(it){
+    return '<button data-sort="'+it[0]+'"><span>'+it[1]+'</span>'+(st.sort===it[0]?'<span class="ck">✓</span>':'')+'</button>';
+  }).join('');
+  var r=this.getBoundingClientRect(),pr=panel.getBoundingClientRect();
+  sortMenu.style.top=(r.bottom-pr.top+6)+'px';
+  sortMenu.style.right=(pr.right-r.right)+'px';
+  sortMenu.classList.add('show');
+  sortMenu.querySelectorAll('[data-sort]').forEach(function(b){
+    b.addEventListener('click',function(){st.sort=b.getAttribute('data-sort');sortMenu.classList.remove('show');renderList()});
+  });
+});
+document.addEventListener('click',function(ev){
+  if(!ev.target.closest('#sortMenu')&&!ev.target.closest('#sortBtn'))sortMenu.classList.remove('show');
+});
+document.getElementById('submit').addEventListener('click',function(){
+  var v=document.getElementById('url').value.trim();
+  var box=document.getElementById('verdict');
+  if(!v){box.innerHTML='请输入地址。';box.classList.add('show');return}
+  // 原型里用返回值形状演示 D15：抓回什么就按什么处理
+  var feed=/\.(xml|rss|atom)$|\/rss\/?$|\/feed\/?$/i.test(v)||/hnrss|feeds\./.test(v);
+  box.innerHTML=feed
+    ?'<b>已订阅</b> —— 抓回来的是 RSS/Atom，已作为一个订阅源入库，之后每日刷新。<br><span style="color:var(--fg-3)">kind: rss · 每日 10:00 自动刷新</span>'
+    :'<b>已保存这篇</b> —— 抓回来是网页，只存这一条，不建订阅源。<br><span style="color:var(--fg-3)">kind: link · 正文已抽取，可划选引用</span>';
+  box.classList.add('show');
+});
+document.getElementById('url').addEventListener('keydown',function(ev){if(ev.key==='Enter')document.getElementById('submit').click()});
+function selInArt(){
+  var s=window.getSelection();if(!s||s.rangeCount===0||st.openId===null)return '';
+  var art=panel.querySelector('.art');if(!art)return '';
+  var node=s.getRangeAt(0).commonAncestorContainer;
+  if(!art.contains(node)&&node!==art)return '';
+  return s.toString().replace(/\s+/g,' ').trim();
+}
+function placeMenu(){
+  var t=selInArt();if(!t){qmenu.classList.remove('show');return}
+  var r=window.getSelection().getRangeAt(0).getBoundingClientRect(),pr=panel.getBoundingClientRect();
+  var w=qmenu.offsetWidth||186;
+  qmenu.style.left=Math.max(6,Math.min(r.left+r.width/2-pr.left-w/2,panel.offsetWidth-w-6))+'px';
+  qmenu.style.top=Math.max(6,(r.top-pr.top)-38)+'px';
+  qmenu.classList.add('show');
+}
+document.addEventListener('selectionchange',function(){if(st.openId!==null)placeMenu()});
+dbody.addEventListener('scroll',function(){if(st.openId!==null)setTimeout(placeMenu,0)});
+qmenu.addEventListener('mousedown',function(ev){ev.preventDefault()});
+qmenu.querySelectorAll('[data-q]').forEach(function(b){
+  b.addEventListener('click',function(){
+    var e=byId(st.openId);
+    if(b.getAttribute('data-q')==='copy'){flash('已复制选中内容')}
+    else{
+      var sel=selInArt()||(e?e.sum:'');
+      var block='> '+sel+'\n\n— 《'+(e?e.title:'')+'》'+(e?e.src:'');
+      var wasPh=draft.classList.contains('ph');draft.classList.remove('ph');
+      draft.textContent=(wasPh?'':draft.textContent+'\n\n')+block;
+      flash('已引用 '+sel.length+' 字');
+    }
+    qmenu.classList.remove('show');
+    var s=window.getSelection();if(s)s.removeAllRanges();
+  });
+});
+var HINTS={
+ list:'<b>列表页</b>的新东西：搜索框（本地过滤标题/摘要/作者/来源）、<b>只看未读</b>、<b>排序</b>（最新 / 最早 / 按来源分组）、右上 <b>+</b> 新增。未读是<b>来源徽标右下角的小圆点</b>，不再和标题、来源挤在一起；卡片右侧的角标是 chevron（点进去），不再是那个容易误读成筛选的三横图标。<br><br>点任意卡片看详情。',
+ add:'<b>新增</b>：一个输入框，<b>抓回来是什么就按什么处理</b> —— 是 feed 就订阅，是网页就只存这一篇。这样你不用先回答"这地址到底是不是 RSS"，也不会因为粘了一个网页首页而建出一个 0 条的假订阅源。<br><br>试试点「抓取」，看两种判定结果。',
+ detail:'<b>详情页</b>。正文里划选 → quote 插件的选区菜单（它就是那个 UI，本插件不自造）。<br><br>滚到底看 <b>受限篇幅</b> 那一行 —— 按你的要求改成一行文字 + 可点的「阅读原文」，不再是整块提示卡。'
+};
+function setTab(which){
+  document.getElementById('tabList').setAttribute('aria-pressed',String(which==='list'));
+  document.getElementById('tabAdd').setAttribute('aria-pressed',String(which==='add'));
+  document.getElementById('tabDetail').setAttribute('aria-pressed',String(which==='detail'));
+  document.getElementById('hint').innerHTML=HINTS[which];
+  if(which==='list')showList();else if(which==='add')showAdd();else showDetail('e2');
+}
+document.getElementById('tabList').addEventListener('click',function(){setTab('list')});
+document.getElementById('tabAdd').addEventListener('click',function(){setTab('add')});
+document.getElementById('tabDetail').addEventListener('click',function(){setTab('detail')});
+renderList();
+setTab('list');
+</script>
+</body>
+</html>

@@ -30,6 +30,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { MissionReadFace } from './faces.ts'
+import { readExportState, type EvalExportNote } from './export-note.ts'
 import { EvalReadRefused } from './read.ts'
 import { analyzeBundle, type EvalReport, type JudgeAssignment } from './report.ts'
 import type {
@@ -63,6 +64,35 @@ async function isBundle(dir: string): Promise<boolean> {
 }
 
 /**
+ * When the bundle says it was written — `manifest.json`'s own `exportedAt`,
+ * which is the field the walkthrough read to discover that the final verdicts
+ * came after it (G17).
+ *
+ * The MANIFEST and not the note: the note is eval's record of an export it
+ * made, and a bundle exported by `dsh-mission export` or copied from another
+ * machine has no note at all. A bundle whose manifest cannot be read reports
+ * null, and the staleness sentence then stays quiet rather than guessing.
+ */
+async function bundleExportedAt(bundleDir: string): Promise<number | null> {
+  try {
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8')) as unknown
+    const at = isPlainObject(manifest) ? manifest['exportedAt'] : undefined
+    return typeof at === 'number' && Number.isFinite(at) ? at : null
+  } catch {
+    return null
+  }
+}
+
+/** Whether the bundle carries the written report `dsh-eval report` produces. */
+async function hasSummary(bundleDir: string): Promise<boolean> {
+  try {
+    return (await stat(join(bundleDir, 'report', 'summary.md'))).isFile()
+  } catch {
+    return false
+  }
+}
+
+/**
  * The plan's own `exports`, read from the plan the run recorded. A plan that
  * moved, or one this composition cannot read, contributes no candidate rather
  * than a guessed path — the other two candidates still stand.
@@ -82,18 +112,25 @@ async function planExportsDir(planPath: string | null): Promise<string | null> {
  * Every export directory this run's bundle could be under, in the order they
  * are tried: what the caller named, what the plan names, and decision 11's
  * default beside the dataset repository.
+ * The run's own export NOTE goes first when it has one: a run started with
+ * `--out <dir>` put its bundle somewhere none of the other three candidates
+ * name, and until the note existed the only way back to it was a reader typing
+ * the path into a box (I5·T53).
  * @param meta - the run's `run.meta` as the ledger holds it.
  * @param outDir - the directory the caller wants tried first (the dialog's).
+ * @param noted - the directory the run's newest export note names, if any.
  * @returns absolute candidate directories, de-duplicated, first-listed wins.
  */
 export async function exportDirCandidates(
   meta: Record<string, unknown>,
   outDir?: string,
+  noted?: string,
 ): Promise<string[]> {
   const snapshot = isPlainObject(meta['snapshot']) ? meta['snapshot'] : undefined
   const repo = stringOrNull(snapshot?.['repo'])
   const candidates: Array<string | null> = [
     outDir === undefined || outDir.trim() === '' ? null : expandHome(outDir.trim()),
+    noted === undefined || noted.trim() === '' ? null : expandHome(noted.trim()),
     await planExportsDir(stringOrNull(meta['planPath'])),
     repo === null ? null : join(repo, 'exports'),
   ]
@@ -174,6 +211,13 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
     searched: [],
     refusal: null,
     cliHint: `dsh-eval report ${report.bundleDir}`,
+    // Filled by {@link runReportView}, which has the ledger and the manifest.
+    // Defaulted here so the pure projection stays callable on its own.
+    exportedAt: null,
+    lastHumanFinalAt: null,
+    staleAfterFinal: false,
+    summaryWritten: false,
+    reexportable: false,
     invariants: report.invariants.map(check => ({
       id: check.id,
       title: check.title,
@@ -231,6 +275,11 @@ function notExported(runId: string, searched: string[]): EvalRunReportView {
       ? 'this run records no plan and no dataset repository, so there is no export directory to look in — export the bundle and name the directory'
       : `no export bundle for ${runId} yet — export it first (looked for ${runId}-bundle in: ${searched.join(', ')})`,
     cliHint: null,
+    exportedAt: null,
+    lastHumanFinalAt: null,
+    staleAfterFinal: false,
+    summaryWritten: false,
+    reexportable: false,
     invariants: [],
     comparisonAllowed: false,
     singleCondition: false,
@@ -273,17 +322,56 @@ export async function runReportView(
   } catch (error) {
     throw new EvalReadRefused(`cannot read run ${runId}: ${error instanceof Error ? error.message : String(error)}`)
   }
-  const candidates = await exportDirCandidates(meta, options.outDir)
+  const state = readExportState(mission, runId)
+  const candidates = await exportDirCandidates(meta, options.outDir, state.note?.outDir)
   const searched: string[] = []
   for (const candidate of candidates) {
     const bundle = bundleDirOf(candidate, runId)
     searched.push(candidate)
-    if (await isBundle(bundle)) return projectReport(await analyzeBundle(bundle), runId)
+    if (!await isBundle(bundle)) continue
+    const view = projectReport(await analyzeBundle(bundle), runId)
+    return { ...view, ...await exportFreshness(bundle, state) }
   }
-  return notExported(runId, searched)
+  return {
+    ...notExported(runId, searched),
+    lastHumanFinalAt: state.lastHumanFinalAt,
+  }
 }
 
-/** Reshape a finalize walk for the wire: the counts, every cell, and the log. */
+/**
+ * The four fields that say how OLD the bundle on screen is.
+ *
+ * `staleAfterFinal` is the one with a sentence attached: an export made before
+ * the last human-final does not carry it, so the numbers a reader is looking
+ * at were computed without the final verdicts. It is deliberately the bundle's
+ * own `exportedAt` that is compared — the manifest, not eval's note — because
+ * that is the timestamp of the FILES, and the note may describe an export whose
+ * directory a person has since moved away.
+ *
+ * `reexportable` says whether the one-click repeat has something to repeat:
+ * the note records the layers and the snapshot reference an export was made
+ * with, and without one the only honest offer is the dialog.
+ */
+async function exportFreshness(
+  bundleDir: string,
+  state: { note: EvalExportNote | null; lastHumanFinalAt: number | null },
+): Promise<Pick<EvalRunReportView, 'exportedAt' | 'lastHumanFinalAt' | 'staleAfterFinal' | 'summaryWritten' | 'reexportable'>> {
+  const exportedAt = await bundleExportedAt(bundleDir) ?? (state.note?.bundleDir === bundleDir ? state.note.exportedAt : null)
+  return {
+    exportedAt,
+    lastHumanFinalAt: state.lastHumanFinalAt,
+    staleAfterFinal: exportedAt !== null && state.lastHumanFinalAt !== null && exportedAt < state.lastHumanFinalAt,
+    summaryWritten: await hasSummary(bundleDir),
+    reexportable: state.note !== null,
+  }
+}
+
+/**
+ * Reshape a finalize walk for the wire: the counts, every cell, what happened
+ * to the containers, and the log. Optional fields become explicit nulls here,
+ * as everywhere on this seam — a reader must be able to tell "no unit" from
+ * "a field this projection forgot".
+ */
 export function projectFinalize(report: FinalizeReport, log: readonly string[]): EvalFinalizeView {
   return {
     runId: report.runId,
@@ -297,7 +385,13 @@ export function projectFinalize(report: FinalizeReport, log: readonly string[]):
       action: cell.action,
       finalState: cell.finalState,
       reason: cell.reason ?? null,
+      unit: cell.unit === undefined
+        ? null
+        : { id: cell.unit.id, resource: cell.unit.resource, released: cell.unit.released, reason: cell.unit.reason ?? null },
     })),
+    unitsReleased: report.unitsReleased,
+    unitsHeld: report.unitsHeld.map(held => ({ ...held })),
+    unitsKnown: report.unitsKnown,
     log: [...log],
   }
 }

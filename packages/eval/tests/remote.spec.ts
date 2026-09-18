@@ -1,6 +1,7 @@
 /**
- * The eval Remote's LAB verbs (I5·T36): the plan review, the condition
- * registry and its diff, and the one write — approve.
+ * The eval Remote's LAB verbs: the plan review, the condition registry and its
+ * diff, and the two writes — `newExperiment` (I5·T34, the 新建实验 form) and
+ * `approve` (I5·T36).
  *
  * The approval gate is the case worth pinning. `approve` is the button on the
  * plan-review page and the only door a human's click has to `runStart`; a plan
@@ -10,6 +11,7 @@
  * reached, and the refusal comes back as data beside the same check list the
  * page was already showing.
  */
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -196,6 +198,22 @@ describe('approve — the human act of ui-spec step 5', () => {
     })
     expect(runStart).toHaveBeenCalledTimes(1)
     expect(runStart.mock.calls[0]?.[1]).toMatchObject({ parentSessionId: 's1', cwd: '/workspace' })
+    // The approval that ticks nothing walks the release gate: `keepUnits` is
+    // absent, and absent is the default (T57).
+    expect(runStart.mock.calls[0]?.[1]).not.toHaveProperty('keepUnits')
+    await fiber.dispose()
+  })
+
+  it('carries the 保留单元 box through to the run when the approver ticked it', async () => {
+    const { fiber, service, remote } = await bench()
+    const { plan } = fixtureRepo()
+    const runStart = vi.spyOn(service, 'runStart').mockResolvedValue({
+      jobId: 'eval-run-1', runId: 'run-1', parentSessionId: 's1',
+    })
+
+    await remote.approve(agentOf('/workspace'), { planPath: plan, keepUnits: true })
+
+    expect(runStart.mock.calls[0]?.[1]).toMatchObject({ keepUnits: true })
     await fiber.dispose()
   })
 
@@ -223,6 +241,95 @@ describe('approve — the human act of ui-spec step 5', () => {
     expect(result.refusal).toBe('the run could not start: no jobs service in this composition')
     // The check list survives the refusal — the page shows both together.
     expect(result.checks.length).toBeGreaterThan(0)
+    await fiber.dispose()
+  })
+})
+
+describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', () => {
+  /** The T36 fixture plus the item tree a draft needs to land in. */
+  function draftable(): string {
+    const { repo } = fixtureRepo()
+    writeJson(join(repo, 'datasets', 'ds'), 'items/p0-001/item.json', { id: 'p0-001' })
+    return repo
+  }
+
+  const FORM = {
+    name: 'i5-walk',
+    dataset: 'ds',
+    items: ['p0-001'],
+    conditions: ['dsh-exec'],
+    reps: 1,
+    stages: ['stage-1'],
+    seed: 20260916,
+    activeMinutes: 60,
+    turns: 10,
+  }
+
+  it('drafts the plan into the session\'s repository and answers with the review page\'s own payload', async () => {
+    const { fiber, remote } = await bench()
+    const repo = draftable()
+
+    const result = await remote.newExperiment(agentOf(), { ...FORM, repo })
+
+    expect(result.planPath).toBe(join(repo, 'datasets', 'ds', 'plans', 'i5-walk.json'))
+    expect(result.review.ok).toBe(true)
+    expect(result.review.digest?.items).toEqual(['p0-001'])
+    // The file is really there — the form's next stop is the plan-review page,
+    // which re-reads it by path.
+    expect(JSON.parse(readFileSync(result.planPath, 'utf8'))['schema']).toBe('dataseek.plan/1')
+    await fiber.dispose()
+  })
+
+  it('is a write, not a start: nothing reaches runStart', async () => {
+    const { fiber, service, remote } = await bench()
+    const repo = draftable()
+    const runStart = vi.spyOn(service, 'runStart')
+
+    await remote.newExperiment(agentOf('/workspace'), { ...FORM, repo })
+
+    // 启动不在这张表单上 (ui-spec §五). The starting verb is `approve`, one page
+    // further on, and this one has no path to it.
+    expect(runStart).not.toHaveBeenCalled()
+    await fiber.dispose()
+  })
+
+  it('reaches the SAME service verb the eval_plan_draft tool reaches, with the calling session', async () => {
+    const { fiber, service, remote } = await bench()
+    const repo = draftable()
+    const draft = vi.spyOn(service, 'draftExperiment')
+
+    await remote.newExperiment(agentOf(), { ...FORM, repo })
+
+    expect(draft).toHaveBeenCalledTimes(1)
+    expect(draft.mock.calls[0]?.[1]).toEqual({ session: { id: 's1' } })
+    await fiber.dispose()
+  })
+
+  it('mints a new condition beside the plan, copying one that exists', async () => {
+    const { fiber, remote } = await bench()
+    const repo = draftable()
+
+    const result = await remote.newExperiment(agentOf(), {
+      ...FORM,
+      repo,
+      newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
+    })
+
+    expect(result.conditionPaths).toEqual([join(repo, 'datasets', 'ds', 'conditions', 'dsh-exec-pro.json')])
+    expect(result.conditions).toEqual(['dsh-exec', 'dsh-exec-pro'])
+    await fiber.dispose()
+  })
+})
+
+describe('draftOptions — what the form\'s pickers may offer', () => {
+  it('answers the sets with their items and stage schemas', async () => {
+    const { fiber, remote } = await bench()
+    const { repo } = fixtureRepo()
+    writeJson(join(repo, 'datasets', 'ds'), 'items/p0-001/item.json', { id: 'p0-001' })
+
+    const view = await remote.draftOptions(agentOf(), { repo })
+
+    expect(view.datasets).toEqual([{ id: 'ds', items: ['p0-001'], stages: ['stage-1'] }])
     await fiber.dispose()
   })
 })

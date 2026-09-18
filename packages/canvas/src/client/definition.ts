@@ -3,11 +3,13 @@
  * `canvas` tab type is.
  *
  * The type is a page, not a viewer: it claims no address and is opened by
- * kind. The guide entry is what makes it reachable — the shipped guide renders
- * a capsule for every registered type, and when this is a pane's ONLY
- * registered type the registry's `defaultSeed` opens it directly instead of
- * showing the guide at all (both behaviours are the official registry's; this
- * package registers nothing beside the capsule).
+ * kind. Since M1.5 the seat hosts the CARD-DETAIL READER — it follows the
+ * board's selection through the shared store; the board activates it through
+ * the official `openTab` on a body click, and the guide entry is what makes
+ * it reachable by hand (the shipped guide renders a capsule for every
+ * registered type, and when this is a pane's ONLY registered type the
+ * registry's `defaultSeed` opens it directly instead of showing the guide at
+ * all — both behaviours are the official registry's).
  *
  * @module @khorsheed/dsh-canvas/client
  */

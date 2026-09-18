@@ -22,7 +22,11 @@ import { IconFolderClose16, IconFolderOpen16, Pill } from '@deepseek-ai/dsh-clie
 import { classifyFile, DATASET_SLOTS, type DatasetSlot } from '../slots.ts'
 import type { DatasetOverviewRow, ItemBrief, ItemRecord, JsonObject } from '../types.ts'
 import type { DatasetsViewProps, ItemRunsView } from './contract.ts'
-import { bytes, Chevron, FileIcon, SlotMark, slotKey, stamp } from './parts.tsx'
+import { ErrorState } from './ErrorState.tsx'
+import {
+  bucketTone, bytes, Chevron, Chip, EmptyState, FileIcon, SlotMark, slotKey, stageTone, stamp, Word,
+} from './parts.tsx'
+import { bucketPhrase, stagePhrase } from './vocab.ts'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
 import css from './DatasetsView.module.css'
@@ -255,24 +259,29 @@ function AnswerRecord(props: { runs: ItemRunsView; t: DatasetsViewProps['t'] }) 
   return (
     <section className={css.panel}>
       <div className={css.panelTitle}>{t('detail.runs')}</div>
-      {runs.runs.length === 0 && <div className={css.panelHint}>{t('detail.runsEmpty')}</div>}
+      {runs.runs.length === 0 && <EmptyState title={t('detail.runsEmpty')} hint={t('detail.runsEmptyHint')} />}
       {runs.runs.map(run => (
         <div key={run.runId} className={css.runBlock}>
           <div className={css.panelLine}>
             <span className={css.panelPath}>{run.name}</span>
             <span className={css.panelTag}>{stamp(run.startedAt)}</span>
-            {run.commit !== null && <span className={css.panelTag}>@{run.commit.slice(0, 7)}</span>}
+            {run.commit !== null && <span className={css.panelTag} title={run.commit}>@{run.commit.slice(0, 7)}</span>}
           </div>
           <ul className={css.panelList}>
             {run.cells.map(cell => (
               <li key={cell.missionId} className={css.panelRow}>
                 <span className={css.panelPath}>
-                  {t('detail.runsCell', {
-                    condition: cell.condition ?? '—',
-                    rep: cell.rep ?? '—',
-                    bucket: cell.bucket,
-                  })}
+                  {t('detail.runsCell', { condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
                 </span>
+                {/* The bucket and the stage are eval's projection of the same
+                    ledger the 实验室 tab reads; ui-spec §九 makes them the same
+                    two chips here as they are there. */}
+                <Chip tone={bucketTone(cell.bucket)} title={cell.bucket}>
+                  <Word phrase={bucketPhrase(cell.bucket)} t={t} />
+                </Chip>
+                <Chip tone={stageTone(cell.state)} title={cell.state}>
+                  <Word phrase={stagePhrase(cell.state)} t={t} />
+                </Chip>
                 <span className={css.panelNumber}>
                   {Object.entries(cell.verdicts).map(([ns, count]) => `${ns} ${count}`).join(' · ')}
                 </span>
@@ -417,7 +426,9 @@ export function DatasetDetail(props: DatasetDetailProps) {
             />
           ))}
         </div>
-        {slotFilter !== null && !anyFile && <div className={css.empty}>{t('detail.filterEmpty')}</div>}
+        {slotFilter !== null && !anyFile && (
+          <EmptyState title={t('detail.filterEmpty')} hint={t('detail.filterEmptyHint')} />
+        )}
       </nav>
       <section className={css.preview}>
         {openItem !== null && (
@@ -427,12 +438,14 @@ export function DatasetDetail(props: DatasetDetailProps) {
           </div>
         )}
         <div className={css.previewScroll}>
-          {openItem === null && selection === null && <div className={css.empty}>{t('detail.itemEmpty')}</div>}
+          {openItem === null && selection === null && (
+            <EmptyState title={t('detail.itemEmpty')} hint={t('detail.itemEmptyHint')} />
+          )}
           {openItem !== null && briefLoading && brief === undefined && (
             <div className={css.empty}>{t('detail.briefLoading')}</div>
           )}
           {openItem !== null && briefError !== undefined && (
-            <div className={css.panelWarn}>{t('detail.briefError')}: {briefError}</div>
+            <ErrorState what={t('detail.briefError')} message={briefError} compact t={t} />
           )}
           {openItem !== null && brief !== undefined && (
             <>
@@ -457,7 +470,13 @@ export function DatasetDetail(props: DatasetDetailProps) {
               </div>
               {previewLoading && <div className={css.empty}>{t('preview.loading')}</div>}
               {!previewLoading && previewError !== null && (
-                <div className={css.panelWarn}>{t('preview.error')}: {previewError}</div>
+                <ErrorState
+                  what={t('preview.error')}
+                  message={previewError}
+                  path={selection.path}
+                  compact
+                  t={t}
+                />
               )}
               {!previewLoading && previewError === null && preview !== null && (
                 <div className={css.previewContent}>

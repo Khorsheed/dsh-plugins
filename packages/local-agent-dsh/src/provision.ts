@@ -21,6 +21,18 @@
  * scope directory IS the capability face: two scopes whose rosters name two
  * presets are two subjects, and the difference is a file a person can read.
  *
+ * It may also carry a PERMISSION BOUNDARY: one appended patch layer pinning
+ * `sandbox-policy`'s mode and `user-approval`'s policy to one of dsh's own
+ * three permission presets. Without it the sub-dsh runs whatever `dsh-base`
+ * composes — `workspace-write` plus `ask` — which is the right default for a
+ * sub-dsh on a developer's machine and the wrong one inside an evaluation
+ * unit, where the container IS the boundary and nobody is there to answer an
+ * approval prompt. The layer is a FILE in the scope directory for the same
+ * reason the roster is: a scoped home bind-mounted into a unit carries its
+ * own boundary with it, and the value never has to ride the spawn env (where
+ * every name enters the unit's composite fingerprint) or be baked into an
+ * image.
+ *
  * The headless bundle declares no `dsh.bundle` on purpose (the T6/G3
  * incident): a declaration would let the host's `dsh plugin` reconcile mount
  * its sub-dsh-only composition into any profile where the package is a
@@ -72,6 +84,27 @@ export interface DshSubProfilePreset {
   includeUserRoot?: boolean
 }
 
+/**
+ * A sub-dsh permission preset: dsh's own three-word vocabulary, spelled the
+ * way `@deepseek-ai/dsh-base` spells it in its `permission-presets` table.
+ * Each word names BOTH halves of the boundary — the sandbox mode and the
+ * approval policy — because that is what the table pairs them as.
+ */
+export type DshSubProfilePermissions = 'read-only' | 'workspace-write' | 'danger-full-access'
+
+/**
+ * The approval policy each permission preset pairs with, copied from
+ * `dsh-base`'s own `permission-presets` table. Pinning the two rows
+ * separately (they are two plugins) must not let them drift apart: the sub-
+ * dsh that sandboxes at `danger-full-access` while still asking for approval
+ * would be a boundary nobody asked for.
+ */
+const APPROVAL_FOR: Readonly<Record<DshSubProfilePermissions, 'ask' | 'never'>> = {
+  'read-only': 'ask',
+  'workspace-write': 'ask',
+  'danger-full-access': 'never',
+}
+
 /** Config the provisioning step reads. */
 export interface DshSubProfileConfig {
   /** Sub-dsh profile name under the scoped home. */
@@ -88,6 +121,13 @@ export interface DshSubProfileConfig {
    * roster row, and the agent reading the global layer.
    */
   preset?: DshSubProfilePreset
+  /**
+   * Pin the sub-dsh's permission boundary — the sandbox mode every confined
+   * call runs under and the approval policy a denied call escalates through.
+   * Absent leaves `dsh-base`'s own rows untouched, which is byte for byte
+   * the behavior of every scope before this field existed.
+   */
+  permissions?: DshSubProfilePermissions
 }
 
 /** The roster row's id inside the sub-profile patch (and the marker this module rewrites). */
@@ -115,6 +155,9 @@ export const SUB_PROFILE_PRESET_ID_RE = /^[a-z0-9][a-z0-9-]*$/
 
 /** Header line that opens the generated roster layer (the parse anchor). */
 const PRESET_BLOCK_HEADER = '# --- preset roster (written by local-agent-dsh provisioning) ---'
+
+/** Header line that opens the generated permission layer (the parse anchor). */
+const PERMISSION_BLOCK_HEADER = '# --- permission boundary (written by local-agent-dsh provisioning) ---'
 
 /** The sub-profile's bundle layer list: the official base layer. The headless
  * composition rides the profile's own patch layer (see the module doc). */
@@ -214,6 +257,86 @@ export function readSubProfilePreset(homeDir: string, profileName: string = DEFA
   return match?.[1]
 }
 
+/**
+ * The permission layer appended to the sub-profile's patch, or `''` when the
+ * sub-profile pins no boundary.
+ *
+ * Two PATCH rows, not inserts: `sandbox-policy` and `approval` already exist
+ * in the `@deepseek-ai/dsh-base` layer this profile stacks on, and the layer
+ * lands after it, so these override what the base composed. A base that
+ * mounts neither row (a future line, a different bundle) makes the loader
+ * warn "entry not found" and skip — a sub-dsh that boots with the composition
+ * it has, never one that fails to boot over a knob.
+ *
+ * Both rows RE-STATE every key they own. A patch `config` is a whole-value
+ * REPLACE, not a deep merge (`applyEntryPatches`: `target[key] = value`), so
+ * a row that wrote `mode` alone would silently drop `workspaceRoot` — and
+ * both rows carry `name` so a foreign plugin squatting the id makes the
+ * loader report a name mismatch and skip, rather than take this config.
+ *
+ * Pinning the literal also takes the boundary OFF `DSH_PERMISSION_MODE`,
+ * which is what `dsh-base` otherwise reads it from: the value belongs to the
+ * scope directory, where `home.sha` already hashes it, rather than to
+ * whatever environment happened to spawn the process.
+ * @param permissions - the boundary to pin, or undefined for none.
+ * @returns the YAML text to append (already newline-terminated), or `''`.
+ */
+export function permissionBoundaryLayer(permissions: DshSubProfilePermissions | undefined): string {
+  if (permissions === undefined) return ''
+  // The value reaches here from YAML, so the union is a claim rather than a
+  // guarantee: a typo must fail loud at provisioning time, not compose a
+  // boundary the sandbox plugin then rejects at the sub-dsh's boot.
+  if (!Object.hasOwn(APPROVAL_FOR, permissions)) {
+    throw new Error(`provision-dsh: permissions ${JSON.stringify(permissions)} must be one of ${Object.keys(APPROVAL_FOR).join(', ')}`)
+  }
+  const approval = APPROVAL_FOR[permissions]
+  const lines = [
+    '',
+    PERMISSION_BLOCK_HEADER,
+    '# The sub-dsh runs every confined call under this mode and answers every',
+    '# escalation with this policy. Remove this layer and the sub-dsh falls',
+    '# back to what dsh-base composes (workspace-write + ask).',
+    '- id: sandbox-policy',
+    "  name: '@deepseek-ai/dsh-sandbox-policy'",
+    '  config:',
+    `    mode: ${permissions}`,
+    '    workspaceRoot: !!js process.cwd()',
+    '- id: approval',
+    "  name: '@deepseek-ai/dsh-user-approval'",
+    '  config:',
+    `    policy: ${approval}`,
+  ]
+  return `${lines.join('\n')}\n`
+}
+
+/**
+ * The permission boundary a provisioned sub-profile's patch pins, read back
+ * from the file — the counterpart of {@link readSubProfilePreset}, and
+ * readable for the same reason: the layer is generated, so a lock check or a
+ * status surface can answer "what boundary does this scope run under?"
+ * without booting the sub-dsh.
+ * @param homeDir - the harness scoped home.
+ * @param profileName - the sub-profile name (default {@link DEFAULT_SUB_PROFILE_NAME}).
+ * @returns the pinned mode, or undefined when the sub-profile pins none.
+ */
+export function readSubProfilePermissions(
+  homeDir: string,
+  profileName: string = DEFAULT_SUB_PROFILE_NAME,
+): DshSubProfilePermissions | undefined {
+  const patchPath = join(homeDir, 'profiles', profileName, PROFILE_PATCH_FILENAME)
+  let content: string
+  try {
+    content = readFileSync(patchPath, 'utf8')
+  } catch {
+    return undefined
+  }
+  const header = content.indexOf(PERMISSION_BLOCK_HEADER)
+  if (header === -1) return undefined
+  const match = /^\s*mode:\s*(\S+)\s*$/m.exec(content.slice(header))
+  const mode = match?.[1]
+  return mode !== undefined && Object.hasOwn(APPROVAL_FOR, mode) ? (mode as DshSubProfilePermissions) : undefined
+}
+
 /** Ensure `link` is a symlink to `target`, replacing a wrong or dangling link; a real directory throws. */
 function ensureSymlink(link: string, target: string): void {
   let stat
@@ -257,6 +380,7 @@ export function provisionDshSubProfile(homeDir: string, config: DshSubProfileCon
   const patchPath = join(profileDir, PROFILE_PATCH_FILENAME)
   const patchContent = readFileSync(join(bundleDir, HEADLESS_PATCH_FILENAME), 'utf8')
     + presetRosterLayer(config.preset)
+    + permissionBoundaryLayer(config.permissions)
   if (!existsSync(patchPath) || readFileSync(patchPath, 'utf8') !== patchContent) {
     writeFileSync(patchPath, patchContent)
   }

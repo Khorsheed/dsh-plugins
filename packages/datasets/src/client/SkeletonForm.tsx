@@ -12,6 +12,7 @@
 import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DatasetsViewProps } from './contract.ts'
+import { ErrorState } from './ErrorState.tsx'
 import type { DatasetsForm } from './store.ts'
 import css from './DatasetsView.module.css'
 
@@ -91,7 +92,7 @@ export function SkeletonForm(props: {
         <Button type="submit" variant="primary" size="sm" disabled={!ready}>{t('form.submit')}</Button>
         <Button type="button" size="sm" onClick={onCancel}>{t('form.cancel')}</Button>
       </div>
-      {notice !== null && <div className={css.notice}>{notice}</div>}
+      {notice !== null && <ErrorState what={t('notice.failed')} message={notice} compact t={t} />}
     </form>
   )
 }

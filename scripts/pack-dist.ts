@@ -18,6 +18,9 @@
  * source scope. A member whose name appears in a manifest edge MUST carry its
  * own version (`name=version`): the edge is ranged on the target's version, so
  * a bare name there is an error rather than a silently unsatisfiable range.
+ * `--family auto` derives the specs from the package's own manifest plus the
+ * workspace's current versions (the same derivation deploy-3080 uses) — the
+ * form humans and CI should reach for by default.
  *
  * The package must be built first (lib/ present); the script fails loud on a
  * missing build or on stale lib/types files with no backing src file.
@@ -573,12 +576,19 @@ function main(argv: readonly string[]): void {
   const scope = args.get('scope')
   const version = args.get('version')
   const outDir = args.get('out')
-  const family = parseFamilySpecs(args.get('family'))
   const usage = 'usage: pack-dist --package <dir> --scope <scope> --version <version> --out <dir> '
-    + '[--family <name[=version][,name[=version]...]>]'
+    + '[--family <name[=version][,name[=version]...] | auto>]'
   if (packageDir === undefined || scope === undefined || version === undefined || outDir === undefined) {
     throw new Error(usage)
   }
+  // `--family auto`: derive the specs from the package's own manifest plus the
+  // workspace's current versions — the same derivation deploy-3080 uses.
+  const family = args.get('family') === 'auto'
+    ? familySpecsFor(
+        JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as PackageJson,
+        loadWorkspaceVersions(join(packageDir, '..')),
+      )
+    : parseFamilySpecs(args.get('family'))
   const tarball = packDist({
     packageDir,
     scope,

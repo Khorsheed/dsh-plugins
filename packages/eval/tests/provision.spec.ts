@@ -209,14 +209,26 @@ describe('conditions provision — step 3: the declaration against the scope', (
       .toEqual(['harness.version', 'model.declared', 'reasoning.effort'])
   })
 
-  it('back-fills a null harness.version into the lock without touching the condition document', async () => {
-    const { repo, homesRoot, conditionPath } = tree({ ...CODEX_CONDITION, harness: { name: 'codex', version: null, drive: 'exec' } })
-    const before = readFileSync(conditionPath, 'utf8')
-    const report = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot) })
+  it('back-fills a null harness.version into the lock, never into the condition document', async () => {
+    const { repo, homesRoot, conditionPath } = tree({
+      ...CODEX_CONDITION,
+      harness: { name: 'codex', version: null, drive: 'exec' },
+    })
+    const report = await provisionCondition(conditionPath, {
+      repo,
+      localAgent: fakeLocalAgent(homesRoot),
+      // The write-back is about home.sha and ONLY home.sha; asking for it off
+      // keeps this test about the version back-fill.
+      writeBack: false,
+    })
 
     expect(report.checks.find(row => row.field === 'harness.version')?.status).toBe('backfilled')
     expect((report.lock?.['provisioned'] as { cliVersion: string }).cliVersion).toBe('0.144.0')
-    expect(readFileSync(conditionPath, 'utf8')).toBe(before)
+    // The detected version lands in the lock; the declaration still says null,
+    // because what a CLI reports about itself is a measurement, not a claim the
+    // condition's author made.
+    const document = JSON.parse(readFileSync(conditionPath, 'utf8')) as { harness: { version: string | null } }
+    expect(document.harness.version).toBeNull()
   })
 
   it('records an uncomparable field as a warning, never as agreement', async () => {
@@ -242,7 +254,13 @@ describe('conditions provision — step 3: the declaration against the scope', (
     ['claude-code', { permissionMode: 'skip' }, 'skip'],
     ['kimi', { autoApprove: true }, 'auto-approve'],
     ['kimi', { autoApprove: false }, 'no-auto-approve'],
+    // dsh answers nothing until its deployment pins a boundary…
     ['dsh', {}, null],
+    // …and `unrestricted` is earned by exactly one preset (T59).
+    ['dsh', { sandbox: 'danger-full-access' }, 'unrestricted'],
+    // A scope still confining its sub-dsh reads as itself, so a condition
+    // claiming the container is the boundary mismatches loudly.
+    ['dsh', { sandbox: 'workspace-write' }, 'workspace-write'],
   ] as const)('spells %s\'s permission knob in the condition vocabulary', (harness, over, expected) => {
     const snapshot = flattenEffective(harness, { drive: 'exec', baseUrlSet: false, ...over })
     expect(snapshot.permissions).toBe(expected)
@@ -272,17 +290,79 @@ describe('conditions provision — steps 4 and 5: the home hash and the lock', (
     })
   })
 
-  it('says what the scoped home hashes to when the declaration leaves home.sha null', async () => {
-    const { repo, homesRoot, conditionPath } = tree()
+  it('writes the measured home.sha back into a declaration that leaves it null, and locks the corrected document', async () => {
+    const { repo, homesRoot, conditionPath, lockPath } = tree()
     const report = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot) })
+
+    // The declaration on disk now says what was measured — which is the whole
+    // of I5·T39 · G7: the digest used to travel from a warning to an editor by
+    // hand, and provision then had to run a second time to re-anchor the lock.
+    const document = JSON.parse(readFileSync(conditionPath, 'utf8')) as { home: { sha: string } }
+    expect(document.home.sha).toBe(report.home?.sha)
+    expect(report.homeShaWritten).toBe(true)
+    expect(report.shaBeforeWriteBack).not.toBe(report.sha)
+    expect(report.warnings.map(w => w.code)).toContain('HOME_SHA_WRITTEN')
+
+    // And the lock anchors the document as it NOW reads, so one provision is
+    // what makes the condition ready.
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as { sha: string; home: { sha: string } }
+    expect(lock.sha).toBe(hashConditionDocument(document))
+    expect(lock.sha).toBe(report.sha)
+    expect(lock.home.sha).toBe(report.home?.sha)
+  })
+
+  it('corrects a STALE declared home.sha the same way', async () => {
+    const stale = 'a'.repeat(64)
+    const { repo, homesRoot, conditionPath } = tree({ ...CODEX_CONDITION, home: { sha: stale } })
+    const report = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot) })
+
+    expect(report.written).toBe(true)
+    expect(report.homeShaWritten).toBe(true)
+    const document = JSON.parse(readFileSync(conditionPath, 'utf8')) as { home: { sha: string } }
+    expect(document.home.sha).toBe(report.home?.sha)
+    expect(document.home.sha).not.toBe(stale)
+    expect((report.lock?.['home'] as { sha: string }).sha).not.toBe(stale)
+  })
+
+  it('leaves the declaration alone with writeBack: false, and says what it would have written', async () => {
+    const { repo, homesRoot, conditionPath } = tree()
+    const before = readFileSync(conditionPath, 'utf8')
+    const report = await provisionCondition(conditionPath, {
+      repo,
+      localAgent: fakeLocalAgent(homesRoot),
+      writeBack: false,
+    })
+
+    expect(readFileSync(conditionPath, 'utf8')).toBe(before)
+    expect(report.homeShaWritten).toBe(false)
+    expect(report.shaBeforeWriteBack).toBeNull()
     const warning = report.warnings.find(w => w.code === 'HOME_SHA_UNDECLARED')
     expect(warning?.message).toContain(report.home?.sha as string)
   })
 
-  it('records the real home hash and flags a declaration that disagrees', async () => {
+  it('re-provisioning a corrected condition changes nothing and writes nothing back', async () => {
+    const { repo, homesRoot, conditionPath } = tree()
+    const first = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot) })
+    const after = readFileSync(conditionPath, 'utf8')
+
+    const second = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot) })
+
+    // Idempotent: the second run has nothing to correct, so the document is
+    // byte-identical and the condition keeps the identity the first one gave it.
+    expect(readFileSync(conditionPath, 'utf8')).toBe(after)
+    expect(second.homeShaWritten).toBe(false)
+    expect(second.sha).toBe(first.sha)
+    expect(second.warnings.map(w => w.code)).not.toContain('HOME_SHA_WRITTEN')
+  })
+
+  it('stale declared home.sha still reports the old way when the write-back is off', async () => {
     const stale = 'a'.repeat(64)
     const { repo, homesRoot, conditionPath } = tree({ ...CODEX_CONDITION, home: { sha: stale } })
-    const report = await provisionCondition(conditionPath, { repo, localAgent: fakeLocalAgent(homesRoot) })
+    const report = await provisionCondition(conditionPath, {
+      repo,
+      localAgent: fakeLocalAgent(homesRoot),
+      writeBack: false,
+    })
 
     expect(report.written).toBe(true)
     expect(report.warnings.map(w => w.code)).toContain('HOME_SHA_DECLARED_STALE')

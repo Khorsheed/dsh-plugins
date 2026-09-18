@@ -11,10 +11,13 @@
 import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
 import { writeEvalReport, type ReportWrite } from './report.ts'
 import { CONDITION_SCHEMA_ID } from './schema.ts'
-import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
+import {
+  conditionDiagnostics, expandHome, normalizeRepoPath, sameRepoPath, validatePlan,
+  type EvalDiagnostic, type PlanValidation,
+} from './validate.ts'
 import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
 import { runPlan, EvalRunRefused, type RunDeps, type RunOptions, type RunReport } from './run.ts'
-import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport } from './finalize.ts'
+import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport, type FinalizeUnitsFace } from './finalize.ts'
 import {
   EvalRunJobs,
   type EvalRunHandle,
@@ -34,20 +37,33 @@ import {
   type RunStatusReport,
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
+import { conditionPathIn, setConditionEndpoint as writeConditionEndpoint } from './condition-edit.ts'
+import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './draft.ts'
+import { resolveRepoWrite, writeResolved, EvalWriteRefused, type RepoWriteResult } from './repo-write.ts'
 import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
+import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
-import { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
+import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './review.ts'
 import { projectFinalize, runReportView } from './report-view.ts'
+import {
+  readExportState, recordExportNote, reexportDirOf,
+  type EvalExportNote,
+} from './export-note.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
-  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionActionFace, MissionExportRemoteFace,
+  CapabilityCatalogFace, DatasetsBindingFace, DatasetsFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
+  MissionAnnotateFace, MissionExportRemoteFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
 import type {
-  EvalApproveResult, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionsView,
+  EvalApproveResult, EvalCellDetail, EvalCellsResult, EvalConditionDiffView,
+  EvalConditionEndpointRequest, EvalConditionEndpointView,
+  EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
+  EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
-  EvalExportRunRequest, EvalFinalizeView, EvalItemRunsResult, EvalMatrixView, EvalPlanReview, EvalRunReportView,
+  EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView,
+  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
 } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
@@ -155,18 +171,66 @@ export class EvalService {
   }
 
   /**
+   * WRITE one text file into the session's bound dataset repository working
+   * tree — the analysis draft's door (ui-spec §六; I5·T39 · G16).
+   *
+   * The narrowest write in this family, and narrow on purpose. It resolves the
+   * repository exactly as every other agent-facing verb does (the binding, and
+   * `repo` may only restate it), then checks the path against a whitelist that
+   * lives in code and admits only the repository's pass-through areas — no
+   * item material, at any depth, whatever the binding admits for reading.
+   *
+   * The alternative it replaces was not a smaller grant made carefully; it was
+   * the largest grant there is, made once per markdown file: `write` reaching
+   * outside the session workspace asked a person to escalate the sandbox to
+   * `danger-full-access`. Nothing about the act needed that, so the act got a
+   * verb instead of the machine getting opened.
+   * @param options - the path (repository-relative), the text, and whether an
+   *   existing file may be replaced; `session` decides the repository.
+   * @throws {@link EvalReadRefused} when no repository resolves for this session.
+   * @throws {@link EvalWriteRefused} when the path is outside the door.
+   */
+  async writeRepoFile(options: {
+    path: string
+    content: string
+    overwrite?: boolean
+    repo?: string
+    session?: { id: string }
+    agent?: boolean
+  }): Promise<RepoWriteResult> {
+    const scope = this.resolveRepoScope({
+      ...(options.repo === undefined ? {} : { repo: options.repo }),
+      ...(options.session === undefined ? {} : { session: options.session }),
+      ...(options.agent === undefined ? {} : { agent: options.agent }),
+    })
+    if (scope instanceof EvalReadRefused) throw scope
+    if (options.content === '') {
+      throw new EvalWriteRefused(
+        `refusing to write an empty file at ${JSON.stringify(options.path)} — an empty analysis is not an analysis, `
+        + 'and a file created by accident is harder to notice than a call that failed.',
+      )
+    }
+    const target = await resolveRepoWrite(scope.repo, options.path, scope.datasets)
+    return await writeResolved(scope.repo, target, options.content, {
+      ...(options.overwrite === undefined ? {} : { overwrite: options.overwrite }),
+    })
+  }
+
+  /**
    * List the conditions a dataset repository declares, with their hashes and
    * readiness (lock present and matching, scoped home verified, unresolved
    * fields). Read-only: minting a condition is a file the agent drafts, and
    * turning one into a real scoped home is `conditions provision` (I4).
-   * @param options - `repo` wins; otherwise the calling session's datasets
-   *   binding decides, and its dataset whitelist is honoured — which datasets
-   *   an agent may see is the human's decision, not the agent's.
+   * @param options - the calling session's datasets binding decides the
+   *   repository; `repo` overrides it for a human caller, and `agent: true`
+   *   (the model-tool face) narrows it to a restatement of the binding.
    * @throws {@link EvalReadRefused} when no repository can be resolved, when
    *   the path is not a dataset repository, or when `dataset` is outside the
    *   session binding's whitelist.
    */
-  conditions(options: { repo?: string; dataset?: string; session?: { id: string } } = {}): Promise<ConditionsReport> {
+  conditions(
+    options: { repo?: string; dataset?: string; session?: { id: string }; agent?: boolean } = {},
+  ): Promise<ConditionsReport> {
     const scope = this.resolveRepoScope(options)
     if (scope instanceof EvalReadRefused) return Promise.reject(scope)
     return listConditions(scope.repo, scope.datasets)
@@ -183,7 +247,9 @@ export class EvalService {
    *   uses.
    * @throws {@link EvalReadRefused} when a repository or a side cannot be resolved.
    */
-  conditionDiff(options: { a: string; b: string; repo?: string; dataset?: string; session?: { id: string } }): Promise<ConditionDiff> {
+  conditionDiff(
+    options: { a: string; b: string; repo?: string; dataset?: string; session?: { id: string }; agent?: boolean },
+  ): Promise<ConditionDiff> {
     const scope = this.resolveRepoScope(options)
     if (scope instanceof EvalReadRefused) return Promise.reject(scope)
     return diffConditions(scope.repo, options.a, options.b, scope.datasets)
@@ -199,12 +265,17 @@ export class EvalService {
    * `repo` names — nothing is committed, and the shared checkout stays
    * untouched.
    * @param conditionPath - path to the declaration (`~` expanded).
-   * @param options - the working copy to write into.
+   * @param options - the working copy to write into, and whether provision may
+   *   correct the declaration's `home.sha` from what it measures (default true;
+   *   `false` is the two-step shape the human used to do by hand).
    * @throws {@link EvalProvisionRefused} when the path, the declaration, or
    *   the local-agent facade makes provisioning impossible; a condition that
    *   simply is not ready comes back as a report with `written: false`.
    */
-  provision(conditionPath: string, options: { repo: string; log?: (message: string) => void }): Promise<ProvisionReport> {
+  provision(
+    conditionPath: string,
+    options: { repo: string; writeBack?: boolean; log?: (message: string) => void },
+  ): Promise<ProvisionReport> {
     const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
     if (localAgent === undefined) {
       return Promise.reject(new EvalProvisionRefused(
@@ -221,6 +292,7 @@ export class EvalService {
     return provisionCondition(conditionPath, {
       repo: options.repo,
       localAgent,
+      ...(options.writeBack === undefined ? {} : { writeBack: options.writeBack }),
       ...(options.log === undefined ? {} : { log: options.log }),
       ...(catalog === undefined
         ? {}
@@ -229,33 +301,90 @@ export class EvalService {
   }
 
   /**
-   * Resolve which repository and which dataset sets a read verb may see:
-   * `repo` wins; otherwise the calling session's datasets binding decides, and
-   * its whitelist is honoured — which datasets an agent may see is the human's
-   * decision, not the agent's.
+   * Resolve which repository and which dataset sets a verb may see: the
+   * calling session's datasets binding decides, `repo` overrides it for a
+   * HUMAN caller, and the binding's dataset whitelist is honoured either way
+   * — which datasets a session may see is the human's decision.
+   *
+   * `agent: true` marks a call that came from a MODEL TOOL, and there the
+   * `repo` parameter stops being an override. It may only restate the binding;
+   * anything else, including a repository named in a session nobody bound, is
+   * refused with the bind command.
+   *
+   * That narrowing is the whole point. The parameter used to be a way around
+   * the very refusal that told the agent to ask a person, and an agent took
+   * it: told there was no binding, it searched the disk, found a checkout
+   * several other agents share, and wrote three files onto somebody else's
+   * branch (I5·T39 · G1 — the plan a pilot run was executing was edited that
+   * way). "Findable" is not "mine to use", and the repository an evaluation
+   * writes into is a human's choice about a shared machine, not a parameter.
+   * A composition that mounts no datasets service has no binding for anyone to
+   * make, so an agent call there is refused too rather than falling through.
+   *
+   * BOTH sources are normalized on the way out: a binding written before the
+   * datasets plugin canonicalized `repoPath` still holds a literal `~`, and
+   * `readdir(<repo>/datasets)` does not expand it — this reader must not be
+   * the one that trips over it (I5 walkthrough gap G5).
    */
   private resolveRepoScope(
-    options: { repo?: string; dataset?: string; session?: { id: string } },
+    options: { repo?: string; dataset?: string; session?: { id: string }; agent?: boolean },
   ): { repo: string; datasets: string[] | undefined } | EvalReadRefused {
     const binding = options.session === undefined
       ? undefined
       : (this.hosts?.get('datasets') as DatasetsBindingFace | undefined)?.binding(options.session)
-    const repo = options.repo !== undefined && options.repo !== ''
-      ? expandHome(options.repo)
-      : binding?.repoPath
+    const asked = options.repo !== undefined && options.repo !== '' ? options.repo : undefined
+    if (options.agent === true) {
+      const bound = binding?.repoPath
+      if (bound === undefined || bound === '') {
+        return new EvalReadRefused(
+          'no dataset repository bound to this session'
+          + (asked === undefined ? '' : `, so ${JSON.stringify(asked)} is not this session's to read`)
+          + ' — ask the person to bind one (/datasets bind <repoPath>), and use no repo argument afterwards.'
+          + ' An unbound session has no repository an agent may pick for it, however many are on the disk.',
+        )
+      }
+      if (asked !== undefined && !sameRepoPath(asked, bound)) {
+        return new EvalReadRefused(
+          `repo ${JSON.stringify(asked)} is not this session's bound dataset repository (${bound})`
+          + ' — the repo argument may only restate the binding. Drop it, or ask the person to rebind'
+          + ' (/datasets bind <repoPath>).',
+        )
+      }
+      // Past the checks the binding is the answer, whether or not the caller
+      // also spelled it out: one resolved path, whichever way in.
+      return this.scopeOf(normalizeRepoPath(bound), binding, options.dataset)
+    }
+    const source = asked ?? binding?.repoPath
+    const repo = source === undefined ? undefined : normalizeRepoPath(source)
     if (repo === undefined || repo === '') {
       return new EvalReadRefused(
         'no dataset repository: pass repo, or ask the human to bind one for this session (/datasets bind <repoPath>)',
       )
     }
+    return this.scopeOf(repo, binding, options.dataset)
+  }
+
+  /**
+   * The resolved repository plus the dataset sets the binding admits — the
+   * half of {@link EvalService.resolveRepoScope} that is the same whoever
+   * called, so the agent path and the human path cannot drift on it.
+   * @param repo - the resolved repository (`~` already expanded).
+   * @param binding - the session's binding, when it has one.
+   * @param dataset - the one set the caller asked for, if any.
+   */
+  private scopeOf(
+    repo: string,
+    binding: { datasets?: string[] } | undefined,
+    dataset: string | undefined,
+  ): { repo: string; datasets: string[] | undefined } | EvalReadRefused {
     const allowed = binding?.datasets
-    if (options.dataset !== undefined && options.dataset !== '') {
-      if (allowed !== undefined && !allowed.includes(options.dataset)) {
+    if (dataset !== undefined && dataset !== '') {
+      if (allowed !== undefined && !allowed.includes(dataset)) {
         return new EvalReadRefused(
-          `dataset ${JSON.stringify(options.dataset)} is outside this session's binding (${allowed.join(', ')})`,
+          `dataset ${JSON.stringify(dataset)} is outside this session's binding (${allowed.join(', ')})`,
         )
       }
-      return { repo, datasets: [options.dataset] }
+      return { repo, datasets: [dataset] }
     }
     return { repo, datasets: allowed === undefined ? undefined : [...allowed] }
   }
@@ -324,12 +453,13 @@ export class EvalService {
    * only, and each gap comes back as a sentence in `notes`. That is deliberate
    * — an empty list with no explanation is the one answer a planning view must
    * never give.
-   * @param options - `repo` wins; otherwise the calling session's datasets
-   *   binding decides, and its dataset whitelist is honoured — exactly the
-   *   resolution {@link EvalService.conditions} uses.
+   * @param options - resolved exactly as {@link EvalService.conditions} does,
+   *   `agent: true` included.
    * @returns the rows, newest run first, then the drafts by name.
    */
-  experiments(options: { repo?: string; dataset?: string; session?: { id: string } } = {}): Promise<EvalExperimentsResult> {
+  experiments(
+    options: { repo?: string; dataset?: string; session?: { id: string }; agent?: boolean } = {},
+  ): Promise<EvalExperimentsResult> {
     const mission = this.hosts?.get('mission') as MissionRunListFace | undefined
     const scope = this.resolveRepoScope(options)
     const resolved = scope instanceof EvalReadRefused ? undefined : scope
@@ -367,6 +497,110 @@ export class EvalService {
   }
 
   /**
+   * DRAFT an experiment — step 2 of ui-spec §七, and the one verb its three
+   * faces share: the 新建实验 form's Remote, the `eval_plan_draft` tool, and
+   * the `eval-planning` skill that tells an agent to call it.
+   *
+   * One action where there were two. Writing `plans/<name>.json`, writing each
+   * new condition beside it and then validating the result used to be three
+   * separate things an agent did with `write` and hoped it had spelled right,
+   * and a person could not do at all. Here they are one call: the files land in
+   * the session's bound repository (its pass-through area — `plans/` and
+   * `conditions/`, the 其他文件 slot of ui-spec §三), nothing is committed, and
+   * the same `validatePlan` every other face runs judges what was written.
+   *
+   * Drafting is NOT starting. There is no path from this verb to `runStart`,
+   * and a plan validate rejects still lands on disk — it is a 草稿, which is
+   * what the lab list calls it, and 批准并启动 stays the plan-review page's
+   * button (R1). The refusals here are the cases where there would be no draft
+   * to look at: an unresolvable repository, a name that is not a file name, a
+   * source condition that does not exist, a target file that does.
+   * @param request - ui-spec §五's fields, flat.
+   * @param options - the calling session (its dataset binding resolves the
+   *   repository), and whether the caller is the model-tool face — where
+   *   `request.repo` may only restate the binding, never choose a repository.
+   * @returns where the files landed, what the plan names, and validate's verdict.
+   * @throws {@link EvalReadRefused} when no dataset repository can be resolved,
+   *   or the named set is outside this session's binding.
+   * @throws {@link EvalDraftRefused} when the draft cannot be written.
+   */
+  async draftExperiment(
+    request: EvalDraftRequest,
+    options: { session?: { id: string }; agent?: boolean } = {},
+  ): Promise<EvalDraftResult> {
+    const scope = this.resolveRepoScope({
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+      dataset: request.dataset,
+      ...(options.session === undefined ? {} : { session: options.session }),
+      ...(options.agent === undefined ? {} : { agent: options.agent }),
+    })
+    if (scope instanceof EvalReadRefused) throw scope
+    const write = await writeDraft({
+      repo: scope.repo,
+      dataset: request.dataset,
+      name: request.name,
+      ...(request.commit === undefined ? {} : { commit: request.commit }),
+      items: request.items,
+      conditions: request.conditions,
+      ...(request.newConditions === undefined ? {} : { newConditions: request.newConditions }),
+      ...(request.judgeConditions === undefined || request.judgeConditions.length === 0
+        ? {}
+        : {
+          judge: {
+            conditions: request.judgeConditions,
+            ...(request.judgeSamples === undefined ? {} : { samples: request.judgeSamples }),
+          },
+        }),
+      reps: request.reps,
+      stages: request.stages,
+      order: { seed: request.seed, ...(request.interleave === undefined ? {} : { interleave: request.interleave }) },
+      budget: { activeMinutes: request.activeMinutes, turns: request.turns },
+      ...(request.expectedNs === undefined ? {} : { expectedNs: request.expectedNs }),
+      ...(request.retryInfrastructure === undefined ? {} : { retryInfrastructure: request.retryInfrastructure }),
+      ...(request.unit === undefined
+        ? {}
+        : {
+          unit: {
+            image: request.unit.image,
+            ...(request.unit.network === undefined ? {} : { network: request.unit.network }),
+            ...(request.unit.user === undefined ? {} : { user: request.unit.user }),
+            ...(request.unit.egressCommand === undefined || request.unit.egressCommand.length === 0
+              ? {}
+              : {
+                egressCheck: {
+                  command: request.unit.egressCommand,
+                  ...(request.unit.egressTimeoutMs === undefined ? {} : { timeoutMs: request.unit.egressTimeoutMs }),
+                },
+              }),
+          },
+        }),
+      ...(request.exports === undefined ? {} : { exports: request.exports }),
+      ...(request.notes === undefined ? {} : { notes: request.notes }),
+    })
+    // The review page's own projection, not a summary of it: what an agent
+    // reports to a person and what that person then reads on the page come
+    // from one call to one validate.
+    return { ...write, review: await this.planReview(write.planPath) }
+  }
+
+  /**
+   * What the 新建实验 form may offer: the dataset sets of the session's bound
+   * repository, each with the items it declares and the stage schemas it
+   * ships. One read fills every picker on the form.
+   *
+   * Degrades rather than refusing, like the lab list: a repository with no
+   * `datasets/` directory answers with an empty list and a sentence saying so.
+   * @param options - `repo` wins; otherwise the session's binding decides, and
+   *   its dataset whitelist is honoured.
+   * @throws {@link EvalReadRefused} when no repository can be resolved at all.
+   */
+  draftOptions(options: { repo?: string; session?: { id: string } } = {}): Promise<EvalDraftOptionsView> {
+    const scope = this.resolveRepoScope(options)
+    if (scope instanceof EvalReadRefused) return Promise.reject(scope)
+    return readDraftOptions(scope.repo, scope.datasets)
+  }
+
+  /**
    * The PLAN-REVIEW page (ui-spec §五, step 3): the plan's own fields, and
    * `validatePlan`'s verdict as a flat `ok / warn / error` list. The same
    * function `dsh-eval validate` runs, rearranged for reading — the page and
@@ -385,6 +619,120 @@ export class EvalService {
    */
   async conditionsPage(options: { repo?: string; dataset?: string; session?: { id: string } } = {}): Promise<EvalConditionsView> {
     return conditionsView(await this.conditions(options))
+  }
+
+  /**
+   * PROVISION one condition of the session's bound repository — the
+   * conditions page's one write-class action, and a human's click.
+   *
+   * It is {@link EvalService.provision} with the repository resolved from the
+   * binding instead of a flag, which is what makes it ONE action: the same
+   * call hashes the scoped home, corrects the declaration's `home.sha`,
+   * re-hashes the condition and writes the lock against the document as it now
+   * reads. Before I5·T58 the page had no provision at all and the slash
+   * command needed two runs with a 64-character transcription between them
+   * (I5·T39 · G7).
+   *
+   * Never a model tool. Provisioning materializes a scoped home and anchors
+   * what a subject IS — R1 keeps it on the human side with 批准并启动 and
+   * 终评.
+   * @param request - the set, the condition, and whether to leave the
+   *   declaration alone (the two-step shape).
+   * @param options - the calling session; its binding names the working copy
+   *   the lock is written into.
+   * @returns what provision did, plus the registry row as it now reads.
+   * @throws {@link EvalReadRefused} when no repository is bound.
+   * @throws {@link EvalProvisionRefused} when provisioning cannot begin.
+   */
+  async provisionCondition(
+    request: EvalConditionProvisionRequest,
+    options: { session?: { id: string } } = {},
+  ): Promise<EvalConditionProvisionView> {
+    const scope = this.resolveRepoScope({
+      dataset: request.dataset,
+      ...(options.session === undefined ? {} : { session: options.session }),
+    })
+    if (scope instanceof EvalReadRefused) throw scope
+    const conditionPath = conditionPathIn(scope.repo, request.dataset, request.condition)
+    const report = await this.provision(conditionPath, {
+      repo: scope.repo,
+      ...(request.keepDeclaration === true ? { writeBack: false } : {}),
+    })
+    return {
+      condition: report.condition,
+      dataset: request.dataset,
+      conditionPath: report.conditionPath,
+      homeDir: report.homeDir,
+      credentialState: report.credentialState,
+      written: report.written,
+      homeShaWritten: report.homeShaWritten,
+      sha: report.sha,
+      homeSha: report.home?.sha ?? null,
+      checks: provisionChecks(report),
+      row: await this.conditionRowOf(scope.repo, request.dataset, request.condition),
+    }
+  }
+
+  /**
+   * Set one condition's `model.endpoint` — the conditions page's other write,
+   * and the only field of an existing declaration any face may change.
+   *
+   * It is a FACTOR edit: `model.endpoint` is condition-hash input, so the
+   * subject changes identity and any lock beside it goes stale. The answer
+   * says which, and provisioning again is the next click rather than something
+   * this verb does on its own — a write that silently re-anchored a subject
+   * would make «what is this condition» depend on when it was last looked at.
+   * @param request - the set, the condition, and the value.
+   * @param options - the calling session; its binding names the working copy.
+   * @returns what changed, and the registry row as it now reads.
+   * @throws {@link EvalReadRefused} when no repository is bound.
+   * @throws {@link EvalConditionEditRefused} when the declaration cannot be edited.
+   */
+  async setConditionEndpoint(
+    request: EvalConditionEndpointRequest,
+    options: { session?: { id: string } } = {},
+  ): Promise<EvalConditionEndpointView> {
+    const scope = this.resolveRepoScope({
+      dataset: request.dataset,
+      ...(options.session === undefined ? {} : { session: options.session }),
+    })
+    if (scope instanceof EvalReadRefused) throw scope
+    const report = await writeConditionEndpoint({
+      repo: scope.repo,
+      dataset: request.dataset,
+      condition: request.condition,
+      endpoint: request.endpoint,
+    })
+    const row = await this.conditionRowOf(scope.repo, request.dataset, request.condition)
+    return {
+      condition: report.condition,
+      dataset: report.dataset,
+      conditionPath: report.conditionPath,
+      before: report.before,
+      after: report.after,
+      sha: report.sha,
+      written: report.written,
+      lockStale: row !== null && row.lock.present && !row.lock.matches,
+      row,
+    }
+  }
+
+  /**
+   * One condition's registry row, re-read after a write so the page never has
+   * to guess what its own action produced. Null rather than a throw when the
+   * listing cannot be retaken: the action already happened and its report is
+   * the answer — a failure to re-read is not a failure to provision.
+   * @param repo - the resolved repository.
+   * @param dataset - the set.
+   * @param condition - the condition id.
+   */
+  private async conditionRowOf(repo: string, dataset: string, condition: string): Promise<EvalConditionRow | null> {
+    try {
+      const view = conditionsView(await listConditions(repo, [dataset]))
+      return view.rows.find(row => row.id === condition) ?? null
+    } catch {
+      return null
+    }
   }
 
   /**
@@ -411,11 +759,16 @@ export class EvalService {
    * list either way, and the reason belongs beside the list that explains it.
    * Wiring failures (no job registry, no live parent agent) are caught here
    * for the same reason and arrive verbatim in `refusal`.
+   * The run it starts walks the release gate cell by cell, which is the
+   * default everywhere since T57; `keepUnits` is the dialog's 保留单元 box,
+   * and the ONE reason it exists is a container a human wants to open
+   * afterwards. It is off unless the approver ticked it.
    * @param planPath - path to a `dataseek.plan/1` document (`~` expanded).
-   * @param options - the approving session (the run's parent) and its workspace.
+   * @param options - the approving session (the run's parent), its workspace,
+   *   and whether the approver asked to keep the units.
    * @returns what validate said, and — when it started — the job and run ids.
    */
-  async approve(planPath: string, options: { parentSessionId: string; cwd?: string }): Promise<EvalApproveResult> {
+  async approve(planPath: string, options: { parentSessionId: string; cwd?: string; keepUnits?: boolean }): Promise<EvalApproveResult> {
     const review = await this.planReview(planPath)
     const refused = (refusal: string): EvalApproveResult => ({
       started: false,
@@ -436,6 +789,7 @@ export class EvalService {
       const handle = await this.runStart(planPath, {
         parentSessionId: options.parentSessionId,
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.keepUnits === true ? { keepUnits: true } : {}),
         label: `eval run ${planPath} (approved)`,
       })
       return {
@@ -627,14 +981,200 @@ export class EvalService {
    * re-checks the `confirmed` list against a FRESH plan and refuses when a
    * guarded layer is unconfirmed — a dialog-stale confirmation never
    * authorizes a changed layer set, and that check stays on mission's side.
+   *
+   * ONE ACTION, two files since I5·T60: the bundle is mission's, and the
+   * report (`report/summary.md` + `results.jsonl` + `usage.jsonl`) is written
+   * into it here, by the same function `dsh-eval report` calls. The page used
+   * to export and then print a command line for the reader to go and run —
+   * which is how a walkthrough with every surface on screen still ended at a
+   * terminal (I5·T39 · G15). Where the bundle went is recorded as a run-level
+   * note in the same breath, because `run.meta` cannot say (I5·T53).
    * @param agent - the calling agent, passed through unchanged.
    * @param request - the export plus the confirmed guarded layers.
+   * @param by - caller tag recorded against the run's export note.
    * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
    */
-  exportRun(agent: unknown, request: EvalExportRunRequest): Promise<EvalExportResultView> {
+  async exportRun(agent: unknown, request: EvalExportRunRequest, by?: string): Promise<EvalExportResultView> {
     const remote = this.missionExport()
-    if (remote === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
-    return remote.exportRun(agent, request)
+    if (remote === undefined) throw MISSION_EXPORT_ABSENT
+    const exported = await remote.exportRun(agent, request)
+    return await this.completeExport(exported, request, by)
+  }
+
+  /**
+   * EXPORT AGAIN, after the final verdicts — the report page's and the judge
+   * bench's one-click repeat (I5·T39 · G17).
+   *
+   * The bundle is written when the run ends and the human-final verdicts are
+   * written afterwards, from a page the bundle knows nothing about. Nothing
+   * carried them in: the fix was to export a second time and re-run the report
+   * command, and neither surface said so. This verb repeats the export the
+   * run's own note recorded — the same layers, the same snapshot reference —
+   * into a FRESH directory beside the first, and writes the report into it.
+   *
+   * It repeats and never widens. The layers come from the note, so a re-export
+   * can only include what a person already confirmed; if one of them has since
+   * become guarded, mission's fail-closed gate refuses the whole call and the
+   * reader goes through the dialog, which is the only place a guarded layer is
+   * ever confirmed. The old directory is left exactly as it was — somebody may
+   * have quoted from it.
+   * @param agent - the calling agent, passed through to mission unchanged.
+   * @param request - the run to export again.
+   * @param by - caller tag recorded against the new export note.
+   * @throws {@link EvalReadRefused} when mission's Remote is absent, or when
+   *   this run has no recorded export to repeat.
+   */
+  async reexportRun(agent: unknown, request: EvalReexportRequest, by?: string): Promise<EvalExportResultView> {
+    const remote = this.missionExport()
+    if (remote === undefined) throw MISSION_EXPORT_ABSENT
+    const mission = this.requireMissionRead('export a run again')
+    const note = readExportState(mission, request.runId).note
+    if (note === null) {
+      throw new EvalReadRefused(
+        `run ${request.runId} records no earlier export to repeat — export it once from the dialog, `
+        + 'which is where the layers and the guarded-layer confirmations are chosen; every export after that can be repeated here.',
+      )
+    }
+    const repeated: EvalExportRunRequest = {
+      runId: request.runId,
+      outDir: reexportDirOf(note.outDir, Date.now()),
+      layers: [...note.layers],
+      ...(note.snapshotDir === null ? {} : { snapshotDir: note.snapshotDir }),
+      ...(note.snapshot === null
+        ? {}
+        : {
+          snapshot: {
+            repo: note.snapshot.repo,
+            commit: note.snapshot.commit,
+            ...(note.snapshot.dataset === null ? {} : { dataset: note.snapshot.dataset }),
+          },
+        }),
+      // Nothing guarded is re-confirmed here: a repeat may only carry what the
+      // first export already carried, and mission re-checks that against a
+      // FRESH plan. A layer that became guarded meanwhile refuses the call.
+      confirmed: [],
+    }
+    const exported = await remote.exportRun(agent, repeated)
+    return await this.completeExport(exported, repeated, by)
+  }
+
+  /**
+   * The half of an export that is eval's: write the report INTO the bundle,
+   * then record where the bundle went.
+   *
+   * Both are best-effort around an artifact that already exists. A bundle
+   * whose report could not be rendered is still a bundle, and a note that the
+   * ledger refused still leaves the directory on disk — so neither failure
+   * turns a completed export into an error. What happened travels in the
+   * answer instead, which is what lets the page say 「导出了，报告没写成」
+   * rather than either lying or throwing.
+   * @param exported - what mission's export answered.
+   * @param request - the export as it was made (the note's content).
+   * @param by - caller tag recorded against the note; defaults to `eval-export`.
+   */
+  private async completeExport(
+    exported: { bundleDir: string; files: number },
+    request: EvalExportRunRequest,
+    by?: string,
+  ): Promise<EvalExportResultView> {
+    const exportedAt = Date.now()
+    let summaryPath: string | null = null
+    let reportRows = 0
+    let reportError: string | null = null
+    try {
+      const written = await writeEvalReport(exported.bundleDir)
+      summaryPath = written.summaryPath
+      reportRows = written.rowCount
+    } catch (error) {
+      reportError = error instanceof Error ? error.message : String(error)
+    }
+    const note: EvalExportNote = {
+      outDir: request.outDir,
+      bundleDir: exported.bundleDir,
+      exportedAt,
+      layers: [...(request.layers ?? [])],
+      snapshotDir: request.snapshotDir ?? null,
+      snapshot: request.snapshot === undefined
+        ? null
+        : { repo: request.snapshot.repo, commit: request.snapshot.commit, dataset: request.snapshot.dataset ?? null },
+      summaryPath,
+      reportError,
+    }
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    const annotate = this.missionAnnotate()
+    const recorded = mission === undefined || annotate === undefined
+      ? { recorded: false, reason: 'no mission ledger in this composition' }
+      : await recordExportNote(annotate, mission, request.runId, note, by ?? 'eval-export')
+    return {
+      bundleDir: exported.bundleDir,
+      files: exported.files,
+      exportedAt,
+      summaryPath,
+      reportRows,
+      reportError,
+      noteRecorded: recorded.recorded,
+    }
+  }
+
+  /**
+   * The JUDGE BENCH's queue (ui-spec step 8): every cell of the run as a
+   * BLIND entry — an ordinal and an opaque ticket, its de-identified
+   * material, the rubric's `human` criteria, every llm-draft sample already
+   * recorded and whatever human-final it carries — plus the run's live
+   * consistency numbers.
+   *
+   * Blind is a property of the PAYLOAD, not of the page: nothing naming a
+   * condition, a harness or a model crosses this seam, so no amount of
+   * client-side carelessness can unblind a grader. The report page is where
+   * the same run is read with its labels on.
+   * @param runId - the run whose cells are being graded.
+   * @throws {@link EvalReadRefused} when no mission service is mounted.
+   */
+  // `async` so the refusal is a REJECTION, like `cell`: the signature promises
+  // a promise, and a caller that only attached `.catch` would otherwise be hit
+  // by a synchronous throw.
+  async judgeQueue(runId: string): Promise<EvalJudgeQueueView> {
+    const mission = this.requireMissionRead('open the judging queue')
+    const datasets = this.hosts?.get('datasets') as DatasetsFace | undefined
+    return await judgeQueueView({
+      mission,
+      runId,
+      ...(datasets === undefined ? {} : { datasets }),
+    })
+  }
+
+  /**
+   * Write one cell's human-final verdicts — ui-spec step 8, and the ONLY door
+   * `human-final` has in this family. A human's click, tagged by session, and
+   * append-only: mission's `annotate` pushes and never rewrites.
+   *
+   * There is deliberately no model-facing twin of this verb, and adding one
+   * would break R1 rather than extend it: 终评是人的 holds here because the
+   * toolset has no path to this code, not because a check turns a model away.
+   * @param runId - the run.
+   * @param ticket - the blind handle the queue issued for the cell.
+   * @param verdicts - one entry per criterion being answered.
+   * @param sessionId - the calling session; recorded as `tab:<sessionId>`.
+   * @throws {@link EvalReadRefused} when mission is absent, the ticket names
+   *   no cell, or a verdict fails `dataseek.verdict/1`.
+   */
+  // `async` for the same reason as `judgeQueue`: every refusal on this verb
+  // reaches the browser as a rejected RPC, never as a throw mid-call.
+  async humanFinal(
+    runId: string,
+    ticket: string,
+    verdicts: readonly EvalJudgeVerdictInput[],
+    sessionId: string,
+  ): Promise<EvalHumanFinalResult> {
+    const mission = this.requireMissionRead('write a human-final verdict')
+    const annotate = this.missionAnnotate()
+    if (annotate === undefined) {
+      throw new EvalReadRefused(
+        'no mission annotate face: human-final verdicts live in the mission ledger, so this composition cannot record one '
+        + '— mount the dsh-mission plugin',
+      )
+    }
+    return await writeHumanFinal({ mission, annotate, runId, ticket, verdicts, sessionId })
   }
 
   /**
@@ -668,6 +1208,12 @@ export class EvalService {
     return typeof mission?.retry === 'function' && typeof mission.isReleasable === 'function'
       ? (mission as MissionActionFace)
       : undefined
+  }
+
+  /** The ONE mission write the judge bench makes; undefined when mission is absent. */
+  private missionAnnotate(): MissionAnnotateFace | undefined {
+    const mission = this.hosts?.get('mission') as Partial<MissionAnnotateFace> | undefined
+    return typeof mission?.annotate === 'function' ? (mission as MissionAnnotateFace) : undefined
   }
 
   /** mission's own Remote service — the leak gate's one home. */
@@ -803,8 +1349,13 @@ export class EvalService {
    * archived with its state. A gate refusal is recorded against that cell,
    * never forced — the re-entry point pilot A had to improvise with
    * per-cell `dsh-mission transition` calls (G13).
+   * Since T57 the walk also RECLAIMS the units: each cell that passes the gate
+   * has its container destroyed between the two transitions, exactly where the
+   * run loop destroys it. lab is probed, not required — a host-path run has no
+   * units and a composition without lab reports the list unknown rather than
+   * claiming zero.
    * @param runId - the run to finalize.
-   * @param options - caller tag and progress sink.
+   * @param options - caller tag and progress sink; the unit face is wired here.
    * @throws {@link EvalFinalizeRefused} when the composition mounts no
    *   mission service, or the run cannot be projected.
    */
@@ -816,7 +1367,11 @@ export class EvalService {
         + '— mount the dsh-mission plugin, or use the dsh-eval CLI (it drives the dsh-mission CLI in a child process)',
       ))
     }
-    return finalizeRun(mission, runId, options)
+    const lab = this.hosts?.get('lab') as FinalizeUnitsFace | undefined
+    return finalizeRun(mission, runId, {
+      ...options,
+      ...(options.units !== undefined || lab === undefined ? {} : { units: lab }),
+    })
   }
 
   /**
@@ -844,6 +1399,69 @@ export class EvalService {
   }
 
   /**
+   * The units lab is holding for a run, RIGHT NOW — the report page's 未回收
+   * count, and the one number that tells a reader whether the run actually
+   * let go of its containers.
+   *
+   * Deliberately NOT mission's `unreleased`. That list is the ledger's belief,
+   * derived from the refs a cell registered; this one is lab's own answer, and
+   * the two disagree in exactly the case worth showing — a cell the ledger has
+   * released whose container is still up, which is what T39's G18 found and
+   * what no page could see. The cell's state is joined back on from the ledger
+   * so the reader can tell a container the 回收 walk can still take (its cell
+   * is `archived`) from one only `--force` can (its cell is `released`).
+   *
+   * A composition with no lab answers `available: false` — unknown, not zero.
+   * @param runId - the run to ask about.
+   * @returns the held units, or why the list is unknown.
+   */
+  async runUnits(runId: string): Promise<EvalRunUnitsView> {
+    const lab = this.hosts?.get('lab') as FinalizeUnitsFace | undefined
+    if (lab === undefined) {
+      return {
+        runId,
+        available: false,
+        units: [],
+        refusal: 'no lab service: this composition runs no containers, so there is nothing to hold or reclaim',
+      }
+    }
+    let rows: readonly LabUnitRow[]
+    try {
+      rows = await lab.status()
+    } catch (error) {
+      // A lab that cannot be asked is not a lab that holds nothing. The page
+      // shows the refusal where the count would be.
+      return {
+        runId,
+        available: false,
+        units: [],
+        refusal: `lab could not be asked which units this run holds: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+    const states = new Map<string, string>()
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    if (mission !== undefined) {
+      try {
+        for (const row of mission.runStatus(runId).rows) states.set(row.id, row.state)
+      } catch {
+        // An unknown run joins nothing; the units are still the units.
+      }
+    }
+    return {
+      runId,
+      available: true,
+      units: rows.filter(row => row.runId === runId).map(row => ({
+        id: row.id,
+        resource: row.resource,
+        running: row.running,
+        missionId: row.missionId ?? null,
+        missionState: row.missionId === undefined ? null : states.get(row.missionId) ?? null,
+      })),
+      refusal: null,
+    }
+  }
+
+  /**
    * {@link EvalService.finalize} for the report page's button: the same walk,
    * with its progress lines captured so the page can show what the gate said
    * cell by cell rather than only how many moved.
@@ -866,6 +1484,8 @@ export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run.ts'
 export { EvalFinalizeRefused } from './finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
 export { EvalReadRefused } from './read.ts'
+export { EvalWriteRefused } from './repo-write.ts'
+export type { RepoWriteResult } from './repo-write.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
@@ -875,5 +1495,7 @@ export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runRe
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
+export { EvalDraftRefused, draftExperiment, draftOptions } from './draft.ts'
+export type { DraftConditionEdit, DraftExperimentInput, DraftOptions, DraftWrite } from './draft.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'

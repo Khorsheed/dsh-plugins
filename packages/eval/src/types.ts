@@ -30,8 +30,18 @@ export interface EvalRunRequest {
   dryRun?: boolean
   /** Concurrent cells (host path only; a unit plan is serial). */
   concurrency?: number
-  /** After archiving, attempt archived → releasable → released. */
+  /**
+   * After archiving, attempt archived → releasable → released and destroy the
+   * cell's unit. The DEFAULT since T57: send `false` (or `keepUnits`) to stop
+   * at `archived` instead.
+   */
   finalize?: boolean
+  /**
+   * Keep every cell's container: stop at `archived` and release nothing. The
+   * same axis as `finalize: false`, named the way an operator asks for it, and
+   * it wins when both are sent.
+   */
+  keepUnits?: boolean
   /** Bundle export directory, overriding the plan's own. */
   out?: string
   /** Infrastructure-retry budget per cell. */
@@ -342,6 +352,13 @@ export interface EvalConditionRow {
   drive: string | null
   /** The DECLARED model; what a run observed lives in that run's annotations. */
   model: string | null
+  /**
+   * The DECLARED endpoint (`"default"` = the harness's own, no base URL in
+   * force); null while unresolved, which the pre-run readiness gate refuses.
+   * A column rather than a detail because it is the field a condition most
+   * often stalls on, and the page is where it gets corrected.
+   */
+  endpoint: string | null
   /** The named scoped home, or null for the harness's default one. */
   scope: string | null
   /** The agent-preset roster the condition runs under, or null for none. */
@@ -423,10 +440,94 @@ export interface EvalConditionDiffRequest {
   dataset?: string
 }
 
-/** Which plan a human is approving. */
+/**
+ * Which condition the conditions page is provisioning. Named by set and id
+ * rather than by path: the page resolves against the session's binding like
+ * every other verb on it, and a browser that could name a PATH to write a lock
+ * into would be choosing the working copy — which is the human's binding
+ * decision, not the page's.
+ */
+export interface EvalConditionProvisionRequest {
+  /** The dataset set whose `conditions/` directory declares it. */
+  dataset: string
+  /** The condition id (its file stem). */
+  condition: string
+  /**
+   * Leave the declaration's `home.sha` alone instead of correcting it from
+   * what was measured. Absent = correct it, which is what makes «provision»
+   * one action rather than two (I5·T39 · G7).
+   */
+  keepDeclaration?: boolean
+}
+
+/** What one provision from the conditions page did. */
+export interface EvalConditionProvisionView {
+  condition: string
+  dataset: string
+  /** The declaration it ran against (absolute). */
+  conditionPath: string
+  /** The scoped home the condition resolved to; reading it materializes it. */
+  homeDir: string
+  /** The credential grade at provision time — `absent` prints the login command below. */
+  credentialState: string
+  /** Whether the lock was written; true means the condition is now ready. */
+  written: boolean
+  /** Whether this call corrected the declaration's `home.sha` and re-hashed it. */
+  homeShaWritten: boolean
+  /** The condition hash as the declaration now reads. */
+  sha: string
+  /** The scoped home's hash; null when the run stopped before hashing it. */
+  homeSha: string | null
+  /** Field verdicts and diagnostics, flattened for the page in contract order. */
+  checks: EvalPlanCheck[]
+  /** The registry row as it now reads; null when the listing could not be retaken. */
+  row: EvalConditionRow | null
+}
+
+/** Which condition's `model.endpoint` a human is setting, and to what. */
+export interface EvalConditionEndpointRequest {
+  dataset: string
+  condition: string
+  /**
+   * The upstream route. `"default"` is the harness's own endpoint with no base
+   * URL in force; empty or null declares "not resolved yet", which the
+   * readiness gate refuses.
+   */
+  endpoint: string | null
+}
+
+/** What one endpoint edit changed. */
+export interface EvalConditionEndpointView {
+  condition: string
+  dataset: string
+  /** The declaration that was written (absolute). */
+  conditionPath: string
+  before: string | null
+  after: string | null
+  /** The condition hash as the declaration now reads. */
+  sha: string
+  /** Whether anything was written — false when the value was already this. */
+  written: boolean
+  /**
+   * Whether a lock sits beside the declaration that this edit just made stale.
+   * `model.endpoint` is hash input, so the subject changed identity and the
+   * lock now anchors a document that no longer exists: provision again.
+   */
+  lockStale: boolean
+  /** The registry row as it now reads; null when the listing could not be retaken. */
+  row: EvalConditionRow | null
+}
+
+/** Which plan a human is approving, and on what terms. */
 export interface EvalApproveRequest {
   /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
   planPath: string
+  /**
+   * The dialog's 保留单元 box: stop every cell at `archived` and keep its
+   * container for someone to open. Absent or false is the default — the run
+   * walks the release gate cell by cell and holds one unit at a time.
+   */
+  keepUnits?: boolean
 }
 
 /**
@@ -445,6 +546,158 @@ export interface EvalApproveResult {
   runId: string | null
   /** The session every delegation parents to — the approving session itself. */
   parentSessionId: string | null
+}
+
+/* ──────────────── the 新建实验 form (ui-spec §五, step 2) ──────────────── */
+
+/**
+ * One condition the draft MINTS: a copy of a declaration that already exists,
+ * with some of the six fields ui-spec §五 lists changed. There is deliberately
+ * no shape here for a condition written from scratch — an experiment is worth
+ * running when its conditions differ in one field, and a declaration nobody
+ * copied differs in however many its author forgot to think about.
+ *
+ * Every field except `id` and `from` is optional, and an edit that changes
+ * NOTHING is refused: that would be the same subject under a second name, and
+ * it would double every count keyed by condition id.
+ */
+export interface EvalDraftConditionRequest {
+  /** The new condition's id; it doubles as the file name. */
+  id: string
+  /** The condition to copy, by id, in the same dataset set. */
+  from: string
+  /** `harness.name`. Changing it nulls `harness.version` — that version was another CLI's. */
+  harness?: string
+  /** `model.declared`; null is the legal "not resolved yet" declaration. */
+  model?: string | null
+  /**
+   * `model.endpoint` — the upstream route. `"default"` is the harness's own
+   * endpoint with no base URL in force; null is the "not resolved yet"
+   * declaration the readiness gate refuses, which is why the field is here at
+   * all (I5·T39 · G6).
+   */
+  endpoint?: string | null
+  /** The named scoped home, or null for the harness's default one. */
+  scope?: string | null
+  /** The agent-preset roster, or null for none. */
+  preset?: string | null
+  /** The harness's permission word. */
+  permissions?: string
+  /** `reasoning.effort`. */
+  reasoning?: string
+}
+
+/** The container segment a drafted plan may declare. */
+export interface EvalDraftUnitRequest {
+  /** Image tag or digest of the dataset suite's env/ layer. */
+  image: string
+  /** The docker network the units join; undeclared is the default bridge, which HAS egress. */
+  network?: string
+  /** In-container user (uid[:gid]). */
+  user?: string
+  /** argv of the per-unit egress probe; empty declares none. */
+  egressCommand?: string[]
+  /** Budget for that probe, in ms. */
+  egressTimeoutMs?: number
+}
+
+/**
+ * What the 新建实验 form (and `eval_plan_draft`) sends. The fields are ui-spec
+ * §五's list, flattened: the form's own shape and the tool's arguments are the
+ * same request because they reach the same service verb.
+ */
+export interface EvalDraftRequest {
+  /** The experiment name — the plan's file stem (`plans/<name>.json`). */
+  name: string
+  /** The dataset set to draft into. */
+  dataset: string
+  /** Dataset repository override; omit to use the calling session's binding. */
+  repo?: string
+  /** The commit to pin, or omit to let the run's snapshot pin it. */
+  commit?: string | null
+  /** The dataset items the matrix runs over. */
+  items: string[]
+  /** Player condition ids; a minted condition not named here is appended. */
+  conditions: string[]
+  /** Conditions to mint, each a copy of an existing declaration. */
+  newConditions?: EvalDraftConditionRequest[]
+  /** Judge condition ids; empty writes no judge block at all. */
+  judgeConditions?: string[]
+  /** Judge samples per cell; ignored without judge conditions. */
+  judgeSamples?: number
+  /** Independent samples per cell. */
+  reps: number
+  /** Stage names, each backed by `schemas/<stage>.json`. */
+  stages: string[]
+  /** The order seed, recorded with the run (frozen decision 11). */
+  seed: number
+  /** Whether same-condition cells are deliberately spread apart; default true. */
+  interleave?: boolean
+  /** Per-cell budget in ACTIVE minutes (not wall clock). */
+  activeMinutes: number
+  /** Per-cell delegation turns. */
+  turns: number
+  /** Verdict sources the run expects; omit for script + llm-draft + human-final. */
+  expectedNs?: string[]
+  /** Per-cell infrastructure-retry budget; omit to leave the default. */
+  retryInfrastructure?: number
+  /** The container segment; omit for the host path. */
+  unit?: EvalDraftUnitRequest
+  /** Bundle export directory; omit for the repository's own `exports/`. */
+  exports?: string
+  /** Review commentary, written into the plan verbatim. */
+  notes?: string
+}
+
+/**
+ * What drafting answers with: where the files landed, and what validate makes
+ * of them.
+ *
+ * `review` is the plan-review page's own payload, not a summary of it — the
+ * same projection of the same `validatePlan`, so the sentence an agent reports
+ * to a person and the list that person then reads on the page cannot disagree.
+ * A draft with errors is still a draft: it is on disk, the lab list shows it
+ * as 草稿, and `review.ok` is false. Drafting refuses only when there would be
+ * no draft to look at.
+ */
+export interface EvalDraftResult {
+  /** The dataset repository written into (absolute). */
+  repo: string
+  dataset: string
+  /** The plan document (absolute). */
+  planPath: string
+  /** The condition declarations minted, in mint order (absolute); empty when none were. */
+  conditionPaths: string[]
+  /** The plan's player condition ids as written, minted ones included. */
+  conditions: string[]
+  /** The plan's judge condition ids as written; empty when it declares no judge. */
+  judges: string[]
+  /** validate's verdict on what was just written, as the review page renders it. */
+  review: EvalPlanReview
+}
+
+/** What the 新建实验 form's pickers are filled from. */
+export interface EvalDraftOptionsRequest {
+  /** Dataset repository override; omit to use the calling session's binding. */
+  repo?: string
+}
+
+/** One dataset set the form may draft into. */
+export interface EvalDraftDatasetOption {
+  id: string
+  /** Item ids the set declares, sorted — the 题目多选 list. */
+  items: string[]
+  /** Stage names it ships a schema for, sorted. */
+  stages: string[]
+}
+
+/** The form's vocabulary: which sets exist, and what each holds. */
+export interface EvalDraftOptionsView {
+  /** The dataset repository the options were read from (absolute); null when none resolved. */
+  repo: string | null
+  datasets: EvalDraftDatasetOption[]
+  /** Honest degrades, one sentence each — the list still answers. */
+  notes: string[]
 }
 
 /* ──────────────────── the matrix page and the cell drawer ─────────────────── */
@@ -714,10 +967,34 @@ export interface EvalExportPlanView {
   attempts: number
 }
 
-/** The export outcome. */
+/**
+ * The export outcome — the bundle AND the report written into it.
+ *
+ * One action writes both since I5·T60. Before it, the page's 导出 wrote the
+ * bundle and the report page then printed a command line for the reader to go
+ * and run (`dsh-eval report <bundle>`), which is how a walkthrough that had
+ * everything on screen still ended at a terminal (I5·T39 · G15). The CLI verb
+ * stays — it is how a bundle from anywhere gets a report — but the page no
+ * longer needs it.
+ */
 export interface EvalExportResultView {
   bundleDir: string
   files: number
+  /** Epoch ms of the export; the field the staleness sentence compares. */
+  exportedAt: number
+  /** `report/summary.md` inside the bundle; null when the report could not be written. */
+  summaryPath: string | null
+  /** Verdict rows the written report carries. */
+  reportRows: number
+  /** Why no report was written beside the bundle; null when one was. */
+  reportError: string | null
+  /** Whether the run-level export note reached the ledger (the page's way back here). */
+  noteRecorded: boolean
+}
+
+/** Which run to export again, after the final verdicts (I5·T39 · G17). */
+export interface EvalReexportRequest {
+  runId: string
 }
 
 /** One run's answer for one dataset item — the 作答记录 of the item page (T47). */
@@ -926,6 +1203,23 @@ export interface EvalRunReportView {
   refusal: string | null
   /** The `dsh-eval report` command that writes results.jsonl / summary.md to disk. */
   cliHint: string | null
+  /**
+   * When the bundle on screen was written (`manifest.json`'s own `exportedAt`),
+   * or null when the bundle carries no readable manifest.
+   */
+  exportedAt: number | null
+  /** The newest `human-final` verdict of the run, or null when none exists. */
+  lastHumanFinalAt: number | null
+  /**
+   * True when the bundle was exported BEFORE the last final verdict — the
+   * numbers on screen were computed without it, and a re-export is the fix
+   * (I5·T39 · G17).
+   */
+  staleAfterFinal: boolean
+  /** Whether `report/summary.md` is in the bundle (every export since T60 writes it). */
+  summaryWritten: boolean
+  /** Whether a recorded export can be repeated in one click (a note exists). */
+  reexportable: boolean
   invariants: EvalReportInvariant[]
   /** True only when all four invariants are established. */
   comparisonAllowed: boolean
@@ -959,6 +1253,29 @@ export interface EvalFinalizeCell {
   finalState: string
   /** The gate's refusal, or why the cell was skipped. */
   reason: string | null
+  /** The unit this cell held and what became of it; null when it held none. */
+  unit: EvalFinalizeCellUnit | null
+}
+
+/** What the walk did with one cell's container. */
+export interface EvalFinalizeCellUnit {
+  id: string
+  resource: string
+  /** True when the destroy went through; false when it was tried and failed. */
+  released: boolean
+  /** lab's verbatim refusal, when the destroy failed. */
+  reason: string | null
+}
+
+/** A unit of this run still up when the walk ended, with the reason. */
+export interface EvalFinalizeHeldUnit {
+  id: string
+  resource: string
+  missionId: string | null
+  /** The cell's state when the walk ended; null when the run owns no such cell. */
+  missionState: string | null
+  /** Why no gate could authorize its destroy, in terms the reader can act on. */
+  reason: string
 }
 
 /** The finalize answer: what moved, what the gate refused, and what was left alone. */
@@ -970,6 +1287,207 @@ export interface EvalFinalizeView {
   /** Skipped cells per raw state — the operator's one-line summary. */
   skippedByState: Record<string, number>
   cells: EvalFinalizeCell[]
+  /** Containers the walk destroyed, one per released cell that held one. */
+  unitsReleased: number
+  /** Containers of this run still up afterwards, each with the reason. */
+  unitsHeld: EvalFinalizeHeldUnit[]
+  /**
+   * Whether the unit list is knowable at all. False on a composition with no
+   * lab: an empty `unitsHeld` then means "not asked", not "none left".
+   */
+  unitsKnown: boolean
   /** The walk's own log lines, verbatim. */
   log: string[]
+}
+
+/** Which run's held units to list. */
+export interface EvalRunUnitsRequest {
+  runId: string
+}
+
+/** One unit lab is holding for a run right now. */
+export interface EvalRunUnit {
+  id: string
+  /** The container name — what `docker ps` shows. */
+  resource: string
+  running: boolean
+  /** The cell it was acquired for; null for a unit bound to none. */
+  missionId: string | null
+  /**
+   * That cell's state in the ledger. It is what separates a container the
+   * 回收 walk can still take (`archived`) from one that only `--force` can
+   * (`released`) — the distinction the report page's action depends on.
+   */
+  missionState: string | null
+}
+
+/**
+ * The report page's 未回收单元 answer: lab's own list, not the ledger's belief.
+ * `available: false` means the count is UNKNOWN — no lab in this composition,
+ * or lab could not be asked — which the page must not render as zero.
+ */
+export interface EvalRunUnitsView {
+  runId: string
+  available: boolean
+  units: EvalRunUnit[]
+  /** Why the list is unknown; null when it was read. */
+  refusal: string | null
+}
+
+/* ───────────────── the judge bench (ui-spec §五, step 8) ──────────────── */
+
+/** Which run's judging queue to open. */
+export interface EvalJudgeQueueRequest {
+  runId: string
+}
+
+/**
+ * One de-identified material file, as the bench shows it. `text` is the
+ * SCRUBBED bytes — the original never leaves the host — and `replacements`
+ * says how many fingerprints the run's table removed from this file, which is
+ * the one number that tells a grader the scrubber actually ran.
+ */
+export interface EvalJudgeMaterial {
+  path: string
+  text: string
+  replacements: number
+}
+
+/** One `kind: human` rubric row — what the bench asks a person to answer. */
+export interface EvalJudgeCriterionRow {
+  id: string
+  criterion: string
+  /** What the author said counts as evidence; null when the rubric omits it. */
+  evidence: string | null
+  weight: number | null
+  /** The criterion states a DEFECT: holding it means points off. */
+  negative: boolean
+  /** Failing it sinks the cell regardless of the rest. */
+  veto: boolean
+  note: string | null
+}
+
+/**
+ * One llm-draft value already on record for a criterion. `judge` is the BLIND
+ * panel label (判官 A / 判官 B), never the judge condition id — that id names
+ * a harness as often as not, and the bench is blind.
+ */
+export interface EvalJudgeDraftSample {
+  judge: string
+  sample: number | null
+  criterion: string
+  pass: boolean
+  evidence: string | null
+  /** The judge's model is the model this cell ran (decision 9, disclosed per cell). */
+  selfJudged: boolean
+}
+
+/** One human-final verdict already on record for a criterion. */
+export interface EvalJudgeHumanVerdict {
+  criterion: string
+  pass: boolean
+  evidence: string | null
+  at: number
+  /** The annotation's writer — a session tag for a bench write. */
+  by: string | null
+}
+
+/**
+ * One queue entry: a cell, blinded. There is no condition id, no harness and
+ * no model anywhere in this shape, and no mission id either — the
+ * orchestrator's `<task>-<conditionId>-rep<N>` naming would put the harness
+ * in the page's DOM. The cell travels as an ordinal plus an opaque ticket,
+ * and the ticket is what the write verb takes back.
+ */
+export interface EvalJudgeQueueCell {
+  /** The opaque handle `humanFinal` resolves back to a mission id. */
+  ticket: string
+  /** The cell's blind name: its position in the run's own (seeded) order. */
+  cellNo: number
+  /** The dataset item — the question being graded, not a subject fingerprint. */
+  task: string | null
+  rep: number | null
+  state: string
+  bucket: string
+  attempt: number
+  materials: EvalJudgeMaterial[]
+  criteria: EvalJudgeCriterionRow[]
+  /** Why the criteria list is empty, when it is; null when it has rows. */
+  criteriaNote: string | null
+  drafts: EvalJudgeDraftSample[]
+  humanFinal: EvalJudgeHumanVerdict[]
+  /** Whether this cell already carries a human-final verdict — the queue's split. */
+  graded: boolean
+  /**
+   * Criteria this cell has an `llm-draft` value for and NO human-final.
+   *
+   * It is here because of how the report picks a cell's scoring source: it
+   * takes the most authoritative namespace that has ANY verdict for the cell
+   * and scores from that one alone (`human-final` > `llm-draft` > `script`).
+   * So the first human-final verdict on a cell — even one answering a single
+   * `kind: human` criterion — makes human-final the cell's ONLY scoring
+   * source, and every criterion in this list stops counting toward its score.
+   *
+   * The bench cannot fix that from here (changing the rule would move every
+   * report ever produced), but it must not let a person do it without
+   * knowing. The page prints the consequence beside the button.
+   */
+  draftOnlyCriteria: string[]
+}
+
+/**
+ * The judge bench's payload: the blind queue and the run's live consistency
+ * numbers (computed off the LEDGER, so a verdict written here moves them
+ * without waiting for a re-export).
+ */
+export interface EvalJudgeQueueView {
+  runId: string
+  cells: EvalJudgeQueueCell[]
+  consistency: EvalReportJudgeConsistency
+  /** How many judge conditions the run declared — the panel's size. */
+  judgeCount: number
+  /**
+   * True when the run's newest recorded export predates its newest
+   * `human-final` — the verdicts written on THIS page are not in the bundle,
+   * and the numbers anyone reads out of it were computed without them
+   * (I5·T39 · G17). False when nothing was ever exported: a run with no bundle
+   * has no stale bundle, and the report page is where "export it" is said.
+   */
+  bundleStale: boolean
+  /** When the run's newest recorded export was made; null when none was. */
+  lastExportAt: number | null
+  /** Degradations, each as a sentence: no data root, no conditions in meta, … */
+  notes: string[]
+}
+
+/** One verdict a person is submitting from the bench. */
+export interface EvalJudgeVerdictInput {
+  criterion: string
+  pass: boolean
+  /** A checkable fact; the bench refuses a blank one. */
+  evidence: string
+  /** Partial credit for a proportional criterion (protocol §6.8). */
+  ratio?: { passed: number; total: number } | null
+}
+
+/** Submit one cell's human-final verdicts. */
+export interface EvalHumanFinalRequest {
+  runId: string
+  /** The blind handle the queue issued; never a mission id. */
+  ticket: string
+  verdicts: EvalJudgeVerdictInput[]
+}
+
+/** What the human-final write did. */
+export interface EvalHumanFinalResult {
+  runId: string
+  ticket: string
+  /** The cell the ticket resolved to — host-side truth, echoed for the ledger's sake. */
+  missionId: string
+  written: number
+  added: boolean
+  /** The annotation's `by`: `tab:<sessionId>`, never a `tool:` origin. */
+  by: string
+  /** mission's annotate is a no-op on an identical repeat; this says it was one. */
+  duplicate: boolean
 }

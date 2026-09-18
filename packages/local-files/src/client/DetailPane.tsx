@@ -8,6 +8,10 @@
  * (markdown / JSON / CSV). The header bar shows the resolved path plus the
  * copy-path / open-folder / open-IDE gestures.
  *
+ * The content search keeps the rendered body: the hits are painted over it
+ * through the CSS Custom Highlight API and the raw matched-lines view is only
+ * the fallback for a query the rendered body cannot show (rendered-search.ts).
+ *
  * The local-files browser is git-agnostic, so there is no diff view — only the
  * content view. Mirrors the file-preview pane's chrome so both render areas
  * read as one family, preparing for a future merge.
@@ -23,6 +27,9 @@ import { isHtmlPath, isMarkdown, languageFor } from './language.ts'
 import { structuredPreview, markdownLabels } from './structured.tsx'
 import { buildSrcDoc } from './html-src-doc.ts'
 import { attachBridge } from './html-bridge.ts'
+import {
+  SEARCH_SKIP_ATTRIBUTE, supportsRenderedSearch, useRenderedSearch,
+} from './rendered-search.ts'
 import css from './DetailPane.module.css'
 
 /**
@@ -36,6 +43,10 @@ import css from './DetailPane.module.css'
  */
 const scrollMemory = new Map<string, number>()
 const scrollKey = (sessionId: string, path: string): string => `${sessionId}\u0000${path}`
+
+/** Chrome marker for the content scan: the format banner and the truncation
+ * notice are not document text, so a query must not count them as hits. */
+const searchSkip = { [SEARCH_SKIP_ATTRIBUTE]: '' } as const
 
 /** Content-search state handed to the text preview body. */
 interface ContentSearch {
@@ -139,6 +150,9 @@ function PreviewBody(props: {
   read: LocalFilesRead
   t: TranslateNS<'localFiles'>
   search: ContentSearch
+  /** Show the raw matched-lines view instead of the rendered body (the
+   * content search's fallback — see rendered-search.ts). */
+  rawSearch: boolean
   htmlMode: 'source' | 'render' | 'script'
   scripted: boolean
   onLoaded: () => void
@@ -148,16 +162,15 @@ function PreviewBody(props: {
   onScroll: () => void
   fullscreen: boolean
 }) {
-  const { read, t, search, htmlMode, scripted, onLoaded, iframeRef, frameRef, scrollRef, onScroll, fullscreen } = props
+  const { read, t, search, rawSearch, htmlMode, scripted, onLoaded, iframeRef, frameRef, scrollRef, onScroll, fullscreen } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
-      const searching = search.query !== '' && search.matches.length > 0
       if (isHtmlPath(read.path)) {
         return (
           <div className={css.previewScroll} ref={scrollRef} onScroll={onScroll}>
-            {read.truncated === true && <div className={css.notice}>{t('local.tooLarge')}</div>}
-            {searching
+            {read.truncated === true && <div className={css.notice} {...searchSkip}>{t('local.tooLarge')}</div>}
+            {rawSearch
               ? <MarkedContent content={content} search={search} />
               : htmlMode === 'source'
                 ? <CodeBlock code={content} lang="html" copyLabel={t('action.copy')} copiedLabel={t('action.copied')} />
@@ -165,7 +178,7 @@ function PreviewBody(props: {
           </div>
         )
       }
-      const documentBody = searching
+      const documentBody = rawSearch
         ? null
         : structuredPreview(read.path, content, t)
           ?? (isMarkdown(read.path) ? <MarkdownText text={content} labels={markdownLabels(t)} /> : null)
@@ -173,13 +186,13 @@ function PreviewBody(props: {
       const documentLabel = languageFor(read.path) ?? (dot < 0 ? read.path : read.path.slice(dot + 1).toLowerCase())
       return (
         <div className={css.previewScroll} ref={scrollRef} onScroll={onScroll}>
-          {read.truncated === true && <div className={css.notice}>{t('local.tooLarge')}</div>}
-          {searching
+          {read.truncated === true && <div className={css.notice} {...searchSkip}>{t('local.tooLarge')}</div>}
+          {rawSearch
             ? <MarkedContent content={content} search={search} />
             : documentBody !== null
               ? (
                 <div className={css.structured}>
-                  <div className={css.structuredBanner}>
+                  <div className={css.structuredBanner} {...searchSkip}>
                     <span className={css.structuredInfo}>{documentLabel}</span>
                   </div>
                   <div className={css.structuredBody}>{documentBody}</div>
@@ -294,7 +307,35 @@ export function DetailPane({
     })
     return hits
   }, [read, contentQuery])
-  const active = matches.length === 0 ? 0 : Math.min(activeMatch, matches.length - 1)
+  // The text read's content (null for every other kind), needed above the
+  // empty-path early return by the search state below.
+  const content = read?.kind === 'text' ? (read.content ?? '') : null
+  const searchQuery = contentQuery.trim()
+  // `matches` is the source-line hit set: it names the hits for the raw view
+  // and its counter, and it is also the cheap "is there anything at all" gate.
+  const searching = content !== null && searchQuery !== '' && matches.length > 0
+  // The rendered body keeps its form and the hits are painted over it (see
+  // rendered-search.ts). The html preview is excluded: its body is an
+  // opaque-origin iframe whose text is not in this DOM, so it keeps the raw
+  // matched-lines view.
+  const canPaint = searching && !html && supportsRenderedSearch()
+  const paintedSearch = useRenderedSearch({
+    rootRef: scrollRef,
+    query: searchQuery,
+    active: activeMatch,
+    enabled: canPaint,
+  })
+  const painted = canPaint && !paintedSearch.fallback
+  // The counter and the jump cursor size themselves against what is on screen:
+  // painted occurrences in the rendered body, matched lines in the raw view.
+  // An unmeasured query (the commit before its scan) reads the raw count, which
+  // is always ≥ the painted one — the hook clamps the index. The rendered body
+  // MUST stay mounted until the scan says otherwise: falling back on the
+  // unmeasured frame would scan the raw view (where the source syntax it could
+  // not find is visible) and latch a hit count for a body that is gone.
+  const total = painted ? (paintedSearch.count ?? matches.length) : matches.length
+  const rawSearch = searching && !painted
+  const active = total === 0 ? 0 : Math.min(activeMatch, total - 1)
   useEffect(() => {
     activeLineRef.current?.scrollIntoView({ block: 'center' })
   }, [active, contentQuery])
@@ -339,12 +380,11 @@ export function DetailPane({
     return <div className={css.placeholder}>{t('detail.noSelection')}</div>
   }
 
-  const search: ContentSearch = { query: contentQuery.trim(), matches, active, activeLineRef }
+  const search: ContentSearch = { query: searchQuery, matches, active, activeLineRef }
   const stepMatch = (delta: number): void => {
-    if (matches.length === 0) return
-    setActiveMatch(index => (index + delta + matches.length) % matches.length)
+    if (total === 0) return
+    setActiveMatch(index => (index + delta + total) % total)
   }
-  const content = read?.kind === 'text' ? (read.content ?? '') : null
 
   const doCopyPath = (): void => {
     if (onCopyPath === undefined) return
@@ -407,7 +447,7 @@ export function DetailPane({
           )}
           {matches.length > 0 && (
             <>
-              <span className={css.searchCount}>{t('search.hit', { current: active + 1, total: matches.length })}</span>
+              <span className={css.searchCount}>{t('search.hit', { current: active + 1, total })}</span>
               <button type="button" className={css.stepButton} onClick={() => { stepMatch(-1) }} aria-label={t('search.prev')}>‹</button>
               <button type="button" className={css.stepButton} onClick={() => { stepMatch(1) }} aria-label={t('search.next')}>›</button>
             </>
@@ -480,7 +520,7 @@ export function DetailPane({
             ? <div className={css.placeholder}>{t('state.error', { message: error })}</div>
             : read === null
               ? <div className={css.placeholder}>{t('detail.noSelection')}</div>
-              : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={htmlScripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} scrollRef={scrollRef} onScroll={captureScroll} fullscreen={fullscreen} />}
+              : <PreviewBody read={read} t={t} search={search} rawSearch={rawSearch} htmlMode={htmlMode} scripted={htmlScripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} scrollRef={scrollRef} onScroll={captureScroll} fullscreen={fullscreen} />}
       </div>
     </div>
   )

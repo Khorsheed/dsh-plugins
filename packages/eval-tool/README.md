@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-`@khorsheed/dsh-eval` 的伴生工具行：模型可见的四个**只读**工具（`eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`）与 `tool:eval` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。服务面（`ctx.dshEval`）、CLI 与 `/eval` slash 留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
+`@khorsheed/dsh-eval` 的伴生工具行：模型可见的六个工具——四个只读（`eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`）加两个写（起草 `eval_plan_draft`、窄写 `eval_repo_write`）——与 `tool:eval` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。`/eval` slash 的注册自 preset 可见性收口（A3）起也归本行（落进 preset scope 层，handler 与定义留在 core）；服务面（`ctx.dshEval`）与 CLI 留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
 
 ## 形态：不自挂载的伴生包
 
@@ -17,16 +17,20 @@
   ```
 
 - **运行依赖 core 的全局服务**：apply 时探测的是 **`ctx.dshEval`，不是 `ctx.eval`**——ctx 上叫 `eval` 的属性会遮蔽 loader `with (ctx) { return eval(expr) }` 里的全局 `eval`，凡挂载的组合一遇 `!!js` 即炸（真实 3171 实例踩出）。core（`@khorsheed/dsh-eval`）未挂载则**静默跳过注册**并留一行日志（degrade：不炸 preset 挂载，该 preset 组合照常挂上，只是模型看不到这四个工具）；工具注册走 `ctx.inject(['tools'])` 延迟注入（挂载序竞态的历史教训），无 tools 注册表的组合同样安全。
-- 工具定义工厂由 core 的 `./tool` 子路径导出（`@khorsheed/dsh-eval/tool` 的 `evalToolDefinitions(service)`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。四个工具全是读：run 由人在会话里用 `/eval run` 发起，写类动词（materialize / submit / transition / annotate / archive / export）归编排器服务面与人的 CLI。
+- 工具定义工厂由 core 的 `./tool` 子路径导出（`@khorsheed/dsh-eval/tool` 的 `evalToolDefinitions(service)`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。六个里四个是读；`eval_plan_draft` 只写两类文件——plan 与它引用的新条件，写进会话绑定题库的工作树，不 commit；`eval_repo_write`（I5·T60）只写一个文本文件，且只进题库的透传区（`docs/`、`datasets/<题集>/plans|conditions|analysis/`），题目材料（`datasets/<题集>/items/…`）一律拒绝。**起草不是启动**：run 仍由人在会话里用 `/eval run` 或在计划审阅页按「批准并启动」发起，其余写类动词（materialize / submit / transition / annotate / archive / export）归编排器服务面与人的 CLI。
 
 **配置**（可选）：`tools` 决定这一行授予哪一组工具。分组是从 core 搬来的：core 不再注册任何模型工具，也不再贡献提示词段。
 
 | `tools` | 注册的工具 |
 |---|---|
-| `all`（缺省） | 四个只读工具 |
+| `all`（缺省） | 六个工具（四个只读 + `eval_plan_draft` + `eval_repo_write`）|
 | `none` | 无——连 `tool:eval` 提示词段也不贡献 |
 
-没有更细的分组，因为没有可分的：这一行一个写工具都不注册。
+没有更细的分组，因为没有可分的：这一行没有任何能启动、推进或终评的工具。
+
+**第六个工具 `eval_repo_write` 是 I5·T60 加的第二个写**（I5·T39 · G16）：把**一个文本文件**写进会话绑定题库的工作树，路径白名单写死在代码里——`docs/<path>`、`datasets/<题集>/plans/<path>`、`datasets/<题集>/conditions/<path>`、`datasets/<题集>/analysis/<path>`，别的一律拒绝并把路径与这张表原样回给调用方。**题目材料永远不可写**：`datasets/<题集>/items/…` 不在表上，不管绑定的读白名单开到多大——题干、`standards.yml`、rubric、oracle 一个都改不了。缺省不覆盖已有文件（要改得显式传 `overwrite`），空内容拒绝，从不 commit。
+
+加它的理由不是「agent 需要能写」，而是**授予的尺寸要配得上动作的尺寸**：第八步 agent 读完 bundle 写分析初稿，而会话工作区不是题库工作树，于是 `write` 撞沙箱、要人批一次升级到 `danger-full-access`——为写一份 markdown 放开整台机器（走查里真实发生过一次）。窄口把这次批准变成零次。
 
 ## 安装
 
@@ -43,6 +47,10 @@ web-dev 场景包的开发模式 preset（`profiles/web-dev/presets/dev`）已�
 **第四个工具 `eval_cells` 是 I5·T46 加的**（宿主面无关，纯工具面）：评测预设自那以后不挂 mission 的伴生行（界面规格 R6），`eval_cells` 按 run 逐格答原先要 `mission_list` / `mission_get` 才答得了的问题——桶、阶段与停留时长、attempt、单元 refs、检查点名、各注解命名空间条数、委派子会话 id，可按 `bucket` / `task` / `condition` 过滤。投影算在 core 的服务面（`ctx.dshEval.cells`），本行只做适配。`tool:eval` 提示词段也随之点名：这条线上没有 mission 工具，不要去找。
 
 **I5·T35a 给它加了第二种模式**：不给 `run_id` 就改答「有哪些实验」——每个评测 run 与每份还没启动的 plan 各一行，带题库快照、条件数、矩阵大小、因子、状态与进度。列与实验室 tab 完全同源（core 的 `experiments` 投影，一份实现），两个面不可能各说各话；这是 T46 摘掉 `mission_run_list` 之后留下的缺口。先这么问拿到 run id，再带着它问逐格。
+
+**`eval_plan_draft` 是 I5·T34 加的第一个写**：一次调用把 `plans/<名称>.json` 与它引用的新条件文件写进会话绑定题库的工作树，随即 validate，返回路径与结果。此前 agent 要先 `write` 两个文件再调 `eval_plan_validate`、自己拼契约；现在与界面的「新建实验」表单走**同一个服务面动词**（`ctx.dshEval.draftExperiment`），所以人建的草稿与 agent 建的草稿是同一份文件、落进同一个列表，实验室分不出是谁建的。新条件一律是**复制**：`new_conditions` 用 `from` 指一条现有条件，只改点名的字段（harness / 模型 / endpoint / scope / preset / 权限 / 推理强度，I5·T58 起七个）——两条只差一个字段才是单因子配对，从零写的声明差的是作者没想到的那几个。把这个写交给模型是安全的，理由与其它写类动词不给的理由是同一条：草稿只是一份文件加一行「草稿」，它什么都没启动，人仍要读、要按按钮。
+
+**`repo` 参数只认会话绑定**（I5·T58）：`eval_conditions` 与 `eval_plan_draft` 的 `repo` 只能复述本会话的 datasets 绑定，不是那一个即拒绝；会话没绑定则任何 `repo` 都拒绝，并提示让人 `/datasets bind`。这条收窄是因为那个参数原本是「让人来绑」这句报错的绕行道，而 agent 走过一次：它搜到一个多 agent 共用的检出，在别人的分支上写了三份文件。人的面（CLI 的 `--repo`、`/eval conditions --repo`）不受影响。
 
 ## Compatibility
 

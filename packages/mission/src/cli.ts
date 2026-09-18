@@ -10,12 +10,23 @@
  * CLI body would never run (the silent-exit-0 bug the bin smoke test in
  * tests/bin.spec.ts now pins). The implementation lives in `cli-core.ts`.
  */
+import { realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { runCli } from './cli-core.ts'
 
 // Direct invocation (`tsx src/cli.ts`, `node lib/cli.js`) vs being imported.
-const entry = process.argv[1]
-if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+// Node resolves an ESM main module to its REAL path, so `import.meta.url` is
+// the resolved file while `process.argv[1]` is the path as it was typed.
+// Invoked through a symlink — pnpm's `.bin/<name>` link above all — the two
+// never match, and the body below silently never runs: exit 0, no output,
+// nothing to tell the caller the CLI did nothing. Resolve argv[1] the same
+// way before comparing. A path that cannot be resolved keeps its literal
+// form, which is exactly what the comparison used before.
+let entryPath = process.argv[1]
+if (entryPath !== undefined) {
+  try { entryPath = realpathSync(entryPath) } catch { /* unresolvable — compare the literal path */ }
+}
+if (entryPath !== undefined && import.meta.url === pathToFileURL(entryPath).href) {
   void runCli(process.argv.slice(2), {
     stdout: line => process.stdout.write(line),
     stderr: line => process.stderr.write(line),

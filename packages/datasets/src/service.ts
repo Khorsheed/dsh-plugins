@@ -12,7 +12,8 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  readBinding, validateBinding, writeBinding, type BindingSession, type DatasetBinding,
+  readBinding, validateBinding, writeBinding,
+  type BindingSession, type DatasetBinding,
 } from './binding.ts'
 import {
   assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir,
@@ -31,6 +32,7 @@ import {
   planDatasetSkeleton, planItemSkeleton, type SkeletonResult,
 } from './scaffold.ts'
 import { ensureWorktree, type ManagedWorktree } from './worktree.ts'
+import { normalizeRepoPath, sameRepoPath } from './repo-path.ts'
 
 /**
  * The effective visibility scope of one call: the resolved repository plus
@@ -55,18 +57,27 @@ export interface DatasetScope {
 
 /**
  * The effective layer ceiling of one call against one dataset:
- * - operator scope: unfiltered (undefined);
+ * - operator scope: unfiltered (undefined) — the human looking at their own
+ *   machine is never the party this constrains;
  * - an explicit binding whitelist: exactly it (sensitive layers listed on
  *   purpose are deliberately included);
- * - no whitelist: the modelFacing floor — when the dataset declares any
- *   sensitive layer, only its modelFacing:true layers; when it declares none,
- *   behavior is unchanged (undefined = unfiltered, undeclared item-level
- *   directories included).
+ * - no whitelist: the modelFacing floor, the dataset's `modelFacing: true`
+ *   layers and nothing else.
+ *
+ * The floor used to apply only to a dataset that declared at least one
+ * sensitive layer, and to answer `undefined` — unfiltered — for every other
+ * one. That made "no whitelist" mean two different things depending on a
+ * descriptor the binder never read, and the unfiltered branch also admitted
+ * item-level directories no `register` entry claims, which are precisely the
+ * ones nobody has declared a sensitivity for. `/datasets bind` with no
+ * `--layers` is the common case and it printed "(all layers)" while this
+ * function quietly applied a floor to some datasets and not others (I5·T39 ·
+ * G3). Now the default is one sentence in both places: the model-facing layers,
+ * and widening it is something a person writes down.
  */
 export function effectiveLayers(scope: DatasetScope, descriptor: DatasetDescriptor): readonly string[] | undefined {
   if (scope.operator === true) return undefined
   if (scope.layers !== undefined) return scope.layers
-  if (!descriptor.layers.some(layer => !layer.modelFacing)) return undefined
   return descriptor.layers.filter(layer => layer.modelFacing).map(layer => layer.name)
 }
 
@@ -76,36 +87,75 @@ export interface ScopeSelectors {
 }
 
 /**
- * Resolve the effective scope: an explicit `repo` wins, then the session
- * binding, then the plugin config's default repo. The binding's whitelists
- * apply whenever a binding exists — including alongside an explicit repo
- * (the binding human owns what the session's agent may see). No repo source
- * at all fails loud instead of guessing.
+ * Resolve the effective scope: an explicit `repo` wins for a HUMAN caller,
+ * then the session binding, then the plugin config's default repo. The
+ * binding's whitelists apply whenever a binding exists — including alongside
+ * an explicit repo, because the binding human owns what the session's agent
+ * may see. No repo source at all fails loud instead of guessing.
+ *
+ * `agent: true` marks a call from a MODEL TOOL, and there `repo` stops being
+ * an override: it may only restate the repository this session already has —
+ * its binding, or the repository the instance was configured with — and
+ * anything else is refused with the bind command.
+ *
+ * The narrowing is the point. The parameter was a way around the very refusal
+ * that told the agent to ask a person, and an agent took it: told there was no
+ * binding, it searched the disk, found a checkout several agents share, and
+ * wrote three files onto somebody else's branch (I5·T39 · G1). Which
+ * repository an evaluation reads and writes is a human's decision about a
+ * shared machine, not an argument.
+ *
+ * Whichever source wins is normalized (`normalizeRepoPath`): a `~` typed into
+ * a tool argument or a config file reaches git as a literal directory name
+ * otherwise, and the three sources must not disagree about what one path
+ * means.
  * @param selectors - explicit per-call selectors.
  * @param binding - the session binding, when one exists.
  * @param defaultRepo - the plugin config's default repo ('' / undefined = none).
+ * @param options - `agent: true` for the model-tool face.
  * @returns the effective scope.
  */
 export function resolveScope(
   selectors: ScopeSelectors,
   binding: DatasetBinding | undefined,
   defaultRepo: string | undefined,
+  options: { agent?: boolean } = {},
 ): DatasetScope {
   const explicit = selectors.repo?.trim()
-  const repo = explicit !== undefined && explicit !== ''
-    ? explicit
-    : binding?.repoPath ?? (defaultRepo !== undefined && defaultRepo !== '' ? defaultRepo : undefined)
+  const asked = explicit !== undefined && explicit !== '' ? explicit : undefined
+  const session = binding?.repoPath ?? (defaultRepo !== undefined && defaultRepo !== '' ? defaultRepo : undefined)
+  const whitelists = {
+    ...(binding?.datasets !== undefined ? { datasets: binding.datasets } : {}),
+    ...(binding?.layers !== undefined ? { layers: binding.layers } : {}),
+  }
+  if (options.agent === true) {
+    if (session === undefined) {
+      throw new DatasetsError(
+        'no dataset repository bound to this session'
+        + (asked === undefined ? '' : `, so ${JSON.stringify(asked)} is not this session's to read`)
+        + ' — ask the person to bind one (/datasets bind <repoPath>), and use no repo argument afterwards.'
+        + ' An unbound session has no repository an agent may pick for it, however many are on the disk.',
+        'NO_REPO',
+      )
+    }
+    if (asked !== undefined && !sameRepoPath(asked, session)) {
+      throw new DatasetsError(
+        `repo ${JSON.stringify(asked)} is not this session's dataset repository (${session})`
+        + ' — the repo argument may only restate it. Drop it, or ask the person to rebind'
+        + ' (/datasets bind <repoPath>).',
+        'REPO_NOT_BOUND',
+      )
+    }
+    return { repo: normalizeRepoPath(session), ...whitelists }
+  }
+  const repo = asked ?? session
   if (repo === undefined) {
     throw new DatasetsError(
       'no dataset repository: pass `repo` explicitly, or bind one first (/datasets bind or `dsh-datasets bind`)',
       'NO_REPO',
     )
   }
-  return {
-    repo,
-    ...(binding?.datasets !== undefined ? { datasets: binding.datasets } : {}),
-    ...(binding?.layers !== undefined ? { layers: binding.layers } : {}),
-  }
+  return { repo: normalizeRepoPath(repo), ...whitelists }
 }
 
 /** `datasets_list` result with a dataset selector: one dataset's items. */
@@ -299,6 +349,14 @@ export interface WorktreeOptions {
 
 /** The public service face (`ctx.datasets`). */
 export interface DatasetsService {
+  /**
+   * The plugin config's default repo (`''` = none) — the scope fallback the
+   * human faces (slash, Remote tab) resolve against when a call carries no
+   * explicit `repo` and the session has no binding. It rides the service so
+   * the companion row's slash face can reach it without seeing the core's
+   * plugin config.
+   */
+  readonly defaultRepo: string
   list(scope: DatasetScope, datasetId?: string, commit?: string): Promise<ListDatasetsResult | ListItemsResult>
   show(scope: DatasetScope, datasetId: string, itemId?: string, commit?: string): Promise<ShowResult>
   describe(scope: DatasetScope, datasetId: string, commit?: string): Promise<JsonObject>
@@ -371,10 +429,23 @@ export interface DatasetsServiceOptions {
   worktreeRoot: string
   /** Binding store root (`<stateRoot>/bindings`). */
   bindingsRoot: string
+  /** Plugin config's default repo (absent / `''` = none); surfaced as {@link DatasetsService.defaultRepo}. */
+  defaultRepo?: string
 }
 
-/** Wrap a git failure as a domain error where the cause is clear. */
+/**
+ * Wrap a git failure as a domain error where the cause is clear.
+ *
+ * A path that is not on disk is answered BEFORE git runs. git's own complaint
+ * about a cwd it cannot enter is "not a git repository" with an empty stderr,
+ * which sends the reader off to check a repository that was never there —
+ * the tab's error seat maps each cause to its own fix, and this one's fix is
+ * not the same as a real non-repository's (I5·T62).
+ */
 async function toplevelOf(repo: string): Promise<string> {
+  if (!existsSync(repo)) {
+    throw new DatasetsError(`${repo} does not exist — no such file or directory`, 'FILE_NOT_FOUND')
+  }
   try {
     return await repoToplevel(repo)
   } catch (error) {
@@ -553,6 +624,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
   }
 
   const service: DatasetsService = {
+    defaultRepo: options.defaultRepo ?? '',
     async list(scope, datasetId, commit) {
       const { repo, sha } = await resolveCommitAt(scope, commit)
       if (datasetId !== undefined) {

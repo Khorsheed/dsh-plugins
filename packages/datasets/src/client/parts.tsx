@@ -8,9 +8,11 @@
  * disagreement rather than a copy inconsistency.
  */
 
+import type { ReactNode } from 'react'
 import { IconChevronDownOutline14, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { exposureOfRole, type DatasetExposure, type DatasetRole, type DatasetSlot } from '../slots.ts'
 import type { DatasetsViewProps } from './contract.ts'
+import type { Phrase } from './vocab.ts'
 import css from './DatasetsView.module.css'
 
 /** The dictionary key of one slot word — the union keeps the copy exhaustive. */
@@ -84,4 +86,96 @@ export function stamp(at: number | null): string {
   const date = new Date(at)
   const pad = (value: number): string => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/**
+ * How loud a chip is. The tone is the CHIP's, not the caller's colour: a page
+ * says what a state MEANS (`warn` = a human has something to do) and the
+ * stylesheet decides what that looks like in each theme.
+ */
+export type Tone = 'neutral' | 'ok' | 'busy' | 'warn' | 'danger'
+
+/**
+ * The tone of one projection bucket (ui-spec §九's five: green = done, blue =
+ * in progress, grey = not started, red = failed/blocked, amber = warning).
+ */
+export function bucketTone(bucket: string): Tone {
+  if (bucket === 'blocked') return 'danger'
+  if (bucket === 'active') return 'busy'
+  if (bucket === 'done') return 'ok'
+  // `ready` and `scheduled` are both «not started yet» — grey, not green.
+  return 'neutral'
+}
+
+/**
+ * The tone of one ledger state.
+ *
+ * ui-spec §九 fixes the five tones AND one thing that is easy to get wrong:
+ * 「已释放 / 已归档这类终态用灰」. A cell that has been archived and released is
+ * FINISHED, not successful — the run is over and nothing more will happen
+ * there, which reads as grey. Green is kept for the state that actually says
+ * something went well (已判: a verdict exists), so a column of green means
+ * «judged», not «reached the end of the pipeline».
+ */
+export function stageTone(state: string): Tone {
+  if (state === 'halted') return 'warn'
+  if (state === 'judged') return 'ok'
+  if (state === 'archived' || state === 'releasable' || state === 'released') return 'neutral'
+  if (state === 'pending') return 'neutral'
+  return 'busy'
+}
+
+/**
+ * One word from the table — a phrase and its parameters, resolved.
+ * @param props - the phrase, the locale seat, and the raw token for the title.
+ */
+export function Word(props: { phrase: Phrase; t: DatasetsViewProps['t']; title?: string | undefined }) {
+  const { phrase, t, title } = props
+  const text = phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)
+  return title === undefined ? <>{text}</> : <span title={title}>{text}</span>
+}
+
+/**
+ * A status chip: one word, one tone, one shape.
+ *
+ * ui-spec §九 asks for ONE of these across both tabs, so this is the 实验室
+ * tab's {@link Chip} verbatim, down to the class name and the tone set — a
+ * plugin never imports a sibling (§八), so the two are copies kept identical
+ * by hand, and the stylesheet rule beside them is identical too.
+ * @param props - the tone, an optional hover title, and the word itself.
+ */
+export function Chip(props: { tone?: Tone; title?: string | undefined; children: ReactNode }) {
+  const { tone = 'neutral', title, children } = props
+  return <span className={css.chipTag} data-tone={tone} title={title}>{children}</span>
+}
+
+/**
+ * The empty seat, which always says what to do next (ui-spec §九): a sentence
+ * about what is not here, a sentence about how to change that, and the action
+ * itself when the page has one. The 实验室 tab's copy of this is identical.
+ * @param props - the two sentences and any action buttons.
+ */
+export function EmptyState(props: { title: string; hint?: string | undefined; children?: ReactNode }) {
+  const { title, hint, children } = props
+  return (
+    <div className={css.emptySeat}>
+      <div className={css.emptyTitle}>{title}</div>
+      {hint !== undefined && hint !== '' && <div className={css.emptyHint}>{hint}</div>}
+      {children !== undefined && <div className={css.emptyActions}>{children}</div>}
+    </div>
+  )
+}
+
+/**
+ * A disclosure for text a page must KEEP but must not print: a host-written
+ * sentence, an absolute path, a raw payload (ui-spec §九).
+ * @param props - the summary line and whatever is folded under it.
+ */
+export function Detail(props: { summary: string; children: ReactNode }) {
+  return (
+    <details className={css.errorDetails}>
+      <summary className={css.errorSummary}>{props.summary}</summary>
+      {props.children}
+    </details>
+  )
 }

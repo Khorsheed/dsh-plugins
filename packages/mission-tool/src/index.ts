@@ -1,13 +1,18 @@
 /**
- * The session-granted mission model tools — the companion row of
+ * The session-granted mission model tools AND the `/mission` slash face —
+ * the companion row of
  * `@khorsheed/dsh-mission` for agent-preset compositions. The row provides
- * NO service (the preset-mount isolate-realm rule forbids service rows), it
- * only registers the model-facing mission tools into the host tools registry
- * and contributes their guidance section, delegating to the global
+ * NO service (the preset-mount isolate-realm rule forbids service rows); it
+ * registers the model-facing mission tools into the host tools registry,
+ * contributes their guidance section, and registers the `/mission` slash
+ * command into the preset's scope layer (preset-visibility rollout A3 — the
+ * official `/goal` `/plan` `/compact` shape: only the sessions of a preset
+ * naming this row see the command), delegating to the global
  * `ctx.mission` service core the main plugin provides at the profile root —
  * the official tool-row shape (the shipped `tool-bash` rows work the same
  * way). Granting is therefore per-session: a preset names the row, its
- * sessions get the tools; every other preset's sessions do not.
+ * sessions get the tools and the slash command; every other preset's
+ * sessions get neither.
  *
  * The package deliberately declares NO `dsh.bundle` patch: installing it as
  * a dependency only makes the module resolvable (a plain dependency, like
@@ -18,8 +23,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-// Type-only: pulls the core's `Context.mission` service augmentation.
-import type {} from '@khorsheed/dsh-mission'
+// The value import also pulls the core's `Context.mission` service
+// augmentation into the program.
+import { registerMissionSlash } from '@khorsheed/dsh-mission'
 import { missionToolDefinitions, type MissionToolsTier } from '@khorsheed/dsh-mission/tool'
 
 const PACKAGE_NAME = '@khorsheed/dsh-mission-tool'
@@ -41,8 +47,9 @@ export interface MissionToolConfig {
   /**
    * Which model-tool group this row grants: `all` (the default — every tool),
    * `read` (the four queue queries only), or `none` (no model tools, and no
-   * guidance section either). The service face, CLI, slash command, and tab
-   * are the core's own and unaffected by all three.
+   * guidance section either). The service face, CLI, and tab are the core's
+   * own; the `/mission` slash command is THIS row's and registers at every
+   * tier — the `tools` key gates only the model face.
    */
   tools?: MissionToolsTier
 }
@@ -89,17 +96,28 @@ const MISSION_READ_PROMPT = `Missions track multi-step work, and this session ca
  */
 export function apply(ctx: Context, config: MissionToolConfig = {}): void {
   const tier = config.tools ?? 'all'
-  // `none` grants nothing at all: no tools and no section (guidance about an
-  // absent tool is a wrong instruction, not a harmless one).
-  if (tier === 'none') return
   const service = ctx.get('mission')
   if (service === undefined) {
     // Degrade, don't explode: the core plugin is not mounted in this profile,
-    // so there is nothing to delegate to. The tab/service/slash faces are the
-    // core's own concern and unaffected; only the model tools stay absent.
-    ctx.logger.info(`${PACKAGE_NAME}: the global mission service is absent — the mission tools are not registered`)
+    // so there is nothing to delegate to. The tab/service faces are the
+    // core's own concern and unaffected; only the model tools and the slash
+    // command stay absent.
+    ctx.logger.info(`${PACKAGE_NAME}: the global mission service is absent — the mission tools and /mission are not registered`)
     return
   }
+  // The `/mission` slash face moved here from the core (preset-visibility
+  // rollout A3): registering from this preset mount lands the command in the
+  // preset's scope layer, so exactly the granted sessions see it. The human
+  // face is NOT tiered — the `tools` key gates the model face only — so this
+  // registration stands ahead of the tier gate, through the same deferred
+  // door as the tools below (an apply-time probe would race the registry's
+  // own mount order and lose).
+  ctx.inject(['commands'], (commandCtx) => {
+    registerMissionSlash(commandCtx, service)
+  })
+  // `none` grants nothing at all: no tools and no section (guidance about an
+  // absent tool is a wrong instruction, not a harmless one).
+  if (tier === 'none') return
   // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
   // tools registry's own mount order on the real composition tree and loses,
   // silently never registering the tools. `ctx.inject` fires when the registry

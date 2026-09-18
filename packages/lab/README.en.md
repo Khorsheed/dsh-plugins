@@ -99,7 +99,7 @@ The mission integration is a probed structural face (`setRefs` / `addArtifact` /
 
 ## CLI
 
-`dsh-lab <verb>` (or `node lib/cli.js`); data on stdout (JSON where the verb produces a value), diagnostics on stderr. Exit codes: `0` ok, `1` failure/refused, `2` usage.
+`dsh-lab <verb>` (or `node lib/cli.js`); data on stdout (JSON where the verb produces a value), diagnostics on stderr. Exit codes: `0` ok, `1` failure/refused, `2` usage. Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
 
 ```sh
 dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--volume NAME:DST[:ro]]...
@@ -136,7 +136,7 @@ $ dsh-lab fingerprint --image eval-env:latest --cpus 2 --memory 8g | jq -c '{fin
 {"fingerprint":"lab-env:0a93c62f…","r":{"cpus":"2","memory":"8589934592"}}
 ```
 
-The CLI is the same `LabService` kernel over a `child_process` runner, with the mission face adapted to the `dsh-mission` bin: `release` gates on `dsh-mission is-releasable`'s 0/1 exit code (any other exit fails closed), and refs / artifacts / checkpoints / annotations register through the mission bin's verbs (`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`). Without the bin on PATH, registration warns and skips, and `release` needs `--force`.
+The CLI is the same `LabService` kernel over a `child_process` runner, with the mission face adapted to the `dsh-mission` bin: `release` gates on `dsh-mission is-releasable`'s 0/1 exit code (any other exit fails closed), and refs / artifacts / checkpoints / annotations register through the mission bin's verbs (`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`). Without the bin on PATH, registration warns and skips, and `release` needs `--force`. Reading `0` as releasable assumes the bin actually ran its body — mission's entry guard is what makes that hold when it is reached through a symlink; a silent no-op exiting 0 would otherwise read as a green gate.
 
 ## Compatibility
 

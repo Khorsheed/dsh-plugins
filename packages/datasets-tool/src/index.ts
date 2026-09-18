@@ -1,13 +1,19 @@
 /**
- * The session-granted dataset model tools — the companion row of
+ * The session-granted dataset model tools AND the `/datasets` slash face —
+ * the companion row of
  * `@khorsheed/dsh-datasets` for agent-preset compositions. The row provides
- * NO service (the preset-mount isolate-realm rule forbids service rows), it
- * only registers the model-facing `datasets_*` tools into the host tools
- * registry and contributes their guidance section, delegating to the global
+ * NO service (the preset-mount isolate-realm rule forbids service rows); it
+ * registers the model-facing `datasets_*` tools into the host tools
+ * registry, contributes their guidance section, and registers the
+ * `/datasets` slash command into the preset's scope layer (preset-visibility
+ * rollout A3 — the official `/goal` `/plan` `/compact` shape: only the
+ * sessions of a preset naming this row see the command), all delegating to
+ * the global
  * `ctx.datasets` service core the main plugin provides at the profile root —
  * the official tool-row shape (the shipped `tool-bash` rows work the same
  * way). Granting is therefore per-session: a preset names the row, its
- * sessions get the tools; every other preset's sessions do not.
+ * sessions get the tools and the slash command; every other preset's
+ * sessions get neither.
  *
  * The package deliberately declares NO `dsh.bundle` patch: installing it as
  * a dependency only makes the module resolvable (a plain dependency, like
@@ -18,8 +24,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-// Type-only: pulls the core's `Context.datasets` service augmentation.
-import type {} from '@khorsheed/dsh-datasets'
+// The value import also pulls the core's `Context.datasets` service
+// augmentation into the program.
+import { registerDatasetsSlash } from '@khorsheed/dsh-datasets'
 import { datasetToolDefinitions, toolsOfGroup, type DatasetsToolGroup } from '@khorsheed/dsh-datasets/tool'
 
 const PACKAGE_NAME = '@khorsheed/dsh-datasets-tool'
@@ -43,8 +50,9 @@ export interface DatasetsToolConfig {
    * `authoring` (read plus `datasets_put_item` — the drafting domain an eval
    * agent wants), `all` (authoring plus `datasets_worktree_path`; the
    * default), or `none` (no model tools and no guidance section). The
-   * service, the CLI, `/datasets`, and the session tab are the core's own
-   * faces and unaffected by every setting.
+   * service, the CLI, and the session tab are the core's own faces; the
+   * `/datasets` slash command is THIS row's and registers at every tier —
+   * the `tools` key gates only the model face.
    */
   tools?: DatasetsToolGroup
 }
@@ -78,18 +86,29 @@ interface PromptSections {
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: DatasetsToolConfig = {}): void {
-  const admitted = new Set(toolsOfGroup(config.tools ?? 'all'))
-  // `none` grants nothing at all: no tools and no section (guidance about an
-  // absent tool is a wrong instruction, not a harmless one).
-  if (admitted.size === 0) return
   const service = ctx.get('datasets')
   if (service === undefined) {
     // Degrade, don't explode: the core plugin is not mounted in this profile,
     // so there is nothing to delegate to. The tab/service/CLI faces are the
-    // core's own concern and unaffected; only the model tools stay absent.
-    ctx.logger.info(`${PACKAGE_NAME}: the global datasets service is absent — the dataset tools are not registered`)
+    // core's own concern and unaffected; only the model tools and the slash
+    // command stay absent.
+    ctx.logger.info(`${PACKAGE_NAME}: the global datasets service is absent — the dataset tools and /datasets are not registered`)
     return
   }
+  // The `/datasets` slash face moved here from the core (preset-visibility
+  // rollout A3): registering from this preset mount lands the command in the
+  // preset's scope layer, so exactly the granted sessions see it. The human
+  // face is NOT tiered — the `tools` key gates the model face only — so this
+  // registration stands ahead of the tier gate, through the same deferred
+  // door as the tools below (an apply-time probe would race the registry's
+  // own mount order and lose).
+  ctx.inject(['commands'], (commandCtx) => {
+    registerDatasetsSlash(commandCtx, service)
+  })
+  const admitted = new Set(toolsOfGroup(config.tools ?? 'all'))
+  // `none` grants nothing at all: no tools and no section (guidance about an
+  // absent tool is a wrong instruction, not a harmless one).
+  if (admitted.size === 0) return
   // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
   // tools registry's own mount order on the real composition tree and loses,
   // silently never registering the tools. `ctx.inject` fires when the registry

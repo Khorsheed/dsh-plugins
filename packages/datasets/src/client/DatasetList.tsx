@@ -19,25 +19,31 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { DATASET_SLOTS } from '../slots.ts'
 import type { DatasetOverviewRow } from '../types.ts'
 import type { DatasetExperimentRow, DatasetsViewProps } from './contract.ts'
-import { slotKey, snapshotCell } from './parts.tsx'
+import { Chip, slotKey, snapshotCell } from './parts.tsx'
 import css from './DatasetsView.module.css'
 
-/** The «validate» cell: what the check found, or why there is no answer. */
+/**
+ * The «validate» cell: what the check found, or why there is no answer.
+ *
+ * A chip rather than coloured text, and the SAME chip the 实验室 tab uses for
+ * every state word (ui-spec §九) — the first error's sentence rides on its
+ * title, because a table cell is not where a diagnostic belongs.
+ */
 function ValidateCell(props: { row: DatasetOverviewRow; t: DatasetsViewProps['t'] }) {
   const { row, t } = props
-  if (row.validate === null) return <span className={css.cellQuiet}>{t('list.validateUnknown')}</span>
+  if (row.validate === null) return <Chip>{t('list.validateUnknown')}</Chip>
   const { errors, warnings } = row.validate
   if (errors > 0) {
     return (
-      <span className={css.cellError} title={row.validate.firstError ?? undefined}>
+      <Chip tone="danger" title={row.validate.firstError ?? undefined}>
         {t('list.validateErrors', { count: errors })}
-      </span>
+      </Chip>
     )
   }
   return (
-    <span className={css.cellQuiet}>
-      {t('list.validateOk')}
-      {warnings > 0 && ` · ${t('list.validateWarnings', { count: warnings })}`}
+    <span className={css.chipRow}>
+      <Chip tone="ok">{t('list.validateOk')}</Chip>
+      {warnings > 0 && <Chip tone="warn">{t('list.validateWarnings', { count: warnings })}</Chip>}
     </span>
   )
 }
@@ -119,11 +125,15 @@ export function DatasetList(props: {
                 </Button>
                 {row.name !== undefined && <div className={css.cellQuiet}>{row.name}</div>}
               </td>
+              {/* The repository's own last segment plus a short commit — the
+                  absolute path stays on the cell's title (ui-spec §九). */}
               <td className={css.cellMono} title={repo}>{snapshot}</td>
               <td className={css.cellNumber}>{t('list.itemCount', { count: row.itemCount })}</td>
               <td><SlotCell row={row} t={t} /></td>
-              <td className={row.canary ? css.cellQuiet : css.cellWarn}>
-                {row.canary ? t('list.canaryOn') : t('list.canaryOff')}
+              <td>
+                <Chip tone={row.canary ? 'ok' : 'warn'}>
+                  {row.canary ? t('list.canaryOn') : t('list.canaryOff')}
+                </Chip>
               </td>
               <td><ValidateCell row={row} t={t} /></td>
               {experiments !== null && <td><ExperimentCell row={row} experiments={experiments} t={t} /></td>}
