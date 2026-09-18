@@ -35,7 +35,7 @@ export type ReaderKey =
   | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'
   | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
   | 'preview.empty' | 'preview.unreachable' | 'preview.http'
-  | 'detail.linkOnlyBadge' | 'detail.removeLink'
+  | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
   | 'state.emptyWall' | 'state.incompleteReason'
@@ -136,6 +136,7 @@ export const en = {
   'preview.unreachable': 'the site could not be reached just now',
   'preview.http': 'the site answered with an HTTP error',
   'detail.linkOnlyBadge': 'Link only',
+  'detail.fetchingBody': 'Fetching the full text…',
   'detail.removeLink': 'Delete this link',
 
   'state.loading': 'Loading…',
@@ -288,6 +289,7 @@ export const zh = {
   'preview.unreachable': '刚才连不上这个站点',
   'preview.http': '这个站点返回了 HTTP 错误',
   'detail.linkOnlyBadge': '仅链接',
+  'detail.fetchingBody': '正在抓取正文…',
   'detail.removeLink': '删除这条链接',
 
   'state.loading': '加载中…',

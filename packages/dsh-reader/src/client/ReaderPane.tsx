@@ -304,6 +304,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const articleHtml = useStore(s => s.articleHtml)
   const articleTruncated = useStore(s => s.articleTruncated)
   const articleError = useStore(s => s.articleError)
+  /**
+   * True while the OPEN entry's body is being fetched.
+   *
+   * The detail view pays for its own fetch when it has nothing to show, so it
+   * has to say so: an empty body area for the length of a network request reads
+   * as "this article has no text", which is the impression the auto-fetch
+   * exists to remove.
+   */
+  const bodyFetching = useStore(s => (s.openEntryId === null ? false : s.fetching[s.openEntryId] === true))
   const openEntryId = useStore(s => s.openEntryId)
   const view = useStore(s => s.view)
   const filter = useStore(s => s.filter)
@@ -1000,6 +1009,32 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (wallCancelRef.current !== null) wallCancelRef.current.cancelled = true
   }, [])
 
+  /**
+   * Fetch one entry's full article, extract it (this process) and show it.
+   *
+   * Two callers, one contract: the card's own "抓取正文" action, and opening an
+   * entry that has no body yet. Both pay exactly one fetch and both record the
+   * outcome — a success caches the extracted body, a failure records the reason
+   * the host and the extractor gave, which is what the next open reads.
+   *
+   * @param entryId - the entry whose body is wanted.
+   * @param url - the article URL to fetch.
+   */
+  const fetchBody = useCallback(async (entryId: string, url: string) => {
+    actions.setFetching(entryId, true)
+    try {
+      const result = await props.fetchEntryBody(entryId, url)
+      if (result.html !== undefined) {
+        actions.setArticle(result.html, result.truncated === true, null)
+      } else if (result.error !== undefined) {
+        actions.setArticle('', false, result.error)
+      }
+      actions.setStaleBody(entryId, result.cached === true && result.fresh === false)
+    } finally {
+      actions.setFetching(entryId, false)
+    }
+  }, [actions, props])
+
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
     actions.openEntry(row.entry.id, row.sourceId)
@@ -1022,14 +1057,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       } else if (row.entry.contentHtml !== undefined) {
         actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
       } else {
-        // Nothing to show: keep the host's reason (a failed payload, a fetch
-        // that could not extract) so the view explains itself instead of
-        // looking like an article with no text. A saved link with no reason is
-        // its own case — this page was fetched but did not become a body — and
-        // saying so is what stops it rendering as a title over blank space. A
-        // FEED entry with no body yet stays silent on purpose: the automatic
-        // backfill is fetching it, and an error line there would be a lie.
-        actions.setArticle('', false, view.value.error ?? (row.sourceKind === 'link' ? t('detail.extractFailed') : null))
+        // Nothing cached, nothing from the feed, and no recorded reason.
+        //
+        // For a FEED entry that is the ordinary state of a body the automatic
+        // backfill has not reached (or one whose cached body expired): opening
+        // an entry IS the reader asking for its text, so pay for one fetch
+        // instead of showing a title over blank space. This is the same call
+        // the card's own 「抓取正文」 uses, so it extracts, caches, and records
+        // a failure reason — which is what the next open reads.
+        //
+        // For a SAVED LINK with no reason, the payload arrived but did not
+        // become a body: that already has its sentence (and a manual retry in
+        // the card menu), and fetching again on every open would be a request
+        // per look at a page that has already refused to be extracted.
+        const reason = view.value.error ?? (row.sourceKind === 'link' ? t('detail.extractFailed') : null)
+        actions.setArticle('', false, reason)
+        if (row.sourceKind === 'rss' && view.value.error === undefined) {
+          void fetchBody(row.entry.id, row.entry.link as string)
+        }
       }
       return
     }
@@ -1051,7 +1096,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const extracted = extractArticle(body.raw, row.entry.link ?? '')
     if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
     else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t])
+  }, [actions, props, t, fetchBody])
 
   /** Submit the add form and report the host's verdict. */
   const submit = useCallback(async () => {
@@ -1253,24 +1298,6 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [cardMenu, cardTag, filterOpen, translateMenu, wallMenu])
 
 
-
-  /**
-   * Fetch the open entry's full article, extract it (this process) and show it.
-   */
-  const fetchBody = useCallback(async (entryId: string, url: string) => {
-    actions.setFetching(entryId, true)
-    try {
-      const result = await props.fetchEntryBody(entryId, url)
-      if (result.html !== undefined) {
-        actions.setArticle(result.html, result.truncated === true, null)
-      } else if (result.error !== undefined) {
-        actions.setArticle('', false, result.error)
-      }
-      actions.setStaleBody(entryId, result.cached === true && result.fresh === false)
-    } finally {
-      actions.setFetching(entryId, false)
-    }
-  }, [actions, props])
 
   /** Reload the tags on one entry. */
   const loadEntryTags = useCallback(async (entryId: string) => {
@@ -1620,6 +1647,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 ×
               </button>
             </div>
+          )}
+          {bodyFetching && (
+            <p className={css.incomplete}>{t('detail.fetchingBody')}</p>
           )}
           {articleError !== null && (
             <p className={css.incomplete}>
