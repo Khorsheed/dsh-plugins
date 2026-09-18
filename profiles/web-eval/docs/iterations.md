@@ -397,7 +397,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T66 | 代码（低） | T63 走查记下的两条：宿主端拼好的中文句子（pivotMatrix 汇总、report 不变量明细、rankReason）英文界面下中英混排，要下发结构化字段由浏览器半边组句；composer 的「题集」chip 只靠会话活动重读，题集 tab 表单里的绑定不通知它 | T63 | 英文界面无中文句子；tab 表单绑完 chip 立刻变 |
 | T67 ✅ | 代码（界面重构，两个里程碑） | 按 ui-spec §五 v2 重构实验室 tab：四阶段导航（实验设计 / 运行记录 / 结果对比 / 人工评估）、每页一个主动作、术语表、高级设置折叠、就绪徽章、同一网格跑前跑中两用、四步向导、运行记录详情（得分头部、时间轴、键值表、附件区）、结果对比（有效性校验 ✓/⚠ + 悬停、柱状图、格式化）、人工评估（同题并排各自打分、队列筛选、一致性通俗化）；协调者自己驱浏览器验收 | T63 T60 | 两个里程碑合入 main `b2f0c7a5`（2026-09-18，`fc20bd82` + `6661530c`，eval 850）；协调者在临时实例上驱浏览器看了明暗两套，14 行核对表全部核到；走查 13 条（状态色 token 映射反、判官台并排列被三列 grid 裁掉、空态文案残留「计划审阅」、计划读不到裸渲染英文与绝对路径、缺失对比组被静默省略、rep / validate / finalize 英文词等）一轮收完，补充合入 `e70f62fe`（`6ea07d75`，eval 860 / datasets 214，十条逐条落地；W13 一半是协调者看错——三个框本有缺省 1 / 60 / 10，卡住的是「阶段」没勾而提示不点名）；用户走一遍随下一次 3171 重装 |
 | T68 | 代码（小） | 计划里的 dataset.repo 指向别的检出（T55 探针发现：t29c-four-harness-readiness 等四份指 wt-i4-env，那里没有 claude-exec-c），resolveDatasetRoot 优先用它，走 /eval run 会从旧检出解析条件、计划里换了条件名也白换。定：起草与 validate 时 dataset.repo 缺省即会话绑定、写了就必须等于绑定（与 G1 同一条纪律，不等即拒并给原文）；题库四份容器计划改掉或删字段 |
-| T69 | 代码（中） | 运行记录详情看得见「跑了什么、交了什么」（用户 2026-09-18）：文本产物就地能读（eval 自己的只读动词，限定该格目录、大小上限，不等宿主文件服务）；过程回放——容器轮选手是单元里的 sub-dsh，转录写在挂载的 scope home（`local-agent/dsh@<scope>/sessions/…`），把它挂到格子上并渲染成时间线（消息 / 工具调用 / 结果 / 耗时），宿主轮用已有 childSessionId，判官同法；结果对比页每格可点跳到详情 | T67 T54 | 3171 上打开 pilot D 的一格：stage1.md 就地能读、时间线看得到 sub-dsh 的消息与工具调用 | T58 T55 | /eval run 永远从绑定的仓库解析条件 |
+| T69 | 代码（中） | 运行记录详情看得见「跑了什么、交了什么」（用户 2026-09-18）：文本产物就地能读（eval 自己的只读动词，限定该格目录、大小上限，不等宿主文件服务）；过程回放——容器轮选手是单元里的 sub-dsh，转录写在挂载的 scope home（`local-agent/dsh@<scope>/sessions/…`），**用户 2026-09-18 定：直接用宿主的子对话视图，不自渲染**——判官与宿主轮本来就是宿主会话，`sessions.open` 一开就是；容器轮把 sub-dsh 的会话目录认领成宿主会话（宿主持久层扫目录），同一颗「打开子会话」；认领不成再退回自渲染；结果对比页每格可点跳到详情 | T67 T54 | 3171 上打开 pilot D 的一格：stage1.md 就地能读、时间线看得到 sub-dsh 的消息与工具调用 | T58 T55 | /eval run 永远从绑定的仓库解析条件 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -2584,15 +2584,17 @@ eval 测试全绿，gate 绿；拿 T39 那份 bundle 重跑 dsh-eval report，�
 # 任务 T69：运行记录详情看得见「跑了什么、交了什么」——产物内联与过程回放
 
 ## 背景
-用户 2026-09-18：「看不到每个 agent 的运行过程以及结果」。运行记录详情（T67）只列产物路径，写着「预览和下载要宿主的文件服务」；产物内容其实判官台已经能读（judge-bench 从 archive/workspace 读文件再去指纹）。过程：宿主轮的 childSessionId 是宿主会话，能 sessions.open；容器轮的选手是单元里的 sub-dsh，它的会话转录写在挂载进单元的 scope home 里——<DSH_HOME>/local-agent/dsh@<scope>/sessions/--workspace--/<sessionId>/session.v3.jsonl.zstd（delegations.jsonl 记委派 → 会话），宿主可读，只是没有任何注解或 UI 把它挂到格子上。判官的过程是宿主会话（sessions/--…-eval-judge-…--）。
+用户 2026-09-18：「看不到每个 agent 的运行过程以及结果」。运行记录详情（T67）只列产物路径，写着「预览和下载要宿主的文件服务」；产物内容其实判官台已经能读（judge-bench 从 archive/workspace 读文件再去指纹）。过程：宿主轮的 childSessionId 是宿主会话，能 sessions.open；容器轮的选手是单元里的 sub-dsh，它的会话转录写在挂载进单元的 scope home 里——<DSH_HOME>/local-agent/dsh@<scope>/sessions/--workspace--/<sessionId>/session.v3.jsonl.zstd（delegations.jsonl 记委派 → 会话），宿主可读，只是没有任何注解或 UI 把它挂到格子上。判官的过程是宿主会话（sessions/--…-eval-judge-…--）。用户定：直接用宿主的子对话视图，不自己再渲染一次——宿主的会话持久层是扫目录认领的（sessions/<项目槽>/<id>/，协调者把 3171 的会话目录拷进临时实例后侧栏直接出现、能打开），所以容器轮的转录只要认领成宿主会话，就能走同一颗「打开子会话」。
 
 ## 先读
 packages/eval/src/cell-detail.ts（artifacts、childSessionId 的来源）、judge-bench.ts（archive 读法）、client/RunsPage.tsx 的 RecordDetail；packages/local-agent-dsh 的委派记录（delegations.jsonl 写在哪、记了什么、结果里有没有 sessionId）；packages/local-agent 注册表暴露给 eval 的 face；T67 补充的 Agent Note；ui-spec §五 v2「运行记录详情」。
 
 ## 已定决定
 - 文本产物内联：eval 的 Remote 加只读动词 cellArtifact({runId, missionId, attempt, path})：路径只能落在该格账本 attempt 目录或归档目录内（realpath 校验，越界拒），文本类（md / json / txt / yml / log）≤ 256 KB 直接返回，超限返回前 256 KB 并说明；二进制拒绝并说明。详情页的附件点开即看；这页不盲、不去指纹（盲评只在人工评估页）。
-- 过程回放：把选手那次委派的会话转录挂到格子上。容器轮：委派结束（或回读）时在格子上记一条注解（orchestrator ns）：scope、sessionId、转录文件相对 DSH_HOME 的路径（不记绝对路径）；宿主轮：已有 childSessionId。Remote 加 cellTrajectory({runId, missionId, attempt})：读转录（zstd 解压，按 type 挑消息 / 工具调用 / 工具结果 / 委派结束），下发一条时间线：谁说了什么、调了哪个工具、参数摘要、结果前几行、耗时；原文折叠。判官那格同法（判官会话 id 已在判定记录或注解里）。
-- 若 local-agent-dsh 现在不把 sessionId 交回编排器，就在它的委派结果里补这一个字段（只加不改），Agent Note 写清；不要按文件名或时间去猜。
+- 过程用宿主自己的子对话视图，不自渲染：
+  - 判官与宿主轮：会话本来就在宿主，`sessions.open(id)`——运行记录详情已有「打开子会话」，判官那格加一颗「打开判官会话」（判官会话 id 已在判定记录 / 注解里）。
+  - 容器轮：第一步先验证宿主能否认领磁盘上的会话——把一份 sub-dsh 会话目录复制到 <DSH_HOME>/sessions/_no-cwd/<id>/（容器 cwd 是 /workspace，宿主没有这个目录，走无 cwd 的槽位避开 workspace-attach），看 session/list 不重启会不会出现、sessions.open 对没经过 session/create 的会话开不开、有没有 workspace-attach-failed。三问都过就这么做：委派结束（或回读）时 eval 把该会话目录复制进宿主 sessions 树（不软链——scope 目录随 provision 重写），格子上记 childSessionId（与宿主轮同一个字段），标题写「<题> · <对比组> · 第 n 次 · 选手」；同一颗「打开子会话」。哪一问不过，写清原文，退回自渲染时间线（只在容器轮；Remote 加 cellTrajectory，读转录按 type 挑消息 / 工具调用 / 结果，原文折叠）。
+  - 若 local-agent-dsh 现在不把 sessionId 交回编排器，就在它的委派结果里补这一个字段（只加不改），Agent Note 写清；不要按文件名或时间去猜。
 - 结果对比页的配对表与判据表每格可点，跳到该条运行记录详情（同一个 store，选中那条记录）。
 - 不做：产物下载、二进制与图片预览；不引第三方查看器。
 
@@ -2600,13 +2602,13 @@ packages/eval/src/cell-detail.ts（artifacts、childSessionId 的来源）、jud
 从 main 开 worktree ../dsh-plugins-wt-record-trajectory，分支 feat/eval-record-trajectory；改 packages/eval（README 双语 + sidecar），local-agent-dsh 若补字段单独成提交。与 T54（report.ts / ReportPage / JudgingPage）并行；本任务碰 RunsPage / cell-detail / remote / service，谁后合谁合 main，按 graft 法解。
 
 ## 测试
-cellArtifact 越界与大小上限；cellTrajectory 对一份真实转录夹具（脱敏）的时间线；宿主轮与容器轮两条路；页面：附件点开、时间线渲染。
+cellArtifact 越界与大小上限；容器轮会话认领（复制进 sessions 树、childSessionId 落格子、重启后仍在）；宿主轮与判官两条路的按钮；退回路线才测时间线。
 
 ## 完成判据
-eval（与 local-agent-dsh 若改）测试全绿，gate 绿；3171 上打开 pilot D 的一格：stage1.md 就地能读，时间线看得到 sub-dsh 的消息与工具调用；判官那格同样。协调者临时实例复核。
+eval（与 local-agent-dsh 若改）测试全绿，gate 绿；3171 上打开 pilot D 的一格：stage1.md 就地能读，「打开子会话」开出宿主视图里 sub-dsh 那次对话（消息与工具调用都在）；判官那格同样。协调者临时实例复核。
 
 ## 回报
-分支与 commit；Agent Note（Alternatives considered 双语）；gate；一格的时间线渲染文本。通用提醒照旧。
+分支与 commit；Agent Note（Alternatives considered 双语）；gate；认领三问的原文与一格打开后的会话标题。通用提醒照旧。
 ```
 
 ### T55 · claude 容器轮把实例登出——先方案后改（已完成，2026-09-18 结案）
