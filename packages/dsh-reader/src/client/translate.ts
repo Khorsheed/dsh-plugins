@@ -662,42 +662,6 @@ export function segmentAt(built: BuiltArticle, target: EventTarget | null): Buil
   return null
 }
 
-/** The block sentence a click landed on inside a reveal, if any. */
-export function sentenceAt(built: BuiltArticle, target: EventTarget | null): { block: BuiltBlock; index: number } | null {
-  if (!(target instanceof Element)) return null
-  const line = target.closest('[data-reader-sentence]')
-  if (line === null) return null
-  const index = Number(line.getAttribute('data-reader-sentence'))
-  for (const block of built.blocks) {
-    if (block.reveal !== null && block.reveal.contains(line)) return { block, index }
-  }
-  return null
-}
-
-/**
- * Toggle every unit of one block sentence (clicking its original line).
- *
- * The line is on screen because at least one of its units is open, so clicking
- * it CLOSES the whole sentence — a reader who sees the sentence's original and
- * clicks it means "hide that", not "open the parts you left open". Only when
- * nothing in the sentence is open (the side-by-side view) does it open them.
- */
-export function toggleSentence(built: BuiltArticle, block: BuiltBlock, index: number, classes: TranslateClasses): void {
-  const sentence = block.sentences[index]
-  if (sentence === undefined) return
-  const members = block.segments.filter(segment => {
-    const offset = offsetOf(block, segment)
-    return offset >= sentence.start && offset < sentence.end
-  })
-  const opening = !members.some(segment => segment.open)
-  for (const segment of members) {
-    segment.open = opening
-    if (opening) segment.span.setAttribute('data-open', '1')
-    else segment.span.removeAttribute('data-open')
-  }
-  paintReveal(block, built.view, classes)
-}
-
 /** Flip one sentence's original open / closed (the click gesture). */
 export function toggleSegment(built: BuiltArticle, segment: BuiltSegment, classes: TranslateClasses): void {
   segment.open = !segment.open

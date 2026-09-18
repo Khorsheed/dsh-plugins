@@ -1807,7 +1807,9 @@
   letter-spacing: -0.003em;
   color: var(--dsw-alias-label-secondary);
   border-radius: 4px;
-  cursor: pointer;
+  /* Selectable text, not a control: the reader quotes this, and a click handler
+     here would fold the sentence on the mouseup that ends a drag selection. */
+  cursor: text;
   transition: background-color 100ms ease;
 }
 

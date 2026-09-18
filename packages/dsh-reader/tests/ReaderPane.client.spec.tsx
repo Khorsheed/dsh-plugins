@@ -210,7 +210,10 @@ function bench(options: BenchOptions = {}) {
   return { ...view, mocks, actions, settle }
 }
 
-afterEach(cleanup)
+// The quoting case installs a `getSelection` spy, and the translation gesture
+// reads the selection (a click that ends a drag must not fold the sentence), so
+// every test starts from a clean slate.
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('the pane renders content, never an empty column', () => {
   it('paints its empty state and its toolbar on the first frame', async () => {
@@ -952,6 +955,22 @@ describe('on-device translation', () => {
     await waitFor(() => {
       expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
     })
+  })
+
+  it('does not fold a sentence when the click ends a selection (quoting)', async () => {
+    installTranslator()
+    const ui = await opened('<p>First sentence here. Second sentence here.</p>')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => { expect(ui.container.querySelector('[data-reader-unit]')).not.toBeNull() })
+    // A drag selection ends with a click; folding the sentence there would take
+    // the selection (and the quote overlay with it) away.
+    vi.spyOn(window, 'getSelection').mockReturnValue({ toString: () => 'First sentence here.' } as unknown as Selection)
+    fireEvent.click(ui.container.querySelector('[data-reader-unit]') as HTMLElement)
+    expect(ui.container.querySelector('[data-reader-reveal]')).toBeNull()
+    // With no selection, the same click is a toggle again.
+    vi.restoreAllMocks()
+    fireEvent.click(ui.container.querySelector('[data-reader-unit]') as HTMLElement)
+    expect(ui.container.querySelector('[data-reader-reveal]')?.textContent).toBe('First sentence here.')
   })
 
   it('hides the globe when the browser has no translator', async () => {

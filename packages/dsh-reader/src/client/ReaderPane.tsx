@@ -45,7 +45,7 @@ import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, restoreArticle,
-  runTranslation, segmentAt, sentenceAt, setPairHover, setView, toggleSegment, toggleSentence,
+  runTranslation, segmentAt, setPairHover, setView, toggleSegment,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
   type TranslationView, type TranslatorLike,
 } from './translate.ts'
@@ -711,21 +711,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [translatePhase])
 
   /**
-   * The article's two paired gestures: clicking a translated sentence opens its
-   * original, and clicking that original closes it again — the same toggle from
-   * either side of the pair.
+   * One gesture, on the TRANSLATED side only: clicking a sentence opens its
+   * original, clicking it again closes it.
+   *
+   * The original itself is deliberately NOT a control. It is text the reader
+   * wants to SELECT — to quote it, or to quote it together with its translation
+   * — and a click handler there would fire on the mouseup that ends a drag
+   * selection, collapsing the sentence and taking the selection (and the quote
+   * overlay with it) away. For the same reason the click is ignored while a
+   * selection is active: ending a selection inside a translated sentence must
+   * not fold its original either.
    */
   const onArticleClick = useCallback((event: { target: EventTarget | null }) => {
     // Only a finished translation: mid-run a reveal would just duplicate the
     // original text that is still on screen.
     if (translatePhase !== 'ready') return
+    if ((window.getSelection()?.toString().length ?? 0) > 0) return
     const built = builtRef.current
     if (built === null) return
-    const sentence = sentenceAt(built, event.target)
-    if (sentence !== null) {
-      toggleSentence(built, sentence.block, sentence.index, translateClasses)
-      return
-    }
     const segment = segmentAt(built, event.target)
     if (segment === null) return
     toggleSegment(built, segment, translateClasses)

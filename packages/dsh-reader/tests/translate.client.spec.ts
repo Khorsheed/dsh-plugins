@@ -30,12 +30,10 @@ import {
   restoreArticle,
   runTranslation,
   segmentAt,
-  sentenceAt,
   setPairHover,
   setView,
   splitSentences,
   toggleSegment,
-  toggleSentence,
   type BuiltArticle,
   type TranslateClasses,
   type TranslatorLike,
@@ -176,14 +174,14 @@ describe('article segmentation', () => {
     expect(line?.textContent).toBe('See the best-studied domains of risk from misuse.')
     // …and the line is marked as the other half of the pair.
     expect(line?.getAttribute('data-open')).toBe('1')
-    // Clicking that line closes the whole sentence: the gesture works from
-    // either side, and collapses every unit the sentence was cut into.
-    const target = sentenceAt(built, line)
-    expect(target).toEqual({ block, index: 0 })
-    toggleSentence(built, block, 0, CLASSES)
+    // The original line is NOT a control (the reader selects it to quote it), so
+    // the reveal has no sentence index of its own to toggle from here — closing
+    // happens on the translated side.
+    expect(line?.getAttribute('data-reader-sentence')).toBe('0')
+    // Closing happens on the translated side: the unit that opened it toggles it
+    // away, and with no unit of the sentence open the line goes with it.
+    toggleSegment(built, block.segments[0]!, CLASSES)
     expect(root.querySelector('[data-reader-reveal]')).toBeNull()
-    expect(block.segments.every(segment => !segment.open)).toBe(true)
-    expect(block.segments.every(segment => segment.span.getAttribute('data-open') === null)).toBe(true)
   })
 
   it('pairs the two sides on HOVER and leaves nothing painted otherwise', () => {
