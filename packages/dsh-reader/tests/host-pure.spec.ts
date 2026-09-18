@@ -292,6 +292,24 @@ describe('the tool row cannot overlap itself', () => {
   })
 })
 
+describe('the translated article reads like content', () => {
+  it('keeps the English original at body-adjacent size in the secondary ink', () => {
+    // The first version set the reveal at 11.5px in the tertiary ink with 5px
+    // gaps; the reader reported the English as too small and sparse. These are
+    // the constraints that fixed it, and they are easy to undo by accident.
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    const line = /\.revealLine\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(line).toMatch(/font-size:\s*12\.5px/)
+    expect(line).toMatch(/line-height:\s*1\.62/)
+    expect(line).toMatch(/margin:\s*0 0 3px/)
+    expect(line).toMatch(/color:\s*var\(--dsw-alias-label-secondary\)/)
+    // The pairing mark: an opened sentence's original is lit, and the sentence
+    // it belongs to is underlined on the translated side.
+    expect(css).toMatch(/\.revealLine\[data-open\]/)
+    expect(css).toMatch(/\.unit\[data-open\]/)
+  })
+})
+
 describe('the article body follows the pane', () => {
   it('does not cap prose at a measure the lists ignore', () => {
     // The retired rule was `max-width: min(100%, 46em)` on paragraphs only, so

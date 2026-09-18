@@ -295,8 +295,21 @@ interface BuiltSegment {
   readonly span: HTMLElement
   /** The source sentence, trimmed: what the reveal shows and what we translate. */
   readonly original: string
-  /** The whitespace that followed it in the original run. */
+  /**
+   * The whitespace that PRECEDED this unit inside its run. It stays in the
+   * original text node (so the DOM is unchanged), but the flattened block text
+   * needs it: without it two runs join as "See thebest-studied domains".
+   */
+  readonly lead: string
+  /** The whitespace that followed it INSIDE the span (between sentences). */
   readonly tail: string
+  /**
+   * The run's own trailing whitespace, which stays in the DOM as a text node
+   * after the last span. It is not part of any span, but the flattened block
+   * text needs it — this is where "See the " + "best-studied domains" keeps its
+   * space.
+   */
+  readonly gap: string
   translated: string | null
   open: boolean
 }
@@ -309,6 +322,10 @@ interface BuiltBlock {
   readonly element: Element
   readonly placement: RevealPlacement
   readonly segments: BuiltSegment[]
+  /** The block's original prose flattened across its units. */
+  flat: string
+  /** Sentence ranges inside `flat`, in order — the reveal's real granularity. */
+  sentences: { readonly start: number; readonly end: number }[]
   reveal: HTMLElement | null
 }
 
@@ -415,13 +432,21 @@ export function buildArticle(root: Element, classes: TranslateClasses): BuiltArt
       anchor = span
       spans.push(span)
       const pieceTail = piece.text.slice(piece.core.length)
-      segments.push({ span, original: piece.core, tail: pieceTail, translated: null, open: false })
+      segments.push({
+        span,
+        original: piece.core,
+        lead: segments.length === 0 ? lead : '',
+        tail: pieceTail,
+        gap: segments.length === pieces.length - 1 ? tail : '',
+        translated: null,
+        open: false,
+      })
     }
     const tailNode = doc.createTextNode(tail)
     anchor.after(tailNode)
     let block = blockIndex.get(host.element)
     if (block === undefined) {
-      block = { element: host.element, placement: host.placement, segments: [], reveal: null }
+      block = { element: host.element, placement: host.placement, segments: [], flat: '', sentences: [], reveal: null }
       blockIndex.set(host.element, block)
       blocks.push(block)
     }
@@ -429,6 +454,29 @@ export function buildArticle(root: Element, classes: TranslateClasses): BuiltArt
     restores.push({ node, lead, core, tail, tailNode, spans })
   }
   if (blocks.length === 0) return null
+  // Flatten each block's ORIGINAL prose and re-cut it into sentences. Inline
+  // markup (a link inside a sentence) split that sentence into several units;
+  // the reveal must still show the WHOLE sentence, or the original reads as
+  // fragments — the shape the reader reported as "sparse".
+  for (const block of blocks) {
+    let flat = ''
+    for (const segment of block.segments) {
+      flat += segment.lead
+      flat += segment.original
+      flat += segment.tail
+      flat += segment.gap
+    }
+    const sentences: { start: number; end: number }[] = []
+    let cursor = 0
+    for (const piece of splitSentences(flat)) {
+      const end = cursor + piece.text.length
+      sentences.push({ start: cursor, end })
+      cursor = end
+    }
+    if (sentences.length === 0) sentences.push({ start: 0, end: flat.length })
+    block.flat = flat
+    block.sentences = sentences
+  }
   const built: BuiltArticle = { root, blocks, restores, view: 'trans' }
   BUILT.set(root, built)
   return built
@@ -454,9 +502,31 @@ function segmentText(segment: BuiltSegment, view: TranslationView): string {
   return (segment.translated ?? segment.original) + segment.tail
 }
 
-/** Render one block's reveal container for the segments currently shown. */
+/** Where one unit starts inside its block's flattened original text. */
+function offsetOf(block: BuiltBlock, segment: BuiltSegment): number {
+  let offset = 0
+  for (const candidate of block.segments) {
+    if (candidate === segment) return offset + candidate.lead.length
+    offset += candidate.lead.length + candidate.original.length + candidate.tail.length + candidate.gap.length
+  }
+  return offset
+}
+
+/** The sentences of a block that a set of units belongs to, in order. */
+function sentencesFor(block: BuiltBlock, segments: readonly BuiltSegment[]): number[] {
+  const indexes = new Set<number>()
+  for (const segment of segments) {
+    const offset = offsetOf(block, segment)
+    let index = block.sentences.findIndex(sentence => offset >= sentence.start && offset < sentence.end)
+    if (index === -1) index = 0
+    indexes.add(index)
+  }
+  return [...indexes].sort((left, right) => left - right)
+}
+
+/** Render one block's reveal container for the sentences currently shown. */
 function paintReveal(block: BuiltBlock, view: TranslationView, classes: TranslateClasses): void {
-  const shown = view === 'both' ? block.segments : block.segments.filter(segment => segment.open)
+  const shown = view === 'both' ? block.sentences.map((_, index) => index) : sentencesFor(block, block.segments.filter(segment => segment.open))
   if (shown.length === 0 || view === 'orig') {
     block.reveal?.remove()
     block.reveal = null
@@ -467,10 +537,18 @@ function paintReveal(block: BuiltBlock, view: TranslationView, classes: Translat
   reveal.className = classes.reveal
   reveal.setAttribute('data-reader-reveal', '1')
   reveal.textContent = ''
-  for (const segment of shown) {
+  for (const index of shown) {
+    const sentence = block.sentences[index]
+    if (sentence === undefined) continue
     const line = doc.createElement('p')
     line.className = classes.line
-    line.textContent = segment.original
+    line.textContent = block.flat.slice(sentence.start, sentence.end).trim()
+    line.setAttribute('data-reader-sentence', String(index))
+    // The pairing mark: this line is the original of an OPENED translation, so
+    // clicking a sentence lights both sides of the pair up.
+    const opened = block.segments.some(segment =>
+      segment.open && sentencesFor(block, [segment]).includes(index))
+    if (opened) line.setAttribute('data-open', '1')
     reveal.append(line)
   }
   if (block.reveal === null) {
@@ -509,6 +587,42 @@ export function segmentAt(built: BuiltArticle, target: EventTarget | null): Buil
     if (found !== undefined) return found
   }
   return null
+}
+
+/** The block sentence a click landed on inside a reveal, if any. */
+export function sentenceAt(built: BuiltArticle, target: EventTarget | null): { block: BuiltBlock; index: number } | null {
+  if (!(target instanceof Element)) return null
+  const line = target.closest('[data-reader-sentence]')
+  if (line === null) return null
+  const index = Number(line.getAttribute('data-reader-sentence'))
+  for (const block of built.blocks) {
+    if (block.reveal !== null && block.reveal.contains(line)) return { block, index }
+  }
+  return null
+}
+
+/**
+ * Toggle every unit of one block sentence (clicking its original line).
+ *
+ * The line is on screen because at least one of its units is open, so clicking
+ * it CLOSES the whole sentence — a reader who sees the sentence's original and
+ * clicks it means "hide that", not "open the parts you left open". Only when
+ * nothing in the sentence is open (the side-by-side view) does it open them.
+ */
+export function toggleSentence(built: BuiltArticle, block: BuiltBlock, index: number, classes: TranslateClasses): void {
+  const sentence = block.sentences[index]
+  if (sentence === undefined) return
+  const members = block.segments.filter(segment => {
+    const offset = offsetOf(block, segment)
+    return offset >= sentence.start && offset < sentence.end
+  })
+  const opening = !members.some(segment => segment.open)
+  for (const segment of members) {
+    segment.open = opening
+    if (opening) segment.span.setAttribute('data-open', '1')
+    else segment.span.removeAttribute('data-open')
+  }
+  paintReveal(block, built.view, classes)
 }
 
 /** Flip one sentence's original open / closed (the click gesture). */

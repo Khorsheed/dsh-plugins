@@ -30,9 +30,11 @@ import {
   restoreArticle,
   runTranslation,
   segmentAt,
+  sentenceAt,
   setView,
   splitSentences,
   toggleSegment,
+  toggleSentence,
   type BuiltArticle,
   type TranslateClasses,
   type TranslatorLike,
@@ -158,6 +160,29 @@ describe('article segmentation', () => {
     // …and clicking again takes it away.
     toggleSegment(built, first, CLASSES)
     expect(root.querySelector('[data-reader-reveal]')).toBeNull()
+  })
+
+  it('reveals the whole sentence even when a link split it into several units', () => {
+    const root = article()
+    const built = buildArticle(root, CLASSES) as BuiltArticle
+    // Block 1 is the paragraph with the inline link: three units, ONE sentence.
+    const block = built.blocks[1]!
+    expect(block.segments).toHaveLength(3)
+    expect(block.sentences).toHaveLength(1)
+    toggleSegment(built, block.segments[0]!, CLASSES)
+    const line = root.querySelector('[data-reader-reveal] [data-reader-sentence]')
+    // The original is the complete sentence, not the fragment that was clicked.
+    expect(line?.textContent).toBe('See the best-studied domains of risk from misuse.')
+    // …and the line is marked as the other half of the pair.
+    expect(line?.getAttribute('data-open')).toBe('1')
+    // Clicking that line closes the whole sentence: the gesture works from
+    // either side, and collapses every unit the sentence was cut into.
+    const target = sentenceAt(built, line)
+    expect(target).toEqual({ block, index: 0 })
+    toggleSentence(built, block, 0, CLASSES)
+    expect(root.querySelector('[data-reader-reveal]')).toBeNull()
+    expect(block.segments.every(segment => !segment.open)).toBe(true)
+    expect(block.segments.every(segment => segment.span.getAttribute('data-open') === null)).toBe(true)
   })
 
   it('shows every original under its block in the side-by-side view', () => {

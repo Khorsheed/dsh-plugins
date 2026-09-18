@@ -45,7 +45,7 @@ import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, restoreArticle,
-  runTranslation, segmentAt, setView, toggleSegment,
+  runTranslation, segmentAt, sentenceAt, setView, toggleSegment, toggleSentence,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
   type TranslationView, type TranslatorLike,
 } from './translate.ts'
@@ -698,13 +698,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     void startTranslation(translateView === 'orig' ? lastViewRef.current : translateView)
   }, [translatePhase, translateView, cancelTranslation, applyView, startTranslation])
 
-  /** Clicking a translated sentence reveals its own original. */
+  /**
+   * The article's two paired gestures: clicking a translated sentence opens its
+   * original, and clicking that original closes it again — the same toggle from
+   * either side of the pair.
+   */
   const onArticleClick = useCallback((event: { target: EventTarget | null }) => {
     // Only a finished translation: mid-run a reveal would just duplicate the
     // original text that is still on screen.
     if (translatePhase !== 'ready') return
     const built = builtRef.current
     if (built === null) return
+    const sentence = sentenceAt(built, event.target)
+    if (sentence !== null) {
+      toggleSentence(built, sentence.block, sentence.index, translateClasses)
+      return
+    }
     const segment = segmentAt(built, event.target)
     if (segment === null) return
     toggleSegment(built, segment, translateClasses)
