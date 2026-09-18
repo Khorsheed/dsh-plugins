@@ -93,6 +93,30 @@ export type EvalKey =
   | 'report.col.weightedDelta'
   | 'report.col.deltas'
   | 'report.col.n'
+  | 'report.criteria'
+  | 'report.criteriaHint'
+  | 'report.criteriaTotal'
+  | 'report.criteriaUndeclared'
+  | 'report.criteriaEvidence'
+  | 'report.criteriaNoEvidence'
+  | 'report.criteriaExpand'
+  | 'report.criteriaReps'
+  | 'report.criteriaWeighted'
+  | 'report.criteriaNotJudged'
+  | 'report.humanOverride'
+  | 'report.supersededBy'
+  | 'report.sampleLine'
+  | 'report.holds'
+  | 'report.holdsNot'
+  | 'report.polarityNegative'
+  | 'report.polarityPositive'
+  | 'report.col.criterion'
+  | 'report.col.axis'
+  | 'report.col.weight'
+  | 'report.col.polarity'
+  | 'source.human'
+  | 'source.llm'
+  | 'source.script'
   | 'report.col.judges'
   | 'report.col.condition'
   | 'report.col.model'
@@ -169,7 +193,7 @@ export type EvalKey =
   | 'judge.reexport'
   | 'judge.reexporting'
   | 'judge.regrade'
-  | 'judge.scoringWarning'
+  | 'judge.scoringMix'
   | 'judge.stats'
   | 'judge.statsSame'
   | 'judge.statsCross'
@@ -546,6 +570,7 @@ export type EvalKey =
   | 'record.ok'
   | 'record.failed'
   | 'record.scoreWhere'
+  | 'record.scoreMixed'
   | 'record.timeline'
   | 'record.timelineNone'
   | 'record.params'
@@ -696,7 +721,7 @@ export const en: Record<EvalKey, string> = {
   'judge.bundleStale': 'The exported bundle was written before these final verdicts, so it does not carry them. Export again to put them in it — the report goes with it, and the old directory is left alone.',
   'judge.reexport': 'Export again',
   'judge.reexporting': 'Exporting…',
-  'judge.scoringWarning': 'Recording here makes human-final this record\u2019s ONLY scoring source. The report scores each record from the most authoritative namespace that has any verdict at all, so these {count} criteria — judged only by llm-draft ({criteria}) — would stop counting toward this record\u2019s score. Answer them here too, or accept that the record scores on the human criteria alone.',
+  'judge.scoringMix': 'Your verdict covers only the criteria you answer here. The report scores each criterion from the most authoritative layer that judged IT, so these {count} criteria the judge answered and you do not ({criteria}) keep counting, on the judge\u2019s word. This record\u2019s score then comes from both, and the report says so beside it.',
   'judge.regrade': 'This record already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
   'judge.stats': 'Grader agreement (live, from the ledger)',
   'judge.statsSame': 'One judge, resampled',
@@ -865,6 +890,30 @@ export const en: Record<EvalKey, string> = {
   'report.col.weightedDelta': 'Δ weighted',
   'report.col.deltas': 'Δ per rep',
   'report.col.n': 'n',
+  'report.criteria': 'Per-criterion scores and the grounds behind them',
+  'report.criteriaHint': 'Each cell is what this criterion concluded in that arm: ✓ / ✗, or the proportion for a proportionally scored one; over several reps, how many it held in. The small print is where the SCORE came from — each criterion independently takes the most authoritative layer that judged it (human > judge > script), so one cell may mix them. Click a cell for the evidence and who wrote it.',
+  'report.criteriaTotal': 'Item total',
+  'report.criteriaUndeclared': 'Not in the rubric weight table — only the verdicts name it, so it is treated as declaring no weight and no polarity.',
+  'report.criteriaEvidence': 'Grounds',
+  'report.criteriaNoEvidence': 'This verdict recorded no evidence text.',
+  'report.criteriaExpand': 'Evidence for {criterion} in {condition}',
+  'report.criteriaReps': '{count} rep',
+  'report.criteriaWeighted': 'weighted {value}',
+  'report.criteriaNotJudged': 'Not judged in this arm',
+  'report.humanOverride': 're-judged by a person',
+  'report.supersededBy': 'superseded — the judge\u2019s original verdict, kept',
+  'report.sampleLine': 'rep {rep} · {source}',
+  'report.holds': 'holds',
+  'report.holdsNot': 'does not hold',
+  'report.polarityNegative': 'defect',
+  'report.polarityPositive': 'positive',
+  'report.col.criterion': 'Criterion',
+  'report.col.axis': 'Dimension',
+  'report.col.weight': 'Weight',
+  'report.col.polarity': 'Polarity',
+  'source.human': 'Human',
+  'source.llm': 'Judge',
+  'source.script': 'Script',
   'report.col.judges': 'Judges',
   'report.col.condition': 'Arm',
   'report.col.model': 'Model',
@@ -1149,7 +1198,7 @@ export const en: Record<EvalKey, string> = {
   'verdict.human': 'Final verdict',
   'verdict.llm': 'Judge draft',
   'verdict.script': 'Script',
-  'verdict.hint': 'Which verdict source this cell carries. The scores themselves are computed from the exported bundle — they are on the results page.',
+  'verdict.hint': 'The most authoritative verdict layer this cell carries. The scores themselves are computed from the exported bundle, per criterion from the best layer that judged it — they are on the results page.',
 
   // ── the record detail, the validity hovers, the side-by-side
   //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
@@ -1157,6 +1206,7 @@ export const en: Record<EvalKey, string> = {
   'record.ok': 'Finished',
   'record.failed': 'Stopped',
   'record.scoreWhere': 'The scores are computed from the exported bundle — they are on the results page.',
+  'record.scoreMixed': 'This record carries verdicts in several layers ({sources}). The report scores EACH criterion from the most authoritative layer that judged it, so this record\u2019s score comes from more than one — the results page names which, criterion by criterion.',
   'record.timeline': 'Stage timeline',
   'record.timelineNone': 'The ledger recorded no transition times for this attempt.',
   'record.params': 'Parameters',
@@ -1302,7 +1352,7 @@ export const zh: Record<EvalKey, string> = {
   'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
   'judge.reexport': '重新导出',
   'judge.reexporting': '正在导出…',
-  'judge.scoringWarning': '在这里记分会让人工终评成为这条记录**唯一**的计分来源。报告按最权威的那个有判定的命名空间给每条记录计分，所以这 {count} 条只有判官初评的判据（{criteria}）将不再计入本条记录的得分。要么在这里也把它们答了，要么接受这条记录只按人工判据计分。',
+  'judge.scoringMix': '你在这里打的分**只覆盖你答的那几条判据**。报告逐条判据取最权威的那一层，所以这 {count} 条你不答、判官答过的判据（{criteria}）仍按判官的计入得分。这条记录的得分来源随之变成「人 + 判官」的混合，报告页会在得分旁标出来。',
   'judge.regrade': '这条记录已经有人工终评了。再记一次是**追加**：报告读每条判据的最新值，早先那次留在账本里。',
   'judge.stats': '评分者一致性（实时，来自账本）',
   'judge.statsSame': '同一判官重复采样',
@@ -1471,6 +1521,30 @@ export const zh: Record<EvalKey, string> = {
   'report.col.weightedDelta': 'Δ 加权',
   'report.col.deltas': '逐次 Δ',
   'report.col.n': 'n',
+  'report.criteria': '判据 × 对比组（每条判据的得分与判官依据）',
+  'report.criteriaHint': '格内是该判据在该组的结论：✓ / ✗ 成立与否（负向判据成立即缺陷），按比例给分的写比例，多次运行写成立次数。小字是这格**得分的来源**——逐判据取最权威的那一层（人 > 判官 > 脚本），所以同一格可以混合。点格子看证据原文与是谁写的。',
+  'report.criteriaTotal': '本题总分',
+  'report.criteriaUndeclared': '不在 rubric 权重表里——只有判定记录提到它，按未声明权重与极性处理。',
+  'report.criteriaEvidence': '判官依据',
+  'report.criteriaNoEvidence': '这条判定没写证据原文。',
+  'report.criteriaExpand': '{condition} 上 {criterion} 的证据',
+  'report.criteriaReps': '{count} 次',
+  'report.criteriaWeighted': '加权 {value}',
+  'report.criteriaNotJudged': '这个对比组没判这条',
+  'report.humanOverride': '人已改判',
+  'report.supersededBy': '已被改判——判官原判，保留',
+  'report.sampleLine': '第 {rep} 次 · {source}',
+  'report.holds': '成立',
+  'report.holdsNot': '不成立',
+  'report.polarityNegative': '负向',
+  'report.polarityPositive': '正向',
+  'report.col.criterion': '判据',
+  'report.col.axis': '维度',
+  'report.col.weight': '权重',
+  'report.col.polarity': '极性',
+  'source.human': '人',
+  'source.llm': '判官',
+  'source.script': '脚本',
   'report.col.judges': '判官',
   'report.col.condition': '对比组',
   'report.col.model': '模型',
@@ -1752,7 +1826,7 @@ export const zh: Record<EvalKey, string> = {
   'verdict.human': '终评',
   'verdict.llm': '判官初判',
   'verdict.script': '脚本判定',
-  'verdict.hint': '这格带的是哪一种判定。分数本身是从导出的 bundle 里算的，在结果对比页。',
+  'verdict.hint': '这格带的判定里最权威的那一层。分数本身是从导出的 bundle 里算的，逐条判据取判过它的最权威那一层，在结果对比页。',
 
   // ── the record detail, the validity hovers, the side-by-side
   //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
@@ -1760,6 +1834,7 @@ export const zh: Record<EvalKey, string> = {
   'record.ok': '成功',
   'record.failed': '异常',
   'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
+  'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告**逐条判据**取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
   'record.timeline': '阶段时间轴',
   'record.timelineNone': '账本没记这次尝试的转移时间。',
   'record.params': '参数配置',

@@ -18,7 +18,7 @@ import {
   BUCKETS, INCIDENTAL_FACTORS, NAMED_FACTORS, bucketPhrase, distinctStates, factorPhrase,
   agreementBand, compactCount, durationParts,
   factorValueText, isNamedFactor, preferredColumn, retryPhrase, shortHash, shortenValue, splitFactors,
-  verdictKey, verdictSourceOf,
+  sourceShares, verdictKey, verdictSourceOf, verdictSourcesOf,
   stagePhrase,
 } from '../src/client/vocab.ts'
 import { passesFilter, timelineOf } from '../src/client/RunsPage.tsx'
@@ -223,6 +223,31 @@ describe('the verdict source (I5·T67)', () => {
     expect(verdictSourceOf({ orchestrator: 12 })).toBeNull()
     expect(verdictSourceOf({ 'llm-draft': 0 })).toBeNull()
     expect(verdictSourceOf({})).toBeNull()
+  })
+
+  it('names EVERY layer a cell carries, not just the top one (I5·T54)', () => {
+    // The merge is per criterion, so a cell with two layers is scored from
+    // two; naming only the most authoritative claims something the report
+    // does not. Authority order, and a zero count is still not a verdict.
+    expect(verdictSourcesOf({ 'script': 1, 'llm-draft': 4, 'human-final': 1 }))
+      .toEqual(['human-final', 'llm-draft', 'script'])
+    expect(verdictSourcesOf({ 'llm-draft': 2, orchestrator: 9 })).toEqual(['llm-draft'])
+    expect(verdictSourcesOf({ 'human-final': 0 })).toEqual([])
+  })
+
+  it('reports a criteria-table cell\'s source mix, with counts only when they mean something', () => {
+    // One layer scored the whole cell: the count would be about nothing.
+    expect(sourceShares({ 'llm-draft': 4 })).toEqual([{ source: 'llm-draft', key: 'source.llm', count: 4 }])
+    // Mixed: the counts ARE the fact — one criterion on a person's word,
+    // three still on the judge's.
+    expect(sourceShares({ 'llm-draft': 3, 'human-final': 1 })).toEqual([
+      { source: 'human-final', key: 'source.human', count: 1 },
+      { source: 'llm-draft', key: 'source.llm', count: 3 },
+    ])
+    expect(sourceShares({})).toEqual([])
+    for (const key of ['source.human', 'source.llm', 'source.script'] as const) {
+      expect(bothHave(key), key).toBe(true)
+    }
   })
 
   it('every source has a word in both dictionaries, and so does «not judged»', () => {

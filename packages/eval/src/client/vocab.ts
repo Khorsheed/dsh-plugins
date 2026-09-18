@@ -371,8 +371,11 @@ export function agreementBand(kappa: number | null): AgreementBand | null {
 export type VerdictSource = 'human-final' | 'llm-draft' | 'script'
 
 /**
- * The verdict AUTHORITY order the report scores by: a cell is scored from ONE
- * namespace, the most authoritative that has anything to say.
+ * The verdict AUTHORITY order the report scores by. Applied PER CRITERION
+ * since I5·T54 — each criterion takes the most authoritative layer that
+ * judged it, so one cell's score can come from several at once — but the
+ * order itself is the same one, and it is what the run-record list sorts a
+ * cell's namespaces by to name the source it carries.
  */
 const VERDICT_ORDER: readonly VerdictSource[] = ['human-final', 'llm-draft', 'script']
 
@@ -384,12 +387,15 @@ const VERDICT_KEYS: Readonly<Record<VerdictSource, EvalKey>> = {
 }
 
 /**
- * Which verdict source a cell carries, by the report's own authority rule.
+ * The most authoritative source a cell carries anything in.
  *
- * What this is NOT: the score. The cell projection carries how MANY verdicts
- * each namespace holds, never their values, and the number a reader compares
- * is `report.ts`'s — polarity from the rubric, one namespace per cell,
- * majority over samples, weights where the rubric carries them. Computing a
+ * What this is NOT: the score, nor a claim that the whole cell scored from
+ * this one layer — since I5·T54 the merge is per criterion and a cell may mix
+ * them; the mixture is on the RESULTS page, beside the number it explains.
+ * The cell projection carries how MANY verdicts each namespace holds, never
+ * their values, and the number a reader compares is `report.ts`'s — polarity
+ * from the rubric, the best layer per criterion, majority over samples,
+ * weights where the rubric carries them. Computing a
  * second one here from the live ledger would give the run records a number
  * that can disagree with the results page about the same cell, which is worse
  * than not showing one. The source IS shown, because 「这格判了没有、谁判的」 is
@@ -409,4 +415,60 @@ export function verdictSourceOf(annotations: Readonly<Record<string, number>>): 
  */
 export function verdictKey(source: VerdictSource | null): EvalKey {
   return source === null ? 'verdict.none' : VERDICT_KEYS[source]
+}
+
+/**
+ * EVERY layer this cell carries a verdict in, most authoritative first.
+ *
+ * The companion of {@link verdictSourceOf}, and the reason it has one: since
+ * the per-criterion merge (I5·T54) a cell's score can come from several
+ * layers, so naming only the top one reads as a claim about the whole record
+ * that the report does not make. This still counts ANNOTATIONS, never
+ * criteria — the split per criterion is the report's, from the bundle.
+ * @param annotations - ns → how many annotations the cell carries.
+ * @returns the sources present, authority order; empty for an unjudged cell.
+ */
+export function verdictSourcesOf(annotations: Readonly<Record<string, number>>): VerdictSource[] {
+  return VERDICT_ORDER.filter(ns => (annotations[ns] ?? 0) > 0)
+}
+
+/** The SHORT word for each source — what fits inside a table cell. */
+const SOURCE_KEYS: Readonly<Record<VerdictSource, EvalKey>> = {
+  'human-final': 'source.human',
+  'llm-draft': 'source.llm',
+  'script': 'source.script',
+}
+
+/**
+ * Narrow a recorded namespace to one of the three the report knows.
+ * @param ns - the `ns` a projected verdict carries.
+ * @returns the source, or null for a namespace this vocabulary has no word for.
+ */
+export function sourceOf(ns: string): VerdictSource | null {
+  return VERDICT_ORDER.find(source => source === ns) ?? null
+}
+
+/** One layer's share of a criteria-table cell. */
+export interface SourceShare {
+  source: VerdictSource
+  key: EvalKey
+  /** Criteria (or reps) that scored from this layer. */
+  count: number
+}
+
+/**
+ * Where a criteria-table cell's score came from, most authoritative first.
+ *
+ * Since the per-criterion merge (I5·T54) a cell can score from SEVERAL layers
+ * at once — a person re-judged one criterion, the judge still holds the rest —
+ * and the mixture is the thing a reader has to be able to see. The counts are
+ * returned rather than a sentence: a cell with one layer prints the word
+ * alone («人»), because «人 4» about a cell nobody else judged counts nothing.
+ * @param sources - layer → how many scored from it, as the report projected it.
+ * @returns one entry per layer present, authority order, most authoritative first.
+ */
+export function sourceShares(sources: Readonly<Record<string, number>>): SourceShare[] {
+  return VERDICT_ORDER
+    .filter(source => (sources[source] ?? 0) > 0)
+    .map(source => ({ source, key: SOURCE_KEYS[source], count: sources[source] as number }))
 }

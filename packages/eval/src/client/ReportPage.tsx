@@ -22,10 +22,11 @@
  * judge be a player and discloses it per cell instead of dropping it.
  */
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  EvalFinalizeView, EvalReportJudgeTag, EvalReportPair, EvalRunReportView, EvalRunUnitsView,
+  EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportJudgeTag,
+  EvalReportPair, EvalReportTaskCriteria, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
@@ -33,7 +34,7 @@ import {
   Agreement, Chip, Count, Detail, Duration, EmptyState, Section, Word,
   invariantTone, stageTone, stamp,
 } from './parts.tsx'
-import { compactCount, durationParts, stagePhrase } from './vocab.ts'
+import { compactCount, durationParts, sourceOf, sourceShares, stagePhrase, verdictKey } from './vocab.ts'
 import type { EvalKey } from './locales.ts'
 import css from './LabView.module.css'
 
@@ -208,6 +209,206 @@ function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
       {/* The rank verdict is the report's own sentence — including the one
           that refuses to rank, which is the sentence a reader must not lose. */}
       <div className={css.rankReason}>{t('report.rank')}: {pair.rankReason}</div>
+    </Section>
+  )
+}
+
+/**
+ * Where one criteria-table cell's score came from: 「人」 alone when one layer
+ * scored the whole cell, 「人 1 / 判官 3」 when the merge mixed them.
+ */
+function SourceMix(props: { sources: Readonly<Record<string, number>>; t: LabViewProps['t'] }) {
+  const shares = sourceShares(props.sources)
+  if (shares.length === 0) return null
+  return (
+    <span className={css.criteriaSource}>
+      {shares.map(share => (shares.length === 1
+        ? props.t(share.key)
+        : `${props.t(share.key)} ${String(share.count)}`)).join(' / ')}
+    </span>
+  )
+}
+
+/** The conclusion in one cell: ✓ / ✗, a proportion, or how many reps it held in. */
+function criterionMark(cell: EvalReportCriterionCell): string {
+  if (cell.reps === 0) return DASH
+  if (cell.proportional) return cell.credit === null ? DASH : `${String(Math.round(cell.credit * 100))}%`
+  const mark = cell.holds === true ? '✓' : '✗'
+  return cell.reps > 1 ? `${mark} ${String(cell.heldReps)}/${String(cell.reps)}` : mark
+}
+
+/** One recorded verdict, with the judge un-blinded and its evidence folded. */
+function CriterionSampleLine(props: {
+  sample: EvalReportCriterionSample
+  superseded: boolean
+  t: LabViewProps['t']
+}) {
+  const { sample, superseded, t } = props
+  const [open, setOpen] = useState(false)
+  const judge = sample.judge
+  return (
+    <div className={css.criteriaSample}>
+      <span className={css.dim}>
+        {t('report.sampleLine', { rep: sample.rep ?? DASH, source: t(verdictKey(sourceOf(sample.ns))) })}
+      </span>
+      <Chip tone={sample.pass ? 'ok' : 'neutral'}>{t(sample.pass ? 'report.holds' : 'report.holdsNot')}</Chip>
+      {sample.ratio !== null && (
+        <span className={css.mono}>{sample.ratio.passed}/{sample.ratio.total}</span>
+      )}
+      {/* Un-blinded on purpose: the bench hides the judge so a grader cannot
+          be swayed, and the REPORT is where a reader must be able to weigh
+          whose opinion a number rests on (decision 9). */}
+      {judge === null
+        ? <span className={css.dim}>{sample.by === '' ? DASH : sample.by}</span>
+        : (
+          <span className={css.judgeTag}>
+            <span className={css.mono}>{judge.condition}</span>
+            {judge.model !== null && <span className={css.dim}> · {judge.model}</span>}
+            {judge.selfJudged && <Chip tone="warn">{t('report.selfJudged')}</Chip>}
+          </span>
+        )}
+      {superseded && <Chip tone="warn">{t('report.supersededBy')}</Chip>}
+      {sample.evidence === ''
+        ? <span className={css.dim}>{t('report.criteriaNoEvidence')}</span>
+        : (
+          <span
+            className={css.criteriaEvidence}
+            data-open={open ? '' : undefined}
+            role="button"
+            tabIndex={0}
+            onClick={() => { setOpen(!open) }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setOpen(!open) }}
+          >
+            {sample.evidence}
+          </span>
+        )}
+    </div>
+  )
+}
+
+/**
+ * One task's 判据 × 对比组 table: rows are criteria, columns are comparison
+ * groups, the bottom row is the task's own score, and every cell opens onto
+ * the verdicts it was computed from.
+ *
+ * The page adds no arithmetic. The conclusion, the source mix and the total
+ * all arrive decided by `analyzeBundle` — including the bottom row, which is
+ * the SAME number the pair table prints rather than this table's column sum,
+ * so the two can never disagree about one item.
+ */
+function CriteriaTable(props: { table: EvalReportTaskCriteria; t: LabViewProps['t'] }) {
+  const { table, t } = props
+  const [open, setOpen] = useState<string | null>(null)
+  const columns = 4 + table.conditions.length
+  // Same rule as the pair table: the weighted figure shows only when every
+  // column carries one, because a blank beside a number reads as zero.
+  const weighted = table.totals.length > 0 && table.totals.every(total => total.weighted !== null)
+  return (
+    <Section title={table.task} meta={t('report.criteriaHint')}>
+      <table className={css.reportTable}>
+        <thead>
+          <tr>
+            <th className={css.reportHead}>{t('report.col.criterion')}</th>
+            <th className={css.reportHead}>{t('report.col.axis')}</th>
+            <th className={css.reportHead}>{t('report.col.weight')}</th>
+            <th className={css.reportHead}>{t('report.col.polarity')}</th>
+            {table.conditions.map(condition => (
+              <th key={condition} className={css.reportHead}>{condition}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map(row => (
+            <Fragment key={row.id}>
+              <tr>
+                <th className={css.reportRowHead}>
+                  <span className={css.mono}>{row.id}</span>
+                  {row.undeclared && <Chip tone="warn" title={t('report.criteriaUndeclared')}>⚠</Chip>}
+                </th>
+                <td className={css.reportTd}>{row.axis ?? DASH}</td>
+                <td className={css.reportTd}>{row.weight ?? DASH}</td>
+                <td className={css.reportTd}>
+                  {t(row.negative ? 'report.polarityNegative' : 'report.polarityPositive')}
+                </td>
+                {row.cells.map((cell) => {
+                  const key = `${row.id}|${cell.condition}`
+                  // A negative criterion that HELD is a defect, and a positive
+                  // one that did not is a miss: both cost the same point, so
+                  // both wear the same colour.
+                  const bad = cell.reps > 0 && (row.negative ? cell.holds === true : cell.holds !== true)
+                  const empty = cell.samples.length === 0 && cell.superseded.length === 0
+                  return (
+                    <td key={cell.condition} className={css.reportTd}>
+                      <button
+                        type="button"
+                        className={css.criteriaCell}
+                        disabled={empty}
+                        aria-expanded={open === key}
+                        title={empty ? t('report.criteriaNotJudged') : t('report.criteriaExpand', { criterion: row.id, condition: cell.condition })}
+                        onClick={() => { setOpen(open === key ? null : key) }}
+                      >
+                        <span className={css.criteriaMark} data-bad={bad ? '' : undefined}>
+                          {criterionMark(cell)}
+                        </span>
+                        <SourceMix sources={cell.sources} t={t} />
+                      </button>
+                    </td>
+                  )
+                })}
+              </tr>
+              {row.cells.filter(cell => open === `${row.id}|${cell.condition}`).map(cell => (
+                <tr key={`${row.id}|${cell.condition}|open`}>
+                  <td className={css.criteriaDetail} colSpan={columns}>
+                    <div className={css.sectionTitle}>
+                      <span>{t('report.criteriaEvidence')}</span>
+                      <span className={css.sectionMeta}>
+                        {row.id} · {cell.condition} · {t('report.criteriaReps', { count: cell.reps })}
+                      </span>
+                      {/* The mark a person who re-judged this cell earned: the
+                          criterion now scores on their word, and the judge's
+                          original verdict stays right beside it. */}
+                      {cell.superseded.length > 0 && (cell.sources['human-final'] ?? 0) > 0 && (
+                        <Chip tone="warn">{t('report.humanOverride')}</Chip>
+                      )}
+                    </div>
+                    {cell.samples.map(sample => (
+                      <CriterionSampleLine
+                        key={`${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                        sample={sample}
+                        superseded={false}
+                        t={t}
+                      />
+                    ))}
+                    {cell.superseded.map(sample => (
+                      <CriterionSampleLine
+                        key={`old|${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                        sample={sample}
+                        superseded
+                        t={t}
+                      />
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </Fragment>
+          ))}
+          <tr className={css.criteriaTotalRow}>
+            <th className={css.reportRowHead}>{t('report.criteriaTotal')}</th>
+            <td className={css.reportTd} />
+            <td className={css.reportTd} />
+            <td className={css.reportTd} />
+            {table.totals.map(total => (
+              <td key={total.condition} className={css.reportTd}>
+                {total.scored === null ? DASH : fmtNum(total.scored)}
+                {weighted && total.weighted !== null && (
+                  <span className={css.dim}> ({t('report.criteriaWeighted', { value: fmtNum(total.weighted) })})</span>
+                )}
+                <span className={css.criteriaSource}> {t('report.criteriaReps', { count: total.reps })}</span>
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
     </Section>
   )
 }
@@ -671,6 +872,12 @@ export function ReportPage(props: {
                 : report.pairs.length === 0
                   ? <div className={css.dim}>{t('report.noPairs')}</div>
                   : report.pairs.map(pair => <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} t={t} />)}
+
+            {/* Under the comparison, where a reader who has just seen a
+                delta asks WHICH dimension moved and on what grounds. Behind
+                the same gate: `criteria` is empty when the invariants closed
+                the comparison, and a single-group run still gets the table. */}
+            {report.criteria.map(table => <CriteriaTable key={table.task} table={table} t={t} />)}
 
             <Efficiency report={report} t={t} />
             <JudgeConsistency report={report} t={t} />

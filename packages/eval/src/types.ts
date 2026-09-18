@@ -1145,6 +1145,65 @@ export interface EvalReportPair {
   rankReason: string
 }
 
+/** One verdict behind a criteria-table cell, as the report page shows it. */
+export interface EvalReportCriterionSample {
+  missionId: string
+  rep: number | null
+  /** `human-final` / `llm-draft` / `script` — the layer this sample was written in. */
+  ns: string
+  /** The criterion HOLDS; on a negative criterion that is the defect. */
+  pass: boolean
+  ratio: { passed: number; total: number } | null
+  /** The verdict's own checkable fact, verbatim — folded to one line on screen. */
+  evidence: string
+  by: string
+  /** The judge, un-blinded (the report page is where the blind comes off). */
+  judge: { condition: string; model: string | null; selfJudged: boolean; sample: number | null } | null
+}
+
+/** One (criterion × comparison group) cell of a task's criteria table. */
+export interface EvalReportCriterionCell {
+  condition: string
+  /** Reps of this group that judged the criterion; 0 renders as a dash, not a ✗. */
+  reps: number
+  heldReps: number
+  /** Mean credit over those reps, polarity NOT applied. */
+  credit: number | null
+  holds: boolean | null
+  /** True when a sample declared a `ratio` — the cell prints a proportion, not a tick. */
+  proportional: boolean
+  /** Layer → reps that scored from it; more than one key is a mixed cell. */
+  sources: Record<string, number>
+  samples: EvalReportCriterionSample[]
+  /** Judge drafts a human-final replaced — kept beside the new verdict. */
+  superseded: EvalReportCriterionSample[]
+}
+
+/** One rubric row of the criteria table. */
+export interface EvalReportCriterionRow {
+  id: string
+  /** The rubric's sub-axis — the DIMENSION, and the closest thing to a title a bundle carries. */
+  axis: string | null
+  kind: string | null
+  weight: number | null
+  negative: boolean
+  /** True when only the verdicts name this criterion, not the rubric. */
+  undeclared: boolean
+  cells: EvalReportCriterionCell[]
+}
+
+/**
+ * One task's 判据 × 对比组 table: rows are criteria, columns are comparison
+ * groups, and the bottom row is the task's own score — the SAME number the
+ * pair table prints, from the same computation.
+ */
+export interface EvalReportTaskCriteria {
+  task: string
+  conditions: string[]
+  rows: EvalReportCriterionRow[]
+  totals: Array<{ condition: string; scored: number | null; weighted: number | null; reps: number }>
+}
+
 /** One condition's efficiency row. Parallel columns, never summed into a score. */
 export interface EvalReportEfficiencyRow {
   condition: string
@@ -1227,6 +1286,13 @@ export interface EvalRunReportView {
   singleCondition: boolean
   /** Empty when comparison is not allowed — the page never renders a closed section. */
   pairs: EvalReportPair[]
+  /**
+   * Per task, every criterion's conclusion in every comparison group, with
+   * the evidence and the judge behind it. Behind the SAME gate as `pairs` —
+   * a closed comparison stays closed one criterion at a time — but present
+   * for a single-group run, where 判官依据 still answers a question.
+   */
+  criteria: EvalReportTaskCriteria[]
   efficiency: EvalReportEfficiencyRow[]
   efficiencyExcluded: EvalReportExcluded[]
   judge: EvalReportJudgeConsistency
@@ -1421,16 +1487,18 @@ export interface EvalJudgeQueueCell {
   /**
    * Criteria this cell has an `llm-draft` value for and NO human-final.
    *
-   * It is here because of how the report picks a cell's scoring source: it
-   * takes the most authoritative namespace that has ANY verdict for the cell
-   * and scores from that one alone (`human-final` > `llm-draft` > `script`).
-   * So the first human-final verdict on a cell — even one answering a single
-   * `kind: human` criterion — makes human-final the cell's ONLY scoring
-   * source, and every criterion in this list stops counting toward its score.
+   * It is here because of how the report merges verdict layers: EACH
+   * criterion independently takes the most authoritative layer that judged it
+   * (`human-final` > `llm-draft` > `script`). So a human verdict settles the
+   * criteria it answers, and every criterion in this list goes on counting —
+   * on the judge's word — leaving the record's score with two authors at
+   * once. The page says that beside the button, because a grader who thinks
+   * they are scoring the whole record is scoring part of it.
    *
-   * The bench cannot fix that from here (changing the rule would move every
-   * report ever produced), but it must not let a person do it without
-   * knowing. The page prints the consequence beside the button.
+   * Until I5·T54 the rule was per CELL and this list was a COST: the first
+   * human verdict dropped every criterion in it from the score. The field
+   * survived the change because the sentence it feeds is still owed; only
+   * what the sentence says changed.
    */
   draftOnlyCriteria: string[]
 }

@@ -1648,3 +1648,80 @@
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
 }
+
+/* ────────── the 判据 × 对比组 table (ui-spec §五 v2, I5·T54 补一) ────────── */
+
+/* The whole cell is the hit target: a reader after the grounds clicks the
+   conclusion, not a separate affordance beside it. */
+.criteriaCell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.criteriaCell:disabled {
+  cursor: default;
+}
+
+.criteriaMark {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* A defect that occurred, and a criterion that failed: the same colour,
+   because they are the same fact about the score. */
+.criteriaMark[data-bad] {
+  color: var(--dsw-alias-state-danger-label);
+}
+
+.criteriaSource {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.criteriaDetail {
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l2);
+  white-space: normal;
+}
+
+.criteriaSample {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* §九: the evidence stays folded to ONE line until a reader asks for it. */
+.criteriaEvidence {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.criteriaEvidence[data-open] {
+  display: block;
+  -webkit-line-clamp: none;
+}
+
+.criteriaTotalRow > * {
+  background: var(--dsw-alias-bg-l2);
+  font-weight: 600;
+}

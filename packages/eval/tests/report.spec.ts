@@ -3,7 +3,10 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runCli } from '../src/cli-core.ts'
-import { analyzeBundle, parseMissionId, writeEvalReport } from '../src/report.ts'
+import {
+  analyzeBundle, parseMissionId, writeEvalReport,
+  type EvalReport, type PairTaskDelta, type ReportRow,
+} from '../src/report.ts'
 import { EvalService } from '../src/service.ts'
 import { RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA } from '../src/weights.ts'
 import { captureIo, cleanupTmp, tmpTree } from './helpers.ts'
@@ -1117,6 +1120,234 @@ describe('report — S10 proportional criteria score by ratio (T19b/T24)', () =>
     const report = await analyzeBundle(bundle)
     expect(report.rows[0]?.ratio).toBeUndefined()
     expect(report.rows[0]?.pass).toBe(false)
+  })
+})
+
+// --- T54 · the per-criterion merge --------------------------------------------
+
+/**
+ * The rubric the merge is measured against: three positive criteria and one
+ * negative, one of them `kind: human` — the shape that produced I5·T37's
+ * report (a judge answered four, a person re-judged one).
+ */
+const MERGE_WEIGHTS_TABLE = {
+  schema: RUBRIC_WEIGHTS_SCHEMA,
+  dataset: 'harness-comparison',
+  commit: sha('c0'),
+  tasks: ['F7'],
+  criteria: [
+    { task: 'F7', id: 'C1', weight: 10, negative: false, kind: 'human', axis: '正确性' },
+    { task: 'F7', id: 'C2', weight: 10, negative: false, kind: 'llm-draft', axis: '正确性' },
+    { task: 'F7', id: 'C3', weight: 10, negative: false, kind: 'llm-draft', axis: '完整性' },
+    { task: 'F7', id: 'N1', weight: -5, negative: true, kind: 'llm-draft', axis: '代价' },
+  ],
+}
+
+/**
+ * The T37 shape, exactly: the judge answered all four criteria on the `a`
+ * side, a person then re-judged **C1 only** and disagreed with the judge about
+ * it. Under the old per-cell rule this cell scored 1 (C1, the human's); under
+ * the merge it scores 4, and its source mix is `human-final 1 / llm-draft 3`.
+ *
+ * `humanOnly` adds a criterion the judge never touched — the branch where the
+ * consistency denominator must NOT grow. `ratio` makes C2 proportional, to
+ * show a merged cell still scores that criterion by its proportion.
+ */
+function mergeBundle(root: string, opts: { humanOnly?: boolean; ratio?: boolean; pure?: 'human' | 'judge' | 'script' } = {}): string {
+  const draft = (condition: string): Array<[string, boolean, unknown?]> => [
+    ['C1', condition !== 'codex-exec'],
+    ['C2', condition === 'codex-exec', ...(opts.ratio === true ? [{ passed: condition === 'codex-exec' ? 3 : 1, total: 4 }] : [])] as [string, boolean, unknown?],
+    ['C3', true],
+    ['N1', condition !== 'codex-exec'],
+  ]
+  const missions: FixtureMission[] = []
+  for (const condition of ['codex-exec', 'claude-exec']) {
+    for (let rep = 1; rep <= 3; rep++) {
+      const annotations: FixtureAnnotation[] = [orchestratorNote('stage1', 1, 60_000, 900)]
+      if (opts.pure === 'script') {
+        annotations.push(scriptNote('F7', draft(condition), 'cli', 1))
+      } else if (opts.pure === 'human') {
+        annotations.push({
+          ns: 'human-final', by: 'tab:s1', createdAt: 2,
+          payload: draft(condition).map(([id, pass, ratio]) => verdict('F7', id, pass, 'judge-bench', ratio)),
+        })
+      } else {
+        annotations.push({
+          ns: 'llm-draft', by: 'judge-runner', createdAt: 1,
+          payload: draft(condition).map(([id, pass, ratio]) => verdict('F7', id, pass, 'judge-a', ratio)),
+        })
+        // The person re-judges C1 on the `a` side only, and disagrees.
+        if (opts.pure === undefined && condition === 'codex-exec') {
+          annotations.push({
+            ns: 'human-final', by: 'tab:s1', createdAt: 2,
+            payload: [
+              verdict('F7', 'C1', true, 'judge-bench'),
+              ...(opts.humanOnly === true ? [verdict('F7', 'H9', true, 'judge-bench')] : []),
+            ],
+          })
+        }
+      }
+      missions.push({
+        id: `F7-${condition}-rep${rep}`,
+        attempts: [{ attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m7')), annotations }],
+      })
+    }
+  }
+  return writeBundle(root, {
+    runId: 'merge',
+    meta: {
+      expectedNs: ['llm-draft', 'human-final'],
+      conditions: [
+        conditionEntry('codex-exec', baseConditionDoc(), 'aa'),
+        conditionEntry('claude-exec', baseConditionDoc({ preset: 'thorough' }), 'bb'),
+      ],
+    },
+    missions,
+    weightsTable: MERGE_WEIGHTS_TABLE,
+  })
+}
+
+const f7Of = (report: EvalReport): PairTaskDelta | undefined =>
+  report.comparisons[0]?.perTask.find(task => task.task === 'F7')
+
+describe('report — T54 the merge is per CRITERION, not per cell', () => {
+  it('counts all four criteria when a person re-judged one of them', async () => {
+    const report = await analyzeBundle(mergeBundle(tmpTree()))
+    // a: C1 human (holds, +1), C2 judge (holds, +1), C3 judge (holds, +1),
+    //    N1 judge (negative, does NOT hold, +1) → 4.
+    // The OLD per-cell rule scored this cell 1: human-final held C1 alone and
+    // the judge's other three dropped out with nothing saying so (T37).
+    expect(f7Of(report)?.aMean).toBe(4)
+    // b: C1 judge (holds, +1), C2 judge (fails, 0), C3 (+1), N1 HOLDS (0) → 2.
+    expect(f7Of(report)?.bMean).toBe(2)
+    // Weighted rides the same merge: 10 + 10 + 10 vs 10 + 10 + (-5).
+    expect(f7Of(report)?.aWeighted).toBe(30)
+    expect(f7Of(report)?.bWeighted).toBe(15)
+  })
+
+  it('records the cell source mix on every one of its result rows', async () => {
+    const write = await writeEvalReport(mergeBundle(tmpTree()))
+    const rows = readFileSync(write.resultsPath, 'utf8').trim().split('\n').map(line => JSON.parse(line) as ReportRow)
+    // Every row carries its OWN layer and its CELL's mix — the mix is repeated
+    // per row exactly as toolCalls is, because a row has no mix of its own.
+    const a = rows.filter(row => row.condition === 'codex-exec' && row.rep === 1)
+    expect(a).toHaveLength(5) // 4 judge rows + 1 human row
+    expect(new Set(a.map(row => row.ns))).toEqual(new Set(['llm-draft', 'human-final']))
+    for (const row of a) expect(row.sources).toEqual({ 'human-final': 1, 'llm-draft': 3 })
+    const b = rows.filter(row => row.condition === 'claude-exec' && row.rep === 1)
+    for (const row of b) expect(row.sources).toEqual({ 'llm-draft': 4 })
+  })
+
+  it('keeps the three pure states exactly as they scored before the merge', async () => {
+    // Nothing to merge: one layer judged everything, so the merged result IS
+    // the old single-namespace result. Same numbers for all three.
+    for (const pure of ['human', 'judge', 'script'] as const) {
+      const report = await analyzeBundle(mergeBundle(tmpTree(), { pure }))
+      // a: C1 fails, C2 holds, C3 holds, N1 does not hold → 3.
+      expect(f7Of(report)?.aMean).toBe(3)
+      expect(f7Of(report)?.bMean).toBe(2)
+      const ns = pure === 'judge' ? 'llm-draft' : pure === 'human' ? 'human-final' : 'script'
+      const table = report.criteriaTables.find(t => t.task === 'F7')
+      for (const row of table?.rows ?? []) {
+        for (const cell of row.cells) expect(cell.sources).toEqual({ [ns]: 3 })
+      }
+    }
+  })
+
+  it('still scores a proportional criterion by its ratio inside a merged cell', async () => {
+    const report = await analyzeBundle(mergeBundle(tmpTree(), { ratio: true }))
+    // C1 is the human's 1; C2 keeps the judge's 3/4; C3 1; N1 1.
+    expect(f7Of(report)?.aMean).toBeCloseTo(1 + 3 / 4 + 1 + 1, 6)
+    expect(f7Of(report)?.bMean).toBeCloseTo(1 + 1 / 4 + 1 + 0, 6)
+    const c2 = report.criteriaTables.find(t => t.task === 'F7')?.rows.find(row => row.criterion === 'C2')
+    const cell = c2?.cells.find(entry => entry.condition === 'codex-exec')
+    expect(cell?.proportional).toBe(true)
+    expect(cell?.credit).toBeCloseTo(3 / 4, 6)
+    expect(cell?.sources).toEqual({ 'llm-draft': 3 })
+  })
+
+  it('counts only criteria BOTH sides judged in the human-agreement denominator', async () => {
+    const report = await analyzeBundle(mergeBundle(tmpTree(), { humanOnly: true }))
+    // The person answered C1 (the judge did too) and H9 (the judge did not).
+    // Three cells × C1 is the whole denominator; H9 never enters it.
+    expect(report.judge.humanAgreement).toEqual({ agreed: 0, total: 3 })
+    const line = report.judge.details.find(detail => detail.includes('llm-draft 对 human-final'))
+    expect(line).toContain('分母只含两者都判过的判据')
+    expect(line).toContain('另有 3 条人评判据判官没判过')
+  })
+
+  it('shuts the criteria table behind the same gate as the comparison', async () => {
+    // An invariant that does not hold closes both: a reader must not be able
+    // to reopen a refused comparison one criterion at a time.
+    const report = await analyzeBundle(brokenMaterializationBundle(tmpTree()))
+    expect(report.comparisonAllowed).toBe(false)
+    expect(report.criteriaTables).toEqual([])
+  })
+})
+
+describe('report — T54 补一 the criteria × group table', () => {
+  it('names the layer each criterion scored from, and keeps the judgement a person replaced', async () => {
+    const report = await analyzeBundle(mergeBundle(tmpTree()))
+    const table = report.criteriaTables.find(entry => entry.task === 'F7')
+    expect(table?.conditions).toEqual(['claude-exec', 'codex-exec'])
+    // Rubric order, not alphabetical, and the rubric's own axis rides along.
+    expect(table?.criteria.map(row => row.id)).toEqual(['C1', 'C2', 'C3', 'N1'])
+    expect(table?.criteria.find(row => row.id === 'N1')).toMatchObject({ negative: true, weight: -5, axis: '代价' })
+
+    const c1 = table?.rows.find(row => row.criterion === 'C1')?.cells.find(cell => cell.condition === 'codex-exec')
+    expect(c1?.sources).toEqual({ 'human-final': 3 })
+    expect(c1?.holds).toBe(true)
+    expect(c1?.samples.map(sample => sample.ns)).toEqual(['human-final', 'human-final', 'human-final'])
+    // The judge's original verdict is kept, not dropped — «人已改判» is only
+    // readable beside the judgement it replaced.
+    expect(c1?.superseded).toHaveLength(3)
+    expect(c1?.superseded[0]).toMatchObject({ ns: 'llm-draft', pass: false })
+
+    const c2 = table?.rows.find(row => row.criterion === 'C2')?.cells.find(cell => cell.condition === 'codex-exec')
+    expect(c2?.sources).toEqual({ 'llm-draft': 3 })
+    expect(c2?.superseded).toEqual([])
+    // Evidence and `by` ride the sample: the whole point of the expansion.
+    expect(c2?.samples[0]?.evidence).toContain('可查证事实')
+    expect(c2?.samples[0]?.by).toBe('judge-a')
+  })
+
+  it('prints the same per-item total the pair table does', async () => {
+    const report = await analyzeBundle(mergeBundle(tmpTree()))
+    const table = report.criteriaTables.find(entry => entry.task === 'F7')
+    const pair = f7Of(report)
+    expect(table?.totals.find(total => total.condition === 'codex-exec')?.scored).toBe(pair?.aMean)
+    expect(table?.totals.find(total => total.condition === 'claude-exec')?.scored).toBe(pair?.bMean)
+    expect(table?.totals.find(total => total.condition === 'codex-exec')?.weighted).toBe(pair?.aWeighted)
+    expect(table?.totals.every(total => total.reps === 3)).toBe(true)
+  })
+
+  it('marks a criterion the rubric never declared instead of inventing a weight', async () => {
+    const report = await analyzeBundle(mergeBundle(tmpTree(), { humanOnly: true }))
+    const table = report.criteriaTables.find(entry => entry.task === 'F7')
+    // Declared criteria keep rubric order; H9 is appended and flagged.
+    expect(table?.criteria.map(row => row.id)).toEqual(['C1', 'C2', 'C3', 'N1', 'H9'])
+    expect(table?.criteria.find(row => row.id === 'H9')).toMatchObject({ undeclared: true, weight: null, negative: false })
+  })
+
+  it('writes the table and the folded evidence into summary.md', async () => {
+    const summary = readFileSync((await writeEvalReport(mergeBundle(tmpTree()))).summaryPath, 'utf8')
+    expect(summary).toContain('## 判据 × 对比组（每条判据的得分与判官依据）')
+    expect(summary).toContain('| 判据 | 维度 | weight | 极性 | claude-exec | codex-exec |')
+    // The mixed cell says «人» where it scored on the human's word — one layer
+    // in the cell, so the word alone — and «判官» on the three it did not.
+    expect(summary).toMatch(/\| C1 \| 正确性 \| 10 \| 正向 \|.*<sub>判官<\/sub> \|.*<sub>人<\/sub> \|/)
+    expect(summary).toContain('| **本题总分** | | | | **2**（加权 15） <sub>3 rep</sub> | **4**（加权 30） <sub>3 rep</sub> |')
+    expect(summary).toContain('<details><summary>判官依据（逐条判定的原文）</summary>')
+    expect(summary).toContain('（已被人工终评改判，原判保留）')
+    // The scoring paragraph now states the merge rule itself.
+    expect(summary).toContain('得分判据数**逐判据**取最权威可用的判定源')
+  })
+
+  it('gives a single-group run the table too — the grounds do not need a second column', async () => {
+    const report = await analyzeBundle(singleConditionBundle(tmpTree()))
+    expect(report.singleCondition).toBe(true)
+    expect(report.criteriaTables.length).toBeGreaterThan(0)
+    expect(report.criteriaTables[0]?.conditions).toHaveLength(1)
   })
 })
 

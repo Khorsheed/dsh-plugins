@@ -8,7 +8,9 @@
  * (facts-only otherwise).
  * @module @khorsheed/dsh-eval
  */
-import type { ConditionEfficiency, EvalReport, PairComparison } from './report.ts'
+import type {
+  ConditionEfficiency, CriterionGroupResult, EvalReport, PairComparison, TaskCriteriaTable,
+} from './report.ts'
 import { RUBRIC_WEIGHTS_PATH } from './weights.ts'
 
 const STATUS_MARK: Record<string, string> = { ok: '✅ 成立', violated: '❌ 不成立', unverifiable: '⚠️ 无法核验' }
@@ -210,6 +212,122 @@ function renderNegative(report: EvalReport): string[] {
   return lines
 }
 
+/** `31.5k` / `4/6` / a plain integer — §九's number, never a raw float. */
+function fmtCredit(cell: CriterionGroupResult): string {
+  if (cell.reps === 0) return DASH
+  const mark = cell.holds === true ? '✓' : '✗'
+  if (cell.proportional) {
+    // A proportional criterion's own number IS the answer; a tick over it
+    // would round 0.6 to «成立» and lose the whole point of §6.5.
+    const proportion = cell.credit === null ? DASH : `${(cell.credit * 100).toFixed(0)}%`
+    return cell.reps > 1 ? `${proportion}（${cell.reps} rep 均值）` : proportion
+  }
+  return cell.reps > 1 ? `${mark} ${cell.heldReps}/${cell.reps}` : mark
+}
+
+/** The word for each verdict layer, most authoritative first. */
+const SOURCE_WORDS: ReadonlyArray<readonly [string, string]> = [
+  ['human-final', '人'], ['llm-draft', '判官'], ['script', '脚本'],
+]
+
+/**
+ * `人 1 / 判官 3` — where a cell's score came from, per criterion.
+ *
+ * A cell scored entirely by one layer prints the WORD alone: 「人 4」 on a
+ * cell nobody else judged says «four» about nothing a reader asked. The count
+ * appears exactly when it carries information — when the layers are mixed,
+ * which is the state T54 created and the state that has to be legible.
+ * @param sources - layer → criteria that scored from it.
+ * @returns the label, or a dash for a cell nothing scored.
+ */
+export function sourceMixText(sources: Readonly<Record<string, number>>): string {
+  const present = SOURCE_WORDS.filter(([ns]) => (sources[ns] ?? 0) > 0)
+  if (present.length === 0) return DASH
+  if (present.length === 1) return present[0]?.[1] as string
+  return present.map(([ns, word]) => `${word} ${String(sources[ns])}`).join(' / ')
+}
+
+/**
+ * One task's 判据 × 对比组 table, plus the evidence behind it folded away.
+ *
+ * The table answers «which dimension moved»; the fold answers «on what
+ * grounds». Both are facts the bundle already carries — until T54 補一 the
+ * summary printed only the per-task totals, and a reader who wanted either
+ * had to open results.jsonl and re-do the merge by hand.
+ */
+function renderCriteriaTable(table: TaskCriteriaTable): string[] {
+  const lines: string[] = []
+  lines.push(`### ${table.task}`)
+  lines.push('')
+  if (table.criteria.length === 0 || table.conditions.length === 0) {
+    lines.push('本题没有任何判定记录。')
+    lines.push('')
+    return lines
+  }
+  const head = `| 判据 | 维度 | weight | 极性 | ${table.conditions.join(' | ')} |`
+  lines.push(head)
+  lines.push(`|${' --- |'.repeat(head.split('|').length - 2)}`)
+  for (const row of table.rows) {
+    const facts = table.criteria.find(c => c.id === row.criterion)
+    const cells = row.cells.map((cell) => {
+      const mix = cell.reps === 0 ? '' : ` <sub>${sourceMixText(cell.sources)}</sub>`
+      return `${fmtCredit(cell)}${mix}`
+    })
+    lines.push(`| ${row.criterion}${facts?.undeclared === true ? ' ⚠️' : ''} | ${facts?.axis ?? DASH} `
+      + `| ${facts?.weight ?? DASH} | ${facts?.negative === true ? '负向' : '正向'} | ${cells.join(' | ')} |`)
+  }
+  // The bottom row is `scoreOf`'s own number, not this table's column sum.
+  // The weighted figure appears only when EVERY column has one — the pair
+  // table's rule, for the same reason: a blank beside a number reads as zero.
+  const weighted = table.totals.length > 0 && table.totals.every(total => total.weighted !== null)
+  lines.push(`| **本题总分** | | | | ${table.totals.map(total =>
+    `**${total.scored === null ? DASH : fmtNum(total.scored)}**`
+    + (weighted && total.weighted !== null ? `（加权 ${fmtNum(total.weighted)}）` : '')
+    + ` <sub>${total.reps} rep</sub>`).join(' | ')} |`)
+  lines.push('')
+  if (table.criteria.some(c => c.undeclared)) {
+    lines.push('⚠️ 标记的判据不在 rubric 权重表里——只有判定记录提到它，权重与极性按未声明处理（正向、无权重）。')
+    lines.push('')
+  }
+
+  const evidence: string[] = []
+  for (const row of table.rows) {
+    for (const cell of row.cells) {
+      for (const sample of [...cell.samples, ...cell.superseded]) {
+        const superseded = cell.samples.includes(sample) ? '' : '（已被人工终评改判，原判保留）'
+        const judge = sample.judge === null
+          ? sample.by
+          : `${sample.judge.condition}${sample.judge.model === null ? '' : ` · ${sample.judge.model}`}`
+            + `${sample.judge.selfJudged ? ' ⚠️自评' : ''}`
+        const ratio = sample.ratio === null ? '' : `（${sample.ratio.passed}/${sample.ratio.total}）`
+        evidence.push(`- \`${row.criterion}\` · ${cell.condition} · rep ${sample.rep ?? DASH} · ${sample.ns}`
+          + ` · ${sample.pass ? '成立' : '不成立'}${ratio} · ${judge}${superseded}`)
+        if (sample.evidence !== '') evidence.push(`  - ${sample.evidence.replace(/\n/g, ' ')}`)
+      }
+    }
+  }
+  if (evidence.length > 0) {
+    lines.push('<details><summary>判官依据（逐条判定的原文）</summary>')
+    lines.push('')
+    lines.push(...evidence)
+    lines.push('')
+    lines.push('</details>')
+    lines.push('')
+  }
+  return lines
+}
+
+/** The whole 判据 × 对比组 section — empty when the comparison gate closed it. */
+function renderCriteria(report: EvalReport): string[] {
+  if (report.criteriaTables.length === 0) return []
+  const lines: string[] = ['## 判据 × 对比组（每条判据的得分与判官依据）', '']
+  lines.push('格内是该判据在该组的结论：`✓` / `✗` 成立与否（负向判据成立即缺陷），多 rep 写 `成立数/rep 数`，'
+    + '按比例给分的判据写比例；下标是这格的**得分来源**——逐判据取最权威层（人 > 判官 > 脚本），同一格可以混合。')
+  lines.push('')
+  for (const table of report.criteriaTables) lines.push(...renderCriteriaTable(table))
+  return lines
+}
+
 /** Render the full summary.md. */
 export function renderSummaryMd(report: EvalReport): string {
   const lines: string[] = []
@@ -286,13 +404,17 @@ export function renderSummaryMd(report: EvalReport): string {
   } else if (report.comparisonAllowed && report.comparisons.length > 0) {
     lines.push('## 配对比较（以题为区组）')
     lines.push('')
-    lines.push('得分判据数取各格最权威可用的判定源（human-final > llm-draft > script），同判据多样本按多数计；'
+    lines.push('得分判据数**逐判据**取最权威可用的判定源（human-final > llm-draft > script）——'
+      + '人改过的判据用人的，没改的仍用判官的，没判官的用脚本的，同一格的来源可以混合；同判据多样本按多数计；'
       + '正向判据成立计 1，负向判据成立计 0、不成立计 1；带 `ratio` 的按比例给分判据计 passed/total（负向则计其余量）。'
-      + '加权分 = Σ weight × 该判据得到的比例，负 weight 自然扣分。')
+      + '加权分 = Σ weight × 该判据得到的比例，负 weight 自然扣分。'
+      + '每条判据取到了哪一层，见下面的「判据 × 对比组」表。')
     lines.push('')
     for (const comparison of report.comparisons) lines.push(...renderPair(comparison))
     lines.push(...renderJudgeAssignment(report))
   }
+
+  lines.push(...renderCriteria(report))
 
   lines.push('## 判官一致性')
   lines.push('')
