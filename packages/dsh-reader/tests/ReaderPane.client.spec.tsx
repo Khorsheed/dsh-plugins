@@ -210,6 +210,30 @@ function bench(options: BenchOptions = {}) {
   return { ...view, mocks, actions, settle }
 }
 
+/** The page global the pane probes, scripted per test. */
+function installTranslator(over: { availability?: string; createThrows?: string; unsupported?: boolean; mangled?: boolean } = {}) {
+  const api = {
+    availability: vi.fn(async () => over.availability ?? 'available'),
+    create: vi.fn(async () => {
+      if (over.unsupported === true) {
+        throw new DOMException('Unable to create translator for the given source and target language.', 'NotSupportedError')
+      }
+      if (over.createThrows !== undefined) throw new Error(over.createThrows)
+      return {
+        inputQuota: 10_000,
+        measureInputUsage: async (text: string) => text.length,
+        translate: async (payload: string) =>
+          payload
+            .split(UNIT_SEPARATOR)
+            .map(part => `译：${part}`)
+            .join(over.mangled === true ? ' ' : UNIT_SEPARATOR),
+      }
+    }),
+  }
+  ;(globalThis as unknown as { Translator?: unknown }).Translator = api
+  return api
+}
+
 // The quoting case installs a `getSelection` spy, and the translation gesture
 // reads the selection (a click that ends a drag must not fold the sentence), so
 // every test starts from a clean slate.
@@ -873,31 +897,61 @@ describe('read state is visible without hiding anything', () => {
   })
 })
 
-describe('on-device translation', () => {
-  /** The page global the pane probes, scripted per test. */
-  function installTranslator(over: { availability?: string; createThrows?: string; unsupported?: boolean; mangled?: boolean } = {}) {
-    const api = {
-      availability: vi.fn(async () => over.availability ?? 'available'),
-      create: vi.fn(async () => {
-        if (over.unsupported === true) {
-          throw new DOMException('Unable to create translator for the given source and target language.', 'NotSupportedError')
-        }
-        if (over.createThrows !== undefined) throw new Error(over.createThrows)
-        return {
-          inputQuota: 10_000,
-          measureInputUsage: async (text: string) => text.length,
-          translate: async (payload: string) =>
-            payload
-              .split(UNIT_SEPARATOR)
-              .map(part => `译：${part}`)
-              .join(over.mangled === true ? ' ' : UNIT_SEPARATOR),
-        }
-      }),
-    }
-    ;(globalThis as unknown as { Translator?: unknown }).Translator = api
-    return api
+describe('the wall translates its cards', () => {
+  /** Two English cards (one mixed), one Chinese card. */
+  function wall() {
+    return bench({
+      sources: [rssSource('hn', { label: 'Hacker News' }), rssSource('mix'), rssSource('cn')],
+      payloads: {
+        hn: feed('hn', [{ title: 'English card title', description: 'An English summary sentence.' }]),
+        mix: feed('mix', [{ title: '中文标题的卡片', description: 'An English summary inside a mixed card.' }]),
+        cn: feed('cn', [{ title: '完全中文的卡片', description: '中文摘要。' }]),
+      },
+    })
   }
 
+  it('translates English cards, leaves Chinese fields alone, and switches back', async () => {
+    installTranslator()
+    const ui = wall()
+    await ui.settle()
+    await screen.findByText('English card title')
+    expect(screen.getByText('完全中文的卡片')).toBeTruthy()
+    // The wall globe appears once the browser has answered the probe.
+    const globe = await screen.findByTitle(zh['action.translate'])
+    fireEvent.click(globe)
+    await waitFor(() => { expect(screen.getByText('译：English card title')).toBeTruthy() })
+    // A mixed card translates ONLY its English field: the Chinese title stays.
+    expect(screen.getByText('中文标题的卡片')).toBeTruthy()
+    expect(await screen.findByText('译：An English summary inside a mixed card.')).toBeTruthy()
+    // A wholly Chinese card is never sent: no Chinese-into-Chinese request.
+    expect(screen.getByText('完全中文的卡片')).toBeTruthy()
+    expect(screen.getByText('中文摘要。')).toBeTruthy()
+    expect(screen.queryByText(/译：完全中文的卡片/)).toBeNull()
+    // Switching the wall's translation off puts the originals back.
+    fireEvent.click(globe)
+    await waitFor(() => { expect(screen.getByText('English card title')).toBeTruthy() })
+    expect(screen.queryByText('译：English card title')).toBeNull()
+    expect(ui.container.querySelector('[data-translated]')).toBeNull()
+  })
+
+  it('shows the original under each field in the side-by-side view', async () => {
+    installTranslator()
+    const ui = wall()
+    await ui.settle()
+    await screen.findByText('English card title')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => { expect(screen.getByText('译：English card title')).toBeTruthy() })
+    fireEvent.click(ui.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['translate.bilingual']))
+    // Both languages are on the card at once — and the originals are marked so
+    // the styles can tell them from the translation.
+    await waitFor(() => { expect(ui.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(2) })
+    expect(screen.getByText('English card title')).toBeTruthy()
+    expect(screen.getByText('An English summary sentence.')).toBeTruthy()
+  })
+})
+
+describe('on-device translation', () => {
   /** One English article, opened, its body on screen. */
   async function opened(body: string) {
     const ui = bench({

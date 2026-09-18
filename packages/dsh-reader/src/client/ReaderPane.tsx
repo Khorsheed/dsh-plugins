@@ -44,10 +44,10 @@ import { extractArticle } from './extract-article.ts'
 import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
-  TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, restoreArticle,
-  runTranslation, segmentAt, setPairHover, setView, toggleSegment,
+  TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
+  restoreArticle, runTranslation, segmentAt, setPairHover, setView, toggleSegment, translateTexts,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
-  type TranslationView, type TranslatorLike,
+  type TranslationView, type TranslatorLike, type TranslatorSessionLike,
 } from './translate.ts'
 import {
   countUnread,
@@ -324,6 +324,30 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const cancelRef = useRef<{ cancelled: boolean } | null>(null)
   /** The last translation view, so turning the globe back on returns to it. */
   const lastViewRef = useRef<TranslationView>('trans')
+  /* ------------------------------------------------ the wall's card texts */
+
+  /** Whether the wall is showing translated cards (its own switch, its own memory). */
+  const [wallOn, setWallOn] = useState(false)
+  /** Side-by-side on the wall: the original stays under each translated field. */
+  const [wallBoth, setWallBoth] = useState(false)
+  const [wallMenu, setWallMenu] = useState(false)
+  const [wallAvailability, setWallAvailability] = useState<TranslationAvailability | null>(null)
+  /** Translated card fields, by entry id. */
+  const [cardTranslations, setCardTranslations] = useState<Record<string, { title?: string; summary?: string }>>({})
+  const [wallProgress, setWallProgress] = useState<{ done: number; total: number } | null>(null)
+  /** The card under the pointer: in translation-only view it peeks the original. */
+  const [hoverCard, setHoverCard] = useState<string | null>(null)
+  /** Entries whose fields still need translating (filled by the observer). */
+  const wallPendingRef = useRef<Set<string>>(new Set())
+  const wallRunningRef = useRef(false)
+  const wallCancelRef = useRef<{ cancelled: boolean } | null>(null)
+  /** One translator per source language, reused across passes. */
+  const wallSessionsRef = useRef<Map<string, TranslatorSessionLike>>(new Map())
+  /** The wall's scroll container, so cards are observed where they appear. */
+  const wallRef = useRef<HTMLDivElement | null>(null)
+  /** The rows the observer resolves ids against (kept fresh for the pass). */
+  const rowsRef = useRef<readonly ReaderRow[]>([])
+
   /** The class names `translate.ts` decorates the article with. */
   const translateClasses = useMemo<TranslateClasses>(
     () => ({
@@ -735,6 +759,159 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [translateClasses, translatePhase])
 
 
+  /* ---------------------------------------------------- the wall's own pass */
+
+  // The wall has no article to segment: a card's unit is a FIELD (title,
+  // summary), and the wall must translate lazily — a wall of forty cards is
+  // eighty fields, and firing them all at once would be a burst the sequential
+  // API cannot absorb. So: the browser's own IntersectionObserver feeds a queue,
+  // one pass drains it, and the translation memory makes a second pass free.
+  rowsRef.current = rows
+  const wallTranslateOffered = translator !== null && wallAvailability !== null && wallAvailability !== 'unavailable'
+
+  // Probe the browser once for the wall's pair (the wall has no single body, so
+  // English is the probe; a card in another language gets its own session below).
+  useEffect(() => {
+    if (view !== 'list' || translator === null || wallAvailability !== null) return undefined
+    let cancelled = false
+    void (async () => {
+      let best: TranslationAvailability = 'unavailable'
+      for (const targetLanguage of TARGET_CANDIDATES) {
+        try {
+          const answer = await translator.availability({ sourceLanguage: 'en', targetLanguage }) as TranslationAvailability
+          if (answer !== 'unavailable') { best = answer; break }
+        } catch {
+          // Try the next spelling.
+        }
+      }
+      if (!cancelled) setWallAvailability(best)
+    })()
+    return () => { cancelled = true }
+  }, [view, translator, wallAvailability])
+
+  /** A translator for one source language, created once and reused. */
+  const wallSession = useCallback(async (language: string): Promise<TranslatorSessionLike | null> => {
+    const api = translator
+    if (api === null) return null
+    const cached = wallSessionsRef.current.get(language)
+    if (cached !== undefined) return cached
+    const outcome: SessionOutcome = await createSession(api, {
+      sources: language === 'en' ? ['en'] : [language, 'en'],
+      targets: TARGET_CANDIDATES,
+    })
+    if (!outcome.ok) return null
+    wallSessionsRef.current.set(language, outcome.session)
+    return outcome.session
+  }, [translator])
+
+  /**
+   * Drain the pending queue: six cards at a time, grouped by detected language
+   * (a wall can mix them — that is the point of asking at all), one batch per
+   * group through the shared batching contract.
+   */
+  const runWallPass = useCallback(async () => {
+    if (wallRunningRef.current || translator === null) return
+    wallRunningRef.current = true
+    const cancel = wallCancelRef.current ?? { cancelled: false }
+    wallCancelRef.current = cancel
+    try {
+      while (!cancel.cancelled && wallPendingRef.current.size > 0) {
+        const ids = [...wallPendingRef.current].slice(0, 6)
+        for (const id of ids) wallPendingRef.current.delete(id)
+        const fields: { id: string; field: 'title' | 'summary'; text: string }[] = []
+        for (const id of ids) {
+          const row = rowsRef.current.find(candidate => candidate.entry.id === id)
+          if (row === undefined) continue
+          // Chinese cards (and Chinese fields inside a mixed card) are left
+          // exactly as they are: translating them to Chinese is not a feature.
+          if (!isTargetLanguage(row.entry.title)) fields.push({ id, field: 'title', text: row.entry.title })
+          const summary = row.entry.summary
+          if (summary !== undefined && summary.length > 0 && !isTargetLanguage(summary)) {
+            fields.push({ id, field: 'summary', text: summary })
+          }
+        }
+        if (fields.length === 0) continue
+        const groups = new Map<string, typeof fields>()
+        for (const field of fields) {
+          const detected = await detectSourceLanguage(field.text, 'en')
+          const key = detected === 'zh' ? 'en' : detected
+          groups.set(key, [...groups.get(key) ?? [], field])
+        }
+        for (const [language, group] of groups) {
+          if (cancel.cancelled) break
+          const session = await wallSession(language)
+          if (session === null) {
+            setWallAvailability('unavailable')
+            return
+          }
+          setWallProgress({ done: 0, total: group.length })
+          const outcome = await translateTexts(
+            group.map(field => field.text),
+            session,
+            () => cancel.cancelled,
+            (done, total) => setWallProgress({ done, total }),
+          )
+          if (cancel.cancelled) break
+          setCardTranslations(current => {
+            const next = { ...current }
+            for (const field of group) {
+              const value = outcome.translated.get(field.text)
+              if (value === undefined) continue
+              next[field.id] = { ...next[field.id], [field.field]: value }
+            }
+            return next
+          })
+        }
+      }
+    } finally {
+      wallRunningRef.current = false
+      setWallProgress(null)
+    }
+  }, [translator, wallSession])
+
+  // Enqueue the cards as they become visible. jsdom has no IntersectionObserver,
+  // and neither would a very old browser, so the fallback translates what is
+  // rendered — the pass is bounded per batch either way.
+  useEffect(() => {
+    if (!wallOn || translator === null) return undefined
+    const container = wallRef.current
+    const cards = container === null ? [] : [...container.querySelectorAll('[data-reader-entry]')]
+    const ids = cards.map(card => card.getAttribute('data-reader-entry') ?? '').filter(id => id !== '')
+    if (typeof IntersectionObserver === 'undefined') {
+      for (const id of ids) wallPendingRef.current.add(id)
+      void runWallPass()
+      return undefined
+    }
+    const observer = new IntersectionObserver(entries => {
+      let added = false
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const id = (entry.target as HTMLElement).getAttribute('data-reader-entry')
+        if (id !== null) { wallPendingRef.current.add(id); added = true }
+        observer.unobserve(entry.target)
+      }
+      if (added) void runWallPass()
+    }, { root: container, rootMargin: '120px' })
+    for (const card of cards) observer.observe(card)
+    return () => { observer.disconnect() }
+  }, [wallOn, translator, runWallPass, rows])
+
+  // Turning the wall's translation off cancels the pass and forgets nothing: the
+  // memory keeps what came back, so switching on again is instant.
+  useEffect(() => {
+    if (wallOn) return
+    if (wallCancelRef.current !== null) wallCancelRef.current.cancelled = true
+    wallCancelRef.current = null
+    wallPendingRef.current.clear()
+    setWallProgress(null)
+    setWallMenu(false)
+  }, [wallOn])
+
+  /** Unmount: stop the wall's pass as well as the article's. */
+  useEffect(() => () => {
+    if (wallCancelRef.current !== null) wallCancelRef.current.cancelled = true
+  }, [])
+
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
     actions.openEntry(row.entry.id, row.sourceId)
@@ -940,7 +1117,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   // Any menu/panel dismisses on the next click outside it — the host's own
   // menus behave that way, and a popover that outlives its context is a trap.
   useEffect(() => {
-    if (cardMenu === null && cardTag === null && !filterOpen && !translateMenu) return undefined
+    if (cardMenu === null && cardTag === null && !filterOpen && !translateMenu && !wallMenu) return undefined
     const dismiss = (event: MouseEvent): void => {
       const target = event.target as HTMLElement | null
       if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"], [class*="translateWrap"]') !== null) return
@@ -948,10 +1125,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       setCardTag(null)
       setFilterOpen(false)
       setTranslateMenu(false)
+      setWallMenu(false)
     }
     window.addEventListener('mousedown', dismiss)
     return () => window.removeEventListener('mousedown', dismiss)
-  }, [cardMenu, cardTag, filterOpen, translateMenu])
+  }, [cardMenu, cardTag, filterOpen, translateMenu, wallMenu])
 
 
 
@@ -1776,9 +1954,93 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             </div>
           )}
         </span>
+        {/* The wall's own translation switch. Separate from the detail view's on
+            purpose: they are two different reading surfaces, each remembers its
+            own state, and both share the one translation memory. Hidden when the
+            browser has no Translator API or not a single cached pair. */}
+        {wallTranslateOffered && (
+          <span className={css.translateWrap}>
+            <button
+              type="button"
+              className={`${css.tool}${wallOn ? ` ${css.toolOn}` : ''}`}
+              title={t('action.translate')}
+              aria-pressed={wallOn}
+              onClick={() => {
+                setSortOpen(false)
+                setFilterOpen(false)
+                if (wallOn) { setWallOn(false); return }
+                wallCancelRef.current = { cancelled: false }
+                setWallOn(true)
+                // Cards already on screen are queued by the observer effect; a
+                // wall that never scrolls still gets translated in one pass.
+                void runWallPass()
+              }}
+            >
+              <IconGlobeOutline14 size={15} />
+            </button>
+            {wallOn && (
+              <>
+                <button
+                  type="button"
+                  className={css.translateCaret}
+                  aria-expanded={wallMenu}
+                  title={t('translate.view')}
+                  onClick={() => { setWallMenu(open => !open) }}
+                >
+                  <IconChevronDownOutline14 size={10} />
+                </button>
+                {wallMenu && (
+                  <div className={css.translateMenu} role="menu">
+                    <div className={css.translateMenuHead}>{t('translate.local')}</div>
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={!wallBoth}
+                      className={css.translateMenuItem}
+                      onClick={() => { setWallMenu(false); setWallBoth(false) }}
+                    >
+                      <span className={css.translateCheck}>{!wallBoth ? '✓' : ''}</span>
+                      <span className={css.translateMenuLabel}>{t('translate.onlyTranslation')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={wallBoth}
+                      className={css.translateMenuItem}
+                      onClick={() => { setWallMenu(false); setWallBoth(true) }}
+                    >
+                      <span className={css.translateCheck}>{wallBoth ? '✓' : ''}</span>
+                      <span className={css.translateMenuLabel}>{t('translate.bilingual')}</span>
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </span>
+        )}
       </div>
 
-      <div className={css.scroll}>
+      {wallProgress !== null && (
+        <div className={css.translateStatus}>
+          <span><b>{t('translate.working')}</b>{` ${wallProgress.done}/${wallProgress.total}`}</span>
+          <span className={css.translateBar}>
+            <i style={{ width: `${wallProgress.total > 0 ? Math.round((wallProgress.done / wallProgress.total) * 100) : 0}%` }} />
+          </span>
+          <button
+            type="button"
+            className={css.incompleteLink}
+            onClick={() => {
+              if (wallCancelRef.current !== null) wallCancelRef.current.cancelled = true
+              wallPendingRef.current.clear()
+              setWallProgress(null)
+            }}
+          >
+            {t('action.cancel')}
+          </button>
+        </div>
+      )}
+
+      <div className={css.scroll} ref={wallRef}>
         {loading && <div className={css.state}>{t('state.loading')}</div>}
         {!loading && error !== null && <div className={css.state}><b>{t('state.error')}</b>{error}</div>}
         {!loading && error === null && sources.length === 0 && (
@@ -1823,11 +2085,25 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         )}
         {!loading && rows.length > 0 && (
           <div className={css.list}>
-            {rows.map(row => (
+            {rows.map(row => {
+              // The card's text box is FIXED (two clamped lines per field, see
+              // the CSS), because Chinese and English wrap differently: swapping
+              // languages must not resize the card or shift the grid.
+              const card = cardTranslations[row.entry.id]
+              const peeking = wallOn && !wallBoth && hoverCard === row.entry.id
+              const titleText = wallOn && !peeking && card?.title !== undefined ? card.title : row.entry.title
+              const summary = row.entry.summary
+              const summaryText = wallOn && !peeking && card?.summary !== undefined ? card.summary : summary
+              const originalTitle = wallOn && wallBoth && card?.title !== undefined ? row.entry.title : null
+              const originalSummary = wallOn && wallBoth && card?.summary !== undefined ? summary : null
+              return (
               <div
                 key={row.entry.id}
                 className={css.card}
                 data-reader-entry={row.entry.id}
+                data-translated={wallOn && card !== undefined ? '1' : undefined}
+                onMouseEnter={() => { if (wallOn && !wallBoth) setHoverCard(row.entry.id) }}
+                onMouseLeave={() => { setHoverCard(current => (current === row.entry.id ? null : current)) }}
                 // Read entries keep their place (never hidden), but they read a
                 // step quieter than unread ones: that hierarchy is what makes a
                 // wall of cards scannable, and it is the feed-reader habit.
@@ -1855,8 +2131,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                     {whenLabel(t, row.entry.publishedAt)}
                   </span>
                 </span>
-                <span className={css.title}>{row.entry.title}</span>
-                {row.entry.summary !== undefined && <span className={css.summary}>{row.entry.summary}</span>}
+                <span className={css.title}>{titleText}</span>
+                {originalTitle !== null && <span className={css.cardOrig}>{originalTitle}</span>}
+                {summary !== undefined && <span className={css.summary}>{summaryText}</span>}
+                {originalSummary !== null && <span className={css.cardOrig}>{originalSummary}</span>}
                 <span className={css.tags}>
                   {(row.entry.tags ?? []).slice(0, 2).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
                   {row.entry.author !== undefined && <span className={css.author}>{row.entry.author}</span>}
@@ -1883,7 +2161,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 </span>
                 <span className={css.chevron}>{glyph('chevron', 13)}</span>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

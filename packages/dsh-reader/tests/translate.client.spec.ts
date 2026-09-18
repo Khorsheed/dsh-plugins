@@ -25,6 +25,7 @@ import {
   detectLanguageDetector,
   detectSourceLanguage,
   detectTranslator,
+  isTargetLanguage,
   isUnsupported,
   remembered,
   restoreArticle,
@@ -34,6 +35,7 @@ import {
   setView,
   splitSentences,
   toggleSegment,
+  translateTexts,
   type BuiltArticle,
   type TranslateClasses,
   type TranslatorLike,
@@ -361,6 +363,64 @@ describe('the translation driver', () => {
     expect(root.textContent).toContain('译:Sentence number 12 is here.')
     expect(root.textContent).toContain('Sentence number 15 is here.')
     expect(root.textContent).not.toContain('译:Sentence number 15 is here.')
+  })
+})
+
+describe('whole-string translation (the wall)', () => {
+  /** A session that marks every part, and counts the requests it saw. */
+  function marker(): TranslatorSessionLike & { calls: string[] } {
+    const calls: string[] = []
+    return {
+      calls,
+      inputQuota: 10_000,
+      measureInputUsage: async (text: string) => text.length,
+      translate: async (payload: string) => {
+        calls.push(payload)
+        return payload.split(UNIT_SEPARATOR).map(part => `译：${part}`).join(UNIT_SEPARATOR)
+      },
+    }
+  }
+
+  it('skips anything already in the target language', () => {
+    expect(isTargetLanguage('这是一条中文标题')).toBe(true)
+    expect(isTargetLanguage('a')).toBe(true)
+    expect(isTargetLanguage('Anthropic 的对齐研究报告（中文摘要）')).toBe(true)
+    expect(isTargetLanguage('A short English title')).toBe(false)
+  })
+
+  it('translates the list in one batch, skips Chinese, and remembers the result', async () => {
+    clearMemory()
+    const session = marker()
+    const outcome = await translateTexts(['First title', 'Second title', '这是一条中文'], session, () => false)
+    expect([...outcome.translated.entries()]).toEqual([['First title', '译：First title'], ['Second title', '译：Second title']])
+    expect(outcome.remembered).toBe(0)
+    expect(outcome.failed).toBe(0)
+    // One request for two fields; the Chinese field never left the browser.
+    expect(session.calls).toHaveLength(1)
+    // A second pass over the same fields costs no request at all — this is what
+    // makes scrolling up and down a translated wall free.
+    const again = await translateTexts(['First title'], session, () => false)
+    expect(again.remembered).toBe(1)
+    expect(session.calls).toHaveLength(1)
+  })
+
+  it('falls back one at a time when the separator is eaten, and counts a failure', async () => {
+    clearMemory()
+    let call = 0
+    const session: TranslatorSessionLike = {
+      inputQuota: 10_000,
+      measureInputUsage: async (text: string) => text.length,
+      translate: async (payload: string) => {
+        call += 1
+        if (call === 1) return payload.split(UNIT_SEPARATOR).join(' ')
+        if (payload === 'Second title') throw new Error('provider said no')
+        return `译：${payload}`
+      },
+    }
+    const outcome = await translateTexts(['First title', 'Second title'], session, () => false)
+    expect(outcome.translated.get('First title')).toBe('译：First title')
+    expect(outcome.translated.has('Second title')).toBe(false)
+    expect(outcome.failed).toBe(1)
   })
 })
 

@@ -24,6 +24,16 @@ The feature lives entirely in the **browser half**. A globe in the detail bar is
 - **Working states are honest.** A first use downloads a language pack: the reader sees the download progress and can cancel. A failed `create()` shows the reason and leaves the article untouched (no segmentation, no half-translated page). A run in which every batch failed says so and offers the retry in the menu.
 - **Chinese only, for now.** The target language is a parameter everywhere (the session request, the availability probe, the copy) and the menu is a constant; a language picker is a menu change, not a rewrite.
 
+## The wall translates too, per field and lazily
+
+A wall of English cards is where the reader scans, so the same on-device machinery runs there (0.2.0 shipped it after the article, and it shares the article's translation memory):
+
+- **The unit is a FIELD, not a sentence.** A card's title and summary are whole strings; there is no DOM to segment, so `translateTexts` runs the article's batching contract over plain strings — one request per batch, accepted only when the same number of parts comes back, a rejected batch re-sent one string at a time, results remembered by original text.
+- **Language is decided per field, synchronously.** `isTargetLanguage` skips anything whose CJK ratio says it is already Chinese (the wall MIXES languages, and one card can mix them: a Chinese title with an English summary). The cheap ratio test exists on purpose — the alternative was a Language Detector round trip per field for a decision a character count gets right; the detector is still used to pick the SOURCE language of a field that does need translating.
+- **Lazy, because a wall is a burst.** The browser's own `IntersectionObserver` feeds a queue with the cards that entered the viewport (six cards per pass, one translator per detected language, reused across passes). A wall that never scrolls still gets one pass; jsdom and any browser without the observer translate what is rendered. Scrolling back is free, and opening an entry does not re-translate its title, because the memory is shared with the article.
+- **The card's text box is FIXED, and that is the point.** The reader raised it before the code existed: Chinese and English wrap to different line counts, and a card grid that re-flows on hover is unusable. Title and summary each reserve two clamped lines (`min-height` = the clamp's line count × line-height) with `overflow-wrap: anywhere`, so the hover peek (a translated card returns to its original under the pointer) cannot change a card's height at all. Side by side is the one state that makes the grid taller, and it is a mode the reader chooses, not a hover that follows the pointer.
+- **Two switches, one memory.** The wall's globe is separate from the detail view's — two reading surfaces, each remembering its own state — but both write into the same sentence memory, which is what makes the shared behaviour invisible and cheap.
+
 ## How a translation is applied
 
 1. `buildArticle(root, classes)` walks the article's text nodes, skips code/pre and anything that is not prose, splits each run into sentences, and replaces the run with spans (keeping the leading/trailing whitespace in place so the join is exact). It is idempotent and records what it needs to undo itself.
@@ -42,7 +52,9 @@ The reveal's own typography and its margin relationship are pinned too (13.5px �
 
 The same two files also pin the session-creation chain: the next target spelling is tried when a pair is rejected, the detected source is tried before the fallback, a `NotSupportedError` on every pair is reported as permanent with the attempted pairs, a network failure is not, an already-`unavailable` pair is skipped, the language probe prefers a confident detection and otherwise falls back, and the pane hides the globe after an unsupported failure while a mere pack failure keeps it.
 
-`pnpm --filter @khorsheed/dsh-reader test`: 164 passed, 9 files. The bundle was rebuilt (tsc + tsdown) with the new module and CSS present in `lib/client.js`.
+The wall has its own coverage: the field-level language skip, one-batch-then-remember, the separator fallback with a counted failure, and two pane tests — English cards translate while Chinese and mixed cards keep their Chinese fields, switching the switch back restores the originals, and the side-by-side view puts each original under its translation.
+
+`pnpm --filter @khorsheed/dsh-reader test`: 175 passed, 9 files. The bundle was rebuilt (tsc + tsdown) with the new module and CSS present in `lib/client.js`.
 
 ## Alternatives considered
 

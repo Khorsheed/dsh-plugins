@@ -672,18 +672,21 @@ export function toggleSegment(built: BuiltArticle, segment: BuiltSegment, classe
   }
 }
 
+/** Remember one translation, evicting oldest-first past the memory's cap. */
+function remember(text: string, translated: string): void {
+  if (text.length === 0 || MEMORY.has(text)) return
+  MEMORY.set(text, translated)
+  if (MEMORY.size > MEMORY_MAX_ENTRIES) {
+    const oldest = MEMORY.keys().next().value
+    if (oldest !== undefined) MEMORY.delete(oldest)
+  }
+}
+
 /** Record a translated unit: in the DOM, and in the translation memory. */
 export function applyTranslation(built: BuiltArticle, segment: BuiltSegment, translated: string): void {
   segment.translated = translated
   if (built.view !== 'orig') segment.span.textContent = translated + segment.tail
-  const key = segment.original
-  if (key.length > 0 && !MEMORY.has(key)) {
-    MEMORY.set(key, translated)
-    if (MEMORY.size > MEMORY_MAX_ENTRIES) {
-      const oldest = MEMORY.keys().next().value
-      if (oldest !== undefined) MEMORY.delete(oldest)
-    }
-  }
+  remember(segment.original, translated)
 }
 
 /** A remembered translation for this sentence, when one exists. */
@@ -694,6 +697,143 @@ export function remembered(text: string): string | undefined {
 /** Drop the translation memory (the specs call this between cases). */
 export function clearMemory(): void {
   MEMORY.clear()
+}
+
+/* ------------------------------------------------------- text (not DOM) units */
+
+/**
+ * True when a string is already (mostly) the target language, so translating it
+ * would be Chinese-into-Chinese.
+ *
+ * The wall is where this matters: a wall mixes Chinese and English entries, and
+ * one card can even mix them field by field (a Chinese title with an English
+ * summary). The ratio mirrors the pane's own script test, and it is deliberately
+ * the CHEAP synchronous answer — the alternative was a Language Detector round
+ * trip per field for a decision a character count already gets right.
+ *
+ * @param text - the field's text.
+ * @returns true when the field should be left alone.
+ */
+export function isTargetLanguage(text: string): boolean {
+  const trimmed = text.trim()
+  if (trimmed.length < 2) return true
+  const cjk = trimmed.match(/[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g)
+  return (cjk?.length ?? 0) / trimmed.length > 0.2
+}
+
+/** The outcome of translating a list of strings. */
+export interface TextsOutcome {
+  /** Original → translation, for every string that came back. */
+  readonly translated: ReadonlyMap<string, string>
+  /** How many strings were already remembered (no request needed). */
+  readonly remembered: number
+  /** How many strings could not be translated at all. */
+  readonly failed: number
+}
+
+/**
+ * Translate a list of whole strings — the wall's cards, where a field is the
+ * unit and there is no DOM to segment.
+ *
+ * The batching contract is the article's, unchanged: sentences joined by the
+ * separator, accepted only when the same number of parts comes back, and a
+ * rejected batch re-sent one string at a time so the fallback gives up
+ * granularity rather than correctness. Results land in the same translation
+ * memory the article uses, so a card title translated here is not translated
+ * again when the same entry is opened.
+ *
+ * @param texts - the strings to translate, in order.
+ * @param session - a translator for this source language.
+ * @param cancelled - checked between batches.
+ * @param onProgress - called with (done, total) as results land.
+ * @returns the translations, the remembered count and the failures.
+ */
+export async function translateTexts(
+  texts: readonly string[],
+  session: TranslatorSessionLike,
+  cancelled: () => boolean,
+  onProgress?: (done: number, total: number) => void,
+): Promise<TextsOutcome> {
+  const translated = new Map<string, string>()
+  const unique = [...new Set(texts.filter(text => text.length > 0 && !isTargetLanguage(text)))]
+  const total = unique.length
+  let done = 0
+  let remembered = 0
+  let failed = 0
+  const report = (): void => { onProgress?.(done, total) }
+  const pending: string[] = []
+  for (const text of unique) {
+    const hit = MEMORY.get(text)
+    if (hit !== undefined) {
+      translated.set(text, hit)
+      done += 1
+      remembered += 1
+    } else {
+      pending.push(text)
+    }
+  }
+  report()
+  let batch: string[] = []
+  let chars = 0
+  const flush = async (): Promise<void> => {
+    if (batch.length === 0) return
+    const current = batch
+    batch = []
+    chars = 0
+    if (cancelled()) return
+    const parts = await translateBatch(current, session)
+    if (parts !== null) {
+      current.forEach((text, index) => {
+        const value = parts[index]!.trim()
+        translated.set(text, value)
+        remember(text, value)
+        done += 1
+      })
+      report()
+      return
+    }
+    for (const text of current) {
+      if (cancelled()) return
+      try {
+        const value = (await session.translate(text)).trim()
+        translated.set(text, value)
+        remember(text, value)
+        done += 1
+      } catch {
+        failed += 1
+      }
+      report()
+    }
+  }
+  for (const text of pending) {
+    if (cancelled()) break
+    if (batch.length > 0 && (chars + text.length > BATCH_MAX_CHARS || batch.length >= BATCH_MAX_UNITS)) await flush()
+    if (cancelled()) break
+    batch.push(text)
+    chars += text.length
+  }
+  await flush()
+  return { translated, remembered, failed }
+}
+
+/**
+ * One batched request, or null when the separator did not survive (the caller
+ * falls back to single requests, which cannot be mis-aligned).
+ */
+async function translateBatch(texts: readonly string[], session: TranslatorSessionLike): Promise<string[] | null> {
+  if (texts.length === 1) {
+    try {
+      return [await session.translate(texts[0]!)]
+    } catch {
+      return null
+    }
+  }
+  try {
+    const parts = (await session.translate(texts.join(UNIT_SEPARATOR))).split(UNIT_SEPARATOR)
+    return parts.length === texts.length ? parts : null
+  } catch {
+    return null
+  }
 }
 
 /* --------------------------------------------------------------- the driver */
@@ -748,14 +888,8 @@ export async function runTranslation(options: RunTranslationOptions): Promise<{ 
     batch = []
     chars = 0
     if (cancelled()) return
-    const payload = current.map(segment => segment.original).join(UNIT_SEPARATOR)
-    let parts: string[] | null = null
-    try {
-      parts = (await session.translate(payload)).split(UNIT_SEPARATOR)
-    } catch {
-      parts = null
-    }
-    if (parts !== null && parts.length === current.length) {
+    const parts = await translateBatch(current.map(segment => segment.original), session)
+    if (parts !== null) {
       current.forEach((segment, index) => {
         applyTranslation(built, segment, parts![index]!.trim())
         done += 1
