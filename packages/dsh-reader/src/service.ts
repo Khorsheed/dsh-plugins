@@ -42,7 +42,7 @@ import {
   isRetryablePreviewFailure,
   linkEntryId,
   DEFAULT_CACHE_POLICY,
-  MAX_CACHED_BODY_CHARS,
+  INLINE_BODY_MAX_CHARS,
   type ReaderAddFailure,
   type ReaderAddOutcome,
   type ReaderAddRefusal,
@@ -506,6 +506,11 @@ export class ReaderService {
     const cached = doc.annotations?.[request.entryId]?.body
     if (cached !== undefined) {
       const fresh = isFresh(cached.expiresAt)
+      // A large body lives in `bodies/`; a missing file means no cache, and the
+      // view then offers the fetch rather than pretending to have the text.
+      const html = cached.file === undefined
+        ? cached.html
+        : (fresh && cached.url === request.url ? this.store.readBody(cached.file) : undefined)
       return {
         entryId: request.entryId,
         cached: true,
@@ -514,7 +519,7 @@ export class ReaderService {
         fetchedAt: cached.fetchedAt,
         ...(cached.truncated === true ? { truncated: true } : {}),
         ...(cached.scriptFigures === undefined ? {} : { scriptFigures: cached.scriptFigures }),
-        ...(fresh && cached.url === request.url ? { html: cached.html } : {}),
+        ...(html === undefined || !fresh || cached.url !== request.url ? {} : { html }),
       }
     }
     if (request.feedHtml !== undefined && request.feedHtml.length > 0) {
@@ -591,28 +596,15 @@ export class ReaderService {
       await this.recordFetchFailure(request.entryId, 'empty extraction')
       return { entryId: request.entryId, cached: false, fresh: false, fromFeed: false, error: 'empty extraction' }
     }
-    // A body past the cache budget is served to the caller that fetched it and
-    // deliberately not stored: the state document is one JSON file, rewritten
-    // whole on every mutation, and a handful of multi-megabyte articles would
-    // make every reader operation pay for them.
-    if (html.length > MAX_CACHED_BODY_CHARS) {
-      return {
-        entryId: request.entryId,
-        cached: false,
-        fresh: true,
-        fromFeed: false,
-        html,
-        tooLarge: true,
-        ...(request.scriptFigures === undefined || request.scriptFigures === 0
-          ? {}
-          : { scriptFigures: request.scriptFigures }),
-      }
-    }
     const doc = await this.currentDoc()
     const ttlHours = doc.cache?.ttlHours ?? DEFAULT_CACHE_POLICY.ttlHours
     const now = new Date()
+    // A large body goes to its own file and the document keeps the file name and
+    // its size: the cache policy (ttl, maxEntries) then governs it exactly like
+    // an inline body, and `state.json` stays small.
+    const sidecar = html.length > INLINE_BODY_MAX_CHARS ? this.store.writeBody(request.entryId, html) : undefined
     const body: NonNullable<ReaderEntryAnnotation['body']> = {
-      html,
+      ...(sidecar === undefined ? { html } : { file: sidecar, chars: html.length }),
       fetchedAt: now.toISOString(),
       // 0 = keep until the budget evicts it; a far-future date keeps the
       // freshness check a single comparison instead of a special case.
@@ -641,7 +633,7 @@ export class ReaderService {
       cached: true,
       fresh: true,
       fromFeed: false,
-      html: body.html,
+      html,
       fetchedAt: body.fetchedAt,
       ...(body.truncated === true ? { truncated: true } : {}),
       ...(body.scriptFigures === undefined ? {} : { scriptFigures: body.scriptFigures }),

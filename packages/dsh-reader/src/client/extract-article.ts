@@ -104,7 +104,7 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     return { ok: false, error: 'no text-bearing block found' }
   }
 
-  const scriptFigures = dropScriptFigures(scored.element)
+  const scriptFigures = countScriptFigures(scored.element)
   trimLeadingChrome(scored.element, doc)
   // The title block is a custom element, so it has no tag of its own: the
   // normalizer UNWRAPS it and its `<br>`s land at the front of the body. Four
@@ -192,24 +192,28 @@ function trimLeadingChrome(root: Element, doc: Document): void {
 const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'blockquote', 'pre', 'ul', 'ol'])
 
 /**
- * Remove figures whose picture is not in the markup, and count them.
+ * Count the figures whose picture is not in the markup.
  *
  * "No picture" means no `<img>`, `<svg>`, `<canvas>`, `<video>` or `<picture>`
- * anywhere inside: the page renders that illustration at runtime. The caption
- * goes with it — a caption under nothing is what makes a reader conclude the
- * fetch failed rather than that the page is script-drawn.
+ * anywhere inside: the page renders that illustration at runtime.
  *
- * @param root - the element the body was extracted from (mutated in place).
- * @returns the number of figures removed.
+ * The figures themselves are KEPT, caption included. Dropping them was tried
+ * and reverted: a caption is text the page published — it says what the figure
+ * shows and carries its number — and hiding it turns "this picture cannot be
+ * fetched" into "this paragraph lost its data". The count travels to the detail
+ * view, which explains once, above the body, why the captions below have no
+ * picture under them.
+ *
+ * @param root - the element the body was extracted from.
+ * @returns the number of figures whose picture the fetch could not bring.
  */
-function dropScriptFigures(root: Element): number {
-  let dropped = 0
+function countScriptFigures(root: Element): number {
+  let count = 0
   for (const figure of Array.from(root.querySelectorAll('figure'))) {
     if (figure.querySelector('img, svg, canvas, video, picture') !== null) continue
-    figure.remove()
-    dropped += 1
+    count += 1
   }
-  return dropped
+  return count
 }
 
 /**

@@ -188,11 +188,12 @@ describe('normalizeInline', () => {
 })
 
 describe('figures the page draws at runtime', () => {
-  it('drops a caption-only figure and counts it', () => {
+  it('counts a caption-only figure and KEEPS its caption', () => {
     // Measured on transformer-circuits.pub: `<figure data-fignum="2">` holds an
     // empty `<div class='intro-structural'>` and a caption; the illustration is
-    // painted by the page's scripts, which a fetch never runs. A caption under
-    // nothing reads as "the plugin lost my image".
+    // painted by the page's scripts, which a fetch never runs. The caption is
+    // text the page published — dropping it (tried, reverted) turns "this
+    // picture cannot be fetched" into "this paragraph lost its data".
     const html = `<html><body><article><p>${'text '.repeat(60)}</p>`
       + `<figure data-fignum="2"><div class="intro-structural"></div><figcaption>Figure 2: a picture drawn at runtime.</figcaption></figure>`
       + `<figure><img src="./png/pic.png"><figcaption>Figure 3: a real image.</figcaption></figure>`
@@ -201,7 +202,7 @@ describe('figures the page draws at runtime', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.scriptFigures).toBe(1)
-    expect(result.html).not.toContain('drawn at runtime')
+    expect(result.html).toContain('a picture drawn at runtime')
     expect(result.html).toContain('a real image')
     expect(result.html).toContain('https://example.com/paper/png/pic.png')
   })

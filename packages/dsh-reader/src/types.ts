@@ -361,18 +361,17 @@ export const MAX_BODY_CHARS_PER_SOURCE = 2 * 1024 * 1024
 export const MAX_TOTAL_BODY_CHARS = 12 * 1024 * 1024
 
 /**
- * How large an EXTRACTED article body may be before it is served but not cached.
+ * How large an extracted body may be before it lives in its own file.
  *
- * The subscription budgets above bound feed payloads; this one bounds what an
- * entry's fetched body may add to `state.json`. Measured: a research paper with
- * its figures inlined as base64 (transformer-circuits.pub's emotions paper is a
- * 41 MB HTML document) extracts to tens of megabytes, and the state document is
- * read and rewritten as a whole on every mutation — so a few such articles
- * would turn every reader operation into a multi-megabyte JSON round trip.
- * Past this budget the body is still shown for the session it was fetched in,
- * and the reader is told it was not kept.
+ * `state.json` is read and rewritten as a whole on every mutation, so a research
+ * paper whose figures are inlined as base64 (transformer-circuits.pub's emotions
+ * paper is a 41.8 MB HTML document and extracts to tens of megabytes) would make
+ * every reader operation pay a multi-megabyte JSON round trip. Above this
+ * threshold the body is written to one file under `bodies/` and the document
+ * keeps only its metadata — so the cache policy (`ttlHours`, `maxEntries`) still
+ * governs it exactly like an inline body, and eviction deletes the file.
  */
-export const MAX_CACHED_BODY_CHARS = 4 * 1024 * 1024
+export const INLINE_BODY_MAX_CHARS = 256 * 1024
 
 /**
  * Build a display label for a source from its URL: the registrable-ish host
@@ -491,8 +490,17 @@ function hash32(input: string): number {
  * fetch.
  */
 export interface ReaderEntryBody {
-  /** Whitelist-normalized article markup, ready for the detail view. */
-  readonly html: string
+  /** Whitelist-normalized article markup, when it is small enough to inline. */
+  readonly html?: string
+  /**
+   * The `bodies/` file holding this body, when it is too large to inline.
+   *
+   * A bare file name, never a path: the store owns the directory, and a document
+   * that carried an absolute path would break the moment the state root moves.
+   */
+  readonly file?: string
+  /** The body's character count, so the document can report its size without it. */
+  readonly chars?: number
   /** When it was fetched (ISO-8601), for the "fetched just now" line and pruning. */
   readonly fetchedAt: string
   /**
@@ -543,8 +551,6 @@ export interface ReaderEntryBodyView {
   readonly truncated?: boolean
   /** Figures this page draws with scripts — the detail view says so. */
   readonly scriptFigures?: number
-  /** True when the body was served but deliberately NOT cached (see the budget). */
-  readonly tooLarge?: boolean
   /** Why a fetch could not produce a body, when one was attempted. */
   readonly error?: string
 }
