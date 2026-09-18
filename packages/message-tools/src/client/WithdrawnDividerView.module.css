@@ -97,6 +97,12 @@
   padding-left: 8px;
 }
 
+/* User images replayed inside one entry: the gallery slot handles its own
+   right-alignment (align="end"); this wrapper only adds the row gap. */
+.entryImages {
+  margin-top: 4px;
+}
+
 .entryAssistant {
   border-left: 2px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2, var(--dsw-alias-label-primary-dimmed)));
   padding-left: 8px;
