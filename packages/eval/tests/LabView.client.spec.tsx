@@ -295,7 +295,14 @@ describe('LabView detail', () => {
 
     // ② the readiness BADGE, not six paragraphs of probe output: one chip per
     // group that failed, with the count and the way to re-read it.
-    expect(screen.getByText('ready.failedCount {"count":1,"total":1}')).toBeTruthy()
+    //
+    // THREE of three, not one of one: the badge counts the subjects the PLAN
+    // names (two players and a judge), and the readiness records only cover
+    // what the run actually probed — cond-b. A group nothing probed used to
+    // be absent from the count rather than a cross in it, so an experiment
+    // whose players were never resolved could read 「✓ 环境就绪」
+    // (I5·T67 · W12).
+    expect(screen.getByText('ready.failedCount {"count":3,"total":3}')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'ready.recheck' })).toBeTruthy()
 
     // ③ everything a reader needs once: folded, and still verbatim inside.

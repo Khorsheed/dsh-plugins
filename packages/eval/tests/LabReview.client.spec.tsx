@@ -465,6 +465,81 @@ describe('the plan-review page', () => {
   })
 })
 
+describe('the readiness badge names every subject, and why each one is not ready', () => {
+  it('counts the groups the PLAN names, not only the ones something resolved', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.design')
+    await screen.findAllByText('codex-exec')
+
+    // THREE subjects — two players and the judge — because the count walks the
+    // plan's own list. It used to walk whatever had been resolved, so a group
+    // nothing knew about vanished out of the denominator instead of appearing
+    // as a cross in it (I5·T67 · W12).
+    expect(await screen.findByText('ready.failedCount {"count":1,"total":3}')).toBeTruthy()
+  })
+
+  it('每个红叉自己说为什么 — read from the review\'s structure, not from its English', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.design')
+    await screen.findAllByText('codex-exec')
+
+    // codex-exec: no lock beside the declaration, and no scoped home was ever
+    // hashed. Both facts are structural fields of the review row, so the words
+    // do not depend on parsing a host sentence (W15) — the cross used to carry
+    // a name and nothing else, with the reasons loose in validate's English
+    // warnings below it.
+    expect(screen.getByText('why.homeSha · why.lock')).toBeTruthy()
+  })
+
+  it('a subject the registry listing does not carry is a ROW, not a gap', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.design')
+    await screen.findAllByText('codex-exec')
+
+    // The table reads the REGISTRY and the badge reads the REVIEW; a subject
+    // the registry does not list used to be filtered away silently, so a
+    // one-row table stood for a three-subject experiment (W12). It cannot be
+    // picked for a diff and cannot be provisioned — there is no declaration to
+    // do either to — so it carries dashes and the one word there is about it.
+    const row = screen.getAllByText('judge-a').map(node => node.closest('[data-absent]')).find(Boolean)
+    expect(row).toBeTruthy()
+    expect(row?.querySelector('button')).toBeNull()
+    expect(row?.textContent).toContain('conditions.missing')
+  })
+
+  it('a plan whose file is gone gets the three-part seat, not its English sentence', async () => {
+    const h = makeHarness({
+      review: {
+        ...REVIEW,
+        ok: false,
+        errors: 1,
+        checks: [{
+          severity: 'error',
+          code: 'PLAN_UNREADABLE',
+          // A path shaped like the real one, without being one: repo hygiene
+          // refuses literal absolute paths anywhere in the tree, and it is
+          // right to — this is a fixture, not a machine.
+          message: 'cannot read plan file: ~/scratch/ds/plans/t60-g11-host.json',
+        }],
+      },
+    })
+    renderView(h)
+    await openPage(h, 'page.design')
+
+    // A sentence about the plan, a sentence about what to do, and the host's
+    // own text plus the absolute path folded away (§九 · W11).
+    expect(await screen.findByText('error.planUnreadable')).toBeTruthy()
+    expect(screen.getByText('error.planUnreadable.fix')).toBeTruthy()
+    const raw = screen.getByText(/cannot read plan file/)
+    expect(raw.closest('details')).not.toBeNull()
+    // …and it is NOT also sitting in the check list as a line of its own.
+    expect(screen.queryAllByText(/cannot read plan file/)).toHaveLength(1)
+  })
+})
+
 describe('the planned grid', () => {
   it('draws the experiment BEFORE it runs — items down, comparison groups across, 计划 n 次 in every seat', async () => {
     const h = makeHarness()
@@ -587,7 +662,7 @@ describe('the conditions page', () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByText('codex-exec')
+    await screen.findAllByText('codex-exec')
     expect(screen.getByText(/conditions.lockNone/)).toBeTruthy()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
@@ -613,7 +688,9 @@ describe('the conditions page', () => {
     })
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByText('codex-exec')
+    // The id is on the table row, the grid heading AND its readiness cross,
+    // so waiting for «exactly one» is waiting for a page that never settles.
+    await screen.findAllByText('codex-exec')
 
     fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
 

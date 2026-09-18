@@ -47,6 +47,16 @@ import css from './LabView.module.css'
  * @param filter - the chip that is pressed.
  * @returns whether the row is kept.
  */
+/**
+ * The ledger states in which nothing more will happen to a cell.
+ *
+ * `inStateMs` is measured from the last transition to NOW, which is a useful
+ * number while a cell is moving and a misleading one once it has stopped: a
+ * released cell reads 「已释放 · 2 天 1 小时」, and the 2 days are how long ago
+ * the run ended rather than anything the cell spent (I5·T67 · W4).
+ */
+const TERMINAL_STATES: ReadonlySet<string> = new Set(['archived', 'releasable', 'released', 'halted'])
+
 export function passesFilter(row: Pick<EvalCellRow, 'state' | 'bucket'>, filter: RunFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'failed') return row.state === 'halted'
@@ -171,6 +181,11 @@ function RecordDetail(props: {
   // that says this cell stopped rather than finished.
   const halted = cell?.state === 'halted'
   const segments = timelineOf(attempt?.history ?? [])
+  // The scale the timeline bars are drawn against: this record's own longest
+  // segment. Across records the units are the same but the runs are not, so a
+  // shared scale would say something about other cells that this panel is not
+  // showing.
+  const longest = Math.max(0, ...segments.map(segment => segment.ms ?? 0))
 
   return (
     <div className={css.drawer}>
@@ -210,9 +225,21 @@ function RecordDetail(props: {
                   <div className={css.timeline}>
                     {segments.map((segment, index) => (
                       <div key={`${segment.state}:${String(index)}`} className={css.timelineRow}>
-                        <Chip tone={stageTone(segment.state)} title={segment.state}>
+                        <Chip tone={stageTone(segment.state)} title={segment.state} className={css.timelineChip}>
                           <Word phrase={stagePhrase(segment.state)} t={t} />
                         </Chip>
+                        {/* As long as the state lasted, against the longest
+                            state of THIS record. A segment the ledger did not
+                            time draws no bar at all — an unmeasured state and
+                            an instant one must not look the same. */}
+                        <span className={css.timelineTrack}>
+                          {segment.ms !== null && longest > 0 && (
+                            <span
+                              className={css.timelineBar}
+                              style={{ width: `${String(Math.round((segment.ms / longest) * 100))}%` }}
+                            />
+                          )}
+                        </span>
                         <span className={css.dim}>
                           {segment.ms === null ? '—' : <Duration ms={segment.ms} t={t} />}
                         </span>
@@ -513,7 +540,17 @@ export function RunsPage(props: {
                     )}
                   </span>
                   <span className={css.colVerdict}><VerdictChip annotations={row.annotations} t={t} /></span>
-                  <span className={css.colDuration}><Duration ms={row.inStateMs} t={t} /></span>
+                  {/* A cell that is FINISHED has not been «in this state» for
+                      two days in any sense a reader cares about — the ledger
+                      measures from the last transition to now, and for a
+                      terminal state that is just how long ago the run ended.
+                      An em dash says «nothing is elapsing here» (W4); the time
+                      a finished record actually took is on its timeline. */}
+                  <span className={css.colDuration}>
+                    {TERMINAL_STATES.has(row.state)
+                      ? <span className={css.dim} title={t('runs.settled')}>—</span>
+                      : <Duration ms={row.inStateMs} t={t} />}
+                  </span>
                   <span className={css.colAttempt}>{row.attempt}</span>
                 </button>
               ))}
