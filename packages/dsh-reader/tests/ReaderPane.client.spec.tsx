@@ -926,6 +926,9 @@ describe('on-device translation', () => {
     fireEvent.click(units[0] as HTMLElement)
     expect(ui.container.querySelector('[data-reader-reveal]')?.textContent).toBe('First sentence here.')
     expect(units[0]?.getAttribute('data-open')).toBe('1')
+    // …and the pairing is marked on BOTH sides: the original line is lit too,
+    // which is what the reader looks for when they click a sentence.
+    expect(ui.container.querySelector('[data-reader-reveal] [data-reader-sentence]')?.getAttribute('data-open')).toBe('1')
     // …and clicking it again takes it away.
     fireEvent.click(units[0] as HTMLElement)
     expect(ui.container.querySelector('[data-reader-reveal]')).toBeNull()

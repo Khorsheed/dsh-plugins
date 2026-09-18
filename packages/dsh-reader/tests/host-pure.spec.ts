@@ -299,10 +299,15 @@ describe('the translated article reads like content', () => {
     // the constraints that fixed it, and they are easy to undo by accident.
     const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
     const line = /\.revealLine\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
-    expect(line).toMatch(/font-size:\s*12\.5px/)
+    expect(line).toMatch(/font-size:\s*13\.5px/)
     expect(line).toMatch(/line-height:\s*1\.62/)
     expect(line).toMatch(/margin:\s*0 0 3px/)
     expect(line).toMatch(/color:\s*var\(--dsw-alias-label-secondary\)/)
+    // The reveal hugs the paragraph it belongs to and is separated from the next
+    // block: a top margin larger than the bottom one read as "glued to the
+    // wrong paragraph".
+    const reveal = /\.reveal\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(reveal).toMatch(/margin:\s*-8px 0 14px/)
     // The pairing mark: an opened sentence's original is lit, and the sentence
     // it belongs to is underlined on the translated side.
     expect(css).toMatch(/\.revealLine\[data-open\]/)

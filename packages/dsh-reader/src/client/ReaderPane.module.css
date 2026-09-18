@@ -1740,7 +1740,8 @@
 }
 
 .unit[data-open] {
-  box-shadow: inset 0 -2px 0 var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-interactive-bg-active);
+  box-shadow: inset 0 -2px 0 var(--dsw-static-deepseek-500);
 }
 
 /* In the original-only view the whole article is already English: the units are
@@ -1763,21 +1764,49 @@
   letter-spacing: 0.005em;
 }
 
+/* The original's own typography. It is CONTENT, not metadata: it reads at the
+   body's own size (13.5px) in the secondary ink, with the lines of one block
+   close together. Two earlier revisions were reported for this — 11.5px in the
+   tertiary ink with 5px gaps read as small and sparse, then 12.5px read as a
+   notch too small still.
+   The asymmetric margin is deliberate: the reveal belongs to the paragraph ABOVE
+   it, so it is pulled up against it (the paragraph's own 12px bottom margin
+   collapses with -8px into 4px of air) and separated from the NEXT block by
+   14px. A top margin larger than the bottom one — the first version — glued the
+   original to the following paragraph instead of to its own. */
 .reveal {
-  margin: 6px 0 0;
-  padding-left: 10px;
+  margin: -8px 0 14px;
+  padding: 1px 0 1px 10px;
   border-left: 2px solid var(--dsw-alias-border-l2);
 }
 
 .revealLine {
-  margin: 0 0 5px;
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--dsw-alias-label-tertiary);
+  margin: 0 0 3px;
+  font-size: 13.5px;
+  line-height: 1.62;
+  letter-spacing: -0.003em;
+  color: var(--dsw-alias-label-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 100ms ease;
 }
 
 .revealLine:last-child {
   margin-bottom: 0;
+}
+
+.revealLine:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The other half of the pairing: the original of the sentence the reader just
+   opened is lit and carries the accent bar, so a click visibly connects the
+   Chinese sentence to its English one. Both marks are deliberately strong —
+   the previous underline-in-a-grey-tone version was reported as invisible. */
+.revealLine[data-open] {
+  background: var(--dsw-alias-interactive-bg-active);
+  box-shadow: inset 2px 0 0 var(--dsw-static-deepseek-500);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* The globe and its caret: one toggle plus the view menu, the omnibox idiom. */
