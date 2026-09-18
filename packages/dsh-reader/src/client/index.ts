@@ -127,6 +127,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       url: value.url,
       html: extracted.html,
       ...(value.truncated === true ? { truncated: true } : {}),
+      ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
     })
     return stored.ok ? stored.value : { entryId, cached: false, fresh: false, fromFeed: false, error: stored.error.message }
   }

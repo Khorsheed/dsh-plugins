@@ -494,6 +494,8 @@ export interface ReaderEntryBody {
   readonly url: string
   /** True when the fetch hit the seam's cap (the note then says so honestly). */
   readonly truncated?: boolean
+  /** Figures the page draws with its own scripts (dropped; the note counts them). */
+  readonly scriptFigures?: number
 }
 
 /** One user-defined tag. */
@@ -525,6 +527,8 @@ export interface ReaderEntryBodyView {
   readonly html?: string
   readonly fetchedAt?: string
   readonly truncated?: boolean
+  /** Figures this page draws with scripts — the detail view says so. */
+  readonly scriptFigures?: number
   /** Why a fetch could not produce a body, when one was attempted. */
   readonly error?: string
 }

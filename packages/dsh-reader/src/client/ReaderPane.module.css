@@ -113,6 +113,10 @@
 }
 
 .search input {
+  /* `border-box`, or `width: 100%` means 100% PLUS the padding and border: the
+     field then hangs ~56px past the pane's right edge, which is exactly what a
+     reader sees as "the search box is not sized to the sidebar". */
+  box-sizing: border-box;
   min-width: 0;
   width: 100%;
   height: 26px;

@@ -113,7 +113,13 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
 
   /** Cache the markup the browser extracted for one entry. */
   @Remote('storeEntryBody')
-  storeEntryBody(request: { entryId: string; url: string; html: string; truncated?: boolean }): Promise<ReaderEntryBodyView> {
+  storeEntryBody(request: {
+    entryId: string
+    url: string
+    html: string
+    truncated?: boolean
+    scriptFigures?: number
+  }): Promise<ReaderEntryBodyView> {
     return this.core.storeEntryBody(request)
   }
 

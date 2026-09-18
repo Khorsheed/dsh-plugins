@@ -58,7 +58,22 @@ const THRESHOLDS: ParagraphThresholds = { latin: 40, cjk: 18 }
 
 /** Result of extracting one article page. */
 export type ExtractArticleResult =
-  | { readonly ok: true; readonly html: string; readonly textLength: number }
+  | {
+    readonly ok: true
+    readonly html: string
+    readonly textLength: number
+    /**
+     * How many figures had to be dropped because the page DRAWS them.
+     *
+     * Measured on the acceptance instance's transformer-circuits.pub paper:
+     * `<figure data-fignum="2">` contains an empty `<div class='intro-structural'>`
+     * and a caption, and the illustration is rendered by the page's own scripts.
+     * A fetch runs no scripts, so what arrives is a caption describing a picture
+     * that is not there. Dropping the empty figure and saying so beats leaving a
+     * bare caption the reader will read as "the plugin lost my image".
+     */
+    readonly scriptFigures?: number
+  }
   | { readonly ok: false; readonly error: string }
 
 /**
@@ -89,12 +104,39 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     return { ok: false, error: 'no text-bearing block found' }
   }
 
+  const scriptFigures = dropScriptFigures(scored.element)
   const normalized = normalizeElement(scored.element, baseUrl)
   const textLength = textLengthOf(scored.element)
   if (textLength < 120) {
     return { ok: false, error: `extracted body is too small (${textLength} chars)` }
   }
-  return { ok: true, html: normalized, textLength }
+  return {
+    ok: true,
+    html: normalized,
+    textLength,
+    ...(scriptFigures === 0 ? {} : { scriptFigures }),
+  }
+}
+
+/**
+ * Remove figures whose picture is not in the markup, and count them.
+ *
+ * "No picture" means no `<img>`, `<svg>`, `<canvas>`, `<video>` or `<picture>`
+ * anywhere inside: the page renders that illustration at runtime. The caption
+ * goes with it — a caption under nothing is what makes a reader conclude the
+ * fetch failed rather than that the page is script-drawn.
+ *
+ * @param root - the element the body was extracted from (mutated in place).
+ * @returns the number of figures removed.
+ */
+function dropScriptFigures(root: Element): number {
+  let dropped = 0
+  for (const figure of Array.from(root.querySelectorAll('figure'))) {
+    if (figure.querySelector('img, svg, canvas, video, picture') !== null) continue
+    figure.remove()
+    dropped += 1
+  }
+  return dropped
 }
 
 /**

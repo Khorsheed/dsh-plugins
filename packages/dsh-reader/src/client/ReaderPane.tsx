@@ -334,6 +334,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
 
+  /**
+   * Figures the open body's page draws with its own scripts, which a fetch
+   * cannot capture. Session state: the host reports the count with the body
+   * (cached or fresh), so reopening an entry shows the same note.
+   */
+  const [scriptFigures, setScriptFigures] = useState(0)
   const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
@@ -1027,6 +1033,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       const result = await props.fetchEntryBody(entryId, url)
       if (result.html !== undefined) {
         actions.setArticle(result.html, result.truncated === true, null)
+        setScriptFigures(result.scriptFigures ?? 0)
       } else if (result.error !== undefined) {
         // Keep whatever is already rendered (a feed summary, say) and add the
         // reason: a failed fetch must not take the little text the reader has.
@@ -1060,10 +1067,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         actions.setArticle('', false, view.error.message)
       } else if (view.value.html !== undefined) {
         actions.setArticle(view.value.html, view.value.truncated === true, null)
+        setScriptFigures(view.value.scriptFigures ?? 0)
         actions.setStaleBody(row.entry.id, view.value.fresh === false)
         if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
       } else if (row.entry.contentHtml !== undefined) {
         actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
+        setScriptFigures(0)
         // The feed published a summary and nothing else: show it immediately
         // (better than an empty page) and fetch the real text behind it. This
         // is the branch that used to end the story — the summary looked like
@@ -1950,6 +1959,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           )}
           {bodyFetching && (
             <p className={css.incomplete}>{t('detail.fetchingBody')}</p>
+          )}
+          {/* The page draws these figures at runtime and a fetch runs no
+              scripts, so the body has the text and the captions but no
+              pictures. Saying so is what keeps "the plugin lost my images"
+              from being the reader's only conclusion. */}
+          {scriptFigures > 0 && (
+            <p className={css.incomplete}>
+              {t('detail.scriptFigures', { count: scriptFigures })}{' '}
+              {openEntry.link !== undefined && (
+                <button
+                  type="button"
+                  className={css.incompleteLink}
+                  onClick={() => { props.openExternal(openEntry.link as string) }}
+                >
+                  {t('detail.readOriginal')}
+                </button>
+              )}
+            </p>
           )}
           {articleError !== null && (
             <p className={css.incomplete}>

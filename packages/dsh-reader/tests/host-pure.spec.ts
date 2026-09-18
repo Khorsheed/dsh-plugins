@@ -446,3 +446,14 @@ describe('inspectPreview', () => {
   })
 })
 
+
+describe('the wall search field is sized by its row', () => {
+  it('uses border-box, so padding cannot push it past the pane', () => {
+    // Reported as "the search box is not sized to the sidebar": `width: 100%`
+    // with `content-box` is 100% PLUS 54px of padding and 2px of border.
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    const search = /\.search input\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(search).toMatch(/box-sizing:\s*border-box/)
+    expect(search).toMatch(/width:\s*100%/)
+  })
+})

@@ -1380,3 +1380,31 @@ describe('a feed that publishes only a summary still gets its article', () => {
     expect(passed.some(entry => entry.entryId === 'g:https://example.com/paper')).toBe(true)
   })
 })
+
+describe('the detail view owns up to figures it cannot fetch', () => {
+  it('counts script-drawn figures and points at the original', async () => {
+    // A feed entry with a link and no body: the fetch path supplies the body,
+    // and with it the count of figures the page paints at runtime.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 3,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const expected = zh['detail.scriptFigures'].replace('{count}', '3')
+    expect(await screen.findByText(new RegExp(expected.slice(0, 12)))).toBeTruthy()
+    expect(screen.getByText(zh['detail.readOriginal'])).toBeTruthy()
+  })
+})
