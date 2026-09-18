@@ -31,6 +31,7 @@ import {
   runTranslation,
   segmentAt,
   sentenceAt,
+  setPairHover,
   setView,
   splitSentences,
   toggleSegment,
@@ -183,6 +184,44 @@ describe('article segmentation', () => {
     expect(root.querySelector('[data-reader-reveal]')).toBeNull()
     expect(block.segments.every(segment => !segment.open)).toBe(true)
     expect(block.segments.every(segment => segment.span.getAttribute('data-open') === null)).toBe(true)
+  })
+
+  it('pairs the two sides on HOVER and leaves nothing painted otherwise', () => {
+    const root = article()
+    const built = buildArticle(root, CLASSES) as BuiltArticle
+    const block = built.blocks[1]! // the paragraph whose link split the sentence
+    toggleSegment(built, block.segments[0]!, CLASSES)
+    const line = root.querySelector('[data-reader-reveal] [data-reader-sentence]') as HTMLElement
+    // Standing state: no marks at all — a reader who opens several sentences
+    // used to leave the whole article speckled.
+    expect(root.querySelectorAll('[data-hover]')).toHaveLength(0)
+    // Hovering any fragment lights the WHOLE sentence (all three fragments the
+    // link split it into) plus the ONE original line it maps to…
+    setPairHover(built, block.segments[2]!.span, true)
+    expect(block.segments.every(segment => segment.span.getAttribute('data-hover') === '1')).toBe(true)
+    expect(line.getAttribute('data-hover')).toBe('1')
+    expect(root.querySelectorAll('[data-hover]')).toHaveLength(4)
+    // …and leaving clears both.
+    setPairHover(built, block.segments[2]!.span, false)
+    expect(root.querySelectorAll('[data-hover]')).toHaveLength(0)
+    // The reverse direction works too: pointing at the original lights the
+    // sentence's units.
+    setPairHover(built, line, true)
+    expect(line.getAttribute('data-hover')).toBe('1')
+    expect(block.segments.every(segment => segment.span.getAttribute('data-hover') === '1')).toBe(true)
+    expect(root.querySelectorAll('[data-hover]')).toHaveLength(4)
+    setPairHover(built, line, false)
+    expect(root.querySelectorAll('[data-hover]')).toHaveLength(0)
+  })
+
+  it('spaces the reveal per placement, so a list item never drags it upward', () => {
+    const root = article()
+    const built = buildArticle(root, CLASSES) as BuiltArticle
+    for (const block of built.blocks) toggleSegment(built, block.segments[0]!, CLASSES)
+    setView(built, 'both', CLASSES)
+    const placements = [...root.querySelectorAll('[data-reader-reveal]')].map(reveal => reveal.getAttribute('data-placement'))
+    // The prose paragraph is a sibling, the two list items are inside.
+    expect(placements).toEqual(['sibling', 'sibling', 'inside', 'inside'])
   })
 
   it('shows every original under its block in the side-by-side view', () => {

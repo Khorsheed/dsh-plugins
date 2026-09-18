@@ -45,7 +45,7 @@ import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, restoreArticle,
-  runTranslation, segmentAt, sentenceAt, setView, toggleSegment, toggleSentence,
+  runTranslation, segmentAt, sentenceAt, setPairHover, setView, toggleSegment, toggleSentence,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
   type TranslationView, type TranslatorLike,
 } from './translate.ts'
@@ -699,6 +699,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [translatePhase, translateView, cancelTranslation, applyView, startTranslation])
 
   /**
+   * The pairing cue: hovering a translated sentence lights its original line,
+   * and hovering an original line lights the sentence it belongs to. Nothing is
+   * painted by default — the marks are thrown away when the pointer leaves.
+   */
+  const onArticleHover = useCallback((event: { type: string; target: EventTarget | null }) => {
+    if (translatePhase !== 'ready') return
+    const built = builtRef.current
+    if (built === null) return
+    setPairHover(built, event.target, event.type === 'mouseover')
+  }, [translatePhase])
+
+  /**
    * The article's two paired gestures: clicking a translated sentence opens its
    * original, and clicking that original closes it again — the same toggle from
    * either side of the pair.
@@ -1311,6 +1323,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               // is delegation: the sentences it creates are not React's.
               ref={articleRef}
               onClick={onArticleClick}
+              onMouseOver={onArticleHover}
+              onMouseOut={onArticleHover}
               className={`${css.article} ${isCjk(articleHtml) ? css.articleZh : css.articleEn}`}
               dangerouslySetInnerHTML={{ __html: articleHtml }}
             />

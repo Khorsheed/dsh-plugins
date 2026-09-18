@@ -303,15 +303,22 @@ describe('the translated article reads like content', () => {
     expect(line).toMatch(/line-height:\s*1\.62/)
     expect(line).toMatch(/margin:\s*0 0 3px/)
     expect(line).toMatch(/color:\s*var\(--dsw-alias-label-secondary\)/)
-    // The reveal hugs the paragraph it belongs to and is separated from the next
-    // block: a top margin larger than the bottom one read as "glued to the
-    // wrong paragraph".
-    const reveal = /\.reveal\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
-    expect(reveal).toMatch(/margin:\s*-8px 0 14px/)
-    // The pairing mark: an opened sentence's original is lit, and the sentence
-    // it belongs to is underlined on the translated side.
-    expect(css).toMatch(/\.revealLine\[data-open\]/)
-    expect(css).toMatch(/\.unit\[data-open\]/)
+    // The pairing cue is HOVER-ONLY: a standing mark on every opened original
+    // was reported as making the article messy.
+    expect(css).toMatch(/\.revealLine\[data-hover\]/)
+    expect(css).toMatch(/\.unit\[data-hover\]/)
+    expect(css).not.toMatch(/\.revealLine\[data-open\]/)
+    expect(css).not.toMatch(/\.unit\[data-open\]/)
+  })
+
+  it('spaces the original by where its container sits', () => {
+    // Only a paragraph has a bottom margin for a negative top margin to collapse
+    // with; inside a list item the same value dragged the original into the
+    // translation line (reported from a bulleted paragraph).
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    expect(css).toMatch(/\.reveal\[data-placement='sibling'\][^}]*margin:\s*-8px 0 14px/)
+    expect(css).toMatch(/\.reveal\[data-placement='inside'\][^}]*margin:\s*5px 0 4px/)
+    expect(css).toMatch(/\.reveal\[data-placement='inline'\][^}]*margin:\s*5px 0 10px/)
   })
 })
 

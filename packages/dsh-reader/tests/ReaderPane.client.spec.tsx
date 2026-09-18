@@ -929,6 +929,12 @@ describe('on-device translation', () => {
     // …and the pairing is marked on BOTH sides: the original line is lit too,
     // which is what the reader looks for when they click a sentence.
     expect(ui.container.querySelector('[data-reader-reveal] [data-reader-sentence]')?.getAttribute('data-open')).toBe('1')
+    // Nothing is painted just for being open; the cue is hover, from either side.
+    expect(ui.container.querySelectorAll('[data-hover]')).toHaveLength(0)
+    fireEvent.mouseOver(units[0] as HTMLElement)
+    expect(ui.container.querySelector('[data-reader-reveal] [data-reader-sentence]')?.getAttribute('data-hover')).toBe('1')
+    fireEvent.mouseOut(units[0] as HTMLElement)
+    expect(ui.container.querySelectorAll('[data-hover]')).toHaveLength(0)
     // …and clicking it again takes it away.
     fireEvent.click(units[0] as HTMLElement)
     expect(ui.container.querySelector('[data-reader-reveal]')).toBeNull()

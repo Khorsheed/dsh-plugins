@@ -512,6 +512,13 @@ function offsetOf(block: BuiltBlock, segment: BuiltSegment): number {
   return offset
 }
 
+/** The sentence one unit belongs to. */
+function sentenceIndexOf(block: BuiltBlock, segment: BuiltSegment): number {
+  const offset = offsetOf(block, segment)
+  const index = block.sentences.findIndex(sentence => offset >= sentence.start && offset < sentence.end)
+  return index === -1 ? 0 : index
+}
+
 /** The sentences of a block that a set of units belongs to, in order. */
 function sentencesFor(block: BuiltBlock, segments: readonly BuiltSegment[]): number[] {
   const indexes = new Set<number>()
@@ -536,6 +543,11 @@ function paintReveal(block: BuiltBlock, view: TranslationView, classes: Translat
   const reveal = block.reveal ?? doc.createElement('div')
   reveal.className = classes.reveal
   reveal.setAttribute('data-reader-reveal', '1')
+  // The spacing depends on WHERE the container sits: a sibling of a paragraph
+  // can be pulled up into that paragraph's bottom margin, while one inside a
+  // list item has nothing to collapse with and would be dragged into the
+  // translation line (reported from the bulleted case).
+  reveal.setAttribute('data-placement', block.placement)
   reveal.textContent = ''
   for (const index of shown) {
     const sentence = block.sentences[index]
@@ -569,12 +581,73 @@ export function setView(built: BuiltArticle, view: TranslationView, classes: Tra
       if (segment.span.textContent !== text) segment.span.textContent = text
       if (segment.open) segment.span.setAttribute('data-open', '1')
       else segment.span.removeAttribute('data-open')
+      // The pair is addressed by SENTENCE, not by unit: a sentence cut into
+      // fragments still has one original line, and hovering any of its
+      // fragments must light that one line.
+      segment.span.setAttribute('data-reader-sentence', String(sentenceIndexOf(block, segment)))
     }
     paintReveal(block, view, classes)
   }
   // `pending` until the first unit lands: the translated typography (CJK
   // leading) must not be applied to text that is still English.
   built.root.setAttribute('data-reader-translated', anyTranslated ? view : 'pending')
+}
+
+/** The units of one block sentence, in order. */
+function spansOfSentence(block: BuiltBlock, index: number): HTMLElement[] {
+  return block.segments
+    .filter(segment => sentenceIndexOf(block, segment) === index)
+    .map(segment => segment.span)
+}
+
+/** The reveal line that shows one block sentence, when it is on screen. */
+function lineOfSentence(block: BuiltBlock, index: number): HTMLElement | null {
+  if (block.reveal === null) return null
+  return block.reveal.querySelector<HTMLElement>(`[data-reader-sentence="${String(index)}"]`)
+}
+
+/**
+ * Mark (or clear) the pair under the pointer.
+ *
+ * The page is deliberately CLEAN by default: an expanded original carries no
+ * standing colour or bar, because a reader who explores a few sentences would
+ * otherwise leave the whole article speckled — reported as "the page gets
+ * messy". The pairing shows up on hover instead, from either side: point at a
+ * translated sentence and its original line lights up, point at an original
+ * line and the sentence it belongs to lights up.
+ *
+ * @param built - the live segmentation.
+ * @param target - what the pointer is over (or just left).
+ * @param on - true on hover, false when the pointer leaves.
+ */
+export function setPairHover(built: BuiltArticle, target: EventTarget | null, on: boolean): void {
+  if (!(target instanceof Element)) return
+  const mark = (element: Element | null | undefined): void => {
+    if (element === null || element === undefined) return
+    if (on) element.setAttribute('data-hover', '1')
+    else element.removeAttribute('data-hover')
+  }
+  const unit = target.closest('[data-reader-unit]')
+  if (unit !== null) {
+    for (const block of built.blocks) {
+      const segment = block.segments.find(candidate => candidate.span === unit)
+      if (segment === undefined) continue
+      const index = sentenceIndexOf(block, segment)
+      for (const span of spansOfSentence(block, index)) mark(span)
+      mark(lineOfSentence(block, index))
+      return
+    }
+    return
+  }
+  const line = target.closest('[data-reader-sentence]')
+  if (line === null) return
+  for (const block of built.blocks) {
+    if (block.reveal === null || !block.reveal.contains(line)) continue
+    const index = Number(line.getAttribute('data-reader-sentence'))
+    mark(line)
+    for (const span of spansOfSentence(block, index)) mark(span)
+    return
+  }
 }
 
 /** The segment a click landed on, if any. */
