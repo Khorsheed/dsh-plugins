@@ -44,8 +44,10 @@ import { extractArticle } from './extract-article.ts'
 import { parseFeed } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
-  buildArticle, detectTranslator, restoreArticle, runTranslation, segmentAt, setView, toggleSegment,
-  type BuiltArticle, type TranslateClasses, type TranslationAvailability, type TranslationView, type TranslatorLike,
+  TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, restoreArticle,
+  runTranslation, segmentAt, setView, toggleSegment,
+  type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
+  type TranslationView, type TranslatorLike,
 } from './translate.ts'
 import {
   countUnread,
@@ -119,9 +121,10 @@ const TAG_PANEL_MAX_HEIGHT = 296
  */
 const SOURCE_SEARCH_MIN = 6
 
-/** The one target language this milestone ships. The menu, the session and the
- *  surface all take it as a parameter; only the language picker itself is deferred. */
-const TRANSLATION_TARGET = 'zh'
+/** The one target language this milestone ships: Chinese, in the spellings the
+ *  candidate chain in `translate.ts` knows how to try. Only the language PICKER
+ *  is deferred — every layer below takes the tag as a parameter. */
+const TRANSLATION_TARGET = TARGET_CANDIDATES[0] ?? 'zh'
 
 /** The globe's menu, in the order it renders (view id + dictionary key). */
 const TRANSLATION_VIEWS = [
@@ -500,11 +503,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /* --------------------------------------------------- the translation flow */
 
   /**
-   * The source language of the open body. The reader's own script heuristic
-   * answers it: a body that reads mostly as Han/Kana/Hangul is already the
-   * target, and translating Chinese into Chinese is not a feature.
+   * The source language of the open body, as the browser's detector reports it
+   * (falling back to the reader's script heuristic, which cannot tell German
+   * from English but does recognise "already Chinese"). A wrong source makes
+   * `create()` reject for a pair the device does not have — and that error does
+   * not name either language, which is why it is worth asking properly.
    */
-  const translationSource = articleHtml !== null && isCjk(articleHtml) ? TRANSLATION_TARGET : 'en'
+  const guessSource = articleHtml !== null && isCjk(articleHtml) ? TRANSLATION_TARGET : 'en'
+  const [translationSource, setTranslationSource] = useState('en')
+  useEffect(() => {
+    if (view !== 'detail' || articleHtml === null || articleHtml.length === 0) return
+    if (guessSource === TRANSLATION_TARGET) { setTranslationSource(guessSource); return }
+    let cancelled = false
+    void (async () => {
+      const detected = await detectSourceLanguage(articleHtml.replace(/<[^>]*>/g, ' '), guessSource)
+      if (!cancelled) setTranslationSource(detected)
+    })()
+    return () => { cancelled = true }
+  }, [view, articleHtml, guessSource])
   /**
    * Whether the globe belongs on this article at all. Three ways it does not:
    * the browser has no Translator API, the pair is unavailable on this device,
@@ -516,22 +532,25 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     && translateAvailability !== 'unavailable'
     && translationSource !== TRANSLATION_TARGET
 
-  // Ask the browser about this pair once per opened article. The probe is
-  // async, so the control appears only after the browser has answered.
+  // Ask the browser about this pair once per opened article, in every target
+  // spelling: the probe is async, and the control appears only once one of them
+  // is not `unavailable`.
   useEffect(() => {
     if (view !== 'detail' || translator === null || articleHtml === null || articleHtml.length === 0) return undefined
-    if (translationSource === TRANSLATION_TARGET) { setTranslateAvailability('unavailable'); return undefined }
+    if (translationSource === TRANSLATION_TARGET && isCjk(articleHtml)) { setTranslateAvailability('unavailable'); return undefined }
     let cancelled = false
     void (async () => {
-      try {
-        const answer = await translator.availability({
-          sourceLanguage: translationSource,
-          targetLanguage: TRANSLATION_TARGET,
-        })
-        if (!cancelled) setTranslateAvailability(answer as TranslationAvailability)
-      } catch {
-        if (!cancelled) setTranslateAvailability('unavailable')
+      let best: TranslationAvailability = 'unavailable'
+      for (const targetLanguage of TARGET_CANDIDATES) {
+        try {
+          const answer = await translator.availability({ sourceLanguage: translationSource, targetLanguage }) as TranslationAvailability
+          if (answer !== 'unavailable') { best = answer; break }
+        } catch {
+          // Try the next spelling; only "every candidate said unavailable" hides
+          // the globe.
+        }
       }
+      if (!cancelled) setTranslateAvailability(best)
     })()
     return () => { cancelled = true }
   }, [view, translator, articleHtml, translationSource])
@@ -584,25 +603,36 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     setTranslatePhase('pack')
     setPackProgress(0)
-    let session
-    try {
-      session = await api.create({
-        sourceLanguage: translationSource,
-        targetLanguage: TRANSLATION_TARGET,
-        monitor: monitor => {
-          monitor.addEventListener('downloadprogress', event => { setPackProgress(event.loaded) })
-        },
-      })
-    } catch (error) {
-      // The pack download or the model refused: say why, and leave the article
-      // alone. No half-translated page, no silent button.
+    // The source candidates: what the browser's detector said, then the script
+    // heuristic's answer. The targets: every Chinese spelling the API accepts.
+    const sources = translationSource === 'en' ? ['en'] : [translationSource, 'en']
+    const outcome: SessionOutcome = await createSession(api, {
+      sources,
+      targets: TARGET_CANDIDATES,
+      monitor: monitor => {
+        monitor.addEventListener('downloadprogress', event => { setPackProgress(event.loaded) })
+      },
+    })
+    setPackProgress(null)
+    if (!outcome.ok) {
+      // Say WHICH pair was asked for: the browser's own message names neither
+      // language, and a reader who reports it needs to be able to.
+      const pairs = outcome.attempts
+        .map(attempt => `${attempt.sourceLanguage} → ${attempt.targetLanguage}`)
+        .filter((pair, index, all) => all.indexOf(pair) === index)
+        .join(' / ')
+      const first = outcome.attempts[0]?.reason ?? 'unknown'
       cancelRef.current = null
+      if (outcome.unsupported) setTranslateAvailability('unavailable')
       setTranslatePhase('failed')
-      setPackProgress(null)
-      setTranslateError(t('translate.failed', { reason: (error instanceof Error ? error.message : String(error)).slice(0, 160) }))
+      setTranslateError(
+        outcome.unsupported
+          ? t('translate.unsupported', { pair: pairs })
+          : t('translate.failed', { reason: `${pairs} · ${first}`.slice(0, 200) }),
+      )
       return
     }
-    setPackProgress(null)
+    const session = outcome.session
     if (cancel.cancelled) { setTranslatePhase('idle'); return }
     const built = buildArticle(container, translateClasses)
     if (built === null) {

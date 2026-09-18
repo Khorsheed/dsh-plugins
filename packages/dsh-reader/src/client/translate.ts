@@ -37,6 +37,19 @@ export type TranslationView = 'trans' | 'both' | 'orig'
 /** What the browser reports for a language pair. */
 export type TranslationAvailability = 'available' | 'downloadable' | 'downloading' | 'unavailable'
 
+/**
+ * The target tags to try, in order.
+ *
+ * Chrome's documented list spells Chinese `zh` (Simplified) and `zh-Hant`
+ * (Traditional), and `zh` is what works on the machines this was built on — but
+ * `Translator.create()` has been observed rejecting a pair that
+ * `availability()` had just blessed (`NotSupportedError`, "Unable to create
+ * translator for the given source and target language", macOS builds included).
+ * Trying the next spelling costs one rejected call and turns a dead button into
+ * a working one where a build prefers the other tag.
+ */
+export const TARGET_CANDIDATES: readonly string[] = ['zh', 'zh-Hans']
+
 /** The unit separator inside a batch. Rare, short, and verified on the way back. */
 export const UNIT_SEPARATOR = '⟦|⟧'
 
@@ -86,6 +99,128 @@ export function detectTranslator(scope: unknown = globalThis): TranslatorLike | 
   const api = candidate as Partial<TranslatorLike>
   if (typeof api.availability !== 'function' || typeof api.create !== 'function') return null
   return candidate as TranslatorLike
+}
+
+/** The structural slice of the Language Detector API, when the page has one. */
+export interface LanguageDetectorLike {
+  availability(): Promise<string>
+  create(options?: { monitor?: (monitor: DownloadMonitorLike) => void }): Promise<{
+    detect(text: string): Promise<readonly { detectedLanguage: string; confidence: number }[]>
+    destroy?(): void
+  }>
+}
+
+/** Read the page's Language Detector, or null when this browser has none. */
+export function detectLanguageDetector(scope: unknown = globalThis): LanguageDetectorLike | null {
+  const candidate = (scope as { LanguageDetector?: unknown }).LanguageDetector
+  if (candidate === undefined || candidate === null) return null
+  const api = candidate as Partial<LanguageDetectorLike>
+  if (typeof api.availability !== 'function' || typeof api.create !== 'function') return null
+  return candidate as LanguageDetectorLike
+}
+
+/**
+ * The body's source language: the browser's detector when it has one, else the
+ * caller's script guess.
+ *
+ * The probe is only worth it because a WRONG source is fatal in a way the
+ * reader cannot see: `create()` rejects for a pair the device does not have, and
+ * the error says "given source and target language" without naming either. The
+ * heuristic that decides this in the pane (`isCjk`) is a script test, not a
+ * language test — it cannot tell German from English.
+ *
+ * @param text - the body's leading text (a sample is enough).
+ * @param fallback - the caller's guess, used when detection is unavailable or unsure.
+ * @returns the BCP-47 tag to ask the translator for.
+ */
+export async function detectSourceLanguage(text: string, fallback: string): Promise<string> {
+  const detector = detectLanguageDetector()
+  if (detector === null) return fallback
+  const sample = text.slice(0, 600).trim()
+  if (sample.length < 20) return fallback
+  try {
+    const state = await detector.availability()
+    if (state === 'unavailable') return fallback
+    const session = await detector.create()
+    const results = await session.detect(sample)
+    session.destroy?.()
+    const best = results[0]
+    if (best !== undefined && best.confidence >= 0.5 && typeof best.detectedLanguage === 'string') {
+      return best.detectedLanguage
+    }
+  } catch {
+    // Degrade to the caller's guess: a failed detection must never block a
+    // translation that would otherwise work.
+  }
+  return fallback
+}
+
+/** One attempted language pair and why it did not produce a translator. */
+export interface SessionAttempt {
+  readonly sourceLanguage: string
+  readonly targetLanguage: string
+  readonly reason: string
+}
+
+/** The outcome of asking the browser for a translator, across candidate pairs. */
+export type SessionOutcome =
+  | { readonly ok: true; readonly session: TranslatorSessionLike; readonly sourceLanguage: string; readonly targetLanguage: string }
+  | { readonly ok: false; readonly attempts: readonly SessionAttempt[]; readonly unsupported: boolean }
+
+/** True when the browser says this pair is not something it can ever build. */
+export function isUnsupported(error: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'NotSupportedError') return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /given source and target|not supported|unsupported language/i.test(message)
+}
+
+/**
+ * Create a translator, trying every candidate pair in order.
+ *
+ * `availability()` is a hint, not a promise: this browser has been observed
+ * blessing a pair and then rejecting `create()` for it. So the pairs are tried
+ * for real, the failures are collected (the reader gets to see which pair was
+ * asked for), and `unsupported` says whether the browser rejected EVERY attempt
+ * as an unsupported language pair — which is a permanent condition, unlike a
+ * download or a quota failure.
+ *
+ * @param api - the page's Translator API.
+ * @param request - the source candidates, the target candidates, and the monitor.
+ * @returns the first working session, or the collected attempts.
+ */
+export async function createSession(api: TranslatorLike, request: {
+  readonly sources: readonly string[]
+  readonly targets: readonly string[]
+  readonly monitor?: (monitor: DownloadMonitorLike) => void
+}): Promise<SessionOutcome> {
+  const attempts: SessionAttempt[] = []
+  let unsupported = true
+  let tried = 0
+  for (const sourceLanguage of request.sources) {
+    for (const targetLanguage of request.targets) {
+      tried += 1
+      try {
+        const state = await api.availability({ sourceLanguage, targetLanguage })
+        if (state === 'unavailable') {
+          attempts.push({ sourceLanguage, targetLanguage, reason: 'unavailable' })
+          continue
+        }
+      } catch (error) {
+        attempts.push({ sourceLanguage, targetLanguage, reason: error instanceof Error ? error.message : String(error) })
+        unsupported = false
+        continue
+      }
+      try {
+        const session = await api.create({ sourceLanguage, targetLanguage, ...(request.monitor === undefined ? {} : { monitor: request.monitor }) })
+        return { ok: true, session, sourceLanguage, targetLanguage }
+      } catch (error) {
+        const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+        if (!isUnsupported(error)) unsupported = false
+        attempts.push({ sourceLanguage, targetLanguage, reason })
+      }
+    }
+  }
+  return { ok: false, attempts, unsupported: unsupported && tried > 0 }
 }
 
 /** One sentence inside a text run, with the whitespace that follows it. */

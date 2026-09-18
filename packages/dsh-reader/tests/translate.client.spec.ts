@@ -16,11 +16,16 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  TARGET_CANDIDATES,
   UNIT_SEPARATOR,
   applyTranslation,
   buildArticle,
   clearMemory,
+  createSession,
+  detectLanguageDetector,
+  detectSourceLanguage,
   detectTranslator,
+  isUnsupported,
   remembered,
   restoreArticle,
   runTranslation,
@@ -30,6 +35,7 @@ import {
   toggleSegment,
   type BuiltArticle,
   type TranslateClasses,
+  type TranslatorLike,
   type TranslatorSessionLike,
 } from '../src/client/translate.ts'
 
@@ -302,5 +308,113 @@ describe('feature detection', () => {
     expect(detectTranslator({ Translator: {} })).toBeNull()
     const api = { availability: async () => 'available', create: async () => { throw new Error('unused') } }
     expect(detectTranslator({ Translator: api })).toBe(api)
+  })
+
+  it('detects the language detector only when it is usable', () => {
+    expect(detectLanguageDetector({})).toBeNull()
+    expect(detectLanguageDetector({ LanguageDetector: { availability: async () => 'available' } })).toBeNull()
+    const api = { availability: async () => 'available', create: async () => ({ detect: async () => [] }) }
+    expect(detectLanguageDetector({ LanguageDetector: api })).toBe(api)
+  })
+})
+
+describe('the source language probe', () => {
+  it('prefers the browser detector when it is confident', async () => {
+    const scope = {
+      LanguageDetector: {
+        availability: async () => 'available',
+        create: async () => ({ detect: async () => [{ detectedLanguage: 'de', confidence: 0.93 }] }),
+      },
+    }
+    const previous = (globalThis as { LanguageDetector?: unknown }).LanguageDetector
+    ;(globalThis as { LanguageDetector?: unknown }).LanguageDetector = scope.LanguageDetector
+    try {
+      expect(await detectSourceLanguage('Ein langer deutscher Satz über Modelle und Risiken.', 'en')).toBe('de')
+    } finally {
+      if (previous === undefined) delete (globalThis as { LanguageDetector?: unknown }).LanguageDetector
+      else (globalThis as { LanguageDetector?: unknown }).LanguageDetector = previous
+    }
+  })
+
+  it('falls back to the caller guess when detection is absent, unsure or failing', async () => {
+    expect(await detectSourceLanguage('A long enough English sentence about models.', 'en')).toBe('en')
+    const previous = (globalThis as { LanguageDetector?: unknown }).LanguageDetector
+    ;(globalThis as { LanguageDetector?: unknown }).LanguageDetector = {
+      availability: async () => 'available',
+      create: async () => ({ detect: async () => [{ detectedLanguage: 'fr', confidence: 0.2 }] }),
+    }
+    try {
+      expect(await detectSourceLanguage('A long enough English sentence about models.', 'en')).toBe('en')
+    } finally {
+      if (previous === undefined) delete (globalThis as { LanguageDetector?: unknown }).LanguageDetector
+      else (globalThis as { LanguageDetector?: unknown }).LanguageDetector = previous
+    }
+  })
+})
+
+describe('creating a translator across candidate pairs', () => {
+  /** An API whose `create` refuses the pairs in `reject`. */
+  function api(reject: string[], options: { availability?: string } = {}): TranslatorLike & { calls: string[] } {
+    const calls: string[] = []
+    return {
+      calls,
+      availability: async () => options.availability ?? 'available',
+      create: async ({ sourceLanguage, targetLanguage }) => {
+        const pair = `${sourceLanguage}→${targetLanguage}`
+        calls.push(pair)
+        if (reject.includes(pair)) {
+          throw new DOMException('Unable to create translator for the given source and target language.', 'NotSupportedError')
+        }
+        return { inputQuota: 1000, measureInputUsage: async (text: string) => text.length, translate: async (text: string) => text }
+      },
+    }
+  }
+
+  it('falls through to the next target spelling when a pair is rejected', async () => {
+    const underTest = api(['en→zh'])
+    expect(TARGET_CANDIDATES[1]).toBe('zh-Hans')
+    const outcome = await createSession(underTest, { sources: ['en'], targets: TARGET_CANDIDATES })
+    expect(outcome.ok).toBe(true)
+    if (outcome.ok) expect(outcome.targetLanguage).toBe('zh-Hans')
+    expect(underTest.calls).toEqual(['en→zh', 'en→zh-Hans'])
+  })
+
+  it('tries the detected source before the fallback one', async () => {
+    const underTest = api(['de→zh', 'de→zh-Hans'])
+    const outcome = await createSession(underTest, { sources: ['de', 'en'], targets: TARGET_CANDIDATES })
+    expect(outcome.ok).toBe(true)
+    if (outcome.ok) expect(outcome.sourceLanguage).toBe('en')
+    expect(underTest.calls).toEqual(['de→zh', 'de→zh-Hans', 'en→zh'])
+  })
+
+  it('reports an unsupported pair as permanent, with the pairs it tried', async () => {
+    const underTest = api(['en→zh', 'en→zh-Hans'])
+    const outcome = await createSession(underTest, { sources: ['en'], targets: TARGET_CANDIDATES })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) {
+      expect(outcome.unsupported).toBe(true)
+      expect(outcome.attempts.map(attempt => attempt.targetLanguage)).toEqual(['zh', 'zh-Hans'])
+      expect(outcome.attempts[0]?.reason).toContain('NotSupportedError')
+    }
+  })
+
+  it('does not call a download or quota failure permanent', async () => {
+    const failing: TranslatorLike = {
+      availability: async () => 'downloadable',
+      create: async () => { throw new DOMException('The download failed.', 'NetworkError') },
+    }
+    const outcome = await createSession(failing, { sources: ['en'], targets: ['zh'] })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.unsupported).toBe(false)
+    expect(isUnsupported(new DOMException('nope', 'NetworkError'))).toBe(false)
+    expect(isUnsupported(new DOMException('x', 'NotSupportedError'))).toBe(true)
+    expect(isUnsupported(new Error('Unable to create translator for the given source and target language.'))).toBe(true)
+  })
+
+  it('skips a pair the browser already calls unavailable', async () => {
+    const underTest = { calls: [] as string[], availability: async () => 'unavailable', create: async () => { throw new Error('must not run') } }
+    const outcome = await createSession(underTest, { sources: ['en'], targets: ['zh'] })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.attempts[0]?.reason).toBe('unavailable')
   })
 })

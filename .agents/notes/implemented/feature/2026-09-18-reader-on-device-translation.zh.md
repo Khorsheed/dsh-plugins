@@ -20,6 +20,7 @@ Status: implemented
 - **批次要校验，兜底让出粒度而不是正确性。** 整句拼成一个字符串、句子之间插哨兵；只有返回的段数与发出的句数相同时才接受。哨兵被改（或调用失败）就把那一批退回「一句一请求」，那种方式不可能错位。仍然失败的单元保留原文 —— 正文里永远没有洞。
 - **三种视图，地球是开关。** 默认*只看译文*（点句子是发现路径，用一条可关闭的提示教一次）；*双语对照*把每段的原文常驻在它下面、并可整段折起；*只看原文*显示源文但保留译文随时零成本切回。地球只在显示译文视图时点亮，所以菜单里的勾和地球状态永远不会互相矛盾。
 - **不能用就不出现。** 只有页面有该 API、浏览器报告这个语言对可用、且正文本来不是目标语言（由 `isCjk` 按正文脚本判定）时，地球才渲染。仅 Chrome/Edge 桌面版 —— Safari、Firefox、移动端就是没有地球，其余功能不变。
+- **`availability()` 只是提示，不是承诺，而失败要说出来。** 验收实例上确实出现过「语言对回报 `available`，`create()` 却抛 `NotSupportedError` —— Unable to create translator for the given source and target language」这种组合，而那条报错**两个语言都不提**（Chromium 在 macOS 构建上有同类记录）。于是三件事一起发了出去：源语言先问浏览器的 `LanguageDetector`（猜错源语言正是建不起来的一条路，而 `isCjk` 分不出德语和英语）；目标语言按 `zh` → `zh-Hans` 两种写法真各建一次；全部以「不支持」被拒时**地球自己藏起来**，状态条写明试过哪些语言对并指向 `chrome://on-device-internals` 的 Broker State。下载/配额这类**非永久**失败则保留地球，消息里带尝试过的语言对和浏览器自己的原因。
 - **处理过程诚实。** 首次使用要下语言包：读者看得到下载进度、可以取消。`create()` 失败就给出原因、正文原封不动（不切分、不出现半截译文）。整批全失败就明说，并在菜单里给重试。
 - **目前只有中文。** 目标语言在每一处都是参数（session 请求、availability 探测、文案），菜单是一个常量；加语言是改菜单，不是重写。
 
@@ -37,7 +38,9 @@ Status: implemented
 
 `ReaderPane.client.spec.tsx` 用脚本化的 `globalThis.Translator` 钉住流程：地球就地翻译、点一句只展开这一句的原文、再点收起、菜单切到只看原文再切回、没有 API / 语言对不可用 / 中文正文时地球不存在、`create()` 失败会给出原因且正文保持原字节、哨兵被改时仍然逐句得到各自译文。
 
-`pnpm --filter @khorsheed/dsh-reader test`：9 个文件、155 个用例全绿。产物已重建（tsc + tsdown），新模块与 CSS 已在 `lib/client.js` 中核对存在。
+同一批文件还钉住「建翻译器」这条链：被拒就试下一个目标写法、探测到的源语言先于兜底源、每一对都 `NotSupportedError` 才算永久并带上试过的语言对、网络失败不算永久、已经 `unavailable` 的对直接跳过、语言探测宁可回退也不阻塞、以及界面在「不支持」后藏起地球而「语言包失败」保留地球。
+
+`pnpm --filter @khorsheed/dsh-reader test`：9 个文件、164 个用例全绿。产物已重建（tsc + tsdown），新模块与 CSS 已在 `lib/client.js` 中核对存在。
 
 ## Alternatives considered
 

@@ -22,7 +22,7 @@ export type ReaderKey =
   | 'action.translate' | 'translate.view' | 'translate.onlyTranslation' | 'translate.bilingual'
   | 'translate.onlyOriginal' | 'translate.retry' | 'translate.tip' | 'translate.preparing'
   | 'translate.working' | 'translate.local' | 'translate.failed' | 'translate.dismiss'
-  | 'translate.nothing' | 'translate.failedAll'
+  | 'translate.nothing' | 'translate.failedAll' | 'translate.unsupported'
   | 'action.fetchBody' | 'detail.bodyStale' | 'action.more' | 'action.addTag'
   | 'tag.title' | 'tag.placeholder' | 'tag.hint' | 'tag.create' | 'tag.empty'
   | 'search.placeholder'
@@ -80,6 +80,7 @@ export const en = {
   'translate.failed': 'Translation stopped: {reason}',
   'translate.failedAll': 'No batch came back — try again from the globe menu',
   'translate.nothing': 'Nothing in this body to translate',
+  'translate.unsupported': 'This browser cannot translate {pair} — the model for that pair is not available (see chrome://on-device-internals, "Broker State")',
   'translate.dismiss': 'Dismiss',
   'detail.bodyStale': 'The saved copy is out of date — fetch it again?',
   'tag.title': 'Tags',
@@ -213,6 +214,7 @@ export const zh = {
   'translate.failed': '翻译中断：{reason}',
   'translate.failedAll': '各批次都没翻出来 —— 可从地球菜单里重试',
   'translate.nothing': '这段正文里没有可翻译的散文',
+  'translate.unsupported': '这个浏览器无法翻译 {pair} —— 该语言对的模型不可用（可在 chrome://on-device-internals 的 Broker State 看原因）',
   'translate.dismiss': '不再提示',
   'detail.bodyStale': '存的正文已过期 —— 重新抓取？',
   'tag.title': '标签',

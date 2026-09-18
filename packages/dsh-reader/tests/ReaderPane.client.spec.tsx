@@ -872,10 +872,13 @@ describe('read state is visible without hiding anything', () => {
 
 describe('on-device translation', () => {
   /** The page global the pane probes, scripted per test. */
-  function installTranslator(over: { availability?: string; createThrows?: string; mangled?: boolean } = {}) {
+  function installTranslator(over: { availability?: string; createThrows?: string; unsupported?: boolean; mangled?: boolean } = {}) {
     const api = {
       availability: vi.fn(async () => over.availability ?? 'available'),
       create: vi.fn(async () => {
+        if (over.unsupported === true) {
+          throw new DOMException('Unable to create translator for the given source and target language.', 'NotSupportedError')
+        }
         if (over.createThrows !== undefined) throw new Error(over.createThrows)
         return {
           inputQuota: 10_000,
@@ -965,10 +968,24 @@ describe('on-device translation', () => {
     installTranslator({ createThrows: 'no language pack available' })
     const ui = await opened('<p>First sentence here. Second sentence here.</p>')
     fireEvent.click(await screen.findByTitle(zh['action.translate']))
-    expect(await screen.findByText(zh['translate.failed'].replace('{reason}', 'no language pack available'))).toBeTruthy()
+    // The pair is named: the browser's own message names neither language, so a
+    // reader reporting the failure needs the plugin to say which pair was asked.
+    expect(await screen.findByText(/en → zh/, { exact: false })).toBeTruthy()
+    expect(screen.getByText(/no language pack available/, { exact: false })).toBeTruthy()
     // The article is exactly as the host sent it: no spans, no half-translation.
     expect(ui.container.querySelector('[data-reader-unit]')).toBeNull()
     expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('First sentence here.')
+  })
+
+  it('gives up honestly when the browser cannot build that pair at all', async () => {
+    installTranslator({ unsupported: true })
+    const ui = await opened('<p>First sentence here. Second sentence here.</p>')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    // The reason names every spelling that was tried…
+    expect(await screen.findByText(zh['translate.unsupported'].replace('{pair}', 'en → zh / en → zh-Hans'))).toBeTruthy()
+    // …and the globe stops offering an action this browser cannot perform.
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.translate'])).toBeNull() })
+    expect(ui.container.querySelector('[data-reader-unit]')).toBeNull()
   })
 
   it('keeps the text aligned when the batch separator does not survive', async () => {
