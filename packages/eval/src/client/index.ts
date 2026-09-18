@@ -27,6 +27,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -46,6 +47,34 @@ import { EvalPresetVisibility, RegistrationToggle } from './preset-visibility.ts
 import { createLabViewStore } from './store.ts'
 
 export { LabView }
+
+/**
+ * The on-screen session across host lines: 0.1.6-alpha.2 dropped
+ * `SessionListState.current` for per-row `retainedBy.mainView` counts (the
+ * `mainView` reference source is declared by ui-session, outside this
+ * package's type program — hence the duck shape), while 0.1.5 publishes only
+ * `current`. One build reads both.
+ * @param list - sessions list snapshot.
+ * @returns the main-view session id, or undefined when nothing is on screen.
+ */
+type SessionListCurrent = SessionListState & {
+  current?: SessionId
+  byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
+}
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  const view = list as SessionListCurrent
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
+
+/**
+ * Minimal navigation face of ui-workspace's `ctx.uiWorkspace`, probed per
+ * call rather than injected: 0.1.6-alpha.2 deleted `ISessions.open`, and
+ * `uiWorkspace.openSession` is the session-navigation entry on both host
+ * lines. A composition without ui-workspace degrades the verb to a no-op.
+ */
+interface UiWorkspaceNav {
+  openSession(id: SessionId): void
+}
 
 /** Required services: the slot registry, the remote channel, the copy, and the
  * session list (the preset-composition criterion reads the current session).
@@ -117,13 +146,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
         fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
         finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
-        // The host's own session controller: the drawer OPENS the player's
+        // The host's own navigation face: the drawer OPENS the player's
         // child session so a person can read the transcript; the member
         // composer and dock there are local-agent's, not this tab's.
-        openSession: (childSessionId: SessionId) => { ctx.sessions.open(childSessionId) },
+        openSession: (childSessionId: SessionId) => {
+          try {
+            (ctx.get('uiWorkspace') as UiWorkspaceNav | undefined)?.openSession(childSessionId)
+          } catch {
+            // alpha.2 throws synchronously on an unknown target; the drawer
+            // stays put and the entry can be retried.
+          }
+        },
       }),
     }, LabView),
-    () => chrome.show(ctx.sessions.list.getSnapshot().current),
+    () => chrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
   )
   ctx.slots.inject('conversation.view', () => {
     labToggle.setReady(true)

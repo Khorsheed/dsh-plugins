@@ -41,6 +41,8 @@ async function bench(options: {
   connectionSeat?: 'rc' | 'alpha'
   preset?: string
   composition?: DatasetsPluginInventorySnapshot
+  /** Publish the 0.1.5-shaped list (top-level `current`, no per-row retention). */
+  legacyCurrent?: boolean
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -66,14 +68,15 @@ async function bench(options: {
       isLoopback: true,
       hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
     } as never)
-  // No preset on the row = the fail-open default; a named preset reads the composition.
-  const list = createSnapshotStore({
-    ids: ['s1'],
-    byId: options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } },
-    current: 's1' as SessionId,
-    phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
-  })
-  ctx.provide('sessions', { list, open: vi.fn() } as never)
+  // No preset on the row = the fail-open default; a named preset reads the
+  // composition. The on-screen session: 0.1.6-alpha.2 reads the row's
+  // main-view retention count; `legacyCurrent` exercises the 0.1.5
+  // `current` fallback instead.
+  const row = options.preset === undefined ? {} : { projectionValues: { agentPreset: options.preset } }
+  const list = createSnapshotStore(options.legacyCurrent === true
+    ? { ids: ['s1'], byId: { s1: { id: 's1', ...row } }, current: 's1' as SessionId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
+    : { ids: ['s1'], byId: { s1: { id: 's1', ...row, retainedBy: { mainView: 1 } } }, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
+  ctx.provide('sessions', { list } as never)
   if (options.composition !== undefined) {
     ctx.provide('remote.pluginInventory', {
       list: async () => ({ ok: true as const, value: options.composition }),
@@ -108,6 +111,12 @@ describe('datasets client apply', () => {
 
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('registers the tab on a 0.1.5-shaped list (legacy current fallback)', async () => {
+    const { ctx, slots } = await bench({ legacyCurrent: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })

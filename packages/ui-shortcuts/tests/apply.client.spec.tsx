@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionReference, SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '@khorsheed/dsh-ui-shortcuts/client'
 import type { ShortcutsRowInjected } from '../src/client/settings/ShortcutsRow.tsx'
@@ -28,16 +28,19 @@ type BenchOptions = {
   sidebarRight?: boolean
   /** Make the service's write path throw, as it does with no mounted surface. */
   sidebarWriteThrows?: boolean
+  /** Retain SID as the main-view (on-screen) session; false starts with nothing on screen. */
+  current?: boolean
 }
 
 async function bench(over: BenchOptions = {}) {
   const runtime = await SlotTestRuntime.create()
   const submit = vi.fn()
   const cancel = vi.fn(() => Promise.resolve())
-  // The runtime provides a real sessions service at root; new-session rides
-  // its create → open pair, so stub creation to return the fixture session.
-  const startSession = vi.fn(async () => SID)
-  runtime.sessions.stubCreate(startSession)
+  // New-session rides the probed ctx.uiWorkspace navigation face (the official
+  // New Session flow on both host lines); ui-workspace is not part of the test
+  // runtime, so the composition stubs the probed service and records the call.
+  const startSession = vi.fn()
+  runtime.ctx.provide('uiWorkspace', { startSession })
   runtime.ctx.provide('conversation', {
     input: { for: () => ({ submit }) },
     cancel,
@@ -55,9 +58,9 @@ async function bench(over: BenchOptions = {}) {
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
-  // The Plugins section declares the keyed card slot in production; the test
-  // root declares it here so the registration lands.
-  await runtime.root.declare({ 'settings.plugin.item': { kind: 'keyed', scope: 'root' } }, (_p: { renderSlot?: unknown }) => null)
+  // The Plugins section declares the tab slot in production; the test root
+  // declares it here so the registration lands.
+  await runtime.root.declare({ 'settings.plugins.tab': { kind: 'list', scope: 'root' } }, (_p: { renderSlot?: unknown }) => null)
   const feature = await runtime.mount({ inject: [...inject], apply })
   // Compaction rides the public session face's command verb.
   const command = vi.fn(async () => ({ ok: true as const, value: { matched: true } }))
@@ -69,14 +72,35 @@ async function bench(over: BenchOptions = {}) {
     },
     session: { command },
   })
-  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession, toggleExpanded, command }
+  // The on-screen session: 0.1.6-alpha.2 reads the main-view retention count
+  // (0.1.5's `current` field is gone), so tests drive it through real
+  // references — release() stands in for "no session on screen".
+  let mainView: SessionReference | undefined
+  const setCurrent = async (id: SessionId | undefined): Promise<void> => {
+    mainView?.release()
+    mainView = id === undefined ? undefined : runtime.sessions.retain(id, { source: 'mainView' as never })
+    await mainView?.ready
+  }
+  if (over.current !== false) await setCurrent(SID)
+  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession, toggleExpanded, command, setCurrent }
 }
 
 /** The inject face the settings card entry serves (reaches the apply-built policy). */
 async function rowInjected(b: Awaited<ReturnType<typeof bench>>): Promise<ShortcutsRowInjected> {
-  const entry = b.slots.entries('settings.plugin.item').find(e => e.options.key === UI_SHORTCUTS_NAMESPACE)
+  const entry = b.slots.entries('settings.plugins.tab').find(e => e.options.id === UI_SHORTCUTS_NAMESPACE)
   if (entry === undefined) throw new Error('shortcuts settings card not registered')
   return (entry.inject as unknown as () => ShortcutsRowInjected)()
+}
+
+/**
+ * A catalog row whose main-view count names no live generation — the masked
+ * gap: the id reads as on-screen while scope() has nothing to borrow.
+ */
+function ghostRow(id: SessionId) {
+  return {
+    id, displayTitle: id, running: false, blank: false, updatedAt: 99,
+    retainedBy: { mainView: 1 },
+  }
 }
 
 /** A composer-shaped textarea target for the Escape layering gate. */
@@ -100,7 +124,7 @@ afterEach(() => {
 describe('ui-shortcuts apply', () => {
   it('registers the shortcut settings card', async () => {
     const b = await bench()
-    expect(b.slots.entries('settings.plugin.item').map(entry => entry.options.key)).toContain(UI_SHORTCUTS_NAMESPACE)
+    expect(b.slots.entries('settings.plugins.tab').map(entry => entry.options.id)).toContain(UI_SHORTCUTS_NAMESPACE)
     await b.runtime.dispose()
   })
 
@@ -117,7 +141,7 @@ describe('ui-shortcuts apply', () => {
     await b.runtime.dispose()
   })
 
-  it('Ctrl/Cmd+O starts a new session through the sessions service and suppresses the browser open-file', async () => {
+  it('Ctrl/Cmd+O starts a new session through the probed uiWorkspace face and suppresses the browser open-file', async () => {
     const b = await bench()
     const ctrl = new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true, cancelable: true })
     document.dispatchEvent(ctrl)
@@ -139,7 +163,7 @@ describe('ui-shortcuts apply', () => {
 
     // Without a current session the gate stands the gesture down before the
     // browser default on the chord is claimed.
-    await b.runtime.sessions.setCurrent(undefined)
+    await b.setCurrent(undefined)
     const gated = new KeyboardEvent('keydown', { key: 'x', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
     document.dispatchEvent(gated)
     expect(b.command).toHaveBeenCalledTimes(1)
@@ -181,7 +205,7 @@ describe('ui-shortcuts apply', () => {
     // No session: there is no column of this session's to write to, so the
     // button must not be claimed either.
     const noSession = await bench()
-    await noSession.runtime.sessions.setCurrent(undefined)
+    await noSession.setCurrent(undefined)
     const idle = new MouseEvent('mousedown', { button: 1, bubbles: true, cancelable: true })
     document.dispatchEvent(idle)
     expect(noSession.toggleExpanded).not.toHaveBeenCalled()
@@ -327,19 +351,31 @@ describe('ui-shortcuts apply', () => {
   it('Ctrl+S stands down without a current session, a current ghost, or an unbound action', async () => {
     const b = await bench()
     // No current session.
-    await b.runtime.sessions.setCurrent(undefined)
+    await b.setCurrent(undefined)
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
     expect(b.submit).not.toHaveBeenCalled()
-    // A current id with no binding (masked gap) resolves no scope.
-    b.runtime.sessions.list.update((draft) => { draft.current = 'ghost' as SessionId })
+    // A main-view row with no live generation (masked gap) resolves no scope.
+    b.runtime.sessions.list.update((draft) => { draft.byId['ghost' as SessionId] = ghostRow('ghost' as SessionId) as never })
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
     expect(b.submit).not.toHaveBeenCalled()
     // Unbound action.
-    await b.runtime.sessions.setCurrent(SID)
+    await b.setCurrent(SID)
     const injected = await rowInjected(b)
     injected.setPreference('steerSend', { kind: 'none' })
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
     expect(b.submit).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('reads the 0.1.5-shaped list current when no row carries main-view retention', async () => {
+    // The 0.1.5 host line publishes `current` with no per-row retainedBy; the
+    // fallback keeps the gesture live there. The generation a real current
+    // session always has is materialized by a non-main-view reference.
+    const b = await bench({ current: false })
+    b.runtime.sessions.retainFor(b.runtime.ctx, SID)
+    b.runtime.sessions.list.update((draft) => { (draft as { current?: SessionId }).current = SID })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(b.submit).toHaveBeenCalledWith('steer')
     await b.runtime.dispose()
   })
 
@@ -429,16 +465,15 @@ describe('ui-shortcuts apply', () => {
   })
 
   it('Escape stands down without a current session or with a current ghost', async () => {
-    const noCurrent = await bench({ running: true })
-    await noCurrent.runtime.sessions.setCurrent(undefined)
+    const noCurrent = await bench({ running: true, current: false })
     withComposerTextarea((textarea) => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
     expect(noCurrent.cancel).not.toHaveBeenCalled()
     await noCurrent.runtime.dispose()
 
-    const ghost = await bench({ running: true })
-    ghost.runtime.sessions.list.update((draft) => { draft.current = 'ghost' as SessionId })
+    const ghost = await bench({ running: true, current: false })
+    ghost.runtime.sessions.list.update((draft) => { draft.byId['ghost' as SessionId] = ghostRow('ghost' as SessionId) as never })
     withComposerTextarea((textarea) => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
@@ -460,7 +495,7 @@ describe('ui-shortcuts apply', () => {
     const b = await bench()
     const injected = await rowInjected(b)
     injected.reset('pause')
-    expect(b.slots.entries('settings.plugin.item').map(entry => entry.options.key)).toContain(UI_SHORTCUTS_NAMESPACE)
+    expect(b.slots.entries('settings.plugins.tab').map(entry => entry.options.id)).toContain(UI_SHORTCUTS_NAMESPACE)
     await b.runtime.dispose()
   })
 

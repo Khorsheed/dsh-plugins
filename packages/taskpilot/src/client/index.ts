@@ -32,7 +32,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-commands/remote'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { en, NS, zh } from './locales.ts'
 import { TaskPilotDock, type TaskPilotDockInjected } from './TaskPilotDock.tsx'
 import { JobTab, type JobTabInjected } from './JobTab.tsx'
@@ -47,6 +47,16 @@ export const inject = [
   'slots', 'sessions', 'remote', 'remote.commands', 'connection', 'locale',
   'sidebarRight', 'sidebarRightTabs',
 ]
+
+/**
+ * Minimal navigation face of ui-workspace's `ctx.uiWorkspace`, probed per
+ * call rather than injected: 0.1.6-alpha.2 deleted `ISessions.open`, and
+ * `uiWorkspace.openSession` is the session-navigation entry on both host
+ * lines. A composition without ui-workspace degrades the verb to a no-op.
+ */
+interface UiWorkspaceNav {
+  openSession(id: SessionId): void
+}
 
 export function apply(ctx: Context): void {
   const t = ctx.locale.bind(NS)
@@ -78,7 +88,14 @@ export function apply(ctx: Context): void {
       // The dock lives in the mounted session's conversation, so the
       // controller's mounted-seat aim and the pill's session coincide.
       openJob: (jobId) => { ctx.sidebarRight.openTab(TASKPILOT_KIND, { params: { jobId } }) },
-      openSession: (id) => { (ctx.sessions as ISessions).open(id) },
+      openSession: (id) => {
+        try {
+          (ctx.get('uiWorkspace') as UiWorkspaceNav | undefined)?.openSession(id)
+        } catch {
+          // alpha.2 throws synchronously on an unknown target; the dock row
+          // stays put and the entry can be retried.
+        }
+      },
       // Duck-typed read of the local-agent family gateway: resolves [] on an
       // absent channel or call error, so the dock's second running source is
       // a no-op when the family is not installed (independent, but compatible).
