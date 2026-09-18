@@ -31,6 +31,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls the ctx.sessions service merge (ISessions) — the tab
 // type's preset-visibility criterion reads the current session.
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
@@ -56,6 +58,24 @@ export type {
   CanvasTabInjected, CanvasTabProps,
 } from './contract.ts'
 export * from './paste-table.ts'
+
+/**
+ * The on-screen session across host lines: 0.1.6-alpha.2 dropped
+ * `SessionListState.current` for per-row `retainedBy.mainView` counts (the
+ * `mainView` reference source is declared by ui-session, outside this
+ * package's type program — hence the duck shape), while 0.1.5 publishes only
+ * `current`. One build reads both.
+ * @param list - sessions list snapshot.
+ * @returns the main-view session id, or undefined when nothing is on screen.
+ */
+type SessionListCurrent = SessionListState & {
+  current?: SessionId
+  byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
+}
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  const view = list as SessionListCurrent
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
 
 /**
  * Required services: slots, the remote channel, the locale, the right-Sidebar
@@ -237,7 +257,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => {
     const toggle = new RegistrationToggle(
       () => ctx.sidebarRightTabs.register(canvasDefinition(t)),
-      () => tabVisibility.show(ctx.sessions.list.getSnapshot().current),
+      () => tabVisibility.show(mainSessionId(ctx.sessions.list.getSnapshot())),
     )
     toggle.setReady(true)
     const unsubscribe = tabVisibility.subscribe(() => { toggle.sync() })
