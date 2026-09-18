@@ -256,6 +256,27 @@ describe('CanvasDetailView', () => {
     expect(screen.queryByRole('button', { name: /问 Agent/ })).toBeNull()
   })
 
+  it('renders an html card in the sandboxed frame (CSP inside) and keeps markdown on MarkdownText', async () => {
+    const htmlCard = card('c_h', {
+      kind: 'document',
+      text: '<!DOCTYPE html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
+    })
+    const { store, props } = makeHarness([htmlCard])
+    store.select(CANVAS_ID, 'c_h')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('文档')
+    await screen.findByText('HTML')
+    const frame = document.querySelector('iframe')
+    expect(frame).not.toBeNull()
+    expect(frame!.getAttribute('sandbox')).toBe('allow-scripts')
+    const srcDoc = frame!.getAttribute('srcdoc') ?? ''
+    expect(srcDoc).toContain('default-src')
+    expect(srcDoc).toContain('<title>报告</title>')
+    expect(srcDoc).toContain('<p>正文</p>')
+    // The raw markup never renders as text.
+    expect(screen.queryByText(/DOCTYPE/)).toBeNull()
+  })
+
   it('shows an archived card with its tag and restores it', async () => {
     const gone = card('c_x', { status: 'archived', text: '归档的旧卡' })
     const { store, mocks, props } = makeHarness([gone])

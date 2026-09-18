@@ -13,6 +13,7 @@
   },
   "files": [
     "src/css-modules.d.ts",
+    "src/card-format.ts",
     "src/types.ts",
     "src/client/contract.ts",
     "src/client/definition.ts",

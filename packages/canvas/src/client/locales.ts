@@ -119,6 +119,7 @@ export const zh = {
   'card.markAnswered': '标记已回答',
   'card.editHint': '⌘⏎ 保存 · Esc 取消',
   'card.fromAgent': '来自 Agent',
+  'card.htmlDocument': 'HTML 文档',
 
   'detail.empty': '在画布空间点一张卡，在这里读全文',
   'detail.cardGone': '这张卡已不在板上',
@@ -128,6 +129,7 @@ export const zh = {
   'detail.openFile': '预览 {name}',
   'detail.created': '创建于 {time}',
   'detail.updated': '更新于 {time}',
+  'detail.formatHtml': 'HTML',
 
   'lens.challenge': '挑战假设',
   'lens.counterexample': '找反例',
@@ -298,6 +300,7 @@ export const en: Record<keyof typeof zh, string> = {
   'card.markAnswered': 'Mark answered',
   'card.editHint': '⌘⏎ save · Esc cancel',
   'card.fromAgent': 'from Agent',
+  'card.htmlDocument': 'HTML document',
 
   'detail.empty': 'Click a card in the canvas space to read it here',
   'detail.cardGone': 'This card is no longer on the board',
@@ -307,6 +310,7 @@ export const en: Record<keyof typeof zh, string> = {
   'detail.openFile': 'Preview {name}',
   'detail.created': 'created {time}',
   'detail.updated': 'updated {time}',
+  'detail.formatHtml': 'HTML',
 
   'lens.challenge': 'Challenge assumptions',
   'lens.counterexample': 'Find counterexamples',

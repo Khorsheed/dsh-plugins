@@ -296,6 +296,18 @@ describe('CanvasTab — list, switcher, board', () => {
     })
   })
 
+  it('shows a compact placeholder for an html card on the board, never the raw markup', async () => {
+    const htmlCard = card('c_h', {
+      kind: 'document',
+      text: '<!DOCTYPE html><html><head><title>三次排期反馈记录</title></head><body><table><tr><td>1</td></tr><tr><td>2</td></tr></table></body></html>',
+    })
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), htmlCard])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('三次排期反馈记录')
+    expect(screen.queryByText(/DOCTYPE/)).toBeNull()
+    expect(screen.queryByText(/<tr>/)).toBeNull()
+  })
+
   it('hides every chat entry when the seam is absent, and the board keeps working', async () => {
     const commented = card('c_1', {
       comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
