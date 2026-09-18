@@ -439,7 +439,6 @@ export type EvalKey =
   | 'agreement.medium'
   | 'agreement.low'
   | 'agreement.none'
-  | 'judge.agreementLine'
   | 'judge.addJudge'
   | 'judge.filterAll'
   | 'judge.filterUngraded'
@@ -1062,7 +1061,6 @@ export const en: Record<EvalKey, string> = {
   'agreement.medium': 'moderate',
   'agreement.low': 'low',
   'agreement.none': 'not enough pairs to say',
-  'judge.agreementLine': 'Grader agreement: {band}',
   'judge.addJudge': 'Graders disagree often here — consider adding a judge before trusting these scores.',
   'judge.filterAll': 'All',
   'judge.filterUngraded': 'Not graded',
@@ -1592,7 +1590,6 @@ export const zh: Record<EvalKey, string> = {
   'agreement.medium': '中',
   'agreement.low': '低',
   'agreement.none': '配对不足，说不了',
-  'judge.agreementLine': '评分者一致性：{band}',
   'judge.addJudge': '这里的评分者分歧较多——在采信这些分数之前，建议增加判官。',
   'judge.filterAll': '全部',
   'judge.filterUngraded': '未评',
