@@ -1224,3 +1224,99 @@ describe('on-device translation', () => {
     })
   })
 })
+
+describe('opening an entry with no body pays for one fetch', () => {
+  /** A feed entry that carries a link but no description at all. */
+  const bareFeed = (id: string): string =>
+    `<rss version="2.0"><channel><title>${id}</title>`
+    + `<item><title>没有正文的条目</title><link>https://example.com/article</link></item>`
+    + '</channel></rss>'
+
+  it('fetches the full text instead of rendering a blank page', async () => {
+    // The measured case: `transformer-circuits.pub/feed.xml` publishes a
+    // 167-character summary per entry, so the card has a title and nothing
+    // else. Opening it used to set no article and no error — a title over blank
+    // space, which reads as "this article cannot be read".
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: bareFeed('hn') } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /没有正文的条目/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.fetchEntryBody.mock.calls[0]?.[1]).toBe('https://example.com/article')
+    expect(await screen.findByText('fetched')).toBeTruthy()
+  })
+
+  it('says it is fetching while the request is in flight', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: bareFeed('hn') } })
+    await ui.settle()
+    // Hold the fetch open so the in-flight state is observable.
+    let release: ((value: unknown) => void) | undefined
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) =>
+      await new Promise(resolve => {
+        release = resolve as (value: unknown) => void
+        void entryId
+      }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /没有正文的条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText(zh['detail.fetchingBody'])).toBeTruthy()
+    release?.({ entryId: 'x', cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })
+    await waitFor(() => { expect(screen.queryByText(zh['detail.fetchingBody'])).toBeNull() })
+    expect(await screen.findByText('fetched')).toBeTruthy()
+  })
+
+  it('does not re-fetch a saved link whose page already refused extraction', async () => {
+    // A saved link with a recorded reason already has its sentence (and a
+    // manual retry in the card menu): fetching again on every look at a page
+    // that will not extract is a request per open, not a fix.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '抽不出正文的页面', url: 'https://example.com/empty' })],
+      payloads: { 'link-1': '' },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /抽不出正文的页面/ }))[0] as HTMLElement)
+    expect((await screen.findAllByText(/抽不出正文/)).length).toBeGreaterThan(0)
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+})
+
+describe('the search box clears itself, and tags can be deleted', () => {
+  it('clears the wall search from inside the field, and only while it has text', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    const input = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    // Nothing to clear, nothing shown: the × is a state, not decoration.
+    expect(screen.queryByTitle(zh['action.clearSearch'])).toBeNull()
+    fireEvent.change(input, { target: { value: '一条' } })
+    fireEvent.click(screen.getByTitle(zh['action.clearSearch']))
+    expect(input.value).toBe('')
+    expect(screen.queryByTitle(zh['action.clearSearch'])).toBeNull()
+  })
+
+  it('deletes a tag from the filter panel and drops its narrowing with it', async () => {
+    // A tag that can only be created is a one-way door: the vocabulary is the
+    // reader's own, so it has to be deletable where it is used — and a deleted
+    // tag must not stay the active filter.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+      tags: [{ id: 'tag-ai', name: 'AI', createdAt: 'x' }],
+      tagCounts: { 'tag-ai': 2 },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByText('AI'))
+    const input = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    await waitFor(() => { expect(input.value).toBe('@tag-ai') })
+
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByLabelText(`${zh['filter.deleteTag']}: AI`))
+    await waitFor(() => { expect(ui.mocks.deleteTag).toHaveBeenCalledWith('tag-ai') })
+    expect(input.value).toBe('')
+  })
+
+  it('keeps both settings controls in the compressed row', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    expect(ui.container.querySelector('#reader-refresh-time')).not.toBeNull()
+    expect(ui.container.querySelector('#reader-cache-ttl')).not.toBeNull()
+  })
+})

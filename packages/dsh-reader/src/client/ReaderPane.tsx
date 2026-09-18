@@ -304,6 +304,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const articleHtml = useStore(s => s.articleHtml)
   const articleTruncated = useStore(s => s.articleTruncated)
   const articleError = useStore(s => s.articleError)
+  /**
+   * True while the OPEN entry's body is being fetched.
+   *
+   * The detail view pays for its own fetch when it has nothing to show, so it
+   * has to say so: an empty body area for the length of a network request reads
+   * as "this article has no text", which is the impression the auto-fetch
+   * exists to remove.
+   */
+  const bodyFetching = useStore(s => (s.openEntryId === null ? false : s.fetching[s.openEntryId] === true))
   const openEntryId = useStore(s => s.openEntryId)
   const view = useStore(s => s.view)
   const filter = useStore(s => s.filter)
@@ -1000,6 +1009,32 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (wallCancelRef.current !== null) wallCancelRef.current.cancelled = true
   }, [])
 
+  /**
+   * Fetch one entry's full article, extract it (this process) and show it.
+   *
+   * Two callers, one contract: the card's own "抓取正文" action, and opening an
+   * entry that has no body yet. Both pay exactly one fetch and both record the
+   * outcome — a success caches the extracted body, a failure records the reason
+   * the host and the extractor gave, which is what the next open reads.
+   *
+   * @param entryId - the entry whose body is wanted.
+   * @param url - the article URL to fetch.
+   */
+  const fetchBody = useCallback(async (entryId: string, url: string) => {
+    actions.setFetching(entryId, true)
+    try {
+      const result = await props.fetchEntryBody(entryId, url)
+      if (result.html !== undefined) {
+        actions.setArticle(result.html, result.truncated === true, null)
+      } else if (result.error !== undefined) {
+        actions.setArticle('', false, result.error)
+      }
+      actions.setStaleBody(entryId, result.cached === true && result.fresh === false)
+    } finally {
+      actions.setFetching(entryId, false)
+    }
+  }, [actions, props])
+
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
     actions.openEntry(row.entry.id, row.sourceId)
@@ -1022,14 +1057,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       } else if (row.entry.contentHtml !== undefined) {
         actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
       } else {
-        // Nothing to show: keep the host's reason (a failed payload, a fetch
-        // that could not extract) so the view explains itself instead of
-        // looking like an article with no text. A saved link with no reason is
-        // its own case — this page was fetched but did not become a body — and
-        // saying so is what stops it rendering as a title over blank space. A
-        // FEED entry with no body yet stays silent on purpose: the automatic
-        // backfill is fetching it, and an error line there would be a lie.
-        actions.setArticle('', false, view.value.error ?? (row.sourceKind === 'link' ? t('detail.extractFailed') : null))
+        // Nothing cached, nothing from the feed, and no recorded reason.
+        //
+        // For a FEED entry that is the ordinary state of a body the automatic
+        // backfill has not reached (or one whose cached body expired): opening
+        // an entry IS the reader asking for its text, so pay for one fetch
+        // instead of showing a title over blank space. This is the same call
+        // the card's own 「抓取正文」 uses, so it extracts, caches, and records
+        // a failure reason — which is what the next open reads.
+        //
+        // For a SAVED LINK with no reason, the payload arrived but did not
+        // become a body: that already has its sentence (and a manual retry in
+        // the card menu), and fetching again on every open would be a request
+        // per look at a page that has already refused to be extracted.
+        const reason = view.value.error ?? (row.sourceKind === 'link' ? t('detail.extractFailed') : null)
+        actions.setArticle('', false, reason)
+        if (row.sourceKind === 'rss' && view.value.error === undefined) {
+          void fetchBody(row.entry.id, row.entry.link as string)
+        }
       }
       return
     }
@@ -1051,7 +1096,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const extracted = extractArticle(body.raw, row.entry.link ?? '')
     if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
     else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t])
+  }, [actions, props, t, fetchBody])
 
   /** Submit the add form and report the host's verdict. */
   const submit = useCallback(async () => {
@@ -1254,29 +1299,30 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
 
 
-  /**
-   * Fetch the open entry's full article, extract it (this process) and show it.
-   */
-  const fetchBody = useCallback(async (entryId: string, url: string) => {
-    actions.setFetching(entryId, true)
-    try {
-      const result = await props.fetchEntryBody(entryId, url)
-      if (result.html !== undefined) {
-        actions.setArticle(result.html, result.truncated === true, null)
-      } else if (result.error !== undefined) {
-        actions.setArticle('', false, result.error)
-      }
-      actions.setStaleBody(entryId, result.cached === true && result.fresh === false)
-    } finally {
-      actions.setFetching(entryId, false)
-    }
-  }, [actions, props])
-
   /** Reload the tags on one entry. */
   const loadEntryTags = useCallback(async (entryId: string) => {
     const result = await props.entryTags(entryId)
     if (result.ok) actions.setEntryTags(entryId, result.value.tags.map(tag => tag.id))
   }, [actions, props])
+
+  /**
+   * Delete a tag from the vocabulary and from every entry carrying it.
+   *
+   * The vocabulary is the reader's own creation, so it has to be deletable —
+   * a tag that can only be made is a one-way door. Two follow-ups are not
+   * optional: the active narrowing is dropped when it was that tag (otherwise
+   * the wall keeps filtering by something that no longer exists), and the
+   * session's tag ids are pruned so no card keeps drawing a dead chip.
+   *
+   * @param tagId - the tag to delete.
+   */
+  const removeTag = useCallback(async (tagId: string) => {
+    const result = await props.deleteTag(tagId)
+    if (!result.ok) return
+    if (query.trim() === tagQuery(tagId)) actions.setQuery('')
+    actions.dropTag(tagId)
+    actions.refresh()
+  }, [actions, props, query])
 
   /**
    * Open the tag panel for one card, without opening the article.
@@ -1621,6 +1667,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               </button>
             </div>
           )}
+          {bodyFetching && (
+            <p className={css.incomplete}>{t('detail.fetchingBody')}</p>
+          )}
           {articleError !== null && (
             <p className={css.incomplete}>
               {/* Say what ACTUALLY happened. The seam's reasons are distinguishable
@@ -1828,40 +1877,46 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         </div>
         <div className={css.paneBody}>
           <p className={css.help}>{t('sources.help')}</p>
-          <div className={css.field}>
-            <label className={css.fieldLabel} htmlFor="reader-refresh-time">{t('sources.time')}</label>
-            <input
-              id="reader-refresh-time"
-              className={css.timeInput}
-              type="time"
-              value={timeOfDay}
-              onChange={event => { void setRefreshTime(event.target.value) }}
-            />
-            <span className={css.help}>{t('sources.timeHelp')}</span>
-          </div>
-          <div className={css.field}>
-            <label className={css.fieldLabel} htmlFor="reader-cache-ttl">{t('sources.cache')}</label>
-            <select
-              id="reader-cache-ttl"
-              className={css.timeInput}
-              value={String(cacheTtlHours)}
-              onChange={event => {
-                const hours = Number(event.target.value)
-                void props.setCachePolicy(hours).then(result => { if (result.ok) actions.setCacheTtl(hours) })
-              }}
-            >
-              {[12, 24, 168, 0].map(hours => (
-                <option key={hours} value={hours}>{t(hours === 0 ? 'sources.cacheForever' : 'sources.cacheHours', { count: hours }) }</option>
-              ))}
-            </select>
-            <span className={css.help}>{t('sources.cacheHelp')}</span>
+          {/* One compact settings row instead of two full-width blocks: two
+              controls and their explanations should not own three lines of the
+              page each. The long help lives in the row's `title`, which is
+              where a reader looks for it the second time. */}
+          <div className={css.settingsRow}>
+            <label className={css.setting} htmlFor="reader-refresh-time" title={t('sources.timeHelp')}>
+              <span className={css.settingLabel}>{t('sources.time')}</span>
+              <input
+                id="reader-refresh-time"
+                className={css.settingControl}
+                type="time"
+                value={timeOfDay}
+                onChange={event => { void setRefreshTime(event.target.value) }}
+              />
+            </label>
+            <label className={css.setting} htmlFor="reader-cache-ttl" title={t('sources.cacheHelp')}>
+              <span className={css.settingLabel}>{t('sources.cache')}</span>
+              <select
+                id="reader-cache-ttl"
+                className={css.settingControl}
+                value={String(cacheTtlHours)}
+                onChange={event => {
+                  const hours = Number(event.target.value)
+                  void props.setCachePolicy(hours).then(result => { if (result.ok) actions.setCacheTtl(hours) })
+                }}
+              >
+                {[12, 24, 168, 0].map(hours => (
+                  <option key={hours} value={hours}>{t(hours === 0 ? 'sources.cacheForever' : 'sources.cacheHours', { count: hours }) }</option>
+                ))}
+              </select>
+            </label>
           </div>
           {/* The list grows one entry per pasted URL plus one per feed, and the
               two are different things: narrowing by kind and ordering by
               arrival is how "delete that link I added yesterday" is answered
-              without reading the whole list. */}
+              without reading the whole list. Grouped and labelled inline, so
+              the two rows read as two questions instead of eight loose chips. */}
           {sources.length > 0 && (
             <div className={css.manageTools}>
+              <span className={css.chipGroupLabel}>{t('filter.byKind')}</span>
               <div className={css.chipRow} role="group" aria-label={t('sources.kindFilter')}>
                 {(['all', ...READER_SOURCE_KINDS] as const).map(kind => (
                   <button
@@ -1880,6 +1935,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   </button>
                 ))}
               </div>
+              <span className={css.chipGroupLabel}>{t('sort.title')}</span>
               <div className={css.chipRow} role="group" aria-label={t('sort.title')}>
                 {(['added', 'name', 'fetched'] as const).map(option => (
                   <button
@@ -2006,6 +2062,20 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             placeholder={t('search.placeholder')}
             onChange={event => actions.setQuery(event.target.value)}
           />
+          {/* A field the reader typed into needs a way out that is not
+              select-all-then-delete: the × clears the whole narrowing, filter
+              values included (`#sourceId` / `@tagId` are just queries). */}
+          {query.length > 0 && (
+            <button
+              type="button"
+              className={css.searchClear}
+              title={t('action.clearSearch')}
+              aria-label={t('action.clearSearch')}
+              onClick={() => { actions.setQuery('') }}
+            >
+              ×
+            </button>
+          )}
         </div>
         {/* Both icon tools sit to the RIGHT of the field, each in its own fixed
             26px box: the search field is the only thing that gives width back on
@@ -2062,6 +2132,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                         placeholder={t('filter.searchSource')}
                         onChange={event => setSourceFilter(event.target.value)}
                       />
+                      {sourceFilter.length > 0 && (
+                        <button
+                          type="button"
+                          className={css.searchClear}
+                          title={t('action.clearSearch')}
+                          aria-label={t('action.clearSearch')}
+                          onClick={() => { setSourceFilter('') }}
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   )}
                   <div className={css.filterList}>
@@ -2147,16 +2228,30 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   ))}
                   {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
                   {tags.map(tag => (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      className={css.filterRow}
-                      onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
-                    >
-                      <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
-                      <span className={css.filterLabel}>{tag.name}</span>
-                      <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
-                    </button>
+                    <div key={tag.id} className={css.filterTagRow}>
+                      <button
+                        type="button"
+                        className={css.filterRow}
+                        onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
+                      >
+                        <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
+                        <span className={css.filterLabel}>{tag.name}</span>
+                        <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
+                      </button>
+                      {/* The vocabulary is the reader's own; a tag that can only
+                          be created is a one-way door. Deleting is quiet (the
+                          × sits at low contrast) but always visible: a control
+                          that appears only on hover is invisible on touch. */}
+                      <button
+                        type="button"
+                        className={css.filterTagDelete}
+                        title={t('filter.deleteTag')}
+                        aria-label={`${t('filter.deleteTag')}: ${tag.name}`}
+                        onClick={() => { void removeTag(tag.id) }}
+                      >
+                        ×
+                      </button>
+                    </div>
                   ))}
                 </>
               )}

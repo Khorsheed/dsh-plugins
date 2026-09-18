@@ -18,7 +18,7 @@ export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
-  | 'filter.searchSource' | 'filter.noSourceMatch' | 'filter.byKind'
+  | 'filter.searchSource' | 'filter.noSourceMatch' | 'filter.byKind' | 'filter.deleteTag'
   | 'action.translate' | 'translate.view' | 'translate.onlyTranslation' | 'translate.bilingual'
   | 'translate.onlyOriginal' | 'translate.retry' | 'translate.tip' | 'translate.preparing'
   | 'translate.working' | 'translate.local' | 'translate.failed' | 'translate.dismiss'
@@ -29,13 +29,13 @@ export type ReaderKey =
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
   | 'action.copyLink' | 'action.openExternal' | 'action.quote' | 'action.manage'
-  | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel'
+  | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel' | 'action.clearSearch'
   | 'add.title' | 'add.help' | 'add.placeholder'
   | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.savedLinkNoPreview' | 'verdict.duplicate'
   | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'
   | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
   | 'preview.empty' | 'preview.unreachable' | 'preview.http'
-  | 'detail.linkOnlyBadge' | 'detail.removeLink'
+  | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
   | 'state.emptyWall' | 'state.incompleteReason'
@@ -95,6 +95,7 @@ export const en = {
   'tag.empty': 'No tags yet — type a name to make the first one',
   'filter.byTag': 'By tag',
   'filter.byKind': 'By type',
+  'filter.deleteTag': 'Delete this tag',
   'filter.searchSource': 'Search sources…',
   'filter.noSourceMatch': 'No source matches',
   'search.placeholder': 'Search titles, authors, sources…',
@@ -117,6 +118,7 @@ export const en = {
   'action.submit': 'Fetch',
   'action.done': 'Done',
   'action.cancel': 'Cancel',
+  'action.clearSearch': 'Clear',
 
   'add.title': 'Add inspiration',
   'add.help': 'Paste a feed address or any article link. What comes back decides how it is stored: a feed is subscribed and refreshed on schedule, a web page is kept as a single item.',
@@ -136,6 +138,7 @@ export const en = {
   'preview.unreachable': 'the site could not be reached just now',
   'preview.http': 'the site answered with an HTTP error',
   'detail.linkOnlyBadge': 'Link only',
+  'detail.fetchingBody': 'Fetching the full text…',
   'detail.removeLink': 'Delete this link',
 
   'state.loading': 'Loading…',
@@ -163,7 +166,7 @@ export const en = {
   'sources.cardHint': 'Subscription',
   'sources.name': 'Name',
   'sources.cache': 'Keep fetched articles',
-  'sources.cacheHelp': 'A fetched article is served from the cache until this deadline; after that, opening it offers the fetch again. 0 means keep it until the storage budget evicts it.',
+  'sources.cacheHelp': 'A fetched article is served from the cache until this deadline; after that, opening the entry fetches it once more. 0 means keep it until the storage budget evicts it.',
   'sources.cacheHours': '{count} hours',
   'sources.cacheForever': 'Until evicted',
   'sources.blocked': 'This publisher refuses automatic fetches (its page answers with a bot challenge), so only the feed’s own text can be shown.',
@@ -247,6 +250,7 @@ export const zh = {
   'tag.empty': '还没有标签 —— 输入名字回车就能建第一个',
   'filter.byTag': '按标签',
   'filter.byKind': '按类型',
+  'filter.deleteTag': '删除这个标签',
   'filter.searchSource': '搜索来源…',
   'filter.noSourceMatch': '没有匹配的来源',
   'search.placeholder': '搜索标题、作者、来源…',
@@ -269,6 +273,7 @@ export const zh = {
   'action.submit': '抓取',
   'action.done': '完成',
   'action.cancel': '取消',
+  'action.clearSearch': '清空',
 
   'add.title': '新增灵感',
   'add.help': '粘贴订阅源地址或任意文章链接。抓回来是什么，就按什么处理：是 feed 就订阅、按计划刷新，是网页就只存这一篇。',
@@ -288,6 +293,7 @@ export const zh = {
   'preview.unreachable': '刚才连不上这个站点',
   'preview.http': '这个站点返回了 HTTP 错误',
   'detail.linkOnlyBadge': '仅链接',
+  'detail.fetchingBody': '正在抓取正文…',
   'detail.removeLink': '删除这条链接',
 
   'state.loading': '加载中…',
@@ -315,7 +321,7 @@ export const zh = {
   'sources.cardHint': '订阅源',
   'sources.name': '名称',
   'sources.cache': '正文保留',
-  'sources.cacheHelp': '抓到的正文在这个期限前直接读缓存；过期后再打开会问你（这里问一次即可，页面上的按钮同样会提示）。0 = 一直留到存储预算淘汰它。',
+  'sources.cacheHelp': '抓到的正文在这个期限前直接读缓存；过期后下次打开这一条会重新抓一次。0 = 一直留到存储预算淘汰它。',
   'sources.cacheHours': '{count} 小时',
   'sources.cacheForever': '留到被淘汰',
   'sources.blocked': '这个站点拒绝自动抓取（原文地址对人以外的请求返回验证页），所以只能展示订阅源自己发布的内容。',
