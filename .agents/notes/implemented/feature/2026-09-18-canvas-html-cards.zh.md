@@ -34,6 +34,15 @@ CSP-in-head 的讲究（srcdoc 没有可依赖的 CSP 继承）、片段与整�
 
 为一条热的渲染路径引入 parser 依赖（或 DOM）是用重型答案回答一个是非题，而且 parser 的容错方向恰好错（它接受残缺标记，于是带尖括号的 markdown 正文也能「parse 出」文档）。启发式的职责是便宜的保守门；它说是，沙箱接手。
 
+## 同波次追加（256KB 上限 + 指针边界）
+
+3080 的首次渲染实测立刻暴露了相邻缺陷：粘入的完整 HTML 文档被静默截断在 8000 字卡上限——数据级丢失，用户在截图里亲眼看到。同版本同波次：
+
+- `MAX_CARD_TEXT_LENGTH` 8000 → 256_000（注释记明理由：整板 `canvas.json` 读写下几十张 256KB 卡仍是毫秒级；真正的 `assets/` 落盘存指针是 M4 项）。`MAX_COMMENT_TEXT_LENGTH` 保持 4000。
+- 提案 §8 边界从「写明」落到「执行」：`promptFormOf`（新，在 `prompt.ts`）是唯一的模型面形态——HTML 卡是指针（标题 + 字数 + 卡 id +「需要内容请用户粘贴节选」），markdown 卡带 4000 字上限 + 截断注记。所有把卡文本喂给模型的路径同走它：`cardToRef`（透镜/提问引用）、板摘要的 `summaryOf`（html 卡显示显示标题，绝不是 doctype）、grounding 护栏列表。
+- 详情滚动容器底部 padding 40px → 64px，正文尾部与评论框/瞬时浮层保持空隙（疑似 composer 遮挡排查过：我们的评论框是 in-flow 且根容器本有 padding——这一行是保险，截图里的浮层是宿主自己的 composer）。
+- 测试：cap 边界（256_000 完整落地、256_001 截断）、html 引用零正文泄漏断言（无 `<!DOCTYPE`、无 `<table>`、无正文词）、markdown 截断注记、grounding 段指针。
+
 ## Consequences
 
 - `packages/canvas/src/card-format.ts`（新）：`detectCardFormat` + `htmlTitleOf` + `MAX_HTML_TITLE_LENGTH`（+9 个 spec 例：整文档、片段、md 内联 html、普通 md、纯文本、空串）。

@@ -9,6 +9,7 @@
  *
  * @module @khorsheed/dsh-canvas
  */
+import { detectCardFormat, htmlTitleOf } from './card-format.ts'
 import {
   BOARD_CARD_KINDS, type BoardCard, type CanvasBoard, type CanvasLensId,
 } from './types.ts'
@@ -20,21 +21,70 @@ const SUMMARY_TEXT_LENGTH = 60
 
 /** A card's one-line summary for the prompt and for refs (kind-tagged, capped). */
 function summaryOf(card: BoardCard): string {
-  const firstLine = card.text.split('\n').find(line => line.trim().length > 0) ?? ''
+  // An HTML card's summary is its display title — never the markup's opener.
+  const firstLine = detectCardFormat(card.text) === 'html'
+    ? displayTitleOf(card)
+    : (card.text.split('\n').find(line => line.trim().length > 0) ?? '')
   const capped = firstLine.length > SUMMARY_TEXT_LENGTH ? `${firstLine.slice(0, SUMMARY_TEXT_LENGTH)}…` : firstLine
   return `[${card.kind}] ${capped}`
 }
 
+/** Strip tags from a first line (the HTML fallback title's plain text). */
+function plainFirstLine(text: string): string {
+  const firstLine = text.split('\n').find(line => line.trim().length > 0) ?? ''
+  const stripped = firstLine.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+  return stripped === '' ? firstLine : stripped
+}
+
+/**
+ * A card's display title for the prompt: the HTML `<title>`, else the first
+ * line with any tags stripped (a one-line HTML document's first line IS the
+ * markup — truncating markup would still leak markup).
+ */
+function displayTitleOf(card: BoardCard): string {
+  return htmlTitleOf(card.text) ?? plainFirstLine(card.text).slice(0, 36)
+}
+
+/** Longest markdown card text handed to the model in one ref (the model-facing cap). */
+export const MAX_PROMPT_CARD_CHARS = 4000
+
+/**
+ * The card's model-facing form: HTML cards are pointers, never the document
+ * (the proposal §8 boundary — an HTML card's content never enters the model
+ * context in full: the agent sees the title and a handle, and asks the user
+ * for an excerpt when it needs one); markdown cards carry their text capped
+ * with an explicit truncation note.
+ * @param card - the card to render for the model.
+ * @returns the model-facing text (English, the model's own language).
+ */
+export function promptFormOf(card: BoardCard): string {
+  const format = detectCardFormat(card.text)
+  if (format === 'html') {
+    const title = displayTitleOf(card)
+    return `[html] ${title} — HTML document, ${card.text.length} chars, on canvas card ${card.id}; `
+      + 'ask the user to paste an excerpt when its content is needed'
+  }
+  if (card.text.length > MAX_PROMPT_CARD_CHARS) {
+    return `${card.text.slice(0, MAX_PROMPT_CARD_CHARS)}\n…(truncated, full text ${card.text.length} chars on card ${card.id})`
+  }
+  return card.text
+}
+
 /**
  * The ref one selected card becomes: an opaque `{ label, text }` chunk — the
- * chat context knows nothing about cards (§3's 选区即上下文 protocol).
+ * chat context knows nothing about cards (§3's 选区即上下文 protocol). The
+ * text rides {@link promptFormOf}: an HTML card is a pointer, a long markdown
+ * card is capped with its truncation noted.
  * @param card - the selected card.
  * @returns the ref handed to the chat context.
  */
 export function cardToRef(card: BoardCard): { label: string; text: string } {
-  const firstLine = card.text.split('\n').find(line => line.trim().length > 0) ?? card.kind
-  const label = firstLine.length > 36 ? `${firstLine.slice(0, 36)}…` : firstLine
-  return { label, text: `[${card.kind}] ${card.text}` }
+  const format = detectCardFormat(card.text)
+  const label = format === 'html'
+    ? displayTitleOf(card)
+    : (plainFirstLine(card.text) || card.kind)
+  const cappedLabel = label.length > 36 ? `${label.slice(0, 36)}…` : label
+  return { label: cappedLabel, text: `[${card.kind}] ${promptFormOf(card)}` }
 }
 
 /** The stats feedback section (§4): visible only when the samples say so. */
@@ -83,7 +133,7 @@ export function renderCanvasPrompt(board: CanvasBoard, lens?: CanvasLensId): str
   if (grounding.length > 0) {
     sections.push(
       '以下「依据」是用户确认过的共同认识，不可违背；质疑它时必须先与用户确认：\n'
-      + grounding.map(card => `- ${card.text}`).join('\n'),
+      + grounding.map(card => `- ${promptFormOf(card)}`).join('\n'),
     )
   }
 

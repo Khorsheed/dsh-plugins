@@ -540,3 +540,18 @@ describe('CanvasBoardService draft', () => {
       .toEqual({ ok: false, error: 'denied' })
   })
 })
+
+describe('the raised card cap (0.4.3)', () => {
+  it('a pasted 256KB document lands whole, and the next char truncates', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    const exact = '长'.repeat(256_000)
+    const put = await board.putCard({ canvasId: created.id, kind: 'document', text: exact }, SESSION)
+    if (!put.ok) throw new Error('expected the card to land')
+    expect(put.board.cards[0]?.text).toBe(exact)
+    const over = '长'.repeat(256_001)
+    const putOver = await board.putCard({ canvasId: created.id, kind: 'document', text: over }, SESSION)
+    if (!putOver.ok) throw new Error('expected the card to land')
+    expect(putOver.board.cards[1]?.text).toHaveLength(256_000)
+  })
+})

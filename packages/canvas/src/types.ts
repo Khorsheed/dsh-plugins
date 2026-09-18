@@ -328,8 +328,14 @@ export type QuestionState = (typeof QUESTION_STATES)[number]
 /** Longest accepted canvas title, in code units. */
 export const MAX_CANVAS_TITLE_LENGTH = 80
 
-/** Longest accepted card text, in code units — cards stay small by design. */
-export const MAX_CARD_TEXT_LENGTH = 8000
+/**
+ * Longest accepted card text, in code units. Cards are small by design — but
+ * "paste a whole document in to read it" is a core scene, and a silent 8000
+ * cut was data loss (a pasted HTML document lost its tail). 256KB per card
+ * keeps canvas.json's whole-board reads/writes in the milliseconds even with
+ * dozens of big cards; the real `assets/` pointer-out is M4's.
+ */
+export const MAX_CARD_TEXT_LENGTH = 256_000
 
 /** Longest accepted comment text, in code units. */
 export const MAX_COMMENT_TEXT_LENGTH = 4000

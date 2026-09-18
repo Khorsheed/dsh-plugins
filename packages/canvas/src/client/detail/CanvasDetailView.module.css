@@ -5,7 +5,9 @@
   position: relative;
   height: 100%;
   overflow-y: auto;
-  padding: 14px 16px 40px;
+  /* The tail keeps clear of the comment form (in-flow) and any transient
+     overlay: 64px of bottom breathing room, not 40. */
+  padding: 14px 16px 64px;
   font-family: var(--dsw-font-family);
   display: flex;
   flex-direction: column;

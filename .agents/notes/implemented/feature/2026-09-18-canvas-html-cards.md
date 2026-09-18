@@ -34,6 +34,15 @@ The CSP-in-head dance (no CSP inheritance to rely on for srcdoc), the fragment-v
 
 A parser dependency (or the DOM) for a hot render path is a heavy answer to a yes/no question, and parsers are lenient in exactly the wrong direction for this gate (they accept broken markup, which markdown prose with angle brackets then "parses" as). The heuristic's job is a cheap conservative gate; the sandbox takes over once it says yes.
 
+## Same-wave follow-up (the 256KB cap + the pointer boundary)
+
+The first render pass on 3080 immediately exposed the adjacent defect: a pasted full HTML document was silently truncated at the 8000-char card cap — data loss, the user saw it in the screenshot. Same version, same wave:
+
+- `MAX_CARD_TEXT_LENGTH` 8000 → 256_000 (the comment records why: whole-board `canvas.json` reads/writes stay millisecond-cheap with dozens of 256KB cards; the real `assets/` pointer-out is M4's). `MAX_COMMENT_TEXT_LENGTH` stays 4000.
+- The proposal §8 boundary is now enforced where text reaches the model, not just stated: `promptFormOf` (new, in `prompt.ts`) is the one model-facing form — an HTML card is a POINTER (title + char count + card id + "ask the user to paste an excerpt"), a markdown card carries its text capped at 4000 with the truncation stated. Every path that hands card text to the model rides it: `cardToRef` (lens/ask refs), the board summary's `summaryOf` (html cards now show the display title, never the doctype), and the grounding guardrail's list.
+- The detail scroll container's bottom padding went 40px → 64px so the tail keeps clear of the comment form and transient overlays (the suspected composer overlap was inspected: our composer is in-flow and the root already padded — the bump is insurance, and the screenshot's float was the host's own composer).
+- Tests: the cap boundary (256_000 lands whole, 256_001 truncates), the zero-body-leak assertion for html refs (no `<!DOCTYPE`, no `<table>`, no body words), the markdown truncation note, and the grounding-section pointer.
+
 ## Consequences
 
 - `packages/canvas/src/card-format.ts` (new): `detectCardFormat` + `htmlTitleOf` + `MAX_HTML_TITLE_LENGTH` (+9 spec cases: documents, fragments, inline-HTML-in-markdown, plain text, empty).
