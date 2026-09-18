@@ -31,7 +31,7 @@ dsh plugin --profile web remove @khorsheed/dsh-context-guard
 
 ## 配置
 
-一个可调项，在 GUI 里改（设置 → 插件配置 →「压缩提醒时机 / Compaction reminder timing」）且实时生效，无需重启。
+一个可调项，在 GUI 里改且实时生效，无需重启——0.1.5：设置 → 插件配置 →「压缩提醒时机 / Compaction reminder timing」；0.1.6-alpha.2 起：插件管理页 → 本包详情页的配置区。
 
 | 键 | 默认值 | 含义 |
 |---|---|---|
@@ -48,6 +48,7 @@ plugins:
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- 0.1.6-alpha.2 预发布线（`@deepseek-ai/dsh@0.1.6-alpha.2`）：✅ 完整——`settings.plugin.item` 槽随 ui-settings-plugins 重构删除，设置卡改投 `plugins.bundle.config`（按包名 keyed，Plugins 页绘制标题后渲染本表单）；双注入探测保持 0.1.5 线旧卡可用，minHost 不动。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
 
 **版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。

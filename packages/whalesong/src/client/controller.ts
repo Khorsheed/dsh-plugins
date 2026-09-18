@@ -17,7 +17,7 @@
  */
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import { anySessionRunning, diffPendingInteractions, diffSessionList } from './status.ts'
 import { createWhalesongOverlay, setWhalesongActive, type WhalesongOverlay } from './whalesong-overlay.ts'
 import { createSoundPlayer, type WhalesongSoundPlayer } from './sound.ts'
@@ -34,11 +34,12 @@ export interface WhalesongRuntimeDeps {
   /** Global session-list snapshot feed (`ctx.sessions.list`). */
   readonly list: ObservableSnapshot<SessionListState>
   /**
-   * Pending-interaction feed (`ctx.uiSession.pendingInteractions`) driving the
-   * blocked chime; absent when the ui-session service is not assembled, which
-   * degrades the blocked chime off (completion chimes are unaffected).
+   * Session status feed (`ctx.uiSession.sessionStatus`) driving the blocked
+   * chime through each entry's `pendingInteraction`; absent when the
+   * ui-session service is not assembled, which degrades the blocked chime off
+   * (completion chimes are unaffected).
    */
-  readonly pending?: ObservableSnapshot<SessionPendingInteractionSnapshot>
+  readonly pending?: ObservableSnapshot<SessionStatusSnapshot>
   readonly createOverlay?: (doc: Document) => WhalesongOverlay
   readonly createSound?: (win: Window) => WhalesongSoundPlayer
   readonly createFavicon?: (win: Window) => FaviconAnimator

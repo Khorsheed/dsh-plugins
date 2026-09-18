@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createWhalesongRuntime, RECONCILE_MS } from '../src/client/controller.ts'
 import type { WhalesongSound } from '../src/client/sound.ts'
@@ -18,9 +18,13 @@ function state(rows: Record<string, RowSpec>): SessionListState {
   return { ids: Object.keys(rows), byId, current: undefined, phase: 'ready', subagentsByParent: {} } as unknown as SessionListState
 }
 
-/** A pending-interaction frame: one approval-shaped entry per session id. */
-function pending(...ids: string[]): SessionPendingInteractionSnapshot {
-  return new Map(ids.map(id => [id as SessionId, { key: `${id}:approval`, kind: 'approval', sessionId: id as SessionId }]))
+/** A Session status frame: one approval-shaped pending interaction per session id. */
+function pending(...ids: string[]): SessionStatusSnapshot {
+  return new Map(ids.map(id => [id as SessionId, {
+    running: undefined,
+    pendingInteraction: { key: `${id}:approval`, kind: 'approval', sessionId: id as SessionId },
+    completionUnread: false,
+  }]))
 }
 
 /** Controllable snapshot feed mirroring SnapshotStore's observable face. */
@@ -68,14 +72,14 @@ interface FakeFavicon {
 /** Runtime wired to fakes; tracks every created instance. */
 function setup(initial: SessionListState): {
   list: FakeFeed<SessionListState>
-  pending: FakeFeed<SessionPendingInteractionSnapshot>
+  pending: FakeFeed<SessionStatusSnapshot>
   sounds: FakeSound[]
   overlays: FakeOverlay[]
   favicons: FakeFavicon[]
   runtime: ReturnType<typeof createWhalesongRuntime>
 } {
   const list = new FakeFeed<SessionListState>(initial)
-  const pendingFeed = new FakeFeed<SessionPendingInteractionSnapshot>(pending())
+  const pendingFeed = new FakeFeed<SessionStatusSnapshot>(pending())
   const sounds: FakeSound[] = []
   const overlays: FakeOverlay[] = []
   const favicons: FakeFavicon[] = []

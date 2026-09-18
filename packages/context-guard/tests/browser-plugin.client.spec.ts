@@ -26,6 +26,9 @@ import type { ContextGuardInjected, ContextGuardSettingsCardInjected } from '../
 /** A session id the slot system may materialize the inject face for. */
 const KNOWN = 's1' as SessionId
 
+/** This bundle's package name — the key the alpha.2 plugins.bundle.config entry registers under. */
+const PACKAGE_NAME = '@khorsheed/dsh-context-guard'
+
 /** In-memory settings provider for the host-half registration test. */
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -85,8 +88,11 @@ interface Bench {
   scope: SettingsScope<ContextGuardConfig>
 }
 
-/** Boot the browser half over a real slot tree that declares the input.right list and the plugin-item slot. */
-async function bench(config?: Parameters<typeof apply>[1]): Promise<Bench> {
+/** Boot the browser half over a real slot tree that declares the input.right list and the given settings slot. */
+async function bench(
+  config?: Parameters<typeof apply>[1],
+  settingsSlot: 'settings.plugin.item' | 'plugins.bundle.config' = 'settings.plugin.item',
+): Promise<Bench> {
   const execute = vi.fn()
   const { scope } = stubScope()
   const ctx = new Context()
@@ -95,7 +101,7 @@ async function bench(config?: Parameters<typeof apply>[1]): Promise<Bench> {
     name: 'root',
     children: {
       'conversation.input.right': { kind: 'list', scope: 'session' },
-      'settings.plugin.item': { kind: 'keyed', scope: 'root' },
+      [settingsSlot]: { kind: 'keyed', scope: 'root' },
     },
   } as never, () => null)
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -119,12 +125,21 @@ function buttonInjectedFor(ctx: Context, sessionId: SessionId): ContextGuardInje
   return (entry.inject as unknown as (id: SessionId) => ContextGuardInjected)(sessionId)
 }
 
-/** Read the registered settings-card entry's inject factory. */
+/** Read the registered settings-card entry's inject factory (0.1.5 slot). */
 function cardInjectedFor(ctx: Context): ContextGuardSettingsCardInjected {
   const entry = ctx.slots
     .entries('settings.plugin.item')
     .find(e => e.options.key === CONTEXT_GUARD_NS)
   if (entry === undefined) throw new Error('context-guard settings card missing')
+  return (entry.inject as unknown as () => ContextGuardSettingsCardInjected)()
+}
+
+/** Read the registered bundle-config entry's inject factory (alpha.2 slot). */
+function bundleConfigInjectedFor(ctx: Context): ContextGuardSettingsCardInjected {
+  const entry = ctx.slots
+    .entries('plugins.bundle.config')
+    .find(e => e.options.key === PACKAGE_NAME)
+  if (entry === undefined) throw new Error('context-guard bundle config missing')
   return (entry.inject as unknown as () => ContextGuardSettingsCardInjected)()
 }
 
@@ -144,11 +159,22 @@ describe('context-guard browser half', () => {
     expect(ctx.slots.entries('conversation.input.right').map(e => e.options.id)).not.toContain('context-guard')
   })
 
-  it('registers the settings card keyed on the namespace, removed with the fiber', async () => {
+  it('registers the settings card keyed on the namespace on the 0.1.5 slot, removed with the fiber', async () => {
     const { ctx, fiber } = await bench()
     expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).toContain(CONTEXT_GUARD_NS)
+    // The alpha.2 registration never fires without the bundle-config declaration.
+    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).not.toContain(PACKAGE_NAME)
     await fiber.dispose()
     expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).not.toContain(CONTEXT_GUARD_NS)
+  })
+
+  it('registers the bundle configuration keyed by package name on the alpha.2 slot, removed with the fiber', async () => {
+    const { ctx, fiber } = await bench(undefined, 'plugins.bundle.config')
+    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).toContain(PACKAGE_NAME)
+    // The legacy registration never fires without the 0.1.5 declaration.
+    expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).not.toContain(CONTEXT_GUARD_NS)
+    await fiber.dispose()
+    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).not.toContain(PACKAGE_NAME)
   })
 
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {
@@ -170,6 +196,11 @@ describe('context-guard browser half', () => {
     const { ctx, scope } = await bench()
     expect(buttonInjectedFor(ctx, KNOWN).hooks.config).toBe(scope)
     expect(cardInjectedFor(ctx).hooks.config).toBe(scope)
+  })
+
+  it('shares the same live settings scope on the alpha.2 bundle-config face', async () => {
+    const { ctx, scope } = await bench(undefined, 'plugins.bundle.config')
+    expect(bundleConfigInjectedFor(ctx).hooks.config).toBe(scope)
   })
 
   it('carries the resolved fallback config on the button inject face', async () => {

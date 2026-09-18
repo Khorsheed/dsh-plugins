@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import { apply } from '../src/client/index.ts'
+import type { LegacyPendingInteractionSnapshot } from '../src/client/status.ts'
 
 type RowSpec = Partial<SessionSummary> & { running: boolean }
 
@@ -27,6 +29,22 @@ class FakeList implements ObservableSnapshot<SessionListState> {
   }
   get listenerCount(): number { return this.listeners.size }
   set(next: SessionListState): void {
+    this.snapshot = next
+    for (const fn of [...this.listeners]) fn()
+  }
+}
+
+/** Controllable feed mirroring the ui-session observable face (either status vintage). */
+class FakeFeed<T> implements ObservableSnapshot<T> {
+  private readonly listeners = new Set<() => void>()
+  constructor(private snapshot: T) {}
+  getSnapshot(): T { return this.snapshot }
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn)
+    return () => { this.listeners.delete(fn) }
+  }
+  get listenerCount(): number { return this.listeners.size }
+  set(next: T): void {
     this.snapshot = next
     for (const fn of [...this.listeners]) fn()
   }
@@ -89,5 +107,45 @@ describe('whalesong client apply', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  it('subscribes the alpha.2 sessionStatus feed for the blocked chime, and unwinds it on teardown', async () => {
+    const list = new FakeList(state({}))
+    const status = new FakeFeed<SessionStatusSnapshot>(new Map())
+    const ctx = new Context()
+    ctx.provide('sessions', { list } as never)
+    ctx.provide('uiSession', { sessionStatus: status } as never)
+    apply(ctx)
+    // Optimistic enabled config starts the runtime synchronously; the status
+    // feed is subscribed through the probe.
+    expect(status.listenerCount).toBe(1)
+    await ctx.fiber.dispose()
+    expect(status.listenerCount).toBe(0)
+  })
+
+  it('adapts the 0.1.5 pendingInteractions feed when sessionStatus is absent', async () => {
+    const list = new FakeList(state({}))
+    const legacy = new FakeFeed<LegacyPendingInteractionSnapshot>(new Map())
+    const ctx = new Context()
+    ctx.provide('sessions', { list } as never)
+    ctx.provide('uiSession', { pendingInteractions: legacy } as never)
+    apply(ctx)
+    // The runtime subscribes the legacy feed through the forward adapter.
+    expect(legacy.listenerCount).toBe(1)
+    await ctx.fiber.dispose()
+    expect(legacy.listenerCount).toBe(0)
+  })
+
+  it('prefers sessionStatus when both faces are present', async () => {
+    const list = new FakeList(state({}))
+    const status = new FakeFeed<SessionStatusSnapshot>(new Map())
+    const legacy = new FakeFeed<LegacyPendingInteractionSnapshot>(new Map())
+    const ctx = new Context()
+    ctx.provide('sessions', { list } as never)
+    ctx.provide('uiSession', { sessionStatus: status, pendingInteractions: legacy } as never)
+    apply(ctx)
+    expect(status.listenerCount).toBe(1)
+    expect(legacy.listenerCount).toBe(0)
+    await ctx.fiber.dispose()
   })
 })
