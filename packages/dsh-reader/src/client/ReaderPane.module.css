@@ -1785,12 +1785,22 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Hover is the ONLY pairing cue, and it works from either side. Nothing is
-   painted on a sentence just because it is open: a reader exploring a few
-   sentences used to leave the whole article speckled. */
+/* An expanded sentence keeps exactly ONE quiet marker: a hairline underline.
+   The reader asked for no standing background and no standing bar (a few opened
+   sentences used to leave the article speckled), and an underline is neither —
+   it is the standard "this text is bound to something" cue, and it is what says
+   which sentences are open when several are. */
+.unit[data-open] {
+  box-shadow: inset 0 -1px 0 var(--dsw-static-deepseek-500);
+}
+
+/* Hover is the pairing cue, and it works from either side: the sentence under
+   the pointer takes a tint plus a firmer underline, and its original line lights
+   up with the accent bar in its own gutter. */
 .unit:hover,
 .unit[data-hover] {
   background: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: inset 0 -2px 0 var(--dsw-static-deepseek-500);
 }
 
 /* In the original-only view the whole article is already English: the units are
@@ -1848,6 +1858,11 @@
 
 .revealLine {
   margin: 0 0 3px;
+  /* Room for the pairing bar below. Every line carries the same padding, so the
+     bar appearing on hover cannot shift the text — and without the room the
+     `inset` bar is painted ON the first glyph (reported as the blue stripe
+     covering the first word). */
+  padding-left: 7px;
   font-size: 13.5px;
   line-height: 1.62;
   letter-spacing: -0.003em;

@@ -303,12 +303,18 @@ describe('the translated article reads like content', () => {
     expect(line).toMatch(/line-height:\s*1\.62/)
     expect(line).toMatch(/margin:\s*0 0 3px/)
     expect(line).toMatch(/color:\s*var\(--dsw-alias-label-secondary\)/)
-    // The pairing cue is HOVER-ONLY: a standing mark on every opened original
-    // was reported as making the article messy.
+    // The pairing bar needs its own gutter: painted at the text's left edge it
+    // lands on the first glyph.
+    expect(line).toMatch(/padding-left:\s*7px/)
+    // Hover is the pairing cue; the original line carries NOTHING standing (a
+    // mark on every opened original was reported as making the article messy).
     expect(css).toMatch(/\.revealLine\[data-hover\]/)
     expect(css).toMatch(/\.unit\[data-hover\]/)
     expect(css).not.toMatch(/\.revealLine\[data-open\]/)
-    expect(css).not.toMatch(/\.unit\[data-open\]/)
+    // An expanded sentence keeps one quiet marker — an underline, no fill.
+    const open = /\.unit\[data-open\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(open).toMatch(/inset 0 -1px 0/)
+    expect(open).not.toMatch(/background/)
   })
 
   it('spaces the original by where its container sits', () => {
