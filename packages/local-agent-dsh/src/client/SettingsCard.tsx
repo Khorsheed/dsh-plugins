@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the settings.plugin.item keyed-slot SlotMap merge.
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+// Type-only: the plugins.bundle.config keyed-slot SlotMap merge (alpha.2).
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { IconChevronDownOutline14, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
@@ -57,30 +57,48 @@ export interface DshSettingsCardInjected {
   }
 }
 
-/** Full props of the settings.plugin.item card entry. */
+/**
+ * Full props of the 0.1.5 settings.plugin.item card entry. The removed slot's
+ * owner share was intentionally empty and its root scope delivered the global
+ * seats; the structural type below is exact about the one seat the auth block
+ * consumes (the slot name is gone from the alpha.2 SlotMap, so the
+ * registration goes through a duck-typed narrow — see client/index.ts).
+ */
 export type DshSettingsCardProps =
-  PropsRuntime<'settings.plugin.item'>
+  InjectFace<DshSettingsCardInjected>
+  & PropsLocale<typeof NS>
+  & {
+    /** The standing root-scope global seat (ui-session's merge), delivered to the 0.1.5 card by the renderer. */
+    useSessions: ProviderAuthBlockProps['useSessions']
+  }
+
+/** Full props of the alpha.2 plugins.bundle.config entry (owner prop `view`). */
+export type DshBundleConfigProps =
+  PropsRuntime<'plugins.bundle.config'>
   & InjectFace<DshSettingsCardInjected>
   & PropsLocale<typeof NS>
 
 /**
- * The dsh harness settings card in the plugin configuration tab: the same
- * collapsible chrome the official plugin cards use, re-implemented locally
- * (the bundle-purity gate forbids value-importing the official chrome — the
- * context-guard pattern). The body carries the family core's shared
- * ProviderAuthBlock (dsh authenticates through the host credentials, so the
- * block renders status only — no login action), the DeepSeek delegation
- * switch (migrated from the 本地 Agent section's row-action seat), and the
- * resident-mode block; all writes go through the bound settingsScope
+ * The staged card state both settings surfaces share: the delegation,
+ * resident-mode, and model edits write through the bound settingsScope
  * immediately (revision-fenced), so a flip takes effect on the next
- * delegation round without a reload. Explanation copy lives in hover/focus
- * bubbles behind ⓘ anchors — the card's rows stay one line each.
- * @param props - runtime slot currency, the injected scope/auth faces, and copy.
- * @returns the card.
+ * delegation round without a reload; the harness's model surface is fetched
+ * while the surface is active (the 0.1.5 card opened, the alpha.2 page
+ * mounted) and re-fetched after every save.
+ * @param active - whether the surface currently shows the body (gates the model-surface fetch).
+ * @param useSettings - the bound settings hook from the inject hooks compartment.
+ * @param scope - the bound settings scope the writes go through.
+ * @param harnessModel - the harness's memberless model surface read.
+ * @param t - copy.
  */
-export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel, useSessions, t }: DshSettingsCardProps) {
+function useCardState(
+  active: boolean,
+  useSettings: DshSettingsCardProps['useSettings'],
+  scope: DshSettingsCardProps['scope'],
+  harnessModel: DshSettingsCardInjected['harnessModel'],
+  t: DshSettingsCardProps['t'],
+) {
   const snapshot: SettingsScopeSnapshot<DshCardSettings> = useSettings(value => value)
-  const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
@@ -95,19 +113,19 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
   const [modelSaved, setModelSaved] = useState(false)
   const [modelError, setModelError] = useState(false)
   const modelValue = modelDraft ?? storedModel
-  // The harness's model surface, fetched while the card is open (and re-fetched
-  // after a save): undefined until the first answer, null when the gateway or
-  // the broker is absent — the card then keeps the bare input with its
-  // recent-models suggestions, exactly as before brokers existed.
+  // The harness's model surface, fetched while the surface is active (and
+  // re-fetched after a save): undefined until the first answer, null when the
+  // gateway or the broker is absent — the card then keeps the bare input with
+  // its recent-models suggestions, exactly as before brokers existed.
   const [modelInfo, setModelInfo] = useState<LocalAgentModelInfo | null | undefined>(undefined)
   useEffect(() => {
-    if (!open) return
+    if (!active) return
     let stale = false
     void harnessModel().then((info) => {
       if (!stale) setModelInfo(info ?? null)
     })
     return () => { stale = true }
-  }, [open, harnessModel, modelSaved])
+  }, [active, harnessModel, modelSaved])
   /**
    * Commit the model field. A blank value UNSETS the key rather than storing
    * an empty string, so the field re-inherits the YAML composition base — and
@@ -197,16 +215,28 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
         ? t('model.menuDefault.last-observed', { model: modelInfo.lastObserved })
         : t('model.menuDefault')
 
-  const title = t('card.title')
-  // The at-a-glance credential dot in the collapsed header: every mount
-  // re-probes (a credential expiring mid-session must flip the dot at the
-  // next view); the bus dedupes identical results, so no re-render storm.
-  const authStatus = useHarnessAuthStatus('dsh', auth.status)
-  const dotLabel = authT(
-    authStatus === 'authenticated' ? 'settings.authenticated'
-      : authStatus === 'anonymous' ? 'settings.notAuthenticated'
-        : authStatus === 'checking' ? 'loading' : 'error',
-  )
+  return {
+    snapshot, saved, error, ready, enabled, live, storedModel, modelValue,
+    modelSaved, modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
+    modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
+    setModelDraft, setModelMenuOpen,
+  }
+}
+
+/** The card body both settings surfaces share: the auth block, the delegation switch, the default-model block, and the resident-mode block. */
+function CardBody({ state, auth, authT, useSessions, t }: {
+  readonly state: ReturnType<typeof useCardState>
+  readonly auth: DshSettingsCardInjected['auth']
+  readonly authT: DshSettingsCardInjected['authT']
+  readonly useSessions: DshSettingsCardProps['useSessions']
+  readonly t: DshSettingsCardProps['t']
+}) {
+  const {
+    snapshot, saved, error, ready, enabled, live, storedModel, modelValue,
+    modelSaved, modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
+    modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
+    setModelDraft, setModelMenuOpen,
+  } = state
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
   // field), or inside the select-like field next to its chevron. No datalist:
@@ -222,6 +252,162 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
       onChange={(event) => { setModelDraft(event.target.value) }}
     />
   )
+  return (
+    <div className={css.body}>
+      <section className={css.block}>
+        <h3 className={css.blockTitle}>{t('auth.title')}</h3>
+        <ProviderAuthBlock
+          harness={{ id: 'dsh', label: 'dsh' }}
+          useSessions={useSessions}
+          status={auth.status}
+          runCommand={auth.runCommand}
+          t={authT}
+        />
+        <span className={css.hint}>{t('auth.host')}</span>
+      </section>
+      <section className={css.block}>
+        <h3 className={css.blockTitle}>{t('enable.title')}</h3>
+        <div className={css.row}>
+          <span className={css.rowLabel}>{t('enable.switch')}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label={t('enable.switch.aria')}
+            className={enabled ? `${css.switch} ${css.switchOn}` : css.switch}
+            disabled={!ready}
+            onClick={() => { write('enabled', !enabled) }}
+          >
+            <span className={css.knob} />
+          </button>
+        </div>
+        <span className={css.hint}>{t(enabled ? 'enable.on' : 'enable.off')}</span>
+      </section>
+      <section className={css.block}>
+        <h3 className={css.blockTitle}>
+          {t('model.title')}
+          <Tooltip label={t('model.info')} side="bottom" maxWidth={360}>
+            <button type="button" className={css.info} aria-label={t('model.info.aria')}>ⓘ</button>
+          </Tooltip>
+        </h3>
+        <div className={css.row}>
+          {choices.length > 0 ? (
+            <div className={css.modelField} ref={modelFieldRef}>
+              {modelInputElement}
+              <button
+                type="button"
+                className={css.modelMenuButton}
+                aria-label={t('model.menu')}
+                aria-haspopup="menu"
+                aria-expanded={modelMenuOpen}
+                disabled={!ready}
+                onClick={() => { toggleModelMenu() }}
+              >
+                <IconChevronDownOutline14 className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
+              </button>
+              {modelMenuOpen && (
+                <div
+                  className={modelMenuUp ? `${css.modelMenu} ${css.modelMenuUp}` : css.modelMenu}
+                  role="menu"
+                  aria-label={t('model.menu')}
+                >
+                  {/* The leading follow-default item: checked while the
+                      field is unset; picking it clears the draft back to
+                      follow-default (a save then unsets the key). */}
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={modelValue.trim() === ''}
+                    className={modelValue.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
+                    onClick={() => { setModelDraft(''); setModelMenuOpen(false) }}
+                  >
+                    <span className={css.modelItemLabel}>{modelDefaultItem}</span>
+                    <span className={css.modelItemCheck} aria-hidden>{modelValue.trim() === '' ? '✓' : ''}</span>
+                  </button>
+                  {choices.map(choice => (
+                    <button
+                      key={choice}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={choice === modelValue}
+                      className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
+                      onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
+                    >
+                      <span className={css.modelItemLabel}>{choice}</span>
+                      <span className={css.modelItemCheck} aria-hidden>{choice === modelValue ? '✓' : ''}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : modelInputElement}
+          <button
+            type="button"
+            className={css.modelSave}
+            disabled={!ready || modelValue.trim() === storedModel}
+            onClick={() => { saveModel() }}
+          >
+            {t('model.save')}
+          </button>
+        </div>
+        {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
+        {modelError && <span className={css.errorText}>{t('model.error')}</span>}
+      </section>
+      <section className={css.block}>
+        <div className={css.row}>
+          <span className={css.rowLabel}>
+            {t('live.title')}
+            <Tooltip label={t('live.info')} side="bottom" maxWidth={360}>
+              <button type="button" className={css.info} aria-label={t('live.info.aria')}>ⓘ</button>
+            </Tooltip>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={live}
+            aria-label={t('live.title')}
+            className={live ? `${css.switch} ${css.switchOn}` : css.switch}
+            disabled={!ready}
+            onClick={() => { write('live', !live) }}
+          >
+            <span className={css.knob} />
+          </button>
+        </div>
+        {snapshot.status === 'unavailable' && (
+          <span className={css.hint}>{t('live.unavailable')}</span>
+        )}
+      </section>
+      {saved && <span className={css.saved}>{t('live.applied')}</span>}
+      {error && <span className={css.errorText}>{t('live.error')}</span>}
+    </div>
+  )
+}
+
+/**
+ * The dsh harness settings card in the 0.1.5 plugin configuration tab: the
+ * same collapsible chrome the official plugin cards use, re-implemented
+ * locally (the bundle-purity gate forbids value-importing the official chrome
+ * — the context-guard pattern), with the at-a-glance credential dot in the
+ * header. Explanation copy lives in hover/focus bubbles behind ⓘ anchors —
+ * the card's rows stay one line each.
+ * @param props - the injected scope/auth faces and copy.
+ * @returns the card.
+ */
+export function DshSettingsCard(props: DshSettingsCardProps) {
+  const { useSettings, scope, auth, authT, harnessModel, useSessions, t } = props
+  const [open, setOpen] = useState(false)
+  const state = useCardState(open, useSettings, scope, harnessModel, t)
+  // The at-a-glance credential dot in the collapsed header: every mount
+  // re-probes (a credential expiring mid-session must flip the dot at the
+  // next view); the bus dedupes identical results, so no re-render storm.
+  const authStatus = useHarnessAuthStatus('dsh', auth.status)
+  const dotLabel = authT(
+    authStatus === 'authenticated' ? 'settings.authenticated'
+      : authStatus === 'anonymous' ? 'settings.notAuthenticated'
+        : authStatus === 'checking' ? 'loading' : 'error',
+  )
+
+  const title = t('card.title')
   return (
     <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
       <button
@@ -240,135 +426,21 @@ export function DshSettingsCard({ useSettings, scope, auth, authT, harnessModel,
         </span>
         <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
-      {open && (
-        <div className={css.body}>
-          <section className={css.block}>
-            <h3 className={css.blockTitle}>{t('auth.title')}</h3>
-            <ProviderAuthBlock
-              harness={{ id: 'dsh', label: 'dsh' }}
-              useSessions={useSessions}
-              status={auth.status}
-              runCommand={auth.runCommand}
-              t={authT}
-            />
-            <span className={css.hint}>{t('auth.host')}</span>
-          </section>
-          <section className={css.block}>
-            <h3 className={css.blockTitle}>{t('enable.title')}</h3>
-            <div className={css.row}>
-              <span className={css.rowLabel}>{t('enable.switch')}</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={enabled}
-                aria-label={t('enable.switch.aria')}
-                className={enabled ? `${css.switch} ${css.switchOn}` : css.switch}
-                disabled={!ready}
-                onClick={() => { write('enabled', !enabled) }}
-              >
-                <span className={css.knob} />
-              </button>
-            </div>
-            <span className={css.hint}>{t(enabled ? 'enable.on' : 'enable.off')}</span>
-          </section>
-          <section className={css.block}>
-            <h3 className={css.blockTitle}>
-              {t('model.title')}
-              <Tooltip label={t('model.info')} side="bottom" maxWidth={360}>
-                <button type="button" className={css.info} aria-label={t('model.info.aria')}>ⓘ</button>
-              </Tooltip>
-            </h3>
-            <div className={css.row}>
-              {choices.length > 0 ? (
-                <div className={css.modelField} ref={modelFieldRef}>
-                  {modelInputElement}
-                  <button
-                    type="button"
-                    className={css.modelMenuButton}
-                    aria-label={t('model.menu')}
-                    aria-haspopup="menu"
-                    aria-expanded={modelMenuOpen}
-                    disabled={!ready}
-                    onClick={() => { toggleModelMenu() }}
-                  >
-                    <IconChevronDownOutline14 className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
-                  </button>
-                  {modelMenuOpen && (
-                    <div
-                      className={modelMenuUp ? `${css.modelMenu} ${css.modelMenuUp}` : css.modelMenu}
-                      role="menu"
-                      aria-label={t('model.menu')}
-                    >
-                      {/* The leading follow-default item: checked while the
-                          field is unset; picking it clears the draft back to
-                          follow-default (a save then unsets the key). */}
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={modelValue.trim() === ''}
-                        className={modelValue.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
-                        onClick={() => { setModelDraft(''); setModelMenuOpen(false) }}
-                      >
-                        <span className={css.modelItemLabel}>{modelDefaultItem}</span>
-                        <span className={css.modelItemCheck} aria-hidden>{modelValue.trim() === '' ? '✓' : ''}</span>
-                      </button>
-                      {choices.map(choice => (
-                        <button
-                          key={choice}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={choice === modelValue}
-                          className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
-                          onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
-                        >
-                          <span className={css.modelItemLabel}>{choice}</span>
-                          <span className={css.modelItemCheck} aria-hidden>{choice === modelValue ? '✓' : ''}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : modelInputElement}
-              <button
-                type="button"
-                className={css.modelSave}
-                disabled={!ready || modelValue.trim() === storedModel}
-                onClick={() => { saveModel() }}
-              >
-                {t('model.save')}
-              </button>
-            </div>
-            {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
-            {modelError && <span className={css.errorText}>{t('model.error')}</span>}
-          </section>
-          <section className={css.block}>
-            <div className={css.row}>
-              <span className={css.rowLabel}>
-                {t('live.title')}
-                <Tooltip label={t('live.info')} side="bottom" maxWidth={360}>
-                  <button type="button" className={css.info} aria-label={t('live.info.aria')}>ⓘ</button>
-                </Tooltip>
-              </span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={live}
-                aria-label={t('live.title')}
-                className={live ? `${css.switch} ${css.switchOn}` : css.switch}
-                disabled={!ready}
-                onClick={() => { write('live', !live) }}
-              >
-                <span className={css.knob} />
-              </button>
-            </div>
-            {snapshot.status === 'unavailable' && (
-              <span className={css.hint}>{t('live.unavailable')}</span>
-            )}
-          </section>
-          {saved && <span className={css.saved}>{t('live.applied')}</span>}
-          {error && <span className={css.errorText}>{t('live.error')}</span>}
-        </div>
-      )}
+      {open && <CardBody state={state} auth={auth} authT={authT} useSessions={useSessions} t={t} />}
     </li>
   )
+}
+
+/**
+ * The bundle's configuration on the alpha.2 Plugins page
+ * (`plugins.bundle.config`, keyed by package name): the page draws the title,
+ * the icon, and the crumb itself, so the entry renders the one-liner for the
+ * `summary` view and the bare form — with its own save control — for `page`.
+ * @param props - the owner view, the injected scope/auth faces, and copy.
+ * @returns the entry.
+ */
+export function DshBundleConfig({ view, useSettings, scope, auth, authT, harnessModel, useSessions, t }: DshBundleConfigProps) {
+  const state = useCardState(view === 'page', useSettings, scope, harnessModel, t)
+  if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
+  return <CardBody state={state} auth={auth} authT={authT} useSessions={useSessions} t={t} />
 }

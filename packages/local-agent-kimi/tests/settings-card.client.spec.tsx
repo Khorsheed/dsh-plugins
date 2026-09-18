@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 /**
- * The kimi settings card in the plugin configuration tab: collapsible chrome,
- * the family core's shared ProviderAuthBlock embedded for the auth states, the
- * default-model block (a free-text field that DISPLAYS the followed default
- * dimmed while unset, a chevron menu with a leading follow-default item plus
- * the broker's full unfiltered vocabulary), and the resident-mode switch
- * writing through the bound settingsScope.
+ * The kimi settings surfaces: the 0.1.5 plugin-configuration-tab card
+ * (collapsible chrome, the family core's shared ProviderAuthBlock embedded
+ * for the auth states, the default-model block — a free-text field that
+ * DISPLAYS the followed default dimmed while unset, a chevron menu with a
+ * leading follow-default item plus the broker's full unfiltered vocabulary —
+ * and the resident-mode switch writing through the bound settingsScope) and
+ * the alpha.2 plugins.bundle.config entry (the summary one-liner, the bare
+ * page form).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -17,7 +19,8 @@ import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import { resetAuthStatuses } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import {
-  KimiSettingsCard, type KimiLiveSettings, type KimiSettingsCardProps,
+  KimiBundleConfig, KimiSettingsCard,
+  type KimiLiveSettings, type KimiBundleConfigProps, type KimiSettingsCardProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -59,8 +62,7 @@ interface CardHarness {
   }
 }
 
-/** Render the card over a scope whose writes update the snapshot reactively. */
-function renderCard(options: {
+interface CardOptions {
   value?: KimiLiveSettings
   user?: Record<string, unknown>
   base?: Record<string, unknown>
@@ -69,7 +71,13 @@ function renderCard(options: {
   authStatus?: LocalAgentStatus | undefined
   modelInfo?: LocalAgentModelInfo | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
-}): CardHarness {
+}
+
+/** The card props over a scope whose writes update the snapshot reactively. */
+function makeCardProps(options: CardOptions): {
+  props: Record<string, unknown>
+  harnessModel: ReturnType<typeof vi.fn>
+} & CardHarness {
   let snapshot: SettingsScopeSnapshot<KimiLiveSettings> = options.snapshot
     ?? makeSnapshot(options.value ?? { live: false, liveMirrorGranularity: 'event' }, options.user, options.base)
   const listeners = new Set<() => void>()
@@ -120,9 +128,22 @@ function renderCard(options: {
     authT,
     harnessModel,
     t,
-  } as unknown as KimiSettingsCardProps
-  render(<KimiSettingsCard {...props} />)
-  return { scope: { set, unset } }
+  }
+  return { props, scope: { set, unset }, harnessModel }
+}
+
+/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+function renderCard(options: CardOptions): CardHarness {
+  const { props, scope } = makeCardProps(options)
+  render(<KimiSettingsCard {...props as unknown as KimiSettingsCardProps} />)
+  return { scope }
+}
+
+/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness & { harnessModel: ReturnType<typeof vi.fn> } {
+  const { props, scope, harnessModel } = makeCardProps(options)
+  render(<KimiBundleConfig {...{ view: entryView, ...props } as unknown as KimiBundleConfigProps} />)
+  return { scope, harnessModel }
 }
 
 /** The disclosure header: the only button carrying aria-expanded. */
@@ -442,5 +463,26 @@ describe('KimiSettingsCard default-model block', () => {
       .toBe(zh['model.placeholder'])
     fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
     expect(screen.getAllByRole('menuitemradio')[0].textContent).toContain(zh['model.menuDefault'])
+  })
+})
+
+describe('KimiBundleConfig', () => {
+  it('renders the one-liner alone in the summary view and never reads the model surface', async () => {
+    const { harnessModel } = renderBundleConfig('summary')
+    await act(async () => {})
+    expect(document.body.textContent).toContain(zh['card.description'])
+    expect(document.body.querySelector('button')).toBeNull()
+    expect(document.body.querySelector('input')).toBeNull()
+    expect(harnessModel).not.toHaveBeenCalled()
+  })
+
+  it('renders the bare form in the page view without the collapsible chrome and writes the live switch through the scope', async () => {
+    const { scope } = renderBundleConfig('page')
+    await act(async () => {})
+    expect(document.body.querySelector('li')).toBeNull()
+    expect(document.body.querySelector('button[aria-expanded]')).toBeNull()
+    fireEvent.click(screen.getByRole('switch', { name: zh['live.title'] }))
+    await act(async () => {})
+    expect(scope.set).toHaveBeenCalledWith('live', true)
   })
 })

@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * The claude-code settings card in the plugin configuration tab: collapsible
- * chrome, the family core's shared ProviderAuthBlock embedded for the auth
- * states, the resident-mode switch writing through the bound settingsScope,
- * and the default-model block — free-text write plus the gateway's model
- * surface (an unset field DISPLAYS the followed default dimmed; the chevron
- * menu leads with a follow-default item over the full unfiltered
- * vocabulary), degrading to the bare input when the surface is absent.
+ * The claude-code settings surfaces: the 0.1.5 plugin-configuration-tab card
+ * (collapsible chrome, the family core's shared ProviderAuthBlock embedded
+ * for the auth states, the resident-mode switch writing through the bound
+ * settingsScope, and the default-model block — free-text write plus the
+ * gateway's model surface, degrading to the bare input when the surface is
+ * absent) and the alpha.2 plugins.bundle.config entry (the summary one-liner,
+ * the bare page form).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -17,7 +17,8 @@ import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/
 import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
-  ClaudeCodeSettingsCard, type ClaudeLiveSettings, type ClaudeCodeSettingsCardProps,
+  ClaudeCodeBundleConfig, ClaudeCodeSettingsCard,
+  type ClaudeLiveSettings, type ClaudeCodeBundleConfigProps, type ClaudeCodeSettingsCardProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -58,8 +59,7 @@ interface CardHarness {
   }
 }
 
-/** Render the card over a scope whose writes update the snapshot reactively. */
-function renderCard(options: {
+interface CardOptions {
   value?: ClaudeLiveSettings
   user?: Record<string, unknown>
   base?: Record<string, unknown>
@@ -68,7 +68,10 @@ function renderCard(options: {
   authStatus?: LocalAgentStatus | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
   modelInfo?: () => Promise<LocalAgentModelInfo | null | undefined>
-}): CardHarness {
+}
+
+/** The card props over a scope whose writes update the snapshot reactively. */
+function makeCardProps(options: CardOptions): { props: Record<string, unknown> } & CardHarness {
   let snapshot: SettingsScopeSnapshot<ClaudeLiveSettings> = options.snapshot
     ?? makeSnapshot(options.value ?? { live: false, liveMirrorGranularity: 'event' }, options.user, options.base)
   const listeners = new Set<() => void>()
@@ -118,9 +121,22 @@ function renderCard(options: {
     ...options.modelInfo === undefined ? {} : { modelInfo: options.modelInfo },
     authT,
     t,
-  } as unknown as ClaudeCodeSettingsCardProps
-  render(<ClaudeCodeSettingsCard {...props} />)
-  return { scope: { set, unset } }
+  }
+  return { props, scope: { set, unset } }
+}
+
+/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+function renderCard(options: CardOptions): CardHarness {
+  const { props, scope } = makeCardProps(options)
+  render(<ClaudeCodeSettingsCard {...props as unknown as ClaudeCodeSettingsCardProps} />)
+  return { scope }
+}
+
+/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness {
+  const { props, scope } = makeCardProps(options)
+  render(<ClaudeCodeBundleConfig {...{ view: entryView, ...props } as unknown as ClaudeCodeBundleConfigProps} />)
+  return { scope }
 }
 
 /** The disclosure header: the only button carrying aria-expanded. */
@@ -442,5 +458,27 @@ describe('ClaudeCodeSettingsCard model surface', () => {
     renderCard({ modelInfo: () => Promise.resolve(modelSurface()) })
     await openCard()
     expect(screen.queryByRole('button', { name: zh['model.menu'] })).toBeNull()
+  })
+})
+
+describe('ClaudeCodeBundleConfig', () => {
+  it('renders the one-liner alone in the summary view and never reads the model surface', async () => {
+    const modelInfo = vi.fn(() => Promise.resolve(modelSurface()))
+    renderBundleConfig('summary', { modelInfo })
+    await act(async () => {})
+    expect(document.body.textContent).toContain(zh['card.description'])
+    expect(document.body.querySelector('button')).toBeNull()
+    expect(document.body.querySelector('input')).toBeNull()
+    expect(modelInfo).not.toHaveBeenCalled()
+  })
+
+  it('renders the bare form in the page view without the collapsible chrome and writes the live switch through the scope', async () => {
+    const { scope } = renderBundleConfig('page')
+    await act(async () => {})
+    expect(document.body.querySelector('li')).toBeNull()
+    expect(document.body.querySelector('button[aria-expanded]')).toBeNull()
+    fireEvent.click(screen.getByRole('switch', { name: zh['live.title'] }))
+    await act(async () => {})
+    expect(scope.set).toHaveBeenCalledWith('live', true)
   })
 })

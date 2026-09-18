@@ -10,7 +10,7 @@
 
 - **每个 CLI 一个作用域目录**——共享 homes 根下的隔离凭据/会话目录，以 0700 创建；你的本地 CLI 安装绝不被动到。
 - **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现。
-- **每 provider 一张设置卡片**——设置 → 插件 → 插件配置：认证状态点（卡头可见）、网页登录/退出、常驻模式（live）热切开关与输出粒度；卡片直接复用本包 client 面的共享 `ProviderAuthBlock`。
+- **每 provider 一张设置卡片**——alpha.2 落在各 bundle 的插件详情页（`plugins.bundle.config`,按包名派发）,0.1.5 落在设置 → 插件 → 插件配置（`settings.plugin.item`,按设置命名空间派发）:认证状态点(0.1.5 卡头可见)、网页登录/退出、常驻模式(live)热切开关与输出粒度;卡片直接复用本包 client 面的共享 `ProviderAuthBlock`。
 - **子 agent 委派**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上。
 - **成员会话侧栏续写（宿主 0.1.6 起）**——官方 subagent 目录每行新增「在侧边栏打开」入口：成员会话本就是 one-shot subagent，侧栏内本家族 MemberComposer 自动当选为可写 composer，本包零改动受益；0.1.5 宿主没有该入口，行为不变。
 - **一家多份登录（命名 scope）**——`/<harness> login --scope <名>` 在 `<homesRoot>/<家名>@<名>` 里另开一份作用域目录：各自登录、各自会话记录、各自 `delegations.jsonl`，凭证不复制。评测因此能在同一次 run 里比较同一家的两个账号。
@@ -68,7 +68,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 **凭证只说知道的（credentialState）。** `LocalAgentStatus` 除 `authenticated` 布尔外还带一档 `credentialState`：`absent`（作用域家目录里没有凭证记录）、`present-unverified`（有记录，但本宿主进程里还没有任何一轮委派碰过它——一份过期且刷不动的凭证和一份能用的凭证形状完全一样，说不知道正是这一档的意义）、`verified`（自上次登录/登出以来有一轮委派真的打通了端点并完成）、`rejected`（某轮的端点拒了这份凭证，且此后没有新登录重写凭证标记）。`authenticated` 保持不变，恒等于 `verified || present-unverified`，所以设置卡片与既有客户端读到的还是原来那个布尔。这一档是每宿主进程的：重启后一份在场的凭证回到 `present-unverified`，因为那才是当下真正知道的；开跑前的主动活性探测不归这个字段。provider 在一轮 settle 成 completed 时调 `reportAuthSuccess`，与既有的 `reportAuthFailure` 对称。
 
-**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）+ 共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`）——各 provider 包的 `settings.plugin.item` 卡片直接组合它们，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
+**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）+ 共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`）——各 provider 包的设置卡片（alpha.2 `plugins.bundle.config` 页、0.1.5 `settings.plugin.item` 卡）直接组合它们，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
 
 ### 新增一个 harness
 
