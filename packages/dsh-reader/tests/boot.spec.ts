@@ -329,3 +329,30 @@ describe('a link that cannot be previewed is still a link', () => {
     expect(after?.hasBody).toBe(true)
   })
 })
+
+describe('an article too large to keep', () => {
+  it('serves the body but does not put it in the state document', async () => {
+    const ctx = await boot()
+    const service = ctx.get('reader') as ReaderService
+    const html = `<p>${'x'.repeat(4 * 1024 * 1024 + 1)}</p>`
+    const view = await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/big', html })
+    expect(view.tooLarge).toBe(true)
+    expect(view.html).toBe(html)
+    // Nothing was committed: reopening the entry will fetch it again rather
+    // than pay for a multi-megabyte JSON document on every reader operation.
+    const again = await service.getEntryBody({ entryId: 'e1', url: 'https://example.com/big' })
+    expect(again.cached).toBe(false)
+    expect(again.html).toBeUndefined()
+  })
+
+  it('still caches a body under the budget', async () => {
+    const ctx = await boot()
+    const service = ctx.get('reader') as ReaderService
+    const html = '<p>small enough</p>'
+    const view = await service.storeEntryBody({ entryId: 'e2', url: 'https://example.com/small', html })
+    expect(view.cached).toBe(true)
+    expect(view.tooLarge).toBeUndefined()
+    const again = await service.getEntryBody({ entryId: 'e2', url: 'https://example.com/small' })
+    expect(again.html).toBe(html)
+  })
+})

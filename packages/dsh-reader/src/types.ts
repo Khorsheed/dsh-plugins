@@ -361,6 +361,20 @@ export const MAX_BODY_CHARS_PER_SOURCE = 2 * 1024 * 1024
 export const MAX_TOTAL_BODY_CHARS = 12 * 1024 * 1024
 
 /**
+ * How large an EXTRACTED article body may be before it is served but not cached.
+ *
+ * The subscription budgets above bound feed payloads; this one bounds what an
+ * entry's fetched body may add to `state.json`. Measured: a research paper with
+ * its figures inlined as base64 (transformer-circuits.pub's emotions paper is a
+ * 41 MB HTML document) extracts to tens of megabytes, and the state document is
+ * read and rewritten as a whole on every mutation — so a few such articles
+ * would turn every reader operation into a multi-megabyte JSON round trip.
+ * Past this budget the body is still shown for the session it was fetched in,
+ * and the reader is told it was not kept.
+ */
+export const MAX_CACHED_BODY_CHARS = 4 * 1024 * 1024
+
+/**
  * Build a display label for a source from its URL: the registrable-ish host
  * plus the last meaningful path segment, which is what distinguishes several
  * feeds from one publisher.
@@ -529,6 +543,8 @@ export interface ReaderEntryBodyView {
   readonly truncated?: boolean
   /** Figures this page draws with scripts — the detail view says so. */
   readonly scriptFigures?: number
+  /** True when the body was served but deliberately NOT cached (see the budget). */
+  readonly tooLarge?: boolean
   /** Why a fetch could not produce a body, when one was attempted. */
   readonly error?: string
 }

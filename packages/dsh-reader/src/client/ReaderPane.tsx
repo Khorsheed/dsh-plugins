@@ -340,6 +340,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * (cached or fresh), so reopening an entry shows the same note.
    */
   const [scriptFigures, setScriptFigures] = useState(0)
+  /** True when the open body was too large to cache (the note then says so). */
+  const [bodyTooLarge, setBodyTooLarge] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
@@ -1034,6 +1036,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       if (result.html !== undefined) {
         actions.setArticle(result.html, result.truncated === true, null)
         setScriptFigures(result.scriptFigures ?? 0)
+        setBodyTooLarge(result.tooLarge === true)
       } else if (result.error !== undefined) {
         // Keep whatever is already rendered (a feed summary, say) and add the
         // reason: a failed fetch must not take the little text the reader has.
@@ -1068,6 +1071,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       } else if (view.value.html !== undefined) {
         actions.setArticle(view.value.html, view.value.truncated === true, null)
         setScriptFigures(view.value.scriptFigures ?? 0)
+        setBodyTooLarge(view.value.tooLarge === true)
         actions.setStaleBody(row.entry.id, view.value.fresh === false)
         if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
       } else if (row.entry.contentHtml !== undefined) {
@@ -1964,6 +1968,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               scripts, so the body has the text and the captions but no
               pictures. Saying so is what keeps "the plugin lost my images"
               from being the reader's only conclusion. */}
+          {bodyTooLarge && (
+            <p className={css.incomplete}>{t('detail.bodyTooLarge')}</p>
+          )}
           {scriptFigures > 0 && (
             <p className={css.incomplete}>
               {t('detail.scriptFigures', { count: scriptFigures })}{' '}
