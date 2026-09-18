@@ -68,12 +68,16 @@ function rssSource(id: string, over: Partial<ReaderSourceSummary> = {}): ReaderS
  */
 function feed(id: string, items: readonly FeedItem[]): string {
   const published = new Date().toISOString()
+  // This fixture is a feed that PUBLISHES its text: the body rides
+  // `content:encoded` (with the description alongside it), which is what most
+  // of these tests assume. A feed that ships only a summary is a different
+  // case with its own fixture — and it is the one that still owes a fetch.
   const entries = items.map(item => `<item>
     <title>${item.title}</title>
     <link>https://example.com/${id}/${encodeURIComponent(item.title)}</link>
     <pubDate>${item.publishedAt ?? published}</pubDate>
     <description>${item.description ?? `摘要：${item.title}`}</description>
-    ${item.body === undefined ? '' : `<content:encoded><![CDATA[${item.body}]]></content:encoded>`}
+    <content:encoded><![CDATA[${item.body ?? item.description ?? `<p>${`摘要：${item.title}`}</p>`}]]></content:encoded>
   </item>`).join('')
   // The namespace declaration is not decoration: `<content:encoded>` with no
   // `xmlns:content` is FATAL XML, which would make every one of these tests pass
@@ -925,28 +929,39 @@ describe('the filter panel cascades into the source list', () => {
   })
 })
 
-describe('the toolbar keeps room for both of its tools', () => {
-  it('puts the field first, then the two icon tools in their own anchored wrappers', async () => {
+describe('the wall keeps its field and its tools apart', () => {
+  it('gives the field a row of its own and the header the three controls', async () => {
+    // The reported shape: a search field wedged between three buttons is a
+    // field the reader cannot see what they typed in on a narrow sidebar. The
+    // field now owns its row (full width) and the wall's controls live in the
+    // header with refresh.
     const ui = bench()
     await ui.settle()
     const tools = ui.container.querySelector('[class*="tools"]') as HTMLElement
+    const head = ui.container.querySelector('[class*="head"]') as HTMLElement
     expect(tools).not.toBeNull()
-    // DOM order IS visual order (no `order` games): field, filter, sort. The
-    // field is the row's only flexible item, so a narrow sidebar gives width
-    // back from the input — never from a tool.
-    const children = [...tools.children]
-    expect(children[0]?.className).toContain('search')
-    expect(children[1]?.className).toContain('toolWrap')
-    expect(children[2]?.className).toContain('toolWrap')
-    expect(tools.querySelectorAll('button').length).toBe(2)
-    // Opening one anchors its panel inside that tool's own wrapper. The old
-    // pane-anchored `top: 62px` was shorter than the toolbar itself, so the
-    // filter panel sat on top of the sort button.
+    expect(head).not.toBeNull()
+
+    // One child: the field. No buttons, no anchored wrappers.
+    expect([...tools.children].map(child => child.className)).toEqual([expect.stringContaining('search')])
+    expect(tools.querySelectorAll('button').length).toBe(0)
+
+    // The header carries filter and sort, each in its own anchored wrapper so
+    // its panel hangs under the control that opened it. The translation switch
+    // joins them only where the page has a Translator API (jsdom has none), so
+    // it is asserted in the translation specs instead.
+    const wrappers = [...head.querySelectorAll('[class*="toolWrap"]')]
+    expect(wrappers.length).toBe(2)
+    expect(head.querySelectorAll('button').length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('still anchors the filter panel inside its own wrapper', async () => {
+    const ui = bench()
+    await ui.settle()
     fireEvent.click(screen.getByTitle(zh['action.filter']))
     const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
-    expect(panel.parentElement).toBe(children[1])
-    // …and the other tool is still in the row, outside the panel.
-    expect(children[2]?.querySelector('button')).not.toBeNull()
+    expect(panel).not.toBeNull()
+    expect(panel.parentElement?.className).toContain('toolWrap')
   })
 })
 
@@ -1318,5 +1333,50 @@ describe('the search box clears itself, and tags can be deleted', () => {
     fireEvent.click(screen.getByTitle(zh['action.manage']))
     expect(ui.container.querySelector('#reader-refresh-time')).not.toBeNull()
     expect(ui.container.querySelector('#reader-cache-ttl')).not.toBeNull()
+  })
+})
+
+describe('a feed that publishes only a summary still gets its article', () => {
+  /** An entry whose feed carries a `<summary>` and no `<content>`. */
+  const summaryFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+
+  it('shows the feed summary, says so, and fetches the real text on open', async () => {
+    // The measured case: transformer-circuits.pub ships a 167-character summary
+    // per entry. It used to BE the body — so the entry looked complete, the
+    // backfill skipped it, and opening it never fetched the paper.
+    // No backfill candidate is offered here, so the ONLY fetch in this test is
+    // the one opening the entry decides to make.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The summary is on screen immediately, with the sentence that says it is
+    // only a summary…
+    expect(await screen.findByText(zh['detail.summaryOnly'])).toBeTruthy()
+    // …and the page behind it is fetched without the reader asking.
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.fetchEntryBody.mock.calls[0]?.[1]).toBe('https://example.com/paper')
+    // The fetched body replaces the summary, so the notice goes away.
+    expect(await screen.findByText('fetched')).toBeTruthy()
+    await waitFor(() => { expect(screen.queryByText(zh['detail.summaryOnly'])).toBeNull() })
+  })
+
+  it('offers a summary-only entry to the automatic backfill', async () => {
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      backfillCandidates: ['g:https://example.com/paper'],
+    })
+    await ui.settle()
+    await waitFor(() => { expect(ui.mocks.listBackfillCandidates).toHaveBeenCalled() })
+    const passed = ui.mocks.listBackfillCandidates.mock.calls[0]?.[0] as readonly { entryId: string }[]
+    expect(passed.some(entry => entry.entryId === 'g:https://example.com/paper')).toBe(true)
   })
 })
