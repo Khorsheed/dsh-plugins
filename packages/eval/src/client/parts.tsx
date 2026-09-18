@@ -22,7 +22,9 @@ import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import type { EvalKey } from './locales.ts'
 import type { LabStartedRun } from './store.ts'
-import { factorPhrase, shortHash, splitFactors, type Phrase } from './vocab.ts'
+import {
+  agreementBand, compactCount, durationParts, factorPhrase, shortHash, splitFactors, type Phrase,
+} from './vocab.ts'
 import css from './LabView.module.css'
 
 /**
@@ -57,18 +59,32 @@ export function statusTone(status: EvalExperimentStatus): Tone {
   return STATUS_TONE[status] ?? 'neutral'
 }
 
-/** The tone of one projection bucket — only two of the five are loud. */
+/**
+ * The tone of one projection bucket (ui-spec §九's five: green = done, blue =
+ * in progress, grey = not started, red = failed/blocked, amber = warning).
+ */
 export function bucketTone(bucket: string): Tone {
-  if (bucket === 'blocked') return 'warn'
+  if (bucket === 'blocked') return 'danger'
   if (bucket === 'active') return 'busy'
   if (bucket === 'done') return 'ok'
+  // `ready` and `scheduled` are both «not started yet» — grey, not green.
   return 'neutral'
 }
 
-/** The tone of one ledger state: past the judge is settled, halted is loud. */
+/**
+ * The tone of one ledger state.
+ *
+ * ui-spec §九 fixes the five tones AND one thing that is easy to get wrong:
+ * 「已释放 / 已归档这类终态用灰」. A cell that has been archived and released is
+ * FINISHED, not successful — the run is over and nothing more will happen
+ * there, which reads as grey. Green is kept for the state that actually says
+ * something went well (已判: a verdict exists), so a column of green means
+ * «judged», not «reached the end of the pipeline».
+ */
 export function stageTone(state: string): Tone {
   if (state === 'halted') return 'warn'
-  if (state === 'released' || state === 'releasable' || state === 'archived' || state === 'judged') return 'ok'
+  if (state === 'judged') return 'ok'
+  if (state === 'archived' || state === 'releasable' || state === 'released') return 'neutral'
   if (state === 'pending') return 'neutral'
   return 'busy'
 }
@@ -200,6 +216,45 @@ export function FactorCell(props: { row: EvalExperimentRow; t: LabViewProps['t']
 
 /** How many factor words fit a list row before the cell starts wrapping. */
 const FACTOR_WORDS = 3
+
+/**
+ * A duration in the reader's own words — 「4 分 48 秒」, `4m 48s` (ui-spec §九).
+ *
+ * The SHAPE (which two units) is {@link durationParts}'s; the words are the
+ * dictionary's, because 「4 分 48 秒」 is not `4m 48s` with the numbers swapped.
+ * @param props - the duration in ms (null prints an em dash) and the locale seat.
+ */
+export function Duration(props: { ms: number | null; t: LabViewProps['t'] }) {
+  const parts = durationParts(props.ms)
+  return <>{parts === null ? '—' : props.t(parts.key, parts.params)}</>
+}
+
+/**
+ * A count, compacted (ui-spec §九: `31.5k`). A dash is not a zero — a harness
+ * that never reported tool calls prints «—», not 0.
+ * @param props - the count, or null when nobody counted.
+ */
+export function Count(props: { value: number | null }) {
+  return <>{compactCount(props.value)}</>
+}
+
+/**
+ * How much two graders agree, said as the word a reader acts on, with κ on the
+ * hover (ui-spec §九: 「评分者一致性：高（κ 0.85）」).
+ * @param props - κ, the locale seat, and whether to print the κ beside the word.
+ */
+export function Agreement(props: { kappa: number | null; t: LabViewProps['t']; showKappa?: boolean }) {
+  const { kappa, t, showKappa = true } = props
+  const band = agreementBand(kappa)
+  if (band === null) return <span className={css.dim}>{t('agreement.none')}</span>
+  const word = t(`agreement.${band}`)
+  return (
+    <span title={kappa === null ? undefined : `κ ${kappa.toFixed(3)}`}>
+      <Chip tone={band === 'high' ? 'ok' : band === 'medium' ? 'warn' : 'danger'}>{word}</Chip>
+      {showKappa && kappa !== null && <span className={css.dim}> κ {kappa.toFixed(2)}</span>}
+    </span>
+  )
+}
 
 /** One labelled block of a page. */
 export function Field(props: { label: string; children: ReactNode }) {

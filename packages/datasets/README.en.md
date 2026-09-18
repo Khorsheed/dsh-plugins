@@ -185,6 +185,15 @@ each empty seat (unbound / no dataset / filter matched nothing / no answer
 record yet) carries a next-step sentence and its own action button, worded
 differently from the toolbar's so the two never read as one button duplicated.
 
+**Glossary v2 and colour semantics** (I5·T63, second pass): §九's three new
+rules land on this page too. English terms in the column headers became words
+(canary, validate), the snapshot column is now the dataset version, and every
+row of «作答记录» reads «{arm} · take N». Colour collapsed to five tones (green =
+done/succeeded, blue = in progress, grey = not started, red = failed/blocked,
+amber = warning) through the same `stageTone` / `bucketTone` the Experiments tab
+uses: archived / releasable / released are GREY, not green — reaching the end of
+the pipeline is «finished», not «succeeded», and green is kept for `judged`.
+
 The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace `datasets`) over the same service core as the tools: `binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`. The read methods are the operator view — the binding supplies the repository path only; the whitelist and the modelFacing floor constrain the agent boundary (tools + worktree), never a human reading their own repository, so sensitive layers stay readable with a `· sensitive` marker while the genuinely unprotected passthrough zone and `item.json` are marked conspicuously. The one exception is the two judging reads behind `itemBrief`: they name their **one layer explicitly** (`layers: ['grading']` / `['verify']`) instead of taking the operator bypass — the page needs the answer key's shape (how many leaves, of which kind), and its bytes never go on the wire. The browser half mounts the namespace through the official `ctx.remote.$mount` channel; eval's namespace is probed with `ctx.get` on **every call** rather than once at mount — the two plugins `$mount` independently and neither may assume it loaded second.
 
 ## Compatibility

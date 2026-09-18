@@ -16,6 +16,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   BUCKETS, INCIDENTAL_FACTORS, NAMED_FACTORS, bucketPhrase, distinctStates, factorPhrase,
+  agreementBand, compactCount, durationParts,
   factorValueText, isNamedFactor, preferredColumn, retryPhrase, shortHash, shortenValue, splitFactors,
   stagePhrase,
 } from '../src/client/vocab.ts'
@@ -155,5 +156,53 @@ describe('the value and digest formatting', () => {
     // Short enough already, or absent: nothing is invented.
     expect(shortHash('c0ffee1')).toBe('c0ffee1')
     expect(shortHash(null)).toBe('—')
+  })
+})
+
+describe('numbers and sentences (ui-spec §九, 2026-09-18)', () => {
+  it('compacts a count the way a person reads it', () => {
+    // Token counts run to six figures; `toLocaleString` prints every one.
+    expect(compactCount(31_500)).toBe('31.5k')
+    expect(compactCount(12_345)).toBe('12.3k')
+    expect(compactCount(1_200_000)).toBe('1.2M')
+    // A round thousand does not print a pointless `.0`.
+    expect(compactCount(31_000)).toBe('31k')
+    // Under a thousand nothing is rounded: rounds and tool calls are small
+    // enough to mean something exactly, and rounding would hide a 1.
+    expect(compactCount(999)).toBe('999')
+    expect(compactCount(0)).toBe('0')
+    // A dash is not a zero — «nobody counted» is a different fact.
+    expect(compactCount(null)).toBe('—')
+  })
+
+  it('splits a duration into the two units that carry information', () => {
+    // The WORDS are the dictionary's (「4 分 48 秒」 is not `4m 48s` with the
+    // numbers swapped); the shape is chosen here.
+    expect(durationParts(288_000)).toEqual({ key: 'dur.ms', params: { m: 4, s: 48 } })
+    expect(durationParts(45_000)).toEqual({ key: 'dur.s', params: { s: 45 } })
+    expect(durationParts(3_720_000)).toEqual({ key: 'dur.hm', params: { h: 1, m: 2 } })
+    expect(durationParts(180_000_000)).toEqual({ key: 'dur.dh', params: { d: 2, h: 2 } })
+    expect(durationParts(null)).toBeNull()
+  })
+
+  it('bands κ into the word a grader acts on', () => {
+    // Landis & Koch collapsed to three: the reader decides ONE thing here —
+    // trust the verdicts, or add a judge.
+    expect(agreementBand(0.85)).toBe('high')
+    expect(agreementBand(0.8)).toBe('high')
+    expect(agreementBand(0.64)).toBe('medium')
+    expect(agreementBand(0.33)).toBe('low')
+    // Not enough pairs to compute one is not «low»; it is «we cannot say».
+    expect(agreementBand(null)).toBeNull()
+    expect(agreementBand(Number.NaN)).toBeNull()
+  })
+
+  it('every phrase the number helpers name is in both dictionaries', () => {
+    for (const key of ['dur.s', 'dur.ms', 'dur.hm', 'dur.dh'] as const) {
+      expect(bothHave(key), key).toBe(true)
+    }
+    for (const band of ['high', 'medium', 'low'] as const) {
+      expect(bothHave(`agreement.${band}`), band).toBe(true)
+    }
   })
 })

@@ -515,6 +515,52 @@ presentation and copy.
   sending structured fields and composing the sentence in the browser half —
   a data-plane change, recorded here rather than taken on in a copy pass.
 
+### Terminology v2 and number formatting (I5·T63, second pass)
+
+After the walkthrough the UI spec §九 gained three rules (a glossary, colour
+semantics, numbers and sentences). This pass took both tabs through them —
+**copy, colour and formatting only**; everything structural belongs to T67.
+
+- **Glossary v2** (Chinese UI): condition → 对比组 (arm), factor → 对比变量
+  (variable), cell → 运行记录 (run record), snapshot → 题库版本 (dataset
+  version), matrix shape → 实验规模 (experiment size), the four invariants →
+  实验有效性校验 (validity checks), the judge bench → 人工评估 (human review);
+  the grid page is 网格, as §九 writes it. English terms in column headers went
+  too: canary, validate, attempt and rep all have words now; `harness` stays.
+  The conditions page's key-name headers (`model.declared`, `model.endpoint`,
+  `scope`, `preset`, `lock`) became words with the key on the `title`, and
+  `provision` is defined once in the dictionary as 准备环境 so both its sites
+  agree. Body copy was swept too, not just the headers: a header saying «arm»
+  over a sentence saying «condition» is the inconsistency §九's word table
+  exists to prevent.
+- **Bucket and stage merged into one 运行状态 column.** The stage is the
+  specific fact and always shows; the bucket only appears when it says
+  something the stage cannot — «blocked» (an unmet dependency) and «scheduled»
+  (waiting on a clock). The other three are implied by the stage, and two chips
+  saying one thing is the noise this pass removes.
+- **Five tones, and one counter-intuitive rule §九 names**: archived /
+  releasable / released are GREY, not green. Reaching the end of the pipeline
+  is «finished», not «succeeded»; green is kept for `judged`, the state that
+  actually carries a verdict. The `blocked` bucket moved from amber to red.
+- **Numbers and sentences**: counts compact to `31.5k` (nothing under a
+  thousand is rounded — those digits each mean something); durations are
+  composed through the dictionary (「4 分 48 秒」 is not `4m 48s` with the
+  numbers swapped); judge agreement collapses from three numbers to the word a
+  reader acts on — «high (κ 0.85)», κ on the hover, plus one line of advice
+  when κ < 0.6, because that is the only number on the page anyone can act on.
+  Host verdict sentences became prompts: one arm reads «no comparison data;
+  what follows is the baseline», and a closed comparison section moved from an
+  amber box to a plain notice — it is a state, not an error.
+- **The review queue** is named «P0-placeholder · take 1» (item + take, never
+  the arm), with the ordinal demoted to a quiet suffix, and gained a filter
+  (all / not graded / graded, plus a per-item row when the run has more than
+  one). The filter is view-local and **never reorders**: the seeded order is
+  part of the blind.
+
+The new pure helpers (`compactCount`, `durationParts`, `agreementBand`) are
+pinned in `tests/vocab.spec.ts`, along with «every phrase they name exists in
+both dictionaries».
+
 ## Hash rules
 
 - **Condition hash**: sha256 hex (lowercase) of the canonical JSON (keys fully sorted, no whitespace); `notes` excluded.
