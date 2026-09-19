@@ -246,7 +246,7 @@ function roundObservation(span: readonly SessionEvent[]): {
 /** How much of the live event stream crosses into the child session. */
 export type DshLiveMirrorGranularity = 'event' | 'token'
 
-/** Flatten a mirrored message event's content to plain text for delta progress. */
+/** Visible answer text for progress/results; reasoning stays in the verbatim transcript. */
 function mirroredEventText(event: SessionEvent): string {
   // user/message carries content directly; assistant/message wraps it in `message`.
   const data = event.data as {
@@ -255,7 +255,7 @@ function mirroredEventText(event: SessionEvent): string {
   }
   const content = data.message?.content ?? data.content ?? []
   return content
-    .filter(block => (block.type === 'text' || block.type === 'reasoning') && typeof block.text === 'string')
+    .filter(block => block.type === 'text' && typeof block.text === 'string')
     .map(block => block.text as string)
     .join('')
 }

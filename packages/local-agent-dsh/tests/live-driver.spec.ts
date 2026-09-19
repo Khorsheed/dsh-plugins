@@ -404,6 +404,20 @@ describe('dsh live driver rounds', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
+  it('keeps native reasoning in the member transcript while returning only the answer', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-reasoning-answer'))
+    const events = answerEvents(1, 'Short answer', 'Visible answer')
+    const assistant = events.find(event => event.type === 'assistant/message')!
+    const data = assistant.data as { message: { content: unknown[] } }
+    data.message.content.unshift({ type: 'reasoning', text: 'Native reasoning' })
+    m.queueChild(new FakeServeChild({ turn: () => ({ events }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).output).toEqual([{ type: 'text', text: 'Visible answer' }])
+    expect(child.snapshotEvents().find(event => event.type === 'assistant/message')?.data).toMatchObject({ message: { content: [{ type: 'reasoning', text: 'Native reasoning' }, { type: 'text', text: 'Visible answer' }] } })
+    await m.driver.disposeAll()
+  })
+
   it('reports the settled round’s observation read off the sub-dsh session log', async () => {
     // The live drive's half of the exec path's settle-mirror report: the
     // settle pass's mirrorDshSession delta carries the round's model
