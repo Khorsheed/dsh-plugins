@@ -56,6 +56,7 @@ import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
   RoomCloseTaskRequest, RoomCloseTaskResult,
+  RoomPrepareMemberRequest, RoomPrepareMemberResult,
   RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult,
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
@@ -430,6 +431,7 @@ export class RoomService extends TypertRemoteService {
   async updateMember(request: RoomUpdateMemberRequest): Promise<RoomUpdateMemberResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     const member = loaded.state.members.find(entry => entry.name === request.name)
     if (member === undefined) {
       return { ok: false, error: { code: 'member-not-found' } }
@@ -468,6 +470,32 @@ export class RoomService extends TypertRemoteService {
     return { ok: true, value: { name: request.name } }
   }
 
+  /** Native preparation creates no unrelated conversation turn and leaves the role unchanged. */
+  @Remote('prepareMember')
+  async prepareMember(request: RoomPrepareMemberRequest): Promise<RoomPrepareMemberResult> {
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    this.handoffs.add(request.sessionId)
+    try { return await this.prepareMemberInRoom(request) }
+    finally { this.handoffs.delete(request.sessionId) }
+  }
+
+  private async prepareMemberInRoom(request: RoomPrepareMemberRequest): Promise<RoomPrepareMemberResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const member = loaded.state.members.find(member => member.name === request.name)
+    if (member?.kind !== 'cli' || member.provider === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    const family = probeLocalAgent(this.ctx)
+    if (family?.prepareMember === undefined) return { ok: false, error: { code: 'coordinator-not-ready', message: 'Native preparation is unavailable in this family core' } }
+    try {
+      const childSessionId = await family.prepareMember(request.sessionId, member.provider, member.childSessionId ?? memberId(loaded.session.snapshotEvents(), member), {
+        ...member.cwd === undefined ? {} : { cwd: member.cwd }, ...member.model === undefined ? {} : { model: member.model },
+      })
+      loaded.session.append('room/member-updated', { name: member.name, childSessionId: SessionId(childSessionId) })
+      await this.ctx.sessions.flush(loaded.session)
+      return { ok: true, value: { childSessionId } }
+    } catch (error) { return { ok: false, error: { code: 'coordinator-not-ready', message: String(error) } } }
+  }
+
   /** A human records the known result before releasing a crashed member's queued work. */
   @Remote('reconcileDelivery')
   async reconcileDelivery(request: RoomReconcileDeliveryRequest): Promise<RoomReconcileDeliveryResult> {
@@ -491,7 +519,7 @@ export class RoomService extends TypertRemoteService {
       const loaded = await this.ensureLive(request.sessionId)
       if (!loaded.ok) return { ok: false, error: loaded.error }
       const events = loaded.session.snapshotEvents()
-      const candidate = loaded.state.members.find(member => memberId(events, member) === request.memberId)
+      let candidate = loaded.state.members.find(member => memberId(events, member) === request.memberId)
       const previous = coordinatorMember(loaded.state, events)
       if (candidate === undefined || previous === undefined) return { ok: false, error: { code: 'member-not-found' } }
       if ((loaded.state.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
@@ -499,12 +527,25 @@ export class RoomService extends TypertRemoteService {
       if (agent?.status === 'running' || (agent?.inbox?.nextTurn.length ?? 0) > 0 || (agent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) {
         return { ok: false, error: { code: 'coordinator-busy' } }
       }
-      if (candidate.kind === 'cli') {
+      if (candidate.kind === 'cli' && candidate.childSessionId === undefined) {
+        const prepared = await this.prepareMemberInRoom({ sessionId: request.sessionId, name: candidate.name })
+        if (!prepared.ok) return { ok: false, error: prepared.error }
+        candidate = { ...candidate, childSessionId: SessionId(prepared.value.childSessionId) }
+      }
+      const refreshedEvents = loaded.session.snapshotEvents()
+      const refreshed = replay(refreshedEvents)
+      candidate = refreshed.members.find(member => memberId(refreshedEvents, member) === request.memberId)
+      if (candidate === undefined) return { ok: false, error: { code: 'member-not-found' } }
+      if ((refreshed.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
+      const refreshedAgent = this.ctx.agents.get(request.sessionId)
+      if (refreshedAgent?.status === 'running' || (refreshedAgent?.inbox?.nextTurn.length ?? 0) > 0 || (refreshedAgent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) return { ok: false, error: { code: 'coordinator-busy' } }
+      for (const participant of [previous, candidate]) {
+        if (participant.kind !== 'cli') continue
         const family = this.ctx.get('localAgent') as { memberConfiguration?: (id: string) => { status: string; round?: unknown; pending?: unknown; lockedReason?: string } } | undefined
-        if (candidate.childSessionId === undefined || family?.memberConfiguration === undefined) {
+        if (participant.childSessionId === undefined || family?.memberConfiguration === undefined) {
           return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member native session preparation is required before promotion' } }
         }
-        const control = family.memberConfiguration(candidate.childSessionId)
+        const control = family.memberConfiguration(participant.childSessionId)
         if (control.status !== 'idle' || control.round !== undefined || control.pending !== undefined || control.lockedReason !== undefined) {
           return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member configuration has not converged or is locked' } }
         }
@@ -537,6 +578,7 @@ export class RoomService extends TypertRemoteService {
   async removeMember(request: RoomRemoveMemberRequest): Promise<RoomRemoveMemberResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     if (!loaded.state.members.some(member => member.name === request.name)) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
@@ -630,6 +672,7 @@ export class RoomService extends TypertRemoteService {
     // roster check runs against the promoted state.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     if (!loaded.state.members.some(member => member.name === request.member)) {
       return { ok: false, error: { code: 'member-not-found' } }
     }

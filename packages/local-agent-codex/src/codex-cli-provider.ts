@@ -270,7 +270,7 @@ export class CodexCliProvider implements SubagentProvider {
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
       }, configuration => this.startCodexResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration))
     }
-    const childSessionId = SessionId(randomUUID())
+    const childSessionId = SessionId(intent?.preparedMemberId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
       if (intent?.effort !== undefined) throw new Error('Codex effort requires the configuration admission core')
       return this.startCodexFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId)
@@ -302,7 +302,7 @@ export class CodexCliProvider implements SubagentProvider {
       if (sessions === undefined) {
         throw new Error('the sessions service is not mounted')
       }
-      childSession = sessions.create(runId, {
+      childSession = sessions.get(runId) ?? sessions.create(runId, {
         meta: {
           cwd,
           parentSession: request.parent.session.id,

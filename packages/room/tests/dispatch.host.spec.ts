@@ -503,6 +503,53 @@ describe('coordinator routing and durable deliveries', () => {
       .toMatchObject({ ok: true, value: { memberId: 'legacy:1', revision: 2 } })
   })
 
+  it('prepares an invited coordinator without a prompt and starts its reserved identity on first input', async () => {
+    const bench = await bootRoom()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'fresh', model: 'chosen' })
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const member = state.value.members.find(member => member.name === 'fresh')!
+    const preparation = vi.fn(async (_parent: string, _provider: string, id: string) => id)
+    bench.localAgentStub['prepareMember'] = preparation
+    bench.localAgentStub['isPreparedMember'] = (id: string) => id === member.id
+    bench.localAgentStub['memberConfiguration'] = () => ({ status: 'idle' })
+    expect(await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 })).toMatchObject({ ok: true })
+    expect(preparation).toHaveBeenCalledWith(bench.sessionId, 'kimi', member.id, { model: 'chosen' })
+    expect(bench.facade.start).not.toHaveBeenCalled()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    bench.facade.start.mockImplementation(async () => settledRun(member.id!, 'ready'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: 'first real prompt' })
+    await bench.service.engine.idle()
+    expect(bench.facade.start.mock.calls[0]![3]).toMatchObject({ preparedMemberId: member.id })
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+  })
+
+  it('holds room mutations during preparation and keeps native routing when preparation fails', async () => {
+    const bench = await bootRoom()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'fresh' })
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const member = state.value.members.find(member => member.name === 'fresh')!
+    let fail!: (error: Error) => void
+    const preparation = vi.fn(() => new Promise<string>((_resolve, reject) => { fail = reject }))
+    bench.localAgentStub['prepareMember'] = preparation
+    const promotion = bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 })
+    await vi.waitFor(() => expect(preparation).toHaveBeenCalledOnce())
+    for (const action of [
+      bench.service.updateMember({ sessionId: bench.sessionId, name: 'fresh', rename: 'renamed' }),
+      bench.service.removeMember({ sessionId: bench.sessionId, name: 'fresh' }),
+      bench.service.messageMember({ sessionId: bench.sessionId, member: 'fresh', text: 'work' }),
+      bench.service.postMessage({ sessionId: bench.sessionId, text: 'work' }),
+    ]) expect(await action).toMatchObject({ ok: false, error: { code: 'coordinator-busy' } })
+    fail(new Error('native initialization failed'))
+    expect(await promotion).toMatchObject({ ok: false, error: { code: 'coordinator-not-ready' } })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: 'still native' })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledOnce()
+    expect(bench.facade.start).not.toHaveBeenCalled()
+  })
+
   it('reroutes stale official input before any native model request through the public pre-step seam', async () => {
     const bench = await bootRoom()
     const member = await preparedMember(bench)

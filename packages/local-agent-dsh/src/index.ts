@@ -201,6 +201,12 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       retireRuntime: childSessionId => currentLiveSwitch?.retireRuntime(childSessionId) ?? Promise.resolve(),
     })
     const harness: LocalAgentHarness = {
+      prepareMember: async ({ binding, childSession, configuration, signal }) => {
+        const driver = currentLiveSwitch?.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) throw new Error('Enable the native live harness before preparing a coordinator')
+        await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('dsh', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, configuration: configuration.resolved, sessionId: binding.childSessionId }, signal)
+      },
       name: 'dsh',
       displayName: 'dsh',
       homeEnvVar: 'DSH_HOME',

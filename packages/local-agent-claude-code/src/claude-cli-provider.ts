@@ -273,7 +273,7 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
       }, configuration => this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration))
     }
-    const childSessionId = SessionId(randomUUID())
+    const childSessionId = SessionId(intent?.preparedMemberId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
       if (intent?.effort !== undefined) throw new Error('Claude effort requires the configuration admission core')
       return this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId)
@@ -305,7 +305,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       if (sessions === undefined) {
         throw new Error('the sessions service is not mounted')
       }
-      childSession = sessions.create(runId, {
+      childSession = sessions.get(runId) ?? sessions.create(runId, {
         meta: {
           cwd,
           parentSession: request.parent.session.id,

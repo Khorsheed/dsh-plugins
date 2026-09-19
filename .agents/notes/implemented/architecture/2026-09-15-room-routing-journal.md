@@ -26,7 +26,7 @@ The composer routes input through room, binds external configuration and Stop to
 
 Existing independent sessions, navigation and run records stay attached to their member. Delivery recovery and reporting are traceable in the same journal. Read-only room inspection does not wake an agent; cold mutation recovery uses the existing public agent resume path.
 
-This is the routing foundation of M3, not completion of delivery A. Native preparation before a first paid prompt, coordinator tool capability checks, the shared core message queue, richer handoff capture, goal pause integration, full reconciliation UI and real harness/browser acceptance remain outstanding. Promotion currently requires a member session and converged configuration; this does not claim the proposal's complete readiness contract. Existing automatic chat task rows remain until the formal task/attempt model is separated in the next implementation slice.
+This is the routing foundation of M3, not completion of delivery A. Native preparation now lives in [its owning note](2026-09-19-native-member-preparation.md). Coordinator tool capability checks, the shared core message queue, richer handoff capture, goal pause integration, full reconciliation UI and real harness/browser acceptance remain outstanding. Promotion currently requires a member session and converged configuration; this does not claim the proposal's complete readiness contract. Existing automatic chat task rows remain until the formal task/attempt model is separated in the next implementation slice.
 
 ## Testing
 

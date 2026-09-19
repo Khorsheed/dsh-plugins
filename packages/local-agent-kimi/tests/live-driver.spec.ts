@@ -1335,3 +1335,20 @@ describe('kimi live driver transcript completeness', () => {
     await m.driver.disposeAll()
   })
 })
+
+
+it('prepares native protocol without a prompt, then reuses it for the first real turn', async () => {
+  const m = mount()
+  const child = Session.create(SessionId('prepared-member'))
+  const fake = new FakeAcpServer()
+  m.queueChild(fake)
+  const spec = roundSpec(m, child)
+  await m.driver.prepare(spec, new AbortController().signal)
+  expect(fake.requests.some(request => request.method === 'session/prompt')).toBe(false)
+  expect(child.snapshotEvents().some(event => event.type === 'turn/start' || event.type === 'user/message')).toBe(false)
+  const run = await m.driver.startRound(request() as never, spec)
+  await run.result
+  expect(fake.requests.filter(request => request.method === 'session/prompt')).toHaveLength(1)
+  expect(m.spawns).toHaveLength(1)
+  await m.driver.disposeAll()
+})

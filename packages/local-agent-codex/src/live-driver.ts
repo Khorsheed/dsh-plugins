@@ -796,6 +796,52 @@ export class CodexLiveDriver {
    * any await, the spawn/handshake races it, and a pre-accept cancel reclaims
    * the fresh runtime instead of letting the turn run unwatched.
    */
+  /** Create/resume the native thread without starting a model turn. */
+  async prepare(spec: CodexLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      const runtime = await this.ensureRuntime(spec, signal)
+      await this.ensureThread(runtime, spec)
+      signal.throwIfAborted()
+      this.armIdleTimer(String(spec.childSession.id))
+    } catch (error) {
+      await this.reclaim(String(spec.childSession.id))
+      throw error
+    }
+  }
+
+  private async ensureThread(rt: CodexLiveRuntime, spec: CodexLiveRoundSpec): Promise<void> {
+    if (rt.threadId === undefined) {
+      const permissionParams = {
+        approvalPolicy: 'never',
+        sandbox: this.config.sandbox ?? 'workspace-write',
+      }
+      if (spec.resume === undefined) {
+        const response = await rt.peer.request<{ thread: { id: string } }>('thread/start', {
+          cwd: spec.cwd,
+          ephemeral: false,
+          ...permissionParams,
+        })
+        if (typeof response?.thread?.id !== 'string') {
+          throw new Error('subagent-codex live: thread/start returned no thread id')
+        }
+        rt.threadId = response.thread.id
+      } else {
+        const response = await rt.peer.request<{ thread: { id: string } }>('thread/resume', {
+          threadId: spec.resume.cliSessionId,
+          cwd: spec.cwd,
+          ...permissionParams,
+        })
+        if (typeof response?.thread?.id !== 'string') {
+          throw new Error('subagent-codex live: thread/resume returned no thread')
+        }
+        rt.threadId = response.thread.id
+      }
+    }
+    if (spec.resume === undefined && rt.threadId !== undefined) spec.onThreadId?.(rt.threadId)
+  }
+
   async startRound(request: SubagentStartRequest, spec: CodexLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.
@@ -1177,34 +1223,7 @@ export class CodexLiveDriver {
       }
       rt.onWireNotification = dispatchNotification
       try {
-        if (rt.threadId === undefined) {
-          const permissionParams = {
-            approvalPolicy: 'never',
-            sandbox: this.config.sandbox ?? 'workspace-write',
-          }
-          if (spec.resume === undefined) {
-            const response = await rt.peer.request<{ thread: { id: string } }>('thread/start', {
-              cwd: spec.cwd,
-              ephemeral: false,
-              ...permissionParams,
-            })
-            if (typeof response?.thread?.id !== 'string') {
-              throw new Error('subagent-codex live: thread/start returned no thread id')
-            }
-            rt.threadId = response.thread.id
-            spec.onThreadId?.(rt.threadId)
-          } else {
-            const response = await rt.peer.request<{ thread: { id: string } }>('thread/resume', {
-              threadId: spec.resume.cliSessionId,
-              cwd: spec.cwd,
-              ...permissionParams,
-            })
-            if (typeof response?.thread?.id !== 'string') {
-              throw new Error('subagent-codex live: thread/resume returned no thread')
-            }
-            rt.threadId = response.thread.id
-          }
-        }
+        await this.ensureThread(rt, spec)
         const response = await rt.peer.request<{ turn: { id: string } }>('turn/start', {
           threadId: rt.threadId,
           input: [{ type: 'text', text: task, text_elements: [] }],

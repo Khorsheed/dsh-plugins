@@ -16,7 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { loadSubDshAgent, summarizeTurn } from './agent-loader.ts'
+import { resolveSubDshSelection, loadSubDshAgent, summarizeTurn } from './agent-loader.ts'
 import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_ERROR_INTERNAL,
@@ -177,6 +177,13 @@ export async function runServe(ctx: Context, io: ServeIo, model?: string, effort
       case 'initialize':
         respond(id, { serverInfo: { name: LIVE_SERVER_NAME }, protocolVersion: LIVE_WIRE_PROTOCOL_VERSION })
         return
+      case 'session/prepare': {
+        try {
+          await resolveSubDshSelection(ctx, model, effort, true)
+          respond(id, { prepared: true })
+        } catch (error) { respondError(id, messageOf(error)) }
+        return
+      }
       case 'turn/start': {
         const sessionId = params['sessionId']
         const text = params['text']

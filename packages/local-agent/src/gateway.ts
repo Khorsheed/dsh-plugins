@@ -109,14 +109,14 @@ export default class LocalAgentGateway extends TypertRemoteService {
   /** Resolve directory ownership from the recorded member, never a UI provider guess. */
   @Remote('memberDirectory')
   async memberDirectory(childSessionId: string, refresh: boolean): Promise<LocalAgentModelDirectory | null> {
-    const record = this.ctx.localAgent.getDelegation(childSessionId)
+    const record = this.ctx.localAgent.getDelegation(childSessionId) ?? this.ctx.localAgent.memberBinding?.(childSessionId)
     const broker = record === undefined ? undefined : this.ctx.localAgent.harnessForProvider(record.provider)?.modelBroker
     return await broker?.modelDirectory?.(childSessionId, refresh) ?? null
   }
 
   @Remote({ mode: 'stream' })
   async *followMemberDirectory(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
-    const record = this.ctx.localAgent.getDelegation(childSessionId)
+    const record = this.ctx.localAgent.getDelegation(childSessionId) ?? this.ctx.localAgent.memberBinding?.(childSessionId)
     const broker = record === undefined ? undefined : this.ctx.localAgent.harnessForProvider(record.provider)?.modelBroker
     if (broker?.followModelDirectory !== undefined) yield* broker.followModelDirectory(childSessionId, signal)
     else {
@@ -246,7 +246,8 @@ export default class LocalAgentGateway extends TypertRemoteService {
   @Remote('memberModel')
   async memberModel(childSessionId: string): Promise<LocalAgentModelInfo | null> {
     const registry = this.ctx.localAgent
-    const record = registry.getDelegation(childSessionId)
+    const observed = registry.getDelegation(childSessionId)
+    const record = observed ?? registry.memberBinding?.(childSessionId)
     if (record === undefined) return null
     const broker = registry.harnessForProvider(record.provider)?.modelBroker
     if (broker === undefined) return null
@@ -258,9 +259,9 @@ export default class LocalAgentGateway extends TypertRemoteService {
       if (configuration.lockedReason !== undefined) info.reason = configuration.lockedReason
       if (configuration.current.resolved.model !== undefined) info.effective = configuration.current.resolved.model
     }
-    return withObservedChoice(info.lastObserved !== undefined || record.observedModel === undefined
+    return withObservedChoice(info.lastObserved !== undefined || observed?.observedModel === undefined
       ? info
-      : { ...info, lastObserved: record.observedModel })
+      : { ...info, lastObserved: observed?.observedModel })
   }
 
   /**

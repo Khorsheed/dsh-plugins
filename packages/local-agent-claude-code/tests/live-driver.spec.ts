@@ -1068,3 +1068,21 @@ describe('claude live driver control requests', () => {
     await m.driver.disposeAll()
   })
 })
+
+
+it('prepares native controls without a user prompt and reuses that process for real input', async () => {
+  const m = mount()
+  const child = Session.create(SessionId('prepared-member'))
+  const fake = new FakeClaude({ nativeModels: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['low'] }] })
+  m.queueChild(fake)
+  const spec = { ...roundSpec(m, child), configuration: { model: 'sonnet', effort: 'low' } }
+  await m.driver.prepare(spec, new AbortController().signal)
+  expect(fake.controlRequests.map(request => request['request'])).toEqual([{ subtype: 'initialize', hooks: {} }, { subtype: 'set_model', model: 'sonnet' }])
+  expect(fake.userMessages).toHaveLength(0)
+  expect(child.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
+  const run = await m.driver.startRound(request() as never, spec)
+  await run.result
+  expect(fake.userMessages).toHaveLength(1)
+  expect(m.spawns).toHaveLength(1)
+  await m.driver.disposeAll()
+})

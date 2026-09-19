@@ -170,8 +170,8 @@ export function apply(ctx: Context, config: Config): void {
       ctx,
       settingsModel: resolveModel,
       recentModels: () => scope.get().recentModels ?? [],
-      homeDir: childSessionId => ctx.localAgent.homeDir('codex', childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)?.scope),
-      cwd: childSessionId => childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)?.cwd,
+      homeDir: childSessionId => ctx.localAgent.homeDir('codex', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
+      cwd: childSessionId => childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.cwd,
       directory: (home, cwd) => modelCatalog.directory(home, cwd),
       refreshDirectory: (home, cwd) => modelCatalog.refresh(home, cwd),
       followDirectory: (home, cwd, signal) => modelCatalog.follow(home, signal, cwd),
@@ -192,6 +192,12 @@ export function apply(ctx: Context, config: Config): void {
       new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
     )
     const disposeHarness = ctx.localAgent.register({
+      prepareMember: async ({ binding, childSession, configuration, signal }) => {
+        const driver = liveSwitch.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) throw new Error('Enable the native live harness before preparing a coordinator')
+        await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('codex', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
+      },
       name: 'codex',
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',

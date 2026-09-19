@@ -14,7 +14,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 
 /** The delegation-facade slice room consumes (the family's public M1 API). */
-export type LocalAgentFacade = Pick<LocalAgentRegistry, 'start' | 'resume' | 'cancel'>
+export type LocalAgentFacade = Pick<LocalAgentRegistry, 'start' | 'resume' | 'cancel'> & Partial<Pick<LocalAgentRegistry, 'prepareMember' | 'isPreparedMember'>>
 
 /** The roster slice of the registry (older than the M1 facade). */
 export type LocalAgentRosterSlice = Pick<LocalAgentRegistry, 'roster' | 'statusOf'>

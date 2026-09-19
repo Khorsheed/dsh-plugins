@@ -191,6 +191,7 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
    */
   private async lastObserved(childSessionId?: string): Promise<string | undefined> {
     const record = childSessionId === undefined ? undefined : this.deps.localAgent.getDelegation(childSessionId)
+    if (childSessionId !== undefined && record === undefined) return undefined
     if (record?.observedModel !== undefined && record.observedModel.trim() !== '') return record.observedModel
     const key = childSessionId ?? ''
     const hit = this.observedCache.get(key)

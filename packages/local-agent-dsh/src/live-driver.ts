@@ -606,6 +606,23 @@ export class DshLiveDriver {
    * otherwise overwrite the runtime's single notification sink and strand
    * the earlier round forever.
    */
+  /** Prepare the owned headless agent and validate its adapter without a model turn. */
+  async prepare(spec: DshLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      provisionDshSubProfile(spec.homeDir, this.config)
+      const apiKey = await resolveApiKey(this.ctx, this.config)
+      const runtime = await this.ensureRuntime(spec, apiKey, signal)
+      await runtime.request('session/prepare', { sessionId: spec.sessionId, resume: spec.resume !== undefined })
+      signal.throwIfAborted()
+      this.armIdleTimer(spec.sessionId)
+    } catch (error) {
+      await this.reclaim(spec.sessionId)
+      throw error
+    }
+  }
+
   async startRound(request: SubagentStartRequest, spec: DshLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.

@@ -315,7 +315,10 @@ export class DispatchEngine {
     // override (family need R2) has not landed — the roster records the
     // intent, the provider still runs in the parent session's cwd.
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
-    const run = member.childSessionId === undefined
+    const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
+    const run = prepared
+      ? await facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId! })
+      : member.childSessionId === undefined
       // The invite-time model lands as the delegation's own model: the facade
       // records it with the first start and every later resume re-requests it
       // (providers bind it at spawn for exec and live alike).

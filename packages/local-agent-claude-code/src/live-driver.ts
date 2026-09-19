@@ -618,6 +618,20 @@ export class ClaudeLiveDriver {
    * turn/end bookkeeping); cancel is the interrupt control request and the
    * process survives.
    */
+  /** Initialize native controls without sending a user prompt. Native history starts on its first real turn. */
+  async prepare(spec: ClaudeLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      await this.ensureRuntime(spec, signal)
+      signal.throwIfAborted()
+      this.armIdleTimer(String(spec.childSession.id))
+    } catch (error) {
+      await this.reclaim(String(spec.childSession.id))
+      throw error
+    }
+  }
+
   async startRound(request: SubagentStartRequest, spec: ClaudeLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.

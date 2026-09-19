@@ -331,6 +331,7 @@ describe('kimi-cli-provider child session record', () => {
     }
     const created: CreatedRecord[] = []
     ctx.provide('sessions', {
+      get: () => undefined,
       create: (id: SessionId, options: { meta?: CreatedRecord['meta'] }) => {
         const session = Session.create(id)
         created.push({ id, meta: options.meta ?? {}, session })

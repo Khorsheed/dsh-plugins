@@ -721,3 +721,11 @@ export interface RoomReconcileDeliveryRequest {
 export type RoomReconcileDeliveryResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: RoomFailure }
+
+export interface RoomPrepareMemberRequest {
+  readonly sessionId: SessionId
+  readonly name: string
+}
+export type RoomPrepareMemberResult =
+  | { readonly ok: true; readonly value: { readonly childSessionId: string } }
+  | { readonly ok: false; readonly error: RoomFailure }

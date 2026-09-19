@@ -5,7 +5,7 @@
  */
 
 import { PassThrough } from 'node:stream'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { AssistantStreamFrame, Agent, AgentHandle, CreateAgentOptions, Inbox, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
@@ -369,4 +369,17 @@ describe('headless serve mode', () => {
     test.stdin.end()
     await test.ctx.fiber.dispose()
   })
+})
+
+
+it('validates the sub-instance model on preparation without creating an agent or prompting', async () => {
+  const afterPrompt = vi.fn()
+  const test = await bench({ afterPrompt })
+  test.ctx.provide('llm', { resolveModelInfo: async () => ({ id: 'test-model' }) } as never)
+  test.send({ jsonrpc: '2.0', id: 101, method: 'session/prepare', params: { sessionId: 'prepared' } })
+  expect((await test.waitLine(isResponseTo(101)))['result']).toEqual({ prepared: true })
+  expect(test.trace.creates).toEqual([])
+  expect(afterPrompt).not.toHaveBeenCalled()
+  test.stdin.end()
+  await test.ctx.fiber.dispose()
 })

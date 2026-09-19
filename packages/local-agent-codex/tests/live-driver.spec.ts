@@ -1123,3 +1123,20 @@ describe('codex live driver member-aware model', () => {
     expect(m.spawns[1]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="model-b"', '--stdio'])
   })
 })
+
+
+it('prepares native protocol without a prompt, then reuses it for the first real turn', async () => {
+  const m = mount()
+  const child = Session.create(SessionId('prepared-member'))
+  const fake = new FakeAppServer()
+  m.queueChild(fake)
+  const spec = roundSpec(m, child)
+  await m.driver.prepare(spec, new AbortController().signal)
+  expect(fake.requests.some(request => request.method === 'turn/start')).toBe(false)
+  expect(child.snapshotEvents().some(event => event.type === 'turn/start' || event.type === 'user/message')).toBe(false)
+  const run = await m.driver.startRound(request() as never, spec)
+  await run.result
+  expect(fake.requests.filter(request => request.method === 'turn/start')).toHaveLength(1)
+  expect(m.spawns).toHaveLength(1)
+  await m.driver.disposeAll()
+})

@@ -20,6 +20,7 @@
     "src/member-control.ts",
     "src/member-control-storage.ts",
     "src/live-stream.ts",
-    "src/member-controls.ts"
+    "src/member-controls.ts",
+    "src/prepared-members.ts"
   ]
 }

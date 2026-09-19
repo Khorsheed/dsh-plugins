@@ -196,7 +196,7 @@ export function apply(ctx: Context, config: Config): void {
     let broker: KimiModelBroker
     const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs, child => broker.spawnModel(child))
     const modelCatalog = new KimiModelCatalog(childSessionId => {
-      const record = childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)
+      const record = childSessionId === undefined ? undefined : ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
       const native = childSessionId === undefined ? undefined : liveSwitch.memberRuntimeConfiguration(childSessionId)
       return {
         homeDir: ctx.localAgent.homeDir('kimi', record?.scope),
@@ -205,7 +205,7 @@ export function apply(ctx: Context, config: Config): void {
       }
     })
     broker = new KimiModelBroker(ctx, {
-      homeDir: childSessionId => ctx.localAgent.homeDir('kimi', childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)?.scope),
+      homeDir: childSessionId => ctx.localAgent.homeDir('kimi', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
       catalog: modelCatalog,
       settingsModel: resolveModel,
       recentModels: () => scope.get().recentModels ?? [],
@@ -214,6 +214,12 @@ export function apply(ctx: Context, config: Config): void {
     })
     const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel, broker))
     const disposeHarness = ctx.localAgent.register({
+      prepareMember: async ({ binding, childSession, configuration, signal }) => {
+        const driver = liveSwitch.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) throw new Error('Enable the native live harness before preparing a coordinator')
+        await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('kimi', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
+      },
       name: 'kimi',
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',

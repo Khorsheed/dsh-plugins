@@ -812,6 +812,58 @@ export class KimiAcpLiveDriver {
    * the exec run's settlement contract exactly (settleRunResult + turn/end
    * bookkeeping); cancel is `session/cancel` and the process survives.
    */
+  /** Initialize the native session and model controls without sending a prompt. */
+  async prepare(spec: KimiLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      const runtime = await this.ensureRuntime(spec, signal)
+      await this.configureSession(runtime, spec)
+      signal.throwIfAborted()
+      this.armIdleTimer(String(spec.childSession.id))
+    } catch (error) {
+      await this.reclaim(String(spec.childSession.id))
+      throw error
+    }
+  }
+
+  private async configureSession(rt: KimiLiveRuntime, spec: KimiLiveRoundSpec): Promise<void> {
+    const member = runtimeMember.get(rt)
+    if (rt.sessionId === undefined) {
+      if (spec.resume === undefined) {
+        const response = await rt.peer.request<JsonObject & { sessionId?: string }>('session/new', {
+          cwd: spec.cwd,
+          mcpServers: member?.mcpServers ?? [],
+        })
+        if (typeof response?.sessionId !== 'string') {
+          throw new Error('subagent-kimi live: session/new returned no session id')
+        }
+        rt.sessionId = response.sessionId
+        rt.modelConfiguration = kimiNativeConfiguration(response)
+        // The record convention is the bare uuid (the exec path's
+        // settle-time parse); the ACP id is a directory name
+        // (`session_<uuid>`). Strip before recording so live- and
+        // exec-written records stay interchangeable.
+      } else {
+        // Resume: the record may be bare (exec-written) or carry the ACP
+        // prefix (legacy live records); the wire always wants the
+        // ACP-native form.
+        rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
+        const response = await rt.peer.request('session/load', {
+          sessionId: rt.sessionId,
+          cwd: spec.cwd,
+          mcpServers: member?.mcpServers ?? [],
+        })
+        rt.modelConfiguration = kimiNativeConfiguration(response)
+      }
+    }
+    if (spec.configuration !== undefined) {
+      rt.modelConfiguration = await configureKimiSession(rt.sessionId, rt.modelConfiguration, spec.configuration,
+        (method, params) => rt.peer.request(method, params))
+    }
+    if (spec.resume === undefined && rt.sessionId !== undefined) spec.onCliSessionId?.(bareKimiSessionId(rt.sessionId))
+  }
+
   async startRound(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.
@@ -1192,41 +1244,8 @@ export class KimiAcpLiveDriver {
         throw new Error('subagent-kimi: run cancelled locally')
       }
       rt.onSessionUpdate = onSessionUpdate
-      const member = runtimeMember.get(rt)
       try {
-        if (rt.sessionId === undefined) {
-          if (spec.resume === undefined) {
-            const response = await rt.peer.request<JsonObject & { sessionId?: string }>('session/new', {
-              cwd: spec.cwd,
-              mcpServers: member?.mcpServers ?? [],
-            })
-            if (typeof response?.sessionId !== 'string') {
-              throw new Error('subagent-kimi live: session/new returned no session id')
-            }
-            rt.sessionId = response.sessionId
-            rt.modelConfiguration = kimiNativeConfiguration(response)
-            // The record convention is the bare uuid (the exec path's
-            // settle-time parse); the ACP id is a directory name
-            // (`session_<uuid>`). Strip before recording so live- and
-            // exec-written records stay interchangeable.
-            spec.onCliSessionId?.(bareKimiSessionId(rt.sessionId))
-          } else {
-            // Resume: the record may be bare (exec-written) or carry the ACP
-            // prefix (legacy live records); the wire always wants the
-            // ACP-native form.
-            rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
-            const response = await rt.peer.request('session/load', {
-              sessionId: rt.sessionId,
-              cwd: spec.cwd,
-              mcpServers: member?.mcpServers ?? [],
-            })
-            rt.modelConfiguration = kimiNativeConfiguration(response)
-          }
-        }
-        if (spec.configuration !== undefined) {
-          rt.modelConfiguration = await configureKimiSession(rt.sessionId, rt.modelConfiguration, spec.configuration,
-            (method, params) => rt.peer.request(method, params))
-        }
+        await this.configureSession(rt, spec)
       } catch (error) {
         // The accept failed: the runtime's session state is unknown, so do
         // not reuse it — reclaim and fail the round loudly. The turn never

@@ -182,7 +182,7 @@ export function apply(ctx: Context, config: Config): void {
       warn: message => ctx.logger.warn(message),
     })
     const modelContext = (childSessionId?: string): { home: string; cwd: string | undefined } => {
-      const record = childSessionId === undefined ? undefined : ctx.localAgent.getDelegation(childSessionId)
+      const record = childSessionId === undefined ? undefined : ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
       return { home: ctx.localAgent.homeDir('claude-code', record?.scope), cwd: record?.cwd }
     }
     const modelBroker = new ClaudeModelBroker({
@@ -215,6 +215,12 @@ export function apply(ctx: Context, config: Config): void {
     })
     const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve, effectiveModel))
     const disposeHarness = ctx.localAgent.register({
+      prepareMember: async ({ binding, childSession, configuration, signal }) => {
+        const driver = liveSwitch.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) throw new Error('Enable the native live harness before preparing a coordinator')
+        await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('claude-code', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
+      },
       name: 'claude-code',
       displayName: 'Claude Code',
       homeEnvVar: 'CLAUDE_CONFIG_DIR',

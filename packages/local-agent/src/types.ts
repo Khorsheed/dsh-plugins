@@ -668,6 +668,7 @@ export interface LocalAgentMemberRun {
 export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'fresh'
+    readonly preparedMemberId?: string
     readonly effort?: string
     readonly configurationLock?: string
     /**
@@ -836,6 +837,8 @@ export interface DelegationExecTarget {
  * it without changing the existing fields.
  */
 export interface DelegationCallOptions {
+  /** Reserved identity returned by prepareMember; never a caller-selected resume override. */
+  readonly preparedMemberId?: string
   /** Native reasoning value, fixed at creation unless changed through member controls. */
   readonly effort?: string
   /** Frozen evaluation condition: rejects interactive configuration changes. */
