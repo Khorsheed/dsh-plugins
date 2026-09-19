@@ -9,7 +9,7 @@ Status: in progress. This record does not establish all-provider streaming accep
 - Lab profile: `room-coordinator-test`, loopback port 3084. Production port 3080 unchanged.
 - Separate settings, credential file and member homes. DSH credential provisioned privately; user completed Kimi login in the lab scope.
 - Observed CLI versions: Kimi 0.42.0, Codex 0.144.0, Claude Code 2.1.277.
-- Development initially used worktree links. The 3084 lab now installs nine candidate tarballs at `0.1.1-roomcoord.c594b735`, with no workspace links for the family. This is a test-only version, not an npm release.
+- Development initially used worktree links. The 3084 lab now installs nine candidate tarballs at `0.1.1-roomcoord.c9889ab5`, with no workspace links for the family. This is a test-only version, not an npm release.
 - Fresh/upgrade installation probes use the npm host toolchain pinned to `0.1.5-rc.1`; their test HOME directories are separate from the logged-in lab and production.
 
 ## Observed results
@@ -110,3 +110,10 @@ The 14-step affected-family gate passes at `8ac19adb` in 211 seconds: eight depe
 Browser checks confirm the left-aligned coordinator label, expanded goal-budget help, compact shared member menu, full model labels/IDs, and Kimi K2.8 native effort choices low/high/max. The configured candidate list still declares incompleteness. The Codex settings menu preselects GPT-5.6-Sol, omits the CLI-default row, keeps Save beside the trigger, and closes after choosing a model; the probe does not save a changed provider default. Returning through the member breadcrumb retains the parent Room. After upgrade, the prior DSH/Kimi persisted transcripts still exactly match the 305/825-event backups, and the legacy roster/coordinator/cancelled goal remain intact.
 
 The isolated preset and restart-reconciliation goal are test fixtures, not production preset migrations or mandatory chat workflow. At this review, Kimi is logged in; the isolated Codex and Claude homes still report absent credentials. These UI checks do not close their authenticated runtime acceptance.
+
+
+## Product review: remove catalog controls and dismiss menus
+
+`c9889ab5` removes custom model IDs, catalog detail/refresh controls, provenance tooltips and routine catalog status from the shared settings/member pickers. Loading, failures and unavailable effort choices remain visible when relevant. Both surfaces dismiss on outside interaction or Escape, with keyboard focus returned to the trigger. The selected row has a trailing checkmark, and placement adapts to the viewport and settings dialog bounds.
+
+The 14-step affected-family gate passes in 217 seconds: eight packages, 1,548 package tests, and 183 script tests (two skipped). Nine candidate tarballs are installed into 3084 after an idle check and isolated preflight. Browser checks confirm Codex settings preserve the saved model, the menu opens above the trigger when space below is insufficient, blank-card clicks dismiss it, and Escape dismisses the picker while leaving Settings open. Kimi member checks confirm only model/effort rows on the root menu, complete candidate labels/IDs without catalog controls, outside-composer and Escape dismissal, and no configuration mutation from dismissal. No ResizeObserver errors are observed during these checks. The 305/825-event DSH/Kimi baseline transcripts still match after the graceful restart. The original parent Room is restored in the browser. Production 3080 remains unchanged.
