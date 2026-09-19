@@ -34,6 +34,8 @@ describe('harness model picker', () => {
     expect(option.textContent).toContain('alias → resolved-model-id')
     await waitFor(() => expect(change).toHaveBeenCalledWith('alias'))
     fireEvent.click(option)
+    expect(view.container.querySelector('details')!.open).toBe(false)
+    open(view.container)
     expect(screen.queryByLabelText(zh['configuration.effort'])).toBeNull()
     screen.getByText(zh['configuration.custom'], { selector: 'summary' }).closest('details')!.open = true
     fireEvent.change(screen.getByLabelText(zh['configuration.custom']), { target: { value: 'my-model' } })

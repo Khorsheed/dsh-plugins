@@ -4,7 +4,7 @@
 .root > summary::after { content: '⌄'; margin-left: 6px; }
 .root > summary:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.14)); }
 .panel { position: absolute; z-index: 20; bottom: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 8px; width: min(320px, calc(100vw - 48px)); max-height: min(480px, 65vh); overflow-y: auto; box-sizing: border-box; padding: 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2)); border-radius: 12px; background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, #fff)); box-shadow: 0 8px 32px rgba(0,0,0,.18); }
-.settings .panel { position: relative; bottom: auto; right: auto; margin-top: 6px; box-shadow: none; width: min(360px, 100%); }
+.settings .panel { top: calc(100% + 6px); bottom: auto; left: 0; right: auto; }
 .fields { display: flex; flex-direction: column; min-width: 0; gap: 6px; border: 0; padding: 0; margin: 0; }
 .fields input { box-sizing: border-box; width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2)); border-radius: 8px; color: inherit; background: transparent; font: inherit; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -59,7 +59,7 @@ export function HarnessModelPicker({ face, value, onChange, disabled, t }: Harne
       {error && <div role="alert">{error}</div>}
       {!directory && <span role="status">{t('loading')}</span>}
       <ModelConfigurationFields directory={directory} value={{ model: value ? { mode: 'value', value } : { mode: 'default' }, effort: { mode: 'default' } }}
-        onChange={selection => onChange(selection.model.mode === 'value' ? selection.model.value : '')}
+        onChange={selection => { onChange(selection.model.mode === 'value' ? selection.model.value : ''); setOpen(false) }}
         showEffort={false} disabled={disabled} t={t} />
       <details className={css.advanced}><summary>{t('configuration.details')}</summary><small>{directory?.reason}</small>
       <button type="button" disabled={refreshing || directory?.refreshing} onClick={() => { void refresh() }}>{t('configuration.refresh')}</button></details>
