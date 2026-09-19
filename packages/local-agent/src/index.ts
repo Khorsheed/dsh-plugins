@@ -860,9 +860,9 @@ export class LocalAgentRegistry {
   readonly memberInbox: MemberInbox
   private readonly memberControls: MemberControls
   /** All provider starts, including direct tool starts, acquire the same whole-turn lease. */
-  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void): Promise<SubagentRun> {
+  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>): Promise<SubagentRun> {
     this.memberInbox.assertAdmission(binding.childSessionId)
-    return this.memberControls.run(binding, start, signal, () => { this.memberInbox.assertAdmission(binding.childSessionId); onAdmitted?.() })
+    return this.memberControls.run(binding, start, signal, () => { this.memberInbox.assertAdmission(binding.childSessionId); return onAdmitted?.() })
   }
 
   private requireInboxMember(childSessionId: string): LocalAgentDelegationRecord {

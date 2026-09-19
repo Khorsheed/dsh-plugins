@@ -693,7 +693,7 @@ export interface LocalAgentMemberRun {
 export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'fresh'
-    readonly onAdmitted?: () => void
+    readonly onAdmitted?: () => void | Promise<void>
     readonly preparedMemberId?: string
     readonly effort?: string
     readonly configurationLock?: string
@@ -725,7 +725,7 @@ export type LocalAgentDelegationIntent =
   }
   | {
     readonly kind: 'resume'
-    readonly onAdmitted?: () => void
+    readonly onAdmitted?: () => void | Promise<void>
     /** The dsh child session id to continue (the resume handle). */
     readonly childSessionId: string
     /** The CLI session id the resume command continues. */
@@ -865,7 +865,7 @@ export interface DelegationExecTarget {
  */
 export interface DelegationCallOptions {
   /** Host-only durable input edge, executed at the provider admission boundary. */
-  readonly onAdmitted?: () => void
+  readonly onAdmitted?: () => void | Promise<void>
   /** Reserved identity returned by prepareMember; never a caller-selected resume override. */
   readonly preparedMemberId?: string
   /** Native reasoning value, fixed at creation unless changed through member controls. */

@@ -129,6 +129,40 @@ describe('provider configuration admission', () => {
     expect(m.controls.get(binding).read().round).toBeUndefined()
   })
 
+  it('awaits durable admission and rechecks cancellation before native startup', async () => {
+    const m = mount()
+    let release!: () => void
+    let entered!: () => void
+    const writing = new Promise<void>(resolve => { release = resolve })
+    const admitted = new Promise<void>(resolve => { entered = resolve })
+    const abort = new AbortController()
+    const start = vi.fn(async () => ({ result: Promise.resolve() } as unknown as SubagentRun))
+    const pending = m.controls.run(binding, start, abort.signal, async () => { entered(); await writing })
+    const rejected = expect(pending).rejects.toThrow('cancel during persistence')
+    await admitted
+    expect(start).not.toHaveBeenCalled()
+    abort.abort(new Error('cancel during persistence'))
+    release()
+    await rejected
+    expect(start).not.toHaveBeenCalled()
+    expect(m.controls.get(binding).read().status).toBe('idle')
+    expect(m.controls.get(binding).read().round).toBeUndefined()
+    await m.controls.run(binding, start)
+    expect(start).toHaveBeenCalledOnce()
+  })
+
+  it('rejects asynchronous persistence failures before native startup', async () => {
+    const m = mount()
+    const start = vi.fn(async () => ({ result: Promise.resolve() } as unknown as SubagentRun))
+    await expect(m.controls.run(binding, start, undefined, async () => {
+      await Promise.resolve()
+      throw new Error('durable room edge failed')
+    })).rejects.toThrow('durable room edge failed')
+    expect(start).not.toHaveBeenCalled()
+    expect(m.controls.get(binding).read().status).toBe('idle')
+    expect(m.controls.get(binding).read().round).toBeUndefined()
+  })
+
   it('refuses a provider, account scope, or frozen-condition change under an existing member identity', () => {
     const m = mount()
     m.controls.get(binding)

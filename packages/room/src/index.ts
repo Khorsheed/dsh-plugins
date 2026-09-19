@@ -970,8 +970,9 @@ export class RoomService extends TypertRemoteService {
       : false
     if (hit) {
       const running = loaded.state.runs.find(entry => entry.member === request.name && entry.state === 'running')
+      if (running === undefined) return { ok: true, value: { cancelled: true } }
       loaded.session.append('room/run-state', {
-        member: request.name, state: 'cancelled', startedAt: running?.startedAt ?? Date.now(),
+        member: request.name, state: 'cancelled', startedAt: running.startedAt,
       })
       // The engine's settle no-ops behind this edge, so the task closing the
       // settle would have done happens here: the dispatch-opened in_progress

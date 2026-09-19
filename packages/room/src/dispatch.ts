@@ -210,29 +210,35 @@ export class DispatchEngine {
     memberName = member.name
     const identity = memberId(room.snapshotEvents(), member)
     const deliveryId = options.dispatchSeq === undefined ? undefined : `${options.dispatchSeq}:${identity}`
-    if (deliveryId !== undefined) room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: 'running' })
     const cursor = previousCursor(room.snapshotEvents(), memberName, options.dispatchSeq ?? Number.MAX_SAFE_INTEGER)
-    const startedAt = Date.now()
-    room.append('room/run-state', { member: memberName, state: 'running', startedAt })
-    await this.ctx.sessions.flush(room)
+    let startedAt: number | undefined
+    const admitted = async (): Promise<number> => {
+      if (startedAt !== undefined) throw new Error('Room delivery was admitted twice')
+      startedAt = Date.now()
+      if (deliveryId !== undefined) room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: 'running' })
+      room.append('room/run-state', { member: memberName, state: 'running', startedAt })
+      await this.ctx.sessions.flush(room)
+      return startedAt
+    }
+    const speechAfter = room.snapshotEvents().at(-1)?.seq ?? -1
     try {
       if (member.kind === 'main-agent') {
-        await this.runMainAgent(room, member, cursor, text, startedAt, options.relayIds ?? [])
+        await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [])
       } else {
-        await this.runCliMember(room, member, cursor, text, startedAt, options.relayIds ?? [])
+        await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [])
       }
     } catch (error: unknown) {
       // Any engine-level fault (adapter throw, followup throw) fails the run
       // loud in the journal; the queue chain continues. The message rides the
       // failed edge so the UI's dim row can say WHY.
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
-      await this.settle(room, member, startedAt, 'failed', faultMessage(error))
+      await this.settle(room, member, startedAt ?? Date.now(), 'failed', faultMessage(error))
     } finally {
       if (deliveryId !== undefined) {
         const current = replay(room.snapshotEvents())
         const target = current.members.find(entry => memberId(room.snapshotEvents(), entry) === identity)
         const run = current.runs.find(entry => entry.member === (target?.name ?? memberName))
-        const speech = room.snapshotEvents().filter(event => event.type === 'room/speech' && event.data.member === (target?.name ?? memberName)).at(-1)
+        const speech = room.snapshotEvents().filter(event => event.type === 'room/speech' && event.seq > speechAfter && event.data.member === (target?.name ?? memberName)).at(-1)
         const outcome = run?.state === 'running' || run === undefined ? 'uncertain' : run.state
         const text = outcome === 'done' && speech?.type === 'room/speech' ? speech.data.text : undefined
         room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: outcome,
@@ -301,30 +307,33 @@ export class DispatchEngine {
   /** CLI member turn: facade start (first round) or resume, then the speech mirror. */
   private async runCliMember(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, startedAt: number, relayIds: readonly string[],
+    text: string, admitted: () => Promise<number>, relayIds: readonly string[],
   ): Promise<void> {
     const facade = probeLocalAgent(this.ctx)
     if (facade === undefined) {
       this.ctx.logger.warn(`room: cannot dispatch to "${member.name}": local-agent facade unavailable`)
-      await this.settle(room, member, startedAt, 'failed', 'the local-agent delegation facade is unavailable')
-      return
+      throw new Error('the local-agent delegation facade is unavailable')
     }
     // Roster invariant: cli members always carry a provider (invite enforces).
     const provider = member.provider ?? ''
-    // member.cwd is deliberately NOT passed down: the facade's per-call cwd
-    // override (family need R2) has not landed — the roster records the
-    // intent, the provider still runs in the parent session's cwd.
+    // Modern providers call this only after the whole-turn FIFO and model
+    // configuration admit the request. Persistence must finish before native work.
+    let startedAt: number | undefined
+    const controlled = facade.supportsMemberConfiguration?.(provider) === true
+    const admission = controlled ? { onAdmitted: async (): Promise<void> => { startedAt = await admitted() } } : {}
+    if (!controlled) startedAt = await admitted()
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
     const run = prepared
-      ? await facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId! })
+      ? await facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, ...admission })
       : member.childSessionId === undefined
       // The invite-time model lands as the delegation's own model: the facade
       // records it with the first start and every later resume re-requests it
       // (providers bind it at spawn for exec and live alike).
       ? await facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
-          member.model === undefined && member.cwd === undefined ? undefined : { ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
-      : await facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], member.cwd === undefined ? undefined : { cwd: member.cwd })
+          member.model === undefined && member.cwd === undefined && !controlled ? undefined : { ...admission, ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+      : await facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], member.cwd === undefined && !controlled ? undefined : { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+    if (startedAt === undefined) throw new Error('Provider published a room run without admission')
     if (member.childSessionId === undefined) {
       // Persist the delegation handle: the run id IS the child session id,
       // and journaling it lets a reload reattach the member (resume path).

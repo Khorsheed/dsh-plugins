@@ -59,7 +59,7 @@ export class MemberControls {
   queuedCount(memberId: string): number { return this.waiting.get(memberId)?.size ?? 0 }
 
   /** Every provider entry shares one FIFO through whole-round settlement. */
-  async run(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void): Promise<SubagentRun> {
+  async run(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>): Promise<SubagentRun> {
     signal?.throwIfAborted()
     this.get(binding) // Reject a foreign binding before accepting it into this member's queue.
     const key = binding.childSessionId
@@ -101,13 +101,14 @@ export class MemberControls {
     return receipt
   }
 
-  private async runNow(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void): Promise<SubagentRun> {
+  private async runNow(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>): Promise<SubagentRun> {
     const control = this.get(binding)
     const lease = await control.admit(randomUUID())
     let nativeStarted = false
     try {
       signal?.throwIfAborted()
-      onAdmitted?.()
+      await onAdmitted?.()
+      signal?.throwIfAborted()
       nativeStarted = true
       const run = await start(lease.configuration)
       this.admitted.set(run, lease.configuration)

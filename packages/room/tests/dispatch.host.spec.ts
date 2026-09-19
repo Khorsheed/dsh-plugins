@@ -648,6 +648,67 @@ describe('coordinator routing and durable deliveries', () => {
     expect(bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/speech').map(event => event.data.member)).toEqual(['renamed', 'renamed'])
   })
 
+  it('keeps a queued native turn unstarted until durable provider admission and excludes queue time', async () => {
+    const bench = await bootRoom()
+    await preparedMember(bench)
+    bench.localAgentStub.supportsMemberConfiguration = () => true
+    const admit = deferred<void>()
+    const finish = deferred<SubagentResult>()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    bench.facade.resume.mockImplementation(async (_parent, _provider, _child, _prompt, options) => {
+      await admit.promise
+      await options.onAdmitted()
+      return { ...settledRun('child-ada', ''), result: finish.promise }
+    })
+    try {
+      await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada wait behind independent work' })
+      await tick()
+      expect(bench.facade.resume).toHaveBeenCalledOnce()
+      expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: {
+        deliveries: [{ status: 'queued' }], runs: [],
+      } })
+      // Stop may cancel independent member work, but it must not cancel this waiting room delivery/task.
+      bench.facade.cancel.mockReturnValue(true)
+      expect(await bench.service.cancel({ sessionId: bench.sessionId, name: 'ada' })).toMatchObject({ ok: true, value: { cancelled: true } })
+      expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [], tasks: [{ status: 'in_progress' }] } })
+      clock.mockReturnValue(4000)
+      admit.resolve()
+      await tick()
+      expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: {
+        deliveries: [{ status: 'running' }], runs: [{ state: 'running', startedAt: 4000 }],
+      } })
+      clock.mockReturnValue(4050)
+      finish.resolve({ output: [{ type: 'text', text: 'actual reply' }], stopReason: 'completed' })
+      await bench.service.engine.idle()
+      const speech = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().find(event => event.type === 'room/speech')
+      expect(speech?.data).toMatchObject({ durationMs: 50, text: 'actual reply' })
+    } finally { clock.mockRestore() }
+  })
+
+  it('does not start native work when the room admission edge cannot be flushed', async () => {
+    const bench = await bootRoom()
+    await preparedMember(bench)
+    bench.localAgentStub.supportsMemberConfiguration = () => true
+    const admit = deferred<void>()
+    const native = vi.fn()
+    bench.facade.resume.mockImplementation(async (_parent, _provider, _child, _prompt, options) => {
+      await admit.promise
+      await options.onAdmitted()
+      native()
+      return settledRun('child-ada', 'must not execute')
+    })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada execute once' })
+    await tick()
+    const flush = vi.spyOn(bench.ctx.sessions, 'flush').mockRejectedValueOnce(new Error('journal unavailable'))
+    admit.resolve()
+    await bench.service.engine.idle()
+    expect(native).not.toHaveBeenCalled()
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: {
+      deliveries: [{ status: 'failed', error: 'journal unavailable' }],
+    } })
+    flush.mockRestore()
+  })
+
   it('recovers unstarted deliveries and marks crashed in-flight work uncertain without replay', async () => {
     const bench = await bootRoom()
     const member = await preparedMember(bench)
