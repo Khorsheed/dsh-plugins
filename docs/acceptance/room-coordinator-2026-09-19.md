@@ -9,7 +9,7 @@ Status: in progress. This record does not establish all-provider streaming accep
 - Lab profile: `room-coordinator-test`, loopback port 3084. Production port 3080 unchanged.
 - Separate settings, credential file and member homes. DSH credential provisioned privately; user completed Kimi login in the lab scope.
 - Observed CLI versions: Kimi 0.42.0, Codex 0.144.0, Claude Code 2.1.277.
-- Development initially used worktree links. The 3084 lab now installs nine candidate tarballs at `0.1.1-roomcoord.80493f09`, with no workspace links for the family. This is a test-only version, not an npm release.
+- Development initially used worktree links. The 3084 lab now installs nine candidate tarballs at `0.1.1-roomcoord.c594b735`, with no workspace links for the family. This is a test-only version, not an npm release.
 - Fresh/upgrade installation probes use the npm host toolchain pinned to `0.1.5-rc.1`; their test HOME directories are separate from the logged-in lab and production.
 
 ## Observed results
@@ -99,3 +99,14 @@ Immediately after the deliberate crash, DSH's read API included three synthetic 
 - Real Codex and Claude login, generation, model control and Room tools in independent lab scopes; login request is pending.
 - Final compatibility review and the remaining real harness matrix.
 - Production installation and gated restart are a separate coordinated step.
+
+
+## Product review: compact configuration and goal vocabulary
+
+`8ac19adb` names the native member `dsh` in fresh rooms, preserves legacy names on replay, places the coordinator label at the top left, and labels shared goal budgets explicitly. Member controls expose concrete model/effort choices without inheritance or CLI-default menu items. Saved settings are retained; empty settings/invitation selections take the first visible directory candidate. Settings retain their Save action. `c594b735` makes the settings picker a floating menu and closes it after selection.
+
+The 14-step affected-family gate passes at `8ac19adb` in 211 seconds: eight dependent packages, 1,546 package tests, and 183 script tests (two skipped). The final menu adjustment receives a fresh core build and all 353 core tests. Nine candidate tarballs are packed, installed into 3084 and pass isolated preflight before a graceful restart. Installed core/Room versions match `c594b735`.
+
+Browser checks confirm the left-aligned coordinator label, expanded goal-budget help, compact shared member menu, full model labels/IDs, and Kimi K2.8 native effort choices low/high/max. The configured candidate list still declares incompleteness. The Codex settings menu preselects GPT-5.6-Sol, omits the CLI-default row, keeps Save beside the trigger, and closes after choosing a model; the probe does not save a changed provider default. Returning through the member breadcrumb retains the parent Room. After upgrade, the prior DSH/Kimi persisted transcripts still exactly match the 305/825-event backups, and the legacy roster/coordinator/cancelled goal remain intact.
+
+The isolated preset and restart-reconciliation goal are test fixtures, not production preset migrations or mandatory chat workflow. At this review, Kimi is logged in; the isolated Codex and Claude homes still report absent credentials. These UI checks do not close their authenticated runtime acceptance.
