@@ -338,6 +338,7 @@ export interface RoomTaskProgress {
 
 /** Closed failure vocabulary of the room Remote surface. */
 export type RoomFailure =
+  | { readonly code: 'not-coordinator' }
   | { readonly code: 'delivery-not-uncertain' }
   | { readonly code: 'coordinator-busy' }
   | { readonly code: 'coordinator-not-ready'; readonly message: string }

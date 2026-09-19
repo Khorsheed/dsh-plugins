@@ -620,7 +620,17 @@ export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy'
  * independence-checker sanction: room absent or declining is invisible to the
  * family path. Room implements this shape to own the dispatch gate.
  */
+export type MemberRoomCommandName = 'room_read' | 'room_invite' | 'room_message'
+
+export interface MemberRoomCommand {
+  name: MemberRoomCommandName
+  arguments: Record<string, unknown>
+}
+
 export interface RoomMemberMessageGate {
+  /** Explicit ownership prevents a rejected room operation falling through to direct execution. */
+  isRoom?(request: { sessionId: string }): Promise<boolean>
+  receiveMemberCommand?(actor: LocalAgentMemberRun, command: MemberRoomCommand): Promise<MemberMessageOutcome>
   receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageReceipt>
 }
 

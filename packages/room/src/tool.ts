@@ -25,7 +25,7 @@
  * @module @khorsheed/dsh-room/tool
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { isRoomLog } from './journal.ts'
+import { coordinatorMember, isRoomLog } from './journal.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCloseTaskRequest, RoomCloseTaskResult,
@@ -221,6 +221,8 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
         return { text: 'The current session is not a room; room_task is only usable inside a room session.' }
       }
       const sessionId = agent.session.id
+      const ownership = await backend.getState({ sessionId })
+      if (ownership.ok && coordinatorMember(ownership.value)?.kind !== 'main-agent') return { text: 'Only the current coordinator may manage the shared room task board.' }
       /** The self-correcting roster suffix: the legal member names, for member-not-found. */
       const rosterHint = async (): Promise<string> => {
         const state = await backend.getState({ sessionId })
@@ -374,6 +376,23 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
         text: `Dispatched to ${result.value.member} — the member runs it asynchronously and its reply `
           + 'appears in the room as member speech. Do not wait on it; the human watches the room.',
       }
+    },
+  })
+}
+
+/** Native room tools use the same bounded context reader as the external MCP bridge. */
+export function roomReadTool(backend: { readRoomContext(sessionId: string): Promise<string> }) {
+  return defineTool({
+    name: 'room_read',
+    description: 'Read the current room roster, coordinator, deliveries, recent outcomes and available harness providers. Reading does not wake any member.',
+    parameters: {},
+    output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.text }] },
+    isConcurrencySafe: () => true,
+    async execute(_args, exec) {
+      if (exec.agent === undefined) return { text: 'room_read requires a calling agent.' }
+      try { return { text: await backend.readRoomContext(exec.agent.session.id) } }
+      catch (error) { return { text: String(error) } }
     },
   })
 }

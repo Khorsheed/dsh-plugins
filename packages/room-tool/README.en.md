@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The companion tool row of `@khorsheed/dsh-room`: the model-facing room tool trio (`room_invite` / `room_task` / `room_message` — invite CLI members, write the shared task board, dispatch messages to members), **granted per session** — present only in sessions whose agent preset composition names it. The second core/companion pair of the tool-row decoupling (M4'②, proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
+The companion tool row of `@khorsheed/dsh-room`: the model-facing room tools (`room_read` / `room_invite` / `room_task` / `room_message` — read room context, invite CLI members, write the shared task board, dispatch messages to members), **granted per session** — present only in sessions whose agent preset composition names it. The second core/companion pair of the tool-row decoupling (M4'②, proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
 
 ## Shape: a companion package that never self-mounts
 
@@ -15,7 +15,9 @@ The companion tool row of `@khorsheed/dsh-room`: the model-facing room tool trio
   ```
 
 - **Runs on the core's global service**: probes `ctx.get('room')` at apply time — when the core (`@khorsheed/dsh-room`) is not mounted it silently skips registration (degrade, never breaks the preset mount); the tools register through deferred `ctx.inject(['tools'])` (the mount-order race lesson), so compositions without a tools registry are equally safe.
-- The three tool-definition factories are exported by the core (`roomInviteTool` / `roomTaskTool` / `roomMessageTool` from `@khorsheed/dsh-room/tool`) — zero copied business logic; the origin tag's owner is THIS package (attribution follows the mounting package). The row takes no config — the invitable provider roster is read from the global room service at call time.
+- The tool-definition factories are exported by the core (`roomReadTool` / `roomInviteTool` / `roomTaskTool` / `roomMessageTool` from `@khorsheed/dsh-room/tool`) — zero copied business logic; the origin tag's owner is THIS package (attribution follows the mounting package). The row takes no config — the invitable provider roster is read from the global room service at call time.
+
+The context reader is registered only when the mounted core supports it. After coordinator handoff, the former native coordinator can still read room context; coordinator writes require the current role. External harnesses use the member bridge for room reads, invitations and background messages.
 
 ## Install
 

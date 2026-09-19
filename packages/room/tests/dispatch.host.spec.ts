@@ -474,6 +474,7 @@ describe('coordinator routing and durable deliveries', () => {
     const session = bench.ctx.sessions.get(bench.sessionId)!
     session.append('room/member-updated', { name, childSessionId: SessionId(`child-${name}`) })
     bench.localAgentStub['memberConfiguration'] = () => ({ status: 'idle' })
+    bench.localAgentStub['canCoordinateRoom'] = () => true
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     if (!state.ok) throw new Error('room unavailable')
     return state.value.members.find(member => member.name === name)!
@@ -513,6 +514,7 @@ describe('coordinator routing and durable deliveries', () => {
     bench.localAgentStub['prepareMember'] = preparation
     bench.localAgentStub['isPreparedMember'] = (id: string) => id === member.id
     bench.localAgentStub['memberConfiguration'] = () => ({ status: 'idle' })
+    bench.localAgentStub['canCoordinateRoom'] = () => true
     expect(await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 })).toMatchObject({ ok: true })
     expect(preparation).toHaveBeenCalledWith(bench.sessionId, 'kimi', member.id, { model: 'chosen' })
     expect(bench.facade.start).not.toHaveBeenCalled()
@@ -548,6 +550,43 @@ describe('coordinator routing and durable deliveries', () => {
     await bench.service.engine.idle()
     expect(bench.agent!.followup).toHaveBeenCalledOnce()
     expect(bench.facade.start).not.toHaveBeenCalled()
+  })
+
+  it('authenticates coordinator tools, prevents room spoofing and reports invited first work automatically', async () => {
+    const bench = await bootRoom()
+    const coordinator = await preparedMember(bench)
+    await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: coordinator.id!, expectedRevision: 0 })
+    const actor = { parentSessionId: bench.sessionId, childSessionId: 'child-ada', provider: 'kimi' }
+    const read = await bench.service.receiveMemberCommand(actor, { name: 'room_read', arguments: {} })
+    expect(read.ok).toBe(true)
+    if (read.ok) expect(JSON.parse(read.receipt)).toMatchObject({ self: 'ada', coordinator: 'ada' })
+    expect(await bench.service.receiveMemberCommand({ ...actor, childSessionId: 'forged' }, { name: 'room_read', arguments: {} })).toMatchObject({ ok: false })
+    expect(await bench.service.receiveMemberCommand(actor, { name: 'room_message', arguments: { sessionId: 'foreign', member: 'main', text: 'work' } })).toMatchObject({ ok: false })
+    expect(await bench.service.messageMember({ sessionId: bench.sessionId, member: 'main', text: 'old native coordinator dispatch' })).toMatchObject({ ok: false, error: { code: 'not-coordinator' } })
+    const done = deferred<SubagentResult>()
+    bench.facade.start.mockImplementation(async () => ({ ...settledRun('child-worker', ''), result: done.promise }))
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'accepted report'))
+    expect(await bench.service.receiveMemberCommand(actor, { name: 'room_invite', arguments: { provider: 'kimi', name: 'worker', firstTask: 'small job' } })).toMatchObject({ ok: true })
+    await tick()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    done.resolve({ output: [{ type: 'text', text: 'finished evidence' }], stopReason: 'completed' })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('finished evidence')
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+    const worker = { ...actor, childSessionId: 'child-worker' }
+    expect(await bench.service.receiveMemberCommand(worker, { name: 'room_invite', arguments: { provider: 'kimi', name: 'unauthorized' } })).toMatchObject({ ok: false })
+    expect(await bench.service.receiveMemberCommand(worker, { name: 'room_read', arguments: {} })).toMatchObject({ ok: true })
+  })
+
+  it('refuses promotion without the coordination tool channel', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    bench.localAgentStub['canCoordinateRoom'] = () => false
+    expect(await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 })).toMatchObject({ ok: false, error: { code: 'coordinator-not-ready' } })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: 'still native' })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledOnce()
   })
 
   it('reroutes stale official input before any native model request through the public pre-step seam', async () => {

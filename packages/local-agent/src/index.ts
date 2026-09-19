@@ -1716,6 +1716,17 @@ export class LocalAgentRegistry {
     return this.resumeLocks.has(childSessionId)
   }
 
+  private memberBridgeAvailable = false
+
+  /** Listener lifecycle owns this flag; it is never persisted across host restarts. */
+  setMemberBridgeAvailable(available: boolean): void { this.memberBridgeAvailable = available }
+
+  /** Transport/readiness capability only; authenticated generation needs separate acceptance. */
+  canCoordinateRoom(childSessionId: string): boolean {
+    const binding = this.memberBinding(childSessionId)
+    return this.memberBridgeAvailable && binding !== undefined && this.harnessForProvider(binding.provider)?.prepareMember !== undefined
+  }
+
   /**
    * Register one CLI run with the member channel and mint its per-run token.
    * The provider calls this before spawning the CLI (fresh and resume rounds

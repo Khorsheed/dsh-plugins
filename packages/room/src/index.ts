@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
@@ -336,10 +337,12 @@ export class RoomService extends TypertRemoteService {
    * @param invitedBy - the invitation's origin.
    * @returns the invitation receipt, or a rejection.
    */
-  async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent'): Promise<RoomInviteResult> {
+  async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent', actorChildSessionId?: string): Promise<RoomInviteResult> {
     // Invite PROMOTES: inviting an agent into a plain session makes it a room.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    if (invitedBy === 'agent' && !this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
     if (!validName(request.name)) return { ok: false, error: { code: 'invalid-name' } }
     if (loaded.state.members.some(member => member.name === request.name)) {
       return { ok: false, error: { code: 'duplicate-name' } }
@@ -371,6 +374,8 @@ export class RoomService extends TypertRemoteService {
         return { ok: false, error: { code: 'unknown-provider', provider: request.provider, available } }
       }
     }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    if (invitedBy === 'agent' && !this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
     loaded.session.append('room/member-added', {
       id: randomUUID(),
       name: request.name,
@@ -385,6 +390,7 @@ export class RoomService extends TypertRemoteService {
     if (request.firstTask !== undefined) {
       firstTaskSeq = loaded.session.append('room/dispatch', {
         id: randomUUID(), origin: invitedBy === 'human' ? 'human' : 'coordinator',
+        ...invitedBy === 'human' ? {} : { replyTo: memberId(loaded.session.snapshotEvents(), coordinatorMember(replay(loaded.session.snapshotEvents()), loaded.session.snapshotEvents())!) },
         targetIds: [memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)],
         targets: [request.name], text: request.firstTask,
       }).seq
@@ -539,6 +545,10 @@ export class RoomService extends TypertRemoteService {
       if ((refreshed.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
       const refreshedAgent = this.ctx.agents.get(request.sessionId)
       if (refreshedAgent?.status === 'running' || (refreshedAgent?.inbox?.nextTurn.length ?? 0) > 0 || (refreshedAgent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) return { ok: false, error: { code: 'coordinator-busy' } }
+      if (candidate.kind === 'cli') {
+        const family = this.ctx.get('localAgent') as { canCoordinateRoom?: (id: string) => boolean } | undefined
+        if (candidate.childSessionId === undefined || family?.canCoordinateRoom?.(candidate.childSessionId) !== true) return { ok: false, error: { code: 'coordinator-not-ready', message: 'The member coordination tool channel is unavailable' } }
+      }
       for (const participant of [previous, candidate]) {
         if (participant.kind !== 'cli') continue
         const family = this.ctx.get('localAgent') as { memberConfiguration?: (id: string) => { status: string; round?: unknown; pending?: unknown; lockedReason?: string } } | undefined
@@ -666,12 +676,13 @@ export class RoomService extends TypertRemoteService {
    * @param request - room session, addressee, text.
    * @returns the dispatch receipt, or a rejection.
    */
-  async messageMember(request: RoomMessageRequest): Promise<RoomMessageResult> {
+  async messageMember(request: RoomMessageRequest, actorChildSessionId?: string): Promise<RoomMessageResult> {
     // Messaging PROMOTES too (the room_message tool's gate): the main agent
     // answering "把 kimi 拉进来问一下…" promotes its own session, then the
     // roster check runs against the promoted state.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (!this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
     if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     if (!loaded.state.members.some(member => member.name === request.member)) {
       return { ok: false, error: { code: 'member-not-found' } }
@@ -690,6 +701,58 @@ export class RoomService extends TypertRemoteService {
     await this.ctx.sessions.flush(loaded.session)
     this.engine.dispatch(loaded.session, request.member, text, { dispatchSeq: dispatch.seq })
     return { ok: true, value: { member: request.member } }
+  }
+
+  /** Host-authenticated actor; model tool arguments never provide the room or sender. */
+  private isCurrentCoordinator(session: Session, actorChildSessionId?: string): boolean {
+    const events = session.snapshotEvents()
+    const coordinator = coordinatorMember(replay(events), events)
+    return actorChildSessionId === undefined ? coordinator?.kind === 'main-agent' : coordinator?.childSessionId === actorChildSessionId
+  }
+
+  /** Bounded shared room context for native and external model tools; reading never wakes an agent. */
+  async readRoomContext(sessionId: string): Promise<string> {
+    const state = await this.getState({ sessionId: SessionId(sessionId) })
+    if (!state.ok) throw new Error(`Room unavailable: ${state.error.code}`)
+    const events = this.ctx.sessions.get(SessionId(sessionId))?.snapshotEvents() ?? []
+    const recent = events.filter(event => event.type === 'room/speech').slice(-12).map(event => event.type === 'room/speech' ? { member: event.data.member, text: event.data.text.slice(0, 2000) } : null)
+    return JSON.stringify({ coordinator: coordinatorMember(state.value)?.name,
+      state: { ...state.value, deliveries: state.value.deliveries?.slice(-30), tasks: state.value.tasks.slice(-100), relays: state.value.relays.slice(-30) },
+      providers: await this.listProviders({}), recent })
+  }
+
+  /** Shared backend for external MCP room tools. Not exposed as a browser Remote. */
+  async receiveMemberCommand(actor: LocalAgentMemberRun, command: MemberRoomCommand): Promise<MemberMessageOutcome> {
+    try {
+      const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
+      if (!loaded.ok) return { ok: false, error: `Room unavailable: ${loaded.error.code}` }
+      const sender = loaded.state.members.find(member => member.childSessionId === actor.childSessionId && member.provider === actor.provider)
+      if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
+      if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
+      const args = command.arguments
+      const allowed: Record<string, readonly string[]> = { room_read: [], room_invite: ['provider', 'name', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text'] }
+      const keys = allowed[command.name]
+      if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
+      const required = (key: string): string => {
+        const value = args[key]
+        if (typeof value !== 'string' || value.trim() === '') throw new Error(`A non-empty ${key} is required`)
+        return value
+      }
+      const optional = (key: string): string | undefined => args[key] === undefined ? undefined : required(key)
+      if (command.name === 'room_read') {
+        return { ok: true, receipt: JSON.stringify({ self: sender.name, ...JSON.parse(await this.readRoomContext(loaded.session.id)) }) }
+      }
+      if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members or dispatch work' }
+      const result = command.name === 'room_invite'
+        ? await this.inviteMember({ sessionId: loaded.session.id, provider: required('provider'), name: required('name'),
+          ...optional('instructions') === undefined ? {} : { instructions: optional('instructions')! },
+          ...optional('cwd') === undefined ? {} : { cwd: optional('cwd')! },
+          ...optional('model') === undefined ? {} : { model: optional('model')! },
+          ...optional('firstTask') === undefined ? {} : { firstTask: optional('firstTask')! },
+        }, 'agent', actor.childSessionId)
+        : await this.messageMember({ sessionId: loaded.session.id, member: required('member'), text: required('text') }, actor.childSessionId)
+      return result.ok ? { ok: true, receipt: JSON.stringify(result.value) } : { ok: false, error: result.error.code }
+    } catch (error) { return { ok: false, error: String(error) } }
   }
 
   /**
@@ -715,6 +778,14 @@ export class RoomService extends TypertRemoteService {
     }
     const loaded = await this.ensureLive(request.parentSessionId)
     if (!loaded.ok) throw new Error(`room: not a room session (${loaded.error.code})`)
+    const sender = loaded.state.members.find(member => member.childSessionId === request.from && member.provider === request.provenance?.provider)
+    if (sender !== undefined && this.isCurrentCoordinator(loaded.session, request.from)) {
+      const target = loaded.state.members.find(member => member.name === request.to || member.childSessionId === request.to)
+      if (target === undefined) throw new Error('Unknown room member')
+      const result = await this.messageMember({ sessionId: loaded.session.id, member: target.name, text: request.content }, request.from)
+      if (!result.ok) throw new Error(result.error.code)
+      return 'sent'
+    }
     const resolveName = (endpoint: string): string => {
       const byName = loaded.state.members.find(member => member.name === endpoint)
       if (byName !== undefined) return byName.name

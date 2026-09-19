@@ -33,6 +33,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentRegistry } from './index.ts'
 import type {
   LocalAgentDelegationView,
+  MemberRoomCommand,
   LocalAgentMemberMessage,
   MemberMessageOutcome,
   RoomMemberMessageGate,
@@ -46,6 +47,11 @@ export interface MemberBridgeRequest {
   to: string
   /** The notification text. */
   text: string
+}
+
+export interface MemberCommandBridgeRequest {
+  token: string
+  command: MemberRoomCommand
 }
 
 /**
@@ -79,6 +85,7 @@ export class MemberChannel {
       })
       server.removeAllListeners('error')
       this.server = server
+      this.registry.setMemberBridgeAvailable(true)
     } catch (error: unknown) {
       this.ctx.logger.warn(
         `localAgent: member channel listener unavailable (${error instanceof Error ? error.message : String(error)}); member_message calls will fail`,
@@ -90,6 +97,7 @@ export class MemberChannel {
   async dispose(): Promise<void> {
     const server = this.server
     this.server = undefined
+    this.registry.setMemberBridgeAvailable(false)
     if (server === undefined) return
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     rmSync(this.socketPath, { force: true })
@@ -116,7 +124,7 @@ export class MemberChannel {
   private async answer(socket: Socket, line: string): Promise<void> {
     let outcome: MemberMessageOutcome
     try {
-      outcome = await this.handle(JSON.parse(line) as MemberBridgeRequest)
+      outcome = await this.handle(JSON.parse(line) as MemberBridgeRequest | MemberCommandBridgeRequest)
     } catch (error: unknown) {
       outcome = { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
@@ -130,11 +138,22 @@ export class MemberChannel {
    * @param request - the bridge callback.
    * @returns the delivery outcome.
    */
-  async handle(request: MemberBridgeRequest): Promise<MemberMessageOutcome> {
+  async handle(request: MemberBridgeRequest | MemberCommandBridgeRequest): Promise<MemberMessageOutcome> {
+    if (request === null || typeof request !== 'object' || typeof request.token !== 'string') return { ok: false, error: 'Malformed member bridge request' }
     const run = this.registry.resolveMemberRun(request.token)
     if (run === undefined) {
       return { ok: false, error: 'localAgent: unknown or expired member token' }
     }
+    if ('command' in request) {
+      const room = this.probeRoom()
+      if (room?.receiveMemberCommand === undefined) return { ok: false, error: 'Room coordination tools are unavailable' }
+      try {
+        const round = this.registry.memberConfiguration(run.childSessionId).round
+        if (round === undefined || round.id.startsWith('prepare:')) return { ok: false, error: 'Room commands require an active member turn' }
+        return await room.receiveMemberCommand(run, request.command)
+      } catch (error) { return { ok: false, error: String(error) } }
+    }
+    if (typeof request.to !== 'string' || typeof request.text !== 'string' || request.text.trim() === '') return { ok: false, error: 'member_message requires a target and non-empty text' }
     const harness = this.registry.list()
       .map(name => this.registry.get(name))
       .find(candidate => candidate?.delegationProvider === run.provider)
@@ -211,11 +230,17 @@ export class MemberChannel {
         ...from.harnessDisplayName === undefined ? {} : { harnessDisplayName: from.harnessDisplayName },
       },
     }
+    let ownsRoom = false
     try {
+      if (room.isRoom !== undefined) {
+        ownsRoom = true // An unreadable ownership check also fails closed.
+        if (!await room.isRoom({ sessionId: from.parentSessionId })) return undefined
+      }
       const receipt = await room.receiveMemberMessage(message)
       return { ok: true, receipt }
     } catch (error: unknown) {
-      // A declining (or broken) gate must not break the channel; the family
+      if (ownsRoom) return { ok: false, error: `Room rejected member message: ${String(error)}` }
+      // Legacy gates have no ownership probe; preserve their decline contract. The family
       // direct-sends.
       this.ctx.logger.warn(`localAgent: room gate declined (${error instanceof Error ? error.message : String(error)}); direct-sending the member message`)
       return undefined

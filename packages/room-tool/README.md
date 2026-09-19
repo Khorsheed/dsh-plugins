@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-`@khorsheed/dsh-room` 的伴生工具行：模型可见的 room 工具三件套（`room_invite` / `room_task` / `room_message`——邀请 CLI 成员、写共享任务板、向成员分发消息），**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。单实例多模式（提案 2026-08-26）工具行解耦的第二对（M4'②）：社区插件的模型工具行只进 preset、不进 profile 根。
+`@khorsheed/dsh-room` 的伴生工具行：模型可见的 room 工具（`room_read` / `room_invite` / `room_task` / `room_message`——读取房间上下文、邀请 CLI 成员、写共享任务板、向成员分发消息），**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。单实例多模式（提案 2026-08-26）工具行解耦的第二对（M4'②）：社区插件的模型工具行只进 preset、不进 profile 根。
 
 ## 形态：不自挂载的伴生包
 
@@ -15,7 +15,9 @@
   ```
 
 - **运行依赖 core 的全局服务**：apply 时 `ctx.get('room')` 探测——core（`@khorsheed/dsh-room`）未挂载则静默不注册（degrade，不炸 preset 挂载）；工具注册走 `ctx.inject(['tools'])` 延迟注入（挂载序竞态的历史教训），无 tools 注册表的组合同样安全。
-- 三个工具定义工厂由 core 导出（`@khorsheed/dsh-room/tool` 的 `roomInviteTool` / `roomTaskTool` / `roomMessageTool`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。行无配置——可邀请的 provider 名单由工具在调用时从全局 room 服务的花名册读取。
+- 工具定义工厂由 core 导出（`@khorsheed/dsh-room/tool` 的 `roomReadTool` / `roomInviteTool` / `roomTaskTool` / `roomMessageTool`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。行无配置——可邀请的 provider 名单由工具在调用时从全局 room 服务的花名册读取。
+
+上下文读取工具只在挂载的 core 支持时注册。协调者交接后，原生旧协调者仍可读取房间上下文，协调写入要求当前角色。外部 harness 通过成员桥接读取房间、邀请成员及后台发送消息。
 
 ## 安装
 

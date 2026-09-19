@@ -4,7 +4,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
-import { roomInviteTool, roomMessageTool, roomTaskTool } from '../src/tool.ts'
+import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool } from '../src/tool.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
@@ -285,5 +285,24 @@ describe('room_message tool (real composition)', () => {
     const text = await call(messageTool, { member: 'main', text: '给自己记一笔' }, execFor(plain))
     expect(text).toContain('Dispatched to main')
     expect(plain.snapshotEvents().some(event => event.type === 'room/created')).toBe(true)
+  })
+})
+
+
+describe('room coordinator tool ownership', () => {
+  it('shares the context reader and denies former native coordinator mutations after handoff', async () => {
+    const { ctx, service, tool, taskTool, messageTool } = await boot()
+    const sessionId = await createRoom(ctx, service)
+    const room = ctx.sessions.get(sessionId)!
+    await service.invite({ sessionId, provider: 'kimi-cli', name: 'planner' })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const planner = state.value.members.find(member => member.name === 'planner')!
+    room.append('room/coordinator', { version: 1, memberId: planner.id!, revision: 1, previousMemberId: 'legacy:1', handoff: 'handoff' })
+    expect(JSON.parse(await call(roomReadTool(service), {}, execFor(room)))).toMatchObject({ coordinator: 'planner', state: { members: [{ name: 'main' }, { name: 'planner' }] } })
+    expect(await call(tool, { provider: 'kimi-cli', name: 'forbidden', instructions: 'work' }, execFor(room))).toContain('not-coordinator')
+    expect(await call(messageTool, { member: 'planner', text: 'work' }, execFor(room))).toContain('not-coordinator')
+    expect(await call(taskTool, { action: 'add', member: 'planner', title: 'work' }, execFor(room))).toContain('Only the current coordinator')
+    expect((await service.getState({ sessionId }))).toMatchObject({ ok: true, value: { tasks: [] } })
   })
 })
