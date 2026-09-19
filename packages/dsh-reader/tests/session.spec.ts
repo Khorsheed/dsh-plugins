@@ -8,6 +8,11 @@
  * Both halves are pure maps, which is exactly why they are worth testing
  * directly: a wrong merge shows up here as a lost reading position rather than
  * as a screenshot somebody has to notice.
+ *
+ * There is no session id in this API on purpose: the reader is one person
+ * reading one wall, and the pane is mounted per dsh session — keying the memory
+ * by session made "open it in another conversation" start from scratch. The
+ * cross-session case is asserted where it is observable, in the pane's own spec.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -25,84 +30,63 @@ import {
 import type { TranslatorSessionLike } from '../src/client/translate.ts'
 
 afterEach(() => {
-  forgetSession('s1')
-  forgetSession('s2')
-  forgetSession('s3')
+  forgetSession()
   forgetTranslators()
 })
 
-describe('the session snapshot', () => {
-  it('has nothing to say about a session it has never seen', () => {
-    expect(readSession('s1')).toEqual({})
+describe('the page snapshot', () => {
+  it('has nothing to say before the reader has done anything', () => {
+    expect(readSession()).toEqual({})
   })
 
   it('merges one patch at a time instead of replacing the record', () => {
-    patchSession('s1', { query: 'attention', sort: 'oldest' })
-    patchSession('s1', { query: 'transformer' })
-    expect(readSession('s1')).toEqual({ query: 'transformer', sort: 'oldest' })
-  })
-
-  it('keeps two sessions apart', () => {
-    patchSession('s1', { query: 'one' })
-    patchSession('s2', { query: 'two' })
-    expect(readSession('s1').query).toBe('one')
-    expect(readSession('s2').query).toBe('two')
+    patchSession({ query: 'attention', sort: 'oldest' })
+    patchSession({ query: 'transformer' })
+    expect(readSession()).toEqual({ query: 'transformer', sort: 'oldest' })
   })
 
   it('drops a field patched with undefined rather than storing a hole', () => {
-    patchSession('s1', { query: 'attention' })
-    patchSession('s1', { query: undefined })
-    expect(readSession('s1')).toEqual({})
-  })
-
-  it('caps how many sessions are remembered, dropping the least recently touched', () => {
-    // The pane is mounted per session and the map lives for the page's whole
-    // life, so an unbounded map is a leak in a long-lived tab.
-    for (let index = 0; index < 12; index += 1) patchSession(`s-${String(index)}`, { query: `q${String(index)}` })
-    patchSession('s-extra', { query: 'extra' })
-    expect(readSession('s-0')).toEqual({})
-    expect(readSession('s-extra').query).toBe('extra')
-    expect(readSession('s-11').query).toBe('q11')
-    for (let index = 1; index < 12; index += 1) forgetSession(`s-${String(index)}`)
-    forgetSession('s-extra')
+    patchSession({ query: 'attention' })
+    patchSession({ query: undefined })
+    expect(readSession()).toEqual({})
   })
 
   it('remembers a reading position per entry', () => {
-    rememberScroll('s1', 'entry-a', 812.4)
-    rememberScroll('s1', 'entry-b', 40)
-    rememberScroll('s1', 'entry-a', -12)
-    expect(readSession('s1').scroll).toEqual({ 'entry-a': 0, 'entry-b': 40 })
+    rememberScroll('entry-a', 812.4)
+    rememberScroll('entry-b', 40)
+    rememberScroll('entry-a', -12)
+    expect(readSession().scroll).toEqual({ 'entry-a': 0, 'entry-b': 40 })
   })
 })
 
 describe('the translation record', () => {
   it('records the view and the language it was built for', () => {
-    rememberTranslation('s1', 'entry-a', 'both', 'en')
-    expect(readSession('s1').translationView).toEqual({ 'entry-a': 'both' })
-    expect(readSession('s1').translationSource).toEqual({ 'entry-a': 'en' })
+    rememberTranslation('entry-a', 'both', 'en')
+    expect(readSession().translationView).toEqual({ 'entry-a': 'both' })
+    expect(readSession().translationSource).toEqual({ 'entry-a': 'en' })
   })
 
   it('treats "original" as the globe being off', () => {
-    rememberTranslation('s1', 'entry-a', 'trans', 'en')
-    rememberTranslation('s1', 'entry-a', 'orig', 'en')
+    rememberTranslation('entry-a', 'trans', 'en')
+    rememberTranslation('entry-a', 'orig', 'en')
     // A record that outlived the reader's choice would switch the globe back on
     // over the original text.
-    expect(readSession('s1').translationView).toEqual({})
-    expect(readSession('s1').translationSource).toEqual({})
+    expect(readSession().translationView).toEqual({})
+    expect(readSession().translationSource).toEqual({})
   })
 
   it('forgets one entry without touching the others', () => {
-    rememberTranslation('s1', 'entry-a', 'trans', 'en')
-    rememberTranslation('s1', 'entry-b', 'trans', 'de')
-    forgetTranslation('s1', 'entry-a')
-    expect(readSession('s1').translationView).toEqual({ 'entry-b': 'trans' })
-    expect(readSession('s1').translationSource).toEqual({ 'entry-b': 'de' })
+    rememberTranslation('entry-a', 'trans', 'en')
+    rememberTranslation('entry-b', 'trans', 'de')
+    forgetTranslation('entry-a')
+    expect(readSession().translationView).toEqual({ 'entry-b': 'trans' })
+    expect(readSession().translationSource).toEqual({ 'entry-b': 'de' })
   })
 
   it('forgetting an entry with no record is a no-op', () => {
-    rememberTranslation('s1', 'entry-b', 'trans', 'en')
-    forgetTranslation('s1', 'entry-a')
-    expect(readSession('s1').translationView).toEqual({ 'entry-b': 'trans' })
+    rememberTranslation('entry-b', 'trans', 'en')
+    forgetTranslation('entry-a')
+    expect(readSession().translationView).toEqual({ 'entry-b': 'trans' })
   })
 })
 

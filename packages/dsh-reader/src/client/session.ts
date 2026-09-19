@@ -5,14 +5,22 @@
  * (`RightbarRoot` renders only while `activePanelId === null`), and the pane's
  * store is created per mount — so returning from the side chat used to lose the
  * open article, the reading position, the wall's narrowing and the fact that a
- * translation was on. This module is the fix: one snapshot per session, in
- * module memory.
+ * translation was on. This module is the fix: one snapshot in module memory.
+ *
+ * ONE bucket for the whole page, not one per dsh session. The pane is mounted
+ * per session, so keying this by `sessionId` meant "open the reader in another
+ * conversation" started from scratch — the same wall, the same article, the
+ * same translation, all to be set up again. The reader is one person reading one
+ * wall; the session id stays what it is genuinely for (the conversation draft,
+ * the side-chat context key), and nothing else here is session-bound.
  *
  * Deliberately NOT persisted. Everything here is where the reader was LOOKING,
  * not what they collected: a reload is a fresh visit, and keeping third-party
  * translated text on disk would contradict this package's "the translation never
  * leaves the page" rule. (Surviving a reload would mean `sessionStorage`; that
- * was considered and declined.)
+ * was considered and declined.) The two things that DO outlive a reload are host
+ * state and are read from there: the cached article bodies (keyed by entry id in
+ * `state.json`) and the 「最近阅读」 list.
  *
  * @module @khorsheed/dsh-reader/client/session
  */
@@ -44,84 +52,60 @@ export interface ReaderSessionSnapshot {
 
 type Patch = Partial<ReaderSessionSnapshot>
 
-/**
- * How many sessions keep a snapshot.
- *
- * A page holds a handful of sessions at most, but the map must not grow without
- * a bound in a long-lived tab; the oldest session is dropped first (Map keeps
- * insertion order, and a write re-inserts).
- */
-const MAX_SESSIONS = 12
-
-const SESSIONS = new Map<string, Patch>()
+/** The page's one snapshot. */
+let PAGE: Patch = {}
 
 /**
- * The snapshot for one session, or `{}` when it has none.
+ * What the page remembers, or `{}` when it remembers nothing yet.
  *
- * @param sessionId - the pane's session.
  * @returns the snapshot (a copy of the recorded fields).
  */
-export function readSession(sessionId: string): Patch {
-  const stored = SESSIONS.get(sessionId)
-  return stored === undefined ? {} : { ...stored }
+export function readSession(): Patch {
+  return { ...PAGE }
 }
 
 /**
- * Record what changed for one session.
+ * Record what changed.
  *
  * A field set to `undefined` is dropped rather than stored: "no record" and
  * "recorded as nothing" would otherwise be two spellings of the same state.
  *
- * @param sessionId - the pane's session.
  * @param patch - the fields to replace.
  */
-export function patchSession(sessionId: string, patch: Patch): void {
-  const current = SESSIONS.get(sessionId) ?? {}
-  const next: Patch = { ...current }
+export function patchSession(patch: Patch): void {
+  const next: Patch = { ...PAGE }
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) delete next[key as keyof Patch]
     else Object.assign(next, { [key]: value })
   }
-  // Re-insertion is what makes the map's order an LRU: a touched session moves
-  // to the end, so the eviction below drops the one nobody came back to.
-  SESSIONS.delete(sessionId)
-  SESSIONS.set(sessionId, next)
-  while (SESSIONS.size > MAX_SESSIONS) {
-    const oldest = SESSIONS.keys().next()
-    if (oldest.done === true) break
-    SESSIONS.delete(oldest.value)
-  }
+  PAGE = next
 }
 
-/** Drop one session's snapshot (the specs call this between cases). */
-export function forgetSession(sessionId: string): void {
-  SESSIONS.delete(sessionId)
+/** Drop the snapshot (the specs call this between cases). */
+export function forgetSession(): void {
+  PAGE = {}
 }
 
 /**
  * Remember where the reader had scrolled inside one entry.
  *
- * @param sessionId - the pane's session.
  * @param entryId - the entry whose body was on screen.
  * @param top - the scroller's offset in pixels.
  */
-export function rememberScroll(sessionId: string, entryId: string, top: number): void {
-  const snapshot = readSession(sessionId)
-  patchSession(sessionId, { scroll: { ...snapshot.scroll, [entryId]: Math.max(0, Math.round(top)) } })
+export function rememberScroll(entryId: string, top: number): void {
+  patchSession({ scroll: { ...PAGE.scroll, [entryId]: Math.max(0, Math.round(top)) } })
 }
 
 /**
  * Remember that one entry is showing a translation, and in which view.
  *
- * @param sessionId - the pane's session.
  * @param entryId - the entry that was translated.
  * @param view - the view that was on screen, or `'orig'` to forget it.
  * @param source - the source language the translator was built for.
  */
-export function rememberTranslation(sessionId: string, entryId: string, view: TranslationView, source: string): void {
-  const snapshot = readSession(sessionId)
-  const translationView = { ...snapshot.translationView }
-  const translationSource = { ...snapshot.translationSource }
+export function rememberTranslation(entryId: string, view: TranslationView, source: string): void {
+  const translationView = { ...PAGE.translationView }
+  const translationSource = { ...PAGE.translationSource }
   if (view === 'orig') {
     // The globe is off: that is the state to restore, and a record that outlived
     // it would turn the globe back on the next time this entry is opened.
@@ -131,23 +115,21 @@ export function rememberTranslation(sessionId: string, entryId: string, view: Tr
     translationView[entryId] = view
     translationSource[entryId] = source
   }
-  patchSession(sessionId, { translationView, translationSource })
+  patchSession({ translationView, translationSource })
 }
 
 /**
  * Forget one entry's translation record (a re-fetch replaced its body).
  *
- * @param sessionId - the pane's session.
  * @param entryId - the entry whose body changed.
  */
-export function forgetTranslation(sessionId: string, entryId: string): void {
-  const snapshot = readSession(sessionId)
-  if (snapshot.translationView?.[entryId] === undefined) return
-  const translationView = { ...snapshot.translationView }
-  const translationSource = { ...snapshot.translationSource }
+export function forgetTranslation(entryId: string): void {
+  if (PAGE.translationView?.[entryId] === undefined) return
+  const translationView = { ...PAGE.translationView }
+  const translationSource = { ...PAGE.translationSource }
   delete translationView[entryId]
   delete translationSource[entryId]
-  patchSession(sessionId, { translationView, translationSource })
+  patchSession({ translationView, translationSource })
 }
 
 /* ------------------------------------------------------- translator sessions */

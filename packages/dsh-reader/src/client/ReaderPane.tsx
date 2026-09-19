@@ -376,20 +376,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /* ------------------------------------------- where this pane already was */
 
   /**
-   * Where this pane stood before the host unmounted it.
+   * Where the reader stood before the host unmounted this pane.
    *
    * The right sidebar unmounts whenever another main panel takes over (hopping
    * to the side chat is the everyday case: `RightbarRoot` renders only while no
    * other panel is active), and this store is created per mount — so the open
    * article, the reading position, the wall's narrowing and the fact that a
    * translation was on all used to be gone on the way back. `client/session.ts`
-   * holds them in module memory; this is the one read of it, taken per session
-   * id so a different session never inherits another's view.
+   * holds them in module memory; this is the one read of it, taken on mount.
+   *
+   * The memory is the PAGE's, not this session's: the same wall and the same
+   * article should be there in the next conversation too, so switching sessions
+   * is not a reason to start over.
    */
-  const snapshotRef = useRef<{ session: string; patch: Partial<ReaderSessionSnapshot> } | null>(null)
-  if (snapshotRef.current === null || snapshotRef.current.session !== sessionId) {
-    snapshotRef.current = { session: sessionId, patch: readSession(sessionId) }
-  }
+  const snapshotRef = useRef<Partial<ReaderSessionSnapshot> | null>(null)
+  if (snapshotRef.current === null) snapshotRef.current = readSession()
   /** The store's first render happens BEFORE the hydration below lands. */
   const hydrateStartedRef = useRef(false)
   /** The mirror effect is skipped once, so a pre-hydration render cannot erase the record. */
@@ -410,8 +411,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   // parsed), and it lives next to `open()`.
   useEffect(() => {
     hydrateStartedRef.current = true
-    const patch = snapshotRef.current?.patch
-    if (patch === undefined) return
+    const patch = snapshotRef.current
+    if (patch === null) return
     actions.hydrate({
       ...(patch.view === undefined ? {} : { view: patch.view }),
       ...(patch.openEntryId === undefined ? {} : { openEntryId: patch.openEntryId }),
@@ -526,12 +527,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   useEffect(() => {
     if (!mirrorStartedRef.current) { mirrorStartedRef.current = true; return }
     if (!hydrateStartedRef.current) return
-    patchSession(sessionId, {
+    patchSession({
       view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
       wallOn, wallBoth, cardTranslations,
     })
   }, [
-    sessionId, view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
     wallOn, wallBoth, cardTranslations,
   ])
 
@@ -934,8 +935,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateError(null)
     // The reader asked for the original: that is the state a return to this
     // entry should find, not a translation that switches itself back on.
-    if (openEntryId !== null) forgetTranslation(sessionId, openEntryId)
-  }, [openEntryId, sessionId])
+    if (openEntryId !== null) forgetTranslation(openEntryId)
+  }, [openEntryId])
 
   /**
    * Get the article translated, reusing a session this page already built.
@@ -1016,7 +1017,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setView(built, initialView, translateClasses)
     // Recorded BEFORE the run: the record is what makes a remounted pane turn
     // the globe back on, and the sentence memory makes the re-run cheap.
-    if (openEntryId !== null) rememberTranslation(sessionId, openEntryId, initialView, sourceLanguage)
+    if (openEntryId !== null) rememberTranslation(openEntryId, initialView, sourceLanguage)
     const result = await runTranslation({
       built,
       session,
@@ -1036,16 +1037,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     // Re-paint once the first units exist, so the translated typography applies.
     setView(built, initialView, translateClasses)
-  }, [translator, translationSource, translateClasses, t, openEntryId, sessionId])
+  }, [translator, translationSource, translateClasses, t, openEntryId])
 
   /** Apply one view to a finished translation. */
   const applyView = useCallback((next: TranslationView) => {
     setTranslateView(next)
     if (next !== 'orig') lastViewRef.current = next
-    if (openEntryId !== null) rememberTranslation(sessionId, openEntryId, next, translationSource)
+    if (openEntryId !== null) rememberTranslation(openEntryId, next, translationSource)
     const built = builtRef.current
     if (built !== null) setView(built, next, translateClasses)
-  }, [translateClasses, openEntryId, sessionId, translationSource])
+  }, [translateClasses, openEntryId, translationSource])
 
   /** A menu choice: it also starts the translation when there is none yet. */
   const pickView = useCallback((next: TranslationView) => {
@@ -1408,7 +1409,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   useEffect(() => {
     if (allEntries.length === 0) return
-    const wanted = snapshotRef.current?.patch.openEntryId
+    const wanted = snapshotRef.current?.openEntryId
     if (wanted === undefined || wanted === null) return
     if (restoredOpenRef.current === wanted || openedRef.current === wanted) {
       restoredOpenRef.current = wanted
@@ -1427,7 +1428,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     restoredOpenRef.current = wanted
     const row = rowFor(entry, presentation, read)
     if (row === undefined) return
-    const top = snapshotRef.current?.patch.scroll?.[wanted]
+    const top = snapshotRef.current?.scroll?.[wanted]
     if (top !== undefined) pendingScrollRef.current = { entryId: wanted, top }
     void open(row)
   }, [allEntries, openEntryId, presentation, read, loading, open, entryById])
@@ -1457,8 +1458,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const onDetailScroll = useCallback(() => {
     const scroller = detailRef.current
     if (scroller === null || openEntryId === null) return
-    rememberScroll(sessionId, openEntryId, scroller.scrollTop)
-  }, [openEntryId, sessionId])
+    rememberScroll(openEntryId, scroller.scrollTop)
+  }, [openEntryId])
 
   /** A new open is a new article: the translation record gets a fresh chance. */
   useEffect(() => { restoredTranslationRef.current = null }, [openEntryId])
@@ -1478,9 +1479,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (articleHtml === null || articleHtml.length === 0) return
     if (translatePhase !== 'idle') return
     if (restoredTranslationRef.current === openEntryId) return
-    const wanted = snapshotRef.current?.patch.translationView?.[openEntryId]
+    const wanted = snapshotRef.current?.translationView?.[openEntryId]
     if (wanted === undefined) return
-    const source = snapshotRef.current?.patch.translationSource?.[openEntryId] ?? translationSource
+    const source = snapshotRef.current?.translationSource?.[openEntryId] ?? translationSource
     const sources = source === 'en' ? ['en'] : [source, 'en']
     if (cachedTranslator(sources, TARGET_CANDIDATES) === undefined) return
     restoredTranslationRef.current = openEntryId
@@ -1716,10 +1717,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const refetchEntry = useCallback(async (entry: ReaderEntry) => {
     if (entry.link === undefined) return
-    forgetTranslation(sessionId, entry.id)
+    forgetTranslation(entry.id)
     restoredTranslationRef.current = entry.id
     await startFetch(entry)
-  }, [sessionId, startFetch])
+  }, [startFetch])
 
   /**
    * Delete a tag from the vocabulary and from every entry carrying it.

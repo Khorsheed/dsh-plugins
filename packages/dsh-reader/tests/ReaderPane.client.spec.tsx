@@ -116,6 +116,8 @@ interface BenchOptions {
   readonly backfillCandidates?: readonly string[]
   /** What the host's 「最近阅读」 list holds, newest first. */
   readonly recent?: readonly ReaderRecentEntry[]
+  /** The dsh session this mount belongs to (defaults to `s1`). */
+  readonly sessionId?: string
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -213,7 +215,7 @@ function bench(options: BenchOptions = {}) {
   }
 
   const props = {
-    sessionId: 's1',
+    sessionId: options.sessionId ?? 's1',
     useStore,
     actions,
     t,
@@ -290,10 +292,10 @@ function installTranslator(over: { availability?: string; createThrows?: string;
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  // "Where the reader was" is module state and every case here renders the SAME
-  // session id: without this, one case's open article (and its narrowing, and
-  // its cached translator) would be restored into the next one.
-  forgetSession('s1')
+  // "Where the reader was" is module state shared by the WHOLE PAGE (that is
+  // the point of it): without this, one case's open article — and its narrowing,
+  // and its cached translator — would be restored into the next one.
+  forgetSession()
   forgetTranslators()
 })
 
@@ -1644,6 +1646,34 @@ describe('coming back to the pane puts the reader where they were', () => {
     // The feed published the text itself (`contentHtml`), so the restore costs
     // no network call at all.
     expect(second.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('carries the article and its translation into ANOTHER dsh session', async () => {
+    // The report: read (and translate) in one conversation, open the reader in
+    // another, and nothing was there. The pane is mounted per dsh session, so a
+    // per-session memory made "continue in the next chat" a fresh start — the
+    // memory belongs to the PAGE, and the session id is only about the
+    // conversation draft.
+    installTranslator()
+    const first = bench({ sessionId: 'session-a', sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    first.unmount()
+
+    // A different session id, the same page: the article is already open and the
+    // globe is already on, with neither being clicked this time.
+    const second = bench({ sessionId: 'session-b', sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })
 
