@@ -42,14 +42,36 @@ export interface ReaderSessionSnapshot {
   readonly wallBoth: boolean
   /** Card translations already produced (small: title and summary per entry). */
   readonly cardTranslations: Record<string, { title?: string; summary?: string }>
-  /** Reading position per entry, in pixels. */
-  readonly scroll: Record<string, number>
+  /**
+   * Where the reader was inside each entry.
+   *
+   * An ANCHOR, not a pixel offset: the body's height is not final when it first
+   * renders (an article's images carry no dimensions, so they grow the document
+   * as they load), and a remembered pixel position then points at different
+   * content — which is how a reader ends up back at the top of a paper.
+   */
+  readonly scroll: Record<string, ReaderReadingAnchor>
   /** Where the WALL itself was scrolled to, in pixels. */
   readonly wallScroll?: number
   /** The translation view a reader chose per entry (its presence means "globe was on"). */
   readonly translationView: Record<string, TranslationView>
   /** The source language that view was built for, so the cached session is findable. */
   readonly translationSource: Record<string, string>
+}
+
+/**
+ * Where the reader was inside one entry.
+ *
+ * `block` + `offset` name a place in the DOCUMENT (the Nth top-level block, and
+ * how far into it the viewport top sat), so it survives everything above it
+ * changing height. `top` is the same place as a pixel offset: the fast path when
+ * the layout is already settled, and the only thing left when the body is not
+ * the one the anchor was taken from.
+ */
+export interface ReaderReadingAnchor {
+  readonly block: number
+  readonly offset: number
+  readonly top: number
 }
 
 type Patch = Partial<ReaderSessionSnapshot>
@@ -89,13 +111,22 @@ export function forgetSession(): void {
 }
 
 /**
- * Remember where the reader had scrolled inside one entry.
+ * Remember where the reader was inside one entry.
  *
  * @param entryId - the entry whose body was on screen.
- * @param top - the scroller's offset in pixels.
+ * @param anchor - the place in the document the viewport top sat at.
  */
-export function rememberScroll(entryId: string, top: number): void {
-  patchSession({ scroll: { ...PAGE.scroll, [entryId]: Math.max(0, Math.round(top)) } })
+export function rememberReadingPosition(entryId: string, anchor: ReaderReadingAnchor): void {
+  patchSession({
+    scroll: {
+      ...PAGE.scroll,
+      [entryId]: {
+        block: Math.max(0, Math.round(anchor.block)),
+        offset: Math.max(0, Math.round(anchor.offset)),
+        top: Math.max(0, Math.round(anchor.top)),
+      },
+    },
+  })
 }
 
 /**

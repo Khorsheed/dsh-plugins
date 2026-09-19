@@ -76,10 +76,11 @@ import {
   forgetTranslation,
   patchSession,
   readSession,
-  rememberScroll,
+  rememberReadingPosition,
   rememberTranslation,
   rememberWallScroll,
   rememberTranslator,
+  type ReaderReadingAnchor,
   type ReaderSessionSnapshot,
 } from './session.ts'
 import css from './ReaderPane.module.css'
@@ -322,10 +323,62 @@ const BACKFILL_CONCURRENCY = 2
  * A body can still be growing when it first renders (images decoding, fonts
  * settling, the real page arriving after the feed's summary), and an offset that
  * cannot be reached yet is silently clamped. ~half a second of retries covers
- * that without ever becoming a polling loop: it stops the moment the scroller is
- * tall enough, or the reader scrolls for themselves.
+ * the first layout; the resize observer below covers the slow part.
  */
 const SCROLL_SETTLE_ATTEMPTS = 30
+
+/**
+ * How long a restored reading position keeps re-anchoring itself.
+ *
+ * An article's images carry no dimensions, so the document keeps growing well
+ * after the body renders — the acceptance instance's paper has 27 of them. While
+ * the reader has not scrolled, re-anchoring on every layout change is what keeps
+ * them at the same SENTENCE instead of the same pixel. After this window the
+ * position is theirs.
+ */
+const POSITION_SETTLE_MS = 20_000
+
+/**
+ * The article's top-level blocks, ignoring the translation's own reveal lines.
+ *
+ * The ordinals are what the reading position is anchored to, so the nodes
+ * `translate.ts` inserts between blocks must not count: a translated article has
+ * one reveal under most paragraphs, and counting them would make a remembered
+ * block index point somewhere else entirely.
+ */
+function articleBlocks(article: HTMLElement): HTMLElement[] {
+  return [...article.children].filter(child => child.getAttribute('data-reader-reveal') !== '1') as HTMLElement[]
+}
+
+/**
+ * Read the reading position out of the DOM: which block the viewport top is in,
+ * and how far into it the reader is.
+ *
+ * @param scroller - the detail view's scroll container.
+ * @param article - the rendered article.
+ * @returns the anchor, or `null` when there is no layout to measure.
+ */
+function readingAnchor(scroller: HTMLElement, article: HTMLElement): ReaderReadingAnchor | null {
+  const articleRect = article.getBoundingClientRect()
+  // No layout (a headless test, or a body that has not been measured): an anchor
+  // would be meaningless, and the caller falls back to the pixel offset.
+  if (articleRect.height <= 0) return null
+  const contentTop = articleRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
+  const visibleY = scroller.scrollTop - contentTop
+  const blocks = articleBlocks(article)
+  let block = 0
+  let offset = Math.max(0, visibleY)
+  for (let index = 0; index < blocks.length; index += 1) {
+    const rect = blocks[index]!.getBoundingClientRect()
+    const start = rect.top - articleRect.top
+    if (start + rect.height > visibleY) {
+      block = index
+      offset = Math.max(0, visibleY - start)
+      break
+    }
+  }
+  return { block, offset: Math.round(offset), top: Math.round(scroller.scrollTop) }
+}
 
 /**
  * Rebuild one entry from a 「最近阅读」 record.
@@ -423,6 +476,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const restoredOpenRef = useRef<string | null>(null)
   /** The offset the LAST programmatic scroll landed on, so its echo is not saved. */
   const scrollEchoRef = useRef<number | null>(null)
+  /** True once the reader has scrolled the article's body themselves. */
+  const readerScrolledRef = useRef(false)
   /** The same for the wall's scroller. */
   const wallEchoRef = useRef<number | null>(null)
   /** The wall's position is put back once per entry into the list view. */
@@ -1454,53 +1509,98 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       // Two different "not there yet": the wall's parse is still filling in, or
       // the recent list (which may be the only record of this entry) has not
       // been read. Only a settled miss means the entry is gone for good, and
-      // then the wall is the honest place to stand.
-      if (!loading && recentLoadedRef.current) restoredOpenRef.current = wanted
+      // then the wall is the honest place to stand — which also means dropping
+      // the entry from the store, because the pane now renders the detail
+      // surface for as long as an entry is open (a settle that gave up while
+      // the id stayed behind would sit on that surface forever).
+      if (!loading && recentLoadedRef.current) {
+        restoredOpenRef.current = wanted
+        actions.closeEntry()
+      }
       return
     }
     restoredOpenRef.current = wanted
     const row = rowFor(entry, presentation, read)
     if (row === undefined) return
     void open(row)
-  }, [allEntries, openEntryId, presentation, read, loading, open, entryById])
+  }, [allEntries, openEntryId, presentation, read, loading, open, entryById, actions])
 
   /**
    * Put the reader back where they were inside the article.
    *
-   * The SAVED position is the target, and it is re-applied whenever the body is
-   * (re)built — a restored pane, a re-opened entry, a re-fetch landing after the
-   * summary, an element React recreated. One application was not enough: a body
-   * that arrives in two steps (the feed's summary first, the real page after the
-   * fetch) clamps the offset against the short version and then leaves the
-   * reader at the top of the long one.
+   * The saved ANCHOR is the target — the Nth top-level block and how far into it
+   * the viewport top sat — and it is re-applied whenever the body is (re)built:
+   * a restored pane, a re-opened entry, a fetch landing after the feed's summary,
+   * an element React recreated.
    *
-   * While the body is too short to reach the offset the assignment is retried
-   * for a short window (images decode, fonts settle, a fetch is in flight). A
-   * programmatic assignment also fires a `scroll` event, so the echo carries the
-   * value the browser actually accepted; `onDetailScroll` recognises it and does
-   * not mistake it for the reader.
+   * A pixel offset alone was not enough, and neither was applying it once. An
+   * article's images carry no dimensions (`extract-article` keeps the site's own
+   * markup), so the document GROWS as they load: a pixel target recorded against
+   * the settled page lands in the middle of a short one, the browser clamps it,
+   * and the reader is left at the top while the content keeps moving under them.
+   * The anchor names the content, and the retry below keeps naming it.
    */
+  const applyReadingPosition = useCallback((): boolean => {
+    const scroller = detailRef.current
+    if (scroller === null || openEntryId === null) return true
+    const anchor = readSession().scroll?.[openEntryId]
+    if (anchor === undefined || anchor.top <= 0) return true
+    let target = anchor.top
+    const article = articleRef.current
+    const articleRect = article?.getBoundingClientRect()
+    // With no layout (a test environment, or a body that has not been measured
+    // yet) the pixel offset is all there is to go on.
+    if (article !== null && articleRect !== undefined && articleRect.height > 0) {
+      const block = articleBlocks(article)[anchor.block]
+      if (block !== undefined) {
+        const contentTop = articleRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
+        target = Math.max(0, contentTop + (block.getBoundingClientRect().top - articleRect.top) + anchor.offset)
+      }
+    }
+    scroller.scrollTop = target
+    // What the browser accepted, which is what its echo will carry (a short body
+    // clamps it, and that echo must never become the new target).
+    scrollEchoRef.current = scroller.scrollTop
+    return Math.abs(scroller.scrollTop - target) <= 1
+  }, [openEntryId])
+
   useEffect(() => {
     if (openEntryId === null || articleHtml === null) return undefined
+    // A new body is a new chance for the reader to take over by scrolling.
+    readerScrolledRef.current = false
     let frame = 0
     let attempt = 0
-    const apply = (): void => {
-      const scroller = detailRef.current
-      const target = readSession().scroll?.[openEntryId]
-      if (scroller === null || target === undefined || target <= 0) return
-      scroller.scrollTop = target
-      // What the browser accepted, which is the value the echo will carry (a
-      // short body clamps it, and that echo must not overwrite the target).
-      scrollEchoRef.current = scroller.scrollTop
+    const step = (): void => {
+      if (readerScrolledRef.current) return
+      if (applyReadingPosition()) return
       attempt += 1
-      if (scroller.scrollHeight >= target + scroller.clientHeight || attempt >= SCROLL_SETTLE_ATTEMPTS) return
-      frame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(apply) : 0
+      if (attempt < SCROLL_SETTLE_ATTEMPTS) frame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(step) : 0
     }
-    apply()
+    step()
+
+    // Late layout is the common case, not the exception: every `<img>` with no
+    // dimensions resizes the document when it arrives. So the anchor is
+    // re-applied on every resize until the reader takes over (or the window
+    // closes) — after that it is their position, not ours.
+    const article = articleRef.current
+    const deadline = Date.now() + POSITION_SETTLE_MS
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver === 'function' && article !== null) {
+      observer = new ResizeObserver(() => {
+        if (readerScrolledRef.current || Date.now() > deadline) return
+        applyReadingPosition()
+      })
+      observer.observe(article)
+    }
+    const giveUp = typeof setTimeout === 'function'
+      ? setTimeout(() => { observer?.disconnect() }, POSITION_SETTLE_MS)
+      : undefined
     return () => {
       if (frame !== 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame)
+      observer?.disconnect()
+      if (giveUp !== undefined) clearTimeout(giveUp)
     }
-  }, [openEntryId, articleHtml])
+  }, [openEntryId, articleHtml, applyReadingPosition])
 
   /**
    * Remember the reading position as it moves.
@@ -1510,10 +1610,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * position ends up one scroll behind the reader.
    *
    * Only the READER's own scrolling is recorded. Setting `scrollTop` to restore
-   * a position fires this handler too, and saving that echo would either be a
-   * no-op or — when the body was too short and clamped it — overwrite the real
-   * target with the clamped value, which is how a long article ends up at the
-   * top.
+   * a position fires this handler too, and saving that echo is how a position
+   * gets destroyed: a clamped assignment carries the clamped value, which would
+   * overwrite the real target with the short body's height.
    */
   const onDetailScroll = useCallback(() => {
     const scroller = detailRef.current
@@ -1523,7 +1622,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       return
     }
     scrollEchoRef.current = null
-    rememberScroll(openEntryId, scroller.scrollTop)
+    // From here on the position is the reader's, not ours.
+    readerScrolledRef.current = true
+    const article = articleRef.current
+    const anchor = article === null ? null : readingAnchor(scroller, article)
+    rememberReadingPosition(openEntryId, anchor ?? {
+      block: 0,
+      offset: scroller.scrollTop,
+      top: scroller.scrollTop,
+    })
   }, [openEntryId])
 
   /**
@@ -2328,7 +2435,38 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /* ------------------------------------------------------------- detail view */
 
-  if (view === 'detail' && openEntry !== undefined) {
+  if (view === 'detail' && (openEntry !== undefined || openEntryId !== null)) {
+    /**
+     * A restore that has not opened its entry yet.
+     *
+     * The pane knows from its first render WHICH entry it should be showing (the
+     * page memory), but the entry itself comes from the host's payloads, which
+     * are still being parsed. Falling through to the wall for that moment is the
+     * "the article disappeared and then loaded again" flash — the page it is
+     * about to be on is the detail view, so it says so.
+     */
+    if (openEntry === undefined) {
+      return (
+        <div className={css.root}>
+          <div className={css.bar}>
+            <button
+              type="button"
+              className={css.tool}
+              title={t('action.back')}
+              onClick={() => { actions.setView('list'); actions.closeEntry() }}
+            >
+              <IconChevronLeftOutline14 size={14} />
+            </button>
+            <span className={css.barLabel}>{t('tab.label')}</span>
+            <span className={css.spacer} />
+          </div>
+          <div className={css.detailBody}>
+            <p className={css.incomplete}>{t('state.loading')}</p>
+          </div>
+        </div>
+      )
+    }
+
     const source = presentation.get(openEntry.sourceId)
     /** The host's own row for this entry's source: the failure code lives here. */
     const sourceSummary = sources.find(item => item.id === openEntry.sourceId)

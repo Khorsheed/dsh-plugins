@@ -25,7 +25,7 @@ import type { ReaderPaneProps } from '../src/client/contract.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
-import { forgetSession, forgetTranslators } from '../src/client/session.ts'
+import { forgetSession, forgetTranslators, readSession, rememberReadingPosition } from '../src/client/session.ts'
 import { UNIT_SEPARATOR } from '../src/client/translate.ts'
 import type { ReaderBody, ReaderEntryFetchState, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
@@ -1797,9 +1797,51 @@ describe('the 最近阅读 page', () => {
   })
 })
 
+/**
+ * A fake layout for the position tests.
+ *
+ * jsdom has no layout engine at all: every rect is zero, the scroller never
+ * clamps, and `scrollHeight` is 0. The anchored position is about exactly the
+ * thing jsdom cannot provide — a document whose height changes as images load —
+ * so the tests state that geometry instead of pretending it away.
+ *
+ * The model: the scroller is 600px tall; the article starts at its top; each
+ * top-level block is `blockHeight` tall; the article scrolls up as the reader
+ * scrolls down (which is what a real rect reports).
+ *
+ * @param blockHeight - how tall each top-level block is.
+ */
+function stubLayout(blockHeight = 300): void {
+  const rect = (top: number, height: number): DOMRect => ({
+    top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}),
+  }) as DOMRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element): DOMRect {
+    const el = this as HTMLElement
+    const scrolled = (document.querySelector('[class*="detailBody"]') as HTMLElement | null)?.scrollTop ?? 0
+    const classes = (el.className ?? '').toString()
+    if (classes.includes('detailBody')) return rect(0, 600)
+    if (classes.includes('article')) return rect(-scrolled, 10_000)
+    const parent = el.parentElement
+    if (parent !== null && (parent.className ?? '').toString().includes('article')) {
+      const index = [...parent.children].indexOf(el)
+      return rect(index * blockHeight - scrolled, blockHeight)
+    }
+    return rect(0, 0)
+  })
+}
+
 describe('the reading position survives the trip', () => {
+
+  // Real top-level blocks, because an anchor IS a block index: a body that is
+  // one bare text run has no block to anchor to.
   const longFeed = (): string =>
-    feed('hn', [{ title: 'An English article', description: 'First sentence here. Second sentence here.' }])
+    feed('hn', [{
+      title: 'An English article',
+      description: 'First sentence here. Second sentence here.',
+      body: '<p>First sentence here. Second sentence here.</p>'
+        + '<p>Another paragraph entirely, with more words in it.</p>'
+        + '<p>Third paragraph here, closing the piece.</p>',
+    }])
 
   /** The pane's wall scroller (the detail view has its own). */
   const wallScroller = (container: HTMLElement): HTMLElement =>
@@ -1827,6 +1869,42 @@ describe('the reading position survives the trip', () => {
       scroller.scrollTop = 0
     })
     await waitFor(() => { expect(scroller.scrollTop).toBe(640) })
+  })
+
+  it('restores the BLOCK the reader was in, not the pixel offset', async () => {
+    // The paper's images carry no dimensions, so by the time the reader comes
+    // back the document is a different height than when they left. A pixel
+    // offset then points at different content — the anchor does not.
+    stubLayout()
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    // A deliberately absurd pixel offset: only the anchor can produce the target.
+    rememberReadingPosition(entryId, { block: 1, offset: 50, top: 999_999 })
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // Block 1 starts 300px into the article, 50px into it: 350.
+    await waitFor(() => { expect(scroller.scrollTop).toBe(350) })
+    vi.restoreAllMocks()
+  })
+
+  it('records the block the reader stopped in', async () => {
+    stubLayout()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    scroller.scrollTop = 620
+    fireEvent.scroll(scroller)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    // 620px in: block 2 (600..900), 20px into it.
+    await waitFor(() => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620 })
+    })
+    vi.restoreAllMocks()
   })
 
   it('puts the wall back where it was after the pane remounts', async () => {

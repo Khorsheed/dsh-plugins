@@ -22,7 +22,7 @@ import {
   forgetTranslators,
   patchSession,
   readSession,
-  rememberScroll,
+  rememberReadingPosition,
   rememberTranslation,
   rememberTranslator,
   translationKey,
@@ -51,11 +51,15 @@ describe('the page snapshot', () => {
     expect(readSession()).toEqual({})
   })
 
-  it('remembers a reading position per entry', () => {
-    rememberScroll('entry-a', 812.4)
-    rememberScroll('entry-b', 40)
-    rememberScroll('entry-a', -12)
-    expect(readSession().scroll).toEqual({ 'entry-a': 0, 'entry-b': 40 })
+  it('remembers a reading position per entry, as an anchor', () => {
+    // Not a bare pixel offset: the body's height is not final while an article's
+    // images load, so the place is named as a block plus an offset into it.
+    rememberReadingPosition('entry-a', { block: 12, offset: 812.4, top: 5000.6 })
+    rememberReadingPosition('entry-b', { block: 0, offset: -40, top: 40 })
+    expect(readSession().scroll).toEqual({
+      'entry-a': { block: 12, offset: 812, top: 5001 },
+      'entry-b': { block: 0, offset: 0, top: 40 },
+    })
   })
 })
 
