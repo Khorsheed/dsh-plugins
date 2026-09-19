@@ -357,7 +357,7 @@ export type RoomTaskLineViewProps =
  * dock.
  */
 export type RoomDockCapsulesProps =
-  { readonly sessionId: SessionId }
+  { readonly sessionId: SessionId; readonly formalPlans?: boolean }
   & RoomTasksInjected
   & RoomInviteInjected
   & PropsLocale<'room'>

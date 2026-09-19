@@ -324,12 +324,12 @@ describe('selectRoomComposer', () => {
 })
 
 describe('RoomComposer inherited environment duties', () => {
-  it('swaps Send for Stop while the main agent turn runs, and Stop calls the injected cancel', async () => {
+  it('keeps Send beside Stop while the coordinator runs and stops only the current turn', async () => {
     const { stop } = await bench(vi.fn(), {
       session: { running: true, queue: [] },
       t: makeTranslate(zh) as RoomComposerProps['t'],
     })
-    expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
     const stopButton = screen.getByRole('button', { name: '停止生成' }) as HTMLButtonElement
     expect(stopButton.disabled).toBe(false)
     fireEvent.click(stopButton)
@@ -530,7 +530,7 @@ describe('external coordinator composer', () => {
     expect(stopMember).toHaveBeenCalledWith('ada')
     expect(stop).not.toHaveBeenCalled()
     type(area, 'next coordinator input')
-    fireEvent.keyDown(area, { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
     await waitFor(() => expect(submit).toHaveBeenCalledWith(SESSION, 'next coordinator input'))
     expect(inputActions.submit).not.toHaveBeenCalled()
   })

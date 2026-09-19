@@ -249,7 +249,7 @@ function TaskRow({ task, tasks, now, closeTask, t }: {
 
 /** The dock capsules (goal + tasks) with their expanded cards. */
 export function RoomDockCapsules({
-  sessionId, roomStore, addTask, closeTask, setGoal,
+  sessionId, roomStore, addTask, closeTask, setGoal, formalPlans = false,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker, t,
 }: RoomDockCapsulesProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
@@ -409,7 +409,7 @@ export function RoomDockCapsules({
           panel → capsules → composer card): the row stays anchored just
           above the input card, and the panel grows upward only — toggling a
           capsule never shifts the row the user clicked. */}
-      {open === 'goal' && (
+      {!formalPlans && open === 'goal' && (
         <div className={css.card}>
           {editingGoal ? (
             <div className={css.goalEditRow}>
@@ -488,7 +488,7 @@ export function RoomDockCapsules({
       {open === 'tasks' && (
         <div className={css.card}>
           <div className={css.panelBar}>
-            <div className={css.chips} role="group" aria-label={t('tasks.capsule')}>
+            <div className={css.chips} role="group" aria-label={t(formalPlans ? 'tasks.chat' : 'tasks.capsule')}>
               <button
                 type="button"
                 className={css.chip}
@@ -600,7 +600,7 @@ export function RoomDockCapsules({
       )}
 
       <div className={css.capsules}>
-        <button
+        {!formalPlans && <button
           type="button"
           className={css.capsule}
           aria-expanded={open === 'goal'}
@@ -616,21 +616,21 @@ export function RoomDockCapsules({
               <span className={css.capsuleText}>{state.goal}</span>
             </>
           )}
-        </button>
+        </button>}
         <button
           type="button"
           className={css.capsule}
           aria-expanded={open === 'tasks'}
-          aria-label={t('tasks.capsule')}
+          aria-label={t(formalPlans ? 'tasks.chat' : 'tasks.capsule')}
           data-running={runners.length > 0 || undefined}
           onClick={() => { toggle('tasks') }}
         >
           <IconChecklistOutline14 size={14} className={css.checklistIcon} />
           {progress.total === 0 ? (
-            <span className={css.capsuleText}>{t('tasks.capsule')}</span>
+            <span className={css.capsuleText}>{t(formalPlans ? 'tasks.chat' : 'tasks.capsule')}</span>
           ) : (
             <>
-              <span className={css.capsuleText}>{t('tasks.capsule')}</span>
+              <span className={css.capsuleText}>{t(formalPlans ? 'tasks.chat' : 'tasks.capsule')}</span>
               <span className={css.capsuleCount}>{progress.done}/{progress.total}</span>
               {runners.length > 0 && (
                 <span className={css.runners}>

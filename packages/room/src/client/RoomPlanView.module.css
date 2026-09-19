@@ -1,17 +1,17 @@
-.root { font-size: 12px; color: var(--dsw-alias-text-primary, #333); border: 1px solid var(--dsw-alias-border-base, #ddd); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.root { font-size: 12px; color: var(--dsw-alias-label-primary, #333); border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, .25)); border-radius: 10px; padding: 10px 12px; min-width: 0; margin: 6px 0; max-height: min(45vh, 420px); overflow: auto; }
 .root summary { cursor: pointer; overflow-wrap: anywhere; }
 .root p { margin: 8px 0; }
-.root button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-base, #ddd); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+.root button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, .25)); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
 .root button:disabled { opacity: .45; cursor: default; }
-.root a { color: var(--dsw-alias-text-link, #315ad5); overflow-wrap: anywhere; }
+.root a { color: var(--dsw-alias-button-info-fill, #315ad5); overflow-wrap: anywhere; }
 .fields { display: grid; gap: 8px; margin-top: 10px; }
 .fields label { display: grid; gap: 4px; }
-.fields textarea { box-sizing: border-box; width: 100%; min-height: 52px; resize: vertical; font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-base, #ddd); border-radius: 6px; padding: 6px; }
+.fields textarea { box-sizing: border-box; width: 100%; min-height: 52px; resize: vertical; font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, .25)); border-radius: 6px; padding: 6px; }
 .budget { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 10px 0; }
 .budget label { display: grid; gap: 4px; }
-.budget input { width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-base, #ddd); border-radius: 5px; padding: 4px; }
+.budget input { width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, .25)); border-radius: 5px; padding: 4px; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.stage, .task, .childTask, .attempt, .review { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--dsw-alias-border-base, #ddd); }
+.stage, .task, .childTask, .attempt, .review { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, .25)); }
 .childTask { margin-left: 14px; }
 .attempt { padding-left: 10px; }
 .text { white-space: pre-wrap; overflow-wrap: anywhere; }

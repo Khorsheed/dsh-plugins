@@ -18,6 +18,8 @@ Parallel capacity, total/per-task attempt limits and active-time budgets are enf
 
 The existing Room composer hosts an optional goal panel with stages, dependencies, attempt history, evidence reviews, pause/resume, human budget changes and explicit unknown-result reconciliation. Member session navigation and targeted Stop remain available. Accepted-leaf counts exclude groups and cancelled tasks. Lost acknowledgements retain command identity; no optimistic acceptance is shown. Reconciliation updates the matching execution projection and supersedes held uncertainty reports without resuming automation.
 
+The composer exposes separate Send and Stop controls during a coordinator round. Mouse users can queue the next message just like Enter users. When the formal goal panel is available, the old goal editor is hidden and legacy task history is labeled Chat tasks, avoiding two competing goal entry points. The formal panel uses the host label/border theme tokens and bounds its expanded height so dark mode and the chat input remain usable.
+
 ## Alternatives considered
 
 **Treat a settled run as accepted work.** A successful process may have produced incorrect or incomplete artifacts. Submission and evidence review remain separate transitions.

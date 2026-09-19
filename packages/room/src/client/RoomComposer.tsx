@@ -214,6 +214,7 @@ export function RoomComposer({
           addTask={addTask}
           closeTask={closeTask}
           setGoal={setGoal}
+          formalPlans={planCommand !== undefined}
           roomCwd={roomCwd}
           invite={invite}
           listProviders={listProviders}
@@ -277,13 +278,8 @@ export function RoomComposer({
           {!external && modelDirectory !== undefined && (
             <RoomModelPicker directory={modelDirectory} onError={setError} t={t} />
           )}
-          {/* Send/Stop swap, the official InputBar's ordinary-session
-              posture: while the room's own main-agent turn runs, the primary
-              circle is Stop (the fallback bar's Stop hides with it), and a
-              bare-message Enter still submits — the input machine's busy
-              admission enqueues it. mousedown is suppressed so the click
-              never steals focus from the draft. */}
-          {running ? (
+          {/* Sending queues a whole turn; stopping affects only the active coordinator. */}
+          {running && (
             <button
               type="button"
               className={css.primary}
@@ -295,7 +291,7 @@ export function RoomComposer({
                 <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
               </svg>
             </button>
-          ) : (
+          )}
             <button
               type="button"
               className={css.primary}
@@ -308,7 +304,6 @@ export function RoomComposer({
                 <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
               </svg>
             </button>
-          )}
         </div>
       </div>
       {/* The stats row's home (the official composer dock) is hidden with the
