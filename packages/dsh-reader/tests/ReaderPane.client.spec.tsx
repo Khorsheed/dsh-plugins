@@ -1796,3 +1796,51 @@ describe('the 最近阅读 page', () => {
     expect(screen.queryByTitle(zh['recent.clearTitle'])).toBeNull()
   })
 })
+
+describe('the reading position survives the trip', () => {
+  const longFeed = (): string =>
+    feed('hn', [{ title: 'An English article', description: 'First sentence here. Second sentence here.' }])
+
+  /** The pane's wall scroller (the detail view has its own). */
+  const wallScroller = (container: HTMLElement): HTMLElement =>
+    container.querySelector('[class*="scroll"]') as HTMLElement
+
+  it('puts the article back to where the reader was when its body is replaced', async () => {
+    // The body can arrive in two steps — the feed's summary first, the real page
+    // after the fetch — and one application clamps the offset against the short
+    // version. The saved position is the target, and it is re-applied to
+    // whatever body ends up on screen.
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    scroller.scrollTop = 640
+    fireEvent.scroll(scroller)
+
+    act(() => {
+      ui.actions.setArticle('<p>Third sentence here.</p>', false, null)
+      // What a browser does to the scroller when the content underneath it is
+      // replaced: the offset is clamped away. jsdom keeps it, so the loss is
+      // simulated explicitly — otherwise the assertion would pass without any
+      // restore at all.
+      scroller.scrollTop = 0
+    })
+    await waitFor(() => { expect(scroller.scrollTop).toBe(640) })
+  })
+
+  it('puts the wall back where it was after the pane remounts', async () => {
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await first.settle()
+    await screen.findByText('An English article')
+    const scroller = wallScroller(first.container)
+    scroller.scrollTop = 300
+    fireEvent.scroll(scroller)
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await second.settle()
+    await screen.findByText('An English article')
+    await waitFor(() => { expect(wallScroller(second.container).scrollTop).toBe(300) })
+  })
+})

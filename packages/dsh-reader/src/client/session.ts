@@ -44,6 +44,8 @@ export interface ReaderSessionSnapshot {
   readonly cardTranslations: Record<string, { title?: string; summary?: string }>
   /** Reading position per entry, in pixels. */
   readonly scroll: Record<string, number>
+  /** Where the WALL itself was scrolled to, in pixels. */
+  readonly wallScroll?: number
   /** The translation view a reader chose per entry (its presence means "globe was on"). */
   readonly translationView: Record<string, TranslationView>
   /** The source language that view was built for, so the cached session is findable. */
@@ -94,6 +96,18 @@ export function forgetSession(): void {
  */
 export function rememberScroll(entryId: string, top: number): void {
   patchSession({ scroll: { ...PAGE.scroll, [entryId]: Math.max(0, Math.round(top)) } })
+}
+
+/**
+ * Remember where the reader had scrolled the wall itself.
+ *
+ * The wall is the other long scroller in this pane, and losing its place is the
+ * same complaint as losing the place inside an article.
+ *
+ * @param top - the wall scroller's offset in pixels.
+ */
+export function rememberWallScroll(top: number): void {
+  patchSession({ wallScroll: Math.max(0, Math.round(top)) })
 }
 
 /**
