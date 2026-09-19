@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The page's memory of "where the reader was" (`client/session.ts`).
  *
@@ -48,6 +49,29 @@ describe('the page snapshot', () => {
   it('drops a field patched with undefined rather than storing a hole', () => {
     patchSession({ query: 'attention' })
     patchSession({ query: undefined })
+    expect(readSession()).toEqual({})
+  })
+
+  it('persists the place (and only the place) so a page restart keeps it', () => {
+    // The reader's reports were all "I came back and it had forgotten": the place
+    // survives the page restarting, the third-party content never does.
+    patchSession({ view: 'detail', openEntryId: 'entry-a', query: 'attention', wallOn: true })
+    const stored = JSON.parse(sessionStorage.getItem('dsh-reader:place') ?? '{}') as Record<string, unknown>
+    expect(stored.openEntryId).toBe('entry-a')
+    expect(stored.view).toBe('detail')
+    // The narrowing of the wall is about this visit, and translated text is a
+    // third party's: neither belongs in storage.
+    expect(stored.query).toBeUndefined()
+    expect(stored.wallOn).toBeUndefined()
+    expect(stored.translationView).toBeUndefined()
+    forgetSession()
+    expect(sessionStorage.getItem('dsh-reader:place')).toBeNull()
+  })
+
+  it('ignores a stored place it cannot read', () => {
+    sessionStorage.setItem('dsh-reader:place', '{ not json')
+    expect(readSession()).toEqual({})
+    sessionStorage.setItem('dsh-reader:place', JSON.stringify({ view: 'nonsense', openEntryId: 42, wallScroll: 'x' }))
     expect(readSession()).toEqual({})
   })
 
