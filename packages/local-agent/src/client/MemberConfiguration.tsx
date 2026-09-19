@@ -1,15 +1,16 @@
 import { requestId } from './request-id.ts'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import type { LocalAgentMemberConfiguration } from '../types.ts'
 import type { MemberConfigurationStore } from './member-configuration.ts'
 import { ModelConfigurationFields, type ConfigurationTranslate } from './ModelConfigurationFields.tsx'
 import css from './MemberConfiguration.module.css'
 import { MemberPaintDiagnostics } from './MemberPaintDiagnostics.tsx'
 import type { LivePaintDiagnostics } from './live-paint.ts'
+import { useConfigurationMenu } from './use-configuration-menu.ts'
 
 export function MemberConfiguration({ store, t, diagnostics }: { store: MemberConfigurationStore; t: ConfigurationTranslate; diagnostics?: LivePaintDiagnostics }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const root = useRef<HTMLDetailsElement>(null)
+  const menu = useConfigurationMenu('above')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const state = snapshot.state
@@ -23,12 +24,6 @@ export function MemberConfiguration({ store, t, diagnostics }: { store: MemberCo
   }
   const currentLabel = label(current?.selection)
   const disabled = busy || !snapshot.connected || state?.lockedReason !== undefined
-  useEffect(() => {
-    const close = (event: MouseEvent): void => { if (root.current && !root.current.contains(event.target as Node)) root.current.open = false }
-    const escape = (event: KeyboardEvent): void => { if (event.key === 'Escape' && root.current) root.current.open = false }
-    document.addEventListener('mousedown', close); document.addEventListener('keydown', escape)
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', escape) }
-  }, [])
   const act = async (operation: 'select' | 'cancel' | 'retry', next?: LocalAgentMemberConfiguration): Promise<void> => {
     if (!state || disabled) return
     setBusy(true); setError(undefined)
@@ -42,10 +37,10 @@ export function MemberConfiguration({ store, t, diagnostics }: { store: MemberCo
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
     finally { setBusy(false) }
   }
-  return <details className={css.root} ref={root}>
-    <summary aria-label={t('configuration.title')}>{currentLabel}{state?.pending || state?.operation ? ` · ${t('configuration.pending')}` : ''}</summary>
+  return <details className={css.root} ref={menu.root} open={menu.open} onToggle={event => menu.setOpen(event.currentTarget.open)}>
+    <summary aria-label={t('configuration.title')} aria-expanded={menu.open}><span className={css.triggerLabel}>{currentLabel}{state?.pending || state?.operation ? ` · ${t('configuration.pending')}` : ''}</span></summary>
     {diagnostics && <MemberPaintDiagnostics sessionId={store.id} diagnostics={diagnostics} />}
-    <div className={css.panel}>
+    <div ref={menu.panel} className={css.panel} style={menu.style}>
       {selection && <ModelConfigurationFields directory={snapshot.directory} value={selection} resolvedModel={state?.current.resolved.model} resolvedEffort={state?.current.resolved.effort} disabled={disabled} t={t}
         onChange={selection => { void act('select', selection) }} />}
       {state?.pending && <div role="status">{t('configuration.pending')}: {label(state.pending.selection)}</div>}
@@ -54,14 +49,10 @@ export function MemberConfiguration({ store, t, diagnostics }: { store: MemberCo
       {!snapshot.connected && <div role="status">{t('configuration.reconnecting')}</div>}
       {(error ?? state?.error ?? snapshot.error) && <div role="alert">{error ?? state?.error ?? snapshot.error}</div>}
       {state?.lockedReason && <div role="status">{state.lockedReason}</div>}
-      <div className={css.actions}>
+      {(state?.pending || state?.operation || state?.status === 'failed') && <div className={css.actions}>
         {(state?.pending || state?.operation) && <button type="button" disabled={disabled} onClick={() => { void act('cancel') }}>{t('configuration.cancel')}</button>}
         {state?.status === 'failed' && <button type="button" disabled={disabled} onClick={() => { void act('retry') }}>{t('configuration.retry')}</button>}
-      </div>
-      <details className={css.advanced}><summary>{t('configuration.details')}</summary>
-        <small>{snapshot.directory?.reason}</small>
-        <button type="button" disabled={busy || snapshot.directory?.refreshing} onClick={() => { void store.refreshDirectory().catch(error => setError(String(error))) }}>{t('configuration.refresh')}</button>
-      </details>
+      </div>}
     </div>
   </details>
 }

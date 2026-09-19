@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import type { LocalAgentMemberConfiguration, LocalAgentModelDirectory } from '../types.ts'
 import type { LocalAgentKey } from './locales.ts'
 import css from './MemberConfiguration.module.css'
@@ -16,10 +16,8 @@ export function ModelConfigurationFields({ directory, value, onChange, resolvedM
   showEffort?: boolean | undefined
   t: ConfigurationTranslate
 }) {
-  const id = useId()
   const [search, setSearch] = useState('')
   const [pane, setPane] = useState<'root' | 'model' | 'effort'>(showEffort ? 'root' : 'model')
-  const [custom, setCustom] = useState('')
   const entries = directory?.entries ?? []
   const model = value.model.mode === 'value' ? value.model.value : resolvedModel ?? entries.find(entry => !entry.hidden)?.value
   const entry = entries.find(entry => entry.value === model || entry.resolvedModel === model)
@@ -44,21 +42,16 @@ export function ModelConfigurationFields({ directory, value, onChange, resolvedM
         <input aria-label={t('configuration.search')} placeholder={t('configuration.search')} value={search} onChange={event => setSearch(event.target.value)} />
         <div className={css.candidates} role="listbox" aria-label={t('configuration.model')}>
           {candidates.map(candidate => <button key={candidate.value} type="button" role="option" aria-selected={candidate.value === model}
-            onClick={() => selectModel(candidate.value)}><strong>{candidate.label}{candidate.value === model ? ' ✓' : ''}</strong><small title={t(`configuration.source.${candidate.source}`)}>{candidate.value}{candidate.resolvedModel ? ` → ${candidate.resolvedModel}` : ''}</small></button>)}
+            onClick={() => selectModel(candidate.value)}><span className={css.optionLabel}><strong>{candidate.label}</strong>{candidate.value === model && <span aria-hidden="true" className={css.check}>✓</span>}</span><small>{candidate.value}{candidate.resolvedModel ? ` → ${candidate.resolvedModel}` : ''}</small></button>)}
           {candidates.length === 0 && <span>{t('configuration.empty')}</span>}
         </div>
-        {directory?.customInput && <details className={css.advanced}><summary>{t('configuration.custom')}</summary>
-          <label htmlFor={`${id}-custom`}>{t('configuration.custom')}</label>
-          <input id={`${id}-custom`} value={custom} onChange={event => setCustom(event.target.value)} />
-          <button type="button" disabled={!custom.trim()} onClick={() => selectModel(custom.trim())}>{t('configuration.apply')}</button>
-        </details>}
       </> : <div className={css.candidates} role="listbox" aria-label={t('configuration.effort')}>
         {options.map(option => <button key={option.value} type="button" role="option" aria-selected={option.value === effort}
           onClick={() => { if (model) onChange({ model: { mode: 'value', value: model }, effort: { mode: 'value', value: option.value } }); setPane('root') }}>
-          <strong>{option.label}{option.value === effort ? ' ✓' : ''}</strong>{option.description && <small>{option.description}</small>}
+          <span className={css.optionLabel}><strong>{option.label}</strong>{option.value === effort && <span aria-hidden="true" className={css.check}>✓</span>}</span>{option.description && <small>{option.description}</small>}
         </button>)}
       </div>}
     </>}
-    {directory && (directory.status !== 'ready' || !directory.complete) && <small role="status">{t(`configuration.directory.${directory.status}`)}{!directory.complete ? ` · ${t('configuration.incomplete')}` : ''}</small>}
+    {directory && directory.status !== 'ready' && <small role="status">{t(`configuration.directory.${directory.status}`)}</small>}
   </fieldset>
 }

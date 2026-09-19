@@ -77,6 +77,20 @@ describe('shared member configuration UI', () => {
     await waitFor(() => expect(h.face.select).toHaveBeenCalledWith('member', expect.any(String), 0, { model: { mode: 'value', value: 'long-native-model-id' }, effort: { mode: 'value', value: 'low' } }))
   })
 
+  it('dismisses the member menu without changing configuration and omits catalog maintenance controls', async () => {
+    const h = bench(); const view = render(<MemberConfiguration store={h.store} t={t} />); open(view.container)
+    await screen.findByRole('button', { name: /模型 old-model/ })
+    expect(screen.queryByText(zh['configuration.details'])).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /模型 old-model/ }))
+    expect(screen.queryByText(zh['configuration.custom'])).toBeNull()
+    fireEvent.pointerDown(document.body)
+    expect(view.container.querySelector('details')!.open).toBe(false)
+    open(view.container)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(view.container.querySelector('details')!.open).toBe(false)
+    expect(h.face.select).not.toHaveBeenCalled()
+  })
+
   it('surfaces a revision conflict and adopts the authoritative selection without retrying automatically', async () => {
     const h = bench(); const view = render(<MemberConfiguration store={h.store} t={t} />); open(view.container)
     await screen.findByRole('button', { name: /模型 old-model/ })

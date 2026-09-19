@@ -37,10 +37,9 @@ describe('harness model picker', () => {
     expect(view.container.querySelector('details')!.open).toBe(false)
     open(view.container)
     expect(screen.queryByLabelText(zh['configuration.effort'])).toBeNull()
-    screen.getByText(zh['configuration.custom'], { selector: 'summary' }).closest('details')!.open = true
-    fireEvent.change(screen.getByLabelText(zh['configuration.custom']), { target: { value: 'my-model' } })
-    fireEvent.click(screen.getByRole('button', { name: zh['configuration.apply'] }))
-    expect(change).toHaveBeenCalledWith('my-model')
+    expect(screen.queryByText(zh['configuration.custom'])).toBeNull()
+    expect(screen.queryByText(zh['configuration.details'])).toBeNull()
+
   })
 
   it('preserves a saved choice even when it is absent from a refreshed directory', async () => {
@@ -52,6 +51,25 @@ describe('harness model picker', () => {
     expect(change).not.toHaveBeenCalled()
     expect(screen.getByText('previous-user-model')).toBeTruthy()
     expect(screen.queryByText(zh['configuration.default'])).toBeNull()
+  })
+
+  it('dismisses on outside pointer or Escape, returns keyboard focus, and never submits on dismissal', async () => {
+    const face: ModelDirectoryFace = { read: async () => ready, follow: async function* (signal) { yield ready; await untilAbort(signal) } }
+    const change = vi.fn()
+    const view = render(<HarnessModelPicker face={face} value="alias" onChange={change} t={t} />)
+    open(view.container)
+    await screen.findByRole('option', { name: /Full Native Label/ })
+    fireEvent.pointerDown(screen.getByLabelText(zh['configuration.search']))
+    expect(view.container.querySelector('details')!.open).toBe(true)
+    fireEvent.pointerDown(document.body)
+    expect(view.container.querySelector('details')!.open).toBe(false)
+    open(view.container)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(view.container.querySelector('details')!.open).toBe(false)
+    expect(document.activeElement).toBe(view.container.querySelector('summary'))
+    expect(change).not.toHaveBeenCalled()
+    open(view.container)
+    await screen.findByRole('option', { name: /Full Native Label/ })
   })
 
   it('hides the previous provider directory immediately when its ownership changes', async () => {
