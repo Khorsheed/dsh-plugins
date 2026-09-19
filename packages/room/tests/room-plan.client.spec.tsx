@@ -26,6 +26,15 @@ function fillEvidence(): void {
 }
 
 describe('formal goal controls', () => {
+  it('fences the human pause to the displayed goal identity', async () => {
+    const command = vi.fn(async (_json: string) => ({ ok: true as const }))
+    render(<RoomPlanView plan={plan()} members={members} command={command} t={t} />)
+    openPlan()
+    fireEvent.click(screen.getByRole('button', { name: 'Pause automatic progress' }))
+    await waitFor(() => expect(command).toHaveBeenCalledOnce())
+    expect(JSON.parse(command.mock.calls[0]![0])).toMatchObject({ action: 'pause', goalId: 'goal', expectedRevision: plan().revision })
+  })
+
   it('offers an optional draft and never starts work just by opening the panel', async () => {
     const command = vi.fn(async (_json: string) => ({ ok: true as const }))
     render(<RoomPlanView members={members} command={command} t={t} />)

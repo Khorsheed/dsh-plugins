@@ -54,7 +54,7 @@ interface CommandBase { requestId: string; expectedRevision: number }
 export type PlanCommand = CommandBase & (
   | { action: 'create'; id: string; objective: string; mode: 'draft' | 'execute'; budget: PlanBudget }
   | { action: 'extend'; stages: { id: string; title: string }[]; tasks: PlanTaskInput[] }
-  | { action: 'pause'; reason: string }
+  | { action: 'pause'; reason: string; goalId?: string }
   | { action: 'resume' }
   | { action: 'budget'; budget: PlanBudget }
   | { action: 'cancel'; reason: string }
@@ -193,7 +193,11 @@ export function changePlan(current: RoomPlan | undefined, command: PlanCommand, 
     return clone(current!)
   }
   if (context.actor.kind === 'worker' && command.action !== 'submit') throw new Error('Only the coordinator or human may organize or review a plan')
-  if (command.expectedRevision !== (current?.revision ?? 0) && context.actor.kind !== 'worker') throw new Error('Plan revision changed; read the current plan before retrying')
+  // Concurrent submissions must not defeat a human stop request. Fence it
+  // to the displayed goal so a stale browser cannot pause a replacement.
+  if (command.action === 'pause' && command.goalId !== undefined && command.goalId !== current?.id) throw new Error('Goal changed; read the current plan before pausing')
+  const humanPause = context.actor.kind === 'human' && command.action === 'pause' && command.goalId === current?.id && current !== undefined
+  if (command.expectedRevision !== (current?.revision ?? 0) && context.actor.kind !== 'worker' && !humanPause) throw new Error('Plan revision changed; read the current plan before retrying')
   let plan: RoomPlan
   if (command.action === 'create') {
     if (current !== undefined && !['completed', 'cancelled'].includes(current.status)) throw new Error('An unfinished plan already exists')
@@ -373,7 +377,7 @@ const base = { requestId: idSchema, expectedRevision: integer(0, Number.MAX_SAFE
 const commandSchema: WireSchema = { oneOf: [
   object({ ...base, action: enumeration('create'), id: idSchema, objective: shortText, mode: enumeration('draft', 'execute'), budget: budgetSchema }),
   object({ ...base, action: enumeration('extend'), stages: { type: 'array', items: object({ id: idSchema, title: shortText }), maxItems: 50 }, tasks: { type: 'array', items: taskSchema, maxItems: 200 } }),
-  object({ ...base, action: enumeration('pause'), reason: shortText }),
+  object({ ...base, action: enumeration('pause'), reason: shortText, goalId: idSchema }, ['goalId']),
   object({ ...base, action: enumeration('resume') }),
   object({ ...base, action: enumeration('budget'), budget: budgetSchema }),
   object({ ...base, action: enumeration('cancel'), reason: shortText }),

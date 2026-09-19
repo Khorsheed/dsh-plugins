@@ -28,6 +28,25 @@ function submitted(plan = running(), id = 'a', attempt = 'attempt-a'): RoomPlan 
 }
 
 describe('formal room goal transitions', () => {
+  it('honors a goal-fenced human pause after concurrent evidence while retaining revision checks elsewhere', () => {
+    const active = running()
+    const latest = submitted(active)
+    const pause = { action: 'pause' as const, goalId: active.id, reason: 'Human paused', requestId: 'pause-race', expectedRevision: active.revision }
+    expect(parsePlanCommand(JSON.stringify(pause))).toEqual(pause)
+    const context = { actor: human, memberIds: members, now: 40 }
+    const stopped = changePlan(latest, pause, context)
+    expect(stopped.status).toBe('paused')
+    expect(stopped.tasks).toEqual(latest.tasks)
+    expect(readyPlanTasks(stopped)).toEqual([])
+    expect(changePlan(stopped, pause, context)).toEqual(stopped)
+    expect(() => changePlan(latest, pause, { ...context, actor: coordinator })).toThrow('revision changed')
+    const { goalId: _goalId, ...legacyPause } = pause
+    expect(() => changePlan(latest, legacyPause, context)).toThrow('revision changed')
+    expect(() => changePlan({ ...latest, id: 'replacement' }, pause, context)).toThrow('Goal changed')
+    expect(() => changePlan({ ...latest, status: 'completed' }, pause, context)).toThrow('closed')
+    expect(() => changePlan(stopped, { action: 'resume', requestId: 'stale-resume', expectedRevision: active.revision }, context)).toThrow('revision changed')
+  })
+
   it('shares a strict bounded command grammar and rejects unknown or malformed wire fields', () => {
     const base = { action: 'resume', requestId: 'wire', expectedRevision: 1 }
     expect(parsePlanCommand(JSON.stringify(base))).toEqual(base)

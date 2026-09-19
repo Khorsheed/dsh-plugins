@@ -131,7 +131,7 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
       <p>{t('plan.revision')}: {plan.revision} · {t('plan.attempts')}: {plan.tasks.reduce((count, task) => count + task.attempts.length, 0)}/{plan.budget.maxAttempts} · {t('plan.parallel')}: {plan.budget.maxParallel}</p>
       {plan.reason && <p role="status">{plan.reason}</p>}
       {!closed && <div className={css.actions}>
-        {plan.status === 'running' ? <button type="button" disabled={busy} onClick={() => { void run({ action: 'pause', reason: t('plan.humanPause') }) }}>{t('plan.pause')}</button>
+        {plan.status === 'running' ? <button type="button" disabled={busy} onClick={() => { void run({ action: 'pause', goalId: plan.id, reason: t('plan.humanPause') }) }}>{t('plan.pause')}</button>
           : <button type="button" disabled={busy} onClick={() => { void run({ action: 'resume' }) }}>{t('plan.resume')}</button>}
       </div>}
       {plan.stages.map(stage => <details key={stage.id} className={css.stage} open>
