@@ -14,6 +14,7 @@
     "src/types.ts",
     "src/gateway.ts",
     "src/member-channel.ts",
+    "src/member-feed.ts",
     "src/member-bridge.ts",
     "src/live-flush.ts",
     "src/model-directory.ts",

@@ -26,6 +26,18 @@ export interface LocalAgentStreamFrame {
   removed: readonly string[]
 }
 
+/** One browser connection multiplexes every currently rendered member surface. */
+export interface LocalAgentMemberFeedRequest {
+  memberId: string
+  channel: 'configuration' | 'directory' | 'output'
+}
+
+export type LocalAgentMemberFeedEvent =
+  | { memberId: string; channel: 'configuration'; value: LocalAgentMemberControlState }
+  | { memberId: string; channel: 'directory'; value: LocalAgentModelDirectory }
+  | { memberId: string; channel: 'output'; value: LocalAgentStreamFrame }
+  | { memberId: string; channel: 'error'; source: 'configuration' | 'directory' | 'output'; message: string }
+
 /** Log-only recovery checkpoint; never injected into a model's conversation. */
 export interface LocalAgentStreamCheckpoint extends Omit<LocalAgentStreamItem, 'revision'> {
   sessionId: string

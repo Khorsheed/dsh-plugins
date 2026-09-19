@@ -25,9 +25,12 @@ import type {
   LocalAgentMemberInbox,
   LocalAgentMemberConfiguration,
   LocalAgentControlReceipt,
+  LocalAgentMemberFeedRequest,
+  LocalAgentMemberFeedEvent,
 } from './types.ts'
 import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
+import { mergeMemberFeeds } from './member-feed.ts'
 
 /**
  * Remote-only projection of the local-agent registry, exposed to the browser
@@ -67,6 +70,27 @@ export default class LocalAgentGateway extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   followMemberOutput(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentStreamFrame> {
     return this.ctx.localAgent.liveStreams.follow(childSessionId, signal)
+  }
+
+  /** Shared browser stream: adding visible members does not consume more HTTP connections. */
+  @Remote({ mode: 'stream' })
+  followMembers(requests: readonly LocalAgentMemberFeedRequest[], signal: AbortSignal): AsyncIterable<LocalAgentMemberFeedEvent> {
+    return mergeMemberFeeds(requests, (request, signal) => this.memberFeed(request, signal), signal)
+  }
+
+  private async *memberFeed(request: LocalAgentMemberFeedRequest, signal: AbortSignal): AsyncIterable<LocalAgentMemberFeedEvent> {
+    const memberId = request.memberId
+    switch (request.channel) {
+      case 'output':
+        for await (const value of this.followMemberOutput(memberId, signal)) yield { memberId, channel: 'output', value }
+        break
+      case 'configuration':
+        for await (const value of this.followMemberConfiguration(memberId, signal)) yield { memberId, channel: 'configuration', value }
+        break
+      case 'directory':
+        for await (const value of this.followMemberDirectory(memberId, signal)) yield { memberId, channel: 'directory', value }
+        break
+    }
   }
 
   private directoryBroker(name: string, childSessionId: string | undefined): LocalAgentModelBroker | undefined {

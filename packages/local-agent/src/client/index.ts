@@ -1,3 +1,4 @@
+import { MemberFeeds } from './member-feed.ts'
 /**
  * Local-agent records plugin, browser half: the member composer for delegated
  * CLI sessions, plus the shared settings-card building blocks the provider
@@ -99,11 +100,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     if (!result.ok) throw new Error('Configuration request failed')
     return result.value
   }
+  const feeds = new MemberFeeds((requests, signal) => gateway.followMembers(requests, signal))
+  ctx.effect(() => () => feeds.dispose(), 'local-agent: shared member feed')
   const configurations = new MemberConfigurationStores({
     read: async id => unwrap(await gateway.memberConfiguration(id)),
-    follow: (id, signal) => gateway.followMemberConfiguration(id, signal),
+    follow: (id, signal) => feeds.follow(id, 'configuration', signal),
     directory: async (id, refresh) => unwrap(await gateway.memberDirectory(id, refresh)),
-    followDirectory: (id, signal) => gateway.followMemberDirectory(id, signal),
+    followDirectory: (id, signal) => feeds.follow(id, 'directory', signal),
     select: async (id, request, revision, selection) => unwrap(await gateway.selectMemberConfiguration(id, request, revision, selection)),
     cancel: async (id, request, revision) => unwrap(await gateway.cancelMemberConfiguration(id, request, revision)),
     retry: async (id, revision) => { unwrap(await gateway.retryMemberConfiguration(id, revision)) },
@@ -126,7 +129,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     })
     return face
   }
-  const outputs = new MemberLiveOutputs((id, signal) => gateway.followMemberOutput(id, signal))
+  const outputs = new MemberLiveOutputs((id, signal) => feeds.follow(id, 'output', signal))
   const configurationUi: LocalAgentUi = {
     renderMemberOutput: (id, startedAt) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, t: ctx.locale.bind(NS) }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),

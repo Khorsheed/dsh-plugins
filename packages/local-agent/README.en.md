@@ -1,5 +1,7 @@
 # `@khorsheed/dsh-local-agent`
 
+Model/effort controls, directories and visible member output share one member subscription per page, keeping multiple members and member-session navigation from multiplying HTTP/1 connections. Core queues busy selections for the next complete turn; frozen evaluation members reject changes.
+
 Live member output uses a streaming Remote and public Conversation nodes. Browser updates are batched for at most 50ms, while incremental recovery checkpoints use an independent one-second cadence. Native final messages replace the transient presentation and retain usage, tools and session navigation. Reconnect obtains a fresh baseline; a host crash may lose the uncheckpointed tail, which remains visibly partial. Browser P95 acceptance remains part of the room coordinator proposal.
 
 English | [中文](README.md)
@@ -12,7 +14,7 @@ Run locally installed coding-agent CLIs — Kimi Code, Codex, Claude Code — fr
 
 - **Scoped homes per CLI** — isolated credential/session home under a shared root, created 0700; your native CLI installation is never touched.
 - **Slash commands** — `/<harness> login|sessions|status|logout`, with the device-code login URL in the reply.
-- **A settings card per provider** — Settings → Plugins → 可配置插件: the auth status dot (visible on the collapsed header), web login/sign-out, and the hot-swappable resident-mode (live) toggle with mirror granularity; cards compose this package's shared `ProviderAuthBlock`.
+- **A settings card per provider** — Settings → Plugins → 可配置插件: the auth status dot (visible on the collapsed header), web login/sign-out, and the hot-swappable resident-mode (live) toggle; cards compose this package's shared `ProviderAuthBlock`.
 - **Subagent delegation** — hand work to a local CLI and resume it later, even across host restarts.
 - **Several logins per harness (named scopes)** — `/<harness> login --scope <name>` opens a second scoped home at `<homesRoot>/<harness>@<name>`: its own login, its own session records, its own `delegations.jsonl`, and nothing copied from the default one. An evaluation can therefore compare two accounts of one harness in a single run.
 
