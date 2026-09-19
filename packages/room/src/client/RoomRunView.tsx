@@ -16,14 +16,15 @@ import css from './RoomRunView.module.css'
 
 /** The member run row. */
 export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, t }: RoomRunViewProps): ReactNode {
-  const data = node.data
+  const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
+  const recovered = state?.runs.find(run => run.member === node.data.member && run.startedAt === node.data.startedAt)
+  const data = node.data.state === 'running' && recovered !== undefined ? { ...node.data, ...recovered } : node.data
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (data.state !== 'running') return undefined
     const timer = setInterval(() => { setNow(Date.now()) }, 1000)
     return () => { clearInterval(timer) }
   }, [data.state])
-  const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   // The run events carry no delegation handle; the roster record does.
   const childSessionId = state?.members.find(entry => entry.name === data.member)?.childSessionId
   // The Definition hides done/cancelled; guard the same states here.

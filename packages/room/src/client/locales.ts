@@ -2,6 +2,10 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'recovery.title': '中断的对话需要对账',
+  'recovery.help': '重启前的结果尚未确认，不会自动重试。请查看成员会话并填写核对结论；对账后，已排队的普通对话可以继续，正式目标仍遵守暂停状态。',
+  'recovery.done': '确认已完成',
+  'recovery.cancelled': '确认放弃本次执行',
   'plan.create': '设定正式目标',
   'plan.objective': '目标',
   'plan.execute': '开始推进（不勾选则只保存草稿）',
@@ -213,6 +217,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'recovery.title': 'Interrupted conversations need reconciliation',
+  'recovery.help': 'The pre-restart outcome is unknown and will not be retried automatically. Inspect the member session and record your finding. Reconciliation releases queued ordinary conversations; paused goals remain paused.',
+  'recovery.done': 'Confirm completed',
+  'recovery.cancelled': 'Abandon this execution',
   'plan.create': 'Set a formal goal',
   'plan.objective': 'Goal',
   'plan.execute': 'Start execution (otherwise save a draft only)',

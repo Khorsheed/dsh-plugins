@@ -8,7 +8,7 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
     if (event.type === 'room/dispatch' && event.data.targetIds !== undefined) {
       for (const memberId of event.data.targetIds) {
         const id = `${event.seq}:${memberId}`
-        if (!rows.has(id)) rows.set(id, { id, dispatchSeq: event.seq, memberId, status: 'queued', text: event.data.text, origin: event.data.origin ?? 'human' })
+        if (!rows.has(id)) rows.set(id, { id, dispatchSeq: event.seq, memberId, status: 'queued', text: event.data.text, origin: event.data.origin ?? 'human', ...event.data.plan === undefined ? {} : { plan: event.data.plan } })
       }
     } else if (event.type === 'room/delivery-state') {
       const row = rows.get(event.data.id)

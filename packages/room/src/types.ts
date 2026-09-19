@@ -358,6 +358,7 @@ export type RoomFailure =
   | { readonly code: 'member-cwd-bound' }
   | { readonly code: 'not-coordinator' }
   | { readonly code: 'delivery-not-uncertain' }
+  | { readonly code: 'plan-reconciliation-required' }
   | { readonly code: 'coordinator-busy' }
   | { readonly code: 'coordinator-not-ready'; readonly message: string }
   | { readonly code: 'coordinator-conflict' }
@@ -731,6 +732,7 @@ export interface RoomDelivery {
   readonly origin: NonNullable<RoomDispatchEvent['origin']>
   readonly text: string
   readonly error?: string
+  readonly plan?: RoomDispatchEvent['plan']
 }
 export interface RoomReconcileDeliveryRequest {
   readonly sessionId: SessionId

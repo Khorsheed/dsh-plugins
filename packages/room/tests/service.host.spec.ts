@@ -293,7 +293,8 @@ describe('RoomService Remote surface (real composition)', () => {
         members: [MAIN_MEMBER, { name: 'K酱', instructions: '后端', cwd: '/tmp/work' }, { name: 'bill' }],
         tasks: [{ member: 'K酱', blockedBy: 'bill', title: '出方案' }],
         relays: [{ from: 'K酱', to: 'bill' }],
-        runs: [{ member: 'K酱', state: 'running' }],
+        // This fixture has a journal edge but no active native handle.
+        runs: [{ member: 'K酱', state: 'failed', error: expect.stringContaining('unknown after restart') }],
       },
     })
 

@@ -980,6 +980,7 @@ describe('coordinator routing and durable deliveries', () => {
       await recovery.recover(room)
       await bench.service.engine.recover(room)
       await bench.service.engine.idle()
+      expect(await bench.service.reconcileDelivery({ sessionId: bench.sessionId, deliveryId, outcome: 'done', evidence: 'Must use the formal goal review path' })).toEqual({ ok: false, error: { code: 'plan-reconciliation-required' } })
       expect(bench.facade.resume).not.toHaveBeenCalled()
       expect(bench.agent!.followup).not.toHaveBeenCalled()
       const command = JSON.stringify({ action: 'reconcile', requestId: 'reconcile-once', expectedRevision: readPlan(room)!.revision, taskId: 't', attemptId: 'attempt', outcome: 'submitted', evidence: { summary: 'Artifact verified after restart', references: ['session:child-ada'], artifacts: ['result.txt'] } })
@@ -1019,7 +1020,15 @@ describe('coordinator routing and durable deliveries', () => {
     const session = bench.ctx.sessions.get(bench.sessionId)!
     const started = session.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: 'side effect' })
     session.append('room/delivery-state', { id: `${started.seq}:${member.id}`, dispatchSeq: started.seq, memberId: member.id!, state: 'running' })
+    session.append('room/run-state', { member: 'ada', runId: `${started.seq}:${member.id}`, state: 'running', startedAt: Date.now() })
     session.append('room/dispatch', { id: 'queued', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: 'next' })
+    const before = session.snapshotEvents().length
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: {
+      deliveries: [{ status: 'uncertain' }, { status: 'queued' }],
+      runs: [{ member: 'ada', state: 'failed', error: expect.stringContaining('unknown after restart') }],
+    } })
+    expect(session.snapshotEvents()).toHaveLength(before)
+    expect(bench.facade.resume).not.toHaveBeenCalled()
     await bench.service.engine.recover(session)
     await bench.service.engine.idle()
     await bench.service.engine.recover(session)

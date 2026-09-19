@@ -46,6 +46,7 @@ import { RoomDockCapsules } from './RoomDockCapsules.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomPlanView } from './RoomPlanView.tsx'
 import { RoomQueueStrip } from './RoomQueueStrip.tsx'
+import { RoomRecoveryView } from './RoomRecoveryView.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
 import css from './RoomComposer.module.css'
 
@@ -94,7 +95,7 @@ export function selectRoomComposer(
 
 /** The room composer takeover component. */
 export function RoomComposer({
-  sessionId, roomStore, submit, stop, addTask, closeTask, setGoal, planCommand, openPlanSession,
+  sessionId, roomStore, submit, stop, addTask, closeTask, setGoal, planCommand, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, listNames, browseDirectory, modelSurface, renderHarnessModelPicker, roomChrome,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, useSession, useProjection, t,
 }: RoomComposerProps): ReactNode {
@@ -226,6 +227,7 @@ export function RoomComposer({
           t={t}
         />
         {state !== undefined && planCommand !== undefined && <RoomPlanView plan={state.plan} members={state.members} command={planCommand} openSession={openPlanSession} stopMember={stopMember} t={t} />}
+        {state !== undefined && reconcileDelivery !== undefined && <RoomRecoveryView deliveries={state.deliveries ?? []} members={state.members} reconcile={reconcileDelivery} openSession={openPlanSession} t={t} />}
         <RoomQueueStrip
           items={[...external ? [] : queued.map(row => ({ id: String(row.id), preview: row.preview })), ...(state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain')).map(row => ({ id: row.id, preview: row.status === 'uncertain' ? `${row.error ?? 'Outcome unknown'}: ${row.text}` : row.text }))]}
           t={t}

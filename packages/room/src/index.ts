@@ -341,7 +341,7 @@ export class RoomService extends TypertRemoteService {
     // Side-effect-free: a cold room answers from its durable log (see loadCold).
     const loaded = await this.loadCold(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    return { ok: true, value: { ...loaded.state, ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
+    return { ok: true, value: { ...this.engine.view(request.sessionId, loaded.state), ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
   }
 
   /**
@@ -537,6 +537,7 @@ export class RoomService extends TypertRemoteService {
     if (!loaded.ok) return { ok: false, error: loaded.error }
     const delivery = loaded.state.deliveries?.find(row => row.id === request.deliveryId)
     if (delivery?.status !== 'uncertain') return { ok: false, error: { code: 'delivery-not-uncertain' } }
+    if (delivery.plan?.taskId !== undefined) return { ok: false, error: { code: 'plan-reconciliation-required' } }
     if (request.evidence.trim() === '') return { ok: false, error: { code: 'empty-text' } }
     loaded.session.append('room/delivery-state', { id: delivery.id, dispatchSeq: delivery.dispatchSeq, memberId: delivery.memberId, state: request.outcome, text: request.evidence.trim() })
     await this.ctx.sessions.flush(loaded.session)

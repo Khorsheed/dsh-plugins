@@ -28,7 +28,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
 import { coordinatorMember, memberId, parseRelayDirective, pendingInstructions, previousCursor, replay, rosterStaleSince } from './journal.ts'
-import type { RoomMember, RoomRelay } from './types.ts'
+import type { RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /** Plugin tag carried by the main-agent followup's message source. */
 export const ROOM_PLUGIN = '@khorsheed/dsh-room'
@@ -183,6 +183,23 @@ export class DispatchEngine {
   /** Drain includes reports queued by the runs being drained. */
   async idle(): Promise<void> {
     while (this.inFlight.size > 0) await Promise.all([...this.inFlight.keys()])
+  }
+
+  /** Read-only recovery projection: persisted running edges are not live processes. */
+  view(sessionId: string, state: RoomState): RoomState {
+    const error = 'Execution outcome is unknown after restart; reconcile before retrying'
+    return {
+      ...state,
+      ...state.deliveries === undefined ? {} : { deliveries: state.deliveries.map(row => row.status === 'running' && !this.scheduled.has(`${sessionId}:${row.id}`)
+        ? { ...row, status: 'uncertain' as const, error } : row) },
+      runs: state.runs.map(run => {
+        const member = state.members.find(row => row.name === run.member)
+        const active = run.runId === undefined
+          ? member !== undefined && [...this.inFlight.values()].includes(`${sessionId} ${member.id}`)
+          : this.scheduled.has(`${sessionId}:${run.runId}`)
+        return run.state === 'running' && !active ? { ...run, state: 'failed' as const, error } : run
+      }),
+    }
   }
 
   /** Restore accepted targets, never repeat an execution whose settlement is unknown. */

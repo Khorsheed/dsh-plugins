@@ -379,6 +379,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (sessionId: SessionId): RoomComposerInjected => ({
       ...tasksFace(sessionId),
       ...inviteFace(sessionId),
+      reconcileDelivery: async (deliveryId, outcome, evidence) => {
+        const result = await remote?.reconcileDelivery({ sessionId, deliveryId, outcome, evidence })
+        await roomStore.refresh(sessionId)
+        return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.error.code : t('composer.error.generic') }
+      },
       planCommand: async command => {
         const result = await remote?.planCommand({ sessionId, command })
         await roomStore.refresh(sessionId)

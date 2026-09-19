@@ -59,11 +59,11 @@ const STATE: RoomState = {
 }
 
 /** A store pre-primed with the STATE fixture. */
-async function primedStore(): Promise<RoomStore> {
+async function primedStore(state: RoomState = STATE): Promise<RoomStore> {
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
   const gateway: RoomGateway = {
     isRoom: async () => ({ ok: true, value: true }),
-    getState: async () => ({ ok: true, value: { ok: true, value: STATE } }),
+    getState: async () => ({ ok: true, value: { ok: true, value: state } }),
   }
   const store = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
   await store.ensure('room-1' as SessionId)
@@ -342,6 +342,16 @@ describe('RoomSpeechView', () => {
 })
 
 describe('RoomRunView', () => {
+  it('projects a crashed running node as unknown without a ticking stop control', async () => {
+    const roomStore = await primedStore({ ...STATE, runs: [{ member: 'ada', startedAt: 1000, state: 'failed', error: 'Unknown outcome after restart' }] })
+    const output = vi.fn()
+    const props = { node: nodeOf('room-run', { seq: 3, time: 1003, member: 'ada', startedAt: 1000, state: 'running' }), sessionId: 'room-1' as SessionId,
+      roomStore, openSession: vi.fn(), cancelMember: vi.fn(), renderMemberOutput: output, t } as unknown as RoomRunViewProps
+    render(<RoomRunView {...props} />)
+    expect(screen.getByText('Unknown outcome after restart')).toBeDefined()
+    expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
+    expect(output).not.toHaveBeenCalled()
+  })
   async function bench(data: RoomRunData, renderMemberOutput?: RoomRunViewProps['renderMemberOutput']) {
     const roomStore = await primedStore()
     const openSession = vi.fn()
