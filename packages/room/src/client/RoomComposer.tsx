@@ -235,7 +235,7 @@ export function RoomComposer({
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       <div className={css.card}>
-        <div className={css.hint}>{t('coordinator.label')} · {coordinator?.name ?? 'main'}{external ? ` · ${coordinator.provider}` : ' · DSH'}</div>
+        <div className={css.coordinator}>{t('coordinator.label')} · {coordinator?.name ?? 'dsh'}{external ? ` · ${coordinator.provider}` : ' · DSH'}</div>
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label="members">
             {candidates.map((member, index) => (

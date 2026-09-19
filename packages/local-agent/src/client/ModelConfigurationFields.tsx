@@ -1,68 +1,64 @@
 import { useId, useState } from 'react'
-import type { LocalAgentConfigurationChoice, LocalAgentMemberConfiguration, LocalAgentModelDirectory } from '../types.ts'
+import type { LocalAgentMemberConfiguration, LocalAgentModelDirectory } from '../types.ts'
 import type { LocalAgentKey } from './locales.ts'
 import css from './MemberConfiguration.module.css'
 
 export type ConfigurationTranslate = (key: LocalAgentKey) => string
-const encoded = (choice: LocalAgentConfigurationChoice): string => choice.mode === 'value' ? `value:${choice.value}` : choice.mode
-const decoded = (value: string): LocalAgentConfigurationChoice => value === 'inherit' || value === 'default' ? { mode: value } : { mode: 'value', value: value.slice(6) }
 
-/** The native directory vocabulary is shared by members, invites and settings. */
-export function ModelConfigurationFields({ directory, value, onChange, resolvedModel, disabled, inherit = true, showEffort = true, defaultLabel, t }: {
+/** User choices are concrete; legacy inheritance stays a backend compatibility concern. */
+export function ModelConfigurationFields({ directory, value, onChange, resolvedModel, resolvedEffort, disabled, showEffort = true, t }: {
   directory?: LocalAgentModelDirectory | undefined
   value: LocalAgentMemberConfiguration
   onChange(value: LocalAgentMemberConfiguration): void
   resolvedModel?: string | undefined
+  resolvedEffort?: string | undefined
   disabled?: boolean | undefined
-  inherit?: boolean | undefined
   showEffort?: boolean | undefined
-  defaultLabel?: string | undefined
   t: ConfigurationTranslate
 }) {
   const id = useId()
   const [search, setSearch] = useState('')
+  const [pane, setPane] = useState<'root' | 'model' | 'effort'>(showEffort ? 'root' : 'model')
+  const [custom, setCustom] = useState('')
   const entries = directory?.entries ?? []
-  const model = value.model.mode === 'value' ? value.model.value : resolvedModel ?? directory?.defaultModel
+  const model = value.model.mode === 'value' ? value.model.value : resolvedModel ?? entries.find(entry => !entry.hidden)?.value
   const entry = entries.find(entry => entry.value === model || entry.resolvedModel === model)
   const options = entry?.reasoning?.options ?? []
-  const effort = value.effort.mode === 'value' ? value.effort.value : undefined
+  const effort = value.effort.mode === 'value' ? value.effort.value : resolvedEffort ?? entry?.reasoning?.default ?? options[0]?.value
   const query = search.trim().toLowerCase()
   const candidates = entries.filter(entry => !query || `${entry.label} ${entry.value} ${entry.resolvedModel ?? ''}`.toLowerCase().includes(query))
+  const selectModel = (next: string): void => {
+    const reasoning = entries.find(entry => entry.value === next)?.reasoning
+    const nextEffort = next === model || reasoning?.options.some(option => option.value === effort) ? effort : reasoning?.default ?? reasoning?.options[0]?.value
+    onChange({ model: { mode: 'value', value: next }, effort: nextEffort === undefined ? { mode: 'default' } : { mode: 'value', value: nextEffort } })
+    setPane(showEffort ? 'root' : 'model')
+  }
   return <fieldset className={css.fields} disabled={disabled}>
-    <legend>{t('configuration.model')}</legend>
-    <div className={css.modes}>
-      {inherit && <button type="button" aria-pressed={value.model.mode === 'inherit'} onClick={() => onChange({ ...value, model: { mode: 'inherit' } })}>{t('configuration.inherit')}</button>}
-      <button type="button" aria-pressed={value.model.mode === 'default'} onClick={() => onChange({ ...value, model: { mode: 'default' } })}>{defaultLabel ?? t('configuration.default')}</button>
-    </div>
-    <label htmlFor={`${id}-search`}>{t('configuration.search')}</label>
-    <input id={`${id}-search`} value={search} onChange={event => setSearch(event.target.value)} />
-    <div className={css.candidates} role="listbox" aria-label={t('configuration.model')}>
-      {candidates.map(candidate => <button key={candidate.value} type="button" role="option"
-        aria-selected={value.model.mode === 'value' && value.model.value === candidate.value}
-        onClick={() => onChange({ ...value, model: { mode: 'value', value: candidate.value } })}>
-        <strong>{candidate.label}</strong>
-        <span>{candidate.value}{candidate.resolvedModel ? ` → ${candidate.resolvedModel}` : ''}</span>
-        <small>{t(`configuration.source.${candidate.source}`)}{candidate.hidden ? ` · ${t('configuration.hidden')}` : ''}</small>
-        {candidate.description && <small>{candidate.description}</small>}
-      </button>)}
-      {candidates.length === 0 && <span>{t('configuration.empty')}</span>}
-    </div>
-    {directory?.customInput && <div className={css.custom}>
-      <label htmlFor={`${id}-custom`}>{t('configuration.custom')}</label>
-      <input id={`${id}-custom`} value={value.model.mode === 'value' ? value.model.value : ''}
-        onChange={event => onChange({ ...value, model: { mode: 'value', value: event.target.value } })} />
-    </div>}
-    {showEffort && <>
-    <label htmlFor={`${id}-effort`}>{t('configuration.effort')}</label>
-    <select id={`${id}-effort`} value={encoded(value.effort)} onChange={event => onChange({ ...value, effort: decoded(event.target.value) })}>
-      {inherit && <option value="inherit">{t('configuration.inherit')}</option>}
-      <option value="default">{t('configuration.default')}</option>
-      {options.map(option => <option key={option.value} value={`value:${option.value}`}>{option.label} ({option.value})</option>)}
-      {value.effort.mode === 'value' && !options.some(option => option.value === effort) && <option value={encoded(value.effort)}>{value.effort.value} · {t('configuration.unverified')}</option>}
-    </select>
-    {options.length === 0 && <small>{t('configuration.effortUnknown')}</small>}
-    {value.effort.mode === 'value' && options.find(option => option.value === effort)?.description && <small>{options.find(option => option.value === effort)?.description}</small>}
+    {pane === 'root' ? <>
+      <button type="button" className={css.menuRow} onClick={() => setPane('model')}><span>{t('configuration.model')}</span>{' '}<span>{entry?.label ?? model ?? t('loading')} ›</span></button>
+      <button type="button" className={css.menuRow} disabled={options.length === 0} onClick={() => setPane('effort')}><span>{t('configuration.effort')}</span>{' '}<span>{options.find(option => option.value === effort)?.label ?? effort ?? t('configuration.unavailable')}{options.length ? ' ›' : ''}</span></button>
+      {options.length === 0 && <small role="status">{t('configuration.effortUnknown')}</small>}
+    </> : <>
+      {showEffort && <button type="button" className={css.back} onClick={() => setPane('root')}>‹ {t('configuration.back')}</button>}
+      {pane === 'model' ? <>
+        <input aria-label={t('configuration.search')} placeholder={t('configuration.search')} value={search} onChange={event => setSearch(event.target.value)} />
+        <div className={css.candidates} role="listbox" aria-label={t('configuration.model')}>
+          {candidates.map(candidate => <button key={candidate.value} type="button" role="option" aria-selected={candidate.value === model}
+            onClick={() => selectModel(candidate.value)}><strong>{candidate.label}{candidate.value === model ? ' ✓' : ''}</strong><small title={t(`configuration.source.${candidate.source}`)}>{candidate.value}{candidate.resolvedModel ? ` → ${candidate.resolvedModel}` : ''}</small></button>)}
+          {candidates.length === 0 && <span>{t('configuration.empty')}</span>}
+        </div>
+        {directory?.customInput && <details className={css.advanced}><summary>{t('configuration.custom')}</summary>
+          <label htmlFor={`${id}-custom`}>{t('configuration.custom')}</label>
+          <input id={`${id}-custom`} value={custom} onChange={event => setCustom(event.target.value)} />
+          <button type="button" disabled={!custom.trim()} onClick={() => selectModel(custom.trim())}>{t('configuration.apply')}</button>
+        </details>}
+      </> : <div className={css.candidates} role="listbox" aria-label={t('configuration.effort')}>
+        {options.map(option => <button key={option.value} type="button" role="option" aria-selected={option.value === effort}
+          onClick={() => { if (model) onChange({ model: { mode: 'value', value: model }, effort: { mode: 'value', value: option.value } }); setPane('root') }}>
+          <strong>{option.label}{option.value === effort ? ' ✓' : ''}</strong>{option.description && <small>{option.description}</small>}
+        </button>)}
+      </div>}
     </>}
-    {directory && <small role="status">{t(`configuration.directory.${directory.status}`)}{!directory.complete ? ` · ${t('configuration.incomplete')}` : ''}{directory.reason ? ` · ${directory.reason}` : ''}</small>}
+    {directory && (directory.status !== 'ready' || !directory.complete) && <small role="status">{t(`configuration.directory.${directory.status}`)}{!directory.complete ? ` · ${t('configuration.incomplete')}` : ''}</small>}
   </fieldset>
 }

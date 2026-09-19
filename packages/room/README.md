@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Room turns a normal DSH session into a shared conversation with a coordinator and invited members. It uses public plugin services and slots; no host source changes are required. Inviting the first member promotes the current session into a Room and seats its native DSH agent as the initial coordinator.
+Room turns a normal DSH session into a shared conversation with a coordinator and invited members. It uses public plugin services and slots; no host source changes are required. Inviting the first member promotes the current session into a Room and seats its native DSH agent as the initial coordinator. New rooms name it `dsh`; existing rooms retain their recorded addressing names.
 
 ## Conversation and coordination
 
@@ -16,7 +16,7 @@ Ordinary chat needs no formal plan. The coordinator can use `room_message` for a
 
 For larger work, the coordinator or human can create a formal goal. The goal panel shows stages, hierarchical tasks, dependencies, execution attempts, submitted evidence and explicit acceptance or rework. A completed generation is not automatically accepted. Dependent tasks become eligible only after their prerequisites are accepted. Rework records a reason and starts another attempt within budget.
 
-Budgets bound concurrency, total attempts, per-task attempts and active execution time. The human can pause/resume, adjust budgets, review evidence, cancel, or complete an accepted plan. After restart, unresolved execution is marked uncertain and the plan pauses; reconciliation requires evidence rather than blindly repeating work. Simple chat tasks remain visible separately from formal goal progress.
+Budgets bound goal-wide concurrency, total executions, executions per task and active goal time (paused time excluded). Initial runs, retries and rework all count; ordinary chat is outside these limits. The human can pause/resume, adjust budgets, review evidence, cancel, or complete an accepted plan. After restart, unresolved execution is marked uncertain and the plan pauses; reconciliation requires evidence rather than blindly repeating work. Simple chat tasks remain visible separately from formal goal progress.
 
 ## Members, models and output
 

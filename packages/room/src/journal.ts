@@ -17,11 +17,11 @@ import type {
 } from './types.ts'
 
 /**
- * The addressing name of the room's own main agent, added to the roster at
- * room creation: an equal member with no privilege. Bare human messages go
- * to it through the official submit path; @-dispatch works like any member.
+ * The native DSH member's addressing name in new rooms. It starts as the
+ * coordinator; bare messages follow the selected coordinator thereafter.
+ * Existing journals retain their recorded names, including legacy main.
  */
-export const MAIN_AGENT_MEMBER = 'main'
+export const MAIN_AGENT_MEMBER = 'dsh'
 
 /**
  * Every `room/*` session-event type this package introduces. Room registers
@@ -64,8 +64,7 @@ export function isRoomLog(events: readonly SessionEvent[]): boolean {
  * @param raw - the raw text.
  * @returns the addressed names (deduped, order-preserving) and the body with
  * the mention prefix stripped. Only LEADING tokens address: an `@name`
- * inside prose is plain text (a bare message goes to the main agent through
- * the official submit path).
+ * inside prose is plain text (a bare message goes to the selected coordinator).
  */
 export function parseMentions(raw: string): { readonly targets: readonly string[]; readonly text: string } {
   const targets: string[] = []

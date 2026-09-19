@@ -14,12 +14,10 @@ import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
  * ▸ 高级设置 (role instructions + the member-level cwd, collapsed on invite —
  * editing opens it, since editing IS changing those). The model field sits in
  * the main form (promoted out of the drawer): the same control the provider
- * settings cards use — an unset field DISPLAYS the provider's current default
- * dimmed (inherited, never pinned), the chevron menu leads with a 默认 item
- * over the harness's full choice vocabulary (invite-time riding the
- * localAgentGateway `harnessModel` read; edit-time prefilled from the member's
- * own `memberModel` surface — effective as the value, choices as the menu —
- * with the journaled intent as the fallback baseline). The rest of the original
+ * settings cards use. Invites retain a saved provider choice, otherwise the
+ * shared picker chooses the first candidate. Edits retain member configuration.
+ * Older cores without the shared picker keep the legacy default/input fallback.
+ * The rest of the original
  * contract is unchanged: logged-out providers grey with login guidance (an
  * absent facade degrades the whole section to a hint), the name precheck
  * plus the host's structured duplicate/invalid errors ride the inline error
@@ -165,7 +163,11 @@ export function InviteDialog({
     if (mode !== 'invite' || modelSurface === undefined || chosenHarness === undefined) return
     let cancelled = false
     void modelSurface(chosenHarness).then((result) => {
-      if (!cancelled) setSurface(result)
+      if (!cancelled) {
+        setSurface(result)
+        const saved = result?.settings
+        if (saved) setModel(current => current || saved)
+      }
     }, () => {})
     return () => { cancelled = true }
   }, [mode, modelSurface, chosenHarness])
@@ -357,7 +359,7 @@ export function InviteDialog({
                   <select
                     className={css.select}
                     value={chosen}
-                    onChange={event => { setProvider(event.target.value) }}
+                    onChange={event => { setProvider(event.target.value); setModel('') }}
                   >
                     {(providers ?? []).map(entry => (
                       <option key={entry.provider} value={entry.provider} disabled={!entry.authenticated}>
@@ -369,7 +371,7 @@ export function InviteDialog({
                 </label>
               )
             )}
-            {memberConfiguration ?? (chosenHarness !== undefined ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy, defaultLabel: modelDefaultItem }) : undefined) ?? modelField}
+            {memberConfiguration ?? (chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>

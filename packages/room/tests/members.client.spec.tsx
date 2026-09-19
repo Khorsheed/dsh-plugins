@@ -154,7 +154,7 @@ describe('MembersView', () => {
     await bench()
     // main: kind label, no instructions row, no edit/remove.
     const mainCard = cardOf('main')
-    expect(mainCard.textContent).toContain('主 agent')
+    expect(mainCard.textContent).toContain('原生 DSH')
     expect(mainCard.textContent).not.toContain('未设置角色')
     expect(mainCard.textContent).not.toContain('编辑')
     expect(mainCard.textContent).not.toContain('移除')
@@ -310,26 +310,25 @@ describe('MembersView', () => {
     expect(labels.indexOf('默认模型')).toBeLessThan(labels.indexOf('称呼（@ 寻址名）'))
   })
 
-  it('the model menu offers the harness choices; an unset field displays the provider default dimmed', async () => {
+  it('the fallback model menu prefills the saved harness choice', async () => {
     const { face } = await bench({ modelSurface: modelInfo() })
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
     const modelInput = screen.getByLabelText('默认模型') as HTMLInputElement
     // The surface lands once the harnessModel read resolves, keyed by the
-    // provider's roster harness name; the unset field shows the effective
-    // default as its placeholder (display, never a pinned value).
+    // provider's roster harness name; a saved choice is carried into the invitation.
     await waitFor(() => { expect(face.modelSurface).toHaveBeenCalledWith('kimi') })
     await waitFor(() => { expect(modelInput.placeholder).toBe('跟随该 provider 默认：kimi-k2') })
-    expect(modelInput.value).toBe('')
+    expect(modelInput.value).toBe('kimi-k2')
     expect(dialog.querySelector('datalist')).toBeNull()
 
-    // The chevron menu leads with the checked 默认 item over the full vocabulary.
+    // The legacy fallback keeps its default item, but selects the saved model.
     fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
     const items = screen.getAllByRole('menuitemradio')
-    expect(items[0].textContent).toBe('默认（跟随该 provider 默认：kimi-k2）✓')
-    expect(items[0].getAttribute('aria-checked')).toBe('true')
-    expect(items.slice(1).map(item => item.textContent)).toEqual(['kimi-k2', 'kimi-k1'])
+    expect(items[0].textContent).toBe('默认（跟随该 provider 默认：kimi-k2）')
+    expect(items[0].getAttribute('aria-checked')).toBe('false')
+    expect(items.slice(1).map(item => item.textContent)).toEqual(['kimi-k2✓', 'kimi-k1'])
   })
 
   it('picking a menu model fills the field and the invite submits it', async () => {
@@ -504,7 +503,7 @@ describe('MembersView', () => {
     expect(billCard.textContent).not.toContain('kimi-k2')
     expect(billCard.textContent).toContain('codex')
     expect(cardOf('cathy').textContent).not.toContain('kimi-k2')
-    expect(cardOf('main').textContent).toContain('主 agent')
+    expect(cardOf('main').textContent).toContain('原生 DSH')
   })
 
   it('renders no model hint when the gateway answer never comes (RPC failure stays invisible)', async () => {
@@ -518,7 +517,7 @@ describe('MembersView', () => {
   it('the main-agent card shows the session model from the official directory', async () => {
     await bench({ modelDirectory: modelDirectory() })
     const mainCard = cardOf('main')
-    await waitFor(() => { expect(mainCard.textContent).toContain('主 agent · Model One') })
+    await waitFor(() => { expect(mainCard.textContent).toContain('原生 DSH · Model One') })
     // CLI members stay on their own memberModel surface (default: no hint).
     expect(cardOf('ada').textContent).not.toContain('Model One')
   })

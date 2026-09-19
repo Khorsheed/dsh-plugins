@@ -54,7 +54,7 @@ async function bootRoom(options: BenchOptions = {}) {
 }
 
 /** The roster row every fresh room seats: its own main agent. */
-const MAIN_MEMBER = { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' }
+const MAIN_MEMBER = { id: 'legacy:1', name: 'dsh', kind: 'main-agent', invitedBy: 'human' }
 
 /**
  * Flush the task queue so the engine's queued run reaches the delivery point.
@@ -184,7 +184,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.invite({ sessionId, provider: 'codex', name: 'ada' }))
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
     // The room's own main agent is seated at creation; its name is taken too.
-    expect(await service.invite({ sessionId, provider: 'kimi', name: 'main' }))
+    expect(await service.invite({ sessionId, provider: 'kimi', name: 'dsh' }))
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
   })
 
@@ -310,7 +310,7 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
     expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bad name' }))
       .toEqual({ ok: false, error: { code: 'invalid-name' } })
-    expect(await service.updateMember({ sessionId, name: 'main', rename: 'boss' }))
+    expect(await service.updateMember({ sessionId, name: 'dsh', rename: 'boss' }))
       .toEqual({ ok: false, error: { code: 'main-member' } })
   })
 
@@ -345,7 +345,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('routes a bare message through the persisted native coordinator and rejects empty input', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     expect(await service.postMessage({ sessionId, text: '今天先讨论方向' }))
-      .toMatchObject({ ok: true, value: { parsed: { targets: ['main'], text: '今天先讨论方向' } } })
+      .toMatchObject({ ok: true, value: { parsed: { targets: ['dsh'], text: '今天先讨论方向' } } })
     const dispatch = ctx.sessions.get(sessionId)!.snapshotEvents().find(event => event.type === 'room/dispatch')
     expect(dispatch?.data).toMatchObject({ origin: 'human', targetIds: ['legacy:1'] })
     expect(await service.postMessage({ sessionId, text: '   ' })).toEqual({ ok: false, error: { code: 'empty-text' } })
@@ -445,7 +445,7 @@ describe('RoomService Remote surface (real composition)', () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     const receipt = await service.receiveMemberMessage({
-      from: 'ada', to: 'main', content: '接口定稿', parentSessionId: sessionId,
+      from: 'ada', to: 'dsh', content: '接口定稿', parentSessionId: sessionId,
       provenance: { kind: 'bridge', delegationId: 'd-1' },
     })
     expect(receipt).toBe('pending-confirm')
@@ -453,7 +453,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(state).toMatchObject({
       ok: true,
       value: {
-        relays: [{ from: 'ada', to: 'main', content: '接口定稿', state: 'pending', provenance: { kind: 'bridge', delegationId: 'd-1' } }],
+        relays: [{ from: 'ada', to: 'dsh', content: '接口定稿', state: 'pending', provenance: { kind: 'bridge', delegationId: 'd-1' } }],
       },
     })
   })
@@ -500,7 +500,7 @@ describe('RoomService Remote surface (real composition)', () => {
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     await service.invite({ sessionId, provider: 'codex', name: 'bill' })
     await service.receiveMemberMessage({ from: 'ada', to: 'bill', content: '接口定稿', parentSessionId: sessionId })
-    await service.receiveMemberMessage({ from: 'ada', to: 'main', content: '抄送', parentSessionId: sessionId })
+    await service.receiveMemberMessage({ from: 'ada', to: 'dsh', content: '抄送', parentSessionId: sessionId })
     const state = await service.getState({ sessionId })
     if (!state.ok) throw new Error('narrowing')
     const [first, second] = state.value.relays
@@ -534,7 +534,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('confirmRelay rejects a relay whose recipient left the roster', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
-    await service.receiveMemberMessage({ from: 'main', to: 'ada', content: 'x', parentSessionId: sessionId })
+    await service.receiveMemberMessage({ from: 'dsh', to: 'ada', content: 'x', parentSessionId: sessionId })
     await service.removeMember({ sessionId, name: 'ada' })
     const state = await service.getState({ sessionId })
     if (!state.ok) throw new Error('narrowing')

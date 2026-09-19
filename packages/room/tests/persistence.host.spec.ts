@@ -153,7 +153,7 @@ describe('room journal persistence', () => {
       const serviceA = ctxA.get('room') as RoomService
       const sessionId = await createRoom(ctxA, serviceA)
       const roomA = ctxA.sessions.get(sessionId)!
-      roomA.append('room/task-added', { id: 't1', member: 'main', title: '积压', status: 'pending' })
+      roomA.append('room/task-added', { id: 't1', member: 'dsh', title: '积压', status: 'pending' })
       await ctxA.sessions.flush(roomA)
       await fiberA.dispose()
 
@@ -190,8 +190,8 @@ describe('room journal persistence', () => {
         expect(await serviceB.getState({ sessionId })).toMatchObject({
           ok: true,
           value: {
-            members: [{ name: 'main', kind: 'main-agent' }],
-            tasks: [{ id: 't1', member: 'main', title: '积压', status: 'pending' }],
+            members: [{ name: 'dsh', kind: 'main-agent' }],
+            tasks: [{ id: 't1', member: 'dsh', title: '积压', status: 'pending' }],
           },
         })
         expect(ctxB.sessions.get(sessionId)).toBeUndefined()
@@ -203,7 +203,7 @@ describe('room journal persistence', () => {
         expect(agents.resume).not.toHaveBeenCalled()
 
         // The first mutation cold-resumes the agent, republishing the session.
-        const added = await serviceB.addTask({ sessionId, member: 'main', title: '重启后的第一条' })
+        const added = await serviceB.addTask({ sessionId, member: 'dsh', title: '重启后的第一条' })
         expect(added.ok).toBe(true)
         expect(agents.resume).toHaveBeenCalledTimes(1)
         expect(agents.resume).toHaveBeenCalledWith(
@@ -220,7 +220,7 @@ describe('room journal persistence', () => {
           },
         })
         // A second mutation reuses the live session (no second resume).
-        await serviceB.addTask({ sessionId, member: 'main', title: '又一条' })
+        await serviceB.addTask({ sessionId, member: 'dsh', title: '又一条' })
         expect(agents.resume).toHaveBeenCalledTimes(1)
       } finally {
         await fiberB.dispose()

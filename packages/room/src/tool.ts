@@ -170,7 +170,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
       + 'board is public — every room member and the human sees these tasks, so writing here is '
       + 'a public commitment the room coordinates around; for your private work plan use your own '
       + 'todo tool instead. Actions: "add" (title + member — the roster name owning the task, '
-      + 'yourself "main" or any CLI member; optional blockedBy names the member the task waits '
+      + 'use room_read to find your own or another member\'s name; optional blockedBy names the member the task waits '
       + 'on, display only) opens a pending task and returns its id; "close" (taskId) marks an '
       + 'open task done; "update" (taskId + a new title and/or blockedBy — null clears the wait) '
       + 'edits an open task. Errors answer with the roster or the open-task list so you can retry '
@@ -188,7 +188,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
       },
       member: {
         type: 'string',
-        description: 'The roster name owning the task (required for add; e.g. "main" for yourself).',
+        description: 'The roster name owning the task (required for add; read room_read for current names).',
       },
       taskId: {
         type: 'string',
@@ -257,7 +257,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
       switch (args.action) {
         case 'add': {
           if (args.title === undefined || args.member === undefined) {
-            return { text: 'room_task add requires both title and member (the roster name owning the task, e.g. "main" for yourself).' }
+            return { text: 'room_task add requires both title and member (the roster name owning the task; read room_read for current names).' }
           }
           if (args.blockedBy === null) {
             return { text: 'add takes no null blockedBy — simply omit blockedBy for an unblocked task.' }
@@ -327,13 +327,13 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       + 'reply appears in the room as member speech (the human sees it; you read it through the '
       + 'room\'s flow). Use this to ask a member something or hand it work — the equivalent of the '
       + 'human typing "@member <text>" in the room composer. The member argument is a roster name '
-      + '(yourself is "main"); an unknown name is rejected with the live roster, so retry with one '
+      + '(read room_read for current names); an unknown name is rejected with the live roster, so retry with one '
       + 'of those.',
     parameters: {
       member: {
         type: 'string',
         required: true,
-        description: 'The addressee\'s roster name (e.g. "main" for yourself, or a CLI member like "ada").',
+        description: 'The addressee\'s roster name (read room_read for current names; new rooms name the native member "dsh").',
       },
       text: {
         type: 'string',

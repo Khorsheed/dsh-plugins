@@ -49,43 +49,57 @@ function bench(initial = state()) {
 function open(container: HTMLElement) { fireEvent.click(container.querySelector('summary')!); container.querySelector('details')!.open = true }
 
 describe('shared member configuration UI', () => {
-  it('accepts model and native effort during a running round, shares pending state and cancels without changing that round', async () => {
+  it('selects concrete model/effort immediately, shares pending state and leaves the running round intact', async () => {
     const h = bench()
     const first = render(<MemberConfiguration store={h.store} t={t} />)
     const second = render(<MemberConfiguration store={h.stores.get('member')} t={t} />)
     open(first.container); open(second.container)
     const a = within(first.container); const b = within(second.container)
-    await waitFor(() => expect(a.getByRole('option', { name: /Full native model label/ }).closest('fieldset')?.disabled).toBe(false))
+    await waitFor(() => expect(a.getByRole('button', { name: /模型 old-model/ }).closest('fieldset')?.disabled).toBe(false))
     expect(h.follow).toHaveBeenCalledTimes(1)
+    fireEvent.click(a.getByRole('button', { name: /模型 old-model/ }))
     fireEvent.click(a.getByRole('option', { name: /Full native model label/ }))
-    fireEvent.change(a.getByLabelText(zh['configuration.effort']), { target: { value: 'value:low' } })
-    fireEvent.click(a.getByRole('button', { name: zh['configuration.apply'] }))
-    await waitFor(() => expect(b.getByText('long-native-model-id · low')).toBeTruthy())
-    expect(a.getAllByText('old-model · high').length).toBeGreaterThan(0)
-    expect(h.face.select).toHaveBeenCalledWith('member', expect.any(String), 0, { model: { mode: 'value', value: 'long-native-model-id' }, effort: { mode: 'value', value: 'low' } })
-    expect(a.getByText('long-native-model-id → native-resolved-id')).toBeTruthy()
+    await waitFor(() => expect(h.face.select).toHaveBeenCalledWith('member', expect.any(String), 0, { model: { mode: 'value', value: 'long-native-model-id' }, effort: { mode: 'value', value: 'low' } }))
+    await b.findByText(/下轮待生效: Full native model label · Native low/)
+    expect(a.getByText(/old-model · high/)).toBeTruthy()
+    expect(a.queryByText(zh['configuration.inherit'])).toBeNull()
+    expect(a.queryByText(zh['configuration.default'])).toBeNull()
     fireEvent.click(b.getByRole('button', { name: zh['configuration.cancel'] }))
-    await waitFor(() => expect(a.queryByText('long-native-model-id · low')).toBeNull())
-    expect(b.getAllByText('old-model · high').length).toBeGreaterThan(0)
+    await waitFor(() => expect(a.queryByText(/下轮待生效:/)).toBeNull())
   })
 
-  it('rejects a stale draft instead of overwriting another entry, then adopts the authoritative selection', async () => {
+  it('lets the user select a native effort option without changing the model', async () => {
+    const initial = state(); delete initial.round
+    initial.current = { revision: 0, selection: { model: { mode: 'value', value: 'long-native-model-id' }, effort: { mode: 'default' } }, resolved: { model: 'long-native-model-id', effort: 'high' } }
+    const h = bench(initial); const view = render(<MemberConfiguration store={h.store} t={t} />); open(view.container)
+    fireEvent.click(await screen.findByRole('button', { name: /推理强度 high/ }))
+    fireEvent.click(screen.getByRole('option', { name: 'Native low' }))
+    await waitFor(() => expect(h.face.select).toHaveBeenCalledWith('member', expect.any(String), 0, { model: { mode: 'value', value: 'long-native-model-id' }, effort: { mode: 'value', value: 'low' } }))
+  })
+
+  it('surfaces a revision conflict and adopts the authoritative selection without retrying automatically', async () => {
     const h = bench(); const view = render(<MemberConfiguration store={h.store} t={t} />); open(view.container)
-    await screen.findByRole('option', { name: /Full native model label/ })
+    await screen.findByRole('button', { name: /模型 old-model/ })
+    vi.mocked(h.face.select).mockResolvedValue({ requestId: 'conflict', revision: 1, status: 'conflict', error: 'changed elsewhere' })
+    fireEvent.click(screen.getByRole('button', { name: /模型 old-model/ }))
     fireEvent.click(screen.getByRole('option', { name: /Full native model label/ }))
-    await act(async () => h.update({ ...state(), revision: 1, pending: { kind: 'selection', revision: 1, requestId: 'other', selection: { model: { mode: 'value', value: 'historical' }, effort: { mode: 'default' } } } }))
-    fireEvent.click(screen.getByRole('button', { name: zh['configuration.apply'] }))
     await screen.findByText('changed elsewhere')
-    expect(h.face.select).toHaveBeenCalledWith('member', expect.any(String), 0, expect.any(Object))
-    await waitFor(() => expect(screen.getByRole('option', { name: /Observed model/ }).getAttribute('aria-selected')).toBe('true'))
+    expect(h.face.select).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: /模型 old-model/ })).toBeTruthy()
   })
 
-  it('shows frozen conditions and leaves choices disabled even when the member is idle', async () => {
+  it('shows frozen conditions and keeps selectors disabled even when idle', async () => {
     const initial = state(); delete initial.round; initial.lockedReason = 'Frozen eval conditions'
     const h = bench(initial); const view = render(<MemberConfiguration store={h.store} t={t} />); open(view.container)
     await screen.findByText('Frozen eval conditions')
-    expect(screen.getByRole('option', { name: /Full native model label/ }).closest('fieldset')?.disabled).toBe(true)
-    expect((screen.getByRole('button', { name: zh['configuration.apply'] }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: /模型 old-model/ }).closest('fieldset')?.disabled).toBe(true)
+    expect(h.face.select).not.toHaveBeenCalled()
+  })
+
+  it('shows unavailable effort honestly when cold metadata has no options', async () => {
+    const h = bench(); const view = render(<MemberConfiguration store={h.store} t={t} />); open(view.container)
+    await screen.findByText(zh['configuration.effortUnknown'])
+    expect((screen.getByRole('button', { name: /推理强度 high/ }) as HTMLButtonElement).disabled).toBe(true)
     expect(h.face.select).not.toHaveBeenCalled()
   })
 

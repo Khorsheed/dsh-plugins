@@ -59,12 +59,12 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
     finally { setBusy(false) }
   }
   const budget = { maxParallel: parallel, maxAttempts: attempts, maxAttemptsPerTask: perTask, maxActiveMs: Math.round(minutes * 60000) }
-  const budgetFields = <div className={css.budget}>
+  const budgetFields = <><p>{t('plan.budgetHelp')}</p><div className={css.budget}>
     <label>{t('plan.parallel')}<input type="number" min={1} max={8} value={parallel} onChange={event => setParallel(Number(event.target.value))} /></label>
     <label>{t('plan.attempts')}<input type="number" min={1} max={100} value={attempts} onChange={event => setAttempts(Number(event.target.value))} /></label>
     <label>{t('plan.perTask')}<input type="number" min={1} max={10} value={perTask} onChange={event => setPerTask(Number(event.target.value))} /></label>
     <label>{t('plan.minutes')}<input type="number" min={1} max={1440} value={minutes} onChange={event => setMinutes(Number(event.target.value))} /></label>
-  </div>
+  </div></>
   const evidenceFields = <div className={css.fields}>
     <label>{t('plan.reason')}<textarea value={reason} onChange={event => setReason(event.target.value)} /></label>
     <label>{t('plan.references')}<textarea value={references} onChange={event => setReferences(event.target.value)} /></label>

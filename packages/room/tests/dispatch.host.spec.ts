@@ -110,7 +110,7 @@ describe('DispatchEngine (real composition)', () => {
       ok: true,
       value: {
         // The delegation handle is journaled (reload reattaches the member).
-        members: [{ name: 'main' }, { name: 'ada', childSessionId: 'child-1' }],
+        members: [{ name: 'dsh' }, { name: 'ada', childSessionId: 'child-1' }],
         // The dispatch auto-opened the task; the settle (speech) closed it.
         tasks: [{ member: 'ada', title: '搭骨架', status: 'done' }],
         runs: [{ member: 'ada', state: 'done' }],
@@ -151,7 +151,7 @@ describe('DispatchEngine (real composition)', () => {
     const text = textOf(prompt)
     // The roster: the OTHER members (self excluded), one-line roles, protocol.
     expect(text).toContain('- bill（codex）：前端')
-    expect(text).toContain('- main（主 agent）')
+    expect(text).toContain('- dsh（原生 DSH）')
     expect(text).not.toContain('- ada')
     // No blackboard: nothing replays ada's earlier dispatch, bill's task,
     // ada's own speech, or the initial instructions again; the dispatch text
@@ -331,7 +331,7 @@ describe('DispatchEngine (real composition)', () => {
 
   it('the main-agent member gets a plugin-sourced followup and no speech projection', async () => {
     const bench = await bootRoom()
-    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@main 总结一下进度' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh 总结一下进度' })
     await bench.service.engine.idle()
 
     expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
@@ -345,8 +345,8 @@ describe('DispatchEngine (real composition)', () => {
     expect(state).toMatchObject({
       ok: true,
       value: {
-        tasks: [{ member: 'main', title: '总结一下进度', status: 'done' }],
-        runs: [{ member: 'main', state: 'done' }],
+        tasks: [{ member: 'dsh', title: '总结一下进度', status: 'done' }],
+        runs: [{ member: 'dsh', state: 'done' }],
       },
     })
     expect(bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().some(event => event.type === 'room/speech')).toBe(false)
@@ -354,22 +354,22 @@ describe('DispatchEngine (real composition)', () => {
 
   it('fails loud when the room agent is not live', async () => {
     const bench = await bootRoom({ liveAgent: false })
-    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@main 在吗' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh 在吗' })
     await bench.service.engine.idle()
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     // The failed edge carries the reason (the client's dim row surfaces it).
     expect(state).toMatchObject({
       ok: true,
-      value: { runs: [{ member: 'main', state: 'failed', error: 'the room session has no live agent' }] },
+      value: { runs: [{ member: 'dsh', state: 'failed', error: 'the room session has no live agent' }] },
     })
     // A failed run closes the auto-opened task as failed — the board shows
     // the failed row for the human (never a stranded spinning in_progress).
-    expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'main', status: 'failed' }] } })
+    expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'dsh', status: 'failed' }] } })
   })
 
   it('a failed task stays human-actionable: closeTask dismisses it to cancelled', async () => {
     const bench = await bootRoom({ liveAgent: false })
-    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@main 在吗' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh 在吗' })
     await bench.service.engine.idle()
     const before = await bench.service.getState({ sessionId: bench.sessionId })
     if (!before.ok) throw new Error('narrowing')
@@ -443,12 +443,12 @@ describe('DispatchEngine (real composition)', () => {
 
   it.each(['aborted', 'error'] as const)('preserves %s partial output without dispatching its trailing directive', async stopReason => {
     const bench = await bootRoom()
-    bench.facade.start.mockResolvedValue(settledRun('child-partial', 'Partial answer\n@main do not relay', stopReason))
+    bench.facade.start.mockResolvedValue(settledRun('child-partial', 'Partial answer\n@dsh do not relay', stopReason))
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: 'Long task' })
     await bench.service.engine.idle()
     const events = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
     expect(events.find(event => event.type === 'room/speech')?.data).toMatchObject({
-      member: 'ada', text: 'Partial answer\n@main do not relay', childSessionId: 'child-partial',
+      member: 'ada', text: 'Partial answer\n@dsh do not relay', childSessionId: 'child-partial',
       interrupted: stopReason === 'aborted' ? 'cancelled' : 'failed',
     })
     expect(events.some(event => event.type === 'room/relay')).toBe(false)
@@ -510,7 +510,7 @@ describe('coordinator routing and durable deliveries', () => {
     expect(bench.facade.resume).toHaveBeenCalledTimes(1)
     expect(bench.agent!.followup).not.toHaveBeenCalled()
     expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('Coordinator handoff')
-    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@main hello' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh hello' })
     await bench.service.engine.idle()
     expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
     expect(await bench.service.removeMember({ sessionId: bench.sessionId, name: 'ada' }))
@@ -578,8 +578,8 @@ describe('coordinator routing and durable deliveries', () => {
     expect(read.ok).toBe(true)
     if (read.ok) expect(JSON.parse(read.receipt)).toMatchObject({ self: 'ada', coordinator: 'ada' })
     expect(await bench.service.receiveMemberCommand({ ...actor, childSessionId: 'forged' }, { name: 'room_read', arguments: {} })).toMatchObject({ ok: false })
-    expect(await bench.service.receiveMemberCommand(actor, { name: 'room_message', arguments: { sessionId: 'foreign', member: 'main', text: 'work' } })).toMatchObject({ ok: false })
-    expect(await bench.service.messageMember({ sessionId: bench.sessionId, member: 'main', text: 'old native coordinator dispatch' })).toMatchObject({ ok: false, error: { code: 'not-coordinator' } })
+    expect(await bench.service.receiveMemberCommand(actor, { name: 'room_message', arguments: { sessionId: 'foreign', member: 'dsh', text: 'work' } })).toMatchObject({ ok: false })
+    expect(await bench.service.messageMember({ sessionId: bench.sessionId, member: 'dsh', text: 'old native coordinator dispatch' })).toMatchObject({ ok: false, error: { code: 'not-coordinator' } })
     const done = deferred<SubagentResult>()
     bench.facade.start.mockImplementation(async () => ({ ...settledRun('child-worker', ''), result: done.promise }))
     bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'accepted report'))
@@ -883,7 +883,7 @@ describe('coordinator routing and durable deliveries', () => {
     expect(await bench.service.setCoordinator(promote)).toEqual({ ok: false, error: { code: 'coordinator-busy' } })
     bench.localAgentStub.readMemberInbox = () => ({ paused: false, messages: [] })
     expect(await bench.service.setCoordinator(promote)).toMatchObject({ ok: true })
-    expect(await bench.service.removeMember({ sessionId: bench.sessionId, name: 'main' })).toEqual({ ok: false, error: { code: 'main-member' } })
+    expect(await bench.service.removeMember({ sessionId: bench.sessionId, name: 'dsh' })).toEqual({ ok: false, error: { code: 'main-member' } })
     expect(await bench.service.updateMember({ sessionId: bench.sessionId, name: 'ada', cwd: '/home/user/other' })).toEqual({ ok: false, error: { code: 'member-cwd-bound' } })
   })
 

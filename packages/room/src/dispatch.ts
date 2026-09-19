@@ -65,7 +65,7 @@ function rosterSection(state: { readonly members: readonly RoomMember[] }, self:
   const lines = state.members
     .filter(member => member.name !== self)
     .map((member) => {
-      const provider = member.kind === 'main-agent' ? '主 agent' : member.provider ?? ''
+      const provider = member.kind === 'main-agent' ? '原生 DSH' : member.provider ?? ''
       const role = member.instructions?.split('\n', 1)[0]?.trim()
       return `- ${member.name}（${provider}）${role === undefined || role === '' ? '' : `：${role}`}`
     })

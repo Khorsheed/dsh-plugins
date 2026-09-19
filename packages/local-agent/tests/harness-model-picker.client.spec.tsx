@@ -12,7 +12,7 @@ const untilAbort = (signal: AbortSignal): Promise<void> => new Promise(resolve =
 function open(container: HTMLElement) { act(() => { container.querySelector('details')!.open = true; fireEvent(container.querySelector('details')!, new Event('toggle')) }) }
 
 describe('harness model picker', () => {
-  it('subscribes only while open and incorporates the background native directory without reopening', async () => {
+  it('chooses the first candidate only when unset and incorporates the native directory without reopening', async () => {
     let complete!: () => void
     const result = new Promise<void>(resolve => { complete = resolve })
     const face: ModelDirectoryFace = {
@@ -26,17 +26,30 @@ describe('harness model picker', () => {
     }
     const change = vi.fn()
     const view = render(<HarnessModelPicker face={face} value="" onChange={change} t={t} />)
-    expect(face.follow).not.toHaveBeenCalled()
+    expect(face.follow).toHaveBeenCalledTimes(1)
     open(view.container)
     await screen.findByText(new RegExp(zh['configuration.directory.loading']))
     await act(async () => complete())
     const option = await screen.findByRole('option', { name: /Full Native Label/ })
     expect(option.textContent).toContain('alias → resolved-model-id')
+    await waitFor(() => expect(change).toHaveBeenCalledWith('alias'))
     fireEvent.click(option)
-    expect(change).toHaveBeenCalledWith('alias')
     expect(screen.queryByLabelText(zh['configuration.effort'])).toBeNull()
+    screen.getByText(zh['configuration.custom'], { selector: 'summary' }).closest('details')!.open = true
     fireEvent.change(screen.getByLabelText(zh['configuration.custom']), { target: { value: 'my-model' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['configuration.apply'] }))
     expect(change).toHaveBeenCalledWith('my-model')
+  })
+
+  it('preserves a saved choice even when it is absent from a refreshed directory', async () => {
+    const face: ModelDirectoryFace = { read: async () => ready, follow: async function* (signal) { yield ready; await untilAbort(signal) } }
+    const change = vi.fn()
+    const view = render(<HarnessModelPicker face={face} value="previous-user-model" onChange={change} t={t} />)
+    open(view.container)
+    await screen.findByRole('option', { name: /Full Native Label/ })
+    expect(change).not.toHaveBeenCalled()
+    expect(screen.getByText('previous-user-model')).toBeTruthy()
+    expect(screen.queryByText(zh['configuration.default'])).toBeNull()
   })
 
   it('hides the previous provider directory immediately when its ownership changes', async () => {

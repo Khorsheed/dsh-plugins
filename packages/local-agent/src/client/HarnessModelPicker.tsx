@@ -16,8 +16,8 @@ export interface HarnessModelPickerProps {
   t: ConfigurationTranslate
 }
 
-/** Discovery subscribes while expanded; selection remains a caller-owned draft. */
-export function HarnessModelPicker({ face, value, onChange, disabled, defaultLabel, t }: HarnessModelPickerProps) {
+/** Discover while expanded or resolving an empty choice; settings remain caller-owned drafts. */
+export function HarnessModelPicker({ face, value, onChange, disabled, t }: HarnessModelPickerProps) {
   const [open, setOpen] = useState(false)
   const [surface, setSurface] = useState<{ face: ModelDirectoryFace; directory: LocalAgentModelDirectory }>()
   const directory = surface?.face === face ? surface.directory : undefined
@@ -27,7 +27,7 @@ export function HarnessModelPicker({ face, value, onChange, disabled, defaultLab
   const [error, setError] = useState<string>()
   const [refreshing, setRefreshing] = useState(false)
   useEffect(() => {
-    if (!open) return
+    if (!open && value) return
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const follow = async (): Promise<void> => {
@@ -41,23 +41,28 @@ export function HarnessModelPicker({ face, value, onChange, disabled, defaultLab
     }
     void follow()
     return () => { controller.abort(); clearTimeout(timer) }
-  }, [face, open])
+  }, [face, open, Boolean(value)])
   const refresh = async (): Promise<void> => {
     setRefreshing(true)
     try { const result = await face.read(true); if (result !== null) setDirectory(result); setError(undefined) }
     catch (error) { setError(error instanceof Error ? error.message : String(error)) }
     finally { setRefreshing(false) }
   }
+  useEffect(() => {
+    const first = directory?.entries.find(entry => !entry.hidden)
+    if (!value && !disabled && first) onChange(first.value)
+  }, [directory, value, disabled, onChange])
   const entry = directory?.entries.find(entry => entry.value === value)
-  return <details className={css.root} open={open} onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary aria-label={t('configuration.model')}>{entry ? `${entry.label} (${entry.value})` : value || defaultLabel || t('configuration.default')}</summary>
+  return <details className={`${css.root} ${css.settings}`} open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary aria-label={t('configuration.model')}>{entry?.label ?? (value || t('configuration.choose'))}</summary>
     {open && <div className={css.panel}>
       {error && <div role="alert">{error}</div>}
       {!directory && <span role="status">{t('loading')}</span>}
       <ModelConfigurationFields directory={directory} value={{ model: value ? { mode: 'value', value } : { mode: 'default' }, effort: { mode: 'default' } }}
         onChange={selection => onChange(selection.model.mode === 'value' ? selection.model.value : '')}
-        inherit={false} showEffort={false} disabled={disabled} defaultLabel={defaultLabel} t={t} />
-      <button type="button" disabled={refreshing || directory?.refreshing} onClick={() => { void refresh() }}>{t('configuration.refresh')}</button>
+        showEffort={false} disabled={disabled} t={t} />
+      <details className={css.advanced}><summary>{t('configuration.details')}</summary><small>{directory?.reason}</small>
+      <button type="button" disabled={refreshing || directory?.refreshing} onClick={() => { void refresh() }}>{t('configuration.refresh')}</button></details>
     </div>}
   </details>
 }
