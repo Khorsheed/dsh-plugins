@@ -20,7 +20,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReaderPaneProps } from '../src/client/contract.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
@@ -1646,6 +1646,29 @@ describe('coming back to the pane puts the reader where they were', () => {
     // The feed published the text itself (`contentHtml`), so the restore costs
     // no network call at all.
     expect(second.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('re-applies the translation when the body under it is replaced', async () => {
+    // The reported shape: the article is on screen but the translation is gone.
+    // Any body swap — a fetch landing after a restore, an expired cache
+    // re-fetched, a re-render that recreated the element — takes the segmented
+    // DOM with it, so the record has to be honoured again for the NEW body.
+    installTranslator()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+
+    // The same entry, a different body, with no gesture from the reader.
+    act(() => { ui.actions.setArticle('<p>Third sentence here.</p>', false, null) })
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：Third sentence here.')
+    })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 
   it('carries the article and its translation into ANOTHER dsh session', async () => {
