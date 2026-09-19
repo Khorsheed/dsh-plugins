@@ -135,6 +135,17 @@ export class RoomService extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'room')
+    ctx.effect(async () => {
+      const loader = ctx.get('loader') as { import?: (name: string) => Promise<{ KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string> }> } | undefined
+      if (loader?.import === undefined) return () => {}
+      for (const specifier of ['@deepseek-ai/dsh-session', catalogSpecifier]) {
+        try {
+          const catalog = await loader.import(specifier)
+          for (const type of ROOM_EVENT_TYPES) (catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add(type)
+        } catch { /* Optional source resolution; static catalog registration remains. */ }
+      }
+      return () => {}
+    }, 'room: runtime event vocabulary')
     this.plans = new PlanService(ctx, () => this.engine)
     this.engine = new DispatchEngine(ctx, {
       allows: (room, seq) => this.plans.allows(room, seq),

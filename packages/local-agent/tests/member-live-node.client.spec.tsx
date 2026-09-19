@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocalAgentStreams } from '../src/live-stream.ts'
@@ -7,7 +7,7 @@ import { MemberLiveNode, MemberLiveOutputView, type MemberLiveNodeProps } from '
 import { MemberLiveOutputs } from '../src/client/live-output.ts'
 import { zh } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('member transient rendering', () => {
   it('renders real updates before a final message, reconnects without duplicating text, and closes when unmounted', async () => {
@@ -63,6 +63,36 @@ describe('Room inline output', () => {
     expect(view.container.querySelector('[data-live-received-at="12"]')).not.toBeNull()
     view.unmount()
     await waitFor(() => expect(closed).toBe(true))
+    bus.dispose()
+  })
+})
+
+
+describe('foreground paint diagnostics', () => {
+  it('samples only after a paint opportunity and cancels callbacks on unmount', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    let now = 100
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    let next = 0
+    const callbacks = new Map<number, FrameRequestCallback>()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callbacks.set(++next, callback); return next })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { callbacks.delete(id) })
+    const frame = () => { const pending = [...callbacks]; callbacks.clear(); for (const [, callback] of pending) callback(now) }
+    const bus = new LocalAgentStreams()
+    const item = { id: '1:1', turn: 1, step: 1, kind: 'text' as const, receivedAt: 100, text: 'streaming' }
+    bus.publish('member', item)
+    const outputs = new MemberLiveOutputs((id, signal) => bus.follow(id, signal))
+    const view = render(<MemberLiveOutputView sessionId="member" startedAt={100} outputs={outputs} t={makeTranslate(zh)} />)
+    await screen.findByText('streaming')
+    const section = view.container.querySelector('[data-member-live]')!
+    now = 120; frame()
+    expect(section.getAttribute('data-live-paint-samples')).toBeNull()
+    now = 145; frame()
+    expect(section.getAttribute('data-live-paint-samples')).toBe('[45]')
+    await act(async () => { bus.publish('member', { ...item, receivedAt: 150, text: 'next' }) })
+    expect(callbacks.size).toBe(1)
+    view.unmount()
+    expect(callbacks.size).toBe(0)
     bus.dispose()
   })
 })

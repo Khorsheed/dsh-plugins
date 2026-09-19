@@ -230,3 +230,20 @@ describe('room journal persistence', () => {
     }
   })
 })
+
+
+describe('linked Room event vocabulary', () => {
+  it('registers the running loader catalog before plugin readiness', async () => {
+    const ctx = new Context()
+    stubAgents(ctx)
+    await ctx.plugin(SessionStore)
+    const catalog = new Set<string>()
+    ctx.provide('loader', { import: async (name: string) => {
+      if (name !== '@deepseek-ai/dsh-session') throw new Error('no source export')
+      return { KNOWN_SESSION_EVENT_TYPES: catalog }
+    } } as never)
+    const fiber = await ctx.plugin(RoomService)
+    try { expect([...catalog]).toEqual([...ROOM_EVENT_TYPES]) }
+    finally { await fiber.dispose() }
+  })
+})
