@@ -37,7 +37,7 @@ dsh plugin add @khorsheed/dsh-room
 ## Compatibility
 
 - npm 宿主线（`@deepseek-ai/dsh@0.1.5-rc.1`）：在本次 local-agent 家族发布并安装前降级。目前尚未发布的家族实现是外部协调者准备、共享控制和认证成员工具的前提；缺失时这些操作返回不可用，原生 DSH Room 功能仍可用。
-- 源码宿主线（deepseek-harness `183f08e9c6`，`0.1.5-rc.1`）：worktree 组合构建及隔离 preflight 通过，已实测 DSH/Kimi 协调者、委派和两阶段验收。Codex/Claude 认证运行、tarball 全新安装/升级，以及完整延迟门槛仍待验收，见[验收记录](../../docs/acceptance/room-coordinator-2026-09-19.md)。
+- 源码宿主线（deepseek-harness `183f08e9c6`，`0.1.5-rc.1`）：worktree 组合构建及隔离 preflight 通过，已实测 DSH/Kimi 协调者、委派、两阶段验收和中断恢复。候选 tarball 在上述 npm 宿主上的全新安装与升级也已通过，旧 Room 状态得到保留。Codex/Claude 认证运行与完整延迟门槛仍待验收，见[验收记录](../../docs/acceptance/room-coordinator-2026-09-19.md)。
 
 Room 通过当前 loader 的会话事件目录注册 `room/*`，保证重启后能够读取持久化日志；core 同样注册成员流式检查点。已持久化的 Room 需要继续挂载 Room 插件。这是等待官方事件注册 API 的临时兼容接口。
 

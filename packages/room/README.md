@@ -37,7 +37,7 @@ The package mounts its own loader row and browser contribution. Install the loca
 ## Compatibility
 
 - npm host line (`@deepseek-ai/dsh@0.1.5-rc.1`): degraded until this local-agent family is published and installed. The currently unpublished family is required for external coordinator preparation, shared controls and authenticated member tools; without it those operations return an unavailable result. Native DSH Room functionality remains available.
-- Source host line (deepseek-harness `183f08e9c6`, `0.1.5-rc.1`): the worktree composition builds and passes isolated preflight. DSH/Kimi real coordinator, delegation and two-stage review have been exercised. Codex/Claude authenticated runtime acceptance, fresh/upgrade tarball acceptance and the full latency gate remain outstanding; see the [acceptance record](../../docs/acceptance/room-coordinator-2026-09-19.md).
+- Source host line (deepseek-harness `183f08e9c6`, `0.1.5-rc.1`): the worktree composition builds and passes isolated preflight. DSH/Kimi real coordinator, delegation, two-stage review and interruption recovery have been exercised. Fresh installation and upgrade of the candidate tarballs also pass against the npm host above, retaining the old Room state. Codex/Claude authenticated runtime acceptance and the full latency gate remain outstanding; see the [acceptance record](../../docs/acceptance/room-coordinator-2026-09-19.md).
 
 Room registers its `room/*` vocabulary in the active loader's session-event catalog so durable journals can be read after restart. Core similarly registers member stream checkpoints. A persisted Room requires Room to remain mounted. This is a temporary compatibility seam pending an official event registration API.
 
