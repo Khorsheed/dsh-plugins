@@ -371,13 +371,18 @@ export class DispatchEngine {
     }
     if (controlled) submitted()
     const result = await run.result
+    const output = runOutputText(result.output)
+    const interrupted = result.stopReason === 'completed' ? undefined
+      : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
+    const speech = output !== '' || interrupted === undefined ? room.append('room/speech', {
+      member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
+      text: output,
+      childSessionId: run.id,
+      durationMs: Date.now() - startedAt,
+      ...interrupted === undefined ? {} : { interrupted },
+    }) : undefined
+    if (speech !== undefined) await this.ctx.sessions.flush(room)
     if (result.stopReason === 'completed') {
-      const speech = room.append('room/speech', {
-        member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
-        text: runOutputText(result.output),
-        childSessionId: run.id,
-        durationMs: Date.now() - startedAt,
-      })
       // The fallback notification channel: a reply whose trailing own line is
       // `@name <content>` (the roster-taught format) becomes a pending relay
       // at the gate — the same shape the family bridge's member_message
@@ -391,15 +396,15 @@ export class DispatchEngine {
           from: member.name,
           to: directive.to,
           content: directive.content,
-          provenance: { kind: 'speech-fallback', speechSeq: speech.seq },
+          provenance: { kind: 'speech-fallback', speechSeq: speech!.seq },
         })
       }
       await this.ctx.sessions.flush(room)
       return { state: 'done', text: runOutputText(result.output) }
     } else if (result.stopReason === 'aborted') {
-      return { state: 'cancelled' }
+      return { state: 'cancelled', text: output }
     } else {
-      return { state: 'failed', error: `the member run ended with stopReason "${result.stopReason}"` }
+      return { state: 'failed', text: output, error: `the member run ended with stopReason "${result.stopReason}"` }
     }
   }
 
@@ -411,7 +416,7 @@ export class DispatchEngine {
     const memberName = replay(events).members.find(entry => memberId(events, entry) === memberId(events, member))?.name ?? member.name
     const terminal = events.find(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.state !== 'running')
     if (terminal?.type === 'room/run-state' && terminal.data.state !== 'running') {
-      return { state: terminal.data.state, ...terminal.data.error === undefined ? {} : { error: terminal.data.error } }
+      return { ...outcome, state: terminal.data.state, ...terminal.data.error === undefined ? {} : { error: terminal.data.error } }
     }
     room.append('room/run-state', {
       member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,

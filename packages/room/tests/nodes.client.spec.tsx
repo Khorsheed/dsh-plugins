@@ -94,6 +94,18 @@ describe('room node Definitions', () => {
     expect(node).toMatchObject({ kind: 'room-speech', anchorSeq: 7, visibility: 'visible', data: state })
   })
 
+  it('cold-replays a stopped partial with its member-session link and explicit status', async () => {
+    const event = ev('room/speech', 9, { member: 'ada', text: 'Partial answer', childSessionId: 'child-1', interrupted: 'cancelled' })
+    const data = roomSpeechDefinition.start(contextOf(undefined), matchOf(event), undefined as never)
+    expect(data.interrupted).toBe('cancelled')
+    const openSession = vi.fn()
+    render(<RoomSpeechView {...{ node: nodeOf('room-speech', data), sessionId: 'room-1', roomStore: await primedStore(), openSession, t } as RoomSpeechViewProps} />)
+    expect(screen.getByText('Partial answer')).toBeTruthy()
+    expect(screen.getByText('已停止 · 部分输出')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '查看成员会话' }))
+    expect(openSession).toHaveBeenCalledWith('child-1')
+  })
+
   it('room-run keys on member+startedAt: running starts, terminals update', () => {
     const running = ev('room/run-state', 3, { member: 'ada', state: 'running', startedAt: 100 })
     const done = ev('room/run-state', 4, { member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 })

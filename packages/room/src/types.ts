@@ -130,6 +130,8 @@ export interface RoomDispatchEvent {
  * session (resume chain) holds its working memory.
  */
 export interface RoomSpeechEvent {
+  /** Partial output from a stopped or failed run; never a completed answer. */
+  readonly interrupted?: 'cancelled' | 'failed'
   readonly member: string
   readonly text: string
   readonly childSessionId?: SessionId

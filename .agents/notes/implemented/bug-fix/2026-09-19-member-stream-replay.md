@@ -22,6 +22,8 @@ The Room client re-elects its composer when the first successful state read chan
 
 All four live providers enqueue and await a final child-store synchronization after their turn boundary and closing checkpoints, before their result resolves. A real Kimi round otherwise stored 87 of 88 events, omitting `turn/end` even after graceful shutdown. Stream-time persistence failures are logged without poisoning the queue; the final synchronization can retry the missing suffix. This preserves the existing best-effort persistence error contract, rather than misreporting a native generation failure when storage is unavailable.
 
+Room retains nonempty output after cancellation or failure in its speech journal, with an optional `interrupted` status. Cold replay shows the partial text, explicit status, duration and member-session link. Partial replies do not produce trailing-line notification relays. An earlier explicit cancellation keeps its terminal state when the native result arrives, while retaining the partial output for the correlated delivery report.
+
 ## Alternatives considered
 
 **Accept a final Room answer as proof of persistence.** Rejected by the real Kimi run: the answer existed in memory while the stored transcript was incomplete.
@@ -39,3 +41,5 @@ The regression tests cover the actual storage reader and distinguish native subi
 Additional tests cover ACP load replay exclusion, cold composer election and retry after a transport failure. The Kimi and Room suites pass 244 and 272 tests respectively; real cold-start and busy-control acceptance remain separate checks.
 
 An asynchronous storage regression for each live provider verifies that the resolved result already has a complete durable transcript ending in `turn/end`. Provider suites pass: DSH 187, Codex 224, Claude 232 and Kimi 245. A failed write is still diagnostic-only; storage availability is not guaranteed by a successful model answer.
+
+Room tests cover cancellation and failure partials, suppression of unfinished relay directives, and a cold-replayed partial's status and child link. Empty cancelled output remains hidden. The Room suite passes 275 tests.

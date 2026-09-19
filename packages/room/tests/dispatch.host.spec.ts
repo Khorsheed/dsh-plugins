@@ -441,6 +441,21 @@ describe('DispatchEngine (real composition)', () => {
     expect(edges[1]!.startedAt).toBe(edges[0]!.startedAt)
   })
 
+  it.each(['aborted', 'error'] as const)('preserves %s partial output without dispatching its trailing directive', async stopReason => {
+    const bench = await bootRoom()
+    bench.facade.start.mockResolvedValue(settledRun('child-partial', 'Partial answer\n@main do not relay', stopReason))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: 'Long task' })
+    await bench.service.engine.idle()
+    const events = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    expect(events.find(event => event.type === 'room/speech')?.data).toMatchObject({
+      member: 'ada', text: 'Partial answer\n@main do not relay', childSessionId: 'child-partial',
+      interrupted: stopReason === 'aborted' ? 'cancelled' : 'failed',
+    })
+    expect(events.some(event => event.type === 'room/relay')).toBe(false)
+    expect(events.filter(event => event.type === 'room/run-state').at(-1)?.data.state)
+      .toBe(stopReason === 'aborted' ? 'cancelled' : 'failed')
+  })
+
   it('cancel journals one terminal cancelled edge and the settle path does not double-append', async () => {
     const bench = await bootRoom()
     const flight = deferred<SubagentResult>()
