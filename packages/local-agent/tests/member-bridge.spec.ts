@@ -89,7 +89,7 @@ describe('member bridge (stdio MCP server)', () => {
 
     expect(responses[0]).toMatchObject({ id: 1, result: { protocolVersion: '2025-03-26', serverInfo: { name: 'dsh-member-bridge' } } })
     const tools = (responses[1]?.result as { tools: { name: string }[] }).tools
-    expect(tools.map(tool => tool.name)).toEqual(['member_message', 'room_read', 'room_invite', 'room_message'])
+    expect(tools.map(tool => tool.name)).toEqual(['member_message', 'room_plan', 'room_read', 'room_invite', 'room_message'])
     // The notification got no reply.
     expect(responses).toHaveLength(2)
   })

@@ -17,6 +17,8 @@
  * confirmRelay/dismissRelay Remotes.
  * @module @khorsheed/dsh-room
  */
+import { planCommandContract } from './plan.ts'
+import { PlanService } from './plan-service.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
@@ -121,6 +123,7 @@ export class RoomService extends TypertRemoteService {
   static inject = ['sessions', 'agents']
 
   /** The dispatch engine executing this service's dispatch records. */
+  readonly plans: PlanService
   readonly engine: DispatchEngine
   private readonly handoffs = new Set<string>()
 
@@ -132,7 +135,13 @@ export class RoomService extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'room')
-    this.engine = new DispatchEngine(ctx)
+    this.plans = new PlanService(ctx, () => this.engine)
+    this.engine = new DispatchEngine(ctx, {
+      allows: (room, seq) => this.plans.allows(room, seq),
+      admitted: (room, seq) => this.plans.admitted(room, seq),
+      settled: (room, seq, outcome) => this.plans.settled(room, seq, outcome),
+    })
+    ctx.effect(() => () => this.plans.dispose())
     // A stale client or another official input surface must not wake a DSH
     // model behind an external coordinator. Public pre-step admits an empty
     // initial step without a model call after room has durably accepted it.
@@ -200,7 +209,12 @@ export class RoomService extends TypertRemoteService {
    */
   private ensureLive(sessionId: SessionId): Promise<RoomLoad> {
     const hit = this.load(sessionId)
-    if (hit.ok || hit.error.code !== 'session-not-found') return Promise.resolve(hit)
+    if (hit.ok) return (async () => {
+      await this.plans.recover(hit.session)
+      await this.engine.recover(hit.session)
+      return this.load(sessionId)
+    })()
+    if (hit.error.code !== 'session-not-found') return Promise.resolve(hit)
     let pending = this.resumes.get(sessionId)
     if (pending === undefined) {
       pending = this.resumeRoom(sessionId).finally(() => this.resumes.delete(sessionId))
@@ -223,7 +237,7 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'resume-failed', message: String(error) } }
     }
     const loaded = this.load(sessionId)
-    if (loaded.ok) await this.engine.recover(loaded.session)
+    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session) }
     return loaded
   }
 
@@ -316,7 +330,7 @@ export class RoomService extends TypertRemoteService {
     // Side-effect-free: a cold room answers from its durable log (see loadCold).
     const loaded = await this.loadCold(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    return { ok: true, value: loaded.state }
+    return { ok: true, value: { ...loaded.state, ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
   }
 
   /**
@@ -569,6 +583,7 @@ export class RoomService extends TypertRemoteService {
         `Coordinator handoff from ${previous.name} to ${candidate.name}.`,
         `Room session: ${request.sessionId}. Earlier native conversations remain available by their session IDs.`,
         loaded.state.goal === undefined ? '' : `Goal: ${loaded.state.goal}`,
+        loaded.state.plan === undefined ? '' : `Formal goal ${loaded.state.plan.id}, revision ${loaded.state.plan.revision}: ${loaded.state.plan.objective} (${loaded.state.plan.status}). Read room_read for attempts, evidence, dependencies and budget; preserve the current pause state.`,
         ...loaded.state.tasks.filter(task => !['done', 'cancelled'].includes(task.status)).map(task => `Open task ${task.id}: ${task.member}: ${task.title} (${task.status})`),
         ...events.filter(event => event.type === 'room/speech' || event.type === 'room/dispatch').slice(-12).map(event =>
           event.type === 'room/speech' ? `${event.data.member}: ${event.data.text.slice(0, 1500)}`
@@ -741,9 +756,36 @@ export class RoomService extends TypertRemoteService {
     if (!state.ok) throw new Error(`Room unavailable: ${state.error.code}`)
     const events = this.ctx.sessions.get(SessionId(sessionId))?.snapshotEvents() ?? []
     const recent = events.filter(event => event.type === 'room/speech').slice(-12).map(event => event.type === 'room/speech' ? { member: event.data.member, text: event.data.text.slice(0, 2000) } : null)
-    return JSON.stringify({ coordinator: coordinatorMember(state.value)?.name,
+    return JSON.stringify({ planCommands: planCommandContract(), coordinator: coordinatorMember(state.value)?.name,
       state: { ...state.value, deliveries: state.value.deliveries?.slice(-30), tasks: state.value.tasks.slice(-100), relays: state.value.relays.slice(-30) },
       providers: await this.listProviders({}), recent })
+  }
+
+  /** Human UI and native/external tools share the same durable transition service. */
+  @Remote('planCommand')
+  async planCommand(request: { sessionId: SessionId; command: string }): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      const loaded = await this.ensureLive(request.sessionId)
+      if (!loaded.ok) return { ok: false, message: loaded.error.code }
+      if (this.handoffs.has(request.sessionId)) return { ok: false, message: 'Coordinator handoff is in progress' }
+      await this.plans.command(loaded.session, request.command, { kind: 'human', memberId: 'human' })
+      return { ok: true }
+    } catch (error) { return { ok: false, message: String(error) } }
+  }
+
+  /** The actor is derived from the calling native agent or authenticated bridge. */
+  async commandPlan(sessionId: string, command: string, actorChildSessionId?: string): Promise<string> {
+    const loaded = await this.ensureLive(SessionId(sessionId))
+    if (!loaded.ok) throw new Error(loaded.error.code)
+    if (this.handoffs.has(sessionId)) throw new Error('Coordinator handoff is in progress')
+    const events = loaded.session.snapshotEvents()
+    const state = replay(events)
+    const member = state.members.find(member => actorChildSessionId === undefined ? member.kind === 'main-agent' : member.childSessionId === actorChildSessionId)
+    if (member === undefined) throw new Error('Calling member is not in this room')
+    const id = memberId(events, member)
+    const plan = await this.plans.command(loaded.session, command, { kind: coordinatorMember(state, events)?.name === member.name ? 'coordinator' : 'worker', memberId: id })
+    const { requests: _requests, ...view } = plan
+    return JSON.stringify(view)
   }
 
   /** Shared backend for external MCP room tools. Not exposed as a browser Remote. */
@@ -755,7 +797,7 @@ export class RoomService extends TypertRemoteService {
       if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
       if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
       const args = command.arguments
-      const allowed: Record<string, readonly string[]> = { room_read: [], room_invite: ['provider', 'name', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text'] }
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text'] }
       const keys = allowed[command.name]
       if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
       const required = (key: string): string => {
@@ -767,6 +809,7 @@ export class RoomService extends TypertRemoteService {
       if (command.name === 'room_read') {
         return { ok: true, receipt: JSON.stringify({ self: sender.name, ...JSON.parse(await this.readRoomContext(loaded.session.id)) }) }
       }
+      if (command.name === 'room_plan') return { ok: true, receipt: await this.commandPlan(loaded.session.id, required('command'), actor.childSessionId) }
       if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members or dispatch work' }
       const result = command.name === 'room_invite'
         ? await this.inviteMember({ sessionId: loaded.session.id, provider: required('provider'), name: required('name'),

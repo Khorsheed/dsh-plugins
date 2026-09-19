@@ -379,6 +379,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (sessionId: SessionId): RoomComposerInjected => ({
       ...tasksFace(sessionId),
       ...inviteFace(sessionId),
+      planCommand: async command => {
+        const result = await remote?.planCommand({ sessionId, command })
+        await roomStore.refresh(sessionId)
+        return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.message : t('composer.error.generic') }
+      },
+      openPlanSession: id => openSession(id as SessionId),
       submit,
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,

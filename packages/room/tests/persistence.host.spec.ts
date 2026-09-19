@@ -122,6 +122,7 @@ describe('room journal persistence', () => {
       session.append('room/run-state', { member: 'ada', state: 'done', startedAt: 1, elapsedMs: 2 })
       session.append('room/member-removed', { name: 'ada' })
       session.append('room/goal', { text: '插件 API v2 上线' })
+      expect(await service.planCommand({ sessionId, command: JSON.stringify({ action: 'create', requestId: 'persist-goal', expectedRevision: 0, id: 'goal', objective: 'Verify persistence', mode: 'draft', budget: { maxParallel: 1, maxAttempts: 3, maxAttemptsPerTask: 2, maxActiveMs: 60000 } }) })).toEqual({ ok: true })
       session.append('room/coordinator', { version: 1, memberId: 'legacy:1', previousMemberId: 'legacy:1', revision: 1, handoff: 'Continue' })
       session.append('room/delivery-state', { id: 'delivery', dispatchSeq: 3, memberId: 'ada', state: 'done' })
       await fix.ctx.sessions.flush(session)

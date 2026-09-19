@@ -111,10 +111,16 @@ function faultMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-interface RunOutcome {
+export interface RunOutcome {
   readonly state: 'done' | 'cancelled' | 'failed'
   readonly text?: string
   readonly error?: string
+}
+
+export interface DispatchHooks {
+  allows?(room: Session, dispatchSeq?: number): boolean
+  admitted?(room: Session, dispatchSeq?: number): Promise<void>
+  settled?(room: Session, dispatchSeq: number | undefined, outcome: RunOutcome): Promise<void>
 }
 
 /**
@@ -131,7 +137,7 @@ export class DispatchEngine {
   /**
    * @param ctx - host context carrying the session store and agents registry.
    */
-  constructor(private readonly ctx: Context) {}
+  constructor(private readonly ctx: Context, private readonly hooks: DispatchHooks = {}) {}
 
   /**
    * Enqueue a dispatch for execution. Fire-and-forget: the outcome is
@@ -196,7 +202,7 @@ export class DispatchEngine {
             const target = state.members.find(member => memberId(events, member) === targetId)
             if (target !== undefined) {
               const run = state.runs.find(run => run.member === target.name)
-              if (run?.state === 'running') room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt, ...run.runId === undefined ? {} : { runId: run.runId }, error: 'Execution outcome is unknown after restart; reconcile before retrying' })
+              if (run?.state === 'running' && (run.runId === undefined || run.runId === id)) room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt, ...run.runId === undefined ? {} : { runId: run.runId }, error: 'Execution outcome is unknown after restart; reconcile before retrying' })
             }
             await this.ctx.sessions.flush(room)
             await this.report(room, dispatch.seq, id, targetId, 'uncertain', 'Execution outcome is unknown after restart; reconcile before retrying')
@@ -213,6 +219,7 @@ export class DispatchEngine {
 
   /** Execute one dispatch: run-state running → member turn → settle edges. */
   private async run(room: Session, memberName: string, text: string, options: DispatchOptions, submitted: () => void): Promise<void> {
+    if (this.hooks.allows?.(room, options.dispatchSeq) === false) return
     const state = replay(room.snapshotEvents())
     const member = state.members.find(entry => options.targetId === undefined ? entry.name === memberName : memberId(room.snapshotEvents(), entry) === options.targetId)
     // Removed between the dispatch and its execution: nothing to run, and the
@@ -231,6 +238,7 @@ export class DispatchEngine {
       if (deliveryId !== undefined) room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: 'running' })
       memberName = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)?.name ?? memberName
       room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId })
+      await this.hooks.admitted?.(room, options.dispatchSeq)
       await this.ctx.sessions.flush(room)
       return startedAt
     }
@@ -244,6 +252,7 @@ export class DispatchEngine {
       outcome = { state: 'failed', error: faultMessage(error) }
     }
     outcome = await this.settle(room, member, runId, startedAt ?? Date.now(), outcome)
+    await this.hooks.settled?.(room, options.dispatchSeq, outcome)
     if (deliveryId !== undefined) {
       room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: outcome.state,
         ...outcome.text === undefined ? {} : { text: outcome.text }, ...outcome.error === undefined ? {} : { error: outcome.error } })
@@ -258,14 +267,15 @@ export class DispatchEngine {
     if (source?.type !== 'room/dispatch' || source.data.origin !== 'coordinator' || source.data.replyTo === undefined) return
     if (events.some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
     const state = replay(events)
-    const recipient = state.members.find(member => memberId(events, member) === source.data.replyTo)
+    const recipient = source.data.plan === undefined ? state.members.find(member => memberId(events, member) === source.data.replyTo) : coordinatorMember(state, events)
     const sender = state.members.find(member => memberId(events, member) === fromId)
     if (recipient === undefined) return
     const reportText = `Delegation ${deliveryId} (${sender?.name ?? fromId}) ${outcome}.\n${text.slice(0, 32000)}`
     const report = room.append('room/dispatch', { id: randomUUID(), origin: 'report', reportFor: deliveryId,
-      targets: [recipient.name], targetIds: [source.data.replyTo], text: reportText })
+      targets: [recipient.name], targetIds: [memberId(events, recipient)], text: reportText,
+      ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } })
     await this.ctx.sessions.flush(room)
-    this.dispatch(room, recipient.name, reportText, { dispatchSeq: report.seq, targetId: source.data.replyTo })
+    if (this.hooks.allows?.(room, report.seq) !== false) this.dispatch(room, recipient.name, reportText, { dispatchSeq: report.seq, targetId: memberId(events, recipient) })
   }
 
   /**

@@ -6,6 +6,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
+import { PlanService, readPlan } from '../src/plan-service.ts'
+import { changePlan, queuePlanAttempt, admitPlanAttempt } from '../src/plan.ts'
 import { ROOM_PLUGIN } from '../src/dispatch.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 
@@ -868,6 +870,131 @@ describe('coordinator routing and durable deliveries', () => {
     expect(await bench.service.setCoordinator(promote)).toMatchObject({ ok: true })
     expect(await bench.service.removeMember({ sessionId: bench.sessionId, name: 'main' })).toEqual({ ok: false, error: { code: 'main-member' } })
     expect(await bench.service.updateMember({ sessionId: bench.sessionId, name: 'ada', cwd: '/home/user/other' })).toEqual({ ok: false, error: { code: 'member-cwd-bound' } })
+  })
+
+  it('executes a formal dependency chain only after evidence review and retains a rework attempt', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    let calls = 0
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', `artifact result ${++calls}`))
+    let requests = 0
+    const command = async (operation: Record<string, unknown>) => {
+      const state = await bench.service.getState({ sessionId: bench.sessionId })
+      if (!state.ok) throw new Error('room missing')
+      return JSON.parse(await bench.service.commandPlan(bench.sessionId, JSON.stringify({ requestId: `plan-command-${requests++}`, expectedRevision: state.value.plan?.revision ?? 0, ...operation })))
+    }
+    expect((await bench.service.getState({ sessionId: bench.sessionId }))).not.toHaveProperty('value.plan')
+    await command({ action: 'create', id: 'implementation', objective: 'Implement then verify', mode: 'execute', budget: { maxParallel: 2, maxAttempts: 6, maxAttemptsPerTask: 3, maxActiveMs: 60000 } })
+    const task = (id: string, dependsOn: string[]) => ({ id, title: id, stageId: 'phase', kind: 'task', ownerMemberId: member.id, instruction: `Do ${id}`, criteria: ['Reviewed evidence'], inputRefs: [], artifactPaths: ['result.txt'], dependsOn })
+    await command({ action: 'extend', stages: [{ id: 'phase', title: 'Build' }], tasks: [task('build', []), task('verify', ['build'])] })
+    await bench.service.engine.idle()
+    expect(calls).toBe(1)
+    let state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room missing')
+    expect(state.value.tasks).toEqual([]) // Formal tasks do not create legacy chat-task rows.
+    expect(state.value.plan!.tasks.map(task => task.status)).toEqual(['submitted', 'pending'])
+    const firstAttempt = state.value.plan!.tasks[0]!.attempts[0]!.id
+    await command({ action: 'review', taskId: 'build', attemptId: firstAttempt, decision: 'rework', reason: 'Add missing test', references: ['review:missing-test'] })
+    await bench.service.engine.idle()
+    expect(calls).toBe(2)
+    state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room missing')
+    expect(state.value.plan!.tasks[0]!.attempts.map(attempt => attempt.status)).toEqual(['rejected', 'submitted'])
+    await command({ action: 'review', taskId: 'build', attemptId: state.value.plan!.tasks[0]!.attempts[1]!.id, decision: 'accepted', reason: 'Build checked', references: ['review:build'] })
+    await bench.service.engine.idle()
+    expect(calls).toBe(3)
+    expect(textOf(bench.facade.resume.mock.calls[2]![3])).toContain('artifact result 2')
+    state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room missing')
+    await command({ action: 'review', taskId: 'verify', attemptId: state.value.plan!.tasks[1]!.attempts[0]!.id, decision: 'accepted', reason: 'Tests checked', references: ['review:verification'] })
+    const complete = await command({ action: 'complete', evidence: { summary: 'Goal verified', references: ['review:build', 'review:verification'], artifacts: ['result.txt'] } })
+    expect(complete.status).toBe('completed')
+    expect(complete.requests).toBeUndefined()
+    expect(bench.agent!.followup).toHaveBeenCalledTimes(3)
+  })
+
+  it('persists goal results while paused and releases their coordinator report on explicit resume', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    const native = deferred<SubagentResult>()
+    bench.facade.resume.mockImplementation(async () => ({ ...settledRun('child-ada', ''), result: native.promise }))
+    let id = 0
+    const send = async (operation: Record<string, unknown>) => {
+      const state = await bench.service.getState({ sessionId: bench.sessionId })
+      if (!state.ok) throw new Error('room missing')
+      const result = await bench.service.planCommand({ sessionId: bench.sessionId, command: JSON.stringify({ requestId: `human-${id++}`, expectedRevision: state.value.plan?.revision ?? 0, ...operation }) })
+      expect(result).toEqual({ ok: true })
+    }
+    await send({ action: 'create', id: 'pause-goal', objective: 'Paused work', mode: 'execute', budget: { maxParallel: 1, maxAttempts: 3, maxAttemptsPerTask: 2, maxActiveMs: 60000 } })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledOnce()
+    bench.agent!.followup.mockClear()
+    await send({ action: 'extend', stages: [{ id: 's', title: 'Stage' }], tasks: [{ id: 't', title: 'Task', stageId: 's', kind: 'task', ownerMemberId: member.id, instruction: 'Work', criteria: ['Evidence'], inputRefs: [], artifactPaths: [], dependsOn: [] }] })
+    await tick()
+    await send({ action: 'pause', reason: 'Inspect before continuing' })
+    native.resolve({ output: [{ type: 'text', text: 'result while paused' }], stopReason: 'completed' })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { plan: { status: 'paused', tasks: [{ status: 'submitted' }] } } })
+    await send({ action: 'resume' })
+    await bench.service.engine.idle()
+    expect(bench.agent!.followup).toHaveBeenCalledOnce()
+  })
+
+  it('reconciles a recovered goal execution without replay and replaces its held uncertainty report', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const context = { actor: { kind: 'coordinator' as const, memberId: 'main' }, memberIds: new Set([member.id!]), now: Date.now() }
+    let plan = changePlan(undefined, { action: 'create', requestId: 'seed', expectedRevision: 0, id: 'recovery', objective: 'Recover evidence', mode: 'execute', budget: { maxParallel: 1, maxAttempts: 3, maxAttemptsPerTask: 2, maxActiveMs: 60000 } }, context)
+    plan = changePlan(plan, { action: 'extend', requestId: 'seed-task', expectedRevision: plan.revision, stages: [{ id: 's', title: 'Stage' }], tasks: [{ id: 't', title: 'Task', stageId: 's', kind: 'task', ownerMemberId: member.id!, instruction: 'Work', criteria: ['Evidence'], inputRefs: [], artifactPaths: [], dependsOn: [] }] }, context)
+    plan = admitPlanAttempt(queuePlanAttempt(plan, 't', 'attempt', 'native-delivery', Date.now()), 't', 'attempt', Date.now())
+    room.append('room/plan-state', plan)
+    const roster = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!roster.ok) throw new Error('room missing')
+    const mainId = roster.value.members[0]!.id!
+    const source = room.append('room/dispatch', { id: 'native-delivery', targets: ['ada'], targetIds: [member.id!], origin: 'coordinator', replyTo: mainId, text: 'Work', plan: { goalId: plan.id, taskId: 't', attemptId: 'attempt' } })
+    const deliveryId = `${source.seq}:${member.id}`
+    room.append('room/delivery-state', { id: deliveryId, dispatchSeq: source.seq, memberId: member.id!, state: 'running' })
+    room.append('room/run-state', { member: 'ada', runId: deliveryId, state: 'running', startedAt: Date.now() })
+    const recovery = new PlanService(bench.ctx, () => bench.service.engine)
+    try {
+      const before = room.snapshotEvents().length
+      expect(recovery.view(room.id, plan)).toMatchObject({ status: 'paused', tasks: [{ attempts: [{ status: 'uncertain' }] }] })
+      expect(room.snapshotEvents()).toHaveLength(before) // Inspection never writes or starts work.
+      await recovery.recover(room)
+      await bench.service.engine.recover(room)
+      await bench.service.engine.idle()
+      expect(bench.facade.resume).not.toHaveBeenCalled()
+      expect(bench.agent!.followup).not.toHaveBeenCalled()
+      const command = JSON.stringify({ action: 'reconcile', requestId: 'reconcile-once', expectedRevision: readPlan(room)!.revision, taskId: 't', attemptId: 'attempt', outcome: 'submitted', evidence: { summary: 'Artifact verified after restart', references: ['session:child-ada'], artifacts: ['result.txt'] } })
+      await recovery.command(room, command, { kind: 'human', memberId: 'human' })
+      await recovery.command(room, command, { kind: 'human', memberId: 'human' }) // Lost acknowledgement.
+      await bench.service.engine.idle()
+      expect(readPlan(room)).toMatchObject({ status: 'paused', tasks: [{ status: 'submitted' }] })
+      expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [{ member: 'ada', state: 'done' }] } })
+      const reports = room.snapshotEvents().filter(event => event.type === 'room/dispatch' && event.data.reportFor?.startsWith('reconcile:'))
+      expect(reports).toHaveLength(1)
+      const oldReport = room.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)
+      expect(oldReport).toBeDefined()
+      expect(room.snapshotEvents().some(event => event.type === 'room/delivery-state' && event.data.dispatchSeq === oldReport!.seq && event.data.state === 'cancelled')).toBe(true)
+      expect(bench.facade.resume).not.toHaveBeenCalled()
+      expect(bench.agent!.followup).not.toHaveBeenCalled()
+    } finally { recovery.dispose() }
+  })
+
+  it('pauses automation when its active-time deadline expires without requiring another command', async () => {
+    const bench = await bootRoom()
+    vi.useFakeTimers()
+    try {
+      const room = bench.ctx.sessions.get(bench.sessionId)!
+      const main = (await bench.service.getState({ sessionId: bench.sessionId }))
+      if (!main.ok) throw new Error('room missing')
+      await bench.service.plans.command(room, JSON.stringify({ action: 'create', requestId: 'deadline', expectedRevision: 0, id: 'deadline-goal', objective: 'Bounded execution', mode: 'execute', budget: { maxParallel: 1, maxAttempts: 2, maxAttemptsPerTask: 1, maxActiveMs: 100 } }), { kind: 'coordinator', memberId: main.value.members[0]!.id! })
+      await vi.advanceTimersByTimeAsync(101)
+      expect(readPlan(room)).toMatchObject({ status: 'paused', reason: 'Active-time budget exhausted', activeMs: 100 })
+      expect(bench.agent!.followup).not.toHaveBeenCalled()
+    } finally { bench.service.plans.dispose(); vi.useRealTimers() }
   })
 
   it('recovers unstarted deliveries and marks crashed in-flight work uncertain without replay', async () => {

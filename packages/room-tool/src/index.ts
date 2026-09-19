@@ -19,7 +19,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the core's `Context.room` service augmentation.
 import type {} from '@khorsheed/dsh-room'
-import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool } from '@khorsheed/dsh-room/tool'
+import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool, roomPlanTool } from '@khorsheed/dsh-room/tool'
 
 const PACKAGE_NAME = '@khorsheed/dsh-room-tool'
 
@@ -67,6 +67,7 @@ export function apply(ctx: Context): void {
   // silently never registering the tools. `ctx.inject` fires when the
   // registry appears and never fires in a composition without one.
   ctx.inject(['tools'], (toolsCtx) => {
+    if (typeof service.commandPlan === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomPlanTool(service))), 'room-tool: room_plan tool')
     if (typeof service.readRoomContext === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomReadTool(service))), 'room-tool: room_read tool')
     toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomInviteTool(service))), 'room-tool: room_invite tool')
     toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomTaskTool(service))), 'room-tool: room_task tool')

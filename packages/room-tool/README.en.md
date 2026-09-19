@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The companion tool row of `@khorsheed/dsh-room`: the model-facing room tools (`room_read` / `room_invite` / `room_task` / `room_message` — read room context, invite CLI members, write the shared task board, dispatch messages to members), **granted per session** — present only in sessions whose agent preset composition names it. The second core/companion pair of the tool-row decoupling (M4'②, proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
+The companion tool row of `@khorsheed/dsh-room`: the model-facing room tools (`room_read` / `room_plan` / `room_invite` / `room_task` / `room_message` — read room context, organize goals with evidence review, invite CLI members, write the shared task board, dispatch messages to members), **granted per session** — present only in sessions whose agent preset composition names it. The second core/companion pair of the tool-row decoupling (M4'②, proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
 
 ## Shape: a companion package that never self-mounts
 
@@ -30,6 +30,8 @@ dsh plugin --profile web add @khorsheed/dsh-room-tool
 ```
 
 The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carries this row; its `install.sh`/`update.sh` drops the preset into `$DSH_HOME/.agent-presets/dev`.
+
+Formal planning is optional. Small work uses `room_message`; `room_plan` creates draft or executable goals, stages, task dependencies and reviewed attempts. `room_read` supplies the current plan and the shared command schema. Execution completion is a submission, not acceptance. Workers may submit only their own active attempt; review and organization belong to the coordinator or human. Budget changes and uncertain-execution reconciliation require the human. The planning tool degrades to absent on a core without its backend.
 
 ## Compatibility
 

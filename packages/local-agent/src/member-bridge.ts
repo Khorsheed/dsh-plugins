@@ -42,6 +42,8 @@ const TOOL_SCHEMA = {
 } as const
 
 const ROOM_TOOLS = [
+  { name: 'room_plan', description: 'Manage a formal goal with stages, dependent tasks and evidence review. Read room_read for plan state and the command contract. Ordinary small work uses room_message. Workers may submit only their own current attempt.',
+    inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'JSON command with action, requestId and expectedRevision; see room_read planCommands.' } }, required: ['command'], additionalProperties: false } },
   { name: 'room_read', description: 'Read your room roster, coordinator, deliveries, recent outcomes and available harness providers. Identity comes from the host.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'room_invite', description: 'Coordinator only: invite a member. An optional firstTask starts in the background and returns its result to you automatically.',

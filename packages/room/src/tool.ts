@@ -396,3 +396,20 @@ export function roomReadTool(backend: { readRoomContext(sessionId: string): Prom
     },
   })
 }
+
+/** Formal planning uses the same strict command grammar exposed by room_read. */
+export function roomPlanTool(backend: { commandPlan(sessionId: string, command: string): Promise<string> }) {
+  return defineTool({
+    name: 'room_plan',
+    description: 'Organize a requested goal into stages and dependent tasks, submit evidence, review/rework results, and pause/resume. Read room_read for current plan and planCommands JSON schema. Ordinary small tasks use room_message without a formal goal. A native run finishing only submits a result; acceptance requires evidence review.',
+    parameters: { command: { type: 'string', required: true, description: 'JSON command matching room_read planCommands: action, requestId, expectedRevision and action fields. Create mode execute is for authorized execution; draft saves a proposal without dispatch.' } },
+    output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.text }] },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      if (exec.agent === undefined) return { text: 'room_plan requires a calling agent.' }
+      try { return { text: await backend.commandPlan(exec.agent.session.id, args.command) } }
+      catch (error) { return { text: String(error) } }
+    },
+  })
+}

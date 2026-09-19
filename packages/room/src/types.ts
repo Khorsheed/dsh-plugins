@@ -6,6 +6,7 @@
  * type-side, and the client bundle never inlines host runtime code.
  * @module @khorsheed/dsh-room/types
  */
+import type { RoomPlan } from './plan.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /**
@@ -108,6 +109,8 @@ export interface RoomMemberRemovedEvent {
  * log.
  */
 export interface RoomDispatchEvent {
+  /** Goal work/report correlation, absent for ordinary chat. */
+  readonly plan?: { readonly goalId: string; readonly taskId?: string; readonly attemptId?: string }
   /** Fingerprint of the original human request, independent of later roster/role changes. */
   readonly requestSignature?: string
   /** Caller retry identity, persisted before accepting input. */
@@ -326,6 +329,7 @@ export interface RoomMemberRun {
  * design note).
  */
 export interface RoomState {
+  readonly plan?: Omit<RoomPlan, 'requests'>
   readonly deliveries?: readonly RoomDelivery[]
   readonly coordinator?: RoomCoordinatorEvent
   readonly members: readonly RoomMember[]
@@ -711,6 +715,7 @@ export interface RoomDeliveryStateEvent {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    'room/plan-state': RoomPlan
     'room/coordinator': RoomCoordinatorEvent
     'room/delivery-state': RoomDeliveryStateEvent
   }

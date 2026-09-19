@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-`@khorsheed/dsh-room` 的伴生工具行：模型可见的 room 工具（`room_read` / `room_invite` / `room_task` / `room_message`——读取房间上下文、邀请 CLI 成员、写共享任务板、向成员分发消息），**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。单实例多模式（提案 2026-08-26）工具行解耦的第二对（M4'②）：社区插件的模型工具行只进 preset、不进 profile 根。
+`@khorsheed/dsh-room` 的伴生工具行：模型可见的 room 工具（`room_read` / `room_plan` / `room_invite` / `room_task` / `room_message`——读取房间上下文、组织目标及证据验收、邀请 CLI 成员、写共享任务板、向成员分发消息），**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。单实例多模式（提案 2026-08-26）工具行解耦的第二对（M4'②）：社区插件的模型工具行只进 preset、不进 profile 根。
 
 ## 形态：不自挂载的伴生包
 
@@ -30,6 +30,8 @@ dsh plugin --profile web add @khorsheed/dsh-room-tool
 ```
 
 web-dev 场景包的开发模式 preset（`profiles/web-dev/presets/dev`）已带此行，`install.sh`/`update.sh` 会把 preset 卸进 `$DSH_HOME/.agent-presets/dev`。
+
+正式计划是可选能力。小事使用 `room_message`；`room_plan` 建立草稿或可执行目标、阶段、任务依赖及验收尝试。`room_read` 提供当前计划和共用命令语法。执行结束只代表提交，不直接验收。执行成员只能提交自己的活跃尝试，验收与组织由协调者或人类负责；修改预算和不确定执行对账须由人类完成。Core 缺少对应后端时，不注册计划工具。
 
 ## Compatibility
 

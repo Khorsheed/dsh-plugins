@@ -21,6 +21,7 @@
     "src/client/RoomEventView.tsx",
     "src/client/RoomModelPicker.tsx",
     "src/client/RoomQueueStrip.tsx",
+    "src/client/RoomPlanView.tsx",
     "src/client/RoomRelayView.tsx",
     "src/client/RoomRunView.tsx",
     "src/client/RoomSpeechView.tsx",
@@ -40,6 +41,7 @@
     "src/css-modules.d.ts",
     "src/journal.ts",
     "src/types.ts",
+    "src/plan.ts",
     "src/deliveries.ts"
   ]
 }

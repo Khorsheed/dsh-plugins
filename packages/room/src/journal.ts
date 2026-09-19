@@ -37,6 +37,7 @@ export const MAIN_AGENT_MEMBER = 'main'
  */
 export const ROOM_EVENT_TYPES = [
   'room/created',
+  'room/plan-state',
   'room/coordinator',
   'room/delivery-state',
   'room/member-added',
@@ -302,8 +303,10 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
     }
   }
+  const planEvent = events.filter(event => event.type === 'room/plan-state').at(-1)
+  const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
-  return { members, relays, tasks, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
+  return { members, relays, tasks, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
 }
 
 /**
