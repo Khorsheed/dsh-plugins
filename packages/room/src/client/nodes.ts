@@ -183,8 +183,9 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
   update: (context, match) => {
     const event = match.event
     if (event.type !== 'room/run-state') return context.state
+    const { error: _error, elapsedMs: _elapsed, ...previous } = context.state
     return {
-      ...context.state,
+      ...previous,
       state: event.data.state,
       ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
       ...event.data.error === undefined ? {} : { error: event.data.error },

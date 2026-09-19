@@ -31,7 +31,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   if (data.state === 'done' || data.state === 'cancelled') return null
 
   const failed = data.state === 'failed'
-  const elapsed = failed ? (data.elapsedMs ?? 0) : Math.max(0, now - data.startedAt)
+  const elapsed = failed ? data.elapsedMs : Math.max(0, now - data.startedAt)
   const jump = (): void => {
     if (childSessionId !== undefined) openSession(childSessionId)
   }
@@ -55,7 +55,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       <span className={css.title}>
         {failed ? t('run.failed', { member: data.member }) : t('run.working', { member: data.member })}
       </span>
-      <span className={css.elapsed} aria-hidden>· {formatDurationMs(elapsed)}</span>
+      <span className={css.elapsed} aria-hidden>· {elapsed === undefined ? t('run.durationUnknown') : formatDurationMs(elapsed)}</span>
       {failed && data.error !== undefined && (
         <span className={css.reason} title={data.error}>{data.error}</span>
       )}

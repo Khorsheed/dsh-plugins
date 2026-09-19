@@ -956,6 +956,38 @@ describe('coordinator routing and durable deliveries', () => {
     expect(bench.agent!.followup).toHaveBeenCalledOnce()
   })
 
+  it.each([true, false])('closing a goal retires held reports and preserves an active result (settled before closing: %s)', async (settledBefore) => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    const native = deferred<SubagentResult>()
+    bench.facade.resume.mockImplementation(async () => ({ ...settledRun('child-ada', ''), result: native.promise }))
+    let id = 0
+    const send = async (operation: Record<string, unknown>) => {
+      const state = await bench.service.getState({ sessionId: bench.sessionId })
+      if (!state.ok) throw new Error('room missing')
+      expect(await bench.service.planCommand({ sessionId: bench.sessionId, command: JSON.stringify({ requestId: `close-${id++}`, expectedRevision: state.value.plan?.revision ?? 0, ...operation }) })).toEqual({ ok: true })
+    }
+    await send({ action: 'create', id: 'closing-goal', objective: 'Close work', mode: 'execute', budget: { maxParallel: 1, maxAttempts: 2, maxAttemptsPerTask: 1, maxActiveMs: 60000 } })
+    await bench.service.engine.idle()
+    bench.agent!.followup.mockClear()
+    await send({ action: 'extend', stages: [{ id: 's', title: 'Stage' }], tasks: [{ id: 't', title: 'Task', stageId: 's', kind: 'task', ownerMemberId: member.id, instruction: 'Work', criteria: ['Evidence'], inputRefs: [], artifactPaths: [], dependsOn: [] }] })
+    await tick()
+    await send({ action: 'pause', reason: 'Review first' })
+    const finish = async () => { native.resolve({ output: [{ type: 'text', text: 'retained result' }], stopReason: 'completed' }); await bench.service.engine.idle() }
+    if (settledBefore) await finish()
+    await send({ action: 'cancel', reason: 'No further automation' })
+    if (!settledBefore) await finish()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    const result = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!result.ok) throw new Error('room missing')
+    expect(result.value.plan).toMatchObject({ status: 'cancelled', tasks: [{ attempts: [{ submission: { summary: 'retained result' } }] }] })
+    expect(result.value.deliveries?.filter(row => row.plan?.goalId === 'closing-goal' && row.status === 'queued')).toEqual([])
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
   it('reconciles a recovered goal execution without replay and replaces its held uncertainty report', async () => {
     const bench = await bootRoom()
     const member = await preparedMember(bench)
@@ -1035,6 +1067,7 @@ describe('coordinator routing and durable deliveries', () => {
     await bench.service.engine.idle()
     expect(bench.facade.resume).not.toHaveBeenCalled()
     expect(await bench.service.reconcileDelivery({ sessionId: bench.sessionId, deliveryId: `${started.seq}:${member.id}`, outcome: 'cancelled', evidence: 'Reviewed native transcript and cancelled the uncertain attempt' })).toEqual({ ok: true })
+    expect(session.snapshotEvents().some(event => event.type === 'room/run-state' && event.data.runId === `${started.seq}:${member.id}` && event.data.state === 'cancelled')).toBe(true)
     await bench.service.engine.idle()
     expect(bench.facade.resume).toHaveBeenCalledTimes(1)
     expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('next')

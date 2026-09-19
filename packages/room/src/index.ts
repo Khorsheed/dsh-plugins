@@ -540,6 +540,8 @@ export class RoomService extends TypertRemoteService {
     if (delivery.plan?.taskId !== undefined) return { ok: false, error: { code: 'plan-reconciliation-required' } }
     if (request.evidence.trim() === '') return { ok: false, error: { code: 'empty-text' } }
     loaded.session.append('room/delivery-state', { id: delivery.id, dispatchSeq: delivery.dispatchSeq, memberId: delivery.memberId, state: request.outcome, text: request.evidence.trim() })
+    const run = loaded.state.runs.find(run => run.runId === delivery.id)
+    if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: delivery.id, startedAt: run.startedAt, state: request.outcome })
     await this.ctx.sessions.flush(loaded.session)
     await this.engine.recover(loaded.session)
     return { ok: true }

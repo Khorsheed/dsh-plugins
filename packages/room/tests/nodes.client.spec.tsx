@@ -122,6 +122,10 @@ describe('room node Definitions', () => {
       { event: done, role: 'update', location: { kind: 'unresolved' } } as never,
     )
     expect(settled).toEqual({ seq: 3, time: 1003, member: 'ada', startedAt: 100, state: 'done', elapsedMs: 900 })
+    const reconciled = roomRunDefinition.update(contextOf({ ...started, state: 'failed', error: 'unknown outcome', elapsedMs: 900 }) as never,
+      { event: ev('room/run-state', 6, { member: 'ada', state: 'done', startedAt: 100 }), role: 'update', location: { kind: 'unresolved' } } as never)
+    expect(reconciled.error).toBeUndefined()
+    expect(reconciled.elapsedMs).toBeUndefined()
     // done/cancelled hide in place (the assembler forbids withdrawing a
     // materialized node with null); failed stays visible.
     expect(roomRunDefinition.buildViewNode!(contextOf(settled)))
@@ -349,6 +353,7 @@ describe('RoomRunView', () => {
       roomStore, openSession: vi.fn(), cancelMember: vi.fn(), renderMemberOutput: output, t } as unknown as RoomRunViewProps
     render(<RoomRunView {...props} />)
     expect(screen.getByText('Unknown outcome after restart')).toBeDefined()
+    expect(screen.getByText('· 耗时未知')).toBeDefined()
     expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
     expect(output).not.toHaveBeenCalled()
   })

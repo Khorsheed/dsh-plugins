@@ -184,6 +184,8 @@ describe('formal room goal transitions', () => {
     expect(() => change(plan, reconcile)).toThrow('Only a human')
     plan = change(plan, reconcile, human)
     expect(plan.status).toBe('paused')
+    expect(plan.reason).toBe('Interrupted attempts reconciled; review and resume explicitly')
+    expect(plan.tasks[0]!.attempts[0]!.error).toBeUndefined()
     expect(change(plan, { action: 'resume' }, human).status).toBe('running')
   })
 

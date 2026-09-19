@@ -96,7 +96,7 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
       <div className={css.actions}>
         {owner?.childSessionId && openSession && <button type="button" onClick={() => openSession(owner.childSessionId!)}>{t('plan.session')}</button>}
         {owner && stopMember && attempt?.startedAt !== undefined && attempt.settledAt === undefined && ['running', 'submitted'].includes(attempt.status) && <button type="button" onClick={() => stopMember(owner.name)}>{t('composer.stop')}</button>}
-        {(reviewable || uncertain || task.status === 'failed') && <button type="button" onClick={() => { setReviewTask(task.id); setGoalControls(false); setReason(''); setReferences(''); setArtifacts('') }}>{t(uncertain ? 'plan.reconcile' : reviewable ? 'plan.review' : 'plan.retry')}</button>}
+        {(uncertain || (!closed && (reviewable || task.status === 'failed'))) && <button type="button" onClick={() => { setReviewTask(task.id); setGoalControls(false); setReason(''); setReferences(''); setArtifacts('') }}>{t(uncertain ? 'plan.reconcile' : reviewable ? 'plan.review' : 'plan.retry')}</button>}
       </div>
       {reviewTask === task.id && attempt && <div className={css.review}>
         {evidenceFields}

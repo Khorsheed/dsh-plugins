@@ -108,7 +108,7 @@ export class PlanService {
       await this.pump(room)
       if (wake !== undefined && coordinator !== undefined) this.engine().dispatch(room, coordinator.name, wake.data.text, { dispatchSeq: wake.seq, targetId: memberId(events, coordinator) })
       // Resumption can release durable reports and reservations that survived a pause.
-      if (command.action === 'resume') await this.engine().recover(room)
+      if (command.action === 'resume' || command.action === 'cancel' || command.action === 'complete') await this.engine().recover(room)
       return readPlan(room)!
     })
   }
@@ -162,7 +162,8 @@ export class PlanService {
       const deliveryId = `${dispatch.seq}:${target}`
       const member = state.members.find(member => memberId(events, member) === target)
       const run = state.runs.find(run => run.member === member?.name)
-      if (run?.runId === deliveryId && ['running', 'failed'].includes(run.state)) room.append('room/run-state', { member: run.member, runId: run.runId, startedAt: run.startedAt, state: attempt.status === 'submitted' ? 'done' : 'failed' })
+      if (run?.runId === deliveryId && ['running', 'failed'].includes(run.state)) room.append('room/run-state', { member: run.member, runId: run.runId, startedAt: run.startedAt, state: attempt.status === 'submitted' ? 'done' : 'failed',
+        ...attempt.status === 'failed' ? { error: attempt.submission?.summary ?? 'Human reconciled the attempt as failed' } : {} })
       room.append('room/delivery-state', { id: deliveryId, dispatchSeq: dispatch.seq, memberId: target,
         state: attempt.status === 'submitted' ? 'done' : 'failed', text: attempt.submission?.summary ?? 'Human reconciliation' })
       for (const oldReport of events) {

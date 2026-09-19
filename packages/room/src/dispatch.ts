@@ -33,6 +33,11 @@ import type { RoomMember, RoomRelay, RoomState } from './types.ts'
 /** Plugin tag carried by the main-agent followup's message source. */
 export const ROOM_PLUGIN = '@khorsheed/dsh-room'
 
+function closedGoal(state: RoomState, goalId: string | undefined): boolean {
+  return goalId !== undefined && state.plan !== undefined
+    && (state.plan.id !== goalId || ['completed', 'cancelled'].includes(state.plan.status))
+}
+
 /** Extra dispatch context beyond the text. */
 export interface DispatchOptions {
   /**
@@ -190,8 +195,9 @@ export class DispatchEngine {
     const error = 'Execution outcome is unknown after restart; reconcile before retrying'
     return {
       ...state,
-      ...state.deliveries === undefined ? {} : { deliveries: state.deliveries.map(row => row.status === 'running' && !this.scheduled.has(`${sessionId}:${row.id}`)
-        ? { ...row, status: 'uncertain' as const, error } : row) },
+      ...state.deliveries === undefined ? {} : { deliveries: state.deliveries.map(row => row.status === 'queued' && closedGoal(state, row.plan?.goalId)
+        ? { ...row, status: 'cancelled' as const } : row.status === 'running' && !this.scheduled.has(`${sessionId}:${row.id}`)
+          ? { ...row, status: 'uncertain' as const, error } : row) },
       runs: state.runs.map(run => {
         const member = state.members.find(row => row.name === run.member)
         const active = run.runId === undefined
@@ -213,6 +219,11 @@ export class DispatchEngine {
         if (this.scheduled.has(`${room.id}:${id}`)) continue
         const edges = events.filter(event => event.type === 'room/delivery-state' && event.data.id === id)
         const last = edges.at(-1)
+        if (last === undefined && closedGoal(state, dispatch.data.plan?.goalId)) {
+          room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'cancelled', error: 'Goal closed before delivery admission' })
+          await this.ctx.sessions.flush(room)
+          continue
+        }
         if (last?.type === 'room/delivery-state') {
           if (last.data.state === 'running') {
             room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'uncertain', error: 'Host restarted before a durable settlement; reconcile before retrying' })
@@ -284,6 +295,7 @@ export class DispatchEngine {
     if (source?.type !== 'room/dispatch' || source.data.origin !== 'coordinator' || source.data.replyTo === undefined) return
     if (events.some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
     const state = replay(events)
+    if (closedGoal(state, source.data.plan?.goalId)) return
     const recipient = source.data.plan === undefined ? state.members.find(member => memberId(events, member) === source.data.replyTo) : coordinatorMember(state, events)
     const sender = state.members.find(member => memberId(events, member) === fromId)
     if (recipient === undefined) return

@@ -233,7 +233,10 @@ export function changePlan(current: RoomPlan | undefined, command: PlanCommand, 
         break
       case 'cancel':
         nonempty(command.reason, 'Cancellation reason'); stopClock(plan, context.now); plan.status = 'cancelled'; plan.reason = command.reason
-        for (const task of plan.tasks) if (task.status === 'pending') task.status = 'cancelled'
+        for (const task of plan.tasks) if (task.status === 'pending') {
+          task.status = 'cancelled'
+          for (const attempt of task.attempts) if (attempt.status === 'queued') { attempt.status = 'cancelled'; attempt.settledAt = context.now }
+        }
         break
       case 'submit': {
         const [task, attempt] = taskAndAttempt(plan, command.taskId, command.attemptId)
@@ -266,7 +269,11 @@ export function changePlan(current: RoomPlan | undefined, command: PlanCommand, 
         if (attempt.status !== 'uncertain') throw new Error('Attempt is not uncertain')
         evidence(command.evidence); attempt.submission = structuredClone(command.evidence)
         attempt.status = command.outcome; attempt.settledAt = context.now
+        delete attempt.error
         task.status = command.outcome === 'submitted' ? 'submitted' : 'failed'
+        if (plan.reason === 'Reconcile uncertain attempts before continuing' && !activePlanAttempts(plan).some(attempt => attempt.status === 'uncertain')) {
+          plan.reason = 'Interrupted attempts reconciled; review and resume explicitly'
+        }
         break
       }
       case 'complete':
