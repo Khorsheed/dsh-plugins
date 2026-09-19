@@ -78,6 +78,7 @@ import {
   readSession,
   rememberScroll,
   rememberTranslation,
+  rememberWallScroll,
   rememberTranslator,
   type ReaderSessionSnapshot,
 } from './session.ts'
@@ -316,6 +317,17 @@ function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
 const BACKFILL_CONCURRENCY = 2
 
 /**
+ * How many animation frames a restored reading position keeps trying.
+ *
+ * A body can still be growing when it first renders (images decoding, fonts
+ * settling, the real page arriving after the feed's summary), and an offset that
+ * cannot be reached yet is silently clamped. ~half a second of retries covers
+ * that without ever becoming a polling loop: it stops the moment the scroller is
+ * tall enough, or the reader scrolls for themselves.
+ */
+const SCROLL_SETTLE_ATTEMPTS = 30
+
+/**
  * Rebuild one entry from a 「最近阅读」 record.
  *
  * The feed that published an entry may have rolled it out of its window, and
@@ -409,8 +421,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const openedRef = useRef<string | null>(null)
   /** The entry the restore has dealt with, whether or not it could be reopened. */
   const restoredOpenRef = useRef<string | null>(null)
-  /** A reading position waiting for its body to be on screen. */
-  const pendingScrollRef = useRef<{ entryId: string; top: number } | null>(null)
+  /** The offset the LAST programmatic scroll landed on, so its echo is not saved. */
+  const scrollEchoRef = useRef<number | null>(null)
+  /** The same for the wall's scroller. */
+  const wallEchoRef = useRef<number | null>(null)
+  /** The wall's position is put back once per entry into the list view. */
+  const wallRestoredRef = useRef(false)
   /** True once the host's recent list has been read at least once. */
   const recentLoadedRef = useRef(false)
 
@@ -1445,24 +1461,45 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     restoredOpenRef.current = wanted
     const row = rowFor(entry, presentation, read)
     if (row === undefined) return
-    const top = readSession().scroll?.[wanted]
-    if (top !== undefined) pendingScrollRef.current = { entryId: wanted, top }
     void open(row)
   }, [allEntries, openEntryId, presentation, read, loading, open, entryById])
 
   /**
    * Put the reader back where they were inside the article.
    *
-   * Applied to the SCROLLER and only once the body it belongs to is on screen:
-   * an offset set earlier clamps against a shorter page and is lost.
+   * The SAVED position is the target, and it is re-applied whenever the body is
+   * (re)built — a restored pane, a re-opened entry, a re-fetch landing after the
+   * summary, an element React recreated. One application was not enough: a body
+   * that arrives in two steps (the feed's summary first, the real page after the
+   * fetch) clamps the offset against the short version and then leaves the
+   * reader at the top of the long one.
+   *
+   * While the body is too short to reach the offset the assignment is retried
+   * for a short window (images decode, fonts settle, a fetch is in flight). A
+   * programmatic assignment also fires a `scroll` event, so the echo carries the
+   * value the browser actually accepted; `onDetailScroll` recognises it and does
+   * not mistake it for the reader.
    */
   useEffect(() => {
-    const pending = pendingScrollRef.current
-    if (pending === null || pending.entryId !== openEntryId) return
-    const scroller = detailRef.current
-    if (scroller === null || articleHtml === null) return
-    scroller.scrollTop = pending.top
-    pendingScrollRef.current = null
+    if (openEntryId === null || articleHtml === null) return undefined
+    let frame = 0
+    let attempt = 0
+    const apply = (): void => {
+      const scroller = detailRef.current
+      const target = readSession().scroll?.[openEntryId]
+      if (scroller === null || target === undefined || target <= 0) return
+      scroller.scrollTop = target
+      // What the browser accepted, which is the value the echo will carry (a
+      // short body clamps it, and that echo must not overwrite the target).
+      scrollEchoRef.current = scroller.scrollTop
+      attempt += 1
+      if (scroller.scrollHeight >= target + scroller.clientHeight || attempt >= SCROLL_SETTLE_ATTEMPTS) return
+      frame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(apply) : 0
+    }
+    apply()
+    return () => {
+      if (frame !== 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame)
+    }
   }, [openEntryId, articleHtml])
 
   /**
@@ -1471,12 +1508,56 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * Deliberately unthrottled: the write is one shallow spread of a small record,
    * and a throttle that drops the trailing event is exactly how a reading
    * position ends up one scroll behind the reader.
+   *
+   * Only the READER's own scrolling is recorded. Setting `scrollTop` to restore
+   * a position fires this handler too, and saving that echo would either be a
+   * no-op or — when the body was too short and clamped it — overwrite the real
+   * target with the clamped value, which is how a long article ends up at the
+   * top.
    */
   const onDetailScroll = useCallback(() => {
     const scroller = detailRef.current
     if (scroller === null || openEntryId === null) return
+    if (scrollEchoRef.current !== null && Math.abs(scroller.scrollTop - scrollEchoRef.current) < 2) {
+      scrollEchoRef.current = null
+      return
+    }
+    scrollEchoRef.current = null
     rememberScroll(openEntryId, scroller.scrollTop)
   }, [openEntryId])
+
+  /**
+   * Remember where the reader had scrolled the WALL itself.
+   *
+   * Same rule as the article: only the reader's own scrolling is recorded, so
+   * the echo of a restore never becomes the new target.
+   */
+  const onWallScroll = useCallback(() => {
+    const scroller = wallRef.current
+    if (scroller === null) return
+    if (wallEchoRef.current !== null && Math.abs(scroller.scrollTop - wallEchoRef.current) < 2) {
+      wallEchoRef.current = null
+      return
+    }
+    wallEchoRef.current = null
+    rememberWallScroll(scroller.scrollTop)
+  }, [])
+
+  // Put the wall back where it was, once per entry into the list view: a long
+  // wall that jumps to the top on every panel switch is the same complaint as a
+  // lost reading position. Re-applying it whenever the ROWS change would fight
+  // the reader's own filtering.
+  useEffect(() => {
+    if (view !== 'list') { wallRestoredRef.current = false; return }
+    if (wallRestoredRef.current) return
+    const scroller = wallRef.current
+    if (scroller === null || rows.length === 0) return
+    wallRestoredRef.current = true
+    const target = readSession().wallScroll
+    if (target === undefined || target <= 0) return
+    scroller.scrollTop = target
+    wallEchoRef.current = scroller.scrollTop
+  }, [view, rows.length])
 
   /**
    * A rebuilt body means the old segmentation died with the old DOM — so the
@@ -2960,7 +3041,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         </div>
       )}
 
-      <div className={css.scroll} ref={wallRef}>
+      <div className={css.scroll} ref={wallRef} onScroll={onWallScroll}>
         {loading && <div className={css.state}>{t('state.loading')}</div>}
         {!loading && error !== null && <div className={css.state}><b>{t('state.error')}</b>{error}</div>}
         {!loading && error === null && sources.length === 0 && (
