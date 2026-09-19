@@ -172,7 +172,10 @@ export class RoomStore {
     if (this.current === undefined) return
     // Optional-call: the ISessions contract always provides binding, but a
     // test double is allowed to omit it (no live feed in that bench).
-    const face = this.ctx.sessions.binding?.(this.current)?.session
+    const binding = this.ctx.sessions.binding?.(this.current)
+    // The session summary no longer notifies for arbitrary journal appends.
+    // Observe the public event window as a refresh signal, without folding it.
+    const face = binding?.eventSource ?? binding?.session
     if (face === undefined) return
     this.liveUnsubscribe = face.subscribe(() => { this.onLiveEvent() })
     this.liveAttached = this.current

@@ -31,7 +31,8 @@ function bench(): Bench {
       list,
       binding: (id: SessionId) => {
         const feed = live.get(id)
-        return feed === undefined ? undefined : { sessionId: id, session: feed }
+        // Host summary can remain unchanged while room journal events append.
+        return feed === undefined ? undefined : { sessionId: id, session: createSnapshotStore({}), eventSource: feed }
       },
     },
   } as unknown as Context
