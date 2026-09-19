@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -188,9 +188,11 @@ describe('LocalAgentGateway member channel', () => {
     ctx.provide('subagents', {
       getProvider: (name: string) => name === PROVIDER ? { name } : undefined,
       start: (_name: string, request: SubagentStartRequest) => {
-        requests.push(request)
-        h.registry.takeDelegationIntent(request.parent.session.id, PROVIDER)
-        return Promise.resolve(makeRun(CHILD, request.signal).run)
+        const intent = h.registry.takeDelegationIntent(request.parent.session.id, PROVIDER)
+        return h.registry.withMemberConfigurationRound({ childSessionId: CHILD, parentSessionId: PARENT, provider: PROVIDER, cwd: '/home/user/work' }, async () => {
+          requests.push(request)
+          return makeRun(CHILD, request.signal).run
+        }, request.signal, intent?.onAdmitted)
       },
     })
     await ctx.plugin(localAgent, { homesRoot: tempHome('gw-member-') })
@@ -199,13 +201,17 @@ describe('LocalAgentGateway member channel', () => {
     h.registry.register(harness({
       name: 'fake',
       delegationProvider: PROVIDER,
-      ...options.broker === undefined ? {} : { modelBroker: options.broker },
+      modelBroker: options.broker ?? { modelInfo: () => ({ choices: [], switchable: true }), configurationAdapter: () => ({
+        validate: async () => {}, prepare: async () => ({ model: 'fake-model' }), apply: async () => ({ model: 'fake-model' }),
+        reconcile: async () => ({ active: false, matches: 'current', resolved: { model: 'fake-model' } }),
+      }) },
     }))
     h.registry.recordDelegation({
       childSessionId: CHILD,
       provider: PROVIDER,
       parentSessionId: PARENT,
       cliSessionId: 'cli-42',
+      cwd: '/home/user/work',
       ...options.observedModel === undefined ? {} : { observedModel: options.observedModel },
     })
     // A live child session keeps resume off the reattach path (no persistence fake needed).
@@ -234,8 +240,8 @@ describe('LocalAgentGateway member channel', () => {
 
     const result = await h.gateway.promptMember(CHILD, 'hello member')
 
-    expect(result).toEqual({ ok: true })
-    expect(h.requests).toHaveLength(1)
+    expect(result).toMatchObject({ ok: true, requestId: expect.any(String) })
+    await vi.waitFor(() => expect(h.requests).toHaveLength(1))
     // The facade resolved the parent/provider from the record, and the prompt
     // carries only the human text — never the CLI-session resume handle.
     expect(h.requests[0]?.parent.session.id).toBe(PARENT)
@@ -267,17 +273,27 @@ describe('LocalAgentGateway member channel', () => {
     expect(h.requests).toHaveLength(0)
   })
 
-  it('promptMember returns a structured error while a resume is in flight', async () => {
+  it('accepts another input while a round runs and hands it to the same provider FIFO', async () => {
     const h = await mountMember()
     h.enterParent(PARENT)
-    expect(h.registry.acquireResumeLock(CHILD)).toBe(true)
+    expect(await h.gateway.promptMember(CHILD, 'first', 'one')).toMatchObject({ ok: true })
+    await vi.waitFor(() => expect(h.requests).toHaveLength(1))
+    expect(await h.gateway.promptMember(CHILD, 'second', 'two')).toEqual({ ok: true, requestId: 'two' })
+    expect(h.gateway.memberInbox(CHILD).messages.map(row => row.status)).toEqual(['running', 'queued'])
+    expect(h.gateway.stopMember(CHILD)).toBe(true)
+    await vi.waitFor(() => expect(h.requests).toHaveLength(2))
+    expect(h.requests[1]!.prompt).toEqual([{ type: 'text', text: 'second' }])
+    h.gateway.stopMember(CHILD)
+    await h.ctx.fiber.dispose()
+  })
 
-    const result = await h.gateway.promptMember(CHILD, 'hello member')
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toMatch(/in-flight resume/)
+  it('does not accept extra human input into a frozen evaluation member', async () => {
+    const h = await mountMember()
+    h.enterParent(PARENT)
+    h.registry.recordDelegation({ ...h.registry.getDelegation(CHILD)!, configurationLock: 'frozen-condition' })
+    expect(await h.gateway.promptMember(CHILD, 'extra input', 'frozen-extra')).toMatchObject({ ok: false, error: expect.stringContaining('Frozen evaluation') })
     expect(h.requests).toHaveLength(0)
-    h.registry.releaseResumeLock(CHILD)
+    await h.ctx.fiber.dispose()
   })
 
   it('stopMember aborts the tracked run and reports false on a miss', async () => {
@@ -286,6 +302,7 @@ describe('LocalAgentGateway member channel', () => {
     expect(h.gateway.stopMember(CHILD)).toBe(false)
 
     await h.gateway.promptMember(CHILD, 'hello member')
+    await vi.waitFor(() => expect(h.requests).toHaveLength(1))
     expect(h.gateway.stopMember(CHILD)).toBe(true)
     expect(h.requests[0]?.signal.aborted).toBe(true)
 

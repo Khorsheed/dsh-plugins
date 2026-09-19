@@ -361,7 +361,22 @@ export interface LocalAgentDelegationView {
  * structured errors for the composer to render inline, never as raw exceptions
  * over the wire.
  */
-export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
+export interface LocalAgentMemberInput {
+  id: string
+  text: string
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'uncertain'
+  createdAt: number
+  updatedAt: number
+  error?: string
+}
+export interface LocalAgentMemberInbox {
+  memberId: string
+  paused: boolean
+  error?: string
+  messages: LocalAgentMemberInput[]
+}
+
+export type LocalAgentPromptResult = { ok: true; requestId?: string } | { ok: false; error: string }
 
 /**
  * Where a member's effective model comes from, in the family's fixed
@@ -678,6 +693,7 @@ export interface LocalAgentMemberRun {
 export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'fresh'
+    readonly onAdmitted?: () => void
     readonly preparedMemberId?: string
     readonly effort?: string
     readonly configurationLock?: string
@@ -709,6 +725,7 @@ export type LocalAgentDelegationIntent =
   }
   | {
     readonly kind: 'resume'
+    readonly onAdmitted?: () => void
     /** The dsh child session id to continue (the resume handle). */
     readonly childSessionId: string
     /** The CLI session id the resume command continues. */
@@ -847,6 +864,8 @@ export interface DelegationExecTarget {
  * it without changing the existing fields.
  */
 export interface DelegationCallOptions {
+  /** Host-only durable input edge, executed at the provider admission boundary. */
+  readonly onAdmitted?: () => void
   /** Reserved identity returned by prepareMember; never a caller-selected resume override. */
   readonly preparedMemberId?: string
   /** Native reasoning value, fixed at creation unless changed through member controls. */

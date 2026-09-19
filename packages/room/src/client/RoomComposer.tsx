@@ -95,7 +95,7 @@ export function selectRoomComposer(
 export function RoomComposer({
   sessionId, roomStore, submit, stop, addTask, closeTask, setGoal,
   roomCwd, invite, listProviders, listNames, browseDirectory, modelSurface, renderHarnessModelPicker, roomChrome,
-  modelDirectory, renderMemberConfiguration, stopMember, useSession, useProjection, t,
+  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, useSession, useProjection, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
@@ -311,7 +311,8 @@ export function RoomComposer({
           fallback; re-rendered here from the same projections. The framework
           omits the seat entirely on a host without the projection subsystem —
           degrade to no row. */}
-      {useProjection !== undefined && <RoomStatsLine useProjection={useProjection} t={t} />}
+      {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
+      {!external && useProjection !== undefined && <RoomStatsLine useProjection={useProjection} t={t} />}
     </div>
   )
 }

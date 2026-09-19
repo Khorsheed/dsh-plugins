@@ -21,6 +21,7 @@
     "src/member-control-storage.ts",
     "src/live-stream.ts",
     "src/member-controls.ts",
-    "src/prepared-members.ts"
+    "src/prepared-members.ts",
+    "src/member-inbox.ts"
   ]
 }

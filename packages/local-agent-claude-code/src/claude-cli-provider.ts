@@ -271,7 +271,7 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...record?.model === undefined ? {} : { model: record.model },
         ...record?.effort === undefined ? {} : { effort: record.effort },
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
-      }, configuration => this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration))
+      }, configuration => this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
     }
     const childSessionId = SessionId(intent?.preparedMemberId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
@@ -284,7 +284,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       ...intent?.model === undefined ? {} : { model: intent.model },
       ...intent?.effort === undefined ? {} : { effort: intent.effort },
       ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
-    }, configuration => this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration))
+    }, configuration => this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted)
   }
 
   /** Fresh round: record the child session, spawn `claude -p`, append after settle. */

@@ -44,6 +44,7 @@ import type {
   LocalAgentModelBroker,
   LocalAgentMemberBinding,
   LocalAgentMemberControlState,
+  LocalAgentMemberInbox,
   LocalAgentMemberConfiguration,
   LocalAgentControlReceipt,
   LocalAgentAppliedConfiguration,
@@ -55,6 +56,7 @@ import type {
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 import { MemberChannel } from './member-channel.ts'
+import { MemberInbox } from './member-inbox.ts'
 import { PreparedMembers } from './prepared-members.ts'
 import { MemberControls } from './member-controls.ts'
 import { FileMemberControlStorage } from './member-control-storage.ts'
@@ -855,11 +857,38 @@ function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signa
 export class LocalAgentRegistry {
   private readonly preparedMembers: PreparedMembers
   private readonly preparations = new Map<string, { signature: string; promise: Promise<string> }>()
+  readonly memberInbox: MemberInbox
   private readonly memberControls: MemberControls
   /** All provider starts, including direct tool starts, acquire the same whole-turn lease. */
-  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>): Promise<SubagentRun> {
-    return this.memberControls.run(binding, start)
+  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void): Promise<SubagentRun> {
+    this.memberInbox.assertAdmission(binding.childSessionId)
+    return this.memberControls.run(binding, start, signal, () => { this.memberInbox.assertAdmission(binding.childSessionId); onAdmitted?.() })
   }
+
+  private requireInboxMember(childSessionId: string): LocalAgentDelegationRecord {
+    const record = this.getDelegation(childSessionId)
+    if (record === undefined) throw new Error('localAgent: no delegation recorded for this member')
+    if (!this.supportsMemberConfiguration(record.provider)) throw new Error('The member provider does not support queued input admission')
+    if (record.configurationLock !== undefined) throw new Error('Frozen evaluation members do not accept extra human input')
+    return record
+  }
+
+  enqueueMemberInput(childSessionId: string, text: string, requestId: string): string {
+    const record = this.requireInboxMember(childSessionId)
+    this.requireLiveParent(record.parentSessionId)
+    return this.memberInbox.enqueue(childSessionId, text, requestId).id
+  }
+  resumeMemberInbox(childSessionId: string): void {
+    const record = this.requireInboxMember(childSessionId)
+    this.requireLiveParent(record.parentSessionId)
+    this.memberInbox.resume(childSessionId)
+  }
+  readMemberInbox(childSessionId: string): LocalAgentMemberInbox {
+    this.requireInboxMember(childSessionId)
+    return this.memberInbox.read(childSessionId)
+  }
+
+  queuedMemberRounds(childSessionId: string): number { return this.memberControls.queuedCount(childSessionId) }
 
   /** The admitted snapshot belongs to this exact run object, including after settle. */
   runConfiguration(run: object): LocalAgentAppliedConfiguration | undefined { return this.memberControls.configurationOf(run) }
@@ -1076,6 +1105,12 @@ export class LocalAgentRegistry {
     private readonly loginPromptTimeoutMs: number,
   ) {
     this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
+    this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, text, signal, onAdmitted) => {
+      const record = this.requireInboxMember(childSessionId)
+      return this.resume(record.parentSessionId, record.provider, childSessionId, [{ type: 'text', text }], {
+        signal, onAdmitted, ...record.scope === undefined ? {} : { scope: record.scope }, ...record.cwd === undefined ? {} : { cwd: record.cwd },
+      })
+    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
       const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
       if (adapter === undefined) throw new Error(`localAgent: ${binding.provider} exposes no configuration admission adapter`)
@@ -1085,6 +1120,7 @@ export class LocalAgentRegistry {
     // heartbeats stop, and every cached child-session write handle closes,
     // when the plugin unloads.
     ctx.effect(() => () => {
+      this.memberInbox.dispose()
       this.liveStreams.dispose()
       for (const entry of this.runs.values()) {
         if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
@@ -1893,6 +1929,7 @@ export class LocalAgentRegistry {
     // the provider consumes it as the resolveChildCwd override.
     const intent: LocalAgentDelegationIntent = {
       kind: 'fresh',
+      ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
       ...options?.preparedMemberId === undefined ? {} : { preparedMemberId: options.preparedMemberId },
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
       // The container exec target rides the same channel for the same
@@ -2044,7 +2081,7 @@ export class LocalAgentRegistry {
         + 'round recorded; start a new delegation to run another model',
       )
     }
-    if (this.isResumeLocked(childSessionId)) {
+    if (this.isResumeLocked(childSessionId) && !this.supportsMemberConfiguration(provider)) {
       throw new Error(`localAgent: child session ${childSessionId} already has an in-flight resume`)
     }
     const parent = this.requireLiveParent(parentSessionId)
@@ -2062,6 +2099,7 @@ export class LocalAgentRegistry {
     // and fails loud on a mismatch.
     const intent: LocalAgentDelegationIntent = {
       kind: 'resume',
+      ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
       childSessionId,
       cliSessionId,
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
@@ -2103,7 +2141,7 @@ export class LocalAgentRegistry {
    */
   cancel(childSessionId: string): boolean {
     const entry = this.runs.get(childSessionId)
-    if (entry === undefined) return false
+    if (entry === undefined) return this.memberInbox.cancelStarting(childSessionId)
     if (entry.controller !== undefined) {
       entry.controller.abort()
     } else {

@@ -1,0 +1,8 @@
+.root { display: grid; gap: 6px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary, inherit); }
+.header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.root p { margin: 0; width: 100%; }
+.root button { border: 1px solid var(--border-color, #8884); border-radius: 6px; padding: 3px 7px; background: transparent; color: inherit; cursor: pointer; }
+.root button:disabled { opacity: .5; cursor: default; }
+.reconcile { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+.reconcile input { flex: 1; min-width: 150px; background: transparent; border: 1px solid var(--border-color, #8884); border-radius: 6px; padding: 4px 6px; color: inherit; }

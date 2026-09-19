@@ -1,6 +1,6 @@
 /**
  * Member bridge: a minimal standalone MCP server (stdio, newline-delimited
- * JSON-RPC) exposing exactly one tool, `member_message(to, text)`, to the CLI
+ * JSON-RPC) exposing member messaging and room coordination tools to the CLI
  * member that spawned it. Each call is forwarded to the host's member-channel
  * listener over the loopback socket named by `DSH_MEMBER_SOCKET`,
  * authenticated by the per-run token in `DSH_MEMBER_TOKEN`; the host's

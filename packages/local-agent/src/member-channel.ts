@@ -182,7 +182,7 @@ export class MemberChannel {
       if (handed !== undefined) return handed
     }
     // Family direct-send: the resume lock doubles as the busy signal.
-    if (this.registry.isResumeLocked(target.childSessionId)) {
+    if (this.registry.isResumeLocked(target.childSessionId) && !this.registry.supportsMemberConfiguration(target.provider)) {
       return { ok: true, receipt: 'busy' }
     }
     const label = from.harnessDisplayName ?? from.provider

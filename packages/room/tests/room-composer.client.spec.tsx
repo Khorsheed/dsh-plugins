@@ -73,6 +73,7 @@ async function bench(
     session?: SessionSlice
     state?: RoomState
     renderMemberConfiguration?: RoomComposerProps['renderMemberConfiguration']
+    renderMemberInbox?: RoomComposerProps['renderMemberInbox']
     stopMember?: (name: string) => void
     modelDirectory?: RoomModelDirectory
   } = {},
@@ -97,6 +98,7 @@ async function bench(
     listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
     browseDirectory: vi.fn(async () => null),
     renderMemberConfiguration: options.renderMemberConfiguration,
+    renderMemberInbox: options.renderMemberInbox,
     stopMember: options.stopMember,
     modelDirectory: options.modelDirectory,
     useSession,
@@ -509,17 +511,19 @@ describe('external coordinator composer', () => {
   it('binds configuration and Stop to the coordinator and hides the former native todo/queue', async () => {
     const stopMember = vi.fn()
     const renderMemberConfiguration = vi.fn((id: string) => <div>Configuration for {id}</div>)
+    const renderMemberInbox = vi.fn((id: string) => <div>Inbox for {id}</div>)
     const state: RoomState = { ...STATE,
       members: STATE.members.map(member => ({ ...member, id: member.name, ...member.name === 'ada' ? { childSessionId: 'child-ada' as SessionId } : {} })),
       coordinator: { version: 1, memberId: 'ada', previousMemberId: 'main', revision: 1, handoff: 'goal' },
       runs: [{ member: 'ada', state: 'running', startedAt: Date.now() }],
     }
     const submit = vi.fn(async () => ({ ok: true as const }))
-    const { area, stop, inputActions } = await bench(submit, { state, stopMember, renderMemberConfiguration,
+    const { area, stop, inputActions } = await bench(submit, { state, stopMember, renderMemberConfiguration, renderMemberInbox,
       session: { running: true, queue: [{ id: 'old', placement: 'queued', preview: 'old DSH input' }] },
       useProjection: (() => [{ content: 'old DSH todo', status: 'in_progress' }]) as unknown as UseProjection,
     })
     expect(screen.getByText('Configuration for child-ada')).toBeDefined()
+    expect(screen.getByText('Inbox for child-ada')).toBeDefined()
     expect(screen.queryByText('old DSH todo')).toBeNull()
     expect(screen.queryByText('old DSH input')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'composer.stop' }))

@@ -265,6 +265,20 @@ describe('MemberComposer', () => {
     expect(stopMember).toHaveBeenCalledWith(CHILD)
   })
 
+  it('keeps queued input writable while running and keeps Stop separate from Send', async () => {
+    const promptMember = vi.fn().mockResolvedValue({ ok: true })
+    const renderMemberInbox = vi.fn(() => <div>persisted inbox</div>)
+    render(<MemberComposer {...props({ promptMember, renderMemberInbox }, true)} />)
+    await screen.findByText(zh['member.running'])
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(false)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'next input' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['member.send'] }))
+    await act(async () => {})
+    expect(promptMember).toHaveBeenCalledWith(CHILD, 'next input', expect.any(String))
+    expect(screen.getByRole('button', { name: zh['member.stop'] })).toBeTruthy()
+    expect(screen.getByText('persisted inbox')).toBeTruthy()
+  })
+
   it('shows Stop from the in-flight delegation poll even when the summary flag is false (external CLI runs)', async () => {
     const stopMember = vi.fn().mockResolvedValue(true)
     const activeDelegations = vi.fn().mockResolvedValue([CHILD])

@@ -375,6 +375,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...inviteFace(sessionId),
       submit,
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
+      renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       stopMember: name => { void remote?.cancel({ sessionId, name }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       // The hidden official bar's Stop: the runtime session face's cancel

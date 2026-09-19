@@ -50,7 +50,10 @@ export type LocalAgentGatewayRemote = TypertRemoteNamespaceMap['localAgentGatewa
 
 /** Optional companion-facing renderer; consumers probe the service at gesture time. */
 export type HarnessModelPickerInput = Omit<HarnessModelPickerProps, 'face' | 't'>
+import { MemberInboxView, type MemberInboxFace } from './MemberInboxView.tsx'
+
 export interface LocalAgentUi {
+  renderMemberInbox(childSessionId: string): ReactNode
   renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
   renderMemberConfiguration(childSessionId: string): ReactNode
 }
@@ -113,7 +116,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     })
     return face
   }
+  const inboxFaces = new Map<string, MemberInboxFace>()
+  const inboxFace = (id: string): MemberInboxFace => {
+    let face = inboxFaces.get(id)
+    if (face === undefined) inboxFaces.set(id, face = {
+      read: async () => unwrap(await gateway.memberInbox(id)),
+      control: async (action, requestId, outcome, evidence) => unwrap(await gateway.controlMemberInbox(id, action, requestId, outcome, evidence)),
+    })
+    return face
+  }
   const configurationUi: LocalAgentUi = {
+    renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
     renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
     renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), t: ctx.locale.bind(NS) }),
   }
@@ -141,8 +154,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       select: selectCliMember,
       inject: (): MemberComposerInjected => ({
         renderMemberConfiguration: configurationUi.renderMemberConfiguration,
+        renderMemberInbox: configurationUi.renderMemberInbox,
         memberOf: childSessionId => gateway.memberOf(childSessionId).then(result => (result.ok ? result.value : undefined)),
-        promptMember: (childSessionId, text) => gateway.promptMember(childSessionId, text).then(result => (result.ok ? result.value : undefined)),
+        promptMember: (childSessionId, text, requestId) => gateway.promptMember(childSessionId, text, requestId).then(result => (result.ok ? result.value : undefined)),
         stopMember: childSessionId => gateway.stopMember(childSessionId).then(result => (result.ok ? result.value : undefined)),
         activeDelegations: () => gateway.activeDelegations().then(result => (result.ok ? result.value : undefined)),
         memberModel: childSessionId => gateway.memberModel(childSessionId).then(result => (result.ok ? result.value : undefined)),

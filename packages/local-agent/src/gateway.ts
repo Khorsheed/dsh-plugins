@@ -8,6 +8,7 @@
  * @module @khorsheed/dsh-local-agent/gateway
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session'
@@ -21,6 +22,7 @@ import type {
   LocalAgentSessionRecord,
   LocalAgentStreamFrame,
   LocalAgentMemberControlState,
+  LocalAgentMemberInbox,
   LocalAgentMemberConfiguration,
   LocalAgentControlReceipt,
 } from './types.ts'
@@ -336,26 +338,26 @@ export default class LocalAgentGateway extends TypertRemoteService {
    *   render inline — raw exceptions never cross the wire.
    */
   @Remote('promptMember')
-  async promptMember(childSessionId: string, text: string): Promise<LocalAgentPromptResult> {
-    const record = this.ctx.localAgent.getDelegation(childSessionId)
-    if (record === undefined) {
-      return { ok: false, error: `localAgent: no delegation recorded for child session ${childSessionId}` }
-    }
+  async promptMember(childSessionId: string, text: string, requestId?: string): Promise<LocalAgentPromptResult> {
+    try { return { ok: true, requestId: this.ctx.localAgent.enqueueMemberInput(childSessionId, text, requestId ?? randomUUID()) } }
+    catch (error) { return { ok: false, error: String(error) } }
+  }
+
+  @Remote('memberInbox')
+  memberInbox(childSessionId: string): LocalAgentMemberInbox { return this.ctx.localAgent.readMemberInbox(childSessionId) }
+
+  @Remote('controlMemberInbox')
+  controlMemberInbox(childSessionId: string, action: 'pause' | 'resume' | 'cancel' | 'reconcile', requestId?: string, outcome?: 'done' | 'cancelled', evidence?: string): LocalAgentPromptResult {
     try {
-      await this.ctx.localAgent.resume(
-        record.parentSessionId,
-        record.provider,
-        childSessionId,
-        [{ type: 'text', text }],
-        // The recorded scope is the member's own: a follow-up continues the
-        // CLI session in the scoped home its earlier rounds ran in, and the
-        // record is where that fact lives (the resume refuses any other).
-        record.scope === undefined ? undefined : { scope: record.scope },
-      )
-    } catch (error: unknown) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-    return { ok: true }
+      this.ctx.localAgent.readMemberInbox(childSessionId)
+      const inbox = this.ctx.localAgent.memberInbox
+      if (action === 'pause') inbox.pause(childSessionId)
+      else if (action === 'resume') this.ctx.localAgent.resumeMemberInbox(childSessionId)
+      else if (action === 'cancel' && requestId !== undefined) inbox.cancel(childSessionId, requestId)
+      else if (action === 'reconcile' && requestId !== undefined && outcome !== undefined && evidence !== undefined) inbox.reconcile(childSessionId, requestId, outcome, evidence)
+      else throw new Error('Invalid member inbox control')
+      return { ok: true }
+    } catch (error) { return { ok: false, error: String(error) } }
   }
 
   /**

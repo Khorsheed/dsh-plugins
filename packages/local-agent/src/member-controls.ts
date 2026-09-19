@@ -53,17 +53,70 @@ export class MemberControls {
     return binding === undefined ? undefined : structuredClone(binding)
   }
 
-  async run(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>): Promise<SubagentRun> {
+  private readonly tails = new Map<string, Promise<void>>()
+  private readonly waiting = new Map<string, Set<string>>()
+
+  queuedCount(memberId: string): number { return this.waiting.get(memberId)?.size ?? 0 }
+
+  /** Every provider entry shares one FIFO through whole-round settlement. */
+  async run(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void): Promise<SubagentRun> {
+    signal?.throwIfAborted()
+    this.get(binding) // Reject a foreign binding before accepting it into this member's queue.
+    const key = binding.childSessionId
+    const previous = this.tails.get(key) ?? Promise.resolve()
+    const id = randomUUID()
+    const waiting = this.waiting.get(key) ?? new Set<string>()
+    waiting.add(id)
+    this.waiting.set(key, waiting)
+    let queued = true
+    let cancelled = false
+    let resolve!: (run: SubagentRun) => void
+    let reject!: (error: unknown) => void
+    const receipt = new Promise<SubagentRun>((yes, no) => { resolve = yes; reject = no })
+    const remove = (): void => {
+      waiting.delete(id)
+      if (waiting.size === 0 && this.waiting.get(key) === waiting) this.waiting.delete(key)
+    }
+    const abort = (): void => {
+      if (!queued) return
+      cancelled = true
+      remove()
+      reject(signal?.reason ?? new Error('Queued member round cancelled'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    const task = previous.catch(() => {}).then(async () => {
+      queued = false
+      signal?.removeEventListener('abort', abort)
+      remove()
+      if (cancelled) return
+      try {
+        signal?.throwIfAborted()
+        const run = await this.runNow(binding, start, signal, onAdmitted)
+        resolve(run)
+        await run.result
+      } catch (error) { reject(error) }
+    })
+    this.tails.set(key, task)
+    void task.finally(() => { if (this.tails.get(key) === task) this.tails.delete(key) })
+    return receipt
+  }
+
+  private async runNow(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void): Promise<SubagentRun> {
     const control = this.get(binding)
     const lease = await control.admit(randomUUID())
+    let nativeStarted = false
     try {
+      signal?.throwIfAborted()
+      onAdmitted?.()
+      nativeStarted = true
       const run = await start(lease.configuration)
       this.admitted.set(run, lease.configuration)
       const release = (): void => { try { lease.release() } catch (error) { this.onError(error) } }
       void run.result.then(release, release)
       return run
     } catch (error) {
-      try { control.rejectAdmission(error) } catch (persistError) { this.onError(persistError) }
+      // Cancelling a request is not a failed model/effort configuration.
+      if (nativeStarted && !signal?.aborted) try { control.rejectAdmission(error) } catch (persistError) { this.onError(persistError) }
       try { lease.release() } catch (releaseError) { this.onError(releaseError) }
       throw error
     }

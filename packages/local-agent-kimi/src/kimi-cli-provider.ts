@@ -231,7 +231,7 @@ export class KimiCliProvider implements SubagentProvider {
         ...record?.model === undefined ? {} : { model: record.model },
         ...record?.effort === undefined ? {} : { effort: record.effort },
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
-      }, configuration => this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration))
+      }, configuration => this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
     }
     const childSessionId = SessionId(intent?.preparedMemberId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
@@ -244,7 +244,7 @@ export class KimiCliProvider implements SubagentProvider {
       ...intent?.model === undefined ? {} : { model: intent.model },
       ...intent?.effort === undefined ? {} : { effort: intent.effort },
       ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
-    }, configuration => this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration))
+    }, configuration => this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted)
   }
 
   /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */

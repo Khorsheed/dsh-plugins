@@ -1,3 +1,4 @@
+import { requestId } from './request-id.ts'
 import { useState, useSyncExternalStore } from 'react'
 import type { LocalAgentConfigurationChoice, LocalAgentMemberConfiguration } from '../types.ts'
 import type { MemberConfigurationStore } from './member-configuration.ts'
@@ -21,7 +22,7 @@ export function MemberConfiguration({ store, t }: { store: MemberConfigurationSt
     if (!state || disabled) return
     setBusy(true); setError(undefined); setNotice(undefined)
     try {
-      const request = crypto.randomUUID()
+      const request = requestId()
       const receipt = operation === 'retry'
         ? (await store.face.retry(store.id, state.revision), undefined)
         : operation === 'cancel'

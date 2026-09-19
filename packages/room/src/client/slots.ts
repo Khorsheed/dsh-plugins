@@ -174,6 +174,7 @@ export interface RoomModelDirectory {
  * ui-model-selection — the picker simply does not render.
  */
 export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjected {
+  readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
   readonly stopMember?: ((name: string) => void) | undefined
   /**

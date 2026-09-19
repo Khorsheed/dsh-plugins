@@ -5,6 +5,21 @@ export const NS = 'local-agent'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'inbox.title': '待处理消息',
+  'inbox.pause': '暂停队列',
+  'inbox.resume': '继续队列',
+  'inbox.paused': '队列已暂停；重启后请先核对未完成消息。',
+  'inbox.cancel': '取消这条',
+  'inbox.evidence': '填写核对结果或证据',
+  'inbox.confirmDone': '确认已完成',
+  'inbox.confirmCancelled': '确认已取消',
+  'inbox.status.queued': '已排队',
+  'inbox.status.running': '执行中',
+  'inbox.status.uncertain': '结果待核对',
+  'inbox.status.failed': '失败',
+  'inbox.status.done': '已完成',
+  'inbox.status.cancelled': '已取消',
+
   "configuration.title": "模型与推理配置",
   "configuration.model": "模型",
   "configuration.effort": "推理强度",
@@ -101,6 +116,21 @@ export const zh = {
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<LocalAgentKey, string> = {
+  'inbox.title': 'Pending messages',
+  'inbox.pause': 'Pause queue',
+  'inbox.resume': 'Resume queue',
+  'inbox.paused': 'Queue paused; check unfinished inputs after a restart.',
+  'inbox.cancel': 'Cancel input',
+  'inbox.evidence': 'Reconciliation evidence',
+  'inbox.confirmDone': 'Confirm completed',
+  'inbox.confirmCancelled': 'Confirm cancelled',
+  'inbox.status.queued': 'Queued',
+  'inbox.status.running': 'Running',
+  'inbox.status.uncertain': 'Outcome uncertain',
+  'inbox.status.failed': 'Failed',
+  'inbox.status.done': 'Done',
+  'inbox.status.cancelled': 'Cancelled',
+
   "configuration.title": "Model and reasoning configuration",
   "configuration.model": "Model",
   "configuration.effort": "Reasoning effort",
