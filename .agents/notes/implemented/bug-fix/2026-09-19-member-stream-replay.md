@@ -14,7 +14,7 @@ The shared live publisher supports distinct native content items within one step
 
 Room's running rows use the optional core output renderer and its shared member subscription. The run start excludes retained output from earlier rounds. Navigation and targeted Stop remain separate from the Markdown output. Removing the run releases the subscription; native member history remains the authoritative final transcript.
 
-The live renderer keeps at most 256 local paint-delay samples per mounted content item. It samples after two animation frames while the document is visible, retains callbacks across newer updates to avoid discarding slow paints, and cancels them on unmount. This is a conservative same-clock diagnostic for loopback acceptance, not remote-host clock synchronization or a latency guarantee.
+The live renderer samples after two animation frames while the document is visible and retains callbacks across newer updates so slow paints cannot disappear. The shared browser output service retains text-free diagnostic receipts for up to 32 member rounds and 4,096 revisions per round after temporary nodes unmount. Opening/reconnect baselines are distinguished from live updates; Room and member surfaces report independent samples, nearest-rank P95, pending, hidden, unmounted, clock-mismatch and unrendered counts. Truncation and round eviction are explicit. A hidden read-only DOM probe in the existing member configuration control exports the retained report at most every 250 ms without changing the product flow. The per-node 256-sample attribute remains a convenience only. These are conservative same-clock diagnostics for delivered browser updates, not remote clock synchronization, coverage of every native token before transport coalescing, or a latency guarantee.
 
 Kimi attaches the new round's output sink only after ACP session loading and configuration. Historical chunks emitted by `session/load` must not become a new answer or stream checkpoint. The native session remains loaded with its original context.
 
@@ -32,6 +32,8 @@ Room retains nonempty output after cancellation or failure in its speech journal
 
 **Mark events ignorable at append.** The inspected host's public `Session.append` does not accept that envelope option. Registering vocabulary uses the existing plugin seam without editing the host.
 
+**Use the last mounted node's sample tail as the latency dataset.** Rejected: settlement discards it, a bounded tail hides older slow samples, and a replayed snapshot measures history age. Retained round receipts expose missing observations instead of counting them as successes.
+
 **Remove repeated answer prefixes after generation.** Rejected: identical text may be legitimate new output. Suppressing the historical load phase preserves native content boundaries without text heuristics.
 
 ## Consequences
@@ -43,3 +45,5 @@ Additional tests cover ACP load replay exclusion, cold composer election and ret
 An asynchronous storage regression for each live provider verifies that the resolved result already has a complete durable transcript ending in `turn/end`. Provider suites pass: DSH 187, Codex 224, Claude 232 and Kimi 245. A failed write is still diagnostic-only; storage availability is not guaranteed by a successful model answer.
 
 Room tests cover cancellation and failure partials, suppression of unfinished relay directives, and a cold-replayed partial's status and child link. Empty cancelled output remains hidden. The Room suite passes 275 tests.
+
+Diagnostic regressions cover replay exclusion, independent surfaces, slow callbacks, unrendered updates, incomplete paints, clock mismatch, bounded retention and the post-settlement DOM report. Full four-provider foreground latency acceptance remains separate; incomplete or truncated reports cannot establish it.

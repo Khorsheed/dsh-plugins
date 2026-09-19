@@ -4,8 +4,10 @@ import type { LocalAgentConfigurationChoice, LocalAgentMemberConfiguration } fro
 import type { MemberConfigurationStore } from './member-configuration.ts'
 import { ModelConfigurationFields, type ConfigurationTranslate } from './ModelConfigurationFields.tsx'
 import css from './MemberConfiguration.module.css'
+import { MemberPaintDiagnostics } from './MemberPaintDiagnostics.tsx'
+import type { LivePaintDiagnostics } from './live-paint.ts'
 
-export function MemberConfiguration({ store, t }: { store: MemberConfigurationStore; t: ConfigurationTranslate }) {
+export function MemberConfiguration({ store, t, diagnostics }: { store: MemberConfigurationStore; t: ConfigurationTranslate; diagnostics?: LivePaintDiagnostics }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [draft, setDraft] = useState<{ selection: LocalAgentMemberConfiguration; revision: number }>()
   const [busy, setBusy] = useState(false)
@@ -41,6 +43,7 @@ export function MemberConfiguration({ store, t }: { store: MemberConfigurationSt
   }
   return <details className={css.root}>
     <summary aria-label={t('configuration.title')}>{currentLabel}{state?.pending || state?.operation ? ` · ${t('configuration.pending')}` : ''}</summary>
+    {diagnostics && <MemberPaintDiagnostics sessionId={store.id} diagnostics={diagnostics} />}
     <div className={css.panel}>
       <div><strong>{t(state?.round ? 'configuration.round' : 'configuration.ready')}</strong><div className={css.value}>{currentLabel}</div></div>
       {state?.pending && <div role="status"><strong>{t('configuration.pending')}</strong><div className={css.value}>{label(state.pending.selection)}</div></div>}

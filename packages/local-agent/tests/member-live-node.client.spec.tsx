@@ -6,6 +6,7 @@ import { LocalAgentStreams } from '../src/live-stream.ts'
 import { MemberLiveNode, MemberLiveOutputView, type MemberLiveNodeProps } from '../src/client/MemberLiveNode.tsx'
 import { MemberLiveOutputs } from '../src/client/live-output.ts'
 import { zh } from '../src/client/locales.ts'
+import { MemberPaintDiagnostics } from '../src/client/MemberPaintDiagnostics.tsx'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -69,7 +70,7 @@ describe('Room inline output', () => {
 
 
 describe('foreground paint diagnostics', () => {
-  it('samples only after a paint opportunity and cancels callbacks on unmount', async () => {
+  it('excludes replay, retains complete-round samples after unmount and accounts for unfinished paints', async () => {
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
     let now = 100
     vi.spyOn(Date, 'now').mockImplementation(() => now)
@@ -82,8 +83,11 @@ describe('foreground paint diagnostics', () => {
     const item = { id: '1:1', turn: 1, step: 1, kind: 'text' as const, receivedAt: 100, text: 'streaming' }
     bus.publish('member', item)
     const outputs = new MemberLiveOutputs((id, signal) => bus.follow(id, signal))
-    const view = render(<MemberLiveOutputView sessionId="member" startedAt={100} outputs={outputs} t={makeTranslate(zh)} />)
+    const diagnostics = <MemberPaintDiagnostics sessionId="member" diagnostics={outputs.diagnostics} />
+    const view = render(<>{diagnostics}<MemberLiveOutputView sessionId="member" startedAt={100} outputs={outputs} t={makeTranslate(zh)} /></>)
     await screen.findByText('streaming')
+    expect(callbacks.size).toBe(0) // Opening baseline is replay, however old its receipt.
+    await act(async () => { bus.publish('member', { ...item, text: 'live update' }) })
     const section = view.container.querySelector('[data-member-live]')!
     now = 120; frame()
     expect(section.getAttribute('data-live-paint-samples')).toBeNull()
@@ -91,8 +95,12 @@ describe('foreground paint diagnostics', () => {
     expect(section.getAttribute('data-live-paint-samples')).toBe('[45]')
     await act(async () => { bus.publish('member', { ...item, receivedAt: 150, text: 'next' }) })
     expect(callbacks.size).toBe(1)
-    view.unmount()
+    view.rerender(diagnostics)
     expect(callbacks.size).toBe(0)
+    await waitFor(() => {
+      const report = JSON.parse(view.container.querySelector('[data-member-paint-diagnostics]')!.getAttribute('data-live-paint-report')!)
+      expect(report.rounds[0]).toMatchObject({ baselineUpdates: 1, liveUpdates: 2, surfaces: { room: { samples: [45], painted: 1, unmounted: 1 } } })
+    })
     bus.dispose()
   })
 })
