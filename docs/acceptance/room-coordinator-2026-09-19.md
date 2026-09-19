@@ -1,12 +1,12 @@
 # Room coordinator acceptance — 2026-09-19
 
-Status: in progress. This record does not establish all-provider streaming acceptance or authorize production deployment.
+Status: deployed to production on September 20 after explicit user authorization. The full four-provider streaming/runtime acceptance remains in progress. Earlier lab sections below describe the state at the time of each probe.
 
 ## Environment
 
 - Isolated branch: `codex/room-coordinator-runtime`.
 - Host: `0.1.5-rc.1`, checkout `183f08e9c6`; host source unchanged.
-- Lab profile: `room-coordinator-test`, loopback port 3084. Production port 3080 unchanged.
+- Lab profile: `room-coordinator-test`, loopback port 3084. Production deployment is recorded separately below.
 - Separate settings, credential file and member homes. DSH credential provisioned privately; user completed Kimi login in the lab scope.
 - Observed CLI versions: Kimi 0.42.0, Codex 0.144.0, Claude Code 2.1.277.
 - Development initially used worktree links. The 3084 lab now installs nine candidate tarballs at `0.1.1-roomcoord.c9889ab5`, with no workspace links for the family. This is a test-only version, not an npm release.
@@ -98,7 +98,7 @@ Immediately after the deliberate crash, DSH's read API included three synthetic 
 - Remaining providers' model reset/default and frozen-eval runtime behavior (automated coverage exists).
 - Real Codex and Claude login, generation, model control and Room tools in independent lab scopes; login request is pending.
 - Final compatibility review and the remaining real harness matrix.
-- Production installation and gated restart are a separate coordinated step.
+- Production installation and gated restart completed September 20; see the production record below.
 
 
 ## Product review: compact configuration and goal vocabulary
@@ -127,3 +127,20 @@ The original Kimi member reproduces the reported failure before the fix: an idle
 The 14-step affected-family gate passes in 203 seconds: eight packages, 1,553 package tests and 183 script tests (two skipped). Nine verified tarballs, version `0.1.1-roomcoord.abf38165`, replace the previous isolated candidate after idle and preflight checks. Actual installed core and Room versions match; production 3080 is unchanged.
 
 After restarting 3084 and loading the new browser bundle, the original member's first cold continuation displays both its new prompt and `冷恢复 538` answer without any subsequent reload or navigation. In the same open view, an 80-line generation visibly streams; two inputs sent during generation produce a two-item waiting dock. Pausing and expanding shows both waiting inputs above the composer. Cancelling the second leaves a single compact row. Resuming executes the remaining input and renders `排队接续 649`; the dock disappears at admission, the cancelled input never enters the transcript, and the inbox ends unpaused with statuses done/done/done/cancelled for these probes. The final stored transcript exactly matches all 97 live events and ends in `turn/end`. These checks establish this Kimi member's continuity and queue behavior, not the outstanding authenticated Codex/Claude matrix or four-provider latency target.
+
+## Production deployment — September 20
+
+The user explicitly requested merge and deployment to 3080. Integration commit `0bfbfdd1` preserves the current local mainline and aligns the DSH preparation path with its scope provisioner. Local `main` fast-forwards to this commit; no remote push or npm publication occurs. Host source remains unchanged at `183f08e9c6`.
+
+The whole-repository build and 4,949 package tests pass. An initial watchdog fixture run differed only in the previous-instance retry count; the complete rerun passes all eight watchdog test groups. The final packing step detects stale Canvas/eval generated modules. After backing up generated directories and clean rebuilding, all 29 bundle tarballs pass the same packer gate. No test assertion or source is changed to address these artifact failures.
+
+The official `deploy:3080` flow builds/tests, packs and installs ten packages: local-agent core, tool-subagent, DSH headless, all four providers, Room, Room tools and eval. Artifact filenames carry stamp `+2609191757`. Composition preflight passes; the watchdog reports authenticated readiness at 01:58:02 and canary PASS at 01:58:03 (UTC+08:00), deployment proof `35dc06f188f2c3c5`. The command finishes successfully in 329 seconds. Installed host/client entry hashes match this build for all ten packages, and all seven client graph URLs return HTTP 200. `check-env` confirms launchd/watchdog supervision and registered restart skill.
+
+In the production browser session named **3080 Room 协调者部署验收**:
+
+- Native DSH actually invokes `Skill dsh-self-restart-guard` and answers 927; no restart commands or file edits are requested by the probe.
+- A fresh Room names the initial coordinator `dsh`. Member navigation retains the parent breadcrumb and displays duration and token usage.
+- The first Kimi request inherits the existing `fable5` choice and fails with an upstream HTTP 401 in its native log. Changing only this test member to directory entry K3 succeeds: its direct input and `生产验收：927` response appear without reloading or leaving the member page, and no waiting dock remains after completion.
+- Promoting that Kimi member updates the coordinator label and model/effort control. Bare Room input reaches Kimi and renders `协调者验收 927` in 5.5 seconds. The browser records no console errors during these checks.
+
+The saved global `fable5` default is preserved; its upstream authentication issue is not a streaming failure or a successful model probe. The production invitation dialog also reports Claude Code as not logged in. These deployment checks do not close the remaining four-provider latency or authenticated Codex/Claude runtime matrix.
