@@ -14,13 +14,20 @@
  * wall; the session id stays what it is genuinely for (the conversation draft,
  * the side-chat context key), and nothing else here is session-bound.
  *
- * Deliberately NOT persisted. Everything here is where the reader was LOOKING,
- * not what they collected: a reload is a fresh visit, and keeping third-party
- * translated text on disk would contradict this package's "the translation never
- * leaves the page" rule. (Surviving a reload would mean `sessionStorage`; that
- * was considered and declined.) The two things that DO outlive a reload are host
- * state and are read from there: the cached article bodies (keyed by entry id in
- * `state.json`) and the 「最近阅读」 list.
+ * The PLACE is persisted, the CONTENT is not. `sessionStorage` carries the four
+ * fields that say where the reader was (the open entry, the view, the article
+ * anchors, the wall's offset), because "where I was reading" is not third-party
+ * content and the reader's report was exactly that a reload — or anything else
+ * that restarts the page — lost it. What stays out of every storage is the
+ * translated text and the translator sessions: those are a third party's words,
+ * and this package's rule is that they never leave the page. So after a reload
+ * the article and the position come back, and the globe does not (there is no
+ * session to restore it with, and rebuilding one needs a gesture).
+ *
+ * Everything else — the wall's narrowing, the read cursor, the wall's own
+ * translation switch and its card texts — is memory only: it is about this
+ * visit. Host state (cached bodies, sources, the 「最近阅读」 list) is read from
+ * the host, as always.
  *
  * @module @khorsheed/dsh-reader/client/session
  */
@@ -76,16 +83,100 @@ export interface ReaderReadingAnchor {
 
 type Patch = Partial<ReaderSessionSnapshot>
 
+/**
+ * The fields that survive the page restarting: where the reader was, and nothing
+ * that came from a third party.
+ *
+ * Mutable on purpose — this layer is read at boot, kept in step by every write,
+ * and handed to `sessionStorage`; the snapshot's own fields are readonly.
+ */
+interface PersistedPlace {
+  view?: ReaderView
+  openEntryId?: string | null
+  openSourceId?: string | null
+  scroll?: Record<string, ReaderReadingAnchor>
+  wallScroll?: number
+}
+
+const PLACE_KEY = 'dsh-reader:place'
+
+/**
+ * The persisted layer, read ONCE at module load.
+ *
+ * It is a separate layer from the page's memory rather than something rebuilt
+ * from it: the memory only holds the fields this page has touched, so writing
+ * the place from the memory alone erased everything the page had not touched yet
+ * — which is exactly the case a page restart creates, and it made the restore
+ * find nothing on the very first mount.
+ */
+let PLACE: PersistedPlace | null = null
+
+/** The persisted layer, read on first use (so the module can be imported before
+ * storage exists — and so a test can seed it before mounting the pane). */
+function place(): PersistedPlace {
+  if (PLACE === null) PLACE = loadPlace()
+  return PLACE
+}
+
 /** The page's one snapshot. */
 let PAGE: Patch = {}
+
+/** The place as `sessionStorage` has it, field by field. */
+function loadPlace(): PersistedPlace {
+  try {
+    const raw = globalThis.sessionStorage?.getItem(PLACE_KEY)
+    if (raw === null || raw === undefined || raw === '') return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return {}
+    const record = parsed as Record<string, unknown>
+    // Field by field: the value in storage is from an older revision of this
+    // package as often as not, and one bad field must not poison the rest.
+    return {
+      ...(record.view === 'list' || record.view === 'detail' || record.view === 'manage' || record.view === 'recent' ? { view: record.view } : {}),
+      ...(typeof record.openEntryId === 'string' || record.openEntryId === null ? { openEntryId: record.openEntryId } : {}),
+      ...(typeof record.openSourceId === 'string' || record.openSourceId === null ? { openSourceId: record.openSourceId } : {}),
+      ...(typeof record.scroll === 'object' && record.scroll !== null ? { scroll: record.scroll as Record<string, ReaderReadingAnchor> } : {}),
+      ...(typeof record.wallScroll === 'number' ? { wallScroll: record.wallScroll } : {}),
+    }
+  } catch {
+    // A sandboxed or full storage is not an error: the pane still works, it just
+    // forgets where it was when the page restarts.
+    return {}
+  }
+}
+
+/** Persist the place; a storage that refuses is a degraded pane, not a failure. */
+function writePlace(): void {
+  try {
+    globalThis.sessionStorage?.setItem(PLACE_KEY, JSON.stringify(place()))
+  } catch {
+    // ignore
+  }
+}
+
+/** Bring the persisted layer in step with a patch, for the fields it owns. */
+function updatePlace(patch: Patch): void {
+  const next: PersistedPlace = { ...place() }
+  if ('view' in patch) next.view = patch.view
+  if ('openEntryId' in patch) next.openEntryId = patch.openEntryId
+  if ('openSourceId' in patch) next.openSourceId = patch.openSourceId
+  if ('scroll' in patch) next.scroll = patch.scroll
+  if ('wallScroll' in patch) next.wallScroll = patch.wallScroll
+  PLACE = next
+  writePlace()
+}
 
 /**
  * What the page remembers, or `{}` when it remembers nothing yet.
  *
+ * The persisted place sits UNDER the in-memory snapshot: within one page the
+ * memory is the truth (it has fields the place does not), and after a restart
+ * the place is all there is.
+ *
  * @returns the snapshot (a copy of the recorded fields).
  */
 export function readSession(): Patch {
-  return { ...PAGE }
+  return { ...place(), ...PAGE }
 }
 
 /**
@@ -103,11 +194,20 @@ export function patchSession(patch: Patch): void {
     else Object.assign(next, { [key]: value })
   }
   PAGE = next
+  updatePlace(patch)
 }
 
-/** Drop the snapshot (the specs call this between cases). */
+/** Drop the snapshot, here and in storage (the specs call this between cases). */
 export function forgetSession(): void {
   PAGE = {}
+  // Back to "not read yet", not to "nothing": the next read must consult storage
+  // again (clearing it first, so what it finds is the truth).
+  PLACE = null
+  try {
+    globalThis.sessionStorage?.removeItem(PLACE_KEY)
+  } catch {
+    // ignore
+  }
 }
 
 /**

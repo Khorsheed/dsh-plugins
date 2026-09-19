@@ -18,8 +18,8 @@ So this note is the review that was asked for, and the change that came out of i
 | --- | --- | --- | --- |
 | Wall parse (entries) | pane, from host payloads | one mount | re-read + re-parsed on every mount — deliberately, so the wall is never stale |
 | Article body (html / sidecar file) | **host** (`state.json` + `bodies/`, under the cache TTL and budget) | restarts | `getEntryBody` when an entry is opened |
-| Article reading position | **page memory**, as an ANCHOR | remounts, session switches | re-applied on every body rebuild, and re-anchored while the layout grows |
-| Translated text | browser (`translate.ts` sentence memory, 4000 sentences) | the page | re-run from memory (usually no request) |
+| The place: view, open entry, article anchors, wall offset | **page memory + `sessionStorage`** | remounts, session switches, page restarts (same tab) | hydrated on mount; the anchors re-applied on every body rebuild and re-measured while the layout grows |
+| Translated text | browser (`translate.ts` sentence memory, 4000 sentences) | the page | re-run from memory (usually no request) — never persisted |
 | Translator session (per pair) | **page memory** | the page | reused — never built, because `create()` needs a gesture |
 | Globe on/off + view (per entry) | **page memory** | the page | re-applied on every body rebuild |
 | Tags, saved links, `recent` | **host** | restarts | host reads |
@@ -29,15 +29,16 @@ So this note is the review that was asked for, and the change that came out of i
 ### The four boundaries and their rules
 
 1. **Host state is the only authority on content.** Bodies, sources, tags and the recent list live there, keyed by entry id, shared by every session, and they are re-read rather than remembered.
-2. **Page memory is "where the reader was", never "what the reader has".** It crosses pane remounts and dsh sessions (the reader is one person reading one wall) and dies with the page: no `localStorage`, no `sessionStorage`, no disk.
+2. **Page memory is "where the reader was", never "what the reader has".** It crosses pane remounts and dsh sessions (the reader is one person reading one wall). The PLACE is also written to `sessionStorage`, so a page restart (a reload, or anything that reinitialises the page) still finds the reader where they were; third-party content is never written anywhere.
 3. **React state never crosses a mount.** Anything that must survive one is written to page memory by the effect that owns it, not kept in component state and hoped for.
-4. **Browser memory (translator sessions, sentence memory) is page-scoped and never persisted**, because the translated text is a third party's and this package's rule is that it never leaves the page.
+4. **Browser memory (translator sessions, sentence memory) is page-scoped and never persisted**, because the translated text is a third party's and this package's rule is that it never leaves the page. Persisting the place and not the globe is deliberate: after a restart the article and its position come back, and the globe stays off (there is no translator session to restore it with, and building one needs a gesture).
 
 ### The rules that stop this becoming patch-on-patch
 
 - **Restored state is re-applied on every REBUILD, and keyed by CONTENT, not by coordinates.** The position was an offset applied once; the translation record had the same shape of bug (read from a mount-time copy, armed once per entry). Both are now keyed on `[openEntryId, articleHtml]` — the body as it currently stands — and both re-apply. A coordinate (a pixel offset) is only ever a fallback.
 - **A record is the source of truth, and the gesture that ends it deletes it.** "The globe is on for this entry" lasts until the reader turns the globe off or asks for a fresh fetch; the position lasts until they scroll somewhere else. No step keeps its own private copy of "what should be on".
-- **A programmatic write must never be mistaken for reader input.** Setting `scrollTop` fires a `scroll` event, and a clamped assignment makes that echo differ from the target — saving it would overwrite the real position with the short document's height. The echo is recognised and dropped.
+- **A programmatic write must never be mistaken for reader input.** Setting `scrollTop` fires a `scroll` event, and a clamped assignment makes that echo differ from the target — saving it would overwrite the real position with the short document's height. The echo is recognised and dropped, and the one decision that really matters — "the reader has taken over" — is made from the gestures only a person produces (`wheel`, `touchmove`, the page keys), never by comparing scroll offsets.
+- **Layout is measured once per layout CHANGE.** Reading geometry inside a scroll handler is what makes Chrome report a forced reflow, and an article has hundreds of blocks: the blocks are measured in one pass when the body renders and on each resize, cached, and the anchor is a binary search over the cache. A scroll handler must not read layout at all.
 - **A restore is asynchronous, so the pane shows the surface it is restoring TO.** The entry id is known on the first render; the entry itself comes from the host's payloads. Rendering the wall in that window is the "the article disappeared and came back" flash, so the detail surface renders with a loading line instead — and a restore that settles on a missing entry closes the store's entry rather than sitting on an empty detail view forever.
 
 ### The change

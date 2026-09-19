@@ -80,7 +80,6 @@ import {
   rememberTranslation,
   rememberWallScroll,
   rememberTranslator,
-  type ReaderReadingAnchor,
   type ReaderSessionSnapshot,
 } from './session.ts'
 import css from './ReaderPane.module.css'
@@ -350,34 +349,68 @@ function articleBlocks(article: HTMLElement): HTMLElement[] {
   return [...article.children].filter(child => child.getAttribute('data-reader-reveal') !== '1') as HTMLElement[]
 }
 
+/** The article's geometry, measured in ONE pass (see `measureArticle`). */
+interface ArticleMetrics {
+  /** The article's top in the scroller's content coordinates. */
+  readonly contentTop: number
+  /** Each top-level block's top and height, relative to the article. */
+  readonly blocks: readonly { readonly top: number; readonly height: number }[]
+  /** The article's own height. */
+  readonly height: number
+}
+
 /**
- * Read the reading position out of the DOM: which block the viewport top is in,
- * and how far into it the reader is.
+ * Measure the article once.
+ *
+ * Reading layout is what makes Chrome report "forced reflow", and an article can
+ * have hundreds of blocks — so this happens when the layout CHANGES (a new body,
+ * a resize), never inside a scroll handler. Anchoring then costs no layout read
+ * at all, which is what a scroll handler needs.
  *
  * @param scroller - the detail view's scroll container.
  * @param article - the rendered article.
- * @returns the anchor, or `null` when there is no layout to measure.
+ * @returns the metrics, or `null` when there is no layout to measure.
  */
-function readingAnchor(scroller: HTMLElement, article: HTMLElement): ReaderReadingAnchor | null {
+function measureArticle(scroller: HTMLElement, article: HTMLElement): ArticleMetrics | null {
   const articleRect = article.getBoundingClientRect()
-  // No layout (a headless test, or a body that has not been measured): an anchor
-  // would be meaningless, and the caller falls back to the pixel offset.
+  // No layout (a headless test, or a body that has not been measured yet): an
+  // anchor would be meaningless, and the caller falls back to the pixel offset.
   if (articleRect.height <= 0) return null
   const contentTop = articleRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
-  const visibleY = scroller.scrollTop - contentTop
-  const blocks = articleBlocks(article)
-  let block = 0
-  let offset = Math.max(0, visibleY)
-  for (let index = 0; index < blocks.length; index += 1) {
-    const rect = blocks[index]!.getBoundingClientRect()
-    const start = rect.top - articleRect.top
-    if (start + rect.height > visibleY) {
-      block = index
-      offset = Math.max(0, visibleY - start)
-      break
+  const blocks = articleBlocks(article).map(block => {
+    const rect = block.getBoundingClientRect()
+    return { top: rect.top - articleRect.top, height: rect.height }
+  })
+  return { contentTop, blocks, height: articleRect.height }
+}
+
+/**
+ * Which block the viewport top is in, and how far into it — from the cache.
+ *
+ * A binary search rather than a walk: this runs on every scroll event, and the
+ * walk it replaces is exactly the forced reflow the browser reported.
+ *
+ * @param metrics - the last measurement.
+ * @param visibleY - how far into the article the viewport top sits.
+ * @returns the block index and the offset into it.
+ */
+function blockAt(metrics: ArticleMetrics, visibleY: number): { block: number; offset: number } {
+  const blocks = metrics.blocks
+  if (blocks.length === 0) return { block: 0, offset: Math.max(0, visibleY) }
+  let low = 0
+  let high = blocks.length - 1
+  let found = 0
+  while (low <= high) {
+    const middle = (low + high) >> 1
+    const block = blocks[middle]!
+    if (block.top + block.height > visibleY) {
+      found = middle
+      high = middle - 1
+    } else {
+      low = middle + 1
     }
   }
-  return { block, offset: Math.round(offset), top: Math.round(scroller.scrollTop) }
+  return { block: found, offset: Math.max(0, visibleY - blocks[found]!.top) }
 }
 
 /**
@@ -1540,27 +1573,57 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * and the reader is left at the top while the content keeps moving under them.
    * The anchor names the content, and the retry below keeps naming it.
    */
+  /** The last measured article geometry; anchoring reads this, never the DOM. */
+  const metricsRef = useRef<ArticleMetrics | null>(null)
+
+  /** Measure the article (one layout pass) and remember the result. */
+  const measure = useCallback((): ArticleMetrics | null => {
+    const scroller = detailRef.current
+    const article = articleRef.current
+    if (scroller === null || article === null) return null
+    const metrics = measureArticle(scroller, article)
+    metricsRef.current = metrics
+    return metrics
+  }, [])
+
+  /**
+   * Put the reader back where they were inside the article.
+   *
+   * The saved ANCHOR is the target — the Nth top-level block and how far into it
+   * the viewport top sat — and it is re-applied whenever the body is (re)built:
+   * a restored pane, a re-opened entry, a fetch landing after the feed's summary,
+   * an element React recreated.
+   *
+   * A pixel offset alone was not enough, and neither was applying it once. An
+   * article's images carry no dimensions (`extract-article` keeps the site's own
+   * markup), so the document GROWS as they load: a pixel target recorded against
+   * the settled page lands in the middle of a short one, the browser clamps it,
+   * and the reader is left at the top while the content keeps moving under them.
+   * The anchor names the content, and this keeps naming it.
+   *
+   * @returns true when the scroller actually reached the target.
+   */
   const applyReadingPosition = useCallback((): boolean => {
     const scroller = detailRef.current
     if (scroller === null || openEntryId === null) return true
     const anchor = readSession().scroll?.[openEntryId]
     if (anchor === undefined || anchor.top <= 0) return true
     let target = anchor.top
-    const article = articleRef.current
-    const articleRect = article?.getBoundingClientRect()
-    // With no layout (a test environment, or a body that has not been measured
-    // yet) the pixel offset is all there is to go on.
-    if (article !== null && articleRect !== undefined && articleRect.height > 0) {
-      const block = articleBlocks(article)[anchor.block]
+    // With no measurement (a test environment, or a body that has not been laid
+    // out yet) the pixel offset is all there is to go on.
+    const metrics = metricsRef.current
+    if (metrics !== null) {
+      const block = metrics.blocks[anchor.block]
       if (block !== undefined) {
-        const contentTop = articleRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
-        target = Math.max(0, contentTop + (block.getBoundingClientRect().top - articleRect.top) + anchor.offset)
+        target = Math.max(0, metrics.contentTop + block.top + anchor.offset)
       }
     }
+    const before = scroller.scrollTop
     scroller.scrollTop = target
-    // What the browser accepted, which is what its echo will carry (a short body
-    // clamps it, and that echo must never become the new target).
-    scrollEchoRef.current = scroller.scrollTop
+    // The browser's own echo of this write carries what it actually accepted.
+    // When the assignment changed nothing there is no echo coming, so the record
+    // is cleared — a stale echo is what makes a reader's scroll look like ours.
+    scrollEchoRef.current = scroller.scrollTop === before ? null : scroller.scrollTop
     return Math.abs(scroller.scrollTop - target) <= 1
   }, [openEntryId])
 
@@ -1576,18 +1639,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       attempt += 1
       if (attempt < SCROLL_SETTLE_ATTEMPTS) frame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(step) : 0
     }
-    step()
+    // Measured after the body is in the document, once: the first layout of a
+    // long article is expensive, and a scroll handler must never pay for it.
+    if (typeof requestAnimationFrame === 'function') frame = requestAnimationFrame(() => { measure(); step() })
+    else { measure(); step() }
 
     // Late layout is the common case, not the exception: every `<img>` with no
-    // dimensions resizes the document when it arrives. So the anchor is
-    // re-applied on every resize until the reader takes over (or the window
-    // closes) — after that it is their position, not ours.
+    // dimensions resizes the document when it arrives. The observer re-measures
+    // (the geometry really did change) and re-anchors, until the reader takes
+    // over or the window closes.
     const article = articleRef.current
     const deadline = Date.now() + POSITION_SETTLE_MS
     let observer: ResizeObserver | null = null
     if (typeof ResizeObserver === 'function' && article !== null) {
       observer = new ResizeObserver(() => {
         if (readerScrolledRef.current || Date.now() > deadline) return
+        measure()
         applyReadingPosition()
       })
       observer.observe(article)
@@ -1600,14 +1667,37 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       observer?.disconnect()
       if (giveUp !== undefined) clearTimeout(giveUp)
     }
-  }, [openEntryId, articleHtml, applyReadingPosition])
+  }, [openEntryId, articleHtml, applyReadingPosition, measure])
+
+  /**
+   * The scroller's own gestures, which is how the reader takes over.
+   *
+   * `wheel`, `touchmove` and the page keys are things only a person produces:
+   * every programmatic write this pane makes comes from `scrollTop`, so listening
+   * for gestures is a far safer signal than trying to recognise our own echo —
+   * mistaking one for the other is what left a reader at the top of an article
+   * whose position we had just applied.
+   */
+  useEffect(() => {
+    const scroller = detailRef.current
+    if (scroller === null) return undefined
+    const takeOver = (): void => { readerScrolledRef.current = true }
+    scroller.addEventListener('wheel', takeOver, { passive: true })
+    scroller.addEventListener('touchmove', takeOver, { passive: true })
+    scroller.addEventListener('keydown', takeOver)
+    return () => {
+      scroller.removeEventListener('wheel', takeOver)
+      scroller.removeEventListener('touchmove', takeOver)
+      scroller.removeEventListener('keydown', takeOver)
+    }
+  }, [openEntryId, articleHtml])
 
   /**
    * Remember the reading position as it moves.
    *
-   * Deliberately unthrottled: the write is one shallow spread of a small record,
-   * and a throttle that drops the trailing event is exactly how a reading
-   * position ends up one scroll behind the reader.
+   * Deliberately unthrottled: the work is a binary search over the measured
+   * blocks plus one small record write — no layout reads at all, because reading
+   * layout here is what made the browser report a forced reflow on every scroll.
    *
    * Only the READER's own scrolling is recorded. Setting `scrollTop` to restore
    * a position fires this handler too, and saving that echo is how a position
@@ -1624,13 +1714,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     scrollEchoRef.current = null
     // From here on the position is the reader's, not ours.
     readerScrolledRef.current = true
-    const article = articleRef.current
-    const anchor = article === null ? null : readingAnchor(scroller, article)
-    rememberReadingPosition(openEntryId, anchor ?? {
-      block: 0,
-      offset: scroller.scrollTop,
-      top: scroller.scrollTop,
-    })
+    const metrics = metricsRef.current
+    const top = Math.round(scroller.scrollTop)
+    if (metrics === null) {
+      rememberReadingPosition(openEntryId, { block: 0, offset: top, top })
+      return
+    }
+    const visibleY = top - metrics.contentTop
+    const { block, offset } = blockAt(metrics, visibleY)
+    rememberReadingPosition(openEntryId, { block, offset, top })
   }, [openEntryId])
 
   /**

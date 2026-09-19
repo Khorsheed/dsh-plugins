@@ -1843,7 +1843,17 @@ describe('the reading position survives the trip', () => {
         + '<p>Third paragraph here, closing the piece.</p>',
     }])
 
-  /** The pane's wall scroller (the detail view has its own). */
+  /**
+ * Let the pane's post-render frame run.
+ *
+ * The article is measured there (one layout pass, not one per scroll event), so
+ * a test that scrolls or asserts a position has to let that frame land first.
+ */
+const settleFrame = async (): Promise<void> => {
+  await act(async () => { await new Promise(resolve => { setTimeout(resolve, 30) }) })
+}
+
+/** The pane's wall scroller (the detail view has its own). */
   const wallScroller = (container: HTMLElement): HTMLElement =>
     container.querySelector('[class*="scroll"]') as HTMLElement
 
@@ -1885,7 +1895,7 @@ describe('the reading position survives the trip', () => {
     await screen.findByText(zh['action.quote'])
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     // Block 1 starts 300px into the article, 50px into it: 350.
-    await waitFor(() => { expect(scroller.scrollTop).toBe(350) })
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
     vi.restoreAllMocks()
   })
 
@@ -1895,6 +1905,7 @@ describe('the reading position survives the trip', () => {
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
     await screen.findByText(zh['action.quote'])
+    await settleFrame()
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     scroller.scrollTop = 620
     fireEvent.scroll(scroller)
@@ -1904,6 +1915,31 @@ describe('the reading position survives the trip', () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620 })
     })
+    vi.restoreAllMocks()
+  })
+
+  it('restores the article and its place after the PAGE restarts', async () => {
+    // What the reader kept reporting: the page restarts (whatever restarted it),
+    // and the store, the parser and every module-level map are empty again. The
+    // place is in sessionStorage precisely for this — no memory survives, and the
+    // article still comes back where it was.
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    stubLayout()
+    sessionStorage.setItem('dsh-reader:place', JSON.stringify({
+      view: 'detail',
+      openEntryId: entryId,
+      scroll: { [entryId]: { block: 1, offset: 50, top: 350 } },
+    }))
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    // No click on a card, no memory: the place alone brings it back.
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // The id the pane's own parser gives this entry: the place has to name the
+    // same entry, or nothing is found and the article opens at the top.
+    expect((ui.mocks.recordRead.mock.calls[0]?.[0] as { entryId: string }).entryId).toBe(entryId)
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    await waitFor(() => { expect(scroller.scrollTop).toBe(350) })
     vi.restoreAllMocks()
   })
 
