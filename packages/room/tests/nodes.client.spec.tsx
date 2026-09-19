@@ -330,17 +330,28 @@ describe('RoomSpeechView', () => {
 })
 
 describe('RoomRunView', () => {
-  async function bench(data: RoomRunData) {
+  async function bench(data: RoomRunData, renderMemberOutput?: RoomRunViewProps['renderMemberOutput']) {
     const roomStore = await primedStore()
     const openSession = vi.fn()
     const cancelMember = vi.fn(async () => {})
     const props = {
       node: nodeOf('room-run', data), sessionId: 'room-1' as SessionId,
-      roomStore, openSession, cancelMember, t,
+      roomStore, openSession, cancelMember, renderMemberOutput, t,
     } as unknown as RoomRunViewProps
     render(<RoomRunView {...props} />)
     return { openSession, cancelMember }
   }
+
+  it('renders native output outside the navigation button with the exact run boundary', async () => {
+    const output = vi.fn(() => <p>incremental answer</p>)
+    await bench({ seq: 3, time: 1003, member: 'ada', startedAt: 1000, state: 'running' }, output)
+    expect(output).toHaveBeenCalledWith('child-1', 1000)
+    expect(screen.getByText('incremental answer').closest('[role="button"]')).toBeNull()
+    cleanup()
+    output.mockClear()
+    await bench({ seq: 4, time: 1004, member: 'ada', startedAt: 1000, state: 'failed' }, output)
+    expect(output).not.toHaveBeenCalled()
+  })
 
   it('renders the running row with a ticking elapsed and jumps on click', async () => {
     vi.useFakeTimers()

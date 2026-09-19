@@ -7,11 +7,11 @@ import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/c
 import { memberLiveDefinition } from '../src/client/live-node.ts'
 
 describe('member live Conversation definition', () => {
-  it('renders checkpoints at the original step, then hides atomically for the native final on live and replay paths', () => {
+  it.each([undefined, 'native-block'])('renders checkpoints and closes native or subitem anchors on live and replay paths (%s)', (itemId) => {
     const session = Session.create(SessionId('member-live-node'))
     session.append('turn/start', { turn: 1 })
     session.append('step/start', { turn: 1, step: 1 })
-    const data = { id: '1:1', sessionId: 'member-live-node', turn: 1, step: 1, kind: 'text' as const, text: 'hello', receivedAt: 0 }
+    const data = { id: itemId === undefined ? '1:1' : `1:1:${itemId}`, sessionId: 'member-live-node', turn: 1, step: 1, kind: 'text' as const, text: 'hello', receivedAt: 0 }
     session.append('local-agent/stream', { ...data, opening: true, append: false })
     const nodes = new Map<string, ConversationViewNode>()
     const assembler = new ConversationNodeAssembler({ entries: () => [memberLiveDefinition], fallbackEntry: () => undefined }, {
@@ -35,6 +35,10 @@ describe('member live Conversation definition', () => {
       message: createAssistantMessage({ content: [{ type: 'text', text: 'authoritative' }], source: { provider: 'test', model: 'test' } }),
     }, { surfaceOp: 'append' })
     assembler.append({ type: 'event', event: session.snapshotEvents().at(-1)! })
+    if (itemId !== undefined) {
+      session.append('local-agent/stream', { ...data, text: '', append: true, closed: true })
+      assembler.append({ type: 'event', event: session.snapshotEvents().at(-1)! })
+    }
     expect(() => assembler.flush()).not.toThrow()
     expect(([...nodes.values()][0] as ChatConversationViewNode).visibility).toBe('hidden')
     assembler.replaceWindow(session.snapshotEvents().map(event => ({ type: 'event', event })), false)

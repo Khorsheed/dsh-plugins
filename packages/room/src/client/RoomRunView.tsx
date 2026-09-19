@@ -15,7 +15,7 @@ import type { RoomRunViewProps } from './slots.ts'
 import css from './RoomRunView.module.css'
 
 /** The member run row. */
-export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, t }: RoomRunViewProps): ReactNode {
+export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, t }: RoomRunViewProps): ReactNode {
   const data = node.data
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -41,6 +41,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
     }
   }
   return (
+    <div>
     <div
       className={css.run}
       data-state={failed ? 'failed' : 'running'}
@@ -72,6 +73,8 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
           </button>
         </Tooltip>
       )}
+    </div>
+    {!failed && childSessionId !== undefined && renderMemberOutput?.(childSessionId, data.startedAt)}
     </div>
   )
 }

@@ -457,6 +457,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       key: 'room-run',
       locale: NS,
       inject: (sessionId: SessionId): RoomRunInjected => ({
+        renderMemberOutput: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberOutput,
         roomStore,
         openSession,
         cancelMember: member => cancelMember(sessionId, member),

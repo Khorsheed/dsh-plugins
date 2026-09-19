@@ -29,6 +29,20 @@ import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+// The durable reader validates plugin vocabulary before replay. Register in
+// both resolution planes: source-based host toolchains and installed bundles
+// can otherwise hold separate catalog instances (the Room journal uses the
+// same host seam). Keep registration after uninstall until process exit so
+// existing member histories remain readable.
+const streamCatalogSpecifier = ['@deepseek-ai/dsh-session', 'src', 'known-event-types'].join('/')
+const streamCatalogs = await Promise.all([
+  import('@deepseek-ai/dsh-session'),
+  import(streamCatalogSpecifier).catch(() => undefined),
+])
+for (const catalog of streamCatalogs) {
+  (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+}
+
 import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'

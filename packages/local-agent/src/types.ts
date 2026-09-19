@@ -30,6 +30,8 @@ export interface LocalAgentStreamFrame {
 export interface LocalAgentStreamCheckpoint extends Omit<LocalAgentStreamItem, 'revision'> {
   sessionId: string
   opening?: boolean
+  /** Final native message has replaced this subitem presentation. */
+  closed?: boolean
   append: boolean
 }
 

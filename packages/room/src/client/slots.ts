@@ -300,6 +300,7 @@ export type RoomSpeechViewProps =
 
 /** Injected face of the member-run chat node. */
 export interface RoomRunInjected {
+  readonly renderMemberOutput?: LocalAgentUi['renderMemberOutput'] | undefined
   /** The client-side room state store (the roster carries the jump target). */
   readonly roomStore: RoomStore
   /** Open a session (the whole-row jump into the member's child session). */

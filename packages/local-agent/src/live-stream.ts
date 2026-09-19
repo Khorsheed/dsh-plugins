@@ -86,7 +86,7 @@ export const LIVE_CHECKPOINT_INTERVAL_MS = 1_000
 
 /** One round's producer. Final native messages replace its presentation nodes by coordinate. */
 export class LiveStreamPublisher {
-  private readonly states = new Map<number, { item: Omit<LocalAgentStreamItem, 'revision'>; durable: string; timer?: ReturnType<typeof setTimeout> }>()
+  private readonly states = new Map<string, { item: Omit<LocalAgentStreamItem, 'revision'>; durable: string; timer?: ReturnType<typeof setTimeout> }>()
   constructor(
     private readonly streams: LocalAgentStreams,
     private readonly session: Session,
@@ -95,29 +95,32 @@ export class LiveStreamPublisher {
     private readonly onError: (error: unknown) => void,
   ) {}
 
-  update(step: number, kind: 'think' | 'text', text: string): void {
-    let state = this.states.get(step)
+  update(step: number, kind: 'think' | 'text', text: string, options: { itemId?: string; receivedAt?: number } = {}): void {
+    const id = `${this.turn}:${step}${options.itemId === undefined ? '' : `:${options.itemId}`}`
+    let state = this.states.get(id)
+    if (state?.item.text === text && state.item.kind === kind) return
+    const receivedAt = options.receivedAt ?? Date.now()
     if (state === undefined) {
-      const item = { id: `${this.turn}:${step}`, turn: this.turn, step, kind, text, receivedAt: Date.now() }
+      const item = { id, turn: this.turn, step, kind, text, receivedAt }
       state = { item, durable: text }
-      this.states.set(step, state)
+      this.states.set(id, state)
       this.session.append('local-agent/stream', { ...item, sessionId: String(this.session.id), opening: true, append: false })
       this.persist()
     } else {
-      state.item = { ...state.item, text, receivedAt: Date.now() }
+      state.item = { ...state.item, kind, text, receivedAt }
     }
     this.streams.publish(String(this.session.id), state.item)
     if (state.timer === undefined) {
       state.timer = setTimeout(() => {
         delete state.timer
-        try { this.checkpoint(step) } catch (error) { this.onError(error) }
+        try { this.checkpoint(id) } catch (error) { this.onError(error) }
       }, LIVE_CHECKPOINT_INTERVAL_MS)
       state.timer.unref?.()
     }
   }
 
-  private checkpoint(step: number): void {
-    const state = this.states.get(step)
+  private checkpoint(id: string): void {
+    const state = this.states.get(id)
     if (state === undefined || state.durable === state.item.text) return
     const append = state.item.text.startsWith(state.durable)
     this.session.append('local-agent/stream', {
@@ -132,14 +135,27 @@ export class LiveStreamPublisher {
 
   /** Call only after the corresponding native final message has been appended. */
   finish(step: number): void {
-    const state = this.states.get(step)
-    if (state?.timer !== undefined) clearTimeout(state.timer)
-    this.states.delete(step)
-    this.streams.finish(String(this.session.id), `${this.turn}:${step}`)
+    for (const [id, state] of this.states) {
+      if (state.item.step !== step) continue
+      if (state.timer !== undefined) clearTimeout(state.timer)
+      // Native final events identify the whole step. Subitems additionally
+      // close their own anchors so replay cannot resurrect a duplicate block.
+      if (id !== `${this.turn}:${step}`) {
+        this.session.append('local-agent/stream', { ...state.item, sessionId: String(this.session.id), text: '', append: true, closed: true })
+        this.persist()
+      }
+      this.states.delete(id)
+      this.streams.finish(String(this.session.id), id)
+    }
   }
 
   /** A producer failure keeps a durable partial, without claiming completion. */
   dispose(): void {
-    for (const step of this.states.keys()) { this.checkpoint(step); this.finish(step) }
+    for (const [id, state] of this.states) {
+      this.checkpoint(id)
+      if (state.timer !== undefined) clearTimeout(state.timer)
+      this.streams.finish(String(this.session.id), id)
+    }
+    this.states.clear()
   }
 }

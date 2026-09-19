@@ -66,6 +66,37 @@ describe('transient member stream', () => {
     bus.dispose()
   })
 
+  it('keeps native subitems distinct, timestamps arrival before flushing, and closes every anchor', async () => {
+    const session = Session.create(SessionId('stream-blocks'))
+    const bus = new LocalAgentStreams()
+    const writer = new LiveStreamPublisher(bus, session, 1, () => {}, error => { throw error })
+    writer.update(1, 'think', 'Reasoning', { itemId: 'block-0', receivedAt: 10 })
+    writer.update(1, 'text', 'Answer', { itemId: 'block-1', receivedAt: 20 })
+    writer.update(1, 'text', 'Answer', { itemId: 'block-1', receivedAt: 99 }) // No new bytes, no fake arrival.
+    const abort = new AbortController()
+    const follower = bus.follow(String(session.id), abort.signal)[Symbol.asyncIterator]()
+    expect((await follower.next()).value.updates).toMatchObject([
+      { id: '1:1:block-0', kind: 'think', text: 'Reasoning', receivedAt: 10 },
+      { id: '1:1:block-1', kind: 'text', text: 'Answer', receivedAt: 20 },
+    ])
+    writer.finish(1)
+    expect((await follower.next()).value.removed).toEqual(['1:1:block-0', '1:1:block-1'])
+    expect(session.snapshotEvents().filter(event => event.type === 'local-agent/stream' && event.data.closed)).toHaveLength(2)
+    abort.abort(); writer.dispose(); bus.dispose()
+  })
+
+  it('retains an unfinished subitem on producer failure instead of falsely closing it', () => {
+    const session = Session.create(SessionId('stream-block-crash'))
+    const bus = new LocalAgentStreams()
+    const writer = new LiveStreamPublisher(bus, session, 1, () => {}, error => { throw error })
+    writer.update(1, 'text', 'Partial', { itemId: 'block' })
+    writer.update(1, 'text', 'Partial answer', { itemId: 'block' })
+    writer.dispose()
+    expect(session.snapshotEvents().at(-1)?.data).toMatchObject({ text: ' answer', append: true })
+    expect(session.snapshotEvents().some(event => event.type === 'local-agent/stream' && event.data.closed)).toBe(false)
+    bus.dispose()
+  })
+
   it('keeps the last partial checkpoint when a producer closes without a final message', () => {
     const session = Session.create(SessionId('stream-crash'))
     const bus = new LocalAgentStreams()

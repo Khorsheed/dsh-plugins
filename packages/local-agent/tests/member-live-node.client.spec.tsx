@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocalAgentStreams } from '../src/live-stream.ts'
-import { MemberLiveNode, type MemberLiveNodeProps } from '../src/client/MemberLiveNode.tsx'
+import { MemberLiveNode, MemberLiveOutputView, type MemberLiveNodeProps } from '../src/client/MemberLiveNode.tsx'
 import { MemberLiveOutputs } from '../src/client/live-output.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -40,6 +40,29 @@ describe('member transient rendering', () => {
     expect(screen.queryByText('你好你好世界')).toBeNull()
     view.unmount()
     await waitFor(() => { expect(closed).toBe(2) })
+    bus.dispose()
+  })
+})
+
+
+describe('Room inline output', () => {
+  it('shares native deltas, filters previous runs and releases its subscription', async () => {
+    const bus = new LocalAgentStreams()
+    const base = { turn: 1, step: 1, kind: 'text' as const }
+    bus.publish('member', { ...base, id: 'old', receivedAt: 1, text: 'old answer' })
+    let closed = false
+    const outputs = new MemberLiveOutputs(async function* (id, signal) {
+      try { yield* bus.follow(id, signal) } finally { closed = true }
+    })
+    const view = render(<MemberLiveOutputView sessionId="member" startedAt={10} outputs={outputs} t={makeTranslate(zh)} />)
+    await act(async () => { bus.publish('member', { ...base, id: 'current', receivedAt: 11, text: 'new answer' }) })
+    await screen.findByText('new answer')
+    expect(screen.queryByText('old answer')).toBeNull()
+    await act(async () => { bus.publish('member', { ...base, id: 'current', receivedAt: 12, text: 'new answer grows' }) })
+    await screen.findByText('new answer grows')
+    expect(view.container.querySelector('[data-live-received-at="12"]')).not.toBeNull()
+    view.unmount()
+    await waitFor(() => expect(closed).toBe(true))
     bus.dispose()
   })
 })

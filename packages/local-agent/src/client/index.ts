@@ -32,7 +32,7 @@ import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { MemberComposer, selectCliMember, type MemberComposerInjected } from './MemberComposer.tsx'
 import { en, NS, zh, type LocalAgentKey } from './locales.ts'
 import { memberLiveDefinition } from './live-node.ts'
-import { MemberLiveNode } from './MemberLiveNode.tsx'
+import { MemberLiveNode, MemberLiveOutputView } from './MemberLiveNode.tsx'
 import { MemberLiveOutputs } from './live-output.ts'
 
 export type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
@@ -53,6 +53,7 @@ export type HarnessModelPickerInput = Omit<HarnessModelPickerProps, 'face' | 't'
 import { MemberInboxView, type MemberInboxFace } from './MemberInboxView.tsx'
 
 export interface LocalAgentUi {
+  renderMemberOutput(childSessionId: string, startedAt: number): ReactNode
   renderMemberInbox(childSessionId: string): ReactNode
   renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
   renderMemberConfiguration(childSessionId: string): ReactNode
@@ -125,13 +126,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     })
     return face
   }
+  const outputs = new MemberLiveOutputs((id, signal) => gateway.followMemberOutput(id, signal))
   const configurationUi: LocalAgentUi = {
+    renderMemberOutput: (id, startedAt) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, t: ctx.locale.bind(NS) }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
     renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
     renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), t: ctx.locale.bind(NS) }),
   }
   ctx.provide('localAgentUi', configurationUi)
-  const outputs = new MemberLiveOutputs((id, signal) => gateway.followMemberOutput(id, signal))
   ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'local-agent-stream', locale: NS,

@@ -20,3 +20,21 @@ export function MemberLiveNode({ node, outputs, t }: MemberLiveNodeProps) {
     <MarkdownText text={text} labels={{ code: { copyLabel: t('stream.copy'), copiedLabel: t('stream.copied') }, footnotes: t('stream.footnotes') }} />
   </section>
 }
+
+/** Same subscription in Room: run boundary excludes retained output from earlier turns. */
+export function MemberLiveOutputView({ sessionId, startedAt, outputs, t }: {
+  sessionId: string
+  startedAt: number
+  outputs: MemberLiveOutputs
+} & PropsLocale<typeof NS>) {
+  const store = outputs.get(sessionId)
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  return <div data-member-output={sessionId}>
+    {[...snapshot.items.values()].filter(item => item.receivedAt >= startedAt).map(item => (
+      <section key={item.id} data-member-live={item.id} data-live-received-at={item.receivedAt}>
+        <small>{item.kind === 'think' ? t('stream.thinking') : t('stream.writing')}{!snapshot.connected ? ` · ${t('stream.recovering')}` : ''}</small>
+        <MarkdownText text={item.text} labels={{ code: { copyLabel: t('stream.copy'), copiedLabel: t('stream.copied') }, footnotes: t('stream.footnotes') }} />
+      </section>
+    ))}
+  </div>
+}

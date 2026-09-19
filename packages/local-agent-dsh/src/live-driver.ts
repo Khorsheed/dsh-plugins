@@ -689,12 +689,15 @@ export class DshLiveDriver {
       : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
         error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
     const liveFlush = new LiveFlush(error => this.ctx.logger.warn(`subagent-dsh: live flush failed: ${String(error)}`))
-    let streaming: { id: string; step: number; assembler: BlockAssembler; next: number } | undefined
+    let streaming: { id: string; step: number; assembler: BlockAssembler; next: number; receivedAt?: number } | undefined
     const publishStream = (): void => {
       if (streaming === undefined || streamPublisher === undefined) return
       const blocks = streaming.assembler.interruptedBlocks()
-      const text = blocks.map(block => 'text' in block ? block.text : '').join('\n\n')
-      if (text !== '') streamPublisher.update(streaming.step, blocks.every(block => block.type === 'reasoning') ? 'think' : 'text', text)
+      const receivedAt = streaming.receivedAt ?? Date.now()
+      for (const [index, block] of blocks.entries()) {
+        if ((block.type === 'reasoning' || block.type === 'text') && block.text !== '') streamPublisher.update(streaming.step, block.type === 'reasoning' ? 'think' : 'text', block.text, { itemId: `${streaming.id}:${index}`, receivedAt })
+      }
+      delete streaming.receivedAt
     }
     const acceptStream = (frame: AssistantStreamFrame): void => {
       if (streamPublisher === undefined) return
@@ -705,6 +708,7 @@ export class DshLiveDriver {
         if (frame.index < streaming.next) return
         if (frame.index !== streaming.next) throw new Error('non-contiguous DSH assistant stream')
         streaming.next++
+        streaming.receivedAt ??= Date.now()
         streaming.assembler.push(frame.chunk)
         liveFlush.schedule(streaming.step, publishStream)
       }

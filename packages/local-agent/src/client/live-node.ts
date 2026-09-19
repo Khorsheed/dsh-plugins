@@ -24,13 +24,13 @@ export const memberLiveDefinition: ConversationNodeDefinition<MemberLiveNodeData
   },
   start(_context, match) {
     if (match.event.type !== 'local-agent/stream') throw new Error('stream anchor required')
-    return { ...match.event.data, seq: match.event.seq, settled: false }
+    return { ...match.event.data, seq: match.event.seq, settled: match.event.data.closed === true }
   },
   update(context, match) {
     if (match.event.type === 'assistant/message') return { ...context.state, settled: true }
     if (match.event.type !== 'local-agent/stream') return context.state
     const checkpoint = match.event.data
-    return { ...context.state, ...checkpoint, text: checkpoint.append ? context.state.text + checkpoint.text : checkpoint.text }
+    return { ...context.state, ...checkpoint, settled: context.state.settled || checkpoint.closed === true, text: checkpoint.append ? context.state.text + checkpoint.text : checkpoint.text }
   },
   buildViewNode(context) {
     if (context.state === undefined) return null

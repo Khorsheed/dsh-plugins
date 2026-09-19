@@ -1031,6 +1031,7 @@ export class KimiAcpLiveDriver {
       this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
     )
 
+    const pendingStreamArrival = new Map<number, number>()
     const appendStreamSnapshot = (
       stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
       force: boolean,
@@ -1041,16 +1042,19 @@ export class KimiAcpLiveDriver {
       if (stream.text.trim() === '') return
       const now = Date.now()
       if (!force) {
+        if (!pendingStreamArrival.has(stream.step)) pendingStreamArrival.set(stream.step, now)
         liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
         return
       }
       liveFlush.cancel(stream.step)
+      const receivedAt = pendingStreamArrival.get(stream.step) ?? now
+      pendingStreamArrival.delete(stream.step)
       if (streamPublisher !== undefined && !final) {
         if (!stream.opened) {
           childSession.append('step/start', { turn, step: stream.step })
           stream.opened = true
         }
-        streamPublisher.update(stream.step, stream.kind, stream.text)
+        streamPublisher.update(stream.step, stream.kind, stream.text, { receivedAt })
         stream.lastSnapshotAt = now
         stream.lastSnapshotLen = stream.text.length
         return
