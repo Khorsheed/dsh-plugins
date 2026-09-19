@@ -1,8 +1,8 @@
 /**
  * Dispatch engine: turns `room/dispatch` journal records and confirmed
  * notification relays into member runs. Same-member dispatches serialize on
- * an in-process FIFO (the family resume lock allows one in-flight resume per
- * child session anyway); different members run in parallel. Every lifecycle
+ * a submission chain until a stable native identity exists, then enter the
+ * family's whole-turn FIFO; different members run in parallel. Every lifecycle
  * edge lands in the journal (`room/run-state` running → done/cancelled/
  * failed, plus `room/speech` for a CLI member's reply), so a reload replays
  * the exact dispatch history — but speech/dispatch events are UI projection
@@ -111,6 +111,12 @@ function faultMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+interface RunOutcome {
+  readonly state: 'done' | 'cancelled' | 'failed'
+  readonly text?: string
+  readonly error?: string
+}
+
 /**
  * The per-room dispatch engine. Owned by the RoomService; all state lives in
  * the journal except the in-process FIFO queues (a restart simply has no
@@ -120,6 +126,7 @@ export class DispatchEngine {
   /** memberKey → the queue tail promise. */
   private readonly queues = new Map<string, Promise<void>>()
   private readonly scheduled = new Set<string>()
+  private readonly inFlight = new Map<Promise<void>, string>()
 
   /**
    * @param ctx - host context carrying the session store and agents registry.
@@ -136,7 +143,7 @@ export class DispatchEngine {
    */
   hasPending(room: Session, memberName: string): boolean {
     const member = replay(room.snapshotEvents()).members.find(member => member.name === memberName)
-    return member !== undefined && (this.queues.has(`${room.id} ${memberId(room.snapshotEvents(), member)}`)
+    return member !== undefined && ([...this.inFlight.values()].includes(`${room.id} ${memberId(room.snapshotEvents(), member)}`)
       || replayDeliveries(room.snapshotEvents()).some(delivery => delivery.memberId === member.id && ['queued', 'running', 'uncertain'].includes(delivery.status)))
   }
 
@@ -153,18 +160,23 @@ export class DispatchEngine {
       this.scheduled.add(scopedId)
     }
     const tail = this.queues.get(key) ?? Promise.resolve()
-    const next = tail.then(() => this.run(room, memberName, text, { ...options, targetId }))
+    let submitted!: () => void
+    const submission = new Promise<void>(resolve => { submitted = resolve })
+    const next = tail.then(() => this.run(room, memberName, text, { ...options, targetId }, submitted))
       .catch((error: unknown) => { this.ctx.logger.warn(`room: dispatch to "${memberName}" faulted: ${String(error)}`) })
       .finally(() => {
-        if (this.queues.get(key) === next) this.queues.delete(key)
+        submitted()
+        this.inFlight.delete(next)
         if (deliveryId !== undefined) this.scheduled.delete(`${room.id}:${deliveryId}`)
       })
-    this.queues.set(key, next)
+    this.inFlight.set(next, key)
+    this.queues.set(key, submission)
+    void submission.then(() => { if (this.queues.get(key) === submission) this.queues.delete(key) })
   }
 
   /** Drain includes reports queued by the runs being drained. */
   async idle(): Promise<void> {
-    while (this.queues.size > 0) await Promise.all([...this.queues.values()])
+    while (this.inFlight.size > 0) await Promise.all([...this.inFlight.keys()])
   }
 
   /** Restore accepted targets, never repeat an execution whose settlement is unknown. */
@@ -184,7 +196,7 @@ export class DispatchEngine {
             const target = state.members.find(member => memberId(events, member) === targetId)
             if (target !== undefined) {
               const run = state.runs.find(run => run.member === target.name)
-              if (run?.state === 'running') room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt, error: 'Execution outcome is unknown after restart; reconcile before retrying' })
+              if (run?.state === 'running') room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt, ...run.runId === undefined ? {} : { runId: run.runId }, error: 'Execution outcome is unknown after restart; reconcile before retrying' })
             }
             await this.ctx.sessions.flush(room)
             await this.report(room, dispatch.seq, id, targetId, 'uncertain', 'Execution outcome is unknown after restart; reconcile before retrying')
@@ -200,7 +212,7 @@ export class DispatchEngine {
   }
 
   /** Execute one dispatch: run-state running → member turn → settle edges. */
-  private async run(room: Session, memberName: string, text: string, options: DispatchOptions): Promise<void> {
+  private async run(room: Session, memberName: string, text: string, options: DispatchOptions, submitted: () => void): Promise<void> {
     const state = replay(room.snapshotEvents())
     const member = state.members.find(entry => options.targetId === undefined ? entry.name === memberName : memberId(room.snapshotEvents(), entry) === options.targetId)
     // Removed between the dispatch and its execution: nothing to run, and the
@@ -210,42 +222,33 @@ export class DispatchEngine {
     memberName = member.name
     const identity = memberId(room.snapshotEvents(), member)
     const deliveryId = options.dispatchSeq === undefined ? undefined : `${options.dispatchSeq}:${identity}`
+    const runId = deliveryId ?? randomUUID()
     const cursor = previousCursor(room.snapshotEvents(), memberName, options.dispatchSeq ?? Number.MAX_SAFE_INTEGER)
     let startedAt: number | undefined
     const admitted = async (): Promise<number> => {
       if (startedAt !== undefined) throw new Error('Room delivery was admitted twice')
       startedAt = Date.now()
       if (deliveryId !== undefined) room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: 'running' })
-      room.append('room/run-state', { member: memberName, state: 'running', startedAt })
+      memberName = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)?.name ?? memberName
+      room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId })
       await this.ctx.sessions.flush(room)
       return startedAt
     }
-    const speechAfter = room.snapshotEvents().at(-1)?.seq ?? -1
+    let outcome: RunOutcome
     try {
-      if (member.kind === 'main-agent') {
-        await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [])
-      } else {
-        await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [])
-      }
+      outcome = member.kind === 'main-agent'
+        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [])
+        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted)
     } catch (error: unknown) {
-      // Any engine-level fault (adapter throw, followup throw) fails the run
-      // loud in the journal; the queue chain continues. The message rides the
-      // failed edge so the UI's dim row can say WHY.
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
-      await this.settle(room, member, startedAt ?? Date.now(), 'failed', faultMessage(error))
-    } finally {
-      if (deliveryId !== undefined) {
-        const current = replay(room.snapshotEvents())
-        const target = current.members.find(entry => memberId(room.snapshotEvents(), entry) === identity)
-        const run = current.runs.find(entry => entry.member === (target?.name ?? memberName))
-        const speech = room.snapshotEvents().filter(event => event.type === 'room/speech' && event.seq > speechAfter && event.data.member === (target?.name ?? memberName)).at(-1)
-        const outcome = run?.state === 'running' || run === undefined ? 'uncertain' : run.state
-        const text = outcome === 'done' && speech?.type === 'room/speech' ? speech.data.text : undefined
-        room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: outcome,
-          ...text === undefined ? {} : { text }, ...run?.error === undefined ? {} : { error: run.error } })
-        await this.ctx.sessions.flush(room)
-        await this.report(room, options.dispatchSeq!, deliveryId, identity, outcome, text ?? run?.error ?? '')
-      }
+      outcome = { state: 'failed', error: faultMessage(error) }
+    }
+    outcome = await this.settle(room, member, runId, startedAt ?? Date.now(), outcome)
+    if (deliveryId !== undefined) {
+      room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: outcome.state,
+        ...outcome.text === undefined ? {} : { text: outcome.text }, ...outcome.error === undefined ? {} : { error: outcome.error } })
+      await this.ctx.sessions.flush(room)
+      await this.report(room, options.dispatchSeq!, deliveryId, identity, outcome.state, outcome.text ?? outcome.error ?? '')
     }
   }
 
@@ -280,13 +283,12 @@ export class DispatchEngine {
   /** Main-agent member turn: a plugin-sourced followup on the room's own agent. */
   private async runMainAgent(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, startedAt: number, relayIds: readonly string[],
-  ): Promise<void> {
+    text: string, _startedAt: number, relayIds: readonly string[],
+  ): Promise<RunOutcome> {
     const agent = this.ctx.agents.get(room.id)
     if (agent === undefined) {
       // Fail loud: the room's own agent is not live, the message goes nowhere.
-      await this.settle(room, member, startedAt, 'failed', 'the room session has no live agent')
-      return
+      return { state: 'failed', error: 'the room session has no live agent' }
     }
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
     agent.followup(createUserMessage({
@@ -301,14 +303,14 @@ export class DispatchEngine {
     // run; the main agent's reply is its ordinary assistant speech (no
     // room/speech projection — speech mirrors CLI members only).
     await agent.whenIdle()
-    await this.settle(room, member, startedAt, 'done')
+    return { state: 'done' }
   }
 
   /** CLI member turn: facade start (first round) or resume, then the speech mirror. */
   private async runCliMember(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[],
-  ): Promise<void> {
+    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void,
+  ): Promise<RunOutcome> {
     const facade = probeLocalAgent(this.ctx)
     if (facade === undefined) {
       this.ctx.logger.warn(`room: cannot dispatch to "${member.name}": local-agent facade unavailable`)
@@ -324,25 +326,40 @@ export class DispatchEngine {
     if (!controlled) startedAt = await admitted()
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
-    const run = prepared
-      ? await facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, ...admission })
+    const pendingRun = prepared
+      ? facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, ...admission })
       : member.childSessionId === undefined
       // The invite-time model lands as the delegation's own model: the facade
       // records it with the first start and every later resume re-requests it
       // (providers bind it at spawn for exec and live alike).
-      ? await facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
+      ? facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
           member.model === undefined && member.cwd === undefined && !controlled ? undefined : { ...admission, ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
-      : await facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], member.cwd === undefined && !controlled ? undefined : { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
-    if (startedAt === undefined) throw new Error('Provider published a room run without admission')
-    if (member.childSessionId === undefined) {
-      // Persist the delegation handle: the run id IS the child session id,
-      // and journaling it lets a reload reattach the member (resume path).
-      room.append('room/member-updated', { name: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name, childSessionId: run.id })
+      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], member.cwd === undefined && !controlled ? undefined : { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+    // Existing members can enter core's queue immediately. A fresh/prepared
+    // identity must publish its first handle before the next submission resumes it.
+    if (controlled && member.childSessionId !== undefined && !prepared) submitted()
+    const run = await pendingRun
+    if (startedAt === undefined) {
+      await run.dispose()
+      throw new Error('Provider published a room run without admission')
     }
-    await this.markSent(room, [
-      ...carried,
-      ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
-    ])
+    try {
+      if (member.childSessionId === undefined) {
+        // Persist identity before releasing fresh-member submissions.
+        room.append('room/member-updated', { name: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name, childSessionId: run.id })
+      }
+      await this.markSent(room, [
+        ...carried,
+        ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
+      ])
+      await this.ctx.sessions.flush(room)
+    } catch (error) {
+      // Native work already exists. Never claim a terminal room outcome while
+      // that work is still active merely because publishing its handle failed.
+      await run.result.catch(() => {})
+      throw error
+    }
+    if (controlled) submitted()
     const result = await run.result
     if (result.stopReason === 'completed') {
       const speech = room.append('room/speech', {
@@ -368,42 +385,34 @@ export class DispatchEngine {
         })
       }
       await this.ctx.sessions.flush(room)
-      await this.settle(room, member, startedAt, 'done')
+      return { state: 'done', text: runOutputText(result.output) }
     } else if (result.stopReason === 'aborted') {
-      await this.settle(room, member, startedAt, 'cancelled')
+      return { state: 'cancelled' }
     } else {
-      await this.settle(room, member, startedAt, 'failed', `the member run ended with stopReason "${result.stopReason}"`)
+      return { state: 'failed', error: `the member run ended with stopReason "${result.stopReason}"` }
     }
   }
 
-  /**
-   * Append a terminal run-state edge, unless a cancel() already moved THIS
-   * run (same startedAt) to a terminal state — the first terminal edge wins.
-   * A settle also closes the member's open in_progress task (the dispatch
-   * auto-opened it) to the run's OWN terminal state: done on a completed
-   * run, cancelled on an abort, failed on a fault. A failed task stays on
-   * the board for the human — visible as failed, never spinning — until
-   * they dismiss it (closeTask) or re-dispatch. A failed settle carries
-   * the human-readable reason on the edge (the client's dim row surfaces
-   * it).
-   */
+  /** Settle only this execution and its own task rows, preserving newer runs. */
   private async settle(
-    room: Session, member: RoomMember, startedAt: number,
-    state: 'done' | 'cancelled' | 'failed', error?: string,
-  ): Promise<void> {
+    room: Session, member: RoomMember, runId: string, startedAt: number, outcome: RunOutcome,
+  ): Promise<RunOutcome> {
     const events = room.snapshotEvents()
     const memberName = replay(events).members.find(entry => memberId(events, entry) === memberId(events, member))?.name ?? member.name
-    const current = replay(events).runs.find(entry => entry.member === memberName)
-    if (current !== undefined && current.startedAt === startedAt && current.state !== 'running') return
+    const terminal = events.find(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.state !== 'running')
+    if (terminal?.type === 'room/run-state' && terminal.data.state !== 'running') {
+      return { state: terminal.data.state, ...terminal.data.error === undefined ? {} : { error: terminal.data.error } }
+    }
     room.append('room/run-state', {
-      member: memberName, state, startedAt, elapsedMs: Date.now() - startedAt,
-      ...error === undefined ? {} : { error },
+      member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,
+      ...outcome.error === undefined ? {} : { error: outcome.error },
     })
     for (const task of replay(room.snapshotEvents()).tasks) {
-      if (task.member === memberName && task.status === 'in_progress') {
-        room.append('room/task-updated', { id: task.id, status: state })
+      if (task.member === memberName && task.status === 'in_progress' && task.deliveryId === runId) {
+        room.append('room/task-updated', { id: task.id, status: outcome.state })
       }
     }
     await this.ctx.sessions.flush(room)
+    return outcome
   }
 }

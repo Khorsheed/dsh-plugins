@@ -709,6 +709,121 @@ describe('coordinator routing and durable deliveries', () => {
     flush.mockRestore()
   })
 
+  it('submits existing members to core immediately and isolates late settlement from a newer run', async () => {
+    const bench = await bootRoom()
+    await preparedMember(bench)
+    bench.localAgentStub.supportsMemberConfiguration = () => true
+    const first = deferred<SubagentResult>()
+    const second = deferred<SubagentResult>()
+    const olderFlushEntered = deferred<void>()
+    const olderFlush = deferred<void>()
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const originalFlush = bench.ctx.sessions.flush.bind(bench.ctx.sessions)
+    let delayed = false
+    const flush = vi.spyOn(bench.ctx.sessions, 'flush').mockImplementation(async target => {
+      const last = target.snapshotEvents().at(-1)
+      if (!delayed && last?.type === 'room/speech' && last.data.text === 'first own output') {
+        delayed = true
+        olderFlushEntered.resolve()
+        await olderFlush.promise
+      }
+      return originalFlush(target)
+    })
+    let calls = 0
+    bench.facade.resume.mockImplementation(async (_parent, _provider, _child, _prompt, options) => {
+      const position = calls++
+      if (position === 1) await olderFlushEntered.promise
+      await options.onAdmitted()
+      return { ...settledRun('child-ada', ''), result: position === 0 ? first.promise : second.promise }
+    })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada first input' })
+    await tick()
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada second input' })
+    await tick()
+    // The old room chain held the second facade call until the entire first turn settled.
+    expect(bench.facade.resume).toHaveBeenCalledTimes(2)
+    first.resolve({ output: [{ type: 'text', text: 'first own output' }], stopReason: 'completed' })
+    await olderFlushEntered.promise
+    await tick()
+    const admitted = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!admitted.ok) throw new Error('missing room')
+    const secondRunId = admitted.value.runs[0]!.runId
+    expect(admitted.value.deliveries?.map(row => row.status)).toEqual(['running', 'running'])
+    olderFlush.resolve()
+    await tick()
+    const settled = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(settled).toMatchObject({ ok: true, value: {
+      runs: [{ state: 'running', runId: secondRunId }],
+      tasks: [{ status: 'done' }, { status: 'in_progress' }],
+      deliveries: [{ status: 'done' }, { status: 'running' }],
+    } })
+    expect(bench.service.engine.hasPending(session, 'ada')).toBe(true)
+    bench.facade.cancel.mockReturnValue(true)
+    await bench.service.cancel({ sessionId: bench.sessionId, name: 'ada' })
+    second.resolve({ output: [], stopReason: 'aborted' })
+    await bench.service.engine.idle()
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: {
+      tasks: [{ status: 'done' }, { status: 'cancelled' }], deliveries: [{ status: 'done' }, { status: 'cancelled' }],
+    } })
+    const outcomes = session.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.state === 'done')
+    expect(outcomes[0]?.data).toMatchObject({ text: 'first own output' })
+    expect(bench.service.engine.hasPending(session, 'ada')).toBe(false)
+    flush.mockRestore()
+  })
+
+  it('holds fresh-member submissions only until their first stable handle is persisted', async () => {
+    const bench = await bootRoom()
+    bench.localAgentStub.supportsMemberConfiguration = () => true
+    const publish = deferred<void>()
+    const result = deferred<SubagentResult>()
+    bench.facade.start.mockImplementation(async (_parent, _provider, _prompt, options) => {
+      await publish.promise
+      await options.onAdmitted()
+      return { ...settledRun('fresh-child', ''), result: result.promise }
+    })
+    bench.facade.resume.mockImplementation(async (_parent, _provider, _child, _prompt, options) => {
+      await result.promise
+      await options.onAdmitted()
+      return settledRun('fresh-child', 'second output')
+    })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: 'first input' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada second input' })
+    await tick()
+    expect(bench.facade.start).toHaveBeenCalledOnce()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    publish.resolve()
+    await tick()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(bench.facade.resume.mock.calls[0]![2]).toBe('fresh-child')
+    result.resolve({ output: [{ type: 'text', text: 'first output' }], stopReason: 'completed' })
+    await bench.service.engine.idle()
+    expect(bench.facade.start).toHaveBeenCalledOnce()
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { deliveries: [{ status: 'done' }, { status: 'done' }] } })
+  })
+
+  it('does not report a terminal room failure before already-started native work settles', async () => {
+    const bench = await bootRoom()
+    await preparedMember(bench)
+    bench.localAgentStub.supportsMemberConfiguration = () => true
+    const result = deferred<SubagentResult>()
+    const nativeStarted = deferred<void>()
+    let flush: ReturnType<typeof vi.spyOn> | undefined
+    bench.facade.resume.mockImplementation(async (_parent, _provider, _child, _prompt, options) => {
+      await options.onAdmitted()
+      flush = vi.spyOn(bench.ctx.sessions, 'flush').mockRejectedValueOnce(new Error('handle flush failed'))
+      nativeStarted.resolve()
+      return { ...settledRun('child-ada', ''), result: result.promise }
+    })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada work with side effects' })
+    await nativeStarted.promise
+    await tick()
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { deliveries: [{ status: 'running' }] } })
+    result.resolve({ output: [], stopReason: 'completed' })
+    await bench.service.engine.idle()
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { deliveries: [{ status: 'failed', error: 'handle flush failed' }] } })
+    flush?.mockRestore()
+  })
+
   it('recovers unstarted deliveries and marks crashed in-flight work uncertain without replay', async () => {
     const bench = await bootRoom()
     const member = await preparedMember(bench)

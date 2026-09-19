@@ -128,12 +128,14 @@ export interface RoomSpeechEvent {
   readonly member: string
   readonly text: string
   readonly childSessionId?: SessionId
-  /** Dispatch→settle milliseconds, when measured. */
+  /** Native admission→settle milliseconds, excluding queue time. */
   readonly durationMs?: number
 }
 
 /** A member run's lifecycle edge. */
 export interface RoomRunStateEvent {
+  /** Stable execution identity; legacy journals use startedAt. */
+  readonly runId?: string
   readonly member: string
   readonly state: 'running' | 'done' | 'cancelled' | 'failed'
   readonly startedAt: number
@@ -196,6 +198,8 @@ export interface RoomGoalEvent {
  * triggers any automatic dispatch.
  */
 export interface RoomTaskAddedEvent {
+  /** Only this delivery may automatically settle this legacy chat task row. */
+  readonly deliveryId?: string
   readonly id: string
   readonly member: string
   readonly title: string
@@ -286,6 +290,8 @@ export interface RoomRelay {
 
 /** One task-board task, as folded by the journal replay. */
 export interface RoomTask {
+  /** Only this delivery may automatically settle this legacy chat task row. */
+  readonly deliveryId?: string
   readonly id: string
   readonly member: string
   readonly title: string
@@ -301,6 +307,8 @@ export interface RoomTask {
 
 /** A member's current run state, as folded by the journal replay. */
 export interface RoomMemberRun {
+  /** Stable execution identity; legacy journals use startedAt. */
+  readonly runId?: string
   readonly member: string
   readonly state: 'running' | 'done' | 'cancelled' | 'failed'
   readonly startedAt: number

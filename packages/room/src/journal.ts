@@ -243,6 +243,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           id: event.data.id,
           member: event.data.member,
           title: event.data.title,
+          ...event.data.deliveryId === undefined ? {} : { deliveryId: event.data.deliveryId },
           status: event.data.status,
           ...event.data.blockedBy === undefined ? {} : { blockedBy: event.data.blockedBy },
           updatedAt: event.time,
@@ -283,10 +284,15 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
       }
       case 'room/run-state': {
+        const current = runs.get(event.data.member)
+        // An older turn may finish journaling after core admits its successor.
+        // Its delivery outcome remains durable, but it cannot replace that successor.
+        if (event.data.state !== 'running' && event.data.runId !== undefined && current?.runId !== undefined && current.runId !== event.data.runId) break
         runs.set(event.data.member, {
           member: event.data.member,
           state: event.data.state,
           startedAt: event.data.startedAt,
+          ...event.data.runId === undefined ? {} : { runId: event.data.runId },
           ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
           ...event.data.error === undefined ? {} : { error: event.data.error },
         })

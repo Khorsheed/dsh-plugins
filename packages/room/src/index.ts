@@ -396,6 +396,7 @@ export class RoomService extends TypertRemoteService {
       }).seq
       loaded.session.append('room/task-added', {
         id: randomUUID(), member: request.name, title: taskTitle(request.firstTask), status: 'in_progress',
+        deliveryId: `${firstTaskSeq}:${memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)}`,
       })
     }
     await this.ctx.sessions.flush(loaded.session)
@@ -657,6 +658,7 @@ export class RoomService extends TypertRemoteService {
     for (const target of targets) {
       loaded.session.append('room/task-added', {
         id: randomUUID(), member: target, title: taskTitle(text), status: 'in_progress',
+        deliveryId: `${dispatch.seq}:${memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === target)!)}`,
       })
     }
     await this.ctx.sessions.flush(loaded.session)
@@ -697,6 +699,7 @@ export class RoomService extends TypertRemoteService {
     })
     loaded.session.append('room/task-added', {
       id: randomUUID(), member: request.member, title: taskTitle(text), status: 'in_progress',
+      deliveryId: `${dispatch.seq}:${memberId(loaded.session.snapshotEvents(), target)}`,
     })
     await this.ctx.sessions.flush(loaded.session)
     this.engine.dispatch(loaded.session, request.member, text, { dispatchSeq: dispatch.seq })
@@ -973,12 +976,13 @@ export class RoomService extends TypertRemoteService {
       if (running === undefined) return { ok: true, value: { cancelled: true } }
       loaded.session.append('room/run-state', {
         member: request.name, state: 'cancelled', startedAt: running.startedAt,
+        ...running.runId === undefined ? {} : { runId: running.runId },
       })
       // The engine's settle no-ops behind this edge, so the task closing the
       // settle would have done happens here: the dispatch-opened in_progress
       // task cancels with its run.
       for (const task of loaded.state.tasks) {
-        if (task.member === request.name && task.status === 'in_progress') {
+        if (task.member === request.name && task.status === 'in_progress' && (running.runId === undefined || task.deliveryId === running.runId)) {
           loaded.session.append('room/task-updated', { id: task.id, status: 'cancelled' })
         }
       }
