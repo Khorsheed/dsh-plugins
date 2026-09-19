@@ -37,6 +37,7 @@
     "src/client/locales.ts",
     "src/client/Overview.tsx",
     "src/client/panel-service.ts",
+    "src/client/preset-visibility.ts",
     "src/client/store-local.ts",
     "src/client/store.ts",
     "src/client/WorktreesTab.tsx"

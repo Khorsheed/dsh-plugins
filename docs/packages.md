@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**33**
-- 自挂载 bundle(`dsh.bundle.patch`):**26**
+- 包总数:**36**
+- 自挂载 bundle(`dsh.bundle.patch`):**29**
 - 组合组件(不自挂载,`dsh.composition.component`):**7** — `preset-composed-row` 5、`provider-mounted-row` 1、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**24**
+- 带浏览器半边(`dsh.client`):**27**
 - 整合 profile(默认安装单元):**3** — `web-basic`、`web-dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -18,11 +18,12 @@
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-canvas` | `packages/canvas` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.95 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-datasets-tool` | `packages/datasets-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
+| `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.3.0 | bundle | — | — | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
@@ -41,9 +42,11 @@
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mission-tool` | `packages/mission-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-quote` | `packages/quote` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
@@ -66,7 +69,8 @@
 - **preset-composed-row**:模型工具行。由**安装它的 profile** 作为直接依赖引入(与 core 并列),
   它自己声明对 core 的依赖(companion → core,只保证模块可解析);再由 agent preset 的
   `agent.cordis.yml` 按名引用一行,按会话授予。它不出现在 `dsh.profile.bundles` 里,`dsh.bundle`
-  声明会把工具自动挂回 profile 根,正是工具拆分要移除的东西。
+  声明会把工具自动挂回 profile 根,正是工具拆分要移除的东西。配套 UI/提示词随此行的授予
+  自隐,判据与反模式见 [plugin-visibility.md](plugin-visibility.md)。
 - **provider-mounted-row**:家族内部共享行,由 provider 的 patch 挂载,或由 provisioner 落位。
 - **sub-profile-patch**:patch 只面向被 provision 出来的子 profile,由 provisioner 复制进该子
   profile 自己的 patch 层。

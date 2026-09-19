@@ -1,0 +1,76 @@
+/* The floating dock frame (`shell.overlay`). The overlay layer is
+   click-through; the frame opts back into pointer events. Every colour comes
+   from a `--dsw-*` alias token. */
+
+.frame {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-elevation-prominent);
+  pointer-events: auto;
+}
+
+.handle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.handleTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The tab stays the whole surface on narrow viewports: the dock's frame
+   would crowd out the content it floats over, so the「弹出为浮层」entry
+   hides here and the frame caps itself to the viewport when already open. */
+@media (max-width: 720px) {
+  .frame {
+    width: calc(100vw - 16px) !important;
+    height: 60vh !important;
+  }
+}

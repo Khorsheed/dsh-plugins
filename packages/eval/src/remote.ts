@@ -22,7 +22,19 @@
  * the condition registry; `matrix` / `cells` / `cell` (I5·T35b) read the
  * matrix, the cell list and one cell in full.
  *
- * Four of them WRITE, and every one is a human's click. `approve` is a click
+ * `newExperiment` / `draftOptions` (I5·T34) are the 新建实验 form's: one read
+ * to fill its pickers, one write that drafts the plan and its new conditions
+ * and validates them. That write is the ONE this face shares with a model
+ * tool — `eval_plan_draft` reaches the same service verb — and it is shared
+ * precisely because drafting is not starting: a draft is a file and a 草稿 row,
+ * and every door to `runStart` stays on the human side of R1.
+ *
+ * Seven of them WRITE, and every one is a human's click. `provisionCondition`
+ * and `setConditionEndpoint` (I5·T58) are the conditions page's two: the first
+ * turns a declaration into a real scoped home and locks it, the second fills
+ * in the one contract field the readiness gate refuses a condition for leaving
+ * null. Both were a terminal and a text editor before, which is why step 4 of
+ * the walkthrough cost six human actions where it should cost two. `approve` is a click
  * reaching the same `runStart` the slash command reaches — with the approving
  * session as the run's parent, exactly as `/eval run` resolves it. The
  * drawer's three are `retry` (a fresh attempt against an auditable reason),
@@ -32,6 +44,13 @@
  * run-class MODEL tool and there will not be one (ui-spec R1): the starting
  * verb belongs to the interface, never to the toolset — and nothing here can
  * relax a leak gate it does not implement.
+ *
+ * `humanFinal` (I5·T37) is the sharpest case of that rule. R1 says 终评是人的,
+ * and it holds because the only code path that writes the `human-final`
+ * namespace is this verb, reached from the judge bench, tagged with the
+ * clicking session. `@khorsheed/dsh-eval-tool` registers no twin of it, and
+ * the reason it never will is structural rather than editorial: a model with
+ * a door to the final verdict would make every run's conclusion its own.
  * @module @khorsheed/dsh-eval/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -50,8 +69,16 @@ import type {
   EvalCellsResult,
   EvalConditionDiffRequest,
   EvalConditionDiffView,
+  EvalConditionEndpointRequest,
+  EvalConditionEndpointView,
+  EvalConditionProvisionRequest,
+  EvalConditionProvisionView,
   EvalConditionsRequest,
   EvalConditionsView,
+  EvalDraftOptionsRequest,
+  EvalDraftOptionsView,
+  EvalDraftRequest,
+  EvalDraftResult,
   EvalExperimentDetail,
   EvalExperimentRequest,
   EvalExperimentsRequest,
@@ -62,12 +89,19 @@ import type {
   EvalExportRunRequest,
   EvalFinalizeRequest,
   EvalFinalizeView,
+  EvalRunUnitsRequest,
+  EvalRunUnitsView,
+  EvalHumanFinalRequest,
+  EvalHumanFinalResult,
   EvalItemRunsRequest,
   EvalItemRunsResult,
+  EvalJudgeQueueRequest,
+  EvalJudgeQueueView,
   EvalMatrixRequest,
   EvalMatrixView,
   EvalPlanRequest,
   EvalPlanReview,
+  EvalReexportRequest,
   EvalReportRequest,
   EvalRunJobView,
   EvalRunOutputView,
@@ -108,7 +142,8 @@ export class EvalRemoteService extends TypertRemoteService<never> {
     const handle = await this.service.runStart(request.plan, {
       ...(request.dryRun === true ? { dryRun: true } : {}),
       ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
-      ...(request.finalize === true ? { finalize: true } : {}),
+      ...(request.finalize === false ? { finalize: false } : {}),
+      ...(request.keepUnits === true ? { keepUnits: true } : {}),
       ...(request.out === undefined ? {} : { exportsDir: request.out }),
       ...(request.retries === undefined ? {} : { retryInfrastructure: request.retries }),
       ...(request.only === undefined ? {} : { only: request.only }),
@@ -250,6 +285,76 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   }
 
   /**
+   * PROVISION one condition — ui-spec step 4's action, on the conditions page.
+   *
+   * A human's click, and never a model tool: provisioning materializes a
+   * scoped home and anchors what a subject IS, so it sits on the human side of
+   * R1 with 批准并启动 and 终评. It is also ONE click: the same call corrects
+   * the declaration's `home.sha` from what it measured and writes the lock
+   * against the corrected document, which is what the person used to do by
+   * copying a digest between a terminal and an editor (I5·T39 · G7).
+   * @param agent - the clicking session; its binding names the working copy.
+   * @param request - the set, the condition, and whether to keep the declaration.
+   * @returns what provision did, and the row as it now reads.
+   */
+  @Remote('provisionCondition')
+  provisionCondition(agent: Agent, request: EvalConditionProvisionRequest): Promise<EvalConditionProvisionView> {
+    return this.service.provisionCondition(request, { session: { id: String(agent.session.id) } })
+  }
+
+  /**
+   * SET one condition's `model.endpoint` — the only field of an existing
+   * declaration any face may change, and the conditions page is where.
+   *
+   * The readiness gate refuses a null endpoint, and until this verb the only
+   * way to fill it in was a text editor (I5·T39 · G6). It is a factor edit:
+   * the condition re-hashes, any lock beside it goes stale, and the answer
+   * says so rather than re-provisioning on the person's behalf.
+   * @param agent - the clicking session; its binding names the working copy.
+   * @param request - the set, the condition, and the value.
+   * @returns what changed, and the row as it now reads.
+   */
+  @Remote('setConditionEndpoint')
+  setConditionEndpoint(agent: Agent, request: EvalConditionEndpointRequest): Promise<EvalConditionEndpointView> {
+    return this.service.setConditionEndpoint(request, { session: { id: String(agent.session.id) } })
+  }
+
+  /**
+   * DRAFT an experiment — ui-spec step 2, the 新建实验 form's one write.
+   *
+   * The same service verb `eval_plan_draft` reaches, which is the point of the
+   * task that added both: a draft a person fills in on a form and a draft an
+   * agent makes in one sentence are the same file written by the same code,
+   * and the lab list cannot tell them apart.
+   *
+   * A write, but NOT a start. It writes into the session's bound repository
+   * working copy and validates what it wrote; a plan validate rejects still
+   * lands, as a 草稿. The starting verb is `approve`, one page further on, and
+   * this one has no path to it.
+   * @param agent - the drafting session; its binding resolves the repository.
+   * @param request - ui-spec §五's form fields, flat.
+   * @returns where the files landed, and validate's verdict on them.
+   */
+  @Remote('newExperiment')
+  newExperiment(agent: Agent, request: EvalDraftRequest): Promise<EvalDraftResult> {
+    return this.service.draftExperiment(request, { session: { id: String(agent.session.id) } })
+  }
+
+  /**
+   * The 新建实验 form's pickers: which dataset sets this session may draft
+   * into, and the items and stage schemas each one holds.
+   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param request - repository override.
+   */
+  @Remote('draftOptions')
+  draftOptions(agent: Agent, request: EvalDraftOptionsRequest): Promise<EvalDraftOptionsView> {
+    return this.service.draftOptions({
+      session: { id: String(agent.session.id) },
+      ...(request.repo === undefined ? {} : { repo: request.repo }),
+    })
+  }
+
+  /**
    * APPROVE a plan and start it — ui-spec step 5, the button on the
    * plan-review page and nothing else. Validate runs first and an error
    * refuses without starting anything; the approving session becomes the run's
@@ -265,6 +370,7 @@ export class EvalRemoteService extends TypertRemoteService<never> {
     return this.service.approve(request.planPath, {
       parentSessionId: String(agent.session.id),
       ...(cwd === undefined ? {} : { cwd }),
+      ...(request.keepUnits === true ? { keepUnits: true } : {}),
     })
   }
 
@@ -364,7 +470,28 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    */
   @Remote('exportRun')
   exportRun(agent: Agent, request: EvalExportRunRequest): Promise<EvalExportResultView> {
-    return this.service.exportRun(agent, request)
+    return this.service.exportRun(agent, request, `tab:${String(agent.session.id)}`)
+  }
+
+  /**
+   * EXPORT AGAIN — the report page's and the judge bench's one-click repeat
+   * after a final verdict (I5·T39 · G17).
+   *
+   * The bundle is written when the run ends; `human-final` is written
+   * afterwards and never travels back into it. This repeats the export the
+   * run's own note recorded — same layers, same snapshot reference — into a
+   * fresh directory beside the first, writes the report into it, and records
+   * a new note. Nothing guarded is re-confirmed here: a repeat may only carry
+   * what a person already confirmed once, and mission re-checks that against a
+   * FRESH plan, so a layer that became guarded meanwhile refuses the call and
+   * sends the reader to the dialog.
+   * @param agent - owning live agent; recorded as `tab:<sessionId>` on the note.
+   * @param request - the run to export again.
+   * @returns the new bundle, its report, and the timestamps.
+   */
+  @Remote('reexport')
+  reexport(agent: Agent, request: EvalReexportRequest): Promise<EvalExportResultView> {
+    return this.service.reexportRun(agent, request, `tab:${String(agent.session.id)}`)
   }
 
   /**
@@ -394,13 +521,64 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * released` through the SAME release gate, and a refusal is recorded against
    * that cell rather than forced: the gate is why the archive means anything,
    * and a button that could bypass it would make the bundle worthless.
+   *
+   * It is also the page's 回收 action. The two are one verb on purpose: what
+   * reclaiming a container IS, is the cell passing its gate, so a second verb
+   * that skipped the ledger would be the force this whole seam refuses.
    * @param agent - owning live agent; recorded as `tab:<sessionId>`.
    * @param request - the run to finalize.
-   * @returns the counts, every cell's outcome, and the walk's log verbatim.
+   * @returns the counts, every cell's outcome, what became of the containers,
+   *   and the walk's log verbatim.
    */
   @Remote('finalize')
   finalize(agent: Agent, request: EvalFinalizeRequest): Promise<EvalFinalizeView> {
     return this.service.finalizeView(request.runId, `tab:${String(agent.session.id)}`)
+  }
+
+  /**
+   * The units lab is holding for this run RIGHT NOW — the report page's 未回收
+   * count. A read: it lists containers, it never touches one.
+   * @param agent - owning live agent (the tab's session).
+   * @param request - the run to ask about.
+   * @returns the held units with their cells' states, or why the list is unknown.
+   */
+  @Remote('runUnits')
+  runUnits(agent: Agent, request: EvalRunUnitsRequest): Promise<EvalRunUnitsView> {
+    void agent
+    return this.service.runUnits(request.runId)
+  }
+
+  /**
+   * The JUDGE BENCH's queue (ui-spec step 8): the run's cells as BLIND
+   * entries — an ordinal and an opaque ticket each — with their
+   * de-identified material, the rubric's `human` criteria, the llm-draft
+   * samples already recorded and whatever human-final they carry.
+   *
+   * Nothing naming a condition, a harness or a model crosses this seam. That
+   * is what makes the review blind, and it is enforced by what the payload
+   * CONTAINS rather than by what the page chooses to render.
+   * @param agent - owning live agent (the tab's session).
+   * @param request - the run whose cells are being graded.
+   */
+  @Remote('judgeQueue')
+  judgeQueue(agent: Agent, request: EvalJudgeQueueRequest): Promise<EvalJudgeQueueView> {
+    void agent
+    return this.service.judgeQueue(request.runId)
+  }
+
+  /**
+   * Record one cell's human-final verdicts — the bench's one write, and the
+   * ONLY door the `human-final` namespace has.
+   *
+   * Append-only (mission's `annotate` never rewrites) and attributed to the
+   * clicking session, so the report's `tool:`-written red flag can never fire
+   * on a verdict that came from here.
+   * @param agent - the grading session; recorded as `tab:<sessionId>`.
+   * @param request - the run, the cell's ticket, and the verdicts.
+   */
+  @Remote('humanFinal')
+  humanFinal(agent: Agent, request: EvalHumanFinalRequest): Promise<EvalHumanFinalResult> {
+    return this.service.humanFinal(request.runId, request.ticket, request.verdicts, String(agent.session.id))
   }
 
   /**

@@ -19,10 +19,27 @@
  * 3. read that scope's effective settings and check the declaration field by
  *    field ({@link checkAgainstEffective}). `permissions` and `model.endpoint`
  *    disagreeing is an ERROR and no lock is written;
- * 4. hash the scoped home's config content (`home.sha`);
+ * 3b. compose the condition's `preset` into that scope
+ *    (`localAgent.provisionScope`), which is what makes two scopes rostering
+ *    two presets a property of the condition rather than of the deployment's
+ *    plugin settings. It runs BEFORE the hash below, because the scope's own
+ *    copy of the preset lives inside the scoped home;
+ * 4. hash the scoped home's config content (`home.sha`) and WRITE IT BACK into
+ *    the declaration when it disagrees ({@link ProvisionOptions.writeBack});
  * 5. measure the provisioned environment's CAPABILITY FACE, when the
  *    condition declares a `preset` ({@link ProvisionOptions.capabilities});
  * 6. write the lock.
+ *
+ * Step 4 used to stop at the hash. `home.sha` is hash input like every other
+ * contract field, so a declaration saying null while the home hashes to
+ * `29217f21…` is not ready — and the only way to make it ready was to copy the
+ * digest out of the warning by hand and provision a SECOND time, because the
+ * first lock had anchored the pre-edit condition hash. One human action, taken
+ * twice, with a 64-character transcription in the middle (I5·T39 · G7). The
+ * write-back closes it: the declaration is corrected, the condition is
+ * re-hashed, and the lock minted below anchors the document as it now reads.
+ * `writeBack: false` keeps the old two-step shape for a caller that wants the
+ * declaration left alone.
  *
  * Step 5 is a HOOK rather than a built-in, and that is a boundary worth
  * stating: measuring a sub-dsh's capability face means booting its
@@ -76,8 +93,22 @@ export interface ProvisionReport {
   sha: string
   /** The scoped home's config hash; null when the check stopped before step 4. */
   home: HomeHash | null
+  /** Whether this provision corrected `home.sha` in the declaration (step 4). */
+  homeShaWritten: boolean
+  /**
+   * The condition hash BEFORE the write-back corrected the declaration, or
+   * null when nothing was written. `sha` above is always the hash of the
+   * document as it now reads — which is what the lock anchors.
+   */
+  shaBeforeWriteBack: string | null
   /** The field-by-field verdicts, in contract order. */
   checks: ProvisionCheck[]
+  /**
+   * What composing this condition's preset into its scope reported back, or
+   * null when this condition declares none (or the facade cannot compose
+   * one). `preset` is the read-back, not the request.
+   */
+  scopeProvisioned: { preset: string | null; snapshotMatchesSource: boolean | null } | null
   /** Whether the lock was written. */
   written: boolean
   /** The lock document — present once it was built, whether or not it was written. */
@@ -124,6 +155,25 @@ export interface ProvisionedCapabilities {
   /** Reader aids — how many rows the face carried. The sha is the identity. */
   skills?: number
   tools?: number
+  /**
+   * Where the measured preset directory lives relative to the scope:
+   * `scope-snapshot` when the scope keeps its own byte-identical copy (the
+   * arrangement a container round needs, since a unit mounts only the scoped
+   * home), `instance-root` when it defers to the deployment's preset root
+   * (measurable, and host-only).
+   */
+  source?: 'scope-snapshot' | 'instance-root'
+  /**
+   * The digest of the scope's own copy of the preset — EVERY file of it,
+   * `SKILL.md` included. Present only in `scope-snapshot` mode, because it is
+   * the only mode with a copy to hash.
+   *
+   * It is not a second opinion about the capability face: it is what lets the
+   * readiness gate and `validate` see, with no catalog and no instance, that
+   * the subject is still the one that was measured. `home.sha` cannot — it
+   * hashes config-suffixed files by design, and a skill body is not one.
+   */
+  snapshot?: { sha: string }
 }
 
 /** What a capability probe is asked about. */
@@ -137,6 +187,13 @@ export interface CapabilityProbeInput {
   homeDir: string
   /** The preset the condition declares — never null when the probe is called. */
   preset: string
+  /**
+   * What the scope's provisioning reported about the scope's own copy of that
+   * preset, when this provision composed the scope through
+   * `localAgent.provisionScope`. Absent means nothing vouched for a copy —
+   * and a scope holding one anyway is then refused rather than measured.
+   */
+  snapshot?: { matchesSource: boolean }
 }
 
 /**
@@ -161,6 +218,17 @@ export interface ProvisionOptions {
    * refuses it later.
    */
   capabilities?: CapabilityProbe
+  /**
+   * Correct the declaration's `home.sha` from the measurement before minting
+   * the lock. DEFAULT TRUE: leaving it stale is what made a condition take two
+   * provisions to become ready (see the module doc). Only the declaration's
+   * `home.sha` is ever touched, only when it disagrees with what was measured,
+   * and only inside the `repo` working copy — nothing is committed.
+   *
+   * `false` restores the pre-T58 behavior: the disagreement is reported as a
+   * warning and the document is left exactly as it was.
+   */
+  writeBack?: boolean
   now?: () => number
   log?: (message: string) => void
 }
@@ -180,6 +248,7 @@ export interface ProvisionOptions {
  */
 export async function provisionCondition(conditionPath: string, options: ProvisionOptions): Promise<ProvisionReport> {
   const now = options.now ?? ((): number => Date.now())
+  const writeBack = options.writeBack ?? true
   const log = options.log ?? ((): void => {})
   const conditionAbs = resolve(expandHome(conditionPath))
   const repo = resolve(expandHome(options.repo))
@@ -215,7 +284,9 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   const harness = stringOrNull(harnessSection['name']) ?? ''
   const scope = stringOrNull(document['scope'])
   const named = `${harness}${scope === null ? '' : `@${scope}`}`
-  const sha = hashConditionDocument(document)
+  // Re-taken after a write-back: the lock must anchor the document as it ends
+  // up on disk, not as it was read.
+  let sha = hashConditionDocument(document)
   const errors: EvalDiagnostic[] = []
   const warnings: EvalDiagnostic[] = []
 
@@ -239,6 +310,9 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     credentialState: 'unknown',
     sha,
     home: null,
+    homeShaWritten: false,
+    shaBeforeWriteBack: null,
+    scopeProvisioned: null,
     checks: [],
     written: false,
     lock: null,
@@ -303,6 +377,39 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     return report
   }
 
+  // ── 3.5 the scope's own composition ───────────────────────────────────
+  // Only for a condition that declares a preset, and only through a facade
+  // that has the verb. This is what makes "two scopes rostering two presets"
+  // a property of the CONDITION rather than of the deployment's plugin
+  // settings — and it must run before the hash below, because the scope's own
+  // copy of the preset is inside the scoped home and enters `home.sha`.
+  const declaredPreset = stringOrNull(document['preset'])
+  let scopeSnapshot: { matchesSource: boolean } | undefined
+  if (declaredPreset !== null && typeof options.localAgent.provisionScope === 'function') {
+    try {
+      const provisioned = await options.localAgent.provisionScope(harness, scope ?? undefined, { preset: declaredPreset })
+      scopeSnapshot = provisioned.presetSnapshot
+      report.scopeProvisioned = {
+        preset: provisioned.preset ?? null,
+        snapshotMatchesSource: provisioned.presetSnapshot?.matchesSource ?? null,
+      }
+      log(`provision ${id}: scope composed preset ${String(provisioned.preset ?? 'none')}`
+        + `${provisioned.presetSnapshot === undefined ? '' : ` (own copy, matches source: ${String(provisioned.presetSnapshot.matchesSource)})`}`)
+    } catch (error) {
+      // Reported, not resolved. The read-back below is what decides whether
+      // this condition has a subject, and it reads the scope rather than this
+      // call's outcome — so a failure here that somehow left a usable scope
+      // still provisions, and one that did not is refused with both reasons.
+      warnings.push({
+        code: 'SCOPE_NOT_PROVISIONED',
+        message: `composing preset ${JSON.stringify(declaredPreset)} into ${named}'s scope failed:`
+          + ` ${error instanceof Error ? error.message : String(error)}`
+          + ' — the capability face is measured from what the scope actually holds, so this provision continues and reports what it finds',
+      })
+      log(`provision ${id}: composing the scope's preset failed — ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   // ── 4. the scoped home's content hash ─────────────────────────────────
   try {
     report.home = await hashHome(homeDir)
@@ -310,18 +417,50 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     throw new EvalProvisionRefused(`cannot hash the scoped home ${homeDir}: ${error instanceof Error ? error.message : String(error)}`)
   }
   const declaredHomeSha = stringOrNull((isPlainObject(document['home']) ? document['home'] : {})['sha'])
-  if (declaredHomeSha === null) {
-    warnings.push({
-      code: 'HOME_SHA_UNDECLARED',
-      message: `the condition declares home.sha null; the scoped home hashes to ${report.home.sha}`
-        + ' — write that into the declaration to make the condition ready (provision records it in the lock but never rewrites the condition document)',
-    })
-  } else if (declaredHomeSha !== report.home.sha) {
-    warnings.push({
-      code: 'HOME_SHA_DECLARED_STALE',
-      message: `the condition declares home.sha ${declaredHomeSha.slice(0, 12)}… but the scoped home hashes to ${report.home.sha}`
-        + ' — the lock records what is actually there; correcting the declaration re-hashes the condition (home.sha is a factor), so provision again afterwards',
-    })
+  if (declaredHomeSha !== report.home.sha) {
+    if (writeBack) {
+      // The correction, and the re-hash that has to follow it. `home.sha` is
+      // hash input, so the document that comes out of this is a different
+      // condition from the one that went in — and the lock below must anchor
+      // the one that is now on disk. Writing the lock against the pre-edit sha
+      // is precisely the stale-lock state the second provision existed to fix.
+      const home = isPlainObject(document['home']) ? { ...document['home'] } : {}
+      home['sha'] = report.home.sha
+      document['home'] = home
+      try {
+        await writeFile(conditionAbs, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+      } catch (error) {
+        throw new EvalProvisionRefused(
+          `cannot write home.sha back into ${conditionAbs}: ${error instanceof Error ? error.message : String(error)}`
+          + ' — provision with --no-write-back to leave the declaration alone and copy the digest in by hand',
+        )
+      }
+      report.shaBeforeWriteBack = sha
+      sha = hashConditionDocument(document)
+      report.sha = sha
+      report.homeShaWritten = true
+      warnings.push({
+        code: 'HOME_SHA_WRITTEN',
+        message: `the condition declared home.sha ${declaredHomeSha === null ? 'null' : `${declaredHomeSha.slice(0, 12)}…`}`
+          + ` and the scoped home hashes to ${report.home.sha}`
+          + ' — the declaration was corrected and re-hashed, so the lock below anchors the condition as it now reads'
+          + ` (condition ${report.shaBeforeWriteBack.slice(0, 12)}… → ${sha.slice(0, 12)}…; run with --no-write-back to leave the document alone)`,
+      })
+      log(`provision ${id}: home.sha written back → ${conditionAbs}`
+        + ` (condition ${report.shaBeforeWriteBack.slice(0, 12)}… → ${sha.slice(0, 12)}…)`)
+    } else if (declaredHomeSha === null) {
+      warnings.push({
+        code: 'HOME_SHA_UNDECLARED',
+        message: `the condition declares home.sha null; the scoped home hashes to ${report.home.sha}`
+          + ' — write that into the declaration to make the condition ready (this provision was asked not to rewrite the condition document)',
+      })
+    } else {
+      warnings.push({
+        code: 'HOME_SHA_DECLARED_STALE',
+        message: `the condition declares home.sha ${declaredHomeSha.slice(0, 12)}… but the scoped home hashes to ${report.home.sha.slice(0, 12)}…`
+          + ' — the lock records what is actually there; correcting the declaration re-hashes the condition (home.sha is a factor), so provision again afterwards',
+      })
+    }
   }
 
   // ── 5. the provisioned environment's capability face ──────────────────
@@ -330,7 +469,6 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   // nobody measured leaves them two on paper and one in fact. Measuring is
   // the caller's hook (see the module doc), and its absence is said out
   // loud rather than papered over.
-  const declaredPreset = stringOrNull(document['preset'])
   let capabilities: ProvisionedCapabilities | undefined
   if (declaredPreset !== null) {
     if (options.capabilities === undefined) {
@@ -341,7 +479,14 @@ export async function provisionCondition(conditionPath: string, options: Provisi
       })
     } else {
       try {
-        capabilities = await options.capabilities({ condition: id, harness, scope, homeDir, preset: declaredPreset })
+        capabilities = await options.capabilities({
+          condition: id,
+          harness,
+          scope,
+          homeDir,
+          preset: declaredPreset,
+          ...(scopeSnapshot === undefined ? {} : { snapshot: scopeSnapshot }),
+        })
       } catch (error) {
         capabilities = undefined
         warnings.push({

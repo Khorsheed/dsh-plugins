@@ -374,7 +374,10 @@ describe('the detail page', () => {
     await openItem(withEval)
     expect(await screen.findByText('detail.runs')).toBeTruthy()
     expect(screen.getByText('pilot-a')).toBeTruthy()
-    expect(screen.getByText(/detail\.runsCell .*dsh-exec.*"rep":1.*done/)).toBeTruthy()
+    // ui-spec §九: the bucket and the stage are the same two chips the
+     // 实验室 tab draws, so the row's own sentence is just 条件 × rep.
+    expect(screen.getByText(/detail\.runsCell .*dsh-exec.*"rep":1/)).toBeTruthy()
+    expect(screen.getByText('bucket.done')).toBeTruthy()
     expect(screen.getByText('llm-draft 2')).toBeTruthy()
   })
 
@@ -467,7 +470,9 @@ describe('the write gestures', () => {
     fireEvent.click(await screen.findByText('detail.validate'))
     await waitFor(() => { expect(h.validateDataset).toHaveBeenCalledWith('s1', 'bench') })
     expect(await screen.findByText(/detail\.validateFound .*"errors":1/)).toBeTruthy()
-    expect(screen.getByText(/RUBRIC_NO_ITEMS/)).toBeTruthy()
+    // The diagnostic code is validate's handle on the check, not a word: §九
+    // keeps it on the row's title and the sentence on the page.
+    expect(screen.getByTitle('RUBRIC_NO_ITEMS')).toBeTruthy()
   })
 
   it('a refused write surfaces the host’s message instead of a silent no-op', async () => {

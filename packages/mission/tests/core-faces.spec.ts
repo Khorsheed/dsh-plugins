@@ -1,9 +1,11 @@
-/** The core's remaining faces after the tool-row split (M4'③): the service,
- * the slash command, and the Remote data face. The model tools and the
- * `tool:mission` prompt section moved to the companion
- * `@khorsheed/dsh-mission-tool`, so mounting this core must touch NEITHER the
- * tool registry NOR the system-prompt assembly — the ctx below supplies
- * neither, so a stray registration would throw instead of passing silently. */
+/** The core's remaining faces after the tool-row split (M4'③) and the
+ * preset-visibility rollout (A3): the service and the Remote data face. The
+ * model tools, the `tool:mission` prompt section, and the `/mission` slash
+ * registration moved to the companion `@khorsheed/dsh-mission-tool`, so
+ * mounting this core must touch NEITHER the tool registry NOR the
+ * system-prompt assembly NOR the command registry — the ctx below supplies
+ * none of them, so a stray registration would throw instead of passing
+ * silently. */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +18,7 @@ afterEach(() => {
 })
 
 describe('mission core faces', () => {
-  it('mounts the service, the slash command, and the Remote face without a tool registry', () => {
+  it('mounts the service and the Remote face, and registers NO slash command (A3: it moved to the companion row)', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-mission-core-'))
     roots.push(root)
     let slash = 0
@@ -29,12 +31,14 @@ describe('mission core faces', () => {
     }
     apply(ctx as never, { dataDir: root })
     expect(provided).toBe('mission')
-    expect(slash).toBe(1)
+    expect(slash).toBe(0)
     expect(pluginMounts).toBe(1)
   })
 
-  it('injects only the command registry and takes no tool-group config', () => {
-    expect(inject).toEqual(['commands'])
+  it('injects nothing and takes no tool-group config', () => {
+    // The command registry was the slash face's hard inject; with the
+    // registration in the companion row the core mounts unconditionally.
+    expect(inject).toEqual([])
     expect(new Config({} as never)).toEqual({ dataDir: '' })
   })
 })

@@ -6,13 +6,14 @@
  * measured), and the readiness gate (the claim must have a measurement
  * behind it, checked before any delegation is spent).
  */
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { provisionCondition, type ProvisionedCapabilities } from '../src/provision.ts'
 import { conditionDiagnostics, resolveConditionReadiness } from '../src/validate.ts'
 import { capabilityRefusal, checkReadiness, type ReadinessSubject } from '../src/readiness.ts'
+import { hashPresetTree } from '../src/preset-snapshot.ts'
 import { LOCK_SCHEMA, PRESET_CAPABLE_HARNESSES, validateJson } from '../src/schema.ts'
 import type { LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus } from '../src/faces.ts'
 import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
@@ -194,6 +195,40 @@ describe('conditions provision — the capability face it records', () => {
 
     const readiness = await resolveConditionReadiness('dsh-lean', datasetRoot)
     expect(readiness.warnings.map(warning => warning.code)).toContain('CAPABILITIES_PRESET_MISMATCH')
+  })
+
+  it('reads the scope\'s preset copy back offline, and reports one that changed after provision', async () => {
+    // T32b recorded this as a gap it could not close: validate is offline and
+    // cannot measure a capability face, so a lock whose preset was edited
+    // afterwards read `ready` here while the run refused it. The face still
+    // needs a live catalog; the scope's own COPY needs only the directory.
+    const { repo, homesRoot, conditionPath, datasetRoot } = tree(conditionDoc({ preset: 'eval-lean', home: { sha: null } }))
+    const presetDir = join(homesRoot, 'dsh', '.agent-presets', 'eval-lean')
+    mkdirSync(join(presetDir, 'skills'), { recursive: true })
+    writeFileSync(join(presetDir, 'agent.cordis.yml'), '- id: skill-filesystem\n')
+    writeFileSync(join(presetDir, 'skills', 'SKILL.md'), 'Draft the plan. One stage.\n')
+    const snapshot = await hashPresetTree(presetDir)
+    const report = await provisionCondition(conditionPath, {
+      repo,
+      localAgent: fakeLocalAgent(homesRoot),
+      capabilities: probe({ source: 'scope-snapshot', snapshot: { sha: snapshot?.sha ?? '' } }),
+    })
+    expect(report.written).toBe(true)
+    const scopeHomeDir = (harness: string, scope?: string): string =>
+      join(homesRoot, scope === undefined ? harness : `${harness}@${scope}`)
+
+    // Unchanged: ready, and the resolver is what makes the check possible.
+    const fresh = await resolveConditionReadiness('dsh-lean', datasetRoot, { scopeHomeDir })
+    expect(fresh.warnings.map(warning => warning.code)).not.toContain('CAPABILITIES_SNAPSHOT_STALE')
+
+    // A skill BODY edit: `home.sha` does not move (it hashes config-suffixed
+    // files) and nothing else offline would see it.
+    writeFileSync(join(presetDir, 'skills', 'SKILL.md'), 'Draft the plan. TWO stages.\n')
+    const stale = await resolveConditionReadiness('dsh-lean', datasetRoot, { scopeHomeDir })
+    expect(stale.warnings.map(warning => warning.code)).toContain('CAPABILITIES_SNAPSHOT_STALE')
+    // Without a resolver the reader is exactly as offline as it always was.
+    const blind = await resolveConditionReadiness('dsh-lean', datasetRoot)
+    expect(blind.warnings.map(warning => warning.code)).not.toContain('CAPABILITIES_SNAPSHOT_STALE')
   })
 })
 

@@ -1,15 +1,17 @@
 /**
- * The core's faces and the group machinery after the tool-row split (M4'③):
- * the service, the `/datasets` slash command, and the Remote data face stay
- * here; the model tools and the `datasets:tools` prompt section moved to the
- * companion `@khorsheed/dsh-datasets-tool`. Mounting this core must touch
- * NEITHER the tool registry NOR the system-prompt assembly — the ctx below
- * supplies neither, so a stray registration would throw instead of passing
- * silently. What remains testable here is the pure group mapping the companion
- * grants with.
+ * The core's faces and the group machinery after the tool-row split (M4'③)
+ * and the preset-visibility rollout (A3): the service and the Remote data
+ * face stay here; the model tools, the `datasets:tools` prompt section, and
+ * the `/datasets` slash registration moved to the companion
+ * `@khorsheed/dsh-datasets-tool`. Mounting this core must touch NEITHER the
+ * tool registry NOR the system-prompt assembly NOR the command registry —
+ * the ctx below supplies none of them, so a stray registration would throw
+ * instead of passing silently. What remains testable here is the pure group
+ * mapping the companion grants with.
  */
 import { describe, expect, it } from 'vitest'
 import { apply, Config, inject, toolsOfGroup } from '../src/index.ts'
+import { formatBindReceipt } from '../src/format.ts'
 import { datasetToolDefinitions } from '../src/tool.ts'
 
 const READ = [
@@ -37,27 +39,41 @@ function applyCore(): { provided: string[]; commands: RecordedCommand[]; plugins
   return { provided, commands, plugins }
 }
 
+describe('the /datasets bind receipt (I5·T58 · G3)', () => {
+  it('names the model-facing default instead of claiming all layers', () => {
+    const receipt = formatBindReceipt({ repoPath: '/repo' })
+    // The old sentence was "(all layers)", which a person reading it would
+    // take to mean the reference answers and the rubric were open to the
+    // planning agent. The default is the opposite of that.
+    expect(receipt).not.toContain('all layers')
+    expect(receipt).toContain('model-facing layers only')
+    expect(receipt).toContain('--layers')
+  })
+
+  it('names the layers a person opened on purpose, and says they are explicit', () => {
+    const receipt = formatBindReceipt({ repoPath: '/repo', layers: ['visible', 'grading'] })
+    expect(receipt).toContain('visible, grading')
+    expect(receipt).toContain('sensitive ones included')
+  })
+
+  it('carries the dataset whitelist when the binding has one', () => {
+    expect(formatBindReceipt({ repoPath: '/repo', datasets: ['alpha'] })).toContain('datasets: alpha')
+    expect(formatBindReceipt({ repoPath: '/repo' })).not.toContain('datasets:')
+  })
+})
+
 describe('the datasets core faces', () => {
-  it('mounts the service, the slash command, and the Remote face without a tool registry', () => {
+  it('mounts the service and the Remote face, and registers NO slash command (A3: it moved to the companion row)', () => {
     const { provided, commands, plugins } = applyCore()
     expect(provided).toEqual(['datasets'])
-    expect(commands.map(command => command.name)).toEqual(['datasets'])
+    expect(commands).toEqual([])
     expect(plugins).toBe(1)
   })
 
-  it('declares its free-form input, so a composer forwards the rest of the line', () => {
-    // WITHOUT this descriptor a capable composer has no reason to believe the
-    // command takes arguments: picking `/datasets` from the completion strip
-    // submits a bare invocation and leaves `bind <path>` in the MESSAGE body,
-    // which is how the command answered with its usage line during T36's live
-    // pass. The hint's content is copy; its PRESENCE is the contract.
-    const [command] = applyCore().commands
-    expect(command?.input?.hint).toBeTypeOf('string')
-    expect(command?.input?.hint).toContain('bind <repoPath>')
-  })
-
-  it('injects only the command registry and takes no tool-group config', () => {
-    expect(inject).toEqual(['commands'])
+  it('injects nothing and takes no tool-group config', () => {
+    // The command registry was the slash face's hard inject; with the
+    // registration in the companion row the core mounts unconditionally.
+    expect(inject).toEqual([])
     expect(new Config({} as never)).toEqual({ repo: '', worktreeRoot: '' })
   })
 })

@@ -291,3 +291,552 @@ export interface CanvasArchiveRequest {
 export type CanvasArchiveResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: CanvasError }
+
+/* ============================================================================
+ * The v2 canvas space (主题画布空间): the deployment-level board vocabulary.
+ * One canvas = one topic = one `canvas.json` under the deployment state dir
+ * (`$DSH_HOME/state/canvas/<canvasId>/`). The card board is the primary
+ * surface; every card is small, so the whole board lives in the one file and
+ * every mutation is a version-guarded rewrite of it (the v1 fence pattern,
+ * re-rooted at the state dir — see the package Agent Note).
+ * ========================================================================= */
+
+/** The canvas metadata file inside one canvas's state directory. */
+export const CANVAS_FILE_NAME = 'canvas.json'
+
+/** The state dir's own name under `$DSH_HOME/state/` (the datasets precedent). */
+export const CANVAS_STATE_DIR_NAME = 'canvas'
+
+/** The content card kinds, in the order the board's filter chips offer them. */
+export const BOARD_CARD_KINDS = ['fragment', 'question', 'grounding', 'reference', 'document'] as const
+
+/** One content card kind. */
+export type BoardCardKind = (typeof BOARD_CARD_KINDS)[number]
+
+/** The card statuses; `proposed` is the agent-contribution entrance (ghost). */
+export const BOARD_CARD_STATUSES = ['proposed', 'kept', 'archived'] as const
+
+/** One card status. Archiving never deletes (the v1 semantics, continued). */
+export type BoardCardStatus = (typeof BOARD_CARD_STATUSES)[number]
+
+/** The question card lifecycle states. */
+export const QUESTION_STATES = ['open', 'exploring', 'answered'] as const
+
+/** One question lifecycle state; `answered` is only ever user-settled. */
+export type QuestionState = (typeof QUESTION_STATES)[number]
+
+/** Longest accepted canvas title, in code units. */
+export const MAX_CANVAS_TITLE_LENGTH = 80
+
+/**
+ * Longest accepted card text, in code units. Cards are small by design — but
+ * "paste a whole document in to read it" is a core scene, and a silent 8000
+ * cut was data loss (a pasted HTML document lost its tail). 256KB per card
+ * keeps canvas.json's whole-board reads/writes in the milliseconds even with
+ * dozens of big cards; the real `assets/` pointer-out is M4's.
+ */
+export const MAX_CARD_TEXT_LENGTH = 256_000
+
+/** Longest accepted comment text, in code units. */
+export const MAX_COMMENT_TEXT_LENGTH = 4000
+
+/** Whether a value is one of the five content card kinds. */
+export function isBoardCardKind(value: unknown): value is BoardCardKind {
+  return typeof value === 'string' && (BOARD_CARD_KINDS as readonly string[]).includes(value)
+}
+
+/** Whether a value is one of the three card statuses. */
+export function isBoardCardStatus(value: unknown): value is BoardCardStatus {
+  return typeof value === 'string' && (BOARD_CARD_STATUSES as readonly string[]).includes(value)
+}
+
+/** Whether a value is one of the three question lifecycle states. */
+export function isQuestionState(value: unknown): value is QuestionState {
+  return typeof value === 'string' && (QUESTION_STATES as readonly string[]).includes(value)
+}
+
+/**
+ * The shape every canvas id must have. The id names a state directory, so it
+ * is validated before any path is joined from it — anything else (traversal,
+ * separators, a foreign prefix) is refused before the filesystem sees it.
+ * @param value - the id a wire request carried.
+ * @returns the id when usable, or undefined.
+ */
+export function normalizeCanvasId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  return /^canvas_[a-z0-9]{8,40}$/.test(value) ? value : undefined
+}
+
+/**
+ * Turn operator input into a usable canvas title, or undefined when nothing
+ * usable is left. A canvas title is display text, not a file name (the id is
+ * the directory), so only whitespace is normalized and the result capped.
+ * @param raw - whatever the operator typed.
+ * @returns the sanitized title, or undefined when it is empty.
+ */
+export function sanitizeCanvasTitle(raw: string): string | undefined {
+  const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (cleaned.length === 0) return undefined
+  return cleaned.slice(0, MAX_CANVAS_TITLE_LENGTH)
+}
+
+/**
+ * Build one id. Ids are time-ordered base36 (a ULID-flavoured shape:
+ * `canvas_01J…`), which keeps the state dir's lexical order chronological;
+ * the caller supplies the time and the randomness so this module stays pure.
+ * @param prefix - `canvas`, `c` (card) or `m` (comment).
+ * @param timeMs - milliseconds since the epoch.
+ * @param random - lowercase base36 randomness (host supplies `node:crypto`).
+ * @returns the id.
+ */
+export function makeBoardId(prefix: 'canvas' | 'c' | 'm', timeMs: number, random: string): string {
+  return `${prefix}_${timeMs.toString(36).padStart(9, '0')}${random.toLowerCase().replace(/[^a-z0-9]/g, '')}`
+}
+
+/** Where a card's content came from. */
+export interface BoardCardSource {
+  readonly type: 'url' | 'file' | 'paste'
+  /** The url, the absolute file path, or a short paste note. */
+  readonly ref: string
+  /** Display title (a fetched page title, the item name). */
+  readonly title?: string
+}
+
+/** One comment on a card. */
+export interface BoardComment {
+  readonly id: string
+  readonly author: 'user' | 'agent'
+  readonly text: string
+  readonly createdAt: string
+}
+
+/** One board card. */
+export interface BoardCard {
+  readonly id: string
+  readonly kind: BoardCardKind
+  text: string
+  source?: BoardCardSource
+  status: BoardCardStatus
+  /** Present only on question cards. */
+  question?: { state: QuestionState }
+  comments: BoardComment[]
+  readonly createdBy: 'user' | 'agent'
+  readonly createdAt: string
+  updatedAt: string
+}
+
+/** The board's self-tuning counters (the rules that read them stay visible). */
+export interface CanvasStats {
+  proposed: { accepted: number; rejected: number }
+  /** Non-archived card counts by kind (kept + proposed — what the board shows). */
+  kindCounts: Partial<Record<BoardCardKind, number>>
+  lastActiveAt: string
+}
+
+/** One canvas's `canvas.json`: metadata plus every card plus the counters. */
+export interface CanvasBoard {
+  readonly id: string
+  title: string
+  attachedWorkspaces: string[]
+  /** The single agent session this canvas owns; null until M2 creates it. */
+  chat: { sessionId: string | null }
+  cards: BoardCard[]
+  stats: CanvasStats
+  /** Set when the canvas is archived from the list; the directory is never deleted. */
+  archivedAt: string | null
+  readonly createdAt: string
+  updatedAt: string
+}
+
+/** Recompute the visible kind counts from the card set (status !== archived). */
+export function computeKindCounts(cards: readonly BoardCard[]): Partial<Record<BoardCardKind, number>> {
+  const counts: Partial<Record<BoardCardKind, number>> = {}
+  for (const card of cards) {
+    if (card.status === 'archived') continue
+    counts[card.kind] = (counts[card.kind] ?? 0) + 1
+  }
+  return counts
+}
+
+/** One canvas as the space's list surface needs it. */
+export interface CanvasSummary {
+  readonly id: string
+  readonly title: string
+  /** Non-archived card count (kept + proposed). */
+  readonly cardCount: number
+  /** Non-archived question cards still open or exploring. */
+  readonly openQuestions: number
+  readonly archivedAt: string | null
+  readonly lastActiveAt: string
+}
+
+/** Project one board into its list row. */
+export function summarizeBoard(board: CanvasBoard): CanvasSummary {
+  let cardCount = 0
+  let openQuestions = 0
+  for (const card of board.cards) {
+    if (card.status === 'archived') continue
+    cardCount += 1
+    if (card.kind === 'question' && card.question !== undefined && card.question.state !== 'answered') {
+      openQuestions += 1
+    }
+  }
+  return {
+    id: board.id,
+    title: board.title,
+    cardCount,
+    openQuestions,
+    archivedAt: board.archivedAt,
+    lastActiveAt: board.stats.lastActiveAt,
+  }
+}
+
+/** A fresh board's stats. */
+export function emptyStats(now: string): CanvasStats {
+  return { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: now }
+}
+
+/**
+ * Read an untrusted card value into a well-formed card, or undefined when the
+ * value is unusable (a hand-edited `canvas.json` must never make the board
+ * unopenable — the bad card drops out, the rest load).
+ * @param raw - one parsed `cards[]` entry.
+ * @param now - timestamps for entries that lost theirs.
+ * @returns the normalized card, or undefined.
+ */
+function normalizeCard(raw: unknown, now: string): BoardCard | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  if (typeof record['id'] !== 'string' || record['id'].length === 0) return undefined
+  if (!isBoardCardKind(record['kind'])) return undefined
+  if (typeof record['text'] !== 'string') return undefined
+  const status = isBoardCardStatus(record['status']) ? record['status'] : 'kept'
+  const card: BoardCard = {
+    id: record['id'],
+    kind: record['kind'],
+    text: record['text'].slice(0, MAX_CARD_TEXT_LENGTH),
+    status,
+    comments: [],
+    createdBy: record['createdBy'] === 'agent' ? 'agent' : 'user',
+    createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : now,
+    updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
+  }
+  if (typeof record['source'] === 'object' && record['source'] !== null) {
+    const source = record['source'] as Record<string, unknown>
+    const type = source['type']
+    if ((type === 'url' || type === 'file' || type === 'paste') && typeof source['ref'] === 'string') {
+      card.source = {
+        type,
+        ref: source['ref'],
+        ...(typeof source['title'] === 'string' ? { title: source['title'] } : {}),
+      }
+    }
+  }
+  if (card.kind === 'question') {
+    card.question = {
+      state: typeof record['question'] === 'object' && record['question'] !== null &&
+        isQuestionState((record['question'] as Record<string, unknown>)['state'])
+        ? (record['question'] as { state: QuestionState }).state
+        : 'open',
+    }
+  }
+  if (Array.isArray(record['comments'])) {
+    for (const entry of record['comments'] as unknown[]) {
+      if (typeof entry !== 'object' || entry === null) continue
+      const comment = entry as Record<string, unknown>
+      if (typeof comment['id'] !== 'string' || typeof comment['text'] !== 'string') continue
+      card.comments.push({
+        id: comment['id'],
+        author: comment['author'] === 'agent' ? 'agent' : 'user',
+        text: comment['text'].slice(0, MAX_COMMENT_TEXT_LENGTH),
+        createdAt: typeof comment['createdAt'] === 'string' ? comment['createdAt'] : now,
+      })
+    }
+  }
+  return card
+}
+
+/**
+ * Read an untrusted `canvas.json` value into a board, or undefined when the
+ * value is unusable at the top level (not an object, or missing the id/title
+ * the directory claims). Per-field problems degrade to defaults instead —
+ * a tolerant read, exactly the pad index's rule.
+ * @param raw - the parsed file content.
+ * @param expectedId - the directory's id; a mismatch refuses the file.
+ * @param now - timestamps for fields that lost theirs.
+ * @returns the normalized board, or undefined.
+ */
+export function normalizeBoard(raw: unknown, expectedId: string, now: string): CanvasBoard | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  if (record['id'] !== expectedId) return undefined
+  if (typeof record['title'] !== 'string' || record['title'].length === 0) return undefined
+  const cards: BoardCard[] = []
+  if (Array.isArray(record['cards'])) {
+    for (const entry of record['cards'] as unknown[]) {
+      const card = normalizeCard(entry, now)
+      if (card !== undefined) cards.push(card)
+    }
+  }
+  const statsRaw = typeof record['stats'] === 'object' && record['stats'] !== null
+    ? record['stats'] as Record<string, unknown>
+    : undefined
+  const proposedRaw = typeof statsRaw?.['proposed'] === 'object' && statsRaw['proposed'] !== null
+    ? statsRaw['proposed'] as Record<string, unknown>
+    : undefined
+  const count = (value: unknown): number => typeof value === 'number' && value >= 0 ? Math.floor(value) : 0
+  return {
+    id: expectedId,
+    title: record['title'].slice(0, MAX_CANVAS_TITLE_LENGTH),
+    attachedWorkspaces: Array.isArray(record['attachedWorkspaces'])
+      ? (record['attachedWorkspaces'] as unknown[]).filter((w): w is string => typeof w === 'string')
+      : [],
+    chat: {
+      sessionId: typeof (record['chat'] as Record<string, unknown> | undefined)?.['sessionId'] === 'string'
+        ? (record['chat'] as { sessionId: string }).sessionId
+        : null,
+    },
+    cards,
+    stats: {
+      proposed: {
+        accepted: count(proposedRaw?.['accepted']),
+        rejected: count(proposedRaw?.['rejected']),
+      },
+      kindCounts: computeKindCounts(cards),
+      lastActiveAt: typeof statsRaw?.['lastActiveAt'] === 'string' ? statsRaw['lastActiveAt'] : now,
+    },
+    archivedAt: typeof record['archivedAt'] === 'string' ? record['archivedAt'] : null,
+    createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : now,
+    updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
+  }
+}
+
+/* ---------------------------------------------------- board wire payloads */
+
+/** Every canvas the deployment holds, as list rows. */
+export interface BoardListResult {
+  readonly items: readonly CanvasSummary[]
+}
+
+/** Create a canvas (a topic, optionally with workspaces attached). */
+export interface BoardCreateRequest {
+  readonly title: string
+  readonly attachedWorkspaces?: readonly string[]
+}
+
+/** Read one board with the freshness token a later mutation must present. */
+export interface BoardReadRequest {
+  readonly canvasId: string
+}
+
+/** A board and the freshness token its file carried. */
+export interface BoardReadResult {
+  readonly board: CanvasBoard
+  readonly version: string
+}
+
+/** A board read either returns the board or reports one shared error code. */
+export type BoardReadOutcome =
+  | ({ readonly ok: true } & BoardReadResult)
+  | { readonly ok: false; readonly error: CanvasError }
+
+/** Add one user card (createdBy user, straight to kept — the board's CRUD). */
+export interface BoardPutCardRequest {
+  readonly canvasId: string
+  readonly kind: BoardCardKind
+  readonly text: string
+  readonly source?: BoardCardSource
+}
+
+/** Edit one card: text, a status transition, or a question-state transition. */
+export interface BoardPatchCardRequest {
+  readonly canvasId: string
+  readonly cardId: string
+  readonly text?: string
+  readonly status?: BoardCardStatus
+  readonly question?: { state: QuestionState }
+}
+
+/** Comment on one card. */
+export interface BoardAddCommentRequest {
+  readonly canvasId: string
+  readonly cardId: string
+  readonly text: string
+  /** Defaults to `user`; the host-side agent path (M3) passes `agent`. */
+  readonly author?: 'user' | 'agent'
+}
+
+/** Archive a canvas from the space list, or restore it (never a delete). */
+export interface BoardArchiveRequest {
+  readonly canvasId: string
+  readonly archived: boolean
+}
+
+/** A mutation either lands (with the fresh board and its new token) or reports a code. */
+export type BoardMutationResult =
+  | ({ readonly ok: true } & BoardReadResult)
+  | { readonly ok: false; readonly error: CanvasError }
+
+
+/* ------------------------------------------------------- summary heuristics */
+
+/** A card summary is clamped at about this many lines (the CSS enforces it). */
+export const SUMMARY_CLAMP_LINES = 6
+
+/** A text longer than this always wears the long-card affordances (fade + count). */
+export const SUMMARY_CLAMP_CHARS = 240
+
+/** Longest derived document-card title, in code units. */
+export const MAX_DOCUMENT_TITLE_LENGTH = 60
+
+/**
+ * Whether a card text is long enough that the summary clamp will actually
+ * cut it — the driver for the fade and the word count (the board never
+ * measures layout; the estimate is deliberately textual).
+ * @param text - the card's full text.
+ * @returns true when the clamp hides something.
+ */
+export function isLongCardText(text: string): boolean {
+  if (text.length > SUMMARY_CLAMP_CHARS) return true
+  let lines = 1
+  for (const char of text) {
+    if (char === '\n') lines += 1
+    if (lines > SUMMARY_CLAMP_LINES) return true
+  }
+  return false
+}
+
+/** A document card's derived heading: the display title and the body that remains. */
+export interface DocumentHeading {
+  /** The first markdown heading's text, or the first non-empty line as-is. */
+  readonly title: string
+  /**
+   * The text with the heading line removed (the summary does not repeat the
+   * title); the whole text when the title came from the first line.
+   */
+  readonly body: string
+}
+
+/**
+ * Derive a document card's display title: the first markdown heading when one
+ * exists, otherwise the first non-empty line — never the raw document from
+ * its `#` opener (the M1.5 acceptance complaint). When the title came from a
+ * heading, that line leaves the body so the summary does not show it twice.
+ * @param text - the document card's full text.
+ * @returns the heading and the remaining body, or undefined for an empty text.
+ */
+export function documentHeadingOf(text: string): DocumentHeading | undefined {
+  const lines = text.split('\n')
+  let firstLine: string | undefined
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index]!.trim()
+    if (trimmed.length === 0) continue
+    if (firstLine === undefined) firstLine = trimmed
+    const heading = /^#{1,6}\s+(\S.*)$/.exec(trimmed)
+    if (heading !== null) {
+      return {
+        title: heading[1]!.trim().slice(0, MAX_DOCUMENT_TITLE_LENGTH),
+        body: [...lines.slice(0, index), ...lines.slice(index + 1)].join('\n'),
+      }
+    }
+  }
+  if (firstLine === undefined) return undefined
+  return { title: firstLine.slice(0, MAX_DOCUMENT_TITLE_LENGTH), body: text }
+}
+
+/* ============================================================================
+ * The M2 chat integration (经 side-chat 插件): the lens vocabulary, the
+ * askAgent / chatStatus wire payloads, and the agent-entrance card proposal.
+ * The side-chat plugin itself is NEVER imported — the seam is a probed
+ * service (`ctx.get('sideChat')`) plus this package's own wire.
+ * ========================================================================= */
+
+/** The lenses, in the order the lens bar offers them (§5's 预置 prompt 模板). */
+export const CANVAS_LENS_IDS = [
+  'challenge', 'counterexample', 'evidence', 'why', 'perspective', 'abstract', 'exemplify', 'ask',
+] as const
+
+/** One lens id; `ask` is the free-question lens (prime-only, no template send). */
+export type CanvasLensId = (typeof CANVAS_LENS_IDS)[number]
+
+/** Whether a value is one of the lens ids. */
+export function isCanvasLensId(value: unknown): value is CanvasLensId {
+  return typeof value === 'string' && (CANVAS_LENS_IDS as readonly string[]).includes(value)
+}
+
+/** One opaque ref chunk handed to the chat context (the side-chat ref protocol). */
+export interface BoardRef {
+  readonly label: string
+  readonly text: string
+}
+
+/** Ask the canvas's agent (prime the chat context, and send when there is a text to send). */
+export interface BoardAskAgentRequest {
+  readonly canvasId: string
+  /** The lens the gesture came through; absent for a free question. */
+  readonly lens?: CanvasLensId
+  /** Selected cards, folded into the context as opaque refs. */
+  readonly cardIds?: readonly string[]
+  /** Free text to send (a comment follow-up); present means an actual send. */
+  readonly text?: string
+  /** Extra opaque refs (the detail reader's text selection). */
+  readonly refs?: readonly BoardRef[]
+}
+
+/** The chat seam's availability probe (the client hides every chat entry when absent). */
+export interface BoardChatStatusResult {
+  /** Whether a `sideChat`-shaped service answered the host's probe. */
+  readonly available: boolean
+}
+
+/** The askAgent outcome: the context it primed and whether a message was sent. */
+export type BoardAskAgentOutcome =
+  | { readonly ok: true; readonly contextKey: string; readonly sent: boolean }
+  | { readonly ok: false; readonly error: CanvasError | 'unavailable' }
+
+/** The agent's card entrance (`canvas_propose_card`): proposed, awaiting the user's ✓/✗. */
+export interface BoardProposeCardRequest {
+  readonly canvasId: string
+  readonly kind: BoardCardKind
+  readonly text: string
+  readonly source?: BoardCardSource
+  /** The proposal's rationale, hung on the card as an agent comment. */
+  readonly comment?: string
+}
+
+/* ---------------------------------------------------------- draft + focus */
+
+/** The draft file beside `canvas.json` (the user's own manuscript). */
+export const DRAFT_FILE_NAME = 'draft.md'
+
+/** Mark the canvas the session's tab has open (the main-session tools' target). */
+export interface BoardFocusRequest {
+  readonly canvasId: string
+}
+
+/** The focus gesture's receipt. */
+export type BoardFocusResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: CanvasError }
+
+/** Read the canvas's draft. */
+export interface BoardReadDraftRequest {
+  readonly canvasId: string
+}
+
+/** An absent draft reads as EMPTY with a null token — the first write creates it. */
+export type BoardReadDraftOutcome =
+  | { readonly ok: true; readonly content: string; readonly version: string | null }
+  | { readonly ok: false; readonly error: CanvasError }
+
+/** Write the draft; a null token means create (the first write), else version-guarded. */
+export interface BoardWriteDraftRequest {
+  readonly canvasId: string
+  readonly content: string
+  readonly version: string | null
+}
+
+/** The draft write's receipt: the new freshness token, or the failure code. */
+export type BoardWriteDraftResult =
+  | { readonly ok: true; readonly version: string }
+  | { readonly ok: false; readonly error: CanvasError }

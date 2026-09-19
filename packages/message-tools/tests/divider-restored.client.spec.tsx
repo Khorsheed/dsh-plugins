@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -57,12 +58,31 @@ function restoredNode(seq: number, restoredFromSeq: number): ChatConversationVie
   })
 }
 
+/** One admitted image block, as a user message's content carries it. */
+const imageAttachment = {
+  attachmentId: 'a1', mediaType: 'image/png', bytes: 10, width: 200, height: 100, name: 'photo.png',
+}
+
+/** A user node whose content blocks are given verbatim (text and/or images). */
+function contentNode(seq: number, content: readonly unknown[]): ChatConversationViewNode {
+  return node('user', seq, { kind: 'user', seq, time: 1000, content, source: { kind: 'user' } })
+}
+
+/** Stand-in for the attachment-slot gallery: one <img> per owned image. */
+function galleryStub(): (owner: {
+  images: readonly { attachment?: { name?: string } }[]
+  align: string
+}) => ReactNode {
+  return owner => <>{owner.images.map((image, index) => <img key={index} alt={image.attachment?.name ?? 'image'} />)}</>
+}
+
 /** Divider props over a stub chat slice: useChat reads `chat.nodes`. */
 function dividerProps(over: {
   hiddenStartSeq?: number
   seq?: number
   nodes?: readonly ChatConversationViewNode[]
   restoreMessage?: (targetSeq: number) => Promise<void>
+  renderMessageImages?: WithdrawnDividerViewProps['renderMessageImages']
 } = {}): WithdrawnDividerViewProps {
   const hiddenStartSeq = over.hiddenStartSeq ?? 5
   const seq = over.seq ?? 10
@@ -76,6 +96,9 @@ function dividerProps(over: {
     t,
     useChat,
     restoreMessage: over.restoreMessage ?? vi.fn(async () => {}),
+    // Present-but-undefined exercises the degrade path (a composition without
+    // the attachment gallery); the default keeps every other case rendering.
+    renderMessageImages: 'renderMessageImages' in over ? over.renderMessageImages : (() => null),
   } as unknown as WithdrawnDividerViewProps
 }
 
@@ -144,6 +167,50 @@ describe('WithdrawnDividerView replay', () => {
     expect(screen.getByRole('button', MARKER).textContent).toContain('已撤回 0 条消息')
     fireEvent.click(screen.getByRole('button', MARKER))
     expect(screen.getByText('撤回的内容不在当前已加载的历史中')).toBeTruthy()
+  })
+
+  it('replays a withdrawn user message\'s images through the attachment gallery', () => {
+    const renderMessageImages = vi.fn(galleryStub())
+    const nodes = [
+      contentNode(5, [{ type: 'text', text: '看图' }, { type: 'image', attachment: imageAttachment }]),
+      dividerNode(5, 10),
+    ]
+    const { container } = render(<WithdrawnDividerView {...dividerProps({ nodes, renderMessageImages })} />)
+    fireEvent.click(screen.getByRole('button', MARKER))
+    expect(screen.getByText('看图')).toBeTruthy()
+    expect(renderMessageImages).toHaveBeenCalledWith({
+      images: [{ attachment: imageAttachment }],
+      align: 'end',
+    })
+    expect(container.querySelector('img')?.getAttribute('alt')).toBe('photo.png')
+  })
+
+  it('counts and replays an image-only withdrawn message instead of reporting an empty span', () => {
+    const renderMessageImages = vi.fn(galleryStub())
+    const nodes = [
+      contentNode(5, [{ type: 'image', attachment: imageAttachment }]),
+      dividerNode(5, 6),
+    ]
+    const { container } = render(
+      <WithdrawnDividerView {...dividerProps({ nodes, hiddenStartSeq: 5, seq: 6, renderMessageImages })} />,
+    )
+    expect(screen.getByRole('button', MARKER).textContent).toContain('已撤回 1 条消息')
+    fireEvent.click(screen.getByRole('button', MARKER))
+    expect(screen.queryByText('撤回的内容不在当前已加载的历史中')).toBeNull()
+    expect(container.querySelector('img')?.getAttribute('alt')).toBe('photo.png')
+  })
+
+  it('degrades to the text replay when the composition has no attachment gallery', () => {
+    const nodes = [
+      contentNode(5, [{ type: 'text', text: '只有文字' }, { type: 'image', attachment: imageAttachment }]),
+      dividerNode(5, 10),
+    ]
+    const { container } = render(
+      <WithdrawnDividerView {...dividerProps({ nodes, renderMessageImages: undefined })} />,
+    )
+    fireEvent.click(screen.getByRole('button', MARKER))
+    expect(screen.getByText('只有文字')).toBeTruthy()
+    expect(container.querySelector('img')).toBeNull()
   })
 })
 

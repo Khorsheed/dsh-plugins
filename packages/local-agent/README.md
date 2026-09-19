@@ -156,6 +156,7 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 缺省作用域目录是 `<homesRoot>/<家名>`——逐字节还是那一份。给一个**名字**（只允许 `[a-z0-9-]`，是名字不是路径）就得到与它**同级**的另一份：`<homesRoot>/<家名>@<名>`。不嵌在缺省目录里面，因为那份目录归各家 CLI 自己管，往里塞第二棵状态树迟早被它自己清掉或读串。
 
 - **惰性建立。** 目录在第一次被点名时创建（`/<家> login|status|sessions|logout --scope <名>`、带 `scope` 的委派、评测的挂载源都算点名）：`mkdir` 0700，然后跑该家自己的 provision（codex 的 `config.toml`、kimi 的 provider/model 配置与权限、claude 的作用域目录、dsh 的子 profile）。缺省目录的 provision 时机不变——仍由各 harness bundle 的 apply 负责。
+- **刻意 provision 一个 scope：`provisionScope(家, 名, 选项)`。** 上面那次是「有人点了这个目录的名」的副作用：每进程每 (家, scope) 只跑一次、不带选项、失败只留一行日志。`provisionScope` 是刻意的那一次——它**等**（并且先等掉上面那次可能刚启动的那一遍，两个写者写的是同一批文件）、**抛**（问了要有答复，失败不能读成成功），并把该家的**回读**交回来。选项目前只有一项 `preset`：preset 是**受试对象**的属性而不是部署的，一条评测条件说「这个 scope 组这个 preset」时，知道答案的是条件文档，而插件 config 一个实例只有一份。只有 dsh 读这一项；另三家收下参数并忽略，provisioning 因此逐字节不变。
 - **凭证不复制。** 新 scope 是空的：`status` 报 `credentialState: absent`，委派按今天的规则失败，要用它先 `/<家> login --scope <名>` 登一次。claude 的 keychain 项按配置目录路径哈希，命名 scope 因此自动拿到自己的项——这是四家里唯一天然按路径安全的部分。
 - **一切按目录走。** 该 scope 的会话记录、`delegations.jsonl`、effective-settings 快照（harness 的 `effectiveSettings(homeDir)` 收目录参数）、CLI 版本探测、登录态与委派回读，全部落在它自己的目录里。委派记录带 `scope`，resume 轮拿它当锚：换了 scope（或首轮有、这轮没有）在进程启动前就拒绝——继续同一个 CLI 会话却换了账号，是事后修不回来的那种错。
 - **边界（明确放弃，不是没接上）。** 带 scope 的委派**只走 exec**：常驻驱动（codex 的 app-server、claude/kimi 的 ACP、子 dsh 的 serve）按成员绑的是缺省作用域目录，撞上 live 直接拒绝而不是悄悄降级。kimi 的成员桥声明写在作用域目录的 `mcp.json` 里、`member-bridge.sock` 又是 homes 根级单例，所以带 scope 的 kimi 轮不带成员通道。dsh 的子 profile 随目录走，不需要特殊处理。

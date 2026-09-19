@@ -1,12 +1,14 @@
 /**
- * The four READ tools the companion row registers: the definition factory's
- * names and each adapter's `execute` against fake service faces — a temp
- * dataset tree for the two contract tools, a fake mission ledger for the two
- * run projections. Registration, origin tagging, and the `tools: 'none'` switch
- * belong to `@khorsheed/dsh-eval-tool` and are pinned in its own spec.
+ * The five tools the companion row registers — four reads and `eval_plan_draft`
+ * — through the definition factory's names and each adapter's `execute`
+ * against fake service faces: a temp dataset tree for the contract tools, a
+ * fake mission ledger for the two run projections. Registration, origin
+ * tagging, and the `tools: 'none'` switch belong to
+ * `@khorsheed/dsh-eval-tool` and are pinned in its own spec.
  */
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalService } from '../src/service.ts'
 import { evalToolDefinitions } from '../src/tool.ts'
@@ -61,17 +63,36 @@ function writeRepo(): string {
   return repo
 }
 
-/** Build the four tools over one service and index them by name. */
+/** Build the five tools over one service and index them by name. */
 function toolsOver(service: EvalService): Map<string, RegisteredTool> {
   const definitions = evalToolDefinitions(service) as unknown as RegisteredTool[]
   return new Map(definitions.map(tool => [tool.name, tool]))
 }
 
+/**
+ * A service whose session `s1` is BOUND to `repo` — the shape every tool call
+ * in this spec has to have since I5·T58, because a model tool now resolves
+ * against the binding and nothing else.
+ * @param repo - the bound repository.
+ * @param datasets - the binding's dataset whitelist, when it has one.
+ */
+function serviceBoundTo(repo: string, datasets?: string[]): EvalService {
+  const face = {
+    binding: (session: { id: string }) => (session.id === 's1'
+      ? { repoPath: repo, ...(datasets === undefined ? {} : { datasets }) }
+      : undefined),
+  }
+  return new EvalService({ get: (name: string) => (name === 'datasets' ? face : undefined) })
+}
+
+/** The exec face of a call from the bound session. */
+const BOUND = { agent: { session: { id: 's1' } } }
+
 describe('eval_conditions', () => {
   it('lists each condition with its hash, readiness, and unresolved fields', async () => {
     const repo = writeRepo()
-    const tool = toolsOver(new EvalService()).get('eval_conditions') as RegisteredTool
-    const report = await tool.execute({ repo }, {}) as {
+    const tool = toolsOver(serviceBoundTo(repo)).get('eval_conditions') as RegisteredTool
+    const report = await tool.execute({}, BOUND) as {
       repo: string
       datasets: string[]
       conditions: Array<{ id: string; dataset: string; status: string; sha: string; harness: { name: string }; model: { declared: string | null }; lock: { present: boolean; matches: boolean }; unresolved: string[]; warnings: Array<{ code: string }> }>
@@ -97,6 +118,32 @@ describe('eval_conditions', () => {
     })
     expect(drafting?.unresolved).toEqual(['harness.version', 'model.declared', 'model.endpoint'])
     expect(drafting?.warnings.map(w => w.code)).toContain('LOCK_MISSING')
+    // model.endpoint rides along in the listing: the readiness gate refuses a
+    // null one, so it is the field a condition most often stalls on and the
+    // conditions page puts it in a column (I5·T58 · G6).
+    expect(locked?.model).toEqual({ declared: 'deepseek-official/deepseek-v4-flash', endpoint: null })
+  })
+
+  it('refuses a repo argument that is not the session\'s binding, and any at all when nothing is bound', async () => {
+    const repo = writeRepo()
+    const elsewhere = join(tmpTree(), 'someone-elses-checkout')
+    const tool = toolsOver(serviceBoundTo(repo)).get('eval_conditions') as RegisteredTool
+
+    // Restating the binding is fine — the agent that types it out is not doing
+    // anything the binding does not already say.
+    const restated = await tool.execute({ repo }, BOUND) as { repo: string }
+    expect(restated.repo).toBe(repo)
+
+    // Naming a DIFFERENT repository is refused, and the refusal names both so
+    // the agent can tell the person which one it wanted.
+    await expect(tool.execute({ repo: elsewhere }, BOUND))
+      .rejects.toThrow(/is not this session's bound dataset repository/)
+
+    // And an unbound session cannot reach a repository through the parameter
+    // at all: this is the door an agent walked through to write three files
+    // into a shared checkout (I5·T39 · G1).
+    await expect(tool.execute({ repo }, { agent: { session: { id: 's2' } } }))
+      .rejects.toThrow(/not this session's to read[\s\S]*\/datasets bind/)
   })
 
   it('falls back to the session binding and honours its dataset whitelist', async () => {
@@ -239,6 +286,123 @@ function missionFace(): {
     }),
   }
 }
+
+describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', () => {
+  /** A repository the draft can land in: one item, one stage schema, one condition. */
+  function draftableRepo(): string {
+    const repo = writeRepo()
+    const dataset = join(repo, 'datasets', 'harness-comparison')
+    writeJson(dataset, 'schemas/stage1.json', { type: 'object', properties: { done: { type: 'boolean' } } })
+    writeJson(dataset, 'items/P0/item.json', { id: 'P0' })
+    return repo
+  }
+
+  const DRAFT_ARGS = {
+    name: 'i5-walk',
+    dataset: 'harness-comparison',
+    items: ['P0'],
+    conditions: ['locked'],
+    reps: 1,
+    stages: ['stage1'],
+    seed: 20260916,
+    active_minutes: 60,
+    turns: 10,
+  }
+
+  it('writes the plan, validates it, and answers with both', async () => {
+    const repo = draftableRepo()
+    const tool = toolsOver(serviceBoundTo(repo)).get('eval_plan_draft') as RegisteredTool
+
+    const result = await tool.execute({ ...DRAFT_ARGS }, BOUND) as {
+      planPath: string
+      conditionPaths: string[]
+      conditions: string[]
+      review: { ok: boolean; errors: number }
+    }
+
+    expect(result.planPath).toBe(join(repo, 'datasets', 'harness-comparison', 'plans', 'i5-walk.json'))
+    expect(result.conditions).toEqual(['locked'])
+    expect(result.review.ok).toBe(true)
+    expect(result.review.errors).toBe(0)
+  })
+
+  it('reaches the SAME service verb the 新建实验 form\'s Remote reaches', async () => {
+    const repo = draftableRepo()
+    const service = serviceBoundTo(repo)
+    const draft = vi.spyOn(service, 'draftExperiment')
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
+
+    await tool.execute({ ...DRAFT_ARGS, repo }, BOUND)
+
+    // One verb, three faces (form, tool, skill). A second implementation of
+    // "write the plan and validate it" is a second place for the two to
+    // disagree about what a draft IS — and the lab list would then be able to
+    // tell a person's draft from an agent's.
+    expect(draft).toHaveBeenCalledTimes(1)
+    expect(draft.mock.calls[0]?.[0]).toMatchObject({ name: 'i5-walk', dataset: 'harness-comparison', repo })
+    // The session rides along, because the repository a draft lands in is the
+    // human's binding decision, not the model's — and `agent: true` says which
+    // side of that decision this caller is on, which is what turns the `repo`
+    // argument from an override into a restatement.
+    expect(draft.mock.calls[0]?.[1]).toEqual({ agent: true, session: { id: 's1' } })
+  })
+
+  it('mints a condition as a copy, and refuses one with no source to copy', async () => {
+    const repo = draftableRepo()
+    const tool = toolsOver(serviceBoundTo(repo)).get('eval_plan_draft') as RegisteredTool
+
+    const result = await tool.execute({
+      ...DRAFT_ARGS,
+      conditions: ['locked'],
+      new_conditions: [{ id: 'locked-pro', from: 'locked', model: 'deepseek-official/deepseek-v4-pro' }],
+    }, BOUND) as { conditionPaths: string[]; conditions: string[] }
+
+    expect(result.conditions).toEqual(['locked', 'locked-pro'])
+    expect(result.conditionPaths).toHaveLength(1)
+
+    await expect(tool.execute({
+      ...DRAFT_ARGS, name: 'other', new_conditions: [{ id: 'orphan' }],
+    }, BOUND)).rejects.toThrow(/always a COPY/)
+  })
+
+  it('carries model.endpoint through as a seventh editable field', async () => {
+    const repo = draftableRepo()
+    const tool = toolsOver(serviceBoundTo(repo)).get('eval_plan_draft') as RegisteredTool
+
+    const result = await tool.execute({
+      ...DRAFT_ARGS,
+      new_conditions: [{
+        id: 'locked-pro',
+        from: 'locked',
+        model: 'deepseek-official/deepseek-v4-pro',
+        endpoint: 'default',
+      }],
+    }, BOUND) as { conditionPaths: string[] }
+
+    const minted = JSON.parse(readFileSync(result.conditionPaths[0] as string, 'utf8')) as {
+      model: { declared: string; endpoint: string }
+      notes: string
+    }
+    // Both halves of decision 5 in one call. Before this the endpoint was the
+    // one readiness-gate field no face could set, so a drafted plan always
+    // needed a text editor before it could run (I5·T39 · G6).
+    expect(minted.model).toEqual({ declared: 'deepseek-official/deepseek-v4-pro', endpoint: 'default' })
+    expect(minted.notes).toContain('model.endpoint')
+  })
+
+  it('never starts anything — the row has no run verb and this one reaches none', async () => {
+    const repo = draftableRepo()
+    const service = serviceBoundTo(repo)
+    const runStart = vi.spyOn(service, 'runStart')
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
+
+    await tool.execute({ ...DRAFT_ARGS }, BOUND)
+
+    expect(runStart).not.toHaveBeenCalled()
+    // And it says so where the model reads it, rather than only in a comment.
+    expect((tool as unknown as { description: string }).description).toContain('DRAFTING IS NOT STARTING')
+  })
+})
 
 describe('eval_run_status', () => {
   it('digests run.meta and projects every cell through the orchestrator ns', async () => {

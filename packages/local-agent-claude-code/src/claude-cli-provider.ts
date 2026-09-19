@@ -1258,13 +1258,20 @@ export async function startClaudeCliRun(
   if (request.signal.aborted) {
     throw new Error('subagent-claude: request was aborted before the CLI started')
   }
-  // Keychain→file sync before EVERY spawn: claude 2.1.236 reads
+  // Credential reconcile before EVERY spawn: claude 2.1.236 reads
   // .credentials.json at runtime while login/refresh write the keychain, so
   // the login watch's sync alone leaves a rotated grant stale at spawn time
   // (the live driver's spawnRuntime does the same). Best-effort: a missing
   // grant fails the run with the CLI's own auth error, not here.
+  // NOTE the directory: on a container round this is still the HOST scoped
+  // home (the in-container path only replaces it in the `docker exec -e`
+  // forwarding), and the unit is about to read that same file through the
+  // bind mount — which is why the reconcile is newer-wins rather than a
+  // mirror. See `syncClaudeCredentialFile`.
   const configDir = spec.env['CLAUDE_CONFIG_DIR']
-  if (configDir !== undefined) await syncClaudeCredentialFile(configDir).catch(() => false)
+  if (configDir !== undefined) {
+    await syncClaudeCredentialFile(configDir, message => { spec.ctx?.logger.warn(message) }).catch(() => false)
+  }
   const turn = spec.resume?.turn ?? 1
   // The member bridge flags ride every argv variant (skip and normal
   // permission modes alike): --allowedTools is redundant under

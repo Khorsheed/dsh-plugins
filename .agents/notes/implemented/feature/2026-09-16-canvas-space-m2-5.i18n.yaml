@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-16-canvas-space-m2-5.md
+.agents/notes/implemented/feature/2026-09-16-canvas-space-m2-5.md: b0168ae7e136994d7db29a3ce6c3db0d6be7ef9f
+.agents/notes/implemented/feature/2026-09-16-canvas-space-m2-5.zh.md: 9667de3e368b874349db12def6916f5cb01c44fc

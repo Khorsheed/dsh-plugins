@@ -1,0 +1,397 @@
+/* The card-detail reader: one scroll container (the root), the rest flows.
+   Every colour is a `--dsw-*` token, so light and dark are the theme's. */
+
+.root {
+  position: relative;
+  height: 100%;
+  overflow-y: auto;
+  /* The tail keeps clear of the comment form (in-flow) and any transient
+     overlay: 64px of bottom breathing room, not 40. */
+  padding: 14px 16px 64px;
+  font-family: var(--dsw-font-family);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notice {
+  padding: 32px 8px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.kindTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  align-self: flex-start;
+}
+
+.ghostFlag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--dsw-static-deepseek-400);
+  letter-spacing: 0.2px;
+  align-self: flex-start;
+}
+
+.archivedTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  padding: 2px 8px;
+  align-self: flex-start;
+}
+
+.title {
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+  font-family: var(--dsw-font-family);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.qState {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.qDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--dsw-alias-label-caption);
+  flex-shrink: 0;
+}
+
+.qState[data-state="exploring"] .qDot {
+  background: var(--dsw-static-deepseek-400);
+  border-color: var(--dsw-static-deepseek-400);
+}
+
+.qState[data-state="answered"] .qDot {
+  background: var(--dsw-alias-label-tertiary);
+  border-color: var(--dsw-alias-label-tertiary);
+}
+
+/* The tri-state reading modes (render / source / split). */
+.seg {
+  display: flex;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.seg button {
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  font-family: var(--dsw-font-family);
+  padding: 3px 10px;
+  border-radius: 5px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  position: relative;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--dsw-alias-label-primary);
+  min-height: 60px;
+}
+
+.body[data-mode="split"] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.sourcePane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.renderPane {
+  min-width: 0;
+}
+
+/* The per-comment 追问 affordance (agent comments only). */
+.followUp {
+  display: inline;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  font-family: var(--dsw-font-family);
+  color: var(--dsw-static-deepseek-400);
+  cursor: pointer;
+}
+
+.followUp:hover {
+  text-decoration: underline;
+}
+
+/* The edit toggle's textarea: uncontrolled, auto-sized, never its own
+   scroller — the root above stays the one scroll container. */
+.editor {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.75;
+  font-family: var(--dsw-font-family);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+
+.editor:focus {
+  border-color: var(--dsw-alias-label-caption);
+}
+
+.editHint {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* --------------------------------------------------------------- ghost bar */
+
+.ghostActions {
+  display: flex;
+  gap: 8px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 9px 11px;
+}
+
+.ghostActions button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--dsw-font-family);
+  padding: 5px 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.ghostActions button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.ghostActions .accept {
+  background: var(--dsw-alias-brand-primary);
+  border-color: transparent;
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+/* -------------------------------------------------------------- attachment */
+
+.attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  padding: 9px 11px;
+}
+
+.attachmentLabel {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.attachmentLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-static-deepseek-400);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.attachmentLink:hover {
+  text-decoration: underline;
+}
+
+.attachmentButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-family: var(--dsw-font-family);
+  cursor: pointer;
+}
+
+.attachmentButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ---------------------------------------------------------------- comments */
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  padding-top: 10px;
+}
+
+.threadTitle {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.comment {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.commentAuthor {
+  color: var(--dsw-static-deepseek-400);
+  font-weight: 500;
+}
+
+.commentForm {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+/* ------------------------------------------------------------------ states */
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 20;
+  max-width: 88%;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-elevation-prominent);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.fatal {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 21;
+  max-width: 88%;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-elevation-prominent);
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+  cursor: pointer;
+}
+
+/* The sandboxed HTML render (strict CSP, no network; the bridge sizes it). */
+.htmlFrame {
+  width: 100%;
+  min-height: 200px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* The format tag beside the kind tag (only HTML today). */
+.formatTag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  padding: 1px 8px;
+}

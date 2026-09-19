@@ -2,7 +2,7 @@
 
 - **分类**：plugin
 - **状态**：planned
-- **最后更新**：2026-09-15
+- **最后更新**：2026-09-18
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：host-015-adaptation（第一~三批已完成，第四批余量见该提案；本提案承接其 readByteRange 与 guard 租约两项欠账）、message-tools-projection-restore（本波子项，独立提案）、local-agent-dsh-sdk-resume（S8 仍堵，不排）、room-composer-parity / context-clearing（波后讨论，不进本波）。无「0.1.6 整体适配」提案，新建。
 - **官方依赖**：纯插件。所有切换走官方 0.1.6-alpha.1 已发布的扩展面，不含新 seam 请求。
 
@@ -53,7 +53,38 @@ terminal-controller（`terminalRemote` + 默认行进组合）、`permissionPres
 
 - 任何依赖 S2/S3/S4/S8/S10/S11/S13/S14/S15 的改造（未开闸，绕行保留）。
 - 流式评估（`assistant-stream` follow frames）、context-clearing 开工、room-composer-parity、local-agent-dsh-sdk-resume M1、terminal / permission / guide.entry 等新面消费——**本波完成后与用户对齐排期**，各自走提案。
-- inline-html-render / message-timeline / context-guard / ui-shortcuts / session-title-edit / whalesong 不动（0.1.6 无影响面）。
+- inline-html-render / message-timeline / context-guard / ui-shortcuts / session-title-edit / whalesong 不动（0.1.6 无影响面）。【2026-09-18 修订：此条被 alpha.2 推翻，见下节】
+
+## alpha.2 重钉（2026-09-18 用户拍板）
+
+官方 2026-09-17 未发 rc、改发 0.1.6-alpha.2（887 commits / 2622 文件，七路并行审计已完成）。用户拍板：**wave 目标从「alpha.1 基线等 rc」改为「直接适配 alpha.2 并上 3080 作固定版本」**；共享 `~/code/deepseek-harness` 检出与 3080 在用户明确放行前均不动，调试走 `~/code/deepseek-harness-alpha` 独立检出 + 本地实例。
+
+alpha.1 已适配的 breaking 六项在 alpha.2 复核**全部仍成立**（零返工）。alpha.2 新增 breaking 与处置：
+
+| # | breaking | 打中 | 处置 |
+|---|---|---|---|
+| 1 | `SessionSnapshot.queue` / `QueuedMessage` 删除，队列迁 `inbox` 投影 | room（RoomComposer）、mobile（MobileQueue/SubmissionFocus） | 迁 `useProjection('inbox')` 读 `InboxState['next-turn']`（投影 alpha.1 已有，双线兼容，0.1.5 探测回落） |
+| 2 | `conversation.chat.turnTail` chain→list：注册强制 `id`、`select` 失效 | ui-file-preview（抢占式注册） | **用户拍板：共存**——改 list 注册补 `id`，与官方 DeliverablesTail/PlanCards 并存对比效果，退役后定 |
+| 3 | `ISessions.open/openSubagent/clear` 与 `SessionListState.current/currentAddress` 删除 | room/eval/ui-shortcuts/mobile/mission/datasets/message-timeline 等 8 包 | 迁移 `ctx.uiWorkspace.openSession`；「当前会话」无公开 selection reader，root 级消费者（全局快捷键、chrome.show）需找新锚点——本波最大待解项 |
+| 4 | `SessionPendingInteractionSnapshot`→`SessionStatusSnapshot` | whalesong | 类型迁移，读取改 `.pendingInteraction` |
+| 5 | `settings.plugin.item` 槽删除 | context-guard（连带 capability-catalog 设置呈现路径） | 迁 `plugins.bundle.config` / `plugins.row.config` / `settings.plugins.tab` |
+| 6 | `ModelDirectory.select()` 不再 reject，返回 `RemoteResult` | room（RoomModelPicker 失败路径死）、message-tools（恒判成功） | 两处改判 `result.ok` |
+| 7 | `sessions.scope()/binding()` 对非 retained 代际收紧 | message-tools/quote/session-title-edit/mobile/room 各 1–5 处 | 逐个复验（`?.` 兜底语义已变） |
+| 8 | `data-composer-stats` DOM 锚删除 | mobile | 换锚或接受官方默认样式 |
+
+行为变化须知：hmr 默认开（profile 配置热重载，`watchUserPatches` 已删——ankh-guard 需对 alpha.2 重跑 preflight-drift 绊线）；resolution mode 默认 link→runtime（prod tgz 无感，link dev 实例需显式参数）；subagent 容量钳制 `maxActiveSubagents: 8` / `maxDepth: 1`（local-agent 家族知晓）；3080 宿主升 alpha.2 前确认 Node 在 22/24/26 矩阵。
+
+同波顺带优化（小项）：local-agent 成员会话侧栏聊天官方机制认领（零改动，README/发版说明）；inline-html-render `openLink` 探测改道 `openTab('browser')` 回落 `window.open`。
+
+alpha.2 修订上文「明确不做」清单：ui-shortcuts / message-timeline / context-guard / whalesong 在 alpha.2 均有影响面（上表 3/5/4 项）。S12 fold 组合语义 alpha.2 一字未改，projection 维持暗态；browser-pane 2026-09-18 闭卷（用官方 Sidebar Browser）；room-composer-parity 补「工厂路线」选项（见其提案）。
+
+### 遗留与放行条件（2026-09-18 晚，用户拍板）
+
+- **3080 合线等官方 rc**：适配已完成（wave 分支全量 build/test 绿、本地实例冒烟通过），但用户体验 alpha.2 后判定该版本问题仍多，拍板 **rc 发布前不合 3080、不动共享检出**；wave 分支（feat/host-016-adaptation）保持全绿待 rc 复验后重钉收尾。
+- **ankh-guard 测试生命周期分支已删除（2026-09-18，用户确认无人维护）**：`fix/ankh-guard-test-lifecycle`（tip `480f3cdb`，2026-09-05 后静默）与 main 两点 diff 达 1680 文件 / +1.7万 / −19万行（过期树，合并即大面积回滚）；其首个 test 提交单独 cherry-pick 即与 main 冲突 6 文件（main 已自长出等效机制 `e2f6f042`），无抢救价值；tip SHA 在此留档（配套 docs 分支 `docs/ankh-guard-test-lifecycle-proposal` tip `e1abf97e`），两个 worktree 与两条分支已删。遗留：EADDRINUSE watchdog 测试在 gate 并发下（load>11）的 flake 在 main 上无人认领——wave 实测安静环境连绿两次、与 alpha.2 无关；rc 波 gate 若再 flake 按此记录现修（tolerance 级调整即可，无需复活分支）。wave 的三代际探测修复（3d88a3a8）与该分支无涉，不受影响。
+- **3080 宿主升 0.1.6 前置验证项**：ankh-guard `runPreflight` 的 boot 路径在 0.1.6 线未挂 `PluginPackages`（runtime 解析代际不进试启动），含裸 specifier 的 profile 条目会被 preflight 误报 FAIL（方向偏严、非放行坏树）；当前 profile 全是 `file:` tgz + 官方 bundle 不触发，但 3080 宿主升 0.1.6 前必须实测 preflight 或补齐挂载（补齐需与上一条的在飞分支协调）。
+- **rc 复核项：形态 C「家族 bundle」按新外部 bundle 模型复审**（2026-09-18 用户要求记录）。我们的 profile 目前 = 官方 bundle + 24 个独立 @khorsheed 行（单成员 bundle 合法但缺套件层）；alpha.2 官方化了 `dsh.profile.bundles` 清单、`OPTIONAL_BUNDLES`（可选 bundle 默认关 + 安装引导）与外部 bundle 隔离——`proposals/active/2026-08-21-package-management.md` 形态 C 薄元包此前卡在 `reconcilePlugins` 只调和直接依赖，rc 发布后按新模型复审可落地性（含「一个插件属于哪些 profile」的跨 profile 展示诉求）。
+- **ui-file-preview 共存对比的用户初判（2026-09-18，rc 波终定）**：改动记录/会话产物维度维持我方机制——官方 workspace-changes 为内存态（宿主重启即失）、git-only（非 git 工作区不覆盖）、不记 read，用户判定草率；内容预览维度官方可覆盖（大文件分页 + office 渲染），届时可退。技术结论：① office 文件无需「拿来」——我们的 `canOpen` 对二进制本就 fallthrough 到官方 document tab，`office-to-pdf` 是公开 client Remote（`convertBytes(bytes, extension)`），要在我们视图内嵌也可行但需自带 PDF 渲染面，价值一般，且 3080 宿主需有 libreoffice-kit；② 大文件「滚动分页」不是公开件（官方 TextPreview 分页为组件内部态），我方自补是小特性——宿主半 M4a 已有 `readByteRange(offset, length)` 有界读，加 offset 窗口 + 客户端加载更多即可，或超大文件 fallthrough 官方 tab。
 
 ## 里程碑
 

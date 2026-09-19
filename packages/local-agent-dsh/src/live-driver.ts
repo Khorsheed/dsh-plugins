@@ -51,7 +51,7 @@ import {
   registerMemberRun,
   resolveApiKey,
 } from './dsh-cli-provider.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
 import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
 
 type AssistantStreamFrame = LiveAssistantStreamParams['frame']
@@ -611,7 +611,7 @@ export class DshLiveDriver {
     signal.throwIfAborted()
     if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
     try {
-      provisionDshSubProfile(spec.homeDir, this.config)
+      provisionDshScope(spec.homeDir, this.config)
       const apiKey = await resolveApiKey(this.ctx, this.config)
       const runtime = await this.ensureRuntime(spec, apiKey, signal)
       await runtime.request('session/prepare', { sessionId: spec.sessionId, resume: spec.resume !== undefined })
@@ -791,7 +791,7 @@ export class DshLiveDriver {
     }
 
     // Provisioning is idempotent; re-running heals a drifted sub-profile.
-    provisionDshSubProfile(spec.homeDir, this.config)
+    provisionDshScope(spec.homeDir, this.config)
     const apiKey = await resolveApiKey(this.ctx, this.config)
 
     const accepted: Promise<void> = (async () => {

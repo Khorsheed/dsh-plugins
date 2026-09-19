@@ -69,7 +69,7 @@ The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` 
 
 Config (all optional): `repo` (default dataset repository when a call has no explicit `repo` and the session has no binding; default none) and `worktreeRoot` (managed worktree root override; default `$DSH_HOME/state/datasets/worktrees`, else `<cwd>/.dsh-datasets/worktrees`). `tools` is no longer a key on this row: the model-tool grouping moved to the companion row `@khorsheed/dsh-datasets-tool`, see [Model tools](#model-tools).
 
-The plugin provides the `ctx.datasets` service for other plugins to consume optionally, provides the `/datasets` slash command, mounts the `datasetsRemote` Typert Remote service (the web session tab's data face), and (when the composition mounts `@khorsheed/dsh-datasets/invariant`) checks the managed worktree root's structural integrity at load. The `datasets_*` model tools and the `datasets:tools` prompt section belong to the companion row `@khorsheed/dsh-datasets-tool`, granted per session by an agent preset — see [Model tools](#model-tools).
+The plugin provides the `ctx.datasets` service for other plugins to consume optionally, mounts the `datasetsRemote` Typert Remote service (the web session tab's data face), and (when the composition mounts `@khorsheed/dsh-datasets/invariant`) checks the managed worktree root's structural integrity at load. Since the preset-visibility rollout (A3) the `/datasets` slash command's REGISTRATION belongs to the companion row — it lands in the preset's scope layer, so only granted sessions see it; the handler and definition stay in this package, registered by the companion through `registerDatasetsSlash`. The `datasets_*` model tools and the `datasets:tools` prompt section belong to the companion row `@khorsheed/dsh-datasets-tool`, granted per session by an agent preset — see [Model tools](#model-tools).
 
 ## The session binding
 
@@ -79,11 +79,19 @@ Each session may bind its own dataset repository, stored as a plugin-owned durab
 { repoPath: string, datasets?: string[], layers?: string[] }
 ```
 
-`datasets` restricts which dataset ids are visible; `layers` is the layer whitelist. Absent fields mean "everything". The whitelist is enforced on **every** tool read path — `list`/`show` filter to it, `read` rejects outside it, and `worktree_path` intersects with it (an empty intersection is an error; the sparse-checkout physically omits disallowed layer directories).
+`datasets` restricts which dataset ids are visible; `layers` is the layer whitelist. An absent `datasets` means "every dataset"; an absent **`layers` does NOT mean "every layer"** — it means that dataset's `modelFacing: true` layers (next paragraph). The whitelist is enforced on **every** tool read path — `list`/`show` filter to it, `read` rejects outside it, and `worktree_path` intersects with it (an empty intersection is an error; the sparse-checkout physically omits disallowed layer directories).
+
+**Safe by default, and what the boundary is about**: a binding with no explicit `layers` gives the agent that dataset's `modelFacing: true` layers and nothing else — a sensitive layer reaches an agent only when somebody lists it. Since I5 · T58 that floor is **unconditional**: the old "a dataset that declares nothing sensitive is not filtered at all" branch is gone, because it made "no whitelist" mean two different things depending on a descriptor the binder never reads, and the unfiltered branch also admitted item-level directories no `register` entry claims — precisely the ones nobody has declared a sensitivity for. The write path (`put_item`) and the worktree default follow the same floor. What the whitelist constrains is the two real boundaries, **agent tools and worktree materialization**; the web tab's and the CLI's read verbs are the human's view (operator scope) and are bound by neither the whitelist nor the floor — sensitive layers stay visible to a person with a `· sensitive` marker, and the tree carries a separate "passthrough" group making the unprotected content conspicuous.
+
+`repoPath` is stored **canonical**: a leading `~` is expanded on write, the path is made absolute and (when the directory exists) resolved through its symlinks, reads go through the same function, and a record written before this holds a literal `~` is normalized in place on the first read. Not tidiness — `git -C`, `readdir(<repo>/datasets)` and the containment checks all take the path verbatim, and no shell is in the loop when the web tab writes a binding, so a stored `~/…` made both tabs report "not a git repository" / "not a dataset repository" about a repository that exists (I5 walkthrough gap G5).
 
 **Why not a session event**: the binding was a log-only `datasets/binding` session event in the first cut, but the harness's persistence read path refuses to rebuild a session whose log contains an event type outside its generated known-types set unless the envelope carries `ignorable: true` — a downstream plugin's event types are outside that set by construction (the registration surface is deferred upstream), and `Session.append()` offers no way to set the marker. Any custom-typed event this plugin appended made the session unresumable, so the binding moved to the plugin's own store (read per call, so a CLI write to a live session's binding is race-free). The trade: a forked session starts unbound, and deleting a session leaves an orphan record behind.
 
-Binding **writes** are human operations: `/datasets bind` in a live session, the web tab's binding bar, or `dsh-datasets bind` from a script. Agent tools only resolve the binding — which datasets an agent may use is decided by the human. Tool calls with an explicit `repo` argument do not need a binding (the whitelist still applies when one exists); with neither an explicit repo nor a binding nor a configured default, tools fail loud and say how to bind.
+Binding **writes** are human operations: `/datasets bind` in a live session, the web tab's binding bar, or `dsh-datasets bind` from a script. Agent tools only resolve the binding — which datasets an agent may use is decided by the human.
+
+**The `repo` argument only restates the binding** (I5 · T58): on the model-tool face `repo` may only restate this session's binding (or, with no binding, the repository the plugin was configured with) — a path that is not that one is refused with both named, and in a session with neither a binding nor a configured default every `repo` is refused with "ask the person to `/datasets bind`". The comparison is on normalized paths (`~` expanded, realpath resolved, trailing separator dropped), so a binding recorded one way and an argument typed another are still one repository. The human faces are unchanged: the CLI's `--repo`, `/datasets` and the tab all still name one.
+
+The narrowing came from a real incident: told plainly by the tools that a person had to bind one, an agent in an unbound session did not stop — it searched the disk with glob, found a checkout several agents share, and wrote three files onto somebody else's branch, editing the evaluation plan that was executing at the time. "Findable" is not "mine to use".
 
 The whitelist is a session-level constraint, not a security boundary: a same-machine human can rebind, and an agent with shell access can read the original repository. It prevents accidental fetches and workflow cross-contamination, not malice.
 
@@ -108,7 +116,7 @@ The whitelist is a session-level constraint, not a security boundary: a same-mac
 
 ## CLI
 
-The `dsh-datasets` bin mirrors the tools' read verbs (same semantics, same parameters) and adds the maintenance verbs. Repository resolution: `--repo`, else `$DSH_DATASETS_REPO`. Exit codes: 0 ok, 1 operational failure, 2 usage error.
+The `dsh-datasets` bin mirrors the tools' read verbs (same semantics, same parameters) and adds the maintenance verbs. Repository resolution: `--repo`, else `$DSH_DATASETS_REPO`. Exit codes: 0 ok, 1 operational failure, 2 usage error. Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
 
 ```sh
 dsh-datasets list [--repo R] [--dataset D] [--commit C]
@@ -135,7 +143,17 @@ dsh-datasets binding --session ID [--state-root DIR]
 /datasets unbind
 ```
 
+`bind` **with no `--layers` binds the model-facing layers only**, and the receipt says so; opening more (sensitive layers included) takes an explicit `--layers a,b`, which the receipt then names. The receipt used to read "(all layers)" — a sentence that said the opposite of the truth, so a person reading it believed the reference answers and the grading rubric were already open to the planning agent (I5 · T39 · G3). `dsh-datasets bind` prints the same receipt.
+
 The command declares its free-form input (`input.hint`). That is not decoration: without it a capable composer has no reason to believe `/datasets` takes arguments — picking the command from the completion strip submits a bare invocation and leaves the `bind <path>` the human typed in the MESSAGE body, so the command answers with its usage line (found during T36's live pass).
+
+## The binding chip on the composer (I5 · T58)
+
+The browser half puts a read-only chip on the composer tool row (`conversation.input.left`): **Datasets · <repository name> · model-facing layers**, or a dashed "Datasets · not bound" when there is none, with the full path and the rebinding command in its title.
+
+It exists because `/datasets bind` had **nowhere to print its receipt**. The binding lands on disk and the 题集 tab reads it correctly, but the tab strip waits for the session to have content and binding is the first thing done in a session that has none — so the one command whose whole output is "it worked" answered into a part of the screen that was not there yet (walkthrough gap G2). The composer tool row is there from the first frame.
+
+The chip is **read-only**: binding is a human act with two doors already (the slash command and the tab), and a third one wedged into the composer would be a third place for the same decision to be made. It rides the same self-hide criterion as the tab (does this session's preset composition name the `@khorsheed/dsh-datasets-tool` row), so the two can never disagree about whether this is a datasets session. It refreshes by subscribing to its own session's snapshot, throttled: a slash command moves the session when it starts and again when it settles — exactly when the receipt has to appear — and the throttle keeps a streaming turn from becoming a poll.
 
 ## The 题集 tab (web)
 
@@ -151,6 +169,33 @@ On web profiles the plugin contributes a **`datasets` tab** to the conversation'
 
 **Every write lands in the working tree only, and the commit stays the human's** (this plugin never commits). An item skeleton is homed by **this dataset's own shape**: when the descriptor's `register` already speaks for the item, the files land at the registered paths (`task.md` / `answers/rubric.yml` / `checks/probes/…`); when it does not, the convention layout applies (`<layer>/rubric.yml`). Existing files are never overwritten. The placeholder `rubric.yml` is deliberately leafless (`items: []`) — `validate` therefore reports `RUBRIC_NO_ITEMS` pointing at that file, which is the intended next step rather than a defect. Importing an item is a **verbatim copy** of an existing item directory, re-homing nothing: the dataset's own `layers` and `register` decide what each file becomes, and whatever lands outside every layer is reported honestly by `validate`. All three write gestures require the operator view (the tab's buttons); an agent's drafting path stays `datasets_put_item`, inside the session binding.
 
+**The error seat is three-part** (UI spec §九): one human sentence on what happened ("The bound dataset path is not a git repository"), one on how to fix it (with the command when there is one), and the raw exception plus the absolute path folded under Details — the page itself never renders `error.message` and never exposes a path. The cause is recovered from the message text (a domain code does not survive the Remote wire; the browser sees one of the gateway's three transport codes), so `tests/error-state.client.spec.tsx` feeds the host's REAL sentences to the real classifier: reword one host message and the test goes red before a user sees the unknown-cause copy. The lab tab uses a copy of the same implementation — a client bundle never imports a sibling plugin (UI spec §八).
+
+**Visual and copy pass, to ui-spec §九** (I5·T63, the same pass as the
+Experiments tab). Both tabs now share one implementation of the status chip
+(`Chip`), the empty seat (`EmptyState`), the section box and the «details»
+disclosure — each as a verbatim copy, because a client bundle never imports a
+sibling plugin (§八). What landed on this page: validate's result and the canary
+flag became chips instead of coloured text, with the diagnostic code moved to
+the row's `title` (the sentence stays on the page); every cell's BUCKET and
+STAGE in «作答记录» now read through the same word table the Experiments tab uses
+(`src/client/vocab.ts`) rather than as `done` / `archived`; the binding bar shows
+the repository's last path segment with the absolute path on its `title`; and
+each empty seat (unbound / no dataset / filter matched nothing / no answer
+record yet) carries a next-step sentence and its own action button, worded
+differently from the toolbar's so the two never read as one button duplicated.
+
+**Glossary v2 and colour semantics** (I5·T63, second pass): §九's three new
+rules land on this page too. English terms in the column headers became words
+(canary, validate), the snapshot column is now the dataset version, and every
+row of «作答记录» reads «{arm} · take N». Colour collapsed to five tones (green =
+done/succeeded, blue = in progress, grey = not started, red = failed/blocked,
+amber = warning) through the same `stageTone` / `bucketTone` the Experiments tab
+uses: archived / releasable / released are GREY, not green — reaching the end of
+the pipeline is «finished», not «succeeded», and green is kept for `judged`.
+
+**The five tones now actually reach the tokens** (I5·T67 fixups · W3): the tone each state CHOSE was always right, but the paint was not — `ok` used the brand blue `--dsw-alias-state-business-primary` and `busy` used the body label colour `--dsw-alias-label-primary`, so 「完成」 rendered blue and 「进行中」 grey. They are `--dsw-alias-state-success-primary` and `--dsw-alias-state-business-primary` now. The two tabs carry the chip as two hand-kept copies (§八), so both took the correction, and eval's `tests/tones.spec.ts` reads BOTH stylesheets to hold it — a chip's colour is a token in a stylesheet, and jsdom neither loads stylesheets nor computes styles, so no client spec can see it.
+
 The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace `datasets`) over the same service core as the tools: `binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`. The read methods are the operator view — the binding supplies the repository path only; the whitelist and the modelFacing floor constrain the agent boundary (tools + worktree), never a human reading their own repository, so sensitive layers stay readable with a `· sensitive` marker while the genuinely unprotected passthrough zone and `item.json` are marked conspicuously. The one exception is the two judging reads behind `itemBrief`: they name their **one layer explicitly** (`layers: ['grading']` / `['verify']`) instead of taking the operator bypass — the page needs the answer key's shape (how many leaves, of which kind), and its bytes never go on the wire. The browser half mounts the namespace through the official `ctx.remote.$mount` channel; eval's namespace is probed with `ctx.get` on **every call** rather than once at mount — the two plugins `$mount` independently and neither may assume it loaded second.
 
 ## Compatibility
@@ -158,7 +203,7 @@ The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — every capability works; the contract surface (`ctx.tools`, `ctx.commands`, log-only session events, the Typert Remote channel, `conversation.view`) is stable on this line. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1).
 - The canary check and the judgeability check are both internal (they only read git objects) — no new host capability, identical on both lines; the `tools` grouping moved with the model-tool face to the companion row `@khorsheed/dsh-datasets-tool` (`read` / `authoring` / `all` / `none`), and this row no longer has that config key.
-- ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the CLI stays fully functional (the model tools come from the companion row). The 题集 tab self-hides: it registers only when the current session's preset composition names the `@khorsheed/dsh-datasets-tool` row, read from the official `pluginInventory` Remote, and every unreadable path fails OPEN (stays visible). Release order matters: a pack that names a companion row needs the companion published / installed first — a row that fails to resolve reports the preset composition `broken` while the instance boots unaffected. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer.
+- ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the CLI stays fully functional (the model tools come from the companion row). The 题集 tab self-hides: it registers only when the current session's preset composition names the `@khorsheed/dsh-datasets-tool` row, read from the official `pluginInventory` Remote, and every unreadable path fails OPEN (stays visible). **"The current session's preset" means the nearest one in its PARENT chain** (I5 · T60; web-eval T39 · G13): a member sub-session declares no preset of its own, so read alone it failed open and every gated tab appeared inside a player's sub-session. Release order matters: a pack that names a companion row needs the companion published / installed first — a row that fails to resolve reports the preset composition `broken` while the instance boots unaffected. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer.
 
 This section mirrors the `dsh.compat` field in package.json; the two move together.
 

@@ -157,12 +157,11 @@ export interface LocalAgentStatus {
  * enter: no keys, no tokens, no full URLs (an endpoint reports its hostname
  * only — a URL's path could carry tenant or project ids).
  *
- * A field the harness has no knob for stays ABSENT (`sandbox`,
- * `permissionMode`, `autoApprove`, `reasoningEffort`, `model`, `cliVersion`):
- * absence means "this harness has no such knob", which is itself the honest
- * condition-hash input (the web-eval frozen baseline calls the dsh harness
- * unrestricted because no knob exists). `drive` and `baseUrlSet` are always
- * present.
+ * A field the harness has no knob for — or one whose knob this deployment
+ * leaves unset — stays ABSENT (`sandbox`, `permissionMode`, `autoApprove`,
+ * `reasoningEffort`, `model`, `cliVersion`): absence is itself the honest
+ * condition-hash input, never a substituted default. `drive` and
+ * `baseUrlSet` are always present.
  */
 export interface LocalAgentEffectiveSettings {
   /**
@@ -172,7 +171,14 @@ export interface LocalAgentEffectiveSettings {
    * to exec when its channel cannot come up.
    */
   drive: 'exec' | 'live'
-  /** Codex: the sandbox policy every round passes to `codex exec --sandbox`. */
+  /**
+   * The file-effect boundary in force, in the harness's own vocabulary.
+   * Codex: the sandbox policy every round passes to `codex exec --sandbox`.
+   * dsh: the permission preset provisioning pins into the sub-profile
+   * (`read-only` / `workspace-write` / `danger-full-access`), which also
+   * decides the sub-dsh's approval policy through dsh-base's own preset
+   * table. Absent when the deployment pins none.
+   */
   sandbox?: string
   /** Claude Code: the `claude -p` permission handling (`skip` or `normal`). */
   permissionMode?: string

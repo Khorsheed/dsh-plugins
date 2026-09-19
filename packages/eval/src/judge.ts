@@ -168,15 +168,17 @@ function asString(value: unknown): string | undefined {
 }
 
 /**
- * The `kind: llm-draft` criteria of a `dataseek.rubric/2` document — the ONLY
- * rubric rows an LLM judge ever sees. `objective` rows belong to the probes
- * and `human` rows to the judge bench; showing them here would invite the
- * judge to answer questions its evidence cannot settle.
+ * The criteria of ONE `kind` in a `dataseek.rubric/2` document, in document
+ * order. The protocol splits a rubric three ways and each third has exactly
+ * one reader: `objective` belongs to the probes, `llm-draft` to the LLM
+ * judge, `human` to the judge bench. One parser serves all three so the three
+ * readers can never disagree about what a rubric says.
  * @param rubricText - the rubric YAML as read from the grading layer.
- * @returns the llm-draft criteria in document order (empty when none).
+ * @param kind - the third to take.
+ * @returns the matching criteria in document order (empty when none).
  * @throws Error when the document does not parse as YAML.
  */
-export function llmDraftCriteria(rubricText: string): RubricCriterion[] {
+export function rubricCriteria(rubricText: string, kind: string): RubricCriterion[] {
   const doc = yaml.load(rubricText) as { items?: unknown } | null
   const items = doc !== null && typeof doc === 'object' && Array.isArray((doc as { items?: unknown }).items)
     ? (doc as { items: unknown[] }).items
@@ -185,7 +187,7 @@ export function llmDraftCriteria(rubricText: string): RubricCriterion[] {
   for (const raw of items) {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
     const row = raw as Record<string, unknown>
-    if (row['kind'] !== 'llm-draft') continue
+    if (row['kind'] !== kind) continue
     const id = asString(row['id'])
     const criterion = asString(row['criterion'])
     if (id === undefined || criterion === undefined) continue
@@ -194,7 +196,7 @@ export function llmDraftCriteria(rubricText: string): RubricCriterion[] {
     out.push({
       id,
       criterion,
-      kind: 'llm-draft',
+      kind,
       ...(evidence !== undefined ? { evidence } : {}),
       ...(typeof row['weight'] === 'number' ? { weight: row['weight'] } : {}),
       ...(row['negative'] === true ? { negative: true } : {}),
@@ -203,6 +205,34 @@ export function llmDraftCriteria(rubricText: string): RubricCriterion[] {
     })
   }
   return out
+}
+
+/**
+ * The `kind: llm-draft` criteria — the ONLY rubric rows an LLM judge ever
+ * sees. `objective` rows belong to the probes and `human` rows to the judge
+ * bench; showing them here would invite the judge to answer questions its
+ * evidence cannot settle.
+ * @param rubricText - the rubric YAML as read from the grading layer.
+ * @returns the llm-draft criteria in document order (empty when none).
+ * @throws Error when the document does not parse as YAML.
+ */
+export function llmDraftCriteria(rubricText: string): RubricCriterion[] {
+  return rubricCriteria(rubricText, 'llm-draft')
+}
+
+/**
+ * The `kind: human` criteria — the judge bench's own rows, and the ONLY ones
+ * a person is asked to answer there (ui-spec §五, protocol §6.8). They are
+ * deliberately absent from {@link buildJudgePrompt}'s material: a criterion
+ * the dataset marked `human` is one the author decided no model should
+ * settle, and a bench that asked about the other two thirds would be
+ * re-judging work that already has a mechanical answer.
+ * @param rubricText - the rubric YAML as read from the grading layer.
+ * @returns the human criteria in document order (empty when none).
+ * @throws Error when the document does not parse as YAML.
+ */
+export function humanCriteria(rubricText: string): RubricCriterion[] {
+  return rubricCriteria(rubricText, 'human')
 }
 
 /**

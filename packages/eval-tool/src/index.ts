@@ -1,13 +1,17 @@
 /**
- * The session-granted eval read tools — the companion row of
- * `@khorsheed/dsh-eval` for agent-preset compositions. The row provides NO
- * service (the preset-mount isolate-realm rule forbids service rows), it only
- * registers the four read-only model tools into the host tools registry and
- * contributes their guidance section, delegating to the global `ctx.dshEval`
- * service core the main plugin provides at the profile root — the official
- * tool-row shape (the shipped `tool-bash` rows work the same way). Granting is
- * therefore per-session: a preset names the row, its sessions get the tools;
- * every other preset's sessions do not.
+ * The session-granted eval tools AND the `/eval` slash face — the companion
+ * row of `@khorsheed/dsh-eval` for agent-preset compositions. The row
+ * provides NO service (the preset-mount isolate-realm rule forbids service
+ * rows); it registers the six model tools into the host tools registry,
+ * contributes their guidance section, and registers the `/eval` slash
+ * command into the preset's scope layer (preset-visibility rollout A3 — the
+ * official `/goal` `/plan` `/compact` shape: only the sessions of a preset
+ * naming this row see the command), all delegating to the global
+ * `ctx.dshEval` service core the main plugin provides at the profile root —
+ * the official tool-row shape (the shipped `tool-bash` rows work the same
+ * way). Granting is therefore per-session: a preset names the row, its
+ * sessions get the tools and the slash command; every other preset's
+ * sessions get neither.
  *
  * The package deliberately declares NO `dsh.bundle` patch: installing it as a
  * dependency only makes the module resolvable (a plain dependency, like
@@ -18,8 +22,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-// Type-only: pulls the core's `Context.dshEval` service augmentation.
-import type {} from '@khorsheed/dsh-eval'
+// The value import also pulls the core's `Context.dshEval` service
+// augmentation into the program.
+import { registerEvalSlash } from '@khorsheed/dsh-eval'
 import { evalToolDefinitions } from '@khorsheed/dsh-eval/tool'
 
 const PACKAGE_NAME = '@khorsheed/dsh-eval-tool'
@@ -39,15 +44,22 @@ const definePluginTool = <T extends object>(def: T): T =>
 /** Plugin configuration. */
 export interface EvalToolConfig {
   /**
-   * Whether this row grants the four read tools: `all` (the default) or
-   * `none` (no tools and no guidance section — a deployment where the model
-   * must not even read conditions and runs). The eval service, the
-   * `/eval` slash face, and the CLI are the core's own and stay mounted
-   * either way.
+   * Whether this row grants the eval tools: `all` (the default) or `none`
+   * (no tools and no guidance section — a deployment where the model must
+   * not even read conditions and runs). The eval service and the CLI are the
+   * core's own and stay mounted either way; the `/eval` slash command is
+   * THIS row's human face and registers at every tier — the `tools` key
+   * gates only the model face.
    *
    * `all` became FOUR tools with T46: an evaluation preset no longer
    * composes the mission tool row, and `eval_cells` is where the per-cell
-   * detail its four read tools used to answer now comes from.
+   * detail its four read tools used to answer now comes from. It became FIVE
+   * with I5·T34: `eval_plan_draft` is the row's first write — drafting a plan
+   * starts nothing, which is exactly what every write-class verb in this row
+   * has in common. It became SIX with I5·T60: `eval_repo_write` puts the
+   * agent's analysis draft into the bound repository's pass-through areas,
+   * which is what the `write` tool could only do by having a person open the
+   * whole machine (I5·T39 · G16).
    */
   tools?: 'all' | 'none'
 }
@@ -75,30 +87,40 @@ interface PromptSections {
 }
 
 /** Cross-call guidance, registered beside the tools it describes. */
-const EVAL_PROMPT = `The eval_* tools are READ ONLY, all four of them. eval_conditions lists the conditions (subjects under test) a dataset repository declares, each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null. eval_plan_validate checks a dataseek.plan/1 document and reports errors (the plan cannot run) and warnings (not resolved yet). eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it. eval_cells goes cell by cell instead — bucket, stage and time in it, attempt, the unit's resource and environment fingerprint, checkpoint names, annotation counts per namespace, and the delegation's child session — filterable by bucket / task / condition; called with NO run_id it lists the experiments themselves (every run plus every unstarted plan, with snapshot, matrix size, factors, status and progress), which is how you find a run id in the first place. Those four are the whole read surface of an evaluation: this session grants no mission tools, so do not look for mission_run_list / mission_run_status / mission_list / mission_get — the experiment list and the cells are both eval_cells, and the run digest is eval_run_status. Starting a run is a HUMAN act: the person runs /eval run <plan.json> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Your part is drafting and reading: propose conditions and plans as data files (copy an existing condition and change exactly ONE field), validate them, and hand them to the human for approval; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
+const EVAL_PROMPT = `The eval_* tools are four reads and two writes. eval_conditions lists the conditions (subjects under test) a dataset repository declares, each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null. eval_plan_validate checks a dataseek.plan/1 document and reports errors (the plan cannot run) and warnings (not resolved yet). eval_plan_draft is the first of the two that write: it drafts an experiment — plans/<name>.json plus any new condition files — into the session's bound dataset repository working copy and validates what it wrote, in one call. Use it instead of hand-writing those files; a new condition is always a COPY of one that exists with named fields changed, because two conditions differing in ONE field are a single-factor pair and a declaration written from scratch differs in however many fields its author forgot. eval_repo_write is the second: ONE text file into the bound repository's working copy, and only under docs/<path>, datasets/<set>/plans/<path>, datasets/<set>/conditions/<path> or datasets/<set>/analysis/<path>. That is where the analysis you write after reading a bundle belongs — beside the plan and the conditions it is about — and it is why you do not need the write tool for it and must not ask for a sandbox escalation to reach the dataset repository. The item material (datasets/<set>/items/…) is never writable through it: not the题面, not standards.yml, not a rubric, not an oracle. Anything else is refused with the path and the allowed list quoted back, and nothing is written. eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it. eval_cells goes cell by cell instead — bucket, stage and time in it, attempt, the unit's resource and environment fingerprint, checkpoint names, annotation counts per namespace, and the delegation's child session — filterable by bucket / task / condition; called with NO run_id it lists the experiments themselves (every run plus every unstarted plan, with snapshot, matrix size, factors, status and progress), which is how you find a run id in the first place. Those six are the whole eval surface of this session: it grants no mission tools, so do not look for mission_run_list / mission_run_status / mission_list / mission_get — the experiment list and the cells are both eval_cells, and the run digest is eval_run_status. DRAFTING IS NOT STARTING. Starting a run is a HUMAN act: the person approves the plan in the 实验室 tab (计划审阅 › 批准并启动) or runs /eval run <plan.json> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Logging each harness in and provisioning its condition are theirs too, and so is the final verdict. Your part is drafting, reading and writing the analysis: draft plans and conditions with eval_plan_draft, write the analysis with eval_repo_write, report the paths and the validate result back, and stop there; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
 
 
 /**
- * Plugin body: register the four read tools and their guidance section when
+ * Plugin body: register the six tools and their guidance section when
  * the service core is present, degrade to a no-op when it is not.
  * @param ctx - Cordis context (the preset's agent-plane mount).
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: EvalToolConfig = {}): void {
-  // `none` grants nothing at all: no tools and no section (guidance about an
-  // absent tool is a wrong instruction, not a harmless one).
-  if ((config.tools ?? 'all') === 'none') return
   // NOT named `eval`: a ctx property of that name shadows the global `eval`
   // inside the loader's `with (ctx) { return eval(expr) }` !!js evaluation.
   const service = ctx.get('dshEval')
   if (service === undefined) {
     // Degrade, don't explode: the core plugin is not mounted in this profile,
-    // so there is nothing to delegate to. The service, CLI, and /eval slash
-    // faces are the core's own concern and unaffected; only the model tools
-    // stay absent.
-    ctx.logger.info(`${PACKAGE_NAME}: the global eval service is absent — the eval tools are not registered`)
+    // so there is nothing to delegate to. The service and CLI faces are the
+    // core's own concern and unaffected; only the model tools and the slash
+    // command stay absent.
+    ctx.logger.info(`${PACKAGE_NAME}: the global eval service is absent — the eval tools and /eval are not registered`)
     return
   }
+  // The `/eval` slash face moved here from the core (preset-visibility
+  // rollout A3): registering from this preset mount lands the command in the
+  // preset's scope layer, so exactly the granted sessions see it. The human
+  // face is NOT tiered — the `tools` key gates the model face only — so this
+  // registration stands ahead of the tier gate, through the same deferred
+  // door as the tools below (an apply-time probe would race the registry's
+  // own mount order and lose).
+  ctx.inject(['commands'], (commandCtx) => {
+    registerEvalSlash(commandCtx, service)
+  })
+  // `none` grants nothing at all: no tools and no section (guidance about an
+  // absent tool is a wrong instruction, not a harmless one).
+  if ((config.tools ?? 'all') === 'none') return
   // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
   // tools registry's own mount order on the real composition tree and loses,
   // silently never registering the tools. `ctx.inject` fires when the registry

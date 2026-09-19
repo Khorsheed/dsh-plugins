@@ -4,7 +4,8 @@
  * (createLabViewStore().create()) and injected Remote mocks. Asserts the
  * experiment table (drafts and runs in one list, the status word, the factor
  * and progress cells), the row click opening the detail shell, the overview
- * page's fields for a run and for a draft, and the four placeholder sub-pages.
+ * page's fields for a run and for a draft, and the draft's refusal to open
+ * the sub-pages that need a run.
  *
  * The plan-review and conditions pages have their own spec
  * (`LabReview.client.spec.tsx`); the shared harness lives there too, so the
@@ -41,6 +42,9 @@ interface Harness {
   fetchConditionDiff: ReturnType<typeof vi.fn>
   approvePlan: ReturnType<typeof vi.fn>
   fetchRunOutput: ReturnType<typeof vi.fn>
+  fetchDraftOptions: ReturnType<typeof vi.fn>
+  draftExperiment: ReturnType<typeof vi.fn>
+  fetchJudgeQueue: ReturnType<typeof vi.fn>
 }
 
 const LIST: EvalExperimentsResult = {
@@ -142,8 +146,16 @@ function makeHarness(overrides: { list?: EvalExperimentsResult } = {}): Harness 
     fetchPlanReview: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     fetchConditions: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     fetchConditionDiff: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    // The 新建实验 form has its own spec (NewExperiment.client.spec.tsx);
+    // here the two verbs only have to exist, because the dialog mounts with
+    // the view and reads them when it is opened.
+    fetchDraftOptions: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    draftExperiment: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     approvePlan: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     fetchRunOutput: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    // The stage bar walks a reader to the stage their status asks for, so the
+    // reads of the stages it lands on have to exist here too.
+    fetchJudgeQueue: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
   }
 }
 
@@ -163,8 +175,11 @@ function renderView(h: Harness) {
     fetchPlanReview: h.fetchPlanReview,
     fetchConditions: h.fetchConditions,
     fetchConditionDiff: h.fetchConditionDiff,
+    fetchDraftOptions: h.fetchDraftOptions,
+    draftExperiment: h.draftExperiment,
     approvePlan: h.approvePlan,
     fetchRunOutput: h.fetchRunOutput,
+    fetchJudgeQueue: h.fetchJudgeQueue,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -186,8 +201,10 @@ describe('LabView list', () => {
     // The snapshot cell abbreviates the commit; a draft with none prints the set alone.
     expect(screen.getByText('ds @ c0ffee1')).toBeTruthy()
     expect(screen.getByText('ds')).toBeTruthy()
-    expect(screen.getByText('model.declared')).toBeTruthy()
-    expect(screen.getByText('reasoning.effort')).toBeTruthy()
+    // ui-spec §九: the factor column carries the field's WORD, never the
+    // dotted path — the path stays on the cell's title.
+    expect(screen.getByText('factor.model.declared')).toBeTruthy()
+    expect(screen.getByText('factor.reasoning.effort')).toBeTruthy()
     expect(screen.getByText('10/12')).toBeTruthy()
     // A draft has nothing expanded, so no progress and no start time.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
@@ -209,71 +226,123 @@ describe('LabView list', () => {
     expect(screen.getByText('list.empty')).toBeTruthy()
   })
 
-  it('新建实验 is a placeholder naming the task that owns it', async () => {
+  it('新建实验 opens the draft form and reads what the repository holds', async () => {
     const h = makeHarness()
     renderView(h)
     await screen.findByText('harness-comparison')
     fireEvent.click(screen.getByRole('button', { name: 'list.new' }))
-    expect(screen.getByText('placeholder.new')).toBeTruthy()
+
+    // The form's own behaviour is NewExperiment.client.spec.tsx's; what this
+    // spec pins is that the list's one action opens it and that the two reads
+    // are paid for THEN — walking a repository's item tree is not a read to
+    // spend on a person who is only looking at their experiments.
+    expect(await screen.findByText('new.title')).toBeTruthy()
+    await waitFor(() => { expect(h.fetchDraftOptions).toHaveBeenCalledWith('s1', {}) })
+  })
+
+  it('does not read the draft options until the form is opened', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await screen.findByText('harness-comparison')
+    expect(h.fetchDraftOptions).not.toHaveBeenCalled()
   })
 })
 
 describe('LabView detail', () => {
-  it('clicking a run row opens the seven-tab shell and fetches the overview', async () => {
+  it('clicking a run row opens the four-stage shell and fetches the detail', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('harness-comparison'))
 
     await waitFor(() => { expect(h.fetchExperiment).toHaveBeenCalledWith('s1', { runId: 'run-20260913-aa' }) })
-    for (const page of ['page.overview', 'page.plan', 'page.conditions', 'page.matrix', 'page.cells', 'page.report', 'page.judging']) {
+    // Four stages, not seven sub-pages (ui-spec §五 v2).
+    for (const page of ['page.design', 'page.runs', 'page.compare', 'page.review']) {
       expect(screen.getByRole('button', { name: page })).toBeTruthy()
     }
-    // The overview is the landing page, and it is the pressed one.
-    expect(screen.getByRole('button', { name: 'page.overview' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'page.design' }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('the overview shows the snapshot, matrix shape, factors, judge, environment, readiness and run.meta', async () => {
+  it('the stage bar says what is true and offers the ONE action that status asks for', async () => {
+    const h = makeHarness()
+    renderView(h)
+    // `judging` — every cell has run, and the final verdict is a person's.
+    fireEvent.click(await screen.findByText('harness-comparison'))
+    expect(await screen.findByText('cta.judgingHint')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'cta.judging' }))
+    expect(screen.getByRole('button', { name: 'page.review' }).getAttribute('aria-pressed')).toBe('true')
+
+    // `pending-approval` — the action IS the human act, pressed where a
+    // reader stands rather than hunted for on a sub-page.
+    fireEvent.click(screen.getByRole('button', { name: 'detail.back' }))
+    fireEvent.click(await screen.findByText('effort-sweep'))
+    expect(await screen.findByText('cta.pendingHint')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'cta.pending' }))
+    await waitFor(() => {
+      expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: '/repo/datasets/ds/plans/effort-sweep.json' })
+    })
+  })
+
+  it('the design stage leads with the scale and the readiness badge, and folds the receipts away', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('harness-comparison'))
 
+    // ① scale and variables: four lines, at the top, where the decision starts.
     expect(await screen.findByText('overview.shapeValue {"items":2,"conditions":2,"reps":3,"cells":12}')).toBeTruthy()
     expect(screen.getByText('overview.snapshot')).toBeTruthy()
     expect(screen.getByText('cond-a, cond-b')).toBeTruthy()
     expect(screen.getByText(/judge-a · overview.judgeSamples/)).toBeTruthy()
+
+    // ② the readiness BADGE, not six paragraphs of probe output: one chip per
+    // group that failed, with the count and the way to re-read it.
+    //
+    // THREE of three, not one of one: the badge counts the subjects the PLAN
+    // names (two players and a judge), and the readiness records only cover
+    // what the run actually probed — cond-b. A group nothing probed used to
+    // be absent from the count rather than a cross in it, so an experiment
+    // whose players were never resolved could read 「✓ 环境就绪」
+    // (I5·T67 · W12).
+    expect(screen.getByText('ready.failedCount {"count":3,"total":3}')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'ready.recheck' })).toBeTruthy()
+
+    // ③ everything a reader needs once: folded, and still verbatim inside.
+    expect(screen.getByText('design.advanced')).toBeTruthy()
     expect(screen.getByText(/dataseek\/bench:1/)).toBeTruthy()
-    // The readiness block is verbatim: the failing probe's reason shows.
-    expect(screen.getByText('the scoped home holds no credential')).toBeTruthy()
-    expect(screen.getByText('ready.failed')).toBeTruthy()
-    // Histograms and the leak warning.
-    expect(screen.getByText('done 10 · active 2')).toBeTruthy()
-    expect(screen.getByText('archived 10 · stage-2 2')).toBeTruthy()
-    expect(screen.getByText('7')).toBeTruthy()
-    expect(screen.getByText(/eval-run-3 · completed/)).toBeTruthy()
+    expect(screen.getByText('ready.rawFold')).toBeTruthy()
+    expect(screen.getAllByText(/the scoped home holds no credential/).length).toBeGreaterThan(0)
+    expect(screen.getByText('overview.metaRaw')).toBeTruthy()
   })
 
-  it('a draft opens its overview from the row alone — no RPC, and it says why the run fields are missing', async () => {
+  it('a draft opens its design stage from the row alone — no RPC for the run', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('effort-sweep'))
 
-    expect(await screen.findByText('overview.draftNotice')).toBeTruthy()
+    // The stage bar's sentence IS the «this is a draft» notice v1 printed into
+    // the page body, and it comes with the action that changes it.
+    expect(await screen.findByText('cta.pendingHint')).toBeTruthy()
     expect(screen.getByText('overview.shapeValue {"items":4,"conditions":2,"reps":1,"cells":8}')).toBeTruthy()
     expect(screen.getByText('overview.environmentHost')).toBeTruthy()
+    // validate's verdict off the LIST row, before the review walk lands.
     expect(screen.getByText('overview.validationOk')).toBeTruthy()
     expect(h.fetchExperiment).not.toHaveBeenCalled()
   })
 
-  // Two, not six: plan and conditions gained bodies in I5·T36 (LabReview),
-  // matrix and cells in I5·T35b (MatrixCells) — each covered by its own spec.
-  it('the one unbuilt sub-page carries the placeholder that names its task', async () => {
+  // Each stage has its own spec — design in LabReview, the grid and the run
+  // records in MatrixCells, the results in Report, the bench in Judging. What
+  // this one still pins is that a DRAFT cannot open the three stages that need
+  // a run: there is nothing to read, and a spinner over nothing would be the
+  // lie the placeholders used to prevent.
+  it('a draft says so on every stage that needs a run', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('harness-comparison'))
-    // The report page gained a body with T38; the judging desk is T37's, and
-    // a tab that lied about being empty would be worse than one that says so.
-    fireEvent.click(screen.getByRole('button', { name: 'page.judging' }))
-    expect(screen.getByText('placeholder.judging')).toBeTruthy()
+    fireEvent.click(await screen.findByText('effort-sweep'))
+    for (const page of ['runs', 'compare', 'review']) {
+      fireEvent.click(screen.getByRole('button', { name: `page.${page}` }))
+      // The empty seat says what is missing AND what produces it (§九).
+      expect(screen.getAllByText('draft.notStarted').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('draft.notStartedHint').length).toBeGreaterThan(0)
+    }
   })
 
   it('回到列表 returns to the table', async () => {
@@ -290,6 +359,9 @@ describe('LabView detail', () => {
     h.fetchExperiment.mockResolvedValue({ ok: false, error: { code: 'REFUSED', message: 'no mission service' } })
     renderView(h)
     fireEvent.click(await screen.findByText('harness-comparison'))
-    expect(await screen.findByText('detail.error: no mission service')).toBeTruthy()
+    expect(await screen.findByText('error.serviceMissing')).toBeTruthy()
+    expect(screen.getByText('error.serviceMissing.fix')).toBeTruthy()
+    expect(screen.getByText('detail.error')).toBeTruthy()
+    expect(screen.getByText('no mission service')).toBeTruthy()
   })
 })

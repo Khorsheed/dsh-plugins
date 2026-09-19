@@ -353,7 +353,8 @@ function summarize(
       detail: `出现 ${fingerprints.length} 个不同指纹：${fingerprints.map(fp => `${fp.slice(0, 12)}…`).join(' / ')}`,
     }
   } else {
-    fingerprint = { status: 'ok', detail: `${(fingerprints[0] as string).slice(0, 16)}… × ${cells.length} 格` }
+    // Twelve, like every other digest this family shows (ui-spec §九).
+    fingerprint = { status: 'ok', detail: `${(fingerprints[0] as string).slice(0, 12)}… × ${cells.length} 格` }
   }
 
   return {

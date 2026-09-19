@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { LabAcquireSpec, LabFace, LabUnitInfo, LabVerifyResult, LocalAgentFace } from '../src/faces.ts'
 import {
-  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, conditionUnitDiagnostics,
+  acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, conditionOwnedComponents, conditionUnitDiagnostics,
   describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
 } from '../src/unit.ts'
@@ -109,6 +109,64 @@ describe('the plan/condition split that produces one acquire spec', () => {
     expect(unitUid('1000:1000')).toBe(1000)
     expect(unitUid('node')).toBeNull()
     expect(unitUid(undefined)).toBeNull()
+  })
+})
+
+describe('the claude container-scope discipline', () => {
+  const player = (id: string, harnessName: string, scope?: string) =>
+    ({ id, harnessName, ...(scope === undefined ? {} : { scope }) })
+
+  it('refuses a claude condition that runs in a unit without its own scope', () => {
+    // No scope means the INSTANCE's default scope — the one the host's own
+    // delegations and every status probe use. That is the sharing the rule
+    // exists to stop, so it is the worst case rather than a neutral one.
+    const diagnostics = claudeScopeDiagnostics([player('claude-exec', 'claude-code')], [])
+    expect(diagnostics.map(d => d.code)).toEqual(['CLAUDE_CONTAINER_SCOPE_MISSING'])
+    // The refusal has to carry the WHY: the next person reading it is deciding
+    // whether to add a scope or to delete the check.
+    expect(diagnostics[0]!.message).toContain('keychain')
+    expect(diagnostics[0]!.message).toContain('/claude-code login --scope')
+  })
+
+  it('accepts a claude condition that owns its container scope', () => {
+    expect(claudeScopeDiagnostics([player('claude-exec', 'claude-code', 'c-claude')], [])).toEqual([])
+  })
+
+  it('refuses a host-side condition that names the container scope', () => {
+    // The judge is the host side here: it delegates from the orchestrator and
+    // stays on the host even in a container run.
+    const diagnostics = claudeScopeDiagnostics(
+      [player('claude-exec', 'claude-code', 'c-claude')],
+      [player('judge-claude', 'claude-code', 'c-claude')],
+    )
+    expect(diagnostics.map(d => d.code)).toEqual(['CLAUDE_CONTAINER_SCOPE_SHARED'])
+    expect(diagnostics[0]!.message).toContain('claude-exec')
+    expect(diagnostics[0]!.message).toContain('token family')
+  })
+
+  it('lets the host side keep the default scope while the unit owns a named one', () => {
+    expect(claudeScopeDiagnostics(
+      [player('claude-exec', 'claude-code', 'c-claude')],
+      [player('judge-claude', 'claude-code')],
+    )).toEqual([])
+  })
+
+  it('lets two container conditions share one scope — both sides of that pair are the file', () => {
+    // Two units reading and writing the SAME credentials file is one chain, the
+    // way codex's single store is one chain. Nothing to invalidate.
+    expect(claudeScopeDiagnostics(
+      [player('claude-a', 'claude-code', 'c-claude'), player('claude-b', 'claude-code', 'c-claude')],
+      [],
+    )).toEqual([])
+  })
+
+  it('leaves the other three harnesses alone', () => {
+    // codex pins a file-only store, kimi has only the file, dsh injects an API
+    // key and never refreshes: none of them can fork a grant across two stores.
+    expect(claudeScopeDiagnostics(
+      [player('codex-exec', 'codex'), player('kimi-exec', 'kimi'), player('dsh-exec', 'dsh')],
+      [player('judge-dsh', 'dsh', 'shared')],
+    )).toEqual([])
   })
 })
 

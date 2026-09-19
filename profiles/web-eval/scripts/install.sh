@@ -45,6 +45,22 @@ PROFILE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml"
 # profile does NOT remove them — the README says so beside the `rm -rf`.
 PRESET_IDS="eval"
 
+# The pack's SKILLS, by skill name; each is a directory under skills/ holding
+# `SKILL.md`. Like the presets they do NOT live under the profile directory:
+# `dsh-skill-filesystem` scans `$DSH_HOME/skills` (its `user-dsh` root), so the
+# roster is per-HOME, and the eval preset's own `skill-filesystem` row is what
+# surfaces them in an evaluation session's skill catalog.
+#
+# Replaced WHOLE on install and on update, for the same reason the presets are:
+# `eval-planning` teaches the one drafting verb (eval_plan_draft) and where the
+# line between drafting and starting is — apparatus, not preference. A locally
+# authored skill of the same name is overwritten; author your own under a
+# different name.
+#
+# Because they sit outside $DSH_HOME/profiles/web-eval, uninstalling the
+# profile does NOT remove them — the README says so beside the `rm -rf`.
+SKILL_IDS="eval-planning"
+
 # Members source mode packs from the checkout — "no usable release on npm".
 # Two reasons a member lands here, and docs/release-status.md is the authority
 # for both:
@@ -202,10 +218,15 @@ mkdir -p "$DEST"
 # halfway through must not be the moment a person discovers their preset
 # directory is gone.
 PRESET_BACKUP="$DSH_HOME/.agent-presets/.web-eval-backup.$$"
+SKILL_BACKUP="$DSH_HOME/skills/.web-eval-backup.$$"
 trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2
   if [ -d "$PRESET_BACKUP" ]; then
     echo "  the agent preset(s) were replaced; the previous copy is at $PRESET_BACKUP" >&2
     echo "  restore with: rm -rf $DSH_HOME/.agent-presets/<id> && mv $PRESET_BACKUP/<id> $DSH_HOME/.agent-presets/" >&2
+  fi
+  if [ -d "$SKILL_BACKUP" ]; then
+    echo "  the skill(s) were replaced; the previous copy is at $SKILL_BACKUP" >&2
+    echo "  restore with: rm -rf $DSH_HOME/skills/<id> && mv $SKILL_BACKUP/<id> $DSH_HOME/skills/" >&2
   fi' 0
 for f in $PROFILE_FILES; do
   [ -e "$SRC/$f" ] && cp -R "$SRC/$f" "$DEST/$f"
@@ -222,6 +243,19 @@ for id in $PRESET_IDS; do
   rm -rf "$PRESET_ROOT/$id"
   cp -R "$SRC/presets/$id" "$PRESET_ROOT/$id"
   echo "dsh-web-eval: installed agent preset \"$id\" into $PRESET_ROOT/$id"
+done
+
+SKILL_ROOT="$DSH_HOME/skills"
+for id in $SKILL_IDS; do
+  [ -f "$SRC/skills/$id/SKILL.md" ] || { echo "dsh-web-eval: skills/$id/SKILL.md missing from the clone" >&2; exit 1; }
+  mkdir -p "$SKILL_ROOT"
+  if [ -d "$SKILL_ROOT/$id" ]; then
+    mkdir -p "$SKILL_BACKUP"
+    cp -R "$SKILL_ROOT/$id" "$SKILL_BACKUP/$id"
+  fi
+  rm -rf "$SKILL_ROOT/$id"
+  cp -R "$SRC/skills/$id" "$SKILL_ROOT/$id"
+  echo "dsh-web-eval: installed skill \"$id\" into $SKILL_ROOT/$id"
 done
 
 if [ -n "$SOURCE" ]; then
@@ -361,6 +395,7 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 trap - 0
-[ -d "$PRESET_BACKUP" ] && rm -rf "$PRESET_BACKUP"
+if [ -d "$PRESET_BACKUP" ]; then rm -rf "$PRESET_BACKUP"; fi
+if [ -d "$SKILL_BACKUP" ]; then rm -rf "$SKILL_BACKUP"; fi
 echo "dsh-web-eval: installed into $DEST — $MEMBERS @khorsheed members, $ROWS patch rows composed"
 echo "next: sh $(cd "$(dirname "$0")/.." && pwd)/scripts/restart-into-web-eval.sh   # hand the running instance over to web-eval on the same port"

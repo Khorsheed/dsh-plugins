@@ -6,10 +6,15 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/card-format.ts",
+    "src/agent.ts",
     "src/index.ts",
     "src/invariant.ts",
+    "src/prompt.ts",
     "src/remote.ts",
     "src/service.ts",
+    "src/store.ts",
+    "src/tools.ts",
     "src/types.ts"
   ]
 }

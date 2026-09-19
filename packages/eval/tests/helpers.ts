@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CliIo } from '../src/cli-core.ts'
@@ -19,9 +19,15 @@ export function captureIo(): { io: CliIo; stdout: () => string; stderr: () => st
 
 const tmpDirs: string[] = []
 
-/** A fresh temp dir, removed on process exit via the vitest afterEach hooks below. */
+/**
+ * A fresh temp dir, removed on process exit via the vitest afterEach hooks
+ * below. realpath, not the mkdtemp name: on macOS the runtime temp root is a
+ * symlink (/var → /private/var), and a repository path the code under test
+ * answers with has been through `normalizeRepoPath`, so a fixture holding the
+ * unresolved name would compare two spellings of one directory.
+ */
 export function tmpTree(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-eval-test-'))
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-eval-test-')))
   tmpDirs.push(dir)
   return dir
 }

@@ -1,0 +1,2339 @@
+/* Reader pane styles. Colour/text tokens are the host's own variables, all of
+   which are defined by ui-theme's design-platform.css; the article typography
+   splits Chinese from Latin deliberately (see the design's D5). */
+
+.root {
+  /* One gutter for every horizontal surface in the pane. */
+  --reader-gutter: 12px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+}
+
+.head {
+  min-width: 0;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.headTitle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.count {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tool {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.tool:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolOn {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The destructive tool in a toolbar: same box as its neighbours, ink-only
+   difference, so it is legible without turning the bar into alarm. */
+.toolDanger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger, var(--dsw-alias-interactive-bg-hover));
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+.tools {
+  min-width: 0;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px 6px;
+}
+
+/* One 26px box per icon tool, both of them AFTER the field. `flex: none` is the
+   whole point: the row is 26 + gap + field + gap + 26, and only the field gives
+   width back when the sidebar narrows, so neither tool can ever be squeezed out
+   by the other's state. Each tool also carries the popover's positioning
+   context, so a panel is anchored to the button that opened it. */
+.toolWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.search {
+  /* `flex: 1 1 0` (not `auto`): the field's width comes from the row's free
+     space, never from its own content, so a long placeholder or a `#source`
+     filter value cannot push the tools out of the row. The `min-width` floor is
+     what stops the reverse failure — a field collapsed into an unreadable
+     sliver on a narrow sidebar — while the input inside may still shrink. */
+  flex: 1 1 0;
+  min-width: 44px;
+  position: relative;
+}
+
+.search svg {
+  position: absolute;
+  top: 50%;
+  left: 7px;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.search input {
+  /* `border-box`, or `width: 100%` means 100% PLUS the padding and border: the
+     field then hangs ~56px past the pane's right edge, which is exactly what a
+     reader sees as "the search box is not sized to the sidebar". */
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  height: 26px;
+  /* Right padding reserves the clear button's box, so the × never sits over
+     the text the reader is looking at and the field never changes width when
+     it appears. */
+  padding: 0 28px 0 26px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Clears the field it sits in (the wall's search, the source page's search).
+   A `×` glyph rather than an icon: it is one character in the flow, and the
+   host's own toolbars use the same mark. */
+.searchClear {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Same 22px box and 15px glyph as the toolbar's other icons: the field's
+     affordance is a control, not a punctuation mark. */
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.searchClear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.search input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.search input:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 2px 8px 10px;
+  overflow-y: auto;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- the card */
+
+/* A card is a surface, not a transparent row: the fill is the host's own card
+   value (ui-deliverables' `--deliverable-fill`: neutral-50 light, neutral-850
+   dark) and the hairline border separates neighbours in the grid. Hover keeps
+   the geometry and only lifts the tone, so scanning the wall never makes it
+   jump. */
+.card {
+  --reader-card-fill: var(--dsw-static-neutral-50, #fafafa);
+  --reader-card-hover: var(--dsw-static-neutral-100, #f5f5f5);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2px 9px;
+  align-items: start;
+  padding: 9px 9px 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--reader-card-fill);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+:global(body[data-ds-dark-theme]) .card {
+  --reader-card-fill: var(--dsw-static-neutral-850, #212123);
+  --reader-card-hover: var(--dsw-static-neutral-800, #292929);
+}
+
+.card:hover {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--reader-card-hover);
+}
+
+.card:active {
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--reader-card-hover);
+}
+
+/* A card is a `role="button"` with tabIndex 0, so it needs the ring every other
+   focusable thing in the host has; without it the wall is keyboard-navigable
+   but not keyboard-VISIBLE. */
+.card:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+/* The unread marker is a badge on the source tile's corner: an avatar badge is
+   the habit readers already have, and it floats instead of occupying layout, so
+   read/unread does not move the title. */
+.tileWrap {
+  position: relative;
+  grid-row: 1 / span 3;
+  grid-column: 1;
+  width: 24px;
+  height: 24px;
+}
+
+.tile {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--dsw-static-neutral-00);
+}
+
+.unread {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-500);
+  box-shadow: 0 0 0 1.5px var(--dsw-alias-bg-base);
+}
+
+.meta {
+  display: flex;
+  grid-column: 2;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.source {
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sep {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.6;
+}
+
+.when {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.title {
+  display: -webkit-box;
+  grid-column: 2 / -1;
+  min-width: 0;
+  /* The text box is FIXED at two lines: the wall swaps between a translation and
+     its original (on hover, or with the side-by-side view), and Chinese and
+     English wrap to different line counts. Without the reservation a one-line
+     Chinese title would shrink the card and shift the whole grid. */
+  min-height: 34px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  /* A long unbroken token (a URL in a title) must wrap inside the fixed box
+     rather than widen the card. */
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Unread is the state that earns ink: the title steps up to primary and gains a
+   touch of weight, on top of the 7px dot on the tile. Read entries go quieter
+   rather than away — the wall is a feed you keep, not an inbox you clear. */
+.card[data-unread] .title {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 650;
+}
+
+.summary {
+  display: -webkit-box;
+  grid-column: 2 / -1;
+  min-width: 0;
+  /* Same reservation as the title: two lines, whatever language lands in it. */
+  min-height: 32px;
+  margin-top: 3px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The original under a translated field, in the wall's side-by-side view. It
+   keeps the FIELD's own typography — a title's original reads as a title — and
+   is told apart by ink and weight instead of by shrinking to caption size: the
+   reader asked for the title's format to be preserved. This is also the ONE
+   state that makes the grid taller, and it does so deliberately: it is a mode
+   the reader picks, not a hover that follows the pointer. */
+.cardOrigTitle {
+  display: -webkit-box;
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: 2px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.cardOrigSummary {
+  display: -webkit-box;
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: 2px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tags {
+  display: flex;
+  grid-column: 2 / -1;
+  align-items: center;
+  /* Wrapping is load-bearing now that a card is a bordered box: a long tag list
+     used to spill out of the card's edge, and a fixed-height row cannot say so. */
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+/* One pill metric for both kinds of tag, so the row never jitters vertically and
+   the `+` affordance lines up with the pills it sits among. The feed's own
+   category is a filled chip; the reader's own tag is outlined and inked — told
+   apart by shape as well as by colour. */
+.tag,
+.tagOwned {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+.tag {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagOwned {
+  border: 1px solid var(--dsw-static-deepseek-500);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* "Link only": a saved link whose body cannot be read here. Same pill metric as
+   the tags beside it (so the row never jitters), but dashed and quiet — it is a
+   statement about the card, not one of the reader's own labels. */
+.tagLinkOnly {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px dashed var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+.author {
+  overflow: hidden;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The trailing cue says "this opens"; it is not a control of its own. */
+.chevron {
+  display: inline-flex;
+  grid-column: 3;
+  grid-row: 1;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.card:hover .chevron {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The list's freshness line: how old this snapshot is, and when the next one
+   is due. Pinned below the scroll area so it never scrolls away with the cards
+   — the question it answers ("do I need to refresh?") is asked while looking
+   at any part of the list. */
+.metaBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px 7px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.state {
+  padding: 26px 14px;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.state b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------------- add pane */
+
+.add {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  padding: 12px 12px 0;
+}
+
+.add h2 {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.add p {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.add input {
+  width: 100%;
+  height: 30px;
+  margin-bottom: 8px;
+  padding: 0 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.add input:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.submit {
+  align-self: flex-start;
+  padding: 7px 13px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.submit:hover {
+  opacity: 0.88;
+}
+
+.verdict {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.verdict b {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The fetch seam's own message, under the verdict. Monospaced because it is
+   transport text, not prose: it is read for the one word that names the cause. */
+.verdictReason {
+  display: block;
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 15px;
+  word-break: break-word;
+  opacity: 0.9;
+}
+
+/* -------------------------------------------------------------- detail view */
+
+.detail {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.bar {
+  min-width: 0;
+  /* `--reader-gutter` minus the icon tool's own inner box, so the TITLE lands on
+     the same left edge as the body text below it. */
+  --reader-bar-pad: calc(var(--reader-gutter) - 10px);
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 6px var(--reader-bar-pad);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.barLabel {
+  /* A secondary page's name IS its title: same size as the tab label the host
+     renders for the pane, so opening "订阅管理" reads as a page and not as a
+     caption under the icons. It truncates rather than wrapping, because the
+     bar also carries the actions.
+     (An earlier revision declared `font-size` twice here — 13px then 10.5px —
+     so the title stayed caption-sized no matter what the first one said.) */
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.detailBody {
+  flex: 1;
+  min-height: 0;
+  /* The gutter is the SAME on every horizontal surface (bar, body, pane), so a
+     page's title, its kicker and its prose start on one left edge. Different
+     gutters here were what made the body look shifted right of its own title. */
+  padding: 0 var(--reader-gutter) 22px;
+  overflow-y: auto;
+}
+
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 8px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.kicker .tile {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+
+.detailTitle {
+  margin: 0 0 9px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+/* 「重新抓取」: the entry-level gesture that sits in the tag row.
+   Deliberately the tag row's own metric (18px pill, 10.5px type) so it reads as
+   part of that line rather than as a second toolbar, but outlined and inked —
+   it is a button, and it must not be mistaken for one of the feed's labels. */
+.refetch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.refetch:hover:not(:disabled) {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-alias-label-primary);
+}
+
+.refetch:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.rule {
+  height: 1px;
+  margin: 0 0 16px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.article {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Chinese and Latin need different leading and letter-spacing: Latin prose sits
+   at 1.66, Chinese at 1.78, because Han glyphs carry their own side bearing and
+   read as a block without the extra leading.
+   There is deliberately NO max-width here. A `min(100%, 46em)` measure used to
+   cap paragraphs while lists ran the full column, which left the body ragged on
+   the right — half a layout and half a typography rule, and the empty band read
+   as a bug. The pane is a sidebar: its width IS the measure, and the reader can
+   make it wider if they want to (decided with the user, 2026-09-18). */
+.articleZh {
+  font-size: 13.5px;
+  line-height: 1.78;
+  letter-spacing: 0.005em;
+}
+
+.articleEn {
+  font-size: 13.5px;
+  line-height: 1.66;
+  letter-spacing: -0.003em;
+}
+
+.article p {
+  margin: 0 0 12px;
+}
+
+.article h1,
+.article h2 {
+  margin: 24px 0 9px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-primary);
+}
+
+.article h3,
+.article h4 {
+  margin: 19px 0 7px;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-primary);
+}
+
+.article ul,
+.article ol {
+  margin: 0 0 12px;
+  padding-left: 19px;
+}
+
+.article li {
+  margin: 0 0 5px;
+}
+
+.article blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 11px;
+  border-left: 3px solid var(--dsw-alias-border-l3);
+}
+
+.article code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+}
+
+.article pre {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow-x: auto;
+}
+
+.article pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.article a {
+  color: var(--dsw-alias-link);
+  text-decoration: none;
+}
+
+.article a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.article img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 4px 0 12px;
+  border-radius: 8px;
+}
+
+.article strong {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 650;
+}
+
+.article table {
+  width: 100%;
+  margin: 0 0 12px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.article th,
+.article td {
+  padding: 5px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  text-align: left;
+}
+
+/* The completeness note: one line at the end of the body, not a card. */
+.incomplete {
+  margin: 18px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.incompleteLink {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--dsw-alias-link);
+  cursor: pointer;
+}
+
+.incompleteLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.alsoFrom {
+  margin-top: 22px;
+}
+
+.alsoFromLabel {
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.alsoFromRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 0;
+  border: none;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: transparent;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.alsoFromRow:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.alsoFromTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------- composer + footer */
+
+.composer {
+  flex: none;
+  padding: 7px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.composerLabel {
+  margin-bottom: 4px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.composerText {
+  max-height: 52px;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.composerEmpty {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ------------------------------------------------------------------ menus */
+
+.menu {
+  /* Anchored to the button that opened it (`.toolWrap` is the positioning
+     context) and dropped just under it, so it can never cover the toolbar the
+     way the old pane-anchored `top: 62px` did — that value was shorter than the
+     toolbar, so the filter panel sat on top of the sort button. */
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.check {
+  color: var(--dsw-static-deepseek-500);
+}
+
+/* ------------------------------------------------- the source grid (the wall) */
+
+/* The members-tab card grid: auto-fill columns, one column when narrow. */
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+  padding: 4px 2px 10px;
+}
+
+.sourceCard {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sourceCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The trailing grid cell, in the members tab's dashed-invite idiom. */
+.addCard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px dashed var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.4));
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, #7f8287);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.addCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.14));
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The empty state is that same dashed card, alone and taller: it IS the
+   action, so it carries the copy instead of a separate guide block. */
+.emptyCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  grid-column: 1 / -1;
+  min-height: 132px;
+  padding: 18px 20px;
+  border: 1px dashed var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.4));
+  border-radius: 14px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.emptyCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+.emptyTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.emptyBody {
+  font-size: 12.5px;
+  line-height: 19px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sourceInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sourceName {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sourceMeta {
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sourceFailed {
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+.sourceError {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--dsw-static-red-600, #d54941);
+  word-break: break-word;
+}
+
+/* --------------------------------------------------------- the add dialog */
+
+/* Transparent overlay (the wall stays readable behind it) + centered card.
+   Same idiom as the members tab's invite dialog: Esc and overlay-click close,
+   hierarchy comes from weight and spacing, and the card carries the
+   separation because the overlay does not dim. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  z-index: 100;
+  text-align: left;
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 520px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 20px 22px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.16));
+  border-radius: 18px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.dialog h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dialog p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dialog input {
+  padding: 9px 11px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.dialog input:focus {
+  outline: none;
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.dialogActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ghost {
+  padding: 7px 13px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ghost:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ------------------------------------------------------ subscriptions page */
+
+.paneBody {
+  flex: 1;
+  min-height: 0;
+  padding: 12px var(--reader-gutter);
+  overflow-y: auto;
+}
+
+.help {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Two settings controls in one row rather than one full-width block each: the
+   page is a list, and the two numbers above it are not the reason it exists.
+   Each control keeps its long explanation as its `title`. */
+.settingsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.settingLabel {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.settingControl {
+  padding: 3px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11.5px;
+}
+
+/* The management page's own narrowing row: two labelled chip groups (kind,
+   order) above the list. It wraps, because the pane is narrow and a chip row
+   that overflows sideways hides the very control the reader came for. */
+.manageTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+
+.chipGroupLabel {
+  flex: none;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipOn {
+  border-color: transparent;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+}
+
+.sourceList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ------------------------------------------------------------ 最近阅读 page */
+
+.recentList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A row is a BUTTON, not a card: the reader is choosing something to reopen, and
+   a list of equal-weight rows is scanned faster than a grid of cards. It keeps
+   the source row's metric (same border, radius, padding) so the two pages feel
+   like one plugin. */
+.recentRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recentRow:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.recentRow:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.recentTitle {
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-primary);
+  /* One line: this list exists to FIND something in, and a wall of wrapped
+     titles is what makes "recently read" useless at a hundred items. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.recentSource {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.sourceRow .sourceInfo {
+  flex: 1;
+}
+
+.rowAction {
+  flex: none;
+  margin-top: 2px;
+  padding: 4px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.rowAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowActionDanger {
+  flex: none;
+  padding: 4px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-static-red-600, #d54941);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.rowActionDanger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger, var(--dsw-alias-interactive-bg-hover));
+}
+
+/* ------------------------------------------------------------ tool extras */
+
+/* The refresh button's in-flight state: the icon turns rather than the list
+   disappearing, so a refresh never looks like a dead button or a lost wall. */
+.toolSpinning svg {
+  animation: reader-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolSpinning svg { animation: none; }
+}
+
+@keyframes reader-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tool:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ------------------------------------------------------ the filter popover */
+
+/* Anchored under its own button, over the wall. A column of rows, because a
+   sidebar has width for a list of names and not for a row of them. */
+.filterPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 200px;
+  max-width: 280px;
+  /* Viewport units, NOT a percentage: the panel's containing block is the 26px
+     `.toolWrap` (that is what anchors it under its button), so `60%` used to
+     resolve to ~16px and the panel rendered as a one-row sliver with a
+     scrollbar (seen on the acceptance instance the day the anchor moved). Only
+     the list scrolls — the head and the search stay put. */
+  max-height: min(62vh, 440px);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+/* The drilled-in page's header: back, what this page is, how many there are. */
+.filterPanelHead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 6px 2px;
+}
+
+.filterBack {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.filterBack:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.filterPanelTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The drill row's current value: right-aligned, ellipsised, never wider than
+   the label it belongs to. */
+.filterValue {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filterChevron {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The source page's own search box: the list it narrows is the only unbounded
+   one in the panel.
+   
+   `flex: 1 1 auto` with `min-width: 0` is the whole fix for the field that used
+   to run past the panel's right edge: `flex: none` let the row size itself from
+   the input's intrinsic width, so a 100%-wide input inside a shrink-to-fit
+   parent was wider than the panel it lived in. */
+.filterSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+  margin: 0 2px 4px;
+}
+
+.filterSearch svg {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.filterSearch input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 28px 0 21px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.filterSearch input:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.filterList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.filterEmpty {
+  padding: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.filterSection {
+  padding: 6px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-tertiary);
+  text-transform: uppercase;
+}
+
+.filterRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filterRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.filterCheck {
+  width: 12px;
+  flex: none;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11px;
+}
+
+.filterLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filterCount {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+}
+
+/* A tag row plus its own delete control. The row takes the width (it is the
+   button that narrows the wall); the × is a fixed, quiet box beside it, always
+   visible so touch and keyboard can reach it too. */
+.filterTagRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.filterTagRow .filterRow {
+  flex: 1;
+  min-width: 0;
+}
+
+.filterTagDelete {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.filterTagDelete:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger, var(--dsw-alias-interactive-bg-hover));
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+.chipBroken {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-static-amber-500, #d9a441);
+  color: #1f2329;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* The incompleteness notice: where the reader is looking, with the way out. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.noticeRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.noticeText {
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.noticeLink {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-static-deepseek-500);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* The subscription editor: the name and the address of one source, editable in
+   place. Both are sized like the surrounding rows rather than like form
+   controls, because this page IS the form. */
+.sourceNameInput,
+.sourceUrlInput {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  min-width: 0;
+}
+
+.sourceNameInput {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sourceUrlInput {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sourceNameInput:hover,
+.sourceUrlInput:hover {
+  border-color: var(--dsw-alias-border-l1);
+}
+
+.sourceNameInput:focus,
+.sourceUrlInput:focus {
+  outline: none;
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-alias-bg-base);
+}
+
+/* ------------------------------------------------------------- entry tags */
+
+/* The tag editor under the article: chips the reader owns, plus the one input.
+   Sits in the same vertical rhythm as the rest of the detail furniture. */
+.tagEdit {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.tagEditLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+}
+
+.tagChipRemove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tagChipRemove:hover {
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+.tagAdd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 0;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.tagAdd:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tagInput {
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11px;
+  outline: none;
+}
+
+/* One focus treatment for both tag inputs: the border turns accent, the box does
+   not grow a second one. */
+.tagInput:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* The per-card action menu (right-click, or the card's own button). Floating,
+   anchored at the pointer, dismissed by the next action. */
+.cardMenu {
+  position: fixed;
+  z-index: 40;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.cardMenu button {
+  display: block;
+  width: 100%;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cardMenu button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The one destructive row in the card menu. */
+.cardMenu .cardMenuDanger {
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+/* The affordance the menu hangs off: quiet until the card is hovered. */
+
+/* The tag button lives in the tags row (where the entry's own tags are), and
+   only surfaces on hover or focus so a wall of cards stays quiet. */
+/* 抓取 state, in the card's tag row: a pill whose colour IS the state — grey
+   (not fetched; click to fetch), blue (in flight, or fetched and waiting to be
+   stored), green (the full text is cached), red (failed; the tooltip says why). */
+.fetchPill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fetchPill:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+
+.fetchPill_fetching {
+  border-color: var(--dsw-alias-state-business-primary, #4a7cf6);
+  color: var(--dsw-alias-state-business-primary, #4a7cf6);
+}
+
+.fetchPill_ready {
+  border-color: var(--dsw-static-green-600, #2f9e44);
+  color: var(--dsw-static-green-600, #2f9e44);
+}
+
+.fetchPill_failed {
+  border-color: var(--dsw-static-red-600, #d54941);
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+.tagOnCard {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 0;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.card:hover .tagOnCard,
+.tagOnCard:focus-visible {
+  opacity: 1;
+}
+
+.tagOnCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The card's tag panel: a checklist of the vocabulary plus the one input. */
+.cardTagPanel {
+  position: fixed;
+  z-index: 40;
+  /* Keep the width and the height bound in step with TAG_PANEL_WIDTH /
+     TAG_PANEL_MAX_HEIGHT in the pane — they are what its placement is computed
+     from (below the card when there is room, above it when there is not). */
+  display: flex;
+  flex-direction: column;
+  width: 236px;
+  max-height: 296px;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+/* The panel's own header: what this surface is, and the one key it takes. The
+   hint is right-aligned and quiet, so it reads as a reminder rather than copy. */
+.tagPanelHead {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 6px;
+}
+
+.tagPanelTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.tagPanelHint {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagPanelList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tagPanelEmpty {
+  padding: 4px 8px 8px;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* One vocabulary row: the check column is fixed so every name starts on the same
+   edge whether or not it is applied. */
+.tagRow,
+.tagCreate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tagRow:hover,
+.tagCreate:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tagRow[data-on] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.tagRowCheck {
+  flex: none;
+  width: 12px;
+  font-size: 11px;
+  color: var(--dsw-static-deepseek-500);
+}
+
+.tagRowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Creating is a first-class action in the vocabulary, not an error fallback:
+   it sits in the same list, with the same metrics, marked only by the glyph. */
+.tagCreate {
+  margin-top: 1px;
+  color: var(--dsw-static-deepseek-500);
+}
+
+/* The panel's field: the input keeps the panel's surface rather than carrying a
+   hard accent border of its own — the caret and the placeholder already say
+   where typing goes, and the old solid blue pill fought the list above it. */
+.tagPanelField {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagPanelField:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* The detail page's inline editor: the same rows, dropped into the page's flow
+   (a floating list inside a scrolling body would be clipped by it). */
+.tagEditField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+}
+
+.tagSuggest {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.cardTagPanel .tagInput {
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 11.5px;
+}
+
+.cardTagPanel .tagInput:focus {
+  border: 0;
+}
+
+/* ------------------------------------------------- on-device translation */
+
+/* The article is segmented in place by `translate.ts`, which creates these
+   elements itself — so the class names are handed to it from this module (no
+   global CSS, no hashed-name guessing on either side). A "unit" is one
+   sentence; clicking it reveals that sentence's original underneath its
+   block. */
+.unit {
+  border-radius: 3px;
+  /* The clone matters: a sentence that wraps across lines must not lose its
+     background on the second line. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+
+.unit:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* An expanded sentence keeps exactly ONE quiet marker: a hairline underline.
+   The reader asked for no standing background and no standing bar (a few opened
+   sentences used to leave the article speckled), and an underline is neither —
+   it is the standard "this text is bound to something" cue, and it is what says
+   which sentences are open when several are. */
+.unit[data-open] {
+  box-shadow: inset 0 -1px 0 var(--dsw-static-deepseek-500);
+}
+
+/* Hover is the pairing cue, and it works from either side: the sentence under
+   the pointer takes a tint plus a firmer underline, and its original line lights
+   up with the accent bar in its own gutter. */
+.unit:hover,
+.unit[data-hover] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: inset 0 -2px 0 var(--dsw-static-deepseek-500);
+}
+
+/* In the original-only view the whole article is already English: the units are
+   just containers again, so they stop advertising a gesture that would do
+   nothing visible. */
+.article[data-reader-translated='orig'] .unit {
+  cursor: text;
+}
+
+.article[data-reader-translated='orig'] .unit:hover {
+  background: transparent;
+}
+
+/* Translated prose is Chinese: it takes the CJK leading/letter-spacing the
+   article's own script detection chose before translation (which was Latin). */
+.article[data-reader-translated='trans'],
+.article[data-reader-translated='both'] {
+  font-size: 13.5px;
+  line-height: 1.78;
+  letter-spacing: 0.005em;
+}
+
+/* The original's own typography. It is CONTENT, not metadata: it reads at the
+   body's own size (13.5px) in the secondary ink, with the lines of one block
+   close together. Two earlier revisions were reported for this — 11.5px in the
+   tertiary ink with 5px gaps read as small and sparse, then 12.5px read as a
+   notch too small still. */
+.reveal {
+  padding: 1px 0 1px 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+}
+
+/* The spacing depends on where the container sits, because only a paragraph
+   has a bottom margin for a negative top margin to collapse with:
+
+   - `sibling` (a paragraph or heading): the reveal belongs to the block ABOVE,
+     so it is pulled up into that paragraph's own 12px margin (leaving 4px) and
+     separated from the NEXT block by 14px.
+   - `inside` (a list item, quote or table cell): there is nothing to collapse
+     with, so a negative margin would drag the original into the translation
+     line — exactly what the bulleted case reported.
+   - `inline` (bare text, no block wrapper at all): same as inside, with more
+     room below since the next run is plain text. */
+.reveal[data-placement='sibling'] {
+  margin: -8px 0 14px;
+}
+
+.reveal[data-placement='inside'] {
+  margin: 5px 0 4px;
+}
+
+.reveal[data-placement='inline'] {
+  margin: 5px 0 10px;
+}
+
+.revealLine {
+  margin: 0 0 3px;
+  /* Room for the pairing bar below. Every line carries the same padding, so the
+     bar appearing on hover cannot shift the text — and without the room the
+     `inset` bar is painted ON the first glyph (reported as the blue stripe
+     covering the first word). */
+  padding-left: 7px;
+  font-size: 13.5px;
+  line-height: 1.62;
+  letter-spacing: -0.003em;
+  color: var(--dsw-alias-label-secondary);
+  border-radius: 4px;
+  /* Selectable text, not a control: the reader quotes this, and a click handler
+     here would fold the sentence on the mouseup that ends a drag selection. */
+  cursor: text;
+  transition: background-color 100ms ease;
+}
+
+.revealLine:last-child {
+  margin-bottom: 0;
+}
+
+.revealLine:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The other half of the pairing, on hover: the original line of the sentence
+   under the pointer is lit and carries the accent bar. (A standing mark on
+   every opened original was reported as making the article messy.) */
+.revealLine[data-hover] {
+  background: var(--dsw-alias-interactive-bg-active);
+  box-shadow: inset 2px 0 0 var(--dsw-static-deepseek-500);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The globe and its caret: one toggle plus the view menu, the omnibox idiom. */
+.translateWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.translateCaret {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.translateCaret:hover,
+.translateCaret[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.translateMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: -30px;
+  z-index: 30;
+  width: 232px;
+  padding: 5px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.translateMenuHead {
+  padding: 5px 8px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.translateMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.translateMenuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.translateCheck {
+  width: 12px;
+  flex: none;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11px;
+}
+
+.translateMenuLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The language-pack download and the translation itself share one line, so the
+   reader always knows why the text is changing. */
+.translateStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 5px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-active);
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.translateStatus b {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.translateBar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l1);
+  overflow: hidden;
+}
+
+.translateBar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dsw-static-deepseek-500);
+  transition: width 200ms ease;
+}
+
+/* The one-time hint: how the click gesture is discovered. Dismissable, and it
+   never comes back for the session. */
+.translateTip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 5px 9px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.translateTip button {
+  margin-left: auto;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.translateTip button:hover {
+  color: var(--dsw-alias-label-primary);
+}

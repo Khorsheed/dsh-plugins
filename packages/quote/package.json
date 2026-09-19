@@ -1,0 +1,166 @@
+{
+  "name": "@khorsheed/dsh-quote",
+  "description": "引用任意内容：选中任意文本浮出动作菜单——引用到当前会话（进 composer）、引用到侧边对话（成 side-chat ref）、复制；side-chat 缺席时对应项隐藏",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/quote"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "lib/typert.host.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.js",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-session-controller": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-conversation": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-layout": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-sidebar-right": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "jsdom": "^30.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "quote",
+    "selection",
+    "sidechat"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-session"
+      ],
+      "platform": "web"
+    },
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "notes": "引用任意内容 is a web-only selection overlay: its one surface rides the frame-wide `shell.overlay` list seat (ui-layout's frame, present on every shipped web line) through ctx.slots.inject, so a host without the seat simply never mounts the menu and a headless profile has nothing to mount at all. The selection read is the repo's last-resort DOM anchor: it reads ONLY window.getSelection()'s selected plain text plus its bounding rect (never host DOM structure or class names — the one structural check is the editable-element exclusion the gesture itself requires); when a host redesign defeats the read, the menu silently never appears (zero breakage, re-verified by hand on each host adaptation).「引用到当前会话」drives the official conversation input machine (ctx.sessions.scope(id).get('conversation').input.for(scope).setDraft, the ui-shortcuts/message-tools precedent) and hides without a current session; a host without the conversation service degrades to a silent no-op.「引用到侧边对话」hides when the sidechat Remote namespace is absent, and the route itself rides this package's own thin typert Remote (namespace `quote`, verb `addRef`) whose host half probes ctx.get('sideChat') and calls openWith — the sanctioned host-to-host seam, structural mirror only, declared in dsh.references, never a dependency; without the side-chat service the verb refuses 'unavailable' and the click no-ops silently.",
+      "verifiedHost": "0.1.5-rc.1"
+    },
+    "references": [
+      "@khorsheed/dsh-sidechat"
+    ]
+  }
+}

@@ -300,6 +300,46 @@ export type LocalAgentLogin =
   }
 
 /**
+ * Per-scope inputs one scope's provisioning may take.
+ *
+ * Provisioning has always been a function of the scoped home alone, which is
+ * right for every knob a harness reads from its own plugin config — one
+ * instance, one answer. `preset` is the first knob that is a property of the
+ * SUBJECT rather than of the deployment: an evaluation whose two conditions
+ * differ in exactly one preset needs two scopes rostering two presets, and a
+ * plugin-level setting cannot say that. So the caller that knows (the
+ * evaluation's `conditions provision`, which reads the condition document)
+ * hands it in here, and the harness persists it into the scope directory so
+ * the next provisioning of that scope reproduces it without being told.
+ *
+ * Only `dsh` reads it. The other three harnesses take the parameter and
+ * ignore it, which is what keeps their provisioning byte-identical.
+ */
+export interface LocalAgentScopeProvisionOptions {
+  /** The agent preset this scope's composition must compose. */
+  preset?: string
+}
+
+/**
+ * What one scope's provisioning reports back.
+ *
+ * Every field is optional and every one is a READ-BACK: what the scope now
+ * holds, not what the caller asked for. A caller that wanted to know whether
+ * its request took effect compares the two.
+ */
+export interface LocalAgentScopeProvisionResult {
+  /** The preset the scope's composition now rosters, when it rosters one. */
+  preset?: string
+  /**
+   * The scope's own copy of that preset directory, when the harness keeps
+   * one. `matchesSource` is the whole content of the claim: the copy is
+   * byte-for-byte the deployment's own preset directory, which is what lets
+   * a fingerprint taken against the deployment's copy describe the scope's.
+   */
+  presetSnapshot?: { matchesSource: boolean }
+}
+
+/**
  * One registered local code-agent harness.
  */
 export interface LocalAgentPreparation {
@@ -348,9 +388,20 @@ export interface LocalAgentHarness {
    * own `apply`, exactly as it always was, so nothing about it moves.
    * Best-effort: a failure is logged and the directory still exists (the
    * status surface then reports what is actually there).
+   *
+   * `options` carries the per-scope inputs a caller supplies when it
+   * provisions one scope deliberately (see {@link LocalAgentRegistry.provisionScope});
+   * the registry's own materialization passes none, so a harness that reads
+   * nothing from it behaves exactly as it did before the parameter existed.
+   * The return value is a READ-BACK of what the scope now holds, and `void`
+   * is the honest answer for a harness with nothing to report.
    * @param homeDir - the scoped home to provision.
+   * @param options - per-scope inputs, absent on the registry's own materialization.
    */
-  provision?: (homeDir: string) => Promise<void> | void
+  provision?: (
+    homeDir: string,
+    options?: LocalAgentScopeProvisionOptions,
+  ) => LocalAgentScopeProvisionResult | void | Promise<LocalAgentScopeProvisionResult | void>
   /**
    * Whether the scoped home currently holds usable credentials. Absent means
    * the harness reports "not authenticated" and the status command still
@@ -969,6 +1020,18 @@ export class LocalAgentRegistry {
    * harness provisioning and the per-directory delegation load to once each.
    */
   private readonly scopedHomes = new Set<string>()
+
+  /**
+   * The provisioning currently running for each materialized scope.
+   *
+   * Materialization fires the harness's hook and does not wait for it — the
+   * directory is what the caller asked for, and the hook is best-effort. A
+   * caller that then provisions the SAME scope deliberately would otherwise
+   * race it, and both writers regenerate the same files. Recording the
+   * promise lets {@link LocalAgentRegistry.provisionScope} let the first one
+   * finish before it starts.
+   */
+  private readonly scopeProvisioning = new Map<string, Promise<void>>()
   private readonly commandDisposers = new Map<string, () => void>()
   private readonly logins = new Map<string, LoginController>()
   /**
@@ -1209,11 +1272,54 @@ export class LocalAgentRegistry {
     // Provisioning is async and best-effort, exactly as it is in every
     // harness bundle's own apply: the directory exists either way, and a
     // failure is a log line rather than a broken command reply.
-    void (async () => harness.provision?.(dir))().catch((error: unknown) => {
+    const pending = (async () => { await harness.provision?.(dir) })().catch((error: unknown) => {
       this.ctx.logger.warn(
         `localAgent: ${name} provisioning of scope ${scope} failed: ${error instanceof Error ? error.message : String(error)}`,
       )
     })
+    this.scopeProvisioning.set(key, pending)
+    void pending
+  }
+
+  /**
+   * Provision ONE scope deliberately, with per-scope inputs, and report what
+   * the scope now holds.
+   *
+   * The difference from the materialization above is the whole reason this
+   * exists. Materialization runs once per (harness, scope) per host process,
+   * passes no options, and swallows failures — right for "somebody named a
+   * scope". A caller that provisions a scope on purpose is asking a question
+   * (`compose this preset`), needs the answer (`this is what it composes
+   * now`), and needs the failure (a preset that could not be composed must
+   * not read as one that was). So this one awaits, propagates, and returns
+   * the harness's read-back.
+   *
+   * A harness with no `provision` hook is not an error: there is simply
+   * nothing to do, and the caller's own read-back — the file it was going to
+   * check anyway — reports what is actually there.
+   * @param name - the harness name.
+   * @param scope - the named scope, or undefined for the default scoped home.
+   * @param options - per-scope inputs for the harness's provisioning.
+   * @returns the scoped home plus whatever the harness read back.
+   * @throws whatever the harness's provisioning throws.
+   */
+  async provisionScope(
+    name: string,
+    scope?: string,
+    options?: LocalAgentScopeProvisionOptions,
+  ): Promise<LocalAgentScopeProvisionResult & { homeDir: string }> {
+    const dir = this.homeDir(name, scope)
+    if (scope !== undefined) {
+      // The materialization this call may just have started writes the same
+      // files. Let it finish rather than interleave with it.
+      await this.scopeProvisioning.get(scopedHomeName(name, scope))
+    }
+    const harness = this.harnesses.get(name)
+    if (harness?.provision === undefined) return { homeDir: dir }
+    const run = (async () => harness.provision?.(dir, options))()
+    if (scope !== undefined) this.scopeProvisioning.set(scopedHomeName(name, scope), run.then(() => {}, () => {}))
+    const result = await run
+    return { homeDir: dir, ...(result ?? {}) }
   }
 
   /**

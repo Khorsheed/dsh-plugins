@@ -1,0 +1,13 @@
+# quote bundle patch: inserts the plugin row into the composing profile, so
+# `dsh plugin --profile <name> add @khorsheed/dsh-quote` reconciles it into the
+# bundles layer. The row is a bare mount — the host half mounts its thin Remote
+# face (namespace `quote`) and the browser half is discovered through the
+# package.json `dsh.client` block.
+#
+# NOTE: a composition must mount this row id exactly once. Official images
+# mount no quote row, so plugin-adding this package is the install path there;
+# a composition that already mounts the id by other means must NOT also add it
+# — a duplicate loader entry id fails boot.
+- insert:
+    - id: quote
+      name: "@khorsheed/dsh-quote"

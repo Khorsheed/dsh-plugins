@@ -47,7 +47,7 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/ds
 import type { LocalAgentDshConfig } from './index.ts'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { DshLiveDriver } from './live-driver.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
 import { mirrorDshSession } from './session-mirror.ts'
 
 /**
@@ -640,7 +640,7 @@ export async function startDshCliRun(
   // directory the unit actually reads. A containerized caller names the
   // unit's own profile through `profileName` (the image's in-box `headless`)
   // and its own entry through `cliLaunch`.
-  if (spec.exec === undefined) provisionDshSubProfile(spec.homeDir, config)
+  if (spec.exec === undefined) provisionDshScope(spec.homeDir, config)
   // Resolve the sub-dsh credential BEFORE spawning: the key travels in the
   // explicit env layer, which is the only way past the shared env scrub.
   const apiKey = await resolveApiKey(ctx, config)

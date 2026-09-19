@@ -13,7 +13,7 @@
  * what "ready" means.
  * @module @khorsheed/dsh-eval
  */
-import { statSync, type Dirent } from 'node:fs'
+import { existsSync, statSync, type Dirent } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
@@ -24,6 +24,7 @@ import {
   expandHome,
   resolveConditionReadiness,
   unresolvedFields,
+  type ConditionReadinessOptions,
   type ConditionResolution,
   type EvalDiagnostic,
   type LockProvisionRecord,
@@ -48,8 +49,12 @@ export interface ConditionSummary {
   /** The dataset set whose `conditions/` directory declares it. */
   dataset: string
   harness: { name: string | null; version: string | null; drive: string | null }
-  /** The DECLARED model (decision 5); what a run observed lives in the run's annotations. */
-  model: { declared: string | null }
+  /**
+   * The DECLARED model and endpoint (decision 5); what a run observed lives in
+   * the run's annotations. `endpoint` is listed because the readiness gate
+   * refuses a null one, so it is the field a condition most often stalls on.
+   */
+  model: { declared: string | null; endpoint: string | null }
   /**
    * The named scoped home this condition logs in as, or null for the harness's
    * default one. Part of the hash: two conditions differing only in scope are
@@ -99,7 +104,11 @@ async function datasetsWithConditions(repo: string): Promise<string[]> {
   try {
     entries = await readdir(join(repo, 'datasets'), { withFileTypes: true })
   } catch {
-    throw new EvalReadRefused(`not a dataset repository (no datasets/ directory): ${repo}`)
+    // Which of the two it is decides which fix the page offers: create
+    // datasets/, or find the repository again (I5·T62).
+    throw new EvalReadRefused(existsSync(repo)
+      ? `not a dataset repository (no datasets/ directory): ${repo}`
+      : `dataset repository does not exist — no such file or directory: ${repo}`)
   }
   const found: string[] = []
   for (const entry of entries) {
@@ -135,15 +144,21 @@ async function conditionIds(datasetRoot: string): Promise<string[]> {
  * @param repo - the dataset repository root (already `~`-expanded).
  * @param only - restrict to these dataset sets; omit to scan every set that
  *   has a `conditions/` directory.
+ * @param options - the optional scoped-home resolver: with one, a condition
+ *   whose preset copy was edited after provision reads stale here too.
  * @throws {@link EvalReadRefused} when `repo` is not a dataset repository.
  */
-export async function listConditions(repo: string, only?: readonly string[]): Promise<ConditionsReport> {
+export async function listConditions(
+  repo: string,
+  only?: readonly string[],
+  options: ConditionReadinessOptions = {},
+): Promise<ConditionsReport> {
   const datasets = only !== undefined && only.length > 0 ? [...only] : await datasetsWithConditions(repo)
   const conditions: ConditionSummary[] = []
   for (const dataset of datasets) {
     const datasetRoot = join(repo, 'datasets', dataset)
     for (const id of await conditionIds(datasetRoot)) {
-      const { entry, document, errors, warnings } = await resolveConditionReadiness(id, datasetRoot)
+      const { entry, document, errors, warnings } = await resolveConditionReadiness(id, datasetRoot, options)
       const harness = isPlainObject(document?.['harness']) ? document['harness'] : undefined
       const model = isPlainObject(document?.['model']) ? document['model'] : undefined
       conditions.push({
@@ -154,7 +169,7 @@ export async function listConditions(repo: string, only?: readonly string[]): Pr
           version: stringOrNull(harness?.['version']),
           drive: stringOrNull(harness?.['drive']),
         },
-        model: { declared: stringOrNull(model?.['declared']) },
+        model: { declared: stringOrNull(model?.['declared']), endpoint: stringOrNull(model?.['endpoint']) },
         scope: stringOrNull(document?.['scope']),
         preset: stringOrNull(document?.['preset']),
         sha: entry.sha,

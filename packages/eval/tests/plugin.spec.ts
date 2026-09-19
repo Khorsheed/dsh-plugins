@@ -22,7 +22,7 @@ describe('the plugin surface', () => {
     expect(invariantCompanion.name).toBe('eval-invariant')
   })
 
-  it('apply provides ctx.dshEval, registers /eval, and requires only the command registry', () => {
+  it('apply provides ctx.dshEval and registers nothing — the slash face moved to the companion row (A3)', () => {
     const registered: string[] = []
     const ctx: ProvideSpy = {
       provided: new Map(),
@@ -37,11 +37,14 @@ describe('the plugin surface', () => {
     entry.apply(ctx as never)
     const service = ctx.provided.get('dshEval')
     expect(service).toBeInstanceOf(EvalService)
-    expect(registered).toEqual(['eval'])
-    // The slash face is the ONLY reason a host service is STATICALLY injected;
-    // the tool registry joins through deferred injection and the upstream
-    // evaluation services are probed per call — never injected.
-    expect(entry.inject).toEqual(['commands'])
+    // `/eval` is registered by the companion `@khorsheed/dsh-eval-tool` row
+    // under its preset's scope — the core row touches no registry at all.
+    expect(registered).toEqual([])
+    // The slash face was the ONLY reason a host service was STATICALLY
+    // injected; with it moved, the core requires nothing: the tool registry
+    // and the jobs controller join through deferred injection and the
+    // upstream evaluation services are probed per call — never injected.
+    expect(entry.inject).toEqual([])
   })
 
   it('the invariant companion registers package ownership', () => {

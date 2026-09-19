@@ -99,7 +99,7 @@ mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addC
 
 ## CLI
 
-`dsh-lab <动词>`（或 `node lib/cli.js`）；数据走 stdout（有值的动词输出 JSON），诊断走 stderr。退出码：`0` 正常，`1` 失败/拒绝，`2` 用法错误。
+`dsh-lab <动词>`（或 `node lib/cli.js`）；数据走 stdout（有值的动词输出 JSON），诊断走 stderr。退出码：`0` 正常，`1` 失败/拒绝，`2` 用法错误。从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
 
 ```sh
 dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--volume NAME:DST[:ro]]...
@@ -136,7 +136,7 @@ $ dsh-lab fingerprint --image eval-env:latest --cpus 2 --memory 8g | jq -c '{fin
 {"fingerprint":"lab-env:0a93c62f…","r":{"cpus":"2","memory":"8589934592"}}
 ```
 
-CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面适配到 `dsh-mission` 二进制：`release` 的 gate 走 `dsh-mission is-releasable` 的 0/1 退出码（其他退出码一律 fail closed），refs / artifact / checkpoint / 注解经 mission 二进制的动词登记（`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`）。PATH 上没有该二进制时，登记 warn 跳过，`release` 需 `--force`。
+CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面适配到 `dsh-mission` 二进制：`release` 的 gate 走 `dsh-mission is-releasable` 的 0/1 退出码（其他退出码一律 fail closed），refs / artifact / checkpoint / 注解经 mission 二进制的动词登记（`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`）。PATH 上没有该二进制时，登记 warn 跳过，`release` 需 `--force`。把 `0` 读成可释放，前提是那个二进制真的跑了主体——mission 的入口守卫保证经软链调用也如此，否则一次静默空跑的 `0` 就会被读成放行。
 
 ## Compatibility
 

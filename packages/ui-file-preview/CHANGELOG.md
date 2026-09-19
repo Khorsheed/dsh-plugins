@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- 内容搜索不再劫持视图：命中经 CSS Custom Highlight API 画在渲染后的正文上（`::highlight()` 外包 `:global()`，否则 lightningcss 会像类名一样改写标识符导致静默不上色）；只有渲染态确实看不见的查询才回落到原始命中行视图，代码视图搜索时因此保留语法配色；HTML 沙箱预览与不支持该 API 的宿主行为不变。
 - 注册任何 UI 前探测宿主的零会话 `capabilities()` Remote；client-only 组合不再留下错误卡、renderer、locale 或空 tab。
 - 导出 `installFilePreviewSurfaces(ctx, remote)`，让握手、安装与卸载边界可直接测试。
 

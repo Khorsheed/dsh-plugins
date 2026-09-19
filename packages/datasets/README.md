@@ -69,7 +69,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 配置（均可选）：`repo`（调用既无显式 `repo` 会话也无绑定时的默认数据集仓库；缺省无）与 `worktreeRoot`（托管 worktree 根覆盖；缺省 `$DSH_HOME/state/datasets/worktrees`，否则 `<cwd>/.dsh-datasets/worktrees`）。`tools` 不再是本行的键：模型工具的分组配置搬到了伴生行 `@khorsheed/dsh-datasets-tool`，见[模型工具](#模型工具)。
 
-插件提供 `ctx.datasets` 服务供其他插件可选消费，提供 `/datasets` slash 命令，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。`datasets_*` 模型工具与 `datasets:tools` 提示词段归伴生行 `@khorsheed/dsh-datasets-tool`，由 agent preset 按会话授予——见[模型工具](#模型工具)。
+插件提供 `ctx.datasets` 服务供其他插件可选消费，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。`/datasets` slash 命令的**注册**自 preset 可见性收口（A3）起归伴生行——落进 preset 的 scope 层，只有授予会话可见；handler 与定义仍在本包，由伴生行调 `registerDatasetsSlash` 接入。`datasets_*` 模型工具与 `datasets:tools` 提示词段归伴生行 `@khorsheed/dsh-datasets-tool`，由 agent preset 按会话授予——见[模型工具](#模型工具)。
 
 ## 会话绑定
 
@@ -79,13 +79,19 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 { repoPath: string, datasets?: string[], layers?: string[] }
 ```
 
-`datasets` 限定可见的数据集 id；`layers` 是层白名单。缺省字段即「全部」。白名单在**所有**工具读取路径上强制——`list`/`show` 按它过滤，`read` 越界即拒，`worktree_path` 与它求交（交集为空即报错；sparse-checkout 让被拒层目录在 worktree 里物理不存在）。
+`datasets` 限定可见的数据集 id；`layers` 是层白名单。`datasets` 缺省即「全部数据集」；**`layers` 缺省不是「全部层」**，是该数据集的 `modelFacing:true` 层（见下条）。白名单在**所有**工具读取路径上强制——`list`/`show` 按它过滤，`read` 越界即拒，`worktree_path` 与它求交（交集为空即报错；sparse-checkout 让被拒层目录在 worktree 里物理不存在）。
 
-**默认安全与边界对象**：绑定未显式写 `layers` 时，agent 的读取范围回退为该数据集的全部 `modelFacing:true` 层——敏感层要下发给 agent 必须显式列出；未声明敏感层的数据集行为不变（全部可见）。写路径（`put_item`）与 worktree 缺省跟随同一底线。白名单约束的对象是 **agent 工具与 worktree 物化**两条真边界；web tab 与 CLI 的读取动词是人的视图（operator scope），不受白名单与底线限制——敏感层对人照常展示并带「· 敏感」标记，树上另有「透传」分组把不受保护的内容显眼列出。
+**默认安全与边界对象**：绑定未显式写 `layers` 时，agent 的读取范围就是该数据集的全部 `modelFacing:true` 层——敏感层要下发给 agent 必须显式列出。这条底线自 I5·T58 起**无条件**生效：原先「数据集一个敏感层都没声明就整体不过滤」的分支去掉了，因为那让「没写白名单」在不同数据集上意味着两件不同的事（绑的人并不会去读 descriptor 才决定绑不绑），而不过滤的那一支还顺带放行了没有任何 `register` 条目认领的 item 级目录——恰恰是没人为其表过态的那些。写路径（`put_item`）与 worktree 缺省跟随同一底线。白名单约束的对象是 **agent 工具与 worktree 物化**两条真边界；web tab 与 CLI 的读取动词是人的视图（operator scope），不受白名单与底线限制——敏感层对人照常展示并带「· 敏感」标记，树上另有「透传」分组把不受保护的内容显眼列出。
+
+`repoPath` 存的是**规范路径**：写入时前导 `~` 展开、转绝对路径、存在则解到 realpath，读出时再过同一个函数，旧记录里的字面 `~` 在第一次读到时就地归一并写回。这不是洁癖——`git -C`、`readdir(<repo>/datasets)` 与包含性检查都不展开 `~`，而 web tab 写绑定时根本没有 shell 在回路里，所以存下字面 `~/…` 会让两个 tab 对一个存在的仓库报「不是 git 仓库」「不是题库」（I5 走查缺口 G5）。
 
 **为什么不是 session 事件**：初版把绑定存为 log-only `datasets/binding` session 事件，但 harness 的持久化读路径会拒绝重建「日志含有其生成的已知类型集之外的事件类型、且 envelope 未带 `ignorable: true`」的会话——下游（仓外）插件的事件类型按构造不在该集合内（注册面上游 deferred），而 `Session.append()` 无法设置该标记。本插件追加的任何自定义类型事件都会让会话在重启后不可读，因此绑定迁到插件自管存储（每次调用现读，所以 CLI 写存活会话的绑定也无竞争）。代价：fork 出的会话以未绑定开始；删除会话会留下一条孤儿记录。
 
-绑定**写入**是人的操作：会话存活时用 `/datasets bind`、web tab 的绑定条，或脚本里的 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。带显式 `repo` 参数的工具调用不依赖绑定（绑定存在时白名单仍然生效）；既无显式 repo 又无绑定又无配置默认时，工具明确报错并提示如何绑定。
+绑定**写入**是人的操作：会话存活时用 `/datasets bind`、web tab 的绑定条，或脚本里的 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。
+
+**`repo` 参数只认会话绑定**（I5·T58）：模型工具面的 `repo` 自此**只能复述**本会话的绑定（没绑定时则是插件配置的默认题库）——路径不是那一个即拒绝并点名两边；会话既没绑定、实例也没配默认，则任何 `repo` 都拒绝，回执写的是「让人来 `/datasets bind`」。比较按归一化路径做（展开 `~`、取 realpath、去尾斜杠），绑定记的写法与 agent 敲的写法不同也算同一个仓库。人的面不变：CLI 的 `--repo`、`/datasets` 与 tab 照旧可以指定。
+
+这条收窄来自一次真事：agent 在未绑定的会话里被工具如实告知「让人来绑」，它没有停下，而是用 glob 搜磁盘、找到一个多 agent 共用的检出，在别人的分支上写下三份文件——当时正在跑的评测计划就是这么被改的。「找得到」不等于「该在这个会话里用」。
 
 白名单是会话级约束，不是安全边界：同机的人可改绑定，有 shell 的 agent 可读原仓库。它防的是误取和流程串味，不防恶意。
 
@@ -110,7 +116,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 ## CLI
 
-`dsh-datasets` bin 镜像工具的读取动词（同语义同名参数），另有维护动词。仓库解析：`--repo`，否则 `$DSH_DATASETS_REPO`。退出码：0 成功，1 操作失败，2 用法错误。
+`dsh-datasets` bin 镜像工具的读取动词（同语义同名参数），另有维护动词。仓库解析：`--repo`，否则 `$DSH_DATASETS_REPO`。退出码：0 成功，1 操作失败，2 用法错误。从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
 
 ```sh
 dsh-datasets list [--repo R] [--dataset D] [--commit C]
@@ -137,7 +143,17 @@ dsh-datasets binding --session ID [--state-root DIR]
 /datasets unbind
 ```
 
+`bind` **不带 `--layers` 时绑的是「仅模型可见层」**，回执把这件事写出来；要开更多层（含敏感层）必须显式写 `--layers a,b`，回执随即点名开了哪几层。回执原先写的是「(all layers)」——与实际相反的一句话，读到的人会以为参考答案与评分 rubric 已经对规划 agent 打开了（I5·T39 · G3）。CLI 的 `dsh-datasets bind` 用同一句回执。
+
 命令声明了 free-form input（`input.hint`）。这不是装饰：不声明的话，能力较强的 composer 没有理由认为 `/datasets` 收参数——从补全条选中命令会提交一个空参调用，人敲的 `bind <path>` 留在消息体里，命令以 usage 行作答（T36 真机撞到的）。
+
+## composer 上的绑定 chip（I5·T58）
+
+浏览器半边在 composer 工具行（`conversation.input.left`）上挂一行只读 chip：**题集 · <仓库名> · 仅模型可见层**，未绑定时是虚线的「题集 · 未绑定」，完整路径与改绑命令在 title 里。
+
+它存在是因为 `/datasets bind` 的回执**没有地方显示**。绑定落了盘、题集 tab 也读得对，但 tab 条要等会话里有内容才出现，而绑定恰恰是会话还空着时做的第一件事——于是一条输出只有「成了」的命令，答进了当时还不存在的那块屏幕（走查缺口 G2）。composer 工具行从第一帧就在。
+
+chip **只读**：绑定是人的动作，已经有 slash 与 tab 两个入口，在 composer 里塞第三个只会让同一个决定多一个做法。它跟 tab 用同一条自隐判据（preset 组合里有没有 `@khorsheed/dsh-datasets-tool` 行），所以两者不可能对「这是不是一个题集会话」各说各话。刷新靠订阅本会话自身的快照并做节流：slash 命令起止各动一次会话，正是回执该出现的那一刻，而节流让一次流式回答不至于变成轮询。
 
 ## 题集 tab（web）
 
@@ -153,6 +169,14 @@ web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「�
 
 **写入都只进工作区，commit 仍是人的**（插件从不提交）。题目骨架按**这个题集自己的形状**落位：descriptor 的 `register` 已经为这个 item 说过话就落在注册路径上（`task.md` / `answers/rubric.yml` / `checks/probes/…`），没说过就走约定布局（`<层>/rubric.yml`）；已存在的文件一律不覆盖。占位的 `rubric.yml` 故意留空 `items: []`——`validate` 因此报 `RUBRIC_NO_ITEMS` 并指到那个文件，这是预期的下一步而不是缺陷。导入题目是**原样拷贝**一个已有题目目录，不重新归位任何文件：该题集的 `layers` 与 `register` 决定每个文件成为什么，落在层外的由 `validate` 如实报出。三个写动作都要求 operator 视图（tab 的按钮），agent 的起草路径仍是 `datasets_put_item`，受会话绑定约束。
 
+**错误态是三段式**（界面规格 §九）：一句人话说发生了什么（「绑定的题库路径不是 git 仓库」），一句说怎么修（能给命令就给命令），异常原文与绝对路径折在「详情」里——页面本身不渲染 `error.message`，也不裸露路径。原因从消息文本认出来（域内错误码过不了 Remote 线，到浏览器时只剩网关的三个传输码），所以 `tests/error-state.client.spec.tsx` 把宿主的真实句子喂给真实的分类器：改了宿主的措辞，测试先红，而不是用户先看到「说不清」。实验室 tab 用的是同一份实现的副本——客户端包不 import 兄弟插件（界面规格 §八）。
+
+**视觉与文案按界面规格 §九 收口**（I5·T63，与实验室 tab 同一轮）。两个 tab 现在共用同一套写法：状态 chip（`Chip`）、空态（`EmptyState`）、区块、表格、「详情」折叠——各自一份逐字相同的副本，因为客户端包不 import 兄弟插件（§八）。落在这一页上的是：validate 结果与 canary 由带颜色的文字换成 chip，诊断 code 移到行的 `title`（页面上留句子）；「作答记录」里每个格子的**桶**与**阶段**走与实验室 tab 同一张状态词表（`src/client/vocab.ts`），不再是 `done` / `archived` 这样的英文标识；绑定栏只显示题库仓库的最后一段，整条绝对路径在 `title` 上；三处空态（没绑定 / 没有题集 / 筛选没命中 / 还没作答记录）各自带一句「下一步」和它自己的动作按钮，措辞与工具条上的那枚不同，免得读成同一枚按钮被复制了一遍。
+
+**术语表 v2 与色彩语义**（I5·T63 补二）：界面规格 §九 的三条新增也落在这一页上。列头里的英文术语换成人话——canary → 防泄标记、validate → 校验；快照 → 题库版本；「作答记录」里每条记录写成「{对比组} · 第 N 次」，rep → 次数。色彩收到五档（绿 = 完成 / 成功、蓝 = 进行中、灰 = 未开始、红 = 失败 / 阻塞、橙 = 警告），与实验室 tab 同一份 `stageTone` / `bucketTone`：**「已归档 / 可释放 / 已释放」是灰不是绿**——跑到尽头是「结束了」不是「成功了」，绿留给「已判」。
+
+**五档颜色真的落到 tokens 了**（I5·T67 补，走查 W3）：`stageTone` / `bucketTone` 选的 tone 一直是对的，painted 的却不是——`ok` 用了品牌蓝 `--dsw-alias-state-business-primary`，`busy` 用了正文色 `--dsw-alias-label-primary`，于是「完成」是蓝的、「进行中」是灰的。现在 `ok` → `--dsw-alias-state-success-primary`、`busy` → `--dsw-alias-state-business-primary`。两个 tab 的 chip 是**手抄的两份**（§八），所以两份一起改；eval 的 `tests/tones.spec.ts` 读**两份样式表**把这条钉住——chip 的颜色是样式表里的一个 token，jsdom 既不加载样式表也不算 computed style，客户端用例照不到它。
+
 tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`。读取方法是 operator 视图——绑定只提供仓库路径，白名单与 modelFacing 底线约束的是 agent 边界（工具 + worktree），不是看自己仓库的人；敏感层带「· 敏感」标记照常可读，真正没保护的透传区与 `item.json` 则显眼标出。唯一的例外是 `itemBrief` 背后那两次判定层读取：它们**显式指名单层**（`layers: ['grading']` / `['verify']`）而不是走 operator 旁路——页面要的是答案键的形状（几条、什么 kind），字节从不上线。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace；eval 的 namespace 在**每次调用时**用 `ctx.get` 探测，不在挂载时探一次——两个插件各自 `$mount`，谁先落地没有保证。
 
 ## Compatibility
@@ -160,7 +184,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - npm release 线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
 - source 线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）。
 - 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力，两条线表现一致；`tools` 分组随模型工具面搬到伴生行 `@khorsheed/dsh-datasets-tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
-- ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由伴生行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets-tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
+- ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由伴生行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets-tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
 本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
 

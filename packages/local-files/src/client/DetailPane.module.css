@@ -349,7 +349,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Search mode renders plain text with line-level hits and inline marks. */
+/* Search FALLBACK renders plain text with line-level hits and inline marks. */
 .markedPre {
   margin: 0;
   padding: 12px 24px;
@@ -373,6 +373,24 @@
   background: var(--dsw-static-deepseek-500);
   color: var(--dsw-static-neutral-00);
   padding: 0 1px;
+}
+
+/* Hits painted over the RENDERED body (rendered-search.ts). `:global()` is
+   load-bearing: lightningcss rewrites a ::highlight() ident like a class
+   (`::highlight(x)` became `::highlight(HMaBaG_x)` in the bundle), which would
+   silently stop matching the registry name the JS sets. ::highlight() honours
+   only color, background-color, text-decoration and text-shadow (no
+   radius/padding), so the active hit is told apart by a darker fill and an
+   underline. */
+:global(::highlight(dsh-file-search-hits)) {
+  background-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-neutral-00);
+}
+
+:global(::highlight(dsh-file-search-active)) {
+  background-color: var(--dsw-static-deepseek-600);
+  color: var(--dsw-static-neutral-00);
+  text-decoration: underline;
 }
 
 /* Structured document views (markdown / JSON tree / CSV table) share the block

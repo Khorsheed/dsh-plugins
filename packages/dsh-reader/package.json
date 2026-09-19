@@ -1,0 +1,160 @@
+{
+  "name": "@khorsheed/dsh-reader",
+  "description": "Link reader tab: RSS/Atom subscriptions plus pasted article links, a card feed with a readable detail view, host-side fetch and daily refresh over a Typert Remote data face",
+  "version": "0.2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/dsh-reader"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "lib/typert.host.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.js",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-sidebar-right": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "reader",
+    "rss",
+    "atom",
+    "feed",
+    "readability",
+    "sidebar"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    },
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "notes": "A page-type right-Sidebar tab (minted kind `reader`) over a Typert Remote data face. Fetching runs on the HOST through the sanctioned `ctx.web` seam; state is written with plain `node:fs` (atomic temp+rename) under `$DSH_HOME/state/dsh-reader`, NOT through `ctx.fs` — that service is the session-fenced sandboxed filesystem, so a workspace-write session refuses a write to the state root (observed on the acceptance instance). Every optional capability is probed at apply time and degrades (no `web` → domain refusals; no `sideChat` → the side-chat gesture hides; no `quote` → selection quoting is unavailable while the entry-level quote button still works). KNOWN LIMIT: the host fetch seam caps a decoded body at 100,000 chars and truncates silently, so articles larger than that cannot be extracted — the detail view falls back to a 「受限篇幅，内容未完整呈现」 notice with a 「阅读原文」 button (measured: Anthropic research pages, theverge.com, newyorker.com). On-device translation (0.2.0) is a BROWSER capability, not a host one: the article is translated by the page's own Translator API (Chrome 138+/Edge 148+, desktop), so the text never reaches the host and no model quota is spent. Where that API is absent or the pair is unavailable, the globe is simply not rendered — the pane keeps working exactly as before. Source bodies that are already Chinese are not offered translation at all.",
+      "verifiedHost": "0.1.5-rc.1"
+    },
+    "references": [
+      "@khorsheed/dsh-quote",
+      "@khorsheed/dsh-sidechat"
+    ]
+  }
+}

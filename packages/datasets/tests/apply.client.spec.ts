@@ -8,6 +8,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import type { DatasetsViewInjected } from '../src/client/contract.ts'
+import type { BindingChipInjected } from '../src/client/BindingChip.tsx'
 import { DATASETS_TOOL_ROW_MODULE, type DatasetsPluginInventorySnapshot } from '../src/client/preset-visibility.ts'
 
 /** The composition answer used by the gate tests. */
@@ -41,6 +42,8 @@ async function bench(options: {
   connectionSeat?: 'rc' | 'alpha'
   preset?: string
   composition?: DatasetsPluginInventorySnapshot
+  /** A whole session list, for the parent-chain cases; overrides `preset`. */
+  rows?: Record<string, unknown>
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -67,9 +70,11 @@ async function bench(options: {
       hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
     } as never)
   // No preset on the row = the fail-open default; a named preset reads the composition.
+  const byId = options.rows
+    ?? (options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } })
   const list = createSnapshotStore({
-    ids: ['s1'],
-    byId: options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } },
+    ids: Object.keys(byId),
+    byId,
     current: 's1' as SessionId,
     phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
   })
@@ -80,10 +85,14 @@ async function bench(options: {
     } as never)
   }
   const slots = ctx.get('slots') as SlotRegistry
-  // The view ring as ui-conversation declares it in production.
+  // The view ring and the composer tool row, as ui-conversation declares them
+  // in production.
   slots.register({
     name: 'root',
-    children: { 'conversation.view': { kind: 'list', scope: 'session' } },
+    children: {
+      'conversation.view': { kind: 'list', scope: 'session' },
+      'conversation.input.left': { kind: 'list', scope: 'session' },
+    },
   } as never, () => null)
   return { ctx, slots, remote, remoteService, workspaces }
 }
@@ -106,6 +115,48 @@ describe('datasets client apply', () => {
     expect(typeof entries[0]!.options.label).toBe('function')
   })
 
+  it('registers the composer binding chip beside the tab (I5·T58 · G2)', async () => {
+    const { ctx, slots } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    // The receipt of `/datasets bind` had nowhere to appear in an empty
+    // session: the tab strip waits for the session to have content, and
+    // binding is the first thing done in a session that has none.
+    const entries = slots.entries('conversation.input.left')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.options).toMatchObject({ id: 'datasets-binding' })
+  })
+
+  it('the chip follows the tab\'s composition criterion, both ways', async () => {
+    const granted = await bench({ preset: 'dev', composition: DEV })
+    await granted.ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(granted.slots.entries('conversation.input.left')).toHaveLength(1)
+
+    const withheld = await bench({ preset: 'standard', composition: DEV })
+    await withheld.ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    // A session whose preset grants no dataset tools has no binding to speak
+    // of, so the chip goes with the tab rather than standing alone.
+    expect(withheld.slots.entries('conversation.input.left')).toHaveLength(0)
+  })
+
+  it('the chip\'s face reads the binding and subscribes to the session', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.input.left')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => BindingChipInjected)('s1')
+
+    await face.fetchBinding('s1' as SessionId)
+    expect(remote.binding).toHaveBeenCalledWith('s1')
+
+    // This host hands out no per-session handle, so the watch degrades to the
+    // session list rather than to a poll.
+    const stop = face.watchSession('s1' as SessionId, () => {})
+    expect(typeof stop).toBe('function')
+    stop()
+  })
+
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -121,6 +172,29 @@ describe('datasets client apply', () => {
 
   it('drops the tab registration in a session whose preset grants no dataset tools', async () => {
     const { ctx, slots } = await bench({ preset: 'standard', composition: DEV })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // I5·T39 · G13: a member sub-session of an evaluation declares no preset of
+  // its own, so read alone it took the fail-open arm and showed this tab
+  // inside a player's own transcript while the parent session hid it.
+  it('decides a member sub-session by its PARENT\'s preset composition', async () => {
+    const { ctx, slots } = await bench({
+      composition: DEV,
+      rows: { s1: { parentSessionId: 'main' } },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('hides in a member sub-session whose parent grants no datasets tools', async () => {
+    const { ctx, slots } = await bench({
+      composition: DEV,
+      rows: { s1: { parentSessionId: 'main' }, main: { projectionValues: { agentPreset: 'standard' } } },
+    })
     await ctx.plugin({ inject: [...inject], apply }).await()
     await settled()
     expect(slots.entries('conversation.view')).toHaveLength(0)

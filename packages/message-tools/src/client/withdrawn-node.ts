@@ -10,7 +10,7 @@
  */
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  ConversationNodeContext, ConversationNodeDefinition,
+  ConversationNodeContext, ConversationNodeDefinition, MessageImageSource,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   isMessageToolsEdit, isMessageToolsReplacement, isMessageToolsRestore, isMessageToolsRestoreAssistant,
@@ -177,6 +177,28 @@ export function foldHiddenRanges(nodes: readonly ChatConversationViewNode[]): nu
   return pairs.flat()
 }
 
+/**
+ * The durable-image arm of the gallery slot's input: a withdrawn message's
+ * image blocks carry admitted references, never the submission-echo preview
+ * arm (nothing is in flight for history).
+ */
+type DurableImage = Extract<MessageImageSource, { attachment: unknown }>
+
+/**
+ * Fold one message's content blocks into the gallery slot's image input, in
+ * source order. Only `type: 'image'` blocks with an attachment qualify; a
+ * withdrawn user message must keep its images visible in the divider replay
+ * (they are exactly what the withdrawal hid).
+ */
+function imageSources(blocks: readonly unknown[]): DurableImage[] {
+  const images: DurableImage[] = []
+  for (const block of blocks) {
+    const b = block as { type?: string; attachment?: DurableImage['attachment'] }
+    if (b.type === 'image' && b.attachment !== undefined) images.push({ attachment: b.attachment })
+  }
+  return images
+}
+
 /** Join text blocks into one plain string. */
 function joinText(blocks: readonly unknown[]): string {
   return blocks
@@ -273,7 +295,7 @@ export const restoredAssistantMessageDefinition: ConversationNodeDefinition<Rest
  * Count the user-visible messages hidden by one withdrawn span. This mirrors
  * {@link collectWithdrawnEntries}: context injections, tool calls, turn tails,
  * and other UI chrome are not counted as “messages”, while restored/edited
- * rows and reasoning-only assistant steps are.
+ * rows, reasoning-only assistant steps, and image-only user messages are.
  * @param nodes - every materialized chat node.
  * @param startSeq - first hidden seq (inclusive).
  * @param endSeq - the divider's seq (exclusive).
@@ -291,17 +313,24 @@ export function countHiddenInSpan(
 export interface WithdrawnEntry {
   /** Source node kind ('user' original or 'assistant-step' summary). */
   readonly kind: 'user' | 'assistant'
-  /** The entry's text (full for user originals, a text join for assistant steps). */
+  /** The entry's text (full for user originals, a text join for assistant steps; empty for an image-only message). */
   readonly text: string
+  /**
+   * The entry's user-attached images, in source order — what the withdrawal
+   * hid alongside the text. Always empty for assistant entries: the replay is
+   * user originals plus assistant text, and assistant image blocks stay out
+   * of that vocabulary (see the module note on the replay).
+   */
+  readonly images: readonly MessageImageSource[]
 }
 
 /**
- * Collect the read-only replay of one withdrawn span: user originals and
- * assistant text, in anchor order. Other kinds carry no user-readable text
- * and are skipped. Assistant-step data is kind-keyed (`data.blocks`, with
- * `data.finalNode.blocks` once settled — `conversation-nodes/assistant.ts`),
- * not type-keyed like message content. Reads the live node store — call from
- * event handlers.
+ * Collect the read-only replay of one withdrawn span: user originals (text
+ * and attached images alike) and assistant text, in anchor order. Other kinds
+ * carry no user-readable content and are skipped. Assistant-step data is
+ * kind-keyed (`data.blocks`, with `data.finalNode.blocks` once settled —
+ * `conversation-nodes/assistant.ts`), not type-keyed like message content.
+ * Reads the live node store — call from event handlers.
  * @param nodes - every materialized chat node.
  * @param startSeq - first hidden seq (inclusive).
  * @param endSeq - the divider's seq (exclusive).
@@ -320,17 +349,20 @@ export function collectWithdrawnEntries(
     if (node.kind === 'user' || node.kind === 'steering' || node.kind === 'message-tools-edited') {
       const content = (node.data as { content?: readonly unknown[] }).content ?? []
       const text = joinText(content)
-      if (text !== '') entries.push({ kind: 'user', text })
+      const images = imageSources(content)
+      if (text !== '' || images.length > 0) entries.push({ kind: 'user', text, images })
       continue
     }
     if (node.kind === 'message-tools-restored') {
-      const text = (node.data as { text?: string }).text ?? ''
-      if (text !== '') entries.push({ kind: 'user', text })
+      const data = node.data as { text?: string; content?: readonly unknown[] }
+      const text = data.text ?? ''
+      const images = imageSources(data.content ?? [])
+      if (text !== '' || images.length > 0) entries.push({ kind: 'user', text, images })
       continue
     }
     if (node.kind === 'message-tools-restored-assistant') {
       const text = (node.data as { text?: string }).text ?? ''
-      if (text !== '') entries.push({ kind: 'assistant', text })
+      if (text !== '') entries.push({ kind: 'assistant', text, images: [] })
       continue
     }
     if (node.kind === 'assistant-step') {
@@ -339,7 +371,7 @@ export function collectWithdrawnEntries(
         finalNode?: { blocks?: readonly unknown[] }
       }
       const text = joinAssistantText(data.finalNode?.blocks ?? data.blocks ?? [])
-      if (text !== '') entries.push({ kind: 'assistant', text })
+      if (text !== '') entries.push({ kind: 'assistant', text, images: [] })
     }
   }
   return entries

@@ -78,8 +78,10 @@ describe('DatasetsRemoteService', () => {
     // Declared layers arrive unfiltered — neither the binding's whitelist nor
     // the modelFacing floor narrows what the binder previews.
     expect(result.datasets[0]?.layers).toEqual(['visible', 'hidden'])
+    // A path that is not on disk is its own cause, not a bad repository: the
+    // tab's error seat offers a different fix for each (I5·T62).
     await expect(remote.previewRepo(agent, { path: join(repo.dir, 'no-such-dir') }))
-      .rejects.toMatchObject({ code: 'NOT_A_REPO' })
+      .rejects.toMatchObject({ code: 'FILE_NOT_FOUND' })
     await fiber.dispose()
   })
 
@@ -87,8 +89,14 @@ describe('DatasetsRemoteService', () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
-    await expect(remote.bind(agent, { repoPath: join(repo.dir, 'no-such-dir') }))
+    // A directory that is there and is not a repository, and a path that is
+    // not there at all: two causes, two fixes, neither one recorded.
+    const bare = mkdtempSync(join(tmpdir(), 'dsh-datasets-bare-'))
+    await expect(remote.bind(agent, { repoPath: bare }))
       .rejects.toMatchObject({ code: 'NOT_A_REPO' })
+    rmSync(bare, { recursive: true, force: true })
+    await expect(remote.bind(agent, { repoPath: join(repo.dir, 'no-such-dir') }))
+      .rejects.toMatchObject({ code: 'FILE_NOT_FOUND' })
     expect(remote.binding(agent)).toBeNull()
     await fiber.dispose()
   })

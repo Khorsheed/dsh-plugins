@@ -23,6 +23,7 @@
  * @module @khorsheed/dsh-local-agent-dsh
  */
 
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -38,7 +39,8 @@ import { LiveDriverSwitch } from './live-switch.ts'
 import { DshModelCatalog, type DshModelDirectoryFace } from './model-catalog.ts'
 import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { defaultPresetRoot, DEFAULT_SUB_PROFILE_NAME, provisionDshScope, USER_PRESET_DIR } from './provision.ts'
+import type { DshSubProfilePermissions } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-dsh'
@@ -59,6 +61,20 @@ export interface LocalAgentDshConfig {
   cliLaunch?: string[]
   /** Override the headless bundle directory the sub-profile symlinks to. */
   headlessBundleDir?: string
+  /**
+   * The sub-dsh's permission boundary: the sandbox mode every confined call
+   * runs under, paired with the approval policy `dsh-base`'s own preset table
+   * pairs it with. Provisioning writes it into the scope's sub-profile as a
+   * patch layer, so a scoped home carries its own boundary — including into a
+   * container unit that bind-mounts it.
+   *
+   * Absent — the default — writes no layer at all: the sub-dsh runs whatever
+   * `dsh-base` composes (`workspace-write` plus `ask`), byte for byte the
+   * behavior before this key existed. Pin `danger-full-access` only where
+   * something else IS the boundary (an evaluation unit, a disposable
+   * container); on a developer's machine the sub-dsh shares the real home.
+   */
+  permissions?: DshSubProfilePermissions
   /**
    * Live driver: keep one resident sub-dsh serve process per member and drive
    * turns over the family wire (runtime-level interrupt, push-mode mirror)
@@ -92,6 +108,7 @@ export const Config: z<LocalAgentDshConfig> = z.object({
   apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
   cliLaunch: z.array(z.string()),
   headlessBundleDir: z.string(),
+  permissions: z.union([z.const('read-only'), z.const('workspace-write'), z.const('danger-full-access')]),
   model: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
@@ -200,6 +217,16 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       liveBoundModel: childSessionId => currentLiveSwitch?.boundModel(childSessionId) ?? null,
       retireRuntime: childSessionId => currentLiveSwitch?.retireRuntime(childSessionId) ?? Promise.resolve(),
     })
+    /**
+     * This deployment's preset root — where a person or a pack installed the
+     * presets this instance offers, and the SOURCE every scope's own copy is
+     * taken from. Derived the way the roster derives it, from the settings
+     * service's harness home when there is one.
+     */
+    const instancePresetRoot = (): string => {
+      const home = (ctx.get?.('settings') as { home?: string } | undefined)?.home
+      return home === undefined ? defaultPresetRoot() : join(home, USER_PRESET_DIR)
+    }
     const harness: LocalAgentHarness = {
       prepareMember: async ({ binding, childSession, configuration, signal }) => {
         const driver = currentLiveSwitch?.resolve(binding.childSessionId)
@@ -218,7 +245,20 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // lives inside the scoped home, so a scope needs its own. (The
       // credential does not: dsh authenticates through the host instance,
       // which is why `isAuthenticated` below reads no directory at all.)
-      provision: scopedHome => { provisionDshSubProfile(scopedHome, config) },
+      // `options.preset` is the per-condition input an evaluation's
+      // `conditions provision` hands in; the scope's own declaration answers
+      // for every other call, which is what makes a rostered preset survive
+      // a restart of this instance.
+      provision: (scopedHome, options) => {
+        const provisioned = provisionDshScope(scopedHome, config, {
+          ...(options?.preset === undefined ? {} : { preset: options.preset }),
+          presetRoot: instancePresetRoot(),
+        })
+        return {
+          ...(provisioned.preset === undefined ? {} : { preset: provisioned.preset }),
+          ...(provisioned.presetSnapshot === undefined ? {} : { presetSnapshot: provisioned.presetSnapshot }),
+        }
+      },
       isAuthenticated: async () => {
         try {
           return (await resolveApiKey(ctx, config)) !== undefined
@@ -226,10 +266,15 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
           return false
         }
       },
-      // The eval snapshot. No sandbox or permission field: a headless sub-dsh
-      // has no such knob (the web-eval frozen baseline calls this harness
-      // unrestricted — absence IS the honest condition-hash input). The
-      // endpoint is the host instance's model config, which this provider
+      // The eval snapshot. `sandbox` is the sub-profile's pinned permission
+      // boundary, reported exactly when one is configured: absence still
+      // means "this scope pins no boundary and runs what dsh-base composes",
+      // which is the honest condition-hash input for every deployment that
+      // never asked for one. Until T59 there was no knob to report at all,
+      // and the dsh rounds inside an evaluation unit paid for it — bash
+      // refused every call because the unit has no sandbox backend and a
+      // headless sub-dsh has no approval channel.
+      // The endpoint is the host instance's model config, which this provider
       // never overrides, so no custom endpoint is ever pinned. The model is
       // the host's default selection the sub-dsh inherits (the headless agent
       // loader reads the same service), reported as `provider/model`; a
@@ -254,6 +299,12 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
           // file records the knob rather than leaving the fairest-to-compare
           // difference between the four harnesses invisible.
           containerNodeOptions: CONTAINER_NODE_OPTIONS,
+          // The CONFIGURED boundary, not a read-back of the sub-profile: this
+          // key is what provisioning writes, and it is in force for the very
+          // first round of a scope whose directory the hook has not
+          // materialized yet. Same shape as codex, which reports the sandbox
+          // policy its own config key puts on every argv.
+          ...config.permissions !== undefined ? { sandbox: config.permissions } : {},
           ...model !== undefined ? { model } : {},
           ...cliVersion !== undefined ? { cliVersion } : {},
         }
@@ -274,7 +325,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       for (const dispose of disposers.splice(0)) dispose()
       if (!enabled) return
       // Idempotent: heals a deleted or drifted sub-profile before each round.
-      provisionDshSubProfile(homeDir, config)
+      provisionDshScope(homeDir, config, { presetRoot: instancePresetRoot() })
       disposers.push(ctx.localAgent.register(harness))
       // The live driver is settings-driven WITHIN this enabled generation:
       // the card's toggle (user layer over the YAML composition base) swaps

@@ -2,7 +2,8 @@
  * Withdrawal divider row ('message-tools-withdrawn' keyed renderer), redone
  * in the official compaction-marker visual language: one dim clickable row
  * (chevron +「已撤回 N 条消息」), expanding in place to a read-only replay of
- * the withdrawn span (user originals + assistant text) with a「恢复到对话
+ * the withdrawn span (user originals — text and attached images — plus
+ * assistant text) with a「恢复到对话
  * 末尾」action. The restore tail-replays the span's replayable entries (user
  * messages + assistant text) — the surface fold is positional, so in-place
  * restoration is impossible — and the divider carries a「已恢复」badge while
@@ -23,10 +24,14 @@ import css from './WithdrawnDividerView.module.css'
 
 /** The withdrawal divider: collapsed marker row plus the expandable replay. */
 export function WithdrawnDividerView({
-  node, t, restoreMessage,
+  node, t, restoreMessage, renderMessageImages,
   ...standard
 }: WithdrawnDividerViewProps): ReactNode {
   const data = node.data
+  // The gallery closure is a required owner prop of every `conversation.chat.node`
+  // renderer; widening it to `| undefined` keeps the degrade path explicit — a
+  // composition without the attachment UI replays text only instead of throwing.
+  const renderImages: WithdrawnDividerViewProps['renderMessageImages'] | undefined = renderMessageImages
   const [expanded, setExpanded] = useState(false)
   const [entries, setEntries] = useState<readonly WithdrawnEntry[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -101,7 +106,10 @@ export function WithdrawnDividerView({
                   {entry.kind === 'user' ? t('withdrawn.entryUser') : t('withdrawn.entryAssistant')}
                 </div>
                 {/* The retired official MessageText primitive, kept as a local text-run block. */}
-                <div className={css.textRun}>{entry.text}</div>
+                {entry.text !== '' && <div className={css.textRun}>{entry.text}</div>}
+                {renderImages !== undefined && entry.images.length > 0 && (
+                  <div className={css.entryImages}>{renderImages({ images: entry.images, align: 'end' })}</div>
+                )}
               </div>
             ))
           )}

@@ -1,0 +1,115 @@
+name: publish
+
+# Staged-publishing pipeline (npm trusted publishing / OIDC — no npm token
+# anywhere): build + test + pack the named packages from THIS commit, then
+# `npm stage publish` each tarball. Nothing goes live here — a maintainer
+# approves on npmjs.com (Staged Packages tab, security-key 2FA).
+#
+# Dispatch-only on purpose: the trigger is a human decision, and the npm-side
+# trusted-publisher config (per package: org Khorsheed, repo dsh-plugins,
+# workflow publish.yml, environment npm-publish, stage-only) must exist
+# before the OIDC exchange can succeed.
+#
+# Version discipline is unchanged: package.json carries the next-release
+# line, and the version guard below refuses to stage a version that is
+# already live (npm has no overwrite).
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'Space-separated package dirs, e.g. "packages/message-tools packages/taskpilot"'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # the OIDC token npm trusted publishing exchanges
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same harness seed as ci.yml's gates job — the build contract
+      # (gen-typert → tsc → tsdown) resolves types against the harness
+      # checkout. Keep the pin in lockstep with ci.yml.
+      - name: Clone deepseek-harness (type/test seed)
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: dsh-v0.1.5-rc.1
+          path: deepseek-harness
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # npm >= 11.15 (staged publishing) ships bundled; also matches the engines floor
+          cache: pnpm
+
+      - name: Install (harness seed)
+        working-directory: deepseek-harness
+        run: pnpm install --frozen-lockfile
+
+      - name: Build harness libs (type seed)
+        working-directory: deepseek-harness
+        run: pnpm run build:lib
+
+      # The flock native addon is compiled, not shipped in the harness tree
+      # (ci.yml gates comment carries the incident); room's persistence tests
+      # need it on Linux runners.
+      - name: Build harness native addon (flock)
+        working-directory: deepseek-harness
+        run: pnpm run build:native-system
+
+      - name: Install (repo)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build + test the named packages
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          filters=()
+          for dir in $PACKAGES; do
+            test -f "$dir/package.json" || { echo "::error::no package.json at $dir"; exit 1; }
+            filters+=(--filter "$(node -p "require('./$dir/package.json').name")")
+          done
+          pnpm -r --workspace-concurrency=2 "${filters[@]}" --if-present run build
+          pnpm -r --workspace-concurrency=2 "${filters[@]}" --if-present run test
+
+      - name: Pack + stage each package
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          npm i -g npm@12
+          out=$(mktemp -d)
+          for dir in $PACKAGES; do
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            published=$(npm view "$name" version 2>/dev/null || echo none)
+            if [ "$published" = "$version" ]; then
+              echo "::error::$name@$version is already published — bump the release line first"
+              exit 1
+            fi
+            # --family auto derives companion edges from the manifest + workspace
+            # versions (the same derivation deploy-3080 uses).
+            tgz=$(pnpm exec tsx scripts/pack-dist.ts --package "$dir" --scope @khorsheed --version "$version" --out "$out" --family auto | tail -1)
+            echo "== staging $name@$version"
+            npm stage publish "$tgz"
+          done
+
+      - name: Summary — what awaits approval
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          {
+            echo '### staged — awaiting approval on npmjs.com (Staged Packages tab, security-key 2FA)'
+            echo ''
+            for dir in $PACKAGES; do
+              echo "- $(node -p "require('./$dir/package.json').name")@$(node -p "require('./$dir/package.json').version")"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -175,7 +175,10 @@ describe('service face (ctx.mission)', () => {
     apply(ctx, { dataDir: join(dir, 'plugin-data') })
     const mission = ctx.get('mission') as MissionService
     expect(mission).toBeInstanceOf(MissionService)
-    expect(commands).toEqual(['mission'])
+    // The `/mission` slash registration moved to the companion
+    // `@khorsheed/dsh-mission-tool` row (preset-visibility rollout A3): the
+    // core row registers nothing into the command registry either.
+    expect(commands).toEqual([])
     // The model tools moved to the companion `@khorsheed/dsh-mission-tool`:
     // the core row registers nothing into either model-facing registry.
     expect(registered).toEqual([])

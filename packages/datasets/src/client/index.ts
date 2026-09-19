@@ -30,6 +30,7 @@ import type {
   DatasetBinding, ImportItemInput, ReadPassthroughRequest, ReadQuery,
   ScaffoldDatasetInput, ScaffoldItemInput,
 } from '../types.ts'
+import { BindingChip, type BindingChipInjected } from './BindingChip.tsx'
 import { DatasetsView } from './DatasetsView.tsx'
 import { en, NS, zh } from './locales.ts'
 import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
@@ -38,7 +39,7 @@ import type {
   DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, ItemRunsView,
 } from './contract.ts'
 
-export { DatasetsView }
+export { BindingChip, DatasetsView }
 
 /** Required services: the slot registry, the remote channel, the copy, the
  * workspace/connection facts the view reads, and the session list (the
@@ -117,9 +118,35 @@ function evalRemoteOf(ctx: Context): EvalProjectionRemote | undefined {
 }
 
 /**
+ * Subscribe to ONE session's own activity — the signal the binding chip
+ * re-reads on.
+ *
+ * The session object's snapshot moves when a slash command starts and again
+ * when it settles, which is precisely when a `/datasets bind` receipt has to
+ * appear. A host that hands out no per-session handle degrades to the session
+ * LIST, which also moves on a session's own activity, just more coarsely; a
+ * host with neither degrades to no refresh at all rather than to a poll.
+ * @param ctx - client root context.
+ * @param sessionId - the session to watch.
+ * @param listener - called on every change.
+ * @returns the unsubscribe function.
+ */
+function watchSession(ctx: Context, sessionId: SessionId, listener: () => void): () => void {
+  const sessions = ctx.sessions as unknown as {
+    binding?: (id: SessionId) => { session?: { subscribe?: (fn: () => void) => () => void } } | undefined
+    list?: { subscribe?: (fn: () => void) => () => void }
+  }
+  const own = sessions.binding?.(sessionId)?.session?.subscribe
+  if (own !== undefined) return own.call(sessions.binding?.(sessionId)?.session, listener)
+  const list = sessions.list?.subscribe
+  return list === undefined ? () => {} : list.call(sessions.list, listener)
+}
+
+/**
  * Client plugin body: mount the Remote, register the dictionaries, and inject
- * the datasets view tab (registered exactly while the current session's preset
- * composition grants the dataset tool row).
+ * the datasets view tab and the composer's binding chip (both registered
+ * exactly while the current session's preset composition grants the dataset
+ * tool row).
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -206,7 +233,37 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     datasetsToggle.setReady(true)
     return () => { datasetsToggle.setReady(false) }
   })
-  ctx.effect(() => chrome.subscribe(() => { datasetsToggle.sync() }), 'datasets: datasets tab visibility')
+
+  // The BINDING CHIP, on the composer tool row: the one line that says which
+  // repository this session is bound to, visible from a session's first frame
+  // rather than from its first message. It rides the same composition
+  // criterion as the tab (a session whose preset grants no dataset tools has
+  // no binding to speak of), through the same toggle, so the two can never
+  // disagree about whether this session is a datasets session.
+  const chipToggle = new RegistrationToggle(
+    () => ctx.slots.register({
+      name: 'conversation.input.left',
+      id: 'datasets-binding',
+      // After the host's own compact controls: this is a standing fact, not an
+      // action, and the actions come first.
+      order: 40,
+      locale: NS,
+      inject: (_sessionId: SessionId): BindingChipInjected => ({
+        fetchBinding: (sid: SessionId) => remote.binding(sid),
+        watchSession: (sid: SessionId, listener: () => void) => watchSession(ctx, sid, listener),
+      }),
+    }, BindingChip),
+    () => chrome.show(ctx.sessions.list.getSnapshot().current),
+  )
+  ctx.slots.inject('conversation.input.left', () => {
+    chipToggle.setReady(true)
+    return () => { chipToggle.setReady(false) }
+  })
+
+  ctx.effect(() => chrome.subscribe(() => {
+    datasetsToggle.sync()
+    chipToggle.sync()
+  }), 'datasets: datasets tab visibility')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

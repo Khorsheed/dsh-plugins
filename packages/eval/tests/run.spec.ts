@@ -1327,19 +1327,69 @@ describe('runPlan — dry run (decision 1)', () => {
 })
 
 describe('runPlan — finalize (decision 10)', () => {
-  it('stops at archived by default; an explicit finalize is refused by the empty-verdicts gate and recorded', async () => {
+  it('walks the gate with no flag at all, and a refusal leaves the cell archived and recorded', async () => {
     const root = makeDatasetTree()
     const planPath = writePlan(root, {}, 't8-final')
     const mission = new FakeMission(join(root, 'mission'))
-    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true },
+    // No `finalize` in the options: the gate walk is what a run does now (T57).
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
       { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
 
     const cell = report.cells[0] as { finalState: string }
-    // verdicts/ is empty until the judge lands (T9), so the file-check refuses —
-    // the cell stays archived and the refusal is recorded, not bypassed.
+    // This plan has no probes and no judge, so verdicts/ is empty and the
+    // file-check refuses — the cell stays archived and the refusal is
+    // recorded, not bypassed. Defaulting the walk on cannot release anything
+    // the gate would have refused when it was asked explicitly.
     expect(cell.finalState).toBe('archived')
     const refusal = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'finalize-refused')
     expect(refusal).toBeDefined()
+    expect(report.meta['finalize']).toBe(true)
+  })
+
+  it('keepUnits stops at archived and never asks the gate at all', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't57-keep')
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(
+      planPath,
+      { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), keepUnits: true },
+      {
+        datasets: fakeDatasets(root, {
+          grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]),
+          verify: new Map([['P0-placeholder/probes/a-ok.mjs', PROBE_OK]]),
+        }),
+        mission,
+        localAgent: new FakeLocalAgent(),
+      },
+    )
+
+    const cell = report.cells[0] as { missionId: string; finalState: string }
+    // The verdicts are there, so the gate WOULD have said yes. Nothing asked
+    // it: that is the whole behavior --keep-units buys, and the absence of a
+    // refusal annotation is how it differs from a gate that said no.
+    expect(cell.finalState).toBe('archived')
+    expect(orchestratorNs(mission, report.runId, cell.missionId).some(e => e['kind'] === 'finalize-refused')).toBe(false)
+    expect(report.meta['finalize']).toBe(false)
+  })
+
+  it('keepUnits beats an explicit finalize: the more specific ask wins', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't57-both')
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(
+      planPath,
+      { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true, keepUnits: true },
+      {
+        datasets: fakeDatasets(root, {
+          grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]),
+          verify: new Map([['P0-placeholder/probes/a-ok.mjs', PROBE_OK]]),
+        }),
+        mission,
+        localAgent: new FakeLocalAgent(),
+      },
+    )
+    expect((report.cells[0] as { finalState: string }).finalState).toBe('archived')
+    expect(report.meta['finalize']).toBe(false)
   })
 })
 
@@ -1464,7 +1514,9 @@ describe('runPlan — the LLM judge (frozen decision 9)', () => {
       { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
 
     const cell = report.cells[0] as { missionId: string; finalState: string; verdicts?: { script: number; llmDraft: number } }
-    expect(cell.finalState).toBe('archived')
+    // Four llm-draft verdicts fill `verdicts/`, so the gate this run walks by
+    // default (T57) says yes and the cell ends `released`.
+    expect(cell.finalState).toBe('released')
     // Two samples × two llm-draft criteria (J1, J2). The objective and human
     // rows of the rubric never reached the judge.
     expect(cell.verdicts).toEqual({ script: 0, llmDraft: 4 })
@@ -1808,7 +1860,7 @@ describe('runPlan — probes write the script ns (protocol §6.7)', () => {
   })
 })
 
-describe('runPlan — --finalize and the archive gate', () => {
+describe('runPlan — the archive gate every run now walks', () => {
   it('reaches released once verdicts exist (script alone is enough — no judge configured)', async () => {
     const root = makeDatasetTree()
     const planPath = writePlan(root)
@@ -2046,9 +2098,22 @@ class FakeLab implements LabFace {
   live = new Map<string, { info: LabUnitInfo; workspace: string; verdicts: string; spec: LabAcquireSpec }>()
   /** Every unit ever acquired, released or not. */
   acquired: LabAcquireSpec[] = []
+  /** The most units alive at once — what `maxConcurrentUnits` is about. */
+  peakLive = 0
   private seq = 0
 
-  constructor(private readonly root: string, private readonly mission: FakeMission) {}
+  /**
+   * @param root - host directory the unit workspaces live under.
+   * @param mission - the ledger `release` consults for its gate.
+   * @param ceiling - lab's `maxConcurrentUnits`, refused with lab's own
+   *   wording so the orchestrator's enrichment matches on what it will
+   *   actually meet in production.
+   */
+  constructor(
+    private readonly root: string,
+    private readonly mission: FakeMission,
+    private readonly ceiling = Number.POSITIVE_INFINITY,
+  ) {}
 
   private locate(unitId: string): { info: LabUnitInfo; workspace: string; verdicts: string; spec: LabAcquireSpec } {
     const held = this.live.get(unitId)
@@ -2066,6 +2131,12 @@ class FakeLab implements LabFace {
 
   async acquire(spec: LabAcquireSpec): Promise<LabUnitInfo> {
     this.calls.push({ verb: 'acquire', options: spec as unknown as Record<string, unknown> })
+    if (this.live.size >= this.ceiling) {
+      throw new Error(
+        `lab: acquire refused — maxConcurrentUnits (${this.ceiling}) reached; `
+        + 'release a unit first. The ceiling is a safety valve against accidental concurrency, not a scheduler.',
+      )
+    }
     this.acquired.push(spec)
     const id = `u${++this.seq}`
     const workspace = join(this.root, id, 'workspace')
@@ -2096,6 +2167,7 @@ class FakeLab implements LabFace {
       ...(spec.runId !== undefined ? { runId: spec.runId } : {}),
     }
     this.live.set(id, { info, workspace, verdicts, spec })
+    this.peakLive = Math.max(this.peakLive, this.live.size)
     return info
   }
 
@@ -2184,9 +2256,18 @@ class FakeLab implements LabFace {
     return `lab-env:${createHash('sha256').update(canonicalJson(components)).digest('hex')}`
   }
 
-  async status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean }>> {
+  async status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean; missionId?: string; runId?: string }>> {
     this.calls.push({ verb: 'status', ...(unitId !== undefined ? { unitId } : {}) })
-    return [...this.live.values()].map(held => ({ id: held.info.id, resource: held.info.resource, running: true }))
+    // The two binding fields real lab carries: without them a caller cannot
+    // tell its own containers from a stranger's, which is the whole question
+    // the ceiling refusal and the report page's count both ask.
+    return [...this.live.values()].map(held => ({
+      id: held.info.id,
+      resource: held.info.resource,
+      running: true,
+      ...(held.info.missionId === undefined ? {} : { missionId: held.info.missionId }),
+      ...(held.info.runId === undefined ? {} : { runId: held.info.runId }),
+    }))
   }
 }
 
@@ -2236,6 +2317,97 @@ function unitProbes(): Map<string, string> {
     ['P0-placeholder/probes/d-not-applicable.mjs', PROBE_NOT_APPLICABLE],
   ])
 }
+
+/* ───────────── T57: the release gate every container run walks ─────────── */
+
+/**
+ * The shape T33b found on 3171: a plan with more cells than lab's ceiling.
+ * Without the gate walk each cell's container survives its cell, so the fourth
+ * acquire meets `maxConcurrentUnits` and the run cannot finish — which means
+ * the run loop's default decided how large a matrix was runnable at all.
+ */
+describe('runPlan — a container run larger than lab\'s ceiling (T57)', () => {
+  /** A three-cell container plan with real verdicts, so the gate can say yes. */
+  function threeCellSetup(root: string, ceiling?: number) {
+    writeUnitCondition(root)
+    const homesRoot = stageScopedHome(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], reps: 3, unit: UNIT_SEGMENT }, 'container-3')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission, ceiling)
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const deps = {
+      datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }),
+      mission,
+      localAgent: agent,
+      lab,
+    }
+    return { planPath, mission, lab, deps }
+  }
+
+  it('runs all three to the end with no flag at all, releasing each unit as its cell passes the gate', async () => {
+    const root = makeDatasetTree()
+    // The real ceiling, and one cell more than half of it: the run finishes
+    // only because it lets go of each container before acquiring the next.
+    const { planPath, lab, deps } = threeCellSetup(root, 4)
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, deps)
+
+    expect(report.cells).toHaveLength(3)
+    expect(report.cells.map(cell => cell.finalState)).toEqual(['released', 'released', 'released'])
+    // Nothing is left behind, and nothing was ever held beside anything else:
+    // the readiness probe unit dies before the first cell acquires.
+    expect(lab.live.size).toBe(0)
+    expect(lab.peakLive).toBe(1)
+    // Four acquires (the probe unit plus three cells), four releases, and the
+    // only forced one is the probe's — a cell's release always takes the gate.
+    expect(lab.calls.filter(call => call.verb === 'acquire')).toHaveLength(4)
+    expect(lab.calls.filter(call => call.verb === 'release').map(call => call.options))
+      .toEqual([{ force: true }, undefined, undefined, undefined])
+  })
+
+  it('--keep-units keeps all three, which is what the ceiling then stops', async () => {
+    const root = makeDatasetTree()
+    const { planPath, lab, deps } = threeCellSetup(root)
+    const report = await runPlan(
+      planPath,
+      { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), keepUnits: true },
+      deps,
+    )
+
+    expect(report.cells.map(cell => cell.finalState)).toEqual(['archived', 'archived', 'archived'])
+    // Today's behavior, verbatim: three containers, all still up, each bound
+    // to its own cell so `/eval finalize` can find them later.
+    expect(lab.live.size).toBe(3)
+    expect([...lab.live.values()].every(held => held.info.missionId !== undefined)).toBe(true)
+  })
+
+  it('names the run and the unit holding the ceiling when an acquire is refused', async () => {
+    const root = makeDatasetTree()
+    // A ceiling of exactly 1 with --keep-units: cell 1 keeps its container,
+    // cell 2 cannot acquire. lab's own refusal says "release a unit first" and
+    // nothing about WHICH; the orchestrator's addition is the rest.
+    const { planPath, lab, deps } = threeCellSetup(root, 1)
+    const error = await runPlan(
+      planPath,
+      { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), keepUnits: true },
+      deps,
+    ).catch((thrown: unknown) => thrown as Error)
+
+    const message = error.message
+    expect(message).toContain('maxConcurrentUnits (1) reached')
+    // The two facts a reader cannot get from `docker ps`: whose run it is, and
+    // which cell inside it.
+    const holder = [...lab.live.values()][0]?.info
+    expect(message).toContain(`run ${String(holder?.runId)}`)
+    expect(message).toContain(`${String(holder?.id)} (${String(holder?.resource)}, cell ${String(holder?.missionId)})`)
+    // And what to type next. `--force` is named only for the case no gate
+    // covers, never as the answer to a gate that would say yes.
+    expect(message).toContain('/eval finalize <runId>')
+    expect(message).toContain('dsh-lab release <unit> --force')
+  })
+})
 
 describe('runPlan — the container path drives one unit per cell (I3·T20)', () => {
   it('takes the eight verbs in the order the trajectory table declares, and no others', async () => {
@@ -2564,7 +2736,9 @@ describe('runPlan — «环境一致» compares the environment class, not the u
   /** Four conditions differing ONLY in the scoped home each one mounts. */
   const HARNESSES = [
     { id: 'codex-unit', name: 'codex', permissions: 'danger-full-access', container: '/creds/codex', variable: 'CODEX_HOME' },
-    { id: 'claude-unit', name: 'claude-code', permissions: 'skip', container: '/creds/claude', variable: 'CLAUDE_CONFIG_DIR' },
+    // claude alone carries a scope: its two credential stores mean a
+    // container condition must own a scope no host-side claude ever uses.
+    { id: 'claude-unit', name: 'claude-code', permissions: 'skip', container: '/creds/claude', variable: 'CLAUDE_CONFIG_DIR', scope: 'c-claude' },
     { id: 'kimi-unit', name: 'kimi', permissions: 'auto-approve', container: '/creds/kimi', variable: 'KIMI_CODE_HOME' },
     { id: 'dsh-unit', name: 'dsh', permissions: 'unrestricted', container: '/creds/dsh', variable: 'DSH_HOME' },
   ]
@@ -2576,6 +2750,7 @@ describe('runPlan — «环境一致» compares the environment class, not the u
       writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', `${harness.id}.json`), `${JSON.stringify({
         ...base,
         harness: { name: harness.name, version: null, drive: 'exec' },
+        ...('scope' in harness ? { scope: (harness as { scope: string }).scope } : {}),
         // Every model declared null: four harnesses cannot share one, and the
         // subject invariant is not what this test is about.
         model: { declared: null, endpoint: null },
@@ -2583,8 +2758,9 @@ describe('runPlan — «环境一致» compares the environment class, not the u
         env: { keys: [harness.variable] },
         unit: { scopedHome: { container: harness.container, var: harness.variable } },
       }, null, 2)}\n`)
-      mkdirSync(join(homesRoot, harness.name), { recursive: true })
-      writeFileSync(join(homesRoot, harness.name, 'auth.json'), '{"written by /<harness> login": true}\n')
+      const homeName = 'scope' in harness ? `${harness.name}@${(harness as { scope: string }).scope}` : harness.name
+      mkdirSync(join(homesRoot, homeName), { recursive: true })
+      writeFileSync(join(homesRoot, homeName, 'auth.json'), '{"written by /<harness> login": true}\n')
     }
     return homesRoot
   }

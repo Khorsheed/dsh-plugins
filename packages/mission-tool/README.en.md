@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The companion tool row of `@khorsheed/dsh-mission`: the twelve model-facing `mission_*` tools and the `tool:mission` prompt section, **granted per session** — present only in sessions whose agent preset composition names it. The service face, CLI, `/mission` slash command, and the 任务 tab all stay in the core; this row lives in presets, never at the profile root. The third core/companion pair of the tool-row decoupling (M4'③, proposal 2026-08-26).
+The companion tool row of `@khorsheed/dsh-mission`: the twelve model-facing `mission_*` tools and the `tool:mission` prompt section, **granted per session** — present only in sessions whose agent preset composition names it. Since the preset-visibility rollout (A3) the `/mission` slash command's registration also belongs to this row (landing in the preset's scope layer; the handler and definition stay in the core). The service face, CLI, and the 任务 tab all stay in the core; this row lives in presets, never at the profile root. The third core/companion pair of the tool-row decoupling (M4'③, proposal 2026-08-26).
 
 ## Shape: a companion package that never self-mounts
 
