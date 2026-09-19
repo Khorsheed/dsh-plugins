@@ -108,6 +108,8 @@ export interface RoomMemberRemovedEvent {
  * log.
  */
 export interface RoomDispatchEvent {
+  /** Fingerprint of the original human request, independent of later roster/role changes. */
+  readonly requestSignature?: string
   /** Caller retry identity, persisted before accepting input. */
   readonly id?: string
   readonly targetIds?: readonly string[]
@@ -346,6 +348,8 @@ export interface RoomTaskProgress {
 
 /** Closed failure vocabulary of the room Remote surface. */
 export type RoomFailure =
+  | { readonly code: 'request-conflict' }
+  | { readonly code: 'member-cwd-bound' }
   | { readonly code: 'not-coordinator' }
   | { readonly code: 'delivery-not-uncertain' }
   | { readonly code: 'coordinator-busy' }

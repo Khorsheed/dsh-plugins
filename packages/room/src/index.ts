@@ -17,7 +17,7 @@
  * confirmRelay/dismissRelay Remotes.
  * @module @khorsheed/dsh-room
  */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -376,6 +376,7 @@ export class RoomService extends TypertRemoteService {
     }
     if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     if (invitedBy === 'agent' && !this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
+    if (replay(loaded.session.snapshotEvents()).members.some(member => member.name === request.name)) return { ok: false, error: { code: 'duplicate-name' } }
     loaded.session.append('room/member-added', {
       id: randomUUID(),
       name: request.name,
@@ -443,6 +444,7 @@ export class RoomService extends TypertRemoteService {
     if (member === undefined) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
+    if (request.cwd !== undefined && (member.childSessionId !== undefined || this.engine.hasPending(loaded.session, member.name))) return { ok: false, error: { code: 'member-cwd-bound' } }
     if (request.model !== undefined && member.childSessionId !== undefined) return { ok: false, error: { code: 'configuration-owned-by-core' } }
     if (request.rename === undefined && request.instructions === undefined
       && request.cwd === undefined && request.model === undefined) {
@@ -552,10 +554,12 @@ export class RoomService extends TypertRemoteService {
       }
       for (const participant of [previous, candidate]) {
         if (participant.kind !== 'cli') continue
-        const family = this.ctx.get('localAgent') as { memberConfiguration?: (id: string) => { status: string; round?: unknown; pending?: unknown; lockedReason?: string } } | undefined
+        const family = this.ctx.get('localAgent') as { isPreparedMember?: (id: string) => boolean; queuedMemberRounds?: (id: string) => number; readMemberInbox?: (id: string) => { paused: boolean; messages: readonly { status: string }[] }; memberConfiguration?: (id: string) => { status: string; round?: unknown; pending?: unknown; lockedReason?: string } } | undefined
         if (participant.childSessionId === undefined || family?.memberConfiguration === undefined) {
           return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member native session preparation is required before promotion' } }
         }
+        const inbox = family.isPreparedMember?.(participant.childSessionId) === true ? undefined : family.readMemberInbox?.(participant.childSessionId)
+        if ((family.queuedMemberRounds?.(participant.childSessionId) ?? 0) > 0 || inbox?.messages.some(row => ['queued', 'running', 'uncertain'].includes(row.status))) return { ok: false, error: { code: 'coordinator-busy' } }
         const control = family.memberConfiguration(participant.childSessionId)
         if (control.status !== 'idle' || control.round !== undefined || control.pending !== undefined || control.lockedReason !== undefined) {
           return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member configuration has not converged or is locked' } }
@@ -594,6 +598,7 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'member-not-found' } }
     }
     if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
+    if (loaded.state.members.find(member => member.name === request.name)?.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
     loaded.session.append('room/member-removed', { name: request.name })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { name: request.name } }
@@ -626,6 +631,27 @@ export class RoomService extends TypertRemoteService {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (request.text.trim() === '') return { ok: false, error: { code: 'empty-text' } }
+    const requestSignature = createHash('sha256').update(JSON.stringify({ text: request.text.trim(), targets: [...new Set(request.targets ?? [])].sort() })).digest('hex')
+    if (request.requestId !== undefined) {
+      if (request.requestId.trim() === '' || request.requestId.length > 128) return { ok: false, error: { code: 'request-conflict' } }
+      const previous = loaded.session.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.id === request.requestId)
+      if (previous?.type === 'room/dispatch') {
+        const original = previous.data
+        const parsedRetry = parseMentions(request.text)
+        const retryTargets = [...new Set([...parsedRetry.targets, ...request.targets ?? []])].sort()
+        const legacyMatch = original.origin === 'human' && original.text === (parsedRetry.targets.length > 0 ? parsedRetry.text : request.text.trim())
+          && (retryTargets.length === 0 || JSON.stringify(retryTargets) === JSON.stringify([...original.targets].sort()))
+        if (original.requestSignature === undefined ? !legacyMatch : original.requestSignature !== requestSignature) return { ok: false, error: { code: 'request-conflict' } }
+        // An earlier flush may have failed after append; acceptance retries storage before acknowledging.
+        await this.ctx.sessions.flush(loaded.session)
+        for (const target of original.targetIds ?? []) {
+          const member = replay(loaded.session.snapshotEvents()).members.find(member => memberId(loaded.session.snapshotEvents(), member) === target)
+          if (member !== undefined) this.engine.dispatch(loaded.session, member.name, original.text, { dispatchSeq: previous.seq, targetId: target })
+        }
+        return { ok: true, value: { parsed: { targets: original.targets, text: original.text }, seq: previous.seq } }
+      }
+    }
+
     const parsed = parseMentions(request.text)
     // Menu-picked addressees union with the parsed leading tokens: a menu
     // pick is explicit addressing wherever the `@name` sits in the sentence.
@@ -643,16 +669,12 @@ export class RoomService extends TypertRemoteService {
     const roster = new Set(loaded.state.members.map(member => member.name))
     const unknown = targets.filter(target => !roster.has(target))
     if (unknown.length > 0) return { ok: false, error: { code: 'unknown-targets', names: unknown } }
-    if (request.requestId !== undefined) {
-      const previous = loaded.session.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.id === request.requestId)
-      if (previous?.type === 'room/dispatch') return { ok: true, value: { parsed: { targets: previous.data.targets, text: previous.data.text }, seq: previous.seq } }
-    }
     loaded.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: request.text.trim() }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     const dispatch = loaded.session.append('room/dispatch', {
-      id: request.requestId ?? randomUUID(), targets, text, origin: 'human',
+      id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human',
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
     for (const target of targets) {

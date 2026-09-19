@@ -34,6 +34,7 @@
     "src/client/name-pool.ts",
     "src/client/nodes.ts",
     "src/client/preset-visibility.ts",
+    "src/client/request-ids.ts",
     "src/client/room-store.ts",
     "src/client/slots.ts",
     "src/css-modules.d.ts",

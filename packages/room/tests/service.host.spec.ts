@@ -196,6 +196,26 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
   })
 
+  it('rechecks invitation names after asynchronous provider readiness', async () => {
+    let release!: () => void
+    const ready = new Promise<void>(resolve => { release = resolve })
+    const localAgent = {
+      start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false),
+      roster: () => [{ name: 'kimi', displayName: 'Kimi' }],
+      statusOf: vi.fn(async () => { await ready; return { authenticated: true, delegationProvider: 'kimi-cli' } }),
+    }
+    const { service, sessionId } = await bootRoom({ localAgent })
+    const request = { sessionId, provider: 'kimi-cli', name: 'same-name' }
+    const first = service.invite(request)
+    const second = service.invite(request)
+    await vi.waitFor(() => expect(localAgent.statusOf).toHaveBeenCalledTimes(2))
+    release()
+    const results = await Promise.all([first, second])
+    expect(results.filter(result => result.ok)).toHaveLength(1)
+    expect(results.filter(result => !result.ok)).toEqual([{ ok: false, error: { code: 'duplicate-name' } }])
+    expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER, { name: 'same-name' }] } })
+  })
+
   it('invite rejects a provider outside the roster delegation set, carrying the legal list', async () => {
     // The classic slip: the harness name `kimi` where the family registered
     // the delegation provider `kimi-cli`.

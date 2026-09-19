@@ -824,6 +824,52 @@ describe('coordinator routing and durable deliveries', () => {
     flush?.mockRestore()
   })
 
+  it('deduplicates the original request across member rename and refuses changed payloads', async () => {
+    const bench = await bootRoom()
+    await preparedMember(bench)
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'only once'))
+    const request = { sessionId: bench.sessionId, text: '@ada original', requestId: 'stable-retry' }
+    const accepted = await bench.service.postMessage(request)
+    await bench.service.engine.idle()
+    await bench.service.updateMember({ sessionId: bench.sessionId, name: 'ada', rename: 'renamed' })
+    expect(await bench.service.postMessage(request)).toEqual(accepted)
+    expect(await bench.service.postMessage({ ...request, text: '@renamed changed' })).toEqual({ ok: false, error: { code: 'request-conflict' } })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('retries durable acceptance after a failed flush without duplicating the message or dropping dispatch', async () => {
+    const bench = await bootRoom()
+    await preparedMember(bench)
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'only once'))
+    const request = { sessionId: bench.sessionId, text: '@ada durable input', requestId: 'flush-retry' }
+    const flush = vi.spyOn(bench.ctx.sessions, 'flush').mockRejectedValueOnce(new Error('temporary flush failure'))
+    await expect(bench.service.postMessage(request)).rejects.toThrow('temporary flush failure')
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(await bench.service.postMessage(request)).toMatchObject({ ok: true })
+    await bench.service.engine.idle()
+    const events = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    expect(events.filter(event => event.type === 'room/dispatch' && event.data.id === request.requestId)).toHaveLength(1)
+    expect(events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    flush.mockRestore()
+  })
+
+  it('blocks coordinator promotion for queued core or recovered inbox work, and preserves the native seat', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    bench.localAgentStub.queuedMemberRounds = () => 1
+    const promote = { sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 }
+    expect(await bench.service.setCoordinator(promote)).toEqual({ ok: false, error: { code: 'coordinator-busy' } })
+    bench.localAgentStub.queuedMemberRounds = () => 0
+    bench.localAgentStub.readMemberInbox = () => ({ paused: true, messages: [{ status: 'uncertain' }] })
+    expect(await bench.service.setCoordinator(promote)).toEqual({ ok: false, error: { code: 'coordinator-busy' } })
+    bench.localAgentStub.readMemberInbox = () => ({ paused: false, messages: [] })
+    expect(await bench.service.setCoordinator(promote)).toMatchObject({ ok: true })
+    expect(await bench.service.removeMember({ sessionId: bench.sessionId, name: 'main' })).toEqual({ ok: false, error: { code: 'main-member' } })
+    expect(await bench.service.updateMember({ sessionId: bench.sessionId, name: 'ada', cwd: '/home/user/other' })).toEqual({ ok: false, error: { code: 'member-cwd-bound' } })
+  })
+
   it('recovers unstarted deliveries and marks crashed in-flight work uncertain without replay', async () => {
     const bench = await bootRoom()
     const member = await preparedMember(bench)

@@ -160,6 +160,8 @@ export function RoomComposer({
       setDraft('')
       setMention(null)
       setPicked([])
+    } catch {
+      setError(t('composer.error.generic'))
     } finally {
       setBusy(false)
     }

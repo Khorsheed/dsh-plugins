@@ -2,6 +2,8 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'coordinator.cwdBound': '成员已绑定会话或有排队工作；请邀请新成员使用其他目录',
+  'coordinator.nativeRequired': '保留原生 DSH 成员，以便单独联系或切回协调者',
   'coordinator.label': '协调者',
   'coordinator.promote': '设为协调者',
   'coordinator.busy': '请等待原协调者与候选成员空闲、队列清空后交接',
@@ -160,6 +162,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'coordinator.cwdBound': 'This member has a bound session or queued work; invite a new member for another directory',
+  'coordinator.nativeRequired': 'Keep the native DSH member available for direct messages and coordinator handoff',
   'coordinator.label': 'Coordinator',
   'coordinator.promote': 'Set as coordinator',
   'coordinator.busy': 'Wait for both coordinators to be idle with empty queues before handoff',

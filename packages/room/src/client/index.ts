@@ -32,6 +32,7 @@ import roomRemote from '@khorsheed/dsh-room/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import { RoomRequestIds } from './request-ids.ts'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
@@ -98,10 +99,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // RoomStore's cached verdict as the actual-room escape.
   const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
+  const requestIds = new RoomRequestIds()
   const submit = async (sessionId: SessionId, text: string, targets?: readonly string[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
+    const requestId = requestIds.forInput(sessionId, text, targets)
     const carried = await remote.postMessage({
-      sessionId, text, ...targets === undefined || targets.length === 0 ? {} : { targets },
+      sessionId, text, requestId, ...targets === undefined || targets.length === 0 ? {} : { targets },
     })
     if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
     const result = carried.value
@@ -110,6 +113,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         ? { ok: false, message: t('composer.error.unknownTargets', { names: result.error.names.join(' ') }) }
         : { ok: false, message: t('composer.error.generic') }
     }
+    requestIds.complete(sessionId, requestId)
     void roomStore.refresh(sessionId)
     return { ok: true }
   }
@@ -195,6 +199,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       case 'coordinator-not-ready': return error.message
       case 'coordinator-conflict': return t('coordinator.conflict')
       case 'active-coordinator': return t('coordinator.active')
+      case 'member-cwd-bound': return t('coordinator.cwdBound')
+      case 'main-member': return t('coordinator.nativeRequired')
       case 'configuration-owned-by-core': return t('coordinator.configuration')
       case 'duplicate-name': return t('invite.error.duplicate')
       case 'invalid-name': return t('invite.error.invalid')
