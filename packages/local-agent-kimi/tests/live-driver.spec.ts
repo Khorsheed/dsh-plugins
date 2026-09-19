@@ -380,6 +380,26 @@ describe('acpStopReasonToHarness', () => {
 })
 
 describe('kimi live driver rounds', () => {
+  it('flushes the final turn boundary before reporting a settled result', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-final-durability'))
+    let durable: ReturnType<Session['snapshotEvents']> = []
+    Object.assign(m.ctx.sessions, { get: () => child })
+    Object.assign(m.ctx.localAgent, {
+      syncChildSession: async () => {
+        const captured = structuredClone(child.snapshotEvents())
+        await new Promise(resolve => setTimeout(resolve, 5))
+        durable = captured
+      },
+    })
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['durable answer'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(durable.at(-1)?.type).toBe('turn/end')
+    expect(durable).toEqual(child.snapshotEvents())
+    await m.driver.disposeAll()
+  })
+
   it('configures a resumed native session before prompting and leaves shared default_model untouched', async () => {
     const m = mount()
     writeFileSync(join(m.homeDir, 'config.toml'), 'default_model = "a"\n')

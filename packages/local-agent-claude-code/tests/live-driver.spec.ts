@@ -297,6 +297,26 @@ function expectStepBoundaries(child: Session): void {
 }
 
 describe('claude live driver rounds', () => {
+  it('flushes the final turn boundary before reporting a settled result', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-final-durability'))
+    let durable: ReturnType<Session['snapshotEvents']> = []
+    Object.assign(m.ctx.sessions, { get: () => child })
+    Object.assign(m.ctx.localAgent, {
+      syncChildSession: async () => {
+        const captured = structuredClone(child.snapshotEvents())
+        await new Promise(resolve => setTimeout(resolve, 5))
+        durable = captured
+      },
+    })
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('durable answer') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(durable.at(-1)?.type).toBe('turn/end')
+    expect(durable).toEqual(child.snapshotEvents())
+    await m.driver.disposeAll()
+  })
+
   it('keeps multiple text blocks and successive assistant messages at distinct stream coordinates', async () => {
     const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()

@@ -682,7 +682,9 @@ export class DshLiveDriver {
     const bufferedEvents: ({ kind: 'event'; event: SessionEvent } | { kind: 'stream'; frame: AssistantStreamFrame })[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-dsh: live persistence failed: ${thrown(error).message}`)
+      })
     }
 
     const streamPublisher = localAgent?.liveStreams === undefined ? undefined
@@ -865,7 +867,7 @@ export class DshLiveDriver {
       },
       signal: request.signal,
       onAbort,
-    }).then((settled) => {
+    }).then(async (settled) => {
       roundSettled = true
       liveFlush.dispose()
       if (turnOpened && streaming !== undefined && streamPublisher !== undefined) {
@@ -901,6 +903,12 @@ export class DshLiveDriver {
         runtime.onStream = undefined
         runtime.onEvent = undefined
         runtime.onIdle = undefined
+      }
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
       }
       return settled
     })

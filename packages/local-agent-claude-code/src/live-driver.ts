@@ -725,7 +725,9 @@ export class ClaudeLiveDriver {
       // Live sessions sync through the core's cached write handle, standalone
       // ones through a one-shot handle — the suffix append is idempotent on
       // both paths (the kimi session-mirror root cause).
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-claude: live persistence failed: ${thrown(error).message}`)
+      })
     }
 
     const requestCancel = (): void => {
@@ -1077,7 +1079,7 @@ export class ClaudeLiveDriver {
       },
       signal: request.signal,
       onAbort,
-    }).then((settled) => {
+    }).then(async (settled) => {
       roundSettled = true
       liveFlush.dispose()
       turnInFlight = false
@@ -1118,6 +1120,12 @@ export class ClaudeLiveDriver {
         runtime.onEvent = undefined
       }
       streamPublisher?.dispose()
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
+      }
       return settled
     })
 

@@ -20,6 +20,8 @@ Kimi attaches the new round's output sink only after ACP session loading and con
 
 The Room client re-elects its composer when the first successful state read changes an unknown verdict to Room, as well as after an in-place promotion. Transport failures leave the verdict unknown, so a subsequent live notification can retry. This removes the need to switch tabs to activate the coordinator composer after a cold page load.
 
+All four live providers enqueue and await a final child-store synchronization after their turn boundary and closing checkpoints, before their result resolves. A real Kimi round otherwise stored 87 of 88 events, omitting `turn/end` even after graceful shutdown. Stream-time persistence failures are logged without poisoning the queue; the final synchronization can retry the missing suffix. This preserves the existing best-effort persistence error contract, rather than misreporting a native generation failure when storage is unavailable.
+
 ## Alternatives considered
 
 **Accept a final Room answer as proof of persistence.** Rejected by the real Kimi run: the answer existed in memory while the stored transcript was incomplete.
@@ -35,3 +37,5 @@ The Room client re-elects its composer when the first successful state read chan
 The regression tests cover the actual storage reader and distinguish native subitems on replay. Browser latency still requires measured acceptance; the timestamp changes and 50 ms transport cadence alone do not establish P95 ≤ 200 ms. Existing lab records interrupted by the missing registration require recovery from a verified complete live snapshot or native transcript before restart; registration cannot recreate events never persisted.
 
 Additional tests cover ACP load replay exclusion, cold composer election and retry after a transport failure. The Kimi and Room suites pass 244 and 272 tests respectively; real cold-start and busy-control acceptance remain separate checks.
+
+An asynchronous storage regression for each live provider verifies that the resolved result already has a complete durable transcript ending in `turn/end`. Provider suites pass: DSH 187, Codex 224, Claude 232 and Kimi 245. A failed write is still diagnostic-only; storage availability is not guaranteed by a successful model answer.

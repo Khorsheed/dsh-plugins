@@ -932,7 +932,9 @@ export class CodexLiveDriver {
     const earlyNotifications: { method: string; params: JsonObject }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-codex: live persistence failed: ${thrown(error).message}`)
+      })
     }
 
     const requestCancel = (): void => {
@@ -1301,7 +1303,7 @@ export class CodexLiveDriver {
       },
       signal: request.signal,
       onAbort,
-    }).then((settled) => {
+    }).then(async (settled) => {
       roundSettled = true
       liveFlush.dispose()
       if (turnOpened) {
@@ -1342,6 +1344,12 @@ export class CodexLiveDriver {
         runtime.onWireNotification = undefined
       }
       streamPublisher?.dispose()
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
+      }
       return settled
     })
 

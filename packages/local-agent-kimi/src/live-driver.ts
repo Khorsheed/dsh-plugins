@@ -957,7 +957,9 @@ export class KimiAcpLiveDriver {
     let mirrorQueue: Promise<unknown> = Promise.resolve()
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-kimi: live persistence failed: ${thrown(error).message}`)
+      })
     }
 
     /** A stream's synthetic key: kimi's ACP deltas carry no item id, so kind + turn pairs them. */
@@ -1391,6 +1393,12 @@ export class KimiAcpLiveDriver {
       streamPublisher?.dispose()
       // Settlement clears the round's update sink.
       if (runtime !== undefined) runtime.onSessionUpdate = undefined
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
+      }
       return settled
     })
 
