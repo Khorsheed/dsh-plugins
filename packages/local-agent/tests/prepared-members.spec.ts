@@ -68,6 +68,8 @@ describe('native member preparation', () => {
     expect(m.starts).not.toHaveBeenCalled()
     expect(m.nativePrepare).toHaveBeenCalledOnce()
     expect(m.registry.isPreparedMember(id)).toBe(true)
+    expect(m.registry.readMemberInbox(id)).toMatchObject({ memberId: id, messages: [], paused: false })
+    expect(() => m.registry.readMemberInbox('unknown-child')).toThrow('no delegation')
     expect(m.stored.get(id)?.events.some(event => event.type === 'turn/start')).toBe(false)
     expect(m.registry.memberConfiguration(id).round).toBeUndefined()
     await m.registry.selectMemberConfiguration(id, 'choose-next', 0, { model: { mode: 'value', value: 'chosen' }, effort: { mode: 'inherit' } })

@@ -884,6 +884,9 @@ export class LocalAgentRegistry {
     this.memberInbox.resume(childSessionId)
   }
   readMemberInbox(childSessionId: string): LocalAgentMemberInbox {
+    // Preparation establishes the same stable child identity before a delegation
+    // transcript exists. Its empty inbox must be readable by the composer.
+    if (this.isPreparedMember(childSessionId)) return this.memberInbox.read(childSessionId)
     this.requireInboxMember(childSessionId)
     return this.memberInbox.read(childSessionId)
   }

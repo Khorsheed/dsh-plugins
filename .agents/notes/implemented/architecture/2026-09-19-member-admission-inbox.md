@@ -16,6 +16,8 @@ Inbox files use private permissions, file and directory fsync, and atomic rename
 
 The member composer remains writable during a running turn, with separate Send and Stop controls. Its inbox shows queued input, targeted cancellation, pause/resume and reconciliation. The selected external coordinator exposes the same inbox in room. Room no longer displays the former native coordinator's projection statistics as if they belonged to an external coordinator; independent member session statistics remain available. Request IDs also work on LAN HTTP origins without crypto.randomUUID.
 
+Prepared members now expose their empty durable inbox before the first delegation transcript exists. The member composer can inspect a promoted fresh coordinator without a false missing-delegation error. Unknown identities still fail; enqueue requires an executed delegation, while the initial Room input uses the prepared-start path.
+
 ## Alternatives considered
 
 **Retain busy rejection at the core and queue in each UI.** It leaves direct delegation tools and room deliveries with different execution semantics. The provider boundary is shared by all entry points.
