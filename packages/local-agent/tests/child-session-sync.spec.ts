@@ -231,3 +231,21 @@ describe('persistChildSession', () => {
     expect(persistence.appended).toHaveLength(1)
   })
 })
+
+
+describe('linked-plugin stream vocabulary', () => {
+  it('registers through the mounted loader before publishing the registry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(CommandRuntime)
+    const runtimeCatalog = new Set<string>()
+    ctx.provide('loader', { import: async (name: string) => {
+      if (name !== '@deepseek-ai/dsh-session') throw new Error('source exports unavailable')
+      expect(ctx.get(LOCAL_AGENT_SERVICE)).toBeUndefined()
+      return { KNOWN_SESSION_EVENT_TYPES: runtimeCatalog }
+    } } as never)
+    const fiber = await ctx.plugin(localAgent, { homesRoot: mkdtempSync(join(tmpdir(), 'stream-catalog-')) })
+    try { expect(runtimeCatalog.has('local-agent/stream')).toBe(true) }
+    finally { await fiber.dispose() }
+  })
+})

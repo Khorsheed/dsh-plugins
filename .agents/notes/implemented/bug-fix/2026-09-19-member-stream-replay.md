@@ -8,7 +8,7 @@ The live browser had complete Kimi output while its stored child log stopped at 
 
 ## Decision
 
-The core registers `local-agent/stream` in both the installed and source host catalogs, using the existing Room compatibility seam. Registration remains for the process lifetime so previously written logs remain readable. Real JSONL and Zstandard integration tests read an initial checkpoint and then append and replay the remaining turn.
+The core registers `local-agent/stream` in both the installed and source host catalogs, using the existing Room compatibility seam. At apply time it also resolves through the mounted loader: a linked development package can otherwise register its own npm peer while the running backend uses a different host checkout. Registration remains for the process lifetime so previously written logs remain readable. Real JSONL and Zstandard integration tests read an initial checkpoint and then append and replay the remaining turn.
 
 The shared live publisher supports distinct native content items within one step and explicit durable closing checkpoints. DSH preserves reasoning and text separately. All four live providers carry the earliest unflushed delta arrival into the shared output channel instead of dating it at publication. Identical snapshots do not fabricate a new arrival.
 

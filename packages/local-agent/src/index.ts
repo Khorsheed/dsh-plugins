@@ -3018,7 +3018,18 @@ function stopDelegation(registry: LocalAgentRegistry, childSessionId: string): C
  * @param ctx - plugin context carrying the command registry.
  * @param config - shared scoped-homes root and login prompt wait.
  */
-export function apply(ctx: Context, config: Config): void {
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  // A linked development plugin can have its own installed host peers. Resolve
+  // through the mounted loader too, so the running backend sees the same set.
+  const loader = ctx.get('loader') as { import?: (name: string) => Promise<{ KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string> }> } | undefined
+  if (loader?.import !== undefined) {
+    for (const specifier of ['@deepseek-ai/dsh-session', streamCatalogSpecifier]) {
+      try {
+        const catalog = await loader.import(specifier)
+        ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+      } catch { /* Optional source export or loader capability; root registration remains. */ }
+    }
+  }
   const registry = new LocalAgentRegistry(ctx, config.homesRoot, config.loginPromptTimeoutMs ?? 10_000)
   ctx.provide(LOCAL_AGENT_SERVICE, registry)
   // The read-only Remote channel the web client polls through; it depends on
