@@ -129,9 +129,9 @@ export class RoomStore {
   async ensure(sessionId: SessionId): Promise<void> {
     if (this.room.has(sessionId) || this.gateway === undefined) return
     const carried = await this.gateway.isRoom({ sessionId })
-    const verdict = carried.ok && carried.value
-    this.room.set(sessionId, verdict)
-    if (!verdict) {
+    if (!carried.ok) return // A transport failure is not a non-room verdict.
+    if (!carried.value) {
+      this.room.set(sessionId, false)
       this.notify()
       return
     }
@@ -151,8 +151,8 @@ export class RoomStore {
     this.room.set(sessionId, true)
     this.states.set(sessionId, carried.value.value)
     this.notify()
-    // A promotion flip (known non-room → room) must re-elect the composer.
-    if (was === false) this.onPromoted?.()
+    // A promotion flip (unknown/non-room → room) must re-elect the composer.
+    if (was !== true) this.onPromoted?.()
     // A completed pull is also the binding-availability retry point: the
     // runtime may mint the session's binding after the list's current flip.
     this.attachLive()
@@ -192,10 +192,10 @@ export class RoomStore {
    * room refreshes its state; a session cached NOT a room re-probes `isRoom`
    * (a promotion lands as a host-side `room/created` append the client never
    * initiated — the room_invite/room_message tools promote in place); a
-   * first-pull-in-flight session (undefined verdict) waits for ensure.
+   * unknown verdict retries ensure after the same debounce.
    */
   private onLiveEvent(): void {
-    if (this.current === undefined || this.room.get(this.current) === undefined) return
+    if (this.current === undefined) return
     if (this.liveTimer !== undefined) clearTimeout(this.liveTimer)
     this.liveTimer = setTimeout(() => {
       this.liveTimer = undefined
@@ -203,8 +203,10 @@ export class RoomStore {
       if (current === undefined) return
       if (this.room.get(current) === true) {
         void this.refresh(current)
-      } else {
+      } else if (this.room.get(current) === false) {
         void this.reprobe(current)
+      } else {
+        void this.ensure(current)
       }
     }, ROOM_LIVE_REFRESH_DEBOUNCE_MS)
   }
@@ -218,7 +220,7 @@ export class RoomStore {
     if (this.gateway === undefined) return
     const carried = await this.gateway.isRoom({ sessionId })
     if (!carried.ok || !carried.value) return
-    // refresh flips the verdict and fires onPromoted on a false → true flip.
+    // refresh flips the verdict and fires onPromoted on a unknown/false → true flip.
     await this.refresh(sessionId)
   }
 
@@ -227,7 +229,7 @@ export class RoomStore {
   }
 
   /**
-   * Called when a session's verdict flips false → true (an in-place
+   * Called when a session's verdict flips unknown/false → true (an in-place
    * promotion): the composer chain elects at RENDER time and nothing
    * re-renders the outlet for a promotion of an idle session, so the client
    * wires this to re-register the composer entry (a slot version bump

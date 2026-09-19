@@ -66,6 +66,25 @@ describe('RoomStore', () => {
     expect(store.getCached('room-1' as SessionId)).toBeUndefined()
   })
 
+  it('re-elects the composer after a cold first room read, without another UI gesture', async () => {
+    const { store } = bench()
+    const promoted = vi.fn()
+    store.onPromoted = promoted
+    await store.ensure('room-cold' as SessionId)
+    expect(promoted).toHaveBeenCalledTimes(1)
+    await store.refresh('room-cold' as SessionId)
+    expect(promoted).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not cache a transport failure as a non-room verdict', async () => {
+    const { store, gateway } = bench()
+    gateway.isRoom.mockResolvedValueOnce({ ok: false, error: { message: 'disconnected' } })
+    await store.ensure('room-retry' as SessionId)
+    expect(store.isRoomCached('room-retry' as SessionId)).toBeUndefined()
+    await store.ensure('room-retry' as SessionId)
+    expect(store.isRoomCached('room-retry' as SessionId)).toBe(true)
+  })
+
   it('ensure fills the verdict and pulls the state for rooms only', async () => {
     const { store, gateway } = bench()
     await store.ensure('room-1' as SessionId)

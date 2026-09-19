@@ -1247,7 +1247,6 @@ export class KimiAcpLiveDriver {
         await this.reclaim(String(childSession.id))
         throw new Error('subagent-kimi: run cancelled locally')
       }
-      rt.onSessionUpdate = onSessionUpdate
       try {
         await this.configureSession(rt, spec)
       } catch (error) {
@@ -1259,6 +1258,9 @@ export class KimiAcpLiveDriver {
         if (!runAbort.signal.aborted) await this.reclaim(String(childSession.id))
         throw thrown(error)
       }
+      // ACP session/load replays historical chunks and tools. Bind this round's
+      // sink only after loading/configuration, so replay never becomes new output.
+      rt.onSessionUpdate = onSessionUpdate
       // The turn boundary opens before the prompt goes out (exec parity: the
       // exec path opens at spawn). session/prompt has no separate accept ack —
       // the request IS the turn. The prompt's user/message lands here too

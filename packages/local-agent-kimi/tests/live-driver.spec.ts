@@ -30,6 +30,7 @@ interface FakeTurn {
 }
 
 interface FakeAcpScript {
+  loadChunks?: string[]
   turn?: (params: Record<string, unknown>) => FakeTurn
   silent?: readonly string[]
   crashAfterPrompt?: boolean
@@ -160,6 +161,7 @@ class FakeAcpServer {
         respond({ sessionId: `session_acp-session-${this.sessionSeq}`, ...this.script.configOptions === undefined ? {} : { configOptions: this.script.configOptions } })
         return
       case 'session/load':
+        for (const text of this.script.loadChunks ?? []) this.update(String(params['sessionId']), { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } })
         respond({ ...this.script.configOptions === undefined ? {} : { configOptions: this.script.configOptions } })
         return
       case 'session/set_config_option':
@@ -599,6 +601,16 @@ describe('kimi live driver rounds', () => {
     expect(m.spawns).toHaveLength(2)
     expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
     expect(second.requests[1]?.params).toMatchObject({ sessionId: 'session_acp-session-1' })
+    await m.driver.disposeAll()
+  })
+
+  it('does not treat session/load replay as the resumed round answer or live output', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-replay'))
+    m.queueChild(new FakeAcpServer({ loadChunks: ['OLD ANSWER'], turn: () => ({ chunks: ['NEW ANSWER'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
+    expect((await run.result).output).toEqual([{ type: 'text', text: 'NEW ANSWER' }])
+    expect(JSON.stringify(child.snapshotEvents())).not.toContain('OLD ANSWER')
     await m.driver.disposeAll()
   })
 
