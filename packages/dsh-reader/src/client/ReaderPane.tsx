@@ -376,14 +376,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /* ------------------------------------------- where this pane already was */
 
   /**
-   * Where the reader stood before the host unmounted this pane.
+   * Where the reader stood before the host unmounted this pane — read ONCE, at
+   * mount, because hydration is a one-shot act: re-reading it later would undo
+   * the narrowing the reader is doing right now.
    *
    * The right sidebar unmounts whenever another main panel takes over (hopping
    * to the side chat is the everyday case: `RightbarRoot` renders only while no
    * other panel is active), and this store is created per mount — so the open
    * article, the reading position, the wall's narrowing and the fact that a
-   * translation was on all used to be gone on the way back. `client/session.ts`
-   * holds them in module memory; this is the one read of it, taken on mount.
+   * translation was on all used to be gone on the way back.
+   *
+   * This is a COPY, and it is deliberately not what the restore steps on the
+   * next screens read: those ask `readSession()` directly. A translation the
+   * reader turns on during THIS mount is written to the page memory after this
+   * copy was taken, so reading the copy there would make the record invisible
+   * for exactly the case it exists for (the body being replaced under the
+   * reader).
    *
    * The memory is the PAGE's, not this session's: the same wall and the same
    * article should be there in the next conversation too, so switching sessions
@@ -955,6 +963,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const api = translator
     const container = articleRef.current
     if (api === null || container === null) return
+    // One run at a time. A second start (the reader's retry, or the restore
+    // re-applying a translation to a body that was just replaced) must not build
+    // its own segmentation over the first one's: two overlapping runs would
+    // decorate the same DOM twice and race each other's view updates. Whatever
+    // was in flight is cancelled and the article is put back as the host sent it.
+    if (cancelRef.current !== null) cancelRef.current.cancelled = true
+    const previous = builtRef.current
+    if (previous !== null) restoreArticle(previous.root)
+    builtRef.current = null
     const cancel = { cancelled: false }
     cancelRef.current = cancel
     setTranslateError(null)
@@ -1409,7 +1426,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   useEffect(() => {
     if (allEntries.length === 0) return
-    const wanted = snapshotRef.current?.openEntryId
+    const wanted = readSession().openEntryId
     if (wanted === undefined || wanted === null) return
     if (restoredOpenRef.current === wanted || openedRef.current === wanted) {
       restoredOpenRef.current = wanted
@@ -1428,7 +1445,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     restoredOpenRef.current = wanted
     const row = rowFor(entry, presentation, read)
     if (row === undefined) return
-    const top = snapshotRef.current?.scroll?.[wanted]
+    const top = readSession().scroll?.[wanted]
     if (top !== undefined) pendingScrollRef.current = { entryId: wanted, top }
     void open(row)
   }, [allEntries, openEntryId, presentation, read, loading, open, entryById])
@@ -1461,8 +1478,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     rememberScroll(openEntryId, scroller.scrollTop)
   }, [openEntryId])
 
-  /** A new open is a new article: the translation record gets a fresh chance. */
-  useEffect(() => { restoredTranslationRef.current = null }, [openEntryId])
+  /**
+   * A rebuilt body means the old segmentation died with the old DOM — so the
+   * record gets another chance, keyed on the BODY and not only on the entry.
+   *
+   * That is the difference between "the globe is on for this entry" and "the
+   * globe was on the first time this entry was opened": a body replaced under
+   * the reader (a fetch landing after a restore, an expired cache re-fetched, a
+   * re-render that recreated the element) used to leave the article on screen
+   * untranslated with nothing to put the translation back. The record is the
+   * single source of truth, and it is deleted the moment the reader turns the
+   * globe off or asks for a fresh fetch.
+   */
+  useEffect(() => { restoredTranslationRef.current = null }, [openEntryId, articleHtml])
 
   /**
    * Turn the globe back on for an entry that was translated before the sidebar
@@ -1479,9 +1507,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (articleHtml === null || articleHtml.length === 0) return
     if (translatePhase !== 'idle') return
     if (restoredTranslationRef.current === openEntryId) return
-    const wanted = snapshotRef.current?.translationView?.[openEntryId]
+    const wanted = readSession().translationView?.[openEntryId]
     if (wanted === undefined) return
-    const source = snapshotRef.current?.translationSource?.[openEntryId] ?? translationSource
+    const source = readSession().translationSource?.[openEntryId] ?? translationSource
     const sources = source === 'en' ? ['en'] : [source, 'en']
     if (cachedTranslator(sources, TARGET_CANDIDATES) === undefined) return
     restoredTranslationRef.current = openEntryId
