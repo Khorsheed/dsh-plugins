@@ -363,6 +363,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   return (
     <div className={css.root}>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
+      {renderMemberInbox?.(matched.childSessionId)}
       <div className={css.card}>
         <div className={css.header}>
           <span>{t('member.title', { harness: membership.harnessDisplayName ?? membership.provider })}</span>
@@ -460,7 +461,6 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           )}
         </div>
       </div>
-      {renderMemberInbox?.(matched.childSessionId)}
       {dockLines.length > 0 && (
         <div className={css.dock} data-member-dock>
           {dockLines.map(line => (

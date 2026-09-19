@@ -234,6 +234,7 @@ export function RoomComposer({
         />
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
+      {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
       <div className={css.card}>
         <div className={css.coordinator}>{t('coordinator.label')} · {coordinator?.name ?? 'dsh'}{external ? ` · ${coordinator.provider}` : ' · DSH'}</div>
         {mention !== null && candidates.length > 0 && (
@@ -312,7 +313,6 @@ export function RoomComposer({
           fallback; re-rendered here from the same projections. The framework
           omits the seat entirely on a host without the projection subsystem —
           degrade to no row. */}
-      {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
       {!external && useProjection !== undefined && <RoomStatsLine useProjection={useProjection} t={t} />}
     </div>
   )

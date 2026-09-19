@@ -18,6 +18,8 @@ The member composer remains writable during a running turn, with separate Send a
 
 Prepared members now expose their empty durable inbox before the first delegation transcript exists. The member composer can inspect a promoted fresh coordinator without a false missing-delegation error. Unknown identities still fail; enqueue requires an executed delegation, while the initial Room input uses the prepared-start path.
 
+The shared inbox dock follows the official queue presentation above the composer: an inset panel, one compact row for one waiting input, and an expandable count for multiple inputs. Only `queued` records appear as waiting; admitted work uses the running composer and transcript, with no zero-count queue. All queued records remain accessible. Failed and uncertain outcomes retain separate recovery controls, and an empty paused inbox still exposes Resume. The official QueueDock is not a public renderer and writes the host agent queue; the plugin uses public icons/theme tokens with core-owned admission rather than mixing two execution queues.
+
 ## Alternatives considered
 
 **Retain busy rejection at the core and queue in each UI.** It leaves direct delegation tools and room deliveries with different execution semantics. The provider boundary is shared by all entry points.
