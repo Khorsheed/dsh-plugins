@@ -9,7 +9,7 @@ Status: in progress. This record does not establish all-provider streaming accep
 - Lab profile: `room-coordinator-test`, loopback port 3084. Production port 3080 unchanged.
 - Separate settings, credential file and member homes. DSH credential provisioned privately; user completed Kimi login in the lab scope.
 - Observed CLI versions: Kimi 0.42.0, Codex 0.144.0, Claude Code 2.1.277.
-- Development initially used worktree links. The 3084 lab now installs nine candidate tarballs at `0.1.1-roomcoord.99247e47`, with no workspace links for the family. This is a test-only version, not an npm release.
+- Development initially used worktree links. The 3084 lab now installs nine candidate tarballs at `0.1.1-roomcoord.80493f09`, with no workspace links for the family. This is a test-only version, not an npm release.
 - Fresh/upgrade installation probes use the npm host toolchain pinned to `0.1.5-rc.1`; their test HOME directories are separate from the logged-in lab and production.
 
 ## Observed results
@@ -25,9 +25,9 @@ Status: in progress. This record does not establish all-provider streaming accep
 | DSH final answer | Reasoning separated from final answer, real result 391 | Passed |
 | Small background delegation | Kimi delegates to DSH, initial receipt returns, DSH completes in 4.4 seconds, automatic correlated report wakes Kimi for final answer | Passed without polling or formal goal |
 | Busy effort change | Kimi 80-line turn begins at low; changing to high displays pending while current remains low; completion applies high to following turns | Passed |
-| Native incremental output | Reasoning/text grow before native completion in Room and member surfaces | Passed qualitatively; full latency gate remains open |
+| Native incremental output | Reasoning/text grow before native completion in Room and member surfaces | DSH/Kimi foreground scenarios below meet the threshold; full provider/workload gate remains open |
 | Stop retains output | Stop a long Kimi response after 56 seconds; Room retains partial text with explicit stopped label and member link | Passed; reverse isolation also passed: stopping DSH leaves Kimi to finish its 25-line answer in 14 seconds |
-| Normal persistence | After final-flush fix, DSH 266 events and Kimi 796 events match live history exactly, including final turn/end; graceful shutdown and cold restart need no recovery | Passed |
+| Normal persistence | After final-flush fix, DSH 305 events and Kimi 825 events match live history exactly, including final turn/end; graceful shutdown and cold restart need no recovery | Passed |
 | Dependent goal stages | `verify-17x23`: compute submitted and explicitly accepted before independently verified second task dispatch; second accepted and goal completed | Passed, 2 attempts within budget 4, concurrency 1 |
 | Rework | `rework-17x23`: first attempt supplies 391 without process; coordinator records rework; second supplies full process and is accepted; goal completed | Passed, 2 attempts within total 3/per-task 2/concurrency 1 |
 | Multiple browser pages | After shared-feed fix, Room and Kimi child both load history; two active members stream while Room state and reports update | After `fe20f7d9`, Room plan revisions update during real work with the Kimi member page open; continuation completed with goal revision 48 and matching member history |
@@ -49,21 +49,34 @@ The earlier lab history required explicit recovery while the server was stopped:
 
 ## Streaming measurement limits
 
-Foreground diagnostics use native receipt timestamps and two animation frames as a conservative paint estimate on this localhost setup. Samples from continuous Kimi runs were commonly 69–91 ms; one early sample reached 244 ms. These snapshots are not a full-turn P95 dataset. A page opened mid-turn also initially measures the age of replayed state, so replay must be distinguished before interpreting such a dataset. No claim of P95 ≤ 200 ms for all four harnesses is made yet.
+Foreground diagnostics use native receipt timestamps and two animation frames as a conservative paint estimate on this localhost setup. Samples from continuous Kimi runs were commonly 69–91 ms; one early sample reached 244 ms. These snapshots are not a full-turn P95 dataset. Before the diagnostic fix below, a page opened mid-turn also initially measured the age of replayed state. No claim of P95 ≤ 200 ms for all four harnesses is made yet.
+
+`80493f09` retains per-round, per-surface diagnostics after transient nodes disappear. Baselines, missing observations and truncation are explicit. Four completed foreground scenarios now have retained [raw millisecond samples](room-coordinator-streaming-2026-09-19.json):
+
+| Harness / surface | Live updates painted | Baselines excluded | P95 | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| Kimi / Room, turn 29 | 25 / 25 | 0 | 110 ms | 138 ms |
+| DSH / Room, turn 16 | 156 / 156 | 0 | 86 ms | 132 ms |
+| DSH / member, turn 17 | 112 / 112 | 1 | 87 ms | 122 ms |
+| Kimi / member, turn 30 | 13 / 13 | 1 | 76 ms | 76 ms |
+
+The two Room requests ran concurrently; the integration gate was also running in the background. The member requests ran separately. All four measured surfaces have zero pending, background, unmounted, clock-mismatch, unrendered or truncated live observations. These scenarios meet the threshold for browser-delivered updates, with replay excluded. They do not measure every pre-coalescing native token, replace the remaining sparse/burst/provider matrix, or measure request-to-first-token latency. For example, the native Kimi record for the 80-line Room reply reports about 47 seconds to its first token, separate from the measured display delay.
+
+After these runs the full persisted histories match 305 DSH / 825 Kimi events, ending at `turn/end`, without manual recovery.
 
 ## Automated verification
 
-Latest completed package suites: core 347, DSH 187, Kimi 246, Codex 224, Claude 232, Room 282. Corresponding builds passed. Core coverage includes eight members sharing one browser feed, coalesced output, late consumers, cancellation and source isolation. Provider suites include delayed persistence at final settlement. Room covers interrupted partials, cold composer election, structured plans and authenticated member tools.
+Latest completed package suites: core 350, DSH 187, Kimi 246, Codex 224, Claude 232, Room 282. Corresponding builds passed. Core coverage includes eight members sharing one browser feed, coalesced output, late consumers, cancellation and source isolation. Provider suites include delayed persistence at final settlement. Room covers interrupted partials, cold composer election, structured plans and authenticated member tools.
 
-Isolated composition preflight passed before each restart. Package independence previously checked 33 packages with zero findings. The full 14-step integration gate passed at `a4f397d9` in 552 seconds, including all builds/tests and 26 plugin tarball checks. After the parser packaging correction, the affected-package 14-step gate passed at `0f4840f7` in 101 seconds; Kimi retained 245 passing tests. The nine-package delivery family also received a clean rebuild before candidate packing. Subsequent 14-step affected-package gates passed at `385da4de` (147 seconds), `5ddd3ac5` (141 seconds) and `99247e47` (100 seconds).
+Isolated composition preflight passed before each restart. Package independence previously checked 33 packages with zero findings. The full 14-step integration gate passed at `a4f397d9` in 552 seconds, including all builds/tests and 26 plugin tarball checks. After the parser packaging correction, the affected-package 14-step gate passed at `0f4840f7` in 101 seconds; Kimi retained 245 passing tests. The nine-package delivery family also received a clean rebuild before candidate packing. Subsequent 14-step affected-package gates passed at `385da4de` (147 seconds), `5ddd3ac5` (141 seconds) and `99247e47` (100 seconds). The core diagnostic update at `80493f09` passes the 14-step affected-family gate in 333 seconds, rebuilding and testing eight dependent packages.
 
 ## Tarball installation and upgrade
 
 - Candidate: nine packages, test version `0.1.1-roomcoord.99247e47`, created and verified by the repository packer. Artifacts are outside the workspace to prevent workspace-link substitution.
 - Fresh installation: empty dependency tree, explicit core/providers/Room pair, family overrides and CLI plugin reconciliation. npm-host preflight passes. Enabling the existing DSH delegation setting exposes `kimi-cli`, `codex-local`, `claude-local`, `dsh-cli`; DSH remains off by default until that setting is enabled.
 - Upgrade baseline: the September 15 `+2609151443` tarballs on the same npm host. A real old Room was created with two members, a role instruction, a model selection, a goal and a task. Upgrade preserves these fields through a cold `room/getState` read. The profile retains `liveMirrorGranularity: event`; candidate composition accepts it. This alone is not a latency pass for migrated execution.
-- Core, Room and Kimi client contributions are present in the composed graph and each returns HTTP 200 with the module-loader header (306635, 461037 and 46963 response characters respectively, latest candidate).
-- Logged-in 3084 lab: replaced development links with the same tarballs. A normal install initially retained old links; saving the old node_modules/lockfile and reinstalling the explicit graph removed them. Actual installed versions and resolved paths were checked, then isolated preflight passed. Real continuation passes: Kimi delegates 19×21 to DSH (3.6 seconds), then consumes the automatic report and answers 399 (5.7-second report turn).
+- Core, Room and Kimi client contributions are present in the composed graph and each returns HTTP 200 with the module-loader header (306635, 461037 and 46963 response characters respectively, `99247e47` candidate).
+- Logged-in 3084 lab: replaced development links with these tarballs, then upgraded to the nine-package `80493f09` diagnostic candidate after build/test and isolated preflight. A normal install initially retained old links; saving the old node_modules/lockfile and reinstalling the explicit graph removed them. Actual installed versions and resolved paths were checked, then isolated preflight passed. Real continuation passes: Kimi delegates 19×21 to DSH (3.6 seconds), then consumes the automatic report and answers 399 (5.7-second report turn).
 
 ## Additional interruption probes
 
