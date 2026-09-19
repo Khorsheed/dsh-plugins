@@ -17,7 +17,7 @@ Status: implemented
 - `DelegationCallOptions`（`{ label?, signal? }`）刻意保持可加性——`onProgress`/`reattach` 随后续里程碑落地。
 - registry 不新增硬 inject：`subagents` / `agents` / `sessions` / `sessionPersistence` 均在调用时经 `ctx.get` 惰性读取，门面调用需要的服务缺席时抛出指明服务名的错误（核心 degrade-don't-explode，调用 fail-loud）。
 
-**Reattach 配方**（固化在 `resume` 的 doc comment 中供 room 直接引用）：`ctx.sessions.get(childSessionId)` 为 undefined 时，`using prep = await ctx.sessionPersistence.prepare(SessionId(childSessionId))`，随后 `ctx.sessions.enter(prep.session)`，detach disposer 由 registry 持有至插件卸载。发布**只 enter、不 `sessions.announce()`**：`enter` 安装 append 发布钩子并加入 store——provider 的 liveness 探针与 transcript 镜像的 `session/event` 广播所需的全部——而 `announce` 只发 `session/created`，其语义是新会话创建。持久化的子会话在其原始生命周期已发过 `session/created`（fresh 委派经 `sessions.create()` 发布），重发会让创建类监听器（apiproxy 投影、按会话的 setup 不变量）把一个正在恢复的会话当成新建。官方 `agentLoop.resume` 的 publish 路径之所以 announce，是因为它为本进程生命周期发布的是全新的 live agent+session 对；CLI provider 的子会话是没有 agent 在其上运行的纯 transcript 容器。
+**Reattach 配方**使用缓存写句柄读取持久化事件，准备子会话、追加构造器后缀，再 enter 并 announce 恢复的实时会话。detach disposer 和写句柄由插件持有至卸载；announce 失败则回滚两者。原先只 enter 的决策已由[成员历史连续性修复](../bug-fix/2026-09-19-member-stream-replay.md)取代：即使 CLI 子会话上没有宿主 agent，创建监听器仍须收到本进程的新生命周期及构造器后缀。
 
 ## Alternatives considered
 

@@ -2033,6 +2033,8 @@ export class LocalAgentRegistry {
    *   const unstored = session.snapshotEvents().slice(cold.events.length)
    *   if (unstored.length > 0) await handle.append(unstored)
    *   const detach = ctx.sessions.enter(session)
+   *   try { ctx.sessions.announce(session) }
+   *   catch (error) { detach(); throw error }
    *   // Hold BOTH for the reattached lifetime: the backend routes live
    *   // session/event appends into the per-id writer only while the write
    *   // handle is open; closing it ends persistence for the session.
@@ -2042,20 +2044,10 @@ export class LocalAgentRegistry {
    * }
    * ```
    *
-   * Hold `detach` and `handle` for the plugin lifetime. The publication is
-   * ENTER-ONLY, deliberately WITHOUT `ctx.sessions.announce()`: `enter`
-   * installs the append-publication hooks and the store entry — everything the
-   * provider's liveness probe (`sessions.get`) and the transcript mirror's
-   * `session/event` broadcast need — while `announce` only emits
-   * `session/created`, whose semantics are NEW-session creation. A persisted
-   * child already fired `session/created` in its original lifetime (fresh
-   * delegations publish through `sessions.create()`), and re-firing would
-   * re-trigger creation listeners (apiproxy projections, per-session setup
-   * invariants) for a session being RESTORED, not created. The official agent
-   * resume (`agentLoop.resume` → publish) announces because it publishes a
-   * brand-new live agent+session pair for this process lifetime; a CLI
-   * provider's child is a pure transcript container with no agent on it, so
-   * only `enter` applies.
+   * Hold `detach` and `handle` for the plugin lifetime. Announce the restored
+   * live session after entering it, rolling back detach if announcement fails.
+   * History followers need this lifecycle edge to replay the constructor's
+   * end-seed suffix before the provider publishes subsequent events.
    * @param parentSessionId - the delegating parent session id; must match the
    *   recorded one and have a live agent.
    * @param provider - the `ctx.subagents` provider that owns the CLI session.
@@ -2300,9 +2292,10 @@ export class LocalAgentRegistry {
 
   /**
    * Restore a persisted child session into the live store when it is absent —
-   * the reattach recipe documented on {@link resume}. Enter-only on purpose;
-   * the detach disposer is held in {@link reattachDisposers} until plugin
-   * dispose, and the write handle comes from the shared
+   * the reattach recipe documented on {@link resume}. Announce the restored
+   * lifecycle so open history followers receive the constructor suffix before
+   * subsequent appends. Hold detach in {@link reattachDisposers} until plugin
+   * dispose; the write handle comes from the shared
    * {@link childWriteHandles} cache so a later {@link syncChildSession}
    * reuses it instead of failing SessionAlreadyOwnedError on a second open.
    */
@@ -2337,9 +2330,13 @@ export class LocalAgentRegistry {
       const unstored = session.snapshotEvents().slice(cold.events.length)
       if (unstored.length > 0) await handle.append(unstored)
       const detach = sessions.enter(session)
-      this.reattachDisposers.set(childSessionId, () => {
+      try {
+        sessions.announce(session)
+      } catch (error) {
         detach()
-      })
+        throw error
+      }
+      this.reattachDisposers.set(childSessionId, detach)
     } catch (error) {
       // A failed reattach keeps no ownership: the cached handle would hold
       // write ownership of a session that never went live.

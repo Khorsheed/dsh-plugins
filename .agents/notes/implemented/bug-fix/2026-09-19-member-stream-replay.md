@@ -24,6 +24,8 @@ All four live providers enqueue and await a final child-store synchronization af
 
 Room retains nonempty output after cancellation or failure in its speech journal, with an optional `interrupted` status. Cold replay shows the partial text, explicit status, duration and member-session link. Partial replies do not produce trailing-line notification relays. An earlier explicit cancellation keeps its terminal state when the native result arrives, while retaining the partial output for the correlated delivery report.
 
+Restoring a cold child uses the complete host lifecycle: enter, then announce, with detach and write-handle cleanup if announcement fails. The creation edge replays constructor-only `session/end-seed` events to an already-open official history follower. Enter alone persists the marker but leaves a live sequence gap: execution and token projections advance while transcript following fails. A regression runs the real host history controller across cold restoration and subsequent turns; another verifies failed-announcement rollback and retry.
+
 ## Alternatives considered
 
 **Accept a final Room answer as proof of persistence.** Rejected by the real Kimi run: the answer existed in memory while the stored transcript was incomplete.

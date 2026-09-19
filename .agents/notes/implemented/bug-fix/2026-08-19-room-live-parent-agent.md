@@ -23,7 +23,7 @@ End-to-end acceptance of the room plugin (scratch profile, real kimi CLI dispatc
 ## Alternatives considered
 
 - **Ensure liveness inside the DispatchEngine only** (leave `createRoom` bare) — rejected: cold-resuming an agent onto a session the store still holds collides with the factory's publish path (`session already exists`); creation through the factory makes the live-agent invariant hold from birth, and the resume path then only ever sees genuinely cold sessions.
-- **Reattach cold rooms enter-only (`sessions.enter`, the local-agent child-session recipe)** — rejected for the room's own session: a later `agents.resume` must publish the session itself, and an enter-only attachment blocks it. Enter-only remains right for CLI child sessions (no agent ever sits on them); the room session owns a real agent.
+- **Reattach cold rooms enter-only (`sessions.enter`, the local-agent child-session recipe)** — rejected for the room's own session: a later `agents.resume` must publish the session itself, and an enter-only attachment blocks it. CLI children use core-owned enter plus announce after the [history continuity fix](2026-09-19-member-stream-replay.md); the room session owns a real agent and remains agent-resumed.
 - **Static `inject = ['tools']`** — rejected: a tools-less composition would fail room's mount outright; deferred injection keeps the degrade-don't-explode property.
 
 ## Consequences
