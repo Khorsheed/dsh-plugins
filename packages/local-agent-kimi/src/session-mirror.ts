@@ -31,10 +31,10 @@ function userEvent(text: string) {
 }
 
 /** One assistant-role message event, attributed to the kimi route. */
-export function assistantEvent(blocks: readonly ContentBlock[]) {
+export function assistantEvent(blocks: readonly ContentBlock[], model?: string) {
   return createAssistantMessage({
     content: blocks as ContentBlock[],
-    source: { provider: 'kimi-cli', model: 'k3' },
+    source: { provider: 'kimi-cli', model: model ?? 'unobserved' },
   })
 }
 
@@ -266,7 +266,7 @@ export async function mirrorKimiSessionDelta(
 
   const newTotal = transcript.lines.length
   const delta = transcript.lines.slice(fromLines)
-  const observedModel = transcript.model
+  const observedModel = options?.turn === undefined || transcript.modelTurn === options.turn ? transcript.model : undefined
   // The ROUND's tool calls, counted over the transcript lines carrying this
   // round's turn — deliberately NOT over the mirror window: a settle pass
   // whose delta a live poll already drained still owes the round its real
@@ -436,7 +436,7 @@ export async function mirrorKimiSessionDelta(
         childSession.append('assistant/message', {
           turn,
           step: completion.step,
-          message: assistantEvent(lineBlocks(line)),
+          message: assistantEvent(lineBlocks(line), line.model),
           stream: [],
           ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
         }, { surfaceOp: 'append' })
@@ -450,7 +450,7 @@ export async function mirrorKimiSessionDelta(
       childSession.append('assistant/message', {
         turn,
         step,
-        message: assistantEvent(lineBlocks(line)),
+        message: assistantEvent(lineBlocks(line), line.model),
         stream: [],
         ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
       }, { surfaceOp: 'append' })

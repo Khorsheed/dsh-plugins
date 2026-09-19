@@ -1072,7 +1072,7 @@ export class KimiAcpLiveDriver {
           stream.kind === 'think'
             ? { type: 'reasoning' as const, text: stream.text }
             : { type: 'text' as const, text: stream.text },
-        ]),
+        ], runtime?.modelConfiguration?.currentModel ?? roundModel),
         stream: [],
         ...withUsage && roundUsage !== undefined ? { usage: roundUsage } : {},
         ...interrupted ? { interrupted: true } : {},

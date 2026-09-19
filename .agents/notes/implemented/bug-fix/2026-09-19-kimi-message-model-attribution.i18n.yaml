@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-19-kimi-message-model-attribution.md
+.agents/notes/implemented/bug-fix/2026-09-19-kimi-message-model-attribution.md: 0b06c07b0e32f78d92611c52c6d352d3778f3114
+.agents/notes/implemented/bug-fix/2026-09-19-kimi-message-model-attribution.zh.md: f50773b67083ecc9c0a28f3f3bb2ee809ae4664e
