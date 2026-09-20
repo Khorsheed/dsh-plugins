@@ -542,3 +542,64 @@ describe('extractArticle captures the article title and an excerpt', () => {
     expect(result.title).toBeUndefined()
   })
 })
+
+/**
+ * Inline SVG figures survive the whitelist: the capture package (the ingest
+ * proposal's M1) returns rendered pages whose script-drawn figures arrive as
+ * inline SVG with styles inlined onto elements — dropping `svg` wholesale loses
+ * exactly the figures capture exists to rescue. The safe subset is pinned here
+ * along with every injection-shaped member that must stay gone.
+ */
+describe('inline SVG figures survive (capture-rendered pages)', () => {
+  const page = fixture('capture-svg.html')
+
+  it('keeps the chart: svg, defs, gradient, clip path, symbol use, text', () => {
+    const result = extractArticle(page, 'https://example.com/rendered')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<svg viewBox="0 0 100 60">')
+    expect(result.html).toContain('<linearGradient')
+    expect(result.html).toContain('id="g0"')
+    expect(result.html).toContain('gradientUnits="userSpaceOnUse"')
+    expect(result.html).toContain('gradientTransform="rotate(90)"')
+    expect(result.html).toContain('<stop offset="0" stop-color="#d54941" stop-opacity="0.9"></stop>')
+    expect(result.html).toContain('<clipPath id="clip0">')
+    // Internal fragment references — presentation attr and style alike — survive.
+    expect(result.html).toContain('clip-path="url(#clip0)"')
+    expect(result.html).toContain('fill="url(#g0)"')
+    expect(result.html).toContain('<path d="M0 60 L50 10 L100 60" fill="none" stroke="#222" stroke-width="1.5" stroke-linecap="round"></path>')
+    expect(result.html).toContain('style="opacity: 0.95"')
+    expect(result.html).toContain('style="fill: rgb(65, 118, 230)"')
+    expect(result.html).toContain('<use href="#sym" x="25" y="30"></use>')
+    expect(result.html).toContain('<tspan dx="1" dy="1">峰值</tspan>')
+    expect(result.html).toContain('<desc>A line chart of the measured values.</desc>')
+    // The figure is no longer "script-drawn": the SVG is present.
+    expect(result.scriptFigures).toBe(1) // only Figure 2's genuinely empty shell
+  })
+
+  it('drops the injection-shaped members, always', () => {
+    const result = extractArticle(page, 'https://example.com/rendered')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('<script')
+    expect(result.html).not.toContain('alert')
+    expect(result.html).not.toContain('onload')
+    expect(result.html).not.toContain('foreignObject')
+    expect(result.html).not.toContain('html junk')
+    expect(result.html).not.toContain('<animate')
+    // An external `use` href drops the element, and an external url() in a
+    // style drops the attribute (the rect keeps its other attributes).
+    expect(result.html).not.toContain('evil.example.com')
+    expect(result.html).not.toContain('tracker.example.com')
+    expect(result.html).toContain('<rect x="90" y="5" width="8" height="8" stroke="#000"></rect>')
+  })
+
+  it('applies the same subset through the feed-body path and keeps summaries clean', () => {
+    const out = normalizeRichText('<p>x</p><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#000"/></svg>')
+    expect(out).toBe('<p>x</p><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#000"></circle></svg>')
+    // A chart's <text> labels are chart chrome, not summary prose. (The double
+    // space is the inline pass's long-standing behavior around a skipped
+    // element; the summary path collapses whitespace downstream.)
+    expect(normalizeInline('<p>a <svg><text>x</text><circle r="1"/></svg> b</p>')).toBe('a  b')
+  })
+})
