@@ -332,6 +332,22 @@ const BACKFILL_CONCURRENCY = 2
 const SCROLL_SETTLE_ATTEMPTS = 30
 
 /**
+ * How fresh a human scroll gesture must be for a scroll event to count as the
+ * reader's.
+ *
+ * The pane's own writes are caught by the echo guard; a BROWSER's writes are
+ * not — when the document shrinks under a scrolled scroller (a translation
+ * rebuild, a body swap, the remount's intermediate short states) the browser
+ * clamps the offset and fires a scroll event that looks exactly like the
+ * reader's. Measured on the live instance: a remount's translation rebuild
+ * clamped the scroller and the clamp overwrote the stored anchor with the
+ * clamped value, so the reader came back to the top. Only wheel / touchmove /
+ * page-key gestures are the reader; a scroll event with no recent one is the
+ * browser's and is never recorded.
+ */
+const SCROLL_GESTURE_WINDOW_MS = 400
+
+/**
  * How long a restored reading position keeps re-anchoring itself.
  *
  * An article's images carry no dimensions, so the document keeps growing well
@@ -635,6 +651,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const scrollEchoRef = useRef<number | null>(null)
   /** True once the reader has scrolled the article's body themselves. */
   const readerScrolledRef = useRef(false)
+  /** The last human scroll gesture on each scroller (0 = none): the pane only
+      records positions the reader CAUSED — see onDetailScroll. */
+  const lastDetailGestureRef = useRef(0)
+  const lastWallGestureRef = useRef(0)
   /** The same for the wall's scroller. */
   const wallEchoRef = useRef<number | null>(null)
   /** The wall's position is put back once per entry into the list view. */
@@ -2032,7 +2052,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   useEffect(() => {
     const scroller = detailRef.current
     if (scroller === null) return undefined
-    const takeOver = (): void => { readerScrolledRef.current = true }
+    const takeOver = (): void => {
+      readerScrolledRef.current = true
+      lastDetailGestureRef.current = Date.now()
+    }
     scroller.addEventListener('wheel', takeOver, { passive: true })
     scroller.addEventListener('touchmove', takeOver, { passive: true })
     scroller.addEventListener('keydown', takeOver)
@@ -2063,8 +2086,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       return
     }
     scrollEchoRef.current = null
-    // From here on the position is the reader's, not ours.
-    readerScrolledRef.current = true
+    // Only a scroll the reader CAUSED is their position. A programmatic write
+    // has its echo above; a browser clamp (the document shrinking under a
+    // scrolled scroller — a translation rebuild, a body swap, a remount's
+    // intermediate short state) has neither: on 3080 a remount's translation
+    // rebuild clamped the scroller and the clamp's scroll event overwrote the
+    // stored anchor with the clamped value, so the reader came back to the top.
+    // The gesture window is what a scroll event's cause is read from.
+    if (Date.now() - lastDetailGestureRef.current > SCROLL_GESTURE_WINDOW_MS) return
     const metrics = metricsRef.current
     const top = Math.round(scroller.scrollTop)
     if (metrics === null) {
@@ -2101,8 +2130,26 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       return
     }
     wallEchoRef.current = null
+    // Same contract as the article's: only a scroll the reader caused is their
+    // place — a clamp while the wall's content shrinks is not.
+    if (Date.now() - lastWallGestureRef.current > SCROLL_GESTURE_WINDOW_MS) return
     rememberWallScroll(scroller.scrollTop)
   }, [])
+
+  /** The wall scroller's gestures, the same "only a person produces these" signal. */
+  useEffect(() => {
+    const scroller = wallRef.current
+    if (scroller === null) return undefined
+    const mark = (): void => { lastWallGestureRef.current = Date.now() }
+    scroller.addEventListener('wheel', mark, { passive: true })
+    scroller.addEventListener('touchmove', mark, { passive: true })
+    scroller.addEventListener('keydown', mark)
+    return () => {
+      scroller.removeEventListener('wheel', mark)
+      scroller.removeEventListener('touchmove', mark)
+      scroller.removeEventListener('keydown', mark)
+    }
+  }, [view, rows.length])
 
   // Put the wall back where it was, once per entry into the list view: a long
   // wall that jumps to the top on every panel switch is the same complaint as a
