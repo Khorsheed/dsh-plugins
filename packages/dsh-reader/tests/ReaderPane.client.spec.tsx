@@ -1488,6 +1488,80 @@ describe('an article that is already fetched is not fetched again', () => {
   })
 })
 
+describe('a slower answer never lands under a newer entry\'s title', () => {
+  /**
+   * The race this block pins: open A, and before the host answers, go back and
+   * open B. A's answer resolving LAST used to write A's body onto B's screen —
+   * and the translation restore, keyed on `[openEntryId, articleHtml]`, would
+   * then re-translate a pairing that never existed.
+   */
+  const idA = `l:https://example.com/hn/${encodeURIComponent('First article')}`
+  const twoArticles = (): string =>
+    feed('hn', [
+      { title: 'First article', body: '<p>First body here, long enough to read.</p>' },
+      { title: 'Second article', body: '<p>Second body here, long enough to read.</p>' },
+    ])
+
+  it('discards a body that arrives after another entry was opened', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: twoArticles() } })
+    // The first entry's answer is held back; the second's comes from the cache
+    // at once.
+    let resolveFirst: ((value: unknown) => void) | undefined
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string }) => {
+      if (request.entryId === idA) {
+        return await new Promise(resolve => { resolveFirst = resolve })
+      }
+      return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false as const, html: '<p>Second body here, long enough to read.</p>' } }
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /First article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    fireEvent.click((await screen.findAllByRole('button', { name: /Second article/ }))[0] as HTMLElement)
+    await screen.findByText('Second body here, long enough to read.')
+
+    // Now the first answer lands — after the second entry is already on screen.
+    await act(async () => {
+      resolveFirst?.({ ok: true, value: { entryId: idA, cached: true, fresh: true, fromFeed: false, html: '<p>First body here, long enough to read.</p>' } })
+    })
+    expect(screen.queryByText('First body here, long enough to read.')).toBeNull()
+    expect(screen.getByText('Second body here, long enough to read.')).toBeTruthy()
+  })
+
+  it('discards a fetch owed by an entry the reader has already left', async () => {
+    // Same race through the OTHER writer: a summary-only entry pays one fetch on
+    // open, and that fetch is the slow one here.
+    const atomFeed = `<feed xmlns="http://www.w3.org/2005/Atom"><title>hn</title>`
+      + '<entry><title>Summary paper</title><link href="https://example.com/paper-a"/>'
+      + '<id>https://example.com/paper-a</id><summary>A summary sentence, all the feed ships.</summary></entry>'
+      + '<entry><title>Full paper</title><link href="https://example.com/paper-b"/>'
+      + '<id>https://example.com/paper-b</id><content><p>Second full text on screen.</p></content></entry></feed>'
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: atomFeed } })
+    let resolveFetch: ((value: unknown) => void) | undefined
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => {
+      if (entryId === 'g:https://example.com/paper-a') {
+        return await new Promise(resolve => { resolveFetch = resolve })
+      }
+      return { entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' }
+    })
+    await ui.settle()
+    // Opening the summary-only entry shows the feed's text and owes one fetch.
+    fireEvent.click((await screen.findAllByRole('button', { name: /Summary paper/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    fireEvent.click((await screen.findAllByRole('button', { name: /Full paper/ }))[0] as HTMLElement)
+    await screen.findByText('Second full text on screen.')
+
+    // The owed fetch lands now — on the wall's back, its body belongs nowhere.
+    await act(async () => {
+      resolveFetch?.({ entryId: 'g:https://example.com/paper-a', cached: true, fresh: true, fromFeed: false, html: '<p>First fetched body, late.</p>' })
+    })
+    expect(screen.queryByText('First fetched body, late.')).toBeNull()
+    expect(screen.getByText('Second full text on screen.')).toBeTruthy()
+  })
+})
+
 describe('the detail view owns up to figures it cannot fetch', () => {
   it('counts script-drawn figures and points at the original', async () => {
     // A feed entry with a link and no body: the fetch path supplies the body,
@@ -1696,6 +1770,32 @@ describe('coming back to the pane puts the reader where they were', () => {
     await waitFor(() => {
       expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
     })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('keeps the wall\'s translation switch and its card texts across a remount', async () => {
+    // The wall's globe has its own switch and its own card texts, and both are
+    // part of "where the reader was". They were mirrored into the page memory on
+    // every change — but initialized from bare defaults, so the FIRST mirror
+    // after a remount overwrote the record with `false`/`{}` before anything
+    // had a chance to read it back.
+    installTranslator()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    await screen.findByText('An English article')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => { expect(screen.getByText('译：An English article')).toBeTruthy() })
+    // Side-by-side, so its restoration is visible on its own mark.
+    fireEvent.click(first.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['translate.bilingual']))
+    await waitFor(() => { expect(first.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(1) })
+    first.unmount()
+
+    // No click anywhere: the wall comes back translated, in the same view.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.getByText('译：An English article')).toBeTruthy() })
+    await waitFor(() => { expect(second.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(1) })
     delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })

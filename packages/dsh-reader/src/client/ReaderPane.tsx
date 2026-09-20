@@ -497,6 +497,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const snapshotRef = useRef<Partial<ReaderSessionSnapshot> | null>(null)
   if (snapshotRef.current === null) snapshotRef.current = readSession()
+  // The mount-time copy, narrowed once for the `useState` initializers below
+  // (their closures cannot see through the ref's null check).
+  const snapshot: Partial<ReaderSessionSnapshot> = snapshotRef.current
   /** The store's first render happens BEFORE the hydration below lands. */
   const hydrateStartedRef = useRef(false)
   /** The mirror effect is skipped once, so a pre-hydration render cannot erase the record. */
@@ -505,6 +508,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const restoredTranslationRef = useRef<string | null>(null)
   /** The entry the pane ITSELF opened, so the restore below never re-opens it. */
   const openedRef = useRef<string | null>(null)
+  /**
+   * The entry the detail view belongs to RIGHT NOW.
+   *
+   * Opening is async: `getEntryBody` / `fetchEntryBody` resolve whenever the
+   * host answers, and an answer that comes back LATE must not land under a
+   * newer entry's title — rapid "open A, back, open B" otherwise ends with A's
+   * body on B's screen (and the translation restore, keyed on
+   * `[openEntryId, articleHtml]`, re-translating a pairing that never was).
+   * `open()` sets this synchronously; every continuation that writes article
+   * state checks it first.
+   */
+  const openRequestRef = useRef<string | null>(null)
   /** The entry the restore has dealt with, whether or not it could be reopened. */
   const restoredOpenRef = useRef<string | null>(null)
   /** The offset the LAST programmatic scroll landed on, so its echo is not saved. */
@@ -600,14 +615,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const lastViewRef = useRef<TranslationView>('trans')
   /* ------------------------------------------------ the wall's card texts */
 
-  /** Whether the wall is showing translated cards (its own switch, its own memory). */
-  const [wallOn, setWallOn] = useState(false)
+  /**
+   * Whether the wall is showing translated cards (its own switch, its own memory).
+   *
+   * Initialized from the page's snapshot, like every "where the reader was"
+   * field: the mirror below writes these three into that snapshot on every
+   * change, so starting from the defaults meant the first post-hydrate mirror
+   * ERASED the remembered globe and its card texts with `false`/`false`/`{}`.
+   */
+  const [wallOn, setWallOn] = useState(snapshot.wallOn ?? false)
   /** Side-by-side on the wall: the original stays under each translated field. */
-  const [wallBoth, setWallBoth] = useState(false)
+  const [wallBoth, setWallBoth] = useState(snapshot.wallBoth ?? false)
   const [wallMenu, setWallMenu] = useState(false)
   const [wallAvailability, setWallAvailability] = useState<TranslationAvailability | null>(null)
   /** Translated card fields, by entry id. */
-  const [cardTranslations, setCardTranslations] = useState<Record<string, { title?: string; summary?: string }>>({})
+  const [cardTranslations, setCardTranslations] = useState<Record<string, { title?: string; summary?: string }>>(
+    () => ({ ...snapshot.cardTranslations }),
+  )
   const [wallProgress, setWallProgress] = useState<{ done: number; total: number } | null>(null)
   /**
    * The translated FIELD under the pointer, in the translation-only view.
@@ -1385,6 +1409,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (wallCancelRef.current !== null) wallCancelRef.current.cancelled = true
   }, [])
 
+  // Closing the detail (back button, a removed link, a restore that found its
+  // entry gone) releases the screen: a fetch still in flight for the closed
+  // entry must not write into the next one.
+  useEffect(() => {
+    if (openEntryId === null) openRequestRef.current = null
+  }, [openEntryId])
+
   /**
    * Fetch one entry's full article, extract it (this process) and show it.
    *
@@ -1400,10 +1431,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     actions.setFetching(entryId, true)
     try {
       const result = await props.fetchEntryBody(entryId, url)
+      // A late answer belongs to the entry that ASKED for it: if the detail
+      // view has moved on (another entry, or the wall), the article area is no
+      // longer this entry's to write. The per-entry records are unaffected —
+      // they are keyed by id either way.
+      const onScreen = openRequestRef.current === entryId
       if (result.html !== undefined) {
-        actions.setArticle(result.html, result.truncated === true, null)
-        setScriptFigures(result.scriptFigures ?? 0)
-      } else if (result.error !== undefined) {
+        if (onScreen) {
+          actions.setArticle(result.html, result.truncated === true, null)
+          setScriptFigures(result.scriptFigures ?? 0)
+        }
+      } else if (result.error !== undefined && onScreen) {
         // Keep whatever is already rendered (a feed summary, say) and add the
         // reason: a failed fetch must not take the little text the reader has.
         actions.setArticle(articleHtml ?? '', false, result.error)
@@ -1416,6 +1454,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
+    // Synchronous: every continuation of this call checks the ref before
+    // writing article state, so the LAST open (or a close) owns the screen.
+    openRequestRef.current = row.entry.id
     openedRef.current = row.entry.id
     actions.openEntry(row.entry.id, row.sourceId)
     actions.setView('detail')
@@ -1453,6 +1494,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         url: row.entry.link,
         ...(row.entry.contentHtml === undefined ? {} : { feedHtml: row.entry.contentHtml }),
       })
+      // The answer came back to a screen that has moved on: another open (or a
+      // close) happened while the host was answering. Writing here would put
+      // this entry's body under THAT entry's title.
+      if (openRequestRef.current !== row.entry.id) return
       if (!view.ok) {
         actions.setArticle('', false, view.error.message)
       } else if (view.value.html !== undefined) {
@@ -1503,6 +1548,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       return
     }
     const bodies = await props.getBodies([row.sourceId])
+    // Same guard as above: a no-link entry's body also arrives late.
+    if (openRequestRef.current !== row.entry.id) return
     if (!bodies.ok) {
       actions.setArticle('', false, bodies.error.message)
       return
