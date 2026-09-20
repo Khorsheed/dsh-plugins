@@ -1,0 +1,115 @@
+{
+  "name": "@khorsheed/dsh-capture",
+  "description": "Rendered fetch (capture) host service: one Remote verb renders a URL in a managed headless Chrome and returns the serialized rendered page with CSSOM styles inlined, so static extractors can read JS-heavy pages",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/capture"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "lib/typert.host.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.js",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@puppeteer/browsers": "^3.2.2",
+    "puppeteer-core": "^25.11.0",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
+    "@types/node": "^22.0.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "capture",
+    "render",
+    "headless",
+    "chrome",
+    "puppeteer",
+    "scraping"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web",
+      "immediately": true
+    },
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "notes": "A host-side rendered-fetch service (Remote namespace `capture`, verb `render`) plus a mount-only browser half that mounts the generated Remote contribution — no UI surface at all (a settings UI was considered and deferred: v1's only caller gesture is the reader's 「渲染抓取」 click, which IS the approval). The managed Chrome (Chrome for Testing) binary is downloaded lazily on the first render into `$DSH_HOME/state/dsh-capture` (deployment state, never the package dir); an install/launch failure is a domain error on that call, never a boot failure. Per-render state is a fresh temporary BrowserContext: no cookies, credentials, or login state persist between renders. The URL policy blocks non-http(s) schemes and resolves every hostname, refusing private/loopback/link-local/metadata targets and re-checking after every redirect hop. State (the per-site allow record) is written with plain node:fs (atomic temp+rename) under the state root, not through ctx.fs (the session-fenced sandbox refuses writes outside the workspace).",
+      "verifiedHost": "0.1.5-rc.1"
+    }
+  }
+}
