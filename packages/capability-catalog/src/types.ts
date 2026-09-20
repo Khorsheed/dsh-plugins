@@ -242,6 +242,32 @@ export interface CatalogPresetOption {
   readonly description?: string
   /** Why this preset cannot compose a session, when it cannot. */
   readonly broken?: string
+  /** Whether a session naming no preset composes this one (the deployment default). */
+  readonly isDefault?: boolean
+}
+
+/**
+ * One mode's capability face: what the model sees when a session runs this
+ * agent preset. The rows are the same shape the default read returns, so a
+ * viewer renders a mode card with the grid it already has.
+ */
+export interface CatalogModeFace {
+  /** The preset id this face was read at. */
+  readonly preset: string
+  /** The preset's published display name, when it has one. */
+  readonly name?: string
+  /** One sentence on what the preset is for, when it publishes one. */
+  readonly description?: string
+  /** Whether this is the deployment's default mode. */
+  readonly isDefault: boolean
+  readonly skills: readonly CatalogSkillRow[]
+  readonly tools: readonly CatalogToolRow[]
+  /**
+   * Why this mode has no face; when set, both lists are empty. Present for a
+   * preset discovery already refused and for one whose standing scope would
+   * not resolve — neither is evidence that the mode loads nothing.
+   */
+  readonly unavailable?: string
 }
 
 /** Request to declare which presets one skill is delivered to. */
@@ -309,11 +335,16 @@ export interface CapabilityCatalogRemote {
   readonly snapshot: (workdir?: string) => Promise<CapabilityCatalogSnapshot>
   /** The capability face of one preset, with its `sha` (see the host half). */
   readonly snapshotFor: (presetId?: string, workdir?: string) => Promise<CapabilityCatalogSnapshot>
-  readonly detail: (name: string, workdir?: string) => Promise<CatalogSkillDetail | undefined>
-  readonly readSkillFile: (name: string, filePath: string, workdir?: string) => Promise<CatalogSkillFileRead | undefined>
+  /** The capability face of one mode as a LISTING (no fingerprint work). */
+  readonly snapshotAt: (presetId?: string, workdir?: string) => Promise<CapabilityCatalogSnapshot>
+  /** Every mode's face in one call, for the cross-mode comparison view. */
+  readonly modeFaces: (workdir?: string) => Promise<readonly CatalogModeFace[]>
+  /** Read one capability at a mode's scope, or the default mode when omitted. */
+  readonly detail: (name: string, workdir?: string, presetId?: string) => Promise<CatalogSkillDetail | undefined>
+  readonly readSkillFile: (name: string, filePath: string, workdir?: string, presetId?: string) => Promise<CatalogSkillFileRead | undefined>
   readonly listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   readonly setCredential: (request: CatalogCredentialSetRequest) => Promise<boolean>
   readonly addSkill: (request: CatalogAddSkillRequest) => Promise<CatalogAddSkillResult>
-  readonly deleteSkill: (name: string, workdir?: string) => Promise<CatalogDeleteSkillResult>
+  readonly deleteSkill: (name: string, workdir?: string, presetId?: string) => Promise<CatalogDeleteSkillResult>
   readonly pickDirectory: () => Promise<string | null>
 }

@@ -3,9 +3,9 @@
  * Owns the section state and Remote wiring; visual cards and dialogs live in
  * focused client modules alongside this shell.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { CatalogMcpSnapshot, CatalogPresetOption, CatalogPresetScopeStatus, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CatalogMcpSnapshot, CatalogModeFace, CatalogPresetOption, CatalogPresetScopeStatus, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import type { CapabilityCatalogKey } from './locales.ts'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import { SkillPreviewCard, DeleteSkillConfirm } from './SkillCards.tsx'
@@ -17,19 +17,24 @@ import { AddSkillModal } from './AddSkillModal.tsx'
 import { McpServerManageModal } from './McpServerManageModal.tsx'
 import { AddMcpDialog } from './AddMcpDialog.tsx'
 import { buildMcpGroups } from './mcp-model.ts'
+import { buildModeComparison, resolveModeChips, type CatalogModeChip, type ModeComparison } from './mode-model.ts'
 import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
 type SortBy = 'name' | 'updated'
 /** Skills-tab segment: builtin=bundled, plugin=runtime, other=project/user/custom. */
 type SkillSegment = 'all' | 'builtin' | 'plugin' | 'other'
+/** The mode control's value for the cross-mode comparison: never a preset id. */
+const MODE_COMPARE = '\u0000compare'
+/** The mode the grid shows: one preset's face, or every preset compared. */
+type ModeSelection = { readonly kind: 'preset'; readonly id: string } | { readonly kind: 'compare' }
 /** Bucket a skill source into a segment (bundled→内置, runtime→插件, else→其他). */
 const skillBucket = (source: string): SkillSegment =>
   source === 'bundled' ? 'builtin' : source === 'runtime' ? 'plugin' : 'other'
 
 export function CapabilityCatalogCard({
   useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh, refreshSettled,
-  mcpSnapshot, mcpAdd, mcpRemove, mcpSetEnabled, mcpSetCredential, mcpSetToolEnabled, mcpDiscover,
+  mcpSnapshot, mcpAdd, mcpRemove, mcpSetEnabled, mcpSetCredential, mcpSetToolEnabled, mcpDiscover, modeFaces,
   presetScopeStatus, presetScopeRoster, presetScopeSet, presetScopeAdopt, presetScopeRelease,
   t,
 }: CapabilityCatalogCardProps) {
@@ -59,14 +64,40 @@ export function CapabilityCatalogCard({
   // Preset-scoped delivery: the managed-root status and the roster the picker shows.
   const [scopeStatus, setScopeStatus] = useState<CatalogPresetScopeStatus | null>(null)
   const [presetOptions, setPresetOptions] = useState<readonly CatalogPresetOption[]>([])
+  // The MODE the grid shows (one preset's face, or every mode compared) and the
+  // comparison's faces. `null` mode means "not chosen yet": the store holds the
+  // deployment default's face, so the grid renders it while the roster loads.
+  const [mode, setMode] = useState<ModeSelection | null>(null)
+  const [faces, setFaces] = useState<readonly CatalogModeFace[] | null>(null)
+  const [modeBusy, setModeBusy] = useState(false)
+  // The mode is mirrored in a ref because the mount effect and the mutation
+  // handlers re-read the view they were installed for, not the one at render.
+  const modeRef = useRef<ModeSelection | null>(null)
 
-  const skills = snapshot?.skills ?? []
+  /** The preset a session naming none composes, i.e. the mode the store holds
+   * before a human picks one — the store's first read is the default's face. */
+  const defaultPreset = useMemo(
+    () => presetOptions.find(option => option.isDefault === true) ?? presetOptions[0],
+    [presetOptions],
+  )
+  /** The preset id a read of THIS view should use (undefined = global fallback). */
+  const presetIdOf = useCallback((selection: ModeSelection | null): string | undefined =>
+    selection === null ? defaultPreset?.id : selection.kind === 'preset' ? selection.id : undefined,
+  [defaultPreset])
+  /** The comparison model, or null when the grid shows one mode's face. */
+  const comparison = useMemo<ModeComparison | null>(
+    () => (mode?.kind === 'compare' && faces !== null ? buildModeComparison(faces) : null),
+    [mode, faces],
+  )
+  const comparing = mode?.kind === 'compare'
+
+  const faceSkills = comparison !== null ? comparison.skills : (snapshot?.skills ?? [])
   // A managed skill scoped to another preset is deliberately absent from the
   // default preset's snapshot; the delivery status still knows it, and the
   // management grid must keep it reachable (to change its scope or release it).
   const managedRows = useMemo<CatalogSkillRow[]>(() => {
     if (scopeStatus === null) return []
-    const known = new Set(skills.map((s) => s.name))
+    const known = new Set(faceSkills.map((s) => s.name))
     return scopeStatus.skills
       .filter((row) => !known.has(row.name))
       .map((row) => ({
@@ -77,11 +108,17 @@ export function CapabilityCatalogCard({
         modelInvocable: row.modelInvocable,
         userInvocable: row.userInvocable,
       }))
-  }, [scopeStatus, skills])
-  const allSkills = useMemo(() => [...skills, ...managedRows], [skills, managedRows])
+  }, [scopeStatus, faceSkills])
+  const skills = useMemo(() => [...faceSkills, ...managedRows], [faceSkills, managedRows])
   /** Display name per preset id, for the managed cards' badge. */
   const presetNames = useMemo(
     () => new Map(presetOptions.map(option => [option.id, option.name ?? option.id])),
+    [presetOptions],
+  )
+  /** One chip per mode id a capability was found in (comparison view only). */
+  const modeChipsFor = useCallback(
+    (ids: readonly string[] | undefined): readonly CatalogModeChip[] =>
+      ids === undefined ? [] : resolveModeChips(ids, presetOptions),
     [presetOptions],
   )
   /** A managed skill's card badge names its effective presets — not its source. */
@@ -91,8 +128,35 @@ export function CapabilityCatalogCard({
     const names = row.presets.map(id => presetNames.get(id) ?? id)
     return `${t('scopePresetTag')} · ${names.length === 0 ? t('scopeAllPresets') : names.join('、')}`
   }, [scopeStatus, presetNames, t])
-  const tools = snapshot?.tools ?? []
-  const loading = snapshot == null
+  const tools = comparison !== null ? comparison.tools : (snapshot?.tools ?? [])
+  const loading = snapshot == null && comparison === null
+
+  /** Enter a mode: the store holds one face at a time, so a preset switch is a
+   * re-read at that preset's scope and the comparison is a separate fetch. */
+  const selectMode = (next: ModeSelection): void => {
+    modeRef.current = next
+    setMode(next)
+    if (next.kind === 'compare') {
+      void loadFaces()
+      return
+    }
+    setModeBusy(true)
+    void refresh(next.id).finally(() => setModeBusy(false))
+  }
+  /** Read every mode's face (the host composes a mode nothing has mounted yet). */
+  const loadFaces = async (): Promise<void> => {
+    setModeBusy(true)
+    try {
+      setFaces(await modeFaces())
+    } finally {
+      setModeBusy(false)
+    }
+  }
+  /** Re-read whatever the grid is showing: one mode's face, or every face. */
+  const reloadView = async (): Promise<void> => {
+    if (modeRef.current?.kind === 'compare') await loadFaces()
+    else await refresh(presetIdOf(modeRef.current))
+  }
 
   /** Re-fetch the catalog + MCP snapshots after any MCP mutation. MCP
    * add/remove/enable/discover changes which `mcp__` tools are registered on the
@@ -100,35 +164,46 @@ export function CapabilityCatalogCard({
    * store — or a removed server's tools linger until a manual page refresh. */
   const refreshMcp = async (): Promise<void> => {
     await Promise.all([
-      refresh(),
+      reloadView(),
       mcpSnapshot().then(setMcps),
     ])
   }
   /** Re-read the preset-scope status and roster after any scope write. */
-  const refreshScope = async (): Promise<void> => {
+  const refreshScope = async (): Promise<readonly CatalogPresetOption[]> => {
     const [status, roster] = await Promise.all([presetScopeStatus(), presetScopeRoster()])
     setScopeStatus(status ?? null)
     setPresetOptions(roster)
+    return roster
   }
 
   useEffect(() => { void refreshMcp() }, [])
-  useEffect(() => { void refreshScope() }, [])
+  useEffect(() => {
+    // The roster lands after the first read; adopt its default as the initial
+    // mode WITHOUT re-reading (the store already holds that face).
+    void refreshScope().then((roster) => {
+      const initial = roster.find(option => option.isDefault === true) ?? roster[0]
+      if (initial === undefined) return
+      const next: ModeSelection = { kind: 'preset', id: initial.id }
+      modeRef.current = next
+      setMode(next)
+    })
+  }, [])
 
   const visibleSkills = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const matched = allSkills.filter((s) =>
+    const matched = skills.filter((s) =>
       (q === '' || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
       && (skillSegment === 'all' || skillBucket(s.source) === skillSegment))
     const sorted = [...matched]
     if (sortBy === 'updated') sorted.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     else sorted.sort((a, b) => a.name.localeCompare(b.name))
     return sorted
-  }, [allSkills, query, skillSegment, sortBy])
+  }, [skills, query, skillSegment, sortBy])
 
   /** Per-segment counts for the skills grid. */
-  const skillBuiltinCount = useMemo(() => allSkills.filter((s) => skillBucket(s.source) === 'builtin').length, [allSkills])
-  const skillPluginCount = useMemo(() => allSkills.filter((s) => skillBucket(s.source) === 'plugin').length, [allSkills])
-  const skillOtherCount = useMemo(() => allSkills.filter((s) => skillBucket(s.source) === 'other').length, [allSkills])
+  const skillBuiltinCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'builtin').length, [skills])
+  const skillPluginCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'plugin').length, [skills])
+  const skillOtherCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'other').length, [skills])
 
   /** Per-segment counts for the three grid filters. */
   const builtinCount = useMemo(() => tools.filter((tool) => tool.channel === 'builtin').length, [tools])
@@ -154,8 +229,17 @@ export function CapabilityCatalogCard({
   }, [tools, query, toolSegment])
 
   /** Merged MCP server groups for the `mcp` segment: catalog-managed servers
-   * + any live-registered (mcp-<server>__<tool>) tools grouped by server. */
-  const mcpGroups = useMemo(() => buildMcpGroups(snapshot, mcps, query), [snapshot, mcps, query])
+   * + any live-registered (mcp-<server>__<tool>) tools grouped by server. The
+   * comparison view feeds it the UNION of every mode's tools, so a server only
+   * some modes see still appears. */
+  const mcpGroups = useMemo(
+    () => buildMcpGroups(
+      comparison === null ? snapshot : { skills: [], tools, mcpServers: [], channels: [] },
+      mcps,
+      query,
+    ),
+    [comparison, snapshot, tools, mcps, query],
+  )
 
   /** The MCP server group open in the manage modal (derived fresh so mutations
    * re-render it, never a stale snapshot), or null when closed. */
@@ -186,10 +270,38 @@ export function CapabilityCatalogCard({
     }
   }
 
+  /**
+   * The mode a READ of one capability should use. A preset view reads its own
+   * mode. The comparison has no single mode, so it reads where the capability
+   * actually lives — the default mode when that mode has it, else the first
+   * mode that does — and never a mode that does not register it at all.
+   */
+  const readModeFor = (name: string): string | undefined => {
+    const current = modeRef.current
+    if (current === null || current.kind === 'preset') return current?.id
+    const modes = comparison?.skillModes.get(name) ?? []
+    if (defaultPreset !== undefined && modes.includes(defaultPreset.id)) return defaultPreset.id
+    return modes[0] ?? defaultPreset?.id
+  }
+
+  /** The mode control's current value. */
+  const modeValue = mode?.kind === 'compare' ? MODE_COMPARE : (presetIdOf(mode) ?? '')
+  const handleModeChange = (value: string): void => {
+    selectMode(value === MODE_COMPARE ? { kind: 'compare' } : { kind: 'preset', id: value })
+  }
+  /** Whether a selected mode fell back to the global layer (its read carries no
+   * `preset` stamp), i.e. the preset could not compose — the grid is NOT that
+   * mode's face and must say so. */
+  const modeFellBack = !comparing
+    && mode !== null
+    && snapshot !== undefined
+    && presetIdOf(mode) !== undefined
+    && snapshot.preset !== presetIdOf(mode)
+
   const openDetail = async (name: string): Promise<void> => {
     setSelectedName(name)
     setClaim({ status: 'loading', data: undefined })
-    const data = await detail(name)
+    const data = await detail(name, readModeFor(name))
     setClaim({ status: 'done', data })
   }
   const closeDetail = (): void => {
@@ -222,7 +334,10 @@ export function CapabilityCatalogCard({
         </button>
       </div>
 
-      {!loading && kind === 'skills' && skills.length > 0 ? (
+      {/* The bar renders while a roster exists even when the current mode holds
+          nothing: the mode control lives in it, so hiding it would strand the
+          user in a mode they cannot leave from this tab. */}
+      {!loading && kind === 'skills' && (skills.length > 0 || presetOptions.length > 0) ? (
         <>
           <div className={css.filterBar} role="search">
             <div className={css.searchBox}>
@@ -240,6 +355,7 @@ export function CapabilityCatalogCard({
               <option value="name">{t('sortBy')}: {t('sortName')}</option>
               <option value="updated">{t('sortBy')}: {t('sortUpdated')}</option>
             </select>
+            <ModeSelect options={presetOptions} value={modeValue} busy={modeBusy} onSelect={handleModeChange} t={t} />
           </div>
           <SegmentBar
             segments={[
@@ -255,7 +371,7 @@ export function CapabilityCatalogCard({
         </>
       ) : null}
 
-      {!loading && kind === 'tools' && tools.length > 0 ? (
+      {!loading && kind === 'tools' && (tools.length > 0 || presetOptions.length > 0) ? (
         <>
           <div className={css.filterBar} role="search">
             <div className={css.searchBox}>
@@ -269,6 +385,7 @@ export function CapabilityCatalogCard({
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
+            <ModeSelect options={presetOptions} value={modeValue} busy={modeBusy} onSelect={handleModeChange} t={t} />
           </div>
           <SegmentBar
             segments={[
@@ -289,6 +406,28 @@ export function CapabilityCatalogCard({
         </>
       ) : null}
 
+      {comparing ? (
+        <div className={css.modeNote} aria-busy={modeBusy}>
+          {modeBusy
+            ? t('modeBusy')
+            : t('modeCompareNote')
+              .replace('{n}', String(comparison?.modes ?? 0))
+              .replace('{skills}', String(skills.length))
+              .replace('{tools}', String(tools.length))}
+          {!modeBusy && comparison !== null && comparison.unavailable.length > 0 ? (
+            <span
+              className={css.modeWarn}
+              title={comparison.unavailable.map(entry => `${entry.label}: ${entry.reason}`).join('\n')}
+            >
+              {t('modeUnavailableNote').replace('{n}', String(comparison.unavailable.length))}
+            </span>
+          ) : null}
+          {!modeBusy ? <span className={css.modeHint}>{t('modeCompareCost')}</span> : null}
+        </div>
+      ) : null}
+      {!comparing && modeBusy ? <div className={css.modeNote}>{t('modeBusy')}</div> : null}
+      {modeFellBack ? <div className={css.modeNote}>{t('modeFallback')}</div> : null}
+
       {loading ? <div className={css.empty}>{t('loading')}</div> : null}
       {!loading && kind === 'skills' && skills.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
       {!loading && kind === 'tools' && tools.length === 0 ? <div className={css.empty}>{t('toolNoMatch')}</div> : null}
@@ -303,6 +442,8 @@ export function CapabilityCatalogCard({
                   key={skill.name}
                   skill={skill}
                   tag={scopeTagOf(skill.name)}
+                  modes={comparison === null ? undefined : modeChipsFor(comparison.skillModes.get(skill.name))}
+                  onMode={handleModeChange}
                   onOpen={() => void openDetail(skill.name)}
                   onDelete={() => setDeleteTarget(skill.name)}
                   t={t}
@@ -318,6 +459,9 @@ export function CapabilityCatalogCard({
           visibleTools={visibleTools}
           mcpGroups={mcpGroups}
           segment={toolSegment}
+          comparison={comparison}
+          modeChipsFor={modeChipsFor}
+          onMode={handleModeChange}
           onOpenTool={(tool) => setToolDetail(tool)}
           onOpenServer={(name) => setMcpDetailName(name)}
           onSetEnabled={setMcpEnabled}
@@ -352,20 +496,20 @@ export function CapabilityCatalogCard({
           setCredential={setCredential}
           readSkillFile={readSkillFile}
           t={t}
-          scope={scopeEditorFor(selectedName, allSkills, scopeStatus, presetOptions, {
+          scope={scopeEditorFor(selectedName, skills, scopeStatus, presetOptions, {
             save: async (presets) => {
               const result = await presetScopeSet(selectedName, presets)
-              await Promise.all([refreshScope(), refresh()])
+              await Promise.all([refreshScope(), reloadView()])
               return result
             },
             adopt: async (presets) => {
               const result = await presetScopeAdopt(selectedName, presets)
-              await Promise.all([refreshScope(), refresh()])
+              await Promise.all([refreshScope(), reloadView()])
               return result
             },
             release: async () => {
               const result = await presetScopeRelease(selectedName)
-              await Promise.all([refreshScope(), refresh()])
+              await Promise.all([refreshScope(), reloadView()])
               return result
             },
           })}
@@ -392,10 +536,13 @@ export function CapabilityCatalogCard({
           name={deleteTarget}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={async () => {
-            const res = await deleteSkill(deleteTarget)
+            // Deleting reads the file at the mode the card was opened from: the
+            // same skill name can resolve to a different bundle in another mode.
+            const targetMode = readModeFor(deleteTarget)
+            const res = await deleteSkill(deleteTarget, targetMode)
             // The removal reaches the registry through the host's watcher after
             // the delete returns, so wait for the row to actually leave.
-            if (res.ok) await refreshSettled(s => !s.skills.some(skill => skill.name === deleteTarget))
+            if (res.ok) await refreshSettled(s => !s.skills.some(skill => skill.name === deleteTarget), targetMode)
             setDeleteTarget(null)
           }}
           t={t}
@@ -427,10 +574,51 @@ function SegmentBar({ segments, active, onSelect, t }: {
   )
 }
 
+/** One mode option's label: its published name, plus the two facts a picker must
+ * not hide — it is the deployment default, or it cannot compose a session. */
+function modeOptionLabel(option: CatalogPresetOption, t: (key: CapabilityCatalogKey) => string): string {
+  const name = option.name ?? option.id
+  if (option.broken !== undefined) return `${name}（${t('scopeBroken')}）`
+  return option.isDefault === true ? `${name}（${t('modeDefault')}）` : name
+}
+
+/**
+ * The mode control (`模式`): the grid's read position, beside the search and
+ * sort controls. One option per agent preset plus the comparison, which is how
+ * "which tools/skills does THIS mode load" and "which modes load THIS
+ * capability" are both answered from one grid.
+ *
+ * A vanished roster (no agent-preset service) renders nothing: a mode picker
+ * with no modes is noise, and the grid already reads the deployment default.
+ */
+function ModeSelect({ options, value, busy, onSelect, t }: {
+  options: readonly CatalogPresetOption[]
+  value: string
+  busy: boolean
+  onSelect: (value: string) => void
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  if (options.length === 0) return null
+  return (
+    <select
+      className={css.select}
+      value={value}
+      disabled={busy}
+      aria-label={t('modeLabel')}
+      title={t('modeHint')}
+      onChange={(e) => onSelect(e.target.value)}
+    >
+      {options.map(option => (
+        <option key={option.id} value={option.id}>{modeOptionLabel(option, t)}</option>
+      ))}
+      <option value={MODE_COMPARE}>{t('modeAll')}</option>
+    </select>
+  )
+}
+
 /** Tool-origin guidance modal: explains why a plugin tool may show as builtin and
  * copies a ready-to-send instruction (referencing the convention doc) for the
- * user's agent to read and apply. */
-function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
+ * user's agent to read and apply. */function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
   const [copied, setCopied] = useState(false)
   const copyDoc = async (): Promise<void> => {
     try {
@@ -466,16 +654,27 @@ const ADOPTABLE_SOURCES: ReadonlySet<string> = new Set([
 /**
  * The scope editor for one skill, or undefined when the deployment has no
  * delivery surface at all (no roster, no managed root).
+ *
+ * `writable` is the honest half of this face. The host writes a preset scope
+ * into the frontmatter of a skill in ITS OWN managed root (`setManagedPresetScope`
+ * answers `"<name>" is not a managed skill` for anything else), so exactly two
+ * shapes are configurable here: a skill already in that root, and one in a
+ * default root the catalog may adopt INTO it. A plugin-provided skill (source
+ * `runtime`) or a built-in one (source `bundled`) is neither: which modes see it
+ * is decided by the plugin's own row in each mode's composition, and offering
+ * the checkerboard with a Save button only produced a refusal. Those rows keep
+ * their section and get an explanation instead — `provider` names the plugin
+ * that decides.
  * @param name - the skill whose detail modal is open.
  * @param skills - the catalog rows, for the skill's own source.
  * @param status - the delivery status, or null before it first resolved.
  * @param options - the roster the picker offers.
  * @param actions - the three write paths, already bound to this skill.
- * @returns the editor face, or undefined when there is nothing to edit.
+ * @returns the editor face, or undefined when there is nothing to say.
  */
 export function scopeEditorFor(
   name: string,
-  skills: readonly { readonly name: string; readonly source: string }[],
+  skills: readonly { readonly name: string; readonly source: string; readonly provider?: string }[],
   status: CatalogPresetScopeStatus | null,
   options: readonly CatalogPresetOption[],
   actions: {
@@ -488,11 +687,14 @@ export function scopeEditorFor(
   const managedRow = status.skills.find(row => row.name === name)
   const catalogRow = skills.find(row => row.name === name)
   if (managedRow === undefined && catalogRow === undefined) return undefined
+  const adoptable = managedRow === undefined && catalogRow !== undefined && ADOPTABLE_SOURCES.has(catalogRow.source)
   return {
     managed: managedRow !== undefined,
+    adoptable,
+    writable: managedRow !== undefined || adoptable,
+    ...catalogRow?.provider === undefined ? {} : { provider: catalogRow.provider },
     declared: managedRow?.presets ?? [],
     ...managedRow?.conflict === undefined ? {} : { conflict: managedRow.conflict },
-    adoptable: managedRow === undefined && catalogRow !== undefined && ADOPTABLE_SOURCES.has(catalogRow.source),
     options,
     save: actions.save,
     adopt: actions.adopt,

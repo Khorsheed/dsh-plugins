@@ -168,6 +168,8 @@ export const zh = {
   scopeSection: '生效的 preset',
   scopeEvery: '所有 preset',
   scopeHint: '勾选这个 skill 生效的 preset；一个都不勾表示所有模式可见。改的是 skill 自己的 frontmatter。',
+  scopeProvided: '该 skill 由插件「{provider}」提供：它在哪些模式生效取决于该插件挂在哪些预设的组合里，不能在这里单独限定。',
+  scopeBuiltin: '该 skill 由部署内置提供：生效模式跟随部署组合，不能在这里单独限定。',
   scopeSave: '保存',
   scopeSaving: '保存中…',
   scopeSaved: '已保存',
@@ -178,6 +180,19 @@ export const zh = {
   scopeBroken: '加载失败',
   scopeError: '操作失败',
   scopeProbe: '这是发现/投递策略，不是权限边界；外部 agent（codex/claude/ACP）不覆盖。',
+
+  /* Mode view: which capabilities each agent preset loads. */
+  modeLabel: '模式',
+  modeHint: '切换查看的 Agent 预设；「全部模式」逐个读取后对比哪些工具/skill 出现在哪些模式里。首次对比会加载尚未挂载的预设。',
+  modeDefault: '默认',
+  modeAll: '全部模式（对比）',
+  modeIn: '出现在',
+  modeChipHint: '切换到该模式查看',
+  modeBusy: '正在读取该模式的会话插件…',
+  modeCompareNote: '对比 {n} 个模式 · 技能 {skills} · 工具 {tools}',
+  modeUnavailableNote: '{n} 个模式无法读取',
+  modeCompareCost: '对比会逐个加载每个模式的组合，未挂载过的预设可能要等一会。',
+  modeFallback: '该模式当前无法加载（组合失败或未挂载），下面显示的是全局层，不代表该模式实际可见范围。',
 }
 
 export const en = {
@@ -333,6 +348,8 @@ export const en = {
   scopeSection: 'Effective presets',
   scopeEvery: 'All presets',
   scopeHint: 'Tick the presets this skill is delivered to; none ticked means every preset sees it. This edits the skill\'s own frontmatter.',
+  scopeProvided: 'This skill comes from the plugin "{provider}": which modes load it follows the plugin\'s row in each preset\'s composition, so its scope cannot be set here.',
+  scopeBuiltin: 'This skill ships with the deployment: its modes follow the deployment composition and cannot be set here.',
   scopeSave: 'Save',
   scopeSaving: 'Saving…',
   scopeSaved: 'Saved',
@@ -343,4 +360,17 @@ export const en = {
   scopeBroken: 'Failed to load',
   scopeError: 'Failed',
   scopeProbe: 'A discovery/delivery policy, not an authorization boundary; external agents (codex/claude/ACP) are not covered.',
+
+  /* Mode view: which capabilities each agent preset loads. */
+  modeLabel: 'Mode',
+  modeHint: 'Switch the agent preset this grid reads; "All modes" reads every preset and compares which tools/skills appear in which modes. The first comparison composes presets nothing has mounted yet.',
+  modeDefault: 'default',
+  modeAll: 'All modes (compare)',
+  modeIn: 'In',
+  modeChipHint: 'Switch to this mode',
+  modeBusy: 'Reading this mode\'s session plugins…',
+  modeCompareNote: 'Compared {n} modes · {skills} skills · {tools} tools',
+  modeUnavailableNote: '{n} mode(s) could not be read',
+  modeCompareCost: 'Comparing composes each mode in turn; a preset nothing has mounted yet can take a moment.',
+  modeFallback: 'This mode cannot be composed right now (or is not mounted), so the global layer is shown — it is not that mode\'s real visibility.',
 }

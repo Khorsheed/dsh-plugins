@@ -2,6 +2,8 @@
   import type { CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { McpCard } from './McpCards.tsx'
+  import { ModeChips } from './ModeChips.tsx'
+  import type { CatalogModeChip, ModeComparison } from './mode-model.ts'
   import type { McpGroup } from './mcp-model.ts'
   import css from './CapabilityCatalogCard.module.css'
 
@@ -24,8 +26,15 @@ export function toolOrigin(tool: CatalogToolRow, t: (key: CapabilityCatalogKey) 
 
 
   /** Tool preview card — same anatomy as the skill cards (shared .pvCard / .grid),
- * so tools and skills carry ONE style that can be optimized together. */
-function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => void; t: (key: CapabilityCatalogKey) => string }) {
+ * so tools and skills carry ONE style that can be optimized together. In the
+ * comparison view a chip row names the modes that load it. */
+function ToolCard({ tool, modes, onMode, onOpen, t }: {
+  tool: CatalogToolRow
+  modes?: readonly CatalogModeChip[] | undefined
+  onMode: (id: string) => void
+  onOpen: () => void
+  t: (key: CapabilityCatalogKey) => string
+}) {
   return (
     <div className={css.pvCard}>
       <button type="button" className={css.pvMain} onClick={onOpen}>
@@ -36,6 +45,7 @@ function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => voi
         <span className={css.pvDesc}>{tool.description}</span>
         <span className={css.pvSub}>{toolOrigin(tool, t)}</span>
       </button>
+      {modes === undefined ? null : <ModeChips modes={modes} onSelect={onMode} t={t} />}
       <div className={css.pvFoot}>
         <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
           <IconBrowseOutline16 size={16} />
@@ -48,11 +58,15 @@ function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => voi
 /** The tools tab's card views following the segment filter. `all` renders both the
  * builtin/plugin tool cards AND the MCP server cards in ONE grid (so the 16px gap
  * stays uniform across them); the other segments render one set. */
-export function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOpenServer, onSetEnabled, onRemove, t }: {
+export function ToolCards({ loading, visibleTools, mcpGroups, segment, comparison, modeChipsFor, onMode, onOpenTool, onOpenServer, onSetEnabled, onRemove, t }: {
   loading: boolean
   visibleTools: readonly CatalogToolRow[]
   mcpGroups: readonly McpGroup[]
   segment: ToolSegment
+  /** The comparison model, or null when the grid shows one mode's face. */
+  comparison: ModeComparison | null
+  modeChipsFor: (ids: readonly string[] | undefined) => readonly CatalogModeChip[]
+  onMode: (id: string) => void
   onOpenTool: (tool: CatalogToolRow) => void
   onOpenServer: (name: string) => void
   onSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
@@ -71,7 +85,14 @@ export function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenToo
   return (
     <div className={css.grid}>
       {showsToolCards ? visibleTools.map((tool) => (
-        <ToolCard key={tool.name} tool={tool} onOpen={() => onOpenTool(tool)} t={t} />
+        <ToolCard
+          key={tool.name}
+          tool={tool}
+          modes={comparison === null ? undefined : modeChipsFor(comparison.toolModes.get(tool.name))}
+          onMode={onMode}
+          onOpen={() => onOpenTool(tool)}
+          t={t}
+        />
       )) : null}
       {showsMcpServers ? mcpGroups.map((g) => (
         <McpCard key={g.serverName} group={g} onOpen={() => onOpenServer(g.serverName)} onSetEnabled={onSetEnabled} onRemove={onRemove} t={t} />

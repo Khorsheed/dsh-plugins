@@ -396,6 +396,74 @@
   white-space: nowrap;
 }
 
+/* Mode chips (comparison view only): which modes load this capability. They sit
+   BELOW the card's main button — a button inside a button is invalid and would
+   fire both actions — and each chip is a jump into that mode. */
+.pvModes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.pvModesLabel {
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.modeChip {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 17px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.modeChip:hover {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The deployment default's chip carries the same tint the active pill does. */
+.modeChip[data-default='true'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* One-line note under the filter bar: the comparison's summary, the mode read's
+   busy state, or the fallback warning. */
+.modeNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.modeWarn {
+  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+  font-weight: 500;
+  cursor: help;
+}
+
+.modeHint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .pvFoot {
   display: flex;
   align-items: center;

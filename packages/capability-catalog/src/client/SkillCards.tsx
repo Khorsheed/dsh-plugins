@@ -1,6 +1,8 @@
 import { useState } from 'react'
   import { Button, IconBrowseOutline16, IconTrashOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
   import type { CatalogSkillRow } from '@khorsheed/dsh-capability-catalog/types'
+  import { ModeChips } from './ModeChips.tsx'
+  import type { CatalogModeChip } from './mode-model.ts'
   import type { CapabilityCatalogKey } from './locales.ts'
   import css from './CapabilityCatalogCard.module.css'
 
@@ -23,11 +25,15 @@ const skillSourceTag = (source: string, t: (key: CapabilityCatalogKey) => string
 }
 
   /** Preview card in the skills grid (Agent-preset anatomy): name + source tag,
- * two-line description, provider subtitle, foot actions. */
-export function SkillPreviewCard({ skill, tag, onOpen, onDelete, t }: {
+ * two-line description, provider subtitle, foot actions. In the comparison view
+ * a chip row names the modes that load it. */
+export function SkillPreviewCard({ skill, tag, modes, onMode, onOpen, onDelete, t }: {
   skill: CatalogSkillRow
   /** Overrides the source tag (a managed skill shows its preset scope instead). */
   tag?: string | undefined
+  /** The modes that load this skill (comparison view only). */
+  modes?: readonly CatalogModeChip[] | undefined
+  onMode: (id: string) => void
   onOpen: () => void
   onDelete: () => void
   t: (key: CapabilityCatalogKey) => string
@@ -43,6 +49,7 @@ export function SkillPreviewCard({ skill, tag, onOpen, onDelete, t }: {
         <span className={css.pvDesc}>{skill.description}</span>
         <span className={css.pvSub}>{skill.provider}</span>
       </button>
+      {modes === undefined ? null : <ModeChips modes={modes} onSelect={onMode} t={t} />}
       <div className={css.pvFoot}>
         <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
           <IconBrowseOutline16 size={16} />

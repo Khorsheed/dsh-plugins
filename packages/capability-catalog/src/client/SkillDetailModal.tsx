@@ -20,12 +20,27 @@ import { useState } from 'react'
     conflict?: string
     /** Whether the skill can be adopted out of a default root. */
     adoptable: boolean
+    /**
+     * Whether THIS skill's preset scope is writable at all. False for a
+     * plugin-provided or built-in skill: its modes follow the plugin's own row
+     * in each mode's composition, and the host refuses a scope write on it.
+     */
+    writable: boolean
+    /** The plugin that provides a non-writable skill, when the row names one. */
+    provider?: string
     /** Every preset the roster supplies. */
     options: readonly CatalogPresetOption[]
     save: (presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
     adopt: (presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
     release: () => Promise<CatalogPresetScopeEditResult>
   }
+
+/** Why a skill with no writable preset scope has no editor. */
+function providedScopeNote(t: (key: CapabilityCatalogKey) => string, provider: string | undefined): string {
+  return provider === undefined
+    ? t('scopeBuiltin')
+    : t('scopeProvided').replace('{provider}', provider)
+}
 
 /** Centered modal with a skill's full detail, source browser, metadata and credential config. */
 export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, t, scope }: {
@@ -135,6 +150,12 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
               </div>
               {scope.options.length === 0 ? (
                 <div className={css.scopeHint}>{t('scopeUnavailable')}</div>
+              ) : !scope.writable ? (
+                /* The host writes a preset scope only into the managed root, so a
+                   plugin-provided or built-in skill has none to edit. The section
+                   stays and explains which plugin decides, rather than showing a
+                   checkerboard whose Save the host refuses. */
+                <div className={css.scopeHint}>{providedScopeNote(t, scope.provider)}</div>
               ) : (
                 <>
                   <div className={css.scopeGrid}>
@@ -152,14 +173,18 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                     ))}
                   </div>
                   <div className={css.scopeActions}>
-                    <button
-                      type="button"
-                      className={css.addBtn}
-                      disabled={scopeBusy}
-                      onClick={() => void runScope(() => scope.save(pickedScope))}
-                    >
-                      {scopeBusy ? t('scopeSaving') : t('scopeSave')}
-                    </button>
+                    {/* A skill not yet in the managed root has nothing to save
+                        yet: its selection is the scope `adopt` installs it with. */}
+                    {scope.managed ? (
+                      <button
+                        type="button"
+                        className={css.addBtn}
+                        disabled={scopeBusy}
+                        onClick={() => void runScope(() => scope.save(pickedScope))}
+                      >
+                        {scopeBusy ? t('scopeSaving') : t('scopeSave')}
+                      </button>
+                    ) : null}
                     {scope.managed ? (
                       <button
                         type="button"

@@ -32,7 +32,7 @@ export const inject = ['slots', 'remote', 'locale']
 interface CatalogHook {
   readonly getSnapshot: () => CapabilityCatalogSnapshot | undefined
   readonly subscribe: (listener: () => void) => () => void
-  readonly refresh: () => Promise<void>
+  readonly refresh: (presetId?: string) => Promise<void>
 }
 
 /**
@@ -53,12 +53,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'capability-catalog: dictionaries')
   const t = ctx.locale.bind(NS)
 
-  // A tiny external store holding the last snapshot; refreshed on open.
+  // A tiny external store holding the last snapshot; refreshed on open and on
+  // every mode switch. `presetId` names the MODE the grid is showing: it rides
+  // into the scope of the read, so the panel's data and its mode control can
+  // never disagree about which face is on screen.
   let snapshot: CapabilityCatalogSnapshot | undefined
   const listeners = new Set<() => void>()
-  const refresh = async (): Promise<void> => {
+  const refresh = async (presetId?: string): Promise<void> => {
     try {
-      const carried = await remote?.snapshot(undefined)
+      const carried = await remote?.snapshotAt(presetId, undefined)
       if (carried === undefined || !carried.ok) return
       snapshot = carried.value
       for (const l of [...listeners]) l()
@@ -82,13 +85,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     refresh,
     // A skill write reaches the registry through the host's watcher, a moment
     // after the operation returns; one refresh therefore reads stale rows.
-    refreshSettled: (settled) => refreshUntilSettled(() => snapshot, refresh, settled),
-    detail: async (name) => {
-      const carried = await remote?.detail(name, undefined)
+    refreshSettled: (settled, presetId) => refreshUntilSettled(() => snapshot, () => refresh(presetId), settled),
+    detail: async (name, presetId) => {
+      const carried = await remote?.detail(name, undefined, presetId)
       return carried !== undefined && carried.ok ? carried.value : undefined
     },
-    readSkillFile: async (name, path) => {
-      const carried = await remote?.readSkillFile(name, path, undefined)
+    readSkillFile: async (name, path, presetId) => {
+      const carried = await remote?.readSkillFile(name, path, undefined, presetId)
       return carried !== undefined && carried.ok ? carried.value : undefined
     },
     listDirSkills: async (dirPath) => {
@@ -103,13 +106,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       const carried = await remote?.addSkill(request)
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
-    deleteSkill: async (name) => {
-      const carried = await remote?.deleteSkill(name, undefined)
+    deleteSkill: async (name, presetId) => {
+      const carried = await remote?.deleteSkill(name, undefined, presetId)
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
     pickDirectory: async () => {
       const carried = await remote?.pickDirectory()
       return carried !== undefined && carried.ok ? carried.value : null
+    },
+    modeFaces: async () => {
+      const carried = await remote?.modeFaces(undefined)
+      return carried !== undefined && carried.ok ? carried.value : []
     },
     mcpSnapshot: async () => {
       const carried = await remote?.mcpSnapshot()

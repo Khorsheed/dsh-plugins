@@ -47,6 +47,55 @@ Zero host edits. If `ctx.skills` / `ctx.tools` / `ctx.credentials` /
 `ctx.agentPresets` are absent it degrades to an empty state rather than failing
 boot.
 
+## The mode view
+
+An instance composes every session from an **agent preset** (「模式」 in the UI):
+the shipped standard / minimal / PTC / 创造 presets plus whatever a deployment or
+user authored. Each one registers a DIFFERENT set of skills and tools, and the
+**mode control beside the search and sort boxes** is how the tab shows that:
+
+- picking a preset reads the catalog at **that preset's standing scope**
+  (`snapshotAt(presetId)`), so the grid is what a session in that mode actually
+  sees — including which skills and tools that mode does *not* have;
+- **全部模式（对比）** reads every preset's face in one call (`modeFaces`) and shows
+  the union, with a chip row on each card naming the modes that load it — the
+  answer to "which modes does this skill/tool appear in?" — and a chip jumps
+  straight into that mode.
+
+A mode that cannot be read (a broken composition, a roster that resolves no
+standing scope) keeps its row and is reported as unreadable rather than rendered
+as an empty face: "this mode loads nothing" and "this mode could not be read" are
+different claims, and a comparison that conflated them would understate where a
+capability is available.
+
+Reading a mode is **not free**: resolving a preset's standing scope MOUNTS its
+composition (the roster's single-flight standing mount), so a preset nothing has
+composed yet is composed by its first read. The default mode is already mounted in
+practice — the session runs on it — while the comparison composes each of the
+others, which is why it is an explicit choice and not something the tab does on
+open. There is no cheaper honest source: a composition file names the plugins a
+mode loads, not the tools and skills those plugins register once they run.
+
+Detail and delete follow the same read position: opening a card reads that
+capability's detail and bundle at the mode the card came from, and a delete
+targets the same one (the same skill name can resolve to a different bundle in
+another mode).
+
+### A preset scope is editable only where the host will write one
+
+The skill detail modal's 「生效的 preset」 section writes `presetScope` into the
+frontmatter of a skill in the plugin's managed root, so only two shapes are
+configurable. The section now says which one it is instead of offering a Save the
+host refuses (`"<name>" is not a managed skill`):
+
+| skill | what the section shows |
+|---|---|
+| in the managed root | the preset grid + 保存 + 释放回用户技能目录 |
+| user / project / custom root | the preset grid + 移入受管目录并可限定 preset (no 保存: the selection is the scope adopt installs it with) |
+| plugin-provided (`runtime`) | why it cannot be set — the modes that load it follow the PLUGIN's row in each preset's composition |
+| built-in (`bundled`) | why it cannot be set — it follows the deployment composition |
+| no roster / no managed delivery in this deployment | the unavailable note |
+
 ## The capability fingerprint
 
 A snapshot is a LISTING — registration order, human wording, file mtimes. The

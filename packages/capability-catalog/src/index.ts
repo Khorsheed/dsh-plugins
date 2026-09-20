@@ -29,6 +29,7 @@ import type {
   CatalogMcpServerConfig,
   CatalogMcpSnapshot,
   CatalogMcpTool,
+  CatalogModeFace,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
@@ -57,7 +58,8 @@ import { toolOrigin, isValidOrigin, type ToolOrigin } from './tool-origin.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
 import { capsTag, hashOf } from './capabilities.ts'
-import { resolvePresetScope, type PresetRosterSlice } from './preset-scope.ts'
+import { resolvePresetScope, type PresetRosterRow, type PresetRosterSlice } from './preset-scope.ts'
+import { modeOptions, readModeFaces } from './modes.ts'
 
 // Community tool-origin convention: re-export the tag helpers so any plugin can
 // `import { setToolOrigin } from '@khorsheed/dsh-capability-catalog'`.
@@ -82,6 +84,7 @@ export type {
   CatalogScopedSkillRow,
   CatalogScopedPresetRow,
   CatalogPresetOption,
+  CatalogModeFace,
   CatalogPresetScopeSetRequest,
   CatalogPresetScopeAdoptRequest,
   CatalogPresetScopeEditResult,
@@ -89,7 +92,9 @@ export type {
 
 export { resolveSkillNameFromContent } from './import.ts'
 export { resolvePresetScope } from './preset-scope.ts'
-export type { PresetRosterSlice, ResolvedPresetScope } from './preset-scope.ts'
+export type { PresetRosterSlice, PresetRosterRow, ResolvedPresetScope } from './preset-scope.ts'
+// The mode view: the roster a picker offers and one face per mode.
+export { modeOptions, readModeFaces } from './modes.ts'
 export {
   ScopedSkillDelivery, scopedSkillsRoot, scanManagedSkills, managedSkillFrom,
   parsePresetScopeFrontmatter, defaultSkillRoots, detectConflicts,
@@ -266,19 +271,53 @@ export class CapabilityCatalogService extends TypertRemoteService {
       : status
   }
 
-  /** Every preset the roster supplies, for the settings surface's scope picker. */
+  /** Every preset the roster supplies, for the scope picker. */
   @Remote('presetScopeRoster')
   async presetScopeRoster(): Promise<readonly CatalogPresetOption[]> {
+    return modeOptions(await this.rosterRows(), this.agentPresets()?.defaultId)
+  }
+
+  /**
+   * Every mode's capability face in ONE call, for the cross-mode comparison
+   * view ("which modes load this tool/skill?").
+   *
+   * This is the expensive verb of the pair: a mode whose standing scope has not
+   * been composed yet is MOUNTED by its read (see modes.ts — there is no cheap
+   * honest source, because a composition file names plugins, not the tools and
+   * skills those plugins register). The browser therefore calls it only when a
+   * human chooses to compare modes, never on opening the section.
+   *
+   * A mode that cannot be read keeps its row with `unavailable` set rather than
+   * an empty face, so the comparison never claims that a broken mode loads
+   * nothing. `preset` on a face is always the id that was asked for: a read
+   * that silently degraded to the global layer is reported as unavailable, not
+   * as that mode's face.
+   * @param workdir - optional cwd for project-scoped skill roots.
+   */
+  @Remote('modeFaces')
+  async modeFaces(workdir?: string): Promise<readonly CatalogModeFace[]> {
+    const options = modeOptions(await this.rosterRows(), this.agentPresets()?.defaultId)
+    return readModeFaces(options, async (id) => {
+      try {
+        const face = await this.collect(id, workdir, false)
+        if (face.preset !== id) {
+          this.ctx.logger.warn(`capability-catalog: preset "${id}" resolved no standing scope — its mode face reads as unavailable`)
+          return undefined
+        }
+        return face
+      } catch (error) {
+        this.ctx.logger.warn(`capability-catalog: mode face read for preset "${id}" failed: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }
+    })
+  }
+
+  /** The roster rows, or [] when this composition mounts no agent-preset service. */
+  private async rosterRows(): Promise<readonly PresetRosterRow[]> {
     const roster = this.agentPresets()
     if (roster?.list === undefined) return []
     try {
-      const rows = await roster.list()
-      return rows.map(row => ({
-        id: row.id,
-        ...row.name === undefined ? {} : { name: row.name },
-        ...row.description === undefined ? {} : { description: row.description },
-        ...row.broken === undefined ? {} : { broken: row.broken },
-      }))
+      return await roster.list()
     } catch (error) {
       this.ctx.logger.warn(`capability-catalog: the preset roster could not be listed: ${error instanceof Error ? error.message : String(error)}`)
       return []
@@ -417,6 +456,27 @@ export class CapabilityCatalogService extends TypertRemoteService {
   }
 
   /**
+   * The capability face of ONE mode as a LISTING — {@link snapshot} scoped to a
+   * named preset, for the settings surface's mode picker.
+   *
+   * The LISTING/FINGERPRINT split matters here the way it does everywhere else:
+   * a viewer wants rows as fast as the registries can produce them, not every
+   * skill body loaded and digested. Asking for a preset's IDENTITY is
+   * {@link snapshotFor}. Like every scope resolution, this MOUNTS a preset
+   * nothing has composed yet.
+   *
+   * Degrades like {@link snapshot}: a preset whose standing scope refuses
+   * answers with the global layer and NO `preset` stamp, which is how a caller
+   * tells "this mode" from "the fallback" and says so.
+   * @param presetId - the mode to read, or undefined for the deployment default.
+   * @param workdir - optional cwd for project-scoped skill roots.
+   */
+  @Remote('snapshotAt')
+  async snapshotAt(presetId?: string, workdir?: string): Promise<CapabilityCatalogSnapshot> {
+    return this.collect(presetId, workdir, false)
+  }
+
+  /**
    * The capability face of ONE preset, with its {@link hashOf} digest.
    *
    * This is the fingerprint verb: every skill body is loaded (so the rows
@@ -466,19 +526,21 @@ export class CapabilityCatalogService extends TypertRemoteService {
   }
 
   @Remote('detail')
-  async detail(name: string, workdir?: string): Promise<CatalogSkillDetail | undefined> {
+  async detail(name: string, workdir?: string, presetId?: string): Promise<CatalogSkillDetail | undefined> {
     const { registry } = resolveServicesHelper(this.ctx)
     if (registry === undefined) return undefined
     // A managed skill scoped to another preset is absent from the default
     // preset's scope; the plugin's own copy keeps it visible and editable here.
-    return catalogDetail(this.ctx, registry, name, workdir, await this.catalogScope(), await this.managedDefinition(name))
+    // `presetId` carries the mode the viewer is LOOKING AT, so a card opened in
+    // mode X reads mode X's body rather than the default mode's.
+    return catalogDetail(this.ctx, registry, name, workdir, await this.catalogScope(presetId), await this.managedDefinition(name))
   }
 
   @Remote('readSkillFile')
-  async readSkillFile(name: string, filePath: string, workdir?: string): Promise<CatalogSkillFileRead | undefined> {
+  async readSkillFile(name: string, filePath: string, workdir?: string, presetId?: string): Promise<CatalogSkillFileRead | undefined> {
     const { registry } = resolveServicesHelper(this.ctx)
     if (registry === undefined) return undefined
-    return catalogReadSkillFile(registry, name, filePath, workdir, await this.catalogScope(), await this.managedDefinition(name))
+    return catalogReadSkillFile(registry, name, filePath, workdir, await this.catalogScope(presetId), await this.managedDefinition(name))
   }
 
   /** One managed skill's definition, for management reads outside its scope. */
@@ -503,10 +565,10 @@ export class CapabilityCatalogService extends TypertRemoteService {
   }
 
   @Remote('deleteSkill')
-  async deleteSkill(name: string, workdir?: string): Promise<CatalogDeleteSkillResult> {
+  async deleteSkill(name: string, workdir?: string, presetId?: string): Promise<CatalogDeleteSkillResult> {
     const { registry } = resolveServicesHelper(this.ctx)
     if (registry === undefined) return { ok: false, error: 'skills service absent in this composition' }
-    return catalogDeleteSkill(registry, name, workdir, await this.catalogScope())
+    return catalogDeleteSkill(registry, name, workdir, await this.catalogScope(presetId))
   }
 
   @Remote('pickDirectory')
