@@ -29,6 +29,11 @@ export interface ArxivLink {
  */
 const ARXIV_ID = /^(?:\d{4}\.\d{4,6}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?$/
 
+/** Whether a bare string is a syntactically valid arXiv id (the resolvers validate API answers with it). */
+export function isArxivId(value: string): boolean {
+  return ARXIV_ID.test(value)
+}
+
 /**
  * Parse an arxiv.org link to one paper.
  *

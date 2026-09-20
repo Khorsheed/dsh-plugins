@@ -9,6 +9,7 @@
     "src/arxiv.ts",
     "src/index.ts",
     "src/invariant.ts",
+    "src/link-resolvers.ts",
     "src/remote.ts",
     "src/service.ts",
     "src/schedule.ts",

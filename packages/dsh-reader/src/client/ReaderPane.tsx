@@ -253,7 +253,7 @@ function verdictForRefusal(refusal: string): Verdict {
 /** The dictionary key for each reason a link cannot be previewed. */
 const PREVIEW_KEY: Readonly<Record<ReaderPreviewFailureCode,
   | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
-  | 'preview.empty' | 'preview.unreachable' | 'preview.http'>> = {
+  | 'preview.empty' | 'preview.unreachable' | 'preview.http' | 'preview.unreadable'>> = {
   blocked: 'preview.blocked',
   login: 'preview.login',
   'unsupported-type': 'preview.unsupportedType',
@@ -261,6 +261,7 @@ const PREVIEW_KEY: Readonly<Record<ReaderPreviewFailureCode,
   empty: 'preview.empty',
   unreachable: 'preview.unreachable',
   http: 'preview.http',
+  unreadable: 'preview.unreadable',
 }
 
 /**
@@ -3133,6 +3134,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             <span className={css.sep}>·</span>
             <span>{date ?? t(when.key, when.count === undefined ? {} : { count: when.count })}</span>
             {openEntry.author !== undefined && (<><span className={css.sep}>·</span><span>{openEntry.author}</span></>)}
+            {/* A resolved link keeps its origin visible: the card landed on the
+                paper's arXiv version, but the URL the reader pasted (a DOI) is
+                the provenance, and it stays one click away. */}
+            {sourceSummary?.resolvedFrom !== undefined && (
+              <>
+                <span className={css.sep}>·</span>
+                <button
+                  type="button"
+                  className={css.incompleteLink}
+                  title={t('detail.resolvedFrom', { url: sourceSummary.resolvedFrom })}
+                  onClick={() => { props.openExternal(sourceSummary.resolvedFrom as string) }}
+                >
+                  {sourceSummary.resolvedFrom.replace(/^https?:\/\//, '')}
+                </button>
+              </>
+            )}
           </div>
           <h1 className={css.detailTitle}>{openEntry.title}</h1>
           {/* The entry's tags, and next to them the one gesture that belongs to

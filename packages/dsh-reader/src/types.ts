@@ -50,6 +50,14 @@ export type ReaderPreviewFailureCode =
   | 'unreachable'
   /** The address answered with an HTTP error status (404 and friends). */
   | 'http'
+  /**
+   * The host is KNOWN to be unreadable server-side without a request (a
+   * script-rendered app behind an anti-bot wall — OpenReview, measured). The
+   * sentence for it carries the way out (paste the arXiv version / open in a
+   * browser), so it is not folded into `blocked`, which means "we tried and
+   * the site answered a wall".
+   */
+  | 'unreadable'
 
 /**
  * Whether an automatic retry is worth the request.
@@ -112,6 +120,13 @@ export interface ReaderSource {
    * says it can only be opened in a browser.
    */
   readonly failure?: ReaderPreviewFailure
+  /**
+   * The URL the reader pasted, when this source was resolved to a canonical
+   * version of the same work (a DOI that gated into its arXiv version). The
+   * source's own `url` is the resolved one — it is what refreshes fetch — and
+   * this keeps the provenance visible.
+   */
+  readonly resolvedFrom?: string
   /** The last raw payload: feed XML for `rss`, article HTML for `link`. */
   readonly raw?: string
 }
@@ -436,6 +451,8 @@ export interface ReaderSourceSummary {
   readonly hasBody: boolean
   /** Present when this source has no previewable body (see {@link ReaderPreviewFailure}). */
   readonly failure?: { readonly code: ReaderPreviewFailureCode; readonly message: string }
+  /** The URL the reader pasted, when the source was resolved to a canonical version (see {@link ReaderSource.resolvedFrom}). */
+  readonly resolvedFrom?: string
 }
 
 /** Capability handshake: what the browser may rely on in this composition. */

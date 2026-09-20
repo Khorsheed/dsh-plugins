@@ -126,6 +126,23 @@ describe('state document', () => {
     expect(doc.refresh.timeOfDay).toBe('10:00')
   })
 
+  it('keeps every failure code the wire knows, unreadable included', () => {
+    // The card's reason sentence is keyed by the code; a code the document
+    // dropped on read would come back from a restart as "no reason".
+    const doc = normalizeStateDoc({
+      sources: [{
+        id: 'a',
+        url: 'https://openreview.net/forum?id=x',
+        kind: 'link',
+        addedAt: '2026-09-20T00:00:00.000Z',
+        resolvedFrom: 'https://doi.org/10.1038/nature16961',
+        failure: { code: 'unreadable', message: 'm', at: '2026-09-20T00:00:00.000Z' },
+      }],
+    })
+    expect(doc.sources[0]?.failure?.code).toBe('unreadable')
+    expect(doc.sources[0]?.resolvedFrom).toBe('https://doi.org/10.1038/nature16961')
+  })
+
   it('bounds a single oversize payload and flags it', () => {
     const huge = 'x'.repeat(MAX_BODY_CHARS_PER_SOURCE + 5_000)
     const doc = normalizeStateDoc({

@@ -54,7 +54,7 @@ import {
 
 /** The failure codes the document may carry, for normalization. */
 const PREVIEW_FAILURE_CODES: ReadonlySet<string> = new Set<ReaderPreviewFailureCode>([
-  'blocked', 'login', 'unsupported-type', 'redirected', 'empty', 'unreachable', 'http',
+  'blocked', 'login', 'unsupported-type', 'redirected', 'empty', 'unreachable', 'http', 'unreadable',
 ])
 
 /** How many tags one document may define (a vocabulary, not a folksonomy dump). */
@@ -407,6 +407,7 @@ function normalizeSource(value: unknown): ReaderSource | undefined {
     ...(typeof record.error === 'string' ? { error: record.error } : {}),
     ...(record.truncated === true ? { truncated: true } : {}),
     ...(failure === undefined ? {} : { failure }),
+    ...(typeof record.resolvedFrom === 'string' ? { resolvedFrom: record.resolvedFrom } : {}),
     ...(typeof record.raw === 'string' ? { raw: record.raw } : {}),
     ...(typeof record.timeOfDay === 'string' ? { timeOfDay: record.timeOfDay } : {}),
   }
