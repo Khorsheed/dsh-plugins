@@ -107,6 +107,7 @@
 - `95b7c355` 失败原因搬进浮层：内联原因行让失败卡片比邻居高、破了墙的网格——药丸全状态一行高，点红丸开浮层（原因 + 按因动作），tooltip 兜底。Agent Note：[failure-popover](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.md)。
 - `6b632348` 分栏重挂载丢筛选（3199 复现）：收窄经被动 effect 镜像进页面记忆，与最后手势同窗口的重挂载能在冲刷前卸载——补卸载 cleanup 冲刷（渲染期 ref + cleanup 总会跑）。Agent Note：[unmount-narrowing-flush](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.md)。
 - `47386c0f` 墙面去重开关「隐藏重复」（默认开）：链接归一化优先、折叠标题+同日兜底、绝不模糊；幸存卡带重复来源徽章；已读跨组归并；自动补抓不为隐藏副本花请求。Agent Note：[wall-dedupe](../../.agents/notes/implemented/feature/2026-09-21-reader-wall-dedupe.md)。
+- `f08069cc` 去重幂等修复（3080 实测）：两个聚合 feed 同一 guid 带同一篇——副本按设计共享 stableEntryId，按 id 的折叠簿记把两张都留下；改为按行位置折叠，同条目 id 升为最强分组层（三层：同 id → 归一化链接 → 折叠标题+同日，传递合并）。owning note 按事实更新。
 
 ## 验收标准（done 判定，绑定可插拔交付）
 
