@@ -62,7 +62,7 @@ await typesafe.health()   // { available, source?, reason?, lastError?, circuitO
 
 ## 边界与韧性
 
-- **超时**：`timeoutMs`（默认 1500）自己拥有 deadline，并且**与 transport 赛跑**——不响应 abort 的 transport 也不能把调用方的 turn 挂住。调用方的 `AbortSignal` 一并透传。
+- **超时**：`timeoutMs`（默认 5000）自己拥有 deadline，并且**与 transport 赛跑**——不响应 abort 的 transport 也不能把调用方的 turn 挂住。调用方的 `AbortSignal` 一并透传。
 - **重试**：`429 / 5xx` 指数退避（尊重 `retry-after`），`retries` 默认 1；`401 / 4xx` 不重试。
 - **熔断**：连续失败达 `circuitBreakerThreshold`（默认 3）后开路 `circuitCooldownMs`（默认 30s），冷却期内直接返回 `circuit-open`，不再让每条消息都等超时。
 - **缓存与合并**：`cacheTtlMs > 0` 时按 `hash(state + questions + model)` 缓存，并合并并发同问；`{ fresh: true }` 跳过缓存。
@@ -79,7 +79,7 @@ await typesafe.health()   // { available, source?, reason?, lastError?, circuitO
     apiKeyRef: TYPESAFE_API_KEY        # 只放引用名
     baseUrl: https://api.typesafe.ai   # 网关 / 私网部署改这里
     defaultModel: jev-latest
-    timeoutMs: 1500
+    timeoutMs: 5000
     retries: 1
     cacheTtlMs: 0                      # 0 = 关
     maxQuestionsPerCall: 32

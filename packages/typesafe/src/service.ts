@@ -69,7 +69,7 @@ export const TYPE_SAFE_DEFAULTS = {
   apiKeyRef: 'TYPESAFE_API_KEY',
   baseUrl: 'https://api.typesafe.ai',
   defaultModel: 'jev-latest',
-  timeoutMs: 1_500,
+  timeoutMs: 5_000,
   retries: 1,
   cacheTtlMs: 0,
   maxQuestionsPerCall: 32,

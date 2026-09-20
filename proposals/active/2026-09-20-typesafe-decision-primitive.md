@@ -72,7 +72,7 @@ type Decision = {
 ```
 
 - **具名注册表** `src/questions.ts`：`NEEDS_REPLY`（群聊是否需要模型参与）、`SHOULD_START_WORK`（是否开始干活）等以常量 + 阈值定义；工具与未来的门控引用同一份，人 review 时一处看全。
-- **配置**：`apiKeyRef`（默认 `TYPESAFE_API_KEY`）、`baseUrl`（默认 `https://api.typesafe.ai`）、`defaultModel`（默认 `jev-latest`）、`timeoutMs`（默认 1500）、`failMode`（默认 `'open'`）、`cacheTtlMs`（默认 0 = 关）、`maxConcurrent`、`retries`、`logDecisions`。
+- **配置**：`apiKeyRef`（默认 `TYPESAFE_API_KEY`）、`baseUrl`（默认 `https://api.typesafe.ai`）、`defaultModel`（默认 `jev-latest`）、`timeoutMs`（默认 5000；实测冷启动 TTFB 1.24s、三问一次调用 1375ms）、`retries`（默认 1）、`cacheTtlMs`（默认 0 = 关）、`circuitBreakerThreshold`（3）、`circuitCooldownMs`（30s）、`maxQuestionsPerCall`（32）、`logDecisions`。**fail-open / fail-closed 不设配置项**：`judge`/`decide` 返回结构化失败，策略属于调用方。
 - **纪律**：
   - 每次操作 `ctx.credentials.resolve`；缺 key → `available: false`，调用返回结构化 `unavailable` 而**不抛**；
   - `signal` 透传 + 自身 `timeoutMs` 兜底（内部 AbortController + race）；
@@ -97,7 +97,7 @@ type Decision = {
 
 ### 4. 未来消费方（M4 路线，不在本提案交付）
 
-- **"是否需要模型参与回复"**：骑既有 `agent/pre-step` waterfall（`PreStepDecision = { kind:'reject' } | { kind:'enter', messages }`；返回 `reject` = 该步不调模型、turn 以 `blocked` 结束）。门控**必须自带 bounded timeout + `failMode: 'open'`**——该 seam 是 inline await 且**无超时**，慢监听器会把 turn 1:1 拖住（见风险①）。
+- **"是否需要模型参与回复"**：骑既有 `agent/pre-step` waterfall（`PreStepDecision = { kind:'reject' } | { kind:'enter', messages }`；返回 `reject` = 该步不调模型、turn 以 `blocked` 结束）。门控**必须自带 bounded timeout + 自己的 fail-open 默认**——该 seam 是 inline await 且**无超时**，慢监听器会把 turn 1:1 拖住（见风险①）。
 - **"是否需要开始干活"（room 成员派发）**：`DispatchHooks.allows?(room, seq?): boolean` 同步且构造在 `RoomService` 内，网络分类器插不进去；要做需要上游（`allows` 异步化，或新增 `room/pre-dispatch` waterfall），走上游变更管道另附提案。今天的可行近似是用 `agent/pre-step` 在成员会话第一步判断。
 
 ### 5. 与官方 `typesafe-ai` skill 的关系（不复述、不重复）
@@ -135,7 +135,7 @@ type Decision = {
 
 ## 风险 / 放弃的东西
 
-① **关键路径延迟**。Jev 是网络 RTT，p50 / p95 取决于网络与区域。**M4 门控必须自带 bounded timeout + fail-open**（`agent/pre-step` inline await 且无超时）。core 从 M1 起提供 `timeoutMs` / `signal` / `failMode`，但门控本体不在本提案交付——多人聊天的入站模型（"不同的人如何加入同一会话"）未定，先写会绑死会被推翻的形状。
+① **关键路径延迟**。Jev 是网络 RTT，p50 / p95 取决于网络与区域。**M4 门控必须自带 bounded timeout + fail-open**（`agent/pre-step` inline await 且无超时）。core 从 M1 起提供 `timeoutMs` / `signal` 与结构化失败（fail-open 由调用方决定），但门控本体不在本提案交付——多人聊天的入站模型（"不同的人如何加入同一会话"）未定，先写会绑死会被推翻的形状。
 
 ② **不预做 DSH 之外的产品形态**。若将来要在自研多人聊天里复用，wire 模块保持零 DSH import、届时提升为独立包；本提案不做。
 
@@ -161,3 +161,7 @@ type Decision = {
   - 伴生行按仓里既定路径首次安装（`deploy:3080` 对无 bundle 的包会硬拒：必须已是 profile 依赖）——用官方 CLI 的普通依赖安装形态：`dsh plugin add <packed tgz> --profile web`，宿主如实提示 "declares no dsh.bundle — installed as a plain dependency, not a profile layer"；随后 deploy 同一命令刷新两包（时间戳 tarball）并按闸重启。
   - 授予入口：`$DSH_HOME/.agent-presets/dev/agent.cordis.yml` 增 `- id: typesafe-tool` 行（已有备份）；重启后运行实例的 skill 目录出现 `typesafe-decide`，证明该行挂载成功。
   - **门禁记录（据实）**：`pnpm gate` 两次在 `test` 步失败，失败**全部**落在 ankh-guard 的 `supervise` lane（真实起 watchog 进程 + 绑端口），当次机器 load average 9.9→20.8/8 核（宿主机另有一个跑满 CPU 的浏览器进程）；同一条 lane 在 worktree 里单独复跑 **211/211 全绿**，与本提案两个包无因果关系。gate 前 12 步（含全树 hygiene、check:plugins、profiles、release groups、package map、doc gates、test:scripts）全过。
+- **2026-09-20 首次真实调用（配置 key 后，开发模式会话，`@khorsheed/dsh-typesafe@0.1.0+2609200512`）**：
+  - 结果（三问一次调用）：`jev-1.13.0`，**1375ms**，tokens **481/70**；`topic [choice]: infra confidence=1.00`（分布 billing=0.00 other=0.00 infra=1.00）、`needs_reply [noul]: 0.88`（noul 无独立 confidence，符合设计）、`urgency [score]: 2 "今天就必须处理" confidence=1.00`。即：tool → 服务 → 凭据解析 → HTTP → 解码 → 渲染 全链路通。
+  - **第一次调用超时（默认 1500ms）**——实测到同一 endpoint 的未授权请求：经代理 TTFB **1.24s**（TLS 握手 0.95s）、绕过代理 TTFB **0.81s**；冷连接 + 三问推理 **1375ms** 贴着上限。**默认值改为 `timeoutMs: 5000`**（README 双语同步），因为默认值应当开箱可用；门控要的小预算仍由调用方按次传 `timeoutMs`。
+  - **文档纠偏**：初稿配置清单里的 `failMode` / `maxConcurrent` 从未实现——`fail-open`/`fail-closed` 是**调用方**对结构化失败的处理，不是本服务的配置项；已从提案删除（README 里原本也没列）。

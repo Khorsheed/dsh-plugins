@@ -80,7 +80,7 @@ consequences.
 
 ## Bounds and resilience
 
-- **Timeout**: `timeoutMs` (default 1500) owns a deadline that **races the transport** — a transport ignoring the
+- **Timeout**: `timeoutMs` (default 5000) owns a deadline that **races the transport** — a transport ignoring the
   abort signal still cannot hang a caller's turn. The caller's `AbortSignal` is relayed too.
 - **Retry**: `429 / 5xx` back off exponentially (honouring `retry-after`), `retries` defaults to 1; `401 / 4xx`
   never retry.
@@ -104,7 +104,7 @@ consequences.
     apiKeyRef: TYPESAFE_API_KEY        # a reference name, never the value
     baseUrl: https://api.typesafe.ai   # point at a gateway or private deployment
     defaultModel: jev-latest
-    timeoutMs: 1500
+    timeoutMs: 5000
     retries: 1
     cacheTtlMs: 0                      # 0 disables
     maxQuestionsPerCall: 32
