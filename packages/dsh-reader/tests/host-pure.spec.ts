@@ -12,7 +12,7 @@ import { arxivHtmlUrl, arxivLink } from '../src/arxiv.ts'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ReaderStore, ReaderStoreError, boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
+import { ReaderStore, ReaderStoreError, boundAnnotations, boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
 import { delayUntilNext, isCatchUpDue, nextOccurrence, parseTimeOfDay, previousOccurrence } from '../src/schedule.ts'
 import { formatReaderRef, mergedDraft, provenanceOf, relativeWhen, absoluteDate } from '../src/client/quote.ts'
 import { MAX_BODY_CHARS_PER_SOURCE } from '../src/types.ts'
@@ -141,6 +141,46 @@ describe('state document', () => {
     })
     expect(doc.sources[0]?.failure?.code).toBe('unreadable')
     expect(doc.sources[0]?.resolvedFrom).toBe('https://doi.org/10.1038/nature16961')
+  })
+
+  it('carries a captured title/excerpt on the annotation, capped, and never sweeps them as empty', () => {
+    const doc = normalizeStateDoc({
+      sources: [],
+      annotations: {
+        'link:a': {
+          title: `  ${'题'.repeat(400)}  `,
+          excerpt: '摘要两句。',
+        },
+        'link:b': { title: '   ' },
+      },
+    })
+    // Capped and trimmed on read…
+    expect(doc.annotations?.['link:a']?.title).toHaveLength(300)
+    expect(doc.annotations?.['link:a']?.excerpt).toBe('摘要两句。')
+    // …an empty one is absent, and a meta-only annotation is NOT swept: it is
+    // the card's memory of what the paper was, load-bearing past the body.
+    expect(doc.annotations?.['link:b']?.title).toBeUndefined()
+    expect(doc.annotations?.['link:b']).toBeUndefined()
+  })
+
+  it('keeps the captured meta when the body budget evicts the body', () => {
+    const annotations = Object.fromEntries(
+      Array.from({ length: 12 }, (_, index) => [`e${index}`, {
+        body: { html: '<p>x</p>', fetchedAt: `2026-09-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`, expiresAt: '2027-01-01T00:00:00.000Z', url: 'https://example.com' },
+        ...(index === 0 ? { title: '最早的论文', excerpt: '它的摘要' } : {}),
+      }]),
+    )
+    const bounded = boundAnnotations({
+      ...emptyStateDoc(),
+      cache: { ttlHours: 24, maxEntries: 5 },
+      annotations,
+    })
+    expect(bounded.changed).toBe(true)
+    // The oldest body is evicted, but its card meta survives the body.
+    const evicted = bounded.doc.annotations?.['e0']
+    expect(evicted?.body).toBeUndefined()
+    expect(evicted?.title).toBe('最早的论文')
+    expect(evicted?.excerpt).toBe('它的摘要')
   })
 
   it('bounds a single oversize payload and flags it', () => {

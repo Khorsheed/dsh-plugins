@@ -64,6 +64,17 @@ export interface ReaderCaptureRemote {
 }
 
 /**
+ * What the pane's own extraction read from the article, beyond the stored body:
+ * the article's own title and a short excerpt. A saved link's card upgrades
+ * from the URL-derived label to these; a feed entry's title is already the
+ * publisher's and is never overridden.
+ */
+export interface ReaderExtractedMeta {
+  readonly title?: string
+  readonly excerpt?: string
+}
+
+/**
  * The business face every reader surface receives from its registration.
  *
  * The wire verbs come straight off the Remote; the last four are local
@@ -110,6 +121,10 @@ export interface ReaderPaneInjected {
     scriptFigures?: number
     /** `translationHash(html)` — the entry's translation map dies with a body it no longer matches. */
     bodyHash?: string
+    /** The article's own title, as extracted — a saved link's card upgrade. */
+    title?: string
+    /** A short excerpt (the first substantial paragraph), with the title. */
+    excerpt?: string
   }) => Promise<RemoteResult<ReaderEntryBodyView>>
   /** A payload the host stored, so this process can extract it (late or never). */
   getRawBody: (entryId: string) => Promise<RemoteResult<{ entryId: string; raw?: string; url?: string; truncated?: boolean; error?: string }>>
@@ -134,9 +149,10 @@ export interface ReaderPaneInjected {
   }) => Promise<RemoteResult<ReaderEntryBodyView>>
   /**
    * Fetch one entry's article, extract it in THIS process (the host has no
-   * parser) and cache what came out. One call from the view's perspective.
+   * parser) and cache what came out. One call from the view's perspective; the
+   * extracted title/excerpt ride along for the card upgrade.
    */
-  fetchEntryBody: (entryId: string, url: string) => Promise<ReaderEntryBodyView>
+  fetchEntryBody: (entryId: string, url: string) => Promise<ReaderEntryBodyView & ReaderExtractedMeta>
   /** The tags on one entry. */
   entryTags: (entryId: string) => Promise<RemoteResult<{ tags: ReaderTag[] }>>
   /** The tag vocabulary, with per-tag usage counts. */

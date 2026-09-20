@@ -159,6 +159,8 @@ export type ReaderActions = {
   setSchedule: (draft: ReaderState, lastRefreshAt: string | undefined, nextRefreshAt: string | undefined) => void
   /** Replace one source's display label (the feed's own title, once parsed). */
   setSourceLabel: (draft: ReaderState, id: string, label: string) => void
+  /** Upgrade a saved link's card to the article's own title/excerpt; feed entries are never touched. */
+  noteExtractedMeta: (draft: ReaderState, entryId: string, meta: { title?: string; excerpt?: string }) => void
   setLoading: (draft: ReaderState, loading: boolean) => void
   setError: (draft: ReaderState, error: string | null) => void
   refresh: (draft: ReaderState) => void
@@ -320,6 +322,24 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       markRead: (d, entryId) => { d.read = { ...d.read, [entryId]: true } },
       setSourceLabel: (d, id, label) => {
         d.sources = d.sources.map(source => source.id === id ? { ...source, label } : source)
+      },
+      noteExtractedMeta: (d, entryId, meta) => {
+        if (meta.title === undefined && meta.excerpt === undefined) return
+        for (const [sourceId, parsed] of Object.entries(d.parsed)) {
+          const index = parsed.entries.findIndex(entry => entry.id === entryId)
+          if (index === -1) continue
+          // A feed entry's title is the publisher's own — the upgrade exists
+          // for saved links, whose card otherwise wears the URL forever.
+          if (d.sources.find(source => source.id === sourceId)?.kind !== 'link') return
+          const entries = parsed.entries.slice()
+          entries[index] = {
+            ...entries[index]!,
+            ...(meta.title === undefined ? {} : { title: meta.title }),
+            ...(meta.excerpt === undefined ? {} : { summary: meta.excerpt }),
+          }
+          d.parsed = { ...d.parsed, [sourceId]: { ...parsed, entries } }
+          return
+        }
       },
       setSchedule: (d, lastRefreshAt, nextRefreshAt) => {
         d.lastRefreshAt = lastRefreshAt ?? null

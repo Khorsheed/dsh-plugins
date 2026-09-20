@@ -568,6 +568,19 @@ function entryFromRecent(item: ReaderRecentEntry): ReaderEntry {
   }
 }
 
+/**
+ * The extracted meta a saved link's row carries once its card was upgraded.
+ *
+ * The `title !== sourceLabel` check is what "upgraded" means: synthesis swaps
+ * the URL-derived label for the article's own name when extraction reads one,
+ * and only then is there anything worth persisting. Feed rows never carry
+ * this — their titles are the publisher's own.
+ */
+function linkMetaOf(row: ReaderRow): { title: string; excerpt?: string } | undefined {
+  if (row.sourceKind !== 'link' || row.entry.title === row.sourceLabel) return undefined
+  return { title: row.entry.title, ...(row.entry.summary === undefined ? {} : { excerpt: row.entry.summary }) }
+}
+
 /** The reader tab body. */
 export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const { sessionId, useStore, actions, t } = props
@@ -871,8 +884,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               entries: [{
                 id: linkEntryId(source.id),
                 sourceId: source.id,
-                title: source.label,
+                // The captured title/excerpt from a past extraction beat the
+                // URL-derived label: the card should name the paper, not the
+                // address, even after the payload's eviction.
+                title: body.title ?? source.label,
                 link: source.url,
+                ...(body.excerpt === undefined ? {} : { summary: body.excerpt }),
                 // No payload at all: whatever the detail view can show is
                 // partial by definition, so it says so instead of pretending.
                 truncated: true,
@@ -903,13 +920,20 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             : { id: source.id, entries: [], error: result.error, ...(fetchedAt === undefined ? {} : { fetchedAt }) })
         } else {
           const extracted = extractArticle(body.raw, source.url)
+          // The card's title/excerpt: the article's own when THIS extraction
+          // read one, else the captured ones from an earlier extraction, else
+          // the URL-derived label — a saved link's card names the paper.
+          const extractedTitle = extracted.ok ? extracted.title : undefined
+          const extractedExcerpt = extracted.ok ? extracted.excerpt : undefined
+          const excerpt = extractedExcerpt ?? body.excerpt
           actions.setParsed({
             id: source.id,
             entries: [{
               id: linkEntryId(source.id),
               sourceId: source.id,
-              title: source.label,
+              title: extractedTitle ?? body.title ?? source.label,
               link: source.url,
+              ...(excerpt === undefined ? {} : { summary: excerpt }),
               ...(extracted.ok ? { contentHtml: extracted.html } : {}),
               // Incompleteness comes from the FETCH, not from extraction: the
               // seam truncated the page, so whatever we extracted is partial.
@@ -1112,8 +1136,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           // The map rides the body's identity: a re-extraction of the same
           // payload keeps it, a changed body retires it in the same commit.
           bodyHash: translationHash(extracted.html),
+          // The article's own title/excerpt: a saved link's card upgrade.
+          ...(extracted.title === undefined ? {} : { title: extracted.title }),
+          ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
           ...(stored.value.truncated === true ? { truncated: true } : {}),
           ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
+        })
+        actions.noteExtractedMeta(entry.id, {
+          ...(extracted.title === undefined ? {} : { title: extracted.title }),
+          ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
         })
       }
     } finally {
@@ -1134,7 +1165,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * same gesture. The body hash keeps the entry's translation map riding the
    * same identity rule as a fetched body.
    */
-  const persistFeedBody = useCallback((entryId: string, url: string, html: string, truncated: boolean) => {
+  const persistFeedBody = useCallback((entryId: string, url: string, html: string, truncated: boolean, meta?: { title?: string; excerpt?: string }) => {
     if (html.trim().length === 0) return
     void props.storeEntryBody({
       entryId,
@@ -1142,6 +1173,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       html,
       bodyHash: translationHash(html),
       ...(truncated ? { truncated: true } : {}),
+      ...(meta?.title === undefined ? {} : { title: meta.title }),
+      ...(meta?.excerpt === undefined ? {} : { excerpt: meta.excerpt }),
     }).then((stored) => {
       if (!stored.ok) return
       // The host holds a fresh body now, whichever marker said otherwise (a
@@ -1767,6 +1800,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // A fresh body just landed: the entry is no longer expired, whichever
         // screen is showing.
         actions.setStaleBody(entryId, false)
+        // A saved link's card upgrades to the article's own title/excerpt on
+        // the same gesture (the action itself refuses feed entries).
+        actions.noteExtractedMeta(entryId, {
+          ...(result.title === undefined ? {} : { title: result.title }),
+          ...(result.excerpt === undefined ? {} : { excerpt: result.excerpt }),
+        })
         if (onScreen) {
           actions.setArticle(result.html, result.truncated === true, null)
           setScriptFigures(result.scriptFigures ?? 0)
@@ -1910,7 +1949,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
           // Full text the feed itself published: keep it, or it dies with the
           // feed's window (see persistFeedBody).
-          else persistFeedBody(row.entry.id, row.entry.link as string, view.value.html, view.value.truncated === true)
+          else persistFeedBody(row.entry.id, row.entry.link as string, view.value.html, view.value.truncated === true, linkMetaOf(row))
         }
       } else if (row.entry.contentHtml !== undefined) {
         actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
@@ -1920,7 +1959,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // behind it. A feed FULL text in the same situation is kept instead —
         // there is nothing to fetch for it.
         if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
-        else persistFeedBody(row.entry.id, row.entry.link as string, row.entry.contentHtml, row.entry.truncated === true)
+        else persistFeedBody(row.entry.id, row.entry.link as string, row.entry.contentHtml, row.entry.truncated === true, linkMetaOf(row))
       } else {
         // Nothing cached, nothing from the feed, and no recorded reason.
         //

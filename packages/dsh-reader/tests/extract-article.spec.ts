@@ -500,3 +500,45 @@ describe('an image-typed <object> becomes an <img>', () => {
     expect(normalizeRichText('<p>x</p><object type="image/png" data="data:image/png;base64,AAAA"></object>')).toBe('<p>x</p>')
   })
 })
+
+/**
+ * The article's own title and a short excerpt, captured at extraction: a saved
+ * link's card upgrades from the URL-derived label to the paper's name and
+ * abstract (the wall is where "which paper was this" gets answered).
+ */
+describe('extractArticle captures the article title and an excerpt', () => {
+  const page = (head: string, body: string): string =>
+    `<html><head><title>${head}</title></head><body><article>${body}</article></body></html>`
+
+  it('prefers the body’s own first heading, and reads the first substantial paragraph', () => {
+    const prose = 'The quick brown fox jumps over the lazy dog while the document watches. '
+    const result = extractArticle(page('Site name | Whatever', `<h1>The Real Paper Title</h1><p>byline-ish</p><p>${prose.repeat(3)}</p><p>${prose}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBe('The Real Paper Title')
+    expect(result.excerpt?.startsWith('The quick brown fox')).toBe(true)
+  })
+
+  it('falls back to the document title when the body has no heading', () => {
+    const result = extractArticle(fixture('arxiv-math.html'), 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBe('A Paper Whose Formulas Are MathML')
+    expect(result.excerpt).toContain('We study the interplay between attention and recurrence')
+  })
+
+  it('truncates a long excerpt to the card’s measure', () => {
+    const result = extractArticle(page('T', `<p>${'word '.repeat(120)}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.excerpt!.length).toBeLessThanOrEqual(280)
+    expect(result.excerpt!.endsWith('…')).toBe(true)
+  })
+
+  it('reports neither when the page offers nothing', () => {
+    const result = extractArticle(page('', `<p>${'prose '.repeat(40)}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBeUndefined()
+  })
+})

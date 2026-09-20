@@ -138,6 +138,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     if (!extracted.ok) {
       return { entryId, cached: false, fresh: false, fromFeed: false, error: extracted.error }
     }
+    const meta = {
+      ...(extracted.title === undefined ? {} : { title: extracted.title }),
+      ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
+    }
     const stored = await remote.storeEntryBody({
       entryId,
       url: value.url,
@@ -145,10 +149,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       // The entry's translation map is keyed to the body's hash: a refetch that
       // changes the body retires the map in the same commit.
       bodyHash: translationHash(extracted.html),
+      ...meta,
       ...(value.truncated === true ? { truncated: true } : {}),
       ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
     })
-    return stored.ok ? stored.value : { entryId, cached: false, fresh: false, fromFeed: false, error: stored.error.message }
+    return stored.ok
+      ? { ...stored.value, ...meta }
+      : { entryId, cached: false, fresh: false, fromFeed: false, error: stored.error.message }
   }
 
   /** The injected business face, identical for whichever session mounts it. */

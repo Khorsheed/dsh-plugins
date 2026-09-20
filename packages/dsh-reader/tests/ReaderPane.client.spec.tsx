@@ -133,6 +133,8 @@ interface BenchOptions {
   readonly browserTab?: boolean
   /** True = a capture Remote (the ingest proposal's M1) probes present. */
   readonly capture?: boolean
+  /** The captured title/excerpt the host joins onto a link source's payload answer. */
+  readonly linkMeta?: Readonly<Record<string, { title?: string; excerpt?: string }>>
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -156,11 +158,18 @@ function bench(options: BenchOptions = {}) {
       ok: true as const,
       value: {
         bodies: ids.map((id): ReaderBody => {
-          if (options.failedIds?.includes(id) === true) return { id, error: 'fetch failed' }
+          // A link source's captured meta rides the payload answer, as the host joins it.
+          const meta = options.linkMeta?.[id]
+          const carried = meta === undefined ? {} : {
+            ...(meta.title === undefined ? {} : { title: meta.title }),
+            ...(meta.excerpt === undefined ? {} : { excerpt: meta.excerpt }),
+          }
+          if (options.failedIds?.includes(id) === true) return { id, error: 'fetch failed', ...carried }
           return {
             id,
             raw: options.payloads?.[id] ?? feed(id, [{ title: `条目 ${id}` }]),
             ...(options.truncatedIds?.includes(id) === true ? { truncated: true } : {}),
+            ...carried,
           }
         }),
       },
@@ -1734,6 +1743,84 @@ describe('a slower answer never lands under a newer entry\'s title', () => {
     expect(screen.getByText('Second full text on screen.')).toBeTruthy()
   })
 })
+
+describe('a saved link’s card learns the paper’s own title', () => {
+  const LINK_PAGE = '<html><head><title></title></head><body><article>'
+    + '<h1>Circadian Rhythms in Pre-Trained Representations</h1>'
+    + `<p>${'We show that representation drift follows a daily rhythm. '.repeat(6)}</p>`
+    + '</article></body></html>'
+  const linkSource = (over: Partial<ReaderSourceSummary> = {}): ReaderSourceSummary =>
+    rssSource('lnk', { kind: 'link', url: 'https://arxiv.org/abs/2604.03147', label: 'arxiv.org/2604.03147', ...over })
+
+  it('upgrades the card at load when the payload parses (title + abstract)', async () => {
+    // The user's report: a pasted link wore its URL-derived label forever.
+    // The pane extracts the payload at load either way — the card now reads
+    // what the extraction read.
+    bench({ sources: [linkSource()], payloads: { lnk: LINK_PAGE } }).settle()
+    await screen.findByText('Circadian Rhythms in Pre-Trained Representations')
+    expect(await screen.findByText(/representation drift follows a daily rhythm/)).toBeTruthy()
+  })
+
+  it('reads the captured meta when the payload is already gone', async () => {
+    // Payload evicted, extraction remembered: the host joins the captured
+    // title/excerpt onto the (missing) payload's answer.
+    bench({
+      sources: [linkSource({ hasBody: false })],
+      failedIds: ['lnk'],
+      linkMeta: { lnk: { title: 'Captured Title From Before', excerpt: 'Captured abstract sentence.' } },
+    }).settle()
+    expect(await screen.findByText('Captured Title From Before')).toBeTruthy()
+    expect(await screen.findByText('Captured abstract sentence.')).toBeTruthy()
+  })
+
+  it('upgrades the card in place when a pill fetch lands', async () => {
+    const ui = bench({
+      sources: [linkSource({ url: 'https://example.com/x', label: 'example.com/x' })],
+      payloads: { lnk: `<html><head><title></title></head><body><article><p>${'这段正文没有标题。'.repeat(30)}</p></article></body></html>` },
+    })
+    await ui.settle()
+    // No h1, no document title: the card starts on the URL-derived label.
+    await screen.findAllByText('example.com/x')
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>抓到的正文</p>',
+      title: '抓取后才知道的真标题',
+      excerpt: '抓取后的摘要句。',
+    }))
+    fireEvent.click(await screen.findByText(zh['fetch.none']))
+    expect(await screen.findByText('抓取后才知道的真标题')).toBeTruthy()
+    expect(await screen.findByText('抓取后的摘要句。')).toBeTruthy()
+  })
+
+  it('never rewrites a feed entry’s own title', async () => {
+    // The same extraction path serves feed entries (the owed-fetch on open):
+    // their titles are the publisher's and must not be replaced by a page h1.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '订阅源的标题' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('订阅源的标题')
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched</p>',
+      title: '页面自己的 h1',
+      excerpt: '页面自己的摘要。',
+    }))
+    fireEvent.click(await screen.findByText(zh['fetch.none']))
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+    // The feed's title stays; the page's h1 never lands on the card.
+    expect(screen.queryByText('页面自己的 h1')).toBeNull()
+    expect(screen.getByText('订阅源的标题')).toBeTruthy()
+  })
+})
+
 
 describe('the detail view owns up to figures it cannot fetch', () => {
   it('counts script-drawn figures and points at the original', async () => {

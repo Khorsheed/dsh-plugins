@@ -106,6 +106,18 @@ export type ExtractArticleResult =
     readonly html: string
     readonly textLength: number
     /**
+     * The article's own title, when one is recoverable: the body's first
+     * heading, else the document's `<title>`. A saved link's card upgrades from
+     * the URL-derived label to this — the wall is where "which paper was this"
+     * gets answered.
+     */
+    readonly title?: string
+    /**
+     * A short plain-text excerpt (the first substantial paragraph, truncated at
+     * the card's measure), captured with the title.
+     */
+    readonly excerpt?: string
+    /**
      * How many figures had to be dropped because the page DRAWS them.
      *
      * Measured on the acceptance instance's transformer-circuits.pub paper:
@@ -136,6 +148,10 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     return { ok: false, error: `not parseable as HTML: ${errorMessage(error)}` }
   }
 
+  // `<title>` is in DROP_TAGS, so read the document title before the strip
+  // below removes the element it is computed from.
+  const docTitle = doc.title ?? ''
+
   // Strip the noise subtrees BEFORE scoring, so every candidate is measured on
   // the same terms (a sidebar full of links otherwise wins on raw text mass).
   for (const node of Array.from(doc.querySelectorAll([...DROP_TAGS].join(',')))) {
@@ -148,6 +164,11 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
   }
 
   const scriptFigures = countScriptFigures(scored.element)
+  // Read the title and excerpt BEFORE the chrome trim: the body's own first
+  // heading is exactly what the trim removes (the pane renders the title
+  // itself), and the excerpt wants the first prose paragraph either way.
+  const title = articleTitleOf(scored.element, docTitle)
+  const excerpt = articleExcerptOf(scored.element)
   trimLeadingChrome(scored.element, doc)
   // The title block is a custom element, so it has no tag of its own: the
   // normalizer UNWRAPS it and its `<br>`s land at the front of the body. Four
@@ -162,8 +183,47 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     ok: true,
     html: normalized,
     textLength,
+    ...(title === undefined ? {} : { title }),
+    ...(excerpt === undefined ? {} : { excerpt }),
     ...(scriptFigures === 0 ? {} : { scriptFigures }),
   }
+}
+
+/**
+ * The article's own title, when one is recoverable.
+ *
+ * The body's first `<h1>` wins (on every measured shape it is the post's name);
+ * the document `<title>` is the fallback (it often carries a site-name suffix,
+ * which is why it does not lead). Capped and collapsed; empty reads as absent.
+ *
+ * @param root - the element the body was extracted from (pre-chrome-trim).
+ * @param docTitle - the document's `<title>`, read before the noise strip.
+ * @returns the title, or `undefined`.
+ */
+function articleTitleOf(root: Element, docTitle: string): string | undefined {
+  const heading = collapse(root.querySelector('h1')?.textContent ?? '')
+  const title = heading.length > 0 ? heading : collapse(docTitle)
+  return title.length === 0 ? undefined : truncateText(title, 200)
+}
+
+/**
+ * A short excerpt for the card: the first paragraph substantial enough to be
+ * prose by the scorer's own per-script rule, at the card's measure.
+ *
+ * @param root - the element the body was extracted from.
+ * @returns the excerpt, or `undefined` when no paragraph qualifies.
+ */
+function articleExcerptOf(root: Element): string | undefined {
+  for (const p of Array.from(root.querySelectorAll('p'))) {
+    const text = collapse(p.textContent ?? '')
+    if (text.length >= paragraphThreshold(text)) return truncateText(text, 280)
+  }
+  return undefined
+}
+
+/** Truncate plain text at a cap with an ellipsis. */
+function truncateText(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
 }
 
 /**
