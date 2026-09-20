@@ -24,7 +24,7 @@ The pill keeps one-line height for every state; the reason and the cause's actio
 ## Consequences
 
 - Failed cards are grid-identical to healthy ones; the failure is still the most visible thing on the card (red pill), and its reason + way out are one tap.
-- The `fire`-on-pill-click semantics of the taxonomy are gone from the wall: the pill never performs a network action directly any more — retry is a deliberate second click inside the popover, which also matches the "not a crawler with a grudge" policy's spirit.
+- The failed pill's click semantics changed from fire-on-contact to reveal-first: retry is a deliberate second click inside the popover, which also matches the "not a crawler with a grudge" policy's spirit. The not-failed states (none/fetching/raw) still fetch on click, unchanged.
 - No new locale keys: the popover composes the existing reason/retry/open sentences; the two tooltip strings were re-worded (zh+en).
 
 ## Testing
