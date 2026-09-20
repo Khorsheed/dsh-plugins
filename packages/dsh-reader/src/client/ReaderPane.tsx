@@ -64,6 +64,7 @@ import {
 } from './translate.ts'
 import {
   countUnread,
+  dedupeRows,
   flattenEntries,
   fetchStateOf,
   LIST_RENDER_LIMIT,
@@ -604,6 +605,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const filter = useStore(s => s.filter)
   const query = useStore(s => s.query)
   const unreadOnly = useStore(s => s.unreadOnly)
+  const hideDupes = useStore(s => s.hideDupes)
   const sort = useStore(s => s.sort)
   const read = useStore(s => s.read)
   const lastRefreshAt = useStore(s => s.lastRefreshAt)
@@ -700,6 +702,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       ...(patch.query === undefined ? {} : { query: patch.query }),
       ...(patch.sort === undefined ? {} : { sort: patch.sort }),
       ...(patch.unreadOnly === undefined ? {} : { unreadOnly: patch.unreadOnly }),
+      ...(patch.hideDupes === undefined ? {} : { hideDupes: patch.hideDupes }),
       ...(patch.read === undefined ? {} : { read: patch.read }),
     })
   }, [actions])
@@ -826,11 +829,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (!mirrorStartedRef.current) { mirrorStartedRef.current = true; return }
     if (!hydrateStartedRef.current) return
     patchSession({
-      view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+      view, openEntryId, openSourceId, filter, query, sort, unreadOnly, hideDupes, read,
       wallOn, wallBoth, cardTranslations,
     })
   }, [
-    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, hideDupes, read,
     wallOn, wallBoth, cardTranslations,
   ])
 
@@ -846,7 +849,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const narrowingRef = useRef<Parameters<typeof patchSession>[0] | null>(null)
   narrowingRef.current = {
-    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, hideDupes, read,
     wallOn, wallBoth, cardTranslations,
   }
   useEffect(() => () => {
@@ -1209,6 +1212,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const rows = useMemo(() => selectRows(allEntries, presentation, {
     filter, query, unreadOnly, sort, read, tags: entryTagIds, now: new Date(),
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
+
+  /**
+   * The wall's dedupe: republished articles fold behind one card (survivor and
+   * hidden copies per `dedupeRows`). The `dupesBy` map is what the surviving
+   * card's badge reads; hiddenCount feeds the footer. When the switch is off
+   * the maps are empty and displayRows IS rows — the fold is invisible.
+   */
+  const { rows: displayRows, dupesBy, hiddenCount } = useMemo(
+    () => (hideDupes ? dedupeRows(rows, fetchStates) : { rows, dupesBy: new Map<string, readonly ReaderRow[]>(), hiddenCount: 0 }),
+    [hideDupes, rows, fetchStates],
+  )
+  // The wall's own observer pass reads the displayed rows, like the renderer.
+  rowsRef.current = displayRows
 
   /**
    * One entry by id: the wall's own parse first, the recent record as a fallback.
@@ -1623,7 +1639,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   // eighty fields, and firing them all at once would be a burst the sequential
   // API cannot absorb. So: the browser's own IntersectionObserver feeds a queue,
   // one pass drains it, and the translation memory makes a second pass free.
-  rowsRef.current = rows
+  // (rowsRef is fed where the displayed rows are computed, dedupe included.)
   const wallTranslateOffered = translator !== null && wallAvailability !== null && wallAvailability !== 'unavailable'
 
   // Probe the browser once for the wall's pair (the wall has no single body, so
@@ -2305,7 +2321,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       scroller.removeEventListener('touchmove', mark)
       scroller.removeEventListener('keydown', mark)
     }
-  }, [view, rows.length])
+  }, [view, displayRows.length])
 
   // Put the wall back where it was, once per entry into the list view: a long
   // wall that jumps to the top on every panel switch is the same complaint as a
@@ -2315,13 +2331,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (view !== 'list') { wallRestoredRef.current = false; return }
     if (wallRestoredRef.current) return
     const scroller = wallRef.current
-    if (scroller === null || rows.length === 0) return
+    if (scroller === null || displayRows.length === 0) return
     wallRestoredRef.current = true
     const target = readSession().wallScroll
     if (target === undefined || target <= 0) return
     scroller.scrollTop = target
     wallEchoRef.current = scroller.scrollTop
-  }, [view, rows.length])
+  }, [view, displayRows.length])
 
   /**
    * A rebuilt body means the old segmentation died with the old DOM — so the
@@ -2544,13 +2560,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [actions, props, refreshFetchStates])
 
   // Automatic, after the wall has something to look at — never before, so the
-  // reader never waits on the network for a list they already had.
+  // reader never waits on the network for a list they already had. A folded
+  // duplicate's copy is not fetched while it is hidden: the survivor answers.
   useEffect(() => {
     if (loading || allEntries.length === 0) return
-    void backfillBodies(selectRows(allEntries, presentation, {
+    const pool = selectRows(allEntries, presentation, {
       filter: 'all', query: '', unreadOnly: false, sort, read, tags: entryTagIds, now: new Date(),
-    }))
-  }, [loading, allEntries, presentation, sort, read, entryTagIds, backfillBodies])
+    })
+    void backfillBodies(hideDupes ? dedupeRows(pool).rows : pool)
+  }, [loading, allEntries, presentation, sort, read, entryTagIds, hideDupes, backfillBodies])
 
   // Any menu/panel dismisses on the next click outside it — the host's own
   // menus behave that way, and a popover that outlives its context is a trap.
@@ -2724,7 +2742,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         <IconGlobeOutline14 size={14} />
         {t('tab.label')}
         <span className={css.count} title={t('filter.unreadOnly')}>
-          {countUnread(rows)} {t('foot.unread')}
+          {countUnread(displayRows)} {t('foot.unread')}
         </span>
       </span>
       <button
@@ -2842,6 +2860,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
                     <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
                     <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
+                  </button>
+                  {/* The dedupe switch lives with the wall's other narrowing:
+                      it decides what the wall shows, not how it looks. */}
+                  <button type="button" className={css.filterRow} onClick={() => actions.toggleHideDupes()}>
+                    <span className={css.filterCheck}>{hideDupes ? '✓' : ''}</span>
+                    <span className={css.filterLabel}>{t('filter.hideDupes')}</span>
                   </button>
                   {/* The drill row carries the CURRENT value, so a narrowing
                       filter is never hidden one level down: the reader sees
@@ -4000,16 +4024,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             ))}
           </div>
         )}
-        {!loading && sources.length > 0 && rows.length === 0 && (
+        {!loading && sources.length > 0 && displayRows.length === 0 && (
           <div className={css.state}>
             {/* An empty query is not a failed search. Saying "nothing matches
                 "" " told the reader nothing while a whole feed was unreadable. */}
             {query.trim().length === 0 ? t('state.emptyWall') : t('state.noMatch', { query })}
           </div>
         )}
-        {!loading && rows.length > 0 && (
+        {!loading && displayRows.length > 0 && (
           <div className={css.list}>
-            {rows.map(row => {
+            {displayRows.map(row => {
               // The card's text box is FIXED (two clamped lines per field, see
               // the CSS), because Chinese and English wrap differently: swapping
               // languages must not resize the card or shift the grid.
@@ -4034,6 +4058,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 rowSource?.failure?.code,
                 parsed[row.sourceId]?.error ?? t('detail.extractFailed'),
               )
+              // The duplicates this card stands for, when the wall's dedupe
+              // folded them behind it (a badge, never a deletion).
+              const dupes = dupesBy.get(row.entry.id) ?? []
               // Only a field that actually has a translation can be peeked: an
               // untranslated (or Chinese) card keeps its ordinary hover.
               const peekable = (field: 'title' | 'summary'): boolean => wallOn && !wallBoth && card?.[field] !== undefined
@@ -4089,6 +4116,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   )}
                   {linkOnly && (
                     <span className={css.tagLinkOnly} title={linkOnlyReason}>{t('detail.linkOnlyBadge')}</span>
+                  )}
+                  {dupes.length > 0 && (
+                    <span
+                      className={css.tagOwned}
+                      title={t('dedupe.title', { sources: dupes.map(dupe => dupe.sourceLabel).join('、') })}
+                    >
+                      {t('dedupe.badge', { count: dupes.length })}
+                    </span>
                   )}
                   {(entryTagIds[row.entry.id] ?? []).map(tagId => (
                     <span key={tagId} className={css.tagOwned}>
@@ -4187,7 +4222,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 how "the search returned six other posts" gets reported. */}
             {query.trim() !== '' && (
               <>
-                <span>{t('state.matches', { count: rows.length, query: query.trim() })}</span>
+                <span>{t('state.matches', { count: displayRows.length, query: query.trim() })}</span>
+                <span className={css.sep}>·</span>
+              </>
+            )}
+            {hiddenCount > 0 && (
+              <>
+                <span>{t('foot.deduped', { count: hiddenCount })}</span>
                 <span className={css.sep}>·</span>
               </>
             )}

@@ -831,6 +831,62 @@ describe('the filter popover narrows the wall', () => {
   })
 })
 
+describe('the wall hides republished duplicates behind one card', () => {
+  // The aggregator's copy carries tracking parameters; the link is otherwise the same.
+  const aggFeed = '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>agg</title><item>'
+    + '<title>An Alien Mind</title><link>https://example.com/alien?utm_source=feed</link>'
+    + '<pubDate>2026-09-17T08:00:00.000Z</pubDate><description>聚合摘要</description></item></channel></rss>'
+  const origFeed = '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>orig</title><item>'
+    + '<title>An Alien Mind</title><link>https://example.com/alien</link>'
+    + '<pubDate>2026-09-17T09:00:00.000Z</pubDate><description>原始摘要</description></item></channel></rss>'
+  const twoSources = () => bench({
+    sources: [rssSource('agg', { label: '聚合源' }), rssSource('orig', { label: '原始博客' })],
+    payloads: { agg: aggFeed, orig: origFeed },
+  })
+
+  it('shows one card with a duplicates badge, and the footer says so', async () => {
+    const ui = await twoSources()
+    await ui.settle()
+    // One card, not two; the badge counts the hidden copies and names them.
+    await waitFor(() => {
+      expect(screen.getAllByText('An Alien Mind')).toHaveLength(1)
+    })
+    const badge = await screen.findByText(zh['dedupe.badge'].replace('{count}', '1'))
+    // The hidden copy is the aggregator's (its feed's own title wins the label).
+    expect(badge.getAttribute('title')).toContain('agg')
+    expect(await screen.findByText(zh['foot.deduped'].replace('{count}', '1'))).toBeTruthy()
+  })
+
+  it('the toggle in the filter popover shows both copies again', async () => {
+    const ui = await twoSources()
+    await ui.settle()
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(1) })
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(await screen.findByText(zh['filter.hideDupes']))
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(2) })
+    expect(screen.queryByText(zh['dedupe.badge'].replace('{count}', '1'))).toBeNull()
+    // …and it survives a remount, like every narrowing (persisted in the snapshot).
+    ui.unmount()
+    const second = twoSources()
+    await second.settle()
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(2) })
+  })
+
+  it('reads as read when either copy was opened', async () => {
+    const ui = await twoSources()
+    await ui.settle()
+    const card = (await screen.findAllByText('An Alien Mind'))[0]!.closest('[data-reader-entry]') as HTMLElement
+    expect(card.getAttribute('data-unread')).not.toBeNull()
+    fireEvent.click(card)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      const again = screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement
+      expect(again.getAttribute('data-unread')).toBeNull()
+    })
+  })
+})
+
 describe('an unreadable payload says so on the wall', () => {
   it('marks the source and explains the cap', async () => {
     const truncatedFeed = '<rss version="2.0"><channel><title>probe</title>'
@@ -1104,10 +1160,10 @@ describe('the filter panel cascades into the source list', () => {
     await ui.settle()
     fireEvent.click(screen.getByTitle(zh['action.filter']))
     const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
-    // Root = read state (2 rows) + the source drill row + the type rows
-    // (all / feed / saved link). The nine sources are NOT here: that is what
-    // keeps the panel usable as subscriptions accumulate.
-    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(5)
+    // Root = read state (unread + hide-duplicates) + the source drill row + the
+    // type rows (all / feed / saved link). The nine sources are NOT here: that
+    // is what keeps the panel usable as subscriptions accumulate.
+    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(6)
     // …and the drill row carries the current value, so nothing is hidden.
     expect(panel.querySelector('[class*="filterValue"]')?.textContent).toBe(zh['filter.all'])
     fireEvent.click(screen.getByText(zh['filter.bySource']))

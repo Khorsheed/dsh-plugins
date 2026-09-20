@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import type { ReaderEntry } from '../src/client/parse-rss.ts'
 import {
   countUnread,
+  dedupeRows,
   flattenEntries,
   fetchStateOf,
   hueForSource,
@@ -180,5 +181,112 @@ describe('fetchStateOf', () => {
     // through, not just the fact of the failure.
     const failed = { state: 'failed' as const, at: '2026-09-20T00:00:00.000Z', message: 'HTTP 403', code: 'blocked' as const }
     expect(fetchStateOf({ a: { state: 'ready' }, b: failed }, 'b')).toBe(failed)
+  })
+})
+
+/**
+ * Wall dedupe: aggregated feeds republish the same article (the reader's wall
+ * had "An Alien Mind" from two feeds). Group by normalized link first, then by
+ * folded title + same published day — never fuzzy: a miss costs a duplicate
+ * card, a false positive costs an article.
+ */
+describe('dedupeRows', () => {
+  /** A row as selectRows emits it, straight from the parts a group cares about. */
+  const row = (over: {
+    id: string
+    sourceId?: string
+    title?: string
+    link?: string
+    publishedAt?: string
+    unread?: boolean
+    sourceLabel?: string
+  }) => {
+    const sourceId = over.sourceId ?? 's1'
+    const source = sources.get(sourceId)!
+    return {
+      entry: entry({
+        id: over.id,
+        sourceId,
+        ...(over.title === undefined ? {} : { title: over.title }),
+        ...(over.link === undefined ? {} : { link: over.link }),
+        ...(over.publishedAt === undefined ? {} : { publishedAt: over.publishedAt }),
+      }),
+      sourceId,
+      sourceLabel: over.sourceLabel ?? source.label,
+      sourceTile: source.tile,
+      sourceHue: source.hue,
+      sourceAddedAt: source.addedAt,
+      sourceKind: source.kind,
+      unread: over.unread ?? true,
+    }
+  }
+
+  it('groups the same link across feeds, protocol/www/utm differences included', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/papers/alien?utm_source=feed&utm_medium=rss', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', link: 'https://www.example.com/papers/alien/?ref=share', publishedAt: yesterday }),
+      row({ id: 'c', sourceId: 's1', link: 'https://example.com/papers/other', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.entry.id)).toEqual(['a', 'c'])
+    expect(result.hiddenCount).toBe(1)
+    // The survivor is the NEWEST member; the hidden one rides with it.
+    expect(result.dupesBy.get('a')?.map(r => r.entry.id)).toEqual(['b'])
+  })
+
+  it('groups by folded title + same day only when no link matches', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', title: 'An Alien Mind: Notes', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', title: 'an alien mind— notes!', publishedAt: '2026-09-17T01:00:00.000Z' }),
+      // Same title, another day: NOT a duplicate — a miss beats a false positive.
+      row({ id: 'c', sourceId: 's2', title: 'An Alien Mind: Notes', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.entry.id)).toEqual(['a', 'c'])
+    expect(result.dupesBy.get('a')?.map(r => r.entry.id)).toEqual(['b'])
+  })
+
+  it('never groups undated or untitled entries, and never two links that differ', () => {
+    const rows = [
+      row({ id: 'a', title: 'Same Title Same Title' }),                    // no date
+      row({ id: 'b', title: 'same title same title' }),                    // no date
+      row({ id: 'c', link: 'https://example.com/a?utm_campaign=x', publishedAt: todayIso }),
+      row({ id: 'd', link: 'https://example.com/a?page=2', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows).toHaveLength(4)
+    expect(result.hiddenCount).toBe(0)
+  })
+
+  it('prefers the member with a fetched body when the mirror says so', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', link: 'https://example.com/p', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows, { b: { state: 'ready', at: todayIso } })
+    expect(result.rows.map(r => r.entry.id)).toEqual(['b'])
+    expect(result.dupesBy.get('b')?.map(r => r.entry.id)).toEqual(['a'])
+  })
+
+  it('merges read state across the group: one read copy reads the card', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso, unread: true }),
+      row({ id: 'b', sourceId: 's2', link: 'https://example.com/p', publishedAt: yesterday, unread: false }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows[0]?.unread).toBe(false)
+    // …but nothing unread was invented, either.
+    const bothUnread = dedupeRows(rows.map(r => ({ ...r, unread: true })))
+    expect(bothUnread.rows[0]?.unread).toBe(true)
+  })
+
+  it('keeps the survivor at its own position in the row order', () => {
+    const rows = [
+      row({ id: 'x', sourceId: 's1', link: 'https://example.com/else', publishedAt: todayIso }),
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', link: 'https://example.com/p', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.entry.id)).toEqual(['x', 'a'])
   })
 })

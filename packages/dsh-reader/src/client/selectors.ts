@@ -292,6 +292,154 @@ export function countUnread(rows: readonly ReaderRow[]): number {
   return rows.reduce((count, row) => count + (row.unread ? 1 : 0), 0)
 }
 
+/* -------------------------------------------------------------- wall dedupe */
+
+/**
+ * Wall dedupe: aggregated feeds republish the same article, and the wall
+ * should show it once (measured on the reader's own wall: "An Alien Mind"
+ * under both an aggregator and the source blog).
+ *
+ * Grouping is deliberately NEVER fuzzy — a miss costs one duplicate card, a
+ * false positive costs an article:
+ *
+ * 1. **Normalized link** (any entry that has one): scheme, `www.` and
+ *    trailing slashes stripped, tracking parameters (`utm_*`, `fbclid`,
+ *    `gclid`, `ref`, `spm`, …) removed, the rest of the query sorted.
+ * 2. **Folded title + same published day**, only when no link grouped: case,
+ *    accents and punctuation folded; BOTH entries must carry a comparable
+ *    date, so undated saved links never title-group.
+ */
+
+/** Query keys that never change which article a link names. */
+const TRACKING_PARAMS: ReadonlySet<string> = new Set([
+  'fbclid', 'gclid', 'spm', 'ref', 'ref_src', 'source', 'mc_cid', 'mc_eid', 'igshid',
+])
+
+/** The dedupe key for an entry's link, or `undefined` when it has none worth one. */
+function linkKey(link: string | undefined): string | undefined {
+  if (link === undefined) return undefined
+  try {
+    const url = new URL(link.trim())
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+    const host = url.hostname.toLowerCase().replace(/^www\./, '')
+    const path = url.pathname.replace(/\/+$/, '')
+    const params = [...url.searchParams.entries()]
+      .filter(([key]) => !/^utm_/i.test(key) && !TRACKING_PARAMS.has(key.toLowerCase()))
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    const query = params.map(([key, value]) => `${key}=${value}`).join('&')
+    return `${host}${path}${query === '' ? '' : `?${query}`}`
+  } catch {
+    return undefined
+  }
+}
+
+/** The dedupe key for an entry's title + day, or `undefined` when either is missing. */
+function titleDayKey(entry: ReaderEntry): string | undefined {
+  const title = entry.title
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+  // A handful of characters is a topic, not a title: folding "Go 语言" onto
+  // itself across two feeds is a false positive, not a duplicate.
+  if (title.length < 6) return undefined
+  const parsed = entry.publishedAt === undefined ? Number.NaN : new Date(entry.publishedAt).getTime()
+  if (Number.isNaN(parsed)) return undefined
+  return `${title}|${entry.publishedAt!.slice(0, 10)}`
+}
+
+/** The group key for one entry, or `undefined` when it can never be a duplicate. */
+function dedupeKeyOf(entry: ReaderEntry): string | undefined {
+  const link = linkKey(entry.link)
+  if (link !== undefined) return `l:${link}`
+  const title = titleDayKey(entry)
+  return title === undefined ? undefined : `t:${title}`
+}
+
+/** The result of hiding duplicates behind their survivors. */
+export interface DedupedRows {
+  /** The rows to render: one per group, in the input's order. */
+  readonly rows: ReaderRow[]
+  /** Survivor entry id → the rows it hides (input order). */
+  readonly dupesBy: ReadonlyMap<string, readonly ReaderRow[]>
+  readonly hiddenCount: number
+}
+
+/**
+ * Fold duplicate rows into their survivors.
+ *
+ * Survivor choice, in order: a member whose body the host already holds
+ * (a `ready` fetch state — the fetched copy opens instantly) beats a NEWER
+ * member, and a tie keeps the input order. The survivor sits at its own
+ * position in the row order. Read state merges across the group: the card
+ * reads as read when ANY copy was read. Hidden rows are reported, never
+ * deleted — the card badges them.
+ *
+ * @param rows - the wall's rows (selectRows' output: filtered and sorted).
+ * @param fetchStates - the pane's fetch-state mirror, for the ready signal.
+ * @returns the rows to render, and where the hidden ones went.
+ */
+export function dedupeRows(
+  rows: readonly ReaderRow[],
+  fetchStates: Readonly<Record<string, ReaderEntryFetchState>> = {},
+): DedupedRows {
+  const groups = new Map<string, ReaderRow[]>()
+  const keys = new Map<string, string>() // entry id → group key
+  for (const row of rows) {
+    const key = dedupeKeyOf(row.entry)
+    if (key === undefined) continue
+    keys.set(row.entry.id, key)
+    const group = groups.get(key)
+    if (group === undefined) groups.set(key, [row])
+    else group.push(row)
+  }
+  if (groups.size === 0) return { rows: [...rows], dupesBy: new Map(), hiddenCount: 0 }
+
+  /** The survivor of one group: a cached body first, then newest, then input order. */
+  const survivorOf = (members: ReaderRow[]): ReaderRow => {
+    let best = members[0]!
+    for (const member of members.slice(1)) {
+      const ready = fetchStates[member.entry.id]?.state === 'ready'
+      const bestReady = fetchStates[best.entry.id]?.state === 'ready'
+      if (ready !== bestReady) {
+        if (ready) best = member
+        continue
+      }
+      if (timeOf(member) > timeOf(best)) best = member
+    }
+    return best
+  }
+
+  const dupesBy = new Map<string, readonly ReaderRow[]>()
+  const survivorIds = new Set<string>()
+  let hiddenCount = 0
+  for (const members of groups.values()) {
+    if (members.length === 1) continue
+    const survivor = survivorOf(members)
+    survivorIds.add(survivor.entry.id)
+    const hidden = members.filter(member => member.entry.id !== survivor.entry.id)
+    hiddenCount += hidden.length
+    dupesBy.set(survivor.entry.id, hidden)
+  }
+  const out = rows
+    .filter(row => {
+      const key = keys.get(row.entry.id)
+      if (key === undefined) return true
+      const group = groups.get(key)!
+      if (group.length === 1) return true
+      return survivorIds.has(row.entry.id)
+    })
+    .map(row => {
+      const hidden = dupesBy.get(row.entry.id)
+      if (hidden === undefined) return row
+      // Read state merges across the group: one read copy reads the card.
+      const mergedUnread = ![row, ...hidden].some(member => !member.unread)
+      return mergedUnread === row.unread ? row : { ...row, unread: mergedUnread }
+    })
+  return { rows: out, dupesBy, hiddenCount }
+}
+
 /** A short, stable, source-derived monogram tile (design decision D11). */
 export function tileForSource(label: string): string {
   const first = label.trim().slice(0, 1)

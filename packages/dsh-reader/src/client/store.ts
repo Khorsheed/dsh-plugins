@@ -88,6 +88,8 @@ export interface ReaderState {
   query: string
   /** Whether to show only entries with no read cursor. */
   unreadOnly: boolean
+  /** Whether the wall folds republished duplicates behind one card (default ON). */
+  hideDupes: boolean
   /** The list order. */
   sort: ReaderSort
   /** Source ids the user has opened (the session's read cursor). */
@@ -122,6 +124,8 @@ export interface ReaderSessionRestore {
   readonly query?: string
   readonly sort?: ReaderSort
   readonly unreadOnly?: boolean
+  /** The dedupe switch rides the same restore as every other narrowing. */
+  readonly hideDupes?: boolean
   readonly read?: Record<string, true>
 }
 
@@ -154,6 +158,7 @@ export type ReaderActions = {
   setFilter: (draft: ReaderState, filter: ReaderFilter) => void
   setQuery: (draft: ReaderState, query: string) => void
   toggleUnreadOnly: (draft: ReaderState) => void
+  toggleHideDupes: (draft: ReaderState) => void
   setSort: (draft: ReaderState, sort: ReaderSort) => void
   markRead: (draft: ReaderState, entryId: string) => void
   setSchedule: (draft: ReaderState, lastRefreshAt: string | undefined, nextRefreshAt: string | undefined) => void
@@ -192,6 +197,9 @@ const INITIAL: ReaderState = {
   filter: 'all',
   query: '',
   unreadOnly: false,
+  // Duplicates fold by default: a republished article is one card, and showing
+  // it twice is the noise the reader reported.
+  hideDupes: true,
   sort: 'newest',
   read: {},
   lastRefreshAt: null,
@@ -233,6 +241,7 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
         if (restore.query !== undefined) d.query = restore.query
         if (restore.sort !== undefined) d.sort = restore.sort
         if (restore.unreadOnly !== undefined) d.unreadOnly = restore.unreadOnly
+        if (restore.hideDupes !== undefined) d.hideDupes = restore.hideDupes
         if (restore.read !== undefined) d.read = restore.read
       },
       setView: (d, view) => { d.view = view },
@@ -318,6 +327,7 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       setFilter: (d, filter) => { d.filter = filter },
       setQuery: (d, query) => { d.query = query },
       toggleUnreadOnly: (d) => { d.unreadOnly = !d.unreadOnly },
+      toggleHideDupes: (d) => { d.hideDupes = !d.hideDupes },
       setSort: (d, sort) => { d.sort = sort },
       markRead: (d, entryId) => { d.read = { ...d.read, [entryId]: true } },
       setSourceLabel: (d, id, label) => {
