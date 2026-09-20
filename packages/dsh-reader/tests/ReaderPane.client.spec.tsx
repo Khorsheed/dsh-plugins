@@ -1648,6 +1648,84 @@ describe('the card says what the plugin holds, and fetches on demand', () => {
   })
 })
 
+describe('the card learns what the pane just did', () => {
+  /** A feed entry whose publisher ships only a summary: opening it owes a fetch. */
+  const summaryFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+  const paperId = 'g:https://example.com/paper'
+
+  /**
+   * A mock host document: what `entryFetchStates` answers is whatever the
+   * writes have made true — exactly how the real service derives states from
+   * its annotations. A fixed-answer mock would let these tests pass without
+   * the pane having propagated anything.
+   */
+  function hostModel(ui: ReturnType<typeof bench>, options: { readonly fail?: boolean } = {}): void {
+    const held = new Map<string, ReaderEntryFetchState>()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => {
+      if (options.fail === true) {
+        held.set(entryId, { state: 'failed', at: new Date().toISOString(), message: 'HTTP 403', code: 'blocked' })
+        return { entryId, cached: false, fresh: false, fromFeed: false, error: 'HTTP 403' }
+      }
+      held.set(entryId, { state: 'ready', at: new Date().toISOString() })
+      return { entryId, cached: true, fresh: true, fromFeed: false, html: '<p>the fetched paper body</p>' }
+    })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: { states: Object.fromEntries(entryIds.map(id => [id, held.get(id) ?? { state: 'none' as const }])) },
+    }))
+  }
+
+  it('flips the card to 已抓取 when the detail view fetched the body', async () => {
+    // The reported symptom: the card said 抓取, the reader opened the article
+    // (which fetched and cached the body), came back — and the card still said
+    // 抓取 until the next mount, because the open path never told the mirror.
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed('tc') } })
+    hostModel(ui)
+    await ui.settle()
+    expect(await screen.findByText(zh['fetch.none'])).toBeTruthy()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The detail view shows the fetched body — the gesture really did land it.
+    expect(await screen.findByText('the fetched paper body')).toBeTruthy()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(screen.queryByText(zh['fetch.none'])).toBeNull()
+  })
+
+  it('flips the card when the automatic backfill lands the body', async () => {
+    // Same mirror gap through the other writer: the run's badge appeared, but
+    // nothing re-read the states, so the pill kept saying 抓取. (No "starts at
+    // 抓取" assertion here: the mock host answers in microtasks, so how long the
+    // initial state is visible is a race that is not the point.)
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      backfillCandidates: [paperId],
+    })
+    hostModel(ui)
+    await ui.settle()
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith(paperId, expect.any(String))
+  })
+
+  it('shows 抓取失败 with the host’s reason after an open-triggered fetch fails', async () => {
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed('tc') } })
+    hostModel(ui, { fail: true })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The fetch fails behind the summary, which stays on screen.
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    expect(pill.getAttribute('title')).toContain(zh['preview.blocked'])
+  })
+})
+
 describe('coming back to the pane puts the reader where they were', () => {
   /**
    * The host unmounts the whole right sidebar when another main panel takes

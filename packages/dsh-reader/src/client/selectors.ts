@@ -10,7 +10,7 @@
  */
 import type { ReaderEntry } from './parse-rss.ts'
 import type { ReaderFilter, ReaderSort } from './store.ts'
-import { kindQuery, READER_SOURCE_KINDS, type ReaderSourceKind } from '../types.ts'
+import { kindQuery, READER_SOURCE_KINDS, type ReaderEntryFetchState, type ReaderSourceKind } from '../types.ts'
 
 /** How many entries the pane will show before it stops rendering cards. */
 export const LIST_RENDER_LIMIT = 300
@@ -56,6 +56,25 @@ export function flattenEntries(
   const out: ReaderEntry[] = []
   for (const source of Object.values(parsed)) out.push(...source.entries)
   return out
+}
+
+/**
+ * What the plugin holds for one entry, as every surface reads it.
+ *
+ * The host's annotation is the only authority (a cached body, an in-flight or
+ * stored-raw fetch, a classified failure with its reason); the pane mirrors it
+ * per entry, and this is the ONE read path into that mirror — including the
+ * default, so no surface spells "no record" as anything other than `none`.
+ *
+ * @param states - the pane's mirror of the host's fetch states.
+ * @param entryId - the entry being shown.
+ * @returns the entry's fetch state.
+ */
+export function fetchStateOf(
+  states: Readonly<Record<string, ReaderEntryFetchState>>,
+  entryId: string,
+): ReaderEntryFetchState {
+  return states[entryId] ?? { state: 'none' }
 }
 
 /**

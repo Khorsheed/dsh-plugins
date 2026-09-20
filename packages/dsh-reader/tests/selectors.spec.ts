@@ -10,6 +10,7 @@ import type { ReaderEntry } from '../src/client/parse-rss.ts'
 import {
   countUnread,
   flattenEntries,
+  fetchStateOf,
   hueForSource,
   isToday,
   selectRows,
@@ -164,5 +165,20 @@ describe('a text search ranks what it matched', () => {
   it('leaves a source selector unranked', () => {
     const rows = selectRows(entries, sources, { ...base, query: '#s1' })
     expect(rows.map(row => row.entry.id)).toEqual(['a'])
+  })
+})
+
+
+describe('fetchStateOf', () => {
+  it('defaults to none for an entry the host has no record of', () => {
+    expect(fetchStateOf({}, 'a')).toEqual({ state: 'none' })
+  })
+
+  it('hands back the mirrored record, failure reason and code included', () => {
+    // The code is what the card's sentence is chosen by, and what the ingest
+    // milestone's reason taxonomy will consume — the mirror must carry it
+    // through, not just the fact of the failure.
+    const failed = { state: 'failed' as const, at: '2026-09-20T00:00:00.000Z', message: 'HTTP 403', code: 'blocked' as const }
+    expect(fetchStateOf({ a: { state: 'ready' }, b: failed }, 'b')).toBe(failed)
   })
 })

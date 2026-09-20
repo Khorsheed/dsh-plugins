@@ -61,6 +61,7 @@ import {
 import {
   countUnread,
   flattenEntries,
+  fetchStateOf,
   LIST_RENDER_LIMIT,
   hueForSource,
   rowFor,
@@ -950,6 +951,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [actions, entryIds, props])
 
   /**
+   * Re-read ONE entry's fetch state from the host after something settled it.
+   *
+   * The host's annotation is the only authority (body presence, the in-flight
+   * or stored-raw record, the classified failure with its reason), and the pane
+   * mirrors it — so a path that just changed the host's state re-reads the one
+   * entry it touched, and the card flips on the same gesture instead of at the
+   * next mount. A full-wall poll per fetch would be the same answer at N times
+   * the cost.
+   */
+  const syncFetchState = useCallback(async (entryId: string) => {
+    const result = await props.entryFetchStates([entryId])
+    if (result.ok) actions.setFetchStates(result.value.states)
+  }, [actions, props])
+
+  /**
    * Read the recent list from the host.
    *
    * Host-side state, so it is read when the page opens rather than mirrored in
@@ -996,7 +1012,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const sweepRaw = useCallback(async () => {
     if (sweepRunning.current) return
-    const raws = allEntries.filter(entry => fetchStates[entry.id]?.state === 'raw').slice(0, 2)
+    const raws = allEntries.filter(entry => fetchStateOf(fetchStates, entry.id).state === 'raw').slice(0, 2)
     if (raws.length === 0) return
     sweepRunning.current = true
     try {
@@ -1530,6 +1546,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       // they are keyed by id either way.
       const onScreen = openRequestRef.current === entryId
       if (result.html !== undefined) {
+        // A fresh body just landed: the entry is no longer expired, whichever
+        // screen is showing.
+        actions.setStaleBody(entryId, false)
         if (onScreen) {
           actions.setArticle(result.html, result.truncated === true, null)
           setScriptFigures(result.scriptFigures ?? 0)
@@ -1537,13 +1556,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       } else if (result.error !== undefined && onScreen) {
         // Keep whatever is already rendered (a feed summary, say) and add the
         // reason: a failed fetch must not take the little text the reader has.
+        // It also leaves the host's copy — and its stale marker — untouched.
         actions.setArticle(articleHtml ?? '', false, result.error)
       }
-      actions.setStaleBody(entryId, result.cached === true && result.fresh === false)
     } finally {
       actions.setFetching(entryId, false)
+      // The card reads the host's annotation through the mirror: re-read the
+      // one entry this fetch settled, so the pill flips on this gesture and
+      // not at the next mount.
+      void syncFetchState(entryId)
     }
-  }, [actions, props, articleHtml])
+  }, [actions, props, articleHtml, syncFetchState])
 
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
@@ -1587,10 +1610,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         url: row.entry.link,
         ...(row.entry.contentHtml === undefined ? {} : { feedHtml: row.entry.contentHtml }),
       })
+      // A per-entry host fact, true no matter which entry is on screen by now,
+      // so it is written before the screen guard: whether the host's cached
+      // copy is past its deadline (the card's 「已过期」 reads this).
+      if (view.ok) actions.setStaleBody(row.entry.id, view.value.cached === true && view.value.fresh === false)
       // The answer came back to a screen that has moved on: another open (or a
       // close) happened while the host was answering. Writing here would put
       // this entry's body under THAT entry's title.
       if (openRequestRef.current !== row.entry.id) return
+      // The mirror the card reads may predate this answer (a body cached after
+      // the mount poll, or a recorded failure it has not re-read). When the two
+      // disagree, re-read this one entry so the card stops lying.
+      const known = fetchStateOf(fetchStates, row.entry.id).state
+      if (view.ok && (
+        (view.value.cached === true && view.value.html !== undefined && known !== 'ready')
+        || (view.value.html === undefined && view.value.error !== undefined && known !== 'failed')
+      )) void syncFetchState(row.entry.id)
       if (!view.ok) {
         actions.setArticle('', false, view.error.message)
       } else if (view.value.html !== undefined) {
@@ -1656,7 +1691,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const extracted = extractArticle(body.raw, row.entry.link ?? '')
     if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
     else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t, fetchBody, recent])
+  }, [actions, props, t, fetchBody, recent, fetchStates, syncFetchState])
 
   /* ------------------------------ coming back to where the reader already was */
 
@@ -2129,15 +2164,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         }
       })
       await Promise.all(workers)
-      // Deliberately no `actions.refresh()` here: the run updates the cards
-      // through `noteBackfilled`, and bumping `rev` would re-enter `load()`
-      // and start the whole thing over. Only the DETAIL view re-reads, and it
-      // does so when it mounts.
+      // Deliberately no `actions.refresh()` here: bumping `rev` would re-enter
+      // `load()` and start the whole thing over. Only the DETAIL view re-reads,
+      // and it does so when it mounts. But the fetch-state mirror DOES re-read
+      // once per run — otherwise a card whose body the backfill just landed
+      // keeps saying 抓取 until the next mount (the reported symptom).
+      await refreshFetchStates()
     } finally {
       backfillRunning.current = false
       actions.setBackfill(null)
     }
-  }, [actions, props])
+  }, [actions, props, refreshFetchStates])
 
   // Automatic, after the wall has something to look at — never before, so the
   // reader never waits on the network for a list they already had.
@@ -2172,10 +2209,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (entry.link === undefined) return
     actions.setFetchStates({ [entry.id]: { state: 'fetching', at: new Date().toISOString() } })
     // `fetchBody` is the same call the detail view makes on open — the host
-    // stores the payload first, so leaving the page does not cancel it.
+    // stores the payload first, so leaving the page does not cancel it. It also
+    // re-reads this entry's state from the host when the fetch settles, so the
+    // pill flips without a full-wall poll here.
     await fetchBody(entry.id, entry.link)
-    await refreshFetchStates()
-  }, [actions, fetchBody, refreshFetchStates])
+  }, [actions, fetchBody])
 
   /** Reload the tags on one entry. */
   const loadEntryTags = useCallback(async (entryId: string) => {
@@ -3577,18 +3615,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       payload before it answers, so leaving the page does not
                       cancel it — the state pill is what says so. */}
                   {row.entry.link !== undefined && (() => {
-                    const state = fetchStates[row.entry.id]?.state ?? 'none'
-                    const failure = fetchStates[row.entry.id]
+                    const fetchState = fetchStateOf(fetchStates, row.entry.id)
+                    const state = fetchState.state
                     const labelKey = state === 'none' ? 'fetch.none'
                       : state === 'fetching' ? 'fetch.fetching'
                         : state === 'raw' ? 'fetch.raw'
                           : state === 'ready' ? 'fetch.ready' : 'fetch.failed'
                     const title = state === 'ready'
                       ? t('fetch.readyTitle')
-                      : state === 'failed'
-                        ? t('fetch.failedTitle', {
-                          reason: failure?.state === 'failed' ? previewReason(t, failure.code, failure.message) : '',
-                        })
+                      : fetchState.state === 'failed'
+                        ? t('fetch.failedTitle', { reason: previewReason(t, fetchState.code, fetchState.message) })
                         : t('fetch.noneTitle')
                     return (
                       <span

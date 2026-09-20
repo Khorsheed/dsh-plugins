@@ -279,6 +279,13 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
         // card simply keeps showing the feed's own text.
         if (d.backfill !== null) d.backfill = { ...d.backfill, done: Math.min(d.backfill.done + 1, d.backfill.total) }
         if (!filled) delete d.backfilled[entryId]
+        if (filled) {
+          // A fresh body is also the end of "expired": the marker is about the
+          // copy the host held, and that copy was just replaced.
+          const stale = { ...d.staleBodies }
+          delete stale[entryId]
+          d.staleBodies = stale
+        }
       },
       setRefreshing: (d, refreshing) => { d.refreshing = refreshing },
       noteRefreshed: (d, at) => {
