@@ -30,6 +30,7 @@
  *
  * @module @khorsheed/dsh-reader/client/translate
  */
+import type { ReaderSentenceLearn } from '../types.ts'
 
 /** The three views the reader picks between (the globe's menu). */
 export type TranslationView = 'trans' | 'both' | 'orig'
@@ -353,6 +354,32 @@ const BUILT = new WeakMap<Element, BuiltArticle>()
 /** Translation memory: original sentence → translated sentence. */
 const MEMORY = new Map<string, string>()
 
+/**
+ * The memory key for one sentence.
+ *
+ * The pair is part of the key: before the host-backed store existed, the page's
+ * memory keyed on the sentence ALONE, so a German title and its English
+ * homograph would have shared one translation. (The hash in the persisted tier
+ * is computed the same way per pair for the same reason.)
+ */
+const memoryKey = (pair: string, text: string): string => `${pair}\n${text}`
+
+/**
+ * The stable key fragment for one sentence (or a whole body).
+ *
+ * FNV-1a over 64 bits: synchronous, which the crypto API is not, and long
+ * enough that the memory's 50k entries never meet a collision (the birthday
+ * bound is ~2^32 entries). The host stores the digest opaquely — only the
+ * browser ever computes it.
+ */
+export function translationHash(text: string): string {
+  let hash = 0xcbf29ce484222325n
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash ^ BigInt(text.charCodeAt(index))) * 0x100000001b3n & 0xffffffffffffffffn
+  }
+  return hash.toString(16).padStart(16, '0')
+}
+
 /** Blocks whose text is a code or data payload, never prose. */
 const SKIP_ANCESTORS = 'pre, code, kbd, samp, [data-reader-no-translate]'
 
@@ -673,25 +700,58 @@ export function toggleSegment(built: BuiltArticle, segment: BuiltSegment, classe
 }
 
 /** Remember one translation, evicting oldest-first past the memory's cap. */
-function remember(text: string, translated: string): void {
-  if (text.length === 0 || MEMORY.has(text)) return
-  MEMORY.set(text, translated)
+function remember(pair: string, text: string, translated: string): void {
+  const key = memoryKey(pair, text)
+  if (text.length === 0 || MEMORY.has(key)) return
+  MEMORY.set(key, translated)
   if (MEMORY.size > MEMORY_MAX_ENTRIES) {
     const oldest = MEMORY.keys().next().value
     if (oldest !== undefined) MEMORY.delete(oldest)
   }
 }
 
-/** Record a translated unit: in the DOM, and in the translation memory. */
-export function applyTranslation(built: BuiltArticle, segment: BuiltSegment, translated: string): void {
+/**
+ * Record a translated unit: in the DOM, and in the translation memory.
+ *
+ * @param pair - the `<src>→<tgt>` label this translation belongs to.
+ */
+export function applyTranslation(built: BuiltArticle, segment: BuiltSegment, translated: string, pair: string): void {
   segment.translated = translated
   if (built.view !== 'orig') segment.span.textContent = translated + segment.tail
-  remember(segment.original, translated)
+  remember(pair, segment.original, translated)
 }
 
-/** A remembered translation for this sentence, when one exists. */
-export function remembered(text: string): string | undefined {
-  return MEMORY.get(text)
+/** A remembered translation for this sentence in this pair, when one exists. */
+export function remembered(pair: string, text: string): string | undefined {
+  return MEMORY.get(memoryKey(pair, text))
+}
+
+/**
+ * Pour translations the host persisted into the page's memory.
+ *
+ * The pane calls this before a translation run spends the model: every primed
+ * sentence paints from memory instead of a request. Entries already in the page
+ * are left alone (a fresher in-page write wins over the host's copy of it).
+ *
+ * @param pair - the pair label the translations belong to.
+ * @param entries - the sentences and their translations.
+ * @returns how many were new to the page.
+ */
+export function primeMemory(pair: string, entries: readonly { text: string; translation: string }[]): number {
+  let primed = 0
+  for (const { text, translation } of entries) {
+    if (text.length === 0) continue
+    const key = memoryKey(pair, text)
+    if (MEMORY.has(key)) continue
+    MEMORY.set(key, translation)
+    primed += 1
+  }
+  while (MEMORY.size > MEMORY_MAX_ENTRIES) {
+    const oldest = MEMORY.keys().next().value
+    if (oldest === undefined) break
+    MEMORY.delete(oldest)
+  }
+  return primed
 }
 
 /** Drop the translation memory (the specs call this between cases). */
@@ -729,6 +789,26 @@ export interface TextsOutcome {
   readonly remembered: number
   /** How many strings could not be translated at all. */
   readonly failed: number
+  /**
+   * What the run newly learned (for the host's persistent tiers), as
+   * `{ hash, source, target }` triples — `hash` is `translationHash(source)`.
+   */
+  readonly learned: readonly ReaderSentenceLearn[]
+  /** What the run was served from memory (whose LRU stamps should move). */
+  readonly recalled: readonly ReaderSentenceLearn[]
+}
+
+/**
+ * One learned (or recalled) sentence, ready for the host's tiers.
+ *
+ * The hash is over the sentence alone; the pair joins the key on the HOST
+ * (`<src>→<tgt>:<hash>`), which is where the pair-keying invariant lives.
+ *
+ * @param source - the original sentence.
+ * @param target - its translation.
+ */
+function learnOf(source: string, target: string): ReaderSentenceLearn {
+  return { hash: translationHash(source), source, target }
 }
 
 /**
@@ -743,6 +823,7 @@ export interface TextsOutcome {
  * again when the same entry is opened.
  *
  * @param texts - the strings to translate, in order.
+ * @param pair - the `<src>→<tgt>` label these translations belong to.
  * @param session - a translator for this source language.
  * @param cancelled - checked between batches.
  * @param onProgress - called with (done, total) as results land.
@@ -750,6 +831,7 @@ export interface TextsOutcome {
  */
 export async function translateTexts(
   texts: readonly string[],
+  pair: string,
   session: TranslatorSessionLike,
   cancelled: () => boolean,
   onProgress?: (done: number, total: number) => void,
@@ -758,16 +840,19 @@ export async function translateTexts(
   const unique = [...new Set(texts.filter(text => text.length > 0 && !isTargetLanguage(text)))]
   const total = unique.length
   let done = 0
-  let remembered = 0
+  let rememberedCount = 0
   let failed = 0
+  const learned: ReaderSentenceLearn[] = []
+  const recalled: ReaderSentenceLearn[] = []
   const report = (): void => { onProgress?.(done, total) }
   const pending: string[] = []
   for (const text of unique) {
-    const hit = MEMORY.get(text)
+    const hit = MEMORY.get(memoryKey(pair, text))
     if (hit !== undefined) {
       translated.set(text, hit)
+      recalled.push(learnOf(text, hit))
       done += 1
-      remembered += 1
+      rememberedCount += 1
     } else {
       pending.push(text)
     }
@@ -786,7 +871,8 @@ export async function translateTexts(
       current.forEach((text, index) => {
         const value = parts[index]!.trim()
         translated.set(text, value)
-        remember(text, value)
+        remember(pair, text, value)
+        learned.push(learnOf(text, value))
         done += 1
       })
       report()
@@ -797,7 +883,8 @@ export async function translateTexts(
       try {
         const value = (await session.translate(text)).trim()
         translated.set(text, value)
-        remember(text, value)
+        remember(pair, text, value)
+        learned.push(learnOf(text, value))
         done += 1
       } catch {
         failed += 1
@@ -813,7 +900,7 @@ export async function translateTexts(
     chars += text.length
   }
   await flush()
-  return { translated, remembered, failed }
+  return { translated, remembered: rememberedCount, failed, learned, recalled }
 }
 
 /**
@@ -842,9 +929,22 @@ async function translateBatch(texts: readonly string[], session: TranslatorSessi
 export interface RunTranslationOptions {
   readonly built: BuiltArticle
   readonly session: TranslatorSessionLike
+  /** The `<src>→<tgt>` label this run's translations belong to. */
+  readonly pair: string
   /** Flipped by the Cancel gesture; checked between batches. */
   readonly cancelled: () => boolean
   readonly onProgress?: (done: number, total: number) => void
+}
+
+/** What one run produced, for the host's persistent tiers. */
+export interface RunTranslationResult {
+  readonly done: number
+  readonly failed: number
+  readonly total: number
+  /** Units the model translated this run (new to the memory). */
+  readonly learned: readonly ReaderSentenceLearn[]
+  /** Units the memory served (their LRU stamps should move). */
+  readonly recalled: readonly ReaderSentenceLearn[]
 }
 
 /** Every segment of a built article, in reading order. */
@@ -862,18 +962,21 @@ export function segmentsOf(built: BuiltArticle): BuiltSegment[] {
  * @param options - the built article, a created session, and the cancel flag.
  * @returns how many units were translated, how many failed, and the total.
  */
-export async function runTranslation(options: RunTranslationOptions): Promise<{ done: number; failed: number; total: number }> {
-  const { built, session, cancelled, onProgress } = options
+export async function runTranslation(options: RunTranslationOptions): Promise<RunTranslationResult> {
+  const { built, session, pair, cancelled, onProgress } = options
   const segments = segmentsOf(built)
   const total = segments.length
   let done = 0
   let failed = 0
+  const learned: ReaderSentenceLearn[] = []
+  const recalled: ReaderSentenceLearn[] = []
   const report = (): void => { onProgress?.(done, total) }
   const pending: BuiltSegment[] = []
   for (const segment of segments) {
-    const hit = remembered(segment.original)
+    const hit = remembered(pair, segment.original)
     if (hit !== undefined) {
-      applyTranslation(built, segment, hit)
+      applyTranslation(built, segment, hit, pair)
+      recalled.push(learnOf(segment.original, hit))
       done += 1
     } else {
       pending.push(segment)
@@ -891,7 +994,9 @@ export async function runTranslation(options: RunTranslationOptions): Promise<{ 
     const parts = await translateBatch(current.map(segment => segment.original), session)
     if (parts !== null) {
       current.forEach((segment, index) => {
-        applyTranslation(built, segment, parts![index]!.trim())
+        const value = parts[index]!.trim()
+        applyTranslation(built, segment, value, pair)
+        learned.push(learnOf(segment.original, value))
         done += 1
       })
       report()
@@ -902,8 +1007,9 @@ export async function runTranslation(options: RunTranslationOptions): Promise<{ 
     for (const segment of current) {
       if (cancelled()) return
       try {
-        const translated = await session.translate(segment.original)
-        applyTranslation(built, segment, translated.trim())
+        const translated = (await session.translate(segment.original)).trim()
+        applyTranslation(built, segment, translated, pair)
+        learned.push(learnOf(segment.original, translated))
         done += 1
       } catch {
         failed += 1
@@ -920,5 +1026,5 @@ export async function runTranslation(options: RunTranslationOptions): Promise<{ 
     chars += size
   }
   await flush()
-  return { done, failed, total }
+  return { done, failed, total, learned, recalled }
 }

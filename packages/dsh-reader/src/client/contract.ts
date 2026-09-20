@@ -26,9 +26,11 @@ import type {
   ReaderEntryFetchState,
   ReaderBody,
   ReaderCapabilities,
+  ReaderEntryTranslationView,
   ReaderMutationOutcome,
   ReaderRefreshResult,
   ReaderRecentEntry,
+  ReaderSentenceLearn,
   ReaderSourceSummary,
   ReaderTag,
 } from '../types.ts'
@@ -144,8 +146,28 @@ export interface ReaderPaneInjected {
   /** Forget every recent entry. */
   clearRecent: () => Promise<RemoteResult<{ removed: number }>>
   /** Read / set the article cache policy. */
-  getCachePolicy: () => Promise<RemoteResult<{ ttlHours: number; maxEntries: number }>>
+  getCachePolicy: () => Promise<RemoteResult<{ ttlHours: number; maxEntries: number; translationBudgetChars: number }>>
   setCachePolicy: (ttlHours: number, maxEntries?: number) => Promise<RemoteResult<ReaderAnnotationOutcome>>
+  /* ------------------------------------------- the persistent translation tiers */
+
+  /** One entry's exact-fit translation record, when the host holds a usable one. */
+  getEntryTranslation: (entryId: string) => Promise<RemoteResult<{ translation?: ReaderEntryTranslationView }>>
+  /** Translations for exactly the asked sentence hashes of one pair (never the table). */
+  getSentenceTranslations: (request: {
+    pair: string
+    hashes: readonly string[]
+  }) => Promise<RemoteResult<{ translations: Record<string, string> }>>
+  /**
+   * Persist what one translation run learned (and refresh what it reused), in
+   * one batch — the caller batches by run, so this is never a per-sentence call.
+   */
+  rememberSentences: (request: {
+    pair: string
+    entries: readonly ReaderSentenceLearn[]
+    recalled?: readonly ReaderSentenceLearn[]
+    entryId?: string
+    bodyHash?: string
+  }) => Promise<RemoteResult<{ stored: number }>>
   /** Read the current conversation draft (the merge `setDraft` needs). */
   readDraft: () => string
   /** Replace the conversation draft with `merged`; a no-op without a session surface. */

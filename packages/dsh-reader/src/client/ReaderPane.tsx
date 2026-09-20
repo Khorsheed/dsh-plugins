@@ -46,6 +46,7 @@ import {
   READER_SOURCE_KINDS,
   type ReaderPreviewFailureCode,
   type ReaderRecentEntry,
+  type ReaderSentenceLearn,
   type ReaderSourceKind,
   type ReaderTag,
 } from '../types.ts'
@@ -54,7 +55,8 @@ import { parseFeed, type ReaderEntry } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
-  restoreArticle, runTranslation, segmentAt, setPairHover, setView, toggleSegment, translateTexts,
+  primeMemory, restoreArticle, runTranslation, segmentAt, segmentsOf, setPairHover, setView, toggleSegment,
+  translateTexts, translationHash,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
   type TranslationView, type TranslatorLike, type TranslatorSessionLike,
 } from './translate.ts'
@@ -1184,6 +1186,73 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [openEntryId])
 
   /**
+   * Warm the page's sentence memory from the host's two tiers before a run
+   * spends the model.
+   *
+   * The entry's own exact-fit map answers first — but only while its `bodyHash`
+   * is the body's, so a re-fetched body invalidates the map and the global
+   * memory still serves every unchanged sentence. Either tier failing is just a
+   * miss: the run then pays the model, exactly as before this store existed.
+   *
+   * @param pair - the run's pair label.
+   * @param entryId - the open entry.
+   * @param html - the body on screen (its hash gates the entry map).
+   * @param built - the segmented article (its sentences are what is asked for).
+   */
+  const warmMemory = useCallback(async (pair: string, entryId: string, html: string, built: BuiltArticle): Promise<void> => {
+    const byHash = new Map<string, string>()
+    for (const segment of segmentsOf(built)) byHash.set(translationHash(segment.original), segment.original)
+    if (byHash.size === 0) return
+    const covered = new Set<string>()
+    try {
+      const answer = await props.getEntryTranslation(entryId)
+      const record = answer.ok ? answer.value.translation : undefined
+      if (record !== undefined && record.pair === pair && record.bodyHash === translationHash(html)) {
+        const pour: { text: string; translation: string }[] = []
+        for (const [hash, translation] of Object.entries(record.segments)) {
+          const text = byHash.get(hash)
+          if (text !== undefined) { pour.push({ text, translation }); covered.add(hash) }
+        }
+        primeMemory(pair, pour)
+      }
+    } catch {
+      // A missing or unreadable record is a miss, never an error in the run.
+    }
+    const missing = [...byHash.keys()].filter(hash => !covered.has(hash))
+    if (missing.length === 0) return
+    try {
+      const slice = await props.getSentenceTranslations({ pair, hashes: missing })
+      if (!slice.ok) return
+      primeMemory(pair, Object.entries(slice.value.translations).flatMap(([hash, translation]) => {
+        const text = byHash.get(hash)
+        return text === undefined ? [] : [{ text, translation }]
+      }))
+    } catch {
+      // Same: a miss.
+    }
+  }, [props])
+
+  /**
+   * Persist what one run produced, in one call — batched by run, never per
+   * sentence. The recalled sentences ride along: their LRU stamps are what
+   * makes the host's budget a use-clock, and they keep the entry's map complete.
+   */
+  const persistTranslations = useCallback((
+    pair: string,
+    learned: readonly ReaderSentenceLearn[],
+    recalled: readonly ReaderSentenceLearn[],
+    entry?: { entryId: string; bodyHash: string },
+  ): void => {
+    if (learned.length === 0 && recalled.length === 0 && entry === undefined) return
+    void props.rememberSentences({
+      pair,
+      entries: learned,
+      recalled,
+      ...(entry === undefined ? {} : { entryId: entry.entryId, bodyHash: entry.bodyHash }),
+    })
+  }, [props])
+
+  /**
    * Get the article translated, reusing a session this page already built.
    *
    * The `Translator` API demands user activation for `create()`, so a session
@@ -1272,12 +1341,31 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     // Recorded BEFORE the run: the record is what makes a remounted pane turn
     // the globe back on, and the sentence memory makes the re-run cheap.
     if (openEntryId !== null) rememberTranslation(openEntryId, initialView, sourceLanguage)
+    // The host's tiers answer first: the entry's exact-fit map, then the global
+    // sentence memory. Only what neither knows is spent on the model.
+    const pair = `${sourceLanguage}→${TRANSLATION_TARGET}`
+    if (openEntryId !== null && articleHtml !== null) {
+      await warmMemory(pair, openEntryId, articleHtml, built)
+      if (cancel.cancelled) { setTranslatePhase('idle'); return }
+    }
     const result = await runTranslation({
       built,
       session,
+      pair,
       cancelled: () => cancel.cancelled,
       onProgress: (done, total) => { setTranslateProgress({ done, total }) },
     })
+    // What the run learned (and what it was served) persists in one batch: a
+    // reload loses the page's memory, and the next visit pays the model again
+    // without this.
+    persistTranslations(
+      pair,
+      result.learned,
+      result.recalled,
+      openEntryId !== null && articleHtml !== null
+        ? { entryId: openEntryId, bodyHash: translationHash(articleHtml) }
+        : undefined,
+    )
     if (cancel.cancelled) return
     cancelRef.current = null
     if (result.total > 0 && result.done === 0) {
@@ -1291,7 +1379,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     // Re-paint once the first units exist, so the translated typography applies.
     setView(built, initialView, translateClasses)
-  }, [translator, translationSource, translateClasses, t, openEntryId])
+  }, [translator, translationSource, translateClasses, t, openEntryId, articleHtml, warmMemory, persistTranslations])
 
   /** Apply one view to a finished translation. */
   const applyView = useCallback((next: TranslationView) => {
@@ -1450,14 +1538,31 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             setWallAvailability('unavailable')
             return
           }
+          // The host's memory answers first, one slice call per group: a wall
+          // re-translated after a reload should be a read, not a model run.
+          const pair = `${language}→${TRANSLATION_TARGET}`
+          try {
+            const byHash = new Map(group.map(field => [translationHash(field.text), field.text] as const))
+            const slice = await props.getSentenceTranslations({ pair, hashes: [...byHash.keys()] })
+            if (slice.ok) {
+              primeMemory(pair, Object.entries(slice.value.translations).flatMap(([hash, translation]) => {
+                const text = byHash.get(hash)
+                return text === undefined ? [] : [{ text, translation }]
+              }))
+            }
+          } catch {
+            // A miss is the model's job, as before.
+          }
           setWallProgress({ done: 0, total: group.length })
           const outcome = await translateTexts(
             group.map(field => field.text),
+            pair,
             session,
             () => cancel.cancelled,
             (done, total) => setWallProgress({ done, total }),
           )
           if (cancel.cancelled) break
+          persistTranslations(pair, outcome.learned, outcome.recalled)
           setCardTranslations(current => {
             const next = { ...current }
             for (const field of group) {
@@ -1473,7 +1578,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       wallRunningRef.current = false
       setWallProgress(null)
     }
-  }, [translator, wallSession])
+  }, [translator, wallSession, props, persistTranslations])
 
   // Enqueue the cards as they become visible. jsdom has no IntersectionObserver,
   // and neither would a very old browser, so the fallback translates what is

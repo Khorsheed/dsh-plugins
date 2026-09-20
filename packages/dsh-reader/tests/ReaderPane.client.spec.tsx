@@ -26,7 +26,7 @@ import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
 import { forgetSession, forgetTranslators, readSession, rememberReadingPosition } from '../src/client/session.ts'
-import { UNIT_SEPARATOR } from '../src/client/translate.ts'
+import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
 import type { ReaderBody, ReaderEntryFetchState, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
@@ -116,6 +116,10 @@ interface BenchOptions {
   readonly backfillCandidates?: readonly string[]
   /** What the host's 「最近阅读」 list holds, newest first. */
   readonly recent?: readonly ReaderRecentEntry[]
+  /** The entry's exact-fit translation record, as the host would answer it. */
+  readonly entryTranslation?: { ok: true; value: { translation?: { pair: string; bodyHash: string; segments: Record<string, string> } } }
+  /** The global memory's answers, by sentence hash. */
+  readonly memorySlice?: Readonly<Record<string, string>>
   /** The dsh session this mount belongs to (defaults to `s1`). */
   readonly sessionId?: string
 }
@@ -192,6 +196,20 @@ function bench(options: BenchOptions = {}) {
     recordRead: vi.fn(async () => ({ ok: true as const, value: { entries: 1 } })),
     listRecent: vi.fn(async () => ({ ok: true as const, value: { entries: [...(options.recent ?? [])] } })),
     clearRecent: vi.fn(async () => ({ ok: true as const, value: { removed: (options.recent ?? []).length } })),
+    // The persistent translation tiers: empty by default, scripted per test.
+    getEntryTranslation: vi.fn(async () => options.entryTranslation ?? { ok: true as const, value: {} }),
+    getSentenceTranslations: vi.fn(async (request: { pair: string; hashes: readonly string[] }) => ({
+      ok: true as const,
+      value: {
+        translations: Object.fromEntries(
+          request.hashes.flatMap(hash => {
+            const hit = options.memorySlice?.[hash]
+            return hit === undefined ? [] : [[hash, hit] as const]
+          }),
+        ),
+      },
+    })),
+    rememberSentences: vi.fn(async () => ({ ok: true as const, value: { stored: 0 } })),
     fetchEntryBody: vi.fn(async (entryId: string) => ({ entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })),
     getEntryBody: vi.fn(async (request: { entryId: string; url: string; feedHtml?: string }) => {
       const sourceId = request.entryId.startsWith('link:') ? request.entryId.slice('link:'.length) : undefined
@@ -243,6 +261,9 @@ function bench(options: BenchOptions = {}) {
     recordRead: mocks.recordRead,
     listRecent: mocks.listRecent,
     clearRecent: mocks.clearRecent,
+    getEntryTranslation: mocks.getEntryTranslation,
+    getSentenceTranslations: mocks.getSentenceTranslations,
+    rememberSentences: mocks.rememberSentences,
     getEntryBody: mocks.getEntryBody,
     fetchEntryBody: mocks.fetchEntryBody,
     readDraft: () => '',
@@ -294,9 +315,12 @@ afterEach(() => {
   vi.restoreAllMocks()
   // "Where the reader was" is module state shared by the WHOLE PAGE (that is
   // the point of it): without this, one case's open article — and its narrowing,
-  // and its cached translator — would be restored into the next one.
+  // and its cached translator — would be restored into the next one. The page's
+  // sentence mirror is the same kind of state, and it now warms from the host,
+  // so it is cleared here too.
   forgetSession()
   forgetTranslators()
+  clearMemory()
 })
 
 describe('the pane renders content, never an empty column', () => {
@@ -1874,6 +1898,160 @@ describe('coming back to the pane puts the reader where they were', () => {
     await second.settle()
     await waitFor(() => { expect(screen.getByText('译：An English article')).toBeTruthy() })
     await waitFor(() => { expect(second.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(1) })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+})
+
+describe('the translation memory survives a reload', () => {
+  /** One English article with an explicit, hashable body. */
+  const BODY = '<p>First sentence here. Second sentence here.</p><p>A third one closes it.</p>'
+  const SENTENCES = ['First sentence here.', 'Second sentence here.', 'A third one closes it.']
+  const PAIR = 'en→zh'
+  const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+  const page = (): string => feed('hn', [{ title: 'An English article', body: BODY }])
+  /** The entry-map record as the host would hold it, keyed to the body as-is. */
+  const entryRecord = (bodyHash: string): { pair: string; bodyHash: string; segments: Record<string, string> } => ({
+    pair: PAIR,
+    bodyHash,
+    segments: Object.fromEntries(SENTENCES.map(sentence => [translationHash(sentence), `译：${sentence}`])),
+  })
+  /** installTranslator, plus a spy on the session's own `translate`. */
+  const installCountingTranslator = () => {
+    const api = installTranslator()
+    const translate = vi.fn(async (payloadText: string) =>
+      payloadText.split(UNIT_SEPARATOR).map(part => `译：${part}`).join(UNIT_SEPARATOR))
+    api.create.mockImplementation(async () => ({
+      inputQuota: 10_000,
+      measureInputUsage: async (text: string) => text.length,
+      translate,
+    }))
+    return translate
+  }
+  /** Open the article and turn the globe on, with the translation on screen. */
+  const openAndTranslate = async (ui: ReturnType<typeof bench>): Promise<void> => {
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+  }
+
+  it('paints a stored entry translation without asking the model', async () => {
+    // The feature's reason to exist: the reader re-reads long articles, and the
+    // exact-fit map for this body is on disk — so after the globe's gesture,
+    // every sentence is a read, not a model call.
+    const translate = installCountingTranslator()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: page() },
+      entryTranslation: { ok: true, value: { translation: entryRecord(translationHash(BODY)) } },
+    })
+    await ui.settle()
+    await openAndTranslate(ui)
+    expect(translate).not.toHaveBeenCalled()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('skips a stale entry map but still serves the sentences from the global memory', async () => {
+    // The body was re-fetched (a minor edit), so its exact-fit record no longer
+    // answers — bodyHash says so. The unchanged sentences still hit globally.
+    const translate = installCountingTranslator()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: page() },
+      entryTranslation: { ok: true, value: { translation: entryRecord('the-hash-of-some-older-body') } },
+      memorySlice: Object.fromEntries(SENTENCES.map(sentence => [translationHash(sentence), `译：${sentence}`])),
+    })
+    await ui.settle()
+    await openAndTranslate(ui)
+    expect(translate).not.toHaveBeenCalled()
+    expect(ui.mocks.getSentenceTranslations).toHaveBeenCalled()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('persists what a run learned in ONE batch — never per sentence', async () => {
+    const translate = installCountingTranslator()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
+    await ui.settle()
+    await openAndTranslate(ui)
+    expect(translate).toHaveBeenCalled() // a cold run pays the model
+    await waitFor(() => { expect(ui.mocks.rememberSentences).toHaveBeenCalledTimes(1) })
+    const call = ui.mocks.rememberSentences.mock.calls[0]?.[0] as {
+      pair: string
+      entryId?: string
+      bodyHash?: string
+      entries: { hash: string; source: string; target: string }[]
+      recalled?: readonly unknown[]
+    }
+    expect(call.pair).toBe(PAIR)
+    expect(call.entryId).toBe(entryId)
+    expect(call.bodyHash).toBe(translationHash(BODY))
+    expect(call.entries.map(entry => entry.source).sort()).toEqual([...SENTENCES].sort())
+    expect(call.entries.every(entry => entry.hash === translationHash(entry.source))).toBe(true)
+    expect(call.recalled).toEqual([])
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('a reload re-paints the translation from the store — gesture yes, model no', async () => {
+    const translate = installCountingTranslator()
+    // The host's tiers, modeled: what the write verb receives is what the reads
+    // answer next time — the only way this test can pass is real propagation.
+    let storedMemory: Record<string, string> = {}
+    let storedEntry: { pair: string; bodyHash: string; segments: Record<string, string> } | undefined
+    const wire = (ui: ReturnType<typeof bench>): void => {
+      ui.mocks.rememberSentences.mockImplementation(async (request: {
+        pair: string
+        entries: readonly { hash: string; target: string }[]
+        recalled?: readonly { hash: string; target: string }[]
+        entryId?: string
+        bodyHash?: string
+      }) => {
+        const all = [...request.entries, ...(request.recalled ?? [])]
+        for (const entry of all) storedMemory[entry.hash] = entry.target
+        if (request.entryId !== undefined && request.bodyHash !== undefined) {
+          storedEntry = { pair: request.pair, bodyHash: request.bodyHash, segments: Object.fromEntries(all.map(entry => [entry.hash, entry.target])) }
+        }
+        return { ok: true as const, value: { stored: request.entries.length } }
+      })
+      ui.mocks.getEntryTranslation.mockImplementation(async () =>
+        ({ ok: true as const, value: storedEntry === undefined ? {} : { translation: storedEntry } }))
+      ui.mocks.getSentenceTranslations.mockImplementation(async (request: { hashes: readonly string[] }) => ({
+        ok: true as const,
+        value: {
+          translations: Object.fromEntries(
+            request.hashes.flatMap(hash => (storedMemory[hash] === undefined ? [] : [[hash, storedMemory[hash]] as const])),
+          ),
+        },
+      }))
+    }
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
+    wire(first)
+    await first.settle()
+    await openAndTranslate(first)
+    const modelCalls = translate.mock.calls.length
+    expect(modelCalls).toBeGreaterThan(0)
+    first.unmount()
+
+    // The reload, faithfully: module memory is gone (translator sessions, the
+    // sentence mirror), the place in sessionStorage is not — the article comes
+    // back by itself, the globe waits for its gesture.
+    clearMemory()
+    forgetTranslators()
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
+    wire(second)
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    // Not one new model call: the whole body came from the store.
+    expect(translate.mock.calls.length).toBe(modelCalls)
+    // And the recall ride-along bumped the LRU clocks without claiming new content.
+    const last = second.mocks.rememberSentences.mock.calls.at(-1)?.[0] as { entries: readonly unknown[]; recalled?: readonly unknown[] }
+    expect(last.entries).toEqual([])
+    expect(last.recalled).toHaveLength(SENTENCES.length)
     delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })
