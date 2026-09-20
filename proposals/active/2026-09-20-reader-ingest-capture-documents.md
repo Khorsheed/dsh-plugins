@@ -39,7 +39,7 @@
 
 ## 方案
 
-### 1. capture 包（D1：独立包，`@khorsheed/dsh-capture`，名字开工时再钉）
+### 1. capture 包（D1：独立包，`@khorsheed/dsh-capture`，名字已钉）
 
 **为什么独立而不是并进 reader**：(a) Chrome for Testing 二进制是百 MB 级的可选基础设施，并进 reader 会让每个只想订 RSS 的用户都背上它；(b) 无头浏览器是一个独立的安全面（SSRF、站点许可、凭据隔离），值得自己的包边界与 README 威胁模型，评审与事故响应都按包切片；(c) 仓库惯例是"独立但兼容"——reader 单独可装可用（探测不到 capture 就退回现状行为），capture 单独可装（未来 canvas-space / datasets 等消费方接同一个 verb）；(d) 跨包边只走单向（reader → capture 探测），符合 `pnpm check:plugins` 的边方向规则。
 
@@ -107,6 +107,14 @@
 - `95b7c355` 失败原因搬进浮层：内联原因行让失败卡片比邻居高、破了墙的网格——药丸全状态一行高，点红丸开浮层（原因 + 按因动作），tooltip 兜底。Agent Note：[failure-popover](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.md)。
 - `6b632348` 分栏重挂载丢筛选（3199 复现）：收窄经被动 effect 镜像进页面记忆，与最后手势同窗口的重挂载能在冲刷前卸载——补卸载 cleanup 冲刷（渲染期 ref + cleanup 总会跑）。Agent Note：[unmount-narrowing-flush](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.md)。
 - `47386c0f` 墙面去重开关「隐藏重复」（默认开）：链接归一化优先、折叠标题+同日兜底、绝不模糊；幸存卡带重复来源徽章；已读跨组归并；自动补抓不为隐藏副本花请求。Agent Note：[wall-dedupe](../../.agents/notes/implemented/feature/2026-09-21-reader-wall-dedupe.md)。
+
+**M1（`capture/m1` 分支，2026-09-21，全部落在新包 `@khorsheed/dsh-capture`）**：
+
+- `26670806` 包本体：Remote 命名空间 `capture`、动词 `render({url, timeoutMs?}) → { html, finalUrl?, title?, truncated? }`（与阅读器 `src/client/contract.ts:56-64` 的结构镜像逐项一致；拒绝为 `capture/*` 码的 RemoteError）。受管 Chrome（pipe、每渲染临时 BrowserContext、Chrome for Testing 懒下载进 `$DSH_HOME/state/dsh-capture`、空闲超时回收、并发 1 有界队列）、SSRF 闸逐跳重查（scheme/凭据/私网/回环/链路本地/元数据/保留段，IPv4 映射/NAT64/6to4 按内嵌分类）、遍扫停留 500ms/步、CSSOM 命中规则内联（`var()` 解析 + SVG 呈现属性双写）、剥脚本/样式块、~8M 字符截断置 `truncated`。浏览器半只做挂载（$mount 生成的 Remote contribution，无 UI——设置页推迟）。权限为手势门：首次成功渲染后逐站点 allow 记录落 `state.json`。
+- `9a669121` README 双语（契约/管线/威胁模型/保真边界/Compat）+ Agent Note：[capture-rendered-fetch](../../.agents/notes/implemented/feature/2026-09-21-capture-rendered-fetch.md)（含「为什么浏览器半必须存在」「手势门 vs browser-pane 完整许可门」两条 Alternatives）。
+- 测试 61 绿：URL 政策矩阵、jsdom 内联（含级联/权重/important/预筛）、队列、store、真实 Context boot（假受管浏览器过缝）、真实 Chrome 集成（fixture 服务器供 IntersectionObserver 懒图 + CSS 变量 SVG + 回环逃逸重定向；无二进制整体跳过）。3080 验收（真站点 transformer-circuits + 阅读器端到端 + 装卸回归）留给部署流。
+- 已知缺口（验收前须知）：阅读器白名单今天仍 DROP `svg` 且不留 `style` 属性——figure 进正文需要阅读器侧的白名单放行（capture 输出已双写 style + 呈现属性，两种放行都能吃）；这是阅读器后续提交，不在本包边界内。
+
 
 ## 验收标准（done 判定，绑定可插拔交付）
 
