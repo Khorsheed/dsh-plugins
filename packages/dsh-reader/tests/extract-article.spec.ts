@@ -151,7 +151,7 @@ describe('normalizeRichText', () => {
 
   it('absolutizes relative media against the page url', () => {
     const out = normalizeRichText('<p><img src="/img/a.png" alt="A"></p>', 'https://example.com/post/')
-    expect(out).toBe('<p><img src="https://example.com/img/a.png" alt="A"></p>')
+    expect(out).toBe('<p><img src="https://example.com/img/a.png" alt="A" referrerpolicy="no-referrer"></p>')
   })
 
   it('drops Cloudflare email-obfuscation placeholders', () => {
@@ -169,6 +169,17 @@ describe('normalizeRichText', () => {
 
   it('drops an image with no usable source', () => {
     expect(normalizeRichText('<p><img src="data:image/png;base64,AAAA"></p>')).toBe('<p></p>')
+  })
+
+  it('drops a noscript whose fallback is not an image', () => {
+    // The "please enable JavaScript" sentence a noscript usually carries is
+    // chrome, not content — it must not leak into the body.
+    const out = normalizeRichText('<p>real text</p><noscript><p>Please enable JavaScript to view this page.</p></noscript>')
+    expect(out).toBe('<p>real text</p>')
+  })
+
+  it('keeps noscript text out of inline summaries too', () => {
+    expect(normalizeInline('<p>real text</p><noscript>Please enable JavaScript.</noscript>')).toBe('real text')
   })
 
   it('returns empty for empty input', () => {
@@ -241,5 +252,107 @@ describe('the page title block does not come along', () => {
       + `<p>${'prose '.repeat(40)}</p></article></body></html>`
     const result = extractArticle(html, 'https://example.com/')
     expect(result.ok && result.html).toContain('hero.png')
+  })
+})
+
+
+/**
+ * Lazy-loaded images: the URL is in the static markup, one attribute over.
+ *
+ * Every case below is a pattern measured on real publishers: the `<img>` the
+ * page ships carries a 1px `data:` placeholder (or no `src` at all), and the
+ * real URL sits in a `data-*` attribute, a `srcset`, a `<picture>`'s sources,
+ * or the `<noscript>` no-JS fallback. A fetch runs no scripts, so what the
+ * normalizer recovers here is the ONLY copy the reader can ever get.
+ */
+describe('lazy-loaded images are recovered', () => {
+  /** A body big enough to extract, with the given markup inside it. */
+  const pageWith = (markup: string): string =>
+    `<html><head><title>T</title></head><body><article><p>${'prose '.repeat(60)}</p>${markup}</article></body></html>`
+
+  it('reads the real URL from the lazy-loading attributes when src is absent', () => {
+    expect(normalizeRichText('<p><img data-src="/img/real.png" alt="A"></p>', 'https://example.com/post/'))
+      .toBe('<p><img src="https://example.com/img/real.png" alt="A" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-original="https://cdn.example.com/b.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/b.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-lazy-src="https://cdn.example.com/c.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/c.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-url="https://cdn.example.com/d.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/d.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-actualsrc="https://cdn.example.com/e.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/e.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('treats a data: src as the placeholder it is and falls through to data-src', () => {
+    // The classic lazy pattern: a 1px inline gif in `src`, the article's image
+    // in `data-src`. A real `src` still wins over the lazy attributes.
+    const out = normalizeRichText(
+      '<p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-src="/img/real.png"></p>',
+      'https://example.com/post/',
+    )
+    expect(out).toBe('<p><img src="https://example.com/img/real.png" referrerpolicy="no-referrer"></p>')
+    const real = normalizeRichText(
+      '<p><img src="/img/shown.png" data-src="/img/other.png"></p>',
+      'https://example.com/post/',
+    )
+    expect(real).toBe('<p><img src="https://example.com/img/shown.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('picks the largest candidate of a srcset, reading both descriptor kinds', () => {
+    expect(normalizeRichText('<p><img srcset="/a-400.png 400w, /a-800.png 800w, /a-200.png 200w"></p>', 'https://example.com/'))
+      .toBe('<p><img src="https://example.com/a-800.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img srcset="/a.png, /a@3x.png 3x, /a@2x.png 2x"></p>', 'https://example.com/'))
+      .toBe('<p><img src="https://example.com/a@3x.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('still drops the image when srcset has no usable candidate either', () => {
+    expect(normalizeRichText('<p><img srcset="data:image/png;base64,AAAA 1x"></p>')).toBe('<p></p>')
+  })
+
+  it('resolves a picture to one image: the first usable source, else the fallback img', () => {
+    const source = normalizeRichText(
+      '<p><picture><source srcset="https://cdn.example.com/wide.webp">'
+      + '<img src="/img/fallback.png" alt="A"></picture></p>',
+      'https://example.com/post/',
+    )
+    // The fallback's alt survives on whichever candidate wins — it is the same picture.
+    expect(source).toBe('<p><img src="https://cdn.example.com/wide.webp" alt="A" referrerpolicy="no-referrer"></p>')
+    const fallback = normalizeRichText(
+      '<p><picture><source srcset="data:image/webp;base64,AAAA">'
+      + '<img src="/img/fallback.png" alt="A"></picture></p>',
+      'https://example.com/post/',
+    )
+    expect(fallback).toBe('<p><img src="https://example.com/img/fallback.png" alt="A" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('recovers the no-JS fallback image out of a noscript', () => {
+    const result = extractArticle(pageWith('<noscript><img src="/img/nojs.png" alt="N"></noscript>'), 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<img src="https://example.com/img/nojs.png" alt="N" referrerpolicy="no-referrer">')
+  })
+
+  it('does not count a figure whose only markup copy lives in a noscript as script-drawn', () => {
+    // The page DID ship this picture — behind a script the fetch never runs.
+    // Recovering it is what separates "drawn at runtime" from "lazy".
+    const html = pageWith('<figure><noscript><img src="/img/lazy.png"></noscript><figcaption>Figure 1: lazy.</figcaption></figure>')
+    const result = extractArticle(html, 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBeUndefined()
+    expect(result.html).toContain('https://example.com/img/lazy.png')
+    expect(result.html).toContain('Figure 1: lazy.')
+  })
+
+  it('leaves the script-drawn-figure notice exactly as it was', () => {
+    // A figure whose picture exists ONLY at runtime (an empty container and a
+    // caption) still produces the notice — nothing here made that recoverable.
+    const html = pageWith('<figure data-fignum="2"><div class="intro-structural"></div><figcaption>Figure 2: drawn at runtime.</figcaption></figure>')
+    const result = extractArticle(html, 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBe(1)
+    expect(result.html).toContain('drawn at runtime')
+    expect(result.html).not.toContain('<img')
   })
 })
