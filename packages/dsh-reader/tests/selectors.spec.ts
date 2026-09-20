@@ -289,4 +289,56 @@ describe('dedupeRows', () => {
     const result = dedupeRows(rows)
     expect(result.rows.map(r => r.entry.id)).toEqual(['x', 'a'])
   })
+
+  it('folds copies that share ONE entry id — the strongest duplicate signal', () => {
+    // Measured live: two aggregator feeds carried the same article with an
+    // IDENTICAL guid, so both copies' stableEntryId is `g:<same>` — the id is
+    // shared BY DESIGN (it buys shared fetch/read/translation state). The fold
+    // must be positional: keyed by id, both rows ARE the survivor.
+    const rows = [
+      row({ id: 'g:https://openai.com/index/an-alien-mind/', sourceId: 's1', link: 'https://openai.com/index/an-alien-mind/', title: 'An Alien Mind', publishedAt: todayIso }),
+      row({ id: 'g:https://openai.com/index/an-alien-mind/', sourceId: 's2', link: 'https://openai.com/index/an-alien-mind/', title: 'An Alien Mind', publishedAt: todayIso, sourceLabel: '阮一峰周刊' }),
+      row({ id: 'c', sourceId: 's1', link: 'https://example.com/other', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows).toHaveLength(2)
+    expect(result.hiddenCount).toBe(1)
+    // The badge bookkeeping survives the id collision: the survivor's id IS the
+    // hidden copy's id, and the one hidden row is still named.
+    expect(result.dupesBy.get('g:https://openai.com/index/an-alien-mind/')?.map(r => r.sourceLabel)).toEqual(['阮一峰周刊'])
+  })
+
+  it('folds same-id copies even when links and titles differ (the publisher said "same item")', () => {
+    const rows = [
+      row({ id: 'g:same-item', sourceId: 's1', link: 'https://a.example.com/one', title: 'One title', publishedAt: todayIso }),
+      row({ id: 'g:same-item', sourceId: 's2', link: 'https://b.example.com/two', title: 'Another title', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.sourceId)).toEqual(['s1'])
+  })
+
+  it('treats same-id copies as sharing every signal — input order survives', () => {
+    // A shared id shares the id-keyed fetch-state record too, so the ready
+    // preference cannot tell same-id copies apart: the first survives, at its
+    // own position. (They share all annotations anyway.)
+    const rows = [
+      row({ id: 'x', sourceId: 's1', link: 'https://example.com/else', publishedAt: todayIso }),
+      row({ id: 'g:shared', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'g:shared', sourceId: 's2', link: 'https://example.com/p', publishedAt: todayIso, sourceLabel: '阮一峰周刊' }),
+    ]
+    expect(dedupeRows(rows).rows.map(r => r.sourceId)).toEqual(['s1', 's1'])
+    expect(dedupeRows(rows, { 'g:shared': { state: 'ready', at: todayIso } }).rows.map(r => r.sourceId)).toEqual(['s1', 's1'])
+  })
+
+  it('bridges transitively: id on one side, link on the other, one card', () => {
+    // A≡B by shared id, B≡C by normalized link — all three are one article.
+    const rows = [
+      row({ id: 'g:x', sourceId: 's1', link: 'https://example.com/p?utm_source=a', publishedAt: todayIso }),
+      row({ id: 'g:x', sourceId: 's2', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'l:https://example.com/p', sourceId: 's3', link: 'https://www.example.com/p', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows).toHaveLength(1)
+    expect(result.hiddenCount).toBe(2)
+  })
 })

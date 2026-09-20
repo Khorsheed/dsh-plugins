@@ -885,6 +885,38 @@ describe('the wall hides republished duplicates behind one card', () => {
       expect(again.getAttribute('data-unread')).toBeNull()
     })
   })
+
+  it('folds two copies that share one guid — the live 3080 case, links differing', async () => {
+    // Measured live: two aggregator feeds carried "An Alien Mind" with an
+    // IDENTICAL guid — so both copies' stableEntryId is one `g:<guid>` BY
+    // DESIGN (it buys shared fetch/read/translation state). The links here
+    // genuinely differ, so only the id tier can fold them.
+    const guidFeed = (id: string, link: string, desc: string): string =>
+      '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>' + id + '</title><item>'
+      + '<title>An Alien Mind</title><link>' + link + '</link>'
+      + '<guid>https://openai.com/index/an-alien-mind/</guid>'
+      + '<pubDate>2026-09-17T08:00:00.000Z</pubDate><description>' + desc + '</description></item></channel></rss>'
+    const ui = bench({
+      sources: [rssSource('agg', { label: '聚合源' }), rssSource('orig', { label: '原始博客' })],
+      payloads: {
+        agg: guidFeed('agg', 'https://cdn.example.com/mirror/an-alien-mind', '聚合摘要'),
+        orig: guidFeed('orig', 'https://openai.com/index/an-alien-mind/', '原始摘要'),
+      },
+    })
+    await ui.settle()
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(1) })
+    expect(await screen.findByText(zh['dedupe.badge'].replace('{count}', '1'))).toBeTruthy()
+    expect(await screen.findByText(zh['foot.deduped'].replace('{count}', '1'))).toBeTruthy()
+    // The read-merge rides the shared id for free — this pin exists so nobody
+    // "fixes" the id collision without reading the dedupe note.
+    fireEvent.click(screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      const card = screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement
+      expect(card.getAttribute('data-unread')).toBeNull()
+    })
+  })
 })
 
 describe('an unreadable payload says so on the wall', () => {
