@@ -43,7 +43,7 @@ export function SkillPreviewCard({ skill, tag, modes, modeTotal, onMode, onOpen,
 }) {
   const deletable = DELETABLE_SOURCES.has(skill.source)
   return (
-    <div className={css.pvCard}>
+    <div className={css.pvCard} data-modes={modes === undefined ? undefined : 'true'}>
       <button type="button" className={css.pvMain} onClick={onOpen}>
         <span className={css.pvHead}>
           <span className={css.pvName}>{skill.name}</span>

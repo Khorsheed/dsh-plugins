@@ -170,7 +170,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                     <div className={css.scopeHint}>{t('modeNone')}</div>
                   ) : (
                     <>
-                      <div className={css.pvModes}>
+                      <div className={css.scopeModes}>
                         <span className={css.pvModesLabel}>{t('modeIn')}</span>
                         {modeChips.map(chip => (
                           <button

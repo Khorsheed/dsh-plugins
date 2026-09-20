@@ -193,6 +193,18 @@ describe('the comparison view', () => {
     expect((await modeSelect()).value).toBe('minimal')
   })
 
+  it('marks a card with a chip row, so the row owns the card\'s bottom padding', async () => {
+    // The row is card BODY content (the button above cannot pad it), so the card
+    // hands its bottom padding over exactly when the row renders — the contract
+    // the stylesheet keys on. An empty list must not claim it.
+    const { modeFaces } = renderCard({ faces })
+    expect(document.querySelector('[data-modes]')).toBeNull()
+    fireEvent.change(await modeSelect(), { target: { value: '\u0000compare' } })
+    await screen.findByText(/Compared 2 modes/)
+    expect(document.querySelectorAll('[data-modes="true"]').length).toBeGreaterThan(0)
+    expect(modeFaces).toHaveBeenCalledTimes(1)
+  })
+
   it('reports a mode it could not read instead of showing an empty face', async () => {
     const { modeFaces } = renderCard({
       faces: [

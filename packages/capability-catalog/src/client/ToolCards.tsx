@@ -37,7 +37,7 @@ function ToolCard({ tool, modes, modeTotal, onMode, onOpen, t }: {
   t: (key: CapabilityCatalogKey) => string
 }) {
   return (
-    <div className={css.pvCard}>
+    <div className={css.pvCard} data-modes={modes === undefined ? undefined : 'true'}>
       <button type="button" className={css.pvMain} onClick={onOpen}>
         <span className={css.pvHead}>
           <span className={css.pvName}>{tool.name}</span>
@@ -78,6 +78,12 @@ export function ToolCards({ loading, visibleTools, mcpGroups, segment, compariso
   const showsToolCards = segment !== 'mcp'
   const showsMcpServers = segment !== 'builtin' && segment !== 'plugin'
   const total = (showsToolCards ? visibleTools.length : 0) + (showsMcpServers ? mcpGroups.length : 0)
+  /** The chips for one tool, or undefined when it has no row (see the skill card). */
+  const chipsForTool = (tool: CatalogToolRow): readonly CatalogModeChip[] | undefined => {
+    if (comparison === null) return undefined
+    const chips = modeChipsFor(comparison.toolModes.get(tool.name))
+    return chips.length === 0 ? undefined : chips
+  }
   if (total === 0) {
     return segment === 'mcp'
       ? <div className={css.empty}>{t('mcpServerEmpty')}</div>
@@ -89,7 +95,7 @@ export function ToolCards({ loading, visibleTools, mcpGroups, segment, compariso
         <ToolCard
           key={tool.name}
           tool={tool}
-          modes={comparison === null ? undefined : modeChipsFor(comparison.toolModes.get(tool.name))}
+          modes={chipsForTool(tool)}
           modeTotal={comparison?.modes ?? 0}
           onMode={onMode}
           onOpen={() => onOpenTool(tool)}

@@ -115,6 +115,17 @@ export function CapabilityCatalogCard({
       ids === undefined ? [] : resolveModeChips(ids, presetOptions),
     [presetOptions],
   )
+  /** The chips a card should render, or undefined when it has no row at all: an
+   * EMPTY list must not claim the row, because the card gives that row its bottom
+   * padding (see `.pvCard[data-modes]` in the stylesheet). */
+  const cardModeChips = useCallback(
+    (ids: readonly string[] | undefined): readonly CatalogModeChip[] | undefined => {
+      if (comparison === null) return undefined
+      const chips = modeChipsFor(ids)
+      return chips.length === 0 ? undefined : chips
+    },
+    [comparison, modeChipsFor],
+  )
   /** A managed skill's preset-scope badge, for the surfaces where that policy is
    * the point (the orphan list, the modal) — never the mode grid, where it would
    * impersonate a source. */
@@ -471,7 +482,7 @@ export function CapabilityCatalogCard({
                 <SkillPreviewCard
                   key={skill.name}
                   skill={skill}
-                  modes={comparison === null ? undefined : modeChipsFor(comparison.skillModes.get(skill.name))}
+                  modes={cardModeChips(comparison?.skillModes.get(skill.name))}
                   modeTotal={comparison?.modes ?? 0}
                   onMode={handleModeChange}
                   onOpen={() => void openDetail(skill.name)}

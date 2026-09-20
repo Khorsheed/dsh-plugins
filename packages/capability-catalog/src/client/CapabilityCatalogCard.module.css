@@ -398,19 +398,40 @@
 
 /* Mode chips (comparison view only): which modes load this capability. They sit
    BELOW the card's main button — a button inside a button is invalid and would
-   fire both actions — and each chip is a jump into that mode. */
+   fire both actions — and each chip is a jump into that mode.
+   The row is card BODY content, so it carries the body's own 20px inset (the
+   button above cannot pad it) and the same 20px below it that the body has; a row
+   without that inset runs into the card border and clips its label. */
 .pvModes {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 8px;
+  /* 12px above = the body's own block rhythm (the button gives up its bottom
+     padding below); 20px below = the card's edge inset. */
+  padding: 12px 20px 20px;
+}
+
+/* A card whose chip row follows hands the bottom padding over to that row, so
+   the provider line and the row sit 12px apart like every other block. */
+.pvCard[data-modes='true'] .pvMain {
+  padding-bottom: 0;
 }
 
 .pvModesLabel {
   font-size: 11px;
   line-height: 17px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* The same row inside the detail modal's scope box, which already pads: no card
+   inset here, just the block rhythm of the box. */
+.scopeModes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .modeChip {
