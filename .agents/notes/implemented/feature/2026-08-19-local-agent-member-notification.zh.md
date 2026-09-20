@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-同一委派组（一个 room，或主 agent 的并行委派）的成员之间此前无法互相触达：CLI 成员在 run 中无法通知同组兄弟成员，任何跨成员知会都要人来转达。本 note 记录[成员通道提案](../../../proposals/active/2026-08-19-local-agent-member-channel.md)的里程碑 M3：成员 A 在 run 中调用 `member_message(to, text)` 工具；宿主以异步单向交接投递给成员 B（A 不等 B），并经**闸门交接**保持闸门所有权单一——room 在场归 room，缺席归家族。M1/M2（gateway remote 与可写 composer）记录于[成员通道 note](2026-08-19-local-agent-member-channel.md)；本 note 覆盖 M3 这个独立的决策集（桥接传输、token 鉴权、闸门契约）。
+同一委派组（一个 room，或主 agent 的并行委派）的成员之间此前无法互相触达：CLI 成员在 run 中无法通知同组兄弟成员，任何跨成员知会都要人来转达。本 note 记录[成员通道提案](../../../proposals/closed/2026-08-19-local-agent-member-channel.md)的里程碑 M3：成员 A 在 run 中调用 `member_message(to, text)` 工具；宿主以异步单向交接投递给成员 B（A 不等 B），并经**闸门交接**保持闸门所有权单一——room 在场归 room，缺席归家族。M1/M2（gateway remote 与可写 composer）记录于[成员通道 note](2026-08-19-local-agent-member-channel.md)；本 note 覆盖 M3 这个独立的决策集（桥接传输、token 鉴权、闸门契约）。
 
 ## Decision
 
@@ -56,6 +56,6 @@ receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessag
 
 ## Cross-references
 
-- [成员通道提案](../../../proposals/active/2026-08-19-local-agent-member-channel.md)——里程碑计划（本 note 实现 kimi 的 M3）。
+- [成员通道提案](../../../proposals/closed/2026-08-19-local-agent-member-channel.md)——里程碑计划（本 note 实现 kimi 的 M3）。
 - [成员通道 M1+M2](2026-08-19-local-agent-member-channel.md)——本 note 依赖的 gateway remote 与可写 composer。
 - [委派 facade](2026-08-18-local-agent-delegation-facade.md)——投递链复用的 resume/锁原语。

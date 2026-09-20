@@ -6,7 +6,7 @@ English | [中文](2026-08-19-local-agent-member-notification.zh.md)
 
 ## Problem
 
-Members of one delegation group (a room, or the main agent's parallel delegations) had no way to reach each other: a CLI member mid-run could not notify a sibling member, and every cross-member nudge had to be routed by the human. This is milestone M3 of the [member-channel proposal](../../../proposals/active/2026-08-19-local-agent-member-channel.md): member A calls a `member_message(to, text)` tool mid-run; the host delivers to member B as an async one-way handoff (A never waits on B), through a **gate handoff** that keeps dispatch-gate ownership single — room when present, the family when not. M1/M2 (the gateway remotes and the writable composer) are recorded in the [member-channel note](2026-08-19-local-agent-member-channel.md); this note covers M3 as a separate decision set (bridge transport, token auth, gate contract).
+Members of one delegation group (a room, or the main agent's parallel delegations) had no way to reach each other: a CLI member mid-run could not notify a sibling member, and every cross-member nudge had to be routed by the human. This is milestone M3 of the [member-channel proposal](../../../proposals/closed/2026-08-19-local-agent-member-channel.md): member A calls a `member_message(to, text)` tool mid-run; the host delivers to member B as an async one-way handoff (A never waits on B), through a **gate handoff** that keeps dispatch-gate ownership single — room when present, the family when not. M1/M2 (the gateway remotes and the writable composer) are recorded in the [member-channel note](2026-08-19-local-agent-member-channel.md); this note covers M3 as a separate decision set (bridge transport, token auth, gate contract).
 
 ## Decision
 
@@ -56,6 +56,6 @@ receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessag
 
 ## Cross-references
 
-- [Member-channel proposal](../../../proposals/active/2026-08-19-local-agent-member-channel.md) — the milestone plan (this implements M3 for kimi).
+- [Member-channel proposal](../../../proposals/closed/2026-08-19-local-agent-member-channel.md) — the milestone plan (this implements M3 for kimi).
 - [Member channel M1+M2](2026-08-19-local-agent-member-channel.md) — the gateway remotes and writable composer this builds on.
 - [Delegation facade](2026-08-18-local-agent-delegation-facade.md) — the resume/lock primitives the delivery chain reuses.

@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-23-parked-turn-resume.md) | 中文
 
-实施[提案 2026-08-23-parked-turn-resume](../../../../proposals/active/2026-08-23-parked-turn-resume.md)。
+实施[提案 2026-08-23-parked-turn-resume](../../../../proposals/closed/2026-08-23-parked-turn-resume.md)。
 
 ## 问题
 

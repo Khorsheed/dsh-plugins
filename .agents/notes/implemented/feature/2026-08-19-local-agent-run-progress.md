@@ -6,7 +6,7 @@ English | [中文](2026-08-19-local-agent-run-progress.zh.md)
 
 ## Problem
 
-A facade-started delegation run was invisible until it settled: a caller (room) could not render "in progress", and the only progress-adjacent data (kimi's mirrored-line count) sat in the registry's own bookkeeping. The proposal's M2 draft had the facade heartbeat read `kimiMirroredLines` off the registry — rejected in review as a cross-package smell: the facade would reach into provider-specific bookkeeping, and progress would be limited to what the facade happens to know. Progress must be **provider-reported**; the facade only forwards. This is milestone M2 of the [delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md).
+A facade-started delegation run was invisible until it settled: a caller (room) could not render "in progress", and the only progress-adjacent data (kimi's mirrored-line count) sat in the registry's own bookkeeping. The proposal's M2 draft had the facade heartbeat read `kimiMirroredLines` off the registry — rejected in review as a cross-package smell: the facade would reach into provider-specific bookkeeping, and progress would be limited to what the facade happens to know. Progress must be **provider-reported**; the facade only forwards. This is milestone M2 of the [delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md).
 
 ## Decision
 
@@ -41,6 +41,6 @@ The kimi provider reports `{ kind: 'mirror', mirroredLines }` from `mirrorKimiAf
 
 ## Cross-references
 
-- [Delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md) — the milestone plan this implements (M2).
+- [Delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md) — the milestone plan this implements (M2).
 - [Delegation facade](2026-08-18-local-agent-delegation-facade.md) — the M1 facade this extends.
 - [dsh sub-agent session mirror](2026-08-18-local-agent-dsh-session-mirror.md) — the settle-time mirror the kimi report follows.

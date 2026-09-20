@@ -389,7 +389,7 @@ Claude 的 partial 输出参数在统一启动路径中无条件按协议正确�
 | 既有账本 | 本提案关系 |
 |---|---|
 | [room 会话提升](2026-08-27-room-session-promotion.md) | 保留入口设计；新增默认协调者角色，不恢复独立房间存储 |
-| [委派门面](2026-08-18-local-agent-delegation-api.md) / [成员双向通道](2026-08-19-local-agent-member-channel.md) | 复用 start/resume、持久身份和桥接；增量补齐交互与结构化回报 |
+| [委派门面](../closed/2026-08-18-local-agent-delegation-api.md) / [成员双向通道](../closed/2026-08-19-local-agent-member-channel.md) | 复用 start/resume、持久身份和桥接；增量补齐交互与结构化回报 |
 | [live driver](../closed/2026-08-20-local-agent-live-driver.md) | 复用执行基础，进一步验证房间端到端流式；不重开其已关闭范围 |
 | [派发可靠性](2026-09-05-local-agent-member-dispatch-reliability.md) | 共用根队列/模式诚实性/流式修复；认领时在原提案记录对应实现，避免两份修复 |
 | [room composer parity](2026-09-05-room-composer-parity.md) | 复用输入体验修复，增加控件跟随协调者；具体重复 UI 项由原 owner 合并 |

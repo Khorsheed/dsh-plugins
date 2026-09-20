@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-各 CLI provider 此前只在 CLI 进程退出后才把 transcript 镜像进 dsh 子会话，关注子会话的调用方（room 的「进行中」视图）在整个 run 期间只能看到静默。M2 已加进度通道（`reportRunProgress` → `localAgent/run-progress` 事件 + 按调用 `onProgress`）；M3 让镜像本身实时化，并把每条新镜像的行报告为 `{ kind: 'delta', text }` 进度。本 note 是[委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)的 M3 里程碑。
+各 CLI provider 此前只在 CLI 进程退出后才把 transcript 镜像进 dsh 子会话，关注子会话的调用方（room 的「进行中」视图）在整个 run 期间只能看到静默。M2 已加进度通道（`reportRunProgress` → `localAgent/run-progress` 事件 + 按调用 `onProgress`）；M3 让镜像本身实时化，并把每条新镜像的行报告为 `{ kind: 'delta', text }` 进度。本 note 是[委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)的 M3 里程碑。
 
 ## Decision
 

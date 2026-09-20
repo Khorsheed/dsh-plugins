@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-代表用户行事的插件（提案中的 room、未来的编排器）此前没有受支持的途径委派给本地 coding-agent CLI：家族的委派协议——按 (parent, provider) 的 intent FIFO、resume 锁、经归属校验的委派记录——只能通过重新实现模型工具的内部逻辑来触达，而朴素的重新实现会重新打开孤儿 intent 窗口（`ctx.subagents.start()` 在 provider 消费前抛错时残留在 FIFO 里的 intent 会被下一次同名 (parent, provider) 的 start 误消费）。跨重启续跑还有第二个缺口：进程内卸载后 dsh 子会话不在场，家族 provider 对此 fail loud。本 note 是[委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)的 M1 里程碑。
+代表用户行事的插件（提案中的 room、未来的编排器）此前没有受支持的途径委派给本地 coding-agent CLI：家族的委派协议——按 (parent, provider) 的 intent FIFO、resume 锁、经归属校验的委派记录——只能通过重新实现模型工具的内部逻辑来触达，而朴素的重新实现会重新打开孤儿 intent 窗口（`ctx.subagents.start()` 在 provider 消费前抛错时残留在 FIFO 里的 intent 会被下一次同名 (parent, provider) 的 start 误消费）。跨重启续跑还有第二个缺口：进程内卸载后 dsh 子会话不在场，家族 provider 对此 fail loud。本 note 是[委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)的 M1 里程碑。
 
 ## Decision
 
@@ -39,6 +39,6 @@ Status: implemented
 
 ## Cross-references
 
-- [委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)——本 note 实现的里程碑计划（M1）。
+- [委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)——本 note 实现的里程碑计划（M1）。
 - [CLI 子代理 resume](2026-08-16-local-agent-resume.md)——门面封装的工具侧 resume 机制。
 - [dsh 子代理会话镜像](2026-08-18-local-agent-dsh-session-mirror.md)——reattach 后的子会话接收的 transcript 镜像。

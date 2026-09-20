@@ -396,7 +396,7 @@ export type RoomFailure =
 
 /**
  * The family bridge's gate entry, verbatim-frozen contract
- * (`proposals/active/2026-08-19-local-agent-member-channel.md`): the bridge
+ * (`proposals/closed/2026-08-19-local-agent-member-channel.md`): the bridge
  * probes `ctx.get('room')` and duck-type-calls this method. Phase 1's gate is
  * always human confirmation, so the receipt is always 'pending-confirm';
  * 'sent'/'busy' belong to the phase-2 auto gate.

@@ -1,6 +1,8 @@
 # add MCP：工具与技能里统一管理 MCP server（粘贴解析 + 凭据 + 启停）
 
+- **分类**：plugin
 - **状态**：planned
+- **最后更新**：2026-08-30
 - **官方依赖**：需契约扩展（upstream 候选）——复用 `@deepseek-ai/dsh-mcp-client` 的连接能力；若其无法作为可独立安装的 peer，则退化为目录内建轻量 MCP client。
 - **范围**：Phase 2。**Phase 1**（工具 tab 展示）已在进行；本提案在工具 tab 之上加「MCP 服务器 管理」。
 

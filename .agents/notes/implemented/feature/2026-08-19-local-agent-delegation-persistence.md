@@ -6,7 +6,7 @@ English | [中文](2026-08-19-local-agent-delegation-persistence.zh.md)
 
 ## Problem
 
-`LocalAgentRegistry`'s delegation mappings (`childSessionId → { provider, parentSessionId, cliSessionId, kimiMirroredLines? }`) and the kimi mirror offsets lived in in-memory Maps, lost on host restart — so a resume handle from a previous run failed `resolveDelegation` with "no delegation recorded" and the cross-restart resume chain stayed broken. This is milestone M4 of the [delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md); the storage design is absorbed verbatim from item 1 of the rejected [codex persistence note](../../rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md) (absorbed into the proposal's M4 when that note was retired).
+`LocalAgentRegistry`'s delegation mappings (`childSessionId → { provider, parentSessionId, cliSessionId, kimiMirroredLines? }`) and the kimi mirror offsets lived in in-memory Maps, lost on host restart — so a resume handle from a previous run failed `resolveDelegation` with "no delegation recorded" and the cross-restart resume chain stayed broken. This is milestone M4 of the [delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md); the storage design is absorbed verbatim from item 1 of the rejected [codex persistence note](../../rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md) (absorbed into the proposal's M4 when that note was retired).
 
 ## Decision
 
@@ -40,7 +40,7 @@ With M1's reattach recipe, the cross-restart chain closes: the mapping loads at 
 
 ## Cross-references
 
-- [Delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md) — the milestone plan this completes (M4, design §2).
+- [Delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md) — the milestone plan this completes (M4, design §2).
 - [Rejected codex persistence note](../../rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md) — source of the absorbed storage design (item 1).
 - [Delegation facade](2026-08-18-local-agent-delegation-facade.md) — the M1 facade whose reattach recipe this completes.
 - [Live transcript mirroring](2026-08-19-local-agent-live-mirror.md) — the M3 mirror whose offset this persists.

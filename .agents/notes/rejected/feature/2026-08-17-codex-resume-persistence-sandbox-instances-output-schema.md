@@ -1,6 +1,6 @@
 # Agent Note: codex resume 持久化、双 sandbox 实例与 output-schema 结构化结论
 
-Status: rejected — item 1 (delegation-mapping persistence) absorbed into proposals/active/2026-08-18-local-agent-delegation-api.md (M4); items 2-3 (dual-sandbox instances, output-schema) dropped with this note, re-file standalone if needed
+Status: rejected — item 1 (delegation-mapping persistence) absorbed into proposals/closed/2026-08-18-local-agent-delegation-api.md (M4); items 2-3 (dual-sandbox instances, output-schema) dropped with this note, re-file standalone if needed
 
 English | [中文](2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.zh.md)
 

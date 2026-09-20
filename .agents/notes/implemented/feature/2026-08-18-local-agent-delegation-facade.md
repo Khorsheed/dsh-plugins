@@ -6,7 +6,7 @@ English | [中文](2026-08-18-local-agent-delegation-facade.zh.md)
 
 ## Problem
 
-Plugins acting on the user's behalf (the proposed room plugin, future orchestrators) had no supported way to delegate to a local coding-agent CLI: the family's delegation protocol — per-(parent, provider) intent FIFO, resume locks, ownership-checked delegation records — was only reachable by re-implementing the model tool's internals, and a naive re-implementation re-opens the orphan-intent window (a staged intent left in the FIFO when `ctx.subagents.start()` throws before the provider consumes it gets misconsumed by the next same-(parent, provider) start). Cross-restart resume had a second gap: the dsh child session is not live after an in-process unload, and the family providers fail loud on that. This is milestone M1 of the [delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md).
+Plugins acting on the user's behalf (the proposed room plugin, future orchestrators) had no supported way to delegate to a local coding-agent CLI: the family's delegation protocol — per-(parent, provider) intent FIFO, resume locks, ownership-checked delegation records — was only reachable by re-implementing the model tool's internals, and a naive re-implementation re-opens the orphan-intent window (a staged intent left in the FIFO when `ctx.subagents.start()` throws before the provider consumes it gets misconsumed by the next same-(parent, provider) start). Cross-restart resume had a second gap: the dsh child session is not live after an in-process unload, and the family providers fail loud on that. This is milestone M1 of the [delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md).
 
 ## Decision
 
@@ -39,6 +39,6 @@ Plugins acting on the user's behalf (the proposed room plugin, future orchestrat
 
 ## Cross-references
 
-- [Delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md) — the milestone plan this implements (M1).
+- [Delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md) — the milestone plan this implements (M1).
 - [CLI sub-agent resume](2026-08-16-local-agent-resume.md) — the tool-side resume mechanism the facade wraps.
 - [dsh sub-agent session mirror](2026-08-18-local-agent-dsh-session-mirror.md) — the transcript mirroring the reattached child session receives.

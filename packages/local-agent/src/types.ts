@@ -616,7 +616,7 @@ export interface LocalAgentModelBroker {
 
 /**
  * One member-to-member notification handed to the room gate — the frozen
- * contract (`proposals/active/2026-08-19-local-agent-member-channel.md` §3):
+ * contract (`proposals/closed/2026-08-19-local-agent-member-channel.md` §3):
  * `{ from, to, content, parentSessionId, provenance }`. The bridge cannot
  * speak roster names for the SENDER (only room owns the roster), so `from`
  * is the sender's dsh child session id and the full delegation view rides

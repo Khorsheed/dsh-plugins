@@ -6,7 +6,7 @@ English | [中文](2026-08-19-local-agent-live-mirror.zh.md)
 
 ## Problem
 
-Every CLI provider mirrored its transcript into the dsh child session only AFTER the CLI process exited, so a caller watching the child session (room's "in progress" view) saw silence for the whole run. M2 added the progress channel (`reportRunProgress` → `localAgent/run-progress` event + per-call `onProgress`); M3 makes the mirroring itself live and reports each mirrored line as a `{ kind: 'delta', text }` progress. This is milestone M3 of the [delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md).
+Every CLI provider mirrored its transcript into the dsh child session only AFTER the CLI process exited, so a caller watching the child session (room's "in progress" view) saw silence for the whole run. M2 added the progress channel (`reportRunProgress` → `localAgent/run-progress` event + per-call `onProgress`); M3 makes the mirroring itself live and reports each mirrored line as a `{ kind: 'delta', text }` progress. This is milestone M3 of the [delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md).
 
 ## Decision
 

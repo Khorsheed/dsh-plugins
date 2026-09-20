@@ -1,8 +1,8 @@
 # ankh-guard:等待用户输入的回合不应被重启自动续跑(parked-turn-resume)
 
 - **分类**：plugin
-- **状态**：verified（M1 已交付并合入 main `dee2d6f`；包内测试绿。进 3080 后转 done）
-- **最后更新**：2026-08-23
+- **状态**：done（M1 已交付并合入 main `dee2d6f`；包内测试绿；已随 ankh-guard 0.3.0 出包并进 3080）
+- **最后更新**：2026-09-21
 - **查重结果**：已搜 `proposals/active/`、`proposals/closed/`、`.agents/notes/`（含 archived)。命中均为背景而非同一意图：ankh-guard 的 resume 机制历史 notes(`2026-08-20-review-sweep-guard-fixes` 等）确立了"中断会话自动续跑"的现状语义，本提案是它的边界修正而非重复；`2026-08-22-restart-lock-unify` 是并发互斥，无关。无重复，新建。
 - **官方依赖**：**核实结论：查不到**——`UserQuestionService` 是 provider 注册表而非 pending-state store，SIGTERM 处理器也无法 await。已按约定登记为上游接缝 [S14](../../docs/upstream-seam-registry.md)；交付形态仍是纯插件（过滤移到 resume/deliver 路径绕行）。
 

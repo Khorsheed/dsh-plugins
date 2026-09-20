@@ -1,6 +1,6 @@
 /**
  * The room's ONLY coupling point to the local-agent family's delegation
- * facade (`proposals/active/2026-08-18-local-agent-delegation-api.md`, M1
+ * facade (`proposals/closed/2026-08-18-local-agent-delegation-api.md`, M1
  * landed as `LocalAgentRegistry.start/resume/cancel`). The TYPES come from a
  * type-only import of the family core (drift-checked at compile time); the
  * RUNTIME stays a probe — `ctx.get('localAgent')` plus method-existence
