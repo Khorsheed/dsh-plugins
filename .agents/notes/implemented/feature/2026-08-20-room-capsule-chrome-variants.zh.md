@@ -35,7 +35,7 @@ dock 双胶囊（目标 + 任务）的第一位评审者给出了"设计感差"�
 
 ## Testing
 
-现有胶囊客户端 spec（`room-dock-capsules.client.spec.tsx`，10 个测试）对新 DOM 钉住不变的行为。视觉验证是手动的：在 scratch 实例上对两个变体的折叠/展开做 Playwright 截图（scratch-screenshots/variant-a-*.png / variant-b-*.png），对象是 :3199 的活 room 会话。
+现有胶囊客户端 spec（`room-dock-capsules.client.spec.tsx`，10 个测试）对新 DOM 钉住不变的行为。视觉验证是手动的：在 scratch 实例上对两个变体的折叠/展开做 Playwright 截图（variant-a-*.png / variant-b-*.png 截图当时只在本机 scratch，已清掉），对象是 :3199 的活 room 会话。
 
 ## Related
 

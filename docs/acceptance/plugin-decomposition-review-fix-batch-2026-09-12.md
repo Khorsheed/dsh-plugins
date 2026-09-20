@@ -69,8 +69,8 @@ build ✓、test ✓、pack bundles(**25 包 packed and verified**)✓。`43d024
 
 ## 复审回执
 
-- `scratch-ds-design-review/05-review-A-round2.md`:WP1/WP2/WP4a/WP6/WP10 行为成立;唯一阻塞项(provider patch 负约束无测试)已在 `bcb1dc5` 修复。
-- `scratch-ds-design-review/05-review-C-round2.md`:WP3/WP4a/WP4b 成立;两个阻塞项(`check-plugin-independence` 漏配、
+- [审查者 A 复审](plugin-decomposition-review-A-round2-2026-09-12.md):WP1/WP2/WP4a/WP6/WP10 行为成立;唯一阻塞项(provider patch 负约束无测试)已在 `bcb1dc5` 修复。
+- [审查者 C 复审](plugin-decomposition-review-C-round2-2026-09-12.md):WP3/WP4a/WP4b 成立;两个阻塞项(`check-plugin-independence` 漏配、
   WP8 最小交付集)已分别在 `678ba77` 与三个 WP8 提交修复。
 - **第三轮(修复验证)**
   - `06-review-A-round3.md`:**阻塞项 A 解除**。审查者自己构造了一次真实违规(给 provider patch 注入 core 行),

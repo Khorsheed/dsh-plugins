@@ -40,7 +40,7 @@ Status: implemented
 
 ## Testing
 
-144 测试保持绿，断言更新在 `room-dock-capsules.client.spec.tsx`（折叠行百分比/计数/runner 内容、卡片 `1/3` 分数、面板在胶囊行之前的树序断言）和 `room-composer.client.spec.tsx`（`tasks.doing` 键）。真机验证在 scratch :3199 上跑了三轮 Playwright（scratch-screenshots/design-a-*.png）：折叠态、goal 卡、任务面板、运行扫光 + 半环、完成动效、暗色模式、无 goal 引导态。第一轮暴露了 `composes` UA 描边 bug；第二、三轮验证修复和新播种房间的全流程（设 goal → 添加 → 完成 → 推进记录）。描边 + 锚定的后续修正两个主题都验过（scratch-screenshots/capsules-*.png）：折叠胶囊有可见描边；折叠态与两种面板展开态下胶囊行的 `getBoundingClientRect().top` 完全相同（1280×800 视口下均为 642px）。
+144 测试保持绿，断言更新在 `room-dock-capsules.client.spec.tsx`（折叠行百分比/计数/runner 内容、卡片 `1/3` 分数、面板在胶囊行之前的树序断言）和 `room-composer.client.spec.tsx`（`tasks.doing` 键）。真机验证在 scratch :3199 上跑了三轮 Playwright（design-a-*.png 截图当时只在本机 scratch，已清掉）：折叠态、goal 卡、任务面板、运行扫光 + 半环、完成动效、暗色模式、无 goal 引导态。第一轮暴露了 `composes` UA 描边 bug；第二、三轮验证修复和新播种房间的全流程（设 goal → 添加 → 完成 → 推进记录）。描边 + 锚定的后续修正两个主题都验过（capsules-*.png 截图当时只在本机 scratch，已清掉）：折叠胶囊有可见描边；折叠态与两种面板展开态下胶囊行的 `getBoundingClientRect().top` 完全相同（1280×800 视口下均为 642px）。
 
 ## Related
 
