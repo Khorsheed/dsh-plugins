@@ -36,7 +36,7 @@ The reader's main scenes are image-heavy tech blogs and papers, and one whole cl
 
 ## Testing
 
-`packages/capture` — 61 tests, all green locally:
+`packages/capture` — 62 tests, all green locally:
 
 - `tests/url-policy.spec.ts`: the refusal matrix pure (schemes, credentials, the whole IP classification table incl. mapped/NAT64/6to4 and parser-normalized exotic forms, stubbed-DNS resolution outcomes, localhost by name).
 - `tests/page-tasks.spec.ts` (jsdom): CSS-var inlining onto SVG (style + presentation attribute), inheritance and nested `var()` chains, fallbacks, specificity/order/important cascades, the rightmost-compound prefilter, script/style stripping, the size cap, sweep stepping/dwell/budget against a scripted scrollable page.

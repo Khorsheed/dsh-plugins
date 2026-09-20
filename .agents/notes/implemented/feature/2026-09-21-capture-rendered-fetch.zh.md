@@ -36,7 +36,7 @@ Status: implemented
 
 ## Testing
 
-`packages/capture`——61 个测试，本地全绿：
+`packages/capture`——62 个测试，本地全绿：
 
 - `tests/url-policy.spec.ts`：纯拒绝矩阵（scheme、凭据、整表 IP 分类——含映射/NAT64/6to4 与解析器归一化的异形、桩 DNS 的各结局、按名拒绝 localhost）。
 - `tests/page-tasks.spec.ts`（jsdom）：CSS 变量内联到 SVG（style + 呈现属性双写）、继承与嵌套 `var()` 链、回退、权重/序/important 级联、最右复合预筛、脚本/样式剥除、尺寸上限、遍扫的步进/停留/预算（脚本化的可滚动页面）。
