@@ -46,7 +46,9 @@ import {
   READER_SOURCE_KINDS,
   type ReaderPreviewFailureCode,
   type ReaderRecentEntry,
+  type ReaderSentenceLearn,
   type ReaderSourceKind,
+  type ReaderStorageStats,
   type ReaderTag,
 } from '../types.ts'
 import { extractArticle } from './extract-article.ts'
@@ -54,7 +56,8 @@ import { parseFeed, type ReaderEntry } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
-  restoreArticle, runTranslation, segmentAt, setPairHover, setView, toggleSegment, translateTexts,
+  primeMemory, restoreArticle, runTranslation, segmentAt, segmentsOf, setPairHover, setView, toggleSegment,
+  translateTexts, translationHash,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
   type TranslationView, type TranslatorLike, type TranslatorSessionLike,
 } from './translate.ts'
@@ -338,6 +341,18 @@ const SCROLL_SETTLE_ATTEMPTS = 30
  * position is theirs.
  */
 const POSITION_SETTLE_MS = 20_000
+
+/**
+ * Format the store's character accounting as an approximate size.
+ *
+ * The host counts CHARACTERS (every budget in the document is written in
+ * chars), and this readout must never pretend to a precision the unit does not
+ * have — so it says MB/KB of text, one decimal at most.
+ */
+function formatStorageSize(chars: number): string {
+  if (chars >= 1_000_000) return `${(chars / 1_000_000).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(chars / 1_000))} KB`
+}
 
 /**
  * The article's top-level blocks, ignoring the translation's own reveal lines.
@@ -684,6 +699,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const [manageKind, setManageKind] = useState<'all' | ReaderSourceKind>('all')
   const [manageSort, setManageSort] = useState<'added' | 'name' | 'fetched'>('added')
+  /** The manage page's storage readout, loaded on entry (host aggregates; the tables never cross). */
+  const [storageStats, setStorageStats] = useState<ReaderStorageStats | null>(null)
+  /** The translation budget draft, in MB (committed on blur/Enter, like the TTL select commits on pick). */
+  const [budgetDraft, setBudgetDraft] = useState('')
+  /** The clear button's second step: armed once, executed on the next click. */
+  const [clearArmed, setClearArmed] = useState(false)
 
   /* ---------------------------------------------------- on-device translation */
 
@@ -880,9 +901,39 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       if (result.ok) actions.setTags(result.value.tags, result.value.counts)
     })
     void props.getCachePolicy().then(result => {
-      if (result.ok) actions.setCacheTtl(result.value.ttlHours)
+      if (result.ok) {
+        actions.setCacheTtl(result.value.ttlHours)
+        setBudgetDraft(String(Math.round(result.value.translationBudgetChars / 1_000_000)))
+      }
     })
   }, [actions, props, rev])
+
+  /** The manage page's storage readout: read on entry, and after a clear. */
+  const loadStorageStats = useCallback(async () => {
+    const result = await props.getStorageStats()
+    if (result.ok) setStorageStats(result.value)
+  }, [props])
+
+  useEffect(() => {
+    if (view === 'manage') void loadStorageStats()
+    else setClearArmed(false)
+  }, [view, loadStorageStats])
+
+  /** Commit the translation budget draft (MB) through the cache policy. */
+  const commitBudget = useCallback(() => {
+    const mb = Number(budgetDraft)
+    if (!Number.isFinite(mb) || mb <= 0) return
+    void props.setCachePolicy(cacheTtlHours, undefined, Math.round(mb * 1_000_000)).then(result => {
+      if (result.ok) void loadStorageStats()
+    })
+  }, [props, budgetDraft, cacheTtlHours, loadStorageStats])
+
+  /** Clear both translation tiers, on the button's second click. */
+  const clearTranslations = useCallback(() => {
+    if (!clearArmed) { setClearArmed(true); return }
+    setClearArmed(false)
+    void props.clearTranslations().then(result => { if (result.ok) void loadStorageStats() })
+  }, [props, clearArmed, loadStorageStats])
 
   useEffect(() => {
     void props.capabilities().then(result => {
@@ -1026,6 +1077,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           entryId: entry.id,
           url,
           html: extracted.html,
+          // The map rides the body's identity: a re-extraction of the same
+          // payload keeps it, a changed body retires it in the same commit.
+          bodyHash: translationHash(extracted.html),
           ...(stored.value.truncated === true ? { truncated: true } : {}),
           ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
         })
@@ -1184,6 +1238,73 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [openEntryId])
 
   /**
+   * Warm the page's sentence memory from the host's two tiers before a run
+   * spends the model.
+   *
+   * The entry's own exact-fit map answers first — but only while its `bodyHash`
+   * is the body's, so a re-fetched body invalidates the map and the global
+   * memory still serves every unchanged sentence. Either tier failing is just a
+   * miss: the run then pays the model, exactly as before this store existed.
+   *
+   * @param pair - the run's pair label.
+   * @param entryId - the open entry.
+   * @param html - the body on screen (its hash gates the entry map).
+   * @param built - the segmented article (its sentences are what is asked for).
+   */
+  const warmMemory = useCallback(async (pair: string, entryId: string, html: string, built: BuiltArticle): Promise<void> => {
+    const byHash = new Map<string, string>()
+    for (const segment of segmentsOf(built)) byHash.set(translationHash(segment.original), segment.original)
+    if (byHash.size === 0) return
+    const covered = new Set<string>()
+    try {
+      const answer = await props.getEntryTranslation(entryId)
+      const record = answer.ok ? answer.value.translation : undefined
+      if (record !== undefined && record.pair === pair && record.bodyHash === translationHash(html)) {
+        const pour: { text: string; translation: string }[] = []
+        for (const [hash, translation] of Object.entries(record.segments)) {
+          const text = byHash.get(hash)
+          if (text !== undefined) { pour.push({ text, translation }); covered.add(hash) }
+        }
+        primeMemory(pair, pour)
+      }
+    } catch {
+      // A missing or unreadable record is a miss, never an error in the run.
+    }
+    const missing = [...byHash.keys()].filter(hash => !covered.has(hash))
+    if (missing.length === 0) return
+    try {
+      const slice = await props.getSentenceTranslations({ pair, hashes: missing })
+      if (!slice.ok) return
+      primeMemory(pair, Object.entries(slice.value.translations).flatMap(([hash, translation]) => {
+        const text = byHash.get(hash)
+        return text === undefined ? [] : [{ text, translation }]
+      }))
+    } catch {
+      // Same: a miss.
+    }
+  }, [props])
+
+  /**
+   * Persist what one run produced, in one call — batched by run, never per
+   * sentence. The recalled sentences ride along: their LRU stamps are what
+   * makes the host's budget a use-clock, and they keep the entry's map complete.
+   */
+  const persistTranslations = useCallback((
+    pair: string,
+    learned: readonly ReaderSentenceLearn[],
+    recalled: readonly ReaderSentenceLearn[],
+    entry?: { entryId: string; bodyHash: string },
+  ): void => {
+    if (learned.length === 0 && recalled.length === 0 && entry === undefined) return
+    void props.rememberSentences({
+      pair,
+      entries: learned,
+      recalled,
+      ...(entry === undefined ? {} : { entryId: entry.entryId, bodyHash: entry.bodyHash }),
+    })
+  }, [props])
+
+  /**
    * Get the article translated, reusing a session this page already built.
    *
    * The `Translator` API demands user activation for `create()`, so a session
@@ -1272,12 +1393,31 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     // Recorded BEFORE the run: the record is what makes a remounted pane turn
     // the globe back on, and the sentence memory makes the re-run cheap.
     if (openEntryId !== null) rememberTranslation(openEntryId, initialView, sourceLanguage)
+    // The host's tiers answer first: the entry's exact-fit map, then the global
+    // sentence memory. Only what neither knows is spent on the model.
+    const pair = `${sourceLanguage}→${TRANSLATION_TARGET}`
+    if (openEntryId !== null && articleHtml !== null) {
+      await warmMemory(pair, openEntryId, articleHtml, built)
+      if (cancel.cancelled) { setTranslatePhase('idle'); return }
+    }
     const result = await runTranslation({
       built,
       session,
+      pair,
       cancelled: () => cancel.cancelled,
       onProgress: (done, total) => { setTranslateProgress({ done, total }) },
     })
+    // What the run learned (and what it was served) persists in one batch: a
+    // reload loses the page's memory, and the next visit pays the model again
+    // without this.
+    persistTranslations(
+      pair,
+      result.learned,
+      result.recalled,
+      openEntryId !== null && articleHtml !== null
+        ? { entryId: openEntryId, bodyHash: translationHash(articleHtml) }
+        : undefined,
+    )
     if (cancel.cancelled) return
     cancelRef.current = null
     if (result.total > 0 && result.done === 0) {
@@ -1291,7 +1431,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     // Re-paint once the first units exist, so the translated typography applies.
     setView(built, initialView, translateClasses)
-  }, [translator, translationSource, translateClasses, t, openEntryId])
+  }, [translator, translationSource, translateClasses, t, openEntryId, articleHtml, warmMemory, persistTranslations])
 
   /** Apply one view to a finished translation. */
   const applyView = useCallback((next: TranslationView) => {
@@ -1450,14 +1590,31 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             setWallAvailability('unavailable')
             return
           }
+          // The host's memory answers first, one slice call per group: a wall
+          // re-translated after a reload should be a read, not a model run.
+          const pair = `${language}→${TRANSLATION_TARGET}`
+          try {
+            const byHash = new Map(group.map(field => [translationHash(field.text), field.text] as const))
+            const slice = await props.getSentenceTranslations({ pair, hashes: [...byHash.keys()] })
+            if (slice.ok) {
+              primeMemory(pair, Object.entries(slice.value.translations).flatMap(([hash, translation]) => {
+                const text = byHash.get(hash)
+                return text === undefined ? [] : [{ text, translation }]
+              }))
+            }
+          } catch {
+            // A miss is the model's job, as before.
+          }
           setWallProgress({ done: 0, total: group.length })
           const outcome = await translateTexts(
             group.map(field => field.text),
+            pair,
             session,
             () => cancel.cancelled,
             (done, total) => setWallProgress({ done, total }),
           )
           if (cancel.cancelled) break
+          persistTranslations(pair, outcome.learned, outcome.recalled)
           setCardTranslations(current => {
             const next = { ...current }
             for (const field of group) {
@@ -1473,7 +1630,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       wallRunningRef.current = false
       setWallProgress(null)
     }
-  }, [translator, wallSession])
+  }, [translator, wallSession, props, persistTranslations])
 
   // Enqueue the cards as they become visible. jsdom has no IntersectionObserver,
   // and neither would a very old browser, so the fallback translates what is
@@ -2069,12 +2226,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /** Drop one source (and everything it brought) from the subscription page. */
   const removeSource = useCallback(async (id: string) => {
-    const result = await props.removeSource(id)
+    // The entries this pane has parsed for the source: their translation maps
+    // die with the source (the host never parses feeds, so the caller names
+    // them). A rolled-off entry's map is the budget's business, as before.
+    const entryIds = allEntries.filter(entry => entry.sourceId === id).map(entry => entry.id)
+    const result = await props.removeSource(id, entryIds)
     if (result.ok) {
       actions.clearParsed()
       actions.refresh()
     }
-  }, [actions, props])
+  }, [actions, props, allEntries])
 
   /**
    * Delete one saved link from wherever the reader is standing.
@@ -3286,6 +3447,60 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 ))}
               </select>
             </label>
+          </div>
+          {/* The storage readout: what the two caches currently hold, plus the
+              one budget the reader controls. The numbers are aggregated on the
+              host — the tables never cross the wire for a settings page. The
+              clear button is two-step in place (the pane's confirm idiom is a
+              second click, not a modal). */}
+          <div className={css.settingsRow}>
+            <span className={css.setting} title={t('sources.storageBodiesHelp')}>
+              <span className={css.settingLabel}>{t('sources.storageBodies')}</span>
+              <span className={css.settingReadout}>
+                {storageStats === null
+                  ? '—'
+                  : t('sources.storageBodiesUsage', {
+                    entries: String(storageStats.bodies.entries),
+                    size: formatStorageSize(storageStats.bodies.chars),
+                  })}
+              </span>
+            </span>
+            <span className={css.setting} title={t('sources.storageTranslationsHelp')}>
+              <span className={css.settingLabel}>{t('sources.storageTranslations')}</span>
+              <span className={css.settingReadout}>
+                {storageStats === null
+                  ? '—'
+                  : t('sources.storageTranslationsUsage', {
+                    maps: String(storageStats.translations.entries),
+                    sentences: String(storageStats.translations.memoryEntries),
+                    size: formatStorageSize(storageStats.translations.chars + storageStats.translations.memoryChars),
+                  })}
+              </span>
+            </span>
+            <label className={css.setting} htmlFor="reader-translation-budget" title={t('sources.translationBudgetHelp')}>
+              <span className={css.settingLabel}>{t('sources.translationBudget')}</span>
+              <input
+                id="reader-translation-budget"
+                className={css.settingControl}
+                type="number"
+                min={1}
+                step={1}
+                value={budgetDraft}
+                onChange={event => { setBudgetDraft(event.target.value) }}
+                onBlur={commitBudget}
+                onKeyDown={event => { if (event.key === 'Enter') commitBudget() }}
+              />
+              <span className={css.settingLabel}>MB</span>
+            </label>
+            <button
+              type="button"
+              className={css.chip}
+              aria-pressed={clearArmed}
+              title={t('sources.storageTranslationsHelp')}
+              onClick={clearTranslations}
+            >
+              {t(clearArmed ? 'sources.clearTranslationsConfirm' : 'sources.clearTranslations')}
+            </button>
           </div>
           {/* The list grows one entry per pasted URL plus one per feed, and the
               two are different things: narrowing by kind and ordering by

@@ -49,6 +49,10 @@ export type ReaderKey =
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
   | 'sources.name' | 'sources.url' | 'sources.cache' | 'sources.cacheHelp'
   | 'sources.cacheHours' | 'sources.cacheForever' | 'sources.blocked'
+  | 'sources.storageBodies' | 'sources.storageBodiesUsage' | 'sources.storageBodiesHelp'
+  | 'sources.storageTranslations' | 'sources.storageTranslationsUsage' | 'sources.storageTranslationsHelp'
+  | 'sources.translationBudget' | 'sources.translationBudgetHelp'
+  | 'sources.clearTranslations' | 'sources.clearTranslationsConfirm'
   | 'sources.unreachable' | 'sources.httpError' | 'detail.fetchFailed'
   | 'sources.kindRss' | 'sources.kindLink' | 'sources.kindFilter' | 'sources.noMatch'
   | 'sources.sortAdded' | 'sources.sortName' | 'sources.sortFetched'
@@ -184,6 +188,16 @@ export const en = {
   'sources.cacheHelp': 'A fetched article is served from the cache until this deadline; after that, opening the entry fetches it once more. 0 means keep it until the storage budget evicts it.',
   'sources.cacheHours': '{count} hours',
   'sources.cacheForever': 'Until evicted',
+  'sources.storageBodies': 'Article cache',
+  'sources.storageBodiesUsage': '{entries} cached · {size}',
+  'sources.storageBodiesHelp': 'What the fetched full texts currently occupy. Their eviction follows the retention setting above and the entries cap.',
+  'sources.storageTranslations': 'Translation cache',
+  'sources.storageTranslationsUsage': '{maps} maps + {sentences} sentences · {size}',
+  'sources.storageTranslationsHelp': 'What the translations currently occupy: a global sentence memory plus one exact-fit map per entry. No expiry — only the budget below evicts, least-recently-used first.',
+  'sources.translationBudget': 'Budget',
+  'sources.translationBudgetHelp': 'How large the translation cache may grow (MB of text). Translations never expire by the clock — rebuilding one costs a gesture plus per-sentence model work — so this budget, least-recently-used, is the only eviction.',
+  'sources.clearTranslations': 'Clear translation cache',
+  'sources.clearTranslationsConfirm': 'Click again to clear both tiers',
   'sources.blocked': 'This publisher refuses automatic fetches (its page answers with a bot challenge), so only the feed’s own text can be shown.',
   'sources.unreachable': 'The publisher’s page could not be reached at all (the request failed before any content arrived), so only the feed’s own text can be shown.',
   'sources.httpError': 'The publisher answered with an error, so only the feed’s own text can be shown.',
@@ -358,6 +372,16 @@ export const zh = {
   'sources.cacheHelp': '抓到的正文在这个期限前直接读缓存；过期后下次打开这一条会重新抓一次。0 = 一直留到存储预算淘汰它。',
   'sources.cacheHours': '{count} 小时',
   'sources.cacheForever': '留到被淘汰',
+  'sources.storageBodies': '原文缓存',
+  'sources.storageBodiesUsage': '{entries} 篇 · {size}',
+  'sources.storageBodiesHelp': '抓下的全文正文当前的占用。淘汰由上方的「正文保留」期限与保留条数决定。',
+  'sources.storageTranslations': '译文缓存',
+  'sources.storageTranslationsUsage': '{maps} 篇映射 + {sentences} 句 · {size}',
+  'sources.storageTranslationsHelp': '译文当前的占用：一份全局句子记忆，外加每个条目的精确映射。不按时间过期——只有下方的预算按最近使用淘汰。',
+  'sources.translationBudget': '译文预算',
+  'sources.translationBudgetHelp': '译文缓存可以涨到多大（MB 文本量）。译文不按钟点过期——重建一份要一次手势加逐句模型——所以这个预算是唯一的淘汰，按最近使用。',
+  'sources.clearTranslations': '清空译文缓存',
+  'sources.clearTranslationsConfirm': '再点一次，清空两层',
   'sources.blocked': '这个站点拒绝自动抓取（原文地址对人以外的请求返回验证页），所以只能展示订阅源自己发布的内容。',
   'sources.unreachable': '原文页面完全连不上（请求在拿到任何内容之前就失败了），所以只能展示订阅源自己发布的内容。',
   'sources.httpError': '原文页面返回了错误状态，所以只能展示订阅源自己发布的内容。',

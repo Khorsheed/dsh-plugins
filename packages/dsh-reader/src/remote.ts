@@ -22,10 +22,13 @@ import type {
   ReaderEntryFetchState,
   ReaderBody,
   ReaderCapabilities,
+  ReaderEntryTranslationView,
   ReaderMutationOutcome,
   ReaderRecentEntry,
   ReaderRefreshResult,
+  ReaderSentenceLearn,
   ReaderSourceSummary,
+  ReaderStorageStats,
   ReaderTag,
 } from './types.ts'
 
@@ -81,9 +84,9 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.core.updateSource(request)
   }
 
-  /** Drop a source. */
+  /** Drop a source; its entries' translations go with it (their bodies stay for the budget). */
   @Remote('removeSource')
-  removeSource(request: { id: string }): Promise<ReaderMutationOutcome> {
+  removeSource(request: { id: string; entryIds?: readonly string[] }): Promise<ReaderMutationOutcome> {
     return this.core.removeSource(request)
   }
 
@@ -128,6 +131,7 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     html: string
     truncated?: boolean
     scriptFigures?: number
+    bodyHash?: string
   }): Promise<ReaderEntryBodyView> {
     return this.core.storeEntryBody(request)
   }
@@ -151,6 +155,44 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     limit?: number
   }): Promise<{ candidates: ReaderBackfillCandidate[] }> {
     return this.core.listBackfillCandidates(request)
+  }
+
+  /* -------------------------------------------------- translation memory */
+
+  /** One entry's exact-fit translation record (segment map resolved), when usable. */
+  @Remote('getEntryTranslation')
+  getEntryTranslation(request: { entryId: string }): Promise<{ translation?: ReaderEntryTranslationView }> {
+    return this.core.getEntryTranslation(request)
+  }
+
+  /** Translations for exactly the asked sentence hashes of one pair — never the whole table. */
+  @Remote('getSentenceTranslations')
+  getSentenceTranslations(request: { pair: string; hashes: readonly string[] }): Promise<{ translations: Record<string, string> }> {
+    return this.core.getSentenceTranslations(request)
+  }
+
+  /** Persist what one translation run learned (and refresh what it reused), in one batch. */
+  @Remote('rememberSentences')
+  rememberSentences(request: {
+    pair: string
+    entries: readonly ReaderSentenceLearn[]
+    recalled?: readonly ReaderSentenceLearn[]
+    entryId?: string
+    bodyHash?: string
+  }): Promise<{ stored: number }> {
+    return this.core.rememberSentences(request)
+  }
+
+  /** Per-tier cache usage, aggregated on the host (the tables never cross). */
+  @Remote('getStorageStats')
+  getStorageStats(): Promise<ReaderStorageStats> {
+    return this.core.getStorageStats()
+  }
+
+  /** Forget every translation: the global memory and every entry map. */
+  @Remote('clearTranslations')
+  clearTranslations(): Promise<{ clearedEntries: number; clearedMemory: boolean }> {
+    return this.core.clearTranslations()
   }
 
   /** The tag vocabulary, with how many entries carry each tag. */
@@ -189,14 +231,14 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.core.entryTags(request)
   }
 
-  /** Read or set how long a fetched body is served. */
+  /** Read or set how long a fetched body is served (and the translation budget). */
   @Remote('getCachePolicy')
-  getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number }> {
+  getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number; translationBudgetChars: number }> {
     return this.core.getCachePolicy()
   }
 
   @Remote('setCachePolicy')
-  setCachePolicy(request: { ttlHours: number; maxEntries?: number }): Promise<ReaderAnnotationOutcome> {
+  setCachePolicy(request: { ttlHours: number; maxEntries?: number; translationBudgetChars?: number }): Promise<ReaderAnnotationOutcome> {
     return this.core.setCachePolicy(request)
   }
 

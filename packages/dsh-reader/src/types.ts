@@ -137,6 +137,16 @@ export interface ReaderStateDoc {
    */
   readonly annotations?: Readonly<Record<string, ReaderEntryAnnotation>>
   /**
+   * The global sentence memory's manifest; the TABLE lives in its own
+   * `bodies/` file.
+   *
+   * Kept out of the document body on purpose: the table is bounded at 50 000
+   * sentences (several MB of JSON), and this document is read and rewritten
+   * whole on every commit — including one per article opened (`recordRead`).
+   * The manifest is all the commit path needs.
+   */
+  readonly translationMemory?: ReaderTranslationMemoryManifest
+  /**
    * What the reader opened, newest first (the 「最近阅读」 page).
    *
    * Persisted, unlike the pane's session memory: "what was I reading" is a fact
@@ -210,6 +220,12 @@ export interface ReaderEntryAnnotation {
   readonly failureCode?: ReaderPreviewFailureCode
   /** When that failure was recorded (ISO-8601). */
   readonly failedAt?: string
+  /**
+   * This entry's translated segment map (a hash→translation table, never
+   * markup). No TTL: a translation costs a gesture plus per-sentence model work
+   * to rebuild, so only the shared translation budget evicts it.
+   */
+  readonly translation?: ReaderEntryTranslation
 }
 
 /** How long a fetched article body is served before the reader is offered a refetch. */
@@ -218,10 +234,132 @@ export interface ReaderCachePolicy {
   readonly ttlHours: number
   /** How many entry bodies may be retained at once (oldest evicted first). */
   readonly maxEntries: number
+  /**
+   * How large the two translation tiers may grow together, in characters.
+   *
+   * Absent means {@link DEFAULT_TRANSLATION_BUDGET_CHARS}. Translations carry no
+   * TTL (rebuilding one costs a user gesture plus per-sentence model work, so
+   * they must not inherit the body TTL) — this budget, LRU by last use across
+   * both tiers, is the only eviction.
+   */
+  readonly translationBudgetChars?: number
 }
 
 /** The default cache policy: a day, and a few hundred articles. */
 export const DEFAULT_CACHE_POLICY: ReaderCachePolicy = { ttlHours: 24, maxEntries: 500 }
+
+/* ---------------------------------------------------- translation memory */
+
+/**
+ * The schema version of the persisted translation tiers (the global sentence
+ * memory's table, and each entry's segment map). A browser Translator model
+ * upgrade quietly changes what the same sentence translates to, and a
+ * segmentation change here changes what a "sentence" is — bumping this turns
+ * every old record into a MISS. Records are evicted LAZILY (the next write or
+ * budget pass drops them), never wiped eagerly.
+ */
+export const TRANSLATION_STORAGE_VERSION = 1
+
+/**
+ * The default total budget for both translation tiers, in characters — 64 MB
+ * worth of text. Counted in characters, like every other budget in this
+ * document (a CJK sentence costs more bytes than that reads; the approximation
+ * is the store's existing convention).
+ */
+export const DEFAULT_TRANSLATION_BUDGET_CHARS = 64 * 1024 * 1024
+
+/** How many sentences the global memory keeps before its own LRU end is evicted. */
+export const MAX_TRANSLATION_MEMORY_ENTRIES = 50_000
+
+/** One remembered sentence translation — the global tier's value. */
+export interface ReaderTranslationMemoryEntry {
+  /** The source sentence, verbatim (the hash in the entry's key is over this). */
+  readonly source: string
+  /** What the translator answered. */
+  readonly target: string
+  /** The LRU clock: when the entry last served a translation (or was written). */
+  readonly lastUsedAt: string
+}
+
+/** The global memory file's content; the table lives in `bodies/`, not inline. */
+export interface ReaderTranslationMemoryTable {
+  readonly version: number
+  readonly entries: Readonly<Record<string, ReaderTranslationMemoryEntry>>
+}
+
+/** The document's pointer at the global memory file. */
+export interface ReaderTranslationMemoryManifest {
+  readonly version: number
+  /** The `bodies/` file holding the table (a fixed, safe name). */
+  readonly file: string
+  readonly entries: number
+  readonly chars: number
+  readonly updatedAt: string
+}
+
+/**
+ * One entry's translation of its body: a map of sentence hash to translation —
+ * never translated markup, so a body re-fetched with minor edits still reuses
+ * every unchanged sentence through the global tier, while a `bodyHash`
+ * mismatch invalidates only this exact-fit record.
+ */
+export interface ReaderEntryTranslation {
+  readonly version: number
+  /** The `<src>→<tgt>` label the map was built under. */
+  readonly pair: string
+  /** Hash of the normalized body the segments were cut from. */
+  readonly bodyHash: string
+  /** sentenceHash → translation, inline while the map is small. */
+  readonly segments?: Readonly<Record<string, string>>
+  /** The `bodies/` file holding the segment map once it is large. */
+  readonly file?: string
+  /** The map's serialized size, for the shared budget. */
+  readonly chars?: number
+  readonly translatedAt: string
+  /** The shared-budget LRU clock. */
+  readonly lastUsedAt: string
+}
+
+/** One sentence the browser half learned (or was served), as it reports it. */
+export interface ReaderSentenceLearn {
+  /** The client's `translationHash(source)`, stored opaquely. */
+  readonly hash: string
+  readonly source: string
+  readonly target: string
+}
+
+/** An entry translation as the wire serves it: the segment map resolved. */
+export interface ReaderEntryTranslationView {
+  readonly pair: string
+  readonly bodyHash: string
+  readonly segments: Record<string, string>
+}
+
+/**
+ * How much the two caches currently hold, aggregated on the host.
+ *
+ * Counts and characters only — the tables themselves never cross the wire for
+ * a settings readout. `chars` is the store's accounting unit (characters, the
+ * same unit the budgets are written in).
+ */
+export interface ReaderStorageStats {
+  /** The cached article bodies (what TTL + maxEntries govern). */
+  readonly bodies: {
+    readonly entries: number
+    readonly chars: number
+  }
+  /** The two translation tiers: per-entry maps, and the global sentence memory. */
+  readonly translations: {
+    /** How many entries carry a segment map. */
+    readonly entries: number
+    /** The maps' combined size. */
+    readonly chars: number
+    /** The global memory's sentence count (0 when no table exists). */
+    readonly memoryEntries: number
+    /** The global memory's size (0 when no table exists). */
+    readonly memoryChars: number
+  }
+}
 
 export interface ReaderRefreshConfig {
   readonly enabled: boolean

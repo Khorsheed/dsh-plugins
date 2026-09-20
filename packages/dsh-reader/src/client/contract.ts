@@ -26,10 +26,13 @@ import type {
   ReaderEntryFetchState,
   ReaderBody,
   ReaderCapabilities,
+  ReaderEntryTranslationView,
   ReaderMutationOutcome,
   ReaderRefreshResult,
   ReaderRecentEntry,
+  ReaderSentenceLearn,
   ReaderSourceSummary,
+  ReaderStorageStats,
   ReaderTag,
 } from '../types.ts'
 import type { createReaderStore } from './store.ts'
@@ -68,8 +71,8 @@ export interface ReaderPaneInjected {
     url?: string
     timeOfDay?: string
   }) => Promise<RemoteResult<ReaderMutationOutcome>>
-  /** Drop a source. */
-  removeSource: (id: string) => Promise<RemoteResult<ReaderMutationOutcome>>
+  /** Drop a source. Its entries' translation maps go with it (the caller passes the ids it parsed). */
+  removeSource: (id: string, entryIds?: readonly string[]) => Promise<RemoteResult<ReaderMutationOutcome>>
   /** Fetch the named sources, or every enabled one. */
   refresh: (ids?: string[]) => Promise<RemoteResult<{ results: ReaderRefreshResult[] }>>
   /** Raw payloads, for this process to parse (the host never parses). */
@@ -91,6 +94,8 @@ export interface ReaderPaneInjected {
     html: string
     truncated?: boolean
     scriptFigures?: number
+    /** `translationHash(html)` — the entry's translation map dies with a body it no longer matches. */
+    bodyHash?: string
   }) => Promise<RemoteResult<ReaderEntryBodyView>>
   /** A payload the host stored, so this process can extract it (late or never). */
   getRawBody: (entryId: string) => Promise<RemoteResult<{ entryId: string; raw?: string; url?: string; truncated?: boolean; error?: string }>>
@@ -143,9 +148,33 @@ export interface ReaderPaneInjected {
   listRecent: () => Promise<RemoteResult<{ entries: ReaderRecentEntry[] }>>
   /** Forget every recent entry. */
   clearRecent: () => Promise<RemoteResult<{ removed: number }>>
-  /** Read / set the article cache policy. */
-  getCachePolicy: () => Promise<RemoteResult<{ ttlHours: number; maxEntries: number }>>
-  setCachePolicy: (ttlHours: number, maxEntries?: number) => Promise<RemoteResult<ReaderAnnotationOutcome>>
+  /** Read / set the article cache policy (and the translation budget). */
+  getCachePolicy: () => Promise<RemoteResult<{ ttlHours: number; maxEntries: number; translationBudgetChars: number }>>
+  setCachePolicy: (ttlHours: number, maxEntries?: number, translationBudgetChars?: number) => Promise<RemoteResult<ReaderAnnotationOutcome>>
+  /* ------------------------------------------- the persistent translation tiers */
+
+  /** One entry's exact-fit translation record, when the host holds a usable one. */
+  getEntryTranslation: (entryId: string) => Promise<RemoteResult<{ translation?: ReaderEntryTranslationView }>>
+  /** Translations for exactly the asked sentence hashes of one pair (never the table). */
+  getSentenceTranslations: (request: {
+    pair: string
+    hashes: readonly string[]
+  }) => Promise<RemoteResult<{ translations: Record<string, string> }>>
+  /**
+   * Persist what one translation run learned (and refresh what it reused), in
+   * one batch — the caller batches by run, so this is never a per-sentence call.
+   */
+  rememberSentences: (request: {
+    pair: string
+    entries: readonly ReaderSentenceLearn[]
+    recalled?: readonly ReaderSentenceLearn[]
+    entryId?: string
+    bodyHash?: string
+  }) => Promise<RemoteResult<{ stored: number }>>
+  /** Per-tier cache usage, aggregated on the host (the manage page's readout). */
+  getStorageStats: () => Promise<RemoteResult<ReaderStorageStats>>
+  /** Forget every translation: the global memory and every entry map. */
+  clearTranslations: () => Promise<RemoteResult<{ clearedEntries: number; clearedMemory: boolean }>>
   /** Read the current conversation draft (the merge `setDraft` needs). */
   readDraft: () => string
   /** Replace the conversation draft with `merged`; a no-op without a session surface. */

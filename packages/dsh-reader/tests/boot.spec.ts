@@ -14,7 +14,7 @@
  * that must survive is the one that has none of them.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -500,5 +500,313 @@ describe('the recent list is the reader’s, and it outlives the process', () =>
     apply(third, { stateRoot: root })
     await third.fiber.await()
     expect((await (third.get('reader') as ReaderService).listRecent()).entries).toHaveLength(0)
+  })
+})
+
+
+describe('the translation store', () => {
+  /** Boot the host half with the state root in hand (for reading the files). */
+  async function bootWithRoot(): Promise<{ ctx: Context; root: string }> {
+    const root = stateRoot()
+    const ctx = new Context()
+    contexts.push(ctx)
+    apply(ctx, { stateRoot: root })
+    await ctx.fiber.await()
+    return { ctx, root }
+  }
+
+  const learn = (hash: string, source: string, target: string): { hash: string; source: string; target: string } =>
+    ({ hash, source, target })
+
+  it('persists the global memory keyed by language pair, across a restart', async () => {
+    const { ctx, root } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    // The same sentence hash under two pairs: the pair is part of the key, so
+    // two languages' reading of one string never share a translation.
+    await service.rememberSentences({ pair: 'en→zh', entries: [learn('h1', 'Same text.', '同一句话。')] })
+    await service.rememberSentences({ pair: 'de→zh', entries: [learn('h1', 'Same text.', '同一句话（德语）。')] })
+    expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: ['h1', 'missing'] })).translations)
+      .toEqual({ h1: '同一句话。' })
+    expect((await service.getSentenceTranslations({ pair: 'de→zh', hashes: ['h1'] })).translations)
+      .toEqual({ h1: '同一句话（德语）。' })
+
+    // A second host over the same root: the memory survived the process.
+    const second = new Context()
+    contexts.push(second)
+    apply(second, { stateRoot: root })
+    await second.fiber.await()
+    const again = await (second.get('reader') as ReaderService).getSentenceTranslations({ pair: 'en→zh', hashes: ['h1'] })
+    expect(again.translations).toEqual({ h1: '同一句话。' })
+    // The table lives in its own named file, not inline in the document.
+    const onDisk = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as { translationMemory?: { file: string } }
+    expect(onDisk.translationMemory?.file).toBe('translation-memory.json')
+  })
+
+  it('stores an entry translation as a segment map keyed to the body hash', async () => {
+    const { ctx, root } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    const entries = Array.from({ length: 10 }, (_, index) =>
+      learn(`h${String(index)}`, `Sentence ${String(index)} of the paper.`, `论文的第 ${String(index)} 句。`))
+    const written = await service.rememberSentences({ pair: 'en→zh', entries, entryId: 'e1', bodyHash: 'body-a' })
+    expect(written).toEqual({ stored: 10 })
+
+    const answer = await service.getEntryTranslation({ entryId: 'e1' })
+    expect(answer.translation?.pair).toBe('en→zh')
+    expect(answer.translation?.bodyHash).toBe('body-a')
+    expect(Object.keys(answer.translation?.segments ?? {})).toHaveLength(10)
+    expect(answer.translation?.segments.h3).toBe('论文的第 3 句。')
+    // A small map stays inline in the document.
+    const onDisk = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as { annotations: Record<string, { translation?: { file?: string } }> }
+    expect(onDisk.annotations.e1?.translation?.file).toBeUndefined()
+  })
+
+  it('sidecars a large segment map, serves it, and sweeps the file on eviction', async () => {
+    const { ctx, root } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    // 2 000 sentences with long translations: the segments JSON crosses the
+    // inline threshold, so the document keeps a file name and its size instead.
+    const entries = Array.from({ length: 2000 }, (_, index) =>
+      learn(`h${String(index)}`, `Sentence number ${String(index)} of a long paper.`, `长文的第 ${String(index)} 句，${'译文'.repeat(60)}`))
+    await service.rememberSentences({ pair: 'en→zh', entries, entryId: 'big', bodyHash: 'body-big' })
+    const onDisk = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as {
+      annotations: Record<string, { translation?: { file?: string; chars?: number; segments?: unknown } }>
+    }
+    const record = onDisk.annotations.big?.translation
+    expect(record?.segments).toBeUndefined()
+    expect(typeof record?.file).toBe('string')
+    const file = record?.file as string
+    const served = await service.getEntryTranslation({ entryId: 'big' })
+    expect(Object.keys(served.translation?.segments ?? {})).toHaveLength(2000)
+
+    // Evict it via the budget: the file goes with the record.
+    await service.setCachePolicy({ ttlHours: 24, translationBudgetChars: 10_000 })
+    await service.rememberSentences({ pair: 'en→zh', entries: [learn('hx', 'One more.', '再来一句。')] })
+    expect(await service.getEntryTranslation({ entryId: 'big' })).toEqual({})
+    expect(readdirSync(join(root, 'bodies'))).not.toContain(file)
+  })
+
+  it('evicts the least-recently-used across both tiers when the budget is exceeded', async () => {
+    const { ctx } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    // Wave 1: five global sentences, 100+100 characters each.
+    const wave1 = Array.from({ length: 5 }, (_, index) => learn(`w1h${String(index)}`, 'a'.repeat(100), '早'.repeat(100)))
+    await service.rememberSentences({ pair: 'en→zh', entries: wave1 })
+    // A beat later (the LRU clock is the write's own timestamp), wave 2: an
+    // entry map, whose sentences also join the memory at the NEWER clock.
+    await new Promise(resolve => { setTimeout(resolve, 5) })
+    const wave2 = Array.from({ length: 5 }, (_, index) => learn(`w2h${String(index)}`, 'c'.repeat(100), '新'.repeat(100)))
+    await service.setCachePolicy({ ttlHours: 24, translationBudgetChars: 1900 })
+    await service.rememberSentences({ pair: 'en→zh', entries: wave2, entryId: 'e1', bodyHash: 'body-a' })
+    // Over budget, the older wave's memory sentences went — and the newer entry
+    // map, a different tier entirely, stayed whole.
+    for (const item of wave1) {
+      expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: [item.hash] })).translations).toEqual({})
+    }
+    const served = await service.getEntryTranslation({ entryId: 'e1' })
+    expect(Object.keys(served.translation?.segments ?? {})).toHaveLength(5)
+    for (const item of wave2) {
+      expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: [item.hash] })).translations[item.hash]).toBe('新'.repeat(100))
+    }
+  })
+
+  it('reads a stale-schema record as a miss and never wipes it eagerly', async () => {
+    const { ctx, root } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [learn('h1', 'A sentence from an older schema.', '旧 schema 的一句。')],
+      entryId: 'e1',
+      bodyHash: 'body-a',
+    })
+
+    // Doctor both tiers to an older schema version, as a hand edit would leave them.
+    const stateFile = join(root, 'state.json')
+    const doc = JSON.parse(readFileSync(stateFile, 'utf8')) as {
+      annotations: Record<string, { translation: { version: number } }>
+      translationMemory: { version: number }
+    }
+    doc.annotations.e1!.translation.version = 0
+    doc.translationMemory.version = 0
+    writeFileSync(stateFile, JSON.stringify(doc))
+    const memoryFile = join(root, 'bodies', 'translation-memory.json')
+    const table = JSON.parse(readFileSync(memoryFile, 'utf8')) as { version: number }
+    table.version = 0
+    writeFileSync(memoryFile, JSON.stringify(table))
+
+    // Both read as a miss…
+    expect(await service.getEntryTranslation({ entryId: 'e1' })).toEqual({})
+    expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: ['h1'] })).translations).toEqual({})
+    // …and both are still on disk — lazy eviction means the NEXT WRITE replaces
+    // them, not the read that noticed.
+    expect(JSON.parse(readFileSync(stateFile, 'utf8')) as typeof doc).toMatchObject({
+      annotations: { e1: { translation: { version: 0 } } },
+    })
+    expect(readFileSync(memoryFile, 'utf8')).toContain('"version":0')
+
+    await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [learn('h2', 'A sentence from the current schema.', '当前 schema 的一句。')],
+      entryId: 'e1',
+      bodyHash: 'body-b',
+    })
+    expect((await service.getEntryTranslation({ entryId: 'e1' })).translation?.bodyHash).toBe('body-b')
+    expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: ['h2'] })).translations.h2)
+      .toBe('当前 schema 的一句。')
+  })
+
+  it('bumps the use clock on recalled sentences instead of rewriting them', async () => {
+    const { ctx, root } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    await service.rememberSentences({ pair: 'en→zh', entries: [learn('h1', 'First written.', '先写下的。')] })
+    const before = (JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as { translationMemory: { updatedAt: string } })
+      .translationMemory.updatedAt
+    await new Promise(resolve => { setTimeout(resolve, 5) })
+    // A recall report: no new sentences, just "this one served again".
+    const result = await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [],
+      recalled: [learn('h1', 'First written.', '先写下的。')],
+    })
+    expect(result).toEqual({ stored: 0 })
+    const after = (JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as { translationMemory: { updatedAt: string } })
+      .translationMemory.updatedAt
+    expect(after > before).toBe(true)
+    expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: ['h1'] })).translations.h1).toBe('先写下的。')
+  })
+
+  /* --------------------------- the linkage rule: the map dies with the body */
+
+  it('a body evicted by the budget takes its translation map — the global memory is untouched', async () => {
+    const { ctx } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one</p>' })
+    await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [learn('h1', 'Sentence of entry one.', '条目一的一句。')],
+      entryId: 'e1',
+      bodyHash: 'body-1',
+    })
+    await service.setCachePolicy({ ttlHours: 24, maxEntries: 1 })
+    // The budget keeps the newest body only: e1's goes, and its map goes with it.
+    await service.storeEntryBody({ entryId: 'e2', url: 'https://example.com/2', html: '<p>two</p>' })
+    expect(await service.getEntryTranslation({ entryId: 'e1' })).toEqual({})
+    // …while the sentence h1 still serves from the global tier.
+    expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: ['h1'] })).translations.h1)
+      .toBe('条目一的一句。')
+  })
+
+  it('drops the map when a refetch replaces the body, keeps it when the body is unchanged', async () => {
+    const { ctx } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one</p>', bodyHash: 'body-1' })
+    await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [learn('h1', 'Sentence of entry one.', '条目一的一句。')],
+      entryId: 'e1',
+      bodyHash: 'body-1',
+    })
+    // A re-store of the SAME body (a re-extraction of the same payload): the
+    // map is still exact, and survives.
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one</p>', bodyHash: 'body-1' })
+    expect((await service.getEntryTranslation({ entryId: 'e1' })).translation?.bodyHash).toBe('body-1')
+    // A refetch that brings a DIFFERENT body: the old map answers nothing now.
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one, edited</p>', bodyHash: 'body-2' })
+    expect(await service.getEntryTranslation({ entryId: 'e1' })).toEqual({})
+  })
+
+  it('keeps the map while an expired body is still on disk — expiry is a serving decision, not a removal', async () => {
+    const { ctx, root } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one</p>', bodyHash: 'body-1' })
+    await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [learn('h1', 'Sentence of entry one.', '条目一的一句。')],
+      entryId: 'e1',
+      bodyHash: 'body-1',
+    })
+    // Doctor the deadline into the past: the body now serves as stale (no html)
+    // but is NOT removed — and the linkage rule is about removal.
+    const stateFile = join(root, 'state.json')
+    const doc = JSON.parse(readFileSync(stateFile, 'utf8')) as { annotations: Record<string, { body: { expiresAt: string } }> }
+    doc.annotations.e1!.body.expiresAt = '2020-01-01T00:00:00.000Z'
+    writeFileSync(stateFile, JSON.stringify(doc))
+    const view = await service.getEntryBody({ entryId: 'e1', url: 'https://example.com/1' })
+    expect(view.cached).toBe(true)
+    expect(view.fresh).toBe(false)
+    expect(view.html).toBeUndefined()
+    expect((await service.getEntryTranslation({ entryId: 'e1' })).translation?.bodyHash).toBe('body-1')
+  })
+
+  it('removing a source drops its entries’ translations — and nothing else', async () => {
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://example.com/story',
+      statusCode: 200,
+      body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(200)}</p></article>` },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://example.com/story' })
+    const sourceId = (await service.listSources()).sources[0]?.id as string
+    const entryId = linkEntryId(sourceId)
+    await service.storeEntryBody({ entryId, url: 'https://example.com/story', html: '<p>the story</p>', bodyHash: 'b1' })
+    await service.rememberSentences({ pair: 'en→zh', entries: [learn('h1', 'A sentence.', '一句。')], entryId, bodyHash: 'b1' })
+    // An unrelated entry's translation, to prove the sweep is scoped.
+    await service.rememberSentences({ pair: 'en→zh', entries: [learn('h2', 'Another sentence.', '另一句。')], entryId: 'e-other', bodyHash: 'b2' })
+
+    expect(await service.removeSource({ id: sourceId })).toBe('ok')
+    expect(await service.getEntryTranslation({ entryId })).toEqual({})
+    expect((await service.getEntryTranslation({ entryId: 'e-other' })).translation?.bodyHash).toBe('b2')
+    // The deleted link's BODY stays (the body budget owns its lifetime) — only
+    // the derived tier is linked.
+    expect((await service.getEntryBody({ entryId, url: 'https://example.com/story' })).cached).toBe(true)
+  })
+
+  /* ------------------------------------------------- the storage surface */
+
+  it('aggregates per-tier usage without shipping the tables', async () => {
+    const { ctx } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one</p>' })
+    await service.storeEntryBody({ entryId: 'e2', url: 'https://example.com/2', html: '<p>two</p><p>two</p>' })
+    await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [learn('h1', 'First.', '一。'), learn('h2', 'Second.', '二。')],
+      entryId: 'e1',
+      bodyHash: 'body-1',
+    })
+    const stats = await service.getStorageStats()
+    expect(stats.bodies.entries).toBe(2)
+    expect(stats.bodies.chars).toBe('<p>one</p>'.length + '<p>two</p><p>two</p>'.length)
+    expect(stats.translations.entries).toBe(1)
+    expect(stats.translations.memoryEntries).toBe(2)
+    expect(stats.translations.memoryChars).toBeGreaterThan(0)
+    expect(stats.translations.chars).toBeGreaterThan(0)
+  })
+
+  it('clears both translation tiers and nothing else', async () => {
+    const { ctx, root } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one</p>', bodyHash: 'body-1' })
+    await service.rememberSentences({
+      pair: 'en→zh',
+      entries: [learn('h1', 'A sentence.', '一句。')],
+      entryId: 'e1',
+      bodyHash: 'body-1',
+    })
+    await service.createTag({ name: 'AI' })
+    await service.recordRead({ entryId: 'e1', sourceId: 's1', title: '读过的一篇' })
+
+    const cleared = await service.clearTranslations()
+    expect(cleared).toEqual({ clearedEntries: 1, clearedMemory: true })
+    expect(await service.getEntryTranslation({ entryId: 'e1' })).toEqual({})
+    expect((await service.getSentenceTranslations({ pair: 'en→zh', hashes: ['h1'] })).translations).toEqual({})
+    // The file goes with the document's reference to it.
+    expect(readdirSync(join(root, 'bodies'))).not.toContain('translation-memory.json')
+    // Everything else stays: the body, the tag, the recent row, the source list.
+    expect((await service.getEntryBody({ entryId: 'e1', url: 'https://example.com/1' })).html).toBe('<p>one</p>')
+    expect((await service.listTags()).tags.map(tag => tag.name)).toEqual(['AI'])
+    expect((await service.listRecent()).entries).toHaveLength(1)
+    // A second clear is a no-op, honestly reported.
+    expect(await service.clearTranslations()).toEqual({ clearedEntries: 0, clearedMemory: false })
   })
 })

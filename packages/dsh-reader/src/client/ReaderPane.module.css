@@ -1222,6 +1222,14 @@
   font-size: 11.5px;
 }
 
+/* A usage readout inside a settings row: the control's typography without the
+   box — it is a fact, not an input. */
+.settingReadout {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* The management page's own narrowing row: two labelled chip groups (kind,
    order) above the list. It wraps, because the pane is narrow and a chip row
    that overflows sideways hides the very control the reader came for. */

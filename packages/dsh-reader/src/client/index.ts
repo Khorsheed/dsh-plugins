@@ -27,6 +27,7 @@ import readerRemote from '@khorsheed/dsh-reader/remote'
 import type { ReaderEntryBodyView } from '../types.ts'
 import type { ReaderPaneInjected } from './contract.ts'
 import { extractArticle } from './extract-article.ts'
+import { translationHash } from './translate.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
 import { ReaderPane } from './ReaderPane.tsx'
 import { createReaderStore } from './store.ts'
@@ -126,6 +127,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       entryId,
       url: value.url,
       html: extracted.html,
+      // The entry's translation map is keyed to the body's hash: a refetch that
+      // changes the body retires the map in the same commit.
+      bodyHash: translationHash(extracted.html),
       ...(value.truncated === true ? { truncated: true } : {}),
       ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
     })
@@ -138,7 +142,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     listSources: () => remote.listSources(),
     addSource: url => remote.addSource({ url }),
     updateSource: request => remote.updateSource(request),
-    removeSource: id => remote.removeSource({ id }),
+    removeSource: (id, entryIds) => remote.removeSource({ id, ...(entryIds === undefined ? {} : { entryIds }) }),
     refresh: ids => remote.refresh(ids === undefined ? {} : { ids }),
     getBodies: ids => remote.getBodies({ ids }),
     quoteToSideChat: request => remote.quoteToSideChat(request),
@@ -148,6 +152,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     listBackfillCandidates: entries => remote.listBackfillCandidates({ entries }),
     getEntryBody: request => remote.getEntryBody(request),
     fetchEntryBody,
+    getEntryTranslation: entryId => remote.getEntryTranslation({ entryId }),
+    getSentenceTranslations: request => remote.getSentenceTranslations(request),
+    rememberSentences: request => remote.rememberSentences(request),
     entryTags: entryId => remote.entryTags({ entryId }),
     listTags: () => remote.listTags(),
     createTag: name => remote.createTag({ name }),
@@ -159,7 +166,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     listRecent: () => remote.listRecent(),
     clearRecent: () => remote.clearRecent(),
     getCachePolicy: () => remote.getCachePolicy(),
-    setCachePolicy: (ttlHours, maxEntries) => remote.setCachePolicy(maxEntries === undefined ? { ttlHours } : { ttlHours, maxEntries }),
+    setCachePolicy: (ttlHours, maxEntries, translationBudgetChars) => remote.setCachePolicy({
+      ttlHours,
+      ...(maxEntries === undefined ? {} : { maxEntries }),
+      ...(translationBudgetChars === undefined ? {} : { translationBudgetChars }),
+    }),
+    getStorageStats: () => remote.getStorageStats(),
+    clearTranslations: () => remote.clearTranslations(),
     readDraft: () => readDraft(sessionId),
     setDraft: merged => { setDraft(sessionId, merged) },
     copyText,

@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-- **`src/client/session.ts` 按会话在模块内存里保存"读者刚才在哪"**：`view`、`openEntryId`、`openSourceId`、`filter`、`query`、`sort`、`unreadOnly`、`read`、墙上的 `wallOn`/`wallBoth`/`cardTranslations`、每条目的阅读位置，以及每条目的翻译记录。**刻意不持久化**：刷新就是一次新的到访；把第三方译文留在磁盘上则与本包"译文不离开页面"的规则相矛盾。这张表有上限（12 个会话，LRU），因为它活在这个标签页的整个生命周期里。
+- **`src/client/session.ts` 按会话在模块内存里保存"读者刚才在哪"**：`view`、`openEntryId`、`openSourceId`、`filter`、`query`、`sort`、`unreadOnly`、`read`、墙上的 `wallOn`/`wallBoth`/`cardTranslations`、每条目的阅读位置，以及每条目的翻译记录。**刻意不持久化**：刷新就是一次新的到访。（位置后来在 2026-09-19 移进了 `sessionStorage`——见状态边界 note；译文**句子**则在 2026-09-20 有了宿主侧的存储，见[译文落盘 note](2026-09-20-reader-persistent-translation.zh.md)；仍然绝不落盘的是翻译会话与地球记录，因为它们在重载之后没有手势就无从驱动。）这张表有上限（12 个会话，LRU），因为它活在这个标签页的整个生命周期里。
 - **store 只加一个动作 `hydrate`**，只接受这些会话内的字段——**不含** `sources`、`parsed`、`fetchStates`、`articleHtml`。宿主拥有的事实永远重新读取，所以重新挂载的面板绝不会展示宿主信息的陈旧副本。
 - **正文用"和点击完全相同的那次调用"重新建立。** 恢复逻辑等解析出的条目到齐，找到快照点名的条目，调用 `open(row)`；宿主机从缓存作答，**因此回来一次不花任何网络请求**。条目没到齐之前什么都不恢复：打开一个已经不存在的条目，只会把读者丢进一个没有条目的详情页。
 - **阅读位置属于详情页的滚动容器**（`detailBody`）：每次 scroll 都写（不做节流——丢掉最后一个事件，恰好就是让阅读位置差一次滚动），并在它所归属的正文上屏之后再应用（更早应用会被较短的页面钳掉）。

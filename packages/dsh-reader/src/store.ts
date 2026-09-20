@@ -36,15 +36,20 @@ import {
   type ReaderCachePolicy,
   MAX_BODY_CHARS_PER_SOURCE,
   MAX_TOTAL_BODY_CHARS,
+  MAX_TRANSLATION_MEMORY_ENTRIES,
   STATE_ROOT_SEGMENT,
+  TRANSLATION_STORAGE_VERSION,
   type ReaderEntryAnnotation,
   type ReaderEntryFetchRecord,
+  type ReaderEntryTranslation,
   type ReaderPreviewFailure,
   type ReaderPreviewFailureCode,
   type ReaderRecentEntry,
   type ReaderSource,
   type ReaderStateDoc,
   type ReaderTag,
+  type ReaderTranslationMemoryEntry,
+  type ReaderTranslationMemoryManifest,
 } from './types.ts'
 
 /** The failure codes the document may carry, for normalization. */
@@ -147,6 +152,10 @@ export function normalizeStateDoc(value: unknown): ReaderStateDoc {
       return Object.keys(annotations).length > 0 ? { annotations } : {}
     })(),
     ...(() => {
+      const translationMemory = normalizeTranslationMemory(record.translationMemory)
+      return translationMemory === undefined ? {} : { translationMemory }
+    })(),
+    ...(() => {
       const recent = normalizeRecent(record.recent)
       return recent.length > 0 ? { recent } : {}
     })(),
@@ -209,7 +218,66 @@ function normalizeCachePolicy(value: unknown): ReaderCachePolicy | undefined {
   const maxEntries = typeof record.maxEntries === 'number' && Number.isFinite(record.maxEntries) && record.maxEntries > 0
     ? Math.min(Math.floor(record.maxEntries), 5_000)
     : DEFAULT_CACHE_POLICY.maxEntries
-  return { ttlHours, maxEntries }
+  const translationBudgetChars = typeof record.translationBudgetChars === 'number'
+    && Number.isFinite(record.translationBudgetChars) && record.translationBudgetChars > 0
+    ? Math.min(Math.floor(record.translationBudgetChars), 1024 * 1024 * 1024)
+    : undefined
+  return {
+    ttlHours,
+    maxEntries,
+    ...(translationBudgetChars === undefined ? {} : { translationBudgetChars }),
+  }
+}
+
+/** A `bodies/` file name is one path segment, or it is not a name we wrote. */
+function normalizeFileName(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) ? value : undefined
+}
+
+/** The global memory's manifest; kept as recorded (a version bump reads as a miss, lazily). */
+function normalizeTranslationMemory(value: unknown): ReaderTranslationMemoryManifest | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const file = normalizeFileName(record.file)
+  if (typeof record.version !== 'number' || file === undefined) return undefined
+  return {
+    version: record.version,
+    file,
+    entries: typeof record.entries === 'number' && Number.isFinite(record.entries) ? Math.max(0, Math.floor(record.entries)) : 0,
+    chars: typeof record.chars === 'number' && Number.isFinite(record.chars) ? Math.max(0, Math.floor(record.chars)) : 0,
+    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date(0).toISOString(),
+  }
+}
+
+/**
+ * One entry's translation segment map, when it carries the fields that make it
+ * one. The schema version is preserved as recorded: a mismatch is a MISS when
+ * the record is served, and the record is evicted by the next write or budget
+ * pass — never by the read path.
+ */
+function normalizeTranslation(value: unknown): ReaderEntryTranslation | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.version !== 'number') return undefined
+  const pair = typeof record.pair === 'string' ? record.pair : ''
+  const bodyHash = typeof record.bodyHash === 'string' ? record.bodyHash : ''
+  if (pair.length === 0 || bodyHash.length === 0) return undefined
+  const segments = typeof record.segments === 'object' && record.segments !== null
+    ? Object.fromEntries(Object.entries(record.segments as Record<string, unknown>)
+      .filter(([, target]) => typeof target === 'string') as [string, string][])
+    : undefined
+  const file = normalizeFileName(record.file)
+  if (segments === undefined && file === undefined) return undefined
+  return {
+    version: record.version,
+    pair,
+    bodyHash,
+    ...(segments !== undefined && Object.keys(segments).length > 0 ? { segments } : {}),
+    ...(file === undefined ? {} : { file }),
+    ...(typeof record.chars === 'number' && Number.isFinite(record.chars) ? { chars: record.chars } : {}),
+    translatedAt: typeof record.translatedAt === 'string' ? record.translatedAt : new Date(0).toISOString(),
+    lastUsedAt: typeof record.lastUsedAt === 'string' ? record.lastUsedAt : new Date(0).toISOString(),
+  }
 }
 
 /** The tag vocabulary, dropping anything without an id and a name. */
@@ -243,12 +311,14 @@ function normalizeAnnotations(value: unknown): Record<string, ReaderEntryAnnotat
       ? [...new Set(record.tagIds.filter((id): id is string => typeof id === 'string' && id.length > 0))]
       : []
     const fetch = normalizeFetch(record.fetch)
+    const translation = normalizeTranslation(record.translation)
     const failureCode = PREVIEW_FAILURE_CODES.has(String(record.failureCode))
       ? (record.failureCode as ReaderPreviewFailureCode)
       : undefined
     const annotation: ReaderEntryAnnotation = {
       ...(body === undefined ? {} : { body }),
       ...(fetch === undefined ? {} : { fetch }),
+      ...(translation === undefined ? {} : { translation }),
       ...(tagIds.length > 0 ? { tagIds } : {}),
       ...(typeof record.error === 'string' ? { error: record.error.slice(0, 500) } : {}),
       ...(failureCode === undefined ? {} : { failureCode }),
@@ -256,9 +326,10 @@ function normalizeAnnotations(value: unknown): Record<string, ReaderEntryAnnotat
     }
     // A `fetch` record alone is a real annotation: it is what says "the payload
     // is on disk waiting to be extracted". Dropping it here lost every stored
-    // payload on the next read.
+    // payload on the next read. A `translation` is the same kind of load-bearing:
+    // it is the whole point of the translation store.
     if (annotation.body === undefined && annotation.fetch === undefined && annotation.tagIds === undefined
-      && annotation.error === undefined) continue
+      && annotation.error === undefined && annotation.translation === undefined) continue
     out[entryId] = annotation
   }
   return out
@@ -418,6 +489,15 @@ export function boundPayloads(doc: ReaderStateDoc): { doc: ReaderStateDoc; chang
 /** Sub-directory holding bodies too large to inline in the document. */
 export const READER_BODIES_DIR = 'bodies'
 
+/**
+ * The global translation memory's file name inside `bodies/`.
+ *
+ * One fixed name rather than a per-key hash: the table is a single artifact,
+ * rewritten whole by the (already debounced) write path, and referenced from
+ * the document's `translationMemory` manifest so `pruneBodies` keeps it.
+ */
+export const TRANSLATION_MEMORY_FILE = 'translation-memory.json'
+
 /** Native-fs state store: the deployment's document, not the session's. */
 export class ReaderStore {
   private readonly stateRoot: string
@@ -462,6 +542,35 @@ export class ReaderStore {
   }
 
   /**
+   * Write one NAMED artifact into `bodies/`, atomically.
+   *
+   * Unlike {@link writeBody} the name is the caller's, not a hash of an entry
+   * id: the global translation memory is one fixed file, not one per entry. The
+   * name is validated to a bare file name — this directory must never grow a
+   * path.
+   *
+   * @param name - the bare file name to write.
+   * @param content - the file's content.
+   * @returns the name written.
+   */
+  writeNamedBody(name: string, content: string): string {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+      throw new ReaderStoreError(`reader: refusing to write ${name} — not a bare file name`, 'io')
+    }
+    mkdirSync(this.bodiesDir, { recursive: true })
+    const target = join(this.bodiesDir, name)
+    const temporary = `${target}.${process.pid}.tmp`
+    try {
+      writeFileSync(temporary, content)
+      renameSync(temporary, target)
+    } catch (error) {
+      rmSync(temporary, { force: true })
+      throw new ReaderStoreError(`reader: ${target} could not be written — ${errorMessage(error)}`, 'io')
+    }
+    return name
+  }
+
+  /**
    * Read one body file.
    *
    * @param name - the file name recorded in the document.
@@ -495,7 +604,11 @@ export class ReaderStore {
       // A fetched-but-not-yet-extracted payload is referenced too: deleting it
       // would throw away a download the reader waited for.
       if (annotation.fetch?.rawFile !== undefined) referenced.add(annotation.fetch.rawFile)
+      // A large translation segment map is a sidecar file like any body.
+      if (annotation.translation?.file !== undefined) referenced.add(annotation.translation.file)
     }
+    // The global translation memory's table is one named file in the same dir.
+    if (doc.translationMemory !== undefined) referenced.add(doc.translationMemory.file)
     let names: string[]
     try {
       names = readdirSync(this.bodiesDir)
@@ -673,8 +786,12 @@ export function boundAnnotations(doc: ReaderStateDoc): { doc: ReaderStateDoc; ch
   const next: Record<string, ReaderEntryAnnotation> = {}
   for (const [entryId, entry] of Object.entries(annotations)) {
     if (entry.body === undefined || keep.has(entryId)) { next[entryId] = entry; continue }
-    const { body: _released, ...rest } = entry
-    if (rest.tagIds === undefined && rest.error === undefined) continue
+    // The body is gone, so its exact-fit translation map goes in the same pass:
+    // the map is keyed to that body's hash and answers nothing without it
+    // (unchanged sentences still hit the GLOBAL memory — the linkage is about
+    // the entry tier only). Tags and the failure record survive, as before.
+    const { body: _released, translation: _linked, ...rest } = entry
+    if (rest.tagIds === undefined && rest.error === undefined && rest.fetch === undefined) continue
     next[entryId] = rest
   }
   return { doc: { ...doc, annotations: next }, changed: true }
@@ -698,4 +815,113 @@ export function pruneOrphanTags(doc: ReaderStateDoc): { doc: ReaderStateDoc; rem
   }
   if (removed === 0) return { doc, removed }
   return { doc: { ...doc, tags: kept }, removed }
+}
+
+/** One memory entry's approximate size in characters (key + both texts + stamp). */
+function memoryEntryChars(key: string, entry: ReaderTranslationMemoryEntry): number {
+  return key.length + entry.source.length + entry.target.length + 24
+}
+
+/** One entry translation's size in characters, as recorded or estimated. */
+function entryTranslationChars(translation: ReaderEntryTranslation): number {
+  if (translation.chars !== undefined) return translation.chars
+  return Object.entries(translation.segments ?? {}).reduce((sum, [hash, target]) => sum + hash.length + target.length + 2, 0)
+}
+
+/**
+ * Bound the two translation tiers to their shared budget, LRU by last use.
+ *
+ * The eviction list is ONE ordering across the global memory and every entry's
+ * segment map: a sentence remembered and a per-entry map are the same kind of
+ * thing (a translation that was paid for), so the oldest lastUsedAt goes first
+ * regardless of which tier holds it. Two extra rules ride the same walk,
+ * because it is the only place both tiers are walked: schema-version mismatches
+ * are evicted on sight (the lazy half of "version bump = miss"), and the memory
+ * table answers to its own count cap even when the budget has room.
+ *
+ * Pure over plain records: the service wires the files, this decides.
+ *
+ * @param memory - the global sentence memory (table content).
+ * @param annotations - the document's annotations (entry translations included).
+ * @param budgetChars - the shared budget.
+ * @returns the bounded records, plus WHICH keys each tier lost (the caller
+ *   applies the entry evictions to the freshest document inside its commit).
+ */
+export function boundTranslations(
+  memory: Record<string, ReaderTranslationMemoryEntry>,
+  annotations: Record<string, ReaderEntryAnnotation>,
+  budgetChars: number,
+): {
+  memory: Record<string, ReaderTranslationMemoryEntry>
+  annotations: Record<string, ReaderEntryAnnotation>
+  evictedMemoryKeys: string[]
+  evictedEntryIds: string[]
+} {
+  let nextMemory = memory
+  const evictedMemoryKeys: string[] = []
+  // The count cap is the memory's own: 50k sentences is already several MB.
+  const keysByAge = Object.keys(memory).sort((a, b) => memory[a]!.lastUsedAt.localeCompare(memory[b]!.lastUsedAt))
+  if (keysByAge.length > MAX_TRANSLATION_MEMORY_ENTRIES) {
+    nextMemory = { ...memory }
+    for (const key of keysByAge.slice(0, keysByAge.length - MAX_TRANSLATION_MEMORY_ENTRIES)) {
+      delete nextMemory[key]
+      evictedMemoryKeys.push(key)
+    }
+  }
+
+  // One LRU ladder across both tiers. Version-mismatched entry maps carry the
+  // stale flag: they are dead weight this walk carries out first, whatever the
+  // budget says.
+  interface Aged { readonly at: string; readonly chars: number; readonly kind: 'memory' | 'entry'; readonly key: string; readonly stale: boolean }
+  const ladder: Aged[] = []
+  let total = 0
+  for (const [key, entry] of Object.entries(nextMemory)) {
+    const chars = memoryEntryChars(key, entry)
+    total += chars
+    ladder.push({ at: entry.lastUsedAt, chars, kind: 'memory', key, stale: false })
+  }
+  for (const [entryId, annotation] of Object.entries(annotations)) {
+    const translation = annotation.translation
+    if (translation === undefined) continue
+    const stale = translation.version !== TRANSLATION_STORAGE_VERSION
+    const chars = entryTranslationChars(translation)
+    if (!stale) total += chars
+    ladder.push({ at: stale ? new Date(0).toISOString() : translation.lastUsedAt, chars, kind: 'entry', key: entryId, stale })
+  }
+  ladder.sort((a, b) => a.at.localeCompare(b.at))
+
+  const evictedEntryIds: string[] = []
+  let nextAnnotations: Record<string, ReaderEntryAnnotation> | undefined
+  for (const item of ladder) {
+    // Stale records are evicted on sight; fresh ones only while over budget.
+    if (!item.stale && total <= budgetChars) break
+    if (item.kind === 'memory') {
+      if (nextMemory === memory) nextMemory = { ...memory }
+      if (nextMemory[item.key] !== undefined) {
+        delete nextMemory[item.key]
+        total -= item.chars
+        evictedMemoryKeys.push(item.key)
+      }
+    } else {
+      const annotation = (nextAnnotations ?? annotations)[item.key]
+      if (annotation?.translation !== undefined) {
+        if (nextAnnotations === undefined) nextAnnotations = { ...annotations }
+        const { translation: _evicted, ...rest } = annotation
+        nextAnnotations[item.key] = rest
+        if (!item.stale) total -= item.chars
+        evictedEntryIds.push(item.key)
+      }
+    }
+  }
+  return {
+    memory: nextMemory,
+    annotations: nextAnnotations ?? annotations,
+    evictedMemoryKeys,
+    evictedEntryIds,
+  }
+}
+
+/** The table's approximate size in characters, for the document's manifest. */
+export function memoryTableChars(entries: Record<string, ReaderTranslationMemoryEntry>): number {
+  return Object.entries(entries).reduce((sum, [key, entry]) => sum + memoryEntryChars(key, entry), 0)
 }
