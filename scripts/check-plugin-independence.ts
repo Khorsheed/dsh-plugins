@@ -98,6 +98,12 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   'mission-tool',
   'datasets-tool',
   'eval-tool',
+  // typesafe-tool is the same shape for the typesafe core: the core publishes
+  // the `ctx.typesafe` service at the profile root and stays surface-free; this
+  // row only makes the tool module resolvable, and an agent preset names the
+  // row — a dsh.bundle declaration would auto-mount typesafe_judge at the
+  // profile root, exactly what the split removes.
+  'typesafe-tool',
 ]
 
 /**

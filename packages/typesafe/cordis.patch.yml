@@ -1,0 +1,9 @@
+# typesafe bundle patch: inserts the core row into the composing profile.
+# Host half only — the TypeSafe System One service other plugins call in code.
+# The model-facing tool row is a separate preset-composed package
+# (@khorsheed/dsh-typesafe-tool), deliberately not inserted here: a session gets
+# the tool exactly when its agent preset names that row.
+# Note: the @-prefixed name must stay quoted — it is a YAML reserved character.
+- insert:
+    - id: typesafe
+      name: '@khorsheed/dsh-typesafe'
