@@ -120,6 +120,13 @@ interface BenchOptions {
   readonly entryTranslation?: { ok: true; value: { translation?: { pair: string; bodyHash: string; segments: Record<string, string> } } }
   /** The global memory's answers, by sentence hash. */
   readonly memorySlice?: Readonly<Record<string, string>>
+  /** The translation budget the policy reports (chars). */
+  readonly translationBudgetChars?: number
+  /** The host's storage aggregates, when a test cares about the manage page. */
+  readonly storageStats?: {
+    bodies: { entries: number; chars: number }
+    translations: { entries: number; chars: number; memoryEntries: number; memoryChars: number }
+  }
   /** The dsh session this mount belongs to (defaults to `s1`). */
   readonly sessionId?: string
 }
@@ -185,8 +192,19 @@ function bench(options: BenchOptions = {}) {
       value: { candidates: (options.backfillCandidates ?? []).filter(id => entries.some(entry => entry.entryId === id))
         .map(id => ({ entryId: id, url: `https://example.com/${id}`, label: id })) },
     })),
-    getCachePolicy: vi.fn(async () => ({ ok: true as const, value: { ttlHours: options.ttlHours ?? 24, maxEntries: 500 } })),
+    getCachePolicy: vi.fn(async () => ({
+      ok: true as const,
+      value: { ttlHours: options.ttlHours ?? 24, maxEntries: 500, translationBudgetChars: options.translationBudgetChars ?? 64_000_000 },
+    })),
     setCachePolicy: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    getStorageStats: vi.fn(async () => ({
+      ok: true as const,
+      value: options.storageStats ?? {
+        bodies: { entries: 0, chars: 0 },
+        translations: { entries: 0, chars: 0, memoryEntries: 0, memoryChars: 0 },
+      },
+    })),
+    clearTranslations: vi.fn(async () => ({ ok: true as const, value: { clearedEntries: 0, clearedMemory: false } })),
     entryTags: vi.fn(async () => ({ ok: true as const, value: { tags: [] } })),
     createTag: vi.fn(async (name: string) => ({ ok: true as const, value: { id: `tag-${name}`, name, createdAt: 'now' } })),
     tagEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
@@ -264,6 +282,8 @@ function bench(options: BenchOptions = {}) {
     getEntryTranslation: mocks.getEntryTranslation,
     getSentenceTranslations: mocks.getSentenceTranslations,
     rememberSentences: mocks.rememberSentences,
+    getStorageStats: mocks.getStorageStats,
+    clearTranslations: mocks.clearTranslations,
     getEntryBody: mocks.getEntryBody,
     fetchEntryBody: mocks.fetchEntryBody,
     readDraft: () => '',
@@ -483,7 +503,9 @@ describe('a saved link with no body says so, and can be deleted', () => {
     const cards = await screen.findAllByRole('button', { name: /保存的文章/ })
     fireEvent.click(cards[cards.length - 1] as HTMLElement)
     fireEvent.click(await screen.findByTitle(zh['detail.removeLink']))
-    await waitFor(() => { expect(ui.mocks.removeSource).toHaveBeenCalledWith('link-1') })
+    // The ids the pane parsed for the source ride along, so the host can drop
+    // their translation maps (the host never parses feeds).
+    await waitFor(() => { expect(ui.mocks.removeSource).toHaveBeenCalledWith('link-1', ['link:link-1']) })
   })
 
   it('reports a saved-but-unreadable link as saved, naming the reason', async () => {
@@ -786,6 +808,68 @@ describe('a source is editable from the subscription page', () => {
     })
     // A changed address re-fetches: the next payload is a different document.
     await waitFor(() => { expect(ui.mocks.refresh).toHaveBeenCalledWith(['hn']) })
+  })
+})
+
+describe('the manage page shows the storage surface', () => {
+  const stats = {
+    bodies: { entries: 3, chars: 2_400_000 },
+    translations: { entries: 2, chars: 300_000, memoryEntries: 1200, memoryChars: 700_000 },
+  }
+  /** The manage page opens from a settled wall; the card content is incidental. */
+  const wall = { sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } }
+
+  it('renders the per-tier usage and the current translation budget', async () => {
+    bench({ ...wall, storageStats: stats, translationBudgetChars: 128_000_000 })
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    await screen.findByText(zh['sources.title'])
+    // The aggregated readout — the host counts characters, and the page says so.
+    expect(await screen.findByText('3 篇 · 2.4 MB')).toBeTruthy()
+    expect(await screen.findByText('2 篇映射 + 1200 句 · 1.0 MB')).toBeTruthy()
+    const budget = document.getElementById('reader-translation-budget') as HTMLInputElement
+    expect(budget.value).toBe('128')
+  })
+
+  it('commits a new budget through the cache policy, keeping the current TTL', async () => {
+    const ui = bench({ ...wall, storageStats: stats })
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    await screen.findByText(zh['sources.title'])
+    const budget = await screen.findByLabelText(/译文预算/) as HTMLInputElement
+    fireEvent.change(budget, { target: { value: '32' } })
+    fireEvent.blur(budget)
+    await waitFor(() => { expect(ui.mocks.setCachePolicy).toHaveBeenCalledWith(24, undefined, 32_000_000) })
+  })
+
+  it('clears the translation cache on the button’s SECOND click, then re-reads', async () => {
+    let cleared = false
+    const ui = bench({ ...wall })
+    ui.mocks.getStorageStats.mockImplementation(async () => ({
+      ok: true as const,
+      value: cleared
+        ? { bodies: { entries: 3, chars: 2_400_000 }, translations: { entries: 0, chars: 0, memoryEntries: 0, memoryChars: 0 } }
+        : stats,
+    }))
+    ui.mocks.clearTranslations.mockImplementation(async () => {
+      cleared = true
+      return { ok: true as const, value: { clearedEntries: 2, clearedMemory: true } }
+    })
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    await screen.findByText(zh['sources.title'])
+    await screen.findByText('2 篇映射 + 1200 句 · 1.0 MB')
+    const button = await screen.findByText(zh['sources.clearTranslations'])
+    fireEvent.click(button)
+    // Armed, not executed: one click never clears.
+    expect(ui.mocks.clearTranslations).not.toHaveBeenCalled()
+    expect(await screen.findByText(zh['sources.clearTranslationsConfirm'])).toBeTruthy()
+    fireEvent.click(screen.getByText(zh['sources.clearTranslationsConfirm']))
+    await waitFor(() => { expect(ui.mocks.clearTranslations).toHaveBeenCalledTimes(1) })
+    // The readout re-reads after the clear: maps and sentences are gone, the
+    // bodies line is untouched.
+    await screen.findByText('0 篇映射 + 0 句 · 1 KB')
+    expect(screen.getByText('3 篇 · 2.4 MB')).toBeTruthy()
   })
 })
 

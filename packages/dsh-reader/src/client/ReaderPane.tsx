@@ -48,6 +48,7 @@ import {
   type ReaderRecentEntry,
   type ReaderSentenceLearn,
   type ReaderSourceKind,
+  type ReaderStorageStats,
   type ReaderTag,
 } from '../types.ts'
 import { extractArticle } from './extract-article.ts'
@@ -340,6 +341,18 @@ const SCROLL_SETTLE_ATTEMPTS = 30
  * position is theirs.
  */
 const POSITION_SETTLE_MS = 20_000
+
+/**
+ * Format the store's character accounting as an approximate size.
+ *
+ * The host counts CHARACTERS (every budget in the document is written in
+ * chars), and this readout must never pretend to a precision the unit does not
+ * have — so it says MB/KB of text, one decimal at most.
+ */
+function formatStorageSize(chars: number): string {
+  if (chars >= 1_000_000) return `${(chars / 1_000_000).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(chars / 1_000))} KB`
+}
 
 /**
  * The article's top-level blocks, ignoring the translation's own reveal lines.
@@ -686,6 +699,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const [manageKind, setManageKind] = useState<'all' | ReaderSourceKind>('all')
   const [manageSort, setManageSort] = useState<'added' | 'name' | 'fetched'>('added')
+  /** The manage page's storage readout, loaded on entry (host aggregates; the tables never cross). */
+  const [storageStats, setStorageStats] = useState<ReaderStorageStats | null>(null)
+  /** The translation budget draft, in MB (committed on blur/Enter, like the TTL select commits on pick). */
+  const [budgetDraft, setBudgetDraft] = useState('')
+  /** The clear button's second step: armed once, executed on the next click. */
+  const [clearArmed, setClearArmed] = useState(false)
 
   /* ---------------------------------------------------- on-device translation */
 
@@ -882,9 +901,39 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       if (result.ok) actions.setTags(result.value.tags, result.value.counts)
     })
     void props.getCachePolicy().then(result => {
-      if (result.ok) actions.setCacheTtl(result.value.ttlHours)
+      if (result.ok) {
+        actions.setCacheTtl(result.value.ttlHours)
+        setBudgetDraft(String(Math.round(result.value.translationBudgetChars / 1_000_000)))
+      }
     })
   }, [actions, props, rev])
+
+  /** The manage page's storage readout: read on entry, and after a clear. */
+  const loadStorageStats = useCallback(async () => {
+    const result = await props.getStorageStats()
+    if (result.ok) setStorageStats(result.value)
+  }, [props])
+
+  useEffect(() => {
+    if (view === 'manage') void loadStorageStats()
+    else setClearArmed(false)
+  }, [view, loadStorageStats])
+
+  /** Commit the translation budget draft (MB) through the cache policy. */
+  const commitBudget = useCallback(() => {
+    const mb = Number(budgetDraft)
+    if (!Number.isFinite(mb) || mb <= 0) return
+    void props.setCachePolicy(cacheTtlHours, undefined, Math.round(mb * 1_000_000)).then(result => {
+      if (result.ok) void loadStorageStats()
+    })
+  }, [props, budgetDraft, cacheTtlHours, loadStorageStats])
+
+  /** Clear both translation tiers, on the button's second click. */
+  const clearTranslations = useCallback(() => {
+    if (!clearArmed) { setClearArmed(true); return }
+    setClearArmed(false)
+    void props.clearTranslations().then(result => { if (result.ok) void loadStorageStats() })
+  }, [props, clearArmed, loadStorageStats])
 
   useEffect(() => {
     void props.capabilities().then(result => {
@@ -1028,6 +1077,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           entryId: entry.id,
           url,
           html: extracted.html,
+          // The map rides the body's identity: a re-extraction of the same
+          // payload keeps it, a changed body retires it in the same commit.
+          bodyHash: translationHash(extracted.html),
           ...(stored.value.truncated === true ? { truncated: true } : {}),
           ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
         })
@@ -2174,12 +2226,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /** Drop one source (and everything it brought) from the subscription page. */
   const removeSource = useCallback(async (id: string) => {
-    const result = await props.removeSource(id)
+    // The entries this pane has parsed for the source: their translation maps
+    // die with the source (the host never parses feeds, so the caller names
+    // them). A rolled-off entry's map is the budget's business, as before.
+    const entryIds = allEntries.filter(entry => entry.sourceId === id).map(entry => entry.id)
+    const result = await props.removeSource(id, entryIds)
     if (result.ok) {
       actions.clearParsed()
       actions.refresh()
     }
-  }, [actions, props])
+  }, [actions, props, allEntries])
 
   /**
    * Delete one saved link from wherever the reader is standing.
@@ -3391,6 +3447,60 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 ))}
               </select>
             </label>
+          </div>
+          {/* The storage readout: what the two caches currently hold, plus the
+              one budget the reader controls. The numbers are aggregated on the
+              host — the tables never cross the wire for a settings page. The
+              clear button is two-step in place (the pane's confirm idiom is a
+              second click, not a modal). */}
+          <div className={css.settingsRow}>
+            <span className={css.setting} title={t('sources.storageBodiesHelp')}>
+              <span className={css.settingLabel}>{t('sources.storageBodies')}</span>
+              <span className={css.settingReadout}>
+                {storageStats === null
+                  ? '—'
+                  : t('sources.storageBodiesUsage', {
+                    entries: String(storageStats.bodies.entries),
+                    size: formatStorageSize(storageStats.bodies.chars),
+                  })}
+              </span>
+            </span>
+            <span className={css.setting} title={t('sources.storageTranslationsHelp')}>
+              <span className={css.settingLabel}>{t('sources.storageTranslations')}</span>
+              <span className={css.settingReadout}>
+                {storageStats === null
+                  ? '—'
+                  : t('sources.storageTranslationsUsage', {
+                    maps: String(storageStats.translations.entries),
+                    sentences: String(storageStats.translations.memoryEntries),
+                    size: formatStorageSize(storageStats.translations.chars + storageStats.translations.memoryChars),
+                  })}
+              </span>
+            </span>
+            <label className={css.setting} htmlFor="reader-translation-budget" title={t('sources.translationBudgetHelp')}>
+              <span className={css.settingLabel}>{t('sources.translationBudget')}</span>
+              <input
+                id="reader-translation-budget"
+                className={css.settingControl}
+                type="number"
+                min={1}
+                step={1}
+                value={budgetDraft}
+                onChange={event => { setBudgetDraft(event.target.value) }}
+                onBlur={commitBudget}
+                onKeyDown={event => { if (event.key === 'Enter') commitBudget() }}
+              />
+              <span className={css.settingLabel}>MB</span>
+            </label>
+            <button
+              type="button"
+              className={css.chip}
+              aria-pressed={clearArmed}
+              title={t('sources.storageTranslationsHelp')}
+              onClick={clearTranslations}
+            >
+              {t(clearArmed ? 'sources.clearTranslationsConfirm' : 'sources.clearTranslations')}
+            </button>
           </div>
           {/* The list grows one entry per pasted URL plus one per feed, and the
               two are different things: narrowing by kind and ordering by
