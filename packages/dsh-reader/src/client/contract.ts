@@ -87,7 +87,7 @@ export interface ReaderPaneInjected {
 
   /** What the plugin holds per entry: a body, a stored payload, or a failure. */
   entryFetchStates: (entryIds: readonly string[]) => Promise<RemoteResult<{ states: Record<string, ReaderEntryFetchState> }>>
-  /** Cache the markup this process extracted (the sweep's write half). */
+  /** Cache body markup this process holds (the sweep's extractions, or a feed's own full text on open). */
   storeEntryBody: (request: {
     entryId: string
     url: string

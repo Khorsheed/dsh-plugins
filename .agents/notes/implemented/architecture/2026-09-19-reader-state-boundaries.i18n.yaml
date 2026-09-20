@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-19-reader-state-boundaries.md
-.agents/notes/implemented/architecture/2026-09-19-reader-state-boundaries.md: baaaec13a7847a442855ca43e10424e7b3fa846b
-.agents/notes/implemented/architecture/2026-09-19-reader-state-boundaries.zh.md: 94bacc7a1ee709c5f6cdc7ad6381f7458ca72344
+.agents/notes/implemented/architecture/2026-09-19-reader-state-boundaries.md: 9d812dbf135cfbfd5c5197b289a8c10233c3eb19
+.agents/notes/implemented/architecture/2026-09-19-reader-state-boundaries.zh.md: 7f0e20df5c4a472b8906d235f564baf0e46245ed

@@ -1834,6 +1834,105 @@ describe('the card learns what the pane just did', () => {
   })
 })
 
+describe('a fulltext feed body is kept on open', () => {
+  /**
+   * A mock host whose `storeEntryBody` really holds: the write is what
+   * `entryFetchStates` and the next `getEntryBody` answer from — the way the
+   * real service derives both from its annotations. A fixed-answer mock would
+   * let these tests pass without the pane having persisted anything.
+   */
+  function holdingHost(ui: ReturnType<typeof bench>): void {
+    const held = new Map<string, string>()
+    ui.mocks.storeEntryBody.mockImplementation(async (request: { entryId: string; html: string }) => {
+      held.set(request.entryId, request.html)
+      return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: request.html } }
+    })
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string; feedHtml?: string }) => {
+      const cached = held.get(request.entryId)
+      if (cached !== undefined) {
+        return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: cached } }
+      }
+      return {
+        ok: true as const,
+        value: request.feedHtml === undefined
+          ? { entryId: request.entryId, cached: false, fresh: true, fromFeed: false }
+          : { entryId: request.entryId, cached: false, fresh: true, fromFeed: true, html: request.feedHtml },
+      }
+    })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: {
+        states: Object.fromEntries(entryIds.map(id => [id, held.has(id)
+          ? { state: 'ready' as const, at: '2026-09-20T00:00:00.000Z' }
+          : { state: 'none' as const }])),
+      },
+    }))
+  }
+
+  const fulltextFeed = (): string =>
+    feed('hn', [{ title: '全文条目', body: '<p>the feed full text</p>' }])
+
+  it('stores the feed’s full text on open, and the card says 已抓取 after back', async () => {
+    // The gap: a fulltext feed's payload IS the article, but only inside the
+    // feed's window — the host never held it, so the card said 抓取 and the
+    // text died with the window. Opening is the gesture that keeps it.
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: fulltextFeed() } })
+    holdingHost(ui)
+    await ui.settle()
+    expect(await screen.findByText(zh['fetch.none'])).toBeTruthy()
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('全文条目')}`
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1) })
+    const stored = ui.mocks.storeEntryBody.mock.calls[0]?.[0] as { entryId: string; url: string; html: string; bodyHash?: string }
+    expect(stored.entryId).toBe(entryId)
+    expect(stored.url).toBe(`https://example.com/hn/${encodeURIComponent('全文条目')}`)
+    expect(stored.html).toContain('the feed full text')
+    // The hash rides along, so the entry's translation map survives the store.
+    expect(typeof stored.bodyHash).toBe('string')
+    // No request was made to keep it: the text was already on screen.
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(screen.queryByText(zh['fetch.none'])).toBeNull()
+  })
+
+  it('does not store again when the host already holds the body', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: fulltextFeed() } })
+    holdingHost(ui)
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1) })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await screen.findByText(zh['fetch.ready'])
+    // The second open reads the host's cache (holdingHost answers from the
+    // first store) — a cached body is paid for, nothing is written twice.
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    await waitFor(() => { expect(ui.mocks.getEntryBody).toHaveBeenCalledTimes(2) })
+    expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1)
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('a summary-only open still owes the fetch, and the summary is never stored', async () => {
+    // The other half of the rule: a summary is not the body, so opening keeps
+    // paying one fetch — and the summary itself is never cached as if it were
+    // the article (that is the 摘要不是正文 note's rule, kept honest here).
+    const summaryFeed =
+      '<feed xmlns="http://www.w3.org/2005/Atom"><title>tc</title>'
+      + '<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>'
+      + '<id>https://example.com/paper</id>'
+      + '<summary>We find that Claude maintains a small set of representations.</summary>'
+      + '</entry></feed>'
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.storeEntryBody).not.toHaveBeenCalled()
+  })
+})
+
 describe('coming back to the pane puts the reader where they were', () => {
   /**
    * The host unmounts the whole right sidebar when another main panel takes
@@ -2341,6 +2440,9 @@ const settleFrame = async (): Promise<void> => {
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
     await screen.findByText(zh['action.quote'])
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // The wheel is the gesture that makes the scroll the reader's (a bare
+    // scroll event is programmatic as far as the pane is concerned).
+    fireEvent.wheel(scroller)
     scroller.scrollTop = 640
     fireEvent.scroll(scroller)
 
@@ -2381,6 +2483,7 @@ const settleFrame = async (): Promise<void> => {
     await screen.findByText(zh['action.quote'])
     await settleFrame()
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    fireEvent.wheel(scroller)
     scroller.scrollTop = 620
     fireEvent.scroll(scroller)
     const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
@@ -2420,11 +2523,100 @@ const settleFrame = async (): Promise<void> => {
     vi.restoreAllMocks()
   })
 
+  it('restores the place after a TAB switch remounts the pane (the 3080 report)', async () => {
+    // The exact reported flow: reading partway down an article, click another
+    // sidebar tab (the host unmounts this pane's body entirely — dockkit renders
+    // only the active tab), click back (a fresh mount). The position must be
+    // back — from page memory this time, not a seeded store.
+    stubLayout()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller1 = first.container.querySelector('[class*="detailBody"]') as HTMLElement
+    fireEvent.wheel(scroller1)
+    scroller1.scrollTop = 620
+    fireEvent.scroll(scroller1)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    await waitFor(() => {
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
+    })
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await settleFrame()
+    const scroller2 = second.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // The point: NOT the top. jsdom has no Range geometry, so the text-offset
+    // path answers proportionally there (a few px into the block rather than
+    // the exact pixel) — the assertion is the block, not a fake-exact pixel.
+    await waitFor(() => {
+      expect(scroller2.scrollTop).toBeGreaterThanOrEqual(600)
+      expect(scroller2.scrollTop).toBeLessThanOrEqual(650)
+    })
+    vi.restoreAllMocks()
+  })
+
+  it('restores the place when the remount happens WITH the globe on', async () => {
+    // The realistic 3080 flow: the reader reads long English articles in
+    // Chinese. The anchor is recorded against the TRANSLATED geometry; the
+    // remount first restores onto the ORIGINAL body, then the translation
+    // re-applies and the re-anchor must land on the same sentence.
+    installTranslator()
+    stubTextLayout()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    const scroller1 = first.container.querySelector('[class*="detailBody"]') as HTMLElement
+    const article1 = first.container.querySelector('[class*="article"]') as HTMLElement
+    // Scroll to block 1 ("Another paragraph entirely…") in the TRANSLATED layout.
+    const blocks1 = [...article1.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+    const heightOf = (element: Element): number => Math.max(40, (element.textContent ?? '').length * 10)
+    const block1Top = heightOf(blocks1[0] as Element)
+    fireEvent.wheel(scroller1)
+    scroller1.scrollTop = block1Top + 100
+    fireEvent.scroll(scroller1)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    const recorded = await waitFor(() => {
+      const anchor = readSession().scroll?.[entryId]
+      expect(anchor?.block).toBe(1)
+      expect(anchor?.textLength).toBeGreaterThan(0)
+      return anchor
+    })
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // The translation comes back by itself (the page's session cache), then the
+    // position must land on the same sentence in the SAME translated geometry.
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    await settleFrame()
+    const scroller2 = second.container.querySelector('[class*="detailBody"]') as HTMLElement
+    const article2 = second.container.querySelector('[class*="article"]') as HTMLElement
+    const blocks2 = [...article2.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+    const expectedTop = heightOf(blocks2[0] as Element)
+    const expectedOffset = Math.round(((recorded?.text ?? 0) / (recorded?.textLength ?? 1)) * heightOf(blocks2[1] as Element))
+    await waitFor(() => { expect(scroller2.scrollTop).toBe(expectedTop + expectedOffset) })
+    vi.restoreAllMocks()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
   it('puts the wall back where it was after the pane remounts', async () => {
     const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await first.settle()
     await screen.findByText('An English article')
     const scroller = wallScroller(first.container)
+    fireEvent.wheel(scroller)
     scroller.scrollTop = 300
     fireEvent.scroll(scroller)
     first.unmount()
@@ -2433,6 +2625,63 @@ const settleFrame = async (): Promise<void> => {
     await second.settle()
     await screen.findByText('An English article')
     await waitFor(() => { expect(wallScroller(second.container).scrollTop).toBe(300) })
+  })
+
+  it('a clamp from a shrinking document is not recorded as the reader\'s position', async () => {
+    // The 3080 mechanism: on the remount, the translation rebuild shrank the
+    // document under the scrolled scroller, the browser clamped it, and the
+    // clamp's scroll event — indistinguishable from the reader's by value —
+    // overwrote the stored anchor with the clamped value (and tripped the
+    // "reader took over" flag, ending the settle window). Only a scroll the
+    // reader CAUSED may be recorded.
+    stubLayout()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 620
+    fireEvent.scroll(scroller)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    await waitFor(() => {
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
+    })
+    // What a browser clamp looks like from this side: the document shrank, the
+    // offset fell, a scroll event fired — with no gesture anywhere near it
+    // (the clock is aged past the gesture window; jsdom cannot clamp, so the
+    // clamp's shape is stated by hand).
+    const realNow = Date.now()
+    const nowSpy = vi.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(realNow + 5000)
+    scroller.scrollTop = 180
+    fireEvent.scroll(scroller)
+    nowSpy.mockRestore()
+    await settleFrame()
+    expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
+    vi.restoreAllMocks()
+  })
+
+  it('a clamp on the wall is not recorded as the wall\'s position either', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    await screen.findByText('An English article')
+    const scroller = wallScroller(ui.container)
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 300
+    fireEvent.scroll(scroller)
+    await waitFor(() => { expect(readSession().wallScroll).toBe(300) })
+    // Same clamp shape on the wall (a narrowing filter shrank the list): no
+    // gesture, so the wall's recorded place must not move.
+    const realNow = Date.now()
+    const nowSpy = vi.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(realNow + 5000)
+    scroller.scrollTop = 40
+    fireEvent.scroll(scroller)
+    nowSpy.mockRestore()
+    await settleFrame()
+    expect(readSession().wallScroll).toBe(300)
   })
 
   it('keeps the reader at the same sentence when the translation rewrites the geometry', async () => {
@@ -2450,6 +2699,7 @@ const settleFrame = async (): Promise<void> => {
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     // Block 0 is 42 chars (420px); 500px in is block 1 ("Another paragraph
     // entirely…", 50 chars = 500px), 80px into it — the 8th character.
+    fireEvent.wheel(scroller)
     scroller.scrollTop = 500
     fireEvent.scroll(scroller)
     const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
