@@ -33,9 +33,17 @@ proposals/
   README.md / README.en.md   本文件
   active/                    进行中的提案：idea / planned / in-progress / blocked
   closed/                    已关闭：done / closed（放弃 / 被取代 / 官方吸收）
+  prototypes/                提案的 HTML 原型与故事板（见下「原型与故事板」）
 ```
 
 文件命名：`YYYY-MM-DD-<slug>.md`（slug 用英文小写连字符；与 Agent Note 命名同款）。**路径编码状态**是刻意为之——状态变更必须伴随文件移动，防止"改了状态忘了归档"。
+
+**原型与故事板（HTML 附件）**不放在 `scratch-*/`：那类目录是 gitignored 的本机临时区，提案引用它就等于给别的机器留一个断链。约定两条：
+
+- `proposals/` 侧提案的附件 → `proposals/prototypes/<slug>.html`，由提案正文以相对链接指过去。
+- `docs/upstream-proposals/` 的上游提案原型 → 与提案文档同目录、互指（先例：`reader-prototype.html` ↔ `2026-09-17-reader-prototype-notes.md`）。
+
+两种情况都只作**可视化附件**：验收结论、决策与事实一律写在提案正文里，原型不是第二事实源。
 
 ## 状态机
 

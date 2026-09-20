@@ -20,7 +20,7 @@ v2 把画布升级为**与工作区平级的空间**：
 ### 设计原则（与仓库插件约定对齐，可分享给设计评审）
 
 - **纯插件交付**：`dsh plugin add / remove` 一条命令装卸，**零官方代码改动**；唯一 upstream 候选（§1.2）不落地也不阻塞交付。
-- **样式与设计参考宿主**：界面只用 `--dsw-*` 主题 token、官方组件（Button/Menu/Modal/Toast/Tooltip）与官方 icon 集，暗色自动跟随；布局语汇对齐宿主会话页。界面原型（`scratch-storyboard/canvas-space-storyboard.html`）即设计沟通材料，可直接分享给设计。
+- **样式与设计参考宿主**：界面只用 `--dsw-*` 主题 token、官方组件（Button/Menu/Modal/Toast/Tooltip）与官方 icon 集，暗色自动跟随；布局语汇对齐宿主会话页。界面原型（[canvas-space-storyboard.html](../prototypes/canvas-space-storyboard.html)）即设计沟通材料，可直接分享给设计。
 - **底层能力尽量复用宿主**：agent 运行时（`ctx.agents`）、markdown 渲染（`MarkdownText`）、文档预览（`openResource`）、web 搜索（官方 web 工具）、存储围栏（`ctx.fs` + 沙箱 policy）全部是官方件——插件只写编排、卡片板与工具契约，不重造任何底层。
 
 ## 现状（官方契约实测 / v1 已交付）

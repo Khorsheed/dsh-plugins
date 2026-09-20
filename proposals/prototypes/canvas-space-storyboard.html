@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵感画布 v2 · 界面原型（讨论稿）</title>
+<!--
+  灵感画布 v2 界面原型 —— 对应 proposals/active/2026-09-16-canvas-space.md
+  设计语汇对齐宿主：--dsw-* 暗色 token + 官方 icon 集（ui-primitives/icons）内联 SVG。
+  关键机制演示：板主聊辅 / 提议卡幽灵态 / 透镜条 / 问题卡生命周期 / 聊天 dock 可收起 / 成稿视图
+-->
+<style>
+  :root {
+    /* 对齐 ui-theme design-platform.css（dark） */
+    --bg: rgb(21, 21, 23);            /* --dsw-alias-bg-base */
+    --layer-1: rgb(35, 35, 36);       /* --dsw-alias-bg-layer-1 */
+    --layer-2: rgb(44, 44, 46);       /* --dsw-alias-bg-layer-2 */
+    --text: rgb(249, 250, 251);       /* --dsw-alias-label-primary */
+    --text-2: rgb(207, 211, 214);     /* --dsw-alias-label-secondary */
+    --text-3: rgb(173, 178, 184);     /* --dsw-alias-label-tertiary */
+    --text-4: rgb(129, 133, 140);     /* neutral-bluish-600 */
+    --border-1: rgba(255, 255, 255, 0.06);  /* --dsw-alias-border-l1 */
+    --border-2: rgba(255, 255, 255, 0.12);  /* --dsw-alias-border-l2 */
+    --hover: rgba(255, 255, 255, 0.08);     /* --dsw-alias-interactive-bg-hover */
+    --active: rgba(255, 255, 255, 0.14);    /* --dsw-alias-interactive-bg-active */
+    --accent: rgb(103, 158, 254);     /* --dsw-static-deepseek-400（唯一强调色，节制使用） */
+    --accent-dim: rgba(103, 158, 254, 0.16);
+    --primary-btn: rgb(249, 250, 251);      /* --dsw-alias-brand-primary */
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; font-size: 13px; }
+  button { font-family: inherit; cursor: pointer; color: inherit; }
+  .ic { width: 14px; height: 14px; flex-shrink: 0; display: inline-block; vertical-align: -2px; }
+  .ic.lg { width: 16px; height: 16px; }
+
+  .app { display: flex; height: 100vh; }
+
+  /* ── 左导轨（main + sidebar.panellist 的效果示意） ── */
+  .rail { width: 52px; background: var(--bg); border-right: 1px solid var(--border-1); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; flex-shrink: 0; }
+  .rail .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--layer-2); color: var(--text-2); display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+  .rail-item { width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent; color: var(--text-4); display: flex; align-items: center; justify-content: center; position: relative; }
+  .rail-item:hover { background: var(--hover); color: var(--text-2); }
+  .rail-item.active { background: var(--active); color: var(--text); }
+  .rail .spacer { flex: 1; }
+
+  /* ── 画布列表列（空间页内左列） ── */
+  .canvas-list { width: 200px; background: var(--bg); border-right: 1px solid var(--border-1); display: flex; flex-direction: column; flex-shrink: 0; }
+  .canvas-list .head { padding: 14px 14px 10px; display: flex; align-items: center; justify-content: space-between; }
+  .canvas-list .head span { font-size: 12px; font-weight: 500; color: var(--text-3); }
+  .btn-new { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border-2); background: transparent; border-radius: 6px; font-size: 11.5px; padding: 3px 8px; color: var(--text-2); }
+  .btn-new:hover { background: var(--hover); }
+  .canvas-row { margin: 1px 8px; padding: 8px 10px; border-radius: 7px; font-size: 12.5px; line-height: 1.45; color: var(--text-3); }
+  .canvas-row.active { background: var(--active); color: var(--text); }
+  .canvas-row .meta { font-size: 11px; color: var(--text-4); margin-top: 2px; }
+  .canvas-row:not(.active):hover { background: var(--hover); }
+
+  /* ── 主区 ── */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  .topbar { height: 50px; border-bottom: 1px solid var(--border-1); display: flex; align-items: center; gap: 10px; padding: 0 16px; flex-shrink: 0; }
+  .topic { font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topic .ic { color: var(--text-4); }
+  .attach-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-3); border: 1px solid var(--border-1); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .attach-chip b { color: var(--text-2); font-weight: 500; }
+  .attach-chip .ic { width: 12px; height: 12px; }
+  .topbar .spacer { flex: 1; }
+  .view-tabs { display: flex; background: var(--layer-1); border-radius: 8px; padding: 2px; border: 1px solid var(--border-1); }
+  .view-tabs button { border: none; background: transparent; font-size: 12px; padding: 4px 14px; border-radius: 6px; color: var(--text-3); }
+  .view-tabs button.active { background: var(--layer-2); color: var(--text); }
+  .chat-toggle { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-2); background: transparent; border-radius: 7px; font-size: 12px; padding: 5px 11px; color: var(--text-2); }
+  .chat-toggle:hover { background: var(--hover); }
+  .chat-toggle.on { background: var(--primary-btn); color: rgb(15, 17, 21); border-color: transparent; }
+
+  .board-scroll { flex: 1; overflow-y: auto; padding: 14px 18px 40px; }
+
+  /* nudge 条 */
+  .nudge { display: flex; align-items: center; gap: 8px; background: var(--layer-1); border: 1px solid var(--border-1); border-radius: var(--radius); padding: 8px 12px; font-size: 12px; color: var(--text-2); margin-bottom: 12px; }
+  .nudge .ic { color: var(--accent); }
+  .nudge .act { color: var(--accent); }
+  .nudge .close { margin-left: auto; border: none; background: none; color: var(--text-4); display: flex; }
+  .nudge .close:hover { color: var(--text-2); }
+
+  /* 筛选 chips */
+  .filters { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-1); background: transparent; border-radius: 999px; font-size: 12px; padding: 4px 11px; color: var(--text-3); }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--active); color: var(--text); border-color: var(--border-2); }
+  .chip .n { color: var(--text-4); }
+  .chip.active .n { color: var(--text-3); }
+  .chip .ic { width: 12px; height: 12px; }
+
+  /* 透镜条 */
+  .lens-bar { display: none; align-items: center; gap: 6px; background: var(--layer-1); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 7px 10px; margin-bottom: 12px; font-size: 12px; }
+  .lens-bar.show { display: flex; }
+  .lens-bar .sel { color: var(--accent); font-weight: 500; margin-right: 4px; white-space: nowrap; }
+  .lens { border: 1px solid var(--border-1); background: transparent; border-radius: 999px; font-size: 12px; padding: 4px 11px; color: var(--text-2); white-space: nowrap; }
+  .lens:hover { background: var(--hover); border-color: var(--border-2); }
+  .lens.primary { background: var(--accent); border-color: transparent; color: rgb(15, 17, 21); font-weight: 500; }
+  .lens-bar .clear { margin-left: auto; border: none; background: none; color: var(--text-4); display: flex; }
+
+  /* 卡片板：kind 仅靠图标+文字区分，不用彩色 */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 10px; }
+  .card { background: var(--layer-1); border: 1px solid var(--border-1); border-radius: var(--radius); padding: 11px 12px; cursor: pointer; position: relative; transition: border-color .15s, background .15s, opacity .3s; display: flex; flex-direction: column; gap: 7px; }
+  .card:hover { border-color: var(--border-2); }
+  .card.selected { border-color: var(--accent); }
+  .card.selected::after { content: ""; position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="rgb(15,17,21)" d="M13.5 4.5L6.5 11.5L2.5 7.5L3.5 6.5L6.5 9.5L12.5 3.5Z"/></svg>') center/12px no-repeat; }
+  .kind-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-3); align-self: flex-start; }
+  .kind-tag .ic { width: 12px; height: 12px; }
+  .card .text { font-size: 12.5px; line-height: 1.65; color: var(--text); }
+  .card .src { font-size: 11px; color: var(--text-4); display: flex; align-items: center; gap: 4px; }
+  .card .src .ic { width: 11px; height: 11px; }
+  .card .src a { color: var(--accent); text-decoration: none; }
+  .q-state { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
+  .q-state .dot { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--text-4); }
+  .q-exploring .dot { background: var(--accent); border-color: var(--accent); }
+  .q-answered .dot { background: var(--text-3); border-color: var(--text-3); }
+  .card.faded { opacity: .45; }
+  .card .age { font-size: 10.5px; color: var(--text-4); }
+
+  /* 评论角标与线程 */
+  .comment-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-3); background: none; border: 1px solid var(--border-1); border-radius: 999px; padding: 3px 9px; align-self: flex-start; }
+  .comment-badge:hover { background: var(--hover); }
+  .comment-badge .ic { width: 11px; height: 11px; }
+  .comment-thread { border-left: 2px solid var(--border-2); padding: 6px 0 2px 10px; font-size: 12px; color: var(--text-2); line-height: 1.6; display: none; }
+  .comment-thread.show { display: block; }
+  .comment-thread .who { color: var(--accent); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+  .comment-thread .who .ic { width: 12px; height: 12px; }
+  .comment-thread .ask { display: inline-block; margin-top: 5px; color: var(--accent); background: none; border: none; padding: 0; font-size: 11.5px; }
+
+  /* 幽灵提议卡 */
+  .card.ghost { border: 1px dashed var(--border-2); background: transparent; }
+  .ghost-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--accent); letter-spacing: .2px; }
+  .ghost-flag .ic { width: 12px; height: 12px; }
+  .ghost-actions { display: flex; gap: 6px; margin-top: 2px; }
+  .ghost-actions button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 6px; font-size: 12px; padding: 5px 0; border: 1px solid var(--border-2); background: transparent; color: var(--text-2); }
+  .ghost-actions button:hover { background: var(--hover); }
+  .ghost-actions .ok { background: var(--primary-btn); border-color: transparent; color: rgb(15, 17, 21); }
+
+  /* document 卡内嵌 html 预览 */
+  .html-preview { border: 1px solid var(--border-1); border-radius: 6px; overflow: hidden; }
+  .html-preview .bar { background: var(--layer-2); font-size: 10px; color: var(--text-4); padding: 3px 8px; display: flex; gap: 5px; align-items: center; }
+  .html-preview .bar .ic { width: 11px; height: 11px; }
+  .html-preview .body { padding: 8px 10px; font-size: 11px; line-height: 1.6; color: var(--text-2); background: var(--bg); }
+  .html-preview .body table { border-collapse: collapse; width: 100%; font-size: 10.5px; margin-top: 4px; }
+  .html-preview .body td, .html-preview .body th { border: 1px solid var(--border-1); padding: 2px 6px; }
+
+  /* ── 聊天 dock ── */
+  .dock { width: 0; overflow: hidden; border-left: 1px solid var(--border-1); background: var(--bg); display: flex; flex-direction: column; flex-shrink: 0; transition: width .2s ease; }
+  .dock.open { width: 326px; }
+  .dock-inner { width: 326px; display: flex; flex-direction: column; height: 100%; }
+  .dock-head { padding: 12px 14px; border-bottom: 1px solid var(--border-1); font-size: 12.5px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .dock-head .ic { color: var(--accent); }
+  .dock-head .sub { font-weight: 400; color: var(--text-4); font-size: 11px; }
+  .dock-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 92%; font-size: 12.5px; line-height: 1.65; padding: 8px 12px; border-radius: 10px; }
+  .msg.user { align-self: flex-end; background: var(--layer-2); border-bottom-right-radius: 4px; }
+  .msg.agent { align-self: flex-start; background: var(--layer-1); border-bottom-left-radius: 4px; }
+  .msg .card-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .mini-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; border-radius: 5px; padding: 2px 7px; border: 1px solid var(--border-2); color: var(--text-2); }
+  .mini-chip .ic { width: 10px; height: 10px; }
+  .msg .end-q { display: block; margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--border-2); color: var(--accent); }
+  .tool-line { align-self: flex-start; font-size: 11px; color: var(--text-4); display: flex; align-items: center; gap: 5px; padding: 2px 4px; }
+  .tool-line .ic { width: 11px; height: 11px; }
+  .proposed-note { align-self: stretch; border: 1px dashed var(--border-2); border-radius: 8px; padding: 9px 11px; font-size: 12px; color: var(--text-2); }
+  .proposed-note b { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; color: var(--accent); font-weight: 500; }
+  .proposed-note b .ic { width: 12px; height: 12px; }
+  .proposed-note .go { color: var(--accent); background: none; border: none; padding: 0; font-size: 12px; }
+  .quick-acts { display: flex; gap: 6px; padding: 0 14px 8px; flex-wrap: wrap; }
+  .quick-acts button { border: 1px solid var(--border-1); background: transparent; border-radius: 999px; font-size: 11.5px; padding: 4px 11px; color: var(--text-2); }
+  .quick-acts button:hover { background: var(--hover); }
+  .composer { border-top: 1px solid var(--border-1); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
+  .composer textarea { flex: 1; border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; resize: none; height: 54px; outline: none; background: var(--layer-1); color: var(--text); }
+  .composer textarea:focus { border-color: var(--text-4); }
+  .composer textarea::placeholder { color: var(--text-4); }
+  .composer .send { width: 32px; height: 32px; border-radius: 8px; border: none; background: var(--primary-btn); color: rgb(15, 17, 21); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* ── 成稿视图 ── */
+  #view-draft { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .diff-banner { margin: 12px 18px 0; border: 1px solid var(--border-1); background: var(--layer-1); border-radius: var(--radius); padding: 9px 12px; font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+  .diff-banner .ic { color: var(--accent); }
+  .diff-banner .spacer { flex: 1; }
+  .diff-banner button { border-radius: 6px; font-size: 12px; padding: 4px 12px; border: 1px solid var(--border-2); background: transparent; color: var(--text-2); }
+  .diff-banner button:hover { background: var(--hover); }
+  .diff-banner button.accept { background: var(--primary-btn); border-color: transparent; color: rgb(15, 17, 21); }
+  .draft-cols { flex: 1; display: flex; padding: 12px 18px 20px; min-height: 0; }
+  .draft-editor, .draft-preview { flex: 1; min-width: 0; overflow-y: auto; }
+  .draft-editor textarea { width: 100%; height: 100%; border: 1px solid var(--border-1); border-radius: var(--radius); padding: 16px; font-size: 13px; line-height: 1.8; font-family: inherit; resize: none; outline: none; background: var(--layer-1); color: var(--text); }
+  .draft-preview { padding: 0 0 0 12px; }
+  .draft-preview .paper { background: var(--layer-1); border: 1px solid var(--border-1); border-radius: var(--radius); padding: 20px 22px; font-size: 13px; line-height: 1.85; }
+  .draft-preview h3 { font-size: 16px; margin-bottom: 10px; }
+  .draft-preview p { margin-bottom: 10px; color: var(--text-2); }
+  .agent-suggest { border-left: 2px solid var(--accent); background: var(--accent-dim); padding: 8px 12px; border-radius: 0 6px 6px 0; font-size: 12px; color: var(--text-2); margin: 10px 0; display: flex; gap: 6px; }
+  .agent-suggest .ic { color: var(--accent); margin-top: 2px; }
+  .save-state { font-size: 11px; color: var(--text-4); padding: 0 18px 10px; display: flex; justify-content: space-between; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs><symbol id="i-light" viewBox="0 0 16 16"> <path d="M11.3496 8C11.3496 6.14985 9.85015 4.65039 8 4.65039C6.14985 4.65039 4.65039 6.14985 4.65039 8C4.65039 9.85015 6.14985 11.3496 8 11.3496C9.85015 11.3496 11.3496 9.85015 11.3496 8ZM12.6504 8C12.6504 10.5681 10.5681 12.6504 8 12.6504C5.43188 12.6504 3.34961 10.5681 3.34961 8C3.34961 5.43188 5.43188 3.34961 8 3.34961C10.5681 3.34961 12.6504 5.43188 12.6504 8Z" fill="currentColor" /> <path d="M8.65039 0.5V2.5H7.34961V0.5H8.65039Z" fill="currentColor" /> <path d="M8.65039 13.5V15.5H7.34961V13.5H8.65039Z" fill="currentColor" /> <path d="M3.15808 2.24035L4.57229 3.65456L3.6525 4.57435L2.23829 3.16014L3.15808 2.24035Z" fill="currentColor" /> <path d="M12.3505 11.4327L13.7647 12.8469L12.8449 13.7667L11.4307 12.3525L12.3505 11.4327Z" fill="currentColor" /> <path d="M2.24537 12.8469L3.65958 11.4327L4.57937 12.3525L3.16516 13.7667L2.24537 12.8469Z" fill="currentColor" /> <path d="M11.4377 3.65455L12.852 2.24033L13.7718 3.16012L12.3575 4.57434L11.4377 3.65455Z" fill="currentColor" /> <path d="M0.5 7.35461H2.5V8.6554H0.5L0.5 7.35461Z" fill="currentColor" /> <path d="M13.5 7.35461H15.5V8.6554H13.5V7.35461Z" fill="currentColor" /> </symbol><symbol id="i-plus" viewBox="0 0 16 16"> <path d="M8.64453 1.5V7.34961H14.5V8.65039H8.64453V14.5H7.34473V8.65039H1.5V7.34961H7.34473V1.5H8.64453Z" fill="currentColor" /> </symbol><symbol id="i-search" viewBox="0 0 16 16"> <path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z" fill="currentColor" /> <path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z" fill="currentColor" /> </symbol><symbol id="i-close" viewBox="0 0 16 16"> <path d="M14.1168 13.197L13.197 14.1167L1.8833 2.80303L2.80309 1.88324L14.1168 13.197Z" fill="currentColor" /> <path d="M13.197 1.88326L14.1168 2.80305L2.80309 14.1168L1.8833 13.197L13.197 1.88326Z" fill="currentColor" /> </symbol><symbol id="i-check" viewBox="0 0 16 16"> <path d="M15.0498 3.92579L8.49512 12.3818C8.25774 12.6881 8.04517 12.9645 7.84668 13.1689C7.63957 13.3823 7.38732 13.5841 7.04492 13.6719C6.86373 13.7183 6.6757 13.7346 6.48926 13.7197C6.13666 13.6915 5.8528 13.5355 5.6123 13.3604C5.38201 13.1926 5.12573 12.9567 4.83984 12.6953L1.03125 9.21289L1.96875 8.1875L5.77734 11.6699C6.08684 11.9529 6.27773 12.1249 6.43066 12.2363C6.50183 12.2882 6.54699 12.3135 6.57324 12.3252C6.58525 12.3305 6.59269 12.3322 6.5957 12.333C6.59802 12.3336 6.59961 12.334 6.59961 12.334C6.63317 12.3367 6.66758 12.3335 6.7002 12.3252C6.7002 12.3252 6.70211 12.3251 6.7041 12.3242C6.70698 12.3229 6.71348 12.319 6.72461 12.3115C6.74849 12.2956 6.78843 12.2642 6.84961 12.2012C6.98138 12.0654 7.13957 11.8628 7.39648 11.5313L13.9502 3.07422L15.0498 3.92579Z" fill="currentColor" /> </symbol><symbol id="i-link" viewBox="0 0 16 16"> <path d="M9.94133 6.50173C11.3218 7.99603 11.3218 10.3011 9.94128 11.7954C9.88691 11.8542 9.82125 11.9196 9.72099 12.0198L7.75707 13.9838C7.65709 14.0838 7.592 14.1491 7.53334 14.2034C6.03906 15.5843 3.7327 15.5854 2.23827 14.2048C2.17933 14.1503 2.11374 14.0844 2.01315 13.9838C1.91318 13.8839 1.84922 13.8188 1.79495 13.7601C0.413857 12.2657 0.413909 9.95948 1.795 8.46503C1.84923 8.4064 1.91335 8.34115 2.01321 8.24129L3.79275 6.46313C3.71814 7.08101 3.75236 7.71445 3.90115 8.33518L3.00344 9.23151C2.89398 9.34097 2.8535 9.38307 2.82251 9.41658C1.93771 10.3744 1.93704 11.8514 2.82179 12.8092C2.85279 12.8427 2.89383 12.884 3.0034 12.9936C3.11272 13.1029 3.15429 13.1442 3.18777 13.1752C4.14561 14.0603 5.62381 14.0608 6.58178 13.1758C6.61532 13.1448 6.65722 13.1032 6.76685 12.9935L8.73077 11.0296C8.83999 10.9204 8.88142 10.8787 8.91238 10.8452C9.79744 9.88728 9.7969 8.40911 8.91173 7.45124C8.88074 7.41775 8.83944 7.3762 8.73011 7.26687C8.62082 7.15757 8.58061 7.11623 8.54712 7.08526C8.37347 6.92477 8.18243 6.79361 7.98088 6.69165L9.00289 5.66964C9.17506 5.78373 9.34035 5.91265 9.49663 6.05703C9.55538 6.11135 9.62026 6.17652 9.72036 6.27662C9.82094 6.3772 9.88686 6.4428 9.94133 6.50173Z" fill="currentColor" /> <path d="M6.06816 9.49196C4.68626 7.99724 4.68667 5.68942 6.06885 4.19487C6.12268 4.13671 6.18789 4.07306 6.28706 3.9739L8.24541 2.01416C8.34478 1.91479 8.41018 1.85055 8.46845 1.79665C9.96301 0.414902 12.2689 0.414922 13.7635 1.79665C13.8217 1.85051 13.8866 1.91559 13.9858 2.01486C14.0849 2.11394 14.1502 2.17769 14.204 2.23583C15.5861 3.7304 15.5866 6.03823 14.2047 7.53291C14.1508 7.59125 14.0854 7.65638 13.9858 7.75595L12.1994 9.54098C12.2614 8.92982 12.2185 8.30587 12.0634 7.69657L12.9956 6.76573C13.1044 6.65692 13.1458 6.61529 13.1765 6.58205C14.0621 5.62404 14.0621 4.1454 13.1765 3.18738C13.1458 3.15419 13.104 3.1135 12.9956 3.00508C12.8877 2.89716 12.8471 2.85551 12.814 2.82485C11.8559 1.9389 10.376 1.93886 9.41794 2.82485C9.38479 2.85554 9.34381 2.89622 9.23564 3.00439L7.27728 4.96413C7.16875 5.07265 7.12708 5.11322 7.09636 5.14643C6.21074 6.10441 6.21153 7.58236 7.09705 8.5404C7.12775 8.57357 7.16826 8.61575 7.27659 8.72408C7.38456 8.83205 7.42647 8.87227 7.45958 8.90293C7.62849 9.0591 7.81309 9.1881 8.00856 9.28894L6.98795 10.3095C6.82111 10.1978 6.66052 10.0715 6.50872 9.93114C6.45057 9.87733 6.38547 9.81341 6.28637 9.71431C6.1871 9.61504 6.12202 9.55018 6.06816 9.49196Z" fill="currentColor" /> </symbol><symbol id="i-listpen" viewBox="0 0 16 16"> <path d="M10.8239 3.54733V4.78443H4.63437V3.54733H10.8239Z" fill="currentColor" /> <path d="M10.8239 6.12629V7.36338H4.63437V6.12629H10.8239Z" fill="currentColor" /> <path d="M9.073 8.70524V9.94234H4.63437V8.70524H9.073Z" fill="currentColor" /> <path d="M9.13321 0.573526C10.0076 0.573525 10.7179 0.572522 11.285 0.63397C11.8645 0.696791 12.3743 0.831648 12.8193 1.1548C13.0776 1.34246 13.3056 1.57047 13.4933 1.82875C13.8164 2.2737 13.9513 2.7836 14.0141 3.36303C14.0755 3.93015 14.0745 4.64049 14.0745 5.51485V6.1757L12.7327 7.5629V5.51485C12.7327 4.61092 12.732 3.9862 12.6803 3.5081C12.6298 3.0427 12.5379 2.79497 12.4083 2.61654C12.3033 2.47211 12.176 2.34472 12.0315 2.23977C11.8531 2.11016 11.6054 2.01823 11.14 1.96777C10.6618 1.91601 10.0372 1.91539 9.13321 1.91539H6.32658C5.42262 1.91539 4.79796 1.91604 4.31983 1.96777C3.85451 2.01819 3.60672 2.11029 3.42827 2.23977C3.28392 2.34465 3.15643 2.47223 3.0515 2.61654C2.9219 2.79496 2.82997 3.04274 2.7795 3.5081C2.72774 3.9862 2.72712 4.61092 2.72712 5.51485V10.023C2.72712 10.9273 2.72773 11.5525 2.7795 12.0307C2.82992 12.4959 2.92205 12.7429 3.0515 12.9213C3.15645 13.0657 3.28384 13.1931 3.42827 13.2981C3.60676 13.4277 3.85408 13.5206 4.31983 13.5711C4.79797 13.6228 5.42259 13.6234 6.32658 13.6234H6.87057L5.57707 14.9593C5.03527 14.9556 4.57031 14.9467 4.17476 14.9039C3.59508 14.841 3.08558 14.7063 2.64048 14.383C2.38215 14.1953 2.15422 13.9684 1.96653 13.7101C1.64319 13.2649 1.50851 12.7546 1.4457 12.1748C1.38432 11.6076 1.38525 10.8974 1.38525 10.023V5.51485C1.38525 4.64049 1.38426 3.93015 1.4457 3.36303C1.50853 2.78363 1.64341 2.27368 1.96653 1.82875C2.15417 1.57059 2.38228 1.34239 2.64048 1.1548C3.08544 0.831805 3.59533 0.696762 4.17476 0.63397C4.74193 0.572552 5.45218 0.573525 6.32658 0.573526H9.13321Z" fill="currentColor" /> <path d="M14.2193 14.9553H10.0124L11.3744 13.6134H14.2193V14.9553Z" fill="currentColor" /> <path d="M8.24493 13.3711L7.49015 14.8806C7.40148 15.058 7.58961 15.2461 7.76695 15.1574L9.27651 14.4027L14.6147 9.09934L13.5832 8.06775L8.24493 13.3711Z" fill="currentColor" /> </symbol><symbol id="i-question" viewBox="0 0 14 14"> <path d="M12.5757 7.00012C12.5757 3.92085 10.0794 1.42463 7.00012 1.42456C3.9208 1.42456 1.42456 3.9208 1.42456 7.00012C1.42463 10.0794 3.92085 12.5757 7.00012 12.5757C10.0793 12.5756 12.5756 10.0793 12.5757 7.00012ZM13.8002 7.00012C13.8001 10.7559 10.7559 13.8001 7.00012 13.8002C3.2443 13.8002 0.199291 10.7559 0.199219 7.00012C0.199219 3.24426 3.24426 0.199219 7.00012 0.199219C10.7559 0.199291 13.8002 3.2443 13.8002 7.00012Z" fill="currentColor" /> <path d="M6.18042 8.68184C6.18043 8.09153 6.32893 7.34655 6.92127 6.8481C7.28566 6.54148 7.76104 6.27318 8.0022 6.10811C8.28964 5.91137 8.42234 5.76562 8.48328 5.58944C8.57774 5.31609 8.53121 5.00904 8.34912 4.76741C8.17409 4.53522 7.83879 4.32222 7.28186 4.32222C5.99668 4.32225 5.46969 5.11832 5.46949 5.78939H4.24414C4.24436 4.39942 5.36327 3.09691 7.28186 3.09688C8.17773 3.09688 8.89489 3.45606 9.32752 4.02999C9.75287 4.59438 9.86938 5.32775 9.64026 5.99019C9.44847 6.5444 9.04722 6.87743 8.69434 7.11898C8.29506 7.39226 8.02318 7.52192 7.70996 7.78548C7.51943 7.94582 7.40577 8.24899 7.40577 8.68184V8.75533H6.18042V8.68184Z" fill="currentColor" /> <path d="M7.39455 9.44026V10.8109H6.16921V9.44026H7.39455Z" fill="currentColor" /> </symbol><symbol id="i-database" viewBox="0 0 16 16"> <ellipse cx="8" cy="3.6" rx="5.75" ry="2.4" stroke="currentColor" stroke-width="1.25" /> <path d="M2.25 3.6V12.3A5.75 2.4 0 0 0 13.75 12.3V3.6" stroke="currentColor" stroke-width="1.25" /> <path d="M2.25 7.95A5.75 2.4 0 0 0 13.75 7.95" stroke="currentColor" stroke-width="1.25" /> </symbol><symbol id="i-code" viewBox="0 0 16 16"> <path fill-rule="evenodd" clip-rule="evenodd" d="M12.3368 1.53569L11.931 4.43172H14.8086V5.79673H11.7404L11.1962 9.67859H14.2839V11.0436H11.0056L10.4994 14.6529L9.14873 14.4643L9.62731 11.0436H5.75876L5.25252 14.6529L3.90186 14.4643L4.38043 11.0436H1.69141V9.67859H4.57104L5.11417 5.79673H2.21609V4.43172H5.30581L5.73724 1.34713L7.08995 1.53569L6.68414 4.43172H10.5527L10.9841 1.34713L12.3368 1.53569ZM5.94937 9.67859H9.81791L10.361 5.79673H6.49353L5.94937 9.67859Z" fill="currentColor" /> </symbol><symbol id="i-newchat" viewBox="0 0 16 16"> <path d="M8.00003 0.3237C3.76075 0.3237 0.32373 3.76072 0.32373 8C0.32373 9.17603 0.589121 10.2922 1.0632 11.2901L1.35291 11.8989L2.5705 11.3205L2.28079 10.7117C1.89079 9.89074 1.67301 8.97167 1.67301 8C1.67301 4.50546 4.50549 1.67298 8.00003 1.67298C11.4946 1.67298 14.3271 4.50546 14.3271 8C14.3271 11.4945 11.4946 14.327 8.00003 14.327C7.28473 14.327 6.76077 14.277 6.29621 14.1487C5.83857 14.0224 5.40441 13.8109 4.88514 13.4488C4.12569 12.919 3.03778 12.7316 2.141 13.2978L2.12682 13.307L2.11264 13.3171L1.34886 13.854L1.79659 15.188L2.86122 14.4384C3.19068 14.2305 3.68325 14.2542 4.11326 14.5539C4.72789 14.9826 5.30042 15.2724 5.93762 15.4484C6.56803 15.6224 7.22776 15.6763 8.00003 15.6763C12.2393 15.6763 15.6763 12.2393 15.6763 8C15.6763 3.76072 12.2393 0.3237 8.00003 0.3237ZM7.32033 4.82535V7.32536H4.82538V8.67464H7.32033V11.1747H8.6696V8.67464H11.1747V7.32536H8.6696V4.82535H7.32033Z" fill="currentColor" /> </symbol><symbol id="i-settings" viewBox="0 0 16 16"> <g clipPath="url(#clip0_1450_63327)"> <path d="M14.0861 5.51366C13.8717 5.0575 13.588 4.58542 13.2889 4.18108C13.208 4.07172 13.1596 4.04373 13.0243 4.03054C12.4277 3.97255 11.8245 4.05527 11.2269 3.9972C10.7224 3.94816 10.3133 3.71661 10.0115 3.30919C9.66986 2.84777 9.43973 2.31343 9.09824 1.85234C9.01771 1.74365 8.96805 1.71589 8.83354 1.70282C8.29432 1.65044 7.70402 1.65061 7.16656 1.70282C7.03205 1.71589 6.98239 1.74365 6.90186 1.85234C6.56067 2.31303 6.33025 2.84774 5.98855 3.30919C5.68681 3.71661 5.27774 3.94816 4.77317 3.9972C4.17564 4.05527 3.57239 3.97255 2.97585 4.03054C2.84046 4.04373 2.79208 4.07172 2.71115 4.18108C2.41212 4.58542 2.12835 5.0575 1.91403 5.51366C1.85299 5.64359 1.85286 5.7018 1.91403 5.8319C2.14865 6.33077 2.49748 6.76892 2.73237 7.26854C2.9594 7.7515 2.96041 8.24717 2.73338 8.73044C2.49837 9.23061 2.14891 9.66837 1.91403 10.1681C1.85291 10.2982 1.85299 10.3564 1.91403 10.4863C2.12856 10.9429 2.41185 11.4142 2.71115 11.8189C2.79208 11.9283 2.84046 11.9563 2.97585 11.9694C3.57239 12.0274 4.17564 11.9447 4.77317 12.0028C5.27774 12.0518 5.68681 12.2834 5.98855 12.6908C6.33024 13.1522 6.56037 13.6866 6.90186 14.1476C6.98239 14.2563 7.03205 14.2841 7.16656 14.2972C7.70402 14.3494 8.29432 14.3495 8.83354 14.2972C8.96805 14.2841 9.01771 14.2563 9.09824 14.1476C9.43944 13.687 9.66985 13.1522 10.0115 12.6908C10.3133 12.2834 10.7224 12.0518 11.2269 12.0028C11.8244 11.9447 12.4271 12.0275 13.0243 11.9694C13.1596 11.9563 13.208 11.9283 13.2889 11.8189C13.5891 11.4131 13.872 10.942 14.0861 10.4863C14.1471 10.3564 14.1472 10.2982 14.0861 10.1681C13.8513 9.66861 13.5017 9.23061 13.2667 8.73044C13.0397 8.24717 13.0407 7.7515 13.2677 7.26854C13.5026 6.7689 13.8513 6.33106 14.0861 5.8319C14.1472 5.7018 14.1471 5.64359 14.0861 5.51366ZM15.3035 6.40373C15.0685 6.90359 14.7188 7.34119 14.4841 7.84037C14.4231 7.97025 14.423 8.02855 14.4841 8.15861C14.7189 8.65833 15.0685 9.09611 15.3035 9.59626C15.5308 10.0801 15.5308 10.5744 15.3035 11.0582C15.052 11.5933 14.7225 12.1426 14.37 12.6191C14.0685 13.0265 13.6581 13.259 13.1536 13.3081C12.5566 13.366 11.9541 13.2835 11.3573 13.3414C11.2228 13.3545 11.1731 13.3823 11.0926 13.491C10.7511 13.9521 10.521 14.4864 10.1793 14.9478C9.87828 15.3542 9.46719 15.5869 8.96387 15.6358C8.34008 15.6964 7.66194 15.6966 7.03623 15.6358C6.53291 15.5869 6.12182 15.3542 5.82084 14.9478C5.47911 14.4863 5.24878 13.9517 4.90753 13.491C4.82701 13.3823 4.77734 13.3545 4.64284 13.3414C4.04647 13.2835 3.44373 13.366 2.84653 13.3081C2.34201 13.259 1.93164 13.0265 1.63013 12.6191C1.27867 12.144 0.948453 11.5941 0.696621 11.0582C0.469315 10.5744 0.469279 10.0801 0.696621 9.59626C0.931628 9.09613 1.2813 8.65807 1.51597 8.15861C1.57708 8.02855 1.57702 7.97025 1.51597 7.84037C1.28117 7.34095 0.931635 6.9036 0.696621 6.40373C0.469213 5.91992 0.469367 5.42562 0.696621 4.94183C0.948441 4.40587 1.27868 3.85598 1.63013 3.38092C1.93164 2.97349 2.34201 2.74095 2.84653 2.6919C3.44353 2.63397 4.04599 2.71649 4.64284 2.65856C4.77734 2.64549 4.82701 2.61774 4.90753 2.50904C5.24905 2.04792 5.47913 1.51362 5.82084 1.05219C6.12182 0.645806 6.53291 0.413119 7.03623 0.364178C7.66002 0.303556 8.33816 0.303369 8.96387 0.364178C9.46719 0.413119 9.87828 0.645806 10.1793 1.05219C10.521 1.51365 10.7513 2.04828 11.0926 2.50904C11.1731 2.61774 11.2228 2.64549 11.3573 2.65856C11.9541 2.71649 12.5566 2.63397 13.1536 2.6919C13.6581 2.74095 14.0685 2.97349 14.37 3.38092C14.7214 3.85598 15.0517 4.40587 15.3035 4.94183C15.5307 5.42562 15.5309 5.91992 15.3035 6.40373Z" fill="currentColor" /> <path d="M9.13764 7.99999C9.13764 7.3715 8.62855 6.8624 8.00005 6.8624C7.37155 6.8624 6.86246 7.3715 6.86246 7.99999C6.86246 8.62849 7.37155 9.13759 8.00005 9.13759C8.62855 9.13759 9.13764 8.62849 9.13764 7.99999ZM10.4834 7.99999C10.4834 9.37126 9.37132 10.4833 8.00005 10.4833C6.62878 10.4833 5.51674 9.37126 5.51674 7.99999C5.51674 6.62873 6.62878 5.51669 8.00005 5.51669C9.37132 5.51669 10.4834 6.62873 10.4834 7.99999Z" fill="currentColor" /> </g> <defs> <clipPath id="clip0_1450_63327"> <rect width="16" height="16" fill="currentColor" /> </clipPath> </defs> </symbol><symbol id="i-send" viewBox="0 0 16 16"> <path d="M8.3125 0.981587C8.66767 1.0545 8.97902 1.20558 9.2627 1.43374C9.48724 1.61438 9.73029 1.85933 9.97949 2.10854L14.707 6.83608L13.293 8.25014L9 3.95717V15.0431H7V3.95717L2.70703 8.25014L1.29297 6.83608L6.02051 2.10854C6.26971 1.85933 6.51277 1.61438 6.7373 1.43374C6.97662 1.24126 7.28445 1.04542 7.6875 0.981587C7.8973 0.94841 8.1031 0.956564 8.3125 0.981587Z" fill="currentColor" /> </symbol><symbol id="i-sparkle" viewBox="0 0 16 16"> <path d="M6.1 3.1Q6.6 7.8 11.3 8.3Q6.6 8.8 6.1 13.5Q5.6 8.8 0.9 8.3Q5.6 7.8 6.1 3.1Z" fill="currentColor" /> <path d="M11.9 1Q12.2 3.7 14.9 4Q12.2 4.3 11.9 7Q11.6 4.3 8.9 4Q11.6 3.7 11.9 1Z" fill="currentColor" /> <path d="M12.5 9.4Q12.7 11.4 14.7 11.6Q12.7 11.8 12.5 13.8Q12.3 11.8 10.3 11.6Q12.3 11.4 12.5 9.4Z" fill="currentColor" /> </symbol><symbol id="i-chevron" viewBox="0 0 14 14"> <path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor" /> </symbol><symbol id="i-paperclip" viewBox="0 0 16 16"> <path d="M5.5498 9.75V5H6.9502V9.75C6.9502 10.3299 7.4201 10.7998 8 10.7998C8.5799 10.7998 9.0498 10.3299 9.0498 9.75V4.5C9.0498 2.9536 7.7964 1.7002 6.25 1.7002C4.7036 1.7002 3.4502 2.9536 3.4502 4.5V9.75C3.4502 12.2629 5.4871 14.2998 8 14.2998C10.5129 14.2998 12.5498 12.2629 12.5498 9.75V4H13.9502V9.75C13.9502 13.0361 11.2861 15.7002 8 15.7002C4.71391 15.7002 2.0498 13.0361 2.0498 9.75V4.5C2.04981 2.1804 3.9304 0.299806 6.25 0.299805C8.5696 0.299805 10.4502 2.1804 10.4502 4.5V9.75C10.4502 11.1031 9.3531 12.2002 8 12.2002C6.6469 12.2002 5.5498 11.1031 5.5498 9.75Z" fill="currentColor" /> </symbol><symbol id="i-folder" viewBox="0 0 16 16"> <path d="M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V6.62671C15.2694 7.02689 15.6605 7.85012 15.4385 8.68726L14.3848 12.658C14.1037 13.7164 13.1449 14.4527 12.0498 14.4529H2.91699C1.51651 14.4529 0.451662 13.2814 0.501954 11.9519V3.98706C0.501954 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM3.7793 7.75562C3.30994 7.75562 2.89883 8.07153 2.77832 8.52515L1.91602 11.7722C1.74167 12.4291 2.23734 13.073 2.91699 13.073H12.0498C12.5191 13.0728 12.9304 12.757 13.0508 12.3035L14.1045 8.33374C14.1819 8.04202 13.9619 7.756 13.6602 7.75562H3.7793ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V7.2937C2.33068 6.7269 3.02249 6.37476 3.7793 6.37476H13.2051V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z" fill="currentColor"/> </symbol><symbol id="i-think" viewBox="0 0 16 16"> <path d="M8.00192 6.64454C8.75026 6.64454 9.35732 7.25169 9.35739 8.00001C9.35739 8.74838 8.7503 9.35548 8.00192 9.35548C7.25367 9.35533 6.64743 8.74829 6.64743 8.00001C6.6475 7.25178 7.25371 6.64468 8.00192 6.64454Z" fill="currentColor" /> <path fill-rule="evenodd" clip-rule="evenodd" d="M9.97165 1.29981C11.5853 0.718916 13.271 0.642197 14.3144 1.68555C15.3577 2.72902 15.2811 4.41466 14.7002 6.02833C14.4707 6.66561 14.1504 7.32937 13.75 8.00001C14.1504 8.67062 14.4707 9.33444 14.7002 9.97169C15.2811 11.5854 15.3578 13.271 14.3144 14.3145C13.271 15.3579 11.5854 15.2811 9.97165 14.7002C9.3344 14.4708 8.67059 14.1505 7.99997 13.75C7.32933 14.1505 6.66558 14.4708 6.02829 14.7002C4.41461 15.2811 2.72899 15.3578 1.68552 14.3145C0.642155 13.271 0.71887 11.5854 1.29977 9.97169C1.52915 9.33454 1.84865 8.67049 2.24899 8.00001C1.84866 7.32953 1.52915 6.66544 1.29977 6.02833C0.718852 4.41459 0.64207 2.729 1.68552 1.68555C2.72897 0.642112 4.41456 0.718887 6.02829 1.29981C6.66541 1.52918 7.32949 1.8487 7.99997 2.24903C8.67045 1.84869 9.33451 1.52919 9.97165 1.29981ZM12.9404 9.2129C12.4391 9.893 11.8616 10.5681 11.2148 11.2149C10.568 11.8616 9.89296 12.4391 9.21286 12.9404C9.62532 13.1579 10.0271 13.338 10.4121 13.4766C11.9146 14.0174 12.9172 13.8738 13.3955 13.3955C13.8737 12.9173 14.0174 11.9146 13.4765 10.4121C13.3379 10.0271 13.1578 9.62535 12.9404 9.2129ZM3.05856 9.2129C2.84121 9.62523 2.66197 10.0272 2.52341 10.4121C1.98252 11.9146 2.12627 12.9172 2.60446 13.3955C3.08278 13.8737 4.08544 14.0174 5.58786 13.4766C5.97264 13.338 6.37389 13.1577 6.7861 12.9404C6.10624 12.4393 5.43168 11.8614 4.78513 11.2149C4.13823 10.5679 3.55992 9.89313 3.05856 9.2129ZM7.99899 3.792C7.23179 4.31419 6.45306 4.95512 5.70407 5.70411C4.95509 6.45309 4.31415 7.23184 3.79196 7.99903C4.3143 8.76666 4.95471 9.54653 5.70407 10.2959C6.45309 11.0449 7.23271 11.6848 7.99997 12.207C8.76725 11.6848 9.54683 11.0449 10.2959 10.2959C11.0449 9.54686 11.6848 8.76729 12.207 8.00001C11.6848 7.23275 11.0449 6.45312 10.2959 5.70411C9.5465 4.95475 8.76662 4.31434 7.99899 3.792ZM5.58786 2.52344C4.08533 1.98255 3.08272 2.12625 2.60446 2.6045C2.12621 3.08275 1.98252 4.08536 2.52341 5.5879C2.66189 5.97253 2.8414 6.37409 3.05856 6.78614C3.55983 6.10611 4.1384 5.43189 4.78513 4.78516C5.43186 4.13843 6.10606 3.55987 6.7861 3.0586C6.37405 2.84144 5.97249 2.66192 5.58786 2.52344ZM13.3955 2.6045C12.9172 2.12631 11.9146 1.98257 10.4121 2.52344C10.0272 2.66201 9.62519 2.84125 9.21286 3.0586C9.8931 3.55996 10.5679 4.13827 11.2148 4.78516C11.8614 5.43172 12.4392 6.10627 12.9404 6.78614C13.1577 6.37393 13.338 5.97267 13.4765 5.5879C14.0174 4.08549 13.8736 3.08281 13.3955 2.6045Z" fill="currentColor" /> </symbol><symbol id="i-archive" viewBox="0 0 20 20"> <path fill-rule="evenodd" clip-rule="evenodd" d="M15.8659 2.05975C17.2603 2.05995 18.3913 3.19096 18.3914 4.58527V5.4874C18.3914 6.02747 18.2192 6.52672 17.9303 6.93735C17.9336 6.96524 17.9388 6.99318 17.9388 7.02195V12.8884C17.9388 13.6345 17.9395 14.2379 17.8996 14.7254C17.8642 15.1593 17.7936 15.5499 17.6373 15.9141L17.5654 16.0685C17.278 16.6328 16.8405 17.1046 16.3038 17.434L16.0679 17.5661C15.66 17.7739 15.2196 17.8598 14.7237 17.9003C14.2362 17.9401 13.6327 17.9405 12.8867 17.9405H7.11122C6.36511 17.9405 5.76171 17.9401 5.27418 17.9003C4.84051 17.8649 4.44949 17.7952 4.08545 17.6391L3.93104 17.5661C3.36673 17.2785 2.89392 16.8414 2.56465 16.3044L2.43245 16.0685C2.22473 15.6608 2.13878 15.2211 2.09825 14.7254C2.05841 14.2379 2.05912 13.6345 2.05912 12.8884V7.02195C2.05912 6.99284 2.06422 6.96449 2.06758 6.93629C1.77931 6.52592 1.60858 6.02687 1.60858 5.4874V4.58527C1.60876 3.19084 2.73962 2.05975 4.1341 2.05975H15.8659ZM16.4984 7.92936C16.296 7.98169 16.0847 8.01288 15.8659 8.01291H4.1341C3.91478 8.01291 3.70246 7.98194 3.49955 7.92936V12.8884C3.49955 13.6582 3.50053 14.1927 3.53445 14.608C3.56769 15.0146 3.62923 15.244 3.71635 15.415L3.7925 15.5514C3.98339 15.8627 4.25749 16.1165 4.58464 16.2833L4.72529 16.3435C4.88095 16.3993 5.08638 16.4402 5.39158 16.4651C5.80685 16.4991 6.34138 16.5001 7.11122 16.5001H12.8867C13.6564 16.5001 14.1911 16.499 14.6063 16.4651C15.0128 16.432 15.2423 16.3703 15.4133 16.2833L15.5508 16.2061C15.8618 16.0152 16.116 15.7419 16.2827 15.415L16.3429 15.2732C16.3985 15.1177 16.4396 14.9128 16.4645 14.608C16.4985 14.1927 16.4984 13.6583 16.4984 12.8884V7.92936ZM4.1341 3.50019C3.53511 3.50019 3.0492 3.98631 3.04902 4.58527V5.4874C3.04902 6.08649 3.535 6.57248 4.1341 6.57248H15.8659C16.4648 6.57228 16.951 6.08638 16.951 5.4874V4.58527C16.9509 3.98644 16.4647 3.50038 15.8659 3.50019H4.1341Z" fill="currentColor" /> <path d="M12.7962 12.5661V11.0832H7.20548V12.5661L12.7962 12.5661Z" fill="currentColor" /> </symbol><symbol id="i-edit" viewBox="0 0 16 16"> <path d="M9.94076 1.34942C10.7047 0.90231 11.6503 0.902415 12.4143 1.34942C12.7061 1.52015 12.9688 1.79118 13.3104 2.13284C13.6521 2.47448 13.9231 2.73721 14.0939 3.02894C14.5408 3.79294 14.5409 4.73856 14.0939 5.50251C13.9231 5.79415 13.652 6.05704 13.3104 6.39861L6.65932 13.0497C6.28068 13.4284 6.00695 13.7108 5.66543 13.9097C5.32391 14.1085 4.94315 14.2074 4.42705 14.3498L3.24394 14.6761C2.77527 14.8054 2.34538 14.9262 2.00131 14.9684C1.65196 15.0112 1.17964 15.0013 0.810764 14.6325C0.441921 14.2637 0.432107 13.7913 0.47486 13.442C0.517035 13.0979 0.6379 12.668 0.767181 12.1993L1.09352 11.0162C1.23588 10.5001 1.33481 10.1193 1.5336 9.77784C1.7325 9.43632 2.0149 9.1626 2.39355 8.78395L9.04466 2.13284C9.38625 1.79126 9.64911 1.52016 9.94076 1.34942ZM15.5427 14.8398H7.55223L8.96707 13.425H15.5427V14.8398ZM3.39382 9.78422C2.965 10.213 2.84244 10.3436 2.75709 10.49C2.67183 10.6366 2.61862 10.8079 2.45733 11.3925L2.13099 12.5756C2.00183 13.0439 1.92194 13.3419 1.88863 13.5536C2.10041 13.5204 2.39872 13.4416 2.86764 13.3123L4.05075 12.9859C4.63544 12.8246 4.80669 12.7715 4.95323 12.6862C5.09968 12.6008 5.23022 12.4783 5.65905 12.0494L10.721 6.98644L8.45577 4.72121L3.39382 9.78422ZM11.7 2.57079C11.3774 2.38198 10.9777 2.38198 10.6551 2.57079C10.5602 2.62647 10.4487 2.72931 10.0449 3.13311L9.45604 3.72094L11.7213 5.98617L12.3102 5.39833C12.7139 4.99457 12.8168 4.88307 12.8725 4.78818C13.0613 4.46561 13.0612 4.06585 12.8725 3.74326C12.8169 3.64827 12.7146 3.53752 12.3102 3.13311C11.9057 2.72863 11.795 2.6264 11.7 2.57079Z" fill="currentColor" /> </symbol></defs></svg>
+<div class="app">
+
+  <!-- 左导轨：panellist 入口（画布图标 = 本插件） -->
+  <nav class="rail">
+    <div class="logo"><svg class="ic lg"><use href="#i-sparkle"/></svg></div>
+    <button class="rail-item" title="会话"><svg class="ic lg"><use href="#i-newchat"/></svg></button>
+    <button class="rail-item active" title="画布（sidebar.panellist → main）"><svg class="ic lg"><use href="#i-light"/></svg></button>
+    <div class="spacer"></div>
+    <button class="rail-item" title="设置"><svg class="ic lg"><use href="#i-settings"/></svg></button>
+  </nav>
+
+  <!-- 画布列表（空间页内左列） -->
+  <aside class="canvas-list">
+    <div class="head"><span>画布</span><button class="btn-new"><svg class="ic"><use href="#i-plus"/></svg>新画布</button></div>
+    <div class="canvas-row active">为什么人们越来越不愿表达异议？
+      <div class="meta">9 张卡 · 2 个待探索问题 · 刚刚</div>
+    </div>
+    <div class="canvas-row">远程团队的书面沟通礼仪
+      <div class="meta">14 张卡 · 已成稿 1.2k 字 · 昨天</div>
+    </div>
+    <div class="canvas-row">社区团购的定价直觉
+      <div class="meta">5 张卡 · 3 天前</div>
+    </div>
+  </aside>
+
+  <!-- 主区 -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topic">为什么人们在职场中越来越不愿表达异议？ <svg class="ic"><use href="#i-chevron"/></svg></div>
+      <span class="attach-chip"><svg class="ic"><use href="#i-folder"/></svg><b>report</b> 工作区 <svg class="ic"><use href="#i-plus"/></svg></span>
+      <div class="spacer"></div>
+      <div class="view-tabs">
+        <button id="tab-board" class="active" onclick="switchView('board')">画布</button>
+        <button id="tab-draft" onclick="switchView('draft')">成稿</button>
+      </div>
+      <button id="chat-toggle" class="chat-toggle on" onclick="toggleDock()"><svg class="ic"><use href="#i-think"/></svg>Agent</button>
+    </div>
+
+    <!-- 画布视图 -->
+    <div class="board-scroll" id="view-board">
+      <div class="nudge" id="nudge">
+        <svg class="ic"><use href="#i-sparkle"/></svg>碎片已有 6 张，还没有沉淀共同认识——<span class="act">挑一条问题卡找答案？</span>
+        <button class="close" onclick="document.getElementById('nudge').remove()"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+
+      <div class="filters" id="filters">
+        <button class="chip active" data-k="all">全部 <span class="n">9</span></button>
+        <button class="chip" data-k="fragment"><svg class="ic"><use href="#i-listpen"/></svg>碎片 <span class="n">3</span></button>
+        <button class="chip" data-k="question"><svg class="ic"><use href="#i-question"/></svg>问题 <span class="n">3</span></button>
+        <button class="chip" data-k="grounding"><svg class="ic"><use href="#i-database"/></svg>依据 <span class="n">1</span></button>
+        <button class="chip" data-k="reference"><svg class="ic"><use href="#i-link"/></svg>资料 <span class="n">1</span></button>
+        <button class="chip" data-k="document"><svg class="ic"><use href="#i-code"/></svg>文档 <span class="n">1</span></button>
+      </div>
+
+      <div class="lens-bar" id="lens-bar">
+        <span class="sel" id="sel-count">已选 1 张</span>
+        <button class="lens">挑战假设</button>
+        <button class="lens">找反例</button>
+        <button class="lens">找证据</button>
+        <button class="lens">追问原因</button>
+        <button class="lens">换个视角</button>
+        <button class="lens">升一层</button>
+        <button class="lens">降一层</button>
+        <button class="lens primary" onclick="openDock()">就此提问</button>
+        <button class="clear" onclick="clearSelection()"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+
+      <div class="grid" id="grid">
+
+        <div class="card" data-kind="fragment" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-listpen"/></svg>碎片</span>
+          <div class="text">沉默并不总是因为恐惧。反复表达而得不到回应，也会制造另一种沉默：不是不敢说，而是不再相信说出来会产生作用。</div>
+          <button class="comment-badge" onclick="event.stopPropagation();this.nextElementSibling.classList.toggle('show')"><svg class="ic"><use href="#i-newchat"/></svg>1 条评论</button>
+          <div class="comment-thread">
+            <span class="who"><svg class="ic"><use href="#i-sparkle"/></svg>Agent</span>：这里隐含一个假设——"表达效能感"比"惩罚恐惧"解释力更强。有数据支撑吗，还是主要来自你的三次排期经历？<br>
+            <button class="ask" onclick="event.stopPropagation();openDock()">就此提问 →</button>
+          </div>
+        </div>
+
+        <div class="card" data-kind="question" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-question"/></svg>问题</span>
+          <div class="text">不表达是因为害怕，还是认为表达无效？</div>
+          <div class="q-state q-exploring"><span class="dot"></span>探索中 · 来自 Agent</div>
+        </div>
+
+        <div class="card ghost" id="ghost-1">
+          <span class="ghost-flag"><svg class="ic"><use href="#i-sparkle"/></svg>AGENT 提议 · 待你确认</span>
+          <span class="kind-tag"><svg class="ic"><use href="#i-link"/></svg>资料</span>
+          <div class="text">《组织行为学》2023 综述：员工沉默的"效能假说"——表达无效感对沉默的预测力是惩罚恐惧的 1.7 倍（N=4,200）。</div>
+          <div class="src"><svg class="ic"><use href="#i-link"/></svg><a href="#" onclick="event.stopPropagation();return false">journal.example.org/2023/voice-efficacy</a></div>
+          <div class="ghost-actions">
+            <button class="ok" onclick="event.stopPropagation();acceptGhost('ghost-1')"><svg class="ic"><use href="#i-check"/></svg>收下</button>
+            <button onclick="event.stopPropagation();rejectGhost('ghost-1')"><svg class="ic"><use href="#i-close"/></svg>拒绝</button>
+          </div>
+        </div>
+
+        <div class="card" data-kind="question" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-question"/></svg>问题</span>
+          <div class="text">组织怎样让人逐渐失去表达效能感？</div>
+          <div class="q-state"><span class="dot"></span>待探索</div>
+          <div class="age">悬挂 6 天 · 已置顶提醒</div>
+        </div>
+
+        <div class="card" data-kind="grounding" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-database"/></svg>依据</span>
+          <div class="text">共同认识：沉默可能源于对表达失去效能感，而不只是害怕惩罚。</div>
+          <div class="src">由问题「不表达是因为害怕…」沉淀 · 2 条资料支撑</div>
+        </div>
+
+        <div class="card" data-kind="fragment" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-listpen"/></svg>碎片</span>
+          <div class="text">沉默形成后意见不会消失，只是从正式讨论转入私下抱怨。组织看到表面的共识，失去的是纠错能力。</div>
+        </div>
+
+        <div class="card" data-kind="reference" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-link"/></svg>资料</span>
+          <div class="text">Edmondson 心理安全研究：团队沉默与"发言风险感知"相关，但干预有效的案例都先修复了"说了有用吗"的预期。</div>
+          <div class="src"><svg class="ic"><use href="#i-link"/></svg><a href="#" onclick="event.stopPropagation();return false">hbr.example.org/psych-safety</a></div>
+        </div>
+
+        <div class="card" data-kind="question" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-question"/></svg>问题</span>
+          <div class="text">什么情况下，沉默反而是一种理性选择？</div>
+          <div class="q-state q-answered"><span class="dot"></span>已有初步回答 → 可沉淀为依据</div>
+        </div>
+
+        <div class="card" data-kind="document" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-code"/></svg>文档 · HTML</span>
+          <div class="html-preview" onclick="event.stopPropagation()">
+            <div class="bar"><svg class="ic"><use href="#i-code"/></svg>沙箱预览 · 粘贴于 2 小时前</div>
+            <div class="body">
+              <b>三次排期反馈记录（节选）</b>
+              <table><tr><th>日期</th><th>反馈</th><th>结果</th></tr>
+              <tr><td>7/02</td><td>排期过紧</td><td>无回应</td></tr>
+              <tr><td>7/19</td><td>同上</td><td>已读未回</td></tr>
+              <tr><td>8/05</td><td>同上</td><td>被劝"理解一下"</td></tr></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card faded" data-kind="fragment" onclick="toggleSelect(this)">
+          <span class="kind-tag"><svg class="ic"><use href="#i-listpen"/></svg>碎片</span>
+          <div class="text">电梯里碰到老板那次，话到嘴边又咽回去了。</div>
+          <div class="age">12 天未动 · 已自动降权</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 成稿视图 -->
+    <div id="view-draft">
+      <div class="diff-banner">
+        <svg class="ic"><use href="#i-sparkle"/></svg>Agent 提交了候选稿：新增"效能感"论证段落（+186 字，基于 2 张资料卡）
+        <div class="spacer"></div>
+        <button>查看 diff</button>
+        <button class="accept">接受</button>
+        <button>拒绝</button>
+      </div>
+      <div class="draft-cols">
+        <div class="draft-editor">
+          <textarea spellcheck="false"># 沉默并不总是因为恐惧
+
+人们常把职场沉默理解为缺乏勇气，但反复表达而得不到回应，也会制造另一种沉默：不是不敢说，而是不再相信说出来会产生作用。
+
+这种沉默形成之后，意见不会消失，只是从正式讨论转入私下抱怨。组织看到的是表面的共识，失去的却是纠错能力。</textarea>
+        </div>
+        <div class="draft-preview">
+          <div class="paper">
+            <h3>沉默并不总是因为恐惧</h3>
+            <p>人们常把职场沉默理解为缺乏勇气，但反复表达而得不到回应，也会制造另一种沉默：不是不敢说，而是不再相信说出来会产生作用。</p>
+            <div class="agent-suggest"><svg class="ic"><use href="#i-sparkle"/></svg><span>Agent 建议：这里可以加入"表达效能感"的研究资料（见资料卡 ①），并保留你关于三次排期反馈的具体经历。</span></div>
+            <p>这种沉默形成之后，意见不会消失，只是从正式讨论转入私下抱怨。组织看到的是表面的共识，失去的却是纠错能力。</p>
+          </div>
+        </div>
+      </div>
+      <div class="save-state"><span>已保存 · 刚刚</span><span>draft.md · 画布「为什么人们…」</span></div>
+    </div>
+  </div>
+
+  <!-- 聊天 dock（可收起；一块画布 = 一个 Agent 会话） -->
+  <aside class="dock open" id="dock">
+    <div class="dock-inner">
+      <div class="dock-head"><svg class="ic"><use href="#i-think"/></svg>主题 Agent <span class="sub">· 单会话 · 历史随画布保存</span></div>
+      <div class="dock-body">
+        <div class="msg user">
+          <div class="card-chips">
+            <span class="mini-chip"><svg class="ic"><use href="#i-listpen"/></svg>沉默并不总是…</span>
+            <span class="mini-chip"><svg class="ic"><use href="#i-database"/></svg>共同认识</span>
+          </div>
+          挑战一下这段论证
+        </div>
+        <div class="msg agent">
+          这段把"沉默"全部归因于效能感丧失，但你的依据卡和资料卡①都存在反例指向：惩罚恐惧在低心理安全团队里仍是主因。论证需要限定适用边界。
+          <span class="end-q">追问：你想论证的是"效能感更重要"，还是"效能感被忽视了"？这两个论点需要的证据不同。</span>
+        </div>
+        <div class="tool-line"><svg class="ic"><use href="#i-search"/></svg>web_search("员工沉默 效能感 元分析") → 4 条结果</div>
+        <div class="proposed-note">
+          <b><svg class="ic"><use href="#i-sparkle"/></svg>提议了 1 张资料卡</b>
+          《组织行为学》2023 综述：效能假说……
+          <button class="go">到板上确认 →</button>
+        </div>
+        <div class="msg user">先找证据再说</div>
+        <div class="msg agent">
+          好，已按"找证据"透镜检索。现有证据更支持"效能感被忽视"的弱版本论点——资料卡①的 1.7 倍预测力是相关性而非因果。建议把主张降级为"被忽视"。
+        </div>
+      </div>
+      <div class="quick-acts">
+        <button>继续追问</button><button>找证据</button><button>找反例</button><button>换个视角</button>
+      </div>
+      <div class="composer">
+        <textarea placeholder="围绕当前主题继续问……（选中卡片后提问会带上它们）"></textarea>
+        <button class="send"><svg class="ic"><use href="#i-send"/></svg></button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+  function switchView(v) {
+    document.getElementById('view-board').classList.toggle('hidden', v !== 'board');
+    document.getElementById('view-draft').style.display = v === 'draft' ? 'flex' : 'none';
+    document.getElementById('tab-board').classList.toggle('active', v === 'board');
+    document.getElementById('tab-draft').classList.toggle('active', v === 'draft');
+  }
+  function toggleDock() {
+    const d = document.getElementById('dock');
+    d.classList.toggle('open');
+    document.getElementById('chat-toggle').classList.toggle('on', d.classList.contains('open'));
+  }
+  function openDock() {
+    document.getElementById('dock').classList.add('open');
+    document.getElementById('chat-toggle').classList.add('on');
+  }
+  function toggleSelect(el) {
+    el.classList.toggle('selected');
+    const n = document.querySelectorAll('.card.selected').length;
+    document.getElementById('lens-bar').classList.toggle('show', n > 0);
+    document.getElementById('sel-count').textContent = '已选 ' + n + ' 张';
+  }
+  function clearSelection() {
+    document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+    document.getElementById('lens-bar').classList.remove('show');
+  }
+  function acceptGhost(id) {
+    const c = document.getElementById(id);
+    c.classList.remove('ghost');
+    c.querySelector('.ghost-flag').remove();
+    c.querySelector('.ghost-actions').remove();
+    c.setAttribute('data-kind', 'reference');
+    c.onclick = function () { toggleSelect(this); };
+  }
+  function rejectGhost(id) {
+    const c = document.getElementById(id);
+    c.style.opacity = '0';
+    setTimeout(() => c.remove(), 300);
+  }
+  document.getElementById('filters').addEventListener('click', e => {
+    const btn = e.target.closest('.chip');
+    if (!btn) return;
+    document.querySelectorAll('#filters .chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    const k = btn.dataset.k;
+    document.querySelectorAll('#grid .card').forEach(card => {
+      card.style.display = (k === 'all' || card.dataset.kind === k || (card.classList.contains('ghost') && k === 'reference')) ? '' : 'none';
+    });
+  });
+</script>
+</body>
+</html>

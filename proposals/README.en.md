@@ -33,9 +33,17 @@ proposals/
   README.md / README.en.md   this file
   active/                    in-flight proposals: idea / planned / in-progress / blocked
   closed/                    closed: done / closed (abandoned / superseded / absorbed upstream)
+  prototypes/                HTML prototypes and storyboards for proposals (see below)
 ```
 
 File naming: `YYYY-MM-DD-<slug>.md` (lowercase hyphenated English slug; same convention as Agent Notes). **Path-encoded status is deliberate** — a status change must move the file, so "updated status but forgot to archive" cannot happen.
+
+**Prototypes and storyboards (HTML attachments)** never live under `scratch-*/`: those directories are gitignored local scratch, so citing one leaves every other machine a dead link. Two rules:
+
+- Attachments of a `proposals/` proposal → `proposals/prototypes/<slug>.html`, linked from the proposal body by relative path.
+- Prototypes for an upstream proposal in `docs/upstream-proposals/` → kept beside the proposal document and cross-referenced (precedent: `reader-prototype.html` ↔ `2026-09-17-reader-prototype-notes.md`).
+
+Either way the file is a **visual attachment only**: acceptance results, decisions and facts stay in the proposal body — the prototype is never a second source of truth.
 
 ## State machine
 
