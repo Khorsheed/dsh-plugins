@@ -2049,6 +2049,27 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     })
     expect(await screen.findByText(new RegExp('渲染抓到的正文'))).toBeTruthy()
   })
+
+  it('counts script-drawn figures on the saved-link path too (inline extraction)', async () => {
+    // A saved link's body is extracted IN the pane (the getBodies branch of
+    // open()), not via a fetch answer — so the script-figure count must be set
+    // from the local extraction, or the notice and the 「渲染抓取」 action never
+    // appear for the exact pages capture exists for.
+    const SHELL_PAGE = '<html><head><title>Shell Page Paper</title></head><body><article>'
+      + '<h1>Shell Page Paper</h1>'
+      + `<p>${'这篇正文的段落足够长，用来压住提取器的块评分。'.repeat(12)}</p>`
+      + '<figure><div class="chart"></div><figcaption>图 1：由页面脚本绘制</figcaption></figure>'
+      + `<p>${'另一段足够长的正文，让条目判定为可读。'.repeat(12)}</p>`
+      + '</article></body></html>'
+    bench({
+      sources: [rssSource('lnk', { kind: 'link', url: 'https://example.com/shell', label: 'example.com/shell' })],
+      payloads: { lnk: SHELL_PAGE },
+    }).settle()
+    const cards = await screen.findAllByRole('button', { name: /Shell Page Paper/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const expected = zh['detail.scriptFigures'].replace('{count}', '1')
+    expect(await screen.findByText(new RegExp(expected.slice(0, 12)))).toBeTruthy()
+  })
 })
 
 

@@ -432,6 +432,12 @@ export interface ReaderEntry {
   /** True when the body is known to be incomplete (see {@link ReaderSource.truncated}). */
   readonly truncated?: boolean
   /**
+   * Figures the page draws with its own scripts, counted at extraction. Saved
+   * links extract at load time, so the count rides the entry; the detail view
+   * shows the notice and the 「渲染抓取」 action from it.
+   */
+  readonly scriptFigures?: number
+  /**
    * True when the ENTRY itself is a salvage of a payload the host capped: its
    * text is real but stops where the cap landed. The detail view says so.
    */
