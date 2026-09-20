@@ -960,6 +960,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               link: source.url,
               ...(excerpt === undefined ? {} : { summary: excerpt }),
               ...(extracted.ok ? { contentHtml: extracted.html } : {}),
+              // The count rides the entry: opening goes through getEntryBody
+              // (feedHtml echo), which knows nothing about figures for a fresh
+              // link — extraction here is the only place that counted them.
+              ...(extracted.ok && extracted.scriptFigures !== undefined && extracted.scriptFigures > 0
+                ? { scriptFigures: extracted.scriptFigures }
+                : {}),
               // Incompleteness comes from the FETCH, not from extraction: the
               // seam truncated the page, so whatever we extracted is partial.
               ...(cut ? { truncated: true } : {}),
@@ -1972,7 +1978,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         actions.setArticle('', false, view.error.message)
       } else if (view.value.html !== undefined) {
         actions.setArticle(view.value.html, view.value.truncated === true, null)
-        setScriptFigures(view.value.scriptFigures ?? 0)
+        // A stored body carries its count; a fresh link's feedHtml echo is the
+        // load-time extraction, whose count rides the entry instead.
+        setScriptFigures(view.value.scriptFigures ?? row.entry.scriptFigures ?? 0)
         actions.setStaleBody(row.entry.id, view.value.fresh === false)
         // `html` here is either the FEED's own payload or a body this plugin
         // already fetched and cached — a cached one is paid for already.
@@ -2038,8 +2046,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
     const truncated = body.truncated === true
     const extracted = extractArticle(body.raw, row.entry.link ?? '')
-    if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
-    else actions.setArticle('', truncated, extracted.error)
+    if (extracted.ok) {
+      actions.setArticle(extracted.html, truncated, null)
+      // The link-entry path extracts inline, so the script-figure count (and
+      // with it the notice + 「渲染抓取」 action) must be set here too — the
+      // fetch paths set it from the host's answer, this one computes it locally.
+      setScriptFigures(extracted.scriptFigures ?? 0)
+    } else actions.setArticle('', truncated, extracted.error)
   }, [actions, props, t, fetchBody, persistFeedBody, recent, fetchStates, syncFetchState])
 
   /* ------------------------------ coming back to where the reader already was */
