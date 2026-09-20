@@ -64,4 +64,4 @@ So this note is the review that was asked for, and the change that came out of i
 
 ## Testing
 
-`packages/dsh-reader` runs 258 tests. The position tests state the geometry jsdom cannot provide (a 600px scroller, 300px blocks): one asserts that the saved anchor names the block the reader stopped in, and one asserts that the restore puts them at the block's offset even when the remembered pixel offset is nonsense — which is the case the reported bug lived in.
+`packages/dsh-reader` runs 282 tests. The position tests state the geometry jsdom cannot provide (a 600px scroller, 300px blocks — and, for the translation case, blocks whose height follows their text length): one asserts that the saved anchor names the block the reader stopped in (with its text offset), one that the restore puts them at the block's offset even when the remembered pixel offset is nonsense — which is the case the reported bug lived in — and one that a translation landing re-anchors to the same sentence through the text offset. The in-block mapping itself (exact Range rect / same fraction / pixel fallback / old-anchor compatibility) is pinned directly in `tests/reading-position.spec.ts`.
