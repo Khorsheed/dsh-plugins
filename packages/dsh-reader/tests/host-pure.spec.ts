@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { classifyFetchFailure, classifyPayload, crossOriginRetarget, inspectPreview, MIN_PREVIEW_TEXT_CHARS, normalizeUrl } from '../src/service.ts'
+import { arxivHtmlUrl, arxivLink } from '../src/arxiv.ts'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -123,6 +124,23 @@ describe('state document', () => {
   it('repairs an unusable refresh time instead of throwing', () => {
     const doc = normalizeStateDoc({ sources: [], refresh: { enabled: true, timeOfDay: 'noon-ish' } })
     expect(doc.refresh.timeOfDay).toBe('10:00')
+  })
+
+  it('keeps every failure code the wire knows, unreadable included', () => {
+    // The card's reason sentence is keyed by the code; a code the document
+    // dropped on read would come back from a restart as "no reason".
+    const doc = normalizeStateDoc({
+      sources: [{
+        id: 'a',
+        url: 'https://openreview.net/forum?id=x',
+        kind: 'link',
+        addedAt: '2026-09-20T00:00:00.000Z',
+        resolvedFrom: 'https://doi.org/10.1038/nature16961',
+        failure: { code: 'unreadable', message: 'm', at: '2026-09-20T00:00:00.000Z' },
+      }],
+    })
+    expect(doc.sources[0]?.failure?.code).toBe('unreadable')
+    expect(doc.sources[0]?.resolvedFrom).toBe('https://doi.org/10.1038/nature16961')
   })
 
   it('bounds a single oversize payload and flags it', () => {
@@ -447,6 +465,38 @@ describe('inspectPreview', () => {
 })
 
 
+describe('arxiv links', () => {
+  it('parses the abs/pdf/html shapes, versions and the old-style id', () => {
+    expect(arxivLink('https://arxiv.org/abs/2604.03147')).toEqual({ kind: 'abs', id: '2604.03147' })
+    expect(arxivLink('https://arxiv.org/abs/2604.03147v2')).toEqual({ kind: 'abs', id: '2604.03147v2' })
+    expect(arxivLink('https://arxiv.org/pdf/2604.03147')).toEqual({ kind: 'pdf', id: '2604.03147' })
+    expect(arxivLink('https://arxiv.org/pdf/2604.03147v1.pdf')).toEqual({ kind: 'pdf', id: '2604.03147v1' })
+    expect(arxivLink('https://arxiv.org/html/2604.03147v1')).toEqual({ kind: 'html', id: '2604.03147v1' })
+    expect(arxivLink('https://arxiv.org/abs/hep-th/9901001')).toEqual({ kind: 'abs', id: 'hep-th/9901001' })
+    expect(arxivLink('https://arxiv.org/abs/math.GT/0309136v3')).toEqual({ kind: 'abs', id: 'math.GT/0309136v3' })
+    // www is the same site; a query or fragment does not change the paper.
+    expect(arxivLink('https://www.arxiv.org/abs/2604.03147?context=cs#s2')).toEqual({ kind: 'abs', id: '2604.03147' })
+  })
+
+  it('rejects everything that is not one paper page', () => {
+    expect(arxivLink('https://example.com/abs/2604.03147')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/list/cs.CL/recent')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/abs/')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/abs/not-an-id')).toBeUndefined()
+    expect(arxivLink('not a url')).toBeUndefined()
+  })
+
+  it('upgrades abs and pdf links to the HTML version, and leaves the rest alone', () => {
+    expect(arxivHtmlUrl('https://arxiv.org/abs/2604.03147')).toBe('https://arxiv.org/html/2604.03147')
+    expect(arxivHtmlUrl('https://arxiv.org/pdf/2604.03147v2.pdf')).toBe('https://arxiv.org/html/2604.03147v2')
+    expect(arxivHtmlUrl('https://arxiv.org/abs/hep-th/9901001')).toBe('https://arxiv.org/html/hep-th/9901001')
+    // Already the HTML version: no rewrite, no loop.
+    expect(arxivHtmlUrl('https://arxiv.org/html/2604.03147v1')).toBeUndefined()
+    expect(arxivHtmlUrl('https://example.com/abs/2604.03147')).toBeUndefined()
+  })
+})
+
 describe('the wall search field is sized by its row', () => {
   it('uses border-box, so padding cannot push it past the pane', () => {
     // Reported as "the search box is not sized to the sidebar": `width: 100%`
@@ -455,5 +505,17 @@ describe('the wall search field is sized by its row', () => {
     const search = /\.search input\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
     expect(search).toMatch(/box-sizing:\s*border-box/)
     expect(search).toMatch(/width:\s*100%/)
+  })
+
+  it('unifies the wall title and the secondary-page title at 12.5px/600', () => {
+    // 订阅管理's title read bigger than 灵感空间's: two page kinds of one pane
+    // with two title sizes. Both now share one title metric — the wall's,
+    // picked by the user as the reference (2026-09-21).
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    for (const selector of ['.headTitle', '.barLabel']) {
+      const block = new RegExp(`${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+      expect(block).toMatch(/font-size:\s*12\.5px/)
+      expect(block).toMatch(/font-weight:\s*600/)
+    }
   })
 })

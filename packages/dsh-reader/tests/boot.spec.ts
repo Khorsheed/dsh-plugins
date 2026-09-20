@@ -252,15 +252,250 @@ describe('a failed fetch keeps the seam’s reason', () => {
   })
 })
 
+describe('an arxiv link is upgraded to the official HTML version', () => {
+  const PAGE = `<article><p>${'正文。'.repeat(200)}</p></article>`
+
+  it('fetches the HTML version of an abs link and stores it as the source URL', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://arxiv.org/abs/2604.03147' })
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link' })
+    // The abs page is never fetched: the HTML version is strictly better.
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147'])
+    const source = (await service.listSources()).sources[0]
+    expect(source?.url).toBe('https://arxiv.org/html/2604.03147')
+    expect(source?.hasBody).toBe(true)
+  })
+
+  it('does the same for a pdf link, version and .pdf suffix included', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://arxiv.org/pdf/2604.03147v2.pdf' })
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147v2'])
+  })
+
+  it('falls back to the pasted URL when the HTML version does not exist (404)', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      if (url.includes('/html/')) {
+        return { url, statusCode: 404, body: { kind: 'html' as const, content: 'no html' }, truncated: false }
+      }
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://arxiv.org/abs/0704.0001' })
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link' })
+    expect(requested).toEqual(['https://arxiv.org/html/0704.0001', 'https://arxiv.org/abs/0704.0001'])
+    expect((await service.listSources()).sources[0]?.url).toBe('https://arxiv.org/abs/0704.0001')
+  })
+
+  it('does not fall back on a refusal that is not "no HTML version"', async () => {
+    // A 403 is arxiv refusing the request, not the paper lacking an HTML
+    // version: quietly fetching the abs page instead would hide a real block
+    // behind a different page's content.
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 403, body: { kind: 'html' as const, content: 'refused' }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://arxiv.org/abs/2604.03147' })
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link', failure: { code: 'blocked' } })
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147'])
+  })
+
+  it('reads the html link the reader already pasted as itself, not as an upgrade', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://arxiv.org/html/2604.03147v1' })
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147v1'])
+  })
+
+  it('recognizes the abs link of a paper already saved via its HTML version', async () => {
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => ({
+      url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://arxiv.org/abs/2604.03147' })
+    // The first add stored the HTML URL; the same paper's abs link is a duplicate.
+    expect(await service.addSource({ url: 'https://arxiv.org/pdf/2604.03147' })).toBe('duplicate')
+  })
+})
+
+describe('a DOI link is resolved to its arXiv version', () => {
+  const PAGE = `<article><p>${'正文。'.repeat(200)}</p></article>`
+  const CROSSREF_GO = JSON.stringify({
+    status: 'ok',
+    message: {
+      items: [{
+        DOI: '10.1038/nature16961',
+        title: ['Mastering the game of Go with deep neural networks and tree search'],
+        author: [{ family: 'Silver' }, { family: 'Hassabis' }],
+      }],
+    },
+  })
+  const ARXIV_GO = '<?xml version="1.0"?><feed><entry><id>http://arxiv.org/abs/1610.00633v2</id>'
+    + '<title>Mastering the game of Go with deep neural networks and tree search</title>'
+    + '<author><name>David Silver</name></author><author><name>Demis Hassabis</name></author></entry></feed>'
+
+  /** A seam that routes the two resolution APIs and any page fetch. */
+  const bootWithApis = (over: {
+    crossref?: { statusCode: number; body: string }
+    arxiv?: { statusCode: number; body: string }
+    onPage?: (url: string) => { url: string; statusCode: number; body: { kind: 'html' | 'text'; content: string }; truncated: boolean }
+  } = {}) => {
+    const requested: string[] = []
+    const ctxPromise = bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      if (url.includes('api.crossref.org')) {
+        const answer = over.crossref ?? { statusCode: 404, body: 'not found' }
+        return { url, statusCode: answer.statusCode, body: { kind: 'text' as const, content: answer.body }, truncated: false }
+      }
+      if (url.includes('export.arxiv.org')) {
+        const answer = over.arxiv ?? { statusCode: 200, body: ARXIV_GO }
+        return { url, statusCode: answer.statusCode, body: { kind: 'text' as const, content: answer.body }, truncated: false }
+      }
+      if (over.onPage !== undefined) return over.onPage(url)
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    return { ctx: ctxPromise, requested }
+  }
+
+  it('lands the HTML version with the paper title as label and the DOI as provenance', async () => {
+    const { ctx: ctxPromise, requested } = bootWithApis({ crossref: { statusCode: 200, body: CROSSREF_GO } })
+    const ctx = await ctxPromise
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://doi.org/10.1038/nature16961' })
+    expect(outcome).toMatchObject({
+      outcome: 'saved-link',
+      kind: 'link',
+      label: 'Mastering the game of Go with deep neural networks and tree search',
+    })
+    const source = (await service.listSources()).sources[0]
+    expect(source?.url).toBe('https://arxiv.org/html/1610.00633v2')
+    expect(source?.resolvedFrom).toBe('https://doi.org/10.1038/nature16961')
+    expect(source?.hasBody).toBe(true)
+    // doi.org itself is never fetched: its cross-origin redirect is refused by design.
+    expect(requested.filter(url => url.startsWith('https://doi.org/'))).toEqual([])
+  })
+
+  it('falls back to the abstract page when the resolved paper has no HTML version', async () => {
+    const { ctx: ctxPromise, requested } = bootWithApis({
+      crossref: { statusCode: 200, body: CROSSREF_GO },
+      onPage: url => url.includes('/html/')
+        ? { url, statusCode: 404, body: { kind: 'html' as const, content: 'no html' }, truncated: false }
+        : { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false },
+    })
+    const ctx = await ctxPromise
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://doi.org/10.1038/nature16961' })
+    const source = (await service.listSources()).sources[0]
+    expect(source?.url).toBe('https://arxiv.org/abs/1610.00633v2')
+    expect(source?.resolvedFrom).toBe('https://doi.org/10.1038/nature16961')
+    expect(requested).toContain('https://arxiv.org/html/1610.00633v2')
+    expect(requested).toContain('https://arxiv.org/abs/1610.00633v2')
+  })
+
+  it('degrades to the ordinary path when no candidate passes the gate — never a guess', async () => {
+    // The measured collision: Crossref's "Deep learning" (LeCun, Bengio,
+    // Hinton) vs arXiv's "Deep Learning" (Polson, Sokolov) — a different paper.
+    const crossref = JSON.stringify({
+      status: 'ok',
+      message: { items: [{ DOI: '10.1038/nature14539', title: ['Deep learning'], author: [{ family: 'LeCun' }, { family: 'Bengio' }, { family: 'Hinton' }] }] },
+    })
+    const arxiv = '<?xml version="1.0"?><feed><entry><id>http://arxiv.org/abs/1807.07987v2</id>'
+      + '<title>Deep Learning</title><author><name>Nicholas G. Polson</name></author></entry></feed>'
+    const { ctx: ctxPromise } = bootWithApis({
+      crossref: { statusCode: 200, body: crossref },
+      arxiv: { statusCode: 200, body: arxiv },
+      onPage: () => {
+        throw Object.assign(new Error('web fetch failed: cross-origin redirect to https://www.nature.com'), { code: 'WEB_REDIRECT_BLOCKED' })
+      },
+    })
+    const ctx = await ctxPromise
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://doi.org/10.1038/nature14539' })
+    // No arXiv URL was stored: the card is the pasted DOI, honestly redirected.
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link', failure: { code: 'redirected' } })
+    const source = (await service.listSources()).sources[0]
+    expect(source?.url).toBe('https://doi.org/10.1038/nature14539')
+    expect(source?.resolvedFrom).toBeUndefined()
+  })
+})
+
 describe('a link that cannot be previewed is still a link', () => {
-  it('stores neither the challenge page nor a backfill debt', async () => {
-    // The measured case: an OpenReview PDF link answered `302 /challenge?…`
-    // with a 200 anti-bot page. The card must not BE that page, the detail view
-    // must explain itself, and the automatic backfill must not keep asking a
-    // wall it will never get past.
+  it('answers OpenReview from the resolver — link-only, unreadable, no fetch spent', async () => {
+    // Measured 2026-09-20: the API sits behind a Cloudflare challenge (403)
+    // and the forum is a JS SPA whose static title is always "Forum |
+    // OpenReview" — no server-side read exists, so the resolver answers the
+    // honest card UPFRONT instead of fetching a challenge page. The card must
+    // not BE that page, the detail view must explain itself, and the automatic
+    // backfill must not keep asking a wall it will never get past.
     const requested = 'https://openreview.net/pdf?id=1lyagkzogH'
+    let fetches = 0
+    const ctx = await bootWithWeb(async () => {
+      fetches += 1
+      return {
+        url: requested,
+        statusCode: 200,
+        body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(200)}</p></article>` },
+        truncated: false,
+      }
+    })
+    const service = ctx.get('reader') as ReaderService
+    expect(await service.addSource({ url: requested })).toMatchObject({
+      outcome: 'saved-link',
+      kind: 'link',
+      failure: { code: 'unreadable' },
+    })
+    expect(fetches).toBe(0)
+
+    const source = (await service.listSources()).sources[0]
+    expect(source).toMatchObject({ kind: 'link', hasBody: false, failure: { code: 'unreadable' } })
+    const id = source?.id as string
+    // No payload was stored: there is nothing to store.
+    const bodies = await service.getBodies({ ids: [id] })
+    expect(bodies.bodies[0]?.raw).toBeUndefined()
+    expect(bodies.bodies[0]?.error).toBeDefined()
+
+    // The detail view's one call answers with the reason, not a blank article.
+    const entry = await service.getEntryBody({ entryId: linkEntryId(id), url: requested })
+    expect(entry.html).toBeUndefined()
+    expect(entry.error).toBeDefined()
+
+    // The retry policy keys off the SOURCE, not just the annotation: the saved
+    // link's entry carries the source's own URL, and even an entry id the
+    // annotation table does not know is refused. A feed entry at the same URL
+    // is a different question and stays eligible — matched by the `kind` guard.
+    const savedUrl = source?.url as string
+    const candidates = await service.listBackfillCandidates({
+      entries: [
+        { entryId: linkEntryId(id), url: savedUrl, label: 'x', hasBody: false },
+        { entryId: `l:${savedUrl}`, url: savedUrl, label: 'x', hasBody: false },
+      ],
+    })
+    expect(candidates.candidates).toHaveLength(0)
+  })
+
+  it('still classifies a bot wall that ARRIVED as a 200, for hosts the table does not know', async () => {
+    // The resolver table covers the measured hosts; a wall anywhere else is
+    // still caught by inspectPreview after the fetch.
+    const requested = 'https://paywall.example.com/pdf?id=x'
     const ctx = await bootWithWeb(async () => ({
-      url: 'https://openreview.net/challenge?redirect=%2Fpdf%3Fid%3D1lyagkzogH',
+      url: 'https://paywall.example.com/challenge?redirect=%2Fpdf%3Fid%3Dx',
       statusCode: 200,
       body: {
         kind: 'html' as const,
@@ -274,33 +509,6 @@ describe('a link that cannot be previewed is still a link', () => {
       kind: 'link',
       failure: { code: 'blocked' },
     })
-
-    const source = (await service.listSources()).sources[0]
-    expect(source).toMatchObject({ kind: 'link', hasBody: false, failure: { code: 'blocked' } })
-    const id = source?.id as string
-    // No payload was stored: the challenge page never becomes a body.
-    const bodies = await service.getBodies({ ids: [id] })
-    expect(bodies.bodies[0]?.raw).toBeUndefined()
-    expect(bodies.bodies[0]?.error).toBeDefined()
-
-    // The detail view's one call answers with the reason, not a blank article.
-    const entry = await service.getEntryBody({ entryId: linkEntryId(id), url: requested })
-    expect(entry.html).toBeUndefined()
-    expect(entry.error).toBeDefined()
-
-    // The retry policy keys off the SOURCE, not just the annotation: the saved
-    // link's entry carries the source's own (post-redirect) URL, and even an
-    // entry id the annotation table does not know is refused. A feed entry at
-    // the same URL is a different question and stays eligible — matched by the
-    // `kind` guard.
-    const savedUrl = source?.url as string
-    const candidates = await service.listBackfillCandidates({
-      entries: [
-        { entryId: linkEntryId(id), url: savedUrl, label: 'x', hasBody: false },
-        { entryId: `l:${savedUrl}`, url: savedUrl, label: 'x', hasBody: false },
-      ],
-    })
-    expect(candidates.candidates).toHaveLength(0)
   })
 
   it('clears the recorded failure when a manual refresh finally works', async () => {

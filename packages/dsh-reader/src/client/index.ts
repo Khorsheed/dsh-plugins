@@ -25,7 +25,7 @@ import type {} from '@khorsheed/dsh-reader/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import readerRemote from '@khorsheed/dsh-reader/remote'
 import type { ReaderEntryBodyView } from '../types.ts'
-import type { ReaderPaneInjected } from './contract.ts'
+import type { ReaderCaptureRemote, ReaderPaneInjected } from './contract.ts'
 import { extractArticle } from './extract-article.ts'
 import { translationHash } from './translate.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
@@ -104,6 +104,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
 
   /**
+   * The in-app Sidebar Browser, probed live (the canvas/quote pattern).
+   *
+   * Two services, both optional: the tab-type registry answers whether the
+   * `browser` kind is registered (host 0.1.6-alpha.2 mounts it; older hosts do
+   * not), and the navigation face performs the open. `openTab` throws for a
+   * kind nothing registered and for a missing session binding, so the call is
+   * wrapped — the pane's fallback is the external link.
+   */
+  const sidebarBrowser = (): { openTab(kind: string, options?: { params?: Record<string, unknown> }): void } | undefined => {
+    const tabs = ctx.get('sidebarRightTabs') as { get(kind: string): unknown } | undefined
+    if (tabs?.get('browser') === undefined) return undefined
+    return ctx.get('sidebarRight') as { openTab(kind: string, options?: { params?: Record<string, unknown> }): void } | undefined
+  }
+
+  /**
    * Fetch one entry's article and cache the extraction.
    *
    * The split is the host/browser boundary: the host owns the network (its
@@ -177,6 +192,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     setDraft: merged => { setDraft(sessionId, merged) },
     copyText,
     openExternal,
+    browserTabAvailable: () => sidebarBrowser() !== undefined,
+    openBrowserTab: url => {
+      const browser = sidebarBrowser()
+      if (browser === undefined) return false
+      try {
+        browser.openTab('browser', { params: { url } })
+        return true
+      } catch {
+        return false
+      }
+    },
+    // The capture package (the ingest proposal's M1): probed live per gesture,
+    // absent today — the 「渲染抓取」 slot renders only while this answers.
+    captureRemote: () => {
+      const capture = ctx.get('remote.capture') as ReaderCaptureRemote | undefined
+      return typeof capture?.render === 'function' ? capture : undefined
+    },
   })
 
   /** The conversation input for a session, when the composition has one. */

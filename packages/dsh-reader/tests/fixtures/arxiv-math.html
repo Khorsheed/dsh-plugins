@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head><title>A Paper Whose Formulas Are MathML</title></head>
+<body>
+<article class="ltx_document">
+  <p>We study the interplay between attention and recurrence in sequence
+  transduction, and we show that a purely attentional architecture suffices for
+  strong results on two machine translation benchmarks.</p>
+  <p>The dominant sequence transduction models are based on complex recurrent or
+  convolutional neural networks that include an encoder and a decoder, and the
+  best performing models connect the two through an attention mechanism.</p>
+  <p>Attention computes the alignment
+  <math alttext="a_{ij}"><mrow><msub><mi>a</mi><mi>ij</mi></msub></mrow></math>
+  between every pair of positions, and the whole model is fully parallelizable.</p>
+  <math display="block" alttext="\mathrm{Attention}(Q,K,V)=\mathrm{softmax}(\frac{QK^T}{\sqrt{d_k}})V"><mrow><mi>softmax</mi><mo>(</mo><mfrac><mrow><msup><mi>e</mi><mi>x</mi></msup></mrow><mrow><msqrt><mi>d</mi></msqrt></mrow></mfrac><mo>)</mo></mrow></math>
+  <p>The scaling keeps the dot products in a region where the softmax has useful
+  gradients, which matters more as the dimension of the keys grows larger.</p>
+  <p>Einstein's relation
+  <math alttext="E=mc^2"><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">E=mc^2</annotation></semantics></math>
+  needs no introduction, and the prose around it carries the paragraph score.</p>
+  <figure>
+    <math alttext="y=x^2"><mrow><mi>y</mi><mo>=</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></math>
+    <figcaption>Figure 1: a formula the page shipped as markup, not as a script.</figcaption>
+  </figure>
+  <math alttext="evil"><mtext>safe text</mtext><annotation-xml encoding="text/html"><img src="x" onerror="alert(1)"><script>alert(2)</script></annotation-xml><script>alert(3)</script></math>
+  <p>One more paragraph of real prose so the article body stands on its own and
+  the extraction has enough paragraph mass to be chosen unambiguously.</p>
+</article>
+</body>
+</html>

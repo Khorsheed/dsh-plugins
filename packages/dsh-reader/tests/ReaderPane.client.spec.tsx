@@ -129,6 +129,10 @@ interface BenchOptions {
   }
   /** The dsh session this mount belongs to (defaults to `s1`). */
   readonly sessionId?: string
+  /** True = the in-app Sidebar Browser seam probes present (host 0.1.6-alpha.2+). */
+  readonly browserTab?: boolean
+  /** True = a capture Remote (the ingest proposal's M1) probes present. */
+  readonly capture?: boolean
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -141,6 +145,11 @@ function bench(options: BenchOptions = {}) {
   const actions = instance.actions
 
   const assigned: ReaderSourceSummary[] = [...(options.sources ?? [])]
+  /** The capture Remote's render verb, when the bench mounts one (M1 probe). */
+  const captureRender = vi.fn(async ({ url }: { url: string }) => ({
+    ok: true as const,
+    value: { html: `<article><p>${'渲染抓到的正文。'.repeat(30)}</p></article>`, finalUrl: url },
+  }))
   const mocks = {
     listSources: vi.fn(async () => ({ ok: true as const, value: { sources: assigned } })),
     getBodies: vi.fn(async (ids: string[]) => ({
@@ -172,6 +181,11 @@ function bench(options: BenchOptions = {}) {
     removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     openExternal: vi.fn(() => true),
     copyText: vi.fn(async () => true),
+    browserTabAvailable: vi.fn(() => options.browserTab ?? false),
+    // Like the real face: the open refuses (false) exactly when the seam is absent.
+    openBrowserTab: vi.fn(() => options.browserTab ?? false),
+    captureRender,
+    captureRemote: vi.fn(() => (options.capture === true ? { render: captureRender } : undefined)),
     setDraft: vi.fn(),
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
@@ -290,6 +304,9 @@ function bench(options: BenchOptions = {}) {
     setDraft: mocks.setDraft,
     copyText: mocks.copyText,
     openExternal: mocks.openExternal,
+    browserTabAvailable: mocks.browserTabAvailable,
+    openBrowserTab: mocks.openBrowserTab,
+    captureRemote: mocks.captureRemote,
   } as unknown as ReaderPaneProps
 
   const view = render(<ReaderPane {...props} />)
@@ -604,6 +621,54 @@ describe('the add form reports the host verdict', () => {
     fireEvent.click(screen.getByText(zh['action.submit']))
     expect(await screen.findByText(zh['verdict.fetchFailed'])).toBeTruthy()
     expect(screen.getByText('connect ECONNREFUSED 127.0.0.1:9')).toBeTruthy()
+  })
+
+  it('offers the browser way out on a link-only verdict whose cause has one', async () => {
+    // The moment the reader learns WHY there is no preview is the moment the
+    // dialog offers the action the cause answers.
+    const ui = bench({
+      addAnswer: {
+        ok: true,
+        value: {
+          outcome: 'saved-link',
+          kind: 'link',
+          id: 'new',
+          label: '被墙的论文',
+          failure: { code: 'blocked', message: 'HTTP 403' },
+        },
+      },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://walled.example.com/paper' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    const action = await screen.findByText(zh['action.openExternal'])
+    fireEvent.click(action)
+    expect(ui.mocks.openExternal).toHaveBeenCalledWith('https://walled.example.com/paper')
+  })
+
+  it('offers no action for a cause that has none', async () => {
+    const ui = bench({
+      addAnswer: {
+        ok: true,
+        value: {
+          outcome: 'saved-link',
+          kind: 'link',
+          id: 'new',
+          label: '打不开的站',
+          failure: { code: 'unreachable', message: 'connect ECONNREFUSED' },
+        },
+      },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://down.example.com/paper' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    await screen.findByText(new RegExp(zh['preview.unreachable'].slice(0, 8)))
+    // 再按一次抓取就是重试——判定里不再多一个按钮。
+    expect(screen.queryByText(zh['action.openExternal'])).toBeNull()
   })
 })
 
@@ -1696,11 +1761,127 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     expect(await screen.findByText(new RegExp(expected.slice(0, 12)))).toBeTruthy()
     expect(screen.getByText(zh['detail.readOriginal'])).toBeTruthy()
   })
+
+  it('opens the in-app Sidebar Browser when that seam probes present', async () => {
+    // Same notice, but the host is 0.1.6-alpha.2+: the action reads 「在浏览器
+    // 打开原文」 and lands in the right-Sidebar browser tab instead of an
+    // external window. The seam's absence keeps the old external link.
+    const ui = bench({
+      browserTab: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 3,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const action = await screen.findByText(zh['action.openExternal'])
+    expect(screen.queryByText(new RegExp(zh['detail.scriptFigures'].replace('{count}', '3').slice(0, 12)))).toBeTruthy()
+    fireEvent.click(action)
+    expect(ui.mocks.openBrowserTab).toHaveBeenCalledWith('https://example.com/paper')
+    expect(ui.mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the external link when the in-app open refuses', async () => {
+    const ui = bench({
+      browserTab: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.openBrowserTab.mockReturnValue(false)
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 1,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['action.openExternal']))
+    expect(ui.mocks.openExternal).toHaveBeenCalledWith('https://example.com/paper')
+  })
+
+  it('keeps the 渲染抓取 slot hidden while no capture Remote is mounted', async () => {
+    // M0 ships no capture package: the probe is the whole surface, and a
+    // control that cannot work is worse than none.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 2,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await screen.findByText(new RegExp(zh['detail.scriptFigures'].replace('{count}', '2').slice(0, 12)))
+    expect(screen.queryByText(zh['detail.renderFetch'])).toBeNull()
+  })
+
+  it('renders→extracts→stores the body through a mounted capture Remote', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 2,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const action = await screen.findByText(zh['detail.renderFetch'])
+    fireEvent.click(action)
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledWith({ url: 'https://example.com/paper' }) })
+    // The captured HTML went through the whitelist extractor and was stored.
+    await waitFor(() => {
+      expect(ui.mocks.storeEntryBody).toHaveBeenCalledWith(expect.objectContaining({
+        entryId: expect.any(String),
+        url: 'https://example.com/paper',
+      }))
+    })
+    expect(await screen.findByText(new RegExp('渲染抓到的正文'))).toBeTruthy()
+  })
 })
 
 
 describe('the card says what the plugin holds, and fetches on demand', () => {
-  async function wallWithStates(state: 'none' | 'ready' | 'raw' | 'failed') {
+  async function wallWithStates(
+    state: 'none' | 'ready' | 'raw' | 'failed',
+    code: 'blocked' | 'unreachable' | 'http' = 'blocked',
+  ) {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
     // The state must be in place BEFORE the pane's first round trip: the pane
     // only polls while something is in flight, so a late mock is never read.
@@ -1708,7 +1889,7 @@ describe('the card says what the plugin holds, and fetches on demand', () => {
       ok: true as const,
       value: {
         states: Object.fromEntries(entryIds.map(id => [id, state === 'failed'
-          ? { state, at: '2026-09-19T00:00:00.000Z', message: 'HTTP 403', code: 'blocked' }
+          ? { state, at: '2026-09-19T00:00:00.000Z', message: 'HTTP 403', code }
           : { state }])),
       },
     }))
@@ -1730,13 +1911,41 @@ describe('the card says what the plugin holds, and fetches on demand', () => {
     expect(await screen.findByText(zh['fetch.ready'])).toBeTruthy()
   })
 
-  it('explains a failure and retries on click', async () => {
-    const ui = await wallWithStates('failed')
+  it('shows the reason on the card, and a bot wall opens in a browser instead of retrying', async () => {
+    // The action belongs to the cause: retrying a wall is a crawler with a
+    // grudge, so the failed pill's click goes to the browser and the reason is
+    // a visible line rather than a tooltip.
+    const ui = await wallWithStates('failed', 'blocked')
     const label = await screen.findByText(zh['fetch.failed'])
     const pill = label.closest('[class*="fetchPill"]') as HTMLElement
     expect(pill.getAttribute('title')).toContain(zh['preview.blocked'])
+    expect(await screen.findByText(zh['preview.blocked'])).toBeTruthy()
+    fireEvent.click(pill)
+    await waitFor(() => { expect(ui.mocks.openExternal).toHaveBeenCalledWith(expect.stringContaining('example.com')) })
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('retries a transport failure on click', async () => {
+    const ui = await wallWithStates('failed', 'unreachable')
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    expect(pill.getAttribute('title')).toContain('重试')
     fireEvent.click(pill)
     await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+  })
+
+  it('makes a final failure an indicator, not a button', async () => {
+    // A 404 answers the same way forever: no retry, no browser detour — the
+    // pill keeps the reason and takes no gesture.
+    const ui = await wallWithStates('failed', 'http')
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    expect(pill.getAttribute('role')).toBeNull()
+    expect(pill.getAttribute('title')).not.toContain('重试')
+    fireEvent.click(pill)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    expect(ui.mocks.openExternal).not.toHaveBeenCalled()
   })
 
   it('extracts a payload the host stored while the page was away', async () => {

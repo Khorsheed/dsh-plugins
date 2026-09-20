@@ -36,7 +36,7 @@ export type ReaderKey =
   | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.savedLinkNoPreview' | 'verdict.duplicate'
   | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'
   | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
-  | 'preview.empty' | 'preview.unreachable' | 'preview.http'
+  | 'preview.empty' | 'preview.unreachable' | 'preview.http' | 'preview.unreadable'
   | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
   | 'detail.refetch' | 'detail.refetching' | 'detail.refetchTitle'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
@@ -44,6 +44,7 @@ export type ReaderKey =
   | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
   | 'fetch.none' | 'fetch.fetching' | 'fetch.raw' | 'fetch.ready' | 'fetch.failed'
   | 'fetch.noneTitle' | 'fetch.readyTitle' | 'fetch.failedTitle'
+  | 'fetch.failedOpenTitle' | 'fetch.failedFinalTitle' | 'detail.renderFetch'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
@@ -58,7 +59,7 @@ export type ReaderKey =
   | 'sources.sortAdded' | 'sources.sortName' | 'sources.sortFetched'
   | 'state.backfilling' | 'detail.filledIn' | 'detail.filledInBadge' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
-  | 'detail.summaryOnly'
+  | 'detail.summaryOnly' | 'detail.resolvedFrom'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
   | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
   | 'foot.refreshing'
@@ -152,6 +153,7 @@ export const en = {
   'preview.empty': 'this page has no readable text',
   'preview.unreachable': 'the site could not be reached just now',
   'preview.http': 'the site answered with an HTTP error',
+  'preview.unreadable': 'this page is a script-rendered app behind an anti-bot wall, so there is nothing to read server-side — if it has an arXiv version, paste that link instead',
   'detail.linkOnlyBadge': 'Link only',
   'detail.fetchingBody': 'Fetching the full text…',
   'detail.refetch': 'Fetch again',
@@ -215,6 +217,7 @@ export const en = {
   'detail.readOriginal': 'Read the original',
   'detail.extractFailed': 'Could not extract a body from this page — open the original instead.',
   'detail.summaryOnly': 'This feed publishes only a summary for this entry — the full text lives on the original page.',
+  'detail.resolvedFrom': 'Resolved from the link you pasted ({url}) — click to open it',
   'detail.alsoFrom': 'Also from this source',
   'detail.composerLabel': 'Current conversation draft',
   'detail.composerEmpty': '(empty)',
@@ -236,6 +239,9 @@ export const en = {
   'fetch.noneTitle': 'Fetch the article now — it keeps going when you leave this page',
   'fetch.readyTitle': 'The full text is cached — open it to read',
   'fetch.failedTitle': 'Fetch failed: {reason} — click to retry',
+  'fetch.failedOpenTitle': 'Fetch failed: {reason} — click to open it in a browser',
+  'fetch.failedFinalTitle': 'Fetch failed: {reason}',
+  'detail.renderFetch': 'Fetch rendered',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -336,6 +342,7 @@ export const zh = {
   'preview.empty': '这一页没有可读的正文',
   'preview.unreachable': '刚才连不上这个站点',
   'preview.http': '这个站点返回了 HTTP 错误',
+  'preview.unreadable': '这个页面是 JS 应用且有反爬，服务器端读不到内容 —— 如果它有 arxiv 版，直接粘贴 arxiv 链接',
   'detail.linkOnlyBadge': '仅链接',
   'detail.fetchingBody': '正在抓取正文…',
   'detail.refetch': '重新抓取',
@@ -399,6 +406,7 @@ export const zh = {
   'detail.readOriginal': '阅读原文',
   'detail.extractFailed': '这一页抽不出正文 —— 点「阅读原文」打开它。',
   'detail.summaryOnly': '这条订阅源只发布了摘要 —— 全文在原文页面上。',
+  'detail.resolvedFrom': '这条由粘贴的链接（{url}）解析而来 —— 点击打开原链接',
   'detail.alsoFrom': '同一来源',
   'detail.composerLabel': '当前会话草稿',
   'detail.composerEmpty': '（空）',
@@ -420,6 +428,9 @@ export const zh = {
   'fetch.noneTitle': '现在就把这篇抓下来 —— 离开这个页面也不会停',
   'fetch.readyTitle': '已有全文，点开就能读',
   'fetch.failedTitle': '抓取失败：{reason} —— 点一下重试',
+  'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下在浏览器打开',
+  'fetch.failedFinalTitle': '抓取失败：{reason}',
+  'detail.renderFetch': '渲染抓取',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',

@@ -80,6 +80,8 @@ import {
   type ReaderTranslationMemoryTable,
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
+import { arxivHtmlUrl } from './arxiv.ts'
+import { resolveLink, type LinkResolution, type ResolverFetch } from './link-resolvers.ts'
 
 /**
  * How many entries one automatic backfill run may fetch.
@@ -139,6 +141,16 @@ interface FetchOutcome {
 
 /** Thrown when a payload cannot become a source. */
 class UnsupportedContent extends Error {}
+
+/**
+ * Whether a failed fetch is the HTML endpoint's "this paper has no HTML
+ * version" — a bare 404 from the content fetch, and nothing else. A refusal
+ * (403/401) or a transport error is a fact about the REQUEST, not about which
+ * face of the paper exists, and must not silently reroute to another page.
+ */
+function isNoHtmlVersion(error: unknown): boolean {
+  return error instanceof UnsupportedContent && error.message === 'HTTP 404'
+}
 
 /**
  * Thrown when the FETCH itself failed — a refused connection, a timeout, a
@@ -242,11 +254,52 @@ export class ReaderService {
     if (doc.sources.some(source => sameTarget(source.url, url))) return 'duplicate'
 
     const now = new Date().toISOString()
+    // Paper links are recognized BEFORE the first page fetch (the ingest
+    // proposal's D3): a DOI is a cross-origin redirect this seam refuses by
+    // design, and OpenReview is measured unreadable server-side — for those
+    // hosts "the ordinary path" is a guaranteed or misleading failure.
+    const resolution = await this.resolvePaper(url)
+    if (resolution?.kind === 'link-only') {
+      return await this.saveLinkOnly(
+        { url, ...(request.label === undefined ? {} : { label: request.label }) },
+        { code: resolution.code, message: resolution.message, at: now },
+        now,
+      )
+    }
+    // What the first fetch aims at: a resolved paper's HTML version, a pasted
+    // arXiv link's HTML upgrade, or the URL itself. A resolved candidate whose
+    // HTML version is missing (404) falls back to the paper's ABSTRACT page —
+    // the API vouched the paper exists — while a pasted link falls back to
+    // itself. The resolved URL joins the duplicate check either way.
+    const resolvedId = resolution?.kind === 'arxiv' ? resolution.id : undefined
+    const upgrade = resolvedId === undefined ? arxivHtmlUrl(url) : `https://arxiv.org/html/${resolvedId}`
+    const fallbackUrl = resolvedId === undefined ? url : `https://arxiv.org/abs/${resolvedId}`
+    const resolvedFrom = resolvedId === undefined ? undefined : url
+    if (upgrade !== undefined && doc.sources.some(source => sameTarget(source.url, upgrade))) return 'duplicate'
     let fetched: FetchOutcome
     try {
-      fetched = await this.fetchFollowing(url)
+      fetched = await this.fetchFollowing(upgrade ?? url)
     } catch (error) {
-      return await this.saveLinkOnly({ url, ...(request.label === undefined ? {} : { label: request.label }) }, classifyFetchFailure(error, now), now)
+      if (upgrade !== undefined && isNoHtmlVersion(error)) {
+        // The paper has no HTML version (the endpoint answers a bare 404). The
+        // fallback goes through the ordinary path: an /abs page is a fine
+        // article, a /pdf is the honest not-a-web-page card.
+        try {
+          fetched = await this.fetchFollowing(fallbackUrl)
+        } catch (fallbackError) {
+          return await this.saveLinkOnly(
+            { url, ...(request.label === undefined ? {} : { label: request.label }), ...(resolvedFrom === undefined ? {} : { resolvedFrom }) },
+            classifyFetchFailure(fallbackError, now),
+            now,
+          )
+        }
+      } else {
+        return await this.saveLinkOnly(
+          { url, ...(request.label === undefined ? {} : { label: request.label }), ...(resolvedFrom === undefined ? {} : { resolvedFrom }) },
+          classifyFetchFailure(error, now),
+          now,
+        )
+      }
     }
 
     const feed = classifyPayload(fetched.raw) === 'feed'
@@ -256,17 +309,21 @@ export class ReaderService {
       // payload is stored, so a challenge page never becomes the card's body —
       // which is exactly how an OpenReview PDF link became a card showing
       // somebody's anti-bot page.
-      const problem = inspectPreview(fetched.raw, fetched.url, url)
+      const problem = inspectPreview(fetched.raw, fetched.url, upgrade ?? url)
       if (problem !== undefined) {
         return await this.saveLinkOnly(
-          { url: fetched.url, ...(request.label === undefined ? {} : { label: request.label }) },
+          {
+            url: fetched.url,
+            ...(request.label === undefined ? {} : { label: request.label }),
+            ...(resolvedFrom === undefined ? {} : { resolvedFrom }),
+          },
           { code: problem.code, message: problem.message, at: now },
           now,
         )
       }
     }
 
-    const label = request.label ?? defaultSourceLabel(fetched.url)
+    const label = request.label ?? (resolution?.kind === 'arxiv' ? resolution.title : undefined) ?? defaultSourceLabel(fetched.url)
     const source: ReaderSource = {
       id: `${feed ? 'rss' : 'link'}-${hash(fetched.url)}`,
       kind: feed ? 'rss' : 'link',
@@ -277,6 +334,7 @@ export class ReaderService {
       fetchedAt: now,
       status: 'ok',
       ...(fetched.truncated ? { truncated: true } : {}),
+      ...(resolvedFrom === undefined ? {} : { resolvedFrom }),
       raw: fetched.raw,
     }
     await this.commit(current => ({ ...current, sources: [source, ...current.sources] }))
@@ -292,13 +350,14 @@ export class ReaderService {
    * `getEntryBody` — the one call the detail view makes — explains itself
    * instead of answering with a blank article.
    *
-   * @param request - the final URL and an optional label.
+   * @param request - the final URL, an optional label, and the pasted URL when
+   *   this link was resolved to a canonical version.
    * @param failure - the classified reason, with its timestamp.
    * @param now - the commit instant.
    * @returns the add outcome the browser reports.
    */
   private async saveLinkOnly(
-    request: { url: string; label?: string },
+    request: { url: string; label?: string; resolvedFrom?: string },
     failure: ReaderPreviewFailure,
     now: string,
   ): Promise<ReaderAddOutcome> {
@@ -317,6 +376,7 @@ export class ReaderService {
       status: 'error',
       error: failure.message,
       failure,
+      ...(request.resolvedFrom === undefined ? {} : { resolvedFrom: request.resolvedFrom }),
     }
     await this.commit(current => ({ ...current, sources: [source, ...current.sources] }))
     await this.recordFetchFailure(linkEntryId(source.id), failure.message)
@@ -1344,6 +1404,31 @@ export class ReaderService {
 
   /* --------------------------------------------------------------- internals */
 
+  /**
+   * Ask the link-resolver table what a pasted URL names.
+   *
+   * Runs on the ADD path only, and never breaks it: the table's own failure
+   * (a resolver bug, an answer shape nobody planned for) reads as "no answer"
+   * and the ordinary fetch path takes over. Resolvers that need the network
+   * ride the same sanctioned seam as every fetch here; with no seam mounted
+   * their fetch throws, they answer `null`, and the ordinary path reports the
+   * missing capability — while a resolver that needs no network (OpenReview's
+   * known-unreadable verdict) still answers.
+   */
+  private async resolvePaper(url: string): Promise<LinkResolution | null> {
+    const web = this.web()
+    const fetch: ResolverFetch = async target => {
+      if (web === undefined) throw new UnsupportedContent('no web capability is mounted')
+      const result = await web.fetch({ url: target })
+      return { statusCode: result.statusCode, body: result.body.content }
+    }
+    try {
+      return await resolveLink(url, fetch)
+    } catch {
+      return null
+    }
+  }
+
   /** The probed web seam (no host import, no boot-time dependency). */
   private web(): WebSeam | undefined {
     return this.ctx.get('web') as WebSeam | undefined
@@ -1656,6 +1741,7 @@ function summarize(source: ReaderSource): ReaderSourceSummary {
     ...(source.failure === undefined
       ? {}
       : { failure: { code: source.failure.code, message: source.failure.message } }),
+    ...(source.resolvedFrom === undefined ? {} : { resolvedFrom: source.resolvedFrom }),
   }
 }
 

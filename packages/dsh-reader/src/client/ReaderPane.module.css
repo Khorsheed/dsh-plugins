@@ -25,6 +25,8 @@
 }
 
 .headTitle {
+  /* The pane's ONE title metric (12.5px/600), shared with the secondary pages'
+     `.barLabel`: 订阅管理 and 灵感空间 are pages of one pane, so one size. */
   display: flex;
   flex: 1;
   min-width: 0;
@@ -590,10 +592,11 @@
 }
 
 .barLabel {
-  /* A secondary page's name IS its title: same size as the tab label the host
-     renders for the pane, so opening "订阅管理" reads as a page and not as a
-     caption under the icons. It truncates rather than wrapping, because the
-     bar also carries the actions.
+  /* A secondary page's name IS its title: the pane's ONE title metric
+     (12.5px/600), the same as the wall's own `.headTitle` — user-picked
+     reference (2026-09-21): 灵感空间's size is the standard, the secondary
+     pages come DOWN to it. It truncates rather than wrapping, because the bar
+     also carries the actions.
      (An earlier revision declared `font-size` twice here — 13px then 10.5px —
      so the title stayed caption-sized no matter what the first one said.) */
   flex: 1;
@@ -602,7 +605,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
@@ -809,6 +812,23 @@
   padding: 5px 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   text-align: left;
+}
+
+/* MathML survives the whitelist for arXiv-style bodies (the render target,
+   Chromium ≥ 153, paints it natively). Display math is a block of its own that
+   scrolls sideways rather than breaking the body's right edge — the same
+   contract `pre` already keeps. */
+.article math {
+  font-size: 1.02em;
+}
+
+.article math[display="block"] {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 12px;
+  padding: 6px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* The completeness note: one line at the end of the body, not a card. */
@@ -1884,6 +1904,30 @@
 .fetchPill_failed {
   border-color: var(--dsw-static-red-600, #d54941);
   color: var(--dsw-static-red-600, #d54941);
+}
+
+/* A final failure (HTTP error, empty page, cross-site hop): an indicator, not a
+   button — no gesture changes the answer, so the pill takes no pointer. */
+.fetchPill_final {
+  cursor: default;
+}
+
+.fetchPill_final:hover {
+  background: transparent;
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+/* The failed pill's reason, on its own line under the pill row: a failure the
+   reader must hover to understand reads as "failed for no reason". */
+.fetchReason {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--dsw-static-red-600, #d54941);
+  opacity: 0.85;
 }
 
 .tagOnCard {
