@@ -188,11 +188,21 @@ export const zh = {
   modeAll: '全部模式（对比）',
   modeIn: '出现在',
   modeChipHint: '切换到该模式查看',
+  modeEvery: '全部模式 · {n}',
+  modeMore: '+{n}',
+  modeCollapse: '收起',
+  modeNone: '该部署里没有任何模式加载它。',
+  modeChipsCost: '（读取每个模式的能力面；未挂载过的预设会被组合一次）',
   modeBusy: '正在读取该模式的会话插件…',
   modeCompareNote: '对比 {n} 个模式 · 技能 {skills} · 工具 {tools}',
   modeUnavailableNote: '{n} 个模式无法读取',
   modeCompareCost: '对比会逐个加载每个模式的组合，未挂载过的预设可能要等一会。',
   modeFallback: '该模式当前无法加载（组合失败或未挂载），下面显示的是全局层，不代表该模式实际可见范围。',
+  orphanManaged: '{n} 个受管 skill 未在任何模式生效',
+  orphanManagedHint: '它们的 preset 范围指向了本部署没有的 preset，或投递被同名副本拒绝。展开后可打开详情改范围或释放回用户技能目录。',
+
+  /* Frontmatter metadata block. */
+  frontmatterMetadata: 'frontmatter metadata',
 }
 
 export const en = {
@@ -368,9 +378,19 @@ export const en = {
   modeAll: 'All modes (compare)',
   modeIn: 'In',
   modeChipHint: 'Switch to this mode',
+  modeEvery: 'every mode · {n}',
+  modeMore: '+{n}',
+  modeCollapse: 'less',
+  modeNone: 'No mode in this deployment loads it.',
+  modeChipsCost: '(reads every mode\'s face; a preset nothing has mounted is composed once)',
   modeBusy: 'Reading this mode\'s session plugins…',
   modeCompareNote: 'Compared {n} modes · {skills} skills · {tools} tools',
   modeUnavailableNote: '{n} mode(s) could not be read',
   modeCompareCost: 'Comparing composes each mode in turn; a preset nothing has mounted yet can take a moment.',
   modeFallback: 'This mode cannot be composed right now (or is not mounted), so the global layer is shown — it is not that mode\'s real visibility.',
+  orphanManaged: '{n} managed skill(s) load in no mode',
+  orphanManagedHint: 'Their preset scope names a preset this deployment does not supply, or delivery was refused by a duplicate copy. Expand to open a skill and change its scope or release it to the user skill root.',
+
+  /* Frontmatter metadata block. */
+  frontmatterMetadata: 'frontmatter metadata',
 }

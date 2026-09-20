@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@khorsheed/dsh-capability-catalog/remote'
 import catalogRemote from '@khorsheed/dsh-capability-catalog/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
-import type { CapabilityCatalogSnapshot } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogModeFace } from '@khorsheed/dsh-capability-catalog/types'
 import { en, NS, zh } from './locales.ts'
 import { refreshUntilSettled } from './settle.ts'
 import type { CapabilityCatalogInjected } from './slots.ts'
@@ -78,6 +78,40 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     refresh,
   }
 
+  // Every mode's face, read ONCE per session and shared by both consumers: the
+  // comparison grid and a detail modal asking where a plugin-provided skill is
+  // loadable. Reading it composes presets nothing has mounted, so a second
+  // caller must never pay for it again — hence the cache plus a single-flight
+  // promise (two opens racing would otherwise compose the same presets twice).
+  // `force` re-reads after a mutation that can change a face (an MCP connect, a
+  // skill write), and clears both slots so a failed read is retried too.
+  let facesCache: readonly CatalogModeFace[] | undefined
+  let facesPending: Promise<readonly CatalogModeFace[]> | undefined
+  const modeFaces = async (force = false): Promise<readonly CatalogModeFace[]> => {
+    if (force) {
+      facesCache = undefined
+      facesPending = undefined
+    }
+    if (facesCache !== undefined) return facesCache
+    facesPending ??= (async () => {
+      try {
+        const carried = await remote?.modeFaces(undefined)
+        return carried !== undefined && carried.ok ? carried.value : []
+      } catch (error) {
+        ctx.logger.error(error)
+        return []
+      }
+    })()
+    const faces = await facesPending
+    facesCache = faces
+    return faces
+  }
+  /** Drop the cached faces after a write that can change what a mode holds. */
+  const invalidateModeFaces = (): void => {
+    facesCache = undefined
+    facesPending = undefined
+  }
+
   const injected: CapabilityCatalogInjected = {
     hooks: {
       catalog: catalogHook,
@@ -104,34 +138,36 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     addSkill: async (request) => {
       const carried = await remote?.addSkill(request)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
     deleteSkill: async (name, presetId) => {
       const carried = await remote?.deleteSkill(name, undefined, presetId)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
     pickDirectory: async () => {
       const carried = await remote?.pickDirectory()
       return carried !== undefined && carried.ok ? carried.value : null
     },
-    modeFaces: async () => {
-      const carried = await remote?.modeFaces(undefined)
-      return carried !== undefined && carried.ok ? carried.value : []
-    },
+    modeFaces,
     mcpSnapshot: async () => {
       const carried = await remote?.mcpSnapshot()
       return carried !== undefined && carried.ok ? carried.value : { servers: [], tools: {}, credentials: [] }
     },
     mcpAdd: async (config) => {
       const carried = await remote?.mcpAdd(config)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : false
     },
     mcpRemove: async (serverName) => {
       const carried = await remote?.mcpRemove(serverName)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : false
     },
     mcpSetEnabled: async (serverName, enabled) => {
       const carried = await remote?.mcpSetEnabled(serverName, enabled)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : undefined
     },
     mcpSetCredential: async (ref, value) => {
@@ -140,10 +176,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     mcpSetToolEnabled: async (serverName, tool, enabled) => {
       const carried = await remote?.mcpSetToolEnabled(serverName, tool, enabled)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : undefined
     },
     mcpDiscover: async (serverName) => {
       const carried = await remote?.mcpDiscover(serverName)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : []
     },
     presetScopeStatus: async () => {
@@ -156,14 +194,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     presetScopeSet: async (name, presets) => {
       const carried = await remote?.presetScopeSet({ name, presets })
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
     presetScopeAdopt: async (name, presets) => {
       const carried = await remote?.presetScopeAdopt({ name, presets })
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
     presetScopeRelease: async (name) => {
       const carried = await remote?.presetScopeRelease(name)
+      invalidateModeFaces()
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
   }

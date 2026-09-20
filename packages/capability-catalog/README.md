@@ -55,12 +55,16 @@ user authored. Each one registers a DIFFERENT set of skills and tools, and the
 **mode control beside the search and sort boxes** is how the tab shows that:
 
 - picking a preset reads the catalog at **that preset's standing scope**
-  (`snapshotAt(presetId)`), so the grid is what a session in that mode actually
-  sees — including which skills and tools that mode does *not* have;
+  (`snapshotAt(presetId)`), and the grid is *that mode's face and nothing else* —
+  a skill delivered only to 写作模式 does not appear under 开发模式, and the tab's
+  counts are the mode's counts;
 - **全部模式（对比）** reads every preset's face in one call (`modeFaces`) and shows
   the union, with a chip row on each card naming the modes that load it — the
   answer to "which modes does this skill/tool appear in?" — and a chip jumps
-  straight into that mode.
+  straight into that mode. The row stays compact at seven modes: a capability in
+  EVERY readable mode collapses to one `全部模式 · 7` pill, and a long partial list
+  shows two chips plus `+N`, which expands in place (a title tooltip alone would
+  answer "which ones?" but not "take me there").
 
 A mode that cannot be read (a broken composition, a roster that resolves no
 standing scope) keeps its row and is reported as unreadable rather than rendered
@@ -68,33 +72,54 @@ as an empty face: "this mode loads nothing" and "this mode could not be read" ar
 different claims, and a comparison that conflated them would understate where a
 capability is available.
 
+An **unscoped** managed skill (no `presetScope`) is delivered to every preset, so
+it appears in every mode. A skill scoped to a preset this deployment does not
+supply, or one whose delivery a duplicate copy refused, appears in no mode's face
+at all; the skills tab then shows it under a diagnostic line (`N 个受管 skill 未在
+任何模式生效`) whose cards open the detail modal, where its scope can be changed or
+released. Without that list, filtering by mode would make such a skill unreachable
+rather than merely hidden.
+
 Reading a mode is **not free**: resolving a preset's standing scope MOUNTS its
 composition (the roster's single-flight standing mount), so a preset nothing has
 composed yet is composed by its first read. The default mode is already mounted in
 practice — the session runs on it — while the comparison composes each of the
 others, which is why it is an explicit choice and not something the tab does on
-open. There is no cheaper honest source: a composition file names the plugins a
-mode loads, not the tools and skills those plugins register once they run.
+open. The client reads faces once per session behind a single-flight cache shared
+with the detail modal, so a panel that already compared modes answers instantly.
+There is no cheaper honest source: a composition file names the plugins a mode
+loads, not the tools and skills those plugins register once they run.
 
 Detail and delete follow the same read position: opening a card reads that
 capability's detail and bundle at the mode the card came from, and a delete
 targets the same one (the same skill name can resolve to a different bundle in
 another mode).
 
+Card badges name the **source** (插件 / 内置 / 用户 / 项目 / 自定义); a managed
+skill's `preset` scope is policy, not provenance, so it is shown where that policy
+is the subject — the orphan list and the detail modal.
+
 ### A preset scope is editable only where the host will write one
 
 The skill detail modal's 「生效的 preset」 section writes `presetScope` into the
 frontmatter of a skill in the plugin's managed root, so only two shapes are
-configurable. The section now says which one it is instead of offering a Save the
-host refuses (`"<name>" is not a managed skill`):
+configurable. The section says which one it is instead of offering a Save the host
+refuses (`"<name>" is not a managed skill`):
 
 | skill | what the section shows |
 |---|---|
 | in the managed root | the preset grid + 保存 + 释放回用户技能目录 |
 | user / project / custom root | the preset grid + 移入受管目录并可限定 preset (no 保存: the selection is the scope adopt installs it with) |
-| plugin-provided (`runtime`) | why it cannot be set — the modes that load it follow the PLUGIN's row in each preset's composition |
+| plugin-provided (`runtime`) | why it cannot be set, plus the modes that actually load it (chips, from the shared faces cache — the question the mode picker answers, asked where the picker cannot: "where does this apply?") |
 | built-in (`bundled`) | why it cannot be set — it follows the deployment composition |
 | no roster / no managed delivery in this deployment | the unavailable note |
+
+The modal's **frontmatter metadata** block prints the metadata keys that have no
+dedicated surface: `presetScope` (the editor above) and `credentials` (the
+credential form) stay out of it, so a skill that merely declares a credential does
+not grow a raw JSON block. It sits above the credential form rather than pressed
+against the source browser, and secret-shaped VALUES (a key matching
+`key|token|secret|password`) render as `···`.
 
 ## The capability fingerprint
 

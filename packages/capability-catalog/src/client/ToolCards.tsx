@@ -28,9 +28,10 @@ export function toolOrigin(tool: CatalogToolRow, t: (key: CapabilityCatalogKey) 
   /** Tool preview card — same anatomy as the skill cards (shared .pvCard / .grid),
  * so tools and skills carry ONE style that can be optimized together. In the
  * comparison view a chip row names the modes that load it. */
-function ToolCard({ tool, modes, onMode, onOpen, t }: {
+function ToolCard({ tool, modes, modeTotal, onMode, onOpen, t }: {
   tool: CatalogToolRow
   modes?: readonly CatalogModeChip[] | undefined
+  modeTotal?: number | undefined
   onMode: (id: string) => void
   onOpen: () => void
   t: (key: CapabilityCatalogKey) => string
@@ -45,7 +46,7 @@ function ToolCard({ tool, modes, onMode, onOpen, t }: {
         <span className={css.pvDesc}>{tool.description}</span>
         <span className={css.pvSub}>{toolOrigin(tool, t)}</span>
       </button>
-      {modes === undefined ? null : <ModeChips modes={modes} onSelect={onMode} t={t} />}
+      {modes === undefined ? null : <ModeChips modes={modes} total={modeTotal ?? 0} onSelect={onMode} t={t} />}
       <div className={css.pvFoot}>
         <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
           <IconBrowseOutline16 size={16} />
@@ -89,6 +90,7 @@ export function ToolCards({ loading, visibleTools, mcpGroups, segment, compariso
           key={tool.name}
           tool={tool}
           modes={comparison === null ? undefined : modeChipsFor(comparison.toolModes.get(tool.name))}
+          modeTotal={comparison?.modes ?? 0}
           onMode={onMode}
           onOpen={() => onOpenTool(tool)}
           t={t}

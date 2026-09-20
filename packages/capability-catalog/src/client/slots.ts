@@ -50,8 +50,13 @@ export interface CapabilityCatalogInjected {
   deleteSkill: (name: string, presetId?: string) => Promise<CatalogDeleteSkillResult>
   /** Open the host's native directory chooser (the workspace "add" dialog). */
   pickDirectory: () => Promise<string | null>
-  /** Every mode's capability face, for the cross-mode comparison view. */
-  modeFaces: () => Promise<readonly CatalogModeFace[]>
+  /**
+   * Every mode's capability face, for the cross-mode comparison view and for a
+   * detail modal asking where a non-writable skill actually loads. Read once per
+   * session behind a single-flight cache; `force` re-reads after a mutation that
+   * can change a face.
+   */
+  modeFaces: (force?: boolean) => Promise<readonly CatalogModeFace[]>
   /** MCP: full management snapshot (servers + tools + credential state). */
   mcpSnapshot: () => Promise<CatalogMcpSnapshot>
   /** MCP: add/replace a server config. */

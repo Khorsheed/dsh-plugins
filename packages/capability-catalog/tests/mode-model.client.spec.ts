@@ -8,7 +8,7 @@
  * cannot be read" must never look like "this mode loads nothing".
  */
 import { describe, expect, it } from 'vitest'
-import { buildModeComparison, resolveModeChips } from '../src/client/mode-model.ts'
+import { buildModeComparison, orphanManagedSkills, resolveModeChips } from '../src/client/mode-model.ts'
 import type { CatalogModeFace, CatalogPresetOption, CatalogSkillRow, CatalogToolRow } from '../src/types.ts'
 
 function skill(name: string, description: string): CatalogSkillRow {
@@ -112,5 +112,61 @@ describe('resolveModeChips', () => {
 
   it('renders nothing for no ids', () => {
     expect(resolveModeChips([], options)).toEqual([])
+  })
+})
+
+describe('orphanManagedSkills', () => {
+  const options: readonly CatalogPresetOption[] = [
+    { id: 'standard', name: '标准模式', isDefault: true },
+    { id: 'dsh-writing', name: '写作模式' },
+  ]
+
+  function managed(name: string, presets: readonly string[], conflict?: string) {
+    return {
+      name,
+      description: `${name} description`,
+      modelInvocable: true,
+      userInvocable: true,
+      path: `/home/user/skills/${name}/SKILL.md`,
+      presets,
+      delivered: presets.length > 0,
+      ...conflict === undefined ? {} : { conflict: `/home/user/skills/${name}` },
+    }
+  }
+
+  it('finds a skill whose declared preset this deployment does not supply', () => {
+    const orphans = orphanManagedSkills([managed('scoped', ['dsh-writing-renamed'])], options, [])
+    expect(orphans.map(row => row.name)).toEqual(['scoped'])
+    expect(orphans[0]?.unreachable).toEqual(['dsh-writing-renamed'])
+  })
+
+  it('treats a declared preset whose scope failed as unreachable', () => {
+    expect(orphanManagedSkills([managed('scoped', ['dsh-writing'])], options, ['dsh-writing']).length).toBe(1)
+  })
+
+  it('is not an orphan when a declared preset can serve it', () => {
+    // Selecting 写作模式 reaches it, so the mode filter alone is enough.
+    expect(orphanManagedSkills([managed('scoped', ['dsh-writing'])], options, [])).toEqual([])
+  })
+
+  it('is not an orphan when one of several declared presets can serve it', () => {
+    expect(orphanManagedSkills([managed('scoped', ['gone', 'standard'])], options, [])).toEqual([])
+  })
+
+  it('never flags an unscoped skill: it is delivered to every mode', () => {
+    expect(orphanManagedSkills([managed('everywhere', [])], options, [])).toEqual([])
+  })
+
+  it('flags a skill whose delivery was refused by a duplicate', () => {
+    const orphans = orphanManagedSkills([managed('duplicated', [], 'conflict')], options, [])
+    expect(orphans[0]?.conflict).toBe('/home/user/skills/duplicated')
+  })
+
+  it('name-sorts its rows', () => {
+    const orphans = orphanManagedSkills([
+      managed('b-skill', ['gone']),
+      managed('a-skill', ['gone']),
+    ], options, [])
+    expect(orphans.map(row => row.name)).toEqual(['a-skill', 'b-skill'])
   })
 })

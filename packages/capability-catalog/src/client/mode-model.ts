@@ -23,7 +23,7 @@
  * @module @khorsheed/dsh-capability-catalog/client/mode-model
  */
 
-import type { CatalogModeFace, CatalogPresetOption, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CatalogModeFace, CatalogPresetOption, CatalogScopedSkillRow, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 
 /** One mode attributed to a capability, as a card's chip renders it. */
 export interface CatalogModeChip {
@@ -59,6 +59,81 @@ export interface UnavailableMode {
   /** The preset's display name, falling back to its id. */
   readonly label: string
   readonly reason: string
+}
+
+/**
+ * One managed skill that is delivered NOWHERE: scoped to preset ids no readable
+ * mode supplies, or refused by a duplicate-name conflict.
+ *
+ * These rows are the reason a mode-filtered grid needs a diagnostic surface at
+ * all. Every other managed skill is reachable by selecting a mode that loads it;
+ * these appear in no mode's face, so filtering alone would make them invisible —
+ * and an invisible managed skill cannot be released.
+ */
+export interface OrphanManagedSkill {
+  readonly name: string
+  readonly description: string
+  readonly modelInvocable: boolean
+  readonly userInvocable: boolean
+  /** The preset ids its frontmatter declares (empty = every preset, i.e. not an orphan). */
+  readonly declared: readonly string[]
+  /** Declared ids the roster no longer supplies or cannot compose. */
+  readonly unreachable: readonly string[]
+  /** The default root already supplying this name, when delivery was refused. */
+  readonly conflict?: string
+}
+
+/**
+ * Find the managed skills no readable mode can show.
+ *
+ * The judgement needs no faces: the delivery status already knows which preset
+ * ids a skill declares, which presets the roster supplies, and which of those
+ * failed to resolve a standing scope. A skill whose declared ids are ALL
+ * unreachable is in no mode's face by construction — and a conflicted one is
+ * excluded from delivery entirely, so its managed copy is in no face either.
+ *
+ * An UNSCOPED managed skill (no declared ids) is deliberately NOT an orphan: the
+ * delivery serves it to every preset through the global layer, so every mode
+ * shows it. Treating it as one would put a permanent, wrong diagnostic on screen.
+ * @param skills - the managed rows (`presetScopeStatus().skills`).
+ * @param presets - every preset the roster supplies.
+ * @param failedPresets - preset ids whose standing scope could not be resolved.
+ * @returns the orphan rows, name-sorted.
+ */
+export function orphanManagedSkills(
+  skills: readonly CatalogScopedSkillRow[],
+  presets: readonly CatalogPresetOption[],
+  failedPresets: readonly string[],
+): readonly OrphanManagedSkill[] {
+  const known = new Set(presets.map(option => option.id))
+  const failed = new Set(failedPresets)
+  const orphans: OrphanManagedSkill[] = []
+  for (const skill of skills) {
+    if (skill.conflict !== undefined) {
+      orphans.push({
+        name: skill.name,
+        description: skill.description,
+        modelInvocable: skill.modelInvocable,
+        userInvocable: skill.userInvocable,
+        declared: skill.presets,
+        unreachable: [...skill.presets],
+        conflict: skill.conflict,
+      })
+      continue
+    }
+    if (skill.presets.length === 0) continue
+    const unreachable = skill.presets.filter(id => !known.has(id) || failed.has(id))
+    if (unreachable.length < skill.presets.length) continue
+    orphans.push({
+      name: skill.name,
+      description: skill.description,
+      modelInvocable: skill.modelInvocable,
+      userInvocable: skill.userInvocable,
+      declared: skill.presets,
+      unreachable,
+    })
+  }
+  return orphans.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /** The comparison grid: the union of every readable mode, with attribution. */

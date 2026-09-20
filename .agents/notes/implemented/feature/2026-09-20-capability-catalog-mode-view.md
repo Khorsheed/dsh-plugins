@@ -78,6 +78,42 @@ it has the capability, else the first mode that does). The same skill name can
 resolve to a different bundle in another mode, so a detail read or a delete that
 silently used the default mode would act on the wrong file.
 
+### The grid is one mode's face — nothing is merged into it
+
+The preset-scope delivery work had merged managed-root rows the current scope did
+not hold into the same grid, so they stayed editable from one place. That made the
+grid a management view, and the mode control turned the merge into a defect: a
+skill carrying `presetScope: [dsh-writing]` appeared under 开发模式, and the tab's
+own counts were the union rather than the mode's face.
+
+The grid is now `snapshotAt(selectedMode)` and nothing else; a managed skill is
+reachable by selecting a mode that loads it, or through the comparison. Two
+consequences are deliberate:
+
+- **an unscoped managed skill** (no `presetScope`) is delivered to every preset, so
+  it is in every mode's face — no special case is needed for it;
+- **a skill no readable mode can load** (its scope names a preset this deployment
+  does not supply, its preset's standing scope failed, or delivery was refused by a
+  duplicate) is in no face at all. Filtering alone would make it unreachable rather
+  than hidden — an invisible managed skill cannot be released — so the skills tab
+  renders it under a diagnostic line whose cards open the modal where the scope can
+  be changed. `orphanManagedSkills` decides membership from the delivery status and
+  the roster, with no faces needed.
+
+The card **badge** goes back to the source (插件 / 内置 / 用户 / 项目 / 自定义). A
+managed skill's `preset` scope is policy, not provenance; it now appears where that
+policy is the subject (the orphan list, the modal), not in a grid whose question is
+"what does this mode load".
+
+### The detail modal answers the same question where the picker cannot
+
+A plugin-provided skill has no preset editor, so the modal's scope section would
+say "the plugin decides" and stop. It now also lists the modes that carry that
+skill, read from the same single-flight `modeFaces()` cache the comparison uses —
+so a panel that compared answers instantly and a first open composes the unmounted
+presets once, shared by every later caller. Clicking a chip closes the modal and
+switches the grid, because the modal describes the grid it was opened from.
+
 ## Alternatives considered
 
 **Derive the faces from `compositionInventory()` without mounting.** The official
@@ -89,10 +125,18 @@ tagged plugin tools only, and a skill has no owner at all — so the answer woul
 a partial attribution presented as a complete one. Rejected: the feature exists to
 be authoritative about tool and skill membership.
 
-**Read every mode eagerly on open, so the chips are always there.** Rejected: it
-would compose every preset in the deployment (with its watchers and connectors)
-merely because a settings tab was opened. The comparison is one click away and
-says what it costs.
+**Read every mode eagerly on open, so the chips are always there.** Rejected for the
+grid: it would compose every preset in the deployment (with its watchers and
+connectors) merely because a settings tab was opened. The comparison is one click
+away and says what it costs. (The detail modal's mode list does read on open, but
+only where the question is otherwise unanswerable — a non-writable skill — and
+behind a session-wide single-flight cache.)
+
+**Keep the merged managed rows and mark them as "not in this mode".** A second
+visual class inside one grid still makes the grid's counts and its answer to "what
+does this mode load" wrong; the reader has to learn which cards count. Rejected in
+favour of one grid whose every row answers the mode's question, plus a separate
+diagnostic for the rows no mode can show.
 
 **Ship only the mode switcher and skip the comparison.** The switcher answers
 "what does mode X have"; the ask was "which modes load X". Both are one control.
@@ -103,20 +147,26 @@ policy says where a skill is delivered, the mode view says where it was actually
 found. The two disagree exactly when the interesting thing happens (a conflict, a
 broken mode, a plugin-provided skill), so the card shows both.
 
+**A hover tooltip instead of `+N`.** A title can name the hidden modes but cannot
+navigate to one, and the chip row's whole point is the jump. The pill expands in
+place instead.
+
 ## Consequences
 
 - `list_capabilities` and `snapshotFor` are untouched: the model-facing tool still
   answers in the caller's agent scope, and the fingerprint path still refuses to
   degrade.
 - Reading a preset through the UI can compose it. That is a side effect a settings
-  tab can have for the first time, and it is bounded by the roster size, paid
-  once per process, and gated behind the explicit comparison choice.
+  tab can have for the first time, and it is bounded by the roster size, paid once
+  per process, and gated behind the explicit comparison choice (or a detail modal
+  asking about a non-writable skill).
 - The mode control renders nothing when the composition mounts no agent-preset
   service (or supplies no presets), which is the same degradation the scope picker
   already had.
-- The comparison's union is a **union**: a capability loaded by no mode (a managed
-  skill scoped to a preset that is not in the roster, say) stays visible through
-  the managed-root rows, as it was before.
+- The comparison's union is a **union** of the readable faces, so a capability
+  loaded by no readable mode is NOT in it; that row lives in the orphan diagnostic
+  instead. The union no longer absorbs the managed-root merge, so the counts a
+  reader sees are the union's own.
 
 ## Related
 

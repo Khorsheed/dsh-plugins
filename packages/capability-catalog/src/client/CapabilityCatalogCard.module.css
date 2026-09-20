@@ -441,6 +441,60 @@
   color: var(--dsw-alias-state-business-primary);
 }
 
+/* The one-pill answer for a capability every readable mode loads: a fact, not a
+   link — naming seven modes adds nothing when the answer is "all of them". */
+.modeChipAll {
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 17px;
+  font-weight: 500;
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* `+N` (expands the row in place) and its collapse counterpart. */
+.modeChipMore {
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 17px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.modeChipMore:hover {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Managed skills no mode loads: a diagnostic surface below the grid, visually
+   outside every mode's face. */
+.orphanGroup {
+  margin-top: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.orphanSummary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.orphanSummary:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
 /* One-line note under the filter bar: the comparison's summary, the mode read's
    busy state, or the fallback warning. */
 .modeNote {

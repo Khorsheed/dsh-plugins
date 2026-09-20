@@ -17,7 +17,7 @@ import { AddSkillModal } from './AddSkillModal.tsx'
 import { McpServerManageModal } from './McpServerManageModal.tsx'
 import { AddMcpDialog } from './AddMcpDialog.tsx'
 import { buildMcpGroups } from './mcp-model.ts'
-import { buildModeComparison, resolveModeChips, type CatalogModeChip, type ModeComparison } from './mode-model.ts'
+import { buildModeComparison, orphanManagedSkills, resolveModeChips, type CatalogModeChip, type ModeComparison, type OrphanManagedSkill } from './mode-model.ts'
 import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
@@ -61,6 +61,9 @@ export function CapabilityCatalogCard({
   const [discoveringMcp, setDiscoveringMcp] = useState<ReadonlySet<string>>(() => new Set())
   // Tool-origin guidance modal ("why is my plugin tool not here").
   const [toolOriginHelp, setToolOriginHelp] = useState(false)
+  // The modes that load the skill whose detail is open, when its scope section
+  // cannot say (see loadDetailModes). null = not queried / not applicable.
+  const [detailModes, setDetailModes] = useState<{ readonly loading: boolean; readonly ids: readonly string[] } | null>(null)
   // Preset-scoped delivery: the managed-root status and the roster the picker shows.
   const [scopeStatus, setScopeStatus] = useState<CatalogPresetScopeStatus | null>(null)
   const [presetOptions, setPresetOptions] = useState<readonly CatalogPresetOption[]>([])
@@ -92,25 +95,16 @@ export function CapabilityCatalogCard({
   const comparing = mode?.kind === 'compare'
 
   const faceSkills = comparison !== null ? comparison.skills : (snapshot?.skills ?? [])
-  // A managed skill scoped to another preset is deliberately absent from the
-  // default preset's snapshot; the delivery status still knows it, and the
-  // management grid must keep it reachable (to change its scope or release it).
-  const managedRows = useMemo<CatalogSkillRow[]>(() => {
-    if (scopeStatus === null) return []
-    const known = new Set(faceSkills.map((s) => s.name))
-    return scopeStatus.skills
-      .filter((row) => !known.has(row.name))
-      .map((row) => ({
-        name: row.name,
-        description: row.description,
-        source: MANAGED_SOURCE,
-        provider: 'capability-catalog',
-        modelInvocable: row.modelInvocable,
-        userInvocable: row.userInvocable,
-      }))
-  }, [scopeStatus, faceSkills])
-  const skills = useMemo(() => [...faceSkills, ...managedRows], [faceSkills, managedRows])
-  /** Display name per preset id, for the managed cards' badge. */
+  /** The grid is the mode's UNFILTERED face — nothing is merged into it.
+   *
+   * The delivery work merged managed-root rows the current scope did not hold,
+   * so they stayed editable from one grid. With a mode control that merge is a
+   * lie: a skill scoped to 写作模式 appeared under 开发模式, and the tab's own
+   * count was the union rather than the mode's. A managed skill is reachable by
+   * selecting a mode that loads it (or the comparison), and `orphans` below
+   * keeps the one case no mode can show reachable. */
+  const skills = faceSkills
+  /** Display name per preset id, for the managed badges. */
   const presetNames = useMemo(
     () => new Map(presetOptions.map(option => [option.id, option.name ?? option.id])),
     [presetOptions],
@@ -121,13 +115,21 @@ export function CapabilityCatalogCard({
       ids === undefined ? [] : resolveModeChips(ids, presetOptions),
     [presetOptions],
   )
-  /** A managed skill's card badge names its effective presets — not its source. */
+  /** A managed skill's preset-scope badge, for the surfaces where that policy is
+   * the point (the orphan list, the modal) — never the mode grid, where it would
+   * impersonate a source. */
   const scopeTagOf = useCallback((name: string): string | undefined => {
     const row = scopeStatus?.skills.find(entry => entry.name === name)
     if (row === undefined) return undefined
     const names = row.presets.map(id => presetNames.get(id) ?? id)
     return `${t('scopePresetTag')} · ${names.length === 0 ? t('scopeAllPresets') : names.join('、')}`
   }, [scopeStatus, presetNames, t])
+  /** Managed skills no readable mode can show (see {@link orphanManagedSkills}). */
+  const orphans = useMemo(() => {
+    if (scopeStatus === null) return []
+    const failed = scopeStatus.presets.filter(row => row.error !== undefined).map(row => row.presetId)
+    return orphanManagedSkills(scopeStatus.skills, presetOptions, failed)
+  }, [scopeStatus, presetOptions])
   const tools = comparison !== null ? comparison.tools : (snapshot?.tools ?? [])
   const loading = snapshot == null && comparison === null
 
@@ -143,18 +145,19 @@ export function CapabilityCatalogCard({
     setModeBusy(true)
     void refresh(next.id).finally(() => setModeBusy(false))
   }
-  /** Read every mode's face (the host composes a mode nothing has mounted yet). */
-  const loadFaces = async (): Promise<void> => {
+  /** Read every mode's face (the host composes a mode nothing has mounted yet).
+   * `force` re-reads after a mutation; otherwise the shared cache answers. */
+  const loadFaces = async (force = false): Promise<void> => {
     setModeBusy(true)
     try {
-      setFaces(await modeFaces())
+      setFaces(await modeFaces(force))
     } finally {
       setModeBusy(false)
     }
   }
   /** Re-read whatever the grid is showing: one mode's face, or every face. */
   const reloadView = async (): Promise<void> => {
-    if (modeRef.current?.kind === 'compare') await loadFaces()
+    if (modeRef.current?.kind === 'compare') await loadFaces(true)
     else await refresh(presetIdOf(modeRef.current))
   }
 
@@ -298,15 +301,42 @@ export function CapabilityCatalogCard({
     && presetIdOf(mode) !== undefined
     && snapshot.preset !== presetIdOf(mode)
 
+  /**
+   * The modes that LOAD one skill, for a detail modal whose scope section
+   * cannot tell: a plugin-provided or built-in skill has no preset editor, so
+   * the modes that carry it are the only answer to "where does it apply".
+   *
+   * Read from the shared faces cache, so a panel that already compared modes
+   * answers instantly and a first-time open pays for the composition once. The
+   * question is asked only where it is otherwise unanswerable: a skill whose
+   * scope IS editable shows its declared scope instead.
+   */
+  const loadDetailModes = async (name: string): Promise<void> => {
+    if (presetScopeWritable(name, skills, scopeStatus)) {
+      setDetailModes(null)
+      return
+    }
+    setDetailModes({ loading: true, ids: [] })
+    const all = await modeFaces()
+    setDetailModes({
+      loading: false,
+      ids: all
+        .filter(face => face.unavailable === undefined && face.skills.some(skill => skill.name === name))
+        .map(face => face.preset),
+    })
+  }
+
   const openDetail = async (name: string): Promise<void> => {
     setSelectedName(name)
     setClaim({ status: 'loading', data: undefined })
+    void loadDetailModes(name)
     const data = await detail(name, readModeFor(name))
     setClaim({ status: 'done', data })
   }
   const closeDetail = (): void => {
     setSelectedName(null)
     setClaim({ status: 'idle', data: undefined })
+    setDetailModes(null)
   }
 
   return (
@@ -441,8 +471,8 @@ export function CapabilityCatalogCard({
                 <SkillPreviewCard
                   key={skill.name}
                   skill={skill}
-                  tag={scopeTagOf(skill.name)}
                   modes={comparison === null ? undefined : modeChipsFor(comparison.skillModes.get(skill.name))}
+                  modeTotal={comparison?.modes ?? 0}
                   onMode={handleModeChange}
                   onOpen={() => void openDetail(skill.name)}
                   onDelete={() => setDeleteTarget(skill.name)}
@@ -451,6 +481,32 @@ export function CapabilityCatalogCard({
               ))}
             </div>
           )
+      ) : null}
+
+      {/* The one class the mode filter cannot reach: a managed skill no readable
+          mode delivers (its scope names a preset this deployment does not have,
+          or a duplicate refused delivery). Without this list it would be
+          invisible everywhere and could never be released. */}
+      {!loading && kind === 'skills' && orphans.length > 0 ? (
+        <details className={css.orphanGroup}>
+          <summary className={css.orphanSummary}>
+            {t('orphanManaged').replace('{n}', String(orphans.length))}
+          </summary>
+          <p className={css.confHint}>{t('orphanManagedHint')}</p>
+          <div className={css.grid}>
+            {orphans.map(orphan => (
+              <SkillPreviewCard
+                key={orphan.name}
+                skill={orphanSkillRow(orphan)}
+                tag={scopeTagOf(orphan.name)}
+                onMode={handleModeChange}
+                onOpen={() => void openDetail(orphan.name)}
+                onDelete={() => setDeleteTarget(orphan.name)}
+                t={t}
+              />
+            ))}
+          </div>
+        </details>
       ) : null}
 
       {kind === 'tools' ? (
@@ -513,6 +569,11 @@ export function CapabilityCatalogCard({
               return result
             },
           })}
+          modeChips={detailModes === null || detailModes.loading ? undefined : modeChipsFor(detailModes.ids)}
+          modesLoading={detailModes?.loading === true}
+          // Switching modes replaces the grid the modal is describing, so the
+          // modal closes with the jump rather than outliving its subject.
+          onModeSelect={(id) => { closeDetail(); handleModeChange(id) }}
         />
       ) : null}
 
@@ -642,14 +703,46 @@ function ModeSelect({ options, value, busy, onSelect, t }: {
 }
 
 /** Sources the catalog may move out of a default root into the managed root. */
-/** Source label for a managed skill rendered outside the scope that delivers it.
+/** Source label for a managed skill rendered outside the mode that delivers it.
  * Not a member of the deletable set: removal goes through `release`. */
 const MANAGED_SOURCE = 'capability-catalog'
+
+/** One orphan row as a card can render it. */
+function orphanSkillRow(orphan: OrphanManagedSkill): CatalogSkillRow {
+  return {
+    name: orphan.name,
+    description: orphan.description,
+    source: MANAGED_SOURCE,
+    provider: 'capability-catalog',
+    modelInvocable: orphan.modelInvocable,
+    userInvocable: orphan.userInvocable,
+  }
+}
 
 /** Sources the catalog may move out of a default root into the managed root. */
 const ADOPTABLE_SOURCES: ReadonlySet<string> = new Set([
   'user-dsh', 'user-agents', 'project-dsh', 'project-agents', 'custom',
 ])
+
+/**
+ * Whether a deployment can write THIS skill's preset scope at all: it lives in
+ * the plugin's managed root, or in a default root the catalog may adopt into it.
+ *
+ * The same rule {@link scopeEditorFor} renders, as a boolean for callers that
+ * only need to know whether the modes are knowable from the scope editor — a
+ * caller asking "which modes load this skill?" should read the faces, not the
+ * declared scope, exactly when this is false.
+ */
+export function presetScopeWritable(
+  name: string,
+  skills: readonly { readonly name: string; readonly source: string }[],
+  status: CatalogPresetScopeStatus | null,
+): boolean {
+  if (status === null) return false
+  if (status.skills.some(row => row.name === name)) return true
+  const row = skills.find(entry => entry.name === name)
+  return row !== undefined && ADOPTABLE_SOURCES.has(row.source)
+}
 
 /**
  * The scope editor for one skill, or undefined when the deployment has no

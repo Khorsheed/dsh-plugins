@@ -1,6 +1,7 @@
 import { useState } from 'react'
   import { IconChevronDownOutline14, IconChevronRightOutline14, IconCopyOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
   import type { CatalogPresetOption, CatalogPresetScopeEditResult, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
+  import type { CatalogModeChip } from './mode-model.ts'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { BundleFileTree } from './BundleFileTree.tsx'
   import { CredentialField, type CredentialSaveState } from './CredentialField.tsx'
@@ -43,7 +44,7 @@ function providedScopeNote(t: (key: CapabilityCatalogKey) => string, provider: s
 }
 
 /** Centered modal with a skill's full detail, source browser, metadata and credential config. */
-export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, t, scope }: {
+export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, t, scope, modeChips, modesLoading, onModeSelect }: {
   name: string
   claim: DetailClaim
   onClose: () => void
@@ -51,6 +52,12 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
   readSkillFile: (name: string, path: string) => Promise<CatalogSkillFileRead | undefined>
   t: (key: CapabilityCatalogKey) => string
   scope?: ScopeEditor | undefined
+  /** The modes that load this skill, when its scope section cannot say (a
+   * non-writable skill); undefined = not queried, [] = queried and in none. */
+  modeChips?: readonly CatalogModeChip[] | undefined
+  /** Whether the ask is still in flight. */
+  modesLoading?: boolean
+  onModeSelect?: (id: string) => void
 }) {
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, CredentialSaveState>>({})
@@ -151,11 +158,37 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
               {scope.options.length === 0 ? (
                 <div className={css.scopeHint}>{t('scopeUnavailable')}</div>
               ) : !scope.writable ? (
-                /* The host writes a preset scope only into the managed root, so a
-                   plugin-provided or built-in skill has none to edit. The section
-                   stays and explains which plugin decides, rather than showing a
-                   checkerboard whose Save the host refuses. */
-                <div className={css.scopeHint}>{providedScopeNote(t, scope.provider)}</div>
+                <>
+                  {/* The host writes a preset scope only into the managed root, so a
+                      plugin-provided or built-in skill has none to edit. The section
+                      explains which plugin decides AND shows where it actually loads,
+                      which is the same question the mode picker answers. */}
+                  <div className={css.scopeHint}>{providedScopeNote(t, scope.provider)}</div>
+                  {modesLoading === true ? (
+                    <div className={css.scopeHint}>{t('modeBusy')}</div>
+                  ) : modeChips === undefined ? null : modeChips.length === 0 ? (
+                    <div className={css.scopeHint}>{t('modeNone')}</div>
+                  ) : (
+                    <>
+                      <div className={css.pvModes}>
+                        <span className={css.pvModesLabel}>{t('modeIn')}</span>
+                        {modeChips.map(chip => (
+                          <button
+                            key={chip.id}
+                            type="button"
+                            className={css.modeChip}
+                            data-default={chip.isDefault ? 'true' : undefined}
+                            title={t('modeChipHint')}
+                            onClick={() => onModeSelect?.(chip.id)}
+                          >
+                            {chip.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className={css.scopeHint}>{t('modeChipsCost')}</div>
+                    </>
+                  )}
+                </>
               ) : (
                 <>
                   <div className={css.scopeGrid}>
@@ -212,6 +245,16 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                 </>
               )}
             </section>
+          ) : null}
+
+          {/* Above the credential form, not below the source browser: this block
+              is the skill's own frontmatter, and a raw JSON dump pressed against
+              the code pane reads as part of the source view. */}
+          {data.metadataText !== undefined && hasUnrenderedMetadata(data.metadataText) ? (
+            <details className={css.source}>
+              <summary className={css.sourceTitle}>{t('frontmatterMetadata')}</summary>
+              <pre className={css.codeBlk}>{formatMetadata(data.metadataText)}</pre>
+            </details>
           ) : null}
 
           {data.credentials !== undefined && data.credentials.length > 0 ? (
@@ -300,13 +343,6 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
               </section>
             )
           })()}
-
-          {data.metadataText !== undefined && hasUnrenderedMetadata(data.metadataText) ? (
-            <details className={css.source}>
-              <summary className={css.sourceTitle}>{t('metadata')}</summary>
-              <pre className={css.codeBlk}>{formatMetadata(data.metadataText)}</pre>
-            </details>
-          ) : null}
         </>
       ) : null}
     </ModalShell>
@@ -314,28 +350,63 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
 }
 
 /**
- * Whether a skill's metadata holds anything the modal does not already render.
+ * Metadata keys this modal already renders in a dedicated place.
  *
- * `presetScope` is edited by the scope section above and visible in the source
- * pane, so repeating it as raw JSON would be noise — but a skill declaring
- * credentials or any other key still gets its metadata block.
+ * `presetScope` is edited by the scope section and visible in the source pane;
+ * `credentials` is the credential form above (its values live in the credential
+ * store, never in the frontmatter). Repeating either as raw JSON is noise, and
+ * an empty `metadata` block appearing because someone declared a credential is
+ * worse than noise — it reads as a defect.
+ */
+const RENDERED_METADATA_KEYS: ReadonlySet<string> = new Set(['presetScope', 'credentials'])
+
+/**
+ * Whether a skill's metadata holds anything the modal does not already render.
  * @param metadataText - the serialized metadata object.
  * @returns whether the block is worth showing.
  */
-function hasUnrenderedMetadata(metadataText: string): boolean {
+export function hasUnrenderedMetadata(metadataText: string): boolean {
   try {
     const parsed: unknown = JSON.parse(metadataText)
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return true
-    return Object.keys(parsed).some(key => key !== 'presetScope')
+    return Object.keys(parsed).some(key => !RENDERED_METADATA_KEYS.has(key))
   } catch {
     return true
   }
 }
 
-/** Pretty-print a JSON metadata string for display. */
-function formatMetadata(metadataText: string): string {
+/** Keys whose VALUE is replaced before a metadata dump is displayed. */
+const SECRET_KEY_PATTERN = /key|token|secret|password/i
+
+/** The placeholder a secret-shaped metadata value renders as. */
+const REDACTED = '···'
+
+/**
+ * Replace secret-shaped VALUES in a metadata object before display.
+ *
+ * The metadata block prints whatever frontmatter carries, and today nothing
+ * secret lives there (credential values are stored in the credential service,
+ * never in the file). This is a display guard for the day someone puts an
+ * inline token in a metadata key: the block still shows the key and its shape,
+ * but not the value. Matching is on the KEY (recursively, so a nested
+ * `auth.token` is covered) — a value-shaped heuristic would redact prose.
+ * @param value - any parsed metadata value.
+ * @returns the same shape with secret-keyed values replaced.
+ */
+export function redactMetadataSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(entry => redactMetadataSecrets(entry))
+  if (value === null || typeof value !== 'object') return value
+  const out: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : redactMetadataSecrets(entry)
+  }
+  return out
+}
+
+/** Pretty-print a JSON metadata string for display, with secret-shaped values redacted. */
+export function formatMetadata(metadataText: string): string {
   try {
-    return JSON.stringify(JSON.parse(metadataText), null, 2)
+    return JSON.stringify(redactMetadataSecrets(JSON.parse(metadataText)), null, 2)
   } catch {
     return metadataText
   }
