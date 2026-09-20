@@ -18,7 +18,7 @@ Status: implemented
 | --- | --- | --- | --- |
 | 墙上的解析结果（条目） | 面板，来自宿主 payload | 一次挂载 | 每次挂载重新读 + 重新解析——刻意如此，墙永不过期 |
 | 正文（html / 侧车文件） | **宿主**（`state.json` + `bodies/`，受缓存 TTL 与预算约束） | 重启 | 打开条目时 `getEntryBody` |
-| 位置：视图、打开的条目、正文锚点、墙偏移 | **页面记忆 + `sessionStorage`** | 重新挂载、切会话、页面重启（同一标签页） | 挂载时 hydrate；锚点在每次正文重建时重新应用，布局增长期间重新测量 |
+| 位置：视图、打开的条目、正文锚点、墙偏移 | **页面记忆 + `sessionStorage`** | 重新挂载、切会话、页面重启（同一标签页） | 挂载时 hydrate；锚点在每次正文重建时重新应用，布局增长期间重新测量，译文视图改变几何时重新落锚 |
 | 译文文本 | 浏览器（`translate.ts` 句子记忆，4000 句） | 这个页面 | 从记忆重跑（通常不发请求）——绝不持久化 |
 | 翻译会话（按语言对） | **页面记忆** | 这个页面 | 复用——绝不重建，因为 `create()` 需要用户手势 |
 | 地球开关 + 视图（按条目） | **页面记忆** | 这个页面 | 每次正文重建都重新应用 |
@@ -43,8 +43,8 @@ Status: implemented
 
 ### 改动
 
-- `client/session.ts`：按条目的位置变成 `ReaderReadingAnchor`——视口顶部所在正文顶层块的序号、块内偏移，以及作为兜底的像素偏移（`rememberReadingPosition`）。
-- `client/ReaderPane.tsx`：读者滚动时从 DOM 里读出锚点（跳过翻译自己插入的 reveal 行，否则会把块的序号顶偏），每次正文重建都重新应用，**用赋值是否真的到达目标**来判定（而不是 scrollHeight），并在布局增长时重新应用（对正文挂 `ResizeObserver`，窗口 `POSITION_SETTLE_MS`），直到读者自己滚动接管为止。
+- `client/session.ts`：按条目的位置变成 `ReaderReadingAnchor`——视口顶部所在正文顶层块的序号、块内偏移、块内文本的字符偏移（于是同一块的译文渲染也能解析出位置），以及作为兜底的像素偏移（`rememberReadingPosition`）。
+- `client/ReaderPane.tsx`：读者滚动时从 DOM 里读出锚点（跳过翻译自己插入的 reveal 行，否则会把块的序号顶偏），每次正文重建都重新应用，**用赋值是否真的到达目标**来判定（而不是 scrollHeight），并在布局增长时重新应用（对正文挂 `ResizeObserver`，窗口 `POSITION_SETTLE_MS`），直到读者自己滚动接管为止；译文视图变化时也重新落锚（一个按 `translateView` / `translatePhase` 键的 effect 重新测量并重新应用——视图切换在 settle 窗口早已关闭之后改写块几何）。
 - 恢复窗口渲染详情面，而不是墙。
 
 ## Alternatives considered
