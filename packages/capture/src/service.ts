@@ -210,11 +210,11 @@ export class CaptureService {
 
     // Belt: the landed URL passes the gate again even though every hop was
     // already checked — a client-side navigation is still a navigation.
-    const landed = await checkResolvedTarget(new URL(page.url()), this.lookup).catch((): CaptureUrlVerdict => ({
-      ok: false,
-      code: 'capture/invalid-url',
-      message: 'the landed URL does not parse',
-    }))
+    const landedUrl = safeUrl(page.url())
+    if (landedUrl === undefined) {
+      throw new RemoteError('capture/invalid-url', 'the landed URL does not parse', { url: '' })
+    }
+    const landed = await checkResolvedTarget(landedUrl, this.lookup)
     if (!landed.ok) throw refusalError(landed)
 
     await waitForQuiescence(() => inFlight, QUIESCENCE_QUIET_MS, QUIESCENCE_MAX_MS)
@@ -306,8 +306,13 @@ export async function waitForQuiescence(inFlight: () => number, quietMs: number,
 
 /** The scheme of a request URL, or undefined when it does not parse. */
 function safeScheme(url: string): string | undefined {
+  return safeUrl(url)?.protocol
+}
+
+/** Parse a URL, or undefined when it does not parse. */
+function safeUrl(url: string): URL | undefined {
   try {
-    return new URL(url).protocol
+    return new URL(url)
   } catch {
     return undefined
   }
@@ -315,9 +320,6 @@ function safeScheme(url: string): string | undefined {
 
 /** The host of a URL, or undefined when it does not parse. */
 function safeHost(url: string): string | undefined {
-  try {
-    return new URL(url).hostname.replace(/\.$/, '')
-  } catch {
-    return undefined
-  }
+  const hostname = safeUrl(url)?.hostname
+  return hostname?.replace(/\.$/, '')
 }

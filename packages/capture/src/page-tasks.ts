@@ -416,8 +416,12 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
         if (best === undefined || compareSpecificity(part.specificity, best.specificity) > 0) best = part
       }
       if (best === undefined) continue
-      for (const declaration of rule.declarations) {
-        consider(declaration.prop, declaration.value, declaration.important, best.specificity, rule.order)
+      // `at` = rule order scaled, plus the declaration's index INSIDE the rule:
+      // two declarations of one property in one rule (vendor-fallback pairs
+      // like `display: -webkit-box; display: flex`) resolve to the LAST one,
+      // as the real cascade does.
+      for (const [d, declaration] of rule.declarations.entries()) {
+        consider(declaration.prop, declaration.value, declaration.important, best.specificity, rule.order * 100_000 + d)
       }
     }
     const inline = (el as HTMLElement).style

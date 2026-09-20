@@ -79,6 +79,17 @@ describe('inlineStylesAndSerialize: CSSOM inlining', () => {
     expect(result.html).toContain('color: blue')
   })
 
+  it('the LAST of two same-property declarations in one rule wins (vendor-fallback pairs)', () => {
+    setPage(`<html><head><style>
+      .box { color: red; color: blue }
+    </style></head><body>
+      <p class="box">x</p>
+    </body></html>`)
+    const result = serializeDocument()
+    expect(result.html).toContain('color: blue')
+    expect(result.html).not.toContain('color: red')
+  })
+
   it('lets !important rules beat the inline style, and the inline style beat plain rules', () => {
     setPage(`<html><head><style>
       .a { color: red !important }
