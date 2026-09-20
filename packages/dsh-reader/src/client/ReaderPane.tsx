@@ -834,6 +834,26 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     wallOn, wallBoth, cardTranslations,
   ])
 
+  /**
+   * The unmount flush: the mirror above is a PASSIVE effect, and a pane that is
+   * reseated in the same commit window as the reader's last gesture (a dockkit
+   * split moving the tab body) can unmount before the flush — the next mount
+   * then hydrates the PREVIOUS narrowing (the 3199 report: source filter set,
+   * split, and the box came back empty). Render writes the ref synchronously on
+   * every commit, and the cleanup — which DOES always run — records it. The
+   * same `hydrateStartedRef` guard as the mirror: a pane that never hydrated
+   * must not overwrite the record with the store's defaults.
+   */
+  const narrowingRef = useRef<Parameters<typeof patchSession>[0] | null>(null)
+  narrowingRef.current = {
+    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+    wallOn, wallBoth, cardTranslations,
+  }
+  useEffect(() => () => {
+    if (!hydrateStartedRef.current) return
+    if (narrowingRef.current !== null) patchSession(narrowingRef.current)
+  }, [])
+
   /** The class names `translate.ts` decorates the article with. */
   const translateClasses = useMemo<TranslateClasses>(
     () => ({

@@ -20,7 +20,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReaderPaneProps } from '../src/client/contract.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
@@ -2276,6 +2276,150 @@ describe('coming back to the pane puts the reader where they were', () => {
     fireEvent.click(screen.getByTitle(zh['action.back']))
     await waitFor(() => {
       expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('An English article')
+    })
+  })
+
+  it('restores a source-filter narrowing across a remount (the 3199 repro)', async () => {  // Live repro on 3199: source filter set (query `#rss-…`), a dockkit split
+    // remounts the pane body, and the box came back EMPTY. Two feeds, so the
+    // narrowing is observable in the rows, not just the box.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    const search = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    fireEvent.change(search, { target: { value: '#hn' } })
+    await waitFor(() => {
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
+    })
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await second.settle()
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
+    })
+  })
+
+  it('keeps the narrowing through a remount AND the add-source flow', async () => {
+    // The full 3199 sequence: filter → split (remount) → 新增灵感 → subscribed
+    // → dialog closes. The wall must still be narrowed at the end of it.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: '#hn' } })
+    await screen.findByText('甲源的条目')
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+      addAnswer: { ok: true, value: { outcome: 'subscribed', kind: 'rss', id: 'new', label: '新源' } },
+    })
+    await second.settle()
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    })
+    // The add flow on the remounted pane.
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const dialog = await screen.findByRole('dialog')
+    const input = await within(dialog).findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://example.com/new.xml' } })
+    fireEvent.click(within(dialog).getByText(zh['action.submit']))
+    await within(dialog).findByText(zh['verdict.subscribed'].replace('{label}', '新源'))
+    fireEvent.click(within(dialog).getByText(zh['action.done']))
+    // The narrowing is still there — box and rows alike.
+    expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    await waitFor(() => {
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
+    })
+  })
+
+  it('flushes the last committed narrowing on unmount, even if the mirror never ran', async () => {
+    // The mirror into the page memory is a PASSIVE effect: a pane reseated in
+    // the same commit window as the reader's last gesture can unmount before
+    // the flush. The unmount cleanup is the guarantee that survives that —
+    // cleanups always run. The forgetSession() here stands in for "the mirror
+    // never wrote": without the cleanup flush, the next mount finds nothing.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: '#hn' } })
+    await screen.findByText('甲源的条目')
+    forgetSession()
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await second.settle()
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    })
+  })
+
+  it('restores a source filter together with the open detail view', async () => {
+    // view=detail + query travel together: the article comes back AND the wall
+    // behind it is still narrowed.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: '#hn' } })
+    fireEvent.click((await screen.findAllByRole('button', { name: /甲源的条目/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
     })
   })
 
