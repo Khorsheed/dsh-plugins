@@ -1,8 +1,8 @@
 # 灵感空间内容摄入：渲染抓取与链接解析（reader-ingest-capture-documents）
 
 - **分类**：plugin
-- **状态**：planned
-- **最后更新**：2026-09-20
+- **状态**：in-progress
+- **最后更新**：2026-09-21
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）。无重复提案。三处**相关**而非重复：[browser-pane](../closed/2026-09-13-browser-pane.md)（closed（放弃）——那是"显示型"内嵌浏览器，本提案的 capture 是"捕获型"抓取后端，复用其评审沉淀的进程模型与 SSRF/许可设计，但不交付帧串流/人机同视图）；[quote-anything](2026-09-16-quote-anything.md) 与 [canvas-space](2026-09-16-canvas-space.md) 是摄入产物的消费方（引用/画布），方向相反不构成重复；阅读器现状与重写决策见 [reader 重写 Agent Note](../../.agents/notes/implemented/feature/2026-09-17-reader-rewrite.md) 与体验梳理 `docs/upstream-proposals/2026-09-17-reader-inspiration-journey.md`。
 - **官方依赖**：纯插件。capture 包使用 `puppeteer-core` + Chrome for Testing（npm 依赖，非官方包改动）；链接解析用 arxiv 公开 API 与 Crossref API（均无鉴权）。长期可向上游提 `fetchRendered` 类缝（届时登记 `docs/upstream-seam-registry.md`），不阻塞。
 
