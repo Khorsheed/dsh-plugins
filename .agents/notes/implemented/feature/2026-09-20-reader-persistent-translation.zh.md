@@ -18,6 +18,8 @@ Status: implemented
 - **两层都带 schema 版本**（`TRANSLATION_STORAGE_VERSION`）：浏览器 Translator 模型升级或这里的切句变化时 bump，旧记录全部读作 MISS，由下一次写入或预算巡查惰性淘汰——绝不主动清空。
 - **三个 Remote 动词，刻意最少**：`getEntryTranslation(entryId)`（精确映射，宿主侧解析 sidecar）、`getSentenceTranslations(pair, hashes)`（切片——客户端自己算正文句子的哈希，整表永不过线）、`rememberSentences(pair, entries, recalled, entryId?, bodyHash?)`（一次运行一批写：learned 落库、recalled 续命、条目映射按本次运行的全句集重写；文件先于文档，`storeRaw` 的顺序）。
 - **客户端**：`translate.ts` 的 `MEMORY` 现在按语言对分键，并且是写穿透**镜像**——`runTranslation`/`translateTexts` 返回 `learned`/`recalled` 两份清单，面板按运行一次写回（运行就是批的边界；不存在按句写入）。`startTranslation` 在花模型之前先热记忆——条目映射优先（pair + `bodyHash` 双闸），再为没盖到的句子要全局切片；整墙翻译按语言组同样先热。会话、地球记录、恢复编排都不变：重载后地球是灭的，等读者点一下，然后正文从磁盘重绘，模型不沾。
+- **联动规则**（用户 2026-09-20 同日批准）：条目的映射随它的**正文**一起死——`boundAnnotations` 的预算淘汰、`bodyHash` 不再匹配的 `storeEntryBody`（客户端给它存的标记算哈希；同一份正文重存则保留）、以及 `removeSource`（调用方带上它解析出的条目 id；链接源的唯一条目宿主可推导）都在同一次提交里丢掉该条目的译文。全局句子记忆永不参与联动——它跨条目设计。已**过期**但仍在盘的正文保留其映射：TTL 是服务端决定，不是移除；联动在下一次成功重抓的 `storeEntryBody` 才触发。缓存正文不与删除源联动——正文预算照旧拥有它们的生命周期。
+- **存储面**（用户 2026-09-20 同日批准）：再多两个动词——`getStorageStats`（按层聚合条数与字符数；读数不把表带过线）与 `clearTranslations`（清两层，其它一律不动；文件由提交管道自己的 `pruneBodies` 带走）。订阅管理页按其现有设置行惯例增加存储区：原文读数、译文读数、预算输入（MB，blur/Enter 经 `setCachePolicy` 提交）、两步的「清空」按钮。
 
 ## Alternatives considered
 
@@ -31,15 +33,15 @@ Status: implemented
 
 - 重载之后，文章和位置照旧回来，地球照旧等手势——手势之后，译文是读盘，不是跑模型。
 - 面板的页面记忆不再是任何译文唯一的副本；`primeMemory` 绝不覆盖页面里较新的写入。
-- `boundAnnotations` 与 `cleanupAnnotations` 现在把译文（以及顺手修掉的裸 `fetch` 记录）当作承重内容——正文淘汰或一次标签操作不再把它们带走。
+- `cleanupAnnotations` 把译文（以及顺手修掉的裸 `fetch` 记录）当作承重内容，一次标签操作绝不会带走它们；而正文淘汰恰好相反——条目映射随正文一起走（上面的联动规则），因为键在一个已不存在的正文上的映射回答不了任何东西。
 - 隐私故事是重述，不是放弃：模型照旧在设备上跑；落盘的是派生句子对，放在缓存正文旁边，共用一个预算，随同一个目录卸载。
 - `dsh.compat.notes` 与两份 README 都带新的落盘故事。
 
 ## Testing
 
-`packages/dsh-reader` 共 311 个测试（+21；每个新用例都对着改动前的代码红过——宿主用例对着不存在的动词，客户端用例对着不热的面板/不分键的记忆）：
+`packages/dsh-reader` 共 320 个测试（相对功能前的基线 +30；每个新用例都对着改动前的代码红过——宿主用例对着不存在的动词，客户端用例对着不热的面板/不分键的记忆）：
 
-- `tests/boot.spec.ts`（+6，真 context + 临时目录）：跨重启的语言对分键；条目映射（内联与 sidecar、淘汰连带清扫）；跨层 LRU 淘汰；旧 schema 读作 miss 且不主动清、下一次写入替换；`recalled` 推进使用时钟。
-- `tests/annotations.spec.ts`（+6，纯函数）：共享预算跨两层 LRU、旧版本见到即淘汰、数量上限、预算内原样、normalizer 的惰性保留、正文淘汰时 `boundAnnotations` 保住译文。
+- `tests/boot.spec.ts`（+12，真 context + 临时目录）：跨重启的语言对分键；条目映射（内联与 sidecar、淘汰连带清扫）；跨层 LRU 淘汰；旧 schema 读作 miss 且不主动清、下一次写入替换；`recalled` 推进使用时钟。联动规则：预算淘汰正文带走映射（记忆不动）、bodyHash 变了的重抓丢掉映射（同体重存保留）、过期但未移除的正文保留映射、removeSource 恰好只丢该源条目的映射。外加 `getStorageStats` 聚合与 `clearTranslations` 清两层且其它不动。
+- `tests/annotations.spec.ts`（+6，纯函数）：共享预算跨两层 LRU、旧版本见到即淘汰、数量上限、预算内原样、normalizer 的惰性保留、`boundAnnotations` 让译文随正文走而标签留下。
 - `tests/translate.client.spec.ts`（+4）：语言对分键（别的对 miss 且重付）、`learned`/`recalled` 清单、`primeMemory` 热灌语义、哈希稳定。
-- `tests/ReaderPane.client.spec.tsx`（+4）：存下的条目映射零模型调用上屏；`bodyHash` 失配跳过映射但全局切片仍作答；一次运行恰好一批写回（pair + entryId + bodyHash）；完整刷新重演——文章从 `sessionStorage` 回来、地球点一下、整篇来自存储、零次新模型调用、recall 批次推进时钟。
+- `tests/ReaderPane.client.spec.tsx`（+7）：存下的条目映射零模型调用上屏；`bodyHash` 失配跳过映射但全局切片仍作答；一次运行恰好一批写回（pair + entryId + bodyHash）；完整刷新重演——文章从 `sessionStorage` 回来、地球点一下、整篇来自存储、零次新模型调用、recall 批次推进时钟。管理页：存储区渲染聚合读数与当前预算、改预算经策略提交且保住 TTL、清空按钮两步且事后重读。
