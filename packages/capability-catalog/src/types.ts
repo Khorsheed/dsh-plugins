@@ -297,7 +297,7 @@ export interface CatalogAddSkillRequest {
   readonly channel: AddSkillChannel
   /** Base64-encoded zip/tgz bytes for `zip`; opaque for `github`. */
   readonly payload: string
-  /** owner/repo[/path] or local dir path for `command`. */
+  /** owner/repo, a git URL (a host-prefixed or pasted link and an in-repo subpath resolve to the same clone), or a local dir path for `command`. */
   readonly repo?: string
   /** Selected skill sub-directory names when `repo` is a multi-skill container dir. */
   readonly skills?: readonly string[]

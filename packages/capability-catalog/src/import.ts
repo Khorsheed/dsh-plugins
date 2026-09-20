@@ -303,14 +303,107 @@ export function parseRepoSpec(spec: string): RepoSpec | undefined {
   return ref === undefined ? undefined : { ref, skills }
 }
 
-/** Turn a source reference (owner/repo or a git URL) into a clone URL. */
-function refToCloneUrl(ref: string): string | undefined {
-  if (/^https?:\/\//.test(ref)) return ref
-  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/.test(ref)) {
-    const [owner, repo] = ref.split('/')
-    return `https://github.com/${owner}/${repo}`
+/** A copy-pasted SCP-style remote (`git@host:owner/repo`): a clone URL, never `owner/repo`. */
+const SCP_STYLE_RE = /^[^/@\s]+@[^/\s:]+:/
+/** A scheme-prefixed spec, which must carry a path after its host. */
+const SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//
+/** The only host whose URL shape is known to be `owner/repo[/path…]`. */
+const GITHUB_HOST = 'github.com'
+/** Segments a copied browser URL puts in front of the real in-repo path. */
+const BROWSER_PATH_MARKERS = new Set(['tree', 'blob'])
+/** Local-path shapes: `stat` already ran, so a miss here is a missing directory, not a repo spec. */
+const LOCAL_PATH_RE = /^(?:~\/|\/|\.\.?\/|\.\.?$)/
+
+/** Whether a spec's first segment names a host rather than an owner (`github.com`, `localhost:3000`). */
+function isHostSegment(segment: string): boolean {
+  return segment !== '.' && segment !== '..' && (segment.includes('.') || segment.includes(':'))
+}
+
+/** A parsed source reference: the clone URL plus the in-repo path to search. */
+interface CloneTarget {
+  /** URL handed to `git clone`. */
+  readonly url: string
+  /** In-repo path holding the skill(s); `''` searches the repository root. */
+  readonly subpath: string
+}
+
+/** A resolved clone target, or why the spec could not be read as a repository. */
+type CloneTargetResult =
+  | ({ readonly ok: true } & CloneTarget)
+  | { readonly ok: false; readonly error: string }
+
+/**
+ * Build a target from `owner/repo` plus whatever path followed it, dropping the
+ * copy-paste noise a browser URL carries: a `tree/<branch>`/`blob/<branch>`
+ * marker, and a trailing `SKILL.md` naming the file rather than its directory.
+ */
+function targetFromParts(host: string | undefined, owner: string, repo: string, rest: readonly string[]): CloneTargetResult {
+  let path = rest
+  if (path.length >= 2 && BROWSER_PATH_MARKERS.has(path[0] ?? '')) path = path.slice(2)
+  if (path[path.length - 1] === 'SKILL.md') path = path.slice(0, -1)
+  return {
+    ok: true,
+    url: `${host === undefined ? `https://${GITHUB_HOST}` : `https://${host}`}/${owner}/${repo}`,
+    subpath: path.join('/'),
   }
-  return undefined
+}
+
+/**
+ * Resolve a source reference into a clone URL plus an optional in-repo subpath.
+ *
+ * Accepted: a git URL with a transport, `owner/repo`, and either of those behind
+ * a host — `github.com/owner/repo`, `github.com/owner/repo/skills/name`, a copied
+ * browser URL's `tree/<branch>/…` or `blob/<branch>/SKILL.md`. Only `github.com`
+ * gets the `owner/repo` split; on any other host the whole path is the repository
+ * (GitLab subgroups are real paths, not repo + subpath), so it is handed to git
+ * untouched.
+ *
+ * Getting this wrong is what the host rule exists for: the old code matched the
+ * `owner/repo` shape anywhere in the string and kept only the FIRST TWO segments,
+ * so the everyday paste `github.com/larashero3-dotcom/lieflat-charts` cloned
+ * `https://github.com/github.com/larashero3-dotcom` — the host taken for the
+ * owner, the real repo name silently dropped — and failed with GitHub's
+ * "Repository not found", which reads like the skill is unsupported.
+ * @param ref - the source reference from `parseRepoSpec`.
+ */
+function resolveCloneTarget(ref: string): CloneTargetResult {
+  // A copied URL's `?tab=`/`#readme` suffix is never part of a git URL.
+  const spec = (ref.trim().split(/[?#]/)[0] ?? '').replace(/\.git$/, '')
+  if (spec === '') return { ok: false, error: 'the spec is empty — use owner/repo or a git URL' }
+
+  const urlMatch = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/]+)\/(.*)$/.exec(spec)
+  if (urlMatch !== null) {
+    const host = urlMatch[1] as string
+    const rest = (urlMatch[2] as string).split('/').filter(part => part !== '')
+    if (host.toLowerCase() !== GITHUB_HOST || rest.length <= 2) return { ok: true, url: spec, subpath: '' }
+    return targetFromParts(host, rest[0] as string, rest[1] as string, rest.slice(2))
+  }
+  // `git@host:owner/repo` and a scheme with no path are not `owner/repo`: the
+  // former is a clone URL as it stands, the latter names no repository at all.
+  if (SCP_STYLE_RE.test(spec)) return { ok: true, url: spec, subpath: '' }
+  if (SCHEME_RE.test(spec)) return { ok: false, error: `${spec} has no repository path` }
+
+  const parts = spec.split('/').filter(part => part !== '')
+  const first = parts[0]
+  const host = first !== undefined && isHostSegment(first) ? parts.shift() : undefined
+  if (parts.length < 2) {
+    const shown = [host, ...parts].filter(part => part !== undefined).join('/')
+    return {
+      ok: false,
+      error: `${shown} is not a repository — a source needs owner/repo (a host or a user page alone has nothing to clone)`,
+    }
+  }
+  if (host !== undefined && host.toLowerCase() !== GITHUB_HOST) {
+    return { ok: true, url: `https://${host}/${parts.join('/')}`, subpath: '' }
+  }
+  return targetFromParts(host, parts[0] as string, parts[1] as string, parts.slice(2))
+}
+
+/** An actionable line appended to a failed clone, keyed off git's own stderr. */
+function cloneFailureHint(text: string): string {
+  if (/Repository not found/i.test(text)) return '\ncheck the owner and repo name: GitHub answers "Repository not found" for a misspelled repo and for a private one alike.'
+  if (/Could not resolve host/i.test(text)) return '\ncheck the host in the clone URL.'
+  return ''
 }
 
 /** A skill bundle found inside a cloned source repo. */
@@ -385,7 +478,8 @@ async function listSkillDirs(dir: string): Promise<string[]> {
 }
 
 /**
- * Install a skill by cloning a source repo (owner/repo, git URL, or a whole
+ * Install a skill by cloning a source repo (owner/repo, a git URL, a host-prefixed
+ * `github.com/owner/repo[/path]`, a copied browser URL, or a whole
  * `npx skills add <repo> [--skill <name>]` command) into the managed root. This
  * is the dsh-native "install from source" — a plain `npx skills add` writes into
  * an external skills dir the dsh filesystem watcher does not scan.
@@ -394,6 +488,8 @@ async function listSkillDirs(dir: string): Promise<string[]> {
  * only one, `request.skills`, or the command's `--skill` values) is then lifted
  * to `<managed root>/<frontmatter name>/`. A repo carrying several skills and no
  * selection is refused with the list rather than installing the shallowest one.
+ * A spec naming a path inside the repo (`…/skills/<name>`) searches only that
+ * path.
  * @param request - the add-skill request (channel 'command', repo carries the spec).
  * @param dshHome - the dsh home root.
  */
@@ -454,9 +550,15 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
     if (children.length === 1 && only !== undefined) return copyInto(join(expanded, only), only)
     return copyInto(expanded)
   }
+  // A path-shaped spec reached this point only because `stat` missed it (the
+  // directory case returned above): say so instead of reading its segments as an
+  // owner/repo and cloning something that does not exist.
+  if (LOCAL_PATH_RE.test(trimmed)) return { ok: false, error: `local directory not found: ${expanded}` }
   const source = parseRepoSpec(spec)
-  const url = source === undefined ? undefined : refToCloneUrl(source.ref)
-  if (source === undefined || url === undefined) return { ok: false, error: `unrecognized repo spec: ${spec || '(empty)'}` }
+  if (source === undefined) return { ok: false, error: `unrecognized repo spec: ${spec || '(empty)'} — use owner/repo, a git URL, or an existing local directory` }
+  const resolved = resolveCloneTarget(source.ref)
+  if (!resolved.ok) return { ok: false, error: `unrecognized repo spec: ${resolved.error}` }
+  const { url, subpath } = resolved
   const root = managedRoot(request.root, dshHome)
   const repoName = url.replace(/\.git$/, '').split('/').pop() ?? 'skill'
   // Clone into a scratch directory, never straight into `root`: a partial clone
@@ -469,10 +571,19 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
     try {
       await execFileAsync('git', ['clone', '--depth', '1', url, scratch])
     } catch (error) {
-      return { ok: false, error: `install failed: ${String(error)}` }
+      const text = String(error)
+      return { ok: false, error: `install failed: ${text}${cloneFailureHint(text)}` }
     }
-    const skills = await collectSkills(scratch)
-    if (skills.length === 0) return { ok: false, error: 'cloned repo has no SKILL.md' }
+    // A spec that named a path inside the repo searches only there: the rest of the
+    // repo is not a candidate, and a miss is a miss, not a silent whole-repo scan.
+    const searchRoot = subpath === '' ? scratch : join(scratch, subpath)
+    if (searchRoot !== scratch && !await pathExists(searchRoot)) {
+      return { ok: false, error: `no such path in the repo: ${subpath} — the clone succeeded, but it has nothing there` }
+    }
+    const skills = await collectSkills(searchRoot)
+    if (skills.length === 0) {
+      return { ok: false, error: subpath === '' ? 'cloned repo has no SKILL.md' : `cloned repo has no SKILL.md under ${subpath}` }
+    }
     // An explicit selection (a chooser's `request.skills`) and `--skill` flags in
     // a pasted command are the same intent; the caller wins when both are present.
     const selections = request.skills !== undefined && request.skills.length > 0 ? request.skills : source.skills

@@ -10,7 +10,7 @@
 - **Tools**：折叠卡 + 渠道归因（`mcp__` 前缀 / 生成的官方白名单 / apply 时序差分）。
 - **新增 skill**：一个弹窗三来源——
   - **文件上传**：拖拽（或点选）单个 `SKILL.md`、含 SKILL.md 的 `.zip`、或整个 skill 文件夹（零依赖 `node:zlib` 解压）。
-  - **命令安装**：填 `owner/repo`、git URL，或整条 `npx skills add <repo> [--skill <名字>]` 命令——参数会被消费，绝不进入克隆 URL。host 克隆到临时目录，再把选中的技能包抬到 `<root>/<name>/`（dsh 原生安装；真 `npx skills add` 会装到 dsh 扫不到的外部目录）。仓库含多个技能时用 `--skill` 指定；不指定会报错并列出可选项。
+  - **命令安装**：填 `owner/repo`、git URL，或整条 `npx skills add <repo> [--skill <名字>]` 命令——参数会被消费，绝不进入克隆 URL。浏览器里复制的链接可直接粘贴：`github.com/owner/repo`、带仓库内路径的 `github.com/owner/repo/skills/<name>`、以及 `tree/<分支>/…` / `blob/<分支>/SKILL.md` 形状的 URL 都会归一到同一个克隆，开头的 host 会被剥掉（不再被当成 owner），仓库内路径只在该路径下搜索而不是全仓扫描。只有 `github.com` 会拆成 owner/repo；其他 host 的整条路径就是仓库本身（GitLab 子组），按原样克隆。只给 host 不给仓库、路径在仓库里不存在、克隆失败，各有各的报错。host 克隆到临时目录，再把选中的技能包抬到 `<root>/<name>/`（dsh 原生安装；真 `npx skills add` 会装到 dsh 扫不到的外部目录）。仓库含多个技能时用 `--skill` 指定；不指定会报错并列出可选项。
   - **从本机目录**：本地 skill 目录可列出（每个 `<name>/SKILL.md`），用户勾选要装的，host 拷贝到受管根。
 
 每个来源都可选目标根（`$DSH_HOME/skills` / `.agents/skills`）与是否进模型 catalog；skill-filesystem watcher 自动发现结果。

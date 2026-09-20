@@ -366,6 +366,14 @@ mkdir -p "$dest"
 cp -R "$STUB_REPO"/. "$dest"/
 `
 
+/** Stub `git` for the failure path: log argv, then answer like GitHub on a bad repo. */
+const GIT_STUB_REMOTE_404 = `#!/bin/sh
+echo "$*" >> "$GIT_LOG"
+echo "remote: Repository not found." >&2
+echo "fatal: repository 'https://github.com/owner/repo/' not found" >&2
+exit 1
+`
+
 const TYPESAFE = `---
 name: typesafe-ai
 description: Design TypeSafe workflows
@@ -379,10 +387,10 @@ description: Design TypeSafe workflows
  * be exercised without the network. Returns the call's result plus the argv each
  * `git` invocation actually received.
  */
-async function withGitStub<T>(fixture: string, fn: () => Promise<T>): Promise<{ result: T; argv: readonly string[] }> {
+async function withGitStub<T>(fixture: string, fn: () => Promise<T>, stub = GIT_STUB): Promise<{ result: T; argv: readonly string[] }> {
   const bin = await mkdtemp(join(tmpdir(), 'cap-gitbin-'))
   const log = join(bin, 'git.log')
-  await writeFile(join(bin, 'git'), GIT_STUB, 'utf8')
+  await writeFile(join(bin, 'git'), stub, 'utf8')
   await chmod(join(bin, 'git'), 0o755)
   const prev = { path: process.env['PATH'], repo: process.env['STUB_REPO'], log: process.env['GIT_LOG'] }
   process.env['PATH'] = `${bin}:${prev.path ?? ''}`
@@ -508,5 +516,126 @@ describe('commandInstall from a source repo', () => {
     await writeFile(join(fixture, 'README.md'), 'no skill here', 'utf8')
     const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo'), home))
     expect(result).toEqual({ ok: false, error: 'cloned repo has no SKILL.md' })
+  })
+})
+
+/**
+ * The spec forms a user actually pastes. A host (and an in-repo path) used to be
+ * read as the `owner/repo` pair and then truncated to two segments, so
+ * `github.com/<user>/<repo>` cloned `https://github.com/github.com/<user>` and
+ * failed with GitHub's "Repository not found" — which reads like the skill is
+ * unsupported rather than like the URL was misread.
+ */
+describe('commandInstall source specs', () => {
+  const request = (repo: string): CatalogAddSkillRequest => ({
+    channel: 'command',
+    payload: '',
+    repo,
+    root: 'user',
+    modelInvocable: true,
+  })
+
+  it('strips a pasted host instead of taking it for the owner', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'lieflat-charts': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('github.com/larashero3-dotcom/lieflat-charts'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    // The regression: this used to clone https://github.com/github.com/larashero3-dotcom,
+    // dropping the real repo name, and answered "Repository not found".
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/larashero3-dotcom\/lieflat-charts /)
+  })
+
+  it('searches only the in-repo path the spec named', async () => {
+    const home = await tmpHome()
+    // Two skills sit at the fixture's root, so the multi-skill refusal would fire
+    // on a whole-repo scan: installing one proves the search really narrowed.
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE, unrelated: SKILL })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('github.com/owner/repo/skills/typesafe-ai'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+  })
+
+  it('reads a copied browser tree URL as repo + path', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE, unrelated: SKILL })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('https://github.com/owner/repo/tree/main/skills/typesafe-ai'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+    expect(argv[0]).not.toContain('tree/main')
+  })
+
+  it('reads a copied blob URL for the SKILL.md as its directory', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('https://github.com/owner/repo/blob/main/skills/typesafe-ai/SKILL.md'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+  })
+
+  it('drops a `.git` suffix and a copied query suffix', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { argv } = await withGitStub(fixture, () => commandInstall(request('github.com/owner/repo.git?tab=readme-ov-file'), home))
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+  })
+
+  it('keeps a non-GitHub host\'s whole path (its paths are not owner/repo)', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    // GitLab subgroups make the repo itself a deeper path; only github.com is split.
+    const { argv } = await withGitStub(fixture, () => commandInstall(request('gitlab.com/group/sub/repo'), home))
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/gitlab\.com\/group\/sub\/repo /)
+  })
+
+  it('refuses a host or a user page with no repository, without cloning', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('github.com/larashero3-dotcom'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('github.com/larashero3-dotcom is not a repository')
+    expect(argv).toEqual([])
+  })
+
+  it('reports an in-repo path that the repo does not have', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('github.com/owner/repo/nope'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('no such path in the repo: nope')
+  })
+
+  it('reports a missing local directory instead of cloning it as owner/repo', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('/nonexistent/skills/dir'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('local directory not found: /nonexistent/skills/dir')
+    expect(argv).toEqual([])
+  })
+
+  it('adds an actionable hint to a failed clone, keeping git\'s own message', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo'), home), GIT_STUB_REMOTE_404)
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Repository not found')
+    expect(result.error).toContain('check the owner and repo name')
+  })
+
+  it('passes an SCP-style remote through whole', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('git@github.com:owner/repo.git'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 git@github\.com:owner\/repo /)
+  })
+
+  it('refuses a URL with no repository path', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('https://github.com'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('https://github.com has no repository path')
+    expect(argv).toEqual([])
   })
 })

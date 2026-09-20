@@ -25,10 +25,19 @@ English | [中文](README.zh.md)
     `node:zlib` zip reader).
   - **命令安装 / Install from source**: give an `owner/repo`, a git URL, or a
     whole `npx skills add <repo> [--skill <name>]` command — flags are consumed,
-    never cloned. The host clones into a scratch dir and lifts the chosen skill
-    bundle to `<root>/<name>/` (the dsh-native install; a real `npx skills add`
-    writes into an external skills dir dsh cannot scan). `--skill` picks one from
-    a repo carrying several; without it such a repo is refused with the list.
+    never cloned. A link copied out of a browser works as pasted: a
+    `github.com/owner/repo` spec, an in-repo path
+    (`github.com/owner/repo/skills/<name>`), and a `tree/<branch>/…` /
+    `blob/<branch>/SKILL.md` URL all resolve to the same clone, the leading host
+    is stripped rather than read as the owner, and the in-repo path is searched
+    instead of the whole repo. Only `github.com` is split into owner/repo; on any
+    other host the whole path is the repository (GitLab subgroups), cloned as
+    given. A host with no repo, a path that is not in the repo, and a failed clone
+    each come back as their own error. The host clones into a scratch dir and
+    lifts the chosen skill bundle to `<root>/<name>/` (the dsh-native install; a
+    real `npx skills add` writes into an external skills dir dsh cannot scan).
+    `--skill` picks one from a repo carrying several; without it such a repo is
+    refused with the list.
   - **从本机目录 / From directory**: a local skill dir can be listed (each
     `<name>/SKILL.md`), the user picks which to install, and the selected ones are
     copied into the managed root.
