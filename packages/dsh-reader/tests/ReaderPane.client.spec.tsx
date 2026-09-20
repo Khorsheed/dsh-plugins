@@ -1930,6 +1930,40 @@ function stubLayout(blockHeight = 300): void {
   })
 }
 
+/**
+ * A variant of the fake layout whose blocks are AS TALL AS THEIR TEXT IS LONG.
+ *
+ * That is the property the translation case needs: a translated block sets
+ * different words of a different length, so its height must actually change —
+ * a fixed-height stub would make "the geometry moved" untestable. Block tops
+ * accumulate; the translation's reveal lines (data-reader-reveal) are not
+ * blocks, exactly as `articleBlocks` sees them.
+ */
+function stubTextLayout(): void {
+  const rect = (top: number, height: number): DOMRect => ({
+    top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}),
+  }) as DOMRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element): DOMRect {
+    const el = this as HTMLElement
+    const scrolled = (document.querySelector('[class*="detailBody"]') as HTMLElement | null)?.scrollTop ?? 0
+    const classes = (el.className ?? '').toString()
+    if (classes.includes('detailBody')) return rect(0, 600)
+    if (classes.includes('article')) return rect(-scrolled, 100_000)
+    const parent = el.parentElement
+    if (parent !== null && (parent.className ?? '').toString().includes('article')) {
+      const blocks = [...parent.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+      let top = 0
+      for (const block of blocks) {
+        const height = Math.max(40, (block.textContent ?? '').length * 10)
+        if (block === el) return rect(top - scrolled, height)
+        top += height
+      }
+      return rect(0, 0)
+    }
+    return rect(0, 0)
+  })
+}
+
 describe('the reading position survives the trip', () => {
 
   // Real top-level blocks, because an anchor IS a block index: a body that is
@@ -2010,10 +2044,13 @@ const settleFrame = async (): Promise<void> => {
     scroller.scrollTop = 620
     fireEvent.scroll(scroller)
     const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
-    // 620px in: block 2 (600..900), 20px into it.
+    // 620px in: block 2 (600..900), 20px into it — and the same place as TEXT:
+    // block 2 is "Third paragraph here, closing the piece." (40 chars), so 20 of
+    // 300px is the 3rd character. The text offset is what a translated (taller
+    // or shorter) rendering of the same block can still resolve.
     await waitFor(() => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620 })
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
     })
     vi.restoreAllMocks()
   })
@@ -2056,5 +2093,49 @@ const settleFrame = async (): Promise<void> => {
     await second.settle()
     await screen.findByText('An English article')
     await waitFor(() => { expect(wallScroller(second.container).scrollTop).toBe(300) })
+  })
+
+  it('keeps the reader at the same sentence when the translation rewrites the geometry', async () => {
+    // The drift the text offset fixes: the anchor's pixel offset into a block
+    // is only valid for the layout it was measured in, and the translated view
+    // sets different words — so switching the globe on used to leave the reader
+    // wherever the stale pixels happened to point.
+    installTranslator()
+    stubTextLayout()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // Block 0 is 42 chars (420px); 500px in is block 1 ("Another paragraph
+    // entirely…", 50 chars = 500px), 80px into it — the 8th character.
+    scroller.scrollTop = 500
+    fireEvent.scroll(scroller)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    await waitFor(() => {
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 1, offset: 80, top: 500, text: 8, textLength: 50 })
+    })
+
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+
+    // After the translation lands, the blocks are taller (the mock's 译： prefix
+    // lengthens every sentence) and the anchor is re-applied THROUGH the text:
+    // block 1 still holds the same sentence, so its new top plus the same
+    // FRACTION of its new text is where the reader must end up — no scroll
+    // gesture involved.
+    const article = ui.container.querySelector('[class*="article"]') as HTMLElement
+    const blocks = [...article.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+    const heightOf = (element: Element): number => Math.max(40, (element.textContent ?? '').length * 10)
+    const expected = heightOf(blocks[0] as Element) + Math.round((8 / 50) * heightOf(blocks[1] as Element))
+    await waitFor(() => { expect(scroller.scrollTop).toBe(expected) })
+    // Sanity: the expected target really is a DIFFERENT place than where the
+    // pixel offset alone would have left the reader (block 1's old top + 80).
+    expect(expected).not.toBe(420 + 80)
+    vi.restoreAllMocks()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })

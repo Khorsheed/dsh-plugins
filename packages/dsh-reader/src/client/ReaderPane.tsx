@@ -80,6 +80,7 @@ import {
   rememberTranslation,
   rememberWallScroll,
   rememberTranslator,
+  type ReaderReadingAnchor,
   type ReaderSessionSnapshot,
 } from './session.ts'
 import css from './ReaderPane.module.css'
@@ -353,10 +354,26 @@ function articleBlocks(article: HTMLElement): HTMLElement[] {
 interface ArticleMetrics {
   /** The article's top in the scroller's content coordinates. */
   readonly contentTop: number
-  /** Each top-level block's top and height, relative to the article. */
-  readonly blocks: readonly { readonly top: number; readonly height: number }[]
+  /** Each top-level block's geometry and text, relative to the article. */
+  readonly blocks: readonly ArticleBlockMetrics[]
   /** The article's own height. */
   readonly height: number
+}
+
+/**
+ * One top-level block, measured.
+ *
+ * `textLength` is captured in the same pass so the scroll handler can record a
+ * TEXT offset without touching the DOM; `element` is what lets a restore
+ * resolve that offset to an exact pixel spot (a Range rect) later.
+ */
+export interface ArticleBlockMetrics {
+  readonly top: number
+  readonly height: number
+  /** How long the block's text was at measure time. */
+  readonly textLength: number
+  /** The block itself, for the text-offset resolution. */
+  readonly element: HTMLElement
 }
 
 /**
@@ -379,7 +396,12 @@ function measureArticle(scroller: HTMLElement, article: HTMLElement): ArticleMet
   const contentTop = articleRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
   const blocks = articleBlocks(article).map(block => {
     const rect = block.getBoundingClientRect()
-    return { top: rect.top - articleRect.top, height: rect.height }
+    return {
+      top: rect.top - articleRect.top,
+      height: rect.height,
+      textLength: block.textContent?.length ?? 0,
+      element: block,
+    }
   })
   return { contentTop, blocks, height: articleRect.height }
 }
@@ -411,6 +433,77 @@ function blockAt(metrics: ArticleMetrics, visibleY: number): { block: number; of
     }
   }
   return { block: found, offset: Math.max(0, visibleY - blocks[found]!.top) }
+}
+
+/**
+ * How far into the anchor block the viewport top sat, in the CURRENT layout.
+ *
+ * A pixel offset into a block is only valid for the layout it was measured in,
+ * and the translated view IS a different layout: the same paragraph sets
+ * different words at a different height, so the recorded `offset` points at the
+ * wrong sentence — the drift the reader reported. The recorded TEXT offset is
+ * the fix: when the block still holds the same text it resolves to an exact
+ * pixel spot (a Range rect over the text node that holds that character); when
+ * the words changed, the same FRACTION of the text is the honest place. An
+ * anchor written before the text offset existed falls back to the pixel offset,
+ * unchanged.
+ *
+ * Exported for the specs; the pane itself reaches it through
+ * `applyReadingPosition`.
+ *
+ * @param block - the anchor block's CURRENT metrics.
+ * @param anchor - the recorded place.
+ * @returns pixels into the block.
+ */
+export function offsetInBlock(block: ArticleBlockMetrics, anchor: ReaderReadingAnchor): number {
+  if (anchor.text !== undefined && anchor.text > 0 && anchor.textLength !== undefined && anchor.textLength > 0) {
+    if (block.textLength === anchor.textLength) {
+      const exact = textOffsetTop(block.element, anchor.text)
+      if (exact !== null) return Math.min(exact, block.height)
+    }
+    // Different words (a translation), or no layout to resolve against: the
+    // place is the same fraction of the text.
+    return Math.round(Math.min(1, anchor.text / anchor.textLength) * block.height)
+  }
+  return anchor.offset
+}
+
+/**
+ * Where a character offset into a block's text sits, in pixels into the block.
+ *
+ * `null` when there is no layout to answer with (jsdom, an unlaid-out body) —
+ * the caller's proportional fallback then applies. This is a layout read, which
+ * is why it runs only on restores and view switches, never in a scroll handler.
+ *
+ * @param block - the block element.
+ * @param charOffset - the character offset into its text.
+ * @returns pixels from the block's top, or `null`.
+ */
+function textOffsetTop(block: HTMLElement, charOffset: number): number | null {
+  try {
+    const doc = block.ownerDocument
+    const walker = doc.createTreeWalker(block, 4 /* NodeFilter.SHOW_TEXT */)
+    let remaining = charOffset
+    let node: Node | null = walker.nextNode()
+    while (node !== null) {
+      const length = (node.textContent ?? '').length
+      if (remaining <= length) break
+      remaining -= length
+      node = walker.nextNode()
+    }
+    if (node === null) return null
+    const range = doc.createRange()
+    range.setStart(node, remaining)
+    range.setEnd(node, remaining)
+    // jsdom's Range has no geometry at all: the method itself is absent.
+    if (typeof range.getBoundingClientRect !== 'function') return null
+    const rect = range.getBoundingClientRect()
+    // A text position has a line height; an all-zero rect is a stub, not a spot.
+    if (rect.height === 0 && rect.width === 0) return null
+    return rect.top - block.getBoundingClientRect().top
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -1662,7 +1755,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (metrics !== null) {
       const block = metrics.blocks[anchor.block]
       if (block !== undefined) {
-        target = Math.max(0, metrics.contentTop + block.top + anchor.offset)
+        target = Math.max(0, metrics.contentTop + block.top + offsetInBlock(block, anchor))
       }
     }
     const before = scroller.scrollTop
@@ -1717,6 +1810,25 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [openEntryId, articleHtml, applyReadingPosition, measure])
 
   /**
+   * A translation rewrites the article's GEOMETRY — different words, different
+   * block heights — whenever it lands or changes view, which is typically long
+   * after the settle window above has closed. Re-measure and re-anchor on those
+   * transitions so the reader stays at the same SENTENCE across an
+   * original↔translation switch (the anchor's text offset is what makes "the
+   * same sentence" computable; `offsetInBlock` owns the mapping).
+   *
+   * A view switch is a deliberate one-shot, so the layout read here is fine —
+   * the no-layout-reads rule is the scroll handler's. `measure()` answering
+   * null (no body on screen yet) skips the apply, and the effect fires on
+   * `openEntryId` changes only through `applyReadingPosition`'s identity —
+   * harmless, because an unmeasured body is exactly what that skips.
+   */
+  useEffect(() => {
+    if (measure() === null) return
+    applyReadingPosition()
+  }, [translateView, translatePhase, measure, applyReadingPosition])
+
+  /**
    * The scroller's own gestures, which is how the reader takes over.
    *
    * `wheel`, `touchmove` and the page keys are things only a person produces:
@@ -1769,6 +1881,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
     const visibleY = top - metrics.contentTop
     const { block, offset } = blockAt(metrics, visibleY)
+    const anchorBlock = metrics.blocks[block]
+    // The same place as a TEXT offset too, so a layout that sets different
+    // words (the translated view) can still find the sentence. From the cached
+    // metrics only — this handler reads no layout and no DOM.
+    if (anchorBlock !== undefined && anchorBlock.height > 0 && anchorBlock.textLength > 0) {
+      const text = Math.round(Math.min(1, offset / anchorBlock.height) * anchorBlock.textLength)
+      rememberReadingPosition(openEntryId, { block, offset, top, text, textLength: anchorBlock.textLength })
+      return
+    }
     rememberReadingPosition(openEntryId, { block, offset, top })
   }, [openEntryId])
 
