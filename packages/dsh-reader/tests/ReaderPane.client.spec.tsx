@@ -1998,41 +1998,55 @@ describe('the card says what the plugin holds, and fetches on demand', () => {
     expect(await screen.findByText(zh['fetch.ready'])).toBeTruthy()
   })
 
-  it('shows the reason on the card, and a bot wall opens in a browser instead of retrying', async () => {
-    // The action belongs to the cause: retrying a wall is a crawler with a
-    // grudge, so the failed pill's click goes to the browser and the reason is
-    // a visible line rather than a tooltip.
+  it('keeps the card one line tall — the reason and its actions live in a popover', async () => {
+    // The action belongs to the cause, but the card's grid must not break: the
+    // reason is NOT on the card (a failed card is the same height as its
+    // neighbours); a tap on the pill opens the popover with the reason and the
+    // action the cause answers.
     const ui = await wallWithStates('failed', 'blocked')
     const label = await screen.findByText(zh['fetch.failed'])
     const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    // The tooltip still carries the reason; the card's text box does not.
     expect(pill.getAttribute('title')).toContain(zh['preview.blocked'])
-    expect(await screen.findByText(zh['preview.blocked'])).toBeTruthy()
+    expect(screen.queryByText(zh['preview.blocked'])).toBeNull()
     fireEvent.click(pill)
+    expect(await screen.findByText(zh['preview.blocked'])).toBeTruthy()
+    fireEvent.click(screen.getByText(zh['detail.readOriginal']))
     await waitFor(() => { expect(ui.mocks.openExternal).toHaveBeenCalledWith(expect.stringContaining('example.com')) })
     expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
   })
 
-  it('retries a transport failure on click', async () => {
+  it('opens the same popover on a transport failure, whose action retries', async () => {
     const ui = await wallWithStates('failed', 'unreachable')
     const label = await screen.findByText(zh['fetch.failed'])
     const pill = label.closest('[class*="fetchPill"]') as HTMLElement
-    expect(pill.getAttribute('title')).toContain('重试')
     fireEvent.click(pill)
+    fireEvent.click(await screen.findByText(zh['detail.refetch']))
     await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
   })
 
-  it('makes a final failure an indicator, not a button', async () => {
+  it('gives a final failure the reason and no action', async () => {
     // A 404 answers the same way forever: no retry, no browser detour — the
-    // pill keeps the reason and takes no gesture.
+    // popover says why and offers nothing.
     const ui = await wallWithStates('failed', 'http')
     const label = await screen.findByText(zh['fetch.failed'])
     const pill = label.closest('[class*="fetchPill"]') as HTMLElement
-    expect(pill.getAttribute('role')).toBeNull()
     expect(pill.getAttribute('title')).not.toContain('重试')
     fireEvent.click(pill)
+    expect(await screen.findByText(zh['preview.http'])).toBeTruthy()
+    expect(screen.queryByText(zh['detail.refetch'])).toBeNull()
+    expect(screen.queryByText(zh['detail.readOriginal'])).toBeNull()
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
     expect(ui.mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('dismisses the popover on the next outside click', async () => {
+    await wallWithStates('failed', 'blocked')
+    fireEvent.click((await screen.findByText(zh['fetch.failed'])).closest('[class*="fetchPill"]') as HTMLElement)
+    expect(await screen.findByText(zh['preview.blocked'])).toBeTruthy()
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => { expect(screen.queryByText(zh['preview.blocked'])).toBeNull() })
   })
 
   it('extracts a payload the host stored while the page was away', async () => {

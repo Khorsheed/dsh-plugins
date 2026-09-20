@@ -238,8 +238,8 @@ export const en = {
   'fetch.failed': 'Fetch failed',
   'fetch.noneTitle': 'Fetch the article now — it keeps going when you leave this page',
   'fetch.readyTitle': 'The full text is cached — open it to read',
-  'fetch.failedTitle': 'Fetch failed: {reason} — click to retry',
-  'fetch.failedOpenTitle': 'Fetch failed: {reason} — click to open it in a browser',
+  'fetch.failedTitle': 'Fetch failed: {reason} — click for details and retry',
+  'fetch.failedOpenTitle': 'Fetch failed: {reason} — click for details',
   'fetch.failedFinalTitle': 'Fetch failed: {reason}',
   'detail.renderFetch': 'Fetch rendered',
 
@@ -427,8 +427,8 @@ export const zh = {
   'fetch.failed': '抓取失败',
   'fetch.noneTitle': '现在就把这篇抓下来 —— 离开这个页面也不会停',
   'fetch.readyTitle': '已有全文，点开就能读',
-  'fetch.failedTitle': '抓取失败：{reason} —— 点一下重试',
-  'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下在浏览器打开',
+  'fetch.failedTitle': '抓取失败：{reason} —— 点一下看详情、可重试',
+  'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下看详情',
   'fetch.failedFinalTitle': '抓取失败：{reason}',
   'detail.renderFetch': '渲染抓取',
 

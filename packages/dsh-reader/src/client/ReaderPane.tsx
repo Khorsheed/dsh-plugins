@@ -730,6 +730,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [sourceFilter, setSourceFilter] = useState('')
   /** The entry whose card menu is open, plus where to anchor it. */
   const [cardMenu, setCardMenu] = useState<{ entryId: string; top: number; left: number } | null>(null)
+  /** The failed fetch pill whose reason popover is open, plus where to anchor it. */
+  const [pillInfo, setPillInfo] = useState<{ entryId: string; top: number; left: number } | null>(null)
   const [tagDraft, setTagDraft] = useState('')
   const [tagInputOpen, setTagInputOpen] = useState(false)
   /** The entry whose tag panel is open on the wall (and where to anchor it). */
@@ -2533,19 +2535,20 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   // Any menu/panel dismisses on the next click outside it — the host's own
   // menus behave that way, and a popover that outlives its context is a trap.
   useEffect(() => {
-    if (cardMenu === null && cardTag === null && !filterOpen && !translateMenu && !wallMenu) return undefined
+    if (cardMenu === null && cardTag === null && !filterOpen && !translateMenu && !wallMenu && pillInfo === null) return undefined
     const dismiss = (event: MouseEvent): void => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"], [class*="translateWrap"]') !== null) return
+      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"], [class*="translateWrap"], [class*="pillPop"]') !== null) return
       setCardMenu(null)
       setCardTag(null)
       setFilterOpen(false)
       setTranslateMenu(false)
       setWallMenu(false)
+      setPillInfo(null)
     }
     window.addEventListener('mousedown', dismiss)
     return () => window.removeEventListener('mousedown', dismiss)
-  }, [cardMenu, cardTag, filterOpen, translateMenu, wallMenu])
+  }, [cardMenu, cardTag, filterOpen, translateMenu, wallMenu, pillInfo])
 
 
 
@@ -4075,11 +4078,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   {/* 抓取, where the reader sees the card: one click stores the
                       article so opening it later is instant. The host writes the
                       payload before it answers, so leaving the page does not
-                      cancel it — the state pill is what says so. A FAILED pill's
-                      gesture belongs to the recorded cause: transport failures
-                      retry, walls open in a real browser, final answers are a
-                      plain indicator — and the reason is a visible line, never
-                      a tooltip-only flash. */}
+                      cancel it — the state pill is what says so. A FAILED pill
+                      opens the reason popover (reason + the cause's action):
+                      the reason must be one tap away, but the card stays one
+                      line tall — an inline reason line broke the wall's grid. */}
                   {row.entry.link !== undefined && (() => {
                     const fetchState = fetchStateOf(fetchStates, row.entry.id)
                     const state = fetchState.state
@@ -4099,33 +4101,37 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       : fetchState.state === 'failed'
                         ? t(failedOpen ? 'fetch.failedOpenTitle' : failedFinal ? 'fetch.failedFinalTitle' : 'fetch.failedTitle', { reason: failedReason ?? '' })
                         : t('fetch.noneTitle')
-                    const fire = (): void => {
-                      if (state === 'ready' || failedFinal) return
-                      if (failedOpen) { openElsewhere(row.entry.link as string); return }
-                      void startFetch(row.entry)
+                    const failed = fetchState.state === 'failed'
+                    const openInfo = (anchor: HTMLElement): void => {
+                      const box = anchor.getBoundingClientRect()
+                      setPillInfo(current => current?.entryId === row.entry.id ? null : {
+                        entryId: row.entry.id,
+                        top: box.bottom + 6,
+                        left: Math.max(8, Math.min(box.left, window.innerWidth - 256)),
+                      })
                     }
-                    const interactive = state !== 'ready' && !failedFinal
                     return (
-                      <>
-                        <span
-                          className={`${css.fetchPill} ${css[`fetchPill_${state === 'raw' ? 'fetching' : state}`] ?? ''}${failedFinal ? ` ${css.fetchPill_final}` : ''}`}
-                          {...(interactive ? { role: 'button', tabIndex: 0 } : {})}
-                          title={title}
-                          onClick={event => {
-                            event.stopPropagation()
-                            if (interactive) fire()
-                          }}
-                          onKeyDown={event => {
-                            if (event.key !== 'Enter' && event.key !== ' ') return
-                            event.stopPropagation()
-                            if (interactive) fire()
-                          }}
-                        >
-                          {glyph(state === 'ready' ? 'check' : state === 'failed' ? 'alert' : 'fetch', 10)}
-                          <span>{t(labelKey)}</span>
-                        </span>
-                        {failedReason !== undefined && <span className={css.fetchReason}>{failedReason}</span>}
-                      </>
+                      <span
+                        className={`${css.fetchPill} ${css[`fetchPill_${state === 'raw' ? 'fetching' : state}`] ?? ''}`}
+                        {...(state !== 'ready' ? { role: 'button', tabIndex: 0 } : {})}
+                        title={title}
+                        onClick={event => {
+                          event.stopPropagation()
+                          if (state === 'ready') return
+                          if (failed) openInfo(event.currentTarget as HTMLElement)
+                          else void startFetch(row.entry)
+                        }}
+                        onKeyDown={event => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return
+                          event.stopPropagation()
+                          if (state === 'ready') return
+                          if (failed) openInfo(event.currentTarget as HTMLElement)
+                          else void startFetch(row.entry)
+                        }}
+                      >
+                        {glyph(state === 'ready' ? 'check' : state === 'failed' ? 'alert' : 'fetch', 10)}
+                        <span>{t(labelKey)}</span>
+                      </span>
                     )
                   })()}
                   {/* The reader's own tag affordance, in the row where the
@@ -4223,6 +4229,49 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </div>
         </div>
       )}
+      {/* The failed pill's popover: the reason and the cause's action float
+          over the wall, so a failed card stays exactly one line tall. */}
+      {pillInfo !== null && (() => {
+        const entry = allEntries.find(item => item.id === pillInfo.entryId)
+        const fetchState = fetchStateOf(fetchStates, pillInfo.entryId)
+        if (entry === undefined || fetchState.state !== 'failed') return null
+        const reason = previewReason(t, fetchState.code, fetchState.message)
+        const canOpen = fetchState.code !== undefined && OPEN_IN_BROWSER_CODES.has(fetchState.code) && entry.link !== undefined
+        const canRetry = fetchState.code === undefined || fetchState.code === 'unreachable'
+        return (
+          <div
+            className={css.pillPop}
+            style={{ top: pillInfo.top, left: pillInfo.left }}
+            role="dialog"
+            aria-label={t('fetch.failed')}
+            onKeyDown={event => { if (event.key === 'Escape') setPillInfo(null) }}
+          >
+            <p className={css.pillPopReason}>{reason}</p>
+            {(canRetry || canOpen) && (
+              <div className={css.pillPopActions}>
+                {canRetry && (
+                  <button
+                    type="button"
+                    className={css.incompleteLink}
+                    onClick={() => { setPillInfo(null); void startFetch(entry) }}
+                  >
+                    {t('detail.refetch')}
+                  </button>
+                )}
+                {canOpen && (
+                  <button
+                    type="button"
+                    className={css.incompleteLink}
+                    onClick={() => { setPillInfo(null); openElsewhere(entry.link as string) }}
+                  >
+                    {browserTab ? t('action.openExternal') : t('detail.readOriginal')}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
       {cardMenu !== null && (() => {
         const entry = allEntries.find(item => item.id === cardMenu.entryId)
         if (entry === undefined) return null
