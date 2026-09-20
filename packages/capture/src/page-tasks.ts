@@ -83,6 +83,8 @@ export interface CaptureSerializeResult {
   readonly inlinedElements: number
   /** Declarations inlined, summed over elements. */
   readonly inlinedDeclarations: number
+  /** Pre-existing `var()`-bearing SVG presentation attributes rewritten to their resolved value. */
+  readonly resolvedAttributes: number
   /** Stylesheets whose rules could not be read (cross-origin). */
   readonly skippedSheets: number
   /** `<script>` elements removed from the output. */
@@ -93,6 +95,8 @@ export interface CaptureSerializeResult {
 
 /**
  * Inline every matched CSSOM rule into `style` attributes (resolving `var()`),
+ * resolve `var()` left in pre-existing SVG presentation attributes (page
+ * scripts write `fill="var(--brand)"` as an ATTRIBUTE — no rule matches it),
  * remove scripts and the now-redundant style sources, then serialize.
  *
  * Why inlining is not optional: a JS-rendered figure's colors live in the
@@ -100,7 +104,9 @@ export interface CaptureSerializeResult {
  * blocks); a bare `outerHTML` keeps the structure but renders it black. The
  * cascade here is (important, inline-ness, specificity, document order) —
  * close enough to the real cascade for the class/attribute selectors these
- * pages use, and exact for the declarations that color figures.
+ * pages use, and exact for the declarations that color figures. Custom
+ * properties resolve from the readable cascade first, with a
+ * `getComputedStyle` fallback for runtime-set or cross-origin-defined ones.
  */
 export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSerializeResult {
   // Every value this body reads is declared INSIDE it: the function is
@@ -436,8 +442,14 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
     return winners
   }
 
-  /** Resolve `var(--x, fallback)` references against the element's custom properties. */
-  const resolveVars = (value: string, vars: ReadonlyMap<string, string>, seen: ReadonlySet<string>, depth: number): string => {
+  /**
+   * Resolve `var(--x, fallback)` references against the element's custom
+   * properties. The cascade map (readable CSSOM rules + inline `--*`) answers
+   * first; on a miss, `getComputedStyle` answers from the FULL cascade — that
+   * fallback is what sees custom properties set by the page's own scripts at
+   * runtime and those from cross-origin sheets (they apply but refuse reads).
+   */
+  const resolveVars = (value: string, vars: ReadonlyMap<string, string>, seen: ReadonlySet<string>, depth: number, el?: Element): string => {
     if (depth > 10 || !value.includes('var(')) return value
     let out = ''
     let i = 0
@@ -464,11 +476,19 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
       }
       const name = (comma === -1 ? inner : inner.slice(0, comma)).trim()
       const fallback = comma === -1 ? undefined : inner.slice(comma + 1)
-      const resolved = vars.get(name)
+      let resolved = vars.get(name)
+      if (resolved === undefined && el !== undefined && typeof getComputedStyle === 'function') {
+        try {
+          const computed = getComputedStyle(el).getPropertyValue(name)
+          if (computed !== '') resolved = computed
+        } catch {
+          // An engine that cannot answer computed custom properties misses here.
+        }
+      }
       if (resolved !== undefined && !seen.has(name)) {
-        out += resolveVars(resolved, vars, new Set([...seen, name]), depth + 1)
+        out += resolveVars(resolved, vars, new Set([...seen, name]), depth + 1, el)
       } else if (fallback !== undefined) {
-        out += resolveVars(fallback, vars, seen, depth + 1)
+        out += resolveVars(fallback, vars, seen, depth + 1, el)
       } else {
         out += 'unset' // unresolved custom property: the declaration computes to invalid/unset
       }
@@ -496,6 +516,7 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
 
   let inlinedElements = 0
   let inlinedDeclarations = 0
+  let resolvedAttributes = 0
   const walker = document.createTreeWalker(document.documentElement, 1 /* elements only */)
   let node: Element | null = document.documentElement
   while (node !== null) {
@@ -503,12 +524,37 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
     const winners = winnersFor(el)
     const vars = effectiveVars(el, winners)
     varMaps.set(el, vars) // document order: a child's read always finds its parent
+    // Resolve var() in the RAW style attribute text FIRST: a browser decomposes
+    // an inline shorthand carrying var() (`background: var(--x)`) into
+    // pending-substitution longhands that enumerate with empty values, so the
+    // winners walk never sees the declaration — and any setProperty mutation
+    // regenerates the attribute from the CSSOM, so this must precede the
+    // winners write. (A rule winner for the same property written afterwards
+    // then wins over the inline declaration — the one wrong direction, bounded
+    // to shorthand-with-var × matching-rule, documented as a fidelity limit.)
+    let rawStyle: string | null = null
+    try {
+      rawStyle = el.getAttribute('style')
+    } catch {
+      rawStyle = null
+    }
+    if (rawStyle !== null && rawStyle.includes('var(')) {
+      const resolved = resolveVars(rawStyle, vars, new Set(), 0, el)
+      if (resolved !== rawStyle && !resolved.includes('unset')) {
+        try {
+          el.setAttribute('style', resolved)
+          resolvedAttributes += 1
+        } catch {
+          // Best-effort; the raw text stays.
+        }
+      }
+    }
     if (winners.size > 0) {
       const styleEl = el as HTMLElement
       let wrote = false
       for (const [prop, winner] of winners) {
         if (prop.startsWith('--')) continue // custom properties serve resolution; they are not emitted
-        const value = winner.value.includes('var(') ? resolveVars(winner.value, vars, new Set(), 0) : winner.value
+        const value = winner.value.includes('var(') ? resolveVars(winner.value, vars, new Set(), 0, el) : winner.value
         if (value === '' || value === 'unset') continue
         try {
           styleEl.style.setProperty(prop, value, winner.important ? 'important' : '')
@@ -526,6 +572,30 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
         }
       }
       if (wrote) inlinedElements += 1
+    }
+    // Pre-existing var() in PRESENTATION ATTRIBUTES: page scripts write
+    // `fill="var(--brand)"` as an attribute (legal; the browser resolves it
+    // from the cascade), and no matched rule exists to rewrite it — resolve
+    // it here or the serialized document keeps a reference whose definition
+    // the removed style blocks used to carry.
+    if (el.namespaceURI === SVG_NS) {
+      for (const attr of SVG_PRESENTATION_ATTRIBUTES) {
+        let raw: string | null = null
+        try {
+          raw = el.getAttribute(attr)
+        } catch {
+          continue
+        }
+        if (raw === null || !raw.includes('var(')) continue
+        const resolved = resolveVars(raw, vars, new Set(), 0, el)
+        if (resolved === '' || resolved.includes('unset')) continue // keep the raw attribute rather than write a half-resolved one
+        try {
+          el.setAttribute(attr, resolved)
+          resolvedAttributes += 1
+        } catch {
+          // Best-effort, as above.
+        }
+      }
     }
     node = walker.nextNode() as Element | null
   }
@@ -558,6 +628,7 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
     finalUrl: window.location.href,
     inlinedElements,
     inlinedDeclarations,
+    resolvedAttributes,
     skippedSheets,
     removedScripts,
     removedStyles,

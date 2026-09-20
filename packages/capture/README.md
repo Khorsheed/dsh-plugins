@@ -29,7 +29,7 @@ render({ url, timeoutMs? }) → {
 4. **拦截 + 导航**：请求拦截开着，**每一跳重定向都重新过第 1 步的政策**（公网 URL 302 进私网是经典 SSRF 逃逸，逐跳重查就是为此）。子资源放 http(s)/data/blob，其余 scheme（file:、chrome: 等）掐断。HTTP ≥ 400 判 `capture/navigation-failed`；导航超时判 `capture/timeout`（默认 30s，`timeoutMs` 可覆盖，钳在 1–120s）。
 5. **静止等待**：`load` 之后等网络静默（500ms 无在途请求，上限 5s）。
 6. **滚动遍扫**：按视口 0.8 步进扫到底，**每步停留 500ms**——transformer-circuits.pub 实测 102 个 figure 中约 20 个靠 IntersectionObserver 懒渲染，120ms/步的快扫不触发它们。扫完不回滚（虚拟化页面可能卸载屏外内容）。
-7. **内联 + 序列化**：在同一文档里：命中的 CSSOM 规则按（`!important` → 内联性 → 选择器权重 → 文档序）定胜负，写进元素 `style`；`var(--x)` 沿自定义属性级联解析（含回退与嵌套，带环保护）；SVG 元素的呈现属性（`fill`/`stroke` 等）同时写成**属性**——下游白名单若只留属性不留 `style`，颜色照样在。然后剥掉全部 `<script>`、`<style>` 与样式表 `<link>`（规则已内联，样式块成了冗余体积），序列化 `<!DOCTYPE html>` + `documentElement.outerHTML`，超上限（默认约 8M 字符）截断并置 `truncated`。
+7. **内联 + 序列化**：在同一文档里：命中的 CSSOM 规则按（`!important` → 内联性 → 选择器权重 → 文档序）定胜负，写进元素 `style`；`var(--x)` 沿自定义属性级联解析（含回退与嵌套，带环保护；脚本运行时设置的或跨源样式表定义的变量由 `getComputedStyle` 兜底）；SVG 元素的呈现属性（`fill`/`stroke` 等）同时写成**属性**——下游白名单若只留属性不留 `style`，颜色照样在。页面脚本直接写进呈现属性的 `var()`（`fill="var(--brand)"`）与内联 shorthand 里的 `var()`（浏览器把 `background: var(--x)` 拆成枚举为空值的待替换长属性，只有属性文本还带着它）在序列化前按文本解析——实测 transformer-circuits 全页零残留。然后剥掉全部 `<script>`、`<style>` 与样式表 `<link>`（规则已内联，样式块成了冗余体积），序列化 `<!DOCTYPE html>` + `documentElement.outerHTML`，超上限（默认约 8M 字符）截断并置 `truncated`。
 
 ## 权限模型（v1）
 
@@ -47,7 +47,7 @@ render({ url, timeoutMs? }) → {
 - **交互控件冻成快照**：序列化是静态 DOM——按钮、输入框、展开器失去行为（脚本本来就不随产物走）。
 - **headless ≠ 逐像素一致**：字体、GPU 光栅、部分 DRM 内容在 `--headless=new` 下与日常浏览器不同；本包不承诺保真镜像。
 - **跨源样式表读不到**：浏览器拒绝读它们的 CSSOM（SecurityError），跳过并计数——只丢这些表里的颜色。
-- **级联是近似**：选择器权重是手算的紧凑实现（`:is()` 取参数最大值、`:where()` 为零），`@container`/`@scope` 按包含处理，`@layer` 按文档序；伪元素样式（`::before` 内容等）不内联。对图着色这类声明是准确的，对整页布局还原不承诺。
+- **级联是近似**：选择器权重是手算的紧凑实现（`:is()` 取参数最大值、`:where()` 为零），`@container`/`@scope` 按包含处理，`@layer` 按文档序；伪元素样式（`::before` 内容等）不内联；同一属性上「内联 shorthand 带 `var()`」与「命中规则」相争时规则错赢（内联本该胜）——限于这一极端组合。对图着色这类声明是准确的，对整页布局还原不承诺。
 - **懒加载有预算**：遍扫总预算 20s；更长的页面抓到预算所及之处。
 
 ## 配置（cordis.yml 行 `config`）

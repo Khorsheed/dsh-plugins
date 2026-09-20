@@ -111,8 +111,51 @@ describe('inlineStylesAndSerialize: CSSOM inlining', () => {
       <svg><rect style="fill: var(--y)" width="3"/></svg>
     </body></html>`)
     const result = serializeDocument()
-    expect(result.html).toContain('fill: rgb(171, 205, 239)')
+    // jsdom keeps the verbatim rewrite; Chrome re-serializes to rgb() — same color.
+    expect(result.html).toMatch(/fill: (?:rgb\(171, 205, 239\)|#abcdef)/)
     expect(result.html).toContain('fill="#abcdef"')
+  })
+
+  it('resolves a var() a page script wrote as a PRESENTATION ATTRIBUTE (no rule matches it)', () => {
+    setPage(`<html><head><style>:root { --brand-clay: #bada55 }</style></head><body>
+      <svg><path fill="var(--brand-clay)" d="M0 0h4v4z"/></svg>
+    </body></html>`)
+    const result = serializeDocument()
+    expect(result.html).toContain('fill="#bada55"')
+    expect(result.html).not.toContain('var(--brand-clay)')
+    expect(result.resolvedAttributes).toBe(1)
+  })
+
+  it('resolves a var() whose definition a script set inline on an ancestor (computed fallback)', () => {
+    // No stylesheet at all: the custom property exists only as a runtime-set
+    // inline declaration — the CSSOM walk cannot see it, getComputedStyle can.
+    setPage(`<html><body>
+      <div style="--ink: #112233"><svg><circle fill="var(--ink)" r="3"/></svg></div>
+    </body></html>`)
+    const result = serializeDocument()
+    expect(result.html).toContain('fill="#112233"')
+  })
+
+  it('keeps an attribute whose var() is genuinely undefined rather than half-resolving it', () => {
+    setPage(`<html><body>
+      <svg><rect fill="var(--gone)" width="2"/></svg>
+    </body></html>`)
+    const result = serializeDocument()
+    expect(result.html).toContain('fill="var(--gone)"')
+    expect(result.resolvedAttributes).toBe(0)
+  })
+
+  it('resolves var() in an inline shorthand the CSSOM decomposes (background)', () => {
+    // Chrome enumerates `style="background:var(--x)"` as empty-valued longhands
+    // — only the raw attribute text carries the declaration, so the rewrite
+    // happens on the attribute text before any CSSOM mutation. jsdom keeps the
+    // shorthand readable; both engines take the same textual rewrite here.
+    setPage(`<html><head><style>:root { --gray-200: #eeeeee }</style></head><body>
+      <div class="bar" style="width:100%;background:var(--gray-200)">x</div>
+    </body></html>`)
+    const result = serializeDocument()
+    expect(result.html).toContain('background:#eeeeee')
+    expect(result.html).not.toContain('var(--gray-200)')
   })
 
   it('matches only the rightmost compound (the prefilter never hides a real match)', () => {
