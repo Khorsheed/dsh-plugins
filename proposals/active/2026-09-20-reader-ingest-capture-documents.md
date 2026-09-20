@@ -42,7 +42,9 @@
 
 **为什么独立而不是并进 reader**：(a) Chrome for Testing 二进制是百 MB 级的可选基础设施，并进 reader 会让每个只想订 RSS 的用户都背上它；(b) 无头浏览器是一个独立的安全面（SSRF、站点许可、凭据隔离），值得自己的包边界与 README 威胁模型，评审与事故响应都按包切片；(c) 仓库惯例是"独立但兼容"——reader 单独可装可用（探测不到 capture 就退回现状行为），capture 单独可装（未来 canvas-space / datasets 等消费方接同一个 verb）；(d) 跨包边只走单向（reader → capture 探测），符合 `pnpm check:plugins` 的边方向规则。
 
-**形状**：宿主半一个包，无客户端半（或极薄）。暴露 Remote verb `render({url, waitUntil?, timeoutMs?}) → { html, finalUrl, title, renderedAt, truncated }`：受管 headless Chrome（pipe 连接、每请求临时 BrowserContext、进程按空闲超时回收）导航后等 network idle + settle 窗口，序列化 `document.documentElement.outerHTML` 返回。安全面照 browser-pane 评审清单：站点 allow/block 表（首次访问要求批准）、禁 `file:`/`data:`/内网与 metadata 地址/重定向逃逸、临时 profile 不碰用户登录态、产物尺寸上限与超时。
+**形状**：宿主半一个包，无客户端半（或极薄）。暴露 Remote verb `render({url, waitUntil?, timeoutMs?}) → { html, finalUrl, title, renderedAt, truncated }`：受管 headless Chrome（pipe 连接、每请求临时 BrowserContext、进程按空闲超时回收）导航后**滚动遍扫全页再 settle**——transformer-circuits 实测（2026-09-20，Playwright 人工验证）：102 个 `<figure>` 中 20 个靠 IntersectionObserver 懒渲染，快速扫过都不触发，必须逐段停留；全部 102 个都是 DOM/SVG，无一 canvas 位图，序列化可得。安全面照 browser-pane 评审清单：站点 allow/block 表（首次访问要求批准）、禁 `file:`/`data:`/内网与 metadata 地址/重定向逃逸、临时 profile 不碰用户登录态、产物尺寸上限与超时。
+
+**样式内联是必需品，不是打磨**：同页实测 SVG 用 CSS 变量着色（`fill="var(--brand-clay)"`，全页 84 个样式块/表），raw `outerHTML` 丢 class 与 var() 样式后图形结构在、颜色全黑。capture 序列化时要把匹配到的 CSSOM 规则内联成 `style` 属性并解析 `var()`（SingleFile 式做法）；保真兜底是把 figure 子树栅格化成 PNG 截图嵌入（保结构观感但失去 SVG 文字的可引用性）——v1 选内联路线，栅格化留作降级选项。
 
 **reader 侧集成**：`fetchEntryBody` 的兜底链变成 普通抓取 → 提取结果为空壳或 `scriptFigures > 0` → 探测 capture Remote，在则用 `render` 重抓再提取。捕获产物**永远过提取器白名单**，绝不直接渲染原始捕获 HTML。JS 渲染的 SVG 图表随 outerHTML 序列化成静态 SVG 进正文（交互控件冻成快照，这是明确接受的代价）。渲染后 DOM 可能极大（数 MB），`render` 内部做尺寸截断并置 `truncated`。
 
@@ -83,7 +85,8 @@
 
 ① **pdfjs 进 client bundle 的体积**（1 MB+ 量级）：懒加载分包可行性未验证（M0 spike）；最坏情况退宿主侧解析，代价是多一条字节上传通道。
 ② **capture 的安全面**：无头浏览器能读到的页面内容会进插件管线（prompt injection 面）；缓解靠站点许可门 + 产物过白名单 + 不碰登录态，**不是免疫**—— threat model 写进 README。
-③ **快照保真度有界**：异步数据（hyparquet 类）要等 settle；交互控件冻结；headless 渲染与日常浏览器不逐像素一致。写进 README，不当保真镜像宣称。
+③ **快照保真度有界**：懒渲染内容要求滚动遍扫 + 逐段停留（transformer-circuits 实测 20/102 图靠 IntersectionObserver，快扫不触发）；class/CSS 变量样式需内联否则图形失色；交互控件冻结；headless 渲染与日常浏览器不逐像素一致。写进 README，不当保真镜像宣称。
+④ **外部解析服务（Jina Reader 类）不作默认**（用户 2026-09-20 问到，记录在案）：URL 与文档内容会离开部署边界发往第三方、需 API key、有速率限制——与仓库自包含哲学冲突。可作为 capture 的可选 provider 后议（显式配置、默认关），主线始终是自托管无头浏览器。
 ④ **arxiv HTML 覆盖率非 100%**：老论文没有 HTML 版，回退路径必须照常工作（仅链接卡片 / 提示拖 PDF）。
 ⑤ **出网截断仍在**：capture 返回的渲染 DOM 也可能超大；截断策略与「内容未完整呈现」提示沿用现有机制。
 ⑥ **放弃 docx/pptx/xlsx/OCR/epub（v1）**：格式增量各自立案，不在本提案扩张。
