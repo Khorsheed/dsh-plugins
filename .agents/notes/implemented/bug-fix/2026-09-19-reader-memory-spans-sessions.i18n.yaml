@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-19-reader-memory-spans-sessions.md
-.agents/notes/implemented/bug-fix/2026-09-19-reader-memory-spans-sessions.md: b9f13fd8cb83a60942291ba5ccf9b80d3be129a0
-.agents/notes/implemented/bug-fix/2026-09-19-reader-memory-spans-sessions.zh.md: 5b38342103c8f18854dba9fda8ca77a783783f5d
+.agents/notes/implemented/bug-fix/2026-09-19-reader-memory-spans-sessions.md: 2ccdaa18500ef66af10aa997c063521e2bb0c0d6
+.agents/notes/implemented/bug-fix/2026-09-19-reader-memory-spans-sessions.zh.md: ccdcc22ab95ab8e2254c6c5df1c3e4e7752e103b
