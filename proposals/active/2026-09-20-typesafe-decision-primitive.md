@@ -110,6 +110,12 @@ type Decision = {
 
 两者**交叉引用、不互相复述**，避免漂移。若运行时确认只做决策、不写集成，可把官方 skill 用 frontmatter `disable-model-invocation: true` 降为"用户可调、不占模型注意力"（用户侧运行决定，不是本提案交付项）。本包 skill 用**不同名**（`typesafe-decide`），不与用户级 `typesafe-ai` 争同名。
 
+### 6. key 的配置入口（不新建 UI）
+
+- **首选**：把 `TYPESAFE_API_KEY` 声明在**本包 skill** `typesafe-decide` 的 frontmatter `metadata.credentials: [{ key: TYPESAFE_API_KEY, label: … }]` 上。这样既有的「设置 → 工具与技能」详情弹窗就有密码输入框（写路径仍是 `credentials.set` → `.credentials.yaml` 0600），而插件与 skill 解析的是**同一份** credentials store——零新 UI。
+- **备选（无 UI 也行）**：`$DSH_HOME/.env` 或调用目录 `.env` 写 `TYPESAFE_API_KEY=…`（credentials 解析的 user-env / project-env 层）；代价是启动快照在 launch 时冻结，改完要重启。
+- **副作用知会**：`metadata.credentials` 声明会让 capability-catalog 的 shellEnv 贡献者把该值以 `DSH_TYPESAFE_API_KEY` 注入**每次 bash 执行**（默认隐藏，但仍可被模型主动 echo）。对本包不是必需——不愿扩大暴露面就走 `.env`，或等 M3 的设置卡。
+
 ## 里程碑
 
 - **M1 core**：`packages/typesafe` 脚手架（identity triangle / 自挂载 / README 双语 / compat）+ 服务 + 凭据 + 具名注册表 + wire 纪律（超时 / 退避 / 熔断 / 缓存 / 决策日志）+ 单测（缺 key 降级、超时、429 退避、缓存命中、不抛保证、熔断恢复）。
