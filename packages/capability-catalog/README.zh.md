@@ -10,7 +10,7 @@
 - **Tools**：折叠卡 + 渠道归因（`mcp__` 前缀 / 生成的官方白名单 / apply 时序差分）。
 - **新增 skill**：一个弹窗三来源——
   - **文件上传**：拖拽（或点选）单个 `SKILL.md`、含 SKILL.md 的 `.zip`、或整个 skill 文件夹（零依赖 `node:zlib` 解压）。
-  - **命令安装**：填 `owner/repo`、git URL 或 `npx skills add <repo> -g` 表单——host 提取 repo 做 `git clone` 进用户/项目 skill 根，并把嵌套的 `SKILL.md` 抬到 `<root>/<name>/`（dsh 原生安装；真 `npx skills add` 会装到 dsh 扫不到的外部目录）。
+  - **命令安装**：填 `owner/repo`、git URL，或整条 `npx skills add <repo> [--skill <名字>]` 命令——参数会被消费，绝不进入克隆 URL。host 克隆到临时目录，再把选中的技能包抬到 `<root>/<name>/`（dsh 原生安装；真 `npx skills add` 会装到 dsh 扫不到的外部目录）。仓库含多个技能时用 `--skill` 指定；不指定会报错并列出可选项。
   - **从本机目录**：本地 skill 目录可列出（每个 `<name>/SKILL.md`），用户勾选要装的，host 拷贝到受管根。
 
 每个来源都可选目标根（`$DSH_HOME/skills` / `.agents/skills`）与是否进模型 catalog；skill-filesystem watcher 自动发现结果。

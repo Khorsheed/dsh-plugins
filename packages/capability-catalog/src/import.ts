@@ -10,15 +10,17 @@
  * The zip path reads the archive with the dependency-free zip reader
  * (`./zip.ts`, node:zlib only), locates the `SKILL.md`, derives the kebab-case
  * `name` from frontmatter, and extracts the bundle under `<root>/<name>/`
- * (strip the archive's own wrapping folder if present). The GitHub clone path
- * is a follow-up (needs a git child process).
+ * (strip the archive's own wrapping folder if present). The clone path resolves
+ * a repo spec — including a whole `npx skills add <repo> --skill <name>` command
+ * copied from a skill's README — clones it into a scratch directory, and lifts
+ * the selected skill bundle(s) into the root.
  * @module @khorsheed/dsh-capability-catalog/import
  */
 
 import { execFile } from 'node:child_process'
-import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { CatalogAddSkillRequest, CatalogAddSkillResult, CatalogDirSkillInfo } from './types.ts'
 import { extractZip, type ZipEntry } from './zip.ts'
@@ -240,19 +242,119 @@ export async function addSkillFromPayload(request: CatalogAddSkillRequest, dshHo
   return addSkillFromText(request, dshHome)
 }
 
-/** Turn a repo spec (owner/repo, git URL, or `npx skills add <repo> -g`) into a clone URL. */
-function repoSpecToClone(spec: string): string | undefined {
-  let s = spec.trim()
-  const prefix = /^npx\s+skills\s+add\s+/i
-  if (prefix.test(s)) s = s.replace(prefix, '')
-  s = s.trim().replace(/\s+-g$/, '')
-  if (s === '') return undefined
-  if (/^https?:\/\//.test(s)) return s
-  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/.test(s)) {
-    const [owner, repo] = s.split('/')
+/** A parsed `command`-channel spec: the source reference plus its `--skill` selections. */
+interface RepoSpec {
+  /** owner/repo or a git URL (a local path is copied before this parse runs). */
+  readonly ref: string
+  /** Sub-skill names from `--skill`/`-s`, matching the CLI's own greedy values. */
+  readonly skills: readonly string[]
+}
+
+/** `skills add` flags whose following non-flag values dsh consumes and ignores. */
+const DROPPED_VALUE_FLAGS = new Set(['-a', '--agent', '--subagent'])
+/** `skills add` flags that take exactly one value dsh consumes and ignores. */
+const DROPPED_SINGLE_VALUE_FLAGS = new Set(['--metadata'])
+/** `skills add` boolean flags dsh consumes and ignores (`-g` is meaningless for a root dsh owns). */
+const DROPPED_BOOL_FLAGS = new Set(['-g', '--global', '-y', '--yes', '-l', '--list', '--all', '--full-depth', '--json', '--copy'])
+/** `skills add` flags that select sub-skills; their greedy values are kept. */
+const SKILL_FLAGS = new Set(['-s', '--skill'])
+
+/**
+ * Parse a `command`-channel spec — `owner/repo`, a git URL, or a whole
+ * `npx skills add <repo> [--skill <name>]… [-g]` command — into its source
+ * reference and `--skill` selections.
+ *
+ * Every flag token is consumed here, never left in the string: the spec used to
+ * be handed to `git clone` after only a prefix and a trailing `-g` were
+ * stripped, so the README form `npx skills add owner/repo --skill name` became
+ * the clone URL `https://github.com/owner/repo --skill name`, which git rejects
+ * as a malformed URL. The recognized set mirrors the `skills` CLI's own `add`
+ * parser (vercel-labs/skills) so a command copied from a skill's README installs
+ * what it says: a flag's value is consumed with it, never glued onto the
+ * reference.
+ * @param spec - the raw spec from the add-skill command channel.
+ */
+export function parseRepoSpec(spec: string): RepoSpec | undefined {
+  const tokens = spec.trim().replace(/^npx\s+skills\s+add\s+/i, '').trim().split(/\s+/)
+  const skills: string[] = []
+  let ref: string | undefined
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i] ?? ''
+    if (token === '') continue
+    if (SKILL_FLAGS.has(token)) {
+      // Greedy, like the CLI: `--skill a b` selects both.
+      while (i + 1 < tokens.length && !(tokens[i + 1] as string).startsWith('-')) skills.push(tokens[++i] as string)
+      continue
+    }
+    if (DROPPED_VALUE_FLAGS.has(token)) {
+      while (i + 1 < tokens.length && !(tokens[i + 1] as string).startsWith('-')) i++
+      continue
+    }
+    if (DROPPED_SINGLE_VALUE_FLAGS.has(token)) {
+      i++
+      continue
+    }
+    // Known boolean flags — and anything else flag-shaped — are dropped: no flag
+    // token may ever reach the clone URL.
+    if (DROPPED_BOOL_FLAGS.has(token) || token.startsWith('-')) continue
+    // The first non-flag token is the source; the CLI accepts several, dsh one.
+    if (ref === undefined) ref = token
+  }
+  return ref === undefined ? undefined : { ref, skills }
+}
+
+/** Turn a source reference (owner/repo or a git URL) into a clone URL. */
+function refToCloneUrl(ref: string): string | undefined {
+  if (/^https?:\/\//.test(ref)) return ref
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/.test(ref)) {
+    const [owner, repo] = ref.split('/')
     return `https://github.com/${owner}/${repo}`
   }
   return undefined
+}
+
+/** A skill bundle found inside a cloned source repo. */
+interface FoundSkill {
+  /** Absolute directory holding the bundle. */
+  readonly dir: string
+  /** Basename of `dir` — the install name `--skill` matches. */
+  readonly dirName: string
+  /** Frontmatter `name`, which drives the folder written under the managed root. */
+  readonly name: string
+  /** Raw SKILL.md content. */
+  readonly content: string
+}
+
+/** Every skill bundle at or under `dir` (depth ≤ 4, `.git` skipped), shallowest first. */
+async function collectSkills(dir: string, depth = 0): Promise<FoundSkill[]> {
+  if (depth > 4) return []
+  const out: FoundSkill[] = []
+  const content = await readFile(join(dir, 'SKILL.md'), 'utf8').catch(() => undefined)
+  const parsed = content === undefined ? undefined : resolveSkillNameFromContent(content)
+  if (content !== undefined && parsed !== undefined) {
+    out.push({ dir, dirName: basename(dir), name: parsed.name, content })
+  }
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === '.git') continue
+    out.push(...await collectSkills(join(dir, entry.name), depth + 1))
+  }
+  return out
+}
+
+/**
+ * Resolve `--skill` selections against the skills a repo carries. A selection
+ * matches a skill's directory name or its frontmatter `name`, case-insensitively
+ * — the `skills` CLI's own rule — and `*` selects every skill.
+ * @returns the chosen skills; `[]` when nothing was selected but the repo is
+ * ambiguous (more than one skill); `undefined` when a selection matched nothing.
+ */
+function selectSkills(skills: readonly FoundSkill[], selections: readonly string[]): FoundSkill[] | undefined {
+  if (selections.length === 0) return skills.length > 1 ? [] : [...skills]
+  if (selections.includes('*')) return [...skills]
+  const chosen = skills.filter(s => selections.some(sel =>
+    sel.toLowerCase() === s.dirName.toLowerCase() || sel.toLowerCase() === s.name.toLowerCase()))
+  return chosen.length === 0 ? undefined : chosen
 }
 
 /** Expand a leading `~` to the OS home directory. */
@@ -283,11 +385,15 @@ async function listSkillDirs(dir: string): Promise<string[]> {
 }
 
 /**
- * Install a skill by cloning a source repo (owner/repo, git URL, or an
- * `npx skills add <repo>` form) into the managed root. The frontmatter name
- * drives the target folder; the repo must carry a `SKILL.md` at its root. This
- * is the dsh-native "install from source" — a plain `npx skills add` writes
- * into an external skills dir the dsh filesystem watcher does not scan.
+ * Install a skill by cloning a source repo (owner/repo, git URL, or a whole
+ * `npx skills add <repo> [--skill <name>]` command) into the managed root. This
+ * is the dsh-native "install from source" — a plain `npx skills add` writes into
+ * an external skills dir the dsh filesystem watcher does not scan.
+ *
+ * The clone lands in a scratch directory; the chosen skill bundle (the repo's
+ * only one, `request.skills`, or the command's `--skill` values) is then lifted
+ * to `<managed root>/<frontmatter name>/`. A repo carrying several skills and no
+ * selection is refused with the list rather than installing the shallowest one.
  * @param request - the add-skill request (channel 'command', repo carries the spec).
  * @param dshHome - the dsh home root.
  */
@@ -295,8 +401,9 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
   const spec = request.repo ?? ''
   const trimmed = spec.trim()
   // A `npx skills add ...` form is treated as its repo (the real npx installer
-  // writes into an external skills dir dsh cannot scan); repoSpecToClone below
-  // extracts the repo from that form. Local directory copy is handled next.
+  // writes into an external skills dir dsh cannot scan); parseRepoSpec below
+  // extracts the repo and any `--skill` selection from that form. Local
+  // directory copy is handled next.
   // Local directory: copy it (or a selected sub-skill) into the managed root.
   const expanded = expandHome(trimmed)
   let dirStat
@@ -347,62 +454,55 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
     if (children.length === 1 && only !== undefined) return copyInto(join(expanded, only), only)
     return copyInto(expanded)
   }
-  const url = repoSpecToClone(spec)
-  if (url === undefined) return { ok: false, error: `unrecognized repo spec: ${spec || '(empty)'}` }
+  const source = parseRepoSpec(spec)
+  const url = source === undefined ? undefined : refToCloneUrl(source.ref)
+  if (source === undefined || url === undefined) return { ok: false, error: `unrecognized repo spec: ${spec || '(empty)'}` }
+  const root = managedRoot(request.root, dshHome)
   const repoName = url.replace(/\.git$/, '').split('/').pop() ?? 'skill'
-  const dest = join(managedRoot(request.root, dshHome), repoName)
+  // Clone into a scratch directory, never straight into `root`: a partial clone
+  // must not surface as a skill, and a repo named like an installed skill must
+  // not overwrite it on the way in. Naming the clone after the repo keeps the
+  // CLI's install name available to `--skill` matching.
+  const scratchRoot = await mkdtemp(join(tmpdir(), 'dsh-skill-clone-'))
+  const scratch = join(scratchRoot, repoName)
   try {
-    await rm(dest, { recursive: true, force: true })
-  } catch {
-    // ignore — the destination may not exist yet
+    try {
+      await execFileAsync('git', ['clone', '--depth', '1', url, scratch])
+    } catch (error) {
+      return { ok: false, error: `install failed: ${String(error)}` }
+    }
+    const skills = await collectSkills(scratch)
+    if (skills.length === 0) return { ok: false, error: 'cloned repo has no SKILL.md' }
+    // An explicit selection (a chooser's `request.skills`) and `--skill` flags in
+    // a pasted command are the same intent; the caller wins when both are present.
+    const selections = request.skills !== undefined && request.skills.length > 0 ? request.skills : source.skills
+    const chosen = selectSkills(skills, selections)
+    if (chosen === undefined) {
+      return { ok: false, error: `no matching skill for: ${selections.join(', ')} — available: ${skills.map(s => s.dirName).join(', ')}` }
+    }
+    if (chosen.length === 0) {
+      // Several skills and no selection: installing the shallowest one silently is
+      // how the wrong skill lands. Mirror the directory path and ask for a choice.
+      return { ok: false, error: `directory has ${skills.length} skills — pick one: ${skills.map(s => s.dirName).join(', ')}` }
+    }
+    const plans = chosen.map(skill => ({ skill, target: join(root, skill.name) }))
+    // Check every target before writing any, so a selection spanning a new and an
+    // existing skill never half-installs.
+    for (const { skill, target } of plans) {
+      if (!request.overwrite && await pathExists(target)) return { ok: false, exists: true, name: skill.name }
+    }
+    const installed: string[] = []
+    for (const { skill, target } of plans) {
+      await rm(target, { recursive: true, force: true }).catch(() => {})
+      // Lift the bundle (which may be nested, e.g. <repo>/skills/<name>) to <root>/<name>/.
+      await cp(skill.dir, target, { recursive: true })
+      await writeFile(join(target, 'SKILL.md'), finalizeSkillText(skill.content, request.modelInvocable), 'utf8')
+      installed.push(skill.name)
+    }
+    return { ok: true, name: installed.join(', ') }
+  } finally {
+    await rm(scratchRoot, { recursive: true, force: true }).catch(() => {})
   }
-  try {
-    await execFileAsync('git', ['clone', '--depth', '1', url, dest])
-  } catch (error) {
-    return { ok: false, error: `install failed: ${String(error)}` }
-  }
-  const found = await findSkillMd(dest)
-  if (found === undefined) return { ok: false, error: 'cloned repo has no SKILL.md' }
-  const parsed = resolveSkillNameFromContent(found.content)
-  if (parsed === undefined) return { ok: false, error: 'cloned SKILL.md missing name/description frontmatter' }
-  const name = parsed.name
-  const target = join(managedRoot(request.root, dshHome), name)
-  if (!request.overwrite && await pathExists(target)) {
-    await rm(dest, { recursive: true, force: true }).catch(() => {})
-    return { ok: false, exists: true, name }
-  }
-  try {
-    await rm(target, { recursive: true, force: true })
-  } catch {
-    // ignore
-  }
-  // Lift the skill dir (which may be nested, e.g. <repo>/skills/<name>) to <managedRoot>/<name>/.
-  if (found.skillDir !== dest) {
-    await cp(found.skillDir, target, { recursive: true })
-  } else {
-    await rename(dest, target)
-  }
-  await writeFile(join(target, 'SKILL.md'), finalizeSkillText(found.content, request.modelInvocable), 'utf8')
-  return { ok: true, name }
-}
-
-/** Find a SKILL.md under `dir` (shallowest, valid frontmatter), skipping .git. */
-async function findSkillMd(dir: string, depth = 0): Promise<{ skillDir: string; content: string } | undefined> {
-  if (depth > 4) return undefined
-  const rootMd = join(dir, 'SKILL.md')
-  try {
-    const content = await readFile(rootMd, 'utf8')
-    if (resolveSkillNameFromContent(content) !== undefined) return { skillDir: dir, content }
-  } catch {
-    // no SKILL.md here
-  }
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === '.git') continue
-    const res = await findSkillMd(join(dir, entry.name), depth + 1)
-    if (res !== undefined) return res
-  }
-  return undefined
 }
 
 /**

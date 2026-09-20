@@ -23,11 +23,12 @@ English | [中文](README.zh.md)
   - **文件上传 / Upload**: drag-drop (or click) a single `SKILL.md`, a `.zip`
     containing `SKILL.md`, or an entire skill folder (dependency-free
     `node:zlib` zip reader).
-  - **命令安装 / Install from source**: give an `owner/repo`, a git URL, or an
-    `npx skills add <repo> -g` form — the host extracts the repo and `git clone`s
-    it into the user/project skill root, lifting a nested `SKILL.md` to
-    `<root>/<name>/` (the dsh-native install; a real `npx skills add` writes into
-    an external skills dir dsh cannot scan).
+  - **命令安装 / Install from source**: give an `owner/repo`, a git URL, or a
+    whole `npx skills add <repo> [--skill <name>]` command — flags are consumed,
+    never cloned. The host clones into a scratch dir and lifts the chosen skill
+    bundle to `<root>/<name>/` (the dsh-native install; a real `npx skills add`
+    writes into an external skills dir dsh cannot scan). `--skill` picks one from
+    a repo carrying several; without it such a repo is refused with the list.
   - **从本机目录 / From directory**: a local skill dir can be listed (each
     `<name>/SKILL.md`), the user picks which to install, and the selected ones are
     copied into the managed root.
