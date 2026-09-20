@@ -129,7 +129,7 @@ type Decision = {
 
 1. 两包可 `dsh plugin add` / `remove` 一条命令装卸；identity triangle 三处同名；`dsh.bundle.patch` 自挂载、`files` 含 `cordis.patch.yml`（tool 包另含 `skills/**/*.md`）。
 2. `pnpm run build` + `pnpm run test` 绿；`pnpm check:plugins`、`pnpm check:hygiene` 过；**零 `@khorsheed/*` 依赖边**。
-3. 3080 实测：用户在「工具与技能 → 凭据」写入 `TYPESAFE_API_KEY` → 模型用 `typesafe_judge` 对一段文本同时问 noul / choice / score，拿到结构化答案与 confidence；**未配 key 时工具不注册、实例照常启动**；卸 tool 包不影响 core；卸 core 后 tool 包 no-op 不炸 boot。
+3. 3080 实测：用户在「工具与技能 → 凭据」写入 `TYPESAFE_API_KEY` → 模型用 `typesafe_judge` 对一段文本同时问 noul / choice / score，拿到结构化答案与 confidence；**未配 key 时工具照常注册、调用返回结构化的 `unconfigured` 说明**（工具消失才是更糟的降级：模型无从告诉人缺什么）；卸 tool 包不影响 core；卸 core 后 tool 包 no-op 不炸 boot。
 4. 韧性实测：注入一次超时 / 429 → 服务退避或回结构化 `unavailable`，调用方 turn 不被挂住；`cacheTtlMs > 0` 时重复同问返回 `cached: true`；决策日志可查。
 5. 配置零明文 key（配置里只有 `apiKeyRef`）；SKILL.md / 仓库无任何 key 形态字符串。
 
@@ -156,3 +156,8 @@ type Decision = {
   - 文档门全过：`verify-translation-pairing` 388 对、`verify-agent-note-format` 354 条、`verify-agent-note-classification` 354 条、`check:plugins` 38 包 0 finding。
   - Agent Note：[TypeSafe as a decision service plus a preset-granted tool row](../../.agents/notes/implemented/feature/2026-09-20-typesafe-decision-primitive.md)。
   - 实例侧：官方 `typesafe-ai` skill 已从 `$DSH_HOME/skills/` 删除（见 §5）。
+- **2026-09-20 首批上 3080（`main` @ `957a9a86`）**：
+  - core 走 `pnpm deploy:3080 --package packages/typesafe`：进 profile `dependencies` + `dsh.profile.bundles`；重启后 watchdog 记 `canary PASS` + `deployment proof PASS`。
+  - 伴生行按仓里既定路径首次安装（`deploy:3080` 对无 bundle 的包会硬拒：必须已是 profile 依赖）——用官方 CLI 的普通依赖安装形态：`dsh plugin add <packed tgz> --profile web`，宿主如实提示 "declares no dsh.bundle — installed as a plain dependency, not a profile layer"；随后 deploy 同一命令刷新两包（时间戳 tarball）并按闸重启。
+  - 授予入口：`$DSH_HOME/.agent-presets/dev/agent.cordis.yml` 增 `- id: typesafe-tool` 行（已有备份）；重启后运行实例的 skill 目录出现 `typesafe-decide`，证明该行挂载成功。
+  - **门禁记录（据实）**：`pnpm gate` 两次在 `test` 步失败，失败**全部**落在 ankh-guard 的 `supervise` lane（真实起 watchog 进程 + 绑端口），当次机器 load average 9.9→20.8/8 核（宿主机另有一个跑满 CPU 的浏览器进程）；同一条 lane 在 worktree 里单独复跑 **211/211 全绿**，与本提案两个包无因果关系。gate 前 12 步（含全树 hygiene、check:plugins、profiles、release groups、package map、doc gates、test:scripts）全过。
