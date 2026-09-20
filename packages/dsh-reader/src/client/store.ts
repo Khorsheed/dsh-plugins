@@ -88,6 +88,8 @@ export interface ReaderState {
   query: string
   /** Whether to show only entries with no read cursor. */
   unreadOnly: boolean
+  /** Whether the wall folds republished duplicates behind one card (default ON). */
+  hideDupes: boolean
   /** The list order. */
   sort: ReaderSort
   /** Source ids the user has opened (the session's read cursor). */
@@ -122,6 +124,8 @@ export interface ReaderSessionRestore {
   readonly query?: string
   readonly sort?: ReaderSort
   readonly unreadOnly?: boolean
+  /** The dedupe switch rides the same restore as every other narrowing. */
+  readonly hideDupes?: boolean
   readonly read?: Record<string, true>
 }
 
@@ -154,11 +158,14 @@ export type ReaderActions = {
   setFilter: (draft: ReaderState, filter: ReaderFilter) => void
   setQuery: (draft: ReaderState, query: string) => void
   toggleUnreadOnly: (draft: ReaderState) => void
+  toggleHideDupes: (draft: ReaderState) => void
   setSort: (draft: ReaderState, sort: ReaderSort) => void
   markRead: (draft: ReaderState, entryId: string) => void
   setSchedule: (draft: ReaderState, lastRefreshAt: string | undefined, nextRefreshAt: string | undefined) => void
   /** Replace one source's display label (the feed's own title, once parsed). */
   setSourceLabel: (draft: ReaderState, id: string, label: string) => void
+  /** Upgrade a saved link's card to the article's own title/excerpt; feed entries are never touched. */
+  noteExtractedMeta: (draft: ReaderState, entryId: string, meta: { title?: string; excerpt?: string }) => void
   setLoading: (draft: ReaderState, loading: boolean) => void
   setError: (draft: ReaderState, error: string | null) => void
   refresh: (draft: ReaderState) => void
@@ -190,6 +197,9 @@ const INITIAL: ReaderState = {
   filter: 'all',
   query: '',
   unreadOnly: false,
+  // Duplicates fold by default: a republished article is one card, and showing
+  // it twice is the noise the reader reported.
+  hideDupes: true,
   sort: 'newest',
   read: {},
   lastRefreshAt: null,
@@ -231,6 +241,7 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
         if (restore.query !== undefined) d.query = restore.query
         if (restore.sort !== undefined) d.sort = restore.sort
         if (restore.unreadOnly !== undefined) d.unreadOnly = restore.unreadOnly
+        if (restore.hideDupes !== undefined) d.hideDupes = restore.hideDupes
         if (restore.read !== undefined) d.read = restore.read
       },
       setView: (d, view) => { d.view = view },
@@ -316,10 +327,29 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       setFilter: (d, filter) => { d.filter = filter },
       setQuery: (d, query) => { d.query = query },
       toggleUnreadOnly: (d) => { d.unreadOnly = !d.unreadOnly },
+      toggleHideDupes: (d) => { d.hideDupes = !d.hideDupes },
       setSort: (d, sort) => { d.sort = sort },
       markRead: (d, entryId) => { d.read = { ...d.read, [entryId]: true } },
       setSourceLabel: (d, id, label) => {
         d.sources = d.sources.map(source => source.id === id ? { ...source, label } : source)
+      },
+      noteExtractedMeta: (d, entryId, meta) => {
+        if (meta.title === undefined && meta.excerpt === undefined) return
+        for (const [sourceId, parsed] of Object.entries(d.parsed)) {
+          const index = parsed.entries.findIndex(entry => entry.id === entryId)
+          if (index === -1) continue
+          // A feed entry's title is the publisher's own — the upgrade exists
+          // for saved links, whose card otherwise wears the URL forever.
+          if (d.sources.find(source => source.id === sourceId)?.kind !== 'link') return
+          const entries = parsed.entries.slice()
+          entries[index] = {
+            ...entries[index]!,
+            ...(meta.title === undefined ? {} : { title: meta.title }),
+            ...(meta.excerpt === undefined ? {} : { summary: meta.excerpt }),
+          }
+          d.parsed = { ...d.parsed, [sourceId]: { ...parsed, entries } }
+          return
+        }
       },
       setSchedule: (d, lastRefreshAt, nextRefreshAt) => {
         d.lastRefreshAt = lastRefreshAt ?? null

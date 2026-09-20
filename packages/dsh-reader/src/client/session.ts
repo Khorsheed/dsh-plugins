@@ -43,6 +43,8 @@ export interface ReaderSessionSnapshot {
   readonly query: string
   readonly sort: ReaderSort
   readonly unreadOnly: boolean
+  /** Whether the wall folds republished duplicates (default ON). */
+  readonly hideDupes: boolean
   readonly read: Record<string, true>
   /** Which surface was translated on the wall, and how it was shown. */
   readonly wallOn: boolean

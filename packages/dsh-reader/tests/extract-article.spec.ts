@@ -309,6 +309,46 @@ describe('lazy-loaded images are recovered', () => {
     expect(normalizeRichText('<p><img srcset="data:image/png;base64,AAAA 1x"></p>')).toBe('<p></p>')
   })
 
+  it('keeps a substantive data-URI image, and a placeholder still yields to data-src', () => {
+    // transformer-circuits.pub inlines its REAL figures as multi-hundred-KB
+    // base64 images (measured: 87 of them on the emotions paper) — the
+    // placeholder policy deleted them. The split is payload size: a 1px gif is
+    // ~70 chars, the smallest real chart is thousands.
+    const big = `data:image/png;base64,${'A'.repeat(600)}`
+    expect(normalizeRichText(`<p><img src="${big}"></p>`))
+      .toBe(`<p><img src="${big}" referrerpolicy="no-referrer"></p>`)
+    // …and the classic placeholder shape is unchanged: absent src, lazy attr wins.
+    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+    expect(normalizeRichText(
+      `<p><img src="${placeholder}" data-src="/img/real.png"></p>`,
+      'https://example.com/post/',
+    )).toBe('<p><img src="https://example.com/img/real.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('pins the 512-char payload boundary on both sides', () => {
+    const at = `data:image/png;base64,${'B'.repeat(512)}`
+    const under = `data:image/png;base64,${'B'.repeat(511)}`
+    expect(normalizeRichText(`<p><img src="${at}"></p>`)).toBe(`<p><img src="${at}" referrerpolicy="no-referrer"></p>`)
+    expect(normalizeRichText(`<p><img src="${under}"></p>`)).toBe('<p></p>')
+  })
+
+  it('never keeps a non-image data URI, however large', () => {
+    const big = `data:text/html;base64,${'C'.repeat(900)}`
+    expect(normalizeRichText(`<p><img src="${big}"></p>`)).toBe('<p></p>')
+  })
+
+  it('strips the line-wrap whitespace pages put inside long base64 payloads', () => {
+    const wrapped = `data:image/png;base64,${'D'.repeat(300)}\n${'E'.repeat(300)}`
+    expect(normalizeRichText(`<p><img src="${wrapped}"></p>`))
+      .toBe(`<p><img src="data:image/png;base64,${'D'.repeat(300)}${'E'.repeat(300)}" referrerpolicy="no-referrer"></p>`)
+  })
+
+  it('lets a substantive data candidate win a srcset', () => {
+    const big = `data:image/webp;base64,${'F'.repeat(700)}`
+    expect(normalizeRichText(`<p><img srcset="/a.png 1x, ${big} 2x"></p>`, 'https://example.com/'))
+      .toBe(`<p><img src="${big}" referrerpolicy="no-referrer"></p>`)
+  })
+
   it('resolves a picture to one image: the first usable source, else the fallback img', () => {
     const source = normalizeRichText(
       '<p><picture><source srcset="https://cdn.example.com/wide.webp">'
@@ -413,5 +453,92 @@ describe('MathML formulas survive the whitelist', () => {
 
   it('flattens math to its text in an inline summary', () => {
     expect(normalizeInline('<p>a <math><mi>x</mi></math> b</p>')).toBe('a x b')
+  })
+})
+
+/**
+ * LaTeXML embeds vector figures as `<object type="image/svg+xml" data="…">`
+ * (measured on arxiv.org/html/2604.03147): the whitelist had no `object`, so
+ * the figure vanished and its caption stayed behind, reading as "the plugin
+ * lost the image". An image-typed object IS an image for the reader's
+ * purposes; every other object keeps being dropped.
+ */
+describe('an image-typed <object> becomes an <img>', () => {
+  const page = fixture('arxiv-object-figure.html')
+
+  it('converts the SVG object figure, absolutized, with its dimensions', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/2604.03147v3')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain(
+      '<img src="https://arxiv.org/html/2604.03147v3/circumplex.svg" width="443" height="290" referrerpolicy="no-referrer">',
+    )
+    expect(result.html).toContain('Figure 1: the circumplex')
+    // A figure whose picture is markup (now an img) is not script-drawn.
+    expect(result.scriptFigures).toBeUndefined()
+  })
+
+  it('still drops a non-image object whole', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/2604.03147v3')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('appendix.pdf')
+    expect(result.html).not.toContain('<object')
+    // The prose around it is untouched.
+    expect(result.html).toContain('embedded file')
+  })
+
+  it('applies the same rule through the feed-body path', () => {
+    expect(normalizeRichText(
+      '<p>x</p><object type="image/svg+xml" data="/fig.svg"></object>',
+      'https://example.com/post/',
+    )).toBe('<p>x</p><img src="https://example.com/fig.svg" referrerpolicy="no-referrer">')
+    expect(normalizeRichText('<p>x</p><object data="/movie.mp4" type="video/mp4"></object>')).toBe('<p>x</p>')
+    // An image-typed object with no usable address is nothing.
+    expect(normalizeRichText('<p>x</p><object type="image/png"></object>')).toBe('<p>x</p>')
+    // A data: address is not a fetchable image here.
+    expect(normalizeRichText('<p>x</p><object type="image/png" data="data:image/png;base64,AAAA"></object>')).toBe('<p>x</p>')
+  })
+})
+
+/**
+ * The article's own title and a short excerpt, captured at extraction: a saved
+ * link's card upgrades from the URL-derived label to the paper's name and
+ * abstract (the wall is where "which paper was this" gets answered).
+ */
+describe('extractArticle captures the article title and an excerpt', () => {
+  const page = (head: string, body: string): string =>
+    `<html><head><title>${head}</title></head><body><article>${body}</article></body></html>`
+
+  it('prefers the body’s own first heading, and reads the first substantial paragraph', () => {
+    const prose = 'The quick brown fox jumps over the lazy dog while the document watches. '
+    const result = extractArticle(page('Site name | Whatever', `<h1>The Real Paper Title</h1><p>byline-ish</p><p>${prose.repeat(3)}</p><p>${prose}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBe('The Real Paper Title')
+    expect(result.excerpt?.startsWith('The quick brown fox')).toBe(true)
+  })
+
+  it('falls back to the document title when the body has no heading', () => {
+    const result = extractArticle(fixture('arxiv-math.html'), 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBe('A Paper Whose Formulas Are MathML')
+    expect(result.excerpt).toContain('We study the interplay between attention and recurrence')
+  })
+
+  it('truncates a long excerpt to the card’s measure', () => {
+    const result = extractArticle(page('T', `<p>${'word '.repeat(120)}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.excerpt!.length).toBeLessThanOrEqual(280)
+    expect(result.excerpt!.endsWith('…')).toBe(true)
+  })
+
+  it('reports neither when the page offers nothing', () => {
+    const result = extractArticle(page('', `<p>${'prose '.repeat(40)}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBeUndefined()
   })
 })

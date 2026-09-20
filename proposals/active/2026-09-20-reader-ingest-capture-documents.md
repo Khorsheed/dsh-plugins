@@ -96,6 +96,18 @@
 - `e9215f91` 判定弹窗动作按钮与句子的空白修正（JSX 换行不产生空格）。
 - 面板内锚点跳转（`#cite.*`/`#fig.*`）**推迟**：白名单剥掉所有 `id`，滚动目标不存在；恢复 id 是归一化契约变更（正文重哈希、译文映射重定键），超出 M0 体量——记录在 mathml note 的 Alternatives。
 
+**M0 验收修复（`reader/m0-followups` 分支，2026-09-21，3080 验收报回）**：
+
+- `0236abaf` arXiv 图存活：LaTeXML 把矢量图嵌成 `<object type="image/svg+xml" data=…>`（实测 2604.03147），归一化改写成带原始宽高的 `<img>`；非图片 object 照旧整棵丢弃。
+- `9b23e0fc` 实质 base64 内联图不再被当占位图丢弃（transformer-circuits 实测 87 张）：图片 MIME 白名单 + 载荷 ≥512 字符才保留，占位图照旧穿透到懒加载属性；存储账（sidecar + 条数/TTL 承接多 MB 正文；外置图片 sidecar 属宿主缝，刻意推迟）写入 note。两个形态共用 Agent Note：[image-forms](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-image-forms.md)。
+- `512ea5a3` 链接卡片升级为论文自己的标题 + 摘要：extractArticle 返回 title/excerpt；宿主标注携带（淘汰存活）；`getBodies` 接回链接源；面板合成即升级、feed 条目永不改。Agent Note：[link-card-title](../../.agents/notes/implemented/feature/2026-09-21-reader-link-card-title.md)。
+
+**M0 验收修复第二批（同分支续作，2026-09-21）**：
+
+- `95b7c355` 失败原因搬进浮层：内联原因行让失败卡片比邻居高、破了墙的网格——药丸全状态一行高，点红丸开浮层（原因 + 按因动作），tooltip 兜底。Agent Note：[failure-popover](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.md)。
+- `6b632348` 分栏重挂载丢筛选（3199 复现）：收窄经被动 effect 镜像进页面记忆，与最后手势同窗口的重挂载能在冲刷前卸载——补卸载 cleanup 冲刷（渲染期 ref + cleanup 总会跑）。Agent Note：[unmount-narrowing-flush](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.md)。
+- `47386c0f` 墙面去重开关「隐藏重复」（默认开）：链接归一化优先、折叠标题+同日兜底、绝不模糊；幸存卡带重复来源徽章；已读跨组归并；自动补抓不为隐藏副本花请求。Agent Note：[wall-dedupe](../../.agents/notes/implemented/feature/2026-09-21-reader-wall-dedupe.md)。
+
 ## 验收标准（done 判定，绑定可插拔交付）
 
 1. 所有新包可 `dsh plugin add` / `remove` 一条命令装卸；identity triangle、`dsh.bundle.patch` 自挂载、`files` 清单、`dsh.client.inject` 声明齐全；`pnpm check:plugins`、`pnpm check:hygiene` 过。

@@ -50,11 +50,15 @@ const KEEP_TAGS = new Set([
  * renders natively, but an `annotation-xml` with `encoding="text/html"` parses
  * its children as HTML — the one MathML-shaped HTML-injection vector — so the
  * subtree never reaches the normalizer.
+ *
+ * `object` is no longer here either: LaTeXML (arXiv's HTML papers) embeds
+ * vector figures as `<object type="image/svg+xml" data="…">`, so the
+ * normalizer converts image-typed objects to `<img>` and drops the rest whole.
  */
 const DROP_TAGS = new Set([
   'script', 'style', 'template', 'nav', 'header', 'footer', 'aside',
   'form', 'iframe', 'svg', 'annotation-xml', 'button', 'select', 'input', 'textarea', 'video',
-  'audio', 'canvas', 'object', 'embed', 'link', 'meta', 'base', 'title',
+  'audio', 'canvas', 'embed', 'link', 'meta', 'base', 'title',
 ])
 
 /** Inline elements that survive an inline-only pass. */
@@ -102,6 +106,18 @@ export type ExtractArticleResult =
     readonly html: string
     readonly textLength: number
     /**
+     * The article's own title, when one is recoverable: the body's first
+     * heading, else the document's `<title>`. A saved link's card upgrades from
+     * the URL-derived label to this — the wall is where "which paper was this"
+     * gets answered.
+     */
+    readonly title?: string
+    /**
+     * A short plain-text excerpt (the first substantial paragraph, truncated at
+     * the card's measure), captured with the title.
+     */
+    readonly excerpt?: string
+    /**
      * How many figures had to be dropped because the page DRAWS them.
      *
      * Measured on the acceptance instance's transformer-circuits.pub paper:
@@ -132,6 +148,10 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     return { ok: false, error: `not parseable as HTML: ${errorMessage(error)}` }
   }
 
+  // `<title>` is in DROP_TAGS, so read the document title before the strip
+  // below removes the element it is computed from.
+  const docTitle = doc.title ?? ''
+
   // Strip the noise subtrees BEFORE scoring, so every candidate is measured on
   // the same terms (a sidebar full of links otherwise wins on raw text mass).
   for (const node of Array.from(doc.querySelectorAll([...DROP_TAGS].join(',')))) {
@@ -144,6 +164,11 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
   }
 
   const scriptFigures = countScriptFigures(scored.element)
+  // Read the title and excerpt BEFORE the chrome trim: the body's own first
+  // heading is exactly what the trim removes (the pane renders the title
+  // itself), and the excerpt wants the first prose paragraph either way.
+  const title = articleTitleOf(scored.element, docTitle)
+  const excerpt = articleExcerptOf(scored.element)
   trimLeadingChrome(scored.element, doc)
   // The title block is a custom element, so it has no tag of its own: the
   // normalizer UNWRAPS it and its `<br>`s land at the front of the body. Four
@@ -158,8 +183,47 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     ok: true,
     html: normalized,
     textLength,
+    ...(title === undefined ? {} : { title }),
+    ...(excerpt === undefined ? {} : { excerpt }),
     ...(scriptFigures === 0 ? {} : { scriptFigures }),
   }
+}
+
+/**
+ * The article's own title, when one is recoverable.
+ *
+ * The body's first `<h1>` wins (on every measured shape it is the post's name);
+ * the document `<title>` is the fallback (it often carries a site-name suffix,
+ * which is why it does not lead). Capped and collapsed; empty reads as absent.
+ *
+ * @param root - the element the body was extracted from (pre-chrome-trim).
+ * @param docTitle - the document's `<title>`, read before the noise strip.
+ * @returns the title, or `undefined`.
+ */
+function articleTitleOf(root: Element, docTitle: string): string | undefined {
+  const heading = collapse(root.querySelector('h1')?.textContent ?? '')
+  const title = heading.length > 0 ? heading : collapse(docTitle)
+  return title.length === 0 ? undefined : truncateText(title, 200)
+}
+
+/**
+ * A short excerpt for the card: the first paragraph substantial enough to be
+ * prose by the scorer's own per-script rule, at the card's measure.
+ *
+ * @param root - the element the body was extracted from.
+ * @returns the excerpt, or `undefined` when no paragraph qualifies.
+ */
+function articleExcerptOf(root: Element): string | undefined {
+  for (const p of Array.from(root.querySelectorAll('p'))) {
+    const text = collapse(p.textContent ?? '')
+    if (text.length >= paragraphThreshold(text)) return truncateText(text, 280)
+  }
+  return undefined
+}
+
+/** Truncate plain text at a cap with an ellipsis. */
+function truncateText(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
 }
 
 /**
@@ -235,7 +299,8 @@ const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'b
  *
  * "No picture" means no `<img>`, `<svg>`, `<canvas>`, `<video>` or `<picture>`
  * anywhere inside: the page renders that illustration at runtime. A `<math>`
- * subtree counts as content — a formula-only figure's picture IS its markup.
+ * subtree counts as content — a formula-only figure's picture IS its markup —
+ * and so does an image-typed `<object>` (the LaTeXML vector-figure shape).
  *
  * The figures themselves are KEPT, caption included. Dropping them was tried
  * and reverted: a caption is text the page published — it says what the figure
@@ -250,7 +315,7 @@ const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'b
 function countScriptFigures(root: Element): number {
   let count = 0
   for (const figure of Array.from(root.querySelectorAll('figure'))) {
-    if (figure.querySelector('img, svg, canvas, video, picture, math') !== null) continue
+    if (figure.querySelector('img, svg, canvas, video, picture, math, object[type^="image/"]') !== null) continue
     count += 1
   }
   return count
@@ -450,6 +515,10 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
     if (src === undefined) return ''
     return emitImg(src, element.getAttribute('alt'))
   }
+  // LaTeXML embeds vector figures as image-typed objects: an image in every
+  // sense that matters here. Any other object (a PDF, a movie) keeps the old
+  // DROP behavior — subtree and fallback content alike.
+  if (tag === 'object') return objectImg(element, baseUrl)
   // A <picture> is one image with several spellings: the first usable <source>
   // srcset, else the fallback <img>. Emitting one normalized <img> is the whole
   // point — the whitelist has no picture/source, so keeping the wrapper would
@@ -488,17 +557,82 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
  * lazy-load are also the ones whose CDNs answer a hotlink with a 403, and the
  * reader has no page context to refer from anyway.
  */
-function emitImg(src: string, alt: string | null): string {
-  return `<img src="${escapeAttribute(src)}"${alt === null ? '' : ` alt="${escapeAttribute(alt)}"`} referrerpolicy="no-referrer">`
+function emitImg(src: string, alt: string | null, dimensions: { readonly width?: string; readonly height?: string } = {}): string {
+  const width = dimensions.width === undefined ? '' : ` width="${dimensions.width}"`
+  const height = dimensions.height === undefined ? '' : ` height="${dimensions.height}"`
+  return `<img src="${escapeAttribute(src)}"${alt === null ? '' : ` alt="${escapeAttribute(alt)}"`}${width}${height} referrerpolicy="no-referrer">`
+}
+
+/** An integer dimension worth carrying onto the emitted image (nothing else is trusted). */
+function dimensionAttr(value: string | null): string | undefined {
+  if (value === null) return undefined
+  const trimmed = value.trim()
+  return /^[1-9]\d{0,4}$/.test(trimmed) ? trimmed : undefined
+}
+
+/**
+ * Resolve an `<object>` to a normalized `<img>`, or to nothing.
+ *
+ * Only `type="image/…"` objects with a fetchable `data` address qualify — that
+ * is the LaTeXML figure shape (`<object type="image/svg+xml" data="fig.svg"
+ * width height>`). The page's own width/height ride along when they are plain
+ * integers: an image with known dimensions is the difference between a stable
+ * layout and the growing document the reading-position note is about. The
+ * fallback children an object may carry are dropped with it — they duplicate
+ * the caption, not the picture.
+ */
+function objectImg(element: Element, baseUrl: string | undefined): string {
+  const type = (element.getAttribute('type') ?? '').trim()
+  if (!/^image\//i.test(type)) return ''
+  const src = absolutize(element.getAttribute('data'), baseUrl)
+  if (src === undefined) return ''
+  const width = dimensionAttr(element.getAttribute('width'))
+  const height = dimensionAttr(element.getAttribute('height'))
+  return emitImg(src, element.getAttribute('alt'), {
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height }),
+  })
+}
+
+/**
+ * The payload size that separates a real inlined figure from a 1px tracking
+ * placeholder. A transparent-gif placeholder is ~70 characters of base64; the
+ * smallest real chart is thousands — the threshold sits far from both, so no
+ * borderline page ever decides anything. (transformer-circuits.pub inlines its
+ * real figures as multi-hundred-KB data URIs; the old all-data:-is-placeholder
+ * rule deleted them.)
+ */
+export const DATA_IMAGE_MIN_PAYLOAD = 512
+
+/** The image types a kept data: URI may declare. */
+const DATA_IMAGE_MIME = /^image\/(?:png|jpe?g|gif|webp|svg\+xml|avif)$/i
+
+/**
+ * A `data:` URI worth keeping as an image, or `undefined` (which reads as
+ * ABSENT — the caller falls through to the lazy-loading attributes).
+ *
+ * The gate is MIME plus payload size; base64 payloads are whitespace-stripped
+ * because pages line-wrap them (a raw newline inside an emitted attribute is
+ * legal HTML, but the stripped form is what browsers parse either way).
+ */
+export function substantiveDataImage(value: string): string | undefined {
+  const match = /^\s*data:([^;,]+)((?:;[^;,]+)*),([\s\S]*)$/i.exec(value)
+  if (match === null) return undefined
+  const [, mime, parameters, payload] = match
+  if (mime === undefined || payload === undefined || !DATA_IMAGE_MIME.test(mime)) return undefined
+  const body = /;base64/i.test(parameters ?? '') ? payload.replace(/\s+/g, '') : payload
+  if (body.length < DATA_IMAGE_MIN_PAYLOAD) return undefined
+  return `data:${mime}${parameters ?? ''},${body}`
 }
 
 /**
  * Resolve the URL an image actually loads, past the lazy-loading tricks.
  *
  * The order is the order of trust: a real `src` first (a `data:` URI there is
- * the classic 1px placeholder and counts as ABSENT — the real URL is in the
- * attributes), then the lazy-loading attributes, then the best `srcset`
- * candidate. Only when nothing usable remains is the image dropped.
+ * the classic 1px placeholder and counts as ABSENT — UNLESS it is a substantive
+ * inlined image, see {@link substantiveDataImage}), then the lazy-loading
+ * attributes, then the best `srcset` candidate. Only when nothing usable
+ * remains is the image dropped.
  *
  * @param element - the `<img>` element.
  * @param baseUrl - base for relative URL resolution.
@@ -506,9 +640,14 @@ function emitImg(src: string, alt: string | null): string {
  */
 function imageSrc(element: Element, baseUrl: string | undefined): string | undefined {
   const src = element.getAttribute('src')
-  if (src !== null && !/^\s*data:/i.test(src)) {
-    const resolved = absolutize(src, baseUrl)
-    if (resolved !== undefined) return resolved
+  if (src !== null) {
+    if (/^\s*data:/i.test(src)) {
+      const inlined = substantiveDataImage(src)
+      if (inlined !== undefined) return inlined
+    } else {
+      const resolved = absolutize(src, baseUrl)
+      if (resolved !== undefined) return resolved
+    }
   }
   for (const name of LAZY_IMAGE_ATTRIBUTES) {
     const resolved = absolutize(element.getAttribute(name), baseUrl)
@@ -535,8 +674,9 @@ function bestSrcset(value: string | null, baseUrl: string | undefined): string |
     const previous = candidates[candidates.length - 1]
     // A data: URL carries a comma of its own (`data:image/png;base64,…`), so a
     // naive split cuts it in two — and the payload tail then parses as a
-    // candidate that can WIN. Rejoin the halves: the whole candidate is
-    // rejected as a scheme below, but its tail must never stand alone.
+    // candidate that can WIN. Rejoin the halves: the whole candidate is then
+    // judged by the same gate as any src (a substantive inlined image is kept,
+    // a placeholder is not), but its tail must never stand alone.
     if (previous !== undefined && /^\s*data:[^,]*$/i.test(previous)) {
       candidates[candidates.length - 1] = `${previous},${piece}`
       continue
@@ -548,7 +688,8 @@ function bestSrcset(value: string | null, baseUrl: string | undefined): string |
     const parts = candidate.trim().split(/\s+/)
     const raw = parts[0]
     if (raw === undefined || raw === '') continue
-    const url = absolutize(raw, baseUrl)
+    // A data: candidate is judged by the same gate as a data: src.
+    const url = /^\s*data:/i.test(raw) ? substantiveDataImage(raw) : absolutize(raw, baseUrl)
     if (url === undefined) continue
     const descriptor = parts[1]
     const size = descriptor === undefined ? Number.NaN : Number.parseFloat(descriptor)
@@ -648,7 +789,8 @@ function serializeInline(node: Node): string {
     if (DROP_TAGS.has(tag)) continue
     // A noscript's fallback image means nothing in an inline summary; the rest
     // of its content ("please enable JavaScript") was never content at all.
-    if (tag === 'noscript') continue
+    // An object's fallback text is the same kind of chrome.
+    if (tag === 'noscript' || tag === 'object') continue
     if (tag === 'br') {
       out += ' '
       continue

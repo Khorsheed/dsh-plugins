@@ -335,8 +335,7 @@ describe('an arxiv link is upgraded to the official HTML version', () => {
   })
 })
 
-describe('a DOI link is resolved to its arXiv version', () => {
-  const PAGE = `<article><p>${'正文。'.repeat(200)}</p></article>`
+describe('a DOI link is resolved to its arXiv version', () => {const PAGE = `<article><p>${'正文。'.repeat(200)}</p></article>`
   const CROSSREF_GO = JSON.stringify({
     status: 'ok',
     message: {
@@ -433,6 +432,67 @@ describe('a DOI link is resolved to its arXiv version', () => {
     const source = (await service.listSources()).sources[0]
     expect(source?.url).toBe('https://doi.org/10.1038/nature14539')
     expect(source?.resolvedFrom).toBeUndefined()
+  })
+})
+
+describe('a saved link’s card learns the article’s own title', () => {
+  it('stores extracted title/excerpt with the body and serves them with the payload', async () => {
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => ({
+      url,
+      statusCode: 200,
+      body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(200)}</p></article>` },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://example.com/paper' })
+    const source = (await service.listSources()).sources[0]!
+    const entryId = linkEntryId(source.id)
+
+    await service.storeEntryBody({ entryId, url: source.url, html: '<p>正文</p>', title: '论文的真标题', excerpt: '这是摘要的第一句。' })
+    // The wall's payload channel carries the captured meta for a link source.
+    const bodies = await service.getBodies({ ids: [source.id] })
+    expect(bodies.bodies[0]).toMatchObject({ title: '论文的真标题', excerpt: '这是摘要的第一句。' })
+
+    // A re-store that carries no meta keeps the captured values.
+    await service.storeEntryBody({ entryId, url: source.url, html: '<p>正文 v2</p>' })
+    const again = await service.getBodies({ ids: [source.id] })
+    expect(again.bodies[0]).toMatchObject({ title: '论文的真标题', excerpt: '这是摘要的第一句。' })
+  })
+
+  it('serves the captured meta even when the source payload is gone', async () => {
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://example.com/paper',
+      statusCode: 200,
+      body: { kind: 'html' as const, content: `<article><p>${'正文。'.repeat(200)}</p></article>` },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://example.com/paper' })
+    const source = (await service.listSources()).sources[0]!
+    const entryId = linkEntryId(source.id)
+    await service.storeEntryBody({ entryId, url: source.url, html: '<p>正文</p>', title: '真标题' })
+    // A failed later refresh keeps the payload-less source; the meta still answers.
+    await service.refresh({ ids: [] })
+    const bodies = await service.getBodies({ ids: [source.id] })
+    expect(bodies.bodies[0]?.title).toBe('真标题')
+  })
+
+  it('never joins meta onto a feed source', async () => {
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => ({
+      url,
+      statusCode: 200,
+      body: {
+        kind: 'text' as const,
+        content: '<rss version="2.0"><channel><title>hn</title><item><title>一条</title></item></channel></rss>',
+      },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://example.com/feed.xml' })
+    const source = (await service.listSources()).sources[0]!
+    const bodies = await service.getBodies({ ids: [source.id] })
+    expect(bodies.bodies[0]?.title).toBeUndefined()
+    expect(bodies.bodies[0]?.excerpt).toBeUndefined()
   })
 })
 

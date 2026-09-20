@@ -1906,28 +1906,31 @@
   color: var(--dsw-static-red-600, #d54941);
 }
 
-/* A final failure (HTTP error, empty page, cross-site hop): an indicator, not a
-   button — no gesture changes the answer, so the pill takes no pointer. */
-.fetchPill_final {
-  cursor: default;
+/* The failed pill's popover: the reason and the cause's actions float over the
+   wall, so a failed card stays exactly one line tall (an inline reason line
+   made failed cards taller than their neighbours and broke the grid). */
+.pillPop {
+  position: fixed;
+  z-index: 40;
+  max-width: 248px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
 }
 
-.fetchPill_final:hover {
-  background: transparent;
-  color: var(--dsw-static-red-600, #d54941);
+.pillPopReason {
+  margin: 0;
 }
 
-/* The failed pill's reason, on its own line under the pill row: a failure the
-   reader must hover to understand reads as "failed for no reason". */
-.fetchReason {
-  flex-basis: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10.5px;
-  color: var(--dsw-static-red-600, #d54941);
-  opacity: 0.85;
+.pillPopActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
 }
 
 .tagOnCard {

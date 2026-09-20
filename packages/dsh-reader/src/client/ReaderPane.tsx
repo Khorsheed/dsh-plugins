@@ -64,6 +64,7 @@ import {
 } from './translate.ts'
 import {
   countUnread,
+  dedupeRows,
   flattenEntries,
   fetchStateOf,
   LIST_RENDER_LIMIT,
@@ -568,6 +569,19 @@ function entryFromRecent(item: ReaderRecentEntry): ReaderEntry {
   }
 }
 
+/**
+ * The extracted meta a saved link's row carries once its card was upgraded.
+ *
+ * The `title !== sourceLabel` check is what "upgraded" means: synthesis swaps
+ * the URL-derived label for the article's own name when extraction reads one,
+ * and only then is there anything worth persisting. Feed rows never carry
+ * this — their titles are the publisher's own.
+ */
+function linkMetaOf(row: ReaderRow): { title: string; excerpt?: string } | undefined {
+  if (row.sourceKind !== 'link' || row.entry.title === row.sourceLabel) return undefined
+  return { title: row.entry.title, ...(row.entry.summary === undefined ? {} : { excerpt: row.entry.summary }) }
+}
+
 /** The reader tab body. */
 export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const { sessionId, useStore, actions, t } = props
@@ -591,6 +605,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const filter = useStore(s => s.filter)
   const query = useStore(s => s.query)
   const unreadOnly = useStore(s => s.unreadOnly)
+  const hideDupes = useStore(s => s.hideDupes)
   const sort = useStore(s => s.sort)
   const read = useStore(s => s.read)
   const lastRefreshAt = useStore(s => s.lastRefreshAt)
@@ -687,6 +702,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       ...(patch.query === undefined ? {} : { query: patch.query }),
       ...(patch.sort === undefined ? {} : { sort: patch.sort }),
       ...(patch.unreadOnly === undefined ? {} : { unreadOnly: patch.unreadOnly }),
+      ...(patch.hideDupes === undefined ? {} : { hideDupes: patch.hideDupes }),
       ...(patch.read === undefined ? {} : { read: patch.read }),
     })
   }, [actions])
@@ -717,6 +733,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [sourceFilter, setSourceFilter] = useState('')
   /** The entry whose card menu is open, plus where to anchor it. */
   const [cardMenu, setCardMenu] = useState<{ entryId: string; top: number; left: number } | null>(null)
+  /** The failed fetch pill whose reason popover is open, plus where to anchor it. */
+  const [pillInfo, setPillInfo] = useState<{ entryId: string; top: number; left: number } | null>(null)
   const [tagDraft, setTagDraft] = useState('')
   const [tagInputOpen, setTagInputOpen] = useState(false)
   /** The entry whose tag panel is open on the wall (and where to anchor it). */
@@ -811,13 +829,33 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (!mirrorStartedRef.current) { mirrorStartedRef.current = true; return }
     if (!hydrateStartedRef.current) return
     patchSession({
-      view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+      view, openEntryId, openSourceId, filter, query, sort, unreadOnly, hideDupes, read,
       wallOn, wallBoth, cardTranslations,
     })
   }, [
-    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, read,
+    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, hideDupes, read,
     wallOn, wallBoth, cardTranslations,
   ])
+
+  /**
+   * The unmount flush: the mirror above is a PASSIVE effect, and a pane that is
+   * reseated in the same commit window as the reader's last gesture (a dockkit
+   * split moving the tab body) can unmount before the flush — the next mount
+   * then hydrates the PREVIOUS narrowing (the 3199 report: source filter set,
+   * split, and the box came back empty). Render writes the ref synchronously on
+   * every commit, and the cleanup — which DOES always run — records it. The
+   * same `hydrateStartedRef` guard as the mirror: a pane that never hydrated
+   * must not overwrite the record with the store's defaults.
+   */
+  const narrowingRef = useRef<Parameters<typeof patchSession>[0] | null>(null)
+  narrowingRef.current = {
+    view, openEntryId, openSourceId, filter, query, sort, unreadOnly, hideDupes, read,
+    wallOn, wallBoth, cardTranslations,
+  }
+  useEffect(() => () => {
+    if (!hydrateStartedRef.current) return
+    if (narrowingRef.current !== null) patchSession(narrowingRef.current)
+  }, [])
 
   /** The class names `translate.ts` decorates the article with. */
   const translateClasses = useMemo<TranslateClasses>(
@@ -871,8 +909,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               entries: [{
                 id: linkEntryId(source.id),
                 sourceId: source.id,
-                title: source.label,
+                // The captured title/excerpt from a past extraction beat the
+                // URL-derived label: the card should name the paper, not the
+                // address, even after the payload's eviction.
+                title: body.title ?? source.label,
                 link: source.url,
+                ...(body.excerpt === undefined ? {} : { summary: body.excerpt }),
                 // No payload at all: whatever the detail view can show is
                 // partial by definition, so it says so instead of pretending.
                 truncated: true,
@@ -903,13 +945,20 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             : { id: source.id, entries: [], error: result.error, ...(fetchedAt === undefined ? {} : { fetchedAt }) })
         } else {
           const extracted = extractArticle(body.raw, source.url)
+          // The card's title/excerpt: the article's own when THIS extraction
+          // read one, else the captured ones from an earlier extraction, else
+          // the URL-derived label — a saved link's card names the paper.
+          const extractedTitle = extracted.ok ? extracted.title : undefined
+          const extractedExcerpt = extracted.ok ? extracted.excerpt : undefined
+          const excerpt = extractedExcerpt ?? body.excerpt
           actions.setParsed({
             id: source.id,
             entries: [{
               id: linkEntryId(source.id),
               sourceId: source.id,
-              title: source.label,
+              title: extractedTitle ?? body.title ?? source.label,
               link: source.url,
+              ...(excerpt === undefined ? {} : { summary: excerpt }),
               ...(extracted.ok ? { contentHtml: extracted.html } : {}),
               // Incompleteness comes from the FETCH, not from extraction: the
               // seam truncated the page, so whatever we extracted is partial.
@@ -1112,8 +1161,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           // The map rides the body's identity: a re-extraction of the same
           // payload keeps it, a changed body retires it in the same commit.
           bodyHash: translationHash(extracted.html),
+          // The article's own title/excerpt: a saved link's card upgrade.
+          ...(extracted.title === undefined ? {} : { title: extracted.title }),
+          ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
           ...(stored.value.truncated === true ? { truncated: true } : {}),
           ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
+        })
+        actions.noteExtractedMeta(entry.id, {
+          ...(extracted.title === undefined ? {} : { title: extracted.title }),
+          ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
         })
       }
     } finally {
@@ -1134,7 +1190,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * same gesture. The body hash keeps the entry's translation map riding the
    * same identity rule as a fetched body.
    */
-  const persistFeedBody = useCallback((entryId: string, url: string, html: string, truncated: boolean) => {
+  const persistFeedBody = useCallback((entryId: string, url: string, html: string, truncated: boolean, meta?: { title?: string; excerpt?: string }) => {
     if (html.trim().length === 0) return
     void props.storeEntryBody({
       entryId,
@@ -1142,6 +1198,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       html,
       bodyHash: translationHash(html),
       ...(truncated ? { truncated: true } : {}),
+      ...(meta?.title === undefined ? {} : { title: meta.title }),
+      ...(meta?.excerpt === undefined ? {} : { excerpt: meta.excerpt }),
     }).then((stored) => {
       if (!stored.ok) return
       // The host holds a fresh body now, whichever marker said otherwise (a
@@ -1154,6 +1212,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const rows = useMemo(() => selectRows(allEntries, presentation, {
     filter, query, unreadOnly, sort, read, tags: entryTagIds, now: new Date(),
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
+
+  /**
+   * The wall's dedupe: republished articles fold behind one card (survivor and
+   * hidden copies per `dedupeRows`). The `dupesBy` map is what the surviving
+   * card's badge reads; hiddenCount feeds the footer. When the switch is off
+   * the maps are empty and displayRows IS rows — the fold is invisible.
+   */
+  const { rows: displayRows, dupesBy, hiddenCount } = useMemo(
+    () => (hideDupes ? dedupeRows(rows, fetchStates) : { rows, dupesBy: new Map<string, readonly ReaderRow[]>(), hiddenCount: 0 }),
+    [hideDupes, rows, fetchStates],
+  )
+  // The wall's own observer pass reads the displayed rows, like the renderer.
+  rowsRef.current = displayRows
 
   /**
    * One entry by id: the wall's own parse first, the recent record as a fallback.
@@ -1568,7 +1639,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   // eighty fields, and firing them all at once would be a burst the sequential
   // API cannot absorb. So: the browser's own IntersectionObserver feeds a queue,
   // one pass drains it, and the translation memory makes a second pass free.
-  rowsRef.current = rows
+  // (rowsRef is fed where the displayed rows are computed, dedupe included.)
   const wallTranslateOffered = translator !== null && wallAvailability !== null && wallAvailability !== 'unavailable'
 
   // Probe the browser once for the wall's pair (the wall has no single body, so
@@ -1767,6 +1838,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // A fresh body just landed: the entry is no longer expired, whichever
         // screen is showing.
         actions.setStaleBody(entryId, false)
+        // A saved link's card upgrades to the article's own title/excerpt on
+        // the same gesture (the action itself refuses feed entries).
+        actions.noteExtractedMeta(entryId, {
+          ...(result.title === undefined ? {} : { title: result.title }),
+          ...(result.excerpt === undefined ? {} : { excerpt: result.excerpt }),
+        })
         if (onScreen) {
           actions.setArticle(result.html, result.truncated === true, null)
           setScriptFigures(result.scriptFigures ?? 0)
@@ -1910,7 +1987,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
           // Full text the feed itself published: keep it, or it dies with the
           // feed's window (see persistFeedBody).
-          else persistFeedBody(row.entry.id, row.entry.link as string, view.value.html, view.value.truncated === true)
+          else persistFeedBody(row.entry.id, row.entry.link as string, view.value.html, view.value.truncated === true, linkMetaOf(row))
         }
       } else if (row.entry.contentHtml !== undefined) {
         actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
@@ -1920,7 +1997,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // behind it. A feed FULL text in the same situation is kept instead —
         // there is nothing to fetch for it.
         if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
-        else persistFeedBody(row.entry.id, row.entry.link as string, row.entry.contentHtml, row.entry.truncated === true)
+        else persistFeedBody(row.entry.id, row.entry.link as string, row.entry.contentHtml, row.entry.truncated === true, linkMetaOf(row))
       } else {
         // Nothing cached, nothing from the feed, and no recorded reason.
         //
@@ -2244,7 +2321,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       scroller.removeEventListener('touchmove', mark)
       scroller.removeEventListener('keydown', mark)
     }
-  }, [view, rows.length])
+  }, [view, displayRows.length])
 
   // Put the wall back where it was, once per entry into the list view: a long
   // wall that jumps to the top on every panel switch is the same complaint as a
@@ -2254,13 +2331,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (view !== 'list') { wallRestoredRef.current = false; return }
     if (wallRestoredRef.current) return
     const scroller = wallRef.current
-    if (scroller === null || rows.length === 0) return
+    if (scroller === null || displayRows.length === 0) return
     wallRestoredRef.current = true
     const target = readSession().wallScroll
     if (target === undefined || target <= 0) return
     scroller.scrollTop = target
     wallEchoRef.current = scroller.scrollTop
-  }, [view, rows.length])
+  }, [view, displayRows.length])
 
   /**
    * A rebuilt body means the old segmentation died with the old DOM — so the
@@ -2483,30 +2560,33 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [actions, props, refreshFetchStates])
 
   // Automatic, after the wall has something to look at — never before, so the
-  // reader never waits on the network for a list they already had.
+  // reader never waits on the network for a list they already had. A folded
+  // duplicate's copy is not fetched while it is hidden: the survivor answers.
   useEffect(() => {
     if (loading || allEntries.length === 0) return
-    void backfillBodies(selectRows(allEntries, presentation, {
+    const pool = selectRows(allEntries, presentation, {
       filter: 'all', query: '', unreadOnly: false, sort, read, tags: entryTagIds, now: new Date(),
-    }))
-  }, [loading, allEntries, presentation, sort, read, entryTagIds, backfillBodies])
+    })
+    void backfillBodies(hideDupes ? dedupeRows(pool).rows : pool)
+  }, [loading, allEntries, presentation, sort, read, entryTagIds, hideDupes, backfillBodies])
 
   // Any menu/panel dismisses on the next click outside it — the host's own
   // menus behave that way, and a popover that outlives its context is a trap.
   useEffect(() => {
-    if (cardMenu === null && cardTag === null && !filterOpen && !translateMenu && !wallMenu) return undefined
+    if (cardMenu === null && cardTag === null && !filterOpen && !translateMenu && !wallMenu && pillInfo === null) return undefined
     const dismiss = (event: MouseEvent): void => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"], [class*="translateWrap"]') !== null) return
+      if (target?.closest('[class*="cardMenu"], [class*="cardTagPanel"], [class*="filterPanel"], [class*="translateWrap"], [class*="pillPop"]') !== null) return
       setCardMenu(null)
       setCardTag(null)
       setFilterOpen(false)
       setTranslateMenu(false)
       setWallMenu(false)
+      setPillInfo(null)
     }
     window.addEventListener('mousedown', dismiss)
     return () => window.removeEventListener('mousedown', dismiss)
-  }, [cardMenu, cardTag, filterOpen, translateMenu, wallMenu])
+  }, [cardMenu, cardTag, filterOpen, translateMenu, wallMenu, pillInfo])
 
 
 
@@ -2662,7 +2742,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         <IconGlobeOutline14 size={14} />
         {t('tab.label')}
         <span className={css.count} title={t('filter.unreadOnly')}>
-          {countUnread(rows)} {t('foot.unread')}
+          {countUnread(displayRows)} {t('foot.unread')}
         </span>
       </span>
       <button
@@ -2780,6 +2860,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
                     <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
                     <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
+                  </button>
+                  {/* The dedupe switch lives with the wall's other narrowing:
+                      it decides what the wall shows, not how it looks. */}
+                  <button type="button" className={css.filterRow} onClick={() => actions.toggleHideDupes()}>
+                    <span className={css.filterCheck}>{hideDupes ? '✓' : ''}</span>
+                    <span className={css.filterLabel}>{t('filter.hideDupes')}</span>
                   </button>
                   {/* The drill row carries the CURRENT value, so a narrowing
                       filter is never hidden one level down: the reader sees
@@ -3938,16 +4024,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             ))}
           </div>
         )}
-        {!loading && sources.length > 0 && rows.length === 0 && (
+        {!loading && sources.length > 0 && displayRows.length === 0 && (
           <div className={css.state}>
             {/* An empty query is not a failed search. Saying "nothing matches
                 "" " told the reader nothing while a whole feed was unreadable. */}
             {query.trim().length === 0 ? t('state.emptyWall') : t('state.noMatch', { query })}
           </div>
         )}
-        {!loading && rows.length > 0 && (
+        {!loading && displayRows.length > 0 && (
           <div className={css.list}>
-            {rows.map(row => {
+            {displayRows.map(row => {
               // The card's text box is FIXED (two clamped lines per field, see
               // the CSS), because Chinese and English wrap differently: swapping
               // languages must not resize the card or shift the grid.
@@ -3972,6 +4058,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 rowSource?.failure?.code,
                 parsed[row.sourceId]?.error ?? t('detail.extractFailed'),
               )
+              // The duplicates this card stands for, when the wall's dedupe
+              // folded them behind it (a badge, never a deletion).
+              const dupes = dupesBy.get(row.entry.id) ?? []
               // Only a field that actually has a translation can be peeked: an
               // untranslated (or Chinese) card keeps its ordinary hover.
               const peekable = (field: 'title' | 'summary'): boolean => wallOn && !wallBoth && card?.[field] !== undefined
@@ -4028,6 +4117,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   {linkOnly && (
                     <span className={css.tagLinkOnly} title={linkOnlyReason}>{t('detail.linkOnlyBadge')}</span>
                   )}
+                  {dupes.length > 0 && (
+                    <span
+                      className={css.tagOwned}
+                      title={t('dedupe.title', { sources: dupes.map(dupe => dupe.sourceLabel).join('、') })}
+                    >
+                      {t('dedupe.badge', { count: dupes.length })}
+                    </span>
+                  )}
                   {(entryTagIds[row.entry.id] ?? []).map(tagId => (
                     <span key={tagId} className={css.tagOwned}>
                       {tags.find(tag => tag.id === tagId)?.name ?? tagId}
@@ -4036,11 +4133,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   {/* 抓取, where the reader sees the card: one click stores the
                       article so opening it later is instant. The host writes the
                       payload before it answers, so leaving the page does not
-                      cancel it — the state pill is what says so. A FAILED pill's
-                      gesture belongs to the recorded cause: transport failures
-                      retry, walls open in a real browser, final answers are a
-                      plain indicator — and the reason is a visible line, never
-                      a tooltip-only flash. */}
+                      cancel it — the state pill is what says so. A FAILED pill
+                      opens the reason popover (reason + the cause's action):
+                      the reason must be one tap away, but the card stays one
+                      line tall — an inline reason line broke the wall's grid. */}
                   {row.entry.link !== undefined && (() => {
                     const fetchState = fetchStateOf(fetchStates, row.entry.id)
                     const state = fetchState.state
@@ -4060,33 +4156,37 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       : fetchState.state === 'failed'
                         ? t(failedOpen ? 'fetch.failedOpenTitle' : failedFinal ? 'fetch.failedFinalTitle' : 'fetch.failedTitle', { reason: failedReason ?? '' })
                         : t('fetch.noneTitle')
-                    const fire = (): void => {
-                      if (state === 'ready' || failedFinal) return
-                      if (failedOpen) { openElsewhere(row.entry.link as string); return }
-                      void startFetch(row.entry)
+                    const failed = fetchState.state === 'failed'
+                    const openInfo = (anchor: HTMLElement): void => {
+                      const box = anchor.getBoundingClientRect()
+                      setPillInfo(current => current?.entryId === row.entry.id ? null : {
+                        entryId: row.entry.id,
+                        top: box.bottom + 6,
+                        left: Math.max(8, Math.min(box.left, window.innerWidth - 256)),
+                      })
                     }
-                    const interactive = state !== 'ready' && !failedFinal
                     return (
-                      <>
-                        <span
-                          className={`${css.fetchPill} ${css[`fetchPill_${state === 'raw' ? 'fetching' : state}`] ?? ''}${failedFinal ? ` ${css.fetchPill_final}` : ''}`}
-                          {...(interactive ? { role: 'button', tabIndex: 0 } : {})}
-                          title={title}
-                          onClick={event => {
-                            event.stopPropagation()
-                            if (interactive) fire()
-                          }}
-                          onKeyDown={event => {
-                            if (event.key !== 'Enter' && event.key !== ' ') return
-                            event.stopPropagation()
-                            if (interactive) fire()
-                          }}
-                        >
-                          {glyph(state === 'ready' ? 'check' : state === 'failed' ? 'alert' : 'fetch', 10)}
-                          <span>{t(labelKey)}</span>
-                        </span>
-                        {failedReason !== undefined && <span className={css.fetchReason}>{failedReason}</span>}
-                      </>
+                      <span
+                        className={`${css.fetchPill} ${css[`fetchPill_${state === 'raw' ? 'fetching' : state}`] ?? ''}`}
+                        {...(state !== 'ready' ? { role: 'button', tabIndex: 0 } : {})}
+                        title={title}
+                        onClick={event => {
+                          event.stopPropagation()
+                          if (state === 'ready') return
+                          if (failed) openInfo(event.currentTarget as HTMLElement)
+                          else void startFetch(row.entry)
+                        }}
+                        onKeyDown={event => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return
+                          event.stopPropagation()
+                          if (state === 'ready') return
+                          if (failed) openInfo(event.currentTarget as HTMLElement)
+                          else void startFetch(row.entry)
+                        }}
+                      >
+                        {glyph(state === 'ready' ? 'check' : state === 'failed' ? 'alert' : 'fetch', 10)}
+                        <span>{t(labelKey)}</span>
+                      </span>
                     )
                   })()}
                   {/* The reader's own tag affordance, in the row where the
@@ -4122,7 +4222,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 how "the search returned six other posts" gets reported. */}
             {query.trim() !== '' && (
               <>
-                <span>{t('state.matches', { count: rows.length, query: query.trim() })}</span>
+                <span>{t('state.matches', { count: displayRows.length, query: query.trim() })}</span>
+                <span className={css.sep}>·</span>
+              </>
+            )}
+            {hiddenCount > 0 && (
+              <>
+                <span>{t('foot.deduped', { count: hiddenCount })}</span>
                 <span className={css.sep}>·</span>
               </>
             )}
@@ -4184,6 +4290,49 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </div>
         </div>
       )}
+      {/* The failed pill's popover: the reason and the cause's action float
+          over the wall, so a failed card stays exactly one line tall. */}
+      {pillInfo !== null && (() => {
+        const entry = allEntries.find(item => item.id === pillInfo.entryId)
+        const fetchState = fetchStateOf(fetchStates, pillInfo.entryId)
+        if (entry === undefined || fetchState.state !== 'failed') return null
+        const reason = previewReason(t, fetchState.code, fetchState.message)
+        const canOpen = fetchState.code !== undefined && OPEN_IN_BROWSER_CODES.has(fetchState.code) && entry.link !== undefined
+        const canRetry = fetchState.code === undefined || fetchState.code === 'unreachable'
+        return (
+          <div
+            className={css.pillPop}
+            style={{ top: pillInfo.top, left: pillInfo.left }}
+            role="dialog"
+            aria-label={t('fetch.failed')}
+            onKeyDown={event => { if (event.key === 'Escape') setPillInfo(null) }}
+          >
+            <p className={css.pillPopReason}>{reason}</p>
+            {(canRetry || canOpen) && (
+              <div className={css.pillPopActions}>
+                {canRetry && (
+                  <button
+                    type="button"
+                    className={css.incompleteLink}
+                    onClick={() => { setPillInfo(null); void startFetch(entry) }}
+                  >
+                    {t('detail.refetch')}
+                  </button>
+                )}
+                {canOpen && (
+                  <button
+                    type="button"
+                    className={css.incompleteLink}
+                    onClick={() => { setPillInfo(null); openElsewhere(entry.link as string) }}
+                  >
+                    {browserTab ? t('action.openExternal') : t('detail.readOriginal')}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
       {cardMenu !== null && (() => {
         const entry = allEntries.find(item => item.id === cardMenu.entryId)
         if (entry === undefined) return null

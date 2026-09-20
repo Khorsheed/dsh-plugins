@@ -236,6 +236,18 @@ export interface ReaderEntryAnnotation {
   /** When that failure was recorded (ISO-8601). */
   readonly failedAt?: string
   /**
+   * The article's own title, captured at extraction.
+   *
+   * A saved link's entry is synthesized from the source's URL-derived label;
+   * once the body has been extracted the paper's real name lives here, and the
+   * wall card prefers it. Deliberately survives the body: past eviction it is
+   * the card's memory of what the paper was. Only ever written for a link
+   * source's single entry — a feed entry's title is already the publisher's.
+   */
+  readonly title?: string
+  /** A short excerpt (the abstract / first paragraph), captured with the title. */
+  readonly excerpt?: string
+  /**
    * This entry's translated segment map (a hash→translation table, never
    * markup). No TTL: a translation costs a gesture plus per-sentence model work
    * to rebuild, so only the shared translation budget evicts it.
@@ -552,6 +564,14 @@ export interface ReaderBody {
   readonly truncated?: boolean
   /** Present when the payload could not be produced (fetch failed, no fs, …). */
   readonly error?: string
+  /**
+   * The captured article title for a link source's single entry, when a past
+   * extraction stored it (see {@link ReaderEntryAnnotation.title}). The wall
+   * prefers it over the URL-derived label.
+   */
+  readonly title?: string
+  /** The captured excerpt, with the title. */
+  readonly excerpt?: string
 }
 
 /* ------------------------------------------------------------------ helpers */

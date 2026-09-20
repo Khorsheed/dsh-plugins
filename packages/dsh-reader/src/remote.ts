@@ -132,6 +132,10 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     truncated?: boolean
     scriptFigures?: number
     bodyHash?: string
+    /** The article's own title, as extracted — the saved link's card upgrade. */
+    title?: string
+    /** A short excerpt (abstract / first paragraph), with the title. */
+    excerpt?: string
   }): Promise<ReaderEntryBodyView> {
     return this.core.storeEntryBody(request)
   }

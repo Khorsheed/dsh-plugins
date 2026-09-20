@@ -323,13 +323,23 @@ function normalizeAnnotations(value: unknown): Record<string, ReaderEntryAnnotat
       ...(typeof record.error === 'string' ? { error: record.error.slice(0, 500) } : {}),
       ...(failureCode === undefined ? {} : { failureCode }),
       ...(typeof record.failedAt === 'string' ? { failedAt: record.failedAt } : {}),
+      // The captured card meta: trimmed and capped on read, empty reads absent.
+      ...(typeof record.title === 'string' && record.title.trim().length > 0
+        ? { title: record.title.trim().slice(0, 300) }
+        : {}),
+      ...(typeof record.excerpt === 'string' && record.excerpt.trim().length > 0
+        ? { excerpt: record.excerpt.trim().slice(0, 1000) }
+        : {}),
     }
     // A `fetch` record alone is a real annotation: it is what says "the payload
     // is on disk waiting to be extracted". Dropping it here lost every stored
     // payload on the next read. A `translation` is the same kind of load-bearing:
-    // it is the whole point of the translation store.
+    // it is the whole point of the translation store. And a captured
+    // title/excerpt is the card's memory of what the paper was — it must outlive
+    // the body it was captured from.
     if (annotation.body === undefined && annotation.fetch === undefined && annotation.tagIds === undefined
-      && annotation.error === undefined && annotation.translation === undefined) continue
+      && annotation.error === undefined && annotation.translation === undefined
+      && annotation.title === undefined && annotation.excerpt === undefined) continue
     out[entryId] = annotation
   }
   return out
@@ -790,9 +800,11 @@ export function boundAnnotations(doc: ReaderStateDoc): { doc: ReaderStateDoc; ch
     // The body is gone, so its exact-fit translation map goes in the same pass:
     // the map is keyed to that body's hash and answers nothing without it
     // (unchanged sentences still hit the GLOBAL memory — the linkage is about
-    // the entry tier only). Tags and the failure record survive, as before.
+    // the entry tier only). Tags, the failure record and the captured card meta
+    // survive, as before.
     const { body: _released, translation: _linked, ...rest } = entry
-    if (rest.tagIds === undefined && rest.error === undefined && rest.fetch === undefined) continue
+    if (rest.tagIds === undefined && rest.error === undefined && rest.fetch === undefined
+      && rest.title === undefined && rest.excerpt === undefined) continue
     next[entryId] = rest
   }
   return { doc: { ...doc, annotations: next }, changed: true }

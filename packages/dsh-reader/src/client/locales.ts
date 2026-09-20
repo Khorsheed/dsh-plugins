@@ -19,6 +19,7 @@ export type ReaderKey =
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
   | 'filter.searchSource' | 'filter.noSourceMatch' | 'filter.byKind' | 'filter.deleteTag'
+  | 'filter.hideDupes' | 'dedupe.badge' | 'dedupe.title'
   | 'action.translate' | 'translate.view' | 'translate.onlyTranslation' | 'translate.bilingual'
   | 'translate.onlyOriginal' | 'translate.retry' | 'translate.tip' | 'translate.preparing'
   | 'translate.working' | 'translate.local' | 'translate.failed' | 'translate.dismiss'
@@ -62,7 +63,7 @@ export type ReaderKey =
   | 'detail.summaryOnly' | 'detail.resolvedFrom'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
   | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
-  | 'foot.refreshing'
+  | 'foot.refreshing' | 'foot.deduped'
   | 'quote.copied' | 'quote.copyFailed' | 'quote.quoted'
   | 'quote.toSideChat' | 'quote.sideChatUnavailable'
   | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
@@ -106,6 +107,9 @@ export const en = {
   'filter.byTag': 'By tag',
   'filter.byKind': 'By type',
   'filter.deleteTag': 'Delete this tag',
+  'filter.hideDupes': 'Hide duplicates',
+  'dedupe.badge': '{count} duplicate sources',
+  'dedupe.title': 'The same article also came from: {sources}',
   'filter.searchSource': 'Search sources…',
   'filter.noSourceMatch': 'No source matches',
   'search.placeholder': 'Search titles, authors, sources…',
@@ -227,6 +231,7 @@ export const en = {
   'foot.never': 'Not refreshed yet',
   'foot.unread': 'unread',
   'foot.refreshing': 'Refreshing…',
+  'foot.deduped': '{count} duplicates hidden',
   'state.backfilling': 'Filling in {done}/{total} full articles…',
   'detail.filledIn': 'The full text was fetched automatically and cached. The card still shows the feed’s own summary — open it to read.',
   'detail.filledInBadge': 'Full text',
@@ -238,8 +243,8 @@ export const en = {
   'fetch.failed': 'Fetch failed',
   'fetch.noneTitle': 'Fetch the article now — it keeps going when you leave this page',
   'fetch.readyTitle': 'The full text is cached — open it to read',
-  'fetch.failedTitle': 'Fetch failed: {reason} — click to retry',
-  'fetch.failedOpenTitle': 'Fetch failed: {reason} — click to open it in a browser',
+  'fetch.failedTitle': 'Fetch failed: {reason} — click for details and retry',
+  'fetch.failedOpenTitle': 'Fetch failed: {reason} — click for details',
   'fetch.failedFinalTitle': 'Fetch failed: {reason}',
   'detail.renderFetch': 'Fetch rendered',
 
@@ -295,6 +300,9 @@ export const zh = {
   'filter.byTag': '按标签',
   'filter.byKind': '按类型',
   'filter.deleteTag': '删除这个标签',
+  'filter.hideDupes': '隐藏重复',
+  'dedupe.badge': '{count} 个重复来源',
+  'dedupe.title': '同一篇还来自：{sources}',
   'filter.searchSource': '搜索来源…',
   'filter.noSourceMatch': '没有匹配的来源',
   'search.placeholder': '搜索标题、作者、来源…',
@@ -416,6 +424,7 @@ export const zh = {
   'foot.never': '尚未刷新',
   'foot.unread': '未读',
   'foot.refreshing': '正在刷新…',
+  'foot.deduped': '已隐藏 {count} 条重复',
   'state.backfilling': '正在补齐全文 {done}/{total}…',
   'detail.filledIn': '全文是自动抓取并缓存的。卡片上仍是 feed 自己的摘要 —— 点开看全文。',
   'detail.filledInBadge': '已抓全文',
@@ -427,8 +436,8 @@ export const zh = {
   'fetch.failed': '抓取失败',
   'fetch.noneTitle': '现在就把这篇抓下来 —— 离开这个页面也不会停',
   'fetch.readyTitle': '已有全文，点开就能读',
-  'fetch.failedTitle': '抓取失败：{reason} —— 点一下重试',
-  'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下在浏览器打开',
+  'fetch.failedTitle': '抓取失败：{reason} —— 点一下看详情、可重试',
+  'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下看详情',
   'fetch.failedFinalTitle': '抓取失败：{reason}',
   'detail.renderFetch': '渲染抓取',
 

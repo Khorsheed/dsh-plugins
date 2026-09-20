@@ -562,8 +562,17 @@ export class ReaderService {
       bodies: request.ids.map(id => {
         const source = byId.get(id)
         if (source === undefined) return { id, error: 'not-found' }
-        if (source.raw === undefined) return { id, error: source.error ?? 'no payload stored yet' }
-        return { id, raw: source.raw, ...(source.truncated === true ? { truncated: true } : {}) }
+        // A saved link's single entry: the captured title/excerpt join the
+        // answer, so the card can show the paper's own name even after the
+        // payload's eviction. Feed sources never join — their entries' titles
+        // are already the publisher's.
+        const meta = source.kind === 'link' ? doc.annotations?.[linkEntryId(source.id)] : undefined
+        const carried = {
+          ...(meta?.title === undefined ? {} : { title: meta.title }),
+          ...(meta?.excerpt === undefined ? {} : { excerpt: meta.excerpt }),
+        }
+        if (source.raw === undefined) return { id, error: source.error ?? 'no payload stored yet', ...carried }
+        return { id, raw: source.raw, ...(source.truncated === true ? { truncated: true } : {}), ...carried }
       }),
     }
   }
@@ -812,6 +821,10 @@ export class ReaderService {
     scriptFigures?: number
     /** The caller's hash of `html`; the entry's translation map dies with a body it no longer matches. */
     bodyHash?: string
+    /** The article's own title, as the extraction read it — a saved link's card upgrade. */
+    title?: string
+    /** A short excerpt (abstract / first paragraph), with the title. */
+    excerpt?: string
   }): Promise<ReaderEntryBodyView> {
     const html = request.html.trim()
     if (html.length === 0) {
@@ -851,6 +864,11 @@ export class ReaderService {
         && existing.translation.bodyHash === request.bodyHash
         ? existing.translation
         : undefined
+      // The article's own title/excerpt ride the same write: supplied beats
+      // stored, stored beats absent — a store that carries no meta keeps the
+      // captured values.
+      const title = metaText(request.title, 300) ?? existing?.title
+      const excerpt = metaText(request.excerpt, 1000) ?? existing?.excerpt
       // The stored raw payload has been consumed: the fetch record goes with it,
       // so the wall now reads `ready` from the body alone.
       return {
@@ -861,6 +879,8 @@ export class ReaderService {
             body,
             ...(tagIds === undefined ? {} : { tagIds }),
             ...(translation === undefined ? {} : { translation }),
+            ...(title === undefined ? {} : { title }),
+            ...(excerpt === undefined ? {} : { excerpt }),
           },
         },
       }
@@ -1554,6 +1574,13 @@ function sameTarget(a: string, b: string): boolean {
   return strip(a) === strip(b)
 }
 
+/** A captured title/excerpt, trimmed and capped; empty reads as absent. */
+function metaText(value: string | undefined, cap: number): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  return trimmed.length === 0 ? undefined : trimmed.slice(0, cap)
+}
+
 /** A short stable hash, used only to build ids. */
 function hash(input: string): string {
   let value = 0x811c9dc5
@@ -1774,9 +1801,12 @@ function cleanupAnnotations(
   for (const [entryId, entry] of Object.entries(annotations)) {
     // A fetch record alone is load-bearing (the payload is on disk waiting to
     // be extracted), and a translation is the costly-to-rebuild kind of record
-    // this document exists to keep — neither may be swept as "empty".
+    // this document exists to keep — neither may be swept as "empty". Neither
+    // may a captured title/excerpt: it is the card's memory of what the paper
+    // was, and it must outlive the body it came from.
     if (entry.body === undefined && (entry.tagIds ?? []).length === 0 && entry.error === undefined
-      && entry.fetch === undefined && entry.translation === undefined) continue
+      && entry.fetch === undefined && entry.translation === undefined
+      && entry.title === undefined && entry.excerpt === undefined) continue
     out[entryId] = (entry.tagIds ?? []).length > 0 ? entry : withoutTags(entry)
   }
   return out
