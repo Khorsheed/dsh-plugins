@@ -309,6 +309,46 @@ describe('lazy-loaded images are recovered', () => {
     expect(normalizeRichText('<p><img srcset="data:image/png;base64,AAAA 1x"></p>')).toBe('<p></p>')
   })
 
+  it('keeps a substantive data-URI image, and a placeholder still yields to data-src', () => {
+    // transformer-circuits.pub inlines its REAL figures as multi-hundred-KB
+    // base64 images (measured: 87 of them on the emotions paper) — the
+    // placeholder policy deleted them. The split is payload size: a 1px gif is
+    // ~70 chars, the smallest real chart is thousands.
+    const big = `data:image/png;base64,${'A'.repeat(600)}`
+    expect(normalizeRichText(`<p><img src="${big}"></p>`))
+      .toBe(`<p><img src="${big}" referrerpolicy="no-referrer"></p>`)
+    // …and the classic placeholder shape is unchanged: absent src, lazy attr wins.
+    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+    expect(normalizeRichText(
+      `<p><img src="${placeholder}" data-src="/img/real.png"></p>`,
+      'https://example.com/post/',
+    )).toBe('<p><img src="https://example.com/img/real.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('pins the 512-char payload boundary on both sides', () => {
+    const at = `data:image/png;base64,${'B'.repeat(512)}`
+    const under = `data:image/png;base64,${'B'.repeat(511)}`
+    expect(normalizeRichText(`<p><img src="${at}"></p>`)).toBe(`<p><img src="${at}" referrerpolicy="no-referrer"></p>`)
+    expect(normalizeRichText(`<p><img src="${under}"></p>`)).toBe('<p></p>')
+  })
+
+  it('never keeps a non-image data URI, however large', () => {
+    const big = `data:text/html;base64,${'C'.repeat(900)}`
+    expect(normalizeRichText(`<p><img src="${big}"></p>`)).toBe('<p></p>')
+  })
+
+  it('strips the line-wrap whitespace pages put inside long base64 payloads', () => {
+    const wrapped = `data:image/png;base64,${'D'.repeat(300)}\n${'E'.repeat(300)}`
+    expect(normalizeRichText(`<p><img src="${wrapped}"></p>`))
+      .toBe(`<p><img src="data:image/png;base64,${'D'.repeat(300)}${'E'.repeat(300)}" referrerpolicy="no-referrer"></p>`)
+  })
+
+  it('lets a substantive data candidate win a srcset', () => {
+    const big = `data:image/webp;base64,${'F'.repeat(700)}`
+    expect(normalizeRichText(`<p><img srcset="/a.png 1x, ${big} 2x"></p>`, 'https://example.com/'))
+      .toBe(`<p><img src="${big}" referrerpolicy="no-referrer"></p>`)
+  })
+
   it('resolves a picture to one image: the first usable source, else the fallback img', () => {
     const source = normalizeRichText(
       '<p><picture><source srcset="https://cdn.example.com/wide.webp">'

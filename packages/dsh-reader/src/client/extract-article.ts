@@ -535,12 +535,44 @@ function objectImg(element: Element, baseUrl: string | undefined): string {
 }
 
 /**
+ * The payload size that separates a real inlined figure from a 1px tracking
+ * placeholder. A transparent-gif placeholder is ~70 characters of base64; the
+ * smallest real chart is thousands — the threshold sits far from both, so no
+ * borderline page ever decides anything. (transformer-circuits.pub inlines its
+ * real figures as multi-hundred-KB data URIs; the old all-data:-is-placeholder
+ * rule deleted them.)
+ */
+export const DATA_IMAGE_MIN_PAYLOAD = 512
+
+/** The image types a kept data: URI may declare. */
+const DATA_IMAGE_MIME = /^image\/(?:png|jpe?g|gif|webp|svg\+xml|avif)$/i
+
+/**
+ * A `data:` URI worth keeping as an image, or `undefined` (which reads as
+ * ABSENT — the caller falls through to the lazy-loading attributes).
+ *
+ * The gate is MIME plus payload size; base64 payloads are whitespace-stripped
+ * because pages line-wrap them (a raw newline inside an emitted attribute is
+ * legal HTML, but the stripped form is what browsers parse either way).
+ */
+export function substantiveDataImage(value: string): string | undefined {
+  const match = /^\s*data:([^;,]+)((?:;[^;,]+)*),([\s\S]*)$/i.exec(value)
+  if (match === null) return undefined
+  const [, mime, parameters, payload] = match
+  if (mime === undefined || payload === undefined || !DATA_IMAGE_MIME.test(mime)) return undefined
+  const body = /;base64/i.test(parameters ?? '') ? payload.replace(/\s+/g, '') : payload
+  if (body.length < DATA_IMAGE_MIN_PAYLOAD) return undefined
+  return `data:${mime}${parameters ?? ''},${body}`
+}
+
+/**
  * Resolve the URL an image actually loads, past the lazy-loading tricks.
  *
  * The order is the order of trust: a real `src` first (a `data:` URI there is
- * the classic 1px placeholder and counts as ABSENT — the real URL is in the
- * attributes), then the lazy-loading attributes, then the best `srcset`
- * candidate. Only when nothing usable remains is the image dropped.
+ * the classic 1px placeholder and counts as ABSENT — UNLESS it is a substantive
+ * inlined image, see {@link substantiveDataImage}), then the lazy-loading
+ * attributes, then the best `srcset` candidate. Only when nothing usable
+ * remains is the image dropped.
  *
  * @param element - the `<img>` element.
  * @param baseUrl - base for relative URL resolution.
@@ -548,9 +580,14 @@ function objectImg(element: Element, baseUrl: string | undefined): string {
  */
 function imageSrc(element: Element, baseUrl: string | undefined): string | undefined {
   const src = element.getAttribute('src')
-  if (src !== null && !/^\s*data:/i.test(src)) {
-    const resolved = absolutize(src, baseUrl)
-    if (resolved !== undefined) return resolved
+  if (src !== null) {
+    if (/^\s*data:/i.test(src)) {
+      const inlined = substantiveDataImage(src)
+      if (inlined !== undefined) return inlined
+    } else {
+      const resolved = absolutize(src, baseUrl)
+      if (resolved !== undefined) return resolved
+    }
   }
   for (const name of LAZY_IMAGE_ATTRIBUTES) {
     const resolved = absolutize(element.getAttribute(name), baseUrl)
@@ -577,8 +614,9 @@ function bestSrcset(value: string | null, baseUrl: string | undefined): string |
     const previous = candidates[candidates.length - 1]
     // A data: URL carries a comma of its own (`data:image/png;base64,…`), so a
     // naive split cuts it in two — and the payload tail then parses as a
-    // candidate that can WIN. Rejoin the halves: the whole candidate is
-    // rejected as a scheme below, but its tail must never stand alone.
+    // candidate that can WIN. Rejoin the halves: the whole candidate is then
+    // judged by the same gate as any src (a substantive inlined image is kept,
+    // a placeholder is not), but its tail must never stand alone.
     if (previous !== undefined && /^\s*data:[^,]*$/i.test(previous)) {
       candidates[candidates.length - 1] = `${previous},${piece}`
       continue
@@ -590,7 +628,8 @@ function bestSrcset(value: string | null, baseUrl: string | undefined): string |
     const parts = candidate.trim().split(/\s+/)
     const raw = parts[0]
     if (raw === undefined || raw === '') continue
-    const url = absolutize(raw, baseUrl)
+    // A data: candidate is judged by the same gate as a data: src.
+    const url = /^\s*data:/i.test(raw) ? substantiveDataImage(raw) : absolutize(raw, baseUrl)
     if (url === undefined) continue
     const descriptor = parts[1]
     const size = descriptor === undefined ? Number.NaN : Number.parseFloat(descriptor)
