@@ -23,6 +23,7 @@ So this note is the review that was asked for, and the change that came out of i
 | Translator session (per pair) | **page memory** | the page | reused — never built, because `create()` needs a gesture |
 | Globe on/off + view (per entry) | **page memory** | the page | re-applied on every body rebuild |
 | Tags, saved links, `recent` | **host** | restarts | host reads |
+| Fetch state per entry (body / raw / in-flight / failure with its reason) | **host** (the per-entry annotation), mirrored in the pane's store | restarts | `entryFetchStates`: a full poll on mount and while anything is in flight, plus a targeted re-read of the one entry by every path that settles it |
 | Wall narrowing, sort, search, unread cursor | **page memory** | the page | hydrated on mount |
 | Conversation draft, quote target | dsh session | the session | the host |
 
@@ -64,4 +65,4 @@ So this note is the review that was asked for, and the change that came out of i
 
 ## Testing
 
-`packages/dsh-reader` runs 282 tests. The position tests state the geometry jsdom cannot provide (a 600px scroller, 300px blocks — and, for the translation case, blocks whose height follows their text length): one asserts that the saved anchor names the block the reader stopped in (with its text offset), one that the restore puts them at the block's offset even when the remembered pixel offset is nonsense — which is the case the reported bug lived in — and one that a translation landing re-anchors to the same sentence through the text offset. The in-block mapping itself (exact Range rect / same fraction / pixel fallback / old-anchor compatibility) is pinned directly in `tests/reading-position.spec.ts`.
+`packages/dsh-reader` runs 290 tests. The position tests state the geometry jsdom cannot provide (a 600px scroller, 300px blocks — and, for the translation case, blocks whose height follows their text length): one asserts that the saved anchor names the block the reader stopped in (with its text offset), one that the restore puts them at the block's offset even when the remembered pixel offset is nonsense — which is the case the reported bug lived in — and one that a translation landing re-anchors to the same sentence through the text offset. The in-block mapping itself (exact Range rect / same fraction / pixel fallback / old-anchor compatibility) is pinned directly in `tests/reading-position.spec.ts`.
