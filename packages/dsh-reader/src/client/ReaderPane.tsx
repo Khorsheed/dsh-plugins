@@ -1884,8 +1884,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const anchorBlock = metrics.blocks[block]
     // The same place as a TEXT offset too, so a layout that sets different
     // words (the translated view) can still find the sentence. From the cached
-    // metrics only — this handler reads no layout and no DOM.
-    if (anchorBlock !== undefined && anchorBlock.height > 0 && anchorBlock.textLength > 0) {
+    // metrics only — this handler reads no layout and no DOM. Only a position
+    // strictly INSIDE the block gets a text offset: past the last block (the
+    // also-in-this-source section), the pixel clamp is the honest restore.
+    if (anchorBlock !== undefined && anchorBlock.height > 0 && anchorBlock.textLength > 0 && offset < anchorBlock.height) {
       const text = Math.round(Math.min(1, offset / anchorBlock.height) * anchorBlock.textLength)
       rememberReadingPosition(openEntryId, { block, offset, top, text, textLength: anchorBlock.textLength })
       return
