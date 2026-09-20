@@ -1488,6 +1488,80 @@ describe('an article that is already fetched is not fetched again', () => {
   })
 })
 
+describe('a slower answer never lands under a newer entry\'s title', () => {
+  /**
+   * The race this block pins: open A, and before the host answers, go back and
+   * open B. A's answer resolving LAST used to write A's body onto B's screen —
+   * and the translation restore, keyed on `[openEntryId, articleHtml]`, would
+   * then re-translate a pairing that never existed.
+   */
+  const idA = `l:https://example.com/hn/${encodeURIComponent('First article')}`
+  const twoArticles = (): string =>
+    feed('hn', [
+      { title: 'First article', body: '<p>First body here, long enough to read.</p>' },
+      { title: 'Second article', body: '<p>Second body here, long enough to read.</p>' },
+    ])
+
+  it('discards a body that arrives after another entry was opened', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: twoArticles() } })
+    // The first entry's answer is held back; the second's comes from the cache
+    // at once.
+    let resolveFirst: ((value: unknown) => void) | undefined
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string }) => {
+      if (request.entryId === idA) {
+        return await new Promise(resolve => { resolveFirst = resolve })
+      }
+      return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false as const, html: '<p>Second body here, long enough to read.</p>' } }
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /First article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    fireEvent.click((await screen.findAllByRole('button', { name: /Second article/ }))[0] as HTMLElement)
+    await screen.findByText('Second body here, long enough to read.')
+
+    // Now the first answer lands — after the second entry is already on screen.
+    await act(async () => {
+      resolveFirst?.({ ok: true, value: { entryId: idA, cached: true, fresh: true, fromFeed: false, html: '<p>First body here, long enough to read.</p>' } })
+    })
+    expect(screen.queryByText('First body here, long enough to read.')).toBeNull()
+    expect(screen.getByText('Second body here, long enough to read.')).toBeTruthy()
+  })
+
+  it('discards a fetch owed by an entry the reader has already left', async () => {
+    // Same race through the OTHER writer: a summary-only entry pays one fetch on
+    // open, and that fetch is the slow one here.
+    const atomFeed = `<feed xmlns="http://www.w3.org/2005/Atom"><title>hn</title>`
+      + '<entry><title>Summary paper</title><link href="https://example.com/paper-a"/>'
+      + '<id>https://example.com/paper-a</id><summary>A summary sentence, all the feed ships.</summary></entry>'
+      + '<entry><title>Full paper</title><link href="https://example.com/paper-b"/>'
+      + '<id>https://example.com/paper-b</id><content><p>Second full text on screen.</p></content></entry></feed>'
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: atomFeed } })
+    let resolveFetch: ((value: unknown) => void) | undefined
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => {
+      if (entryId === 'g:https://example.com/paper-a') {
+        return await new Promise(resolve => { resolveFetch = resolve })
+      }
+      return { entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' }
+    })
+    await ui.settle()
+    // Opening the summary-only entry shows the feed's text and owes one fetch.
+    fireEvent.click((await screen.findAllByRole('button', { name: /Summary paper/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    fireEvent.click((await screen.findAllByRole('button', { name: /Full paper/ }))[0] as HTMLElement)
+    await screen.findByText('Second full text on screen.')
+
+    // The owed fetch lands now — on the wall's back, its body belongs nowhere.
+    await act(async () => {
+      resolveFetch?.({ entryId: 'g:https://example.com/paper-a', cached: true, fresh: true, fromFeed: false, html: '<p>First fetched body, late.</p>' })
+    })
+    expect(screen.queryByText('First fetched body, late.')).toBeNull()
+    expect(screen.getByText('Second full text on screen.')).toBeTruthy()
+  })
+})
+
 describe('the detail view owns up to figures it cannot fetch', () => {
   it('counts script-drawn figures and points at the original', async () => {
     // A feed entry with a link and no body: the fetch path supplies the body,
@@ -1571,6 +1645,84 @@ describe('the card says what the plugin holds, and fetches on demand', () => {
     await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalled() })
     const stored = ui.mocks.storeEntryBody.mock.calls[0]?.[0] as { html: string }
     expect(stored.html).toContain('prose')
+  })
+})
+
+describe('the card learns what the pane just did', () => {
+  /** A feed entry whose publisher ships only a summary: opening it owes a fetch. */
+  const summaryFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+  const paperId = 'g:https://example.com/paper'
+
+  /**
+   * A mock host document: what `entryFetchStates` answers is whatever the
+   * writes have made true — exactly how the real service derives states from
+   * its annotations. A fixed-answer mock would let these tests pass without
+   * the pane having propagated anything.
+   */
+  function hostModel(ui: ReturnType<typeof bench>, options: { readonly fail?: boolean } = {}): void {
+    const held = new Map<string, ReaderEntryFetchState>()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => {
+      if (options.fail === true) {
+        held.set(entryId, { state: 'failed', at: new Date().toISOString(), message: 'HTTP 403', code: 'blocked' })
+        return { entryId, cached: false, fresh: false, fromFeed: false, error: 'HTTP 403' }
+      }
+      held.set(entryId, { state: 'ready', at: new Date().toISOString() })
+      return { entryId, cached: true, fresh: true, fromFeed: false, html: '<p>the fetched paper body</p>' }
+    })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: { states: Object.fromEntries(entryIds.map(id => [id, held.get(id) ?? { state: 'none' as const }])) },
+    }))
+  }
+
+  it('flips the card to 已抓取 when the detail view fetched the body', async () => {
+    // The reported symptom: the card said 抓取, the reader opened the article
+    // (which fetched and cached the body), came back — and the card still said
+    // 抓取 until the next mount, because the open path never told the mirror.
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed('tc') } })
+    hostModel(ui)
+    await ui.settle()
+    expect(await screen.findByText(zh['fetch.none'])).toBeTruthy()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The detail view shows the fetched body — the gesture really did land it.
+    expect(await screen.findByText('the fetched paper body')).toBeTruthy()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(screen.queryByText(zh['fetch.none'])).toBeNull()
+  })
+
+  it('flips the card when the automatic backfill lands the body', async () => {
+    // Same mirror gap through the other writer: the run's badge appeared, but
+    // nothing re-read the states, so the pill kept saying 抓取. (No "starts at
+    // 抓取" assertion here: the mock host answers in microtasks, so how long the
+    // initial state is visible is a race that is not the point.)
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      backfillCandidates: [paperId],
+    })
+    hostModel(ui)
+    await ui.settle()
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith(paperId, expect.any(String))
+  })
+
+  it('shows 抓取失败 with the host’s reason after an open-triggered fetch fails', async () => {
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed('tc') } })
+    hostModel(ui, { fail: true })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The fetch fails behind the summary, which stays on screen.
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    expect(pill.getAttribute('title')).toContain(zh['preview.blocked'])
   })
 })
 
@@ -1696,6 +1848,32 @@ describe('coming back to the pane puts the reader where they were', () => {
     await waitFor(() => {
       expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
     })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('keeps the wall\'s translation switch and its card texts across a remount', async () => {
+    // The wall's globe has its own switch and its own card texts, and both are
+    // part of "where the reader was". They were mirrored into the page memory on
+    // every change — but initialized from bare defaults, so the FIRST mirror
+    // after a remount overwrote the record with `false`/`{}` before anything
+    // had a chance to read it back.
+    installTranslator()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    await screen.findByText('An English article')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => { expect(screen.getByText('译：An English article')).toBeTruthy() })
+    // Side-by-side, so its restoration is visible on its own mark.
+    fireEvent.click(first.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['translate.bilingual']))
+    await waitFor(() => { expect(first.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(1) })
+    first.unmount()
+
+    // No click anywhere: the wall comes back translated, in the same view.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.getByText('译：An English article')).toBeTruthy() })
+    await waitFor(() => { expect(second.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(1) })
     delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })
@@ -1830,6 +2008,40 @@ function stubLayout(blockHeight = 300): void {
   })
 }
 
+/**
+ * A variant of the fake layout whose blocks are AS TALL AS THEIR TEXT IS LONG.
+ *
+ * That is the property the translation case needs: a translated block sets
+ * different words of a different length, so its height must actually change —
+ * a fixed-height stub would make "the geometry moved" untestable. Block tops
+ * accumulate; the translation's reveal lines (data-reader-reveal) are not
+ * blocks, exactly as `articleBlocks` sees them.
+ */
+function stubTextLayout(): void {
+  const rect = (top: number, height: number): DOMRect => ({
+    top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}),
+  }) as DOMRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element): DOMRect {
+    const el = this as HTMLElement
+    const scrolled = (document.querySelector('[class*="detailBody"]') as HTMLElement | null)?.scrollTop ?? 0
+    const classes = (el.className ?? '').toString()
+    if (classes.includes('detailBody')) return rect(0, 600)
+    if (classes.includes('article')) return rect(-scrolled, 100_000)
+    const parent = el.parentElement
+    if (parent !== null && (parent.className ?? '').toString().includes('article')) {
+      const blocks = [...parent.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+      let top = 0
+      for (const block of blocks) {
+        const height = Math.max(40, (block.textContent ?? '').length * 10)
+        if (block === el) return rect(top - scrolled, height)
+        top += height
+      }
+      return rect(0, 0)
+    }
+    return rect(0, 0)
+  })
+}
+
 describe('the reading position survives the trip', () => {
 
   // Real top-level blocks, because an anchor IS a block index: a body that is
@@ -1910,10 +2122,13 @@ const settleFrame = async (): Promise<void> => {
     scroller.scrollTop = 620
     fireEvent.scroll(scroller)
     const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
-    // 620px in: block 2 (600..900), 20px into it.
+    // 620px in: block 2 (600..900), 20px into it — and the same place as TEXT:
+    // block 2 is "Third paragraph here, closing the piece." (40 chars), so 20 of
+    // 300px is the 3rd character. The text offset is what a translated (taller
+    // or shorter) rendering of the same block can still resolve.
     await waitFor(() => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620 })
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
     })
     vi.restoreAllMocks()
   })
@@ -1956,5 +2171,49 @@ const settleFrame = async (): Promise<void> => {
     await second.settle()
     await screen.findByText('An English article')
     await waitFor(() => { expect(wallScroller(second.container).scrollTop).toBe(300) })
+  })
+
+  it('keeps the reader at the same sentence when the translation rewrites the geometry', async () => {
+    // The drift the text offset fixes: the anchor's pixel offset into a block
+    // is only valid for the layout it was measured in, and the translated view
+    // sets different words — so switching the globe on used to leave the reader
+    // wherever the stale pixels happened to point.
+    installTranslator()
+    stubTextLayout()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // Block 0 is 42 chars (420px); 500px in is block 1 ("Another paragraph
+    // entirely…", 50 chars = 500px), 80px into it — the 8th character.
+    scroller.scrollTop = 500
+    fireEvent.scroll(scroller)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    await waitFor(() => {
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 1, offset: 80, top: 500, text: 8, textLength: 50 })
+    })
+
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+
+    // After the translation lands, the blocks are taller (the mock's 译： prefix
+    // lengthens every sentence) and the anchor is re-applied THROUGH the text:
+    // block 1 still holds the same sentence, so its new top plus the same
+    // FRACTION of its new text is where the reader must end up — no scroll
+    // gesture involved.
+    const article = ui.container.querySelector('[class*="article"]') as HTMLElement
+    const blocks = [...article.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+    const heightOf = (element: Element): number => Math.max(40, (element.textContent ?? '').length * 10)
+    const expected = heightOf(blocks[0] as Element) + Math.round((8 / 50) * heightOf(blocks[1] as Element))
+    await waitFor(() => { expect(scroller.scrollTop).toBe(expected) })
+    // Sanity: the expected target really is a DIFFERENT place than where the
+    // pixel offset alone would have left the reader (block 1's old top + 80).
+    expect(expected).not.toBe(420 + 80)
+    vi.restoreAllMocks()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })

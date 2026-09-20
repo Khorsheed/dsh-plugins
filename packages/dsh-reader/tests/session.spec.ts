@@ -85,6 +85,25 @@ describe('the page snapshot', () => {
       'entry-b': { block: 0, offset: 0, top: 40 },
     })
   })
+
+  it('carries the text offset when the scroll handler could measure one', () => {
+    // The text offset is what a translated (re-worded, re-heighted) rendering
+    // of the same block can still resolve; it rides the same record and the
+    // same sessionStorage persistence.
+    rememberReadingPosition('entry-a', { block: 2, offset: 80, top: 500, text: 8.4, textLength: 50 })
+    expect(readSession().scroll?.['entry-a']).toEqual({ block: 2, offset: 80, top: 500, text: 8, textLength: 50 })
+    const stored = JSON.parse(sessionStorage.getItem('dsh-reader:place') ?? '{}') as { scroll?: Record<string, unknown> }
+    expect(stored.scroll?.['entry-a']).toEqual({ block: 2, offset: 80, top: 500, text: 8, textLength: 50 })
+  })
+
+  it('reads a stored anchor from before the text offset existed', () => {
+    // Backward compatibility is the point of the optional fields: an old
+    // archive has only block/offset/top, and it must still come back.
+    sessionStorage.setItem('dsh-reader:place', JSON.stringify({
+      scroll: { 'entry-a': { block: 1, offset: 50, top: 350 } },
+    }))
+    expect(readSession().scroll?.['entry-a']).toEqual({ block: 1, offset: 50, top: 350 })
+  })
 })
 
 describe('the translation record', () => {

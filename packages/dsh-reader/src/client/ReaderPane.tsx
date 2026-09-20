@@ -61,6 +61,7 @@ import {
 import {
   countUnread,
   flattenEntries,
+  fetchStateOf,
   LIST_RENDER_LIMIT,
   hueForSource,
   rowFor,
@@ -80,6 +81,7 @@ import {
   rememberTranslation,
   rememberWallScroll,
   rememberTranslator,
+  type ReaderReadingAnchor,
   type ReaderSessionSnapshot,
 } from './session.ts'
 import css from './ReaderPane.module.css'
@@ -353,10 +355,26 @@ function articleBlocks(article: HTMLElement): HTMLElement[] {
 interface ArticleMetrics {
   /** The article's top in the scroller's content coordinates. */
   readonly contentTop: number
-  /** Each top-level block's top and height, relative to the article. */
-  readonly blocks: readonly { readonly top: number; readonly height: number }[]
+  /** Each top-level block's geometry and text, relative to the article. */
+  readonly blocks: readonly ArticleBlockMetrics[]
   /** The article's own height. */
   readonly height: number
+}
+
+/**
+ * One top-level block, measured.
+ *
+ * `textLength` is captured in the same pass so the scroll handler can record a
+ * TEXT offset without touching the DOM; `element` is what lets a restore
+ * resolve that offset to an exact pixel spot (a Range rect) later.
+ */
+export interface ArticleBlockMetrics {
+  readonly top: number
+  readonly height: number
+  /** How long the block's text was at measure time. */
+  readonly textLength: number
+  /** The block itself, for the text-offset resolution. */
+  readonly element: HTMLElement
 }
 
 /**
@@ -379,7 +397,12 @@ function measureArticle(scroller: HTMLElement, article: HTMLElement): ArticleMet
   const contentTop = articleRect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
   const blocks = articleBlocks(article).map(block => {
     const rect = block.getBoundingClientRect()
-    return { top: rect.top - articleRect.top, height: rect.height }
+    return {
+      top: rect.top - articleRect.top,
+      height: rect.height,
+      textLength: block.textContent?.length ?? 0,
+      element: block,
+    }
   })
   return { contentTop, blocks, height: articleRect.height }
 }
@@ -411,6 +434,77 @@ function blockAt(metrics: ArticleMetrics, visibleY: number): { block: number; of
     }
   }
   return { block: found, offset: Math.max(0, visibleY - blocks[found]!.top) }
+}
+
+/**
+ * How far into the anchor block the viewport top sat, in the CURRENT layout.
+ *
+ * A pixel offset into a block is only valid for the layout it was measured in,
+ * and the translated view IS a different layout: the same paragraph sets
+ * different words at a different height, so the recorded `offset` points at the
+ * wrong sentence — the drift the reader reported. The recorded TEXT offset is
+ * the fix: when the block still holds the same text it resolves to an exact
+ * pixel spot (a Range rect over the text node that holds that character); when
+ * the words changed, the same FRACTION of the text is the honest place. An
+ * anchor written before the text offset existed falls back to the pixel offset,
+ * unchanged.
+ *
+ * Exported for the specs; the pane itself reaches it through
+ * `applyReadingPosition`.
+ *
+ * @param block - the anchor block's CURRENT metrics.
+ * @param anchor - the recorded place.
+ * @returns pixels into the block.
+ */
+export function offsetInBlock(block: ArticleBlockMetrics, anchor: ReaderReadingAnchor): number {
+  if (anchor.text !== undefined && anchor.text > 0 && anchor.textLength !== undefined && anchor.textLength > 0) {
+    if (block.textLength === anchor.textLength) {
+      const exact = textOffsetTop(block.element, anchor.text)
+      if (exact !== null) return Math.min(exact, block.height)
+    }
+    // Different words (a translation), or no layout to resolve against: the
+    // place is the same fraction of the text.
+    return Math.round(Math.min(1, anchor.text / anchor.textLength) * block.height)
+  }
+  return anchor.offset
+}
+
+/**
+ * Where a character offset into a block's text sits, in pixels into the block.
+ *
+ * `null` when there is no layout to answer with (jsdom, an unlaid-out body) —
+ * the caller's proportional fallback then applies. This is a layout read, which
+ * is why it runs only on restores and view switches, never in a scroll handler.
+ *
+ * @param block - the block element.
+ * @param charOffset - the character offset into its text.
+ * @returns pixels from the block's top, or `null`.
+ */
+function textOffsetTop(block: HTMLElement, charOffset: number): number | null {
+  try {
+    const doc = block.ownerDocument
+    const walker = doc.createTreeWalker(block, 4 /* NodeFilter.SHOW_TEXT */)
+    let remaining = charOffset
+    let node: Node | null = walker.nextNode()
+    while (node !== null) {
+      const length = (node.textContent ?? '').length
+      if (remaining <= length) break
+      remaining -= length
+      node = walker.nextNode()
+    }
+    if (node === null) return null
+    const range = doc.createRange()
+    range.setStart(node, remaining)
+    range.setEnd(node, remaining)
+    // jsdom's Range has no geometry at all: the method itself is absent.
+    if (typeof range.getBoundingClientRect !== 'function') return null
+    const rect = range.getBoundingClientRect()
+    // A text position has a line height; an all-zero rect is a stub, not a spot.
+    if (rect.height === 0 && rect.width === 0) return null
+    return rect.top - block.getBoundingClientRect().top
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -497,6 +591,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const snapshotRef = useRef<Partial<ReaderSessionSnapshot> | null>(null)
   if (snapshotRef.current === null) snapshotRef.current = readSession()
+  // The mount-time copy, narrowed once for the `useState` initializers below
+  // (their closures cannot see through the ref's null check).
+  const snapshot: Partial<ReaderSessionSnapshot> = snapshotRef.current
   /** The store's first render happens BEFORE the hydration below lands. */
   const hydrateStartedRef = useRef(false)
   /** The mirror effect is skipped once, so a pre-hydration render cannot erase the record. */
@@ -505,6 +602,18 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const restoredTranslationRef = useRef<string | null>(null)
   /** The entry the pane ITSELF opened, so the restore below never re-opens it. */
   const openedRef = useRef<string | null>(null)
+  /**
+   * The entry the detail view belongs to RIGHT NOW.
+   *
+   * Opening is async: `getEntryBody` / `fetchEntryBody` resolve whenever the
+   * host answers, and an answer that comes back LATE must not land under a
+   * newer entry's title — rapid "open A, back, open B" otherwise ends with A's
+   * body on B's screen (and the translation restore, keyed on
+   * `[openEntryId, articleHtml]`, re-translating a pairing that never was).
+   * `open()` sets this synchronously; every continuation that writes article
+   * state checks it first.
+   */
+  const openRequestRef = useRef<string | null>(null)
   /** The entry the restore has dealt with, whether or not it could be reopened. */
   const restoredOpenRef = useRef<string | null>(null)
   /** The offset the LAST programmatic scroll landed on, so its echo is not saved. */
@@ -600,14 +709,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const lastViewRef = useRef<TranslationView>('trans')
   /* ------------------------------------------------ the wall's card texts */
 
-  /** Whether the wall is showing translated cards (its own switch, its own memory). */
-  const [wallOn, setWallOn] = useState(false)
+  /**
+   * Whether the wall is showing translated cards (its own switch, its own memory).
+   *
+   * Initialized from the page's snapshot, like every "where the reader was"
+   * field: the mirror below writes these three into that snapshot on every
+   * change, so starting from the defaults meant the first post-hydrate mirror
+   * ERASED the remembered globe and its card texts with `false`/`false`/`{}`.
+   */
+  const [wallOn, setWallOn] = useState(snapshot.wallOn ?? false)
   /** Side-by-side on the wall: the original stays under each translated field. */
-  const [wallBoth, setWallBoth] = useState(false)
+  const [wallBoth, setWallBoth] = useState(snapshot.wallBoth ?? false)
   const [wallMenu, setWallMenu] = useState(false)
   const [wallAvailability, setWallAvailability] = useState<TranslationAvailability | null>(null)
   /** Translated card fields, by entry id. */
-  const [cardTranslations, setCardTranslations] = useState<Record<string, { title?: string; summary?: string }>>({})
+  const [cardTranslations, setCardTranslations] = useState<Record<string, { title?: string; summary?: string }>>(
+    () => ({ ...snapshot.cardTranslations }),
+  )
   const [wallProgress, setWallProgress] = useState<{ done: number; total: number } | null>(null)
   /**
    * The translated FIELD under the pointer, in the translation-only view.
@@ -833,6 +951,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [actions, entryIds, props])
 
   /**
+   * Re-read ONE entry's fetch state from the host after something settled it.
+   *
+   * The host's annotation is the only authority (body presence, the in-flight
+   * or stored-raw record, the classified failure with its reason), and the pane
+   * mirrors it — so a path that just changed the host's state re-reads the one
+   * entry it touched, and the card flips on the same gesture instead of at the
+   * next mount. A full-wall poll per fetch would be the same answer at N times
+   * the cost.
+   */
+  const syncFetchState = useCallback(async (entryId: string) => {
+    const result = await props.entryFetchStates([entryId])
+    if (result.ok) actions.setFetchStates(result.value.states)
+  }, [actions, props])
+
+  /**
    * Read the recent list from the host.
    *
    * Host-side state, so it is read when the page opens rather than mirrored in
@@ -879,7 +1012,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    */
   const sweepRaw = useCallback(async () => {
     if (sweepRunning.current) return
-    const raws = allEntries.filter(entry => fetchStates[entry.id]?.state === 'raw').slice(0, 2)
+    const raws = allEntries.filter(entry => fetchStateOf(fetchStates, entry.id).state === 'raw').slice(0, 2)
     if (raws.length === 0) return
     sweepRunning.current = true
     try {
@@ -1385,6 +1518,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (wallCancelRef.current !== null) wallCancelRef.current.cancelled = true
   }, [])
 
+  // Closing the detail (back button, a removed link, a restore that found its
+  // entry gone) releases the screen: a fetch still in flight for the closed
+  // entry must not write into the next one.
+  useEffect(() => {
+    if (openEntryId === null) openRequestRef.current = null
+  }, [openEntryId])
+
   /**
    * Fetch one entry's full article, extract it (this process) and show it.
    *
@@ -1400,22 +1540,39 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     actions.setFetching(entryId, true)
     try {
       const result = await props.fetchEntryBody(entryId, url)
+      // A late answer belongs to the entry that ASKED for it: if the detail
+      // view has moved on (another entry, or the wall), the article area is no
+      // longer this entry's to write. The per-entry records are unaffected —
+      // they are keyed by id either way.
+      const onScreen = openRequestRef.current === entryId
       if (result.html !== undefined) {
-        actions.setArticle(result.html, result.truncated === true, null)
-        setScriptFigures(result.scriptFigures ?? 0)
-      } else if (result.error !== undefined) {
+        // A fresh body just landed: the entry is no longer expired, whichever
+        // screen is showing.
+        actions.setStaleBody(entryId, false)
+        if (onScreen) {
+          actions.setArticle(result.html, result.truncated === true, null)
+          setScriptFigures(result.scriptFigures ?? 0)
+        }
+      } else if (result.error !== undefined && onScreen) {
         // Keep whatever is already rendered (a feed summary, say) and add the
         // reason: a failed fetch must not take the little text the reader has.
+        // It also leaves the host's copy — and its stale marker — untouched.
         actions.setArticle(articleHtml ?? '', false, result.error)
       }
-      actions.setStaleBody(entryId, result.cached === true && result.fresh === false)
     } finally {
       actions.setFetching(entryId, false)
+      // The card reads the host's annotation through the mirror: re-read the
+      // one entry this fetch settled, so the pill flips on this gesture and
+      // not at the next mount.
+      void syncFetchState(entryId)
     }
-  }, [actions, props, articleHtml])
+  }, [actions, props, articleHtml, syncFetchState])
 
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
+    // Synchronous: every continuation of this call checks the ref before
+    // writing article state, so the LAST open (or a close) owns the screen.
+    openRequestRef.current = row.entry.id
     openedRef.current = row.entry.id
     actions.openEntry(row.entry.id, row.sourceId)
     actions.setView('detail')
@@ -1453,6 +1610,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         url: row.entry.link,
         ...(row.entry.contentHtml === undefined ? {} : { feedHtml: row.entry.contentHtml }),
       })
+      // A per-entry host fact, true no matter which entry is on screen by now,
+      // so it is written before the screen guard: whether the host's cached
+      // copy is past its deadline (the card's 「已过期」 reads this).
+      if (view.ok) actions.setStaleBody(row.entry.id, view.value.cached === true && view.value.fresh === false)
+      // The answer came back to a screen that has moved on: another open (or a
+      // close) happened while the host was answering. Writing here would put
+      // this entry's body under THAT entry's title.
+      if (openRequestRef.current !== row.entry.id) return
+      // The mirror the card reads may predate this answer (a body cached after
+      // the mount poll, or a recorded failure it has not re-read). When the two
+      // disagree, re-read this one entry so the card stops lying.
+      const known = fetchStateOf(fetchStates, row.entry.id).state
+      if (view.ok && (
+        (view.value.cached === true && view.value.html !== undefined && known !== 'ready')
+        || (view.value.html === undefined && view.value.error !== undefined && known !== 'failed')
+      )) void syncFetchState(row.entry.id)
       if (!view.ok) {
         actions.setArticle('', false, view.error.message)
       } else if (view.value.html !== undefined) {
@@ -1503,6 +1676,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       return
     }
     const bodies = await props.getBodies([row.sourceId])
+    // Same guard as above: a no-link entry's body also arrives late.
+    if (openRequestRef.current !== row.entry.id) return
     if (!bodies.ok) {
       actions.setArticle('', false, bodies.error.message)
       return
@@ -1516,7 +1691,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const extracted = extractArticle(body.raw, row.entry.link ?? '')
     if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
     else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t, fetchBody, recent])
+  }, [actions, props, t, fetchBody, recent, fetchStates, syncFetchState])
 
   /* ------------------------------ coming back to where the reader already was */
 
@@ -1615,7 +1790,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (metrics !== null) {
       const block = metrics.blocks[anchor.block]
       if (block !== undefined) {
-        target = Math.max(0, metrics.contentTop + block.top + anchor.offset)
+        target = Math.max(0, metrics.contentTop + block.top + offsetInBlock(block, anchor))
       }
     }
     const before = scroller.scrollTop
@@ -1670,6 +1845,25 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [openEntryId, articleHtml, applyReadingPosition, measure])
 
   /**
+   * A translation rewrites the article's GEOMETRY — different words, different
+   * block heights — whenever it lands or changes view, which is typically long
+   * after the settle window above has closed. Re-measure and re-anchor on those
+   * transitions so the reader stays at the same SENTENCE across an
+   * original↔translation switch (the anchor's text offset is what makes "the
+   * same sentence" computable; `offsetInBlock` owns the mapping).
+   *
+   * A view switch is a deliberate one-shot, so the layout read here is fine —
+   * the no-layout-reads rule is the scroll handler's. `measure()` answering
+   * null (no body on screen yet) skips the apply, and the effect fires on
+   * `openEntryId` changes only through `applyReadingPosition`'s identity —
+   * harmless, because an unmeasured body is exactly what that skips.
+   */
+  useEffect(() => {
+    if (measure() === null) return
+    applyReadingPosition()
+  }, [translateView, translatePhase, measure, applyReadingPosition])
+
+  /**
    * The scroller's own gestures, which is how the reader takes over.
    *
    * `wheel`, `touchmove` and the page keys are things only a person produces:
@@ -1722,6 +1916,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
     const visibleY = top - metrics.contentTop
     const { block, offset } = blockAt(metrics, visibleY)
+    const anchorBlock = metrics.blocks[block]
+    // The same place as a TEXT offset too, so a layout that sets different
+    // words (the translated view) can still find the sentence. From the cached
+    // metrics only — this handler reads no layout and no DOM. Only a position
+    // strictly INSIDE the block gets a text offset: past the last block (the
+    // also-in-this-source section), the pixel clamp is the honest restore.
+    if (anchorBlock !== undefined && anchorBlock.height > 0 && anchorBlock.textLength > 0 && offset < anchorBlock.height) {
+      const text = Math.round(Math.min(1, offset / anchorBlock.height) * anchorBlock.textLength)
+      rememberReadingPosition(openEntryId, { block, offset, top, text, textLength: anchorBlock.textLength })
+      return
+    }
     rememberReadingPosition(openEntryId, { block, offset, top })
   }, [openEntryId])
 
@@ -1959,15 +2164,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         }
       })
       await Promise.all(workers)
-      // Deliberately no `actions.refresh()` here: the run updates the cards
-      // through `noteBackfilled`, and bumping `rev` would re-enter `load()`
-      // and start the whole thing over. Only the DETAIL view re-reads, and it
-      // does so when it mounts.
+      // Deliberately no `actions.refresh()` here: bumping `rev` would re-enter
+      // `load()` and start the whole thing over. Only the DETAIL view re-reads,
+      // and it does so when it mounts. But the fetch-state mirror DOES re-read
+      // once per run — otherwise a card whose body the backfill just landed
+      // keeps saying 抓取 until the next mount (the reported symptom).
+      await refreshFetchStates()
     } finally {
       backfillRunning.current = false
       actions.setBackfill(null)
     }
-  }, [actions, props])
+  }, [actions, props, refreshFetchStates])
 
   // Automatic, after the wall has something to look at — never before, so the
   // reader never waits on the network for a list they already had.
@@ -2002,10 +2209,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (entry.link === undefined) return
     actions.setFetchStates({ [entry.id]: { state: 'fetching', at: new Date().toISOString() } })
     // `fetchBody` is the same call the detail view makes on open — the host
-    // stores the payload first, so leaving the page does not cancel it.
+    // stores the payload first, so leaving the page does not cancel it. It also
+    // re-reads this entry's state from the host when the fetch settles, so the
+    // pill flips without a full-wall poll here.
     await fetchBody(entry.id, entry.link)
-    await refreshFetchStates()
-  }, [actions, fetchBody, refreshFetchStates])
+  }, [actions, fetchBody])
 
   /** Reload the tags on one entry. */
   const loadEntryTags = useCallback(async (entryId: string) => {
@@ -3407,18 +3615,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       payload before it answers, so leaving the page does not
                       cancel it — the state pill is what says so. */}
                   {row.entry.link !== undefined && (() => {
-                    const state = fetchStates[row.entry.id]?.state ?? 'none'
-                    const failure = fetchStates[row.entry.id]
+                    const fetchState = fetchStateOf(fetchStates, row.entry.id)
+                    const state = fetchState.state
                     const labelKey = state === 'none' ? 'fetch.none'
                       : state === 'fetching' ? 'fetch.fetching'
                         : state === 'raw' ? 'fetch.raw'
                           : state === 'ready' ? 'fetch.ready' : 'fetch.failed'
                     const title = state === 'ready'
                       ? t('fetch.readyTitle')
-                      : state === 'failed'
-                        ? t('fetch.failedTitle', {
-                          reason: failure?.state === 'failed' ? previewReason(t, failure.code, failure.message) : '',
-                        })
+                      : fetchState.state === 'failed'
+                        ? t('fetch.failedTitle', { reason: previewReason(t, fetchState.code, fetchState.message) })
                         : t('fetch.noneTitle')
                     return (
                       <span

@@ -18,11 +18,12 @@ So this note is the review that was asked for, and the change that came out of i
 | --- | --- | --- | --- |
 | Wall parse (entries) | pane, from host payloads | one mount | re-read + re-parsed on every mount — deliberately, so the wall is never stale |
 | Article body (html / sidecar file) | **host** (`state.json` + `bodies/`, under the cache TTL and budget) | restarts | `getEntryBody` when an entry is opened |
-| The place: view, open entry, article anchors, wall offset | **page memory + `sessionStorage`** | remounts, session switches, page restarts (same tab) | hydrated on mount; the anchors re-applied on every body rebuild and re-measured while the layout grows |
+| The place: view, open entry, article anchors, wall offset | **page memory + `sessionStorage`** | remounts, session switches, page restarts (same tab) | hydrated on mount; the anchors re-applied on every body rebuild, re-measured while the layout grows, and re-anchored when the translation view changes the geometry |
 | Translated text | browser (`translate.ts` sentence memory, 4000 sentences) | the page | re-run from memory (usually no request) — never persisted |
 | Translator session (per pair) | **page memory** | the page | reused — never built, because `create()` needs a gesture |
 | Globe on/off + view (per entry) | **page memory** | the page | re-applied on every body rebuild |
 | Tags, saved links, `recent` | **host** | restarts | host reads |
+| Fetch state per entry (body / raw / in-flight / failure with its reason) | **host** (the per-entry annotation), mirrored in the pane's store | restarts | `entryFetchStates`: a full poll on mount and while anything is in flight, plus a targeted re-read of the one entry by every path that settles it |
 | Wall narrowing, sort, search, unread cursor | **page memory** | the page | hydrated on mount |
 | Conversation draft, quote target | dsh session | the session | the host |
 
@@ -43,8 +44,8 @@ So this note is the review that was asked for, and the change that came out of i
 
 ### The change
 
-- `client/session.ts`: the per-entry position is a `ReaderReadingAnchor` — the index of the article's top-level block the viewport top sits in, the offset into it, and the pixel offset as a fallback (`rememberReadingPosition`).
-- `client/ReaderPane.tsx`: the anchor is read out of the DOM when the reader scrolls (skipping the translation's own reveal lines, which would otherwise shift the block ordinals), re-applied on every body rebuild, verified by whether the assignment actually REACHED the target, and re-applied on layout growth (a `ResizeObserver` on the article, for `POSITION_SETTLE_MS`) until the reader takes over by scrolling.
+- `client/session.ts`: the per-entry position is a `ReaderReadingAnchor` — the index of the article's top-level block the viewport top sits in, the offset into it, the character offset into the block's text (so a translated rendering of the same block still resolves), and the pixel offset as a fallback (`rememberReadingPosition`).
+- `client/ReaderPane.tsx`: the anchor is read out of the DOM when the reader scrolls (skipping the translation's own reveal lines, which would otherwise shift the block ordinals), re-applied on every body rebuild, verified by whether the assignment actually REACHED the target, re-applied on layout growth (a `ResizeObserver` on the article, for `POSITION_SETTLE_MS`) until the reader takes over by scrolling, and re-anchored when the translation view changes (an effect keyed on `translateView` / `translatePhase` re-measures and re-applies — the view switch rewrites the block geometry long after the settle window closed).
 - The restore window renders the detail surface instead of the wall.
 
 ## Alternatives considered
@@ -64,4 +65,4 @@ So this note is the review that was asked for, and the change that came out of i
 
 ## Testing
 
-`packages/dsh-reader` runs 258 tests. The position tests state the geometry jsdom cannot provide (a 600px scroller, 300px blocks): one asserts that the saved anchor names the block the reader stopped in, and one asserts that the restore puts them at the block's offset even when the remembered pixel offset is nonsense — which is the case the reported bug lived in.
+`packages/dsh-reader` runs 290 tests. The position tests state the geometry jsdom cannot provide (a 600px scroller, 300px blocks — and, for the translation case, blocks whose height follows their text length): one asserts that the saved anchor names the block the reader stopped in (with its text offset), one that the restore puts them at the block's offset even when the remembered pixel offset is nonsense — which is the case the reported bug lived in — and one that a translation landing re-anchors to the same sentence through the text offset. The in-block mapping itself (exact Range rect / same fraction / pixel fallback / old-anchor compatibility) is pinned directly in `tests/reading-position.spec.ts`.

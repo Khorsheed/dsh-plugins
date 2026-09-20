@@ -74,11 +74,23 @@ export interface ReaderSessionSnapshot {
  * changing height. `top` is the same place as a pixel offset: the fast path when
  * the layout is already settled, and the only thing left when the body is not
  * the one the anchor was taken from.
+ *
+ * `text` is the same place once more, as a CHARACTER offset into the block's
+ * text. A pixel offset into a block is only valid for the layout it was
+ * measured in: the translated view sets different words (Chinese runs shorter
+ * than English), so the same paragraph is a different height and `offset`
+ * points at the wrong sentence. `text` restores exactly (a Range rect) when the
+ * block still holds the same text, and as the same FRACTION of the text when it
+ * does not. `textLength` is how the restore tells those two apart. Both are
+ * optional: anchors written before them restore via the pixel offset, as
+ * before.
  */
 export interface ReaderReadingAnchor {
   readonly block: number
   readonly offset: number
   readonly top: number
+  readonly text?: number
+  readonly textLength?: number
 }
 
 type Patch = Partial<ReaderSessionSnapshot>
@@ -224,6 +236,10 @@ export function rememberReadingPosition(entryId: string, anchor: ReaderReadingAn
         block: Math.max(0, Math.round(anchor.block)),
         offset: Math.max(0, Math.round(anchor.offset)),
         top: Math.max(0, Math.round(anchor.top)),
+        // Optional, so an anchor the scroll handler cannot measure (a block
+        // with no text) keeps the old shape exactly.
+        ...(anchor.text === undefined ? {} : { text: Math.max(0, Math.round(anchor.text)) }),
+        ...(anchor.textLength === undefined ? {} : { textLength: Math.max(0, Math.round(anchor.textLength)) }),
       },
     },
   })

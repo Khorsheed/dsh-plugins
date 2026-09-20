@@ -29,9 +29,17 @@ const KEEP_TAGS = new Set([
   'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'br', 'sub', 'sup', 'dl', 'dt', 'dd',
 ])
 
-/** Elements whose entire subtree is dropped (never merely unwrapped). */
+/**
+ * Elements whose entire subtree is dropped (never merely unwrapped).
+ *
+ * `noscript` is deliberately NOT here: its subtree is where the standard no-JS
+ * image fallback lives (`<noscript><img src="real.jpg"></noscript>` behind a
+ * lazy-loading script), and dropping it wholesale loses pictures whose URL is
+ * right there in the static markup. The normalizer recovers that image and
+ * drops everything else a noscript carries.
+ */
 const DROP_TAGS = new Set([
-  'script', 'style', 'noscript', 'template', 'nav', 'header', 'footer', 'aside',
+  'script', 'style', 'template', 'nav', 'header', 'footer', 'aside',
   'form', 'iframe', 'svg', 'math', 'button', 'select', 'input', 'textarea', 'video',
   'audio', 'canvas', 'object', 'embed', 'link', 'meta', 'base', 'title',
 ])
@@ -39,11 +47,25 @@ const DROP_TAGS = new Set([
 /** Inline elements that survive an inline-only pass. */
 const INLINE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'code', 'a', 'sub', 'sup', 'br'])
 
-/** Attributes preserved per element (everything else is stripped). */
+/**
+ * Attributes preserved per element (everything else is stripped).
+ *
+ * The `img` row documents what an emitted image carries; the img branch of
+ * `normalizeNode` builds that tag itself, because the source URL is RESOLVED
+ * (lazy-loading attributes, srcset, a picture's sources) rather than copied.
+ */
 const KEPT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   a: ['href'],
-  img: ['src', 'alt'],
+  img: ['src', 'alt', 'referrerpolicy'],
 }
+
+/**
+ * Where lazy-loading scripts stash the real URL when `src` is a placeholder.
+ *
+ * Ordered by how often each name carries the article's image; the list is kept
+ * tight on purpose — an attribute nobody publishes buys nothing but surface.
+ */
+const LAZY_IMAGE_ATTRIBUTES = ['data-src', 'data-original', 'data-lazy-src', 'data-url', 'data-actualsrc'] as const
 
 /** The minimum text length a block must reach to count as a paragraph, by script. */
 interface ParagraphThresholds {
@@ -297,7 +319,10 @@ function scoreElement(element: Element): number {
     linkMass += collapse(node.textContent ?? '').length
   }
   for (const node of Array.from(element.querySelectorAll('img'))) {
-    // An image counts for a little: article bodies have them, navigation does not.
+    // An image counts for a little: article bodies have them, navigation does
+    // not. One inside a <noscript> is the no-JS fallback for a picture the
+    // markup already holds — counting the duplicate would double the boost.
+    if (node.closest('noscript') !== null) continue
     if (node.getAttribute('src') !== null) imageCount += 1
   }
 
@@ -403,11 +428,20 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
   if (element.hasAttribute('data-cfemail') || (element.getAttribute('class') ?? '').includes('__cf_email__')) return ''
 
   if (tag === 'img') {
-    const src = absolutize(element.getAttribute('src'), baseUrl)
+    const src = imageSrc(element, baseUrl)
     if (src === undefined) return ''
-    const alt = element.getAttribute('alt')
-    return `<img src="${escapeAttribute(src)}"${alt === null ? '' : ` alt="${escapeAttribute(alt)}"`}>`
+    return emitImg(src, element.getAttribute('alt'))
   }
+  // A <picture> is one image with several spellings: the first usable <source>
+  // srcset, else the fallback <img>. Emitting one normalized <img> is the whole
+  // point — the whitelist has no picture/source, so keeping the wrapper would
+  // either duplicate the image or lose it.
+  if (tag === 'picture') return pictureImg(element, baseUrl)
+  // The standard no-JS fallback: a lazy-loading script hides the real image in
+  // a <noscript>, and a fetch runs no scripts — so the ONLY copy the static
+  // markup holds lives here. Recover that image; drop everything else a
+  // noscript carries (the "please enable JavaScript" text is not content).
+  if (tag === 'noscript') return noscriptImg(element, baseUrl)
   if (tag === 'br') return '<br>'
   if (tag === 'hr') return '<hr>'
 
@@ -427,6 +461,134 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
     })
     .join('')
   return `<${tag}${attributes}>${inner}</${tag}>`
+}
+
+/**
+ * Serialize one normalized image.
+ *
+ * `referrerpolicy="no-referrer"` is emitted, never copied: the sites that
+ * lazy-load are also the ones whose CDNs answer a hotlink with a 403, and the
+ * reader has no page context to refer from anyway.
+ */
+function emitImg(src: string, alt: string | null): string {
+  return `<img src="${escapeAttribute(src)}"${alt === null ? '' : ` alt="${escapeAttribute(alt)}"`} referrerpolicy="no-referrer">`
+}
+
+/**
+ * Resolve the URL an image actually loads, past the lazy-loading tricks.
+ *
+ * The order is the order of trust: a real `src` first (a `data:` URI there is
+ * the classic 1px placeholder and counts as ABSENT — the real URL is in the
+ * attributes), then the lazy-loading attributes, then the best `srcset`
+ * candidate. Only when nothing usable remains is the image dropped.
+ *
+ * @param element - the `<img>` element.
+ * @param baseUrl - base for relative URL resolution.
+ * @returns the absolute URL, or `undefined`.
+ */
+function imageSrc(element: Element, baseUrl: string | undefined): string | undefined {
+  const src = element.getAttribute('src')
+  if (src !== null && !/^\s*data:/i.test(src)) {
+    const resolved = absolutize(src, baseUrl)
+    if (resolved !== undefined) return resolved
+  }
+  for (const name of LAZY_IMAGE_ATTRIBUTES) {
+    const resolved = absolutize(element.getAttribute(name), baseUrl)
+    if (resolved !== undefined) return resolved
+  }
+  return bestSrcset(element.getAttribute('srcset'), baseUrl)
+}
+
+/**
+ * The largest candidate of a `srcset` list.
+ *
+ * Candidates are ranked by their descriptor's number — `800w` beats `400w`,
+ * `2x` beats `1x`, a bare URL is the smallest. The two descriptor kinds are
+ * never meaningfully mixed in one list, so one ranking serves both.
+ *
+ * @param value - the srcset attribute, or null.
+ * @param baseUrl - base for relative URL resolution.
+ * @returns the absolute URL of the biggest candidate, or `undefined`.
+ */
+function bestSrcset(value: string | null, baseUrl: string | undefined): string | undefined {
+  if (value === null) return undefined
+  const candidates: string[] = []
+  for (const piece of value.split(',')) {
+    const previous = candidates[candidates.length - 1]
+    // A data: URL carries a comma of its own (`data:image/png;base64,…`), so a
+    // naive split cuts it in two — and the payload tail then parses as a
+    // candidate that can WIN. Rejoin the halves: the whole candidate is
+    // rejected as a scheme below, but its tail must never stand alone.
+    if (previous !== undefined && /^\s*data:[^,]*$/i.test(previous)) {
+      candidates[candidates.length - 1] = `${previous},${piece}`
+      continue
+    }
+    candidates.push(piece)
+  }
+  let best: { readonly url: string; readonly score: number } | undefined
+  for (const candidate of candidates) {
+    const parts = candidate.trim().split(/\s+/)
+    const raw = parts[0]
+    if (raw === undefined || raw === '') continue
+    const url = absolutize(raw, baseUrl)
+    if (url === undefined) continue
+    const descriptor = parts[1]
+    const size = descriptor === undefined ? Number.NaN : Number.parseFloat(descriptor)
+    const score = Number.isFinite(size) ? size : 0
+    if (best === undefined || score > best.score) best = { url, score }
+  }
+  return best?.url
+}
+
+/**
+ * Resolve a `<picture>` to its one normalized `<img>`, or to nothing.
+ *
+ * @param element - the `<picture>` element.
+ * @param baseUrl - base for relative URL resolution.
+ * @returns the normalized image HTML, or an empty string.
+ */
+function pictureImg(element: Element, baseUrl: string | undefined): string {
+  const fallback = Array.from(element.children).find(child => child.localName === 'img')
+  const alt = fallback?.getAttribute('alt') ?? null
+  for (const source of Array.from(element.children)) {
+    if (source.localName !== 'source') continue
+    const url = bestSrcset(source.getAttribute('srcset'), baseUrl)
+    if (url !== undefined) return emitImg(url, alt)
+  }
+  if (fallback !== undefined) {
+    const url = imageSrc(fallback, baseUrl)
+    if (url !== undefined) return emitImg(url, alt)
+  }
+  return ''
+}
+
+/**
+ * Recover the no-JS fallback image a `<noscript>` carries, when it carries one.
+ *
+ * A fetched page parses with scripting disabled, so the content is usually
+ * already elements; a parse with scripting on holds the same markup as TEXT
+ * instead, and then it is parsed here a second time. Either way, anything that
+ * is not a usable image is dropped, exactly as before.
+ *
+ * @param element - the `<noscript>` element.
+ * @param baseUrl - base for relative URL resolution.
+ * @returns the normalized image HTML, or an empty string.
+ */
+function noscriptImg(element: Element, baseUrl: string | undefined): string {
+  let img = element.querySelector('img')
+  if (img === null) {
+    const text = element.textContent ?? ''
+    if (!/<img[\s/>]/i.test(text)) return ''
+    try {
+      img = new DOMParser().parseFromString(`<body>${text}</body>`, 'text/html').querySelector('img')
+    } catch {
+      return ''
+    }
+  }
+  if (img === null) return ''
+  const src = imageSrc(img, baseUrl)
+  if (src === undefined) return ''
+  return emitImg(src, img.getAttribute('alt'))
 }
 
 /**
@@ -466,6 +628,9 @@ function serializeInline(node: Node): string {
     if (child.nodeType !== 1 /* element */) continue
     const tag = (child as Element).localName.toLowerCase()
     if (DROP_TAGS.has(tag)) continue
+    // A noscript's fallback image means nothing in an inline summary; the rest
+    // of its content ("please enable JavaScript") was never content at all.
+    if (tag === 'noscript') continue
     if (tag === 'br') {
       out += ' '
       continue
