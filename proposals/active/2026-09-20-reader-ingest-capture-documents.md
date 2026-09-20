@@ -112,7 +112,9 @@
 
 - `26670806` 包本体：Remote 命名空间 `capture`、动词 `render({url, timeoutMs?}) → { html, finalUrl?, title?, truncated? }`（与阅读器 `src/client/contract.ts:56-64` 的结构镜像逐项一致；拒绝为 `capture/*` 码的 RemoteError）。受管 Chrome（pipe、每渲染临时 BrowserContext、Chrome for Testing 懒下载进 `$DSH_HOME/state/dsh-capture`、空闲超时回收、并发 1 有界队列）、SSRF 闸逐跳重查（scheme/凭据/私网/回环/链路本地/元数据/保留段，IPv4 映射/NAT64/6to4 按内嵌分类）、遍扫停留 500ms/步、CSSOM 命中规则内联（`var()` 解析 + SVG 呈现属性双写）、剥脚本/样式块、~8M 字符截断置 `truncated`。浏览器半只做挂载（$mount 生成的 Remote contribution，无 UI——设置页推迟）。权限为手势门：首次成功渲染后逐站点 allow 记录落 `state.json`。
 - `9a669121` README 双语（契约/管线/威胁模型/保真边界/Compat）+ Agent Note：[capture-rendered-fetch](../../.agents/notes/implemented/feature/2026-09-21-capture-rendered-fetch.md)（含「为什么浏览器半必须存在」「手势门 vs browser-pane 完整许可门」两条 Alternatives）。
-- 测试 61 绿：URL 政策矩阵、jsdom 内联（含级联/权重/important/预筛）、队列、store、真实 Context boot（假受管浏览器过缝）、真实 Chrome 集成（fixture 服务器供 IntersectionObserver 懒图 + CSS 变量 SVG + 回环逃逸重定向；无二进制整体跳过）。3080 验收（真站点 transformer-circuits + 阅读器端到端 + 装卸回归）留给部署流。
+- 测试 66 绿：URL 政策矩阵、jsdom 内联（含级联/权重/important/预筛/属性承载 var()）、队列、store、真实 Context boot（假受管浏览器过缝）、真实 Chrome 集成（fixture 服务器供 IntersectionObserver 懒图 + CSS 变量 SVG + 回环逃逸重定向；无二进制整体跳过）。3080 验收（阅读器端到端 + 装卸回归）留给部署流。
+- 实弹验证（`064e794a` + `166fe044`，本地系统 Chrome 打真实 transformer-circuits.pub/2026/workspace）：102 个 figure 全数捕获（63 个内联 SVG——带图注的 Figure 1/2 在内；其余是 Google-Docs 图片 figure）、5638 个解析后 fill、**零 `var()` 残留**、零 script/style 标签、5.1 MB 未截断。这轮实弹照出两个 CSSOM 遍历看不见的 `var()` 面（脚本写进呈现属性的、内联 shorthand 被拆成空值长属性的）并当场修掉——只走 CSSOM 的版本残留 87 处。
+- gate 状态：`check:plugins`/`check:hygiene`/build/pack/独立安装冒烟（真 CLI `plugin add` + dump-config 见行）全绿；整仓 `pnpm gate` 的 test 步在本机（8 核）连续红在 ankh-guard `supervise-4-of-4` 的负载敏感计时断言——**main 基线（e71b3d9f，无 capture）同样失败**，该包与本分支零代码交集，安静单独跑其 lane 211/211 绿（flake 类已在 2026-09-05-ankh-guard-watchdog-test-lifecycle 记录在案）。
 - 已知缺口（验收前须知）：阅读器白名单今天仍 DROP `svg` 且不留 `style` 属性——figure 进正文需要阅读器侧的白名单放行（capture 输出已双写 style + 呈现属性，两种放行都能吃）；这是阅读器后续提交，不在本包边界内。
 
 
