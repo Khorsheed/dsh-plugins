@@ -1,7 +1,7 @@
 # TypeSafe 快速判断原语：模型工具 + 系统门控（typesafe-decision-primitive）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress（M1 core 与 M2 tool+skill 已交付并进本地 3080；M4 门控等入站定案）
 - **最后更新**：2026-09-20
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived），关键词「typesafe / jev / 决策原语 / 分类器 / 门控 / gate / classifier」。**无同类提案**。命中的三条都无能力重叠：[skill-add 命令解析 note](../../.agents/notes/implemented/bug-fix/2026-09-20-skill-add-command-flag-parsing.md)（`npx skills add typesafe-ai/skills --skill typesafe-ai` 的 URL 解析 bug）、[add-mcp-manage](2026-08-29-add-mcp-manage.md) 与 [masked-credential-proxy](2026-08-29-masked-credential-proxy.md)（MCP 管理 / 凭据遮罩；本提案复用既有「工具与技能 → 凭据」入口，不新建凭据面）。相关而非重复：[room-coordinator-runtime](2026-09-15-room-coordinator-runtime.md)、[room-session-promotion](2026-08-27-room-session-promotion.md)（未来门控的所在场景；本提案不依赖 room，M4 只登记路线）。新建。
 - **官方依赖**：**纯插件**。全部落在既有 seam 上：`ctx.provide` 自定义服务、`ctx.credentials` 引用解析、`ctx.inject(['tools'])` / `ctx.inject(['systemPrompt'])` / `ctx.get('skills').register`。M4 的门控骑既有 `agent/pre-step` waterfall（第三方先例 ankh-guard），同样零官方改动；**唯一可能需要上游**的是 room「成员派发级」判断（`DispatchHooks.allows` 同步且内部构造），不在本提案交付范围、不阻塞。
@@ -108,7 +108,9 @@ type Decision = {
 | 请求形态 | 不含（实测 0 代码块） | 不含（契约由工具 schema 承载） |
 | 维护 | 上游（`npx skills update`） | 本包（随版本走） |
 
-两者**交叉引用、不互相复述**，避免漂移。若运行时确认只做决策、不写集成，可把官方 skill 用 frontmatter `disable-model-invocation: true` 降为"用户可调、不占模型注意力"（用户侧运行决定，不是本提案交付项）。本包 skill 用**不同名**（`typesafe-decide`），不与用户级 `typesafe-ai` 争同名。
+两者**交叉引用、不互相复述**，避免漂移。本包 skill 用**不同名**（`typesafe-decide`），不与用户级 `typesafe-ai` 争同名。
+
+**2026-09-20 用户拍板：移除官方 `typesafe-ai` skill**（已从 `$DSH_HOME/skills/` 删除）。理由：真工具就位后它只会把 agent 引向"写个 CLI 包装"（其正文含 0 请求形态，而官方 quickstart 的示例 prompt 正是 "build a simple CLI that uses the TypeSafe API…"），而它的构建期知识一条 `npx skills add typesafe-ai/skills --skill typesafe-ai` 就能装回。删除是可逆的单实例级决定，因此在此留账：**本实例不再安装该 skill**；要写 TypeSafe 集成时改读官方在线文档（本包 skill 保留这条指引）。这也取代了早先"改官方 SKILL.md 声明凭据"的零代码方案——凭据现在归 core 的 `apiKeyRef`。
 
 ### 6. key 的配置入口（不新建 UI）
 
@@ -118,9 +120,9 @@ type Decision = {
 
 ## 里程碑
 
-- **M1 core**：`packages/typesafe` 脚手架（identity triangle / 自挂载 / README 双语 / compat）+ 服务 + 凭据 + 具名注册表 + wire 纪律（超时 / 退避 / 熔断 / 缓存 / 决策日志）+ 单测（缺 key 降级、超时、429 退避、缓存命中、不抛保证、熔断恢复）。
-- **M2 tool + skill**：`packages/typesafe-tool`（`typesafe_judge` + prompt section + `typesafe-decide` skill + 结构探测降级）+ README / compat + 3080 验收。
-- **M3 观测与授予（可选）**：决策日志 / usage 汇总面；per-preset 授予与自隐核对；`health()` 暴露到设置卡（复用既有凭据入口，不新建凭据 UI）。
+- **M1 core（已交付）**：`packages/typesafe` 脚手架（自挂载行 `typesafe` / README 双语 + compat）+ `ctx.provide('typesafe', …)` 服务 + `apiKeyRef` 凭据解析 + 具名注册表 + wire 纪律（timeout 与 transport 赛跑 / 429&5xx 退避 / 熔断 / 可选缓存与并发合并 / 决策日志 / 输入校验 / 永不抛）+ 32 项单测。
+- **M2 tool + skill（已交付）**：`packages/typesafe-tool`（preset-composed 行；`typesafe_judge` + `typesafe:judge` 提示词段 + `typesafe-decide` skill（含 `metadata.credentials`）+ 结构探测降级）+ README 双语 + 10 项单测。
+- **M3 观测与授予（可选）**：决策日志 / usage 汇总面；`health()` 暴露到设置卡（复用既有凭据入口，不新建凭据 UI）。
 - **M4（未立项）**：门控消费方。本提案只登记路线；若独立成包则另开提案，若落在将来的 team 插件里则在那份提案记录。
 
 ## 验收标准（done 判定）
@@ -147,4 +149,10 @@ type Decision = {
 
 ## 实现记录
 
-（随实施追加：相关 Agent Note / PR / 包名）
+- **2026-09-20（worktree `.worktrees/typesafe`，分支 `feat/typesafe-decision-primitive`）**：M1 + M2 一次交付。
+  - `@khorsheed/dsh-typesafe@0.1.0`：`packages/typesafe`（自挂载行 id `typesafe`），服务 API `judge` / `decide` / `health` / `config`；`src/wire.ts` 零 harness import；32 项单测（请求形状、429 退避与 `retry-after`、401 不重试、timeout 与 transport 赛跑、caller abort、decode、缺 key → `unconfigured`、输入校验、缓存 + `fresh`、并发合并、熔断、阈值套用）。
+  - `@khorsheed/dsh-typesafe-tool@0.1.0`：`packages/typesafe-tool`（`dsh.composition.component: preset-composed-row`，无 patch），`dsh.references: ['@khorsheed/dsh-typesafe']` + 源码零 import（结构探测）；`typesafe_judge`（参数 `state` + `questions[{id,type,instructions,choices?,levels?}]`）、`typesafe:judge` 提示词段、`typesafe-decide` skill（`metadata.credentials` 供既有凭据 UI）；10 项单测（授予面、缺 core 降级、`tools:false`、参数映射、渲染、失败不当异常）。
+  - **与方案的偏差（据实记录）**：① 服务未提供 `models()`——运行时决策用不到，推迟到 M3；② 工具参数用 `choices`/`levels` 两个显式字段而不是裸 `criteria`，避免工具 schema 里的联合类型；③ **动了一处共享脚本**：`scripts/check-plugin-independence.ts` 的 `NO_OWN_PATCH` 增加 `'typesafe-tool'` 一条（checker 要求 preset-composed 行的 metadata 与该清单一致）；**没有**新增 `ALLOWED_EDGES` 条目、没有依赖边。
+  - 文档门全过：`verify-translation-pairing` 388 对、`verify-agent-note-format` 354 条、`verify-agent-note-classification` 354 条、`check:plugins` 38 包 0 finding。
+  - Agent Note：[TypeSafe as a decision service plus a preset-granted tool row](../../.agents/notes/implemented/feature/2026-09-20-typesafe-decision-primitive.md)。
+  - 实例侧：官方 `typesafe-ai` skill 已从 `$DSH_HOME/skills/` 删除（见 §5）。
