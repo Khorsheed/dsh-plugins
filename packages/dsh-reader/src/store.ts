@@ -786,12 +786,12 @@ export function boundAnnotations(doc: ReaderStateDoc): { doc: ReaderStateDoc; ch
   const next: Record<string, ReaderEntryAnnotation> = {}
   for (const [entryId, entry] of Object.entries(annotations)) {
     if (entry.body === undefined || keep.has(entryId)) { next[entryId] = entry; continue }
-    const { body: _released, ...rest } = entry
-    // The reader-authored and the costly-to-rebuild fields survive a body
-    // eviction: tags, the failure record, and the translation (whose rebuild
-    // costs a gesture plus model work — releasing it with the page it was
-    // read from would be the worst trade in this document).
-    if (rest.tagIds === undefined && rest.error === undefined && rest.translation === undefined) continue
+    // The body is gone, so its exact-fit translation map goes in the same pass:
+    // the map is keyed to that body's hash and answers nothing without it
+    // (unchanged sentences still hit the GLOBAL memory — the linkage is about
+    // the entry tier only). Tags and the failure record survive, as before.
+    const { body: _released, translation: _linked, ...rest } = entry
+    if (rest.tagIds === undefined && rest.error === undefined && rest.fetch === undefined) continue
     next[entryId] = rest
   }
   return { doc: { ...doc, annotations: next }, changed: true }

@@ -335,6 +335,32 @@ export interface ReaderEntryTranslationView {
   readonly segments: Record<string, string>
 }
 
+/**
+ * How much the two caches currently hold, aggregated on the host.
+ *
+ * Counts and characters only — the tables themselves never cross the wire for
+ * a settings readout. `chars` is the store's accounting unit (characters, the
+ * same unit the budgets are written in).
+ */
+export interface ReaderStorageStats {
+  /** The cached article bodies (what TTL + maxEntries govern). */
+  readonly bodies: {
+    readonly entries: number
+    readonly chars: number
+  }
+  /** The two translation tiers: per-entry maps, and the global sentence memory. */
+  readonly translations: {
+    /** How many entries carry a segment map. */
+    readonly entries: number
+    /** The maps' combined size. */
+    readonly chars: number
+    /** The global memory's sentence count (0 when no table exists). */
+    readonly memoryEntries: number
+    /** The global memory's size (0 when no table exists). */
+    readonly memoryChars: number
+  }
+}
+
 export interface ReaderRefreshConfig {
   readonly enabled: boolean
   /** Local time of day as `HH:MM`; defaults to `10:00`. */

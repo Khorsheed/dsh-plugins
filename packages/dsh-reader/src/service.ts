@@ -73,8 +73,9 @@ import {
   type ReaderSentenceLearn,
   type ReaderSource,
   type ReaderSourceSummary,
-  type ReaderTag,
   type ReaderStateDoc,
+  type ReaderStorageStats,
+  type ReaderTag,
   type ReaderTranslationMemoryEntry,
   type ReaderTranslationMemoryTable,
 } from './types.ts'
@@ -369,16 +370,39 @@ export class ReaderService {
   /**
    * Remove a source.
    *
-   * @param request - the source id.
+   * Its entries' TRANSLATIONS go with it: the entries themselves are unreachable
+   * once the source is gone (the recent page disables them), so their exact-fit
+   * maps are dead weight. The host never parses feeds, so the caller passes the
+   * entry ids it has parsed; a link source's single entry id is derivable here
+   * regardless. The cached BODIES stay — the body budget owns their lifetime,
+   * unchanged.
+   *
+   * @param request - the source id, plus the entries the caller knows belong to it.
    * @returns the outcome, or a domain refusal.
    */
-  async removeSource(request: { id: string }): Promise<ReaderMutationOutcome> {
+  async removeSource(request: { id: string; entryIds?: readonly string[] }): Promise<ReaderMutationOutcome> {
     const doc = await this.currentDoc()
     if (!doc.sources.some(source => source.id === request.id)) return 'not-found'
-    await this.commit(current => ({
-      ...current,
-      sources: current.sources.filter(source => source.id !== request.id),
-    }))
+    const entryIds = new Set(request.entryIds ?? [])
+    entryIds.add(linkEntryId(request.id))
+    await this.commit(current => {
+      let annotations = current.annotations
+      const touched: Record<string, ReaderEntryAnnotation> = {}
+      let changed = false
+      for (const id of entryIds) {
+        const annotation = annotations?.[id]
+        if (annotation?.translation === undefined) continue
+        const { translation: _gone, ...rest } = annotation
+        touched[id] = rest
+        changed = true
+      }
+      if (changed) annotations = { ...annotations, ...touched }
+      return {
+        ...current,
+        sources: current.sources.filter(source => source.id !== request.id),
+        ...(changed ? { annotations } : {}),
+      }
+    })
     return 'ok'
   }
 
@@ -726,6 +750,8 @@ export class ReaderService {
     html: string
     truncated?: boolean
     scriptFigures?: number
+    /** The caller's hash of `html`; the entry's translation map dies with a body it no longer matches. */
+    bodyHash?: string
   }): Promise<ReaderEntryBodyView> {
     const html = request.html.trim()
     if (html.length === 0) {
@@ -756,13 +782,26 @@ export class ReaderService {
     await this.commit(current => {
       const existing = current.annotations?.[request.entryId]
       const tagIds = existing?.tagIds
+      // The entry's translation map rides the body's identity: a stored body
+      // whose hash no longer matches makes the map dead weight, and it goes in
+      // the same commit (unchanged sentences still hit the GLOBAL memory). A
+      // re-store of the SAME body keeps it.
+      const translation = existing?.translation !== undefined
+        && request.bodyHash !== undefined
+        && existing.translation.bodyHash === request.bodyHash
+        ? existing.translation
+        : undefined
       // The stored raw payload has been consumed: the fetch record goes with it,
       // so the wall now reads `ready` from the body alone.
       return {
         ...current,
         annotations: {
           ...current.annotations,
-          [request.entryId]: tagIds === undefined ? { body } : { body, tagIds },
+          [request.entryId]: {
+            body,
+            ...(tagIds === undefined ? {} : { tagIds }),
+            ...(translation === undefined ? {} : { translation }),
+          },
         },
       }
     })
@@ -987,6 +1026,73 @@ export class ReaderService {
       }
     })
     return { stored: learned.length }
+  }
+
+  /**
+   * How much the two caches currently hold, aggregated on the host.
+   *
+   * The tables themselves never cross the wire for a settings readout: counts
+   * and characters only. The characters are the store's own accounting unit —
+   * the same numbers the budgets bound.
+   *
+   * @returns per-tier usage.
+   */
+  async getStorageStats(): Promise<ReaderStorageStats> {
+    const doc = await this.currentDoc()
+    let bodyEntries = 0
+    let bodyChars = 0
+    let translationEntries = 0
+    let translationChars = 0
+    for (const annotation of Object.values(doc.annotations ?? {})) {
+      const body = annotation.body
+      if (body !== undefined) {
+        bodyEntries += 1
+        bodyChars += body.chars ?? (body as { html?: string }).html?.length ?? 0
+      }
+      const translation = annotation.translation
+      if (translation !== undefined) {
+        translationEntries += 1
+        translationChars += translation.chars ?? Object.entries(translation.segments ?? {})
+          .reduce((sum, [hash, target]) => sum + hash.length + target.length + 2, 0)
+      }
+    }
+    return {
+      bodies: { entries: bodyEntries, chars: bodyChars },
+      translations: {
+        entries: translationEntries,
+        chars: translationChars,
+        memoryEntries: doc.translationMemory?.entries ?? 0,
+        memoryChars: doc.translationMemory?.chars ?? 0,
+      },
+    }
+  }
+
+  /**
+   * Forget every translation: the global sentence memory AND every entry map.
+   *
+   * The manage page's one gesture for it, after its own confirm. Bodies, tags,
+   * the recent list and the sources are untouched — the reader is clearing a
+   * derived cache, not their library. The commit's own `pruneBodies` sweep
+   * takes the files once the document no longer names them.
+   *
+   * @returns how many entry maps went, and whether the memory table went.
+   */
+  async clearTranslations(): Promise<{ clearedEntries: number; clearedMemory: boolean }> {
+    const doc = await this.currentDoc()
+    const clearedEntries = Object.values(doc.annotations ?? {}).filter(annotation => annotation.translation !== undefined).length
+    const clearedMemory = doc.translationMemory !== undefined
+    if (clearedEntries === 0 && !clearedMemory) return { clearedEntries: 0, clearedMemory: false }
+    await this.commit(current => {
+      const annotations: Record<string, ReaderEntryAnnotation> = {}
+      for (const [id, annotation] of Object.entries(current.annotations ?? {})) {
+        if (annotation.translation === undefined) { annotations[id] = annotation; continue }
+        const { translation: _cleared, ...rest } = annotation
+        annotations[id] = rest
+      }
+      const { translationMemory: _dropped, ...rest } = current
+      return { ...rest, annotations }
+    })
+    return { clearedEntries, clearedMemory }
   }
 
   /**

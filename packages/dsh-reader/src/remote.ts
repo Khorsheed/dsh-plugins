@@ -28,6 +28,7 @@ import type {
   ReaderRefreshResult,
   ReaderSentenceLearn,
   ReaderSourceSummary,
+  ReaderStorageStats,
   ReaderTag,
 } from './types.ts'
 
@@ -83,9 +84,9 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.core.updateSource(request)
   }
 
-  /** Drop a source. */
+  /** Drop a source; its entries' translations go with it (their bodies stay for the budget). */
   @Remote('removeSource')
-  removeSource(request: { id: string }): Promise<ReaderMutationOutcome> {
+  removeSource(request: { id: string; entryIds?: readonly string[] }): Promise<ReaderMutationOutcome> {
     return this.core.removeSource(request)
   }
 
@@ -130,6 +131,7 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     html: string
     truncated?: boolean
     scriptFigures?: number
+    bodyHash?: string
   }): Promise<ReaderEntryBodyView> {
     return this.core.storeEntryBody(request)
   }
@@ -179,6 +181,18 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     bodyHash?: string
   }): Promise<{ stored: number }> {
     return this.core.rememberSentences(request)
+  }
+
+  /** Per-tier cache usage, aggregated on the host (the tables never cross). */
+  @Remote('getStorageStats')
+  getStorageStats(): Promise<ReaderStorageStats> {
+    return this.core.getStorageStats()
+  }
+
+  /** Forget every translation: the global memory and every entry map. */
+  @Remote('clearTranslations')
+  clearTranslations(): Promise<{ clearedEntries: number; clearedMemory: boolean }> {
+    return this.core.clearTranslations()
   }
 
   /** The tag vocabulary, with how many entries carry each tag. */

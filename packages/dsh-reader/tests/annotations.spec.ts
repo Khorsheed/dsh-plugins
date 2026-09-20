@@ -231,8 +231,11 @@ describe('the translation tiers', () => {
     expect(doc.translationMemory).toBeUndefined()
   })
 
-  it('never evicts a translation to make room for a cached page', () => {
-    // Same rule as tags: the costly-to-rebuild record survives the body budget.
+  it('takes the entry translation with the body it maps — and never the reader’s tags', () => {
+    // The linkage rule (user-approved 2026-09-20): a body eviction drops the
+    // exact-fit translation map in the same pass — it answers nothing without
+    // the body — while tags and the failure record survive, and the GLOBAL
+    // sentence memory is not this function's business at all.
     const base = withBodies(MAX_CACHED_BODIES + 1)
     const oldest = 'e0'
     const doc: ReaderStateDoc = {
@@ -241,6 +244,7 @@ describe('the translation tiers', () => {
         ...base.annotations,
         [oldest]: {
           ...base.annotations?.[oldest],
+          tagIds: ['t-keep'],
           translation: {
             version: 1,
             pair: 'en→zh',
@@ -251,10 +255,12 @@ describe('the translation tiers', () => {
           },
         },
       },
+      tags: { 't-keep': { id: 't-keep', name: 'important', createdAt: 'x' } },
     }
     const bounded = boundAnnotations(doc).doc
     expect(bounded.annotations?.[oldest]?.body).toBeUndefined()
-    expect(bounded.annotations?.[oldest]?.translation?.segments).toEqual({ h1: 't1' })
+    expect(bounded.annotations?.[oldest]?.translation).toBeUndefined()
+    expect(bounded.annotations?.[oldest]?.tagIds).toEqual(['t-keep'])
   })
 })
 
