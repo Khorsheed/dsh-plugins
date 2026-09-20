@@ -52,7 +52,7 @@ interface SkillSummaryLike {
 }
 
 /** Minimal loaded SkillDefinition (adds content + metadata). */
-interface SkillDefinitionLike extends SkillSummaryLike {
+export interface SkillDefinitionLike extends SkillSummaryLike {
   readonly content: string
   readonly metadata?: Readonly<Record<string, unknown>>
 }
@@ -268,10 +268,11 @@ export async function readSkillFileContent(
   filePath: string,
   workdir: string | undefined,
   scope: unknown = undefined,
+  fallback?: SkillDefinitionLike,
 ): Promise<CatalogSkillFileRead | undefined> {
   const base = workdir === undefined ? {} : { cwd: workdir }
   const lookup = scope === undefined ? base : { ...base, scope }
-  const def = await registry.get(name, lookup)
+  const def = (await registry.get(name, lookup)) ?? fallback
   if (def === undefined) return undefined
   const resourceBase = def.resourceBase
   const bundleDir = resourceBase?.kind === 'directory' ? resourceBase.path : undefined
@@ -311,10 +312,14 @@ export async function loadSkillDetail(
   name: string,
   workdir: string | undefined,
   scope: unknown = undefined,
+  fallback?: SkillDefinitionLike,
 ): Promise<CatalogSkillDetail | undefined> {
   const base = workdir === undefined ? {} : { cwd: workdir }
   const lookup = scope === undefined ? base : { ...base, scope }
-  const def = await registry.get(name, lookup)
+  // The registry read is scope-limited on purpose; a managed skill scoped to
+  // another preset falls back to the plugin's own copy so the catalog can still
+  // show and edit it.
+  const def = (await registry.get(name, lookup)) ?? fallback
   if (def === undefined) return undefined
   // metadata.credentials are the user-configurable secrets; env-var references
   // detected in the body are the agent's own runtime inputs (DSH_HOME etc.) and

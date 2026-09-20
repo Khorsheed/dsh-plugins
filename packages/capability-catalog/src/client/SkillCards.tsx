@@ -24,8 +24,10 @@ const skillSourceTag = (source: string, t: (key: CapabilityCatalogKey) => string
 
   /** Preview card in the skills grid (Agent-preset anatomy): name + source tag,
  * two-line description, provider subtitle, foot actions. */
-export function SkillPreviewCard({ skill, onOpen, onDelete, t }: {
+export function SkillPreviewCard({ skill, tag, onOpen, onDelete, t }: {
   skill: CatalogSkillRow
+  /** Overrides the source tag (a managed skill shows its preset scope instead). */
+  tag?: string | undefined
   onOpen: () => void
   onDelete: () => void
   t: (key: CapabilityCatalogKey) => string
@@ -36,7 +38,7 @@ export function SkillPreviewCard({ skill, onOpen, onDelete, t }: {
       <button type="button" className={css.pvMain} onClick={onOpen}>
         <span className={css.pvHead}>
           <span className={css.pvName}>{skill.name}</span>
-          <span className={css.pvTag}>{skillSourceTag(skill.source, t)}</span>
+          <span className={css.pvTag}>{tag ?? skillSourceTag(skill.source, t)}</span>
         </span>
         <span className={css.pvDesc}>{skill.description}</span>
         <span className={css.pvSub}>{skill.provider}</span>

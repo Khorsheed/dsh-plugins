@@ -193,6 +193,76 @@ export interface CatalogDirSkillInfo {
   readonly kind?: 'self' | 'child'
 }
 
+/** One managed skill's preset-scoped delivery state. */
+export interface CatalogScopedSkillRow {
+  readonly name: string
+  readonly description: string
+  readonly modelInvocable: boolean
+  readonly userInvocable: boolean
+  /** The managed `SKILL.md` path. */
+  readonly path: string
+  /** The preset ids its frontmatter declares; empty means "every preset". */
+  readonly presets: readonly string[]
+  /** Whether a delivery provider currently serves it in at least one preset. */
+  readonly delivered: boolean
+  /** The default-root path already supplying this name, when delivery is refused. */
+  readonly conflict?: string
+}
+
+/** One preset's scoped-delivery state. */
+export interface CatalogScopedPresetRow {
+  readonly presetId: string
+  readonly skills: readonly string[]
+  /** Why this preset's standing scope could not be used. */
+  readonly error?: string
+}
+
+/** Preset-scoped skill delivery status, as the settings surface reads it.
+ * This is a discovery policy for one instance, not an authorization boundary. */
+export interface CatalogPresetScopeStatus {
+  /** Whether any preset is currently served. */
+  readonly enabled: boolean
+  /** Why delivery is off, or reduced — absent when fully operational. */
+  readonly reason?: string
+  /** The plugin-owned root the delivered skills live in. */
+  readonly root: string
+  /** Whether the managed root is currently watched for changes. */
+  readonly watching: boolean
+  readonly skills: readonly CatalogScopedSkillRow[]
+  readonly presets: readonly CatalogScopedPresetRow[]
+  /** True because custom skill roots are configured in host compositions this
+   * plugin cannot read: a duplicate there would not be detected. */
+  readonly customRootsUnverifiable: boolean
+}
+
+/** One preset a scope picker may choose. */
+export interface CatalogPresetOption {
+  readonly id: string
+  readonly name?: string
+  readonly description?: string
+  /** Why this preset cannot compose a session, when it cannot. */
+  readonly broken?: string
+}
+
+/** Request to declare which presets one skill is delivered to. */
+export interface CatalogPresetScopeSetRequest {
+  readonly name: string
+  readonly presets: readonly string[]
+}
+
+/** Request to adopt an installed skill into the managed, preset-scoped root. */
+export interface CatalogPresetScopeAdoptRequest {
+  readonly name: string
+  readonly presets: readonly string[]
+  readonly workdir?: string
+}
+
+/** Outcome of one preset-scope write; `error` is present exactly when it failed. */
+export interface CatalogPresetScopeEditResult {
+  readonly ok: boolean
+  readonly error?: string
+}
+
 /** Add-skill channel. */
 export type AddSkillChannel = 'zip' | 'github' | 'command'
 

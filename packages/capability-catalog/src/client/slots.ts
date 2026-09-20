@@ -7,7 +7,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the generated Remote namespace merge.
 import type {} from '@khorsheed/dsh-capability-catalog/remote'
-import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogDeleteSkillResult, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogDeleteSkillResult, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogPresetOption, CatalogPresetScopeEditResult, CatalogPresetScopeStatus, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
 
 /** A tiny external store holding the last catalog snapshot (re-created on change). */
 export interface CatalogHook {
@@ -59,6 +59,16 @@ export interface CapabilityCatalogInjected {
   mcpSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
   /** MCP: connect + discover a server's tools. */
   mcpDiscover: (serverName: string) => Promise<readonly CatalogMcpTool[]>
+  /** Preset-scoped delivery status of the plugin's managed skill root. */
+  presetScopeStatus: () => Promise<CatalogPresetScopeStatus | undefined>
+  /** Every preset the roster supplies, for the scope picker. */
+  presetScopeRoster: () => Promise<readonly CatalogPresetOption[]>
+  /** Declare which presets one managed skill is delivered to. */
+  presetScopeSet: (name: string, presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
+  /** Move an installed skill into the managed root with a preset scope. */
+  presetScopeAdopt: (name: string, presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
+  /** Move a managed skill back to the user skill root. */
+  presetScopeRelease: (name: string) => Promise<CatalogPresetScopeEditResult>
 }
 
 /** Full props of the settings.section entry (a standalone nav tab). */
