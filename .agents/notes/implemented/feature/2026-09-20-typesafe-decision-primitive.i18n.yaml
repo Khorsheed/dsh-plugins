@@ -3,4 +3,4 @@
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-20-typesafe-decision-primitive.md
 .agents/notes/implemented/feature/2026-09-20-typesafe-decision-primitive.md: 62e164f0631c606d8064d237cdfbdd057619ee76
-.agents/notes/implemented/feature/2026-09-20-typesafe-decision-primitive.zh.md: 3e9234b76ccb2940327706c4db807bec82277641
+.agents/notes/implemented/feature/2026-09-20-typesafe-decision-primitive.zh.md: 11ffe802758d6eb5187535f0857bade57500b1c8

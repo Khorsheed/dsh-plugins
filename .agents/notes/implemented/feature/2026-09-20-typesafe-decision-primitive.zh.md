@@ -51,4 +51,4 @@ skill 里的 `metadata.credentials` 声明是刻意的：那是 capability-catal
 - 注册表里的阈值是起点，必须在真实数据上校准——门控的第一步应是 shadow（只记日志、不改行为）。
 - `metadata.credentials` 会把该值同时以 `DSH_TYPESAFE_API_KEY` 注入 bash 执行（默认隐藏，不是硬边界）。不接受这点暴露就走 `.env` 路径。
 - 刻意推迟：`models()` 清单（运行时决策用不到）、门控本体（多人聊天的入站模型还没定）、room 成员派发级门控（需要上游 seam——room 的 `DispatchHooks.allows` 是同步且构造在 `RoomService` 内部）。
-- 尚未发布：两个包只是以 tarball 进了本地 3080 profile，没有切 npm 发布。
+- 分发：未切 npm 发布。部署流程（`pnpm deploy:3080`）把两个包以 tarball 装进本地 3080 profile；模型面还需要某个 agent preset 按名引用工具行才会授予。
