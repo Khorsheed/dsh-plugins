@@ -415,3 +415,48 @@ describe('MathML formulas survive the whitelist', () => {
     expect(normalizeInline('<p>a <math><mi>x</mi></math> b</p>')).toBe('a x b')
   })
 })
+
+/**
+ * LaTeXML embeds vector figures as `<object type="image/svg+xml" data="…">`
+ * (measured on arxiv.org/html/2604.03147): the whitelist had no `object`, so
+ * the figure vanished and its caption stayed behind, reading as "the plugin
+ * lost the image". An image-typed object IS an image for the reader's
+ * purposes; every other object keeps being dropped.
+ */
+describe('an image-typed <object> becomes an <img>', () => {
+  const page = fixture('arxiv-object-figure.html')
+
+  it('converts the SVG object figure, absolutized, with its dimensions', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/2604.03147v3')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain(
+      '<img src="https://arxiv.org/html/2604.03147v3/circumplex.svg" width="443" height="290" referrerpolicy="no-referrer">',
+    )
+    expect(result.html).toContain('Figure 1: the circumplex')
+    // A figure whose picture is markup (now an img) is not script-drawn.
+    expect(result.scriptFigures).toBeUndefined()
+  })
+
+  it('still drops a non-image object whole', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/2604.03147v3')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('appendix.pdf')
+    expect(result.html).not.toContain('<object')
+    // The prose around it is untouched.
+    expect(result.html).toContain('embedded file')
+  })
+
+  it('applies the same rule through the feed-body path', () => {
+    expect(normalizeRichText(
+      '<p>x</p><object type="image/svg+xml" data="/fig.svg"></object>',
+      'https://example.com/post/',
+    )).toBe('<p>x</p><img src="https://example.com/fig.svg" referrerpolicy="no-referrer">')
+    expect(normalizeRichText('<p>x</p><object data="/movie.mp4" type="video/mp4"></object>')).toBe('<p>x</p>')
+    // An image-typed object with no usable address is nothing.
+    expect(normalizeRichText('<p>x</p><object type="image/png"></object>')).toBe('<p>x</p>')
+    // A data: address is not a fetchable image here.
+    expect(normalizeRichText('<p>x</p><object type="image/png" data="data:image/png;base64,AAAA"></object>')).toBe('<p>x</p>')
+  })
+})

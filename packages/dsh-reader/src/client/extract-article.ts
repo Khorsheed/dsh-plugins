@@ -50,11 +50,15 @@ const KEEP_TAGS = new Set([
  * renders natively, but an `annotation-xml` with `encoding="text/html"` parses
  * its children as HTML — the one MathML-shaped HTML-injection vector — so the
  * subtree never reaches the normalizer.
+ *
+ * `object` is no longer here either: LaTeXML (arXiv's HTML papers) embeds
+ * vector figures as `<object type="image/svg+xml" data="…">`, so the
+ * normalizer converts image-typed objects to `<img>` and drops the rest whole.
  */
 const DROP_TAGS = new Set([
   'script', 'style', 'template', 'nav', 'header', 'footer', 'aside',
   'form', 'iframe', 'svg', 'annotation-xml', 'button', 'select', 'input', 'textarea', 'video',
-  'audio', 'canvas', 'object', 'embed', 'link', 'meta', 'base', 'title',
+  'audio', 'canvas', 'embed', 'link', 'meta', 'base', 'title',
 ])
 
 /** Inline elements that survive an inline-only pass. */
@@ -235,7 +239,8 @@ const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'b
  *
  * "No picture" means no `<img>`, `<svg>`, `<canvas>`, `<video>` or `<picture>`
  * anywhere inside: the page renders that illustration at runtime. A `<math>`
- * subtree counts as content — a formula-only figure's picture IS its markup.
+ * subtree counts as content — a formula-only figure's picture IS its markup —
+ * and so does an image-typed `<object>` (the LaTeXML vector-figure shape).
  *
  * The figures themselves are KEPT, caption included. Dropping them was tried
  * and reverted: a caption is text the page published — it says what the figure
@@ -250,7 +255,7 @@ const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'b
 function countScriptFigures(root: Element): number {
   let count = 0
   for (const figure of Array.from(root.querySelectorAll('figure'))) {
-    if (figure.querySelector('img, svg, canvas, video, picture, math') !== null) continue
+    if (figure.querySelector('img, svg, canvas, video, picture, math, object[type^="image/"]') !== null) continue
     count += 1
   }
   return count
@@ -450,6 +455,10 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
     if (src === undefined) return ''
     return emitImg(src, element.getAttribute('alt'))
   }
+  // LaTeXML embeds vector figures as image-typed objects: an image in every
+  // sense that matters here. Any other object (a PDF, a movie) keeps the old
+  // DROP behavior — subtree and fallback content alike.
+  if (tag === 'object') return objectImg(element, baseUrl)
   // A <picture> is one image with several spellings: the first usable <source>
   // srcset, else the fallback <img>. Emitting one normalized <img> is the whole
   // point — the whitelist has no picture/source, so keeping the wrapper would
@@ -488,8 +497,41 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
  * lazy-load are also the ones whose CDNs answer a hotlink with a 403, and the
  * reader has no page context to refer from anyway.
  */
-function emitImg(src: string, alt: string | null): string {
-  return `<img src="${escapeAttribute(src)}"${alt === null ? '' : ` alt="${escapeAttribute(alt)}"`} referrerpolicy="no-referrer">`
+function emitImg(src: string, alt: string | null, dimensions: { readonly width?: string; readonly height?: string } = {}): string {
+  const width = dimensions.width === undefined ? '' : ` width="${dimensions.width}"`
+  const height = dimensions.height === undefined ? '' : ` height="${dimensions.height}"`
+  return `<img src="${escapeAttribute(src)}"${alt === null ? '' : ` alt="${escapeAttribute(alt)}"`}${width}${height} referrerpolicy="no-referrer">`
+}
+
+/** An integer dimension worth carrying onto the emitted image (nothing else is trusted). */
+function dimensionAttr(value: string | null): string | undefined {
+  if (value === null) return undefined
+  const trimmed = value.trim()
+  return /^[1-9]\d{0,4}$/.test(trimmed) ? trimmed : undefined
+}
+
+/**
+ * Resolve an `<object>` to a normalized `<img>`, or to nothing.
+ *
+ * Only `type="image/…"` objects with a fetchable `data` address qualify — that
+ * is the LaTeXML figure shape (`<object type="image/svg+xml" data="fig.svg"
+ * width height>`). The page's own width/height ride along when they are plain
+ * integers: an image with known dimensions is the difference between a stable
+ * layout and the growing document the reading-position note is about. The
+ * fallback children an object may carry are dropped with it — they duplicate
+ * the caption, not the picture.
+ */
+function objectImg(element: Element, baseUrl: string | undefined): string {
+  const type = (element.getAttribute('type') ?? '').trim()
+  if (!/^image\//i.test(type)) return ''
+  const src = absolutize(element.getAttribute('data'), baseUrl)
+  if (src === undefined) return ''
+  const width = dimensionAttr(element.getAttribute('width'))
+  const height = dimensionAttr(element.getAttribute('height'))
+  return emitImg(src, element.getAttribute('alt'), {
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height }),
+  })
 }
 
 /**
@@ -648,7 +690,8 @@ function serializeInline(node: Node): string {
     if (DROP_TAGS.has(tag)) continue
     // A noscript's fallback image means nothing in an inline summary; the rest
     // of its content ("please enable JavaScript") was never content at all.
-    if (tag === 'noscript') continue
+    // An object's fallback text is the same kind of chrome.
+    if (tag === 'noscript' || tag === 'object') continue
     if (tag === 'br') {
       out += ' '
       continue
