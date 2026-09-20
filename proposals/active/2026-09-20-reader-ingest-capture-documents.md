@@ -96,6 +96,12 @@
 - `e9215f91` 判定弹窗动作按钮与句子的空白修正（JSX 换行不产生空格）。
 - 面板内锚点跳转（`#cite.*`/`#fig.*`）**推迟**：白名单剥掉所有 `id`，滚动目标不存在；恢复 id 是归一化契约变更（正文重哈希、译文映射重定键），超出 M0 体量——记录在 mathml note 的 Alternatives。
 
+**M0 验收修复（`reader/m0-followups` 分支，2026-09-21，3080 验收报回）**：
+
+- `0236abaf` arXiv 图存活：LaTeXML 把矢量图嵌成 `<object type="image/svg+xml" data=…>`（实测 2604.03147），归一化改写成带原始宽高的 `<img>`；非图片 object 照旧整棵丢弃。
+- `9b23e0fc` 实质 base64 内联图不再被当占位图丢弃（transformer-circuits 实测 87 张）：图片 MIME 白名单 + 载荷 ≥512 字符才保留，占位图照旧穿透到懒加载属性；存储账（sidecar + 条数/TTL 承接多 MB 正文；外置图片 sidecar 属宿主缝，刻意推迟）写入 note。两个形态共用 Agent Note：[image-forms](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-image-forms.md)。
+- `512ea5a3` 链接卡片升级为论文自己的标题 + 摘要：extractArticle 返回 title/excerpt；宿主标注携带（淘汰存活）；`getBodies` 接回链接源；面板合成即升级、feed 条目永不改。Agent Note：[link-card-title](../../.agents/notes/implemented/feature/2026-09-21-reader-link-card-title.md)。
+
 ## 验收标准（done 判定，绑定可插拔交付）
 
 1. 所有新包可 `dsh plugin add` / `remove` 一条命令装卸；identity triangle、`dsh.bundle.patch` 自挂载、`files` 清单、`dsh.client.inject` 声明齐全；`pnpm check:plugins`、`pnpm check:hygiene` 过。
