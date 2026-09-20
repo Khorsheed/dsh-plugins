@@ -35,14 +35,24 @@
  * @module @khorsheed/dsh-reader/service
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { MAX_RECENT_ENTRIES, ReaderStore, ReaderStoreError, emptyStateDoc } from './store.ts'
+import {
+  MAX_RECENT_ENTRIES,
+  ReaderStore,
+  ReaderStoreError,
+  boundTranslations,
+  emptyStateDoc,
+  memoryTableChars,
+  TRANSLATION_MEMORY_FILE,
+} from './store.ts'
 import {
   defaultSourceLabel,
   errorMessage,
   isRetryablePreviewFailure,
   linkEntryId,
   DEFAULT_CACHE_POLICY,
+  DEFAULT_TRANSLATION_BUDGET_CHARS,
   INLINE_BODY_MAX_CHARS,
+  TRANSLATION_STORAGE_VERSION,
   type ReaderAddFailure,
   type ReaderAddOutcome,
   type ReaderAddRefusal,
@@ -54,14 +64,19 @@ import {
   type ReaderCapabilities,
   type ReaderMutationOutcome,
   type ReaderEntryFetchState,
+  type ReaderEntryTranslation,
+  type ReaderEntryTranslationView,
   type ReaderPreviewFailure,
   type ReaderPreviewFailureCode,
   type ReaderRecentEntry,
   type ReaderRefreshResult,
+  type ReaderSentenceLearn,
   type ReaderSource,
   type ReaderSourceSummary,
   type ReaderTag,
   type ReaderStateDoc,
+  type ReaderTranslationMemoryEntry,
+  type ReaderTranslationMemoryTable,
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 
@@ -82,6 +97,15 @@ const MAX_REDIRECT_HOPS = 3
 
 /** Upper bound on summaries handed to the browser in one call. */
 const SUMMARY_LIMIT = 500
+
+/** How many sentence hashes one memory-slice read answers (the table never crosses). */
+const TRANSLATION_SLICE_LIMIT = 2000
+
+/** How many sentences one write batch may carry (a long article is ~500). */
+const TRANSLATION_WRITE_LIMIT = 2000
+
+/** One sentence's source or translation is never longer than a few paragraphs. */
+const TRANSLATION_TEXT_LIMIT = 4_000
 
 /** The shape of one `ctx.web.fetch` result, declared structurally. */
 interface WebFetchResult {
@@ -803,6 +827,193 @@ export class ReaderService {
     return { candidates }
   }
 
+  /* -------------------------------------------------- translation memory */
+
+  /**
+   * One entry's exact-fit translation record, with its segment map resolved.
+   *
+   * A record from an older storage schema, or one whose sidecar file is gone,
+   * reads as absent — the caller falls back to the global memory, and the stale
+   * record is carried out by the next write or budget pass (lazy, never wiped).
+   *
+   * @param request - the entry.
+   * @returns the record, or nothing usable.
+   */
+  async getEntryTranslation(request: { entryId: string }): Promise<{ translation?: ReaderEntryTranslationView }> {
+    const doc = await this.currentDoc()
+    const record = doc.annotations?.[request.entryId]?.translation
+    if (record === undefined || record.version !== TRANSLATION_STORAGE_VERSION) return {}
+    const segments = record.segments !== undefined
+      ? { ...record.segments }
+      : record.file === undefined
+        ? undefined
+        : readSegmentsFile(this.store.readBody(record.file))
+    if (segments === undefined) return {}
+    return {
+      translation: {
+        pair: record.pair,
+        bodyHash: record.bodyHash,
+        segments,
+      },
+    }
+  }
+
+  /**
+   * The translations for exactly the sentences asked about, of one pair.
+   *
+   * The client hashes the body's sentences itself, so the slice is precise and
+   * the whole table never crosses the wire. Reads do not rewrite the file:
+   * the LRU stamp moves when the sentence next serves (the client's batched
+   * report of what it reused), not when a list of hashes arrives.
+   *
+   * @param request - the pair label and the sentence hashes wanted.
+   * @returns hash → translation for the hits.
+   */
+  async getSentenceTranslations(request: { pair: string; hashes: readonly string[] }): Promise<{ translations: Record<string, string> }> {
+    const memory = await this.translationMemory()
+    const translations: Record<string, string> = {}
+    for (const hash of request.hashes.slice(0, TRANSLATION_SLICE_LIMIT)) {
+      if (typeof hash !== 'string' || hash.length === 0) continue
+      const hit = memory[`${request.pair}:${hash}`]
+      if (hit !== undefined) translations[hash] = hit.target
+    }
+    return { translations }
+  }
+
+  /**
+   * Persist what one translation run produced, in one batch.
+   *
+   * `entries` are the sentences the model just translated: they upsert into the
+   * global memory AND the entry's exact-fit map. `recalled` are the sentences
+   * the run was served from memory: their lastUsedAt bumps (that is what makes
+   * the budget's LRU a use-clock rather than a write-clock), and they join the
+   * entry map too, so the map stays the complete record of this body. When
+   * `entryId` + `bodyHash` are present the entry map is REWRITTEN to the run's
+   * full sentence set — the run saw the whole body, so a merge would only
+   * preserve sentences the current body no longer has.
+   *
+   * @param request - the pair, the learned and recalled sentences, and the
+   *   entry identity when this run was an article's.
+   * @returns how many sentences were newly learned.
+   */
+  async rememberSentences(request: {
+    pair: string
+    entries: readonly ReaderSentenceLearn[]
+    recalled?: readonly ReaderSentenceLearn[]
+    entryId?: string
+    bodyHash?: string
+  }): Promise<{ stored: number }> {
+    const pair = request.pair.trim()
+    if (pair.length === 0) return { stored: 0 }
+    const learned = normalizeLearns(request.entries)
+    const recalled = normalizeLearns(request.recalled ?? [])
+    const now = new Date().toISOString()
+    const doc = await this.currentDoc()
+    const budget = doc.cache?.translationBudgetChars ?? DEFAULT_TRANSLATION_BUDGET_CHARS
+
+    // The global table: upsert the learned, bump the recalled.
+    const memory = { ...await this.translationMemory() }
+    let memoryChanged = false
+    for (const learn of [...learned, ...recalled]) {
+      memory[`${pair}:${learn.hash}`] = { source: learn.source, target: learn.target, lastUsedAt: now }
+      memoryChanged = true
+    }
+
+    // The entry map, when this run was an article's: the complete sentence set,
+    // sidecarred when it outgrows the inline limit — exactly like bodies.
+    let entryWrite: { entryId: string; translation: ReaderEntryTranslation } | undefined
+    if (request.entryId !== undefined && request.bodyHash !== undefined) {
+      const segments: Record<string, string> = {}
+      for (const learn of [...learned, ...recalled]) segments[learn.hash] = learn.target
+      const entryId = request.entryId
+      let translation: ReaderEntryTranslation = {
+        version: TRANSLATION_STORAGE_VERSION,
+        pair,
+        bodyHash: request.bodyHash,
+        translatedAt: doc.annotations?.[entryId]?.translation?.translatedAt ?? now,
+        lastUsedAt: now,
+      }
+      const serialized = JSON.stringify(segments)
+      if (serialized.length > INLINE_BODY_MAX_CHARS) {
+        translation = { ...translation, file: this.store.writeBody(`${entryId}#translation`, serialized), chars: serialized.length }
+      } else {
+        translation = { ...translation, segments, chars: serialized.length }
+      }
+      entryWrite = { entryId, translation }
+    }
+
+    // The budget eviction runs against the document just read: its outcome (the
+    // final table + the evicted entry ids) is what the commit applies, so the
+    // memory file on disk always matches the manifest that names it.
+    const bounded = boundTranslations(memory, {
+      ...(doc.annotations ?? {}),
+      ...(entryWrite === undefined ? {} : { [entryWrite.entryId]: { ...doc.annotations?.[entryWrite.entryId], translation: entryWrite.translation } }),
+    }, budget)
+    if (bounded.evictedMemoryKeys.length > 0) memoryChanged = true
+    if (memoryChanged) {
+      // File before document — the same order `storeRaw` uses — so a crash
+      // leaves an unreferenced file for the next prune, never a dangling name.
+      const table: ReaderTranslationMemoryTable = { version: TRANSLATION_STORAGE_VERSION, entries: bounded.memory }
+      this.store.writeNamedBody(TRANSLATION_MEMORY_FILE, JSON.stringify(table))
+    }
+    await this.commit(current => {
+      let annotations: Record<string, ReaderEntryAnnotation> | undefined
+      if (entryWrite !== undefined || bounded.evictedEntryIds.length > 0) {
+        annotations = { ...current.annotations }
+        if (entryWrite !== undefined) {
+          annotations[entryWrite.entryId] = { ...annotations[entryWrite.entryId], translation: entryWrite.translation }
+        }
+        for (const id of bounded.evictedEntryIds) {
+          const annotation = annotations[id]
+          if (annotation?.translation === undefined) continue
+          const { translation: _evicted, ...rest } = annotation
+          annotations[id] = rest
+        }
+      }
+      return {
+        ...current,
+        ...(annotations === undefined ? {} : { annotations }),
+        ...(memoryChanged
+          ? {
+            translationMemory: {
+              version: TRANSLATION_STORAGE_VERSION,
+              file: TRANSLATION_MEMORY_FILE,
+              entries: Object.keys(bounded.memory).length,
+              chars: memoryTableChars(bounded.memory),
+              updatedAt: now,
+            },
+          }
+          : {}),
+      }
+    })
+    return { stored: learned.length }
+  }
+
+  /**
+   * The global sentence memory's table, from its sidecar file.
+   *
+   * Read per call, not cached: the file is the truth, and the service's own
+   * commits are the only writes — a cache keyed on the manifest would save a
+   * few MB of JSON parsing per translation run at the price of a coherence
+   * story. An absent, unreadable, or stale-version file reads as empty (the
+   * lazy half of the schema version).
+   */
+  private async translationMemory(): Promise<Record<string, ReaderTranslationMemoryEntry>> {
+    const doc = await this.currentDoc()
+    const manifest = doc.translationMemory
+    if (manifest === undefined) return {}
+    const raw = this.store.readBody(manifest.file)
+    if (raw === undefined) return {}
+    try {
+      const table = JSON.parse(raw) as ReaderTranslationMemoryTable
+      if (table.version !== TRANSLATION_STORAGE_VERSION || typeof table.entries !== 'object' || table.entries === null) return {}
+      return { ...table.entries }
+    } catch {
+      return {}
+    }
+  }
+
+
   /** The tag vocabulary plus which entry ids carry each tag. */
   async listTags(): Promise<{ tags: ReaderTag[]; counts: Record<string, number> }> {
     const doc = await this.currentDoc()
@@ -894,18 +1105,27 @@ export class ReaderService {
     return { tags: Object.values(doc.tags ?? {}).filter(tag => ids.has(tag.id)) }
   }
 
-  /** How long a fetched body is served, and how many are kept. */
-  async getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number }> {
+  /** How long a fetched body is served, and how large the translation store may grow. */
+  async getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number; translationBudgetChars: number }> {
     const doc = await this.currentDoc()
-    return doc.cache ?? DEFAULT_CACHE_POLICY
+    return {
+      ttlHours: doc.cache?.ttlHours ?? DEFAULT_CACHE_POLICY.ttlHours,
+      maxEntries: doc.cache?.maxEntries ?? DEFAULT_CACHE_POLICY.maxEntries,
+      translationBudgetChars: doc.cache?.translationBudgetChars ?? DEFAULT_TRANSLATION_BUDGET_CHARS,
+    }
   }
 
   /** Change the cache policy (`ttlHours: 0` = keep until the budget evicts). */
-  async setCachePolicy(request: { ttlHours: number; maxEntries?: number }): Promise<ReaderAnnotationOutcome> {
+  async setCachePolicy(request: { ttlHours: number; maxEntries?: number; translationBudgetChars?: number }): Promise<ReaderAnnotationOutcome> {
     if (!Number.isFinite(request.ttlHours) || request.ttlHours < 0 || request.ttlHours > 24 * 90) return 'invalid'
+    if (request.translationBudgetChars !== undefined
+      && (!Number.isFinite(request.translationBudgetChars) || request.translationBudgetChars <= 0 || request.translationBudgetChars > 1024 * 1024 * 1024)) {
+      return 'invalid'
+    }
     const doc = await this.currentDoc()
     const maxEntries = request.maxEntries ?? doc.cache?.maxEntries ?? DEFAULT_CACHE_POLICY.maxEntries
-    await this.commit(current => ({ ...current, cache: { ttlHours: request.ttlHours, maxEntries } }))
+    const translationBudgetChars = request.translationBudgetChars ?? doc.cache?.translationBudgetChars ?? DEFAULT_TRANSLATION_BUDGET_CHARS
+    await this.commit(current => ({ ...current, cache: { ttlHours: request.ttlHours, maxEntries, translationBudgetChars } }))
     return 'ok'
   }
 
@@ -1360,8 +1580,53 @@ function cleanupAnnotations(
 ): Record<string, ReaderEntryAnnotation> {
   const out: Record<string, ReaderEntryAnnotation> = {}
   for (const [entryId, entry] of Object.entries(annotations)) {
-    if (entry.body === undefined && (entry.tagIds ?? []).length === 0 && entry.error === undefined) continue
+    // A fetch record alone is load-bearing (the payload is on disk waiting to
+    // be extracted), and a translation is the costly-to-rebuild kind of record
+    // this document exists to keep — neither may be swept as "empty".
+    if (entry.body === undefined && (entry.tagIds ?? []).length === 0 && entry.error === undefined
+      && entry.fetch === undefined && entry.translation === undefined) continue
     out[entryId] = (entry.tagIds ?? []).length > 0 ? entry : withoutTags(entry)
+  }
+  return out
+}
+
+/**
+ * Parse a translation sidecar's segment map, tolerating a damaged file.
+ *
+ * @param raw - the file's content, or `undefined` when it is gone.
+ * @returns the map, or `undefined` when the file holds none.
+ */
+function readSegmentsFile(raw: string | undefined): Record<string, string> | undefined {
+  if (raw === undefined) return undefined
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(([, target]) => typeof target === 'string'),
+    ) as Record<string, string>
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Coerce one batch of learned sentences: bounded in count and in size, each
+ * carrying its hash and both texts.
+ *
+ * @param entries - the client's batch.
+ * @returns the entries worth storing.
+ */
+function normalizeLearns(entries: readonly ReaderSentenceLearn[]): ReaderSentenceLearn[] {
+  const out: ReaderSentenceLearn[] = []
+  for (const entry of entries.slice(0, TRANSLATION_WRITE_LIMIT)) {
+    if (typeof entry.hash !== 'string' || entry.hash.length === 0 || entry.hash.length > 64) continue
+    if (typeof entry.source !== 'string' || typeof entry.target !== 'string') continue
+    if (entry.source.length === 0 || entry.target.length === 0) continue
+    out.push({
+      hash: entry.hash,
+      source: entry.source.slice(0, TRANSLATION_TEXT_LIMIT),
+      target: entry.target.slice(0, TRANSLATION_TEXT_LIMIT),
+    })
   }
   return out
 }
