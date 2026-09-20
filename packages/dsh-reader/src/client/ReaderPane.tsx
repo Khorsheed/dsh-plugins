@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   IconChevronDownOutline14,
   IconChevronLeftOutline14,
+  IconClockOutline16,
   IconCopyOutline16,
   IconGlobeOutline14,
   IconPlusOutline16,
@@ -103,8 +104,6 @@ const STROKE: Readonly<Record<string, string>> = {
   fetch: 'M8 2.6v8.2M4.8 7.8 8 11l3.2-3.2M3 13.4h10',
   check: 'M3.4 8.6 6.6 11.8 12.6 4.6',
   alert: 'M8 3.2v5.4M8 11.6v1.2',
-  // A clock, for 「最近阅读」: the page is about WHEN, not about state.
-  clock: 'M8 2.6a5.4 5.4 0 1 0 0 10.8A5.4 5.4 0 0 0 8 2.6Zm0 2.2v3.4l2.4 1.4',
 }
 
 /** Render one of the small stroke glyphs. */
@@ -2660,7 +2659,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         </button>
       )}
       <span className={css.headTitle}>
-        <IconGlobeOutline14 size={14} />
+        <IconGlobeOutline14 size={15} />
         {t('tab.label')}
         <span className={css.count} title={t('filter.unreadOnly')}>
           {countUnread(rows)} {t('foot.unread')}
@@ -2953,7 +2952,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         title={t('action.recent')}
         onClick={() => { actions.closeEntry(); actions.setView('recent') }}
       >
-        {glyph('clock', 15)}
+        {/* The official clock, not a hand-rolled stroke: the custom path filled
+            10.8/16 of the box where the Icon*Outline16 neighbours fill ~12/16,
+            so it read a size smaller beside them. */}
+        <IconClockOutline16 size={15} />
       </button>
       <button
         type="button"

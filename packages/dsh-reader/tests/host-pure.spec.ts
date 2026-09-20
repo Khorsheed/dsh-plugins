@@ -506,4 +506,15 @@ describe('the wall search field is sized by its row', () => {
     expect(search).toMatch(/box-sizing:\s*border-box/)
     expect(search).toMatch(/width:\s*100%/)
   })
+
+  it('unifies the wall title and the secondary-page title at 15px/600', () => {
+    // 订阅管理's title read bigger than 灵感空间's: two page kinds of one pane
+    // with two title sizes. Both now share the page-title metric.
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    for (const selector of ['.headTitle', '.barLabel']) {
+      const block = new RegExp(`${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+      expect(block).toMatch(/font-size:\s*15px/)
+      expect(block).toMatch(/font-weight:\s*600/)
+    }
+  })
 })
