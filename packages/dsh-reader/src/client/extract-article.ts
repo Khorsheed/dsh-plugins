@@ -27,6 +27,14 @@ const KEEP_TAGS = new Set([
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'pre',
   'code', 'strong', 'em', 'b', 'i', 'u', 's', 'a', 'img', 'figure', 'figcaption',
   'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'br', 'sub', 'sup', 'dl', 'dt', 'dd',
+  // The presentation MathML subset: arXiv's HTML papers (LaTeXML) carry their
+  // formulas as `<math alttext="…">`, and the render target (Chromium ≥ 153)
+  // renders this subset natively — no script, no font download. Anything NOT
+  // in this list (`mglyph`, `mpadded`, …) is unwrapped to its children, which
+  // for a formula is its readable text.
+  'math', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext', 'msup', 'msub', 'msubsup',
+  'mfrac', 'msqrt', 'mroot', 'mspace', 'mtable', 'mtr', 'mtd', 'munder',
+  'mover', 'munderover', 'semantics', 'annotation',
 ])
 
 /**
@@ -37,10 +45,15 @@ const KEEP_TAGS = new Set([
  * lazy-loading script), and dropping it wholesale loses pictures whose URL is
  * right there in the static markup. The normalizer recovers that image and
  * drops everything else a noscript carries.
+ *
+ * `annotation-xml` IS here while `math` is not: the presentation MathML subset
+ * renders natively, but an `annotation-xml` with `encoding="text/html"` parses
+ * its children as HTML — the one MathML-shaped HTML-injection vector — so the
+ * subtree never reaches the normalizer.
  */
 const DROP_TAGS = new Set([
   'script', 'style', 'template', 'nav', 'header', 'footer', 'aside',
-  'form', 'iframe', 'svg', 'math', 'button', 'select', 'input', 'textarea', 'video',
+  'form', 'iframe', 'svg', 'annotation-xml', 'button', 'select', 'input', 'textarea', 'video',
   'audio', 'canvas', 'object', 'embed', 'link', 'meta', 'base', 'title',
 ])
 
@@ -57,6 +70,10 @@ const INLINE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'code', 'a', 's
 const KEPT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   a: ['href'],
   img: ['src', 'alt', 'referrerpolicy'],
+  // `alttext` is the formula's plain-text twin (accessibility and a readable
+  // fallback), `display` marks block math (the pane scrolls it horizontally).
+  // Everything else — event handlers, `href` on <mi>, style hooks — is stripped.
+  math: ['alttext', 'display'],
 }
 
 /**
@@ -217,7 +234,8 @@ const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'b
  * Count the figures whose picture is not in the markup.
  *
  * "No picture" means no `<img>`, `<svg>`, `<canvas>`, `<video>` or `<picture>`
- * anywhere inside: the page renders that illustration at runtime.
+ * anywhere inside: the page renders that illustration at runtime. A `<math>`
+ * subtree counts as content — a formula-only figure's picture IS its markup.
  *
  * The figures themselves are KEPT, caption included. Dropping them was tried
  * and reverted: a caption is text the page published — it says what the figure
@@ -232,7 +250,7 @@ const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'b
 function countScriptFigures(root: Element): number {
   let count = 0
   for (const figure of Array.from(root.querySelectorAll('figure'))) {
-    if (figure.querySelector('img, svg, canvas, video, picture') !== null) continue
+    if (figure.querySelector('img, svg, canvas, video, picture, math') !== null) continue
     count += 1
   }
   return count

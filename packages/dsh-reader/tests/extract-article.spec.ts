@@ -356,3 +356,62 @@ describe('lazy-loaded images are recovered', () => {
     expect(result.html).not.toContain('<img')
   })
 })
+
+/**
+ * MathML passthrough: arXiv's HTML papers (LaTeXML) carry formulas as
+ * `<math alttext="…">`, and the pane's render target (Chromium ≥ 153) renders
+ * the presentation subset natively. Dropping it was measured as "the paper's
+ * formulas are gone"; keeping it must not open an injection path, so the
+ * dangerous members (`annotation-xml`, any script) are pinned GONE here.
+ */
+describe('MathML formulas survive the whitelist', () => {
+  const page = fixture('arxiv-math.html')
+
+  it('keeps the safe presentation subset with alttext and display', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<math alttext="a_{ij}">')
+    expect(result.html).toContain('<msub><mi>a</mi><mi>ij</mi></msub>')
+    expect(result.html).toContain('<math alttext="\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}(\\frac{QK^T}{\\sqrt{d_k}})V" display="block">')
+    expect(result.html).toContain('<mfrac>')
+    expect(result.html).toContain('<msqrt><mi>d</mi></msqrt>')
+    // The TeX source inside <semantics><annotation> is markup-invisible data —
+    // it survives (its encoding attribute is stripped), and the visible
+    // presentation before it is intact.
+    expect(result.html).toContain('<semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation>E=mc^2</annotation></semantics>')
+  })
+
+  it('drops annotation-xml and every nested script — the injection vector', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('annotation-xml')
+    expect(result.html).not.toContain('<script')
+    expect(result.html).not.toContain('onerror')
+    expect(result.html).not.toContain('alert')
+    // The math around the dropped subtree survives on its own terms.
+    expect(result.html).toContain('<math alttext="evil"><mtext>safe text</mtext></math>')
+  })
+
+  it('does not count a formula-only figure as script-drawn', () => {
+    // The figure's content IS the markup (a formula), so the scriptFigures
+    // notice must not fire for it.
+    const result = extractArticle(page, 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBeUndefined()
+    expect(result.html).toContain('Figure 1: a formula')
+  })
+
+  it('keeps math through the feed-body path (normalizeRichText) too', () => {
+    const out = normalizeRichText('<p>inline <math alttext="x+y"><mrow><mi>x</mi><mo>+</mo><mi>y</mi></mrow></math></p>')
+    expect(out).toBe('<p>inline <math alttext="x+y"><mrow><mi>x</mi><mo>+</mo><mi>y</mi></mrow></math></p>')
+    expect(normalizeRichText('<math><annotation-xml encoding="text/html"><img src="x" onerror="alert(1)"></annotation-xml><mi>x</mi></math>'))
+      .toBe('<math><mi>x</mi></math>')
+  })
+
+  it('flattens math to its text in an inline summary', () => {
+    expect(normalizeInline('<p>a <math><mi>x</mi></math> b</p>')).toBe('a x b')
+  })
+})

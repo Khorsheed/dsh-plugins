@@ -811,6 +811,23 @@
   text-align: left;
 }
 
+/* MathML survives the whitelist for arXiv-style bodies (the render target,
+   Chromium ≥ 153, paints it natively). Display math is a block of its own that
+   scrolls sideways rather than breaking the body's right edge — the same
+   contract `pre` already keeps. */
+.article math {
+  font-size: 1.02em;
+}
+
+.article math[display="block"] {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 12px;
+  padding: 6px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 /* The completeness note: one line at the end of the body, not a card. */
 .incomplete {
   margin: 18px 0 0;

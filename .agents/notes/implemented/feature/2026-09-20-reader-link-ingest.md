@@ -32,7 +32,7 @@ The add flow (`ReaderService.addSource`) recognizes paper links BEFORE the first
 
 ## Consequences
 
-- A pasted arXiv link lands the paper (tables, MathML formulas — rendered natively since the [MathML passthrough](2026-09-20-reader-mathml.md)) instead of its abstract; a pasted DOI that gates through lands the same paper with its origin marked; an OpenReview link is an honest card instead of a challenge page.
+- A pasted arXiv link lands the paper (tables, MathML formulas — rendered natively since the [MathML passthrough](2026-09-21-reader-mathml.md)) instead of its abstract; a pasted DOI that gates through lands the same paper with its origin marked; an OpenReview link is an honest card instead of a challenge page.
 - arXiv HTML pages exceed the fetch seam's default 100,000-char cap (measured 384 KB), so the existing 「内容未完整呈现」 truncation path is what a default deployment shows; the deployment-side `maxBodyChars` patch (the acceptance instance runs 64 MB) lifts it. The upgrade makes this limit VISIBLE on the main scene rather than rare.
 - The DOI path costs two extra API requests per pasted DOI and both are new network trust: Crossref and arXiv answers are parsed defensively (JSON parse failure, missing fields and truncation all degrade to the ordinary path), and no API answer is ever rendered — only the gated id becomes a URL.
 - `resolvedFrom` joins the source document (optional, normalized like every field); old documents read as before.

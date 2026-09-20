@@ -32,7 +32,7 @@ Status: implemented
 
 ## Consequences
 
-- 粘 arXiv 链接落的是论文（表格、MathML 公式——自 [MathML 放行](2026-09-20-reader-mathml.md) 起原生渲染）而不是摘要页；过闸的 DOI 落同一篇论文并标注来源；OpenReview 链接是诚实的卡片而不是挑战页。
+- 粘 arXiv 链接落的是论文（表格、MathML 公式——自 [MathML 放行](2026-09-21-reader-mathml.md) 起原生渲染）而不是摘要页；过闸的 DOI 落同一篇论文并标注来源；OpenReview 链接是诚实的卡片而不是挑战页。
 - arXiv HTML 页超过出网缝默认的 100,000 字符上限（实测 384 KB），默认部署下走既有「内容未完整呈现」截断路径；部署侧 patch `maxBodyChars`（验收实例 64 MB）可解。升级让这个上限在主场景上**可见**，而不是偶发。
 - DOI 路径每个链接多两次 API 请求，且是新的网络信任面：Crossref 与 arXiv 的回答都做防御性解析（JSON 解析失败、缺字段、截断一律降级回普通路径），任何 API 回答都绝不渲染——只有过闸的 id 变成 URL。
 - `resolvedFrom` 进入源文档（可选字段，与其它字段一样归一化）；旧文档原样读取。
