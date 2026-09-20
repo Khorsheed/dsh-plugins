@@ -2561,6 +2561,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     await props.copyText(openEntry.link)
   }, [openEntry, props])
 
+  /**
+   * The way out to a real browser for a page the fetch cannot do justice to.
+   *
+   * The in-app Sidebar Browser (host 0.1.6-alpha.2+) keeps the reader inside
+   * the product; on an older host the same gesture is the ordinary external
+   * link. Probed at render, never thrown.
+   */
+  const browserTab = props.browserTabAvailable()
+  const openElsewhere = useCallback((url: string) => {
+    if (props.openBrowserTab(url)) return
+    props.openExternal(url)
+  }, [props])
+
   /* ------------------------------------------------------------------ render */
 
   /**
@@ -3229,9 +3242,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 <button
                   type="button"
                   className={css.incompleteLink}
-                  onClick={() => { props.openExternal(openEntry.link as string) }}
+                  onClick={() => { openElsewhere(openEntry.link as string) }}
                 >
-                  {t('detail.readOriginal')}
+                  {browserTab ? t('action.openExternal') : t('detail.readOriginal')}
                 </button>
               )}
             </p>

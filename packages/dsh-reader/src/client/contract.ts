@@ -183,6 +183,18 @@ export interface ReaderPaneInjected {
   copyText: (text: string) => Promise<boolean>
   /** Open a URL in the user's browser; false when the platform refuses. */
   openExternal: (url: string) => boolean
+  /**
+   * Whether the host's in-app Sidebar Browser is mounted (probed live: the tab
+   * kind `browser` exists on host 0.1.6-alpha.2+). When it is, fetches that
+   * need a real browser — a page that draws its figures with scripts, a bot
+   * wall — get an in-app way out instead of only an external link.
+   */
+  browserTabAvailable: () => boolean
+  /**
+   * Open a URL in the in-app Sidebar Browser; false when the seam is absent or
+   * refuses, so the caller falls back to {@link ReaderPaneInjected.openExternal}.
+   */
+  openBrowserTab: (url: string) => boolean
 }
 
 /** Full props of the reader pane: the seat's session + store + locale + face. */

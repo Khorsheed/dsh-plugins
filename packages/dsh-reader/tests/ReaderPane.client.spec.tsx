@@ -129,6 +129,8 @@ interface BenchOptions {
   }
   /** The dsh session this mount belongs to (defaults to `s1`). */
   readonly sessionId?: string
+  /** True = the in-app Sidebar Browser seam probes present (host 0.1.6-alpha.2+). */
+  readonly browserTab?: boolean
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -172,6 +174,8 @@ function bench(options: BenchOptions = {}) {
     removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     openExternal: vi.fn(() => true),
     copyText: vi.fn(async () => true),
+    browserTabAvailable: vi.fn(() => options.browserTab ?? false),
+    openBrowserTab: vi.fn(() => true),
     setDraft: vi.fn(),
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
@@ -290,6 +294,8 @@ function bench(options: BenchOptions = {}) {
     setDraft: mocks.setDraft,
     copyText: mocks.copyText,
     openExternal: mocks.openExternal,
+    browserTabAvailable: mocks.browserTabAvailable,
+    openBrowserTab: mocks.openBrowserTab,
   } as unknown as ReaderPaneProps
 
   const view = render(<ReaderPane {...props} />)
@@ -1695,6 +1701,61 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     const expected = zh['detail.scriptFigures'].replace('{count}', '3')
     expect(await screen.findByText(new RegExp(expected.slice(0, 12)))).toBeTruthy()
     expect(screen.getByText(zh['detail.readOriginal'])).toBeTruthy()
+  })
+
+  it('opens the in-app Sidebar Browser when that seam probes present', async () => {
+    // Same notice, but the host is 0.1.6-alpha.2+: the action reads 「在浏览器
+    // 打开原文」 and lands in the right-Sidebar browser tab instead of an
+    // external window. The seam's absence keeps the old external link.
+    const ui = bench({
+      browserTab: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 3,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const action = await screen.findByText(zh['action.openExternal'])
+    expect(screen.queryByText(new RegExp(zh['detail.scriptFigures'].replace('{count}', '3').slice(0, 12)))).toBeTruthy()
+    fireEvent.click(action)
+    expect(ui.mocks.openBrowserTab).toHaveBeenCalledWith('https://example.com/paper')
+    expect(ui.mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the external link when the in-app open refuses', async () => {
+    const ui = bench({
+      browserTab: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.openBrowserTab.mockReturnValue(false)
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 1,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['action.openExternal']))
+    expect(ui.mocks.openExternal).toHaveBeenCalledWith('https://example.com/paper')
   })
 })
 
