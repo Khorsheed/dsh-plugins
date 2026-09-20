@@ -44,6 +44,7 @@ export type ReaderKey =
   | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
   | 'fetch.none' | 'fetch.fetching' | 'fetch.raw' | 'fetch.ready' | 'fetch.failed'
   | 'fetch.noneTitle' | 'fetch.readyTitle' | 'fetch.failedTitle'
+  | 'fetch.failedOpenTitle' | 'fetch.failedFinalTitle' | 'detail.renderFetch'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
@@ -238,6 +239,9 @@ export const en = {
   'fetch.noneTitle': 'Fetch the article now — it keeps going when you leave this page',
   'fetch.readyTitle': 'The full text is cached — open it to read',
   'fetch.failedTitle': 'Fetch failed: {reason} — click to retry',
+  'fetch.failedOpenTitle': 'Fetch failed: {reason} — click to open it in a browser',
+  'fetch.failedFinalTitle': 'Fetch failed: {reason}',
+  'detail.renderFetch': 'Fetch rendered',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -424,6 +428,9 @@ export const zh = {
   'fetch.noneTitle': '现在就把这篇抓下来 —— 离开这个页面也不会停',
   'fetch.readyTitle': '已有全文，点开就能读',
   'fetch.failedTitle': '抓取失败：{reason} —— 点一下重试',
+  'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下在浏览器打开',
+  'fetch.failedFinalTitle': '抓取失败：{reason}',
+  'detail.renderFetch': '渲染抓取',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',

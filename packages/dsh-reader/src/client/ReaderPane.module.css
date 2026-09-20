@@ -1886,6 +1886,30 @@
   color: var(--dsw-static-red-600, #d54941);
 }
 
+/* A final failure (HTTP error, empty page, cross-site hop): an indicator, not a
+   button — no gesture changes the answer, so the pill takes no pointer. */
+.fetchPill_final {
+  cursor: default;
+}
+
+.fetchPill_final:hover {
+  background: transparent;
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+/* The failed pill's reason, on its own line under the pill row: a failure the
+   reader must hover to understand reads as "failed for no reason". */
+.fetchReason {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--dsw-static-red-600, #d54941);
+  opacity: 0.85;
+}
+
 .tagOnCard {
   display: inline-flex;
   align-items: center;

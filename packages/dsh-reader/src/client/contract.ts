@@ -50,6 +50,20 @@ export interface ReaderArticle {
 }
 
 /**
+ * The capture package's Remote face (the ingest proposal's M1), mirrored
+ * structurally — never imported. Absent namespaces probe as undefined.
+ */
+export interface ReaderCaptureRemote {
+  /** Render a URL in the managed browser and hand back the serialized page. */
+  render: (request: { url: string; timeoutMs?: number }) => Promise<RemoteResult<{
+    html: string
+    finalUrl?: string
+    title?: string
+    truncated?: boolean
+  }>>
+}
+
+/**
  * The business face every reader surface receives from its registration.
  *
  * The wire verbs come straight off the Remote; the last four are local
@@ -195,6 +209,13 @@ export interface ReaderPaneInjected {
    * refuses, so the caller falls back to {@link ReaderPaneInjected.openExternal}.
    */
   openBrowserTab: (url: string) => boolean
+  /**
+   * The capture package's Remote, when one is mounted — the 「渲染抓取」 slot
+   * renders only while this answers. M0 ships no capture package (it is the
+   * ingest proposal's M1), so the probe is the whole point today: probed live,
+   * never cached, never thrown.
+   */
+  captureRemote: () => ReaderCaptureRemote | undefined
 }
 
 /** Full props of the reader pane: the seat's session + store + locale + face. */

@@ -25,7 +25,7 @@ import type {} from '@khorsheed/dsh-reader/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import readerRemote from '@khorsheed/dsh-reader/remote'
 import type { ReaderEntryBodyView } from '../types.ts'
-import type { ReaderPaneInjected } from './contract.ts'
+import type { ReaderCaptureRemote, ReaderPaneInjected } from './contract.ts'
 import { extractArticle } from './extract-article.ts'
 import { translationHash } from './translate.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
@@ -202,6 +202,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       } catch {
         return false
       }
+    },
+    // The capture package (the ingest proposal's M1): probed live per gesture,
+    // absent today — the 「渲染抓取」 slot renders only while this answers.
+    captureRemote: () => {
+      const capture = ctx.get('remote.capture') as ReaderCaptureRemote | undefined
+      return typeof capture?.render === 'function' ? capture : undefined
     },
   })
 

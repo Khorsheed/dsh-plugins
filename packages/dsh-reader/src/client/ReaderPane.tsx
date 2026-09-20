@@ -265,6 +265,16 @@ const PREVIEW_KEY: Readonly<Record<ReaderPreviewFailureCode,
 }
 
 /**
+ * The failure causes a real browser can solve: a bot wall, a login wall, a
+ * non-web file, a known-unreadable app — each opens fine where a human is
+ * driving. The other codes differ per action: `unreachable` is the retryable
+ * one, and `http` / `empty` / `redirected` are final (no gesture changes the
+ * answer), which is exactly the retry policy `isRetryablePreviewFailure`
+ * states host-side.
+ */
+const OPEN_IN_BROWSER_CODES: ReadonlySet<ReaderPreviewFailureCode> = new Set(['blocked', 'login', 'unsupported-type', 'unreadable'])
+
+/**
  * Why this link has no body to show, in the reader's words.
  *
  * A recorded CODE is preferred over the raw message: the code is the host's
@@ -688,6 +698,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * (cached or fresh), so reopening an entry shows the same note.
    */
   const [scriptFigures, setScriptFigures] = useState(0)
+  /** True while a capture-rendered refetch of the open entry is in flight. */
+  const [captureBusy, setCaptureBusy] = useState(false)
   /** What the plugin holds per entry, as the host reports it (the 抓取 pills). */
   const fetchStates = useStore(s => s.fetchStates)
   /** What the reader opened, as the host stores it (the 「最近阅读」 page). */
@@ -695,7 +707,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
-  const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string; code?: ReaderPreviewFailureCode } | null>(null)
+  const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string; code?: ReaderPreviewFailureCode; url?: string } | null>(null)
   const [draft, setDraft] = useState('')
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
@@ -1775,6 +1787,53 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
   }, [actions, props, articleHtml, syncFetchState])
 
+  /**
+   * Refetch the open entry through the capture package's rendered fetch.
+   *
+   * The captured HTML goes through the SAME whitelist extractor as any fetched
+   * page — captured markup is never rendered raw — and the stored body then
+   * rides every existing path (the cache, the translation memory, quoting).
+   * The slot that calls this renders only while a capture Remote probes
+   * present, so a missing package can never reach the middle of this flow.
+   *
+   * @param entry - the entry on screen.
+   */
+  const captureBody = useCallback(async (entry: ReaderEntry) => {
+    const capture = props.captureRemote()
+    if (capture === undefined || entry.link === undefined) return
+    setCaptureBusy(true)
+    try {
+      const rendered = await capture.render({ url: entry.link })
+      if (!rendered.ok) {
+        if (openRequestRef.current === entry.id) actions.setArticle(articleHtml ?? '', false, rendered.error.message)
+        return
+      }
+      const finalUrl = rendered.value.finalUrl ?? entry.link
+      const extracted = extractArticle(rendered.value.html, finalUrl)
+      if (!extracted.ok) {
+        if (openRequestRef.current === entry.id) actions.setArticle(articleHtml ?? '', false, extracted.error)
+        return
+      }
+      const stored = await props.storeEntryBody({
+        entryId: entry.id,
+        url: finalUrl,
+        html: extracted.html,
+        bodyHash: translationHash(extracted.html),
+        ...(rendered.value.truncated === true ? { truncated: true } : {}),
+        ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
+      })
+      if (openRequestRef.current !== entry.id) return
+      if (stored.ok && stored.value.html !== undefined) {
+        actions.setArticle(stored.value.html, stored.value.truncated === true, null)
+        setScriptFigures(stored.value.scriptFigures ?? 0)
+        actions.setStaleBody(entry.id, false)
+        void syncFetchState(entry.id)
+      }
+    } finally {
+      setCaptureBusy(false)
+    }
+  }, [actions, props, articleHtml, syncFetchState])
+
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
     // Synchronous: every continuation of this call checks the ref before
@@ -2269,12 +2328,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (value.failure !== undefined) {
       // Saved, but there is no body to preview. This is NOT a failure verdict:
       // the link is in the wall, and the sentence names the reason so the
-      // reader knows whether it is worth opening in a browser.
+      // reader knows whether it is worth opening in a browser. The URL rides
+      // along: for the causes a real browser solves, the verdict itself offers
+      // the way out (the moment "why" lands is the moment to act on it).
       setVerdict({
         kind: 'savedLinkNoPreview',
         label: value.label,
         reason: value.failure.message,
         code: value.failure.code,
+        url,
       })
       setDraftUrl('')
       actions.refresh()
@@ -2569,6 +2631,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * link. Probed at render, never thrown.
    */
   const browserTab = props.browserTabAvailable()
+  /** The capture package's Remote, while one is mounted (M1; absent by default). */
+  const captureRemote = props.captureRemote()
   const openElsewhere = useCallback((url: string) => {
     if (props.openBrowserTab(url)) return
     props.openExternal(url)
@@ -2975,6 +3039,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             {verdict.reason !== undefined && verdict.kind === 'fetchFailed' && (
               <span className={css.verdictReason}>{verdict.reason}</span>
             )}
+            {/* The way out, when the cause has one: a bot wall, a login wall
+                and a non-web file all open fine where a human is driving. The
+                retryable and the final causes get no button — re-pressing 抓取
+                is the retry, and a final answer has no gesture. */}
+            {verdict.url !== undefined && verdict.code !== undefined && OPEN_IN_BROWSER_CODES.has(verdict.code) && (
+              <button
+                type="button"
+                className={css.incompleteLink}
+                onClick={() => { openElsewhere(verdict.url as string) }}
+              >
+                {t('action.openExternal')}
+              </button>
+            )}
           </div>
         )}
         <div className={css.dialogActions}>
@@ -3238,6 +3315,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           {scriptFigures > 0 && (
             <p className={css.incomplete}>
               {t('detail.scriptFigures', { count: scriptFigures })}{' '}
+              {/* 「渲染抓取」: the capture package's slot (the ingest proposal's
+                  M1). It renders ONLY while a capture Remote probes present —
+                  a control that cannot work is worse than none. */}
+              {captureRemote !== undefined && openEntry.link !== undefined && (
+                <button
+                  type="button"
+                  className={css.incompleteLink}
+                  disabled={captureBusy}
+                  onClick={() => { void captureBody(openEntry) }}
+                >
+                  {captureBusy ? t('detail.refetching') : t('detail.renderFetch')}
+                </button>
+              )}{' '}
               {openEntry.link !== undefined && (
                 <button
                   type="button"
@@ -3266,7 +3356,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   <button
                     type="button"
                     className={css.incompleteLink}
-                    onClick={() => { props.openExternal(openEntry.link as string) }}
+                    onClick={() => { openElsewhere(openEntry.link as string) }}
                   >
                     {t('detail.readOriginal')}
                   </button>
@@ -3941,7 +4031,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   {/* 抓取, where the reader sees the card: one click stores the
                       article so opening it later is instant. The host writes the
                       payload before it answers, so leaving the page does not
-                      cancel it — the state pill is what says so. */}
+                      cancel it — the state pill is what says so. A FAILED pill's
+                      gesture belongs to the recorded cause: transport failures
+                      retry, walls open in a real browser, final answers are a
+                      plain indicator — and the reason is a visible line, never
+                      a tooltip-only flash. */}
                   {row.entry.link !== undefined && (() => {
                     const fetchState = fetchStateOf(fetchStates, row.entry.id)
                     const state = fetchState.state
@@ -3949,30 +4043,45 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       : state === 'fetching' ? 'fetch.fetching'
                         : state === 'raw' ? 'fetch.raw'
                           : state === 'ready' ? 'fetch.ready' : 'fetch.failed'
+                    const failedReason = fetchState.state === 'failed'
+                      ? previewReason(t, fetchState.code, fetchState.message)
+                      : undefined
+                    const failedCode = fetchState.state === 'failed' ? fetchState.code : undefined
+                    const failedOpen = failedCode !== undefined && OPEN_IN_BROWSER_CODES.has(failedCode)
+                    // Unclassified and transport failures may retry; the rest is final.
+                    const failedFinal = fetchState.state === 'failed' && !failedOpen && failedCode !== undefined && failedCode !== 'unreachable'
                     const title = state === 'ready'
                       ? t('fetch.readyTitle')
                       : fetchState.state === 'failed'
-                        ? t('fetch.failedTitle', { reason: previewReason(t, fetchState.code, fetchState.message) })
+                        ? t(failedOpen ? 'fetch.failedOpenTitle' : failedFinal ? 'fetch.failedFinalTitle' : 'fetch.failedTitle', { reason: failedReason ?? '' })
                         : t('fetch.noneTitle')
+                    const fire = (): void => {
+                      if (state === 'ready' || failedFinal) return
+                      if (failedOpen) { openElsewhere(row.entry.link as string); return }
+                      void startFetch(row.entry)
+                    }
+                    const interactive = state !== 'ready' && !failedFinal
                     return (
-                      <span
-                        className={`${css.fetchPill} ${css[`fetchPill_${state === 'raw' ? 'fetching' : state}`] ?? ''}`}
-                        role="button"
-                        tabIndex={0}
-                        title={title}
-                        onClick={event => {
-                          event.stopPropagation()
-                          if (state !== 'ready') void startFetch(row.entry)
-                        }}
-                        onKeyDown={event => {
-                          if (event.key !== 'Enter' && event.key !== ' ') return
-                          event.stopPropagation()
-                          if (state !== 'ready') void startFetch(row.entry)
-                        }}
-                      >
-                        {glyph(state === 'ready' ? 'check' : state === 'failed' ? 'alert' : 'fetch', 10)}
-                        <span>{t(labelKey)}</span>
-                      </span>
+                      <>
+                        <span
+                          className={`${css.fetchPill} ${css[`fetchPill_${state === 'raw' ? 'fetching' : state}`] ?? ''}${failedFinal ? ` ${css.fetchPill_final}` : ''}`}
+                          {...(interactive ? { role: 'button', tabIndex: 0 } : {})}
+                          title={title}
+                          onClick={event => {
+                            event.stopPropagation()
+                            if (interactive) fire()
+                          }}
+                          onKeyDown={event => {
+                            if (event.key !== 'Enter' && event.key !== ' ') return
+                            event.stopPropagation()
+                            if (interactive) fire()
+                          }}
+                        >
+                          {glyph(state === 'ready' ? 'check' : state === 'failed' ? 'alert' : 'fetch', 10)}
+                          <span>{t(labelKey)}</span>
+                        </span>
+                        {failedReason !== undefined && <span className={css.fetchReason}>{failedReason}</span>}
+                      </>
                     )
                   })()}
                   {/* The reader's own tag affordance, in the row where the
