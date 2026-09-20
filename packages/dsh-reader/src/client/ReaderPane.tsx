@@ -3046,13 +3046,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 retryable and the final causes get no button — re-pressing 抓取
                 is the retry, and a final answer has no gesture. */}
             {verdict.url !== undefined && verdict.code !== undefined && OPEN_IN_BROWSER_CODES.has(verdict.code) && (
-              <button
-                type="button"
-                className={css.incompleteLink}
-                onClick={() => { openElsewhere(verdict.url as string) }}
-              >
-                {t('action.openExternal')}
-              </button>
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className={css.incompleteLink}
+                  onClick={() => { openElsewhere(verdict.url as string) }}
+                >
+                  {t('action.openExternal')}
+                </button>
+              </>
             )}
           </div>
         )}
