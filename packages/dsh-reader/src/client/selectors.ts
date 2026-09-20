@@ -300,14 +300,20 @@ export function countUnread(rows: readonly ReaderRow[]): number {
  * under both an aggregator and the source blog).
  *
  * Grouping is deliberately NEVER fuzzy — a miss costs one duplicate card, a
- * false positive costs an article:
+ * false positive costs an article. Three tiers, strongest first; a match on
+ * ANY tier groups (they compose transitively — an id-match and a link-match
+ * bridge two groups into one):
  *
- * 1. **Normalized link** (any entry that has one): scheme, `www.` and
+ * 1. **Same entry id** — the strongest signal there is: `stableEntryId` shares
+ *    one id across copies BY DESIGN (a shared guid buys shared fetch/read/
+ *    translation state), so a guid collision is the publisher saying "same
+ *    item", and it folds even when the copies' links differ.
+ * 2. **Normalized link** (any entry that has one): scheme, `www.` and
  *    trailing slashes stripped, tracking parameters (`utm_*`, `fbclid`,
  *    `gclid`, `ref`, `spm`, …) removed, the rest of the query sorted.
- * 2. **Folded title + same published day**, only when no link grouped: case,
- *    accents and punctuation folded; BOTH entries must carry a comparable
- *    date, so undated saved links never title-group.
+ * 3. **Folded title + same published day**: case, accents and punctuation
+ *    folded; BOTH entries must carry a comparable date, so undated saved links
+ *    never title-group.
  */
 
 /** Query keys that never change which article a link names. */
@@ -349,12 +355,14 @@ function titleDayKey(entry: ReaderEntry): string | undefined {
   return `${title}|${entry.publishedAt!.slice(0, 10)}`
 }
 
-/** The group key for one entry, or `undefined` when it can never be a duplicate. */
-function dedupeKeyOf(entry: ReaderEntry): string | undefined {
+/** Every tier key an entry qualifies for (the id tier always applies). */
+function dedupeKeysOf(entry: ReaderEntry): string[] {
+  const keys = [`i:${entry.id}`]
   const link = linkKey(entry.link)
-  if (link !== undefined) return `l:${link}`
+  if (link !== undefined) keys.push(`l:${link}`)
   const title = titleDayKey(entry)
-  return title === undefined ? undefined : `t:${title}`
+  if (title !== undefined) keys.push(`t:${title}`)
+  return keys
 }
 
 /** The result of hiding duplicates behind their survivors. */
@@ -371,10 +379,18 @@ export interface DedupedRows {
  *
  * Survivor choice, in order: a member whose body the host already holds
  * (a `ready` fetch state — the fetched copy opens instantly) beats a NEWER
- * member, and a tie keeps the input order. The survivor sits at its own
- * position in the row order. Read state merges across the group: the card
- * reads as read when ANY copy was read. Hidden rows are reported, never
- * deleted — the card badges them.
+ * member, and a tie keeps the input order. Same-id copies share the id-keyed
+ * fetch-state record, so between them the choice is always the input order —
+ * they share every annotation anyway. The survivor sits at its own position in
+ * the row order. Read state merges across the group: the card reads as read
+ * when ANY copy was read (free via the shared id for same-id copies). Hidden
+ * rows are reported, never deleted — the card badges them.
+ *
+ * All bookkeeping is POSITIONAL (row indexes), never id-keyed for the fold
+ * itself: two copies of one article can share ONE entry id by design, and
+ * id-keyed folding keeps both — the survivor's id is the hidden copy's id.
+ * Only the badge lookup (`dupesBy`) is id-keyed, which is safe: the surviving
+ * card is the only rendered row carrying that id.
  *
  * @param rows - the wall's rows (selectRows' output: filtered and sorted).
  * @param fetchStates - the pane's fetch-state mirror, for the ready signal.
@@ -384,52 +400,66 @@ export function dedupeRows(
   rows: readonly ReaderRow[],
   fetchStates: Readonly<Record<string, ReaderEntryFetchState>> = {},
 ): DedupedRows {
-  const groups = new Map<string, ReaderRow[]>()
-  const keys = new Map<string, string>() // entry id → group key
-  for (const row of rows) {
-    const key = dedupeKeyOf(row.entry)
-    if (key === undefined) continue
-    keys.set(row.entry.id, key)
-    const group = groups.get(key)
-    if (group === undefined) groups.set(key, [row])
-    else group.push(row)
-  }
-  if (groups.size === 0) return { rows: [...rows], dupesBy: new Map(), hiddenCount: 0 }
+  // Multi-tier grouping with bridging: a row joins the group any of its tier
+  // keys names, and a row whose keys name two groups merges them (A≡B by id
+  // and B≡C by link fold all three).
+  const keyToGroup = new Map<string, number>()
+  const groupRows: number[][] = []
+  const groupKeys: string[][] = []
+  rows.forEach((row, index) => {
+    const keys = dedupeKeysOf(row.entry)
+    const hits = [...new Set(keys.map(key => keyToGroup.get(key)).filter((group): group is number => group !== undefined))]
+    if (hits.length === 0) {
+      const created = groupRows.length
+      groupRows.push([index])
+      groupKeys.push([...keys])
+      for (const key of keys) keyToGroup.set(key, created)
+      return
+    }
+    const target = hits[0]!
+    groupRows[target]!.push(index)
+    groupKeys[target]!.push(...keys)
+    for (const key of keys) keyToGroup.set(key, target)
+    for (const absorbed of hits.slice(1)) {
+      groupRows[target]!.push(...groupRows[absorbed]!)
+      for (const key of groupKeys[absorbed]!) keyToGroup.set(key, target)
+      groupRows[absorbed] = []
+      groupKeys[absorbed] = []
+    }
+  })
 
-  /** The survivor of one group: a cached body first, then newest, then input order. */
-  const survivorOf = (members: ReaderRow[]): ReaderRow => {
+  /** The survivor of one group, by row index: a cached body first, then newest, then input order. */
+  const survivorIndexOf = (members: readonly number[]): number => {
     let best = members[0]!
-    for (const member of members.slice(1)) {
+    for (const index of members.slice(1)) {
+      const member = rows[index]!
+      const bestRow = rows[best]!
       const ready = fetchStates[member.entry.id]?.state === 'ready'
-      const bestReady = fetchStates[best.entry.id]?.state === 'ready'
+      const bestReady = fetchStates[bestRow.entry.id]?.state === 'ready'
       if (ready !== bestReady) {
-        if (ready) best = member
+        if (ready) best = index
         continue
       }
-      if (timeOf(member) > timeOf(best)) best = member
+      if (timeOf(member) > timeOf(bestRow)) best = index
     }
     return best
   }
 
   const dupesBy = new Map<string, readonly ReaderRow[]>()
-  const survivorIds = new Set<string>()
+  const folded = new Set<number>() // row indexes hidden behind their survivor
   let hiddenCount = 0
-  for (const members of groups.values()) {
-    if (members.length === 1) continue
-    const survivor = survivorOf(members)
-    survivorIds.add(survivor.entry.id)
-    const hidden = members.filter(member => member.entry.id !== survivor.entry.id)
-    hiddenCount += hidden.length
-    dupesBy.set(survivor.entry.id, hidden)
+  for (const members of groupRows) {
+    if (members.length <= 1) continue
+    const survivor = survivorIndexOf(members)
+    dupesBy.set(rows[survivor]!.entry.id, members.filter(index => index !== survivor).map(index => rows[index]!))
+    for (const index of members) {
+      if (index === survivor) continue
+      folded.add(index)
+      hiddenCount += 1
+    }
   }
   const out = rows
-    .filter(row => {
-      const key = keys.get(row.entry.id)
-      if (key === undefined) return true
-      const group = groups.get(key)!
-      if (group.length === 1) return true
-      return survivorIds.has(row.entry.id)
-    })
+    .filter((_, index) => !folded.has(index))
     .map(row => {
       const hidden = dupesBy.get(row.entry.id)
       if (hidden === undefined) return row
