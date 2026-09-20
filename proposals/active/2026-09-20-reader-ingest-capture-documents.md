@@ -85,6 +85,16 @@
 
 前置工作：reader 提取器懒加载图恢复、缓存/位置/抓取状态修复（`reader/capture-prep-fixes` 分支，2026-09-20，Agent Note 随提交）。
 
+**M0（`reader/m0-ingest` 分支，2026-09-20/21，全部落在 `@khorsheed/dsh-reader`）**：
+
+- `18cd1731` arXiv abs/pdf 链接添加时升级到官方 HTML 版（404 回退原地址；升级 URL 参与查重）——`src/arxiv.ts` + `service.ts` addSource。
+- `f2e83c72` 链接解析器（`src/link-resolvers.ts`，表驱动纯模块）：DOI 经 Crossref（`filter=doi:` + `select` 列表路由）→ arXiv 标题搜索（6 词短语上限，实测）→ 标题相似度 + 作者姓重合双因子闸；OpenReview 不抓直接答 `unreadable`（新失败码）；源文档新增 `resolvedFrom` 标注来源。Agent Note：[link-ingest](../../.agents/notes/implemented/feature/2026-09-20-reader-link-ingest.md)。
+- `4f756538` 脚本插图提示给真浏览器出口：注入面 `browserTabAvailable`/`openBrowserTab` 探测 `browser` tab kind（0.1.6-alpha.2+），缺席退回外部链接。
+- `f61c8d58` 抓取失败分类动作（§3/D5）：卡片失败态原因行 + 按因手势（unreachable 重试 / 墙类在浏览器打开 / 终局不可点）；添加弹窗仅链接判定带建议动作；「渲染抓取」槽位仅在 `capture` Remote 探测在场时渲染（M1 前恒隐，流程已完整：render → 同一道白名单提取 → 存正文）。Agent Note：[failure-actions](../../.agents/notes/implemented/feature/2026-09-21-reader-failure-actions.md)。
+- `21846c05` MathML 安全子集放行（公式原生渲染；`annotation-xml` 与脚本永不放行）。Agent Note：[mathml](../../.agents/notes/implemented/feature/2026-09-21-reader-mathml.md)。
+- `28a3846b` UI 打磨：最近阅读换官方 `IconClockOutline16`；墙面标题与二级页标题统一 15px/600。
+- 面板内锚点跳转（`#cite.*`/`#fig.*`）**推迟**：白名单剥掉所有 `id`，滚动目标不存在；恢复 id 是归一化契约变更（正文重哈希、译文映射重定键），超出 M0 体量——记录在 mathml note 的 Alternatives。
+
 ## 验收标准（done 判定，绑定可插拔交付）
 
 1. 所有新包可 `dsh plugin add` / `remove` 一条命令装卸；identity triangle、`dsh.bundle.patch` 自挂载、`files` 清单、`dsh.client.inject` 声明齐全；`pnpm check:plugins`、`pnpm check:hygiene` 过。
