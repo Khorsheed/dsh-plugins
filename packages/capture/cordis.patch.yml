@@ -1,0 +1,14 @@
+# dsh-capture bundle patch: inserts the plugin row into the composing profile,
+# so `dsh plugin --profile <name> add @khorsheed/dsh-capture` reconciles it into
+# the bundles layer. The row is a bare mount — the host half provides the
+# `capture` service core and mounts its thin Remote face; the browser half is a
+# mount-only client (it mounts the generated Remote contribution so callers can
+# reach `remote.capture.render`; it carries no UI).
+#
+# NOTE: a composition must mount this row id exactly once. Official images
+# mount no capture row, so plugin-adding this package is the install path
+# there; a composition that already mounts the id by other means must NOT also
+# add it — a duplicate loader entry id fails boot.
+- insert:
+    - id: capture
+      name: "@khorsheed/dsh-capture"
