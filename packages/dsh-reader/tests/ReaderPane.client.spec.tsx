@@ -1834,6 +1834,105 @@ describe('the card learns what the pane just did', () => {
   })
 })
 
+describe('a fulltext feed body is kept on open', () => {
+  /**
+   * A mock host whose `storeEntryBody` really holds: the write is what
+   * `entryFetchStates` and the next `getEntryBody` answer from — the way the
+   * real service derives both from its annotations. A fixed-answer mock would
+   * let these tests pass without the pane having persisted anything.
+   */
+  function holdingHost(ui: ReturnType<typeof bench>): void {
+    const held = new Map<string, string>()
+    ui.mocks.storeEntryBody.mockImplementation(async (request: { entryId: string; html: string }) => {
+      held.set(request.entryId, request.html)
+      return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: request.html } }
+    })
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string; feedHtml?: string }) => {
+      const cached = held.get(request.entryId)
+      if (cached !== undefined) {
+        return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: cached } }
+      }
+      return {
+        ok: true as const,
+        value: request.feedHtml === undefined
+          ? { entryId: request.entryId, cached: false, fresh: true, fromFeed: false }
+          : { entryId: request.entryId, cached: false, fresh: true, fromFeed: true, html: request.feedHtml },
+      }
+    })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: {
+        states: Object.fromEntries(entryIds.map(id => [id, held.has(id)
+          ? { state: 'ready' as const, at: '2026-09-20T00:00:00.000Z' }
+          : { state: 'none' as const }])),
+      },
+    }))
+  }
+
+  const fulltextFeed = (): string =>
+    feed('hn', [{ title: '全文条目', body: '<p>the feed full text</p>' }])
+
+  it('stores the feed’s full text on open, and the card says 已抓取 after back', async () => {
+    // The gap: a fulltext feed's payload IS the article, but only inside the
+    // feed's window — the host never held it, so the card said 抓取 and the
+    // text died with the window. Opening is the gesture that keeps it.
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: fulltextFeed() } })
+    holdingHost(ui)
+    await ui.settle()
+    expect(await screen.findByText(zh['fetch.none'])).toBeTruthy()
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('全文条目')}`
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1) })
+    const stored = ui.mocks.storeEntryBody.mock.calls[0]?.[0] as { entryId: string; url: string; html: string; bodyHash?: string }
+    expect(stored.entryId).toBe(entryId)
+    expect(stored.url).toBe(`https://example.com/hn/${encodeURIComponent('全文条目')}`)
+    expect(stored.html).toContain('the feed full text')
+    // The hash rides along, so the entry's translation map survives the store.
+    expect(typeof stored.bodyHash).toBe('string')
+    // No request was made to keep it: the text was already on screen.
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(screen.queryByText(zh['fetch.none'])).toBeNull()
+  })
+
+  it('does not store again when the host already holds the body', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: fulltextFeed() } })
+    holdingHost(ui)
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1) })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await screen.findByText(zh['fetch.ready'])
+    // The second open reads the host's cache (holdingHost answers from the
+    // first store) — a cached body is paid for, nothing is written twice.
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    await waitFor(() => { expect(ui.mocks.getEntryBody).toHaveBeenCalledTimes(2) })
+    expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1)
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('a summary-only open still owes the fetch, and the summary is never stored', async () => {
+    // The other half of the rule: a summary is not the body, so opening keeps
+    // paying one fetch — and the summary itself is never cached as if it were
+    // the article (that is the 摘要不是正文 note's rule, kept honest here).
+    const summaryFeed =
+      '<feed xmlns="http://www.w3.org/2005/Atom"><title>tc</title>'
+      + '<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>'
+      + '<id>https://example.com/paper</id>'
+      + '<summary>We find that Claude maintains a small set of representations.</summary>'
+      + '</entry></feed>'
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.storeEntryBody).not.toHaveBeenCalled()
+  })
+})
+
 describe('coming back to the pane puts the reader where they were', () => {
   /**
    * The host unmounts the whole right sidebar when another main panel takes

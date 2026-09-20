@@ -1110,6 +1110,35 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     }
   }, [allEntries, fetchStates, props, refreshFetchStates])
 
+  /**
+   * Cache the feed's own full text as the entry's body, on the open that
+   * displays it.
+   *
+   * A fulltext feed has already paid for the article — but the payload lives
+   * only inside the feed's window: once the entry rolls off the feed, the host
+   * holds nothing and the next open becomes a fetch (or a failure). Storing on
+   * the first open costs no request (the text is already on screen), lets the
+   * body survive the window, and flips the card's pill to 「已抓取」 on the
+   * same gesture. The body hash keeps the entry's translation map riding the
+   * same identity rule as a fetched body.
+   */
+  const persistFeedBody = useCallback((entryId: string, url: string, html: string, truncated: boolean) => {
+    if (html.trim().length === 0) return
+    void props.storeEntryBody({
+      entryId,
+      url,
+      html,
+      bodyHash: translationHash(html),
+      ...(truncated ? { truncated: true } : {}),
+    }).then((stored) => {
+      if (!stored.ok) return
+      // The host holds a fresh body now, whichever marker said otherwise (a
+      // stale cache this store replaced, or the card's 「抓取」).
+      actions.setStaleBody(entryId, false)
+      void syncFetchState(entryId)
+    })
+  }, [actions, props, syncFetchState])
+
   const rows = useMemo(() => selectRows(allEntries, presentation, {
     filter, query, unreadOnly, sort, read, tags: entryTagIds, now: new Date(),
   }), [allEntries, presentation, filter, query, unreadOnly, sort, read, entryTagIds])
@@ -1810,7 +1839,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         setScriptFigures(view.value.scriptFigures ?? 0)
         actions.setStaleBody(row.entry.id, view.value.fresh === false)
         // `html` here is either the FEED's own payload or a body this plugin
-        // already fetched and cached — and only the first one owes a fetch.
+        // already fetched and cached — a cached one is paid for already.
         //
         // Re-fetching a cached body was the bug behind "entering the article
         // again makes me translate it all over again": a summary-only feed
@@ -1818,14 +1847,21 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // had already been fetched replaced its DOM (and its translation) with
         // the same text from the network. The body is paid for once; the
         // detail view's own 「重新抓取」 is how a reader asks again.
-        if (summaryOwed && view.value.fromFeed === true) void fetchBody(row.entry.id, row.entry.link as string)
+        if (view.value.fromFeed === true) {
+          if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
+          // Full text the feed itself published: keep it, or it dies with the
+          // feed's window (see persistFeedBody).
+          else persistFeedBody(row.entry.id, row.entry.link as string, view.value.html, view.value.truncated === true)
+        }
       } else if (row.entry.contentHtml !== undefined) {
         actions.setArticle(row.entry.contentHtml, row.entry.truncated === true, null)
         setScriptFigures(0)
         // The host holds no body at all, and the feed published a summary: show
         // it immediately (better than an empty page) and fetch the real text
-        // behind it.
+        // behind it. A feed FULL text in the same situation is kept instead —
+        // there is nothing to fetch for it.
         if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
+        else persistFeedBody(row.entry.id, row.entry.link as string, row.entry.contentHtml, row.entry.truncated === true)
       } else {
         // Nothing cached, nothing from the feed, and no recorded reason.
         //
@@ -1868,7 +1904,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const extracted = extractArticle(body.raw, row.entry.link ?? '')
     if (extracted.ok) actions.setArticle(extracted.html, truncated, null)
     else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t, fetchBody, recent, fetchStates, syncFetchState])
+  }, [actions, props, t, fetchBody, persistFeedBody, recent, fetchStates, syncFetchState])
 
   /* ------------------------------ coming back to where the reader already was */
 
