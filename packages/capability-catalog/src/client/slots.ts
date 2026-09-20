@@ -24,6 +24,13 @@ export interface CapabilityCatalogInjected {
   }
   /** Re-fetch the catalog snapshot after a mutation (e.g. add-skill). */
   refresh: () => Promise<void>
+  /**
+   * Re-fetch until `settled` accepts the snapshot, on a bounded backoff. Use it
+   * for mutations whose visibility depends on the host's skill watcher (adding
+   * or deleting a skill): the write lands before the registry is invalidated, so
+   * one immediate refresh returns the pre-change snapshot.
+   */
+  refreshSettled: (settled: (snapshot: CapabilityCatalogSnapshot) => boolean) => Promise<boolean>
   /** Load one skill's full detail (content + metadata + credentials). */
   detail: (name: string) => Promise<CatalogSkillDetail | undefined>
   /** Read one skill-bundle file's text content on demand. */

@@ -23,6 +23,7 @@
     "src/client/McpServerManageModal.tsx",
     "src/client/MetadataRow.tsx",
     "src/client/ModalShell.tsx",
+    "src/client/settle.ts",
     "src/client/SchemaView.tsx",
     "src/client/SkillCards.tsx",
     "src/client/SkillDetailModal.tsx",

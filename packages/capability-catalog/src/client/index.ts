@@ -18,6 +18,7 @@ import catalogRemote from '@khorsheed/dsh-capability-catalog/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { CapabilityCatalogSnapshot } from '@khorsheed/dsh-capability-catalog/types'
 import { en, NS, zh } from './locales.ts'
+import { refreshUntilSettled } from './settle.ts'
 import type { CapabilityCatalogInjected } from './slots.ts'
 import { CapabilityCatalogCard } from './CapabilityCatalogCard.tsx'
 
@@ -79,6 +80,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       catalog: catalogHook,
     },
     refresh,
+    // A skill write reaches the registry through the host's watcher, a moment
+    // after the operation returns; one refresh therefore reads stale rows.
+    refreshSettled: (settled) => refreshUntilSettled(() => snapshot, refresh, settled),
     detail: async (name) => {
       const carried = await remote?.detail(name, undefined)
       return carried !== undefined && carried.ok ? carried.value : undefined

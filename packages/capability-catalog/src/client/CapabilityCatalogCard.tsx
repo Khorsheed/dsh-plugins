@@ -28,7 +28,7 @@ const skillBucket = (source: string): SkillSegment =>
   source === 'bundled' ? 'builtin' : source === 'runtime' ? 'plugin' : 'other'
 
 export function CapabilityCatalogCard({
-  useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh,
+  useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh, refreshSettled,
   mcpSnapshot, mcpAdd, mcpRemove, mcpSetEnabled, mcpSetCredential, mcpSetToolEnabled, mcpDiscover,
   t,
 }: CapabilityCatalogCardProps) {
@@ -313,7 +313,7 @@ export function CapabilityCatalogCard({
       ) : null}
 
       {showAdd ? (
-        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} pickDirectory={pickDirectory} refresh={refresh} t={t} />
+        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} pickDirectory={pickDirectory} refreshSettled={refreshSettled} t={t} />
       ) : null}
 
       {showAddMcp ? (
@@ -333,7 +333,9 @@ export function CapabilityCatalogCard({
           onCancel={() => setDeleteTarget(null)}
           onConfirm={async () => {
             const res = await deleteSkill(deleteTarget)
-            if (res.ok) await refresh()
+            // The removal reaches the registry through the host's watcher after
+            // the delete returns, so wait for the row to actually leave.
+            if (res.ok) await refreshSettled(s => !s.skills.some(skill => skill.name === deleteTarget))
             setDeleteTarget(null)
           }}
           t={t}
