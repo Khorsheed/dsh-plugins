@@ -2659,7 +2659,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         </button>
       )}
       <span className={css.headTitle}>
-        <IconGlobeOutline14 size={15} />
+        <IconGlobeOutline14 size={14} />
         {t('tab.label')}
         <span className={css.count} title={t('filter.unreadOnly')}>
           {countUnread(rows)} {t('foot.unread')}

@@ -25,15 +25,14 @@
 }
 
 .headTitle {
-  /* The wall's name reads at the page-title size (15px/600), the SAME as the
-     secondary pages' `.barLabel`: 订阅管理 and 灵感空间 are pages of one pane,
-     and two different title sizes made the wall read as the smaller one. */
+  /* The pane's ONE title metric (12.5px/600), shared with the secondary pages'
+     `.barLabel`: 订阅管理 and 灵感空间 are pages of one pane, so one size. */
   display: flex;
   flex: 1;
   min-width: 0;
   align-items: center;
   gap: 6px;
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
@@ -593,10 +592,11 @@
 }
 
 .barLabel {
-  /* A secondary page's name IS its title: the same 15px/600 as the wall's own
-     `.headTitle`, so opening 订阅管理 reads as a peer page, not a caption under
-     the icons. It truncates rather than wrapping, because the bar also carries
-     the actions.
+  /* A secondary page's name IS its title: the pane's ONE title metric
+     (12.5px/600), the same as the wall's own `.headTitle` — user-picked
+     reference (2026-09-21): 灵感空间's size is the standard, the secondary
+     pages come DOWN to it. It truncates rather than wrapping, because the bar
+     also carries the actions.
      (An earlier revision declared `font-size` twice here — 13px then 10.5px —
      so the title stayed caption-sized no matter what the first one said.) */
   flex: 1;
@@ -605,7 +605,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
