@@ -80,6 +80,7 @@ import {
   type ReaderTranslationMemoryTable,
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
+import { arxivHtmlUrl } from './arxiv.ts'
 
 /**
  * How many entries one automatic backfill run may fetch.
@@ -139,6 +140,16 @@ interface FetchOutcome {
 
 /** Thrown when a payload cannot become a source. */
 class UnsupportedContent extends Error {}
+
+/**
+ * Whether a failed fetch is the HTML endpoint's "this paper has no HTML
+ * version" — a bare 404 from the content fetch, and nothing else. A refusal
+ * (403/401) or a transport error is a fact about the REQUEST, not about which
+ * face of the paper exists, and must not silently reroute to another page.
+ */
+function isNoHtmlVersion(error: unknown): boolean {
+  return error instanceof UnsupportedContent && error.message === 'HTTP 404'
+}
 
 /**
  * Thrown when the FETCH itself failed — a refused connection, a timeout, a
@@ -242,11 +253,28 @@ export class ReaderService {
     if (doc.sources.some(source => sameTarget(source.url, url))) return 'duplicate'
 
     const now = new Date().toISOString()
+    // An arXiv abs/pdf link upgrades to the paper's official HTML version
+    // before the first fetch: real tables and MathML instead of an abstract
+    // page. The upgrade is deduplicated against the wall too — the paper's
+    // three URLs are one paper.
+    const upgrade = arxivHtmlUrl(url)
+    if (upgrade !== undefined && doc.sources.some(source => sameTarget(source.url, upgrade))) return 'duplicate'
     let fetched: FetchOutcome
     try {
-      fetched = await this.fetchFollowing(url)
+      fetched = await this.fetchFollowing(upgrade ?? url)
     } catch (error) {
-      return await this.saveLinkOnly({ url, ...(request.label === undefined ? {} : { label: request.label }) }, classifyFetchFailure(error, now), now)
+      if (upgrade !== undefined && isNoHtmlVersion(error)) {
+        // The paper has no HTML version (the endpoint answers a bare 404). The
+        // URL the reader pasted goes through the ordinary path: an /abs page is
+        // a fine article, a /pdf is the honest not-a-web-page card.
+        try {
+          fetched = await this.fetchFollowing(url)
+        } catch (fallbackError) {
+          return await this.saveLinkOnly({ url, ...(request.label === undefined ? {} : { label: request.label }) }, classifyFetchFailure(fallbackError, now), now)
+        }
+      } else {
+        return await this.saveLinkOnly({ url, ...(request.label === undefined ? {} : { label: request.label }) }, classifyFetchFailure(error, now), now)
+      }
     }
 
     const feed = classifyPayload(fetched.raw) === 'feed'

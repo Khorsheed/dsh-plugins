@@ -252,6 +252,89 @@ describe('a failed fetch keeps the seam’s reason', () => {
   })
 })
 
+describe('an arxiv link is upgraded to the official HTML version', () => {
+  const PAGE = `<article><p>${'正文。'.repeat(200)}</p></article>`
+
+  it('fetches the HTML version of an abs link and stores it as the source URL', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://arxiv.org/abs/2604.03147' })
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link' })
+    // The abs page is never fetched: the HTML version is strictly better.
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147'])
+    const source = (await service.listSources()).sources[0]
+    expect(source?.url).toBe('https://arxiv.org/html/2604.03147')
+    expect(source?.hasBody).toBe(true)
+  })
+
+  it('does the same for a pdf link, version and .pdf suffix included', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://arxiv.org/pdf/2604.03147v2.pdf' })
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147v2'])
+  })
+
+  it('falls back to the pasted URL when the HTML version does not exist (404)', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      if (url.includes('/html/')) {
+        return { url, statusCode: 404, body: { kind: 'html' as const, content: 'no html' }, truncated: false }
+      }
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://arxiv.org/abs/0704.0001' })
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link' })
+    expect(requested).toEqual(['https://arxiv.org/html/0704.0001', 'https://arxiv.org/abs/0704.0001'])
+    expect((await service.listSources()).sources[0]?.url).toBe('https://arxiv.org/abs/0704.0001')
+  })
+
+  it('does not fall back on a refusal that is not "no HTML version"', async () => {
+    // A 403 is arxiv refusing the request, not the paper lacking an HTML
+    // version: quietly fetching the abs page instead would hide a real block
+    // behind a different page's content.
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 403, body: { kind: 'html' as const, content: 'refused' }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    const outcome = await service.addSource({ url: 'https://arxiv.org/abs/2604.03147' })
+    expect(outcome).toMatchObject({ outcome: 'saved-link', kind: 'link', failure: { code: 'blocked' } })
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147'])
+  })
+
+  it('reads the html link the reader already pasted as itself, not as an upgrade', async () => {
+    const requested: string[] = []
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => {
+      requested.push(url)
+      return { url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false }
+    })
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://arxiv.org/html/2604.03147v1' })
+    expect(requested).toEqual(['https://arxiv.org/html/2604.03147v1'])
+  })
+
+  it('recognizes the abs link of a paper already saved via its HTML version', async () => {
+    const ctx = await bootWithWeb(async ({ url }: { url: string }) => ({
+      url, statusCode: 200, body: { kind: 'html' as const, content: PAGE }, truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    await service.addSource({ url: 'https://arxiv.org/abs/2604.03147' })
+    // The first add stored the HTML URL; the same paper's abs link is a duplicate.
+    expect(await service.addSource({ url: 'https://arxiv.org/pdf/2604.03147' })).toBe('duplicate')
+  })
+})
+
 describe('a link that cannot be previewed is still a link', () => {
   it('stores neither the challenge page nor a backfill debt', async () => {
     // The measured case: an OpenReview PDF link answered `302 /challenge?…`

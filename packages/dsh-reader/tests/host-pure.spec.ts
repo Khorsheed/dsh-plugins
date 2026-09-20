@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { classifyFetchFailure, classifyPayload, crossOriginRetarget, inspectPreview, MIN_PREVIEW_TEXT_CHARS, normalizeUrl } from '../src/service.ts'
+import { arxivHtmlUrl, arxivLink } from '../src/arxiv.ts'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -446,6 +447,38 @@ describe('inspectPreview', () => {
   })
 })
 
+
+describe('arxiv links', () => {
+  it('parses the abs/pdf/html shapes, versions and the old-style id', () => {
+    expect(arxivLink('https://arxiv.org/abs/2604.03147')).toEqual({ kind: 'abs', id: '2604.03147' })
+    expect(arxivLink('https://arxiv.org/abs/2604.03147v2')).toEqual({ kind: 'abs', id: '2604.03147v2' })
+    expect(arxivLink('https://arxiv.org/pdf/2604.03147')).toEqual({ kind: 'pdf', id: '2604.03147' })
+    expect(arxivLink('https://arxiv.org/pdf/2604.03147v1.pdf')).toEqual({ kind: 'pdf', id: '2604.03147v1' })
+    expect(arxivLink('https://arxiv.org/html/2604.03147v1')).toEqual({ kind: 'html', id: '2604.03147v1' })
+    expect(arxivLink('https://arxiv.org/abs/hep-th/9901001')).toEqual({ kind: 'abs', id: 'hep-th/9901001' })
+    expect(arxivLink('https://arxiv.org/abs/math.GT/0309136v3')).toEqual({ kind: 'abs', id: 'math.GT/0309136v3' })
+    // www is the same site; a query or fragment does not change the paper.
+    expect(arxivLink('https://www.arxiv.org/abs/2604.03147?context=cs#s2')).toEqual({ kind: 'abs', id: '2604.03147' })
+  })
+
+  it('rejects everything that is not one paper page', () => {
+    expect(arxivLink('https://example.com/abs/2604.03147')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/list/cs.CL/recent')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/abs/')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/abs/not-an-id')).toBeUndefined()
+    expect(arxivLink('not a url')).toBeUndefined()
+  })
+
+  it('upgrades abs and pdf links to the HTML version, and leaves the rest alone', () => {
+    expect(arxivHtmlUrl('https://arxiv.org/abs/2604.03147')).toBe('https://arxiv.org/html/2604.03147')
+    expect(arxivHtmlUrl('https://arxiv.org/pdf/2604.03147v2.pdf')).toBe('https://arxiv.org/html/2604.03147v2')
+    expect(arxivHtmlUrl('https://arxiv.org/abs/hep-th/9901001')).toBe('https://arxiv.org/html/hep-th/9901001')
+    // Already the HTML version: no rewrite, no loop.
+    expect(arxivHtmlUrl('https://arxiv.org/html/2604.03147v1')).toBeUndefined()
+    expect(arxivHtmlUrl('https://example.com/abs/2604.03147')).toBeUndefined()
+  })
+})
 
 describe('the wall search field is sized by its row', () => {
   it('uses border-box, so padding cannot push it past the pane', () => {
