@@ -57,9 +57,17 @@ const KEEP_TAGS = new Set([
  */
 const DROP_TAGS = new Set([
   'script', 'style', 'template', 'nav', 'header', 'footer', 'aside',
-  'form', 'iframe', 'svg', 'annotation-xml', 'button', 'select', 'input', 'textarea', 'video',
+  'form', 'iframe', 'annotation-xml', 'button', 'select', 'input', 'textarea', 'video',
   'audio', 'canvas', 'embed', 'link', 'meta', 'base', 'title',
+  // svg is NOT here: capture-rendered pages carry their rescued figures as
+  // inline SVG, which normalizeSvg() whitelists per element/attribute. The
+  // strip's selector gains the canonical-case members separately (SVG names are
+  // case-sensitive in an HTML document).
+  'foreignobject',
 ])
+
+/** The strip selector's exact-case members (SVG camelCase names in an HTML document). */
+const DROP_STRIP_EXTRA = ['foreignObject']
 
 /** Inline elements that survive an inline-only pass. */
 const INLINE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'code', 'a', 'sub', 'sup', 'br'])
@@ -154,7 +162,7 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
 
   // Strip the noise subtrees BEFORE scoring, so every candidate is measured on
   // the same terms (a sidebar full of links otherwise wins on raw text mass).
-  for (const node of Array.from(doc.querySelectorAll([...DROP_TAGS].join(',')))) {
+  for (const node of Array.from(doc.querySelectorAll([...DROP_TAGS, ...DROP_STRIP_EXTRA].join(',')))) {
     node.remove()
   }
 
@@ -344,7 +352,7 @@ export function normalizeRichText(html: string, baseUrl?: string): string {
   }
   const body = doc.body
   if (body === null) return ''
-  for (const node of Array.from(body.querySelectorAll([...DROP_TAGS].join(',')))) {
+  for (const node of Array.from(body.querySelectorAll([...DROP_TAGS, ...DROP_STRIP_EXTRA].join(',')))) {
     node.remove()
   }
   return normalizeChildren(body, baseUrl)
@@ -529,6 +537,10 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
   // markup holds lives here. Recover that image; drop everything else a
   // noscript carries (the "please enable JavaScript" text is not content).
   if (tag === 'noscript') return noscriptImg(element, baseUrl)
+  // Capture-rendered pages carry their rescued figures as inline SVG with
+  // styles inlined onto the elements; the subset walker below keeps the chart
+  // and strips the injection-shaped members (script, foreignObject, SMIL).
+  if (tag === 'svg') return normalizeSvg(element)
   if (tag === 'br') return '<br>'
   if (tag === 'hr') return '<hr>'
 
@@ -592,6 +604,116 @@ function objectImg(element: Element, baseUrl: string | undefined): string {
     ...(width === undefined ? {} : { width }),
     ...(height === undefined ? {} : { height }),
   })
+}
+
+/* --------------------------------------------------------- the SVG subset */
+
+/**
+ * Inline SVG: the chart markup a capture-rendered page carries.
+ *
+ * The capture package (the ingest proposal's M1) returns the RENDERED page:
+ * figures the origin site paints with scripts arrive as inline SVG with the
+ * computed styles inlined onto the elements. Keeping a static subset is what
+ * lets those figures into the body at all. The rules:
+ *
+ * - a fixed element set (shapes, text, defs/clip/mask/pattern, gradients,
+ *   `use`/`symbol`), looked up case-insensitively and emitted in the canonical
+ *   SVG casing — the HTML parser's foreign-content adjustment already gave us
+ *   that casing, and the emitted string is re-parsed as HTML downstream;
+ * - `<script>`, `<foreignObject>` (the HTML-injection vector inside SVG) and
+ *   every SMIL element (`animate`, `set`, …) drop with their subtrees — a
+ *   static figure needs none of them;
+ * - attributes come from one whitelist (geometry, presentation, the inlined
+ *   `style`, paint-server/clip refs, and `id` — `url(#…)` and `href="#…"` point
+ *   at it), and any value containing `url(` must reference a same-document
+ *   fragment, so no external paint server, font or pixel loads;
+ * - `use`/`textPath` keep `href` only when it IS a fragment (`#…`) — an
+ *   external reference drops the element (and legacy `xlink:href` normalizes
+ *   to `href`).
+ *
+ * No per-element size cap: the body's own size machinery (the fetch cap, the
+ * sidecar threshold) bounds the whole markup, and a chart's `<path>` data is
+ * the content the cap exists to bound.
+ */
+
+/** Canonical SVG names by lowercase form (the parser adjusts them; garbage may not). */
+const SVG_TAGS: ReadonlyMap<string, string> = new Map(
+  [
+    'svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon',
+    'text', 'tspan', 'textPath', 'defs', 'clipPath', 'mask', 'pattern',
+    'linearGradient', 'radialGradient', 'stop', 'use', 'symbol', 'marker', 'desc',
+  ].map(name => [name.toLowerCase(), name]),
+)
+
+/** Subtree-dropped inside SVG: script-capable or animated. (`title` collides with the HTML drop.) */
+const SVG_DROP = new Set(['script', 'foreignobject', 'animate', 'animatemotion', 'animatetransform', 'set'])
+
+/** Attributes kept on SVG elements; everything else (event handlers included) is stripped. */
+const SVG_ATTRIBUTES: readonly string[] = [
+  'id',
+  // geometry
+  'd', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'x2', 'y1', 'y2', 'points',
+  'width', 'height', 'viewBox', 'transform', 'dx', 'dy',
+  // presentation
+  'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-linecap',
+  'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-miterlimit',
+  'opacity', 'fill-rule', 'clip-rule', 'text-anchor', 'font-size', 'font-family',
+  'font-weight', 'font-style', 'dominant-baseline', 'textLength', 'letter-spacing',
+  // the capture pipeline's inlined computed style (CSS is non-executable)
+  'style',
+  // references and paint servers
+  'clip-path', 'mask', 'offset', 'stop-color', 'stop-opacity',
+  'gradientUnits', 'gradientTransform', 'patternUnits', 'patternTransform',
+  'patternContentUnits', 'spreadMethod', 'preserveAspectRatio', 'startOffset',
+  'markerWidth', 'markerHeight', 'markerUnits', 'orient', 'refX', 'refY',
+  'marker-start', 'marker-mid', 'marker-end',
+]
+
+/** A kept value may only reference this same document: every `url(` must open a `#` fragment. */
+function svgValueSafe(value: string): boolean {
+  const refs = value.match(/url\(/gi)
+  if (refs === null) return true
+  return refs.length === (value.match(/url\(\s*['"]?#/gi) ?? []).length
+}
+
+/** The whitelisted attributes of one SVG element, in the whitelist's order. */
+function svgAttributes(element: Element): string {
+  const parts: string[] = []
+  for (const name of SVG_ATTRIBUTES) {
+    const value = element.getAttribute(name)
+    if (value === null || !svgValueSafe(value)) continue
+    parts.push(` ${name}="${escapeAttribute(value)}"`)
+  }
+  return parts.join('')
+}
+
+/** One SVG subtree → whitelisted markup (or empty). */
+function normalizeSvg(element: Element): string {
+  const name = element.localName.toLowerCase()
+  if (SVG_DROP.has(name)) return ''
+  const canonical = SVG_TAGS.get(name)
+  if (canonical === undefined) return normalizeSvgChildren(element)
+  if (canonical === 'use' || canonical === 'textPath') {
+    // A fragment reference only: an external one drops the element outright.
+    const href = (element.getAttribute('href') ?? element.getAttribute('xlink:href'))?.trim()
+    if (href === undefined || !/^#\S+$/.test(href)) return ''
+    return `<${canonical} href="${escapeAttribute(href)}"${svgAttributes(element)}>${normalizeSvgChildren(element)}</${canonical}>`
+  }
+  return `<${canonical}${svgAttributes(element)}>${normalizeSvgChildren(element)}</${canonical}>`
+}
+
+/** Every child of an SVG node: text is escaped, elements walk the subset. */
+function normalizeSvgChildren(element: Element): string {
+  const parts: string[] = []
+  for (const child of Array.from(element.childNodes)) {
+    if (child.nodeType === 3 /* text */) {
+      parts.push(escapeHtml((child.textContent ?? '').replace(/\s+/g, ' ')))
+      continue
+    }
+    if (child.nodeType !== 1 /* element */) continue
+    parts.push(normalizeSvg(child as Element))
+  }
+  return parts.join('')
 }
 
 /**
@@ -789,8 +911,8 @@ function serializeInline(node: Node): string {
     if (DROP_TAGS.has(tag)) continue
     // A noscript's fallback image means nothing in an inline summary; the rest
     // of its content ("please enable JavaScript") was never content at all.
-    // An object's fallback text is the same kind of chrome.
-    if (tag === 'noscript' || tag === 'object') continue
+    // An object's fallback text and a chart's text labels are the same chrome.
+    if (tag === 'noscript' || tag === 'object' || tag === 'svg') continue
     if (tag === 'br') {
       out += ' '
       continue
