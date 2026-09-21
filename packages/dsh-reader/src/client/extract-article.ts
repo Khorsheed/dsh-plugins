@@ -73,6 +73,63 @@ const DROP_STRIP_EXTRA = ['foreignObject']
 const INLINE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'code', 'a', 'sub', 'sup', 'br'])
 
 /**
+ * Unwrapped containers that must leave a word boundary behind.
+ *
+ * Unwrapping a non-whitelist element keeps its children but no longer marks
+ * any separation: a capture's outerHTML serialization carries NO inter-tag
+ * whitespace, so `<div>A</div><div>B</div>` used to normalize into `AB` —
+ * measured live as a composite figure's cards reading as one concatenated
+ * run. These block-ish containers (plus any custom element) emit a boundary;
+ * inline-ish unknowns keep the old flush behavior.
+ */
+const UNWRAP_BOUNDARY_TAGS = new Set([
+  'div', 'section', 'article', 'main', 'details', 'summary', 'hgroup', 'fieldset', 'center',
+])
+
+/**
+ * The style properties a figure's containers may keep: layout and paint, never
+ * behavior. `position` is further value-gated (no fixed/sticky), `z-index` is
+ * bounded, and any `url(…)` must be a same-document fragment — no external
+ * loads or script tricks ride an inlined style into the reader.
+ */
+const FIGURE_STYLE_EXACT: ReadonlySet<string> = new Set([
+  'display', 'position', 'top', 'right', 'bottom', 'left', 'inset', 'width', 'height',
+  'margin', 'padding', 'gap', 'order', 'color', 'background', 'overflow',
+  'text-align', 'vertical-align', 'line-height', 'white-space', 'transform',
+  'transform-origin', 'opacity', 'visibility', 'z-index', 'flex', 'grid',
+])
+const FIGURE_STYLE_PREFIXES = [
+  'flex-', 'grid-', 'max-', 'min-', 'margin-', 'padding-', 'gap-',
+  'justify-', 'align-', 'place-', 'border', 'font-', 'background-', 'overflow-', 'text-',
+] as const
+
+/**
+ * Filter one `style` attribute to the figure allowlist.
+ *
+ * @param style - the attribute's raw value.
+ * @returns the kept declarations, or `undefined` when none survive.
+ */
+function figureStyle(style: string | null): string | undefined {
+  if (style === null) return undefined
+  const kept: string[] = []
+  for (const declaration of style.split(';')) {
+    const colon = declaration.indexOf(':')
+    if (colon === -1) continue
+    const prop = declaration.slice(0, colon).trim().toLowerCase()
+    const value = declaration.slice(colon + 1).trim()
+    if (prop.length === 0 || value.length === 0) continue
+    if (!FIGURE_STYLE_EXACT.has(prop) && !FIGURE_STYLE_PREFIXES.some(prefix => prop.startsWith(prefix))) continue
+    // Value gates: no external loads, no script tricks, no pinning/overlay.
+    if (/javascript:|expression\s*\(|behavior\s*:/i.test(prop + ':' + value)) continue
+    if (/url\(/i.test(value) && !svgValueSafe(value)) continue
+    if (prop === 'position' && !/^(static|relative|absolute)$/i.test(value)) continue
+    if (prop === 'z-index' && (!/^\d+$/.test(value) || Number(value) > 5)) continue
+    kept.push(`${prop}: ${value}`)
+  }
+  return kept.length === 0 ? undefined : kept.join('; ')
+}
+
+/**
  * Attributes preserved per element (everything else is stripped).
  *
  * The `img` row documents what an emitted image carries; the img branch of
@@ -309,6 +366,9 @@ const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'b
  * anywhere inside: the page renders that illustration at runtime. A `<math>`
  * subtree counts as content — a formula-only figure's picture IS its markup —
  * and so does an image-typed `<object>` (the LaTeXML vector-figure shape).
+ * A composite of styled containers carries its content as TEXT (a capture-
+ * rendered figure is a diagram plus property cards): enough non-caption words
+ * means the figure is here, even with no raster or vector island.
  *
  * The figures themselves are KEPT, caption included. Dropping them was tried
  * and reverted: a caption is text the page published — it says what the figure
@@ -324,6 +384,14 @@ function countScriptFigures(root: Element): number {
   let count = 0
   for (const figure of Array.from(root.querySelectorAll('figure'))) {
     if (figure.querySelector('img, svg, canvas, video, picture, math, object[type^="image/"]') !== null) continue
+    // A composite of styled containers CARRIES its content in the markup (a
+    // capture-rendered figure is boxes of text): what is not the caption is
+    // the figure's own words, and enough of them means the picture is here.
+    const own = Array.from(figure.children)
+      .filter(child => child.localName !== 'figcaption')
+      .map(child => child.textContent ?? '')
+      .join('')
+    if (collapse(own).length >= 20) continue
     count += 1
   }
   return count
@@ -355,7 +423,8 @@ export function normalizeRichText(html: string, baseUrl?: string): string {
   for (const node of Array.from(body.querySelectorAll([...DROP_TAGS, ...DROP_STRIP_EXTRA].join(',')))) {
     node.remove()
   }
-  return normalizeChildren(body, baseUrl)
+  // Same edge trim as normalizeElement: boundaries at the extremes are dead.
+  return normalizeChildren(body, baseUrl).trim()
 }
 
 /** One scored candidate block. */
@@ -478,14 +547,16 @@ function textLengthOf(element: Element): number {
  * @returns the normalized HTML string.
  */
 function normalizeElement(element: Element, baseUrl: string | undefined): string {
-  return normalizeChildren(element, baseUrl)
+  // Edge trim: the unwrap boundary leaves a dead newline at either extreme,
+  // which renders as nothing and would only dirty the stored body's bytes.
+  return normalizeChildren(element, baseUrl).trim()
 }
 
 /** Normalize every child of a node. */
-function normalizeChildren(node: Node, baseUrl: string | undefined): string {
+function normalizeChildren(node: Node, baseUrl: string | undefined, inFigure = false): string {
   const parts: string[] = []
   for (const child of Array.from(node.childNodes)) {
-    const normalized = normalizeNode(child, baseUrl)
+    const normalized = normalizeNode(child, baseUrl, inFigure)
     if (normalized.length > 0) parts.push(normalized)
   }
   return parts.join('')
@@ -500,7 +571,7 @@ function normalizeChildren(node: Node, baseUrl: string | undefined): string {
  * @param baseUrl - base for relative URL resolution.
  * @returns the normalized HTML for this node.
  */
-function normalizeNode(node: Node, baseUrl: string | undefined): string {
+function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false): string {
   if (node.nodeType === 3 /* text */) {
     const text = node.textContent ?? ''
     // Collapse runs of whitespace: HTML source formatting is not content, and
@@ -544,8 +615,23 @@ function normalizeNode(node: Node, baseUrl: string | undefined): string {
   if (tag === 'br') return '<br>'
   if (tag === 'hr') return '<hr>'
 
-  const inner = normalizeChildren(element, baseUrl)
-  if (!KEEP_TAGS.has(tag)) return inner
+  const inner = normalizeChildren(element, baseUrl, inFigure || tag === 'figure')
+  // A figure's composite layout IS its content (a capture-rendered figure is a
+  // diagram plus property cards built from styled containers), so inside one
+  // the div/span boxes survive as elements with their allowlisted style —
+  // everywhere else they unwrap, as before.
+  if (inFigure && (tag === 'div' || tag === 'span')) {
+    const style = figureStyle(element.getAttribute('style'))
+    // A kept container with neither text nor style is a shell, not a layout.
+    if (inner.trim().length === 0 && style === undefined) return ''
+    return `<${tag}${style === undefined ? '' : ` style="${escapeAttribute(style)}"`}>${inner}</${tag}>`
+  }
+  if (!KEEP_TAGS.has(tag)) {
+    // Unwrapped block-ish containers leave a word boundary: capture's
+    // serialization carries no inter-tag whitespace, and two sibling cards
+    // must never concatenate into one run of text.
+    return UNWRAP_BOUNDARY_TAGS.has(tag) || tag.includes('-') ? `\n${inner}\n` : inner
+  }
   if (tag === 'a') {
     const href = absolutize(element.getAttribute('href'), baseUrl)
     // An anchor without a usable target keeps its text but loses the link, so
@@ -920,8 +1006,10 @@ function serializeInline(node: Node): string {
     const inner = serializeInline(child)
     // Blocks and links are flattened: the summary carries the words, not the
     // structure. Emphasis survives because it is cheap and often meaningful.
+    // The trailing space is the word boundary the block used to mark — two
+    // flattened siblings must never read as one word (the composite-figure bug).
     if (!INLINE_TAGS.has(tag) || tag === 'a') {
-      out += inner
+      out += `${inner} `
       continue
     }
     out += `<${tag}>${inner}</${tag}>`

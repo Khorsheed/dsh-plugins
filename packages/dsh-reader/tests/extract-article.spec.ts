@@ -452,7 +452,9 @@ describe('MathML formulas survive the whitelist', () => {
   })
 
   it('flattens math to its text in an inline summary', () => {
-    expect(normalizeInline('<p>a <math><mi>x</mi></math> b</p>')).toBe('a x b')
+    // (The triple space is the inline pass's boundary around a flattened
+    // element — long-standing behavior; the summary path collapses it.)
+    expect(normalizeInline('<p>a <math><mi>x</mi></math> b</p>')).toBe('a x   b')
   })
 })
 
@@ -601,5 +603,72 @@ describe('inline SVG figures survive (capture-rendered pages)', () => {
     // space is the inline pass's long-standing behavior around a skipped
     // element; the summary path collapses whitespace downstream.)
     expect(normalizeInline('<p>a <svg><text>x</text><circle r="1"/></svg> b</p>')).toBe('a  b')
+  })
+})
+
+/**
+ * Composite figures keep their structure: a capture-rendered figure is an
+ * HTML+CSS composite (a diagram plus property cards built from styled
+ * containers). Unwrapping those containers without boundaries concatenated the
+ * cards into one run — measured live on transformer-circuits.pub's workspace
+ * paper ("Intermediate processing stageJ-space carries…"), the reader saw one
+ * figure torn into disjoint pieces. Inside `<figure>` the structure is the
+ * content; outside, today's unwrap behavior is unchanged except for the word
+ * boundary.
+ */
+describe('composite figures keep their container structure', () => {
+  const page = fixture('capture-composite-figure.html')
+
+  it('keeps the cards as styled containers, and texts never concatenate', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // The card structure survived: styled divs with their allowlisted layout.
+    expect(result.html).toContain('<div style="display: flex; gap: 16px; align-items: flex-start">')
+    expect(result.html).toContain('flex-direction: column')
+    expect(result.html).toContain('background-color: #fafafa')
+    // The exact live failure: card title and card body merged into one run.
+    expect(result.html).not.toContain('stageJ-space')
+    expect(result.html).not.toContain('depthsLimited')
+    // Each card is its own kept container.
+    expect(result.html).toMatch(/<div[^>]*>Intermediate processing stage<\/div>\s*<div[^>]*>J-space carries/)
+  })
+
+  it('strips hostile and out-of-scope style, keeps the declaration rest', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('position: fixed')
+    expect(result.html).not.toContain('9999')
+    expect(result.html).not.toContain('tracker.example.com')
+    expect(result.html).not.toContain('behavior')
+    expect(result.html).not.toContain('javascript:')
+    // The third card's legitimate layout survived the hostile declarations.
+    expect(result.html).toContain('J-lens vectors compose')
+    expect(result.html).toContain('border-radius: 6px')
+  })
+
+  it('counts only the genuinely empty shell, not the composite', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // The composite carries text and an svg: it is not a script-drawn shell.
+    expect(result.scriptFigures).toBeUndefined()
+  })
+
+  it('outside figures, containers still unwrap — but sibling texts gain a boundary', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Unchanged shape: the outer divs are still gone from the markup…
+    expect(result.html).not.toContain('<div>Alpha')
+    // …but the two sections can no longer read as one word.
+    expect(result.html).not.toContain('itBeta')
+    expect(result.html).toMatch(/container\s+Beta/)
+  })
+
+  it('the same boundary rule holds in inline summaries', () => {
+    expect(normalizeInline('<div>Alpha</div><div>Beta</div>')).toBe('Alpha Beta')
+    expect(normalizeInline('<p>a <strong>b</strong> c</p>')).toBe('a <strong>b</strong> c')
   })
 })

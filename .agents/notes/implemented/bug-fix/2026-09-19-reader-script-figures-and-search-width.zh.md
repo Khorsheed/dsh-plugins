@@ -15,7 +15,7 @@ Status: implemented
 ## Decision
 
 - **输入框用 `border-box`。** 一个不许超出容器的表单控件声明 `box-sizing: border-box`；CSS 测试现在钉住这一条，因为同一个错误已经造成两次读者可见的缺陷。
-- **没有画面的 figure 直接去掉，并计数。** `extractArticle` 删除所有子树里没有 `<img>` / `<svg>` / `<canvas>` / `<video>` / `<picture>` 的 `<figure>`，并返回删掉的个数。悬空的图注比没有图注更糟：它看起来像数据丢了。这个计数随正文一起走——持久化在条目 annotation 上（`ReaderEntryBody.scriptFigures`），由 `getEntryBody` 与抓取一起回报——详情页写明「这一页有 N 张插图由页面自己的脚本绘制，抓取时拿不到」，旁边是「阅读原文」。
+- **没有画面的 figure 计数、图注保留。** `extractArticle` 统计所有子树里没有 `<img>` / `<svg>` / `<canvas>` / `<video>` / `<picture>` / `<math>` / image 类型 `<object>`、且除图注外没有自己实质文字的 `<figure>`（capture 渲染的样式盒组合体**就是**内容——见[图布局 note](2026-09-21-reader-figure-layout.md)）——而图注保留，因为它是页面发布的文字（更早的「整棵删掉」版本曾被读成数据丢失）。这个计数随正文一起走——持久化在条目 annotation 上（`ReaderEntryBody.scriptFigures`），由 `getEntryBody` 与抓取一起回报——详情页写明「这一页有 N 张插图由页面自己的脚本绘制，抓取时拿不到」，旁边是「阅读原文」。
 - **徽章说它真正意思。** 「已补全」改为「已抓全文」，悬停说明实际情况：卡片上仍是 feed 自己的摘要，全文已经缓存，点开就能读。
 
 ## Alternatives considered

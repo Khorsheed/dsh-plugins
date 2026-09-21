@@ -109,6 +109,7 @@
 - `47386c0f` 墙面去重开关「隐藏重复」（默认开）：链接归一化优先、折叠标题+同日兜底、绝不模糊；幸存卡带重复来源徽章；已读跨组归并；自动补抓不为隐藏副本花请求。Agent Note：[wall-dedupe](../../.agents/notes/implemented/feature/2026-09-21-reader-wall-dedupe.md)。
 - `f08069cc` 去重幂等修复（3080 实测）：两个聚合 feed 同一 guid 带同一篇——副本按设计共享 stableEntryId，按 id 的折叠簿记把两张都留下；改为按行位置折叠，同条目 id 升为最强分组层（三层：同 id → 归一化链接 → 折叠标题+同日，传递合并）。owning note 按事实更新。
 - `c1e07286` 内联 SVG 图过白名单安全子集（reader/svg-whitelist 分支，2026-09-21）：capture（M1）渲染回来的脚本图以 SVG+内联样式到达，此前被 `svg` 整棵丢弃只剩图注；`script`/`foreignObject`/SMIL/事件/外部引用钉死不放行。Agent Note：[inline-svg](../../.agents/notes/implemented/feature/2026-09-21-reader-inline-svg.md)。
+- `1eb8f5e4` 组合图保结构 + 解包留词边界（reader/figure-layout 分支，2026-09-21，3199 实锤：workspace 页 Figure 2 的三张卡连读成一段）：figure 内 div/span 保留 + style 属性白名单；块级容器解包留边界；脚本图计数器学会组合体。Agent Note：[figure-layout](../../.agents/notes/implemented/bug-fix/2026-09-21-reader-figure-layout.md)。
 
 **M1（`capture/m1` 分支，2026-09-21，全部落在新包 `@khorsheed/dsh-capture`）**：
 
