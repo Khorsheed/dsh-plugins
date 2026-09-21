@@ -2,8 +2,8 @@
 
 - **分类**：plugin
 - **状态**：planned
-- **最后更新**：2026-09-16
-- **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）。命中前作 [2026-09-13-inspiration-canvas](2026-09-13-inspiration-canvas.md)（同包 `@khorsheed/dsh-canvas` 的 v1）：本提案是它的 v2 重设计——意图从「工作区内的灵感稿纸」扩展为「主题驱动的思考画布空间」，v1 M1 已交付能力的去留逐项见 §0.2。其余相关命中（mode-switcher / package-management / local-files-browser）同前作查重，关系不变。
+- **最后更新**：2026-09-21
+- **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）。命中前作 [2026-09-13-inspiration-canvas](2026-09-13-inspiration-canvas.md)（同包 `@khorsheed/dsh-canvas` 的 v1）：本提案是它的 v2 重设计——意图从「工作区内的灵感稿纸」扩展为「主题驱动的思考画布空间」，v1 M1 已交付能力的去留逐项见 §0.2。其余相关命中（mode-switcher / package-management / local-files-browser）同前作查重，关系不变。**2026-09-21 二次查重**：本轮"详情即编辑器 / 删透镜 / 图片管线 / 分类自定义"的意图检索命中 side-chat（被停用的一侧）与 quote-anything（选区交互归它，不动），同包同意图 → 按查重铁律**追加本 §10，不新建提案**。
 - **官方依赖**：纯插件（主路径全部走已存在的官方 seam）。一处 **upstream 候选**：ui-workspace 左栏增量分区 seam（§1.2）——未落地前以 `sidebar.panellist` + `main` 入口交付完整能力，不阻塞。
 
 ## 目标
@@ -132,7 +132,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 - **主视图即板**：卡片摘要态（clamp ~6 行 + 渐隐 + 字数标），多选由悬停勾选框承担。
 - **点卡进详情页**：钻取式——列表 ↔ 详情（返回键），详情三态（渲染 `MarkdownText` / 源码 textarea / 并列），评论线程、来源与附件预览、幽灵 ✓/✗ 同页完成；不占第二列，宽度压力消失。
 - **建卡两条路**：`＋ 新卡` 选 kind 后行内编辑（createdBy=user、直接 kept）；或**粘贴即建卡**——焦点不在任何卡上时粘贴，按内容路由：纯文本 → 碎片、URL → 资料（抓取标题）、text/html → document 卡（§8）；粘贴表格沿用 v1 转 markdown。
-- **对话双入口（M3 起）**：**当前会话**——画布工具（§7）注册到主会话 agent（origin tag + 探测门控），用户直接在左侧会话让 agent 改画布；**side-chat**——透镜「就此提问」/评论「追问」→ `openWith`（第二意见，独立 contextKey）。**选区交互只有引用插件一家**（卡片详情不再自建选区「问 Agent」——M2 的过渡实现已随引用插件上线退役）：选中任意内容 → 浮层 → 引用到当前会话 / 侧边对话。
+- **对话双入口（M3 起）**【M3.2 部分停用，见 §10.1】：**当前会话**——画布工具（§7）注册到主会话 agent（origin tag + 探测门控），用户直接在左侧会话让 agent 改画布；~~**side-chat**——透镜「就此提问」/评论「追问」→ `openWith`（第二意见，独立 contextKey）~~ **此路整条停用（2026-09-21 用户裁决：侧边对话本身还要打磨，联动等新那边定型再做；先做好画布自己）**。**选区交互只有引用插件一家**（卡片详情不再自建选区「问 Agent」——M2 的过渡实现已随引用插件上线退役）：选中任意内容 → 浮层 → 引用到当前会话 / 侧边对话。
 - **宽模式修正（M3.1，3080 反馈）**：fullscreen 模式隐藏右栏拖拽把手且保留的是大会话宽——撤回。右栏保持普通 track 模式（把手可用、宽度用户拖、布局记忆）；一次性建议只保留 `toggleSidebar()` 收左侧会话列表。「右栏宽度 API / tab 宽度提示」登记为 upstream 候选。
 - **深度融合三处内联**：提议卡幽灵态落板（✓/✗）；评论挂卡上（角标 + 展开线程）；成稿视图里 Agent 候选稿以 diff 横幅出现。
 - **成稿视图**：顶栏切到成稿，v1 编辑器（edit/preview/split）占满右栏宽模式。
@@ -158,14 +158,14 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 `碎片 → Agent 评论（指出假设/张力）→ 问题卡 → 追问/找证据 → grounding 沉淀 → 成稿`
 
-- **评论即追问**：`canvas_comment` 契约约定评论指出一个隐含假设或张力、以一个尖锐问题收尾；评论旁"就此提问"一键带入聊天。
+- **评论即追问**：`canvas_comment` 契约约定评论指出一个隐含假设或张力、以一个尖锐问题收尾；~~评论旁"就此提问"一键带入聊天~~【M3.2 停用：一键入口移除，"以追问收尾"的契约保留——它是文本质量约定，不依赖 side-chat】。
 - **概念形成路径**（对应"X 是什么"式的探索型用户）：外部解释（聊天记录/网页）→ 用户**用自己的话复述**成碎片卡 → Agent 评论纠正边界、透镜追问 → 确认后升 grounding——**概念只有经用户复述并确认才成为"共同认识"**，这是"看懂了"和"能写出来"之间的桥。Agent 搜索产生的解释默认落 reference 卡（原料），绝不直接升 grounding。
 - **问题卡生命周期**：`open → exploring → answered`；answered 一键沉淀为 grounding 卡；悬挂问题定期 resurfacing。
-- **透镜（lens）**：选中卡后的一组具体动作——挑战假设 / 找反例 / 找证据 / 追问原因 / 换个视角 / 升一层（抽象）/ 降一层（举例）/ 就此提问。每个透镜 = 预置 prompt 模板 + 当前选区，产物（新问题/新证据卡）落回板上。
+- **透镜（lens）**【M3.2 整条停用；**意图未裁决放弃**，见 §10.1】：选中卡后的一组具体动作——挑战假设 / 找反例 / 找证据 / 追问原因 / 换个视角 / 升一层（抽象）/ 降一层（举例）/ 就此提问。每个透镜 = 预置 prompt 模板 + 当前选区，产物（新问题/新证据卡）落回板上。
 - **空白即引导**：空画布/空 kind 的 empty state 教下一步。
 - **护栏**：所有 nudge 可关闭且记住选择；引导永不阻塞直接写作。
 
-### 6. 聊天架构（经 side-chat 插件，M2 起）
+### 6. 聊天架构（经 side-chat 插件，M2 起）【M3.2：画布侧调用整条停用，本节契约留档待复活】
 
 画布不自建聊天，聊天能力由 [side-chat](2026-09-16-side-chat.md)（通用上下文聊天插件，全 preset 常驻右栏）承接：
 
@@ -185,7 +185,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 | `canvas_comment(cardId, text)` | 评论挂到卡上（契约：指出假设/张力 + 追问收尾） |
 | `canvas_propose_draft(markdown)` | 成稿候选；正本只在用户接受时写，diff 用 `FsWriteOutcome.before/after` |
 
-- **双入口注册（M3 起）**：三个画布工具**注册到主会话 agent**（origin tag + 探测门控，普通会话里可让 agent 直接改画布），同时随 `openWith` 注入 side-chat 的 canvas context（第二意见）——用户自选在当前会话还是侧边会话驱动画布。工具按 `canvas_*` 前缀 + 清晰描述控制存在感， absent 会话（无画布/未启用）时不报错、返回不可用说明。
+- **双入口注册（M3 起）**【M3.2 收为单入口】：~~三个画布工具~~ 同时随 `openWith` 注入 side-chat 的 canvas context（第二意见）—— 此半停用；**保留**注册到主会话 agent（origin tag + 门控，普通会话里可让 agent 直接改画布）的一半——那是不依赖 side-chat 的正面路径。工具按 `canvas_*` 前缀 + 清晰描述控制存在感， absent 会话（无画布/未启用）时不报错、返回不可用说明。
 - **搜索 reference / grounding**：profile 组合了官方 `web_search`/`web_fetch` 则天然可用（搜到的结果经 `canvas_propose_card` 落 reference 卡）；host 侧探测 `ctx.get('web')` 作兜底；都没有则在画布页明示"搜索未组合"。
 - **会话侧索引（M4，可选兼容）**：`canvas_search(query)` / `canvas_clip(canvasId, kind, text)` 两个工具让任何工作区的普通会话能检索画布、把对话内容剪藏进画布——画布由此"被索引到工作区的会话里"。
 
@@ -204,15 +204,120 @@ $DSH_HOME/state/canvas/<canvasId>/
 - **导出**：`exportDraftToWorkspace` 把 `draft.md` 复制进指定工作区目录（写走 `ctx.fs` 围栏）。
 - **索引**：`canvas_search` 按标题/卡文本检索；普通会话由此发现画布（§7）。
 
+### 10. v2.1 修订（2026-09-21）：详情即唯一编辑器与交互收口（M3.2 / M3.3）
+
+用户 3080 实使用后提了九条，逐条给机制与裁决。**共同形状：这一轮不扩能力，只把已有能力接顺手**——九条里只有"图片"真正撞到宿主契约缺口，其余全是本地接线、命名与欠账。
+
+#### 10.1 裁决清单
+
+| # | 用户的问法 | 事实 | 裁决 |
+|---|---|---|---|
+| 1a | 图片能直接复制进去吗 | **不能，且断三处**（见 10.3） | M3.3 做；`assets/` 落盘等上游 seam，本轮只走 base64 |
+| 1b | md / html 复制进去会自动渲染吗 | **会**——格式由内容嗅探（`card-format.ts:54-72`），非用户选；GFM 全量可用 | 不改；体感问题来自 10.2（就地编辑无渲染面）与内联 HTML 字面显示 |
+| 2 | 快捷键 | 板上零快捷键 | **本轮不做**（用户明示先不急），只留档 |
+| 3 | 样式配色跟宿主一致 | 颜色 100% token 化，组件 0% 复用 | **M3.2 收口**（本来就是 §设计原则第 2 条的欠账） |
+| 4 | 分栏左右等高 + 同步滚动 | 前提半错：只有一个滚动容器，故"不同步"不存在；真病是两栏高度不对齐 | **M3.2**：等高封顶 + 比例同步（行锚点同步不可得，见 10.5） |
+| 5 | 透镜与就此提问先删 | 四处发起 + prompt 语义段 | **删**（用户裁决：侧边对话还要打磨，先做好画布自己）；意图**未裁决放弃**，见 10.4 |
+| 6 | 能自由画画吗 | **能，零宿主改动**：笔画即文本 | M6 立项（探针先行），本轮只登记 |
+| 7 | 「卡板」这类称呼难理解 | 病根是**视图轴与角色轴混用一套 UI** | **M3.2 改名**，见 10.7 |
+| 8 | 分类能否自定义，默认草稿 / 灵感 | 能，代价在**模型可见 enum** | **M3.4**：内置 id 不删，只开放 label 层，见 10.7 |
+| 9 | 卡片排列按 sidebar 宽度自适应吗 | **已经是**（`repeat(auto-fill, minmax(228px,1fr))`，`board.module.css:467`） | 不做 |
+
+#### 10.2 统一详情：点卡即进详情页，详情页是唯一编辑器
+
+采纳用户反演（替代本轮讨论中的"弹窗编辑器"方案）：**卡板只有摘要态与选择态，不再有就地 textarea**。
+
+- 板上取消就地编辑（`CardTextarea` 从板上摘除，详情页继续用），点卡 = 进详情；空卡也进详情（详情页承担新建 + 编辑 + 渲染三职）。
+- 详情页三态不变（渲染 / 源码 / 分栏），源码态即编辑器，渲染态实时跟随（保存后重渲染——现状已是 blur/⌘ 提交，本轮不改提交语义）。
+- 代价两条，明写在案：① 未保存前它是**客户端草稿**，因为没有任何东西可删（归档不删除是 v1 语义延续）；② 多卡微编辑比就地慢一跳。换来的是"编辑所见即所渲"这一条统一路径，以及宽度压力消失。
+- Modal 整体**不做**（宿主只有 `Modal` 原语、没有 modal/dialog slot；钻取导航已够用）。
+- 交互原型（可点，含三态切换 / 保存态 / 外部改动冲突示意 / 图片三臂循环）：[canvas-detail-editor.html](../prototypes/canvas-detail-editor.html)。**附件只是可视化，事实以本节为准**（proposals/README 的约定）。
+
+#### 10.3 图片管线：三臂分解与本轮范围
+
+| 臂 | 现状（今日实测） | 本轮 |
+|---|---|---|
+| **接线** | **整个 client 零 paste 监听**（`onPaste`/`clipboardData` 全库 0 命中）；`paste-table.ts` 202 行是死代码，只被 `index.ts:58` 的 `export *` 引走，无人调用 | **接上**：详情页 textarea + 板区各挂 `onPaste`，按 `clipboardData` 分派（图片 / `text/html` / 表格 / 纯文本），死代码由此转活 |
+| **写入** | 宿主 `FileSystem` 无 `writeBinary`（`fs/src/index.ts:86-280` 全量成员无二进制写 / mkdir / remove / rename）→ `assets/` 落盘按构造不可行 | **不做**，登记上游候选（浏览器→磁盘的 `uploadFileBinary` 已存在，但回执是否插件可读未验 → 探针项） |
+| **显示** | `/api/file?path=` 能按路径发图（`media-references.ts:21-75`，签名 cookie，20MiB）；`MarkdownText` 的 `pathImages` 钩子（`render.tsx:140-155`）在 `CanvasDetailView.tsx:380` **没传** | **传上**（`![](相对路径)` 与宿主绝对路径同一套改写），零宿主改动 |
+
+**政策不对称是这臂的核心决策点**：md 面**拒绝** `data:` URI（`render.tsx:45-79`：`sanitizeUrl` 只放 http/https/mailto；`vocabularyImageUrl` 的 blob:/data: 只对**改写后的值**放行），HTML 卡**允许**（`srcdoc.ts:24` CSP `img-src data: blob:`）。于是"手写 `![](data:image/…)` 显示不出来、贴一段带 `<img src=data:> 的 HTML 反而显示"。本轮裁决：**md 面走 `pathImages.resolve` 自己把本地图片改写为可显示 URL**（这是官方留的口子，不是绕行），HTML 面维持 CSP 现状不改。
+
+**base64 内联的前置条件**：`MAX_CARD_TEXT_LENGTH` 已是 256KB（2026-09-18 修掉静默截断），一张手机截图的 base64 就顶满；而当前刷新模型是"整板读"（每回合最多 ~40 次 `readBoard`，详情进来还要再读一次整板），**大图内联会把板的每次重读变成几 MB**。故 **10.6 的按卡懒加载正文是图片落地的硬前置**，顺序不可颠倒。
+
+类比档位：Typora / Obsidian 的贴图都是**落盘 + 相对路径引用**（我们的写入臂缺一半）；iA Writer 干脆禁内联图。我们本轮的可达档位 = "路径图能显示，粘贴图先落 base64 且受懒加载保护"。
+
+#### 10.4 删透镜与 side-chat 耦合：删哪四处、留哪一件
+
+**删（画布→side-chat 的全部发起）**：① 板选中条的 8 个透镜按钮（`BoardView.tsx:409-424`）；② 评论旁「追问」；③ 详情页 ask 流（`CanvasDetailView.tsx` 的 `ask` / `chatAvailable` / `openSideChat`）；④ `chatStatus` 探测门。选中条由此从 8 按钮收成 3（归档 / 取消选择 / 更多）。
+
+**同时删**：`prompt.ts` 的透镜语义段与 `CANVAS_LENS_IDS`（`types.ts:755-764`）。理由不是省事——**系统提示里留着透镜语义，模型会提议用户界面上已不存在的动作**。
+
+**留**：`canvas_propose_card` / `canvas_comment` 注册到主会话 agent 的那半（`./agent` 入口，0.4.2 交付）。**它是画布自己的正面，不依赖 side-chat**；本轮把 §7 的"双入口"收为"单入口"。side-chat 的 `openWith` 契约本体归 side-chat 提案，画布不再提及它，manifest 的 `dsh.references` 边随之撤。
+
+**未裁决的残留（必须记着）**：§5 的"概念形成路径"（外部解释 → 用户复述成碎片 → 追问 → 升 grounding）失去唯一抓手，而它是画布区别于普通笔记的机制核心。故 §5 整节标注**停用未裁决**：新那边（侧边对话）打磨定型后先回来判这一节的复活形状，不要让它以"事实放弃"的姿态沉底。同理 `canvas_propose_draft`（§7 三件套里唯一还没实现的）不属于透镜，不受本条影响。
+
+#### 10.5 分栏等高与滚动同步
+
+事实修正：detail root 是唯一滚动容器（`CanvasDetailView.module.css:5-7` `overflow-y:auto`；`:201-202` 注释明写 textarea "never its own scroller"），所以两栏本来就"一起滚"。病在 `.body[data-mode="split"] { align-items: start }`（`:167-172`）：两栏各自按内容长高，1 行表格源码渲染成 4 行、标题字号不同 → **中段对不上眼**，读起来就是"高度不一致"。
+
+方案：两栏各自成滚动容器，`align-items: stretch` + 宿主 `useAnchoredMaxHeight` 封顶到可视高，再双向**比例同步**（`scrollTop/(scrollHeight-clientHeight)` 互推，带"谁在驱动"守卫防抖回环）。
+
+**为什么不是行锚点同步**：那需要 renderer 给每个块打源码位置，而 `MarkdownText` 只把 `node.position.start.offset` 用作 React key（`MarkdownText.tsx:51`），**不外传块级锚点**。自写一份 mdast 管线换锚点 = 违背 §设计原则"渲染器复用宿主"，且要长期跟宿主语法漂移。故档位定为比例同步（MacDown 档），不做 VS Code 预览的 `syncScroll` 档；行锚点若真要，登记为上游候选（renderer 暴露 block anchors），不阻塞本轮。
+
+#### 10.6 宿主复用欠账与刷新通道（性能前提）
+
+**样式**：三个 CSS 文件里 hex/rgba **0 命中**，暗色跟随已成立（28 处 `--dsw-alias-*`）——色彩面没有活要干。**组件面是欠账**：33 个手写 `<button>`、`title=` 当 tooltip、自有 toast、自有下拉菜单，而宿主 `ui-primitives` 已导出 `Button / Pill / Tag / Switch / Input / Menu / Modal / Tooltip / Toast / HoverCard / useDismissOnOutsidePointer / useAnchoredPosition / useAnchoredMaxHeight / writeClipboard / relativeTime / FileTypeIcon`。替换清单按可见度排序：选中条按钮 → 卡片操作位 → 顶栏 → 切换器菜单 → toast。**残留两处宿主没有**：三态 segmented control 与多选 chip，保留自绘但改皮肤走 `Pill`/`Tag` 的 token 语汇。
+
+**刷新通道**（图片能否落地的前置，也是"卡"的真实来源）：现在每回合最多 ~40 次整板重读——根因链是 `useSelection(current => current)` 订阅整个快照（`BoardView.tsx:81`、`CanvasDetailView.tsx:96`）+ `touchOnSuccess` 自我回声 + `watchTurn` 2s×60 轮询（`index.ts:125-157`）+ 批量归档串行 N 次整板写（`CanvasTab.tsx:288-304`）+ 详情再读一次整板。收口三步，顺序即优先级：① **按卡懒取正文**（`readBoard` 出摘要视图，`readCard` 出单卡全文——**图片前置**）；② 订阅收窄到 selector + 卡片 memo；③ 批量归档改一次整板写。
+
+#### 10.7 命名与自定义分类（同一处病的两个症状）
+
+**病根不是词丑，是两个正交轴共用一套 UI**：`卡板 | 成稿` 是**视图**轴（板 vs 长文），`碎片/问题/依据/资料/文档` 是**内容角色**轴，而"文档"同时是角色之一 → 读者以为它们同一层。外部三家都不发明生僻词：**视图名 + 用户自己起名的属性值**（Heptabase：Card / Whiteboard / Topic + tag；Obsidian Canvas：只有 note 一种卡、零 kind；Notion：view 名（Board/Table）+ select 属性）。
+
+改名（M3.2，只动 locale 与一处 UI 文案，不动数据）：
+
+| 现名 | 拟改 | 说明 |
+|---|---|---|
+| 卡板 | （消失） | 它就是 tab 本身，不需要视图名；顶栏只留 `[卡片 \| 长文]` |
+| 成稿 | 长文 | 里面常是未完成稿，"成稿"名不副实 |
+| 碎片 | 灵感 | 与用户自己的词一致（下方自定义分类的默认目录同名） |
+| 依据 | 共识 | "grounding truth" 的中文落点，`grounding` 语义是共同认识不是证据 |
+| 资料 | 来源 | 带出处的原料 |
+| 文档 | （随轴合并删除） | 它是格式（md/html）不是角色，`detectCardFormat` 已经独立承担 |
+
+**自定义分类（M3.4）**：`kind` 现为闭合联合，五处硬绑——`types.ts:311`（union）+ `:345`（校验）+ `tools.ts:64,156`（**模型可见 enum**）+ `prompt.ts:115`（计数）+ typert 生成类型。关键设计：**内置 id 一个不删，只开放 label 层**。
+
+- `canvas.json` 加 `categories: [{ id, label, order, enabled }]`；卡的 `kind` 仍写内置 id 或用户新增 id；校验从"是否在 5 个里"改成"是否在本画布目录里"。
+- 工具 enum 动态生成为 内置 ∪ 本画布自定义 —— **模型面必须跟着用户词表走，否则模型只会写死那五个**（这是本条真正的成本所在）。
+- i18n：用户自定义 label 是**用户数据**，不再进 locale 表（中外混排时不翻译，接受）。
+- 默认目录按用户提的两个起：**草稿、灵感**（映射到内置 `document`→改名承担 / 实际内置 `fragment`/`question`/`grounding`/`reference` 仍在目录里但可停用）。
+- 迁移：旧卡零改动（内置 id 保留），只是名字可改、可加、可停用 → 不破数据、不破工具契约。
+- 残留：跨画布各起各的名（A 画布"灵感"、B 画布"想法"）——本轮**不做**全局默认目录同步。
+
+#### 10.8 自由草图卡（M6 立项，探针先行）
+
+用户自评"有点没道理"的那条，实际是画布第二合理的缺失维度，且**零宿主改动可做**：把笔画存成**矢量 JSON 落 `card.text`**，它就是普通文本卡 → 现成的版本围栏、评论线程、幽灵提议、`MAX_CARD_TEXT_LENGTH` 全部适用。
+
+档位选择：**Excalidraw 档**（元素即 JSON，"图"是导出物、源是文本 → git 可 diff、模型可读写），不选 Apple 备忘录 / Freeform 的位图档（存 PNG，撞上 10.3 的写入臂缺口）。采集是 pointer events + `<svg>` 折线，撤销 = 弹笔画栈，工程量小头在**持久化格式**，而它恰好是我们的强项。
+
+已验的一个具体缺口：裸 `<svg><path/></svg>` 只有 1 个闭合对，`detectCardFormat`（`card-format.ts:60-72`，"nothing but markup + ≥2 pairs"）判成 markdown → **SVG 源码上屏**。需要给 `<svg` 开头条加显式分支（纯函数 + 单测，不破"保守"原则，因为 `<svg` 开头不是 markdown 语汇）。
+
+真正 blocked 的两件事，都登记不假装会做：① **"草稿图去生图"**要把图喂给模型，需浏览器→磁盘 `uploadFileBinary` 的回执可被插件读回 —— **未验，列为 M6 探针**（同 10.3 写入臂）；② 像素级涂（位图橡皮、压感、笔刷）是另一个量级，不做。
+
 ## 里程碑
 
 - **M1（空间与板）**：`main`+`panellist` 挂载、画布列表与新建、数据模型 + Remote 扩展、卡片板 UI（CRUD/筛选/选择/归档/幽灵提议位）、state 目录沙箱探针、v1 目录一次性导入。**验收：无聊天即完整可用的卡板空间。**
 - **M2（聊天集成）**：经 side-chat 承接——`openWith` 接入（contextKey / systemPrompt / tools / refs）、透镜条与评论「追问」接线、详情视图选区「问 Agent」、side-chat 缺席降级；`canvas_propose_card` / `canvas_comment` 两工具随 `openWith` 注入（origin tag 自带）+ proposed 接受流接线（打通"选卡→提问→幽灵卡落板→收下"全环）。**不做会话 preset 自隐**（曾随 M2 上线、3080 实证入口永隐后撤回：preset 在建会话时绑定，画布是跨会话空间，自隐=永隐；模式可见性由 profile/整合包安装层决定——写作模式的 profile 装画布，其余不装）。依赖 [side-chat](2026-09-16-side-chat.md) M1。
 - **M1.5（验收反馈，随 M1 波次）**：卡片摘要折叠（clamp + 字数标）、点正文打开右栏详情、多选改悬停勾选框；右栏画布 tab 削减为**卡片详情阅读器**（`MarkdownText` 全文 + 评论 + 附件预览）——卡片 md 渲染由此提前落地，不等 M4。
 - **M2.5（3080 实证修正）**：卡片详情从右栏 tab 改为**空间内右列 pane**（宿主 `RightbarRoot` 只在会话面板激活时渲染，右栏 tab 在画布空间按构造不可见）；右栏 tab 保留于会话场景。聊天唤起改由 side-chat 自我浮出水面（见 side-chat M3）。
-- **M3（右栏重构 + 双入口，当前方向）**：退役 main 面板与空间内 pane（`main`/`panellist` 注册移除），唯一座位回右栏 tab（宽模式 + 顶栏画布切换 + 钻取导航：列表 ↔ 详情三态页）；三个画布工具注册到主会话 agent（origin tag + 门控）——"当前会话改画布"打通；side-chat 继续作第二意见入口。`canvas_propose_draft` + 候选 diff、stats 自适应规则、web 搜索兜底。
-- **M4（渲染器与索引）**：document 卡（md/html 粘贴、edit/preview/split）、成稿视图（编辑器复用 + 候选 diff）、会话侧 `canvas_search`/`canvas_clip`、客户端动作位「插入当前会话」（卡片经 `ctx.sessions.scope(id).get('conversation')` 注入 composer，发指针不发全文——与 `canvas_search` 互补，与 side-chat 引用通道无冲突）。
+- **M3（右栏重构 + 双入口，当前方向）**：退役 main 面板与空间内 pane（`main`/`panellist` 注册移除），唯一座位回右栏 tab（宽模式 + 顶栏画布切换 + 钻取导航：列表 ↔ 详情三态页）；三个画布工具注册到主会话 agent（origin tag + 门控）——"当前会话改画布"打通；side-chat 继续作第二意见入口。`canvas_propose_draft` + 候选 diff、stats 自适应规则、web 搜索兜底。（本行的"side-chat 继续作第二意见入口"已随 M3.2 停用，见 §10.4。）
+- **M3.2（v2.1 交互收口，当前波次）**：详情即唯一编辑器（板上摘掉就地 textarea）+ 删透镜与 side-chat 四处发起（prompt 透镜语义段与 `CANVAS_LENS_IDS` 一并撤，`dsh.references` 边随之撤）；宿主原语替换（33 处 `<button>` / `title=` tooltip / 自绘 toast·菜单 → Button/Menu/Tooltip/Toast）；分栏等高封顶 + 比例滚动同步；改名（卡板消失、成稿→长文、碎片→灵感、依据→共识、资料→来源、文档随轴合并删）。**验收：一轮"点卡→编辑 md→看渲染→分栏对照→回板"全程不离开详情页、不出现一次就地闪烁；深色主题下无自绘控件错位。**
+- **M3.3（v2.1 刷新与资产）**：刷新收口三步为**硬前置**——按卡懒取正文（`readBoard` 出摘要视图 + `readCard` 出全文）→ 订阅 selector 收窄 + 卡片 memo → 批量归档单次整板写；随后接 paste 四路分派（图片 base64 / `text/html` / 表格转 md / 纯文本，`paste-table.ts` 死代码由此转活）、`pathImages` 接上使 `![](相对路径)` 与宿主绝对路径同一套改写。**`assets/` 落盘与 `ctx.fs.writeBinary` 登记上游候选，不在本波次做。验收：贴一张截图后，每回合 RPC 次数与字节数不显著劣化（以 M3.2 前计数为基线）。**
+- **M3.4（v2.1 分类自定义）**：`categories` 目录进 `canvas.json`、kind 校验改本画布域、**模型 enum 动态生成**、默认目录按「草稿 / 灵感」起、locale 退化为内置 label 表 + 用户数据（自定义名不翻译）。
+- **M4（渲染器与索引）**：**首项出账**——document 卡（md/html 粘贴、edit/preview/split）已被 2026-09-18 的 HTML 卡与 M3.2/M3.3 吃掉；余项 = 成稿视图候选 diff、会话侧 `canvas_search`/`canvas_clip`、客户端动作位「插入当前会话」（卡片经 `ctx.sessions.scope(id).get('conversation')` 注入 composer，发指针不发全文——与 `canvas_search` 互补，与 side-chat 引用通道无冲突。**动作位属主会话路径，不受 §10.4 停用 side-chat 耦合影响。**
 - **M5（可并行）**：ui-workspace 分区 seam 上游提案；落地后迁移入口。
+- **M6（可选，探针先行）**：自由草图卡——Excalidraw 档矢量 JSON 落 `card.text`（**零宿主改动**），`detectCardFormat` 加 `<svg` 分支，pointer 采集 + 笔画撤销栈。**前置探针 M0**：`uploadFileBinary` 的回执能否被插件读回（决定"草稿图去生图"可行与否，同 §10.3 写入臂）。像素级涂（位图橡皮、压感）不做。
 
 ## 实现记录
 
@@ -241,7 +346,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 1. `@khorsheed/dsh-canvas` 可 `dsh plugin add` / `remove` 一条命令装卸；identity triangle 三处同名；`dsh.bundle.patch` 自挂载；`files` 含 `lib/client.js` 与 `cordis.patch.yml`。
 2. `pnpm run build` + `pnpm run test` 绿；`pnpm check:plugins`、`pnpm check:hygiene` 过。
-3. 3080 实测：左导轨进画布空间 → 新建画布（主题 + 挂载工作区）→ 贴入碎片 → 聊天 dock 提问（带选区）→ Agent 提议卡幽灵态落板、✓ 转 kept → 问题卡经透镜"找证据"得到 reference 卡 → answered 问题沉淀 grounding → 粘贴网页 HTML 成 document 卡、渲染与编辑正常 → 成稿视图编辑、候选 diff 接受 → **重启后聊天历史与板状态完整** → 普通会话里 `canvas_search` 能检到该画布 → 深色主题正常。
+3. 3080 实测：右栏 tab 进画布 → 新建画布（主题 + 挂载工作区）→ 贴入碎片 → **在左侧当前会话让 agent 改画布**（M3.2 起画布的唯一对话入口）→ Agent 提议卡幽灵态落板、✓ 转 kept → 问题卡让 agent"找证据"得到 reference 卡 → answered 问题沉淀 grounding → 粘贴网页 HTML 成 document 卡、渲染与编辑正常 → **贴一张截图能显示、板子不卡**（M3.3）→ 成稿视图编辑、候选 diff 接受 → **重启后聊天历史与板状态完整** → 普通会话里 `canvas_search` 能检到该画布 → 深色主题正常。~~透镜「找证据」按钮~~（M3.2 停用，同一步改走会话侧）。
 4. 卸载后 `$DSH_HOME/state/canvas/` 与挂载工作区文件原样保留；v1 `<workspace>/灵感画布/` 不受改动。
 
 ## 风险 / 放弃的东西
@@ -261,3 +366,11 @@ $DSH_HOME/state/canvas/<canvasId>/
 ⑦ **多画布 = 多 Agent 会话。** 每画布一个持久会话有资源开销；`agentPreset` 可配、缺省沿用 profile 默认；会话冷恢复（resume）而非长驻，空闲画布不占运行时。
 
 ⑧ **v1 右栏入口移除是 breaking change。** 0.1→0.2 主版本承载；v1 数据目录只读导入、原文件不动；README 写明迁移路径。
+
+⑨ **M3.2 删透镜是"删用户可能已在用的入口"。** 0.x 阶段可删，但要留一行 README 说明与一个复活判据：side-chat 打磨定形后，先看 §5 概念形成路径要不要以"选区动作"而非"按钮条"的形态回来。**这是本轮唯一被停用而未被裁决放弃的能力。**
+
+⑩ **base64 图片与整板读相乘是真实的劣化风险。** 256KB 上限 × 每回合 ~40 次整板重读 = 秒级卡顿。M3.3 的三步收口顺序不可颠倒：**先懒取正文，再开粘贴图片**；否则等于把 2026-09-18 修掉的"静默截断"换成"静默卡顿"。
+
+⑪ **分类自定义让模型面工具 schema 随画布变化。** `canvas_propose_card` 的 enum 从静态 5 值变成每画布动态集合——typert 生成的类型与 `GEN_TYPERT`  freshness 缓存的输入随之含画布数据（缓存要求字节级同输入，数据进来必然破缓存）。M3.4 开工前先定：**enum 走"全局并集"（简单，模型能看见所有画布的类目）还是"当前画布集合"（精准，破缓存）**；倾向全局并集 + 当前画布目录写进系统提示。
+
+⑫ **宿主原语替换会撞并发工作。** `packages/canvas` 是多人同树区（AGENTS.md 约定）：替换 33 处按钮涉及三个 CSS 模块，动手前查 `git log --oneline -3 -- packages/canvas` 与近期 note，按包分小步提交。

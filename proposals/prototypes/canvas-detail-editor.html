@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵感画布 · 统一详情编辑面示意</title>
+<style>
+  :root {
+    --bg: #f6f6f7; --panel: #ffffff; --elevated: #fbfbfc;
+    --line: #e3e3e6; --line-strong: #cfcfd4;
+    --text: #1c1c1f; --text-2: #5c5c66; --text-3: #8a8a94;
+    --accent: #3d5afe; --accent-soft: rgba(61,90,254,.10);
+    --ok: #177245; --ok-soft: rgba(23,114,69,.10);
+    --warn: #8a5a00; --warn-soft: rgba(138,90,0,.10);
+    --bad: #a3271f; --bad-soft: rgba(163,39,31,.10);
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a; --panel: #1e1e22; --elevated: #232328;
+      --line: #2e2e34; --line-strong: #43434c;
+      --text: #e8e8ea; --text-2: #a2a2ac; --text-3: #75757f;
+      --accent: #7a90ff; --accent-soft: rgba(122,144,255,.16);
+      --ok: #4ec27f; --ok-soft: rgba(78,194,127,.14);
+      --warn: #e0aa4e; --warn-soft: rgba(224,170,78,.14);
+      --bad: #f0776c; --bad-soft: rgba(240,119,108,.14);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px; background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "SF Pro SC", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -.1px; }
+  h2 { font-size: 13px; margin: 0 0 6px; color: var(--text-2); font-weight: 600; }
+  .sub { color: var(--text-3); font-size: 12px; margin: 0 0 20px; }
+  .frame { display: grid; grid-template-columns: 380px 1fr; gap: 16px; align-items: start; max-width: 1320px; }
+  .pane { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .pane-caption {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--line); background: var(--elevated);
+    font-size: 12px; color: var(--text-3);
+  }
+  .pane-caption b { color: var(--text-2); font-weight: 600; }
+
+  /* ── 顶栏（沿用现包结构：切换器 / 段控件 / 新卡） ── */
+  .topbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .switcher { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); font-weight: 600; }
+  .switcher .caret { color: var(--text-3); }
+  .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .spacer { flex: 1; }
+  .btn {
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font: inherit;
+    font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex: none;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
+  .btn.small { font-size: 11.5px; padding: 2px 7px; }
+  .seg { display: flex; flex: none; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button {
+    border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 12px;
+    padding: 3px 9px; cursor: pointer; white-space: nowrap; flex: none;
+  }
+
+  /* ── 卡板：单行筛选 + 焦点环 + 无 hover 工具条 ── */
+  .chips { display: flex; gap: 6px; padding: 10px 10px 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; border: 1px solid var(--line); background: var(--panel); color: var(--text-2);
+    font: inherit; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
+  .chip[data-active] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .chip .n { color: var(--text-3); margin-left: 3px; }
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; max-height: 460px; overflow-y: auto; }
+  .card {
+    position: relative; border: 1px solid var(--line); background: var(--elevated); border-radius: 7px;
+    padding: 8px 9px 8px 12px; cursor: pointer; min-height: 88px; overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--line-strong);
+  }
+  .card[data-kind="问题"]::before { background: var(--warn); }
+  .card[data-kind="依据"]::before { background: var(--ok); }
+  .card[data-kind="资料"]::before { background: var(--text-3); }
+  .card[data-kind="文档"]::before { background: var(--accent); }
+  .card.focused { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .card.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .card .kind { font-size: 11px; color: var(--text-2); font-weight: 600; }
+  .card .kind .by { color: var(--text-3); font-weight: 400; }
+  .card .txt {
+    font-size: 12px; color: var(--text); margin-top: 3px; white-space: pre-wrap;
+    display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .card .foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-3); }
+  .kbd-hint { padding: 0 10px 10px; font-size: 11px; color: var(--text-3); }
+  kbd {
+    font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--line-strong);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--text-2);
+  }
+
+  /* ── 详情：唯一编辑面 ── */
+  .detail-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .detail-head .title { font-size: 13px; font-weight: 600; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--text-2); flex: none; white-space: nowrap; }
+  .pill.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .pill.warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+  .pill.bad { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
+  .pill.accent { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+  .detail-body { display: grid; gap: 1px; background: var(--line); min-height: 300px; }
+  .detail-body[data-mode="source"], .detail-body[data-mode="render"] { grid-template-columns: 1fr; }
+  .detail-body[data-mode="split"] { grid-template-columns: 1fr 1fr; }
+  .pane-src, .pane-render { background: var(--panel); padding: 12px; }
+  .pane-src textarea {
+    width: 100%; min-height: 240px; resize: vertical; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--elevated); color: var(--text); font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 9px 10px;
+  }
+  .rendered h3 { font-size: 14px; margin: 12px 0 4px; }
+  .rendered p { margin: 6px 0; font-size: 13px; }
+  .rendered blockquote { margin: 8px 0; padding: 4px 10px; border-left: 3px solid var(--line-strong); color: var(--text-2); font-size: 13px; }
+  .rendered table { border-collapse: collapse; font-size: 12.5px; margin: 8px 0; }
+  .rendered th, .rendered td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; }
+  .rendered code { font: 12px ui-monospace, Menlo, monospace; background: var(--elevated); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .hidden { display: none !important; }
+
+  /* 图片粘贴位：三条通路的诚实状态 */
+  .imagebar { display: grid; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .slot {
+    border: 1px dashed var(--line-strong); border-radius: 6px; padding: 7px 9px; font-size: 12px; color: var(--text-2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .slot b { font-weight: 600; }
+  .slot.ok { border-style: solid; border-color: transparent; background: var(--ok-soft); color: var(--ok); }
+  .slot.bad { border-style: solid; border-color: transparent; background: var(--bad-soft); color: var(--bad); }
+  .slot.warn { border-style: solid; border-color: transparent; background: var(--warn-soft); color: var(--warn); }
+
+  .detail-foot { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .overflow { position: relative; }
+  .menu {
+    position: absolute; right: 0; bottom: 26px; width: 148px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 4px; z-index: 5;
+  }
+  .menu button {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text);
+    font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 5px; cursor: pointer;
+  }
+  .menu button:hover { background: var(--accent-soft); color: var(--accent); }
+  .comments { padding: 10px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-2); }
+  .comments .c { margin-bottom: 4px; }
+  .comments .who { color: var(--text-3); }
+  .comments .who.agent { color: var(--accent); }
+
+  /* ── 注释区 ── */
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(292px, 1fr)); gap: 14px; margin-top: 22px; max-width: 1320px; }
+  .note { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+  .note p { margin: 0 0 6px; font-size: 12.5px; color: var(--text-2); }
+  .note ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-2); }
+  .note li { margin: 3px 0; }
+  .note .evid { color: var(--text-3); font: 11.5px/1.6 ui-monospace, Menlo, monospace; }
+  .verdict {
+    margin-top: 18px; max-width: 1320px; background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<h1>灵感画布 · 统一详情编辑面</h1>
+<p class="sub">
+  你的反向提案的可视化：点卡（有内容 / 无内容）一律进详情，详情是唯一编辑面，板卡内不再放编辑器。
+  这份 HTML 是可点的示意，不是截图——卡片能选、方向键能用、三态能切、图片位点了有反馈。
+</p>
+
+<div class="frame">
+
+  <!-- ───────────── 左：卡板（右栏真实宽度） ───────────── -->
+  <section class="pane" id="board-pane">
+    <div class="pane-caption"><b>卡板</b> 右栏 380px · 只负责「扫一眼 + 决定进哪张」</div>
+    <div class="topbar">
+      <span class="switcher">写作·第二章 <span class="caret">▾</span></span>
+      <span class="spacer"></span>
+      <span class="seg"><button aria-pressed="true">卡板</button><button>成稿</button></span>
+      <button class="btn" id="new-card">＋ 新卡</button>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="board" id="board" tabindex="0" aria-label="卡板，可用方向键移动焦点"></div>
+    <div class="kbd-hint">
+      <kbd>←↑↓→</kbd> 焦点 · <kbd>⏎</kbd> 进详情 · <kbd>x</kbd> 勾选 · <kbd>⌫</kbd> 归档 · <kbd>⌘A</kbd> 选当前筛选 · <kbd>esc</kbd> 退
+    </div>
+  </section>
+
+  <!-- ───────────── 右：详情 = 唯一编辑面 ───────────── -->
+  <section class="pane">
+    <div class="detail-head">
+      <button class="btn ghost small" id="back">‹ 卡板</button>
+      <span class="title" id="d-title">—</span>
+      <span class="pill" id="d-kind">—</span>
+      <span class="spacer"></span>
+      <span class="pill" id="d-state">已保存</span>
+      <span class="seg" id="d-mode">
+        <button data-m="render">渲染</button><button data-m="source">源码</button><button data-m="split" aria-pressed="true">分栏</button>
+      </span>
+      <button class="btn primary small" id="d-save">保存 ⌘⏎</button>
+    </div>
+
+    <div class="detail-body" data-mode="split" id="d-body">
+      <div class="pane-src" id="src-wrap">
+        <textarea id="d-src" spellcheck="false" placeholder="在这里写。左侧实时渲染。"></textarea>
+        <div class="kbd-hint" style="padding:6px 0 0">
+          <button class="btn small ghost" id="simulate">模拟一次外部改动</button>
+          <span class="pill bad hidden" id="conflict">服务端已改动 · <b>查看差异</b> / 保留我的</span>
+        </div>
+      </div>
+      <div class="pane-render rendered" id="d-render"></div>
+    </div>
+
+    <div class="imagebar">
+      <div class="slot warn" id="img-slot">
+        <b>图片</b> 点一下看三条通路的真实状态
+        <span class="spacer"></span>
+        <span class="pill" id="img-flag">未接线</span>
+      </div>
+    </div>
+
+    <div class="detail-foot">
+      <button class="btn small" id="lens-primary">就此提问</button>
+      <span class="overflow">
+        <button class="btn small" id="lens-more">其他透镜 ▾</button>
+        <div class="menu hidden" id="lens-menu">
+          <button>挑战假设</button><button>找反例</button><button>找证据</button>
+          <button>追问原因</button><button>换个视角</button><button>升一层</button><button>降一层</button>
+        </div>
+      </span>
+      <span class="spacer"></span>
+      <button class="btn small ghost">编辑</button>
+      <button class="btn small ghost">归档</button>
+    </div>
+
+    <div class="comments" id="d-comments"></div>
+  </section>
+</div>
+
+<!-- ───────────── 注释 ───────────── -->
+<div class="notes">
+  <div class="note">
+    <h2>这个方案删掉了什么</h2>
+    <ul>
+      <li>板卡里的就地 textarea 与 <code>editingId</code> 状态（一具看不出效果的裸框）</li>
+      <li>卡上三枚 hover 图标（编辑 / 标记已答 / 归档）→ 折进详情脚栏</li>
+      <li>详情页重复读一遍整板的 <code>readBoard</code> <span class="evid">CanvasDetailView.tsx:152-172</span></li>
+      <li>选区条 8 个 lens 换行 3 行的问题 → 主操作 + overflow 菜单 <span class="evid">BoardView.tsx:409-424</span></li>
+    </ul>
+    <p>净变化：一条编辑路径、一份提交代码。详情页今天已经同时有 <code>render|source|split</code> + 可写 textarea + MarkdownText，所以这是<b>删重复</b>，不是加组件。</p>
+  </div>
+
+  <div class="note">
+    <h2>「无内容也进详情」的取消语义</h2>
+    <p>空卡若先落盘，取消就留垃圾——官方 <code>ctx.fs</code> 只归档不删除（<span class="evid">README.md:76</span>）。</p>
+    <p>所以草稿只活在客户端，<b>首次保存才 <code>putCard</code></b>；上面点「＋ 新卡」就是这个流程：进详情、标「未保存的新卡」、返回即无痕消失。</p>
+    <p>顺带解决「新建卡两次点击」：kind 从必选第一步变成默认可改。</p>
+  </div>
+
+  <div class="note">
+    <h2>图片：点上面那个图片位</h2>
+    <ul>
+      <li><b>md 卡内联 base64</b> → 不显示。<span class="evid">render.tsx:45-79</span> 图片只认 http/https，data:/blob: 只认词表重写后的值</li>
+      <li><b>HTML 卡内联 base64</b> → 能显示。<span class="evid">srcdoc.ts:24</span> 的 CSP 写了 <code>img-src data: blob:</code></li>
+      <li><b>落 assets/ 再显示</b> → 显示臂已通（<code>pathImages</code> → <code>/api/file?path=</code>，宿主聊天已在用），但 <code>ctx.fs</code> 无 writeBinary <span class="evid">fs/src/index.ts:86-280</span></li>
+    </ul>
+    <p>而且 base64 进 <code>canvas.json</code> 会撞上刷新放大：一次回合最坏 40 次整板重读。贴图的前置是「列表读不带全文」。</p>
+  </div>
+
+  <div class="note">
+    <h2>代价（要认的那一条）</h2>
+    <p>多卡微调变慢：改两张卡要来回换页两次。Linear / Notion 保留就地轻编辑就是为了这个。</p>
+    <p>我不为它预先设计。真感到疼再补：给 source 态套宿主 sanctioned 的 <code>Modal</code> <span class="evid">ui-primitives/src/Modal.tsx:25-60</span>，而 <code>CanvasDetailView</code> 本就是自足组件，那时接进去很便宜。</p>
+    <p>收益一侧：键位天然自洽（<kbd>esc</kbd>=返回卡板），不需要 modal 那套分层 Esc 的坑。</p>
+  </div>
+</div>
+
+<div class="verdict">
+  <b>底线：统一详情不是「换个入口」，是把编辑面收敛到唯一一处能渲染的地方——你指出的「看不出效果」和「md 没支持」其实是同一个缺口的两个症状，且详情组件已经把答案写好了一半。</b>
+</div>
+
+<script>
+const SEED = [
+  { id: 'c1', kind: '碎片', by: 'user', text: '「我记不住它存在哪，我只记得我往里扔过。」', comments: [] },
+  { id: 'c2', kind: '问题', by: 'agent', text: '卡板是「暂存」还是「整理后的产物」？\n\n如果是暂存，筛选就是多余的负担。', comments: [{ who: 'agent', t: '这个二分本身可疑：暂存与整理可以同板分层。' }] },
+  { id: 'c3', kind: '依据', by: 'user', text: '右栏折叠宽度下，选区条 10 个按钮换行为 3 行，主操作被推离拇指区。', comments: [] },
+  { id: 'c4', kind: '资料', by: 'user', text: 'Linear 交互拆解：乐观更新 + Undo 的三段式反馈。', comments: [] },
+  { id: 'c5', kind: '文档', by: 'agent', text: '### 结论\n\n键盘优先不等于极客模式；**焦点环本身就是可发现性**。\n\n| 方案 | 成本 | 收益 |\n| --- | --- | --- |\n| 统一详情 | 低 | 一条编辑路径 |\n| 弹窗编辑器 | 中 | 不打断阅读 |\n\n> 上面这张表就是渲染态演示：源码里是竖线，这里是表格。', comments: [{ who: 'user', t: '表格列宽在窄栏会挤，考虑改成两列。' }] },
+  { id: 'c6', kind: '碎片', by: 'agent', text: '把「追问」从按钮变成一个动词键：选中 → ? → 直接进 sidechat。', comments: [] },
+];
+
+const KINDS = ['全部', '碎片', '问题', '依据', '资料', '文档'];
+let cards = SEED.map(c => ({ ...c }));
+let filter = '全部', focus = 0, openId = null, mode = 'split', dirty = false, draft = null;
+let selected = new Set();
+
+const $ = id => document.getElementById(id);
+const visible = () => cards.filter(c => filter === '全部' || c.kind === filter);
+
+function renderChips() {
+  $('chips').innerHTML = KINDS.map(k => {
+    const n = k === '全部' ? cards.length : cards.filter(c => c.kind === k).length;
+    return `<button class="chip" data-k="${k}" ${filter === k ? 'data-active' : ''}>${k}<span class="n">${n}</span></button>`;
+  }).join('');
+  [...$('chips').children].forEach((el, i) => {
+    el.onclick = () => { filter = KINDS[i]; focus = 0; render(); };
+  });
+}
+
+function esc(s) { return s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
+
+// 极简 markdown：标题 / 引用 / 表格 / 粗体 / 行内码。只为示意「效果看得见」。
+function md(src) {
+  const lines = src.split('\n'), out = [];
+  let table = null;
+  const inline = t => esc(t)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const flush = () => { if (table) { out.push(tableToHtml(table)); table = null; } };
+  const tableToHtml = rows => {
+    const cells = rows.map(r => r.split('|').slice(1, -1).map(s => s.trim()));
+    const head = cells[0], body = cells.slice(2);
+    return `<table><tr>${head.map(h => `<th>${inline(h)}</th>`).join('')}</tr>${
+      body.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</table>`;
+  };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (line.trim().startsWith('|')) { (table ||= []).push(line.trim()); continue; }
+    flush();
+    if (line.startsWith('### ')) out.push(`<h3>${inline(line.slice(4))}</h3>`);
+    else if (line.startsWith('> ')) out.push(`<blockquote>${inline(line.slice(2))}</blockquote>`);
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  flush();
+  return out.join('');
+}
+
+function renderBoard() {
+  const list = visible();
+  if (focus > list.length - 1) focus = Math.max(0, list.length - 1);
+  $('board').innerHTML = list.map((c, i) => `
+    <div class="card ${i === focus ? 'focused' : ''} ${selected.has(c.id) ? 'selected' : ''}" data-id="${c.id}" data-kind="${c.kind}">
+      <div class="kind">${c.kind}${c.by === 'agent' ? ' <span class="by">· Agent</span>' : ''}</div>
+      <div class="txt">${esc(c.text)}</div>
+      <div class="foot"><span>${c.text.length} 字</span>${c.comments.length ? `<span>批注 ${c.comments.length}</span>` : ''}</div>
+    </div>`).join('') || '<div class="kbd-hint">这个筛选下没有卡。真实版这里给「清空筛选」和「直接开一张新卡」两个出口。</div>';
+  [...$('board').children].forEach(el => {
+    el.onclick = () => { if (el.dataset.id) openCard(el.dataset.id); };
+  });
+}
+
+function renderDetail() {
+  const c = cards.find(x => x.id === openId);
+  $('d-body').dataset.mode = mode;
+  $('src-wrap').classList.toggle('hidden', mode === 'render');
+  $('d-render').classList.toggle('hidden', mode === 'source');
+  [...$('d-mode').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === mode)));
+  if (!c) {
+    $('d-title').textContent = '← 点一张卡，或用 ＋ 新卡直接进来';
+    $('d-kind').textContent = '—';
+    $('d-state').textContent = '未打开'; $('d-state').className = 'pill';
+    $('d-src').value = ''; $('d-render').innerHTML = '';
+    $('d-comments').innerHTML = '';
+    return;
+  }
+  const firstLine = c.text.split('\n')[0].replace(/^#+\s*/, '').trim();
+  $('d-title').textContent = draft === c.id ? '未保存的新卡' : (firstLine.slice(0, 18) || '（无标题）');
+  $('d-kind').textContent = c.kind + (c.by === 'agent' ? ' · Agent' : '');
+  $('d-src').value = c.text;
+  $('d-render').innerHTML = md(c.text);
+  $('d-state').textContent = dirty ? '未保存' : '已保存';
+  $('d-state').className = 'pill ' + (dirty ? 'warn' : 'ok');
+  $('d-comments').innerHTML = c.comments.length
+    ? c.comments.map(x => `<div class="c"><span class="who ${x.who}">${x.who === 'agent' ? 'Agent' : '你'}</span>：${esc(x.t)}</div>`).join('')
+    : '<span style="color:var(--text-3)">还没有批注。</span>';
+}
+
+function render() { renderChips(); renderBoard(); renderDetail(); }
+
+function openCard(id) { openId = id; dirty = false; render(); }
+
+function openNew() {
+  const id = 'n' + Date.now();
+  cards.unshift({ id, kind: '碎片', by: 'user', text: '', comments: [] });
+  draft = id; openId = id; filter = '全部'; focus = 0; mode = 'split'; dirty = true; render();
+  $('d-src').focus();
+}
+
+function back() {
+  if (draft) { cards = cards.filter(c => c.id !== draft); draft = null; }
+  openId = null; dirty = false; render();
+}
+
+function save() {
+  const c = cards.find(x => x.id === openId);
+  if (!c) return;
+  c.text = $('d-src').value;
+  if (draft === c.id) draft = null;
+  dirty = false; $('conflict').classList.add('hidden'); render();
+}
+
+$('new-card').onclick = openNew;
+$('back').onclick = back;
+$('d-save').onclick = save;
+$('d-src').oninput = () => {
+  const c = cards.find(x => x.id === openId); if (!c) return;
+  c.text = $('d-src').value; dirty = true;
+  $('d-render').innerHTML = md(c.text);
+  $('d-state').textContent = '未保存'; $('d-state').className = 'pill warn';
+};
+$('d-src').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); } };
+[...$('d-mode').children].forEach(b => { b.onclick = () => { mode = b.dataset.m; render(); }; });
+
+$('lens-more').onclick = () => $('lens-menu').classList.toggle('hidden');
+$('lens-menu').onclick = e => { if (e.target.tagName === 'BUTTON') $('lens-menu').classList.add('hidden'); };
+
+$('simulate').onclick = () => { if (openId !== null) $('conflict').classList.remove('hidden'); };
+$('conflict').onclick = () => $('conflict').classList.add('hidden');
+
+const IMG_STATES = [
+  { cls: 'bad', flag: '不通', msg: '<b>md 卡内联 base64</b> 不显示：MarkdownText 的图片只认 http/https，data: 仅接受词表重写后的值 <span class="evid">render.tsx:45-79</span>' },
+  { cls: 'ok', flag: '今天可用', msg: '<b>HTML 卡内联 base64</b> 能显示：iframe CSP 写了 img-src data: blob: <span class="evid">srcdoc.ts:24</span>' },
+  { cls: 'warn', flag: '缺一只手', msg: '<b>落 assets/</b>：显示臂已通（pathImages → /api/file?path=），写盘没有 ctx.fs.writeBinary <span class="evid">fs/src/index.ts:86-280</span>' },
+];
+let imgStep = -1;
+$('img-slot').onclick = () => {
+  imgStep = (imgStep + 1) % IMG_STATES.length;
+  const s = IMG_STATES[imgStep];
+  const slot = $('img-slot');
+  slot.className = 'slot ' + s.cls;
+  slot.innerHTML = s.msg + '<span class="spacer"></span><span class="pill" id="img-flag">再点一下换通路</span>';
+};
+
+$('board').onkeydown = e => {
+  const list = visible();
+  const move = d => { focus = Math.max(0, Math.min(list.length - 1, focus + d)); renderBoard(); };
+  if (e.key === 'ArrowRight') { e.preventDefault(); move(1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); move(-1); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); move(2); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); move(-2); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (list[focus]) openCard(list[focus].id); }
+  else if (e.key === 'x' || e.key === ' ') {
+    e.preventDefault();
+    const c = list[focus]; if (!c) return;
+    selected.has(c.id) ? selected.delete(c.id) : selected.add(c.id); renderBoard();
+  } else if (e.key === 'Backspace' || e.key === 'Delete') {
+    e.preventDefault();
+    const ids = selected.size ? [...selected] : list[focus] ? [list[focus].id] : [];
+    cards = cards.filter(c => !ids.includes(c.id)); selected.clear(); render();
+  } else if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault(); selected = new Set(list.map(c => c.id)); renderBoard();
+  }
+};
+
+render();
+</script>
+</body>
+</html>
