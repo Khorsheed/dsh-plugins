@@ -202,6 +202,28 @@ describe('rescopePackageJson', () => {
       peerDependencies: { '@khorsheed/dsh-datasets': 'workspace:*' },
     }, '@khorsheed/dsh-datasets-tool', '0.1.0', family)).toThrow(/no version was given/)
   })
+
+  it('keeps dsh.runtimeDependencies entries verbatim, drops the rest', () => {
+    // capture's puppeteer stays unbundled by design (runtime dynamic import):
+    // the dist manifest must still install it, or the deployed plugin answers
+    // "Cannot find package" on first render (the 3080 incident, 2026-09-21).
+    const out = rescopePackageJson({
+      name: '@khorsheed/dsh-capture',
+      version: '0.1.0',
+      dependencies: { 'puppeteer-core': '^25.11.0', '@puppeteer/browsers': '^3.2.2', zod: '^4.4.3' },
+      dsh: { runtimeDependencies: ['puppeteer-core', '@puppeteer/browsers'] },
+    } as Parameters<typeof rescopePackageJson>[0], '@khorsheed/dsh-capture', '0.1.0')
+    expect(out.dependencies).toEqual({ 'puppeteer-core': '^25.11.0', '@puppeteer/browsers': '^3.2.2' })
+  })
+
+  it('fails loud when dsh.runtimeDependencies names a non-dependency', () => {
+    expect(() => rescopePackageJson({
+      name: '@khorsheed/dsh-x',
+      version: '0.1.0',
+      dependencies: { zod: '^4.4.3' },
+      dsh: { runtimeDependencies: ['puppeteer-core'] },
+    } as Parameters<typeof rescopePackageJson>[0], '@khorsheed/dsh-x', '0.1.0')).toThrow(/not in dependencies/)
+  })
 })
 
 describe('parseFamilySpecs', () => {

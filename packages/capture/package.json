@@ -110,6 +110,10 @@
       "minHost": "0.1.5-rc.1",
       "notes": "A host-side rendered-fetch service (Remote namespace `capture`, verb `render`) plus a mount-only browser half that mounts the generated Remote contribution — no UI surface at all (a settings UI was considered and deferred: v1's only caller gesture is the reader's 「渲染抓取」 click, which IS the approval). The managed Chrome (Chrome for Testing) binary is downloaded lazily on the first render into `$DSH_HOME/state/dsh-capture` (deployment state, never the package dir); an install/launch failure is a domain error on that call, never a boot failure. Per-render state is a fresh temporary BrowserContext: no cookies, credentials, or login state persist between renders. The URL policy blocks non-http(s) schemes and resolves every hostname, refusing private/loopback/link-local/metadata targets and re-checking after every redirect hop. State (the per-site allow record) is written with plain node:fs (atomic temp+rename) under the state root, not through ctx.fs (the session-fenced sandbox refuses writes outside the workspace).",
       "verifiedHost": "0.1.5-rc.1"
-    }
+    },
+    "runtimeDependencies": [
+      "@puppeteer/browsers",
+      "puppeteer-core"
+    ]
   }
 }
