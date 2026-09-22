@@ -1,6 +1,6 @@
 # @khorsheed/dsh-quote
 
-引用任意内容：在应用里选中任意文本，选区旁浮出小菜单——**引用到当前会话**（进 composer 待编辑）、**引用到侧边对话**（成 side-chat ref）、**复制**。引用 = 选中的纯文本 + 来源标签，是不透明文本块：本插件不知道任何具体插件的类型，side-chat / 画布缺席时各自菜单项隐藏，插件独立可装卸。
+引用任意内容：在应用里选中任意文本，选区旁浮出小菜单——**引用到当前会话**（进 composer 待编辑）、**引用到侧边对话**（成 side-chat ref）、**复制**；其他插件可经 `ctx.quoteActions` 注册表往菜单里加自己的动作行（见[向菜单贡献动作](#向菜单贡献动作其他插件)）。引用 = 选中的纯文本 + 来源标签，是不透明文本块：本插件不知道任何具体插件的类型，side-chat / 画布缺席时各自菜单项隐藏，插件独立可装卸。
 
 ## 选区浮层
 
@@ -23,6 +23,33 @@
 **来源标签**：当前会话的显示名（best-effort 纯文本；无显示名时回退「选区」）。引用不回链原文位置——标注只到「会话」粒度。
 
 **降级矩阵**：无当前会话 → 两个引用项都隐藏（只剩复制）；`remote.sidechat` 或 `remote.quote` 缺席 → 「引用到侧边对话」隐藏；点击仍赶上 side-chat 服务缺席 → verb 拒绝 `unavailable`，静默无操作。
+
+## 向菜单贡献动作（其他插件）
+
+菜单行是可扩展的：本插件的浏览器半在 apply 最顶部 `ctx.provide` 一个动作注册表 **`ctx.quoteActions`**（ui-shortcuts 的 `ctx.shortcuts` 先例），任何插件都可以往选区菜单里注册自己的动作行——比如画布注册「存为画布卡片」：
+
+```ts
+// 仓内消费方：ctx.get 探测 + 结构镜像 + 在 manifest 的 dsh.references 声明
+// '@khorsheed/dsh-quote'（数据引用，非依赖）；仓外 npm 消费者可以直接
+// import 类型（'@khorsheed/dsh-quote/client' 导出 QuoteActionContribution 等）。
+const registry = ctx.get('quoteActions')
+if (registry !== undefined) {
+  ctx.effect(() => registry.registerAction({
+    id: 'my-plugin.save',                              // 约定 <plugin>.<action>；重复 id 注册即抛错
+    label: () => t('menu.save'),                       // 每次菜单打开重新求值——闭上你自己的 locale 面
+    // icon: <MyIcon />,                               // 可选；缺省由菜单补一个通用图标
+    available: target => target.sessionId !== undefined, // 可选显隐闸；每次打开重新求值
+    run: (target) => { void save(target.text) },        // 菜单先关闭再执行
+  }), 'my-plugin: quote action')
+}
+```
+
+- **target 是不透明载荷**：`{ text, label, sessionId }`——选中的纯文本、best-effort 来源标签（当前会话显示名，否则「选区」）、当前会话 id（无当前会话时为 `undefined`，动作要自己经 `available` 隐藏）。注册表不知道任何动作把内容投递到哪里，正如本插件不知道任何引用来源的类型。
+- **顺序**：内置三行（引用到当前会话 / 引用到侧边对话 / 复制）恒在前，贡献行按注册顺序追加在后。
+- **降级**：quote 缺席 → 探测落空、动作永不出现（静默，不要 inject 本服务）；你的插件缺席 → 它的行不出现。两侧都不炸。
+- **时序**：注册发生在 boot 期；apply 时探测不到就说明 quote 未装或晚于你的插件加载——按降级处理即可。
+- **健壮性**：贡献的 `label` / `available` / `run` 抛错只进日志——label 降级为 id、available 降级为隐藏、run 静默，绝不拖垮菜单。
+- 契约全文见 `src/client/registry.ts`。
 
 ## 安装
 
@@ -61,6 +88,8 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 **路由：当前会话**：`formatQuoteBlock`（每行 `> ` 前缀 + 块尾来源标注行）经 `mergedQuoteDraft` 合并——空白草稿直接填入，已有草稿空一行后追加，绝不覆盖用户正在输入的内容（message-tools backfill 先例）。
 
 **路由：侧边对话**：`remote.quote.addRef({ contextKey, label, ref })` → 宿主半 `openWith`（side-chat 记录 pending refs，下一条发送折叠进消息并清空）。verb 不带 calling agent：`openWith` 不持有会话域写入，side-chat store 对宿主侧调用按部署默认模式落围栏（canvas askAgent 先例）。
+
+**动作注册表**：`ctx.quoteActions`（`src/client/registry.ts`）在 client apply 最顶部 provide；注册即追加、dispose 即移除，菜单经 `useSyncExternalStore` 订阅，热增删同帧反映。`list()` 的引用在两次变更间保持稳定，直接充当 getSnapshot。
 
 **身份三角**：cordis 行 id `quote` / `clientBundle('@khorsheed/dsh-quote')` / `src/invariant.ts` 的 `PACKAGE_NAME` 三处同名。
 </details>

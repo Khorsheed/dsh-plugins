@@ -15,6 +15,12 @@
  *   mirror — the sidechat package is never imported);
  * - 「复制」 rides the official `writeClipboard` helper.
  *
+ * Other plugins contribute their own menu rows through the action registry
+ * this half provides as `ctx.quoteActions` (the ui-shortcuts `ctx.shortcuts`
+ * precedent): a contribution owns its label, visibility gate and body, and
+ * receives the same opaque `{text, label, sessionId}` target — the menu
+ * never learns where a contributed row delivers to.
+ *
  * Every capability is probed and degrades silently: the registration rides
  * `ctx.slots.inject` (a host without the overlay seat mounts nothing), the
  * conversation item hides with no current session, the side-chat item hides
@@ -43,10 +49,15 @@ import quoteRemote from '@khorsheed/dsh-quote/remote'
 import { mergedQuoteDraft, type QuoteAddRefOutcome, type QuoteAddRefRequest } from '../types.ts'
 import type { QuoteMenuInjected } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
+import { QuoteActionRegistryRuntime } from './registry.ts'
 import { createSelectionSource } from './selection.ts'
 import { SelectionQuoteMenu } from './SelectionMenu.tsx'
 
 export { SelectionQuoteMenu } from './SelectionMenu.tsx'
+export { QuoteActionRegistryRuntime } from './registry.ts'
+export type {
+  QuoteActionContribution, QuoteActionFeed, QuoteActionRegistry, QuoteActionTarget, ResolvedQuoteAction,
+} from './registry.ts'
 export { classifySelection, createSelectionSource } from './selection.ts'
 export type { RootedSelectionSource, SelectionRect, SelectionSnapshot, SelectionSource } from './selection.ts'
 export type { QuoteMenuInjected, QuoteMenuProps } from './contract.ts'
@@ -72,6 +83,12 @@ interface SidebarRightMirror {
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
+  // The contribution registry leads the apply: provided before any other
+  // step, a consumer plugin applying right after this one already probes it
+  // successfully. The cordis fiber owns the provide's lifetime (the
+  // ui-shortcuts `ctx.shortcuts` precedent) — no manual disposal.
+  const registry = new QuoteActionRegistryRuntime(error => ctx.logger.error(error))
+  ctx.provide('quoteActions', registry)
   try {
     disposers.push(await ctx.remote.$mount(quoteRemote))
   } catch (error) {
@@ -121,6 +138,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       sidebarRight?.openTab('sidechat', { params: { contextKey } })
     },
     copyText: writeClipboard,
+    actions: registry,
   })
 
   // The selection quote menu on the frame-wide overlay layer (root scope;
