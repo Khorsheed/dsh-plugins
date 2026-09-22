@@ -8,9 +8,11 @@
  *
  * @module @khorsheed/dsh-client-ui-content-preview/client
  */
+export * from './contract.ts'
 export * from './labels.ts'
 export * from './language.ts'
 export * from './structured.tsx'
 export * from './html-src-doc.ts'
 export * from './html-bridge.ts'
 export * from './rendered-search.ts'
+export * from './ContentPane.tsx'
