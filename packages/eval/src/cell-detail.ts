@@ -2,7 +2,8 @@
  * The CELL DRAWER's projection (ui-spec §五): everything about ONE cell —
  * its attempts with their refs, checkpoints, artifacts and transitions, what
  * each annotation namespace has to say, the verify output verbatim, the
- * delegation's child session, and whether its resources may be destroyed.
+ * delegation's child session, the JUDGE's rounds and the sessions they ran
+ * in, and whether its resources may be destroyed.
  *
  * This is the companion of `runCells`, which answers about a RUN's cells; the
  * drawer needs one cell in full, and a list that carried this much per row
@@ -24,7 +25,7 @@ import { join } from 'node:path'
 import type { MissionActionFace, MissionAttemptFace, MissionReadFace } from './faces.ts'
 import { EvalReadRefused } from './read.ts'
 import type {
-  EvalCellAnnotationNs, EvalCellAttempt, EvalCellDetail, EvalCellProbeRun,
+  EvalCellAnnotationNs, EvalCellAttempt, EvalCellDetail, EvalCellJudgeSession, EvalCellProbeRun,
 } from './types.ts'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -151,6 +152,43 @@ export function probeRunsOf(annotations: readonly LedgerAnnotation[]): EvalCellP
   return runs
 }
 
+/**
+ * The JUDGE rounds recorded on a cell, oldest first.
+ *
+ * The orchestrator writes one `kind: 'judge'` annotation per judge round, and
+ * that annotation has carried the round's `childSessionId` since judging
+ * existed — the judge is delegated to exactly like a player, so its
+ * transcript is a host session with its messages and tool calls in it. What
+ * was missing was never the record, only a door: the drawer read ONE session
+ * id for the whole cell, so a person who wanted to know why a verdict came
+ * out the way it did had nothing but the verdict's own `evidence` line.
+ *
+ * A round that failed before the delegation started is kept, with a null
+ * session and its error: «这次判官没跑起来» is an answer, and dropping the
+ * row would make it look like the judge never ran at all.
+ * @param annotations - the cell's annotations, ledger order.
+ * @returns one entry per judge round.
+ */
+export function judgeSessionsOf(annotations: readonly LedgerAnnotation[]): EvalCellJudgeSession[] {
+  const rounds: EvalCellJudgeSession[] = []
+  for (const annotation of annotations) {
+    if (annotation.ns !== 'orchestrator' || !isPlainObject(annotation.payload)) continue
+    if (stringOrNull(annotation.payload['kind']) !== 'judge') continue
+    const payload = annotation.payload
+    rounds.push({
+      judgeCondition: stringOrNull(payload['judgeCondition']),
+      judgeModel: stringOrNull(payload['judgeModel']),
+      sample: numberOrNull(payload['sample']),
+      attempt: numberOrNull(payload['attempt']),
+      childSessionId: stringOrNull(payload['childSessionId']),
+      at: annotation.createdAt,
+      selfJudged: payload['selfJudged'] === true,
+      error: stringOrNull(payload['error']),
+    })
+  }
+  return rounds
+}
+
 /** Project one attempt record onto the wire shape. */
 function attemptView(attempt: MissionAttemptFace): EvalCellAttempt {
   const retry = attempt.retry
@@ -236,9 +274,20 @@ export async function runCellDetail(
 
   // refs' session trail is the delegation's own record; the orchestrator's
   // annotations are the fallback for a round that failed before refs existed.
+  //
+  // Only the PLAYER's rounds count here. Three annotation kinds carry a
+  // `childSessionId` — `delegation`, `readiness` and `judge` — and the loop
+  // used to take the last one of ANY kind, so a cell whose refs were empty
+  // offered 打开子会话 on whatever ran last, which on a judged cell is the
+  // JUDGE's session and on a refused one is the readiness probe. Both are
+  // real sessions, so nothing failed; it just silently answered a different
+  // question. The judge's rounds have their own door now (`judgeSessions`).
   let annotatedSession: string | null = null
   for (const annotation of annotations) {
-    const child = isPlainObject(annotation.payload) ? annotation.payload['childSessionId'] : undefined
+    if (!isPlainObject(annotation.payload)) continue
+    const kind = stringOrNull(annotation.payload['kind'])
+    if (kind !== 'delegation' && kind !== 'delegation-failed') continue
+    const child = annotation.payload['childSessionId']
     if (typeof child === 'string') annotatedSession = child
   }
   const sessions = current?.refs?.sessions
@@ -278,6 +327,7 @@ export async function runCellDetail(
     childSessionId: sessions !== undefined && sessions.length > 0
       ? (sessions[sessions.length - 1] as string)
       : annotatedSession,
+    judgeSessions: judgeSessionsOf(annotations),
     attempts: attempts.map(attemptView),
     annotations: summarizeAnnotations(annotations),
     probes: probeRunsOf(annotations),

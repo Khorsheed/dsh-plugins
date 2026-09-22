@@ -686,10 +686,18 @@ export function runCells(mission: MissionReadFace, runId: string, query: RunCell
     const annotations: Record<string, number> = {}
     // The delegation's session is refs' to report; the annotations are only
     // the fallback, walked newest-first so a resumed cell names its latest.
+    // The PLAYER's rounds only: `readiness` and `judge` annotations carry a
+    // `childSessionId` too, and taking the last of any kind pointed this
+    // field at the judge's session on every judged cell whose refs were
+    // empty — a real session answering a different question (see
+    // `cell-detail.ts`, which reports the judge's rounds under their own name).
     let annotatedSession: string | null = null
     for (const annotation of record?.annotations ?? []) {
       annotations[annotation.ns] = (annotations[annotation.ns] ?? 0) + 1
-      const child = isPlainObject(annotation.payload) ? annotation.payload['childSessionId'] : undefined
+      if (!isPlainObject(annotation.payload)) continue
+      const kind = annotation.payload['kind']
+      if (kind !== 'delegation' && kind !== 'delegation-failed') continue
+      const child = annotation.payload['childSessionId']
       if (typeof child === 'string') annotatedSession = child
     }
     const sessions = attempt?.refs?.sessions

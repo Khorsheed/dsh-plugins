@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  EvalCellDetail, EvalCellsResult, EvalExperimentDetail, EvalExperimentsResult, EvalMatrixView,
+  EvalCellArtifactView, EvalCellDetail, EvalCellsResult, EvalExperimentDetail, EvalExperimentsResult, EvalMatrixView,
 } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
@@ -135,6 +135,16 @@ const CELL: EvalCellDetail = {
   refs: { resource: 'unit-b', fingerprint: 'lab-env:aaaa' },
   materializationSha: 'deadbeef',
   childSessionId: 'child-c',
+  judgeSessions: [
+    {
+      judgeCondition: 't31-judge-other', judgeModel: 'other/m1', sample: 1, attempt: 2,
+      childSessionId: 'judge-c', at: 70, selfJudged: false, error: null,
+    },
+    {
+      judgeCondition: 't31-judge-twin', judgeModel: null, sample: 2, attempt: 2,
+      childSessionId: null, at: 80, selfJudged: true, error: 'judge delegation failed to start',
+    },
+  ],
   attempts: [
     { attempt: 1, state: 'halted', retry: null, refs: { resource: 'unit-a', fingerprint: null, sessions: [] }, checkpoints: [{ name: 'stage1', at: 6 }], artifacts: [], history: [] },
     {
@@ -142,7 +152,10 @@ const CELL: EvalCellDetail = {
       retry: { reason: 'the container died mid-round', category: 'infrastructure', at: 40, by: 'tab:s1' },
       refs: { resource: 'unit-b', fingerprint: 'lab-env:aaaa', sessions: ['child-c'] },
       checkpoints: [{ name: 'stage1', at: 50 }, { name: 'archive', at: 58 }],
-      artifacts: [{ path: 'archive/workspace', kind: 'archive', addedAt: 59 }],
+      artifacts: [
+        { path: 'stage1.md', kind: 'submission', addedAt: 55 },
+        { path: 'archive', kind: 'archive', addedAt: 59 },
+      ],
       history: [{ from: 'judged', to: 'archived', at: 60 }],
     },
   ],
@@ -175,6 +188,14 @@ function makeHarness() {
       value: { bundleDir: '/out/run-1-bundle', guardedLayers: ['grading'], expectedNs: ['script'], missions: 2, attempts: 3 },
     })),
     exportRun: vi.fn(async () => ({ ok: true as const, value: { bundleDir: '/out/run-1-bundle', files: 9 } })),
+    fetchCellArtifact: vi.fn(async (): Promise<Result<EvalCellArtifactView>> => ({
+      ok: true,
+      value: {
+        runId: 'run-1', missionId: 'p0-codex-a-rep1', attempt: 2, path: 'stage1.md',
+        kind: 'text', entries: [], truncated: false, bytes: 21,
+        text: '# 阶段一\n\n交了这些。\n', note: null,
+      },
+    })),
     openSession: vi.fn(),
   }
 }
@@ -220,6 +241,7 @@ function propsOf(h: Harness) {
     fetchMatrix: h.fetchMatrix,
     fetchCells: h.fetchCells,
     fetchCell: h.fetchCell,
+    fetchCellArtifact: h.fetchCellArtifact,
     retryCell: h.retryCell,
     releaseCheck: h.releaseCheck,
     planExport: h.planExport,
@@ -410,11 +432,13 @@ describe('the cells page and its drawer', () => {
     expect(screen.getByText('record.param.unit')).toBeTruthy()
     expect(screen.getByText('unit-b')).toBeTruthy()
 
-    // Artifacts named in words, with the path on the hover — and the one
-    // honest sentence about what this tab still cannot do with them.
+    // Artifacts named in words, with the path on the hover — and each row is
+    // now the control that opens it (I5·T69), so the sentence apologizing for
+    // a missing file service is gone.
     expect(screen.getByText('artifact.archive')).toBeTruthy()
-    expect(screen.getByText('workspace')).toBeTruthy()
-    expect(screen.getByText('record.filePending')).toBeTruthy()
+    expect(screen.getByText('archive')).toBeTruthy()
+    expect(screen.getByText('stage1.md')).toBeTruthy()
+    expect(screen.queryByText('record.filePending')).toBeNull()
 
     // The probe line AND the raw payload — a summary would drop the exit code.
     // ui-spec §五 keeps verify verbatim; only the verdict word is ours.
@@ -427,6 +451,89 @@ describe('the cells page and its drawer', () => {
     expect(screen.getByText(/drawer\.checkpoints.*stage1 → archive/)).toBeTruthy()
     expect(screen.getAllByText('retry.cat.infrastructure').length).toBeGreaterThan(0)
     expect(screen.getByText(/the container died mid-round/)).toBeTruthy()
+  })
+
+  it('opens an attachment in place: the submission is read where it is listed, and a second click closes it', async () => {
+    const h = makeHarness()
+    await openPage(h, 'page.runs')
+    fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    await screen.findByText('record.attachments')
+    // Nothing is expanded on arrival: the panel is a record, not a browser.
+    expect(h.fetchCellArtifact).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('stage1.md'))
+    await waitFor(() => {
+      expect(h.fetchCellArtifact).toHaveBeenCalledWith('s1', {
+        // The CURRENT attempt, not attempt 1: a retry opens a fresh directory
+        // and the same filename there is a different file.
+        runId: 'run-1', missionId: 'p0-codex-a-rep1', attempt: 2, path: 'stage1.md',
+      })
+    })
+    expect(await screen.findByText(/交了这些。/)).toBeTruthy()
+
+    // The same row closes it — one attachment is shown at a time, so 点开 and
+    // 收起 are one gesture.
+    fireEvent.click(screen.getByText('stage1.md'))
+    await waitFor(() => { expect(screen.queryByText(/交了这些。/)).toBeNull() })
+  })
+
+  it('a directory artifact lists its entries, and an entry opens through the same door', async () => {
+    const h = makeHarness()
+    h.fetchCellArtifact.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        runId: 'run-1', missionId: 'p0-codex-a-rep1', attempt: 2, path: 'archive',
+        kind: 'directory', entries: ['manifest.json', 'workspace'], truncated: false,
+        bytes: null, text: null, note: null,
+      },
+    })
+    await openPage(h, 'page.runs')
+    fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    fireEvent.click(await screen.findByText('archive'))
+    expect(await screen.findByText('workspace')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('manifest.json'))
+    await waitFor(() => {
+      expect(h.fetchCellArtifact).toHaveBeenLastCalledWith('s1', {
+        runId: 'run-1', missionId: 'p0-codex-a-rep1', attempt: 2, path: 'archive/manifest.json',
+      })
+    })
+  })
+
+  it('says a refused binary is one, rather than showing an empty pane', async () => {
+    const h = makeHarness()
+    h.fetchCellArtifact.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        runId: 'run-1', missionId: 'p0-codex-a-rep1', attempt: 2, path: 'stage1.md',
+        kind: 'binary', entries: [], truncated: false, bytes: 4096, text: null,
+        note: '这一页不内联 .png 产物，只内联文本（md / json / txt / yml / yaml / log / jsonl）',
+      },
+    })
+    await openPage(h, 'page.runs')
+    fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    fireEvent.click(await screen.findByText('stage1.md'))
+    expect(await screen.findByText(/不内联 \.png 产物/)).toBeTruthy()
+    expect(screen.getByText(/record\.artifactBytes.*4096/)).toBeTruthy()
+  })
+
+  it('opens the JUDGE\'s session too — and disables the round that never started one', async () => {
+    const h = makeHarness()
+    await openPage(h, 'page.runs')
+    fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    expect(await screen.findByText('record.judgeRounds')).toBeTruthy()
+    // Un-blinded on purpose: this page already names the comparison group in
+    // its own header. The blind panel is the judge bench's.
+    expect(screen.getByText('t31-judge-other')).toBeTruthy()
+
+    const buttons = screen.getAllByText('record.openJudgeSession')
+    expect(buttons).toHaveLength(2)
+    fireEvent.click(buttons[0] as HTMLElement)
+    expect(h.openSession).toHaveBeenCalledWith('judge-c')
+    // The round that failed before it started has no session, so its button
+    // is dead rather than pointing somewhere plausible.
+    expect((buttons[1] as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('judge delegation failed to start')).toBeTruthy()
   })
 
   it('re-runs with a reason and a category, and refuses to send a blank one', async () => {

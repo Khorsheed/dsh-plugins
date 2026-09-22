@@ -909,12 +909,72 @@ export interface EvalCellDetail {
    * player's transcript, never steering it mid-run.
    */
   childSessionId: string | null
+  /**
+   * The JUDGE's rounds on this cell, each with its own child session. A judge
+   * is a delegation like any other and its transcript is a host session the
+   * same way the player's is — it simply never had a door on this page, so
+   * «为什么判成这样» could only be answered from the verdict's `evidence`.
+   * One entry per recorded judge round, oldest first; a round that failed
+   * before it started carries a null session and its error.
+   */
+  judgeSessions: EvalCellJudgeSession[]
   attempts: EvalCellAttempt[]
   annotations: EvalCellAnnotationNs[]
   /** The verify runs, verbatim. */
   probes: EvalCellProbeRun[]
   /** Whether this cell's resources may be destroyed right now. */
   releasable: boolean
+}
+
+/** One judge round on a cell, as the drawer offers it. */
+export interface EvalCellJudgeSession {
+  /** The judge condition id. Un-blinded: this page names the player too. */
+  judgeCondition: string | null
+  judgeModel: string | null
+  /** Which sample of that judge this round was; null when the round recorded none. */
+  sample: number | null
+  /** The attempt this round judged. */
+  attempt: number | null
+  /** The round's child session — null when the delegation never started one. */
+  childSessionId: string | null
+  at: number
+  /** Whether the judge judged its own condition's work. */
+  selfJudged: boolean
+  /** The round's recorded failure, verbatim; null when it settled. */
+  error: string | null
+}
+
+/** Which artifact of which cell `cellArtifact` is asked for. */
+export interface EvalCellArtifactRequest {
+  runId: string
+  missionId: string
+  /** The attempt whose run-data directory the path is resolved against. */
+  attempt: number
+  /** The artifact path exactly as the ledger recorded it. */
+  path: string
+}
+
+/**
+ * One artifact, read in place. `kind` says which of the three answers this
+ * is: the text, a directory's entries, or the refusal to inline bytes nobody
+ * can read as text.
+ */
+export interface EvalCellArtifactView {
+  runId: string
+  missionId: string
+  attempt: number
+  path: string
+  kind: 'text' | 'directory' | 'binary'
+  /** A directory's entry names, sorted; empty for the other two kinds. */
+  entries: string[]
+  /** Whether the text was cut at the byte cap, or the listing at the entry cap. */
+  truncated: boolean
+  /** The file's size on disk; null for a directory. */
+  bytes: number | null
+  /** The text, up to the byte cap; null for a directory or a refused binary. */
+  text: string | null
+  /** Why it was cut, listed or refused — shown beside the content, never instead of it. */
+  note: string | null
 }
 
 /** Which cell a per-cell verb is about. */

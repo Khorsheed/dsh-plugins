@@ -977,6 +977,65 @@
   padding-bottom: 4px;
 }
 
+/* A report number that is also the door to its records: it stays a number on
+   the page (no button chrome) and only announces itself on hover, so the
+   table still reads as a table. */
+.reportJump {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.reportJump:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline solid;
+}
+
+/* ── attachments that open in place (I5·T69) ────────────────────────────── */
+
+/* An attachment row IS the control that expands it, so it carries the whole
+   width and the hover — a row that looks like text and behaves like a button
+   is the shape people do not click. */
+.artifactRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.artifactRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.artifactRow[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Indented under its row, so a long submission reads as belonging to the
+   attachment it came from rather than to the block below it. */
+.artifactPane {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px 12px;
+  padding-left: 8px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+}
+
 /* ── the export dialog ──────────────────────────────────────────────────── */
 
 .exportForm {

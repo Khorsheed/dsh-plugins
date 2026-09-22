@@ -42,6 +42,7 @@ import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from 
 import { resolveRepoWrite, writeResolved, EvalWriteRefused, type RepoWriteResult } from './repo-write.ts'
 import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
+import { readCellArtifact } from './cell-artifact.ts'
 import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
 import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './review.ts'
@@ -57,7 +58,7 @@ import type {
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
 import type {
-  EvalApproveResult, EvalCellDetail, EvalCellsResult, EvalConditionDiffView,
+  EvalApproveResult, EvalCellArtifactRequest, EvalCellArtifactView, EvalCellDetail, EvalCellsResult, EvalConditionDiffView,
   EvalConditionEndpointRequest, EvalConditionEndpointView,
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult,
@@ -933,6 +934,30 @@ export class EvalService {
   }
 
   /**
+   * ONE artifact of one attempt, read in place — the attachment a person
+   * clicks in the record detail.
+   *
+   * A READ and nothing else: no write, no delete, no download. The path is
+   * resolved against that attempt's run-data directory and checked with
+   * `realpath` on both sides, so an artifact path is the only thing this verb
+   * can be pointed at (see `cell-artifact.ts` for why the check is on the
+   * REAL paths rather than on the string).
+   * @param request - the run, the cell, the attempt and the path.
+   * @throws {@link EvalReadRefused} when mission is absent, when the path
+   *   leaves the attempt directory, or when nothing is there.
+   */
+  async cellArtifact(request: EvalCellArtifactRequest): Promise<EvalCellArtifactView> {
+    const mission = this.requireMissionRead('read a cell artifact')
+    return await readCellArtifact({
+      mission,
+      runId: request.runId,
+      missionId: request.missionId,
+      attempt: request.attempt,
+      path: request.path,
+    })
+  }
+
+  /**
    * Re-run one cell: open a fresh attempt. A HUMAN gesture from the drawer,
    * forwarded to mission unchanged — including its demand for an auditable
    * reason, which this verb re-states rather than relaxes.
@@ -1515,7 +1540,8 @@ export type { RepoWriteResult } from './repo-write.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
-export { materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
+export { judgeSessionsOf, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
+export { ARTIFACT_MAX_BYTES, ARTIFACT_MAX_ENTRIES, TEXT_EXTENSIONS, extensionOf, isInside, readCellArtifact } from './cell-artifact.ts'
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
 export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runReportView } from './report-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'

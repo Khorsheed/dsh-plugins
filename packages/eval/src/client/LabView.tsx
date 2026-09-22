@@ -62,7 +62,7 @@ export function LabView(props: LabViewProps) {
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
     provisionCondition, setConditionEndpoint,
     fetchDraftOptions, draftExperiment,
-    fetchMatrix, fetchCells, fetchCell, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
+    fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal,
   } = props
   const list = useStore(s => s.list)
@@ -107,6 +107,11 @@ export function LabView(props: LabViewProps) {
   const cell = useStore(s => s.cell)
   const cellLoading = useStore(s => s.cellLoading)
   const cellError = useStore(s => s.cellError)
+  const artifactPath = useStore(s => s.artifactPath)
+  const artifact = useStore(s => s.artifact)
+  const artifactLoading = useStore(s => s.artifactLoading)
+  const artifactError = useStore(s => s.artifactError)
+  const recordFocus = useStore(s => s.recordFocus)
   const report = useStore(s => s.report)
   const reportLoading = useStore(s => s.reportLoading)
   const reportError = useStore(s => s.reportError)
@@ -489,6 +494,38 @@ export function LabView(props: LabViewProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, openRunId, cellSelection, refreshRev, actions, fetchCell])
+
+  // The expanded attachment. Keyed on the open record's CURRENT attempt as
+  // well as its path: a retry opens a fresh attempt directory, and the same
+  // filename there is a different file.
+  const artifactAttempt = cell?.attempt ?? null
+  useEffect(() => {
+    if (openRunId === null || cellSelection === null || artifactPath === null || artifactAttempt === null) return
+    let cancelled = false
+    const request = { runId: openRunId, missionId: cellSelection, attempt: artifactAttempt, path: artifactPath }
+    actions.setArtifactLoading(true)
+    void fetchCellArtifact(sessionId, request).then((result) => {
+      if (cancelled) return
+      actions.setArtifactLoading(false)
+      if (result.ok) actions.setArtifact(result.value)
+      else actions.setArtifactError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRunId, cellSelection, artifactPath, artifactAttempt, actions, fetchCellArtifact])
+
+  // A click on the 结果对比 page's tables lands here: when the (题目 × 对比组)
+  // it named holds exactly ONE record, that record's detail opens by itself —
+  // which is what «跳到该条运行记录» means when there is one. With several
+  // reps the list stays put under its chip, because picking one of them would
+  // be picking for the reader.
+  const focusMatches = recordFocus === null
+    ? []
+    : (cells?.rows ?? []).filter(row => row.task === recordFocus.task && row.condition === recordFocus.condition)
+  const soleFocusMatch = focusMatches.length === 1 ? (focusMatches[0]?.missionId ?? null) : null
+  useEffect(() => {
+    if (soleFocusMatch === null || cellSelection === soleFocusMatch) return
+    actions.openCell(soleFocusMatch)
+  }, [soleFocusMatch, cellSelection, actions])
 
   // The report: the bundle read, paid for by the page that asked for it. A
   // directory named in THIS visit — exported into, or typed on the page — is
@@ -885,6 +922,13 @@ export function LabView(props: LabViewProps) {
                       onRelease={onRelease}
                       onExport={() => { actions.setExportOpen(true) }}
                       onOpenSession={(childId) => { openSession(childId as SessionId) }}
+                      artifactPath={artifactPath}
+                      artifact={artifact}
+                      artifactLoading={artifactLoading}
+                      artifactError={artifactError}
+                      onOpenArtifact={(path) => { actions.openArtifact(path) }}
+                      focus={recordFocus}
+                      onClearFocus={() => { actions.focusRecords(null) }}
                       onAddGroup={() => { setNewOpen(true) }}
                       t={t}
                     />
@@ -907,6 +951,7 @@ export function LabView(props: LabViewProps) {
                       onExport={() => { actions.setExportOpen(true) }}
                       onReexport={onReexport}
                       onLookIn={(dir) => { actions.setLookIn(dir) }}
+                      onOpenRecords={(task, condition) => { actions.focusRecords({ task, condition }) }}
                       t={t}
                     />
                   )

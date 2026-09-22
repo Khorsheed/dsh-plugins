@@ -10,7 +10,8 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  EvalApproveRequest, EvalApproveResult, EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
+  EvalApproveRequest, EvalApproveResult, EvalCellArtifactRequest, EvalCellArtifactView,
+  EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
   EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionsRequest, EvalConditionsView,
@@ -92,6 +93,12 @@ export interface LabViewInjected {
   fetchCells: (sessionId: SessionId, request: EvalCellsRequest) => Promise<RemoteResult<EvalCellsResult>>
   /** One cell in full — the drawer. */
   fetchCell: (sessionId: SessionId, request: EvalCellRequest) => Promise<RemoteResult<EvalCellDetail>>
+  /**
+   * ONE of that cell's artifacts, read in place. A read with no download and
+   * no write: text comes back capped and says when it was cut, a directory
+   * comes back as its entries, and anything else is refused by name.
+   */
+  fetchCellArtifact: (sessionId: SessionId, request: EvalCellArtifactRequest) => Promise<RemoteResult<EvalCellArtifactView>>
   /** Re-run one cell: a fresh attempt against an auditable reason. */
   retryCell: (sessionId: SessionId, request: EvalCellRetryRequest) => Promise<RemoteResult<EvalCellRetryResult>>
   /** The release check: may this cell's resources be destroyed? */

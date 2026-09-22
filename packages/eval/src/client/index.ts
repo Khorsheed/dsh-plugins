@@ -35,7 +35,7 @@ import type {} from '@khorsheed/dsh-eval/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
-  EvalApproveRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
+  EvalApproveRequest, EvalCellArtifactRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionEndpointRequest, EvalConditionProvisionRequest,
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
@@ -121,6 +121,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchMatrix: (sid: SessionId, request: EvalMatrixRequest) => remote.matrix(sid, request),
         fetchCells: (sid: SessionId, request: EvalCellsRequest) => remote.cells(sid, request),
         fetchCell: (sid: SessionId, request: EvalCellRequest) => remote.cell(sid, request),
+        // The attachment a reader clicks: the bytes were always reachable
+        // (the judge bench reads the same directory), only the door was missing.
+        fetchCellArtifact: (sid: SessionId, request: EvalCellArtifactRequest) => remote.cellArtifact(sid, request),
         retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(sid, request),
         releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
         planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
