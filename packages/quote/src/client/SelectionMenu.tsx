@@ -3,7 +3,9 @@
  * anywhere in the app and this small floating card appears beside the
  * selection — 「引用到当前会话」 into the current composer, 「引用到侧边对话」
  * as a side-chat ref, 「复制」. Route items hide by the degrade matrix (no
- * current session, no side-chat); 复制 is always there.
+ * current session, no side-chat); 复制 is always there. Rows contributed by
+ * other plugins through the `ctx.quoteActions` registry render after the
+ * built-ins, each gated by its own `available`.
  *
  * The menu subscribes to the injected selection source and captures the
  * text/rect at selection time, so a click never races the live selection.
@@ -13,12 +15,13 @@
  *
  * @module @khorsheed/dsh-quote/client
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
-  IconCopyOutline16, IconListPenOutline16, IconRightUpOutline16,
+  IconCopyOutline16, IconListPenOutline16, IconRightUpOutline16, IconSparkle16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatQuoteBlock } from '../types.ts'
 import type { QuoteMenuProps } from './contract.ts'
+import type { QuoteActionTarget } from './registry.ts'
 import type { SelectionRect, SelectionSnapshot } from './selection.ts'
 import css from './SelectionMenu.module.css'
 
@@ -36,9 +39,9 @@ function sameRect(a: SelectionRect, b: SelectionRect): boolean {
   return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height
 }
 
-/** One action row's descriptor. */
+/** One action row's descriptor (built-in id or a contributed `<plugin>.<action>`). */
 interface MenuAction {
-  readonly id: 'conversation' | 'sidechat' | 'copy'
+  readonly id: string
   readonly icon: ReactNode
   readonly label: string
   readonly run: () => void
@@ -46,7 +49,7 @@ interface MenuAction {
 
 /** The floating selection quote menu. */
 export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
-  const { useSessions, t, selection, sideChatAvailable, insertQuote, addSideChatRef, openSideChat, copyText } = props
+  const { useSessions, t, selection, sideChatAvailable, insertQuote, addSideChatRef, openSideChat, copyText, actions: actionFeed } = props
   const [snapshot, setSnapshot] = useState<SelectionSnapshot | null>(null)
   const [placement, setPlacement] = useState<Placement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -54,6 +57,10 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   const current = useSessions(sessions => sessions.current)
   const currentTitle = useSessions(sessions =>
     current === undefined ? undefined : sessions.byId[current]?.displayTitle)
+  // Contributed rows: the feed's list reference only changes on register /
+  // dispose, so a contribution hot-added while the menu is open appears on
+  // the same render pass.
+  const contributed = useSyncExternalStore(actionFeed.subscribe, actionFeed.list)
 
   // Subscribe to the app-level selection seam. The consumed echo (the click's
   // own mouseup re-reporting the acted selection) is filtered here.
@@ -130,6 +137,21 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
       void copyText(snapshot.text)
     },
   })
+  // Contributed rows (the ctx.quoteActions registry): same opaque target the
+  // built-ins annotate, each row's own gate, the generic icon as fallback.
+  const target: QuoteActionTarget = { text: snapshot.text, label, sessionId: current }
+  for (const action of contributed) {
+    if (action.available !== undefined && !action.available(target)) continue
+    actions.push({
+      id: action.id,
+      icon: action.icon ?? <IconSparkle16 />,
+      label: action.label(),
+      run: () => {
+        close()
+        action.run(target)
+      },
+    })
+  }
 
   return (
     <div

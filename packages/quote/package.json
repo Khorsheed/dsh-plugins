@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-quote",
-  "description": "引用任意内容：选中任意文本浮出动作菜单——引用到当前会话（进 composer）、引用到侧边对话（成 side-chat ref）、复制；side-chat 缺席时对应项隐藏",
+  "description": "引用任意内容：选中任意文本浮出动作菜单——引用到当前会话（进 composer）、引用到侧边对话（成 side-chat ref）、复制；其他插件可经 ctx.quoteActions 注册表往菜单里注册自己的动作行；side-chat 缺席时对应项隐藏",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"

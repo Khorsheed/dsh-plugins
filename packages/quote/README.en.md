@@ -1,6 +1,6 @@
 # @khorsheed/dsh-quote
 
-Quote anything: select any text anywhere in the app and a small menu floats beside the selection — **Quote to current chat** (into the composer, still editable), **Quote to side chat** (a side-chat ref), **Copy**. A quote is the selected plain text plus a short source label — an opaque chunk: the plugin knows nothing about any other plugin's types, items hide when side-chat/canvas are absent, and the plugin installs and uninstalls alone.
+Quote anything: select any text anywhere in the app and a small menu floats beside the selection — **Quote to current chat** (into the composer, still editable), **Quote to side chat** (a side-chat ref), **Copy**; other plugins add their own rows through the `ctx.quoteActions` registry (see [Contributing menu actions](#contributing-menu-actions-other-plugins)). A quote is the selected plain text plus a short source label — an opaque chunk: the plugin knows nothing about any other plugin's types, items hide when side-chat/canvas are absent, and the plugin installs and uninstalls alone.
 
 ## The selection overlay
 
@@ -23,6 +23,34 @@ Why not side-chat's own Remote: the M2 probe found no client-reachable "queue on
 **Source label**: the current session's display title (best-effort plain text; a generic "Selection" fallback when none). Quotes never link back to the origin position — the annotation stops at "which chat" granularity.
 
 **Degrade matrix**: no current session → both quote items hide (copy stays); `remote.sidechat` or `remote.quote` absent → Quote to side chat hides; a click that still races a missing side-chat service gets the verb's `unavailable` refusal and no-ops silently.
+
+## Contributing menu actions (other plugins)
+
+The menu is extensible: the browser half `ctx.provide`s an action registry, **`ctx.quoteActions`**, at the very top of its apply (the ui-shortcuts `ctx.shortcuts` precedent). Any plugin can register its own row into the selection menu — the canvas package, say, registering "Save as canvas card":
+
+```ts
+// In-repo consumers: ctx.get probe + structural mirror + declare
+// '@khorsheed/dsh-quote' in the manifest's dsh.references (a data reference,
+// not a dependency). External npm consumers may import the types directly —
+// '@khorsheed/dsh-quote/client' exports QuoteActionContribution & friends.
+const registry = ctx.get('quoteActions')
+if (registry !== undefined) {
+  ctx.effect(() => registry.registerAction({
+    id: 'my-plugin.save',                                // '<plugin>.<action>' convention; a duplicate id throws at registration
+    label: () => t('menu.save'),                         // re-evaluated at every menu open — close over your own locale face
+    // icon: <MyIcon />,                                 // optional; the menu stands a generic icon in
+    available: target => target.sessionId !== undefined, // optional visibility gate; re-evaluated per open
+    run: (target) => { void save(target.text) },          // the menu closes before this runs
+  }), 'my-plugin: quote action')
+}
+```
+
+- **The target is an opaque payload**: `{ text, label, sessionId }` — the selected plain text, the best-effort source label (the current session's display title, else "Selection"), and the current session id (`undefined` when none; gate the row yourself via `available`). The registry never learns where an action delivers to, just as this plugin never learns a quote source's types.
+- **Order**: the three built-in rows (current chat / side chat / copy) always lead; contributed rows follow in registration order.
+- **Degrade**: quote absent → the probe misses and the action never appears (silent — never `inject` this service); your plugin absent → its rows are absent. Neither side breaks.
+- **Timing**: registration is boot-time; a probe that misses at apply means quote is not installed or loaded after your plugin — treat it as the degrade.
+- **Robustness**: a contribution's `label` / `available` / `run` throwing is only logged — the label degrades to the id, the gate degrades to hidden, the run is swallowed; the menu never goes down.
+- The full contract lives in `src/client/registry.ts`.
 
 ## Install
 
@@ -61,6 +89,8 @@ Restart the host afterwards. The plugin keeps no persistent state of its own, so
 **Route: current chat**: `formatQuoteBlock` (every line `> `-prefixed, the attribution closing the blockquote) merged by `mergedQuoteDraft` — a blank draft is filled directly, a typed draft gets the block appended after one blank line and is never overwritten (the message-tools backfill precedent).
 
 **Route: side chat**: `remote.quote.addRef({ contextKey, label, ref })` → the host half's `openWith` (the side-chat record holds pending refs, folded into the next send and cleared). The verb carries no calling agent: `openWith` owns no session-scoped write, and the side-chat store fences host-side calls on the deployment default mode (the canvas `askAgent` precedent).
+
+**The action registry**: `ctx.quoteActions` (`src/client/registry.ts`) is provided at the very top of the client apply; registration appends, disposal removes, and the menu subscribes through `useSyncExternalStore`, so hot adds/removals land in the same frame. `list()`'s reference stays stable between mutations, serving directly as the getSnapshot.
 
 **Identity triangle**: the cordis row id `quote`, `clientBundle('@khorsheed/dsh-quote')`, and `src/invariant.ts`'s `PACKAGE_NAME` move together.
 </details>

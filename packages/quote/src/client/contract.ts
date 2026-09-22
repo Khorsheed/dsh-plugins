@@ -21,6 +21,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from './locales.ts'
+import type { QuoteActionFeed } from './registry.ts'
 import type { SelectionSource } from './selection.ts'
 
 /**
@@ -45,6 +46,12 @@ export interface QuoteMenuInjected {
   openSideChat: (contextKey: string) => void
   /** Copy text to the host clipboard (the official writeClipboard helper). */
   copyText: (text: string) => Promise<boolean>
+  /**
+   * Contributed actions (the `ctx.quoteActions` registry's read face): the
+   * menu subscribes and renders these rows after the built-ins, each gated
+   * by its own `available`. An empty registry costs nothing.
+   */
+  readonly actions: QuoteActionFeed
 }
 
 /** Full props of the selection quote menu. */
