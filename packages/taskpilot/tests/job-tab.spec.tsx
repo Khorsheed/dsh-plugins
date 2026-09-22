@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import type { JobView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { JobTab, type HistoryPage } from '../src/client/JobTab.tsx'
@@ -141,4 +141,44 @@ describe('JobTab', () => {
     expect(screen.getByText(/No log entries/)).toBeTruthy()
     expect(props.loadHistory).not.toHaveBeenCalled()
   })
+
+  it('ticks the duration while the job is live, instead of freezing at 0s', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-23T01:34:15Z'))
+      const startedAt = Date.now() - 5_000
+      render(<JobTab {...tabProps({
+        useSessions: (selector: (state: unknown) => unknown) => selector({ jobsBySession: { [SESSION]: [job({ startedAt })] } }),
+      }) as never} />)
+      expect(metaValue('Duration')).toBe('5s')
+      await act(async () => { vi.advanceTimersByTime(2_000) })
+      expect(metaValue('Duration')).toBe('7s')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the exact span of a settled job', () => {
+    render(<JobTab {...tabProps({
+      useSessions: (selector: (state: unknown) => unknown) => selector({
+        jobsBySession: { [SESSION]: [job({ status: 'completed', startedAt: 1_000, finishedAt: 131_000 })] },
+      }),
+    }) as never} />)
+    expect(metaValue('Duration')).toBe('2m 10s')
+  })
+
+  it('renders — for the duration of a settled row that carries no finish time', () => {
+    render(<JobTab {...tabProps({
+      useSessions: (selector: (state: unknown) => unknown) => selector({
+        jobsBySession: { [SESSION]: [job({ status: 'killed' })] },
+      }),
+    }) as never} />)
+    expect(metaValue('Duration')).toBe('—')
+  })
 })
+
+/** The value cell of one metadata row, read by its label. */
+function metaValue(label: string): string {
+  const row = screen.getByText(label).parentElement
+  return row?.textContent?.slice(label.length) ?? ''
+}
