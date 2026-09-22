@@ -10,7 +10,8 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  EvalApproveRequest, EvalApproveResult, EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
+  EvalApproveRequest, EvalApproveResult, EvalCellArtifactRequest, EvalCellArtifactView,
+  EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
   EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionsRequest, EvalConditionsView,
@@ -92,6 +93,12 @@ export interface LabViewInjected {
   fetchCells: (sessionId: SessionId, request: EvalCellsRequest) => Promise<RemoteResult<EvalCellsResult>>
   /** One cell in full — the drawer. */
   fetchCell: (sessionId: SessionId, request: EvalCellRequest) => Promise<RemoteResult<EvalCellDetail>>
+  /**
+   * ONE of that cell's artifacts, read in place. A read with no download and
+   * no write: text comes back capped and says when it was cut, a directory
+   * comes back as its entries, and anything else is refused by name.
+   */
+  fetchCellArtifact: (sessionId: SessionId, request: EvalCellArtifactRequest) => Promise<RemoteResult<EvalCellArtifactView>>
   /** Re-run one cell: a fresh attempt against an auditable reason. */
   retryCell: (sessionId: SessionId, request: EvalCellRetryRequest) => Promise<RemoteResult<EvalCellRetryResult>>
   /** The release check: may this cell's resources be destroyed? */
@@ -143,12 +150,20 @@ export interface LabViewInjected {
   /** Record one cell's human-final verdicts — append-only, tagged by session. */
   submitHumanFinal: (sessionId: SessionId, request: EvalHumanFinalRequest) => Promise<RemoteResult<EvalHumanFinalResult>>
   /**
-   * Open the delegation's child session in the host's own session controller.
-   * READ the player's transcript — the member composer and dock are
-   * local-agent's, and continuing the conversation there is a human's call,
-   * never an intervention in the run.
+   * Open one of the run's child sessions — the player's round, or a judge's —
+   * in the host's own session controller. READ the transcript; the member
+   * composer and dock are local-agent's, and continuing the conversation
+   * there is a human's call, never an intervention in the run.
+   *
+   * The PARENT is not optional decoration. Every session this page offers is
+   * a subagent of the run's originSession, and the host refuses a subagent
+   * session addressed on its own — «subagent Sessions require their durable
+   * parent address» — so handing over the child id alone navigates to a page
+   * whose history fails to load (I5·T69, seen on pilot D before this
+   * parameter existed). Null falls back to selecting by id, which is all a
+   * run recorded without an originSession allows.
    */
-  openSession: (sessionId: SessionId) => void
+  openSession: (sessionId: SessionId, parentSessionId: SessionId | null) => void
 }
 
 /** Full props of the lab view entry (runtime + store + injected + locale shares). */

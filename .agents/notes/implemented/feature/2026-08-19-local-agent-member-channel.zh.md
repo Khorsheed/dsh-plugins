@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-家族 CLI 成员的 dsh 子会话此前是只读的：官方 composer 管线的每条发送路径都拒绝 one-shot 子会话，而 ui-subagent 的链条目（`conversation.composer`，priority -10）为它渲染静态只读面板。[成员通道提案](../../../proposals/active/2026-08-19-local-agent-member-channel.md)要把成员会话变成双向通道：人打开成员会话时得到可写 composer，发送 = 继续同一个 CLI 会话（facade resume），run 进行中可 Stop——且不改动宿主。本 note 记录该提案的里程碑 M1（通道）与 M2（composer）。
+家族 CLI 成员的 dsh 子会话此前是只读的：官方 composer 管线的每条发送路径都拒绝 one-shot 子会话，而 ui-subagent 的链条目（`conversation.composer`，priority -10）为它渲染静态只读面板。[成员通道提案](../../../proposals/closed/2026-08-19-local-agent-member-channel.md)要把成员会话变成双向通道：人打开成员会话时得到可写 composer，发送 = 继续同一个 CLI 会话（facade resume），run 进行中可 Stop——且不改动宿主。本 note 记录该提案的里程碑 M1（通道）与 M2（composer）。
 
 ## Decision
 
@@ -50,7 +50,7 @@ wire 类型（`LocalAgentDelegationView`、`LocalAgentPromptResult`）放在 `sr
 
 ## Cross-references
 
-- [成员通道提案](../../../proposals/active/2026-08-19-local-agent-member-channel.md)——本 note 实现的里程碑计划（M1+M2）。
+- [成员通道提案](../../../proposals/closed/2026-08-19-local-agent-member-channel.md)——本 note 实现的里程碑计划（M1+M2）。
 - [委派 facade](2026-08-18-local-agent-delegation-facade.md)——gateway 组合的 resume/cancel facade。
 - [run 进度](2026-08-19-local-agent-run-progress.md)——composer 运行态将消费（M3 实时镜像）的进度通道。
 - **更正（2026-08-23）：有待处理交互时必须让出选举。** 官方 `ApprovalPanel`（提问/审批弹窗）本身就是 `conversation.composer` 链上 priority 1 的条目；本条目在 -20 先选举会把它遮蔽——成员会话里待答的 ask-user-question 永远渲染不出来。`selectCliMember` 现在在 `owner.interactions` 非空时返回 null，让交互 UI 当选。接管 composer 的通用规则（已有测试钉住）：有 pending 交互 → 让出；运行中 Stop → 自己实现（成员走 `stopMember`）。

@@ -1,10 +1,10 @@
 # 本地文件浏览器（local-files-browser）
 
-- **分类**: plugin
-- **状态**: done（已作为独立包 `@khorsheed/dsh-local-files` 交付，提交 `3df3044`；见下方「更新：拆分为独立包」）
-- **最后更新**: 2026-08-26（拆分方向 2026-08-28 更新）
-- **查重结果**: 已搜 `proposals/active/` + `.agents/notes/`——「本地文件/文件浏览器/目录树」命中：[file-view-html-rendering](../active/2026-08-21-file-view-html-rendering.md)（worktrees 抽屉里的 HTML 渲染，非浏览器）、[withdraw-file-rollback](../active/2026-08-21-withdraw-file-rollback.md)（git 操作，无关）。**无「浏览任意本地文件系统」的同意图提案**。关联：本包 worktrees（宿主半面、`openExternal` 复用）、[mode-switcher](../active/2026-08-26-mode-switcher.md)（同 profile 无关，仅登记避免入口混淆）。
-- **官方依赖**: 纯插件。全部机制基于现有能力：`conversation.view` 槽位（工作区 tab，与 chat/产物平行）、`shell.overlay` 槽位、`conversation.session.header.utilities` 槽位、Typert Remote（独立 `localFiles` 命名空间）、`ctx.workspaces`（workspace 枚举 + 当前 session workspace）、官方 `openExternal`/`canOpenPath` 宿主手势（`ui-file-preview` 同款）。**零 harness 改动**。
+- **分类**：plugin
+- **状态**：done（已作为独立包 `@khorsheed/dsh-local-files` 交付，提交 `3df3044`；见下方「更新：拆分为独立包」）
+- **最后更新**：2026-08-26（拆分方向 2026-08-28 更新）
+- **查重结果**：已搜 `proposals/active/` + `.agents/notes/`——「本地文件/文件浏览器/目录树」命中：[file-view-html-rendering](../active/2026-08-21-file-view-html-rendering.md)（worktrees 抽屉里的 HTML 渲染，非浏览器）、[withdraw-file-rollback](../active/2026-08-21-withdraw-file-rollback.md)（git 操作，无关）。**无「浏览任意本地文件系统」的同意图提案**。关联：本包 worktrees（宿主半面、`openExternal` 复用）、[mode-switcher](../active/2026-08-26-mode-switcher.md)（同 profile 无关，仅登记避免入口混淆）。
+- **官方依赖**：纯插件。全部机制基于现有能力：`conversation.view` 槽位（工作区 tab，与 chat/产物平行）、`shell.overlay` 槽位、`conversation.session.header.utilities` 槽位、Typert Remote（独立 `localFiles` 命名空间）、`ctx.workspaces`（workspace 枚举 + 当前 session workspace）、官方 `openExternal`/`canOpenPath` 宿主手势（`ui-file-preview` 同款）。**零 harness 改动**。
 
 ## 目标
 

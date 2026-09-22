@@ -1,7 +1,7 @@
 # 工作模式（mode）：单实例多模式 —— preset + 自隐 + 模式管理器
 
 - **分类**：plugin
-- **状态**：方向已定（试点活体验证通过），落地拆分待排期
+- **状态**：idea（方向已定：试点活体验证通过；落地拆分待排期）
 - **最后更新**：2026-09-10（六更·收敛：单实例多模式——场景包装进同一实例、按会话选模式；守卫重启退出产品线；eval 拿出本设计，待装置改造后重新评估）
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）——「模式 / 切换 / mode / profile / preset」命中：[plugin-manager](../closed/2026-08-22-plugin-manager.md)（已废除的 loader 级行开关）、worktree-governance 的「三档切换」、local-agent 的「驱动模式 live/exec」、官方 `agent-presets` 的 preset 选择器。关联：[docs/roadmap.md](../../docs/roadmap.md)、[package-management](2026-08-21-package-management.md)（形态 A/B）、[capability-catalog](2026-08-26-capability-catalog.md)。
 - **官方依赖**：主路径零 harness 改动（preset 官方原生；自隐是 client 惯用法；建会话 chip 现成）。可选上游增强：槽位可见性谓词（见「放弃的东西」）。
@@ -68,12 +68,12 @@ eval：本次不纳入（维持独立 profile/实例），装置改造完成后�
 | preset 是自包含组合，工具行自带、`disabled` 是休眠模板行；「Host availability alone grants no tool」 | harness `presets/standard/agent.cordis.yml:199-219`、官方 skill《editing-cordis-compositions》 | 会话级工具授予官方原生 |
 | 官方支持同产品多命名 provider 实例（host-plane 行 + preset 工具行按名指） | 同上 skill「Native product subagents」 | eval 的 provider pin 有 per-session 化的后门（包级改动） |
 | 发布服务的行不能进 preset（跨会话消费者/撞名）；沙箱、审批、模型路由禁止 | 同上 skill plane rule | 服务与注册表永远实例级 |
-| **活体验证**：自隐在 0.1.2-rc.1 与 0.1.1 双线通过（对照显示、名单内显示、名单外隐藏、切换三次稳定翻转、console 零错误） | worktrees 试点，截图 `scratch-screenshots/pilot-badge-*.png` | 「preset 即模式 + 自隐」实锤可行 |
+| **活体验证**：自隐在 0.1.2-rc.1 与 0.1.1 双线通过（对照显示、名单内显示、名单外隐藏、切换三次稳定翻转、console 零错误） | worktrees 试点，截图 `docs/screenshots/pilot-badge-*.png` | 「preset 即模式 + 自隐」实锤可行 |
 | 会话 preset 读取 key 跨线不同（0.1.2 投影 / 0.1.1 顶层） | 试点探针实锤 | 自隐跨线兼容是每包成本（双读） |
 | web 线 client 拿不到自身 config（boot 无注入） | 试点实测（harness `web/src/boot.ts:127`） | 配置一律 host → Remote |
 | preset 切换限空白会话（首回合后锁定） | harness `agent-presets` | 模式对会话是创建时选择，锁定期一致 |
 | 一个实例只能跑一个 profile | harness `profile-boot` | 「多模式」必须装在同一个 profile 里（并集），多 profile ≠ 多模式 |
-| 0.1.5 官方插件列表分「会话插件 / 全局插件」两组；社区工具行在会话插件组呈现正确（短名标题、状态徽标、计数同步），按需 compose 查看、preset 热发现 | 2026-09-11 3092 实测（`scratch-screenshots/pilot-015-session-plugins*.png`） | 「模式的插件子集」视图官方已覆盖，模式管理器不设独立设置页 |
+| 0.1.5 官方插件列表分「会话插件 / 全局插件」两组；社区工具行在会话插件组呈现正确（短名标题、状态徽标、计数同步），按需 compose 查看、preset 热发现 | 2026-09-11 3092 实测（`docs/screenshots/pilot-015-session-plugins*.png`） | 「模式的插件子集」视图官方已覆盖，模式管理器不设独立设置页 |
 | 只有不发布服务的工具行能直接进 preset；`ctx.provide` 的包（worktrees/mission）整包进 preset 被 isolate-realm 规则拒绝 | 同上实测 | M4' 融合包拆工具行是硬前提，拆法 = 工具模块不 provide |
 | 「条件启用」= `disabled: !!js` 用 Loader 表达式作用域求值，作用域只有 `process` 等全局，**读不到会话/preset 身份**（求值失败才落 conditional 标签） | harness `agent-presets/composition-inventory.ts`、`plugin-inventory` | 平台/环境门，不能做声明式按会话显隐——自隐约定不变 |
 
@@ -102,7 +102,7 @@ eval：本次不纳入（维持独立 profile/实例），装置改造完成后�
 ### C. UI 自隐（M3'）
 
 - **C1** worktrees 徽标：dev preset 会话显示、非 dev preset 会话隐藏；**判据来自官方 `pluginInventory` 的 preset 组合数据**（"组合里有我的行"），不再依赖手配 `visiblePresets` 名单。
-- **C2** 两个会话间来回切换：显隐干净翻转、无残留占位、无布局塌陷、console 零错误（对照片：`scratch-screenshots/pilot-badge-*.png` 的试点基线）。
+- **C2** 两个会话间来回切换：显隐干净翻转、无残留占位、无布局塌陷、console 零错误（对照片：`docs/screenshots/pilot-badge-*.png` 的试点基线）。
 - **C3** 通用插件（capability-catalog、context-guard 等 fail-open 组）在所有模式下行为逐字不变。
 
 ### D. 工具行解耦（M4'）

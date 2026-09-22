@@ -136,6 +136,35 @@ describe('MemberChannel delivery chain', () => {
     expect(again).toEqual({ ok: true, receipt: 'sent' })
   })
 
+  it('binds room command identity to the active token and refuses idle/preparation tokens', async () => {
+    const h = await mountChannel()
+    const receiveMemberCommand = vi.fn(async () => ({ ok: true, receipt: 'accepted' }))
+    h.ctx.provide('room' as never, { receiveMemberMessage: async () => 'sent', receiveMemberCommand } as never)
+    const state = vi.spyOn(h.registry, 'memberConfiguration').mockReturnValue({ round: { id: 'active-turn' } } as never)
+    const command = { name: 'room_message' as const, arguments: { member: 'worker', text: 'work' } }
+    expect(await h.channel.handle({ token: h.tokenA, command })).toEqual({ ok: true, receipt: 'accepted' })
+    expect(receiveMemberCommand).toHaveBeenCalledWith(h.registry.resolveMemberRun(h.tokenA), command)
+    state.mockReturnValue({ round: { id: 'prepare:initialization' } } as never)
+    expect(await h.channel.handle({ token: h.tokenA, command })).toMatchObject({ ok: false })
+    state.mockReturnValue({} as never)
+    expect(await h.channel.handle({ token: h.tokenA, command })).toMatchObject({ ok: false })
+    h.registry.unregisterMemberRun(h.tokenA)
+    expect(await h.channel.handle({ token: h.tokenA, command })).toMatchObject({ ok: false })
+    expect(receiveMemberCommand).toHaveBeenCalledOnce()
+    await h.ctx.fiber.dispose()
+  })
+
+  it('does not bypass a claiming room when its gate rejects or ownership cannot be read', async () => {
+    const h = await mountChannel()
+    const isRoom = vi.fn(async () => true)
+    h.ctx.provide('room' as never, { isRoom, receiveMemberMessage: async () => { throw new Error('permission denied') } } as never)
+    expect(await h.channel.handle({ token: h.tokenA, to: 'child-b', text: 'work' })).toMatchObject({ ok: false })
+    isRoom.mockRejectedValueOnce(new Error('ownership unavailable'))
+    expect(await h.channel.handle({ token: h.tokenA, to: 'child-b', text: 'work' })).toMatchObject({ ok: false })
+    expect(h.requests).toHaveLength(0)
+    await h.ctx.fiber.dispose()
+  })
+
   it('direct-sends with provenance when room is absent: facade resume with the recorded parent/provider', async () => {
     const h = await mountChannel()
     h.enterParent(PARENT)

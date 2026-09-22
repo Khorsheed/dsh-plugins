@@ -51,6 +51,20 @@ describe('room-tool companion row', () => {
     }
   })
 
+  it('adds the shared context reader on a capable core and tags its origin', () => {
+    const { ctx, tools } = makeCtx({ service: { readRoomContext: vi.fn() } })
+    apply(ctx)
+    expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_read', 'room_invite', 'room_task', 'room_message'])
+    expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room-tool' })
+  })
+
+  it('registers formal planning only when the core exposes the shared backend', () => {
+    const { ctx, tools } = makeCtx({ service: { commandPlan: vi.fn(), readRoomContext: vi.fn() } })
+    apply(ctx)
+    expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_plan', 'room_read', 'room_invite', 'room_task', 'room_message'])
+    expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room-tool' })
+  })
+
   it('registers nothing (and still does not throw) when the tools registry never appears', () => {
     const { ctx, tools } = makeCtx({ service: {}, withTools: false })
     expect(() => { apply(ctx) }).not.toThrow()

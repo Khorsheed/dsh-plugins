@@ -11,6 +11,7 @@
  * elapsed honest). The main-agent member takes no instructions and cannot be
  * removed — it is the room itself.
  */
+import { coordinatorMember } from '../journal.ts'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Button, IconAgentPresetOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RoomMember } from '../types.ts'
@@ -42,7 +43,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 /** The members tab. */
 export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory,
-  modelSurface, memberModel, setMemberModel, modelDirectory, t,
+  modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -106,16 +107,16 @@ export function MembersView({
       const cwd = values.cwd.trim()
       const instructions = values.instructions.trim()
       const model = values.model.trim()
-      const modelChanged = model !== values.modelBaseline.trim()
-      if (modelChanged && member.childSessionId !== undefined && setMemberModel !== undefined) {
-        // The live member switches FIRST: a structured refusal (a round in
-        // flight) aborts the whole save and rides the dialog's error line —
-        // no success close, no journaled persist. An undefined answer (RPC
-        // failure / vanished gateway) degrades to the persist alone.
+      const modelChanged = model !== values.modelBaseline.trim() && !(member.childSessionId !== undefined && renderMemberConfiguration !== undefined)
+      if (modelChanged && member.childSessionId !== undefined) {
+        if (setMemberModel === undefined) return { ok: false as const, message: t('invite.error.generic') }
+        // Compatibility entry also uses the core queue. No journaled model
+        // mutation for a started member: its durable owner is local-agent.
         const result = await setMemberModel(member.childSessionId, model === '' ? undefined : model)
-        if (result !== undefined && !result.ok) return { ok: false as const, message: result.error }
+        if (result === undefined) return { ok: false as const, message: t('invite.error.generic') }
+        if (!result.ok) return { ok: false as const, message: result.error }
       }
-      return updateMember(member.name, {
+      const patch = {
         ...name !== member.name ? { rename: name } : {},
         ...cwd !== (member.cwd ?? '') ? { cwd: cwd === '' ? null : cwd } : {},
         ...instructions !== (member.instructions ?? '')
@@ -124,8 +125,9 @@ export function MembersView({
         // The journaled intent: the first dispatch binds it for a never-
         // started member (the broker call above is a no-op there — no
         // delegation record — so this value alone carries the edit).
-        ...modelChanged ? { model: model === '' ? null : model } : {},
-      })
+        ...modelChanged && member.childSessionId === undefined ? { model: model === '' ? null : model } : {},
+      }
+      return Object.keys(patch).length === 0 ? { ok: true as const } : updateMember(member.name, patch)
     }
     const outcome = await invite({
       provider: values.provider,
@@ -161,7 +163,9 @@ export function MembersView({
       existingNames={(state?.members ?? []).map(entry => entry.name)}
       browseDirectory={browseDirectory}
       modelSurface={modelSurface}
+      renderHarnessModelPicker={renderHarnessModelPicker}
       memberModel={memberModel}
+      memberConfiguration={dialog.mode === 'edit' && dialog.member.childSessionId !== undefined ? renderMemberConfiguration?.(dialog.member.childSessionId) : undefined}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
       t={t}
@@ -197,7 +201,11 @@ export function MembersView({
           const running = run?.state === 'running'
           return (
             <MemberCard
-              key={member.name}
+              key={member.id ?? member.name}
+              coordinator={coordinatorMember(state)?.name === member.name}
+              onPromote={setCoordinator === undefined || member.id === undefined ? undefined : () => {
+                void setCoordinator(member.id!, state.coordinator?.revision ?? 0).then(outcome => { if (!outcome.ok) setError(outcome.message) })
+              }}
               member={member}
               run={run}
               elapsedMs={running ? Date.now() - (run?.startedAt ?? Date.now()) : undefined}

@@ -1,4 +1,11 @@
-# preset 可见性收口：worktrees/canvas 右栏入口、slash 命令搬家与 local-agent 定性
+# preset 可见性收口：worktrees/canvas 右栏入口、slash 命令搬家与 local-agent 定性（preset-visibility-rollout）
+
+- **分类**：plugin
+- **状态**：in-progress（A1/A2/A3 已实施并部署 3080、验收观察中；A5 已落地；A4 定性修正与 `/<harness>` slash 搬家本轮不做，见「不做」清单）
+- **最后更新**：2026-09-18
+- **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。统一规范在 [docs/plugin-visibility.md](../../docs/plugin-visibility.md)（本提案是它的实施清单，不重复规范本身）；[mode-switcher](2026-08-26-mode-switcher.md) 是入口设计、[canvas-space](2026-09-16-canvas-space.md) 与 [inspiration-canvas](2026-09-13-inspiration-canvas.md) 是各自包的界面，均非同一意图；交付记录见 [implemented/feature/2026-09-17-preset-visibility-rollout](../../.agents/notes/implemented/feature/2026-09-17-preset-visibility-rollout.md)。无重复，新建。
+- **官方依赖**：纯插件（零上游改动；preset 组合数据经 `pluginInventory` Remote 探测）
+
 
 2026-09-17。状态：A1/A2/A3 已实施并部署 3080（merge `197a5af4`，deploy-3080 OK，canary PASS），验收观察中；A5 已落地（2026-09-18，见下）。
 

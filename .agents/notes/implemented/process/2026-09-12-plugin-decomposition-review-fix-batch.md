@@ -105,7 +105,7 @@ branch had also made. Two mechanisms for one fact cannot both live in the tree.
   dropped-declaration case, the metadata/list cross-check, the package-map render
   and its `--check`, and the numeric prerelease comparison (`rc.10` > `rc.6`).
 - Reviewer verdicts (A and C, freeze range `cf8f663..a0fa7c6`) live in
-  `scratch-ds-design-review/05-review-{A,C}-round2.md`; the blockers they raised
+  [reviewer A](../../../../docs/acceptance/plugin-decomposition-review-A-round2-2026-09-12.md) and [reviewer C](../../../../docs/acceptance/plugin-decomposition-review-C-round2-2026-09-12.md); the blockers they raised
   are the commits `test(local-agent): freeze the provider patch contract`,
   `fix(scripts): make the family data-reference loop self-closing` and the WP8
   commits.

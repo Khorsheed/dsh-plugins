@@ -30,4 +30,4 @@ Status: implemented
 - 全部既有行为保留：provider 未登录置灰与登录提示、门面缺失降级、名字预校验与主机结构化错误行、浏览… 选 cwd（只读展示、留空=继承）、编辑模式的 diff 提交（清空 cwd/指令以 null 清除）。176 个 client/host 测试保持绿（原 172 + 新增 4：实时预览、骰子避重名、折叠默认态、`rollName` 耗尽）。
 - `tsconfig.client.json` 的显式文件清单新增 `MemberCard.tsx` 与 `name-pool.ts`。
 - 既有怪癖，不在本次范围：卡片的 `onKeyDown` stopPropagation 使 Esc 只在焦点在卡片外时关闭弹窗；取消按钮始终可用。
-- 已在临时实例（端口 3199，profile link 工作区包）验证：`scratch-screenshots/`（已 gitignore）下的截图覆盖两种布局与最终版的 亮/暗 × 初始/骰子/填写 矩阵。
+- 已在临时实例（端口 3199，profile link 工作区包）验证：`scratch-screenshots/`（已 gitignore、未入库）下的截图覆盖两种布局与最终版的 亮/暗 × 初始/骰子/填写 矩阵。

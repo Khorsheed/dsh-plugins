@@ -339,7 +339,7 @@ describe('mirrorDshSession', () => {
     const child = childWithRounds('child-4', 1)
     const first = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
     expect(first).toEqual({
-      texts: ['第一轮任务', 'thinking 1第一条回复'],
+      texts: ['第一轮任务', '第一条回复'],
       // Four events crossed (task, boundary pair, reply); the boundaries
       // count in the total but carry no delta text.
       total: 4,
@@ -366,7 +366,7 @@ describe('mirrorDshSession', () => {
     ])
     const second = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
     expect(second).toEqual({
-      texts: ['thinking 1第二条回复'],
+      texts: ['第二条回复'],
       total: 7,
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',
@@ -413,7 +413,7 @@ describe('mirrorDshSession', () => {
     expect(writes).toHaveLength(1)
     expect(writes[0]?.data).toEqual(todos1)
     expect(first.total).toBe(5)
-    expect(first.texts).toEqual(['任务', 'thinking 1回复'])
+    expect(first.texts).toEqual(['任务', '回复'])
 
     // A repeat pass over an unchanged log is a pure no-op — no duplicate
     // identical snapshot lands in the child log.
@@ -469,10 +469,10 @@ describe('mirrorDshLiveEvent', () => {
     expect(mirrorDshLiveEvent(child, stepLine('step/start', 1, 1) as never)).toBeUndefined()
     // Assistant messages cross verbatim, usage included, same as the span loop.
     const text = mirrorDshLiveEvent(child, assistantLine(1, '实时回复') as never)
-    expect(text).toBe('thinking 1实时回复')
+    expect(text).toBe('实时回复')
     expect(mirrorDshLiveEvent(child, stepLine('step/end', 1, 1) as never)).toBeUndefined()
     const assistant = child.snapshotEvents().find(event => event.type === 'assistant/message')
-    expect(assistant?.data).toMatchObject({ usage: { inputTokens: 100, outputTokens: 10 } })
+    expect(assistant?.data).toMatchObject({ usage: { inputTokens: 100, outputTokens: 10 }, message: { content: [{ type: 'reasoning', text: 'thinking 1' }, { type: 'text', text: '实时回复' }] } })
     const starts = child.snapshotEvents().filter(event => event.type === 'step/start')
     expect(starts).toHaveLength(1)
     expect(starts[0]?.data).toEqual({ turn: 1, step: 1 })
@@ -533,7 +533,7 @@ describe('mirrorDshLiveEvent', () => {
     ])
     const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-live-parity')
     expect(delta).toEqual({
-      texts: ['thinking 1第二条回复'],
+      texts: ['第二条回复'],
       total: 7,
       sessionLogFile: 'session.jsonl',
       observedModel: 'deepseek-official/deepseek-v4-flash',

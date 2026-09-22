@@ -29,4 +29,4 @@ Status: implemented
 - 183 个测试全绿（此前 176 + 新增 7）：竖条存在与颜色、折叠切换行为、短发言无按钮、`rosterStaleSince` 单测（首次派发、增/删成员、可见与不可见更新、cursor 边界），以及集成测试（首次派发携带名册、无变化省略、成员加入后重新携带、childSessionId 入日志不触发重带；goal 行每次都在）。
 - 稳态派发下成员 prompt 省掉整个名册段；任何名册变化后的首次派发会重新带上，成员不会长期按过期名册行动。
 - **暴露 link 安装隐患（scratch 已有绕行）：** `link:` 安装的插件把 `@deepseek-ai/dsh-session` 解析到仓库自己的 node_modules 副本，room 对 `KNOWN_SESSION_EVENT_TYPES` 的注册到不了持久化读路径所用的 toolchain 副本——冷 room session 在 link 的开发实例里拒绝加载（`SessionFormatUnsupportedError`），存活会话正常。3199 scratch profile 挂了一个 `room-catalog-shim` bundle（在 `~/code/dsh-scratch-uicheck/`，不在本仓库），按绝对路径 import toolchain 模块并注册词表。生产 3080 也是 `link:` 这些包——冷 room 读取在那里是否同样失败未验证，值得在下次 room 部署前查一下。
-- 已在 3199 scratch 实例用手工构造的 room session 验证（两名成员、一条 609 字符发言、一条短发言）：`scratch-screenshots/speech-rail-collapsed.png`（竖条 + 折叠 + 渐变 + 展开全部）与 `scratch-screenshots/speech-expanded.png`（全文 + 收起）。
+- 已在 3199 scratch 实例用手工构造的 room session 验证（两名成员、一条 609 字符发言、一条短发言）：`docs/screenshots/speech-rail-collapsed.png`（竖条 + 折叠 + 渐变 + 展开全部）与 `docs/screenshots/speech-expanded.png`（全文 + 收起）。

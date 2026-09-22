@@ -154,8 +154,18 @@ function factorLine(pair: EvalReportPair, t: LabViewProps['t']): string {
 }
 
 /** One condition pair: the factor, the per-item deltas, the CI and the verdict. */
-function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
-  const { pair, t } = props
+function PairBlock(props: {
+  pair: EvalReportPair
+  /**
+   * Open the records behind one (题目 × 对比组) on the 运行记录 stage. A
+   * report number is a MEAN over the run's reps, so the honest jump names the
+   * pair and lets the record list resolve how many that is — one rep opens
+   * its detail, several leave the list standing under a chip (I5·T69).
+   */
+  onOpenRecords: (task: string, condition: string) => void
+  t: LabViewProps['t']
+}) {
+  const { pair, onOpenRecords, t } = props
   // The weighted columns appear only when the rubric carried weights for both
   // sides — an empty pair of columns would read as "weight zero".
   const weighted = pair.rows.some(row => row.aWeighted !== null && row.bWeighted !== null)
@@ -182,8 +192,30 @@ function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
               {pair.rows.map(row => (
                 <tr key={row.task}>
                   <th className={css.reportRowHead}>{row.task}</th>
-                  <td className={css.reportTd}>{fmtNum(row.aMean)}</td>
-                  <td className={css.reportTd}>{fmtNum(row.bMean)}</td>
+                  {/* Each side's number opens the records it was computed
+                      from. A mean nobody can get behind is a number a reader
+                      has to take on faith, and this table is exactly where
+                      「为什么是这个数」 gets asked. */}
+                  <td className={css.reportTd}>
+                    <button
+                      type="button"
+                      className={css.reportJump}
+                      title={t('report.openRecords', { task: row.task, condition: pair.a })}
+                      onClick={() => { onOpenRecords(row.task, pair.a) }}
+                    >
+                      {fmtNum(row.aMean)}
+                    </button>
+                  </td>
+                  <td className={css.reportTd}>
+                    <button
+                      type="button"
+                      className={css.reportJump}
+                      title={t('report.openRecords', { task: row.task, condition: pair.b })}
+                      onClick={() => { onOpenRecords(row.task, pair.b) }}
+                    >
+                      {fmtNum(row.bMean)}
+                    </button>
+                  </td>
                   <td className={css.reportTd}>{fmtNum(row.delta)}</td>
                   {weighted && (
                     <td className={css.reportTd}>
@@ -227,6 +259,20 @@ function SourceMix(props: { sources: Readonly<Record<string, number>>; t: LabVie
         : `${props.t(share.key)} ${String(share.count)}`)).join(' / ')}
     </span>
   )
+}
+
+/**
+ * The records behind one criteria cell, de-duplicated.
+ *
+ * A cell aggregates every rep of one (题目 × 对比组), and every sample under
+ * it carries the `missionId` it was written on — including the superseded
+ * ones, because the judge draft a person replaced was written on that same
+ * record. One id means the cell has exactly one record behind it.
+ * @param cell - the projected cell.
+ * @returns the distinct mission ids, in the order the samples list them.
+ */
+function recordsOf(cell: EvalReportCriterionCell): string[] {
+  return [...new Set([...cell.samples, ...cell.superseded].map(sample => sample.missionId))]
 }
 
 /** The conclusion in one cell: ✓ / ✗, a proportion, or how many reps it held in. */
@@ -296,8 +342,20 @@ function CriterionSampleLine(props: {
  * the SAME number the pair table prints rather than this table's column sum,
  * so the two can never disagree about one item.
  */
-function CriteriaTable(props: { table: EvalReportTaskCriteria; t: LabViewProps['t'] }) {
-  const { table, t } = props
+function CriteriaTable(props: {
+  table: EvalReportTaskCriteria
+  /** The pair table's jump: land on 运行记录 narrowed to one (题目 × 对比组). */
+  onOpenRecords: (task: string, condition: string) => void
+  /**
+   * The same jump, but straight to ONE record — available here and not on the
+   * pair table because a criteria cell carries the `missionId` of every
+   * verdict behind it. With one record behind the cell there is nothing to
+   * pick, so picking it is not picking FOR the reader (I5·T69).
+   */
+  onOpenRecord: (task: string, condition: string, missionId: string) => void
+  t: LabViewProps['t']
+}) {
+  const { table, onOpenRecords, onOpenRecord, t } = props
   const [open, setOpen] = useState<string | null>(null)
   const columns = 4 + table.conditions.length
   // Same rule as the pair table: the weighted figure shows only when every
@@ -370,6 +428,29 @@ function CriteriaTable(props: { table: EvalReportTaskCriteria; t: LabViewProps['
                       {cell.superseded.length > 0 && (cell.sources['human-final'] ?? 0) > 0 && (
                         <Chip tone="warn">{t('report.humanOverride')}</Chip>
                       )}
+                      {/* The same road the pair table's numbers take, keyed
+                          off what this cell actually knows: one record behind
+                          it opens that record, several leave the list standing
+                          under its chip for the reader to choose. */}
+                      {recordsOf(cell).length > 0 && (() => {
+                        const records = recordsOf(cell)
+                        const only = records.length === 1 ? records[0] as string : null
+                        return (
+                          <button
+                            type="button"
+                            className={css.reportJump}
+                            title={only === null
+                              ? t('report.openRecords', { task: table.task, condition: cell.condition })
+                              : t('report.openRecord', { record: only })}
+                            onClick={() => {
+                              if (only === null) onOpenRecords(table.task, cell.condition)
+                              else onOpenRecord(table.task, cell.condition, only)
+                            }}
+                          >
+                            {t(only === null ? 'report.criteriaOpenRecords' : 'report.criteriaOpenRecord')}
+                          </button>
+                        )
+                      })()}
                     </div>
                     {cell.samples.map(sample => (
                       <CriterionSampleLine
@@ -690,11 +771,15 @@ export function ReportPage(props: {
   onReexport: () => void
   /** Look for the bundle under this export directory instead. */
   onLookIn: (dir: string) => void
+  /** Jump from a number to the records it was computed from (I5·T69). */
+  onOpenRecords: (task: string, condition: string) => void
+  /** Land on 运行记录 AND open ONE record — the criteria table's jump. */
+  onOpenRecord: (task: string, condition: string, missionId: string) => void
   t: LabViewProps['t']
 }) {
   const {
     report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
-    onFinalize, onExport, onReexport, onLookIn, t,
+    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, t,
   } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
@@ -871,13 +956,23 @@ export function ReportPage(props: {
                 ? <div className={css.dim}>{t('report.singleCondition')}</div>
                 : report.pairs.length === 0
                   ? <div className={css.dim}>{t('report.noPairs')}</div>
-                  : report.pairs.map(pair => <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} t={t} />)}
+                  : report.pairs.map(pair => (
+                    <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} t={t} />
+                  ))}
 
             {/* Under the comparison, where a reader who has just seen a
                 delta asks WHICH dimension moved and on what grounds. Behind
                 the same gate: `criteria` is empty when the invariants closed
                 the comparison, and a single-group run still gets the table. */}
-            {report.criteria.map(table => <CriteriaTable key={table.task} table={table} t={t} />)}
+            {report.criteria.map(table => (
+              <CriteriaTable
+                key={table.task}
+                table={table}
+                onOpenRecords={onOpenRecords}
+                onOpenRecord={onOpenRecord}
+                t={t}
+              />
+            ))}
 
             <Efficiency report={report} t={t} />
             <JudgeConsistency report={report} t={t} />

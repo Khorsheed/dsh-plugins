@@ -75,3 +75,5 @@
 - 排队会掩盖瞬时并发,须防队列饥饿 / 死锁(每个 settle 路径必须唤醒,错误路径补救)。
 - 若 token 流式根因落在 harness/claude 契约(`--include-partial-messages` / `stream-json` 支持),需记 seam/upstream 候选,并把该点降级为「已知有限」。
 - 现阶段不扩大:room 流式投影(§方案 C 可选部分)、双成员并行、跨会话协调排队等后续另立。
+
+- 2026-09-19：协调者实现分支增加 provider 边界整轮 FIFO 和持久人工成员收件箱，覆盖 Room/工具/成员输入的原生互斥及忙时配置准入。实现约束及仍未完成的 Room 投递边界/展示统一见[成员准入记录](../../.agents/notes/implemented/architecture/2026-09-19-member-admission-inbox.md)。尚未部署或进行浏览器 P95 验收。

@@ -30,7 +30,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   assertResumeScopeUnchanged,
-  assertScopeExecOnly,
   resolveRoundModel,
   containerExecSpawn,
   containerScopedHome,
@@ -40,7 +39,7 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
@@ -48,6 +47,7 @@ import type { KimiModelBroker } from './model-broker.ts'
 import { guardKimiCredential } from './credential-guard.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
+import { kimiExecConfiguration } from './model-configuration.ts'
 import { addTokenUsage } from './session-view.ts'
 import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
 
@@ -224,9 +224,27 @@ export class KimiCliProvider implements SubagentProvider {
       // A resume re-requests the model the FIRST round recorded — the caller
       // cannot name one (the facade refuses it), and a record without one is
       // a delegation that named none, which this round repeats.
-      return this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model)
+      if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') return this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model)
+      return this.ctx.localAgent.withMemberConfigurationRound({
+        childSessionId: intent.childSessionId, provider: this.name, parentSessionId: request.parent.session.id, cwd,
+        ...scope === undefined ? {} : { scope },
+        ...record?.model === undefined ? {} : { model: record.model },
+        ...record?.effort === undefined ? {} : { effort: record.effort },
+        ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
+      }, configuration => this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
     }
-    return this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model)
+    const childSessionId = SessionId(intent?.preparedMemberId ?? randomUUID())
+    if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
+      if (intent?.effort !== undefined) throw new Error('Kimi effort requires the configuration admission core')
+      return this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId)
+    }
+    return this.ctx.localAgent.withMemberConfigurationRound({
+      childSessionId, provider: this.name, parentSessionId: request.parent.session.id, cwd,
+      ...scope === undefined ? {} : { scope },
+      ...intent?.model === undefined ? {} : { model: intent.model },
+      ...intent?.effort === undefined ? {} : { effort: intent.effort },
+      ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
+    }, configuration => this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted)
   }
 
   /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */
@@ -238,8 +256,9 @@ export class KimiCliProvider implements SubagentProvider {
     scope: string | undefined,
     /** The model this DELEGATION requested, when the caller named one. */
     requestedModel: string | undefined,
+    runId: ReturnType<typeof SessionId>,
+    configuration?: LocalAgentAppliedConfiguration,
   ): Promise<SubagentRun> {
-    const runId = SessionId(randomUUID())
     let childSession: Session | undefined
     try {
       // Strict global read, never the caller-scope `ctx.sessions` proxy: the
@@ -248,7 +267,7 @@ export class KimiCliProvider implements SubagentProvider {
       if (sessions === undefined) {
         throw new Error('the sessions service is not mounted')
       }
-      childSession = sessions.create(runId, {
+      childSession = sessions.get(runId) ?? sessions.create(runId, {
         meta: {
           cwd,
           parentSession: request.parent.session.id,
@@ -295,9 +314,7 @@ export class KimiCliProvider implements SubagentProvider {
     // target exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
-      // A scoped round is exec-only: the resident `kimi acp` process is
-      // started per member against the DEFAULT scoped home.
-      assertScopeExecOnly(scope, 'subagent-kimi')
+      // The member-bound live driver receives this exact scoped home.
       // A delegation naming its own model is NOT refused anymore: the model
       // becomes the member's start model, which the live driver's spawn
       // resolver binds (rewriting the scoped `default_model` before spawn; a
@@ -308,6 +325,7 @@ export class KimiCliProvider implements SubagentProvider {
           cwd,
           homeDir,
           childSession,
+          ...configuration === undefined ? {} : { configuration: configuration.resolved },
           parentSessionId: request.parent.session.id,
           // The ACP session id arrives with session/new (server-assigned), far
           // earlier than the exec path's settle-time stderr parse.
@@ -354,7 +372,8 @@ export class KimiCliProvider implements SubagentProvider {
         endpointLabel: baseUrl,
         // The session-level override (the composer picker) outranks even the
         // delegation's own model — the family order puts it first.
-        ...resolveRoundModel(this.memberModels?.overrideFor(runId) ?? requestedModel, this.model),
+        ...(configuration?.resolved ?? resolveRoundModel(this.memberModels?.overrideFor(runId) ?? requestedModel, this.model)),
+        ...configuration === undefined ? {} : { controlled: true },
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -414,6 +433,7 @@ export class KimiCliProvider implements SubagentProvider {
     scope: string | undefined,
     /** The model the delegation's FIRST round recorded, re-requested here. */
     requestedModel: string | undefined,
+    configuration?: LocalAgentAppliedConfiguration,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -439,9 +459,7 @@ export class KimiCliProvider implements SubagentProvider {
       // See the fresh path: a container target is exec-only.
       const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
-        // See the fresh path: a scoped round never goes to the resident
-        // process, which binds the default scoped home.
-        assertScopeExecOnly(scope, 'subagent-kimi')
+        // Resume retains the recorded scope and its native session.
         // See the fresh path: the recorded model is the member's start model,
         // which the spawn resolver binds (retiring a mismatched runtime).
         if (requestedModel !== undefined) this.memberModels?.noteStartModel(intent.childSessionId, requestedModel)
@@ -450,6 +468,7 @@ export class KimiCliProvider implements SubagentProvider {
             cwd,
             homeDir,
             childSession,
+            ...configuration === undefined ? {} : { configuration: configuration.resolved },
             parentSessionId: request.parent.session.id,
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
           })
@@ -481,7 +500,8 @@ export class KimiCliProvider implements SubagentProvider {
           endpointLabel: baseUrl,
           // See the fresh path: the session-level override outranks the
           // delegation's recorded model on the exec path too.
-          ...resolveRoundModel(this.memberModels?.overrideFor(intent.childSessionId) ?? requestedModel, this.model),
+          ...(configuration?.resolved ?? resolveRoundModel(this.memberModels?.overrideFor(intent.childSessionId) ?? requestedModel, this.model)),
+        ...configuration === undefined ? {} : { controlled: true },
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {
@@ -549,6 +569,8 @@ export interface KimiCliRunSpec {
    * rode every round.
    */
   readonly model?: string | undefined
+  readonly effort?: string | undefined
+  readonly controlled?: boolean
   /** Subprocess termination grace passed to the shared process-tree owner. */
   readonly disposeGraceMs: number
   /** Shared subprocess service spawn operation. */
@@ -742,7 +764,7 @@ async function mirrorKimiAfterExit(
  * @param spec - workspace, environment, process service, and diagnostic policy.
  * @returns the published run after the child starts.
  */
-export function startKimiCliRun(
+export async function startKimiCliRun(
   request: SubagentStartRequest,
   spec: KimiCliRunSpec,
 ): Promise<SubagentRun> {
@@ -769,9 +791,14 @@ export function startKimiCliRun(
   // Container target: the same argv, wrapped in `docker exec`. The host cwd
   // still applies — it is the docker CLIENT's working directory now, while
   // the CLI's own is the target's in-container workdir.
+  const configurationHome = spec.homeDir ?? spec.env['KIMI_CODE_HOME']
+  if (spec.controlled && spec.effort !== undefined && !configurationHome) throw new Error('Kimi effort requires an explicit scoped configuration home')
+  const configEnv = spec.controlled && spec.effort !== undefined
+    ? await kimiExecConfiguration(configurationHome!, spec.model, spec.effort) : {}
+  const env = { ...spec.env, ...configEnv }
   const launch = spec.exec === undefined
-    ? { argv, env: spec.env }
-    : containerExecSpawn(spec.exec, { argv, env: spec.env }, 'subagent-kimi')
+    ? { argv, env }
+    : containerExecSpawn(spec.exec, { argv, env }, 'subagent-kimi')
 
   const child = spec.spawn({
     argv: launch.argv,

@@ -296,6 +296,42 @@ describe('LocalAgentRegistry delegation facade', () => {
       expectNothingStaged(h.registry)
     })
 
+    it('queues concurrent resumes through the modern provider boundary instead of rejecting its active lock', async () => {
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      const binding = { childSessionId: 'queued-child', provider: PROVIDER, parentSessionId: PARENT, cwd: '/home/user/work' }
+      h.registry.recordDelegation({ ...binding, cliSessionId: 'native-thread' })
+      h.registry.register({ name: 'fake', displayName: 'Fake', homeEnvVar: 'FAKE_HOME', delegationProvider: PROVIDER,
+        records: { listSessions: async () => [] }, isAuthenticated: async () => true,
+        modelBroker: { modelInfo: () => ({ choices: [], switchable: true }), configurationAdapter: () => ({
+          validate: async () => {}, prepare: async () => ({ model: 'configured' }), apply: async () => ({ model: 'configured' }),
+          reconcile: async () => ({ active: false, matches: 'current', resolved: { model: 'configured' } }),
+        }) },
+      })
+      const turns: ReturnType<typeof makeRun>[] = []
+      h.setStartHandler(request => {
+        h.consumeIntent(request)
+        return h.registry.withMemberConfigurationRound(binding, async () => {
+          expect(h.registry.acquireResumeLock(binding.childSessionId)).toBe(true)
+          const turn = makeRun(binding.childSessionId, request.signal)
+          turns.push(turn)
+          void turn.run.result.then(() => h.registry.releaseResumeLock(binding.childSessionId))
+          return turn.run
+        }, request.signal)
+      })
+      await h.registry.resume(PARENT, PROVIDER, binding.childSessionId, PROMPT)
+      const second = h.registry.resume(PARENT, PROVIDER, binding.childSessionId, PROMPT)
+      await vi.waitFor(() => expect(h.registry.queuedMemberRounds(binding.childSessionId)).toBe(1))
+      expect(turns).toHaveLength(1)
+      turns[0]!.settle({ output: [], stopReason: 'completed' })
+      const run = await second
+      expect(turns).toHaveLength(2)
+      expect(h.registry.runConfiguration(run)?.resolved.model).toBe('configured')
+      expect(h.registry.cancel(binding.childSessionId)).toBe(true)
+      expect(await run.result).toMatchObject({ stopReason: 'aborted' })
+      await h.fiber.dispose()
+    })
+
     it('rejects a child with an in-flight resume', async () => {
       const h = await mountFacade()
       h.enterParent(PARENT)

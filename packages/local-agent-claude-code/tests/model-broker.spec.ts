@@ -24,6 +24,7 @@ interface Mount {
 }
 
 function mount(options: {
+  directory?: ClaudeModelBrokerDeps['directory']
   model?: string
   recent?: string[]
   live?: boolean
@@ -44,6 +45,7 @@ function mount(options: {
       isDelegationActive: (child: string) => active.includes(child),
       getDelegation: () => options.record as never,
     },
+    ...options.directory === undefined ? {} : { directory: options.directory },
     settingsModel: () => settings.model?.trim() === '' ? undefined : settings.model?.trim(),
     cliDefault: () => new ClaudeScopedModelMemory().cliDefault(homeDir),
     recentModels: () => settings.recent,
@@ -59,6 +61,19 @@ function mount(options: {
 }
 
 describe('claude model broker resolution', () => {
+  it('offers the native directory with labels while retaining historical suggestions as history', async () => {
+    const { broker } = mount({ recent: ['old-model'], directory: () => ({
+      entries: [{ value: 'default', label: 'Recommended', resolvedModel: 'native-current', source: 'native' }],
+      defaultModel: 'default', complete: true, customInput: true, status: 'ready', refreshing: false, revision: 1,
+    }) })
+    const info = await broker.modelInfo()
+    expect(info).toMatchObject({ effective: 'default', source: 'cli-builtin', choices: ['default', 'old-model'] })
+    expect(info.directory?.entries).toEqual([
+      { value: 'default', label: 'Recommended', resolvedModel: 'native-current', source: 'native' },
+      { value: 'old-model', label: 'old-model', source: 'history' },
+    ])
+  })
+
   it('cli-builtin: nothing names a model, so effective stays absent', async () => {
     const { broker } = mount()
     const info = await broker.modelInfo()
@@ -129,7 +144,7 @@ describe('claude model broker lastObserved', () => {
     const { broker } = mount({ record: { cliSessionId: 'cli-1' }, transcriptModel })
     const info = await broker.modelInfo('child-1')
     expect(info.lastObserved).toBe('history-model')
-    expect(transcriptModel).toHaveBeenCalledWith('cli-1')
+    expect(transcriptModel).toHaveBeenCalledWith('cli-1', 'child-1')
   })
 
   it('harness level: the newest transcript in the tree answers (no session id)', async () => {
@@ -137,7 +152,7 @@ describe('claude model broker lastObserved', () => {
     const { broker } = mount({ transcriptModel })
     const info = await broker.modelInfo()
     expect(info.lastObserved).toBe('harness-history-model')
-    expect(transcriptModel).toHaveBeenCalledWith(undefined)
+    expect(transcriptModel).toHaveBeenCalledWith(undefined, undefined)
   })
 
   it('a transcript read failure degrades to no lastObserved, never a throw', async () => {

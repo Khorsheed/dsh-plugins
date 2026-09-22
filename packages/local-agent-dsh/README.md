@@ -2,6 +2,8 @@
 
 [English](README.en.md) | 中文
 
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。DSH headless 进程把原生 assistant 帧转入共用的插件瞬时通道。
+
 把任务委派给 dsh 自己——作为独立的本地 CLI 进程运行，与 kimi / codex / claude-code harness 平级。子 dsh 在自己的 scoped home 下运行，通过父级的 API key 认证，可跨轮续接；设置开关（默认关）打开后才启用委派工具。
 
 ## 特性
@@ -52,7 +54,9 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 **写了 = 每轮委派以它起子 dsh。**新起一轮与续接（resume）同等对待，`--model` 排在 `--session-id` / `--resume` 之后。值写成 `provider/model`（与 `effectiveSettings.model` 报的形状相同）；只写模型名则沿用宿主实例的 provider。按第一个 `/` 切分，所以模型 id 里再带斜杠也不会被切坏。
 
-设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录），保存即生效于**下一轮**委派，不需要重载；清空后保存即取消该键。字段未设置时，输入框内直接以暗色占位**显示当前跟随的默认模型**（继承展示，不是钉死的值：`agentDefaultModel` 当前选择、否则宿主实例默认、否则最近观测到的模型）；旁边的 ∨ 菜单是唯一的候选列表（不再用原生 datalist），首行是「默认（跟随宿主…）」项——未设置时它处于选中态，点它把草稿清回跟随默认——其余项是模型 broker 给出的去重并集（本键 + 宿主默认选择 + **宿主适配器枚举** + 最近使用）：broker 通过公开的 `ctx.llm` 面（`listProviders` × `listModels`，宿主自己的模型选择器也建在它上面）把宿主实例能跑的模型全部拼作 `provider/model` 供选择，并随 `llm/adapters-updated` 事件刷新；绝不内置目录，枚举不可读时该层为空、其余层照常回答；手动输入始终可用。核心或 broker 缺席时退回旧的裸输入框（仅最近使用候选）。
+设置卡「默认模型」修改后续轮次使用的 provider 配置。共享选择器展示当前作用域的模型目录、发现来源和完整性，并保留按需填写模型 ID 的入口。清空选择后跟随有效配置及默认值链。保存不会打断当前轮次，也无需重载；共享选择器不可用时，卡片保留文本输入兜底。成员级模型和推理强度修改使用下文的持久控制面。
+
+丰富目录还通过可用的公开 `resolveModelInfo` 保留适配器显示名、解析路由和原生推理选项。目录共用 core 缓存与刷新订阅，区分部分枚举，整体刷新失败保留成功数据。宿主目录不证明被单独修改的 scoped 运行时配置相同。共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次（含工具续跑）；core 统一持有当前/待生效配置、撤销与重试，冻结评测成员禁止变更。
 
 **委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（固定顺序：会话覆盖 > 委派记录 > 本键 > 宿主默认选择 > CLI 内置）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。常驻模式下带模型的轮次不再被拒绝：它成为该成员的**起始模型**，在 `--serve` 子 dsh 起进程时以 `--model` 绑定；若该成员的常驻 runtime 绑定的是另一个模型，先回收重生（子 dsh 会话从盘上 resume 续上），再以所点模型起新一轮。
 
@@ -64,7 +68,7 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 不再逐字写入子会话日志（宿主移除逐 chunk 事件），增量改走运行进度通道、轮次以一条合并消息落定（最终文本不变）；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。更旧宿主留在前一发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制

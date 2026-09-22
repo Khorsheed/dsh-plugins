@@ -148,7 +148,7 @@ dsh-dev/
 
 | 包 | 版本 | 状态 | 功能 | 相关 proposal |
 |---|---|---|---|---|
-| `local-agent` | 0.1.0-rc.6 | 🔶 | 家族核心：harness registry、作用域 home、登录/会话命令族、委派门面 `ctx.localAgent` | [delegation-api](../proposals/active/2026-08-18-local-agent-delegation-api.md) `planned`<br>[member-channel](../proposals/active/2026-08-19-local-agent-member-channel.md) `planned` ← **卡发布**<br>[member-state](../proposals/active/2026-08-22-local-agent-member-state.md) `planned` |
+| `local-agent` | 0.1.0-rc.6 | 🔶 | 家族核心：harness registry、作用域 home、登录/会话命令族、委派门面 `ctx.localAgent` | [delegation-api](../proposals/closed/2026-08-18-local-agent-delegation-api.md) `done`<br>[member-channel](../proposals/closed/2026-08-19-local-agent-member-channel.md) `done`<br>[member-state](../proposals/active/2026-08-22-local-agent-member-state.md) `planned`；家族整体仍未上 npm（见 [release-status](release-status.md)） |
 | `local-agent-kimi` | 0.1.0-rc.6 | 🔶 | Kimi Code harness：`kimi -p` 委派、续聊、记账 | — |
 | `local-agent-codex` | 0.1.0-rc.6 | 🔶 | Codex harness：`codex exec` 委派 | — |
 | `local-agent-claude-code` | 0.1.0-rc.5 | 🔶 | Claude Code harness：`claude -p` 委派 | — |

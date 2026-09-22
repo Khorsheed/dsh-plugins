@@ -1755,3 +1755,82 @@ describe('report — tool calls (T30c)', () => {
     for (const line of rows) expect(line).not.toContain('toolCalls')
   })
 })
+
+
+describe('report frozen effort evidence', () => {
+  it('recomputes effort mismatch, excludes the sample and retains its cost and evidence', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'effort-mismatch', meta: { conditions: [conditionEntry('codex-exec', baseConditionDoc(), 'a1')] },
+      missions: [{ id: 'P0-codex-exec-rep1', attempts: [{ attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+        annotations: [scriptNote('P0', [['check', true]]), { ns: 'orchestrator', by: 'orchestrator', payload: [{ ...delegation('stage1', 1, 1000, 100), reasoning: { declared: 'high', requested: 'high', resolved: 'high', observed: 'low', revision: 0, status: 'verified' } }] }],
+      }] }],
+    })
+    const report = await analyzeBundle(bundle)
+    expect(report.invariants.find(row => row.id === 'subject')?.status).toBe('violated')
+    expect(report.efficiencyExcluded).toContainEqual({ condition: 'codex-exec', state: 'configuration-mismatch', count: 1 })
+    const written = await writeEvalReport(bundle)
+    const rows = readFileSync(written.usagePath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    expect(rows[0]).toMatchObject({ counted: false, reasoning: { status: 'mismatch', observed: 'low', resolved: 'high' }, usage: { outputTokens: 100 } })
+  })
+
+  it('scores NOTHING on a mismatched cell, however many layers judged it (T54 × frozen effort)', async () => {
+    // The two rules meet here. Per-criterion merging asks «which LAYER answers
+    // for this criterion»; the configuration guard asks «does this cell answer
+    // for its condition at all». A round whose effort was read back as
+    // something other than the condition declared did not run under that
+    // condition, so the merge must not turn an unattributable cell into a
+    // partially usable one — not one criterion of it counts, from any layer.
+    const mismatched = (condition: string): FixtureAnnotation[] => [
+      { ns: 'llm-draft', by: 'judge-runner', createdAt: 1, payload: ['C1', 'C2', 'C3'].map(id => verdict('F8', id, true, 'judge-a')) },
+      { ns: 'human-final', by: 'tab:s1', createdAt: 2, payload: [verdict('F8', 'C1', true, 'judge-bench')] },
+      {
+        ns: 'orchestrator', by: 'orchestrator', createdAt: 0,
+        payload: [{
+          ...delegation('stage1', 1, 1000, 100),
+          // Declared high, observed low: the report recomputes this to
+          // `mismatch` whatever the record claims.
+          ...(condition === 'claude-exec'
+            ? { reasoning: { declared: 'high', requested: 'high', resolved: 'high', observed: 'low', revision: 0, status: 'verified' } }
+            : { reasoning: { declared: 'high', requested: 'high', resolved: 'high', observed: 'high', revision: 0, status: 'verified' } }),
+        }],
+      },
+    ]
+    const report = await analyzeBundle(writeBundle(tmpTree(), {
+      runId: 'mismatch-merge',
+      meta: {
+        expectedNs: ['llm-draft', 'human-final'],
+        conditions: [
+          conditionEntry('codex-exec', baseConditionDoc(), 'aa'),
+          conditionEntry('claude-exec', baseConditionDoc({ preset: 'thorough' }), 'bb'),
+        ],
+      },
+      missions: ['codex-exec', 'claude-exec'].map(condition => ({
+        id: `F8-${condition}-rep1`,
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m8')),
+          annotations: mismatched(condition),
+        }],
+      })),
+    }))
+
+    // Its verdict ROWS are still written — the bundle recorded them and the
+    // report never hides a record — but they carry no source mix, because
+    // nothing about this cell scored.
+    const mismatchedRows = report.rows.filter(row => row.condition === 'claude-exec')
+    expect(mismatchedRows).toHaveLength(4)
+    for (const row of mismatchedRows) expect(row.sources).toBeUndefined()
+    // The attributable side keeps its own mix, merged per criterion.
+    for (const row of report.rows.filter(r => r.condition === 'codex-exec')) {
+      expect(row.sources).toEqual({ 'human-final': 1, 'llm-draft': 2 })
+    }
+    // A mismatch violates the SUBJECT invariant, so the comparison gate shuts
+    // for the whole run and the criteria table is withheld with `pairs` —
+    // the reader is told which check failed, not shown a table built on a
+    // cell nobody can attribute.
+    expect(report.invariants.find(check => check.id === 'subject')?.status).toBe('violated')
+    expect(report.comparisonAllowed).toBe(false)
+    expect(report.criteriaTables).toEqual([])
+    expect(report.efficiencyExcluded).toContainEqual({ condition: 'claude-exec', state: 'configuration-mismatch', count: 1 })
+  })
+
+})

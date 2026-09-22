@@ -488,6 +488,7 @@ describe('claude-cli-provider child session record', () => {
     const ctx = new Context()
     const created: Session[] = []
     ctx.provide('sessions', {
+      get: () => undefined,
       create: (id: SessionId) => {
         const session = Session.create(id)
         created.push(session)

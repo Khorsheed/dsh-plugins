@@ -1,6 +1,8 @@
 # tool catalog display：工具 tab 展示（内置 / 插件 / MCP 分组 + 参数级详情）
 
+- **分类**：plugin
 - **状态**：planned
+- **最后更新**：2026-08-29
 - **官方依赖**：纯插件
 - **范围**：**Phase 1 = 只做展示**。不涉及用户导入 MCP / 配置 / secret（那是独立的 Phase 2「MCP 导入与生命周期」，单独立 proposal）。
 

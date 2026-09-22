@@ -7,11 +7,12 @@
  * *behaviour* are testable without booting anything.
  */
 import { describe, expect, it } from 'vitest'
-import { classifyPayload, normalizeUrl } from '../src/service.ts'
+import { classifyFetchFailure, classifyPayload, crossOriginRetarget, inspectPreview, MIN_PREVIEW_TEXT_CHARS, normalizeUrl } from '../src/service.ts'
+import { arxivHtmlUrl, arxivLink } from '../src/arxiv.ts'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ReaderStore, ReaderStoreError, boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
+import { ReaderStore, ReaderStoreError, boundAnnotations, boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
 import { delayUntilNext, isCatchUpDue, nextOccurrence, parseTimeOfDay, previousOccurrence } from '../src/schedule.ts'
 import { formatReaderRef, mergedDraft, provenanceOf, relativeWhen, absoluteDate } from '../src/client/quote.ts'
 import { MAX_BODY_CHARS_PER_SOURCE } from '../src/types.ts'
@@ -123,6 +124,63 @@ describe('state document', () => {
   it('repairs an unusable refresh time instead of throwing', () => {
     const doc = normalizeStateDoc({ sources: [], refresh: { enabled: true, timeOfDay: 'noon-ish' } })
     expect(doc.refresh.timeOfDay).toBe('10:00')
+  })
+
+  it('keeps every failure code the wire knows, unreadable included', () => {
+    // The card's reason sentence is keyed by the code; a code the document
+    // dropped on read would come back from a restart as "no reason".
+    const doc = normalizeStateDoc({
+      sources: [{
+        id: 'a',
+        url: 'https://openreview.net/forum?id=x',
+        kind: 'link',
+        addedAt: '2026-09-20T00:00:00.000Z',
+        resolvedFrom: 'https://doi.org/10.1038/nature16961',
+        failure: { code: 'unreadable', message: 'm', at: '2026-09-20T00:00:00.000Z' },
+      }],
+    })
+    expect(doc.sources[0]?.failure?.code).toBe('unreadable')
+    expect(doc.sources[0]?.resolvedFrom).toBe('https://doi.org/10.1038/nature16961')
+  })
+
+  it('carries a captured title/excerpt on the annotation, capped, and never sweeps them as empty', () => {
+    const doc = normalizeStateDoc({
+      sources: [],
+      annotations: {
+        'link:a': {
+          title: `  ${'题'.repeat(400)}  `,
+          excerpt: '摘要两句。',
+        },
+        'link:b': { title: '   ' },
+      },
+    })
+    // Capped and trimmed on read…
+    expect(doc.annotations?.['link:a']?.title).toHaveLength(300)
+    expect(doc.annotations?.['link:a']?.excerpt).toBe('摘要两句。')
+    // …an empty one is absent, and a meta-only annotation is NOT swept: it is
+    // the card's memory of what the paper was, load-bearing past the body.
+    expect(doc.annotations?.['link:b']?.title).toBeUndefined()
+    expect(doc.annotations?.['link:b']).toBeUndefined()
+  })
+
+  it('keeps the captured meta when the body budget evicts the body', () => {
+    const annotations = Object.fromEntries(
+      Array.from({ length: 12 }, (_, index) => [`e${index}`, {
+        body: { html: '<p>x</p>', fetchedAt: `2026-09-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`, expiresAt: '2027-01-01T00:00:00.000Z', url: 'https://example.com' },
+        ...(index === 0 ? { title: '最早的论文', excerpt: '它的摘要' } : {}),
+      }]),
+    )
+    const bounded = boundAnnotations({
+      ...emptyStateDoc(),
+      cache: { ttlHours: 24, maxEntries: 5 },
+      annotations,
+    })
+    expect(bounded.changed).toBe(true)
+    // The oldest body is evicted, but its card meta survives the body.
+    const evicted = bounded.doc.annotations?.['e0']
+    expect(evicted?.body).toBeUndefined()
+    expect(evicted?.title).toBe('最早的论文')
+    expect(evicted?.excerpt).toBe('它的摘要')
   })
 
   it('bounds a single oversize payload and flags it', () => {
@@ -353,5 +411,151 @@ describe('the tag panel is placed from its own box', () => {
     const pane = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.tsx'), 'utf8')
     expect(pane).toMatch(/TAG_PANEL_WIDTH = 236/)
     expect(pane).toMatch(/TAG_PANEL_MAX_HEIGHT = 296/)
+  })
+})
+
+describe('a saved link says why it has no preview', () => {
+  /** An error shaped like the harness's: the code is a PROPERTY, not text. */
+  const seamError = (message: string, code?: string): Error =>
+    Object.assign(new Error(message), code === undefined ? {} : { code })
+
+  const REDIRECT_REFUSAL = 'cross-origin redirect to https://login.ezproxy.obspm.fr is not followed automatically; retry against that URL directly'
+
+  it('classifies a cross-origin refusal to a login host as a login wall', () => {
+    // The regression this locks: the original detector searched the MESSAGE for
+    // the text `WEB_REDIRECT_BLOCKED`, which the host never puts there (it is
+    // `error.code`), so the whole follow path was dead and the reader got the
+    // seam's raw sentence. The URL that surfaced it was an institutional proxy
+    // hop: arxiv-org.ezproxy.obspm.fr → login.ezproxy.obspm.fr.
+    const failure = classifyFetchFailure(seamError(REDIRECT_REFUSAL, 'WEB_REDIRECT_BLOCKED'), '2026-09-18T00:00:00.000Z')
+    expect(failure.code).toBe('login')
+    expect(failure.message).toBe(REDIRECT_REFUSAL)
+  })
+
+  it('classifies a cross-origin refusal to an ordinary host as a move', () => {
+    const message = 'cross-origin redirect to https://www.example.com is not followed automatically; retry against that URL directly'
+    expect(classifyFetchFailure(seamError(message, 'WEB_REDIRECT_BLOCKED'), 'now').code).toBe('redirected')
+  })
+
+  it('reads the code where the host actually puts it', () => {
+    // Message-only lookalikes must NOT be treated as redirect refusals: driving
+    // the follow from free text is what made it fragile in the first place.
+    const message = 'cross-origin redirect to https://www.example.com is not followed automatically'
+    expect(crossOriginRetarget(seamError(message), 'http://www.example.com/feed')).toBeUndefined()
+  })
+
+  it('follows only the hop it can reconstruct — same host, new scheme', () => {
+    const message = 'cross-origin redirect to https://example.com is not followed automatically; retry against that URL directly'
+    // http → https on the same host keeps the path and query: that is the hop
+    // the refusal's origin-only message still describes faithfully.
+    expect(crossOriginRetarget(seamError(message, 'WEB_REDIRECT_BLOCKED'), 'http://example.com/feed.xml?x=1'))
+      .toBe('https://example.com/feed.xml?x=1')
+    // A different host has moved to another SITE; fetching its bare origin
+    // would file somebody else's home page under the reader's URL.
+    expect(crossOriginRetarget(seamError(message, 'WEB_REDIRECT_BLOCKED'), 'https://other.example.com/feed.xml'))
+      .toBeUndefined()
+  })
+
+  it('maps the remaining seam failures onto their own codes', () => {
+    expect(classifyFetchFailure(seamError('unsupported content type "application/pdf"', 'WEB_UNSUPPORTED_CONTENT_TYPE'), 'now').code)
+      .toBe('unsupported-type')
+    expect(classifyFetchFailure(seamError('HTTP 403: the site refuses non-browser requests', undefined), 'now').code)
+      .toBe('blocked')
+    expect(classifyFetchFailure(seamError('HTTP 404', undefined), 'now').code).toBe('http')
+    expect(classifyFetchFailure(seamError('no web capability is mounted'), 'now').code).toBe('unreachable')
+    expect(classifyFetchFailure(seamError('fetch failed: ECONNREFUSED'), 'now').code).toBe('unreachable')
+  })
+})
+
+describe('inspectPreview', () => {
+  const page = (text: string): string => `<!doctype html><html><body><p>${text}</p></body></html>`
+
+  it('leaves a real page alone', () => {
+    // Only a vanishingly small payload is second-guessed; an ordinary article
+    // must never be downgraded to a link-only card.
+    expect(inspectPreview(page('正'.repeat(MIN_PREVIEW_TEXT_CHARS)), 'https://example.com/a', 'https://example.com/a'))
+      .toBeUndefined()
+  })
+
+  it('recognizes a bot challenge that arrived as a 200', () => {
+    // Measured on the acceptance instance: an OpenReview PDF link answered
+    // `302 /challenge?redirect=…` with a 200 challenge page, so the status code
+    // said nothing and the card silently became that page.
+    const raw = '<!doctype html><html><title>Just a moment…</title><body>Checking your browser before accessing</body></html>'
+    const result = inspectPreview(raw, 'https://openreview.net/challenge?redirect=%2Fpdf%3Fid%3Dx', 'https://openreview.net/pdf?id=x')
+    expect(result?.code).toBe('blocked')
+  })
+
+  it('recognizes an authentication interstitial', () => {
+    const raw = '<html><head><title>Cookie Required</title></head><body><p>Licensing agreements for these databases require that access be extended only to authorized users.</p></body></html>'
+    expect(inspectPreview(raw, 'https://login.ezproxy.obspm.fr/connect', 'https://arxiv-org.ezproxy.obspm.fr/html/x')?.code)
+      .toBe('login')
+  })
+
+  it('falls back to empty when the page is just short', () => {
+    expect(inspectPreview(page('hi'), 'https://example.com/a', 'https://example.com/a')?.code).toBe('empty')
+  })
+
+  it('calls a cross-host hop that yields nothing a redirect', () => {
+    // No "login" wording anywhere, and the host changed: the classification
+    // must say the address moved rather than blame the page.
+    const raw = '<html><body><p>redirecting…</p></body></html>'
+    expect(inspectPreview(raw, 'https://other.example.com/x', 'https://example.com/x')?.code).toBe('redirected')
+  })
+})
+
+
+describe('arxiv links', () => {
+  it('parses the abs/pdf/html shapes, versions and the old-style id', () => {
+    expect(arxivLink('https://arxiv.org/abs/2604.03147')).toEqual({ kind: 'abs', id: '2604.03147' })
+    expect(arxivLink('https://arxiv.org/abs/2604.03147v2')).toEqual({ kind: 'abs', id: '2604.03147v2' })
+    expect(arxivLink('https://arxiv.org/pdf/2604.03147')).toEqual({ kind: 'pdf', id: '2604.03147' })
+    expect(arxivLink('https://arxiv.org/pdf/2604.03147v1.pdf')).toEqual({ kind: 'pdf', id: '2604.03147v1' })
+    expect(arxivLink('https://arxiv.org/html/2604.03147v1')).toEqual({ kind: 'html', id: '2604.03147v1' })
+    expect(arxivLink('https://arxiv.org/abs/hep-th/9901001')).toEqual({ kind: 'abs', id: 'hep-th/9901001' })
+    expect(arxivLink('https://arxiv.org/abs/math.GT/0309136v3')).toEqual({ kind: 'abs', id: 'math.GT/0309136v3' })
+    // www is the same site; a query or fragment does not change the paper.
+    expect(arxivLink('https://www.arxiv.org/abs/2604.03147?context=cs#s2')).toEqual({ kind: 'abs', id: '2604.03147' })
+  })
+
+  it('rejects everything that is not one paper page', () => {
+    expect(arxivLink('https://example.com/abs/2604.03147')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/list/cs.CL/recent')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/abs/')).toBeUndefined()
+    expect(arxivLink('https://arxiv.org/abs/not-an-id')).toBeUndefined()
+    expect(arxivLink('not a url')).toBeUndefined()
+  })
+
+  it('upgrades abs and pdf links to the HTML version, and leaves the rest alone', () => {
+    expect(arxivHtmlUrl('https://arxiv.org/abs/2604.03147')).toBe('https://arxiv.org/html/2604.03147')
+    expect(arxivHtmlUrl('https://arxiv.org/pdf/2604.03147v2.pdf')).toBe('https://arxiv.org/html/2604.03147v2')
+    expect(arxivHtmlUrl('https://arxiv.org/abs/hep-th/9901001')).toBe('https://arxiv.org/html/hep-th/9901001')
+    // Already the HTML version: no rewrite, no loop.
+    expect(arxivHtmlUrl('https://arxiv.org/html/2604.03147v1')).toBeUndefined()
+    expect(arxivHtmlUrl('https://example.com/abs/2604.03147')).toBeUndefined()
+  })
+})
+
+describe('the wall search field is sized by its row', () => {
+  it('uses border-box, so padding cannot push it past the pane', () => {
+    // Reported as "the search box is not sized to the sidebar": `width: 100%`
+    // with `content-box` is 100% PLUS 54px of padding and 2px of border.
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    const search = /\.search input\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(search).toMatch(/box-sizing:\s*border-box/)
+    expect(search).toMatch(/width:\s*100%/)
+  })
+
+  it('unifies the wall title and the secondary-page title at 12.5px/600', () => {
+    // 订阅管理's title read bigger than 灵感空间's: two page kinds of one pane
+    // with two title sizes. Both now share one title metric — the wall's,
+    // picked by the user as the reference (2026-09-21).
+    const css = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ReaderPane.module.css'), 'utf8')
+    for (const selector of ['.headTitle', '.barLabel']) {
+      const block = new RegExp(`${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+      expect(block).toMatch(/font-size:\s*12\.5px/)
+      expect(block).toMatch(/font-weight:\s*600/)
+    }
   })
 })

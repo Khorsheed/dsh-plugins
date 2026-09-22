@@ -8,6 +8,52 @@
 
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 
+/** In-flight text item, identified by the durable turn/step coordinate. */
+export interface LocalAgentStreamItem {
+  id: string
+  turn: number
+  step: number
+  kind: 'think' | 'text'
+  text: string
+  revision: number
+  receivedAt: number
+}
+
+/** Reconnection starts with a baseline; subsequent updates carry suffixes or explicit replacements. */
+export interface LocalAgentStreamFrame {
+  baseline: boolean
+  updates: readonly (LocalAgentStreamItem & { append: boolean })[]
+  removed: readonly string[]
+}
+
+/** One browser connection multiplexes every currently rendered member surface. */
+export interface LocalAgentMemberFeedRequest {
+  memberId: string
+  channel: 'configuration' | 'directory' | 'output'
+}
+
+export type LocalAgentMemberFeedEvent =
+  | { memberId: string; channel: 'configuration'; value: LocalAgentMemberControlState }
+  | { memberId: string; channel: 'directory'; value: LocalAgentModelDirectory }
+  | { memberId: string; channel: 'output'; value: LocalAgentStreamFrame }
+  | { memberId: string; channel: 'error'; source: 'configuration' | 'directory' | 'output'; message: string }
+
+/** Log-only recovery checkpoint; never injected into a model's conversation. */
+export interface LocalAgentStreamCheckpoint extends Omit<LocalAgentStreamItem, 'revision'> {
+  sessionId: string
+  opening?: boolean
+  /** Final native message has replaced this subitem presentation. */
+  closed?: boolean
+  append: boolean
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Plugin-owned live presentation anchor and incremental recovery checkpoints. */
+    'local-agent/stream': LocalAgentStreamCheckpoint
+  }
+}
+
 /** One session record a harness's records adapter lists. */
 export interface LocalAgentSessionRecord {
   /** Harness session id. */
@@ -232,6 +278,9 @@ export interface LocalAgentRosterRow {
  * rejected instead of resuming someone else's conversation context.
  */
 export interface LocalAgentDelegationRecord {
+  /** Creation-time reasoning request and optional frozen evaluation lock. */
+  effort?: string
+  configurationLock?: string
   /** The dsh subagent child session id (the run id of the first round). */
   childSessionId: string
   /** The `ctx.subagents` provider name that owns the CLI session. */
@@ -332,7 +381,22 @@ export interface LocalAgentDelegationView {
  * structured errors for the composer to render inline, never as raw exceptions
  * over the wire.
  */
-export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
+export interface LocalAgentMemberInput {
+  id: string
+  text: string
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'uncertain'
+  createdAt: number
+  updatedAt: number
+  error?: string
+}
+export interface LocalAgentMemberInbox {
+  memberId: string
+  paused: boolean
+  error?: string
+  messages: LocalAgentMemberInput[]
+}
+
+export type LocalAgentPromptResult = { ok: true; requestId?: string } | { ok: false; error: string }
 
 /**
  * Where a member's effective model comes from, in the family's fixed
@@ -350,6 +414,91 @@ export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
  */
 export type LocalAgentModelSource = 'override' | 'delegation' | 'settings' | 'cli-config' | 'cli-builtin'
 
+/** Provider-native values, never normalized into a supposedly equivalent budget. */
+export interface LocalAgentReasoningOption {
+  value: string
+  label: string
+  description?: string
+}
+
+/** A catalog candidate is not proof that an account can successfully run it. */
+export interface LocalAgentModelEntry {
+  value: string
+  label: string
+  resolvedModel?: string
+  description?: string
+  source: 'native' | 'configuration' | 'history'
+  hidden?: boolean
+  reasoning?: { options: readonly LocalAgentReasoningOption[]; default?: string }
+}
+
+export interface LocalAgentModelDirectoryData {
+  entries: readonly LocalAgentModelEntry[]
+  defaultModel?: string
+  /** Complete enumeration of this source, not a guarantee of account access. */
+  complete: boolean
+  customInput: boolean
+  unsupported?: boolean
+  reason?: string
+}
+
+export interface LocalAgentModelDirectory extends LocalAgentModelDirectoryData {
+  status: 'loading' | 'ready' | 'stale' | 'error' | 'unsupported'
+  refreshing: boolean
+  revision: number
+  refreshedAt?: number
+}
+
+/** Inherit the member's creation settings, ask for the harness default, or pin a native value. */
+export type LocalAgentConfigurationChoice = { mode: 'inherit' | 'default' } | { mode: 'value'; value: string }
+
+export interface LocalAgentMemberConfiguration {
+  model: LocalAgentConfigurationChoice
+  effort: LocalAgentConfigurationChoice
+}
+
+/** Resolved control facts; actual generation observations are recorded separately. */
+export interface LocalAgentResolvedConfiguration {
+  model?: string
+  effort?: string
+}
+
+export interface LocalAgentAppliedConfiguration {
+  revision: number
+  selection: LocalAgentMemberConfiguration
+  resolved: LocalAgentResolvedConfiguration
+}
+
+export interface LocalAgentPendingConfiguration {
+  revision: number
+  requestId: string
+  kind: 'selection' | 'cancel'
+  selection: LocalAgentMemberConfiguration
+}
+
+export interface LocalAgentMemberControlState {
+  memberId: string
+  /** Monotonic intent revision, including cancellation. */
+  revision: number
+  current: LocalAgentAppliedConfiguration
+  pending?: LocalAgentPendingConfiguration
+  operation?: LocalAgentPendingConfiguration & { previous: LocalAgentAppliedConfiguration }
+  status: 'idle' | 'pending' | 'applying' | 'reconciling' | 'failed'
+  /** Immutable configuration captured at admission, including tool continuation. */
+  round?: { id: string; configuration: LocalAgentAppliedConfiguration }
+  lockedReason?: string
+  /** First admitted configuration of a frozen evaluation; defaults cannot drift on resume. */
+  frozen?: LocalAgentAppliedConfiguration
+  error?: string
+}
+
+export interface LocalAgentControlReceipt {
+  requestId: string
+  revision: number
+  status: 'pending' | 'applying' | 'applied' | 'cancelled' | 'failed' | 'conflict' | 'locked' | 'unsupported'
+  error?: string
+}
+
 /**
  * The model surface for one member — or, without a member, for a harness's
  * next round (the settings card's "what would run" line). Every layer reports
@@ -358,6 +507,8 @@ export type LocalAgentModelSource = 'override' | 'delegation' | 'settings' | 'cl
  * config-discovered + recently used, deduped), never a hardcoded catalog.
  */
 export interface LocalAgentModelInfo {
+  /** Durable current/pending selection, shared by every member entry point. */
+  configuration?: LocalAgentMemberControlState
   /** The model the next round would actually run with, when any layer names one. */
   effective?: string
   /** Which layer {@link LocalAgentModelInfo.effective} came from. */
@@ -387,6 +538,8 @@ export interface LocalAgentModelInfo {
    * that only ever ran its CLI default still has a one-item menu.
    */
   choices: readonly string[]
+  /** Rich, source-labelled directory; choices remains the legacy read face. */
+  directory?: LocalAgentModelDirectory
   /** Whether the harness's live driver is on for the member's rounds. */
   live: boolean
   /**
@@ -405,7 +558,40 @@ export interface LocalAgentModelInfo {
  * reads and switches per member. A harness without a broker keeps its old
  * faces exactly (the card's free-text model input still writes plugin config).
  */
+/** Stable execution identity, available before the first native session ID arrives. */
+export interface MemberConfigurationAdapter {
+  /** Re-resolve defaults and validate before every whole-turn admission. */
+  prepare?(selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration>
+  /** Read-only validation. Unknown native values can fail later at the control boundary. */
+  validate(selection: LocalAgentMemberConfiguration): Promise<void>
+  /** No generation. Implementations must bound native controls and preserve session history. */
+  apply(selection: LocalAgentMemberConfiguration, previous: LocalAgentAppliedConfiguration, operationId: string): Promise<LocalAgentResolvedConfiguration>
+  /** Reconcile before retry/recovery; unknown never authorizes another round. */
+  reconcile(state: LocalAgentMemberControlState): Promise<{
+    active: boolean
+    matches: 'current' | 'operation' | 'unknown'
+    resolved: LocalAgentResolvedConfiguration
+  }>
+}
+
+export interface LocalAgentMemberBinding {
+  childSessionId: string
+  provider: string
+  parentSessionId: string
+  cwd: string
+  scope?: string
+  model?: string
+  effort?: string
+  configurationLock?: string
+}
+
 export interface LocalAgentModelBroker {
+  /** Native preparation for the core-owned configuration admission barrier. */
+  configurationAdapter?(binding: LocalAgentMemberBinding): MemberConfigurationAdapter
+  /** Refresh only discovery; never starts a model turn or changes selection. */
+  modelDirectory?(childSessionId?: string, refresh?: boolean): LocalAgentModelDirectory | Promise<LocalAgentModelDirectory>
+  /** Keeps an open picker current after a background probe. */
+  followModelDirectory?(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory>
   /**
    * Read the model surface. With a member, `delegationModel` carries the
    * delegation record's requested model (the record lives in the core; the
@@ -430,7 +616,7 @@ export interface LocalAgentModelBroker {
 
 /**
  * One member-to-member notification handed to the room gate — the frozen
- * contract (`proposals/active/2026-08-19-local-agent-member-channel.md` §3):
+ * contract (`proposals/closed/2026-08-19-local-agent-member-channel.md` §3):
  * `{ from, to, content, parentSessionId, provenance }`. The bridge cannot
  * speak roster names for the SENDER (only room owns the roster), so `from`
  * is the sender's dsh child session id and the full delegation view rides
@@ -469,7 +655,17 @@ export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy'
  * independence-checker sanction: room absent or declining is invisible to the
  * family path. Room implements this shape to own the dispatch gate.
  */
+export type MemberRoomCommandName = 'room_plan' | 'room_read' | 'room_invite' | 'room_message'
+
+export interface MemberRoomCommand {
+  name: MemberRoomCommandName
+  arguments: Record<string, unknown>
+}
+
 export interface RoomMemberMessageGate {
+  /** Explicit ownership prevents a rejected room operation falling through to direct execution. */
+  isRoom?(request: { sessionId: string }): Promise<boolean>
+  receiveMemberCommand?(actor: LocalAgentMemberRun, command: MemberRoomCommand): Promise<MemberMessageOutcome>
   receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageReceipt>
 }
 
@@ -517,6 +713,10 @@ export interface LocalAgentMemberRun {
 export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'fresh'
+    readonly onAdmitted?: () => void | Promise<void>
+    readonly preparedMemberId?: string
+    readonly effort?: string
+    readonly configurationLock?: string
     /**
      * The working directory the round's CLI process runs in, when the caller
      * supplied one (the `cwd` call option riding the staged intent). Absent
@@ -545,6 +745,7 @@ export type LocalAgentDelegationIntent =
   }
   | {
     readonly kind: 'resume'
+    readonly onAdmitted?: () => void | Promise<void>
     /** The dsh child session id to continue (the resume handle). */
     readonly childSessionId: string
     /** The CLI session id the resume command continues. */
@@ -614,6 +815,8 @@ export type LocalAgentRunProgress =
   }
   | {
     readonly kind: 'settled'
+    /** Native generation observation only, never copied from the requested effort. */
+    readonly observedEffort?: string
     /**
      * The model identifier the provider observed in its own output stream for
      * this round, when the stream carried one — absent otherwise, never
@@ -681,6 +884,14 @@ export interface DelegationExecTarget {
  * it without changing the existing fields.
  */
 export interface DelegationCallOptions {
+  /** Host-only durable input edge, executed at the provider admission boundary. */
+  readonly onAdmitted?: () => void | Promise<void>
+  /** Reserved identity returned by prepareMember; never a caller-selected resume override. */
+  readonly preparedMemberId?: string
+  /** Native reasoning value, fixed at creation unless changed through member controls. */
+  readonly effort?: string
+  /** Frozen evaluation condition: rejects interactive configuration changes. */
+  readonly configurationLock?: string
   /**
    * Child display label persisted with a session-backed child; omitted, the
    * harness's own display name labels the delegation.

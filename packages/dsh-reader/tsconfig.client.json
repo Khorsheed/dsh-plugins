@@ -21,6 +21,7 @@
     "src/client/parse-rss.ts",
     "src/client/extract-article.ts",
     "src/client/quote.ts",
+    "src/client/session.ts",
     "src/client/store.ts",
     "src/client/selectors.ts",
     "src/client/ReaderPane.tsx",

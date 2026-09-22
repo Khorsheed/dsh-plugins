@@ -14,8 +14,9 @@
  * `promptMember` Remote (the facade resume), never to the official input
  * machine; Stop goes to `stopMember`.
  */
+import { requestId } from './request-id.ts'
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, KeyboardEvent } from 'react'
+import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -68,10 +69,12 @@ export function selectCliMember(owner: ComposerChainProps): MemberComposerMatch 
  * renders through its own copy rather than throwing into the slot tree).
  */
 export interface MemberComposerInjected {
+  renderMemberInbox?: ((childSessionId: string) => ReactNode) | undefined
+  renderMemberConfiguration?: ((childSessionId: string) => ReactNode) | undefined
   /** The delegation view for a child session; null = not a family member. */
   memberOf: (childSessionId: string) => Promise<LocalAgentDelegationView | null | undefined>
   /** Send one human follow-up to the member (facade resume host-side). */
-  promptMember: (childSessionId: string, text: string) => Promise<LocalAgentPromptResult | undefined>
+  promptMember: (childSessionId: string, text: string, requestId?: string) => Promise<LocalAgentPromptResult | undefined>
   /** Interrupt the member's in-flight run. */
   stopMember: (childSessionId: string) => Promise<boolean | undefined>
   /**
@@ -152,10 +155,11 @@ export function resetMembershipCache(): void {
  * @returns the composer, the neutral checking state while probing, or the
  *   read-only panel when not a member.
  */
-export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, t }: MemberComposerProps) {
+export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, renderMemberConfiguration, renderMemberInbox, t }: MemberComposerProps) {
   const [membership, setMembership] = useState<Membership>(() => membershipCache.get(matched.childSessionId))
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const inputRequest = useRef<{ child: string; text: string; id: string }>()
   /** The last structured promptMember failure, rendered inline. */
   const [error, setError] = useState<string | null>(null)
   const sessionRunning = useSession(snapshot => snapshot.running) ?? false
@@ -289,7 +293,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
     )
   }
 
-  const busy = sending || running
+  const busy = sending || (running && renderMemberInbox === undefined)
   const dockLines = memberDockLines(projections, t)
   /** The chip label: the effective model id when any layer names one (codex's
       catalog default counts — it names the CLI's own default); otherwise the
@@ -310,14 +314,17 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
     if (text === '' || busy) return
     setSending(true)
     setError(null)
-    void promptMember(matched.childSessionId, text).then((result) => {
+    if (inputRequest.current?.child !== matched.childSessionId || inputRequest.current.text !== text) inputRequest.current = { child: matched.childSessionId, text, id: requestId() }
+    const submit = renderMemberInbox === undefined ? promptMember(matched.childSessionId, text) : promptMember(matched.childSessionId, text, inputRequest.current.id)
+    void submit.then((result) => {
       setSending(false)
       if (result !== undefined && result.ok) {
         setDraft('')
+        inputRequest.current = undefined
       } else {
         setError(result !== undefined && !result.ok ? result.error : t('member.sendFailed'))
       }
-    })
+    }).catch(() => { setSending(false); setError(t('member.sendFailed')) })
   }
   const stop = (): void => {
     void stopMember(matched.childSessionId)
@@ -356,6 +363,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   return (
     <div className={css.root}>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
+      {renderMemberInbox?.(matched.childSessionId)}
       <div className={css.card}>
         <div className={css.header}>
           <span>{t('member.title', { harness: membership.harnessDisplayName ?? membership.provider })}</span>
@@ -374,7 +382,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           {/* The model seat sits in the right cluster, immediately before the
               Send/Stop circle — the official composer's order (model seat →
               send, ui-model-selection's ModelSelect). */}
-          {modelInfo !== null && (
+          {renderMemberConfiguration !== undefined ? renderMemberConfiguration(matched.childSessionId) : modelInfo !== null && (
             <div className={css.modelPicker} ref={modelPickerRef}>
               <button
                 type="button"
@@ -431,13 +439,14 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
               )}
             </div>
           )}
-          {running ? (
+          {running && (
             <button type="button" className={css.primary} aria-label={t('member.stop')} onClick={stop}>
               <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                 <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
               </svg>
             </button>
-          ) : (
+          )}
+          {(!running || renderMemberInbox !== undefined) && (
             <button
               type="button"
               className={css.primary}

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-15-frozen-member-configuration.md
+.agents/notes/implemented/architecture/2026-09-15-frozen-member-configuration.md: fd93aba865f9d06899e5f75b9d609d6fdfba028a
+.agents/notes/implemented/architecture/2026-09-15-frozen-member-configuration.zh.md: f25a4a1a342963f274894f4cfb51b1cb1beed671

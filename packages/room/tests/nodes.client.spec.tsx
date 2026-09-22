@@ -59,11 +59,11 @@ const STATE: RoomState = {
 }
 
 /** A store pre-primed with the STATE fixture. */
-async function primedStore(): Promise<RoomStore> {
+async function primedStore(state: RoomState = STATE): Promise<RoomStore> {
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
   const gateway: RoomGateway = {
     isRoom: async () => ({ ok: true, value: true }),
-    getState: async () => ({ ok: true, value: { ok: true, value: STATE } }),
+    getState: async () => ({ ok: true, value: { ok: true, value: state } }),
   }
   const store = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
   await store.ensure('room-1' as SessionId)
@@ -94,6 +94,18 @@ describe('room node Definitions', () => {
     expect(node).toMatchObject({ kind: 'room-speech', anchorSeq: 7, visibility: 'visible', data: state })
   })
 
+  it('cold-replays a stopped partial with its member-session link and explicit status', async () => {
+    const event = ev('room/speech', 9, { member: 'ada', text: 'Partial answer', childSessionId: 'child-1', interrupted: 'cancelled' })
+    const data = roomSpeechDefinition.start(contextOf(undefined), matchOf(event), undefined as never)
+    expect(data.interrupted).toBe('cancelled')
+    const openSession = vi.fn()
+    render(<RoomSpeechView {...{ node: nodeOf('room-speech', data), sessionId: 'room-1', roomStore: await primedStore(), openSession, t } as RoomSpeechViewProps} />)
+    expect(screen.getByText('Partial answer')).toBeTruthy()
+    expect(screen.getByText('已停止 · 部分输出')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '查看成员会话' }))
+    expect(openSession).toHaveBeenCalledWith('child-1')
+  })
+
   it('room-run keys on member+startedAt: running starts, terminals update', () => {
     const running = ev('room/run-state', 3, { member: 'ada', state: 'running', startedAt: 100 })
     const done = ev('room/run-state', 4, { member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 })
@@ -110,6 +122,10 @@ describe('room node Definitions', () => {
       { event: done, role: 'update', location: { kind: 'unresolved' } } as never,
     )
     expect(settled).toEqual({ seq: 3, time: 1003, member: 'ada', startedAt: 100, state: 'done', elapsedMs: 900 })
+    const reconciled = roomRunDefinition.update(contextOf({ ...started, state: 'failed', error: 'unknown outcome', elapsedMs: 900 }) as never,
+      { event: ev('room/run-state', 6, { member: 'ada', state: 'done', startedAt: 100 }), role: 'update', location: { kind: 'unresolved' } } as never)
+    expect(reconciled.error).toBeUndefined()
+    expect(reconciled.elapsedMs).toBeUndefined()
     // done/cancelled hide in place (the assembler forbids withdrawing a
     // materialized node with null); failed stays visible.
     expect(roomRunDefinition.buildViewNode!(contextOf(settled)))
@@ -330,17 +346,39 @@ describe('RoomSpeechView', () => {
 })
 
 describe('RoomRunView', () => {
-  async function bench(data: RoomRunData) {
+  it('projects a crashed running node as unknown without a ticking stop control', async () => {
+    const roomStore = await primedStore({ ...STATE, runs: [{ member: 'ada', startedAt: 1000, state: 'failed', error: 'Unknown outcome after restart' }] })
+    const output = vi.fn()
+    const props = { node: nodeOf('room-run', { seq: 3, time: 1003, member: 'ada', startedAt: 1000, state: 'running' }), sessionId: 'room-1' as SessionId,
+      roomStore, openSession: vi.fn(), cancelMember: vi.fn(), renderMemberOutput: output, t } as unknown as RoomRunViewProps
+    render(<RoomRunView {...props} />)
+    expect(screen.getByText('Unknown outcome after restart')).toBeDefined()
+    expect(screen.getByText('· 耗时未知')).toBeDefined()
+    expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
+    expect(output).not.toHaveBeenCalled()
+  })
+  async function bench(data: RoomRunData, renderMemberOutput?: RoomRunViewProps['renderMemberOutput']) {
     const roomStore = await primedStore()
     const openSession = vi.fn()
     const cancelMember = vi.fn(async () => {})
     const props = {
       node: nodeOf('room-run', data), sessionId: 'room-1' as SessionId,
-      roomStore, openSession, cancelMember, t,
+      roomStore, openSession, cancelMember, renderMemberOutput, t,
     } as unknown as RoomRunViewProps
     render(<RoomRunView {...props} />)
     return { openSession, cancelMember }
   }
+
+  it('renders native output outside the navigation button with the exact run boundary', async () => {
+    const output = vi.fn(() => <p>incremental answer</p>)
+    await bench({ seq: 3, time: 1003, member: 'ada', startedAt: 1000, state: 'running' }, output)
+    expect(output).toHaveBeenCalledWith('child-1', 1000)
+    expect(screen.getByText('incremental answer').closest('[role="button"]')).toBeNull()
+    cleanup()
+    output.mockClear()
+    await bench({ seq: 4, time: 1004, member: 'ada', startedAt: 1000, state: 'failed' }, output)
+    expect(output).not.toHaveBeenCalled()
+  })
 
   it('renders the running row with a ticking elapsed and jumps on click', async () => {
     vi.useFakeTimers()

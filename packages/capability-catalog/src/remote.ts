@@ -19,7 +19,7 @@ import type {
   CatalogToolRow,
 } from './types.ts'
 import {
-  collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice,
+  collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice, type SkillDefinitionLike,
 } from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
 import { hashOf } from './capabilities.ts'
@@ -106,8 +106,9 @@ export async function catalogDetail(
   name: string,
   workdir: string | undefined,
   scope: unknown = undefined,
+  fallback?: SkillDefinitionLike,
 ): Promise<CatalogSkillDetail | undefined> {
-  return loadSkillDetail(ctx, registry, name, workdir, scope)
+  return loadSkillDetail(ctx, registry, name, workdir, scope, fallback)
 }
 
 /** Read one skill-bundle file's text content on demand. */
@@ -117,8 +118,9 @@ export async function catalogReadSkillFile(
   filePath: string,
   workdir: string | undefined,
   scope: unknown = undefined,
+  fallback?: SkillDefinitionLike,
 ): Promise<CatalogSkillFileRead | undefined> {
-  return readSkillFileContent(registry, name, filePath, workdir, scope)
+  return readSkillFileContent(registry, name, filePath, workdir, scope, fallback)
 }
 
 /** Open the host's native directory chooser (the workspace "add" dialog). */

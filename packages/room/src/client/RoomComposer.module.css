@@ -196,3 +196,11 @@
 .itemActive:focus:not(:focus-visible) {
   outline: none;
 }
+
+.coordinator {
+  padding: 0 16px;
+  align-self: flex-start;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, #81858c);
+}

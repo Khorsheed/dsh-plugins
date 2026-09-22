@@ -54,7 +54,7 @@ async function bootRoom(options: BenchOptions = {}) {
 }
 
 /** The roster row every fresh room seats: its own main agent. */
-const MAIN_MEMBER = { name: 'main', kind: 'main-agent', invitedBy: 'human' }
+const MAIN_MEMBER = { id: 'legacy:1', name: 'dsh', kind: 'main-agent', invitedBy: 'human' }
 
 /**
  * Flush the task queue so the engine's queued run reaches the delivery point.
@@ -184,7 +184,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.invite({ sessionId, provider: 'codex', name: 'ada' }))
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
     // The room's own main agent is seated at creation; its name is taken too.
-    expect(await service.invite({ sessionId, provider: 'kimi', name: 'main' }))
+    expect(await service.invite({ sessionId, provider: 'kimi', name: 'dsh' }))
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
   })
 
@@ -194,6 +194,26 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'local-agent-unavailable' } })
     // The room itself and its main-agent member are unaffected.
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
+  })
+
+  it('rechecks invitation names after asynchronous provider readiness', async () => {
+    let release!: () => void
+    const ready = new Promise<void>(resolve => { release = resolve })
+    const localAgent = {
+      start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false),
+      roster: () => [{ name: 'kimi', displayName: 'Kimi' }],
+      statusOf: vi.fn(async () => { await ready; return { authenticated: true, delegationProvider: 'kimi-cli' } }),
+    }
+    const { service, sessionId } = await bootRoom({ localAgent })
+    const request = { sessionId, provider: 'kimi-cli', name: 'same-name' }
+    const first = service.invite(request)
+    const second = service.invite(request)
+    await vi.waitFor(() => expect(localAgent.statusOf).toHaveBeenCalledTimes(2))
+    release()
+    const results = await Promise.all([first, second])
+    expect(results.filter(result => result.ok)).toHaveLength(1)
+    expect(results.filter(result => !result.ok)).toEqual([{ ok: false, error: { code: 'duplicate-name' } }])
+    expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER, { name: 'same-name' }] } })
   })
 
   it('invite rejects a provider outside the roster delegation set, carrying the legal list', async () => {
@@ -273,7 +293,8 @@ describe('RoomService Remote surface (real composition)', () => {
         members: [MAIN_MEMBER, { name: 'K酱', instructions: '后端', cwd: '/tmp/work' }, { name: 'bill' }],
         tasks: [{ member: 'K酱', blockedBy: 'bill', title: '出方案' }],
         relays: [{ from: 'K酱', to: 'bill' }],
-        runs: [{ member: 'K酱', state: 'running' }],
+        // This fixture has a journal edge but no active native handle.
+        runs: [{ member: 'K酱', state: 'failed', error: expect.stringContaining('unknown after restart') }],
       },
     })
 
@@ -289,7 +310,7 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
     expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bad name' }))
       .toEqual({ ok: false, error: { code: 'invalid-name' } })
-    expect(await service.updateMember({ sessionId, name: 'main', rename: 'boss' }))
+    expect(await service.updateMember({ sessionId, name: 'dsh', rename: 'boss' }))
       .toEqual({ ok: false, error: { code: 'main-member' } })
   })
 
@@ -321,16 +342,13 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
   })
 
-  it('postMessage without a mention is a structured no-targets rejection (bare messages belong to the official path)', async () => {
+  it('routes a bare message through the persisted native coordinator and rejects empty input', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     expect(await service.postMessage({ sessionId, text: '今天先讨论方向' }))
-      .toEqual({ ok: false, error: { code: 'no-targets' } })
-    // Nothing is journaled: the rejection is pure defense.
-    const events = ctx.sessions.get(sessionId)!.snapshotEvents()
-    expect(events.filter(event => event.type.startsWith('room/'))).toHaveLength(2)
-    expect(events.some(event => event.type === 'user/message')).toBe(false)
-    expect(await service.postMessage({ sessionId, text: '   ' }))
-      .toEqual({ ok: false, error: { code: 'empty-text' } })
+      .toMatchObject({ ok: true, value: { parsed: { targets: ['dsh'], text: '今天先讨论方向' } } })
+    const dispatch = ctx.sessions.get(sessionId)!.snapshotEvents().find(event => event.type === 'room/dispatch')
+    expect(dispatch?.data).toMatchObject({ origin: 'human', targetIds: ['legacy:1'] })
+    expect(await service.postMessage({ sessionId, text: '   ' })).toEqual({ ok: false, error: { code: 'empty-text' } })
   })
 
   it('postMessage with mentions logs a standard user/message (the official bubble) plus the dispatch bookkeeping, auto-opens tasks, and validates the roster', async () => {
@@ -363,7 +381,7 @@ describe('RoomService Remote surface (real composition)', () => {
     ])
     // The dispatch record stays as bookkeeping (tasks, cursors, replay).
     const dispatches = events.filter(event => event.type === 'room/dispatch')
-    expect(dispatches.map(event => event.data)).toEqual([
+    expect(dispatches.map(event => event.data)).toMatchObject([
       { targets: ['ada'], text: '出方案' },
       { targets: ['ada', 'bill'], text: '对齐接口' },
     ])
@@ -405,7 +423,7 @@ describe('RoomService Remote surface (real composition)', () => {
 
     const events = ctx.sessions.get(sessionId)!.snapshotEvents()
     const dispatches = events.filter(event => event.type === 'room/dispatch')
-    expect(dispatches.map(event => event.data)).toEqual([
+    expect(dispatches.map(event => event.data)).toMatchObject([
       { targets: ['bill'], text: '接口找 @bill 对齐一下' },
       { targets: ['ada', 'bill'], text: '顺带 @bill 看看' },
     ])
@@ -427,7 +445,7 @@ describe('RoomService Remote surface (real composition)', () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     const receipt = await service.receiveMemberMessage({
-      from: 'ada', to: 'main', content: '接口定稿', parentSessionId: sessionId,
+      from: 'ada', to: 'dsh', content: '接口定稿', parentSessionId: sessionId,
       provenance: { kind: 'bridge', delegationId: 'd-1' },
     })
     expect(receipt).toBe('pending-confirm')
@@ -435,7 +453,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(state).toMatchObject({
       ok: true,
       value: {
-        relays: [{ from: 'ada', to: 'main', content: '接口定稿', state: 'pending', provenance: { kind: 'bridge', delegationId: 'd-1' } }],
+        relays: [{ from: 'ada', to: 'dsh', content: '接口定稿', state: 'pending', provenance: { kind: 'bridge', delegationId: 'd-1' } }],
       },
     })
   })
@@ -482,7 +500,7 @@ describe('RoomService Remote surface (real composition)', () => {
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     await service.invite({ sessionId, provider: 'codex', name: 'bill' })
     await service.receiveMemberMessage({ from: 'ada', to: 'bill', content: '接口定稿', parentSessionId: sessionId })
-    await service.receiveMemberMessage({ from: 'ada', to: 'main', content: '抄送', parentSessionId: sessionId })
+    await service.receiveMemberMessage({ from: 'ada', to: 'dsh', content: '抄送', parentSessionId: sessionId })
     const state = await service.getState({ sessionId })
     if (!state.ok) throw new Error('narrowing')
     const [first, second] = state.value.relays
@@ -516,7 +534,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('confirmRelay rejects a relay whose recipient left the roster', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
-    await service.receiveMemberMessage({ from: 'main', to: 'ada', content: 'x', parentSessionId: sessionId })
+    await service.receiveMemberMessage({ from: 'dsh', to: 'ada', content: 'x', parentSessionId: sessionId })
     await service.removeMember({ sessionId, name: 'ada' })
     const state = await service.getState({ sessionId })
     if (!state.ok) throw new Error('narrowing')

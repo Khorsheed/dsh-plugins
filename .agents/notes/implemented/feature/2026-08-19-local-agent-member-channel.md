@@ -6,7 +6,7 @@ English | [中文](2026-08-19-local-agent-member-channel.zh.md)
 
 ## Problem
 
-A family CLI member's dsh child session was read-only: the official composer pipeline rejects every send path for a one-shot subagent session, and ui-subagent's chain entry (`conversation.composer`, priority -10) renders a static read-only panel for it. The [member-channel proposal](../../../proposals/active/2026-08-19-local-agent-member-channel.md) turns the member session into a two-way channel: a human opening the member session gets a writable composer whose send continues the SAME CLI session (facade resume), with Stop for the in-flight run — without touching the host. This is milestones M1 (channel) and M2 (composer) of that proposal.
+A family CLI member's dsh child session was read-only: the official composer pipeline rejects every send path for a one-shot subagent session, and ui-subagent's chain entry (`conversation.composer`, priority -10) renders a static read-only panel for it. The [member-channel proposal](../../../proposals/closed/2026-08-19-local-agent-member-channel.md) turns the member session into a two-way channel: a human opening the member session gets a writable composer whose send continues the SAME CLI session (facade resume), with Stop for the in-flight run — without touching the host. This is milestones M1 (channel) and M2 (composer) of that proposal.
 
 ## Decision
 
@@ -50,7 +50,7 @@ The wire types (`LocalAgentDelegationView`, `LocalAgentPromptResult`) live in `s
 
 ## Cross-references
 
-- [Member-channel proposal](../../../proposals/active/2026-08-19-local-agent-member-channel.md) — the milestone plan this implements (M1+M2).
+- [Member-channel proposal](../../../proposals/closed/2026-08-19-local-agent-member-channel.md) — the milestone plan this implements (M1+M2).
 - [Delegation facade](2026-08-18-local-agent-delegation-facade.md) — the resume/cancel facade the gateway composes.
 - [Run progress](2026-08-19-local-agent-run-progress.md) — the progress channel the composer's running state will consume (M3 live mirror).
 - **Correction (2026-08-23): pending interactions must decline the election.** The official `ApprovalPanel` (question/approval popups) is itself a `conversation.composer` chain entry at priority 1; this entry elects at -20 and would shadow it — a pending ask-user-question in a member session could never render. `selectCliMember` now returns null whenever `owner.interactions` is non-empty, letting the interaction UI elect. General rule for takeover composers, now pinned by a test: interactions pending → decline; run Stop → own it (member: `stopMember`).

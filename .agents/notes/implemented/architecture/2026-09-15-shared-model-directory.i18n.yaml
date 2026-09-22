@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-15-shared-model-directory.md
+.agents/notes/implemented/architecture/2026-09-15-shared-model-directory.md: 8a8389e9c17a93b45e4a78aeae3c4c976fca295d
+.agents/notes/implemented/architecture/2026-09-15-shared-model-directory.zh.md: 0bd89e66a9854399686dc2f0d61bf71c47d63264

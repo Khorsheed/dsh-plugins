@@ -2,6 +2,8 @@
  * Slot-facing types of the room client half: the injected action faces and
  * the composed props of its slot entries.
  */
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
+import type { ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
@@ -53,6 +55,7 @@ export interface RoomTasksInjected {
  * inherits another's surface actions.
  */
 export interface RoomInviteInjected {
+  readonly renderHarnessModelPicker?: LocalAgentUi['renderHarnessModelPicker'] | undefined
   /** The room session's own cwd (the invite dialog's empty-cwd placeholder). */
   readonly roomCwd?: string | undefined
   /** Invite a CLI member. */
@@ -171,6 +174,12 @@ export interface RoomModelDirectory {
  * ui-model-selection — the picker simply does not render.
  */
 export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjected {
+  readonly reconcileDelivery?: ((deliveryId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
+  readonly planCommand?: ((command: string) => Promise<RoomMutationOutcome>) | undefined
+  readonly openPlanSession?: ((sessionId: string) => void) | undefined
+  readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
+  readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
+  readonly stopMember?: ((name: string) => void) | undefined
   /**
    * Dispatch an @-message into the room and refresh the store on success.
    * Bare messages never reach here — the composer releases them to the
@@ -227,11 +236,13 @@ export type RoomInviteOutcome =
 
 /** Injected face of the members tab. */
 export interface RoomMembersInjected extends RoomInviteInjected {
+  readonly renderMemberConfiguration?: ((childSessionId: string) => ReactNode) | undefined
   /** The client-side room state store (roster + runs). */
   readonly roomStore: RoomStore
   /** Open a session (the member's child-session trajectory jump). */
   readonly openSession: (sessionId: SessionId) => void
   /** Remove the named member from the roster. */
+  readonly setCoordinator?: ((memberId: string, expectedRevision: number) => Promise<RoomMutationOutcome>) | undefined
   readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
   /**
    * Edit the named member: rename, cwd override (null clears back to
@@ -290,6 +301,7 @@ export type RoomSpeechViewProps =
 
 /** Injected face of the member-run chat node. */
 export interface RoomRunInjected {
+  readonly renderMemberOutput?: LocalAgentUi['renderMemberOutput'] | undefined
   /** The client-side room state store (the roster carries the jump target). */
   readonly roomStore: RoomStore
   /** Open a session (the whole-row jump into the member's child session). */
@@ -347,7 +359,7 @@ export type RoomTaskLineViewProps =
  * dock.
  */
 export type RoomDockCapsulesProps =
-  { readonly sessionId: SessionId }
+  { readonly sessionId: SessionId; readonly formalPlans?: boolean }
   & RoomTasksInjected
   & RoomInviteInjected
   & PropsLocale<'room'>

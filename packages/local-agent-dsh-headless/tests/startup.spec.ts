@@ -57,6 +57,7 @@ export const apply = ctx => globalThis.__headlessStartupApply(ctx)
     '    resumeSessionId: !!js ctx.localAgentDshHeadlessStartup.resumeSessionId',
     // Mirrors the shipped patch row, so the fixture proves the same wiring.
     '    model: !!js ctx.localAgentDshHeadlessStartup.model',
+    '    effort: !!js ctx.localAgentDshHeadlessStartup.effort',
     '- id: local-agent-dsh-headless-startup',
     `  name: ${pathToFileURL(join(dir, 'startup.mjs')).href}`,
     '',
@@ -119,6 +120,15 @@ describe('sub-dsh headless command-line provider', () => {
   it('carries --model in serve mode too — a resident process binds one model', async () => {
     const { task } = await bootStartup(['--serve', '--model', 'deepseek-official/deepseek-v4-pro'])
     expect(task).toEqual({ task: '', serve: true, model: 'deepseek-official/deepseek-v4-pro' })
+  })
+
+  it('carries native effort through both resumed exec and resident startup configuration', async () => {
+    const resumed = await bootStartup(['--resume', 'prior', '--effort', 'high', 'continue'])
+    expect(resumed.task).toMatchObject({ resumeSessionId: 'prior', effort: 'high' })
+    expect(resumed.observed.runnerConfig).toMatchObject({ effort: 'high' })
+    const live = await bootStartup(['--serve', '--effort', 'low'])
+    expect(live.task).toMatchObject({ serve: true, effort: 'low' })
+    expect(live.observed.runnerConfig).toMatchObject({ effort: 'low' })
   })
 
   it('leaves the runner config without a model when the flag is absent', async () => {

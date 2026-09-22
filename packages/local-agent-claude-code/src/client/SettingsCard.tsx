@@ -1,3 +1,5 @@
+import type { HarnessModelPickerInput } from '@khorsheed/dsh-local-agent/client'
+import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -37,6 +39,7 @@ export interface ClaudeLiveSettings {
 
 /** Injected face of the claude-code settings card. */
 export interface ClaudeCodeSettingsCardInjected {
+  renderModelPicker?: ((props: HarnessModelPickerInput) => ReactNode) | undefined
   /** Bound settings scope for the local-agent-claude-code namespace. */
   scope: SettingsScope<ClaudeLiveSettings>
   /** The auth block's query/command faces, backed by the family core Remote. */
@@ -75,7 +78,7 @@ export type ClaudeCodeSettingsCardProps =
  * @param props - runtime slot currency, the injected scope/auth faces, and copy.
  * @returns the card.
  */
-export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelInfo, useSessions, t }: ClaudeCodeSettingsCardProps) {
+export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, renderModelPicker, modelInfo, useSessions, t }: ClaudeCodeSettingsCardProps) {
   const snapshot: SettingsScopeSnapshot<ClaudeLiveSettings> = useSettings(value => value)
   const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -257,7 +260,7 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
               </Tooltip>
             </h3>
             <div className={css.row}>
-              {choices.length > 0 ? (
+              {renderModelPicker?.({ value: modelValue, onChange: setModelDraft, disabled: !ready, defaultLabel: modelDefaultItem }) ?? (choices.length > 0 ? (
                 <div className={css.modelField} ref={modelFieldRef}>
                   {modelInputElement}
                   <button
@@ -306,7 +309,7 @@ export function ClaudeCodeSettingsCard({ useSettings, scope, auth, authT, modelI
                     </div>
                   )}
                 </div>
-              ) : modelInputElement}
+              ) : modelInputElement)}
               <button
                 type="button"
                 className={css.modelSave}

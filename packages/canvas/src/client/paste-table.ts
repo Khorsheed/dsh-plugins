@@ -1,5 +1,5 @@
 /**
- * Clipboard → markdown-table conversion, as pure functions.
+ * Clipboard → card text: which flavor of a paste lands in the editor.
  *
  * Two sources are worth converting and they arrive differently. A spreadsheet
  * or a web page offers `text/html` — the richest signal, and the only one that
@@ -8,13 +8,20 @@
  * terminal, a text editor). Anything else is left alone: mangling ordinary
  * pasted prose is a far worse failure than declining to convert.
  *
- * The deliberate restraint is on the plain-text path: it converts only when
- * the shape is unambiguously a table (two or more rows agreeing on a column
- * count of two or more). Space-aligned tables — PDFs, plain-text dumps — never
+ * The deliberate restraint is on the plain-text path: it converts only when the
+ * shape is unambiguously a table (two or more rows agreeing on a column count
+ * of two or more). Space-aligned tables — PDFs, plain-text dumps — never
  * auto-convert; the view offers an explicit selection-based action for those.
+ *
+ * The paste arm (`choosePaste`) sits ABOVE the table conversion and answers the
+ * question the renderer actually asks: the card's format is sniffed from its
+ * WHOLE text (`card-format.ts`), never from a flag, so "is this clipboard a
+ * page?" is only answerable against the card the paste would produce.
  *
  * @module @khorsheed/dsh-canvas/client
  */
+
+import { detectCardFormat } from '../card-format.ts'
 
 /** One paste's conversion outcome and which source produced it. */
 export interface PasteConversion {
@@ -199,4 +206,53 @@ export function convertPaste(html: string, text: string): PasteConversion | null
     return { markdown: toMarkdownTable(parseDelimited(text.replace(/\r\n?/g, '\n'), '\t')), source: 'tsv' }
   }
   return null
+}
+
+/**
+ * Which clipboard flavor a paste into a card's editor should insert. `plain`
+ * and `words` both mean "the browser does the inserting" — they differ only in
+ * whether the card owes the user an explanation.
+ */
+export type PasteArm = 'page' | 'table' | 'plain' | 'words' | 'markup'
+
+/** One paste's decision: what to insert, and which arm decided it. */
+export interface PasteChoice {
+  readonly arm: PasteArm
+  readonly text: string
+}
+
+/**
+ * Decide what a paste into a card's editor should insert.
+ *
+ * `mergedWith` is the whole point of the signature: the renderer sniffs a
+ * card's ENTIRE text (see the module doc of `card-format.ts`), so the
+ * clipboard's markup may only be taken as a page when the card it would
+ * produce STILL reads as one page — a web page pasted into a card that already
+ * holds prose would leave tags that render as nothing but tags. That case
+ * falls back to the clipboard's plain flavor: the page's words survive, its
+ * markup does not. A table is the one shape worth pulling out of the markup
+ * even then, which is `convertPaste`'s job.
+ * @param html - the clipboard's HTML flavor ('' when it carried none).
+ * @param plain - the clipboard's text flavor.
+ * @param mergedWith - the card text the candidate would produce.
+ * @returns what to insert; `plain` and `words` mean "let the browser paste".
+ */
+export function choosePaste(html: string, plain: string, mergedWith: (candidate: string) => string): PasteChoice {
+  const markup = html.trim()
+  const pageShaped = detectCardFormat(markup) === 'html'
+  const becomesPage = pageShaped && detectCardFormat(mergedWith(markup)) === 'html'
+  const table = convertPaste(markup, plain)
+  // A spreadsheet ships the SAME grid twice: sheet soup as markup, TSV as text.
+  // When the text flavor reads as a table too, the grid is the clipboard's
+  // whole content and markdown beats any page reading of the soup. A table
+  // inside a real page is the other case: the page wins, table and all.
+  if (table !== null && (looksLikeTsv(plain) || !becomesPage)) return { arm: 'table', text: table.markdown }
+  if (becomesPage) return { arm: 'page', text: markup }
+  if (plain.trim() === '') {
+    // Nothing but markup on the clipboard: dead-as-markup still beats lost.
+    return { arm: 'markup', text: markup }
+  }
+  // A page that loses its markup says why (its words did land); rich text that
+  // was never a page has nothing to explain, so the browser pastes silently.
+  return { arm: pageShaped ? 'words' : 'plain', text: plain }
 }

@@ -37,6 +37,7 @@ import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import type { CanvasChatInjected, CanvasRemote, CanvasTabInjected } from './contract.ts'
 import { CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
+import { CanvasImageSrcs } from './images.ts'
 import {
   CanvasTabVisibility, RegistrationToggle, type CanvasPluginInventorySnapshot,
 } from './preset-visibility.ts'
@@ -103,6 +104,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     if (mounted === undefined) throw new Error('canvas: the host half is not installed')
     return mounted
   }
+
+  // The image read leg (§10.3): ONE cache for every seat, so a pointer read
+  // for one render is already paid for by the next. The reader calls
+  // `requireRemote` when it reads, never at construction: a composition
+  // without the host half throws inside one read, and the cache records that
+  // pointer as unreadable instead of failing the tab.
+  const images = new CanvasImageSrcs(ref => requireRemote().imageBytes({ ref }))
 
   /**
    * Every mutating wrapper in the face lands here: a landed board mutation
@@ -195,6 +203,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
+    // The image arm (§10.3): the write leg names no session, because there is
+    // no board file to fence — the store is content-addressed outside every
+    // workspace, and the card that cites the pointer is written by the normal
+    // (fenced) patch verb afterwards.
+    attachImage: request => requireRemote().attachImage(request),
+    images,
     selectCard: (canvasId, cardId) => { selection.select(canvasId, cardId) },
     openCanvas: canvasId => { selection.openCanvas(canvasId) },
     clearCard: () => { selection.clearCard() },
@@ -218,7 +232,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // A suggestion, never a failure: the user can widen the panel by hand.
       }
     },
-    hooks: { selection: selection.source },
+    hooks: { selection: selection.source, imageRev: images.source },
   })
 
   // Stage one of the right-Sidebar registration: the page type itself (guide

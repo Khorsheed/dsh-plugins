@@ -22,12 +22,15 @@
     "src/client/McpCards.tsx",
     "src/client/McpServerManageModal.tsx",
     "src/client/MetadataRow.tsx",
+    "src/client/ModeChips.tsx",
     "src/client/ModalShell.tsx",
+    "src/client/settle.ts",
     "src/client/SchemaView.tsx",
     "src/client/SkillCards.tsx",
     "src/client/SkillDetailModal.tsx",
     "src/client/ToolCards.tsx",
     "src/client/ToolDetailModal.tsx",
-    "src/client/mcp-model.ts"
+    "src/client/mcp-model.ts",
+    "src/client/mode-model.ts"
   ]
 }

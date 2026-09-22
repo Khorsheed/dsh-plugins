@@ -1,3 +1,5 @@
+import type { HarnessModelPickerInput } from '@khorsheed/dsh-local-agent/client'
+import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -35,6 +37,7 @@ export interface CodexLiveSettings {
 
 /** Injected face of the codex settings card. */
 export interface CodexSettingsCardInjected {
+  renderModelPicker?: ((props: HarnessModelPickerInput) => ReactNode) | undefined
   /** Bound settings scope for the local-agent-codex namespace. */
   scope: SettingsScope<CodexLiveSettings>
   /** The auth block's query/command faces, backed by the family core Remote. */
@@ -73,7 +76,7 @@ export type CodexSettingsCardProps =
  * @param props - runtime slot currency, the injected scope/auth faces, and copy.
  * @returns the card.
  */
-export function CodexSettingsCard({ useSettings, scope, auth, authT, harnessModel, useSessions, t }: CodexSettingsCardProps) {
+export function CodexSettingsCard({ useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t }: CodexSettingsCardProps) {
   const snapshot: SettingsScopeSnapshot<CodexLiveSettings> = useSettings(value => value)
   const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -255,7 +258,7 @@ export function CodexSettingsCard({ useSettings, scope, auth, authT, harnessMode
               </Tooltip>
             </h3>
             <div className={css.row}>
-              {choices.length > 0 ? (
+              {renderModelPicker?.({ value: modelValue, onChange: setModelDraft, disabled: !ready, defaultLabel: modelDefaultItem }) ?? (choices.length > 0 ? (
                 <div className={css.modelField} ref={modelFieldRef}>
                   {modelInputElement}
                   <button
@@ -304,7 +307,7 @@ export function CodexSettingsCard({ useSettings, scope, auth, authT, harnessMode
                     </div>
                   )}
                 </div>
-              ) : modelInputElement}
+              ) : modelInputElement)}
               <button
                 type="button"
                 className={css.modelSave}

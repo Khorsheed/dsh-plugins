@@ -2,6 +2,8 @@
 
 > 从任意 dsh 会话委派给 Kimi Code CLI——你自己的 `~/.kimi-code` 不受任何影响。
 
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。最终内容仍以 provider 完成项为准，包括工具记录和用量。
+
 [English](README.en.md) | 中文
 
 local-agent 家族的 Kimi Code harness:每个 agent preset 都获得 `subagent_kimi` 委派工具和 `/kimi` 命令族,由运行在自有作用域目录里的真实 `kimi` CLI 支撑。
@@ -72,7 +74,9 @@ base_url = "https://your-router.example/v1"
 
 也就是说：一次性驱动不碰你的 `config.toml`，常驻驱动会改写其中的 `default_model` 一行。
 
-设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录），保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键。字段未设置时，输入框内直接以暗色占位**显示当前跟随的默认模型**（继承展示，不是钉死的值：作用域 config 的 `default_model`、否则 CLI 内置默认、否则最近观测到的模型）；旁边的 ∨ 菜单是唯一的候选列表（不再用原生 datalist），首行是「默认（跟随 …）」项——未设置时它处于选中态，点它把草稿清回跟随默认，其余项是 model broker 的去重并集（本键、作用域默认、config 的 `[models."…"]` 表、最近存过的值）；手动输入始终可用。宿主核心没有 broker 时卡片退回纯输入框加最近存值。
+设置卡「默认模型」修改后续轮次使用的 provider 配置。共享选择器展示当前作用域的模型目录、发现来源和完整性，并保留按需填写模型 ID 的入口。清空选择后跟随有效配置及默认值链。保存不会打断当前轮次，也无需重载；共享选择器不可用时，卡片保留文本输入兜底。成员级模型和推理强度修改使用下文的持久控制面。
+
+丰富目录优先使用常驻成员提供的 ACP 原生模型和配置元数据，保留显示名及当前模型的推理选项。此前显示该成员 scoped 配置候选，并明确标为配置来源、不完整。查询不创建临时 ACP 会话。目录刷新与订阅共用 core 缓存，共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次（含工具续跑）；core 统一持有当前/待生效配置、撤销与重试，冻结评测成员禁止变更。
 
 **委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（顺序见家族核心 README）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。常驻模式下它成为该成员的**起始模型**：起进程前改写作用域 `default_model` 绑定；已有常驻 runtime 绑着别的模型时先退役，以新模型重起并 `session/load` 续上同一个 CLI 会话。
 
@@ -84,7 +88,7 @@ base_url = "https://your-router.example/v1"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 无法逐字写入子会话日志（宿主移除逐 chunk 事件），改为流式增量按节流快照写入会话日志（同 (turn, step) 的重复 assistant/message 由宿主整体替换、即时发布，UI 呈现为一条持续增长的消息），子项完成在同一坐标收尾；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。更旧宿主留在前一发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制
@@ -119,7 +123,7 @@ base_url = "https://your-router.example/v1"
 
 **隔离与记账。** 子会话是委派会话工作区内一个全新会话;父级只收到最终回答或精确错误——子会话的上下文、评论、工具活动与 diff 永不跨入父级会话。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`,失败或被中止也会关(reason `error`/`aborted`),因此耗时等于真实 CLI 运行时长。每个镜像 step(assistant 消息、工具调用/结果)都包在同 (turn, step) 的 `step/start`–`step/end` 边界对里——宿主会话的实时装配只在边界上登记 step,缺了边界 assistant 消息在实时视图里不渲染(整页刷新重建时才补回);token 粒度的流式快照与收尾折叠也在 `turn/end` 之前落地并带边界。用量是该轮 delta 内所有 `usage.record` 之和(每条是一次 LLM 请求的口径、非累计),挂在当轮最后一条镜像的 assistant 消息上;镜像过滤 kimi 自动权限模式的 `<system-reminder>` 消息、工具调用带参数渲染、结果按调用配对,并增量推进,早期消息绝不重复。中止会让工具结果立即 settle(SIGTERM→grace→SIGKILL),并保留已镜像的部分成果。
 
-**长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 `kimi acp` 进程(ACP over stdio;握手要求 `loadSession` 能力,否则熔断回退),`session/new` 建会话(server 分配 id,即委派记录的 `cliSessionId`),之后每轮 = `session/prompt`;`cancel` 落地为 `session/cancel`——进程不死、会话可续。成员桥经 ACP `mcpServers` 内联声明(不写 mcp.json)。`session/request_permission` 按无人值守策略自动应答(选第一个 allow,无则 cancelled,与 `kimi -p` 的自动批准一致)。**完成项的镜像刻意仍是文件折叠**:ACP 推送的是 token 级 chunk,与 wire.jsonl 行折叠不同构,所以推送只触发节流的 `mirrorKimiDelta` 过一遍,settle 对账仍是权威——单一折叠、单一 offset,两条驱动路径不可能漂移;两档粒度都把每个子项 1:1 全量折叠,token 档额外把在流子项的增量按节流(默认 ≥300ms 且 ≥200 字符,driver config `snapshotMinIntervalMs`/`snapshotMinChars` 可覆盖)以快照写到该子项预留的 (turn, step),完成行的折叠落在同一坐标收尾,中止的流以带 interrupted 的最终快照收尾。runtime 空闲超时回收(stdin EOF → SIGTERM 阶梯),崩溃后下一轮自动重连并 `session/load` 盘上的会话。
+**长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 `kimi acp` 进程(ACP over stdio;握手要求 `loadSession` 能力,否则熔断回退),`session/new` 建会话(server 分配 id,即委派记录的 `cliSessionId`),之后每轮 = `session/prompt`;`cancel` 落地为 `session/cancel`——进程不死、会话可续。成员桥经 ACP `mcpServers` 内联声明(不写 mcp.json)。`session/request_permission` 按无人值守策略自动应答(选第一个 allow,无则 cancelled,与 `kimi -p` 的自动批准一致)。**完成项的镜像刻意仍是文件折叠**:ACP 推送的是 token 级 chunk,与 wire.jsonl 行折叠不同构,所以推送只触发节流的 `mirrorKimiDelta` 过一遍,settle 对账仍是权威——单一折叠、单一 offset,两条驱动路径不可能漂移;实时输出把完成子项 1:1 全量折叠，生成中的文本经共用瞬时通道发布，默认最多合并 50ms；增量恢复检查点独立于浏览器发布，最终原生消息在预留的 (turn, step) 替换临时展示，中止的流保留带 interrupted 的最终消息。runtime 空闲超时回收(stdin EOF → SIGTERM 阶梯),崩溃后下一轮自动重连并 `session/load` 盘上的会话。
 
 </details>
 

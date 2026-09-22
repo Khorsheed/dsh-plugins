@@ -14,9 +14,9 @@
  * token-level chunks, NOT the wire.jsonl line fold the exec mirror owns — so
  * completed items always fold from the file: push events merely TRIGGER
  * throttled `mirrorKimiDelta` passes and the settle pass stays authoritative
- * (one fold, one offset, zero divergence between the two drivers). BOTH
- * granularities fold every transcript item 1:1 into the child session log.
- * The token granularity additionally mirrors the in-flight item live: chunk
+ * (one fold, one offset, zero divergence between the two drivers). Every
+ * transcript item folds 1:1 into the child session log.
+ * Live output also mirrors the in-flight item: chunk
  * deltas accumulate per streaming item and append throttled snapshot
  * assistant/messages at the item's reserved (turn, step) — the host folds
  * repeated settles at one coordinate into one live-updating chat node — and
@@ -34,6 +34,9 @@
  * @module @khorsheed/dsh-local-agent-kimi/live-driver
  */
 
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { configureKimiSession } from './session-configuration.ts'
+import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -49,7 +52,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import {
   DEFAULT_DISPOSE_GRACE_MS,
@@ -81,10 +84,10 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 export const DEFAULT_LIVE_MIRROR_THROTTLE_MS = 500
 
 /** Default minimum interval between one streaming item's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = 300
+export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = LIVE_FLUSH_INTERVAL_MS
 
 /** Default minimum text growth between one streaming item's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_CHARS = 200
+export const DEFAULT_SNAPSHOT_MIN_CHARS = 0
 
 /** Grace between stdin EOF and SIGTERM when reclaiming an ACP server. */
 const RECLAIM_EOF_GRACE_MS = 1_000
@@ -132,6 +135,7 @@ export type KimiLiveMirrorGranularity = 'event' | 'token'
 
 /** Fully resolved inputs for one live round. */
 export interface KimiLiveRoundSpec {
+  readonly configuration?: LocalAgentResolvedConfiguration
   /** Parent Session workspace; also the runtime process cwd and ACP session cwd. */
   readonly cwd: string
   /** The `kimi` harness's scoped home, injected as the runtime's `KIMI_CODE_HOME`. */
@@ -345,7 +349,9 @@ class KimiLiveRuntime {
    * resolving a different model for the member retires this runtime so the
    * respawn binds the new one.
    */
+  configurationKey: string | undefined
   boundModel: string | undefined
+  modelConfiguration: KimiNativeConfiguration | undefined
   /** Serializes session/prompt per member (converge-before-next-turn). */
   turnChain: Promise<unknown> = Promise.resolve()
   /** The active round's notification sink; installed per round, cleared at settle. */
@@ -369,7 +375,9 @@ class KimiLiveRuntime {
         if (method !== 'session/update') return
         const sessionId = params['sessionId']
         if (sessionId !== this.sessionId) return
-        this.onSessionUpdate?.((params['update'] ?? {}) as JsonObject)
+        const update = (params['update'] ?? {}) as JsonObject
+        if (update['sessionUpdate'] === 'config_option_update') this.modelConfiguration = kimiNativeConfiguration(update)
+        this.onSessionUpdate?.(update)
       },
       requestMs,
     )
@@ -422,6 +430,7 @@ export class KimiAcpLiveDriver {
   private readonly ensuring = new Map<string, Promise<KimiLiveRuntime>>()
   /** The model each in-flight spawn is binding (a stale-model spawn never serves a switched member). */
   private readonly ensuringModel = new Map<string, string | undefined>()
+  private readonly ensuringConfiguration = new Map<string, string | undefined>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
   /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
   private readonly roundChains = new Map<string, Promise<unknown>>()
@@ -441,8 +450,9 @@ export class KimiAcpLiveDriver {
     private readonly config: {
       liveIdleMs?: number
       liveMirrorGranularity?: KimiLiveMirrorGranularity
-      /** Snapshot throttle for the token granularity's streaming messages. */
+      /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
+      /** @deprecated Character growth no longer gates live publication. */
       snapshotMinChars?: number
       /**
        * Resolver for the member's effective model, read at each RUNTIME
@@ -509,13 +519,8 @@ export class KimiAcpLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: KimiLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: KimiLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -543,9 +548,11 @@ export class KimiAcpLiveDriver {
 
   private ensureRuntime(spec: KimiLiveRoundSpec, signal: AbortSignal): Promise<KimiLiveRuntime> {
     const key = String(spec.childSession.id)
-    const model = this.resolveBoundModel(key)
+    const model = spec.configuration === undefined ? this.resolveBoundModel(key) : spec.configuration.model
+    const configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     const existing = this.runtimes.get(key)
-    if (existing !== undefined && !existing.dead && existing.boundModel === model) {
+    if (existing !== undefined && !existing.dead && existing.boundModel === model
+      && existing.configurationKey === configurationKey) {
       this.clearIdleTimer(key)
       return Promise.resolve(existing)
     }
@@ -558,7 +565,7 @@ export class KimiAcpLiveDriver {
       if (!existing.dead) void existing.reclaim()
     }
     const pending = this.ensuring.get(key)
-    if (pending !== undefined && this.ensuringModel.get(key) === model) return pending
+    if (pending !== undefined && this.ensuringModel.get(key) === model && this.ensuringConfiguration.get(key) === configurationKey) return pending
     // A stale-model spawn in flight: chain behind it, then spawn onto the new
     // model (the chained spawn reclaims the stale runtime via the mismatch
     // path on its own ensure).
@@ -575,10 +582,12 @@ export class KimiAcpLiveDriver {
         if (this.ensuring.get(key) === spawn) {
           this.ensuring.delete(key)
           this.ensuringModel.delete(key)
+          this.ensuringConfiguration.delete(key)
         }
       })
     this.ensuring.set(key, spawn)
     this.ensuringModel.set(key, model)
+    this.ensuringConfiguration.set(key, configurationKey)
     return spawn
   }
 
@@ -604,6 +613,11 @@ export class KimiAcpLiveDriver {
     return runtime === undefined || runtime.dead ? undefined : runtime.boundModel
   }
 
+  runtimeConfiguration(childSessionId: string): KimiNativeConfiguration | undefined {
+    const runtime = this.runtimes.get(childSessionId)
+    return runtime === undefined || runtime.dead ? undefined : runtime.modelConfiguration
+  }
+
   /**
    * Spawn the member's resident `kimi acp` and prove the wire: initialize +
    * the loadSession capability (crash recovery needs it — without it the
@@ -627,14 +641,14 @@ export class KimiAcpLiveDriver {
     // nothing. Best-effort: a home whose config cannot be written still gets
     // its runtime, running whatever the config already named, and the round's
     // model read-back is what catches the mismatch.
-    if (boundModel !== undefined) {
+    if (spec.configuration === undefined && boundModel !== undefined) {
       await writeKimiDefaultModel(spec.homeDir, boundModel).catch((error: unknown) => {
         this.ctx.logger.warn(`local-agent-kimi: pinning default_model for the resident runtime failed: ${thrown(error).message}`)
         return false
       })
     }
     const spawnSpec: SubprocessSpawnSpec = {
-      argv: ['kimi', 'acp'],
+      argv: ['kimi', ...spec.configuration?.model === undefined ? [] : ['--model', spec.configuration.model], 'acp'],
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -700,6 +714,7 @@ export class KimiAcpLiveDriver {
     }
     this.channelBrokenAt = undefined
     runtime.boundModel = boundModel
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     this.runtimes.set(key, runtime)
     // Stash the member handle for the session declarations.
     runtimeMember.set(runtime, member)
@@ -797,6 +812,58 @@ export class KimiAcpLiveDriver {
    * the exec run's settlement contract exactly (settleRunResult + turn/end
    * bookkeeping); cancel is `session/cancel` and the process survives.
    */
+  /** Initialize the native session and model controls without sending a prompt. */
+  async prepare(spec: KimiLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      const runtime = await this.ensureRuntime(spec, signal)
+      await this.configureSession(runtime, spec)
+      signal.throwIfAborted()
+      this.armIdleTimer(String(spec.childSession.id))
+    } catch (error) {
+      await this.reclaim(String(spec.childSession.id))
+      throw error
+    }
+  }
+
+  private async configureSession(rt: KimiLiveRuntime, spec: KimiLiveRoundSpec): Promise<void> {
+    const member = runtimeMember.get(rt)
+    if (rt.sessionId === undefined) {
+      if (spec.resume === undefined) {
+        const response = await rt.peer.request<JsonObject & { sessionId?: string }>('session/new', {
+          cwd: spec.cwd,
+          mcpServers: member?.mcpServers ?? [],
+        })
+        if (typeof response?.sessionId !== 'string') {
+          throw new Error('subagent-kimi live: session/new returned no session id')
+        }
+        rt.sessionId = response.sessionId
+        rt.modelConfiguration = kimiNativeConfiguration(response)
+        // The record convention is the bare uuid (the exec path's
+        // settle-time parse); the ACP id is a directory name
+        // (`session_<uuid>`). Strip before recording so live- and
+        // exec-written records stay interchangeable.
+      } else {
+        // Resume: the record may be bare (exec-written) or carry the ACP
+        // prefix (legacy live records); the wire always wants the
+        // ACP-native form.
+        rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
+        const response = await rt.peer.request('session/load', {
+          sessionId: rt.sessionId,
+          cwd: spec.cwd,
+          mcpServers: member?.mcpServers ?? [],
+        })
+        rt.modelConfiguration = kimiNativeConfiguration(response)
+      }
+    }
+    if (spec.configuration !== undefined) {
+      rt.modelConfiguration = await configureKimiSession(rt.sessionId, rt.modelConfiguration, spec.configuration,
+        (method, params) => rt.peer.request(method, params))
+    }
+    if (spec.resume === undefined && rt.sessionId !== undefined) spec.onCliSessionId?.(bareKimiSessionId(rt.sessionId))
+  }
+
   async startRound(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.
@@ -831,7 +898,6 @@ export class KimiAcpLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: KimiLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
 
     const runAbort = new AbortController()
@@ -852,7 +918,7 @@ export class KimiAcpLiveDriver {
      */
     const reservedSteps: number[] = []
     /**
-     * The streaming items seen this round (token granularity). kimi's ACP
+     * The streaming items seen this round . kimi's ACP
      * chunks carry no item id, so the stream key is synthetic per kind per
      * round (the codex live driver's fallback shape): thought chunks share
      * one stream, message chunks another. Deltas accumulate into throttled
@@ -874,14 +940,6 @@ export class KimiAcpLiveDriver {
     /** The stream the latest delta accumulated into (a kind switch force-snapshots it). */
     let activeStream: string | undefined
     /**
-     * The latest ACP plan snapshot, rendered (event granularity only — the
-     * token granularity folds plans through their own stream). The wire.jsonl
-     * fold never carries plans (kimi records text/think parts only — surveyed
-     * against production wires), so the settle fold below appends it once;
-     * there is no wire copy to dedupe against.
-     */
-    let roundPlan = ''
-    /**
      * The round's usage NOT carried by a folded line, summed across mirror
      * passes (each pass's window is disjoint). The settle's final snapshot
      * carries the remainder when no folded message did — host 0.1.5 has no
@@ -899,11 +957,16 @@ export class KimiAcpLiveDriver {
     let mirrorQueue: Promise<unknown> = Promise.resolve()
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-kimi: live persistence failed: ${thrown(error).message}`)
+      })
     }
 
     /** A stream's synthetic key: kimi's ACP deltas carry no item id, so kind + turn pairs them. */
-    const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}`
+    let generation = 0
+    const seenToolCalls = new Set<string>()
+    const toolSteps = new Map<string, number>()
+    const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}-${generation}`
     /** The plan stream's key: a snapshot stream beside the think/text delta streams. */
     const planKey = `kimi-stream-plan-${turn}`
 
@@ -915,16 +978,14 @@ export class KimiAcpLiveDriver {
      */
     const foldDelta = (text: string): void => {
       roundText += text
-      if (granularity === 'token') {
-        const key = streamKey('text')
-        reserveStream(key, 'text')
-        const stream = streams.get(key)
-        if (stream !== undefined) {
-          stream.text += text
-          appendStreamSnapshot(stream, false, false)
-        }
-        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
+      const key = streamKey('text')
+      reserveStream(key, 'text')
+      const stream = streams.get(key)
+      if (stream !== undefined) {
+        stream.text += text
+        appendStreamSnapshot(stream, false, false)
       }
+      localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
     }
 
     /**
@@ -945,41 +1006,61 @@ export class KimiAcpLiveDriver {
     const foldPlan = (update: JsonObject): void => {
       const plan = renderPlan(update)
       if (plan === '') return
-      if (granularity === 'token') {
-        // The plan's own snapshot stream (think-styled): every update replaces
-        // the text and lands a snapshot at the reserved (turn, step); the
-        // stream force-finalizes at settle (the wire carries no plan line
-        // that could complete it).
-        reserveStream(planKey, 'think')
-        const stream = streams.get(planKey)
-        if (stream !== undefined && stream.text !== plan) {
-          stream.text = plan
-          appendStreamSnapshot(stream, true, false)
-        }
-      } else {
-        roundPlan = plan
+      // The plan's own snapshot stream (think-styled): every update replaces
+      // the text and lands a snapshot at the reserved (turn, step); the
+      // stream force-finalizes at settle (the wire carries no plan line
+      // that could complete it).
+      reserveStream(planKey, 'think')
+      const stream = streams.get(planKey)
+      if (stream !== undefined && stream.text !== plan) {
+        stream.text = plan
+        appendStreamSnapshot(stream, true, false)
       }
     }
 
     /**
      * Append one snapshot of a streaming item at its reserved (turn, step).
-     * Throttled per stream by interval and growth unless `force`; the forced
+     * Batched per stream on a bounded deadline unless `force`; the forced
      * final snapshot carries `interrupted` (a cancelled turn reads 已停止
      * legitimately) and, when `withUsage`, the round's uncarried usage. An
      * empty stream leaves no boundary at all.
      */
+    const streamPublisher = localAgent?.liveStreams === undefined ? undefined
+      : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
+        error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
+    const liveFlush = new LiveFlush(
+      error => this.ctx.logger.warn(`live mirror flush failed: ${String(error)}`),
+      this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
+    )
+
+    const pendingStreamArrival = new Map<number, number>()
     const appendStreamSnapshot = (
       stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
       force: boolean,
       interrupted: boolean,
       withUsage = false,
+      final = false,
     ): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
-      const minInterval = this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS
-      const minChars = this.config.snapshotMinChars ?? DEFAULT_SNAPSHOT_MIN_CHARS
-      if (!force && now - stream.lastSnapshotAt < minInterval) return
-      if (!force && stream.text.length - stream.lastSnapshotLen < minChars) return
+      if (!force) {
+        if (!pendingStreamArrival.has(stream.step)) pendingStreamArrival.set(stream.step, now)
+        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
+        return
+      }
+      liveFlush.cancel(stream.step)
+      const receivedAt = pendingStreamArrival.get(stream.step) ?? now
+      pendingStreamArrival.delete(stream.step)
+      if (streamPublisher !== undefined && !final) {
+        if (!stream.opened) {
+          childSession.append('step/start', { turn, step: stream.step })
+          stream.opened = true
+        }
+        streamPublisher.update(stream.step, stream.kind, stream.text, { receivedAt })
+        stream.lastSnapshotAt = now
+        stream.lastSnapshotLen = stream.text.length
+        return
+      }
       if (!stream.opened) {
         childSession.append('step/start', { turn, step: stream.step })
         stream.opened = true
@@ -991,7 +1072,7 @@ export class KimiAcpLiveDriver {
           stream.kind === 'think'
             ? { type: 'reasoning' as const, text: stream.text }
             : { type: 'text' as const, text: stream.text },
-        ]),
+        ], runtime?.modelConfiguration?.currentModel ?? roundModel),
         stream: [],
         ...withUsage && roundUsage !== undefined ? { usage: roundUsage } : {},
         ...interrupted ? { interrupted: true } : {},
@@ -1030,25 +1111,34 @@ export class KimiAcpLiveDriver {
     }
 
     /**
-     * The fold-pass coordination surface (token granularity only): the file
+     * The fold-pass coordination surface : the file
      * fold skips reserved steps for sequential folds and pairs a completed
      * think/assistant line with its stream — scoped to THIS round's turn, so
      * an earlier round's leftover lines never consume this round's stream.
      */
     const mirrorStreams: KimiMirrorStreams = {
       reservedSteps: t => t === turn ? reservedSteps : [],
+      completeTool: (line) => {
+        if (line.turn !== turn) return undefined
+        const step = toolSteps.get(line.id)
+        if (step === undefined) return undefined
+        toolSteps.delete(line.id)
+        return { step, opened: true }
+      },
       completeStream: (line) => {
         if (line.turn !== turn) return undefined
-        const key = streamKey(line.kind === 'think' ? 'think' : 'text')
-        const stream = streams.get(key)
-        if (stream === undefined) return undefined
+        const kind = line.kind === 'think' ? 'think' : 'text'
+        const entry = [...streams.entries()].find(([key, stream]) => key !== planKey && stream.kind === kind)
+        if (entry === undefined) return undefined
+        const [key, stream] = entry
+        liveFlush.cancel(stream.step)
+        streamPublisher?.finish(stream.step)
         streams.delete(key)
         if (activeStream === key) activeStream = undefined
         return { step: stream.step, opened: stream.opened }
       },
     }
-    const mirrorOptions = (): KimiMirrorOptions | undefined =>
-      granularity === 'token' ? { streams: mirrorStreams } : undefined
+    const mirrorOptions = (): KimiMirrorOptions => ({ streams: mirrorStreams })
 
     /**
      * Observation accounting across mirror passes: a pass whose window
@@ -1112,7 +1202,7 @@ export class KimiAcpLiveDriver {
         }
         const text = content?.text ?? ''
         if (text !== '') foldDelta(text)
-      } else if (kind === 'agent_thought_chunk' && granularity === 'token') {
+      } else if (kind === 'agent_thought_chunk') {
         const content = update['content'] as { type?: string; text?: string } | undefined
         const text = content?.text ?? ''
         if (text !== '') {
@@ -1123,6 +1213,22 @@ export class KimiAcpLiveDriver {
             stream.text += text
             appendStreamSnapshot(stream, false, false)
           }
+        }
+      } else if (kind === 'tool_call') {
+        const id = typeof update['toolCallId'] === 'string' ? update['toolCallId'] : undefined
+        if (id === undefined || !seenToolCalls.has(id)) {
+          if (id !== undefined) {
+            seenToolCalls.add(id)
+            let step = nextKimiSessionStep(childSession, turn)
+            for (const reserved of reservedSteps) step = Math.max(step, reserved + 1)
+            reservedSteps.push(step)
+            toolSteps.set(id, step)
+            childSession.append('step/start', { turn, step })
+            persist()
+          }
+          // ACP has no text-item ids. A new tool call separates generation
+          // segments; late file folds consume same-kind segments in order.
+          generation++
         }
       } else if (kind === 'plan') {
         // ACP plan updates are full-plan snapshots; the wire.jsonl fold never
@@ -1143,36 +1249,8 @@ export class KimiAcpLiveDriver {
         await this.reclaim(String(childSession.id))
         throw new Error('subagent-kimi: run cancelled locally')
       }
-      rt.onSessionUpdate = onSessionUpdate
-      const member = runtimeMember.get(rt)
       try {
-        if (rt.sessionId === undefined) {
-          if (spec.resume === undefined) {
-            const response = await rt.peer.request<{ sessionId?: string }>('session/new', {
-              cwd: spec.cwd,
-              mcpServers: member?.mcpServers ?? [],
-            })
-            if (typeof response?.sessionId !== 'string') {
-              throw new Error('subagent-kimi live: session/new returned no session id')
-            }
-            rt.sessionId = response.sessionId
-            // The record convention is the bare uuid (the exec path's
-            // settle-time parse); the ACP id is a directory name
-            // (`session_<uuid>`). Strip before recording so live- and
-            // exec-written records stay interchangeable.
-            spec.onCliSessionId?.(bareKimiSessionId(rt.sessionId))
-          } else {
-            // Resume: the record may be bare (exec-written) or carry the ACP
-            // prefix (legacy live records); the wire always wants the
-            // ACP-native form.
-            rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
-            await rt.peer.request('session/load', {
-              sessionId: rt.sessionId,
-              cwd: spec.cwd,
-              mcpServers: member?.mcpServers ?? [],
-            })
-          }
-        }
+        await this.configureSession(rt, spec)
       } catch (error) {
         // The accept failed: the runtime's session state is unknown, so do
         // not reuse it — reclaim and fail the round loudly. The turn never
@@ -1182,6 +1260,9 @@ export class KimiAcpLiveDriver {
         if (!runAbort.signal.aborted) await this.reclaim(String(childSession.id))
         throw thrown(error)
       }
+      // ACP session/load replays historical chunks and tools. Bind this round's
+      // sink only after loading/configuration, so replay never becomes new output.
+      rt.onSessionUpdate = onSessionUpdate
       // The turn boundary opens before the prompt goes out (exec parity: the
       // exec path opens at spawn). session/prompt has no separate accept ack —
       // the request IS the turn. The prompt's user/message lands here too
@@ -1269,9 +1350,10 @@ export class KimiAcpLiveDriver {
       onAbort,
     }).then(async (settled) => {
       roundSettled = true
+      liveFlush.dispose()
       promptInFlight = false
       if (turnOpened) {
-        // Token granularity: reconcile the file fold INSIDE the turn window
+        // Reconcile the file fold INSIDE the turn window
         // (bounded quiescence — the price of the wire flush race; a mirror
         // failure never fails the round), so every streamed item's completion
         // fold lands at its reserved step before turn/end. Streams whose
@@ -1279,23 +1361,24 @@ export class KimiAcpLiveDriver {
         // quiescence window) then finalize in place: one forced snapshot each
         // — interrupted on a non-completed round, the LAST one carrying the
         // round's uncarried usage — then step/end.
-        if (granularity === 'token') {
-          try {
-            await settleMirror()
-          } catch (error) {
-            this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
-          }
-          if (streams.size > 0) {
-            const remaining = [...streams.values()]
-            for (const [position, stream] of remaining.entries()) {
-              appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
-              if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
-            }
-            streams.clear()
-            activeStream = undefined
-            persist()
-          }
+        try {
+          await settleMirror()
+        } catch (error) {
+          this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
         }
+        if (streams.size > 0) {
+          const remaining = [...streams.values()]
+          for (const [position, stream] of remaining.entries()) {
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
+            streamPublisher?.finish(stream.step)
+            if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
+          }
+          streams.clear()
+          activeStream = undefined
+          persist()
+        }
+        for (const step of toolSteps.values()) childSession.append('step/end', { turn, step })
+        toolSteps.clear()
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
         } else if (settled.stopReason === 'aborted') {
@@ -1307,56 +1390,34 @@ export class KimiAcpLiveDriver {
           })
         }
       }
+      streamPublisher?.dispose()
       // Settlement clears the round's update sink.
       if (runtime !== undefined) runtime.onSessionUpdate = undefined
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
+      }
       return settled
     })
 
-    // Settle reconciliation (event granularity): the fold runs AFTER the turn
-    // closes — the location index registers steps from their boundary pair
-    // whenever it lands, so a post-turn/end fold still materializes. Token
-    // granularity already reconciled inside the turn window above (its
-    // completion folds and final stream snapshots had to precede turn/end).
-    // Then re-arm the reaper.
-    void result.then(async () => {
-      try {
-        if (turnOpened && granularity !== 'token') {
-          await settleMirror()
-          // The round's plan snapshot: the wire fold has no plan line, so the
-          // driver folds the latest ACP plan update once, think-styled, at the
-          // turn's next free step (after the mirror, so the step is past
-          // every fold the settle pass landed).
-          if (roundPlan !== '') {
-            const step = nextKimiSessionStep(childSession, turn)
-            childSession.append('step/start', { turn, step })
-            childSession.append('assistant/message', {
-              turn,
-              step,
-              message: assistantEvent([{ type: 'reasoning' as const, text: roundPlan }]),
-              stream: [],
-            }, { surfaceOp: 'append' })
-            childSession.append('step/end', { turn, step })
-            persist()
-          }
+    // Re-arm the reaper and publish observations after in-turn reconciliation.
+    void result.then(() => {
+      // Every settled round reports its observed model through the
+      // registry's observation channel (record merge + `settled` event) —
+      // the live drive's half of the exec path's onRoundSettled. A mirror
+      // failure never drops an observation an earlier pass already saw, and
+      // a round that never opened owns no span to observe. Degrades
+      // silently on a core predating recordRoundSettled.
+      if (turnOpened) {
+        const round = {
+          ...roundModel === undefined ? {} : { observedModel: roundModel },
         }
-      } catch (error) {
-        this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
-      } finally {
-        // Every settled round reports its observed model through the
-        // registry's observation channel (record merge + `settled` event) —
-        // the live drive's half of the exec path's onRoundSettled. A mirror
-        // failure never drops an observation an earlier pass already saw, and
-        // a round that never opened owns no span to observe. Degrades
-        // silently on a core predating recordRoundSettled.
-        if (turnOpened) {
-          const round = {
-            ...roundModel === undefined ? {} : { observedModel: roundModel },
-          }
-          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
-          registry?.recordRoundSettled?.(childSession.id, round)
-        }
-        this.armIdleTimer(String(childSession.id))
+        const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
+        registry?.recordRoundSettled?.(childSession.id, round)
       }
+      this.armIdleTimer(String(childSession.id))
     })
 
     // Publication gate: hold start() until the session is ready and the

@@ -14,11 +14,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasTabProps } from '../src/client/contract.ts'
+import { CanvasImageSrcs } from '../src/client/images.ts'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { CanvasTab } from '../src/client/tab/CanvasTab.tsx'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardAskAgentOutcome, BoardChatStatusResult, BoardFocusResult,
+  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardFocusResult,
   BoardListResult, BoardMutationResult, BoardReadDraftOutcome, BoardReadOutcome,
   BoardWriteDraftResult, CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
@@ -27,6 +28,10 @@ type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; me
 
 const NOW = '2026-09-16T08:00:00.000Z'
 const CANVAS_ID = 'canvas_01234567abcdefgh'
+/** One stored image's id: the digest shape a card-held pointer insists on. */
+const IMG_ID = `sha256:${'0123456789abcdef'.repeat(4)}`
+/** The same image's pointer, as a card holds it (§10.3). */
+const IMG_SRC = `attachment://${IMG_ID}?mediaType=image/png&bytes=3&width=2&height=1`
 
 /** A plain translate over the zh dictionary (the key-set source of truth). */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -110,6 +115,12 @@ function makeHarness(options: {
   const boards = new Map((options.boards ?? [board()]).map(value => [value.id, value]))
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
   const store = new CanvasSelectionStore()
+  // The REAL image cache over a fake read leg (§10.3): the tab reads its feed
+  // as a subscription, so the feed is exercised here rather than faked away.
+  const images = new CanvasImageSrcs(async () => ({
+    ok: true as const,
+    value: { ok: true as const, data: 'AAEC', mediaType: 'image/png' as const },
+  }))
   const mutationFor = (canvasId: string): Result<BoardMutationResult> => {
     const current = boards.get(canvasId)
     if (current === undefined) return { ok: true, value: { ok: false, error: 'missing' } }
@@ -165,6 +176,9 @@ function makeHarness(options: {
       ok({ available: options.chatAvailable ?? true })),
     openSideChat: vi.fn(),
     suggestWideMode: vi.fn(),
+    attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> =>
+      ok({ ok: true, ref: { attachmentId: IMG_ID, mediaType: 'image/png', bytes: 3, width: 2, height: 1 } })),
+    images,
   }
   const sessionId = options.sessionId === 'none' ? undefined : (options.sessionId ?? 's1')
   const props = {
@@ -178,6 +192,9 @@ function makeHarness(options: {
     useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
       return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
     } as CanvasTabProps['useSelection'],
+    useImageRev: function useImageRev<S>(selector: (snapshot: number) => S): S {
+      return selector(useSyncExternalStore(images.source.subscribe, images.source.getSnapshot))
+    } as CanvasTabProps['useImageRev'],
   } as unknown as CanvasTabProps
   return { store, mocks, props, boards }
 }
@@ -260,6 +277,130 @@ describe('CanvasTab — list, switcher, board', () => {
     })
   })
 
+  it('never lets a stray click create the card: the draft saves on ⌘⏎ only', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    const editor = await screen.findByPlaceholderText(/写点什么/)
+    fireEvent.change(editor, { target: { value: '会上没人开口' } })
+    // The card does not exist yet, so nothing is on the board but the old card.
+    expect(screen.queryByText('卡片 c_1')).toBeNull()
+    fireEvent.blur(editor)
+    expect(mocks.putCard).not.toHaveBeenCalled()
+    fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
+    await waitFor(() => {
+      expect(mocks.putCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, kind: 'fragment', text: '会上没人开口' })
+    })
+    await screen.findByText('卡片 c_1')
+  })
+
+  it('drops an untouched draft without asking, and guards a drafted one exactly once', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+
+    // An empty draft leaves silently (nothing to lose).
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    fireEvent.click(await screen.findByRole('button', { name: /返回卡板/ }))
+    await screen.findByText('卡片 c_1')
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    // A drafted one asks; 继续编辑 keeps every character.
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '问题' }))
+    const editor = await screen.findByPlaceholderText(/写点什么/)
+    // `input` (not `change`) is what reports the keystroke to the owner — the
+    // dirty flag the exit gesture reads rides it.
+    fireEvent.input(editor, { target: { value: '不表达是因为害怕吗？' } })
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('10')
+    fireEvent.click(within(dialog).getByRole('button', { name: '继续编辑' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(mocks.putCard).not.toHaveBeenCalled()
+    expect(screen.getByPlaceholderText(/写点什么/)).toHaveProperty('value', '不表达是因为害怕吗？')
+
+    // 丢掉 leaves the board with no new card — the count the switcher reports
+    // is unchanged, because nothing was ever written.
+    fireEvent.click(screen.getByRole('button', { name: /返回卡板/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '丢掉' }))
+    await screen.findByText('卡片 c_1')
+    expect(mocks.putCard).not.toHaveBeenCalled()
+  })
+
+  /** The draft's pad field, with jsdom's missing layout and pointer capture supplied. */
+  function draftField(container: HTMLElement): HTMLElement {
+    const svg = Array.from(container.querySelectorAll('svg'))
+      .find(candidate => candidate.getAttribute('viewBox') === '0 0 600 400')
+    const box = svg?.parentElement
+    if (box === undefined) throw new Error('expected the draft to offer a pad')
+    box.setPointerCapture = () => {}
+    box.releasePointerCapture = () => {}
+    box.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 300, height: 200, right: 300, bottom: 200, x: 0, y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect
+    return box
+  }
+
+  it('saves a card that is only a drawing, with the ink and an empty body', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    const { container } = render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const box = draftField(container)
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 60, clientY: 40 })
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: 120, clientY: 80 })
+    fireEvent.pointerUp(box, { pointerId: 1 })
+    // ⌘⏎ belongs to the pen too: the textarea that carries it is put away
+    // while the field is up, and a shortcut that quits with a tool is a trap.
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true })
+    await waitFor(() => {
+      expect(mocks.putCard).toHaveBeenCalledWith('s1', expect.objectContaining({
+        canvasId: CANVAS_ID, kind: 'fragment', text: '', draw: expect.any(Array),
+      }))
+    })
+  })
+
+  it('names the ink in the discard question, not just the words', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    const { container } = render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const box = draftField(container)
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 60, clientY: 40 })
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: 120, clientY: 80 })
+    fireEvent.pointerUp(box, { pointerId: 1 })
+    fireEvent.click(screen.getByRole('button', { name: /返回卡板/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('1 笔')
+    expect(dialog.textContent).not.toContain('个字')
+  })
+
+  /** Whether this seat renders a drawing: the logical box is the give-away. */
+  function hasFigure(container: HTMLElement): boolean {
+    return Array.from(container.querySelectorAll('svg'))
+      .some(candidate => candidate.getAttribute('viewBox') === '0 0 600 400')
+  }
+
+  it('shows a drawn card’s ink on the board, where an empty body would read as blank', async () => {
+    const drawn = card('c_ink', {
+      text: '',
+      draw: [{ pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' }],
+    })
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), drawn])] })
+    const { container } = render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    expect(hasFigure(container)).toBe(true)
+  })
+
   it('wires ghost proposals to patchCard status transitions (accept AND reject)', async () => {
     const ghostA = card('c_a', { kind: 'reference', status: 'proposed', createdBy: 'agent', text: '效能假说综述' })
     const ghostB = card('c_b', { kind: 'fragment', status: 'proposed', createdBy: 'agent', text: '反例笔记' })
@@ -340,8 +481,60 @@ describe('CanvasTab — the drill', () => {
     await screen.findByRole('button', { name: /新卡/ })
   })
 
-  it('switches the detail through render/source/split and saves source through patchCard', async () => {
-    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+  it('paints a card\'s image pointer the moment the tab\'s read lands', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_img', { text: `![截图](${IMG_SRC})` })])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('为什么人们不愿表达异议')
+    fireEvent.click(screen.getByRole('button', { name: '进入详情页编辑' }))
+    // The first paint only STARTS the read; the cache's feed is what repaints
+    // this tab, and the fresh vocabulary is what the memoized renderer needs.
+    const image = await screen.findByRole('img', { name: '截图' })
+    await waitFor(() => {
+      expect(image.getAttribute('src')).toBe('data:image/png;base64,AAEC')
+    })
+  })
+
+  it('inlines a pointer held by an HTML card, inside the sandbox CSP', async () => {
+    const page = `<!doctype html><html><head><title>页</title></head><body><img src="${IMG_SRC}"></body></html>`
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_page', { kind: 'document', text: page })])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('为什么人们不愿表达异议')
+    fireEvent.click(screen.getByRole('button', { name: '进入详情页编辑' }))
+    await waitFor(() => {
+      const frame = document.querySelector('iframe')
+      expect(frame?.getAttribute('srcdoc') ?? '').toContain('src="data:image/png;base64,AAEC"')
+    })
+    // The frame still runs the strict policy — inlining bytes did not open it.
+    expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain("img-src data: blob:")
+  })
+
+  it('is a reader on the board: the pencil opens the detail, and no editor sits on the card', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    // The card's text is never a textarea on the board.
+    expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '进入详情页编辑' }))
+    await screen.findByRole('button', { name: /返回卡板/ })
+    expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
+    // Editing is the detail's own, behind the source mode.
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    expect(await screen.findByDisplayValue('卡片 c_1')).toBeTruthy()
+  })
+
+  it('opens an archived card from the well instead of swallowing the click', async () => {
+    const { props } = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_old', { status: 'archived', text: '归档掉的旧卡' })])],
+    })
+    render(<CanvasTab {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: /已归档的卡/ }))
+    fireEvent.click(screen.getByText('归档掉的旧卡'))
+    await screen.findByRole('button', { name: /返回卡板/ })
+    await screen.findByText('已归档')
+    await screen.findByRole('button', { name: '恢复' })
+  })
+
+  it('switches the detail through render/source/split and saves source through patchCard', async () => {    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
     fireEvent.click(screen.getByText('卡片 c_1'))

@@ -26,8 +26,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { LocalAgentModelBroker, LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
-import { listCodexConfigModels, readCodexModel } from './provision.ts'
+import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
+import type { MemberConfigurationAdapter } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory, LocalAgentMemberBinding, LocalAgentMemberConfiguration, LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { listCodexConfigModels, readCodexModel, readCodexReasoningEffort } from './provision.ts'
 
 /** Everything the broker reads or drives, injected so the unit specs stay small. */
 export interface CodexModelBrokerDeps {
@@ -43,7 +45,7 @@ export interface CodexModelBrokerDeps {
    * on a cold cache, re-probing in the background when stale. Sits ahead of
    * the recent-model memory in the choice vocabulary.
    */
-  readonly catalog: (homeDir: string) => readonly string[]
+  readonly catalog: (homeDir: string, cwd?: string) => readonly string[]
   /**
    * The catalog cache's SYNC read of the account's built-in default slug (the
    * `isDefault` entry of the same probe {@link catalog} serves): the layer
@@ -51,9 +53,13 @@ export interface CodexModelBrokerDeps {
    * this layer supplies the effective model the source stays `cli-builtin` —
    * it names the CLI's OWN default, not a configured one.
    */
-  readonly catalogDefault: (homeDir: string) => string | undefined
+  readonly catalogDefault: (homeDir: string, cwd?: string) => string | undefined
   /** The default scope's scoped home; config discovery reads it live. */
-  readonly homeDir: () => string
+  readonly homeDir: (childSessionId?: string) => string
+  readonly cwd?: (childSessionId?: string) => string | undefined
+  readonly directory?: (homeDir: string, cwd?: string) => LocalAgentModelDirectory
+  readonly refreshDirectory?: (homeDir: string, cwd?: string) => Promise<unknown>
+  readonly followDirectory?: (homeDir: string, cwd: string | undefined, signal: AbortSignal) => AsyncIterable<LocalAgentModelDirectory>
   /** Whether the live driver is on (the member's rounds bind resident runtimes). */
   readonly live: () => boolean
   /**
@@ -87,6 +93,59 @@ function dedupeChoices(layers: ReadonlyArray<string | undefined>): string[] {
 export class CodexModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: CodexModelBrokerDeps) {}
 
+  configurationAdapter(binding: LocalAgentMemberBinding): MemberConfigurationAdapter {
+    const home = this.deps.ctx.localAgent.homeDir('codex', binding.scope)
+    const resolve = async (selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration> => {
+      let directory = this.deps.directory?.(home, binding.cwd)
+      if (directory?.status === 'loading') {
+        await this.deps.refreshDirectory?.(home, binding.cwd)
+        directory = this.deps.directory?.(home, binding.cwd)
+      }
+      const model = selection.model.mode === 'value' ? selection.model.value
+        : (selection.model.mode === 'inherit' ? binding.model : undefined)
+          ?? this.deps.settingsModel() ?? await readCodexModel(home)
+          ?? this.deps.catalogDefault(home, binding.cwd)
+      const entry = directory?.entries.find(entry => entry.value === model)
+      const explicitEffort = selection.effort.mode === 'value' ? selection.effort.value
+        : selection.effort.mode === 'inherit' ? binding.effort : undefined
+      const effort = explicitEffort ?? await readCodexReasoningEffort(home) ?? entry?.reasoning?.default
+      if (explicitEffort !== undefined && !entry?.reasoning?.options.some(option => option.value === explicitEffort)) {
+        throw new Error('Codex has not advertised this reasoning effort for the selected model; refresh its native directory')
+      }
+      return { ...model === undefined ? {} : { model }, ...effort === undefined ? {} : { effort } }
+    }
+    return {
+      validate: async selection => { await resolve(selection) },
+      prepare: resolve,
+      apply: async selection => {
+        const resolved = await resolve(selection)
+        await this.deps.retireRuntime(binding.childSessionId)
+        return resolved
+      },
+      reconcile: async state => {
+        if (this.activeDelegations().includes(binding.childSessionId)) return { active: true, matches: 'unknown', resolved: {} }
+        // No request is replayed: retire any idle process, then arm the
+        // persisted current selection for the next thread/resume + turn/start.
+        await this.deps.retireRuntime(binding.childSessionId)
+        return { active: false, matches: 'current', resolved: await resolve(state.current.selection) }
+      },
+    }
+  }
+
+  async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
+    const home = this.deps.homeDir(childSessionId)
+    if (refresh) await this.deps.refreshDirectory?.(home, this.deps.cwd?.(childSessionId))
+    const info = await this.modelInfo(childSessionId, childSessionId === undefined ? undefined : this.deps.ctx.localAgent.getDelegation(childSessionId)?.model)
+    return info.directory ?? { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 0 }
+  }
+
+  async *followModelDirectory(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    if (this.deps.followDirectory === undefined) { yield await this.modelDirectory(childSessionId); return }
+    for await (const _snapshot of this.deps.followDirectory(this.deps.homeDir(childSessionId), this.deps.cwd?.(childSessionId), signal)) {
+      yield await this.modelDirectory(childSessionId)
+    }
+  }
+
   /** The member's in-flight rounds (an empty answer on a core that predates the read). */
   private activeDelegations(): readonly string[] {
     const registry = this.deps.ctx.localAgent as unknown as {
@@ -115,14 +174,14 @@ export class CodexModelBroker implements LocalAgentModelBroker {
    */
   async modelInfo(childSessionId?: string, delegationModel?: string): Promise<LocalAgentModelInfo> {
     const settings = this.deps.settingsModel()
-    const homeDir = this.deps.homeDir()
+    const homeDir = this.deps.homeDir(childSessionId)
     const [cliDefault, discovered] = await Promise.all([
       readCodexModel(homeDir).catch(() => undefined),
       listCodexConfigModels(homeDir).catch(() => [] as string[]),
     ])
     const override = childSessionId === undefined ? undefined : this.deps.overrides.get(childSessionId)
     const delegation = delegationModel?.trim() === '' ? undefined : delegationModel
-    const catalogDefaultRaw = this.deps.catalogDefault(homeDir)?.trim()
+    const catalogDefaultRaw = this.deps.catalogDefault(homeDir, this.deps.cwd?.(childSessionId))?.trim()
     const catalogDefault = catalogDefaultRaw === undefined || catalogDefaultRaw === '' ? undefined : catalogDefaultRaw
     const effective = override ?? delegation ?? settings ?? cliDefault ?? catalogDefault
     // The catalogDefault layer keeps source `cli-builtin`: it names the CLI's
@@ -141,7 +200,8 @@ export class CodexModelBroker implements LocalAgentModelBroker {
       ...delegation === undefined ? {} : { delegation },
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
-      choices: dedupeChoices([settings, cliDefault, ...discovered, ...this.deps.catalog(homeDir), ...this.deps.recentModels()]),
+      ...this.deps.directory === undefined ? {} : { directory: extendModelDirectory(this.deps.directory(homeDir, this.deps.cwd?.(childSessionId)), [settings, cliDefault, ...discovered], this.deps.recentModels()) },
+      choices: dedupeChoices([settings, cliDefault, ...discovered, ...this.deps.catalog(homeDir, this.deps.cwd?.(childSessionId)), ...this.deps.recentModels()]),
       live: this.deps.live(),
       switchable: !inFlight,
       ...inFlight ? { reason: '成员有进行中的委派轮次，等其完成后再切换模型' } : {},
@@ -155,6 +215,9 @@ export class CodexModelBroker implements LocalAgentModelBroker {
    * while a round is in flight — retiring mid-round would kill the run.
    */
   async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    if (typeof this.deps.ctx.localAgent.setMemberModel === 'function') {
+      return this.deps.ctx.localAgent.setMemberModel(childSessionId, model)
+    }
     if (this.activeDelegations().includes(childSessionId)) {
       throw new Error(`subagent-codex: 成员有进行中的委派轮次，等其完成后再切换模型 (child session ${childSessionId})`)
     }

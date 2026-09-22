@@ -1,3 +1,5 @@
+import { declaredEffort, effortEvidence, frozenConfigurationOptions, requireEffortAdmission } from './frozen-configuration.ts'
+import type { DelegationConfiguration } from './faces.ts'
 /**
  * The run loop v0 — the executing half of the orchestrator, stages one and
  * two, host directories instead of containers. Reads a plan, snapshots the
@@ -346,6 +348,7 @@ export function defaultStateRoot(): string | undefined {
 }
 
 interface ResolvedCondition {
+  declaredEffort: string | null
   id: string
   sha: string
   harnessName: string
@@ -1040,7 +1043,9 @@ async function runCellOnce(
     // T11 read-back: the settled progress event carries the round's observed
     // model and usage; kept here and merged with delegationOf after settle
     // (either channel may have the value the other missed).
+    let admitted: DelegationConfiguration | undefined
     let settled: {
+      observedEffort?: string
       observedModel?: string
       cliVersion?: string
       usage?: DelegationUsage
@@ -1053,6 +1058,7 @@ async function runCellOnce(
       : localAgent.delegationOf?.(childSessionId)?.observedModel
     let run: Awaited<ReturnType<LocalAgentFace['start']>>
     try {
+      requireEffortAdmission(localAgent, env.condition.provider, env.condition.declaredEffort)
       const delegationOptions = {
         label: `${env.runId}/${missionId} ${stageId}`,
         signal: controller.signal,
@@ -1080,6 +1086,7 @@ async function runCellOnce(
           // event wins over a later record read (last settle = this round).
           if (event.kind !== 'settled') return
           settled = {
+            ...event.observedEffort !== undefined ? { observedEffort: event.observedEffort } : {},
             ...event.observedModel !== undefined ? { observedModel: event.observedModel } : {},
             ...event.cliVersion !== undefined ? { cliVersion: event.cliVersion } : {},
             ...event.usage !== undefined ? { usage: event.usage } : {},
@@ -1097,9 +1104,11 @@ async function runCellOnce(
       run = childSessionId === undefined
         ? await localAgent.start(env.parentSessionId, env.condition.provider, promptBlocks, {
           ...delegationOptions,
+          ...frozenConfigurationOptions(env.condition.sha, env.condition.declaredEffort),
           ...(env.condition.declaredModel === null ? {} : { model: env.condition.declaredModel }),
         })
         : await localAgent.resume(env.parentSessionId, env.condition.provider, childSessionId, promptBlocks, delegationOptions)
+      admitted = localAgent.runConfiguration?.(run)
     } catch (error) {
       clearTimeout(timer)
       releaseRoundSignal()
@@ -1156,6 +1165,7 @@ async function runCellOnce(
     // records no usage here, and null is the honest answer.
     const observedModel = settled?.observedModel
       ?? await awaitObservedModel(localAgent, run.id, priorObserved, env.readbackWaitMs)
+    const reasoning = effortEvidence(env.condition.declaredEffort, admitted, settled?.observedEffort ?? result.observedEffort)
     const usage = settled?.usage ?? null
     // `usage` stays an explicit null (its shape predates this field and the
     // report reads the key), but the two newer facts are OMITTED when the
@@ -1179,6 +1189,8 @@ async function runCellOnce(
       // this round actually put on the CLI's command line.
       requestedModel: env.condition.declaredModel,
       model: { declared: env.condition.declaredModel, observed: observedModel },
+      reasoning,
+      ...(admitted === undefined ? {} : { configuration: admitted }),
     }, { runId: env.runId, by: env.by })
     // The cancel is checked FIRST: when both fired, the run was cancelled
     // during the round's last budgeted second, and "the operator stopped it"
@@ -1196,6 +1208,7 @@ async function runCellOnce(
     // Declared ≠ observed is fail loud (frozen decision 5): the run is
     // misattributed and must not quietly continue. The annotation above
     // carries the mismatch for the report.
+    if (reasoning.status === 'mismatch') throw new MisattributedRun(`condition ${env.condition.id}: frozen reasoning effort does not match admitted/observed configuration — this sample is not comparable`)
     if (observedModel !== null && env.condition.declaredModel !== null && observedModel !== env.condition.declaredModel) {
       throw new MisattributedRun(
         `condition ${env.condition.id} declares model ${JSON.stringify(env.condition.declaredModel)} but the delegation ran ${JSON.stringify(observedModel)} (child ${run.id}, stage ${stageId}) — the run is misattributed`,
@@ -1688,6 +1701,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       id: resolution.id,
       sha,
       harnessName: (document['harness'] as { name?: string } | undefined)?.name ?? '',
+      declaredEffort: declaredEffort(document),
       declaredModel: (document['model'] as { declared: string | null } | undefined)?.declared ?? null,
       provider: '',
       ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
@@ -1750,6 +1764,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       sha: hashConditionDocument(document),
       harnessName,
       declaredModel,
+      declaredEffort: declaredEffort(document),
       provider: '',
       ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
     })
@@ -1932,6 +1947,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       throw new EvalRunRefused(`condition ${condition.id}: no local-agent harness ${JSON.stringify(document.harness.name)} with a delegation provider is registered`)
     }
     condition.provider = provider
+    requireEffortAdmission(faces.localAgent, provider, condition.declaredEffort)
   }
   for (const judge of judges) {
     const document = judgeDocuments.get(judge.id) as { harness: { name: string; drive: string } }
@@ -1943,6 +1959,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       throw new EvalRunRefused(`judge condition ${judge.id}: no local-agent harness ${JSON.stringify(document.harness.name)} with a delegation provider is registered`)
     }
     judge.provider = provider
+    requireEffortAdmission(faces.localAgent, provider, judge.declaredEffort)
   }
 
   // ── Readiness: one real delegation per condition, before anything. ────
@@ -1977,6 +1994,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         id: condition.id,
         harnessName: condition.harnessName,
         declaredModel: condition.declaredModel,
+        declaredEffort: condition.declaredEffort,
+        sha: condition.sha,
         provider: condition.provider,
         role: 'player',
         ...(condition.scope === undefined ? {} : { scope: condition.scope }),
@@ -1987,6 +2006,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         id: judge.id,
         harnessName: judge.harnessName,
         declaredModel: judge.declaredModel,
+        declaredEffort: judge.declaredEffort ?? null,
+        sha: judge.sha,
         provider: judge.provider,
         role: 'judge',
         ...(judge.scope === undefined ? {} : { scope: judge.scope }),

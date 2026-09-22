@@ -79,7 +79,7 @@ describe('member bridge (stdio MCP server)', () => {
     server = undefined
   })
 
-  it('answers initialize and tools/list with the one member_message tool', async () => {
+  it('answers initialize and tools/list with member messaging and room coordination tools', async () => {
     const bridge = rig({})
     bridge.write({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } })
     bridge.write({ jsonrpc: '2.0', method: 'notifications/initialized' })
@@ -89,9 +89,20 @@ describe('member bridge (stdio MCP server)', () => {
 
     expect(responses[0]).toMatchObject({ id: 1, result: { protocolVersion: '2025-03-26', serverInfo: { name: 'dsh-member-bridge' } } })
     const tools = (responses[1]?.result as { tools: { name: string }[] }).tools
-    expect(tools.map(tool => tool.name)).toEqual(['member_message'])
+    expect(tools.map(tool => tool.name)).toEqual(['member_message', 'room_plan', 'room_read', 'room_invite', 'room_message'])
     // The notification got no reply.
     expect(responses).toHaveLength(2)
+  })
+
+  it('forwards room commands without accepting an actor or room identity', async () => {
+    const host = await fakeHost({ ok: true, receipt: 'accepted' })
+    server = host.server
+    const bridge = rig({ socket: host.socket, token: 'tok-1' })
+    bridge.write({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'room_message', arguments: { member: 'worker', text: 'small job' } } })
+    const responses = await untilResponses(bridge, 1)
+    bridge.close()
+    expect(responses[0]).toMatchObject({ id: 8, result: { isError: false, content: [{ text: 'accepted' }] } })
+    expect(host.calls[0]).toEqual({ token: 'tok-1', command: { name: 'room_message', arguments: { member: 'worker', text: 'small job' } } })
   })
 
   it('forwards member_message to the host socket with the per-run token, returning the receipt', async () => {

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-18-eval-report-per-criterion-merge.md
-.agents/notes/implemented/bug-fix/2026-09-18-eval-report-per-criterion-merge.md: 3eba6eb1cdfcb946cc5e003fa0ea8ba592b61b94
-.agents/notes/implemented/bug-fix/2026-09-18-eval-report-per-criterion-merge.zh.md: 6adc45c18596b677944a293eef56fbb433f46e8b
+.agents/notes/implemented/bug-fix/2026-09-18-eval-report-per-criterion-merge.md: 2b79ab11f908a1d64d9d1a4013b2cedb1bcf6c60
+.agents/notes/implemented/bug-fix/2026-09-18-eval-report-per-criterion-merge.zh.md: 34c79afb6e3a20648a3eb6a6208a6d2f0ca896fd

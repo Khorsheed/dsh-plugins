@@ -151,7 +151,7 @@ describe('normalizeRichText', () => {
 
   it('absolutizes relative media against the page url', () => {
     const out = normalizeRichText('<p><img src="/img/a.png" alt="A"></p>', 'https://example.com/post/')
-    expect(out).toBe('<p><img src="https://example.com/img/a.png" alt="A"></p>')
+    expect(out).toBe('<p><img src="https://example.com/img/a.png" alt="A" referrerpolicy="no-referrer"></p>')
   })
 
   it('drops Cloudflare email-obfuscation placeholders', () => {
@@ -171,6 +171,17 @@ describe('normalizeRichText', () => {
     expect(normalizeRichText('<p><img src="data:image/png;base64,AAAA"></p>')).toBe('<p></p>')
   })
 
+  it('drops a noscript whose fallback is not an image', () => {
+    // The "please enable JavaScript" sentence a noscript usually carries is
+    // chrome, not content — it must not leak into the body.
+    const out = normalizeRichText('<p>real text</p><noscript><p>Please enable JavaScript to view this page.</p></noscript>')
+    expect(out).toBe('<p>real text</p>')
+  })
+
+  it('keeps noscript text out of inline summaries too', () => {
+    expect(normalizeInline('<p>real text</p><noscript>Please enable JavaScript.</noscript>')).toBe('real text')
+  })
+
   it('returns empty for empty input', () => {
     expect(normalizeRichText('   ')).toBe('')
   })
@@ -184,5 +195,480 @@ describe('normalizeInline', () => {
 
   it('drops script content', () => {
     expect(normalizeInline('<p>x</p><script>steal()</script>')).toBe('x')
+  })
+})
+
+describe('figures the page draws at runtime', () => {
+  it('counts a caption-only figure and KEEPS its caption', () => {
+    // Measured on transformer-circuits.pub: `<figure data-fignum="2">` holds an
+    // empty `<div class='intro-structural'>` and a caption; the illustration is
+    // painted by the page's scripts, which a fetch never runs. The caption is
+    // text the page published — dropping it (tried, reverted) turns "this
+    // picture cannot be fetched" into "this paragraph lost its data".
+    const html = `<html><body><article><p>${'text '.repeat(60)}</p>`
+      + `<figure data-fignum="2"><div class="intro-structural"></div><figcaption>Figure 2: a picture drawn at runtime.</figcaption></figure>`
+      + `<figure><img src="./png/pic.png"><figcaption>Figure 3: a real image.</figcaption></figure>`
+      + `</article></body></html>`
+    const result = extractArticle(html, 'https://example.com/paper/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBe(1)
+    expect(result.html).toContain('a picture drawn at runtime')
+    expect(result.html).toContain('a real image')
+    expect(result.html).toContain('https://example.com/paper/png/pic.png')
+  })
+
+  it('reports nothing when every figure has its picture', () => {
+    const html = `<html><body><article><p>${'text '.repeat(60)}</p>`
+      + `<figure><img src="https://example.com/a.png"><figcaption>cap</figcaption></figure>`
+      + `</article></body></html>`
+    const result = extractArticle(html, 'https://example.com/')
+    expect(result.ok && result.scriptFigures).toBeUndefined()
+  })
+})
+
+describe('the page title block does not come along', () => {
+  it('drops the repeated title, the masthead and the leading blanks', () => {
+    // Measured on transformer-circuits.pub: the extracted body opened with an
+    // empty logo link, the site name, the article title TWICE, four <br>s, and
+    // only then the byline — while the pane already renders the entry title.
+    const title = 'Verbalizable Representations Form a Global Workspace'
+    const html = `<html><head><title>${title}</title></head><body>`
+      + `<div class="article-header"><a href="https://example.com"><svg></svg></a>`
+      + `<a href="https://example.com">Example Thread</a></div>`
+      + `<d-article><d-title><h1>${title}</h1><h1>${title}</h1><br><br></d-title>`
+      + `<h3>Authors</h3><p>${'prose '.repeat(40)}</p></d-article></body></html>`
+    const result = extractArticle(html, 'https://example.com/paper/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('<h1>')
+    expect(result.html).not.toContain('Example Thread')
+    expect(result.html.startsWith('<h3>Authors</h3>')).toBe(true)
+  })
+
+  it('keeps a leading figure: a picture is content, not chrome', () => {
+    const html = `<html><head><title>T</title></head><body><article>`
+      + `<figure><img src="https://example.com/hero.png"><figcaption>Hero</figcaption></figure>`
+      + `<p>${'prose '.repeat(40)}</p></article></body></html>`
+    const result = extractArticle(html, 'https://example.com/')
+    expect(result.ok && result.html).toContain('hero.png')
+  })
+})
+
+
+/**
+ * Lazy-loaded images: the URL is in the static markup, one attribute over.
+ *
+ * Every case below is a pattern measured on real publishers: the `<img>` the
+ * page ships carries a 1px `data:` placeholder (or no `src` at all), and the
+ * real URL sits in a `data-*` attribute, a `srcset`, a `<picture>`'s sources,
+ * or the `<noscript>` no-JS fallback. A fetch runs no scripts, so what the
+ * normalizer recovers here is the ONLY copy the reader can ever get.
+ */
+describe('lazy-loaded images are recovered', () => {
+  /** A body big enough to extract, with the given markup inside it. */
+  const pageWith = (markup: string): string =>
+    `<html><head><title>T</title></head><body><article><p>${'prose '.repeat(60)}</p>${markup}</article></body></html>`
+
+  it('reads the real URL from the lazy-loading attributes when src is absent', () => {
+    expect(normalizeRichText('<p><img data-src="/img/real.png" alt="A"></p>', 'https://example.com/post/'))
+      .toBe('<p><img src="https://example.com/img/real.png" alt="A" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-original="https://cdn.example.com/b.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/b.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-lazy-src="https://cdn.example.com/c.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/c.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-url="https://cdn.example.com/d.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/d.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img data-actualsrc="https://cdn.example.com/e.png"></p>'))
+      .toBe('<p><img src="https://cdn.example.com/e.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('treats a data: src as the placeholder it is and falls through to data-src', () => {
+    // The classic lazy pattern: a 1px inline gif in `src`, the article's image
+    // in `data-src`. A real `src` still wins over the lazy attributes.
+    const out = normalizeRichText(
+      '<p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-src="/img/real.png"></p>',
+      'https://example.com/post/',
+    )
+    expect(out).toBe('<p><img src="https://example.com/img/real.png" referrerpolicy="no-referrer"></p>')
+    const real = normalizeRichText(
+      '<p><img src="/img/shown.png" data-src="/img/other.png"></p>',
+      'https://example.com/post/',
+    )
+    expect(real).toBe('<p><img src="https://example.com/img/shown.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('picks the largest candidate of a srcset, reading both descriptor kinds', () => {
+    expect(normalizeRichText('<p><img srcset="/a-400.png 400w, /a-800.png 800w, /a-200.png 200w"></p>', 'https://example.com/'))
+      .toBe('<p><img src="https://example.com/a-800.png" referrerpolicy="no-referrer"></p>')
+    expect(normalizeRichText('<p><img srcset="/a.png, /a@3x.png 3x, /a@2x.png 2x"></p>', 'https://example.com/'))
+      .toBe('<p><img src="https://example.com/a@3x.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('still drops the image when srcset has no usable candidate either', () => {
+    expect(normalizeRichText('<p><img srcset="data:image/png;base64,AAAA 1x"></p>')).toBe('<p></p>')
+  })
+
+  it('keeps a substantive data-URI image, and a placeholder still yields to data-src', () => {
+    // transformer-circuits.pub inlines its REAL figures as multi-hundred-KB
+    // base64 images (measured: 87 of them on the emotions paper) — the
+    // placeholder policy deleted them. The split is payload size: a 1px gif is
+    // ~70 chars, the smallest real chart is thousands.
+    const big = `data:image/png;base64,${'A'.repeat(600)}`
+    expect(normalizeRichText(`<p><img src="${big}"></p>`))
+      .toBe(`<p><img src="${big}" referrerpolicy="no-referrer"></p>`)
+    // …and the classic placeholder shape is unchanged: absent src, lazy attr wins.
+    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+    expect(normalizeRichText(
+      `<p><img src="${placeholder}" data-src="/img/real.png"></p>`,
+      'https://example.com/post/',
+    )).toBe('<p><img src="https://example.com/img/real.png" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('pins the 512-char payload boundary on both sides', () => {
+    const at = `data:image/png;base64,${'B'.repeat(512)}`
+    const under = `data:image/png;base64,${'B'.repeat(511)}`
+    expect(normalizeRichText(`<p><img src="${at}"></p>`)).toBe(`<p><img src="${at}" referrerpolicy="no-referrer"></p>`)
+    expect(normalizeRichText(`<p><img src="${under}"></p>`)).toBe('<p></p>')
+  })
+
+  it('never keeps a non-image data URI, however large', () => {
+    const big = `data:text/html;base64,${'C'.repeat(900)}`
+    expect(normalizeRichText(`<p><img src="${big}"></p>`)).toBe('<p></p>')
+  })
+
+  it('strips the line-wrap whitespace pages put inside long base64 payloads', () => {
+    const wrapped = `data:image/png;base64,${'D'.repeat(300)}\n${'E'.repeat(300)}`
+    expect(normalizeRichText(`<p><img src="${wrapped}"></p>`))
+      .toBe(`<p><img src="data:image/png;base64,${'D'.repeat(300)}${'E'.repeat(300)}" referrerpolicy="no-referrer"></p>`)
+  })
+
+  it('lets a substantive data candidate win a srcset', () => {
+    const big = `data:image/webp;base64,${'F'.repeat(700)}`
+    expect(normalizeRichText(`<p><img srcset="/a.png 1x, ${big} 2x"></p>`, 'https://example.com/'))
+      .toBe(`<p><img src="${big}" referrerpolicy="no-referrer"></p>`)
+  })
+
+  it('resolves a picture to one image: the first usable source, else the fallback img', () => {
+    const source = normalizeRichText(
+      '<p><picture><source srcset="https://cdn.example.com/wide.webp">'
+      + '<img src="/img/fallback.png" alt="A"></picture></p>',
+      'https://example.com/post/',
+    )
+    // The fallback's alt survives on whichever candidate wins — it is the same picture.
+    expect(source).toBe('<p><img src="https://cdn.example.com/wide.webp" alt="A" referrerpolicy="no-referrer"></p>')
+    const fallback = normalizeRichText(
+      '<p><picture><source srcset="data:image/webp;base64,AAAA">'
+      + '<img src="/img/fallback.png" alt="A"></picture></p>',
+      'https://example.com/post/',
+    )
+    expect(fallback).toBe('<p><img src="https://example.com/img/fallback.png" alt="A" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('recovers the no-JS fallback image out of a noscript', () => {
+    const result = extractArticle(pageWith('<noscript><img src="/img/nojs.png" alt="N"></noscript>'), 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<img src="https://example.com/img/nojs.png" alt="N" referrerpolicy="no-referrer">')
+  })
+
+  it('does not count a figure whose only markup copy lives in a noscript as script-drawn', () => {
+    // The page DID ship this picture — behind a script the fetch never runs.
+    // Recovering it is what separates "drawn at runtime" from "lazy".
+    const html = pageWith('<figure><noscript><img src="/img/lazy.png"></noscript><figcaption>Figure 1: lazy.</figcaption></figure>')
+    const result = extractArticle(html, 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBeUndefined()
+    expect(result.html).toContain('https://example.com/img/lazy.png')
+    expect(result.html).toContain('Figure 1: lazy.')
+  })
+
+  it('leaves the script-drawn-figure notice exactly as it was', () => {
+    // A figure whose picture exists ONLY at runtime (an empty container and a
+    // caption) still produces the notice — nothing here made that recoverable.
+    const html = pageWith('<figure data-fignum="2"><div class="intro-structural"></div><figcaption>Figure 2: drawn at runtime.</figcaption></figure>')
+    const result = extractArticle(html, 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBe(1)
+    expect(result.html).toContain('drawn at runtime')
+    expect(result.html).not.toContain('<img')
+  })
+})
+
+/**
+ * MathML passthrough: arXiv's HTML papers (LaTeXML) carry formulas as
+ * `<math alttext="…">`, and the pane's render target (Chromium ≥ 153) renders
+ * the presentation subset natively. Dropping it was measured as "the paper's
+ * formulas are gone"; keeping it must not open an injection path, so the
+ * dangerous members (`annotation-xml`, any script) are pinned GONE here.
+ */
+describe('MathML formulas survive the whitelist', () => {
+  const page = fixture('arxiv-math.html')
+
+  it('keeps the safe presentation subset with alttext and display', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<math alttext="a_{ij}">')
+    expect(result.html).toContain('<msub><mi>a</mi><mi>ij</mi></msub>')
+    expect(result.html).toContain('<math alttext="\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}(\\frac{QK^T}{\\sqrt{d_k}})V" display="block">')
+    expect(result.html).toContain('<mfrac>')
+    expect(result.html).toContain('<msqrt><mi>d</mi></msqrt>')
+    // The TeX source inside <semantics><annotation> is markup-invisible data —
+    // it survives (its encoding attribute is stripped), and the visible
+    // presentation before it is intact.
+    expect(result.html).toContain('<semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation>E=mc^2</annotation></semantics>')
+  })
+
+  it('drops annotation-xml and every nested script — the injection vector', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('annotation-xml')
+    expect(result.html).not.toContain('<script')
+    expect(result.html).not.toContain('onerror')
+    expect(result.html).not.toContain('alert')
+    // The math around the dropped subtree survives on its own terms.
+    expect(result.html).toContain('<math alttext="evil"><mtext>safe text</mtext></math>')
+  })
+
+  it('does not count a formula-only figure as script-drawn', () => {
+    // The figure's content IS the markup (a formula), so the scriptFigures
+    // notice must not fire for it.
+    const result = extractArticle(page, 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBeUndefined()
+    expect(result.html).toContain('Figure 1: a formula')
+  })
+
+  it('keeps math through the feed-body path (normalizeRichText) too', () => {
+    const out = normalizeRichText('<p>inline <math alttext="x+y"><mrow><mi>x</mi><mo>+</mo><mi>y</mi></mrow></math></p>')
+    expect(out).toBe('<p>inline <math alttext="x+y"><mrow><mi>x</mi><mo>+</mo><mi>y</mi></mrow></math></p>')
+    expect(normalizeRichText('<math><annotation-xml encoding="text/html"><img src="x" onerror="alert(1)"></annotation-xml><mi>x</mi></math>'))
+      .toBe('<math><mi>x</mi></math>')
+  })
+
+  it('flattens math to its text in an inline summary', () => {
+    // (The triple space is the inline pass's boundary around a flattened
+    // element — long-standing behavior; the summary path collapses it.)
+    expect(normalizeInline('<p>a <math><mi>x</mi></math> b</p>')).toBe('a x   b')
+  })
+})
+
+/**
+ * LaTeXML embeds vector figures as `<object type="image/svg+xml" data="…">`
+ * (measured on arxiv.org/html/2604.03147): the whitelist had no `object`, so
+ * the figure vanished and its caption stayed behind, reading as "the plugin
+ * lost the image". An image-typed object IS an image for the reader's
+ * purposes; every other object keeps being dropped.
+ */
+describe('an image-typed <object> becomes an <img>', () => {
+  const page = fixture('arxiv-object-figure.html')
+
+  it('converts the SVG object figure, absolutized, with its dimensions', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/2604.03147v3')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain(
+      '<img src="https://arxiv.org/html/2604.03147v3/circumplex.svg" width="443" height="290" referrerpolicy="no-referrer">',
+    )
+    expect(result.html).toContain('Figure 1: the circumplex')
+    // A figure whose picture is markup (now an img) is not script-drawn.
+    expect(result.scriptFigures).toBeUndefined()
+  })
+
+  it('still drops a non-image object whole', () => {
+    const result = extractArticle(page, 'https://arxiv.org/html/2604.03147v3')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('appendix.pdf')
+    expect(result.html).not.toContain('<object')
+    // The prose around it is untouched.
+    expect(result.html).toContain('embedded file')
+  })
+
+  it('applies the same rule through the feed-body path', () => {
+    expect(normalizeRichText(
+      '<p>x</p><object type="image/svg+xml" data="/fig.svg"></object>',
+      'https://example.com/post/',
+    )).toBe('<p>x</p><img src="https://example.com/fig.svg" referrerpolicy="no-referrer">')
+    expect(normalizeRichText('<p>x</p><object data="/movie.mp4" type="video/mp4"></object>')).toBe('<p>x</p>')
+    // An image-typed object with no usable address is nothing.
+    expect(normalizeRichText('<p>x</p><object type="image/png"></object>')).toBe('<p>x</p>')
+    // A data: address is not a fetchable image here.
+    expect(normalizeRichText('<p>x</p><object type="image/png" data="data:image/png;base64,AAAA"></object>')).toBe('<p>x</p>')
+  })
+})
+
+/**
+ * The article's own title and a short excerpt, captured at extraction: a saved
+ * link's card upgrades from the URL-derived label to the paper's name and
+ * abstract (the wall is where "which paper was this" gets answered).
+ */
+describe('extractArticle captures the article title and an excerpt', () => {
+  const page = (head: string, body: string): string =>
+    `<html><head><title>${head}</title></head><body><article>${body}</article></body></html>`
+
+  it('prefers the body’s own first heading, and reads the first substantial paragraph', () => {
+    const prose = 'The quick brown fox jumps over the lazy dog while the document watches. '
+    const result = extractArticle(page('Site name | Whatever', `<h1>The Real Paper Title</h1><p>byline-ish</p><p>${prose.repeat(3)}</p><p>${prose}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBe('The Real Paper Title')
+    expect(result.excerpt?.startsWith('The quick brown fox')).toBe(true)
+  })
+
+  it('falls back to the document title when the body has no heading', () => {
+    const result = extractArticle(fixture('arxiv-math.html'), 'https://arxiv.org/html/1706.03762v7')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBe('A Paper Whose Formulas Are MathML')
+    expect(result.excerpt).toContain('We study the interplay between attention and recurrence')
+  })
+
+  it('truncates a long excerpt to the card’s measure', () => {
+    const result = extractArticle(page('T', `<p>${'word '.repeat(120)}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.excerpt!.length).toBeLessThanOrEqual(280)
+    expect(result.excerpt!.endsWith('…')).toBe(true)
+  })
+
+  it('reports neither when the page offers nothing', () => {
+    const result = extractArticle(page('', `<p>${'prose '.repeat(40)}</p>`), 'https://example.com/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.title).toBeUndefined()
+  })
+})
+
+/**
+ * Inline SVG figures survive the whitelist: the capture package (the ingest
+ * proposal's M1) returns rendered pages whose script-drawn figures arrive as
+ * inline SVG with styles inlined onto elements — dropping `svg` wholesale loses
+ * exactly the figures capture exists to rescue. The safe subset is pinned here
+ * along with every injection-shaped member that must stay gone.
+ */
+describe('inline SVG figures survive (capture-rendered pages)', () => {
+  const page = fixture('capture-svg.html')
+
+  it('keeps the chart: svg, defs, gradient, clip path, symbol use, text', () => {
+    const result = extractArticle(page, 'https://example.com/rendered')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<svg viewBox="0 0 100 60">')
+    expect(result.html).toContain('<linearGradient')
+    expect(result.html).toContain('id="g0"')
+    expect(result.html).toContain('gradientUnits="userSpaceOnUse"')
+    expect(result.html).toContain('gradientTransform="rotate(90)"')
+    expect(result.html).toContain('<stop offset="0" stop-color="#d54941" stop-opacity="0.9"></stop>')
+    expect(result.html).toContain('<clipPath id="clip0">')
+    // Internal fragment references — presentation attr and style alike — survive.
+    expect(result.html).toContain('clip-path="url(#clip0)"')
+    expect(result.html).toContain('fill="url(#g0)"')
+    expect(result.html).toContain('<path d="M0 60 L50 10 L100 60" fill="none" stroke="#222" stroke-width="1.5" stroke-linecap="round"></path>')
+    expect(result.html).toContain('style="opacity: 0.95"')
+    expect(result.html).toContain('style="fill: rgb(65, 118, 230)"')
+    expect(result.html).toContain('<use href="#sym" x="25" y="30"></use>')
+    expect(result.html).toContain('<tspan dx="1" dy="1">峰值</tspan>')
+    expect(result.html).toContain('<desc>A line chart of the measured values.</desc>')
+    // The figure is no longer "script-drawn": the SVG is present.
+    expect(result.scriptFigures).toBe(1) // only Figure 2's genuinely empty shell
+  })
+
+  it('drops the injection-shaped members, always', () => {
+    const result = extractArticle(page, 'https://example.com/rendered')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('<script')
+    expect(result.html).not.toContain('alert')
+    expect(result.html).not.toContain('onload')
+    expect(result.html).not.toContain('foreignObject')
+    expect(result.html).not.toContain('html junk')
+    expect(result.html).not.toContain('<animate')
+    // An external `use` href drops the element, and an external url() in a
+    // style drops the attribute (the rect keeps its other attributes).
+    expect(result.html).not.toContain('evil.example.com')
+    expect(result.html).not.toContain('tracker.example.com')
+    expect(result.html).toContain('<rect x="90" y="5" width="8" height="8" stroke="#000"></rect>')
+  })
+
+  it('applies the same subset through the feed-body path and keeps summaries clean', () => {
+    const out = normalizeRichText('<p>x</p><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#000"/></svg>')
+    expect(out).toBe('<p>x</p><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#000"></circle></svg>')
+    // A chart's <text> labels are chart chrome, not summary prose. (The double
+    // space is the inline pass's long-standing behavior around a skipped
+    // element; the summary path collapses whitespace downstream.)
+    expect(normalizeInline('<p>a <svg><text>x</text><circle r="1"/></svg> b</p>')).toBe('a  b')
+  })
+})
+
+/**
+ * Composite figures keep their structure: a capture-rendered figure is an
+ * HTML+CSS composite (a diagram plus property cards built from styled
+ * containers). Unwrapping those containers without boundaries concatenated the
+ * cards into one run — measured live on transformer-circuits.pub's workspace
+ * paper ("Intermediate processing stageJ-space carries…"), the reader saw one
+ * figure torn into disjoint pieces. Inside `<figure>` the structure is the
+ * content; outside, today's unwrap behavior is unchanged except for the word
+ * boundary.
+ */
+describe('composite figures keep their container structure', () => {
+  const page = fixture('capture-composite-figure.html')
+
+  it('keeps the cards as styled containers, and texts never concatenate', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // The card structure survived: styled divs with their allowlisted layout.
+    expect(result.html).toContain('<div style="display: flex; gap: 16px; align-items: flex-start">')
+    expect(result.html).toContain('flex-direction: column')
+    expect(result.html).toContain('background-color: #fafafa')
+    // The exact live failure: card title and card body merged into one run.
+    expect(result.html).not.toContain('stageJ-space')
+    expect(result.html).not.toContain('depthsLimited')
+    // Each card is its own kept container.
+    expect(result.html).toMatch(/<div[^>]*>Intermediate processing stage<\/div>\s*<div[^>]*>J-space carries/)
+  })
+
+  it('strips hostile and out-of-scope style, keeps the declaration rest', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('position: fixed')
+    expect(result.html).not.toContain('9999')
+    expect(result.html).not.toContain('tracker.example.com')
+    expect(result.html).not.toContain('behavior')
+    expect(result.html).not.toContain('javascript:')
+    // The third card's legitimate layout survived the hostile declarations.
+    expect(result.html).toContain('J-lens vectors compose')
+    expect(result.html).toContain('border-radius: 6px')
+  })
+
+  it('counts only the genuinely empty shell, not the composite', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // The composite carries text and an svg: it is not a script-drawn shell.
+    expect(result.scriptFigures).toBeUndefined()
+  })
+
+  it('outside figures, containers still unwrap — but sibling texts gain a boundary', () => {
+    const result = extractArticle(page, 'https://transformer-circuits.pub/2026/workspace/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Unchanged shape: the outer divs are still gone from the markup…
+    expect(result.html).not.toContain('<div>Alpha')
+    // …but the two sections can no longer read as one word.
+    expect(result.html).not.toContain('itBeta')
+    expect(result.html).toMatch(/container\s+Beta/)
+  })
+
+  it('the same boundary rule holds in inline summaries', () => {
+    expect(normalizeInline('<div>Alpha</div><div>Beta</div>')).toBe('Alpha Beta')
+    expect(normalizeInline('<p>a <strong>b</strong> c</p>')).toBe('a <strong>b</strong> c')
   })
 })

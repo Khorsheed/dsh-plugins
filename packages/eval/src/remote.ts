@@ -20,7 +20,9 @@
  * `runs` / `run` (I5·T35a) read the list and one experiment's overview;
  * `plan` / `conditions` / `conditionDiff` (I5·T36) read the plan review and
  * the condition registry; `matrix` / `cells` / `cell` (I5·T35b) read the
- * matrix, the cell list and one cell in full.
+ * matrix, the cell list and one cell in full; `cellArtifact` (I5·T69) reads
+ * ONE of that cell's artifacts in place, so the record detail's attachment
+ * list is something a person can open rather than a list of paths.
  *
  * `newExperiment` / `draftOptions` (I5·T34) are the 新建实验 form's: one read
  * to fill its pickers, one write that drafts the plan and its new conditions
@@ -60,6 +62,8 @@ import type { EvalService } from './service.ts'
 import type {
   EvalApproveRequest,
   EvalApproveResult,
+  EvalCellArtifactRequest,
+  EvalCellArtifactView,
   EvalCellDetail,
   EvalCellReleaseResult,
   EvalCellRequest,
@@ -420,6 +424,34 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   cell(agent: Agent, request: EvalCellRequest): Promise<EvalCellDetail> {
     void agent
     return this.service.cell(request.runId, request.missionId)
+  }
+
+  /**
+   * ONE artifact of one attempt, read in place — what makes the record
+   * detail's attachment list something a person can OPEN.
+   *
+   * The drawer listed paths and said a file service was missing. That was
+   * true of a download and false of the read: the judge bench already reads
+   * the same attempt directory to build its material, so the bytes were
+   * reachable all along and only the door was absent.
+   *
+   * READ-ONLY, and narrow by construction. The path is resolved against that
+   * attempt's run-data directory and both sides are `realpath`-checked, so
+   * neither a `../` nor a symlink laid inside the archive can point it out of
+   * the cell. Text extensions only, capped; a binary is refused by name and
+   * says so, and a directory answers with its entries.
+   *
+   * This page is NOT blind and must not pretend to be: the record detail
+   * already names the condition in its header, so the material crosses
+   * un-de-identified. The blind read is `judgeQueue`'s, over the same files,
+   * through the run's own scrub table.
+   * @param agent - owning live agent.
+   * @param request - the run, the cell, the attempt and the path.
+   */
+  @Remote('cellArtifact')
+  cellArtifact(agent: Agent, request: EvalCellArtifactRequest): Promise<EvalCellArtifactView> {
+    void agent
+    return this.service.cellArtifact(request)
   }
 
   /**

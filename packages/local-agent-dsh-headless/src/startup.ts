@@ -41,6 +41,7 @@ export interface LocalAgentDshHeadlessStartupValues {
    * at spawn, which is why the parent refuses a per-delegation model there.
    */
   model?: string
+  effort?: string
 }
 
 /**
@@ -56,6 +57,7 @@ function headlessCommand(): Command {
     .option('--resume <id>', 'continue the existing session with this id')
     .option('--serve', 'stay resident and drive turns over the stdio wire (no task)')
     .option('--model <provider/model>', 'run this model instead of the instance default (a bare id keeps the provider)')
+    .option('--effort <value>', 'native reasoning effort for this launch')
     .argument('[task...]', 'the task text; multiple words are joined by spaces')
     .addHelpText('after', `
 Examples:
@@ -79,9 +81,11 @@ export function apply(ctx: Context): void {
     const task = program.args.join(' ')
     // Commander camelizes `--session-id` to `sessionId` but keeps `--resume`
     // as `resume`; map both onto the service's explicit field names.
-    const options = program.opts<{ sessionId?: string; resume?: string; serve?: boolean; model?: string }>()
+    const options = program.opts<{ sessionId?: string; resume?: string; serve?: boolean; model?: string; effort?: string }>()
     // `--model` is orthogonal to the session flags: it names WHICH model runs,
     // not which session, so it rides both modes.
+    const effort = options.effort?.trim()
+    if (effort === '') program.error('error: --effort needs a native reasoning value')
     const model = options.model?.trim()
     if (model !== undefined && model === '') {
       program.error('error: --model needs a model identifier, for example deepseek-official/deepseek-v4-pro')
@@ -97,6 +101,7 @@ export function apply(ctx: Context): void {
         task: '',
         serve: true,
         ...(model === undefined ? {} : { model }),
+        ...(effort === undefined ? {} : { effort }),
       } satisfies LocalAgentDshHeadlessStartupValues)
       return
     }
@@ -111,6 +116,7 @@ export function apply(ctx: Context): void {
       ...(options.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
       ...(options.resume !== undefined ? { resumeSessionId: options.resume } : {}),
       ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort }),
     } satisfies LocalAgentDshHeadlessStartupValues)
   })
   parseCmdline(ctx, program)

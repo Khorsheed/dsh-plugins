@@ -80,6 +80,10 @@ export type EvalKey =
   | 'report.comparisonClosed'
   | 'report.singleCondition'
   | 'report.noPairs'
+  | 'report.openRecords'
+  | 'report.openRecord'
+  | 'report.criteriaOpenRecords'
+  | 'report.criteriaOpenRecord'
   | 'report.pairTitle'
   | 'report.pairNoTasks'
   | 'report.factorSingle'
@@ -561,6 +565,8 @@ export type EvalKey =
   | 'runs.filter.blocked'
   | 'runs.col.verdict'
   | 'runs.filtered'
+  | 'runs.focus'
+  | 'runs.focusClear'
   | 'verdict.none'
   | 'verdict.human'
   | 'verdict.llm'
@@ -576,7 +582,15 @@ export type EvalKey =
   | 'record.params'
   | 'record.attachments'
   | 'record.attachmentsNone'
-  | 'record.filePending'
+  | 'record.artifactLoading'
+  | 'record.artifactError'
+  | 'record.artifactDirEmpty'
+  | 'record.artifactBytes'
+  | 'record.judgeRounds'
+  | 'record.judgeSample'
+  | 'record.judgeSelf'
+  | 'record.judgeNoSession'
+  | 'record.openJudgeSession'
   | 'record.param.task'
   | 'record.param.condition'
   | 'record.param.rep'
@@ -877,6 +891,10 @@ export const en: Record<EvalKey, string> = {
   'report.comparisonClosed': '{count} validity check(s) did not pass, so this experiment\u2019s records are not comparable yet. What follows is each arm on its own.',
   'report.singleCondition': 'One arm only: there is nothing to compare against, so what follows is the baseline.',
   'report.noPairs': 'No pair of arms produced comparable data.',
+  'report.openRecords': 'Open the run records behind this number ({task} × {condition}).',
+  'report.openRecord': 'Open the run record this verdict was written on ({record}).',
+  'report.criteriaOpenRecords': 'Open the records',
+  'report.criteriaOpenRecord': 'Open the record',
   'report.pairTitle': '{a} vs {b}',
   'report.pairNoTasks': 'No paired item (the two conditions ran disjoint item sets).',
   'report.factorSingle': 'differs in {factor}: {detail}',
@@ -1194,6 +1212,8 @@ export const en: Record<EvalKey, string> = {
   'runs.filter.blocked': 'Blocked',
   'runs.col.verdict': 'Verdict',
   'runs.filtered': '{matched} of {total}',
+  'runs.focus': 'Narrowed to {task} × {condition} — {matched} record(s) from the comparison page.',
+  'runs.focusClear': 'Show every record',
   'verdict.none': 'Not judged',
   'verdict.human': 'Final verdict',
   'verdict.llm': 'Judge draft',
@@ -1212,7 +1232,15 @@ export const en: Record<EvalKey, string> = {
   'record.params': 'Parameters',
   'record.attachments': 'Attachments',
   'record.attachmentsNone': 'This attempt recorded no artifacts.',
-  'record.filePending': 'Preview and download need a host file service this tab does not have yet; the path is here so it can be opened from a terminal.',
+  'record.artifactLoading': 'Reading…',
+  'record.artifactError': 'this attachment',
+  'record.artifactDirEmpty': 'Nothing in this directory.',
+  'record.artifactBytes': '{bytes} bytes on disk.',
+  'record.judgeRounds': 'Judge rounds',
+  'record.judgeSample': 'sample {sample}',
+  'record.judgeSelf': 'judged its own group',
+  'record.judgeNoSession': 'This round never started a session — its error is beside it.',
+  'record.openJudgeSession': 'Open the judge session',
   'record.param.task': 'Item',
   'record.param.condition': 'Comparison group',
   'record.param.rep': 'Rep',
@@ -1508,6 +1536,10 @@ export const zh: Record<EvalKey, string> = {
   'report.comparisonClosed': '实验有效性校验有 {count} 条没通过，这次实验的各条记录之间还不可比。下面是各组各自的表现。',
   'report.singleCondition': '当前为单对比组实验，无对比数据，下方是基线表现。',
   'report.noPairs': '没有任何一对对比组给出了可比的数据。',
+  'report.openRecords': '打开这个数背后的运行记录（{task} × {condition}）。',
+  'report.openRecord': '打开这条判定写在哪条运行记录上（{record}）。',
+  'report.criteriaOpenRecords': '打开运行记录',
+  'report.criteriaOpenRecord': '打开这条运行记录',
   'report.pairTitle': '{a} 对 {b}',
   'report.pairNoTasks': '没有共同的题（两个对比组的题集不相交）。',
   'report.factorSingle': '差在「{factor}」：{detail}',
@@ -1822,6 +1854,8 @@ export const zh: Record<EvalKey, string> = {
   'runs.filter.blocked': '阻塞',
   'runs.col.verdict': '判定',
   'runs.filtered': '{matched} / {total}',
+  'runs.focus': '只看 {task} × {condition}——从结果对比页过来的 {matched} 条记录。',
+  'runs.focusClear': '看全部记录',
   'verdict.none': '未判',
   'verdict.human': '终评',
   'verdict.llm': '判官初判',
@@ -1840,7 +1874,15 @@ export const zh: Record<EvalKey, string> = {
   'record.params': '参数配置',
   'record.attachments': '附件',
   'record.attachmentsNone': '这次尝试没记下产物。',
-  'record.filePending': '预览和下载要宿主的文件服务，这个 tab 还没有；路径放在这里，可以从终端打开。',
+  'record.artifactLoading': '读取中……',
+  'record.artifactError': '这个附件',
+  'record.artifactDirEmpty': '这个目录是空的。',
+  'record.artifactBytes': '磁盘上 {bytes} 字节。',
+  'record.judgeRounds': '判官轮次',
+  'record.judgeSample': '第 {sample} 次采样',
+  'record.judgeSelf': '判了自己那组',
+  'record.judgeNoSession': '这一轮没起会话——错误写在旁边。',
+  'record.openJudgeSession': '打开判官会话',
   'record.param.task': '题',
   'record.param.condition': '对比组',
   'record.param.rep': '次',

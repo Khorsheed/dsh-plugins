@@ -9,13 +9,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   MAX_CACHED_BODIES,
+  MAX_RECENT_ENTRIES,
   boundAnnotations,
+  boundTranslations,
   emptyStateDoc,
   normalizeStateDoc,
   pruneOrphanTags,
   ReaderStore,
 } from '../src/store.ts'
-import type { ReaderStateDoc } from '../src/types.ts'
+import { MAX_TRANSLATION_MEMORY_ENTRIES } from '../src/types.ts'
+import type { ReaderEntryAnnotation, ReaderStateDoc } from '../src/types.ts'
 
 /** A document with one cached body per entry, oldest first. */
 function withBodies(count: number): ReaderStateDoc {
@@ -119,5 +122,208 @@ describe('the document keeps the reader’s own state apart from the feeds', () 
     const doc = normalizeStateDoc({ sources: [] })
     expect(doc.cache).toBeUndefined()
     expect(emptyStateDoc().cache).toBeUndefined()
+  })
+})
+
+describe('the recent list', () => {
+  const item = (entryId: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    entryId,
+    sourceId: 's1',
+    title: `文章 ${entryId}`,
+    url: `https://example.com/${entryId}`,
+    readAt: '2026-09-19T10:00:00.000Z',
+    ...over,
+  })
+
+  it('drops records that cannot be reopened or ordered', () => {
+    // The file is user-editable state, and a recent entry is only useful if it
+    // knows what to reopen (both ids) and when it was read.
+    const doc = normalizeStateDoc({
+      sources: [],
+      recent: [
+        item('ok'),
+        item('no-source', { sourceId: '' }),
+        item('no-entry', { entryId: '  ' }),
+        item('no-time', { readAt: 42 }),
+        'not-an-object',
+        item('no-title', { title: '', url: 'https://example.com/x' }),
+        item('no-url', { url: undefined }),
+      ],
+    })
+    expect(doc.recent?.map(entry => entry.entryId)).toEqual(['ok', 'no-title', 'no-url'])
+    // A missing url is legal (an entry opened from a feed body alone).
+    expect(doc.recent?.[2]?.url).toBeUndefined()
+  })
+
+  it('keeps one row per entry and keeps the file order', () => {
+    const doc = normalizeStateDoc({ sources: [], recent: [item('a'), item('b'), item('a')] })
+    expect(doc.recent?.map(entry => entry.entryId)).toEqual(['a', 'b'])
+  })
+
+  it('caps the list at MAX_RECENT_ENTRIES', () => {
+    const recent = Array.from({ length: MAX_RECENT_ENTRIES + 25 }, (_, index) => item(`e${String(index)}`))
+    const doc = normalizeStateDoc({ sources: [], recent })
+    expect(doc.recent).toHaveLength(MAX_RECENT_ENTRIES)
+    expect(doc.recent?.[0]?.entryId).toBe('e0')
+    expect(doc.recent?.at(-1)?.entryId).toBe(`e${String(MAX_RECENT_ENTRIES - 1)}`)
+  })
+
+  it('round-trips the list through the disk document', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-reader-recent-'))
+    try {
+      const store = new ReaderStore({ stateRoot: dir })
+      await store.update(current => ({ ...current, recent: [item('e1'), item('e2')] }))
+      const { doc } = await store.read()
+      expect(doc.recent?.map(entry => entry.entryId)).toEqual(['e1', 'e2'])
+      expect(doc.recent?.[0]?.title).toBe('文章 e1')
+      expect(doc.recent?.[0]?.readAt).toBe('2026-09-19T10:00:00.000Z')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+
+describe('the translation tiers', () => {
+  /** One annotation whose only content is a translation segment map. */
+  const translated = (entryId: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    [entryId]: {
+      translation: {
+        version: 1,
+        pair: 'en→zh',
+        bodyHash: `body-${entryId}`,
+        segments: { h1: '译文一' },
+        translatedAt: '2026-09-20T10:00:00.000Z',
+        lastUsedAt: '2026-09-20T10:00:00.000Z',
+        ...over,
+      },
+    },
+  })
+
+  it('keeps the translation records as recorded — a stale schema version included', () => {
+    // Lazy invalidation is a contract of the READ path (a version mismatch is a
+    // miss); the normalizer must not wipe the record, or "lazy" would be a lie.
+    const doc = normalizeStateDoc({
+      sources: [],
+      annotations: {
+        ...translated('e1'),
+        ...translated('e2', { version: 0 }),
+        bad: { translation: { pair: '', bodyHash: '' } },
+      },
+      translationMemory: { version: 0, file: 'translation-memory.json', entries: 3, chars: 120, updatedAt: '2026-09-20T10:00:00.000Z' },
+    })
+    expect(doc.annotations?.e1?.translation?.segments).toEqual({ h1: '译文一' })
+    expect(doc.annotations?.e2?.translation?.version).toBe(0)
+    // A translation record alone keeps the annotation, exactly like a fetch record.
+    expect(doc.annotations?.bad).toBeUndefined()
+    expect(doc.translationMemory).toEqual({ version: 0, file: 'translation-memory.json', entries: 3, chars: 120, updatedAt: '2026-09-20T10:00:00.000Z' })
+  })
+
+  it('refuses a translation file name that is not a bare file name', () => {
+    // The name is joined into bodies/ on reads and prunes; a hand-edited
+    // document must not turn that into a path.
+    const doc = normalizeStateDoc({
+      sources: [],
+      annotations: { e1: { translation: { version: 1, pair: 'en→zh', bodyHash: 'b', file: '../escape', translatedAt: 'x', lastUsedAt: 'y' } } },
+      translationMemory: { version: 1, file: '../../etc/passwd', entries: 1, chars: 1, updatedAt: 'z' },
+    })
+    expect(doc.annotations?.e1?.translation).toBeUndefined()
+    expect(doc.translationMemory).toBeUndefined()
+  })
+
+  it('takes the entry translation with the body it maps — and never the reader’s tags', () => {
+    // The linkage rule (user-approved 2026-09-20): a body eviction drops the
+    // exact-fit translation map in the same pass — it answers nothing without
+    // the body — while tags and the failure record survive, and the GLOBAL
+    // sentence memory is not this function's business at all.
+    const base = withBodies(MAX_CACHED_BODIES + 1)
+    const oldest = 'e0'
+    const doc: ReaderStateDoc = {
+      ...base,
+      annotations: {
+        ...base.annotations,
+        [oldest]: {
+          ...base.annotations?.[oldest],
+          tagIds: ['t-keep'],
+          translation: {
+            version: 1,
+            pair: 'en→zh',
+            bodyHash: 'b',
+            segments: { h1: 't1' },
+            translatedAt: 'x',
+            lastUsedAt: 'y',
+          },
+        },
+      },
+      tags: { 't-keep': { id: 't-keep', name: 'important', createdAt: 'x' } },
+    }
+    const bounded = boundAnnotations(doc).doc
+    expect(bounded.annotations?.[oldest]?.body).toBeUndefined()
+    expect(bounded.annotations?.[oldest]?.translation).toBeUndefined()
+    expect(bounded.annotations?.[oldest]?.tagIds).toEqual(['t-keep'])
+  })
+})
+
+describe('the shared translation budget', () => {
+  /** One memory entry with a controlled clock and size. */
+  const mem = (at: string, size = 10): [string, { source: string; target: string; lastUsedAt: string }] => [
+    `en→zh:${at}`,
+    { source: 's'.repeat(size), target: 't'.repeat(size), lastUsedAt: at },
+  ]
+  /** One annotation carrying an entry translation with a controlled clock and size. */
+  const entryMap = (at: string, size: number, version = 1): ReaderEntryAnnotation => ({
+    translation: {
+      version,
+      pair: 'en→zh',
+      bodyHash: 'b',
+      segments: { h: 't'.repeat(size) },
+      chars: size,
+      translatedAt: at,
+      lastUsedAt: at,
+    },
+  })
+
+  it('evicts the least recently used across BOTH tiers, not per tier', () => {
+    const memory = Object.fromEntries([
+      mem('2026-09-20T00:00:03.000Z', 100), // newest
+      mem('2026-09-20T00:00:01.000Z', 100), // oldest overall
+      mem('2026-09-20T00:00:04.000Z', 100),
+    ])
+    const annotations: Record<string, ReaderEntryAnnotation> = {
+      e1: entryMap('2026-09-20T00:00:02.000Z', 100), // second oldest
+    }
+    // Each memory entry measures ~253 chars (key + both texts + stamp), the map
+    // 100: total 859. A budget of 550 fits exactly the two newest items.
+    const bounded = boundTranslations(memory, annotations, 550)
+    expect(bounded.evictedMemoryKeys).toEqual(['en→zh:2026-09-20T00:00:01.000Z'])
+    expect(bounded.evictedEntryIds).toEqual(['e1'])
+    expect(Object.keys(bounded.memory)).toHaveLength(2)
+    expect(bounded.annotations.e1?.translation).toBeUndefined()
+  })
+
+  it('evicts a stale-schema entry map on sight, even with budget to spare', () => {
+    const bounded = boundTranslations({}, { e1: entryMap('2026-09-20T00:00:00.000Z', 10, 0) }, 10_000)
+    expect(bounded.evictedEntryIds).toEqual(['e1'])
+    expect(bounded.annotations.e1?.translation).toBeUndefined()
+  })
+
+  it('caps the memory by count even when the budget has room', () => {
+    const stamp = (index: number): string => new Date(Date.UTC(2026, 8, 20) + index * 1000).toISOString()
+    const memory = Object.fromEntries(
+      Array.from({ length: MAX_TRANSLATION_MEMORY_ENTRIES + 2 }, (_, index) => mem(stamp(index), 1)),
+    )
+    const bounded = boundTranslations(memory, {}, Number.MAX_SAFE_INTEGER)
+    expect(bounded.evictedMemoryKeys).toEqual([`en→zh:${stamp(0)}`, `en→zh:${stamp(1)}`])
+    expect(Object.keys(bounded.memory)).toHaveLength(MAX_TRANSLATION_MEMORY_ENTRIES)
+  })
+
+  it('leaves an under-budget pair untouched (same records, no evictions)', () => {
+    const memory = Object.fromEntries([mem('2026-09-20T00:00:01.000Z', 10)])
+    const annotations: Record<string, ReaderEntryAnnotation> = { e1: entryMap('2026-09-20T00:00:02.000Z', 10) }
+    const bounded = boundTranslations(memory, annotations, 100_000)
+    expect(bounded.memory).toBe(memory)
+    expect(bounded.annotations).toBe(annotations)
+    expect(bounded.evictedMemoryKeys).toEqual([])
+    expect(bounded.evictedEntryIds).toEqual([])
   })
 })

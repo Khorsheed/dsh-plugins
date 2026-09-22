@@ -23,6 +23,7 @@
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type { AttachmentIdType, AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
@@ -34,16 +35,18 @@ import { canvasErrorOf } from './service.ts'
 import {
   CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, DRAFT_FILE_NAME, emptyStats,
   isBoardCardKind, isBoardCardStatus, isCanvasLensId, isQuestionState, makeBoardId,
-  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId,
+  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeDraw,
   sanitizeCanvasTitle, summarizeBoard,
   type BoardAddCommentRequest, type BoardArchiveRequest, type BoardAskAgentOutcome,
-  type BoardAskAgentRequest, type BoardCard, type BoardChatStatusResult, type BoardCreateRequest,
+  type BoardAskAgentRequest, type BoardAttachImageOutcome, type BoardAttachImageRequest,
+  type BoardCard, type BoardChatStatusResult, type BoardCreateRequest,
   type BoardFocusRequest, type BoardFocusResult,
+  type BoardImageBytesOutcome, type BoardImageBytesRequest,
   type BoardListResult, type BoardMutationResult,
   type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
   type BoardReadDraftOutcome, type BoardReadDraftRequest, type BoardReadOutcome, type BoardReadRequest,
   type BoardRef, type BoardWriteDraftRequest, type BoardWriteDraftResult,
-  type CanvasBoard, type CanvasError, type CanvasSummary,
+  type CanvasBoard, type CanvasError, type CanvasImageError, type CanvasSummary,
 } from './types.ts'
 
 /**
@@ -68,6 +71,36 @@ function randomSuffix(): string {
 /** The board as one JSON document (the pad index's trailing-newline shape). */
 function serializeBoard(board: CanvasBoard): string {
   return `${JSON.stringify(board, null, 2)}\n`
+}
+
+/**
+ * The attachment store's failure codes, read STRUCTURALLY: the host's own
+ * contract is "consumers route on `code`, never on the prototype chain"
+ * (`dsh-attachment/error`), so nothing is imported from that package at
+ * runtime and the image arm degrades on a deployment that mounts no store.
+ * Twelve admission codes fold into the four the client can say something about.
+ */
+const IMAGE_TOO_LARGE_CODES = new Set([
+  'TOO_MANY_IMAGES', 'IMAGES_TOO_LARGE', 'IMAGE_TOO_LARGE', 'IMAGE_TOO_MANY_PIXELS', 'IMAGE_DIMENSION_TOO_LARGE',
+])
+const IMAGE_NOT_IMAGE_CODES = new Set([
+  'UNSUPPORTED_IMAGE_TYPE', 'INVALID_IMAGE', 'IMAGE_TYPE_MISMATCH', 'INVALID_IMAGE_BASE64', 'INVALID_FILE_BASE64',
+])
+const IMAGE_UNREADABLE_CODES = new Set([
+  'INVALID_ATTACHMENT_REF', 'ATTACHMENT_CORRUPT', 'ATTACHMENT_NOT_FOUND', 'ATTACHMENT_READ_FAILED',
+  'ATTACHMENT_PROJECTION_UNSUPPORTED', 'ATTACHMENT_FILES_UNSUPPORTED',
+])
+
+/** Map one thrown value onto the image arm's four codes. */
+function imageErrorOf(error: unknown): CanvasImageError {
+  const code = typeof error === 'object' && error !== null
+    ? (error as { code?: unknown }).code
+    : undefined
+  if (typeof code !== 'string') return 'unavailable'
+  if (IMAGE_TOO_LARGE_CODES.has(code)) return 'too-large'
+  if (IMAGE_NOT_IMAGE_CODES.has(code)) return 'not-image'
+  if (IMAGE_UNREADABLE_CODES.has(code)) return 'unreadable'
+  return 'unavailable'
 }
 
 /** Plugin config for the board service; every key is optional. */
@@ -313,15 +346,18 @@ export class CanvasBoardService {
 
   /**
    * Add one user card: createdBy user, straight to kept (proposed is the
-   * agent's entrance, M3). A question card starts its lifecycle open.
-   * @param request - canvas id, kind, text, and optional source.
+   * agent's entrance, M3). A question card starts its lifecycle open. The text
+   * may be empty only when the card arrives with a drawing — a picture is the
+   * content then, not a card missing its caption.
+   * @param request - canvas id, kind, text, optional drawing and source.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
    */
   async putCard(request: BoardPutCardRequest, session: Session): Promise<BoardMutationResult> {
     if (!isBoardCardKind(request.kind)) return { ok: false, error: 'invalid-name' }
     const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
-    if (text.length === 0) return { ok: false, error: 'invalid-name' }
+    const draw = normalizeDraw(request.draw)
+    if (text.length === 0 && draw.length === 0) return { ok: false, error: 'invalid-name' }
     return this.mutate(request.canvasId, session, (board, now) => {
       const card: BoardCard = {
         id: makeBoardId('c', Date.now(), randomSuffix()),
@@ -333,6 +369,7 @@ export class CanvasBoardService {
         createdAt: now,
         updatedAt: now,
         ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),
+        ...(draw.length === 0 ? {} : { draw }),
         ...(request.source === undefined ? {} : { source: request.source }),
       }
       board.cards.push(card)
@@ -341,9 +378,12 @@ export class CanvasBoardService {
   }
 
   /**
-   * Edit one card: text, a status transition, or a question-state transition.
-   * The proposed → kept/archived transitions feed the acceptance counters
-   * (the ghost's ✓/✗); archiving never deletes, exactly the pad's semantics.
+   * Edit one card: text, its drawing, a status transition, or a question-state
+   * transition. The proposed → kept/archived transitions feed the acceptance
+   * counters (the ghost's ✓/✗); archiving never deletes, exactly the pad's
+   * semantics. A drawing arrives whole (the pad owns the stroke list, so the
+   * fence covers a lost write the same way it covers a lost keystroke); `[]`
+   * clears it, `undefined` leaves it alone.
    * @param request - canvas id, card id, and the fields to change.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
@@ -357,6 +397,11 @@ export class CanvasBoardService {
       if (card === undefined) return 'missing'
       if (request.text !== undefined) {
         card.text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
+      }
+      if (request.draw !== undefined) {
+        const draw = normalizeDraw(request.draw)
+        if (draw.length === 0) delete card.draw
+        else card.draw = draw
       }
       if (request.status !== undefined && request.status !== card.status) {
         if (card.status === 'proposed') {
@@ -576,6 +621,77 @@ export class CanvasBoardService {
       return { ok: true, version: outcome.version }
     } catch (error) {
       return { ok: false, error: canvasErrorOf(error) }
+    }
+  }
+
+  /* ---------------------------------------------------------------- images (§10.3) */
+
+  /** The attachment store, when this deployment mounts one (the image arm's probe). */
+  private get attachments(): AttachmentStore | undefined {
+    return this.ctx.get('attachments')
+  }
+
+  /**
+   * Commit one pasted image to the host's attachment store and hand back the
+   * pointer a card may hold. Bytes ride THIS call and never card text (§10.3
+   * is deliberate: the board is read whole, so pixels in `card.text` would be
+   * paid for on every turn); the store's own admission — media type verified
+   * against the decoded bytes, the byte and pixel gates — is the only size
+   * check here, because inventing a second one would disagree with the host's.
+   * @param request - canonical base64, the declared media type, and a display name.
+   * @returns the five-field reference to store in the card, or one image code.
+   */
+  async attachImage(request: BoardAttachImageRequest): Promise<BoardAttachImageOutcome> {
+    const attachments = this.attachments
+    if (attachments === undefined) return { ok: false, error: 'unavailable' }
+    const bytes = Buffer.from(request.data, 'base64')
+    if (bytes.byteLength === 0) return { ok: false, error: 'not-image' }
+    try {
+      const stored = await attachments.saveImage({
+        data: new Uint8Array(bytes),
+        mediaType: request.mediaType,
+        ...(request.name === undefined ? {} : { name: request.name }),
+      })
+      return {
+        ok: true,
+        ref: {
+          attachmentId: String(stored.attachmentId),
+          mediaType: stored.mediaType,
+          bytes: stored.bytes,
+          width: stored.width,
+          height: stored.height,
+        },
+      }
+    } catch (error) {
+      return { ok: false, error: imageErrorOf(error) }
+    }
+  }
+
+  /**
+   * Read one stored image back for display, as canonical base64. The pointer
+   * carries the four fields the host re-derives from the object and compares
+   * (`mediaType`/`bytes`/`width`/`height`), so a card written by another
+   * deployment, or a hand-edited one, fails the comparison rather than
+   * rendering something else — the digest check is what makes a forged
+   * pointer harmless (§10.3's read side).
+   * @param request - the reference as the card holds it.
+   * @returns base64 bytes and the verified media type, or one image code.
+   */
+  async imageBytes(request: BoardImageBytesRequest): Promise<BoardImageBytesOutcome> {
+    const attachments = this.attachments
+    if (attachments === undefined) return { ok: false, error: 'unavailable' }
+    const { ref } = request
+    try {
+      const stored = await attachments.readImage({
+        attachmentId: ref.attachmentId as AttachmentIdType,
+        mediaType: ref.mediaType,
+        bytes: ref.bytes,
+        width: ref.width,
+        height: ref.height,
+      } satisfies ImageAttachmentRef)
+      return { ok: true, data: Buffer.from(stored.data).toString('base64'), mediaType: stored.ref.mediaType }
+    } catch (error) {
+      return { ok: false, error: imageErrorOf(error) }
     }
   }
 }

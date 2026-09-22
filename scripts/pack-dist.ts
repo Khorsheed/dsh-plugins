@@ -136,7 +136,7 @@ export type PackageJson = Record<string, unknown> & {
   peerDependencies?: Record<string, string>
   peerDependenciesMeta?: Record<string, unknown>
   devDependencies?: Record<string, string>
-  dsh?: { references?: string[] }
+  dsh?: { references?: string[], runtimeDependencies?: readonly string[] }
 }
 
 /**
@@ -311,10 +311,24 @@ export function rescopePackageJson(
   // They do NOT mount anything: `dsh plugin add` reconciles only the profile's
   // *direct* dependencies into its bundles layer, so a transitive family edge
   // keeps the module resolvable and leaves the row unmounted.
+  //
+  // Second exception: `dsh.runtimeDependencies` (an explicit opt-in list).
+  // A dependency the package deliberately does NOT bundle (capture's
+  // puppeteer-core / @puppeteer/browsers, consumed via runtime dynamic import)
+  // must still be installed alongside the dist package — name it there and the
+  // entry survives verbatim. Naming something absent from `dependencies` fails
+  // loud: a kept entry that points nowhere is worse than a dropped one.
+  const keepRuntime = new Set(pkg.dsh?.runtimeDependencies ?? [])
+  for (const dep of keepRuntime) {
+    if (out.dependencies?.[dep] === undefined) {
+      throw new Error(`dsh.runtimeDependencies names ${dep}, which is not in dependencies`)
+    }
+  }
   const deps = Object.fromEntries(
-    Object.entries(out.dependencies ?? {}).flatMap(([dep]) => {
+    Object.entries(out.dependencies ?? {}).flatMap(([dep, range]) => {
       const member = family?.get(dep)
-      return member === undefined ? [] : [[member.distName, familyEdgeRange(member, dep, 'dependencies')]]
+      if (member !== undefined) return [[member.distName, familyEdgeRange(member, dep, 'dependencies')]]
+      return keepRuntime.has(dep) ? [[dep, range]] : []
     }),
   )
   if (Object.keys(deps).length > 0) out.dependencies = deps

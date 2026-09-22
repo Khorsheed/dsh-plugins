@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
+
 Delegate coding tasks from any dsh agent preset to your locally installed Codex CLI. Delegations run under a plugin-scoped home, so your personal `~/.codex` — config, credentials, sessions — is never touched.
 
 ## Features
@@ -58,7 +60,9 @@ Optional, in the profile patch layer:
 
 The scoped `config.toml` is never rewritten: `-m` overrules it per round and the file stays exactly as you edited it.
 
-The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in). Saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key, which falls back to the YAML composition base and from there to "absent" above. While unset, the input itself **displays the default it currently follows** as a dimmed placeholder (inherited, never a pinned value; the display chain: config default → catalog default → the last model the delegation records observed → the generic copy) — and the "catalog default" layer now usually has a name: the `model/list` entry marked `isDefault` is the account's built-in default (verified live: gpt-5.6-sol), which the broker reports as the effective model with source `cli-builtin`. The chevron menu is the single choice list (the native datalist is gone): its leading item is "Default (follow …)" — checked while unset, picking it clears the draft back to follow-default — and the rest are the model broker's deduped union (this key + the config's top-level `model` + the `model` keys its `[profiles.*]` tables carry + the account's runnable catalog probed from the app-server's `model/list` (cached in-process, best-effort, hidden entries filtered) + recently used), everything the instance itself knows, never a hardcoded catalog; typing by hand always works. When the core or the broker is absent the card degrades to the old bare input (recent-models suggestions only).
+The settings card’s "Default model" writes the provider setting for subsequent rounds. Its shared picker displays the scoped model directory, discovery source and completeness, plus an explicit model-ID input when needed. Clearing the selection follows the effective configuration/default chain. Saving does not interrupt an active round and requires no reload. If the shared picker is unavailable, the card retains its text-input fallback. Per-member model and effort changes use the durable controls described below.
+
+The rich directory read now preserves native display labels, hidden candidates and reasoning options, traverses pagination, and uses the core cache and refresh subscription. Its context follows the member's scope and cwd. Failed refreshes retain the last successful snapshot as stale; configuration and history suggestions retain their source labels. The shared model picker and member effort controls are connected. Busy selections apply at the next complete turn boundary, including tool continuations; core owns current/pending state, cancellation and retry, while frozen evaluation members reject changes. A native catalog candidate is not proof of account access.
 
 **A delegation's own model outranks this key.** An orchestrator may name the model for ONE delegation through the facade's `DelegationCallOptions.model` (the fixed order: session override > delegation record > this key > scoped config > CLI built-in). The first round's request is recorded and every resume round re-requests it — `resume` takes no model of its own. In live mode such a round is no longer refused: the model becomes the member's **start model**, bound at the app-server spawn; a resident runtime bound to a different model is retired first (the same codex thread resumes via thread/resume) so the round respawns onto the asked-for model.
 
@@ -85,7 +89,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full (`liveMirrorGranularity: token` streams via incremental snapshots at one (turn, step) — the npm line's ui-chat `settleMessage` is wholesale-replace by design; adapted to format v2/v3 and handle-based sessionPersistence; build+test green); minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations

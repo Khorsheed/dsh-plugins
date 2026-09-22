@@ -17,6 +17,14 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
+
+/** Additive transient notification; old clients safely ignore unknown methods. */
+export interface LiveAssistantStreamParams {
+  readonly sessionId: string
+  readonly turn: number
+  readonly frame: AssistantStreamFrame
+}
 
 /** Wire contract version; bumped on any incompatible shape change. */
 export const LIVE_WIRE_PROTOCOL_VERSION = 1

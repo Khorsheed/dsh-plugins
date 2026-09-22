@@ -2,7 +2,7 @@
  * T29 — a claude round against a NAMED scoped home. The scope selects which
  * `CLAUDE_CONFIG_DIR` the round reads and writes (and, on macOS, which keychain
  * item, since claude keys that by the config directory's path); a resume may
- * not change it, and a scoped round never goes to the resident process.
+ * not change it; live rounds receive the same scoped home.
  */
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -119,11 +119,12 @@ describe('claude scoped home', () => {
     expect(wrong.specs).toHaveLength(0)
   })
 
-  it('refuses a scoped round that the live driver would serve', async () => {
-    const live = { disabled: false, startRound: vi.fn() }
+  it('passes the recorded scoped home to the live driver without an exec fallback', async () => {
+    const liveRun = { result: Promise.resolve({ status: 'done' }), dispose: vi.fn() }
+    const live = { disabled: false, startRound: vi.fn(async () => liveRun) }
     const { provider, specs } = mount({ kind: 'fresh', scope: 'eval-b' }, { live })
-    await expect(provider.start(request())).rejects.toThrow(/exec-only/)
-    expect(live.startRound).not.toHaveBeenCalled()
+    expect(await provider.start(request())).toBe(liveRun)
+    expect(live.startRound).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ homeDir: `${HOMES}/claude-code@eval-b` }))
     expect(specs).toHaveLength(0)
   })
 })

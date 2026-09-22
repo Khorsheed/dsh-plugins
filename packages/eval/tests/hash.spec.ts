@@ -34,6 +34,10 @@ describe('canonicalJson', () => {
 })
 
 describe('hashConditionDocument', () => {
+  it('preserves the pre-effort-control frozen baseline digest', () => {
+    expect(hashConditionDocument(T1_CONDITION)).toBe('3afb40c930e0eaff946f7ee920b8b50db03a4db4e77a9a2cf896fdc01a328b55')
+  })
+
   it('is deterministic: same document twice, same digest', () => {
     expect(hashConditionDocument(T1_CONDITION)).toBe(hashConditionDocument(structuredClone(T1_CONDITION)))
   })

@@ -19,6 +19,7 @@ import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { KimiModelCatalog } from './model-catalog.ts'
 import { KimiModelBroker } from './model-broker.ts'
 import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
@@ -75,13 +76,7 @@ export interface Config {
   live?: boolean
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
-  /**
-   * Live mirror granularity: `event` mirrors the wire.jsonl fold via
-   * throttled passes. `token` folds the same items 1:1 and additionally
-   * appends throttled snapshot messages for the in-flight item at its
-   * reserved (turn, step) — the host merges repeated settles at one
-   * coordinate into one live-updating message.
-   */
+  /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
 }
 
@@ -90,7 +85,7 @@ export const Config: z<Config> = z.object({
   thinkingEffort: z.union([z.const('low'), z.const('high'), z.const('max')]),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
 })
 
 /**
@@ -107,7 +102,7 @@ export const KIMI_SETTINGS_NAMESPACE = 'local-agent-kimi'
  */
 const KIMI_SETTINGS_SCHEMA = z.object({
   live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
 })
@@ -176,8 +171,7 @@ export function apply(ctx: Context, config: Config): void {
     // layer over the YAML composition base) swaps driver generations without
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
     // back to exec, in-flight rounds finish on their runtime, idle runtimes
-    // are reclaimed at once. A granularity change needs no new generation:
-    // the driver reads it per round.
+    // are reclaimed at once. Legacy granularity settings are accepted but ignored.
     const scope = ctx.settings.register(KIMI_SETTINGS_NAMESPACE, KIMI_SETTINGS_SCHEMA, {
       base: {
         ...config.live === undefined ? {} : { live: config.live },
@@ -201,8 +195,18 @@ export function apply(ctx: Context, config: Config): void {
     // construction-order only, and no round can run before both exist.
     let broker: KimiModelBroker
     const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs, child => broker.spawnModel(child))
+    const modelCatalog = new KimiModelCatalog(childSessionId => {
+      const record = childSessionId === undefined ? undefined : ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
+      const native = childSessionId === undefined ? undefined : liveSwitch.memberRuntimeConfiguration(childSessionId)
+      return {
+        homeDir: ctx.localAgent.homeDir('kimi', record?.scope),
+        ...record?.cwd === undefined ? {} : { cwd: record.cwd },
+        ...native === undefined ? {} : { native },
+      }
+    })
     broker = new KimiModelBroker(ctx, {
-      homeDir: () => ctx.localAgent.homeDir('kimi'),
+      homeDir: childSessionId => ctx.localAgent.homeDir('kimi', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
+      catalog: modelCatalog,
       settingsModel: resolveModel,
       recentModels: () => scope.get().recentModels ?? [],
       isLive: () => scope.get().live,
@@ -210,6 +214,12 @@ export function apply(ctx: Context, config: Config): void {
     })
     const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel, broker))
     const disposeHarness = ctx.localAgent.register({
+      prepareMember: async ({ binding, childSession, configuration, signal }) => {
+        const driver = liveSwitch.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) throw new Error('Enable the native live harness before preparing a coordinator')
+        await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('kimi', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
+      },
       name: 'kimi',
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',
@@ -267,6 +277,7 @@ export function apply(ctx: Context, config: Config): void {
       },
     })
     return () => {
+      modelCatalog.dispose()
       disposeProvider()
       disposeHarness()
       liveSwitch.dispose()

@@ -57,6 +57,19 @@ function userNode(seq: number, text = ''): ChatConversationViewNode {
   }
 }
 
+/** One admitted image block as it appears in a user message's content. */
+const imageAttachment = {
+  attachmentId: 'a1', mediaType: 'image/png', bytes: 10, width: 200, height: 100, name: 'photo.png',
+}
+
+/** A user node whose content blocks are given verbatim (text and/or images). */
+function contentNode(seq: number, content: readonly unknown[]): ChatConversationViewNode {
+  return {
+    ...userNode(seq),
+    data: { kind: 'user', seq, time: 1000, content, source: { kind: 'user' } },
+  }
+}
+
 describe('withdrawnDividerDefinition', () => {
   it('claims message-tools replacement events as start matches', () => {
     expect(withdrawnDividerDefinition.match(replacementEvent(10, 5, 9))).toEqual({ id: '10', role: 'start' })
@@ -264,12 +277,26 @@ describe('span statistics', () => {
     expect(countHiddenInSpan([editTriggerContext, dividerNode(12, 13)], 12, 13)).toBe(0)
   })
 
-  it('collects user originals and assistant text in anchor order, skipping textless entries', () => {
+  it('collects user originals and assistant text in anchor order, skipping empty entries', () => {
     expect(collectWithdrawnEntries(nodes, 5, 10)).toEqual([
-      { kind: 'user', text: '被撤回的原消息' },
-      { kind: 'assistant', text: '回复' },
-      { kind: 'assistant', text: '流式中' },
+      { kind: 'user', text: '被撤回的原消息', images: [] },
+      { kind: 'assistant', text: '回复', images: [] },
+      { kind: 'assistant', text: '流式中', images: [] },
     ])
+  })
+
+  it('keeps the images of a withdrawn user message, text or not', () => {
+    const mixed = [
+      contentNode(5, [{ type: 'text', text: '看图' }, { type: 'image', attachment: imageAttachment }]),
+      contentNode(6, [{ type: 'image', attachment: imageAttachment }]),
+      dividerNode(5, 10),
+    ]
+    expect(collectWithdrawnEntries(mixed, 5, 10)).toEqual([
+      { kind: 'user', text: '看图', images: [{ attachment: imageAttachment }] },
+      { kind: 'user', text: '', images: [{ attachment: imageAttachment }] },
+    ])
+    // The image-only message counts as one hidden message instead of zero.
+    expect(countHiddenInSpan(mixed, 5, 10)).toBe(2)
   })
 
   it('skips unreadable nodes but preserves reasoning-only assistant steps', () => {
@@ -280,7 +307,7 @@ describe('span statistics', () => {
       { ...userNode(8), kind: 'assistant-step', data: { status: 'settled', blocks: [{ kind: 'reasoning', text: '想' }] } },
     ]
     expect(collectWithdrawnEntries(sparse, 5, 10)).toEqual([
-      { kind: 'assistant', text: '想' },
+      { kind: 'assistant', text: '想', images: [] },
     ])
   })
 
@@ -301,9 +328,23 @@ describe('span statistics', () => {
       data: { seq: 13, time: 1, content: [{ type: 'text', text: '编辑后' }] },
     }
     expect(collectWithdrawnEntries([restored, restoredAssistant, edited], 11, 14)).toEqual([
-      { kind: 'user', text: '原文' },
-      { kind: 'assistant', text: '旧答' },
-      { kind: 'user', text: '编辑后' },
+      { kind: 'user', text: '原文', images: [] },
+      { kind: 'assistant', text: '旧答', images: [] },
+      { kind: 'user', text: '编辑后', images: [] },
+    ])
+  })
+
+  it('replays a re-withdrawn restore row\'s images from its replayed content', () => {
+    const restored = {
+      ...userNode(11),
+      kind: 'message-tools-restored',
+      data: {
+        seq: 11, time: 1, restoredFromSeq: 5,
+        content: [{ type: 'image', attachment: imageAttachment }], text: '',
+      },
+    }
+    expect(collectWithdrawnEntries([restored, dividerNode(11, 13)], 11, 13)).toEqual([
+      { kind: 'user', text: '', images: [{ attachment: imageAttachment }] },
     ])
   })
 

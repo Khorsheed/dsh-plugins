@@ -20,13 +20,14 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReaderPaneProps } from '../src/client/contract.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
-import { UNIT_SEPARATOR } from '../src/client/translate.ts'
-import type { ReaderBody, ReaderSourceSummary } from '../src/types.ts'
+import { forgetSession, forgetTranslators, readSession, rememberReadingPosition } from '../src/client/session.ts'
+import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
+import type { ReaderBody, ReaderEntryFetchState, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -47,7 +48,17 @@ interface FeedItem {
 
 /** A source as the host reports it, with every field the pane reads. */
 function rssSource(id: string, over: Partial<ReaderSourceSummary> = {}): ReaderSourceSummary {
-  return { id, kind: 'rss', url: `https://example.com/${id}.xml`, label: id, enabled: true, hasBody: true, ...over }
+  return {
+    id,
+    kind: 'rss',
+    url: `https://example.com/${id}.xml`,
+    label: id,
+    enabled: true,
+    // The host always reports when a source was added; the pane sorts by it.
+    addedAt: '2026-09-17T10:00:00.000Z',
+    hasBody: true,
+    ...over,
+  }
 }
 
 /**
@@ -58,12 +69,16 @@ function rssSource(id: string, over: Partial<ReaderSourceSummary> = {}): ReaderS
  */
 function feed(id: string, items: readonly FeedItem[]): string {
   const published = new Date().toISOString()
+  // This fixture is a feed that PUBLISHES its text: the body rides
+  // `content:encoded` (with the description alongside it), which is what most
+  // of these tests assume. A feed that ships only a summary is a different
+  // case with its own fixture — and it is the one that still owes a fetch.
   const entries = items.map(item => `<item>
     <title>${item.title}</title>
     <link>https://example.com/${id}/${encodeURIComponent(item.title)}</link>
     <pubDate>${item.publishedAt ?? published}</pubDate>
     <description>${item.description ?? `摘要：${item.title}`}</description>
-    ${item.body === undefined ? '' : `<content:encoded><![CDATA[${item.body}]]></content:encoded>`}
+    <content:encoded><![CDATA[${item.body ?? item.description ?? `<p>${`摘要：${item.title}`}</p>`}]]></content:encoded>
   </item>`).join('')
   // The namespace declaration is not decoration: `<content:encoded>` with no
   // `xmlns:content` is FATAL XML, which would make every one of these tests pass
@@ -89,8 +104,39 @@ interface BenchOptions {
   readonly ttlHours?: number
   /** Forces `getEntryBody` to answer with this error (the refusal paths). */
   readonly getEntryBodyError?: string
+  /**
+   * Entry ids the host already holds a fetched body for, and that body. This is
+   * the `cached: true, fromFeed: false` answer — an entry whose fetch happened
+   * earlier (in another visit, or before the pane was remounted).
+   */
+  readonly cachedBodies?: Readonly<Record<string, string>>
+  /** Per-entry body metadata riding a cachedBodies answer (count, rendered flag). */
+  readonly cachedBodiesMeta?: Readonly<Record<string, { scriptFigures?: number; rendered?: boolean }>>
+  /** What `entryFetchStates` answers per entry id (default: `none`). */
+  readonly fetchStates?: Readonly<Record<string, ReaderEntryFetchState>>
   /** Entry ids the host reports as needing their full text. */
   readonly backfillCandidates?: readonly string[]
+  /** What the host's 「最近阅读」 list holds, newest first. */
+  readonly recent?: readonly ReaderRecentEntry[]
+  /** The entry's exact-fit translation record, as the host would answer it. */
+  readonly entryTranslation?: { ok: true; value: { translation?: { pair: string; bodyHash: string; segments: Record<string, string> } } }
+  /** The global memory's answers, by sentence hash. */
+  readonly memorySlice?: Readonly<Record<string, string>>
+  /** The translation budget the policy reports (chars). */
+  readonly translationBudgetChars?: number
+  /** The host's storage aggregates, when a test cares about the manage page. */
+  readonly storageStats?: {
+    bodies: { entries: number; chars: number }
+    translations: { entries: number; chars: number; memoryEntries: number; memoryChars: number }
+  }
+  /** The dsh session this mount belongs to (defaults to `s1`). */
+  readonly sessionId?: string
+  /** True = the in-app Sidebar Browser seam probes present (host 0.1.6-alpha.2+). */
+  readonly browserTab?: boolean
+  /** True = a capture Remote (the ingest proposal's M1) probes present. */
+  readonly capture?: boolean
+  /** The captured title/excerpt the host joins onto a link source's payload answer. */
+  readonly linkMeta?: Readonly<Record<string, { title?: string; excerpt?: string }>>
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -103,17 +149,29 @@ function bench(options: BenchOptions = {}) {
   const actions = instance.actions
 
   const assigned: ReaderSourceSummary[] = [...(options.sources ?? [])]
+  /** The capture Remote's render verb, when the bench mounts one (M1 probe). */
+  const captureRender = vi.fn(async ({ url }: { url: string }) => ({
+    ok: true as const,
+    value: { html: `<article><p>${'渲染抓到的正文。'.repeat(30)}</p></article>`, finalUrl: url },
+  }))
   const mocks = {
     listSources: vi.fn(async () => ({ ok: true as const, value: { sources: assigned } })),
     getBodies: vi.fn(async (ids: string[]) => ({
       ok: true as const,
       value: {
         bodies: ids.map((id): ReaderBody => {
-          if (options.failedIds?.includes(id) === true) return { id, error: 'fetch failed' }
+          // A link source's captured meta rides the payload answer, as the host joins it.
+          const meta = options.linkMeta?.[id]
+          const carried = meta === undefined ? {} : {
+            ...(meta.title === undefined ? {} : { title: meta.title }),
+            ...(meta.excerpt === undefined ? {} : { excerpt: meta.excerpt }),
+          }
+          if (options.failedIds?.includes(id) === true) return { id, error: 'fetch failed', ...carried }
           return {
             id,
             raw: options.payloads?.[id] ?? feed(id, [{ title: `条目 ${id}` }]),
             ...(options.truncatedIds?.includes(id) === true ? { truncated: true } : {}),
+            ...carried,
           }
         }),
       },
@@ -131,25 +189,74 @@ function bench(options: BenchOptions = {}) {
     })),
     quoteToSideChat: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
+    removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     openExternal: vi.fn(() => true),
     copyText: vi.fn(async () => true),
+    browserTabAvailable: vi.fn(() => options.browserTab ?? false),
+    // Like the real face: the open refuses (false) exactly when the seam is absent.
+    openBrowserTab: vi.fn(() => options.browserTab ?? false),
+    captureRender,
+    captureRemote: vi.fn(() => (options.capture === true ? { render: captureRender } : undefined)),
     setDraft: vi.fn(),
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
     listTags: vi.fn(async () => ({ ok: true as const, value: { tags: options.tags ?? [], counts: options.tagCounts ?? {} } })),
+    entryFetchStates: vi.fn(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: {
+        states: Object.fromEntries(entryIds.map(id => [id, options.fetchStates?.[id] ?? { state: 'none' as const }])),
+      },
+    })),
+    getRawBody: vi.fn(async (entryId: string) => ({ ok: true as const, value: { entryId } })),
+    storeEntryBody: vi.fn(async (request: { entryId: string; url: string; html: string; scriptFigures?: number; rendered?: boolean }) => ({
+      ok: true as const,
+      value: {
+        entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: request.html,
+        ...(request.scriptFigures === undefined ? {} : { scriptFigures: request.scriptFigures }),
+        ...(request.rendered === undefined ? {} : { rendered: request.rendered }),
+      },
+    })),
     listBackfillCandidates: vi.fn(async (entries: readonly { entryId: string }[]) => ({
       ok: true as const,
       value: { candidates: (options.backfillCandidates ?? []).filter(id => entries.some(entry => entry.entryId === id))
         .map(id => ({ entryId: id, url: `https://example.com/${id}`, label: id })) },
     })),
-    getCachePolicy: vi.fn(async () => ({ ok: true as const, value: { ttlHours: options.ttlHours ?? 24, maxEntries: 500 } })),
+    getCachePolicy: vi.fn(async () => ({
+      ok: true as const,
+      value: { ttlHours: options.ttlHours ?? 24, maxEntries: 500, translationBudgetChars: options.translationBudgetChars ?? 64_000_000 },
+    })),
     setCachePolicy: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    getStorageStats: vi.fn(async () => ({
+      ok: true as const,
+      value: options.storageStats ?? {
+        bodies: { entries: 0, chars: 0 },
+        translations: { entries: 0, chars: 0, memoryEntries: 0, memoryChars: 0 },
+      },
+    })),
+    clearTranslations: vi.fn(async () => ({ ok: true as const, value: { clearedEntries: 0, clearedMemory: false } })),
     entryTags: vi.fn(async () => ({ ok: true as const, value: { tags: [] } })),
     createTag: vi.fn(async (name: string) => ({ ok: true as const, value: { id: `tag-${name}`, name, createdAt: 'now' } })),
     tagEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     renameTag: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     deleteTag: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     pruneTags: vi.fn(async () => ({ ok: true as const, value: { removed: 0 } })),
+    recordRead: vi.fn(async () => ({ ok: true as const, value: { entries: 1 } })),
+    listRecent: vi.fn(async () => ({ ok: true as const, value: { entries: [...(options.recent ?? [])] } })),
+    clearRecent: vi.fn(async () => ({ ok: true as const, value: { removed: (options.recent ?? []).length } })),
+    // The persistent translation tiers: empty by default, scripted per test.
+    getEntryTranslation: vi.fn(async () => options.entryTranslation ?? { ok: true as const, value: {} }),
+    getSentenceTranslations: vi.fn(async (request: { pair: string; hashes: readonly string[] }) => ({
+      ok: true as const,
+      value: {
+        translations: Object.fromEntries(
+          request.hashes.flatMap(hash => {
+            const hit = options.memorySlice?.[hash]
+            return hit === undefined ? [] : [[hash, hit] as const]
+          }),
+        ),
+      },
+    })),
+    rememberSentences: vi.fn(async () => ({ ok: true as const, value: { stored: 0 } })),
     fetchEntryBody: vi.fn(async (entryId: string) => ({ entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })),
     getEntryBody: vi.fn(async (request: { entryId: string; url: string; feedHtml?: string }) => {
       const sourceId = request.entryId.startsWith('link:') ? request.entryId.slice('link:'.length) : undefined
@@ -158,6 +265,15 @@ function bench(options: BenchOptions = {}) {
       }
       if (sourceId !== undefined && options.failedIds?.includes(sourceId) === true) {
         return { ok: true as const, value: { entryId: request.entryId, cached: false, fresh: true, fromFeed: false, error: 'fetch failed' } }
+      }
+      const cached = options.cachedBodies?.[request.entryId]
+      if (cached !== undefined) {
+        const meta = options.cachedBodiesMeta?.[request.entryId]
+        return { ok: true as const, value: {
+          entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: cached,
+          ...(meta?.scriptFigures === undefined ? {} : { scriptFigures: meta.scriptFigures }),
+          ...(meta?.rendered === undefined ? {} : { rendered: meta.rendered }),
+        } }
       }
       return {
         ok: true as const,
@@ -169,7 +285,7 @@ function bench(options: BenchOptions = {}) {
   }
 
   const props = {
-    sessionId: 's1',
+    sessionId: options.sessionId ?? 's1',
     useStore,
     actions,
     t,
@@ -179,8 +295,11 @@ function bench(options: BenchOptions = {}) {
     capabilities: mocks.capabilities,
     quoteToSideChat: mocks.quoteToSideChat,
     updateSource: mocks.updateSource,
-    removeSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
+    removeSource: mocks.removeSource,
     refresh: mocks.refresh,
+    entryFetchStates: mocks.entryFetchStates,
+    getRawBody: mocks.getRawBody,
+    storeEntryBody: mocks.storeEntryBody,
     listBackfillCandidates: mocks.listBackfillCandidates,
     listTags: mocks.listTags,
     getCachePolicy: mocks.getCachePolicy,
@@ -191,12 +310,23 @@ function bench(options: BenchOptions = {}) {
     renameTag: mocks.renameTag,
     deleteTag: mocks.deleteTag,
     pruneTags: mocks.pruneTags,
+    recordRead: mocks.recordRead,
+    listRecent: mocks.listRecent,
+    clearRecent: mocks.clearRecent,
+    getEntryTranslation: mocks.getEntryTranslation,
+    getSentenceTranslations: mocks.getSentenceTranslations,
+    rememberSentences: mocks.rememberSentences,
+    getStorageStats: mocks.getStorageStats,
+    clearTranslations: mocks.clearTranslations,
     getEntryBody: mocks.getEntryBody,
     fetchEntryBody: mocks.fetchEntryBody,
     readDraft: () => '',
     setDraft: mocks.setDraft,
     copyText: mocks.copyText,
     openExternal: mocks.openExternal,
+    browserTabAvailable: mocks.browserTabAvailable,
+    openBrowserTab: mocks.openBrowserTab,
+    captureRemote: mocks.captureRemote,
   } as unknown as ReaderPaneProps
 
   const view = render(<ReaderPane {...props} />)
@@ -237,7 +367,18 @@ function installTranslator(over: { availability?: string; createThrows?: string;
 // The quoting case installs a `getSelection` spy, and the translation gesture
 // reads the selection (a click that ends a drag must not fold the sentence), so
 // every test starts from a clean slate.
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  // "Where the reader was" is module state shared by the WHOLE PAGE (that is
+  // the point of it): without this, one case's open article — and its narrowing,
+  // and its cached translator — would be restored into the next one. The page's
+  // sentence mirror is the same kind of state, and it now warms from the host,
+  // so it is cleared here too.
+  forgetSession()
+  forgetTranslators()
+  clearMemory()
+})
 
 describe('the pane renders content, never an empty column', () => {
   it('paints its empty state and its toolbar on the first frame', async () => {
@@ -346,6 +487,124 @@ describe('a truncated body says so, and offers the way out', () => {
   })
 })
 
+describe('a saved link with no body says so, and can be deleted', () => {
+  /** A link the host saved but could not read, as the summary reports it. */
+  const unreadableLink = (code: 'blocked' | 'login' | 'unsupported-type' | 'redirected' | 'empty' | 'http' = 'blocked') =>
+    rssSource('link-1', {
+      kind: 'link',
+      label: '只能打开原文的链接',
+      url: 'https://openreview.net/pdf?id=1lyagkzogH',
+      hasBody: false,
+      status: 'error',
+      error: 'the site answered a bot challenge instead of the page',
+      failure: { code, message: 'the site answered a bot challenge instead of the page' },
+    })
+
+  it('marks the card link-only, with the host’s reason on the badge', async () => {
+    const ui = bench({ sources: [unreadableLink()] })
+    await ui.settle()
+    const badge = await screen.findByText(zh['detail.linkOnlyBadge'])
+    expect(badge.getAttribute('title')).toBe(zh['preview.blocked'])
+  })
+
+  it('uses the code for the sentence, so a login wall is not called a bot wall', async () => {
+    const ui = bench({ sources: [unreadableLink('login')] })
+    await ui.settle()
+    expect((await screen.findByText(zh['detail.linkOnlyBadge'])).getAttribute('title')).toBe(zh['preview.login'])
+  })
+
+  it('explains a saved link whose page could not be extracted at all', async () => {
+    // The payload arrived and the source is not marked failed, so no reason was
+    // recorded anywhere — opening it used to render the title over blank space.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '抽不出正文的页面', url: 'https://example.com/empty' })],
+      payloads: { 'link-1': '' },
+    })
+    await ui.settle()
+    const cards = await screen.findAllByRole('button', { name: /抽不出正文的页面/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    // The sentence shares its paragraph with the 阅读原文 button (and the card
+    // badge repeats it in a tooltip), so match loosely and require at least one.
+    expect((await screen.findAllByText(/抽不出正文/)).length).toBeGreaterThan(0)
+  })
+
+  it('offers delete for a saved link, and never for a feed entry', async () => {
+    // A saved link IS one item, so deleting it here is honest; a feed entry
+    // would come back on the next refresh, and a delete that undoes itself is
+    // a lie the UI must not tell.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '保存的文章', url: 'https://example.com/story' })],
+      payloads: { 'link-1': `<html><body><article><p>${'正文。'.repeat(200)}</p></article></body></html>` },
+    })
+    await ui.settle()
+    const cards = await screen.findAllByRole('button', { name: /保存的文章/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    fireEvent.click(await screen.findByTitle(zh['detail.removeLink']))
+    // The ids the pane parsed for the source ride along, so the host can drop
+    // their translation maps (the host never parses feeds).
+    await waitFor(() => { expect(ui.mocks.removeSource).toHaveBeenCalledWith('link-1', ['link:link-1']) })
+  })
+
+  it('reports a saved-but-unreadable link as saved, naming the reason', async () => {
+    const ui = bench({
+      addAnswer: {
+        ok: true,
+        value: {
+          outcome: 'saved-link',
+          kind: 'link',
+          id: 'new',
+          label: '被拒的文章',
+          failure: { code: 'unsupported-type', message: 'unsupported content type "application/pdf"' },
+        },
+      },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://openreview.net/pdf?id=x' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    const expected = zh['verdict.savedLinkNoPreview']
+      .replace('{label}', '被拒的文章')
+      .replace('{reason}', zh['preview.unsupportedType'])
+    expect(await screen.findByText(expected)).toBeTruthy()
+    // Saved is not failed: the dialog confirms and the field clears.
+    expect((input as HTMLInputElement).value).toBe('')
+  })
+})
+
+describe('the subscription page narrows and orders its own list', () => {
+  const feedSource = (id: string, addedAt: string) =>
+    rssSource(id, { label: id, addedAt, hasBody: true })
+
+  it('filters by kind and sorts by when things arrived', async () => {
+    // The page mixes feeds and saved links, and "delete the link I added
+    // yesterday" is not answerable without both against a long list.
+    const ui = bench({
+      sources: [
+        feedSource('订阅甲', '2026-09-01T00:00:00.000Z'),
+        rssSource('保存的链接', { kind: 'link', label: '保存的链接', addedAt: '2026-09-18T00:00:00.000Z', url: 'https://example.com/a' }),
+      ],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    expect(await screen.findByText(zh['sources.title'])).toBeTruthy()
+
+    // Sorted by arrival, newest first: the link was added a day after the feed.
+    const names = (): string[] => Array.from(
+      ui.container.querySelectorAll('[class*="sourceRow"] [class*="sourceNameInput"]'),
+    ).map(node => (node as HTMLInputElement).value)
+    await waitFor(() => { expect(names()).toEqual(['保存的链接', '订阅甲']) })
+
+    // Narrowing to saved links leaves exactly that one row.
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${zh['sources.kindLink']}`) }))
+    await waitFor(() => { expect(names()).toEqual(['保存的链接']) })
+
+    // …and the kind the reader did not ask for is not what "all" means.
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${zh['sources.kindRss']}`) }))
+    await waitFor(() => { expect(names()).toEqual(['订阅甲']) })
+  })
+})
+
 describe('the add form reports the host verdict', () => {
   it('confirms a subscription and clears the field', async () => {
     const ui = bench()
@@ -382,6 +641,54 @@ describe('the add form reports the host verdict', () => {
     fireEvent.click(screen.getByText(zh['action.submit']))
     expect(await screen.findByText(zh['verdict.fetchFailed'])).toBeTruthy()
     expect(screen.getByText('connect ECONNREFUSED 127.0.0.1:9')).toBeTruthy()
+  })
+
+  it('offers the browser way out on a link-only verdict whose cause has one', async () => {
+    // The moment the reader learns WHY there is no preview is the moment the
+    // dialog offers the action the cause answers.
+    const ui = bench({
+      addAnswer: {
+        ok: true,
+        value: {
+          outcome: 'saved-link',
+          kind: 'link',
+          id: 'new',
+          label: '被墙的论文',
+          failure: { code: 'blocked', message: 'HTTP 403' },
+        },
+      },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://walled.example.com/paper' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    const action = await screen.findByText(zh['action.openExternal'])
+    fireEvent.click(action)
+    expect(ui.mocks.openExternal).toHaveBeenCalledWith('https://walled.example.com/paper')
+  })
+
+  it('offers no action for a cause that has none', async () => {
+    const ui = bench({
+      addAnswer: {
+        ok: true,
+        value: {
+          outcome: 'saved-link',
+          kind: 'link',
+          id: 'new',
+          label: '打不开的站',
+          failure: { code: 'unreachable', message: 'connect ECONNREFUSED' },
+        },
+      },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://down.example.com/paper' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    await screen.findByText(new RegExp(zh['preview.unreachable'].slice(0, 8)))
+    // 再按一次抓取就是重试——判定里不再多一个按钮。
+    expect(screen.queryByText(zh['action.openExternal'])).toBeNull()
   })
 })
 
@@ -535,6 +842,94 @@ describe('the filter popover narrows the wall', () => {
   })
 })
 
+describe('the wall hides republished duplicates behind one card', () => {
+  // The aggregator's copy carries tracking parameters; the link is otherwise the same.
+  const aggFeed = '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>agg</title><item>'
+    + '<title>An Alien Mind</title><link>https://example.com/alien?utm_source=feed</link>'
+    + '<pubDate>2026-09-17T08:00:00.000Z</pubDate><description>聚合摘要</description></item></channel></rss>'
+  const origFeed = '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>orig</title><item>'
+    + '<title>An Alien Mind</title><link>https://example.com/alien</link>'
+    + '<pubDate>2026-09-17T09:00:00.000Z</pubDate><description>原始摘要</description></item></channel></rss>'
+  const twoSources = () => bench({
+    sources: [rssSource('agg', { label: '聚合源' }), rssSource('orig', { label: '原始博客' })],
+    payloads: { agg: aggFeed, orig: origFeed },
+  })
+
+  it('shows one card with a duplicates badge, and the footer says so', async () => {
+    const ui = await twoSources()
+    await ui.settle()
+    // One card, not two; the badge counts the hidden copies and names them.
+    await waitFor(() => {
+      expect(screen.getAllByText('An Alien Mind')).toHaveLength(1)
+    })
+    const badge = await screen.findByText(zh['dedupe.badge'].replace('{count}', '1'))
+    // The hidden copy is the aggregator's (its feed's own title wins the label).
+    expect(badge.getAttribute('title')).toContain('agg')
+    expect(await screen.findByText(zh['foot.deduped'].replace('{count}', '1'))).toBeTruthy()
+  })
+
+  it('the toggle in the filter popover shows both copies again', async () => {
+    const ui = await twoSources()
+    await ui.settle()
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(1) })
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(await screen.findByText(zh['filter.hideDupes']))
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(2) })
+    expect(screen.queryByText(zh['dedupe.badge'].replace('{count}', '1'))).toBeNull()
+    // …and it survives a remount, like every narrowing (persisted in the snapshot).
+    ui.unmount()
+    const second = twoSources()
+    await second.settle()
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(2) })
+  })
+
+  it('reads as read when either copy was opened', async () => {
+    const ui = await twoSources()
+    await ui.settle()
+    const card = (await screen.findAllByText('An Alien Mind'))[0]!.closest('[data-reader-entry]') as HTMLElement
+    expect(card.getAttribute('data-unread')).not.toBeNull()
+    fireEvent.click(card)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      const again = screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement
+      expect(again.getAttribute('data-unread')).toBeNull()
+    })
+  })
+
+  it('folds two copies that share one guid — the live 3080 case, links differing', async () => {
+    // Measured live: two aggregator feeds carried "An Alien Mind" with an
+    // IDENTICAL guid — so both copies' stableEntryId is one `g:<guid>` BY
+    // DESIGN (it buys shared fetch/read/translation state). The links here
+    // genuinely differ, so only the id tier can fold them.
+    const guidFeed = (id: string, link: string, desc: string): string =>
+      '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>' + id + '</title><item>'
+      + '<title>An Alien Mind</title><link>' + link + '</link>'
+      + '<guid>https://openai.com/index/an-alien-mind/</guid>'
+      + '<pubDate>2026-09-17T08:00:00.000Z</pubDate><description>' + desc + '</description></item></channel></rss>'
+    const ui = bench({
+      sources: [rssSource('agg', { label: '聚合源' }), rssSource('orig', { label: '原始博客' })],
+      payloads: {
+        agg: guidFeed('agg', 'https://cdn.example.com/mirror/an-alien-mind', '聚合摘要'),
+        orig: guidFeed('orig', 'https://openai.com/index/an-alien-mind/', '原始摘要'),
+      },
+    })
+    await ui.settle()
+    await waitFor(() => { expect(screen.getAllByText('An Alien Mind')).toHaveLength(1) })
+    expect(await screen.findByText(zh['dedupe.badge'].replace('{count}', '1'))).toBeTruthy()
+    expect(await screen.findByText(zh['foot.deduped'].replace('{count}', '1'))).toBeTruthy()
+    // The read-merge rides the shared id for free — this pin exists so nobody
+    // "fixes" the id collision without reading the dedupe note.
+    fireEvent.click(screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      const card = screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement
+      expect(card.getAttribute('data-unread')).toBeNull()
+    })
+  })
+})
+
 describe('an unreadable payload says so on the wall', () => {
   it('marks the source and explains the cap', async () => {
     const truncatedFeed = '<rss version="2.0"><channel><title>probe</title>'
@@ -586,6 +981,68 @@ describe('a source is editable from the subscription page', () => {
     })
     // A changed address re-fetches: the next payload is a different document.
     await waitFor(() => { expect(ui.mocks.refresh).toHaveBeenCalledWith(['hn']) })
+  })
+})
+
+describe('the manage page shows the storage surface', () => {
+  const stats = {
+    bodies: { entries: 3, chars: 2_400_000 },
+    translations: { entries: 2, chars: 300_000, memoryEntries: 1200, memoryChars: 700_000 },
+  }
+  /** The manage page opens from a settled wall; the card content is incidental. */
+  const wall = { sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } }
+
+  it('renders the per-tier usage and the current translation budget', async () => {
+    bench({ ...wall, storageStats: stats, translationBudgetChars: 128_000_000 })
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    await screen.findByText(zh['sources.title'])
+    // The aggregated readout — the host counts characters, and the page says so.
+    expect(await screen.findByText('3 篇 · 2.4 MB')).toBeTruthy()
+    expect(await screen.findByText('2 篇映射 + 1200 句 · 1.0 MB')).toBeTruthy()
+    const budget = document.getElementById('reader-translation-budget') as HTMLInputElement
+    expect(budget.value).toBe('128')
+  })
+
+  it('commits a new budget through the cache policy, keeping the current TTL', async () => {
+    const ui = bench({ ...wall, storageStats: stats })
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    await screen.findByText(zh['sources.title'])
+    const budget = await screen.findByLabelText(/译文预算/) as HTMLInputElement
+    fireEvent.change(budget, { target: { value: '32' } })
+    fireEvent.blur(budget)
+    await waitFor(() => { expect(ui.mocks.setCachePolicy).toHaveBeenCalledWith(24, undefined, 32_000_000) })
+  })
+
+  it('clears the translation cache on the button’s SECOND click, then re-reads', async () => {
+    let cleared = false
+    const ui = bench({ ...wall })
+    ui.mocks.getStorageStats.mockImplementation(async () => ({
+      ok: true as const,
+      value: cleared
+        ? { bodies: { entries: 3, chars: 2_400_000 }, translations: { entries: 0, chars: 0, memoryEntries: 0, memoryChars: 0 } }
+        : stats,
+    }))
+    ui.mocks.clearTranslations.mockImplementation(async () => {
+      cleared = true
+      return { ok: true as const, value: { clearedEntries: 2, clearedMemory: true } }
+    })
+    await screen.findByText('一条')
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    await screen.findByText(zh['sources.title'])
+    await screen.findByText('2 篇映射 + 1200 句 · 1.0 MB')
+    const button = await screen.findByText(zh['sources.clearTranslations'])
+    fireEvent.click(button)
+    // Armed, not executed: one click never clears.
+    expect(ui.mocks.clearTranslations).not.toHaveBeenCalled()
+    expect(await screen.findByText(zh['sources.clearTranslationsConfirm'])).toBeTruthy()
+    fireEvent.click(screen.getByText(zh['sources.clearTranslationsConfirm']))
+    await waitFor(() => { expect(ui.mocks.clearTranslations).toHaveBeenCalledTimes(1) })
+    // The readout re-reads after the clear: maps and sentences are gone, the
+    // bodies line is untouched.
+    await screen.findByText('0 篇映射 + 0 句 · 1 KB')
+    expect(screen.getByText('3 篇 · 2.4 MB')).toBeTruthy()
   })
 })
 
@@ -746,9 +1203,10 @@ describe('the filter panel cascades into the source list', () => {
     await ui.settle()
     fireEvent.click(screen.getByTitle(zh['action.filter']))
     const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
-    // Root = the read-state row + the drill row. The nine sources are NOT here:
-    // that is what keeps the panel usable as subscriptions accumulate.
-    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(2)
+    // Root = read state (unread + hide-duplicates) + the source drill row + the
+    // type rows (all / feed / saved link). The nine sources are NOT here: that
+    // is what keeps the panel usable as subscriptions accumulate.
+    expect(panel.querySelectorAll('[class*="filterRow"]').length).toBe(6)
     // …and the drill row carries the current value, so nothing is hidden.
     expect(panel.querySelector('[class*="filterValue"]')?.textContent).toBe(zh['filter.all'])
     fireEvent.click(screen.getByText(zh['filter.bySource']))
@@ -797,28 +1255,39 @@ describe('the filter panel cascades into the source list', () => {
   })
 })
 
-describe('the toolbar keeps room for both of its tools', () => {
-  it('puts the field first, then the two icon tools in their own anchored wrappers', async () => {
+describe('the wall keeps its field and its tools apart', () => {
+  it('gives the field a row of its own and the header the three controls', async () => {
+    // The reported shape: a search field wedged between three buttons is a
+    // field the reader cannot see what they typed in on a narrow sidebar. The
+    // field now owns its row (full width) and the wall's controls live in the
+    // header with refresh.
     const ui = bench()
     await ui.settle()
     const tools = ui.container.querySelector('[class*="tools"]') as HTMLElement
+    const head = ui.container.querySelector('[class*="head"]') as HTMLElement
     expect(tools).not.toBeNull()
-    // DOM order IS visual order (no `order` games): field, filter, sort. The
-    // field is the row's only flexible item, so a narrow sidebar gives width
-    // back from the input — never from a tool.
-    const children = [...tools.children]
-    expect(children[0]?.className).toContain('search')
-    expect(children[1]?.className).toContain('toolWrap')
-    expect(children[2]?.className).toContain('toolWrap')
-    expect(tools.querySelectorAll('button').length).toBe(2)
-    // Opening one anchors its panel inside that tool's own wrapper. The old
-    // pane-anchored `top: 62px` was shorter than the toolbar itself, so the
-    // filter panel sat on top of the sort button.
+    expect(head).not.toBeNull()
+
+    // One child: the field. No buttons, no anchored wrappers.
+    expect([...tools.children].map(child => child.className)).toEqual([expect.stringContaining('search')])
+    expect(tools.querySelectorAll('button').length).toBe(0)
+
+    // The header carries filter and sort, each in its own anchored wrapper so
+    // its panel hangs under the control that opened it. The translation switch
+    // joins them only where the page has a Translator API (jsdom has none), so
+    // it is asserted in the translation specs instead.
+    const wrappers = [...head.querySelectorAll('[class*="toolWrap"]')]
+    expect(wrappers.length).toBe(2)
+    expect(head.querySelectorAll('button').length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('still anchors the filter panel inside its own wrapper', async () => {
+    const ui = bench()
+    await ui.settle()
     fireEvent.click(screen.getByTitle(zh['action.filter']))
     const panel = ui.container.querySelector('[class*="filterPanel"]') as HTMLElement
-    expect(panel.parentElement).toBe(children[1])
-    // …and the other tool is still in the row, outside the panel.
-    expect(children[2]?.querySelector('button')).not.toBeNull()
+    expect(panel).not.toBeNull()
+    expect(panel.parentElement?.className).toContain('toolWrap')
   })
 })
 
@@ -1094,5 +1563,1825 @@ describe('on-device translation', () => {
       expect(article).toContain('译：First sentence here.')
       expect(article).toContain('译：Second sentence here.')
     })
+  })
+})
+
+describe('opening an entry with no body pays for one fetch', () => {
+  /** A feed entry that carries a link but no description at all. */
+  const bareFeed = (id: string): string =>
+    `<rss version="2.0"><channel><title>${id}</title>`
+    + `<item><title>没有正文的条目</title><link>https://example.com/article</link></item>`
+    + '</channel></rss>'
+
+  it('fetches the full text instead of rendering a blank page', async () => {
+    // The measured case: `transformer-circuits.pub/feed.xml` publishes a
+    // 167-character summary per entry, so the card has a title and nothing
+    // else. Opening it used to set no article and no error — a title over blank
+    // space, which reads as "this article cannot be read".
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: bareFeed('hn') } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /没有正文的条目/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.fetchEntryBody.mock.calls[0]?.[1]).toBe('https://example.com/article')
+    expect(await screen.findByText('fetched')).toBeTruthy()
+  })
+
+  it('says it is fetching while the request is in flight', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: bareFeed('hn') } })
+    await ui.settle()
+    // Hold the fetch open so the in-flight state is observable.
+    let release: ((value: unknown) => void) | undefined
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) =>
+      await new Promise(resolve => {
+        release = resolve as (value: unknown) => void
+        void entryId
+      }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /没有正文的条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText(zh['detail.fetchingBody'])).toBeTruthy()
+    release?.({ entryId: 'x', cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })
+    await waitFor(() => { expect(screen.queryByText(zh['detail.fetchingBody'])).toBeNull() })
+    expect(await screen.findByText('fetched')).toBeTruthy()
+  })
+
+  it('does not re-fetch a saved link whose page already refused extraction', async () => {
+    // A saved link with a recorded reason already has its sentence (and a
+    // manual retry in the card menu): fetching again on every look at a page
+    // that will not extract is a request per open, not a fix.
+    const ui = bench({
+      sources: [rssSource('link-1', { kind: 'link', label: '抽不出正文的页面', url: 'https://example.com/empty' })],
+      payloads: { 'link-1': '' },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /抽不出正文的页面/ }))[0] as HTMLElement)
+    expect((await screen.findAllByText(/抽不出正文/)).length).toBeGreaterThan(0)
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+})
+
+describe('the search box clears itself, and tags can be deleted', () => {
+  it('clears the wall search from inside the field, and only while it has text', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    const input = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    // Nothing to clear, nothing shown: the × is a state, not decoration.
+    expect(screen.queryByTitle(zh['action.clearSearch'])).toBeNull()
+    fireEvent.change(input, { target: { value: '一条' } })
+    fireEvent.click(screen.getByTitle(zh['action.clearSearch']))
+    expect(input.value).toBe('')
+    expect(screen.queryByTitle(zh['action.clearSearch'])).toBeNull()
+  })
+
+  it('deletes a tag from the filter panel and drops its narrowing with it', async () => {
+    // A tag that can only be created is a one-way door: the vocabulary is the
+    // reader's own, so it has to be deletable where it is used — and a deleted
+    // tag must not stay the active filter.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一条' }]) },
+      tags: [{ id: 'tag-ai', name: 'AI', createdAt: 'x' }],
+      tagCounts: { 'tag-ai': 2 },
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByText('AI'))
+    const input = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    await waitFor(() => { expect(input.value).toBe('@tag-ai') })
+
+    fireEvent.click(screen.getByTitle(zh['action.filter']))
+    fireEvent.click(screen.getByLabelText(`${zh['filter.deleteTag']}: AI`))
+    await waitFor(() => { expect(ui.mocks.deleteTag).toHaveBeenCalledWith('tag-ai') })
+    expect(input.value).toBe('')
+  })
+
+  it('keeps both settings controls in the compressed row', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.manage']))
+    expect(ui.container.querySelector('#reader-refresh-time')).not.toBeNull()
+    expect(ui.container.querySelector('#reader-cache-ttl')).not.toBeNull()
+  })
+})
+
+describe('a feed that publishes only a summary still gets its article', () => {
+  /** An entry whose feed carries a `<summary>` and no `<content>`. */
+  const summaryFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+
+  it('shows the feed summary, says so, and fetches the real text on open', async () => {
+    // The measured case: transformer-circuits.pub ships a 167-character summary
+    // per entry. It used to BE the body — so the entry looked complete, the
+    // backfill skipped it, and opening it never fetched the paper.
+    // No backfill candidate is offered here, so the ONLY fetch in this test is
+    // the one opening the entry decides to make.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The summary is on screen immediately, with the sentence that says it is
+    // only a summary…
+    expect(await screen.findByText(zh['detail.summaryOnly'])).toBeTruthy()
+    // …and the page behind it is fetched without the reader asking.
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.fetchEntryBody.mock.calls[0]?.[1]).toBe('https://example.com/paper')
+    // The fetched body replaces the summary, so the notice goes away.
+    expect(await screen.findByText('fetched')).toBeTruthy()
+    await waitFor(() => { expect(screen.queryByText(zh['detail.summaryOnly'])).toBeNull() })
+  })
+
+  it('offers a summary-only entry to the automatic backfill', async () => {
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      backfillCandidates: ['g:https://example.com/paper'],
+    })
+    await ui.settle()
+    await waitFor(() => { expect(ui.mocks.listBackfillCandidates).toHaveBeenCalled() })
+    const passed = ui.mocks.listBackfillCandidates.mock.calls[0]?.[0] as readonly { entryId: string }[]
+    expect(passed.some(entry => entry.entryId === 'g:https://example.com/paper')).toBe(true)
+  })
+})
+
+describe('an article that is already fetched is not fetched again', () => {
+  /** The measured feed shape: a summary, no full text — so a body is OWED. */
+  const summaryFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>已经抓过的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+
+  it('shows the cached body without a request, so the translation on screen survives', async () => {
+    // The reported bug: a summary-only feed keeps saying a full text is owed
+    // even after one was fetched, so opening the article replaced its DOM (and
+    // the reader's translation) with the same bytes from the network.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      cachedBodies: { 'g:https://example.com/paper': '<p>已经抓下来的正文</p>' },
+      fetchStates: { 'g:https://example.com/paper': { state: 'ready' } },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /已经抓过的论文/ }))[0] as HTMLElement)
+    expect(await screen.findByText('已经抓下来的正文')).toBeTruthy()
+    // The feed-summary notice is gone: what is on screen is no longer the feed's
+    // summary, and no fetch was made to get here.
+    expect(screen.queryByText(zh['detail.summaryOnly'])).toBeNull()
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('still pays one fetch when the entry has never been fetched', async () => {
+    // The other half of the rule: "the host holds a body" is what skips the
+    // fetch, not "the entry is old".
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /已经抓过的论文/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+  })
+
+  it('fetches again from the detail view\'s own button', async () => {
+    // Where a reader asks for a fresh copy: the site changed, or the extraction
+    // came back thin the first time. Entering the article no longer does this.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      cachedBodies: { 'g:https://example.com/paper': '<p>旧正文</p>' },
+      fetchStates: { 'g:https://example.com/paper': { state: 'ready' } },
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /已经抓过的论文/ }))[0] as HTMLElement)
+    // The cached body is on screen before anything could have been fetched for it.
+    expect(await screen.findByText('旧正文')).toBeTruthy()
+    const button = await screen.findByRole('button', { name: new RegExp(zh['detail.refetch']) })
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    fireEvent.click(button)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.fetchEntryBody.mock.calls[0]?.[0]).toBe('g:https://example.com/paper')
+    expect(await screen.findByText('fetched')).toBeTruthy()
+  })
+})
+
+describe('a slower answer never lands under a newer entry\'s title', () => {
+  /**
+   * The race this block pins: open A, and before the host answers, go back and
+   * open B. A's answer resolving LAST used to write A's body onto B's screen —
+   * and the translation restore, keyed on `[openEntryId, articleHtml]`, would
+   * then re-translate a pairing that never existed.
+   */
+  const idA = `l:https://example.com/hn/${encodeURIComponent('First article')}`
+  const twoArticles = (): string =>
+    feed('hn', [
+      { title: 'First article', body: '<p>First body here, long enough to read.</p>' },
+      { title: 'Second article', body: '<p>Second body here, long enough to read.</p>' },
+    ])
+
+  it('discards a body that arrives after another entry was opened', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: twoArticles() } })
+    // The first entry's answer is held back; the second's comes from the cache
+    // at once.
+    let resolveFirst: ((value: unknown) => void) | undefined
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string }) => {
+      if (request.entryId === idA) {
+        return await new Promise(resolve => { resolveFirst = resolve })
+      }
+      return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false as const, html: '<p>Second body here, long enough to read.</p>' } }
+    })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /First article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    fireEvent.click((await screen.findAllByRole('button', { name: /Second article/ }))[0] as HTMLElement)
+    await screen.findByText('Second body here, long enough to read.')
+
+    // Now the first answer lands — after the second entry is already on screen.
+    await act(async () => {
+      resolveFirst?.({ ok: true, value: { entryId: idA, cached: true, fresh: true, fromFeed: false, html: '<p>First body here, long enough to read.</p>' } })
+    })
+    expect(screen.queryByText('First body here, long enough to read.')).toBeNull()
+    expect(screen.getByText('Second body here, long enough to read.')).toBeTruthy()
+  })
+
+  it('discards a fetch owed by an entry the reader has already left', async () => {
+    // Same race through the OTHER writer: a summary-only entry pays one fetch on
+    // open, and that fetch is the slow one here.
+    const atomFeed = `<feed xmlns="http://www.w3.org/2005/Atom"><title>hn</title>`
+      + '<entry><title>Summary paper</title><link href="https://example.com/paper-a"/>'
+      + '<id>https://example.com/paper-a</id><summary>A summary sentence, all the feed ships.</summary></entry>'
+      + '<entry><title>Full paper</title><link href="https://example.com/paper-b"/>'
+      + '<id>https://example.com/paper-b</id><content><p>Second full text on screen.</p></content></entry></feed>'
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: atomFeed } })
+    let resolveFetch: ((value: unknown) => void) | undefined
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => {
+      if (entryId === 'g:https://example.com/paper-a') {
+        return await new Promise(resolve => { resolveFetch = resolve })
+      }
+      return { entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' }
+    })
+    await ui.settle()
+    // Opening the summary-only entry shows the feed's text and owes one fetch.
+    fireEvent.click((await screen.findAllByRole('button', { name: /Summary paper/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    fireEvent.click((await screen.findAllByRole('button', { name: /Full paper/ }))[0] as HTMLElement)
+    await screen.findByText('Second full text on screen.')
+
+    // The owed fetch lands now — on the wall's back, its body belongs nowhere.
+    await act(async () => {
+      resolveFetch?.({ entryId: 'g:https://example.com/paper-a', cached: true, fresh: true, fromFeed: false, html: '<p>First fetched body, late.</p>' })
+    })
+    expect(screen.queryByText('First fetched body, late.')).toBeNull()
+    expect(screen.getByText('Second full text on screen.')).toBeTruthy()
+  })
+})
+
+describe('a saved link’s card learns the paper’s own title', () => {
+  const LINK_PAGE = '<html><head><title></title></head><body><article>'
+    + '<h1>Circadian Rhythms in Pre-Trained Representations</h1>'
+    + `<p>${'We show that representation drift follows a daily rhythm. '.repeat(6)}</p>`
+    + '</article></body></html>'
+  const linkSource = (over: Partial<ReaderSourceSummary> = {}): ReaderSourceSummary =>
+    rssSource('lnk', { kind: 'link', url: 'https://arxiv.org/abs/2604.03147', label: 'arxiv.org/2604.03147', ...over })
+
+  it('upgrades the card at load when the payload parses (title + abstract)', async () => {
+    // The user's report: a pasted link wore its URL-derived label forever.
+    // The pane extracts the payload at load either way — the card now reads
+    // what the extraction read.
+    bench({ sources: [linkSource()], payloads: { lnk: LINK_PAGE } }).settle()
+    await screen.findByText('Circadian Rhythms in Pre-Trained Representations')
+    expect(await screen.findByText(/representation drift follows a daily rhythm/)).toBeTruthy()
+  })
+
+  it('reads the captured meta when the payload is already gone', async () => {
+    // Payload evicted, extraction remembered: the host joins the captured
+    // title/excerpt onto the (missing) payload's answer.
+    bench({
+      sources: [linkSource({ hasBody: false })],
+      failedIds: ['lnk'],
+      linkMeta: { lnk: { title: 'Captured Title From Before', excerpt: 'Captured abstract sentence.' } },
+    }).settle()
+    expect(await screen.findByText('Captured Title From Before')).toBeTruthy()
+    expect(await screen.findByText('Captured abstract sentence.')).toBeTruthy()
+  })
+
+  it('upgrades the card in place when a pill fetch lands', async () => {
+    const ui = bench({
+      sources: [linkSource({ url: 'https://example.com/x', label: 'example.com/x' })],
+      payloads: { lnk: `<html><head><title></title></head><body><article><p>${'这段正文没有标题。'.repeat(30)}</p></article></body></html>` },
+    })
+    await ui.settle()
+    // No h1, no document title: the card starts on the URL-derived label.
+    await screen.findAllByText('example.com/x')
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>抓到的正文</p>',
+      title: '抓取后才知道的真标题',
+      excerpt: '抓取后的摘要句。',
+    }))
+    fireEvent.click(await screen.findByText(zh['fetch.none']))
+    expect(await screen.findByText('抓取后才知道的真标题')).toBeTruthy()
+    expect(await screen.findByText('抓取后的摘要句。')).toBeTruthy()
+  })
+
+  it('never rewrites a feed entry’s own title', async () => {
+    // The same extraction path serves feed entries (the owed-fetch on open):
+    // their titles are the publisher's and must not be replaced by a page h1.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '订阅源的标题' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('订阅源的标题')
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched</p>',
+      title: '页面自己的 h1',
+      excerpt: '页面自己的摘要。',
+    }))
+    fireEvent.click(await screen.findByText(zh['fetch.none']))
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+    // The feed's title stays; the page's h1 never lands on the card.
+    expect(screen.queryByText('页面自己的 h1')).toBeNull()
+    expect(screen.getByText('订阅源的标题')).toBeTruthy()
+  })
+})
+
+
+describe('the detail view owns up to figures it cannot fetch', () => {
+  it('counts script-drawn figures and points at the original', async () => {
+    // A feed entry with a link and no body: the fetch path supplies the body,
+    // and with it the count of figures the page paints at runtime.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 3,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const expected = zh['detail.scriptFigures'].replace('{count}', '3')
+    expect(await screen.findByText(new RegExp(expected.slice(0, 12)))).toBeTruthy()
+    expect(screen.getByText(zh['detail.readOriginal'])).toBeTruthy()
+  })
+
+  it('opens the in-app Sidebar Browser when that seam probes present', async () => {
+    // Same notice, but the host is 0.1.6-alpha.2+: the action reads 「在浏览器
+    // 打开原文」 and lands in the right-Sidebar browser tab instead of an
+    // external window. The seam's absence keeps the old external link.
+    const ui = bench({
+      browserTab: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 3,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const action = await screen.findByText(zh['action.openExternal'])
+    expect(screen.queryByText(new RegExp(zh['detail.scriptFigures'].replace('{count}', '3').slice(0, 12)))).toBeTruthy()
+    fireEvent.click(action)
+    expect(ui.mocks.openBrowserTab).toHaveBeenCalledWith('https://example.com/paper')
+    expect(ui.mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the external link when the in-app open refuses', async () => {
+    const ui = bench({
+      browserTab: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.openBrowserTab.mockReturnValue(false)
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 1,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['action.openExternal']))
+    expect(ui.mocks.openExternal).toHaveBeenCalledWith('https://example.com/paper')
+  })
+
+  it('keeps the 渲染抓取 slot hidden while no capture Remote is mounted', async () => {
+    // M0 ships no capture package: the probe is the whole surface, and a
+    // control that cannot work is worse than none.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 2,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await screen.findByText(new RegExp(zh['detail.scriptFigures'].replace('{count}', '2').slice(0, 12)))
+    expect(screen.queryByText(zh['detail.renderFetch'])).toBeNull()
+  })
+
+  it('auto-renders on open when the fetched body counts script figures (one gesture, the whole pipeline)', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 2,
+    }))
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    // No button click: opening the entry IS the gesture, the plain fetch lands
+    // a shell (2 script figures), and the rendered fetch continues on its own.
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledWith({ url: 'https://example.com/paper' }) })
+    // The captured HTML went through the whitelist extractor and was stored —
+    // rendered: true (「重新抓取」 re-renders it) and the count, zero included:
+    // a silent record lets the notice rise from the dead on the next open.
+    await waitFor(() => {
+      expect(ui.mocks.storeEntryBody).toHaveBeenCalledWith(expect.objectContaining({
+        entryId: expect.any(String),
+        url: 'https://example.com/paper',
+        scriptFigures: 0,
+        rendered: true,
+      }))
+    })
+    expect(await screen.findByText(new RegExp('渲染抓到的正文'))).toBeTruthy()
+  })
+
+  it('a failed auto-render leaves the manual retry, and reopening does not refire it', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 2,
+    }))
+    ui.mocks.captureRender.mockResolvedValueOnce({ ok: false, error: { message: 'capture/unavailable' } })
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledTimes(1) })
+    // The loop guard held: the failure leaves a manual retry…
+    await screen.findByText(zh['detail.renderFetch'])
+    // …and a leave-and-reopen does not start a second render by itself.
+    fireEvent.click(screen.getByRole('button', { name: zh['action.back'] }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /有插图的条目/ }))[0] as HTMLElement)
+    await screen.findByText(new RegExp(zh['detail.scriptFigures'].replace('{count}', '2').slice(0, 12)))
+    expect(ui.mocks.captureRender).toHaveBeenCalledTimes(1)
+    fireEvent.click(await screen.findByText(zh['detail.renderFetch']))
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledTimes(2) })
+  })
+
+  it('重新抓取 re-renders an entry whose stored body came from a render', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    // The stored body is a rendered one: opening reads rendered: true back.
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string }) => ({
+      ok: true as const,
+      value: {
+        entryId: request.entryId,
+        cached: true,
+        fresh: true,
+        fromFeed: false,
+        html: '<p>渲染过的正文</p>',
+        scriptFigures: 0,
+        rendered: true,
+      },
+    }))
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await screen.findByText(new RegExp('渲染过的正文'))
+    const before = ui.mocks.captureRender.mock.calls.length
+    // Hold the render open: the button must show the in-flight state, or a
+    // re-render looks dead for minutes.
+    let release: (() => void) | undefined
+    ui.mocks.captureRender.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return { ok: true as const, value: { html: `<article><p>${'渲染抓到的正文。'.repeat(30)}</p></article>` } }
+    })
+    fireEvent.click(await screen.findByText(zh['detail.refetch']))
+    await waitFor(() => { expect(ui.mocks.captureRender.mock.calls.length).toBe(before + 1) })
+    const refetchBtn = screen.getByRole('button', { name: new RegExp(zh['detail.refetching']) })
+    expect(refetchBtn).toHaveProperty('disabled', true)
+    release!()
+    await screen.findByText(new RegExp('渲染抓到的正文'))
+    // …and the plain fetch never fired: that would clobber the rendered body
+    // with the page's pre-JS shell.
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('counts script-drawn figures on the saved-link path too (inline extraction)', async () => {
+    // A saved link's body is extracted IN the pane (the getBodies branch of
+    // open()), not via a fetch answer — so the script-figure count must be set
+    // from the local extraction, or the notice and the 「渲染抓取」 action never
+    // appear for the exact pages capture exists for.
+    const SHELL_PAGE = '<html><head><title>Shell Page Paper</title></head><body><article>'
+      + '<h1>Shell Page Paper</h1>'
+      + `<p>${'这篇正文的段落足够长，用来压住提取器的块评分。'.repeat(12)}</p>`
+      + '<figure><div class="chart"></div><figcaption>图 1：由页面脚本绘制</figcaption></figure>'
+      + `<p>${'另一段足够长的正文，让条目判定为可读。'.repeat(12)}</p>`
+      + '</article></body></html>'
+    bench({
+      sources: [rssSource('lnk', { kind: 'link', url: 'https://example.com/shell', label: 'example.com/shell' })],
+      payloads: { lnk: SHELL_PAGE },
+    }).settle()
+    const cards = await screen.findAllByRole('button', { name: /Shell Page Paper/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    const expected = zh['detail.scriptFigures'].replace('{count}', '1')
+    expect(await screen.findByText(new RegExp(expected.slice(0, 12)))).toBeTruthy()
+  })
+})
+
+
+describe('the card says what the plugin holds, and fetches on demand', () => {
+  async function wallWithStates(
+    state: 'none' | 'ready' | 'raw' | 'failed',
+    code: 'blocked' | 'unreachable' | 'http' = 'blocked',
+  ) {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    // The state must be in place BEFORE the pane's first round trip: the pane
+    // only polls while something is in flight, so a late mock is never read.
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: {
+        states: Object.fromEntries(entryIds.map(id => [id, state === 'failed'
+          ? { state, at: '2026-09-19T00:00:00.000Z', message: 'HTTP 403', code }
+          : { state }])),
+      },
+    }))
+    await ui.settle()
+    await screen.findByText('一条')
+    await waitFor(() => { expect(ui.mocks.entryFetchStates).toHaveBeenCalled() })
+    return ui
+  }
+
+  it('shows 抓取 when nothing is held, and fetches on click', async () => {
+    const ui = await wallWithStates('none')
+    const pill = await screen.findByText(zh['fetch.none'])
+    fireEvent.click(pill)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('example.com')) })
+  })
+
+  it('shows 已抓取 when the body is cached', async () => {
+    await wallWithStates('ready')
+    expect(await screen.findByText(zh['fetch.ready'])).toBeTruthy()
+  })
+
+  it('keeps the card one line tall — the reason and its actions live in a popover', async () => {
+    // The action belongs to the cause, but the card's grid must not break: the
+    // reason is NOT on the card (a failed card is the same height as its
+    // neighbours); a tap on the pill opens the popover with the reason and the
+    // action the cause answers.
+    const ui = await wallWithStates('failed', 'blocked')
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    // The tooltip still carries the reason; the card's text box does not.
+    expect(pill.getAttribute('title')).toContain(zh['preview.blocked'])
+    expect(screen.queryByText(zh['preview.blocked'])).toBeNull()
+    fireEvent.click(pill)
+    expect(await screen.findByText(zh['preview.blocked'])).toBeTruthy()
+    fireEvent.click(screen.getByText(zh['detail.readOriginal']))
+    await waitFor(() => { expect(ui.mocks.openExternal).toHaveBeenCalledWith(expect.stringContaining('example.com')) })
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('opens the same popover on a transport failure, whose action retries', async () => {
+    const ui = await wallWithStates('failed', 'unreachable')
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    fireEvent.click(pill)
+    fireEvent.click(await screen.findByText(zh['detail.refetch']))
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+  })
+
+  it('gives a final failure the reason and no action', async () => {
+    // A 404 answers the same way forever: no retry, no browser detour — the
+    // popover says why and offers nothing.
+    const ui = await wallWithStates('failed', 'http')
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    expect(pill.getAttribute('title')).not.toContain('重试')
+    fireEvent.click(pill)
+    expect(await screen.findByText(zh['preview.http'])).toBeTruthy()
+    expect(screen.queryByText(zh['detail.refetch'])).toBeNull()
+    expect(screen.queryByText(zh['detail.readOriginal'])).toBeNull()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    expect(ui.mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('dismisses the popover on the next outside click', async () => {
+    await wallWithStates('failed', 'blocked')
+    fireEvent.click((await screen.findByText(zh['fetch.failed'])).closest('[class*="fetchPill"]') as HTMLElement)
+    expect(await screen.findByText(zh['preview.blocked'])).toBeTruthy()
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => { expect(screen.queryByText(zh['preview.blocked'])).toBeNull() })
+  })
+
+  it('extracts a payload the host stored while the page was away', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: { states: Object.fromEntries(entryIds.map(id => [id, { state: 'raw' as const, at: '2026-09-19T00:00:00.000Z' }])) },
+    }))
+    ui.mocks.getRawBody.mockImplementation(async (entryId: string) => ({
+      ok: true as const,
+      value: { entryId, raw: `<article><p>${'prose '.repeat(60)}</p></article>`, url: 'https://example.com/a' },
+    }))
+    await ui.settle()
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalled() })
+    const stored = ui.mocks.storeEntryBody.mock.calls[0]?.[0] as { html: string }
+    expect(stored.html).toContain('prose')
+  })
+})
+
+describe('the card learns what the pane just did', () => {
+  /** A feed entry whose publisher ships only a summary: opening it owes a fetch. */
+  const summaryFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+  const paperId = 'g:https://example.com/paper'
+
+  /**
+   * A mock host document: what `entryFetchStates` answers is whatever the
+   * writes have made true — exactly how the real service derives states from
+   * its annotations. A fixed-answer mock would let these tests pass without
+   * the pane having propagated anything.
+   */
+  function hostModel(ui: ReturnType<typeof bench>, options: { readonly fail?: boolean } = {}): void {
+    const held = new Map<string, ReaderEntryFetchState>()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => {
+      if (options.fail === true) {
+        held.set(entryId, { state: 'failed', at: new Date().toISOString(), message: 'HTTP 403', code: 'blocked' })
+        return { entryId, cached: false, fresh: false, fromFeed: false, error: 'HTTP 403' }
+      }
+      held.set(entryId, { state: 'ready', at: new Date().toISOString() })
+      return { entryId, cached: true, fresh: true, fromFeed: false, html: '<p>the fetched paper body</p>' }
+    })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: { states: Object.fromEntries(entryIds.map(id => [id, held.get(id) ?? { state: 'none' as const }])) },
+    }))
+  }
+
+  it('flips the card to 已抓取 when the detail view fetched the body', async () => {
+    // The reported symptom: the card said 抓取, the reader opened the article
+    // (which fetched and cached the body), came back — and the card still said
+    // 抓取 until the next mount, because the open path never told the mirror.
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed('tc') } })
+    hostModel(ui)
+    await ui.settle()
+    expect(await screen.findByText(zh['fetch.none'])).toBeTruthy()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The detail view shows the fetched body — the gesture really did land it.
+    expect(await screen.findByText('the fetched paper body')).toBeTruthy()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(screen.queryByText(zh['fetch.none'])).toBeNull()
+  })
+
+  it('flips the card when the automatic backfill lands the body', async () => {
+    // Same mirror gap through the other writer: the run's badge appeared, but
+    // nothing re-read the states, so the pill kept saying 抓取. (No "starts at
+    // 抓取" assertion here: the mock host answers in microtasks, so how long the
+    // initial state is visible is a race that is not the point.)
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: summaryFeed('tc') },
+      backfillCandidates: [paperId],
+    })
+    hostModel(ui)
+    await ui.settle()
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith(paperId, expect.any(String))
+  })
+
+  it('shows 抓取失败 with the host’s reason after an open-triggered fetch fails', async () => {
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed('tc') } })
+    hostModel(ui, { fail: true })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    // The fetch fails behind the summary, which stays on screen.
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalled() })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    const label = await screen.findByText(zh['fetch.failed'])
+    const pill = label.closest('[class*="fetchPill"]') as HTMLElement
+    expect(pill.getAttribute('title')).toContain(zh['preview.blocked'])
+  })
+})
+
+describe('a fulltext feed body is kept on open', () => {
+  /**
+   * A mock host whose `storeEntryBody` really holds: the write is what
+   * `entryFetchStates` and the next `getEntryBody` answer from — the way the
+   * real service derives both from its annotations. A fixed-answer mock would
+   * let these tests pass without the pane having persisted anything.
+   */
+  function holdingHost(ui: ReturnType<typeof bench>): void {
+    const held = new Map<string, string>()
+    ui.mocks.storeEntryBody.mockImplementation(async (request: { entryId: string; html: string }) => {
+      held.set(request.entryId, request.html)
+      return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: request.html } }
+    })
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string; feedHtml?: string }) => {
+      const cached = held.get(request.entryId)
+      if (cached !== undefined) {
+        return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: cached } }
+      }
+      return {
+        ok: true as const,
+        value: request.feedHtml === undefined
+          ? { entryId: request.entryId, cached: false, fresh: true, fromFeed: false }
+          : { entryId: request.entryId, cached: false, fresh: true, fromFeed: true, html: request.feedHtml },
+      }
+    })
+    ui.mocks.entryFetchStates.mockImplementation(async (entryIds: readonly string[]) => ({
+      ok: true as const,
+      value: {
+        states: Object.fromEntries(entryIds.map(id => [id, held.has(id)
+          ? { state: 'ready' as const, at: '2026-09-20T00:00:00.000Z' }
+          : { state: 'none' as const }])),
+      },
+    }))
+  }
+
+  const fulltextFeed = (): string =>
+    feed('hn', [{ title: '全文条目', body: '<p>the feed full text</p>' }])
+
+  it('stores the feed’s full text on open, and the card says 已抓取 after back', async () => {
+    // The gap: a fulltext feed's payload IS the article, but only inside the
+    // feed's window — the host never held it, so the card said 抓取 and the
+    // text died with the window. Opening is the gesture that keeps it.
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: fulltextFeed() } })
+    holdingHost(ui)
+    await ui.settle()
+    expect(await screen.findByText(zh['fetch.none'])).toBeTruthy()
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('全文条目')}`
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1) })
+    const stored = ui.mocks.storeEntryBody.mock.calls[0]?.[0] as { entryId: string; url: string; html: string; bodyHash?: string }
+    expect(stored.entryId).toBe(entryId)
+    expect(stored.url).toBe(`https://example.com/hn/${encodeURIComponent('全文条目')}`)
+    expect(stored.html).toContain('the feed full text')
+    // The hash rides along, so the entry's translation map survives the store.
+    expect(typeof stored.bodyHash).toBe('string')
+    // No request was made to keep it: the text was already on screen.
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => { expect(screen.getByText(zh['fetch.ready'])).toBeTruthy() })
+    expect(screen.queryByText(zh['fetch.none'])).toBeNull()
+  })
+
+  it('does not store again when the host already holds the body', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: fulltextFeed() } })
+    holdingHost(ui)
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    await waitFor(() => { expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1) })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await screen.findByText(zh['fetch.ready'])
+    // The second open reads the host's cache (holdingHost answers from the
+    // first store) — a cached body is paid for, nothing is written twice.
+    fireEvent.click((await screen.findAllByRole('button', { name: /全文条目/ }))[0] as HTMLElement)
+    expect(await screen.findByText('the feed full text')).toBeTruthy()
+    await waitFor(() => { expect(ui.mocks.getEntryBody).toHaveBeenCalledTimes(2) })
+    expect(ui.mocks.storeEntryBody).toHaveBeenCalledTimes(1)
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('a summary-only open still owes the fetch, and the summary is never stored', async () => {
+    // The other half of the rule: a summary is not the body, so opening keeps
+    // paying one fetch — and the summary itself is never cached as if it were
+    // the article (that is the 摘要不是正文 note's rule, kept honest here).
+    const summaryFeed =
+      '<feed xmlns="http://www.w3.org/2005/Atom"><title>tc</title>'
+      + '<entry><title>只有摘要的论文</title><link href="https://example.com/paper"/>'
+      + '<id>https://example.com/paper</id>'
+      + '<summary>We find that Claude maintains a small set of representations.</summary>'
+      + '</entry></feed>'
+    const ui = bench({ sources: [rssSource('tc')], payloads: { tc: summaryFeed } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /只有摘要的论文/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.storeEntryBody).not.toHaveBeenCalled()
+  })
+})
+
+describe('coming back to the pane puts the reader where they were', () => {
+  /**
+   * The host unmounts the whole right sidebar when another main panel takes
+   * over (the side chat is the everyday case), and the store is created per
+   * mount — so this block renders the pane, lets the reader set something up,
+   * unmounts it and renders a SECOND pane over the same session id.
+   */
+  const english = (): string =>
+    feed('hn', [{
+      title: 'An English article',
+      description: 'First sentence here. Second sentence here.',
+    }, { title: 'Another article', description: 'Different text entirely.' }])
+
+  it('restores the open article and the wall\'s narrowing', async () => {
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    const search = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'An English article' } })
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    first.unmount()
+
+    // The pane is gone and comes back: no state crosses over except this
+    // module's memory of where the reader was standing.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    // The ARTICLE is back — not just the id, and not the wall.
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // …and so is the search that narrowed the wall behind it. The box lives on
+    // the wall, so it takes the back button to see it.
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('An English article')
+    })
+  })
+
+  it('restores a source-filter narrowing across a remount (the 3199 repro)', async () => {  // Live repro on 3199: source filter set (query `#rss-…`), a dockkit split
+    // remounts the pane body, and the box came back EMPTY. Two feeds, so the
+    // narrowing is observable in the rows, not just the box.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    const search = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
+    fireEvent.change(search, { target: { value: '#hn' } })
+    await waitFor(() => {
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
+    })
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await second.settle()
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
+    })
+  })
+
+  it('keeps the narrowing through a remount AND the add-source flow', async () => {
+    // The full 3199 sequence: filter → split (remount) → 新增灵感 → subscribed
+    // → dialog closes. The wall must still be narrowed at the end of it.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: '#hn' } })
+    await screen.findByText('甲源的条目')
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+      addAnswer: { ok: true, value: { outcome: 'subscribed', kind: 'rss', id: 'new', label: '新源' } },
+    })
+    await second.settle()
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    })
+    // The add flow on the remounted pane.
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const dialog = await screen.findByRole('dialog')
+    const input = await within(dialog).findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://example.com/new.xml' } })
+    fireEvent.click(within(dialog).getByText(zh['action.submit']))
+    await within(dialog).findByText(zh['verdict.subscribed'].replace('{label}', '新源'))
+    fireEvent.click(within(dialog).getByText(zh['action.done']))
+    // The narrowing is still there — box and rows alike.
+    expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    await waitFor(() => {
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
+    })
+  })
+
+  it('flushes the last committed narrowing on unmount, even if the mirror never ran', async () => {
+    // The mirror into the page memory is a PASSIVE effect: a pane reseated in
+    // the same commit window as the reader's last gesture can unmount before
+    // the flush. The unmount cleanup is the guarantee that survives that —
+    // cleanups always run. The forgetSession() here stands in for "the mirror
+    // never wrote": without the cleanup flush, the next mount finds nothing.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: '#hn' } })
+    await screen.findByText('甲源的条目')
+    forgetSession()
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await second.settle()
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+    })
+  })
+
+  it('restores a source filter together with the open detail view', async () => {
+    // view=detail + query travel together: the article comes back AND the wall
+    // behind it is still narrowed.
+    const first = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await first.settle()
+    fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: '#hn' } })
+    fireEvent.click((await screen.findAllByRole('button', { name: /甲源的条目/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    first.unmount()
+
+    const second = bench({
+      sources: [rssSource('hn'), rssSource('other')],
+      payloads: {
+        hn: feed('hn', [{ title: '甲源的条目' }]),
+        other: feed('other', [{ title: '乙源的条目' }]),
+      },
+    })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
+      expect(screen.queryByText('甲源的条目')).not.toBeNull()
+      expect(screen.queryByText('乙源的条目')).toBeNull()
+    })
+  })
+
+  it('turns the globe back on from a session this page already built', async () => {
+    installTranslator()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    first.unmount()
+
+    // No click on the globe this time: `Translator.create()` would need user
+    // activation, so the ONLY way this can work is the page's session cache.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    expect(screen.getByText(zh['translate.tip'])).toBeTruthy()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('opens the entry again without asking the host for a body it already has', async () => {
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // The feed published the text itself (`contentHtml`), so the restore costs
+    // no network call at all.
+    expect(second.mocks.fetchEntryBody).not.toHaveBeenCalled()
+  })
+
+  it('re-applies the translation when the body under it is replaced', async () => {
+    // The reported shape: the article is on screen but the translation is gone.
+    // Any body swap — a fetch landing after a restore, an expired cache
+    // re-fetched, a re-render that recreated the element — takes the segmented
+    // DOM with it, so the record has to be honoured again for the NEW body.
+    installTranslator()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+
+    // The same entry, a different body, with no gesture from the reader.
+    act(() => { ui.actions.setArticle('<p>Third sentence here.</p>', false, null) })
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：Third sentence here.')
+    })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('carries the article and its translation into ANOTHER dsh session', async () => {
+    // The report: read (and translate) in one conversation, open the reader in
+    // another, and nothing was there. The pane is mounted per dsh session, so a
+    // per-session memory made "continue in the next chat" a fresh start — the
+    // memory belongs to the PAGE, and the session id is only about the
+    // conversation draft.
+    installTranslator()
+    const first = bench({ sessionId: 'session-a', sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    first.unmount()
+
+    // A different session id, the same page: the article is already open and the
+    // globe is already on, with neither being clicked this time.
+    const second = bench({ sessionId: 'session-b', sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('keeps the wall\'s translation switch and its card texts across a remount', async () => {
+    // The wall's globe has its own switch and its own card texts, and both are
+    // part of "where the reader was". They were mirrored into the page memory on
+    // every change — but initialized from bare defaults, so the FIRST mirror
+    // after a remount overwrote the record with `false`/`{}` before anything
+    // had a chance to read it back.
+    installTranslator()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    await screen.findByText('An English article')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => { expect(screen.getByText('译：An English article')).toBeTruthy() })
+    // Side-by-side, so its restoration is visible on its own mark.
+    fireEvent.click(first.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['translate.bilingual']))
+    await waitFor(() => { expect(first.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(1) })
+    first.unmount()
+
+    // No click anywhere: the wall comes back translated, in the same view.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.getByText('译：An English article')).toBeTruthy() })
+    await waitFor(() => { expect(second.container.querySelectorAll('[class*="cardOrig"]').length).toBeGreaterThanOrEqual(1) })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+})
+
+describe('the translation memory survives a reload', () => {
+  /** One English article with an explicit, hashable body. */
+  const BODY = '<p>First sentence here. Second sentence here.</p><p>A third one closes it.</p>'
+  const SENTENCES = ['First sentence here.', 'Second sentence here.', 'A third one closes it.']
+  const PAIR = 'en→zh'
+  const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+  const page = (): string => feed('hn', [{ title: 'An English article', body: BODY }])
+  /** The entry-map record as the host would hold it, keyed to the body as-is. */
+  const entryRecord = (bodyHash: string): { pair: string; bodyHash: string; segments: Record<string, string> } => ({
+    pair: PAIR,
+    bodyHash,
+    segments: Object.fromEntries(SENTENCES.map(sentence => [translationHash(sentence), `译：${sentence}`])),
+  })
+  /** installTranslator, plus a spy on the session's own `translate`. */
+  const installCountingTranslator = () => {
+    const api = installTranslator()
+    const translate = vi.fn(async (payloadText: string) =>
+      payloadText.split(UNIT_SEPARATOR).map(part => `译：${part}`).join(UNIT_SEPARATOR))
+    api.create.mockImplementation(async () => ({
+      inputQuota: 10_000,
+      measureInputUsage: async (text: string) => text.length,
+      translate,
+    }))
+    return translate
+  }
+  /** Open the article and turn the globe on, with the translation on screen. */
+  const openAndTranslate = async (ui: ReturnType<typeof bench>): Promise<void> => {
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+  }
+
+  it('paints a stored entry translation without asking the model', async () => {
+    // The feature's reason to exist: the reader re-reads long articles, and the
+    // exact-fit map for this body is on disk — so after the globe's gesture,
+    // every sentence is a read, not a model call.
+    const translate = installCountingTranslator()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: page() },
+      entryTranslation: { ok: true, value: { translation: entryRecord(translationHash(BODY)) } },
+    })
+    await ui.settle()
+    await openAndTranslate(ui)
+    expect(translate).not.toHaveBeenCalled()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('skips a stale entry map but still serves the sentences from the global memory', async () => {
+    // The body was re-fetched (a minor edit), so its exact-fit record no longer
+    // answers — bodyHash says so. The unchanged sentences still hit globally.
+    const translate = installCountingTranslator()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: page() },
+      entryTranslation: { ok: true, value: { translation: entryRecord('the-hash-of-some-older-body') } },
+      memorySlice: Object.fromEntries(SENTENCES.map(sentence => [translationHash(sentence), `译：${sentence}`])),
+    })
+    await ui.settle()
+    await openAndTranslate(ui)
+    expect(translate).not.toHaveBeenCalled()
+    expect(ui.mocks.getSentenceTranslations).toHaveBeenCalled()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('persists what a run learned in ONE batch — never per sentence', async () => {
+    const translate = installCountingTranslator()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
+    await ui.settle()
+    await openAndTranslate(ui)
+    expect(translate).toHaveBeenCalled() // a cold run pays the model
+    await waitFor(() => { expect(ui.mocks.rememberSentences).toHaveBeenCalledTimes(1) })
+    const call = ui.mocks.rememberSentences.mock.calls[0]?.[0] as {
+      pair: string
+      entryId?: string
+      bodyHash?: string
+      entries: { hash: string; source: string; target: string }[]
+      recalled?: readonly unknown[]
+    }
+    expect(call.pair).toBe(PAIR)
+    expect(call.entryId).toBe(entryId)
+    expect(call.bodyHash).toBe(translationHash(BODY))
+    expect(call.entries.map(entry => entry.source).sort()).toEqual([...SENTENCES].sort())
+    expect(call.entries.every(entry => entry.hash === translationHash(entry.source))).toBe(true)
+    expect(call.recalled).toEqual([])
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('a reload re-paints the translation from the store — gesture yes, model no', async () => {
+    const translate = installCountingTranslator()
+    // The host's tiers, modeled: what the write verb receives is what the reads
+    // answer next time — the only way this test can pass is real propagation.
+    let storedMemory: Record<string, string> = {}
+    let storedEntry: { pair: string; bodyHash: string; segments: Record<string, string> } | undefined
+    const wire = (ui: ReturnType<typeof bench>): void => {
+      ui.mocks.rememberSentences.mockImplementation(async (request: {
+        pair: string
+        entries: readonly { hash: string; target: string }[]
+        recalled?: readonly { hash: string; target: string }[]
+        entryId?: string
+        bodyHash?: string
+      }) => {
+        const all = [...request.entries, ...(request.recalled ?? [])]
+        for (const entry of all) storedMemory[entry.hash] = entry.target
+        if (request.entryId !== undefined && request.bodyHash !== undefined) {
+          storedEntry = { pair: request.pair, bodyHash: request.bodyHash, segments: Object.fromEntries(all.map(entry => [entry.hash, entry.target])) }
+        }
+        return { ok: true as const, value: { stored: request.entries.length } }
+      })
+      ui.mocks.getEntryTranslation.mockImplementation(async () =>
+        ({ ok: true as const, value: storedEntry === undefined ? {} : { translation: storedEntry } }))
+      ui.mocks.getSentenceTranslations.mockImplementation(async (request: { hashes: readonly string[] }) => ({
+        ok: true as const,
+        value: {
+          translations: Object.fromEntries(
+            request.hashes.flatMap(hash => (storedMemory[hash] === undefined ? [] : [[hash, storedMemory[hash]] as const])),
+          ),
+        },
+      }))
+    }
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
+    wire(first)
+    await first.settle()
+    await openAndTranslate(first)
+    const modelCalls = translate.mock.calls.length
+    expect(modelCalls).toBeGreaterThan(0)
+    first.unmount()
+
+    // The reload, faithfully: module memory is gone (translator sessions, the
+    // sentence mirror), the place in sessionStorage is not — the article comes
+    // back by itself, the globe waits for its gesture.
+    clearMemory()
+    forgetTranslators()
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
+    wire(second)
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    // Not one new model call: the whole body came from the store.
+    expect(translate.mock.calls.length).toBe(modelCalls)
+    // And the recall ride-along bumped the LRU clocks without claiming new content.
+    const last = second.mocks.rememberSentences.mock.calls.at(-1)?.[0] as { entries: readonly unknown[]; recalled?: readonly unknown[] }
+    expect(last.entries).toEqual([])
+    expect(last.recalled).toHaveLength(SENTENCES.length)
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+})
+
+describe('the 最近阅读 page', () => {
+  const recentItem = (entryId: string, over: Partial<ReaderRecentEntry> = {}): ReaderRecentEntry => ({
+    entryId,
+    sourceId: 'hn',
+    title: `读过的 ${entryId}`,
+    url: `https://example.com/${entryId}`,
+    readAt: '2026-09-19T09:00:00.000Z',
+    ...over,
+  })
+
+  it('records every open, with the source and the URL', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '一条' }]) } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /一条/ }))[0] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.recordRead).toHaveBeenCalledTimes(1) })
+    const request = ui.mocks.recordRead.mock.calls[0]?.[0] as { entryId: string; sourceId: string; title: string; url?: string }
+    expect(request.sourceId).toBe('hn')
+    expect(request.title).toBe('一条')
+    expect(request.url).toContain('example.com')
+  })
+
+  it('lists what the host holds, newest first, and reopens one by clicking it', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }, { title: '第二条' }]) },
+      recent: [
+        // The id the pane's own parser gives this item (no guid in the fixture,
+        // so the link is the id): this row points at a REAL entry on the wall.
+        recentItem(`l:https://example.com/hn/${encodeURIComponent('第二条')}`, { title: '第二条' }),
+        recentItem('older', { title: '更早读过的一篇' }),
+      ],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    // The host's copy is what the page renders — the pane mirrors nothing.
+    expect(await screen.findByText('最近阅读')).toBeTruthy()
+    expect(await screen.findByText('第二条')).toBeTruthy()
+    expect(screen.getByText('更早读过的一篇')).toBeTruthy()
+    // …and the second one, whose entry the feed still publishes, opens again.
+    fireEvent.click(screen.getByText('第二条'))
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    expect(ui.mocks.recordRead).toHaveBeenCalledWith(expect.objectContaining({ title: '第二条' }))
+  })
+
+  it('shows an entry the feed no longer publishes, rebuilt from the record', async () => {
+    // A feed's window rolls over: the recent list is the only place left that
+    // knows the reader read this article, and its URL still opens it.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }]) },
+      recent: [recentItem('gone-entry', { title: '已经滚出订阅窗口的一篇' })],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    expect(await screen.findByText('已经滚出订阅窗口的一篇')).toBeTruthy()
+    fireEvent.click(screen.getByText('已经滚出订阅窗口的一篇'))
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+  })
+
+  it('cannot reopen an entry whose source was deleted, and says why', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }]) },
+      recent: [recentItem('orphan', { sourceId: 'deleted-source', title: '源已经删掉的一篇' })],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    const row = (await screen.findByText('源已经删掉的一篇')).closest('button') as HTMLButtonElement
+    expect(row.disabled).toBe(true)
+    expect(row.getAttribute('title')).toBe(zh['recent.sourceGone'])
+  })
+
+  it('empties the list, and keeps the empty state', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '第一条' }]) },
+      recent: [recentItem('e1', { title: '读过的一篇' })],
+    })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    expect(await screen.findByText('读过的一篇')).toBeTruthy()
+    fireEvent.click(screen.getByTitle(zh['recent.clearTitle']))
+    await waitFor(() => { expect(ui.mocks.clearRecent).toHaveBeenCalledTimes(1) })
+    expect(await screen.findByText(zh['recent.empty'])).toBeTruthy()
+    expect(screen.queryByText('读过的一篇')).toBeNull()
+  })
+
+  it('says so when nothing has been read yet', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: feed('hn', [{ title: '第一条' }]) } })
+    await ui.settle()
+    fireEvent.click(screen.getByTitle(zh['action.recent']))
+    expect(await screen.findByText(zh['recent.empty'])).toBeTruthy()
+    // Nothing to clear, so the destructive affordance is not rendered at all.
+    expect(screen.queryByTitle(zh['recent.clearTitle'])).toBeNull()
+  })
+})
+
+/**
+ * A fake layout for the position tests.
+ *
+ * jsdom has no layout engine at all: every rect is zero, the scroller never
+ * clamps, and `scrollHeight` is 0. The anchored position is about exactly the
+ * thing jsdom cannot provide — a document whose height changes as images load —
+ * so the tests state that geometry instead of pretending it away.
+ *
+ * The model: the scroller is 600px tall; the article starts at its top; each
+ * top-level block is `blockHeight` tall; the article scrolls up as the reader
+ * scrolls down (which is what a real rect reports).
+ *
+ * @param blockHeight - how tall each top-level block is.
+ */
+function stubLayout(blockHeight = 300): void {
+  const rect = (top: number, height: number): DOMRect => ({
+    top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}),
+  }) as DOMRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element): DOMRect {
+    const el = this as HTMLElement
+    const scrolled = (document.querySelector('[class*="detailBody"]') as HTMLElement | null)?.scrollTop ?? 0
+    const classes = (el.className ?? '').toString()
+    if (classes.includes('detailBody')) return rect(0, 600)
+    if (classes.includes('article')) return rect(-scrolled, 10_000)
+    const parent = el.parentElement
+    if (parent !== null && (parent.className ?? '').toString().includes('article')) {
+      const index = [...parent.children].indexOf(el)
+      return rect(index * blockHeight - scrolled, blockHeight)
+    }
+    return rect(0, 0)
+  })
+}
+
+/**
+ * A variant of the fake layout whose blocks are AS TALL AS THEIR TEXT IS LONG.
+ *
+ * That is the property the translation case needs: a translated block sets
+ * different words of a different length, so its height must actually change —
+ * a fixed-height stub would make "the geometry moved" untestable. Block tops
+ * accumulate; the translation's reveal lines (data-reader-reveal) are not
+ * blocks, exactly as `articleBlocks` sees them.
+ */
+function stubTextLayout(): void {
+  const rect = (top: number, height: number): DOMRect => ({
+    top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}),
+  }) as DOMRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element): DOMRect {
+    const el = this as HTMLElement
+    const scrolled = (document.querySelector('[class*="detailBody"]') as HTMLElement | null)?.scrollTop ?? 0
+    const classes = (el.className ?? '').toString()
+    if (classes.includes('detailBody')) return rect(0, 600)
+    if (classes.includes('article')) return rect(-scrolled, 100_000)
+    const parent = el.parentElement
+    if (parent !== null && (parent.className ?? '').toString().includes('article')) {
+      const blocks = [...parent.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+      let top = 0
+      for (const block of blocks) {
+        const height = Math.max(40, (block.textContent ?? '').length * 10)
+        if (block === el) return rect(top - scrolled, height)
+        top += height
+      }
+      return rect(0, 0)
+    }
+    return rect(0, 0)
+  })
+}
+
+describe('the reading position survives the trip', () => {
+
+  // Real top-level blocks, because an anchor IS a block index: a body that is
+  // one bare text run has no block to anchor to.
+  const longFeed = (): string =>
+    feed('hn', [{
+      title: 'An English article',
+      description: 'First sentence here. Second sentence here.',
+      body: '<p>First sentence here. Second sentence here.</p>'
+        + '<p>Another paragraph entirely, with more words in it.</p>'
+        + '<p>Third paragraph here, closing the piece.</p>',
+    }])
+
+  /**
+ * Let the pane's post-render frame run.
+ *
+ * The article is measured there (one layout pass, not one per scroll event), so
+ * a test that scrolls or asserts a position has to let that frame land first.
+ */
+const settleFrame = async (): Promise<void> => {
+  await act(async () => { await new Promise(resolve => { setTimeout(resolve, 30) }) })
+}
+
+/** The pane's wall scroller (the detail view has its own). */
+  const wallScroller = (container: HTMLElement): HTMLElement =>
+    container.querySelector('[class*="scroll"]') as HTMLElement
+
+  it('puts the article back to where the reader was when its body is replaced', async () => {
+    // The body can arrive in two steps — the feed's summary first, the real page
+    // after the fetch — and one application clamps the offset against the short
+    // version. The saved position is the target, and it is re-applied to
+    // whatever body ends up on screen.
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // The wheel is the gesture that makes the scroll the reader's (a bare
+    // scroll event is programmatic as far as the pane is concerned).
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 640
+    fireEvent.scroll(scroller)
+
+    act(() => {
+      ui.actions.setArticle('<p>Third sentence here.</p>', false, null)
+      // What a browser does to the scroller when the content underneath it is
+      // replaced: the offset is clamped away. jsdom keeps it, so the loss is
+      // simulated explicitly — otherwise the assertion would pass without any
+      // restore at all.
+      scroller.scrollTop = 0
+    })
+    await waitFor(() => { expect(scroller.scrollTop).toBe(640) })
+  })
+
+  it('restores the BLOCK the reader was in, not the pixel offset', async () => {
+    // The paper's images carry no dimensions, so by the time the reader comes
+    // back the document is a different height than when they left. A pixel
+    // offset then points at different content — the anchor does not.
+    stubLayout()
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    // A deliberately absurd pixel offset: only the anchor can produce the target.
+    rememberReadingPosition(entryId, { block: 1, offset: 50, top: 999_999 })
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // Block 1 starts 300px into the article, 50px into it: 350.
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    vi.restoreAllMocks()
+  })
+
+  it('records the block the reader stopped in', async () => {
+    stubLayout()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 620
+    fireEvent.scroll(scroller)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    // 620px in: block 2 (600..900), 20px into it — and the same place as TEXT:
+    // block 2 is "Third paragraph here, closing the piece." (40 chars), so 20 of
+    // 300px is the 3rd character. The text offset is what a translated (taller
+    // or shorter) rendering of the same block can still resolve.
+    await waitFor(() => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
+    })
+    vi.restoreAllMocks()
+  })
+
+  it('restores the article and its place after the PAGE restarts', async () => {
+    // What the reader kept reporting: the page restarts (whatever restarted it),
+    // and the store, the parser and every module-level map are empty again. The
+    // place is in sessionStorage precisely for this — no memory survives, and the
+    // article still comes back where it was.
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    stubLayout()
+    sessionStorage.setItem('dsh-reader:place', JSON.stringify({
+      view: 'detail',
+      openEntryId: entryId,
+      scroll: { [entryId]: { block: 1, offset: 50, top: 350 } },
+    }))
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    // No click on a card, no memory: the place alone brings it back.
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // The id the pane's own parser gives this entry: the place has to name the
+    // same entry, or nothing is found and the article opens at the top.
+    expect((ui.mocks.recordRead.mock.calls[0]?.[0] as { entryId: string }).entryId).toBe(entryId)
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    await waitFor(() => { expect(scroller.scrollTop).toBe(350) })
+    vi.restoreAllMocks()
+  })
+
+  it('restores the place after a TAB switch remounts the pane (the 3080 report)', async () => {
+    // The exact reported flow: reading partway down an article, click another
+    // sidebar tab (the host unmounts this pane's body entirely — dockkit renders
+    // only the active tab), click back (a fresh mount). The position must be
+    // back — from page memory this time, not a seeded store.
+    stubLayout()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller1 = first.container.querySelector('[class*="detailBody"]') as HTMLElement
+    fireEvent.wheel(scroller1)
+    scroller1.scrollTop = 620
+    fireEvent.scroll(scroller1)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    await waitFor(() => {
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
+    })
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await settleFrame()
+    const scroller2 = second.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // The point: NOT the top. jsdom has no Range geometry, so the text-offset
+    // path answers proportionally there (a few px into the block rather than
+    // the exact pixel) — the assertion is the block, not a fake-exact pixel.
+    await waitFor(() => {
+      expect(scroller2.scrollTop).toBeGreaterThanOrEqual(600)
+      expect(scroller2.scrollTop).toBeLessThanOrEqual(650)
+    })
+    vi.restoreAllMocks()
+  })
+
+  it('restores the place when the remount happens WITH the globe on', async () => {
+    // The realistic 3080 flow: the reader reads long English articles in
+    // Chinese. The anchor is recorded against the TRANSLATED geometry; the
+    // remount first restores onto the ORIGINAL body, then the translation
+    // re-applies and the re-anchor must land on the same sentence.
+    installTranslator()
+    stubTextLayout()
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await first.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    const scroller1 = first.container.querySelector('[class*="detailBody"]') as HTMLElement
+    const article1 = first.container.querySelector('[class*="article"]') as HTMLElement
+    // Scroll to block 1 ("Another paragraph entirely…") in the TRANSLATED layout.
+    const blocks1 = [...article1.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+    const heightOf = (element: Element): number => Math.max(40, (element.textContent ?? '').length * 10)
+    const block1Top = heightOf(blocks1[0] as Element)
+    fireEvent.wheel(scroller1)
+    scroller1.scrollTop = block1Top + 100
+    fireEvent.scroll(scroller1)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    const recorded = await waitFor(() => {
+      const anchor = readSession().scroll?.[entryId]
+      expect(anchor?.block).toBe(1)
+      expect(anchor?.textLength).toBeGreaterThan(0)
+      return anchor
+    })
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await second.settle()
+    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    // The translation comes back by itself (the page's session cache), then the
+    // position must land on the same sentence in the SAME translated geometry.
+    await waitFor(() => {
+      expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    await settleFrame()
+    const scroller2 = second.container.querySelector('[class*="detailBody"]') as HTMLElement
+    const article2 = second.container.querySelector('[class*="article"]') as HTMLElement
+    const blocks2 = [...article2.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+    const expectedTop = heightOf(blocks2[0] as Element)
+    const expectedOffset = Math.round(((recorded?.text ?? 0) / (recorded?.textLength ?? 1)) * heightOf(blocks2[1] as Element))
+    await waitFor(() => { expect(scroller2.scrollTop).toBe(expectedTop + expectedOffset) })
+    vi.restoreAllMocks()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+  })
+
+  it('puts the wall back where it was after the pane remounts', async () => {
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await first.settle()
+    await screen.findByText('An English article')
+    const scroller = wallScroller(first.container)
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 300
+    fireEvent.scroll(scroller)
+    first.unmount()
+
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await second.settle()
+    await screen.findByText('An English article')
+    await waitFor(() => { expect(wallScroller(second.container).scrollTop).toBe(300) })
+  })
+
+  it('a clamp from a shrinking document is not recorded as the reader\'s position', async () => {
+    // The 3080 mechanism: on the remount, the translation rebuild shrank the
+    // document under the scrolled scroller, the browser clamped it, and the
+    // clamp's scroll event — indistinguishable from the reader's by value —
+    // overwrote the stored anchor with the clamped value (and tripped the
+    // "reader took over" flag, ending the settle window). Only a scroll the
+    // reader CAUSED may be recorded.
+    stubLayout()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 620
+    fireEvent.scroll(scroller)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    await waitFor(() => {
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
+    })
+    // What a browser clamp looks like from this side: the document shrank, the
+    // offset fell, a scroll event fired — with no gesture anywhere near it
+    // (the clock is aged past the gesture window; jsdom cannot clamp, so the
+    // clamp's shape is stated by hand).
+    const realNow = Date.now()
+    const nowSpy = vi.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(realNow + 5000)
+    scroller.scrollTop = 180
+    fireEvent.scroll(scroller)
+    nowSpy.mockRestore()
+    await settleFrame()
+    expect(readSession().scroll?.[entryId]).toEqual({ block: 2, offset: 20, top: 620, text: 3, textLength: 40 })
+    vi.restoreAllMocks()
+  })
+
+  it('a clamp on the wall is not recorded as the wall\'s position either', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    await screen.findByText('An English article')
+    const scroller = wallScroller(ui.container)
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 300
+    fireEvent.scroll(scroller)
+    await waitFor(() => { expect(readSession().wallScroll).toBe(300) })
+    // Same clamp shape on the wall (a narrowing filter shrank the list): no
+    // gesture, so the wall's recorded place must not move.
+    const realNow = Date.now()
+    const nowSpy = vi.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(realNow + 5000)
+    scroller.scrollTop = 40
+    fireEvent.scroll(scroller)
+    nowSpy.mockRestore()
+    await settleFrame()
+    expect(readSession().wallScroll).toBe(300)
+  })
+
+  it('keeps the reader at the same sentence when the translation rewrites the geometry', async () => {
+    // The drift the text offset fixes: the anchor's pixel offset into a block
+    // is only valid for the layout it was measured in, and the translated view
+    // sets different words — so switching the globe on used to leave the reader
+    // wherever the stale pixels happened to point.
+    installTranslator()
+    stubTextLayout()
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+    await settleFrame()
+    const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
+    // Block 0 is 42 chars (420px); 500px in is block 1 ("Another paragraph
+    // entirely…", 50 chars = 500px), 80px into it — the 8th character.
+    fireEvent.wheel(scroller)
+    scroller.scrollTop = 500
+    fireEvent.scroll(scroller)
+    const entryId = `l:https://example.com/hn/${encodeURIComponent('An English article')}`
+    await waitFor(() => {
+      expect(readSession().scroll?.[entryId]).toEqual({ block: 1, offset: 80, top: 500, text: 8, textLength: 50 })
+    })
+
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+
+    // After the translation lands, the blocks are taller (the mock's 译： prefix
+    // lengthens every sentence) and the anchor is re-applied THROUGH the text:
+    // block 1 still holds the same sentence, so its new top plus the same
+    // FRACTION of its new text is where the reader must end up — no scroll
+    // gesture involved.
+    const article = ui.container.querySelector('[class*="article"]') as HTMLElement
+    const blocks = [...article.children].filter(child => child.getAttribute('data-reader-reveal') !== '1')
+    const heightOf = (element: Element): number => Math.max(40, (element.textContent ?? '').length * 10)
+    const expected = heightOf(blocks[0] as Element) + Math.round((8 / 50) * heightOf(blocks[1] as Element))
+    await waitFor(() => { expect(scroller.scrollTop).toBe(expected) })
+    // Sanity: the expected target really is a DIFFERENT place than where the
+    // pixel offset alone would have left the reader (block 1's old top + 80).
+    expect(expected).not.toBe(420 + 80)
+    vi.restoreAllMocks()
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })

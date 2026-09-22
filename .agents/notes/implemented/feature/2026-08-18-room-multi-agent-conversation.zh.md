@@ -51,7 +51,7 @@ Status: implemented
 
 ### 通知：成员间转派（一阶段：人工确认）
 
-- **主通道（桥接）**：local-agent 家族的 member-channel 提案（`proposals/active/2026-08-19-local-agent-member-channel.md`）给成员 CLI 注入桥接 MCP 工具 `member_message(to, text)`（每 run 一次性 token 鉴权、host 侧同父校验）——结构化工具调用，run 中途即可发，身份不可伪造。
+- **主通道（桥接）**：local-agent 家族的 member-channel 提案（`proposals/closed/2026-08-19-local-agent-member-channel.md`）给成员 CLI 注入桥接 MCP 工具 `member_message(to, text)`（每 run 一次性 token 鉴权、host 侧同父校验）——结构化工具调用，run 中途即可发，身份不可伪造。
 - **闸门交接**：家族 bridge 投递前探测 `ctx.get('room')`；父会话是 room 时不直发，调 room 的接收方法 `room.receiveMemberMessage({ from, to, content, parentSessionId, provenance })`，由 room 判定归属并按闸门配置决定**待确认卡**还是**自动派发**；room 缺席或父会话非 room，家族直发。闸门所有权单一归于 room。
 - **回执透传**：闸门结果（`sent` / `pending-confirm` / `busy`）经桥接返回给发送方成员，让它的结论诚实（"已通知，待房间主人确认" ≠ "已送达"）。
 - **降级通道（文本解析）**：桥接缺席时（旧版本家族、非家族成员），room 检出成员回复**末尾独占行**的 `@名字 <内容>` 作为待转派（该格式写进名册注入，行文中"提到"与"通知"机械可区分）。
@@ -81,7 +81,7 @@ Status: implemented
 
 ### 对 local-agent 的需求
 
-委派门面（`start` / `resume` / `cancel`、reattach 配方、进度事件、`delegations.jsonl` 持久化——提案 `proposals/active/2026-08-18-local-agent-delegation-api.md`，M1–M4）**已交付并验收**。三条新需求，已提交家族评估：
+委派门面（`start` / `resume` / `cancel`、reattach 配方、进度事件、`delegations.jsonl` 持久化——提案 `proposals/closed/2026-08-18-local-agent-delegation-api.md`，M1–M4）**已交付并验收**。三条新需求，已提交家族评估：
 
 > **R1——双向成员通道**：~~实现官方 continuable 接口~~——经家族评审否决（`prepareContinuable` 只返回种子数据，continuation manager 自行创建进程内 dsh Agent，与 CLI 无关；官方 README 亦留白 host-user continuation），**已由 member-channel 提案承接**：可写 composer（chain priority 遮蔽只读接管）+ `promptMember`/`stopMember` Remote + 桥接 MCP 成员互通知。room 侧配合点：暴露 `receiveMemberMessage` 闸门入口（见「通知」一节）；R1 不再向 continuable 方向提需求。
 >

@@ -20,8 +20,11 @@
  * @module @khorsheed/dsh-local-agent-dsh/model-broker
  */
 
+import { extendModelDirectory } from '@khorsheed/dsh-local-agent'
+import type { MemberConfigurationAdapter } from '@khorsheed/dsh-local-agent'
+import type { DshModelCatalog } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { LocalAgentModelBroker, LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelBroker, LocalAgentModelInfo, LocalAgentModelDirectory, LocalAgentMemberBinding, LocalAgentMemberConfiguration, LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 
 /** Everything the broker reads or drives, injected so the unit specs stay small. */
 export interface DshModelBrokerDeps {
@@ -35,6 +38,7 @@ export interface DshModelBrokerDeps {
    * the selection is unreadable (absence is the honest answer, never a guess).
    */
   readonly cliDefault: () => string | undefined
+  readonly defaultEffort?: () => string | undefined
   /**
    * The host's adapter enumeration spelled `provider/model` — discovered
    * host-side via `ctx.llm` and cached by the caller (refreshed on
@@ -42,6 +46,7 @@ export interface DshModelBrokerDeps {
    * service is absent: the other choice layers still answer.
    */
   readonly discovered: () => readonly string[]
+  readonly catalog?: DshModelCatalog
   /** The card's recent-model memory (the suggestion vocabulary's tail). */
   readonly recentModels: () => readonly string[]
   /** Whether the live driver is on (the member's rounds bind resident runtimes). */
@@ -77,6 +82,41 @@ function dedupeChoices(layers: ReadonlyArray<string | undefined>): string[] {
 export class DshModelBroker implements LocalAgentModelBroker {
   constructor(private readonly deps: DshModelBrokerDeps) {}
 
+  configurationAdapter(binding: LocalAgentMemberBinding): MemberConfigurationAdapter {
+    const resolve = async (selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration> => {
+      let directory = this.deps.catalog?.read()
+      if (directory?.status === 'loading') directory = await this.deps.catalog?.refresh()
+      const model = selection.model.mode === 'value' ? selection.model.value
+        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel() ?? this.deps.cliDefault()
+      const entry = directory?.entries.find(entry => entry.value === model)
+      const requested = selection.effort.mode === 'value' ? selection.effort.value : selection.effort.mode === 'inherit' ? binding.effort : undefined
+      const effort = requested ?? this.deps.defaultEffort?.() ?? entry?.reasoning?.default
+      if (effort !== undefined && !entry?.reasoning?.options.some(option => option.value === effort)) {
+        throw new Error('DSH has not advertised this reasoning effort for the selected model')
+      }
+      return { ...model === undefined ? {} : { model }, ...effort === undefined ? {} : { effort } }
+    }
+    return {
+      validate: async selection => { await resolve(selection) }, prepare: resolve,
+      apply: async selection => { const resolved = await resolve(selection); await this.deps.retireRuntime(binding.childSessionId); return resolved },
+      reconcile: async state => {
+        if (this.activeDelegations().includes(binding.childSessionId)) return { active: true, matches: 'unknown', resolved: {} }
+        await this.deps.retireRuntime(binding.childSessionId)
+        return { active: false, matches: 'current', resolved: await resolve(state.current.selection) }
+      },
+    }
+  }
+
+  async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
+    if (refresh) await this.deps.catalog?.refresh()
+    return this.modelInfo(childSessionId).directory ?? { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 0 }
+  }
+
+  async *followModelDirectory(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    if (this.deps.catalog === undefined) { yield await this.modelDirectory(childSessionId); return }
+    for await (const _snapshot of this.deps.catalog.follow(signal)) yield await this.modelDirectory(childSessionId)
+  }
+
   /** The member's in-flight rounds (an empty answer on a core that predates the read). */
   private activeDelegations(): readonly string[] {
     const registry = this.deps.ctx.localAgent as unknown as {
@@ -99,6 +139,7 @@ export class DshModelBroker implements LocalAgentModelBroker {
   modelInfo(childSessionId?: string, delegationModel?: string): LocalAgentModelInfo {
     const settings = this.deps.settingsModel()
     const cliDefault = this.deps.cliDefault()
+    const directory = this.deps.catalog?.read()
     const override = childSessionId === undefined ? undefined : this.deps.overrides.get(childSessionId)
     const delegation = delegationModel?.trim() === '' ? undefined : delegationModel
     const effective = override ?? delegation ?? settings ?? cliDefault
@@ -114,6 +155,7 @@ export class DshModelBroker implements LocalAgentModelBroker {
       ...delegation === undefined ? {} : { delegation },
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
+      ...directory === undefined ? {} : { directory: extendModelDirectory(directory, [settings, cliDefault], this.deps.recentModels()) },
       choices: dedupeChoices([settings, cliDefault, ...this.deps.discovered(), ...this.deps.recentModels()]),
       live: this.deps.live(),
       switchable: !inFlight,
@@ -129,6 +171,7 @@ export class DshModelBroker implements LocalAgentModelBroker {
    * the run.
    */
   async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    if (typeof this.deps.ctx.localAgent.setMemberModel === 'function') return this.deps.ctx.localAgent.setMemberModel(childSessionId, model)
     if (this.activeDelegations().includes(childSessionId)) {
       throw new Error(`subagent-dsh: 成员有进行中的委派轮次，等其完成后再切换模型 (child session ${childSessionId})`)
     }

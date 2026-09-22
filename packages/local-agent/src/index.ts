@@ -19,7 +19,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, chmodSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -29,6 +29,20 @@ import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+// The durable reader validates plugin vocabulary before replay. Register in
+// both resolution planes: source-based host toolchains and installed bundles
+// can otherwise hold separate catalog instances (the Room journal uses the
+// same host seam). Keep registration after uninstall until process exit so
+// existing member histories remain readable.
+const streamCatalogSpecifier = ['@deepseek-ai/dsh-session', 'src', 'known-event-types'].join('/')
+const streamCatalogs = await Promise.all([
+  import('@deepseek-ai/dsh-session'),
+  import(streamCatalogSpecifier).catch(() => undefined),
+])
+for (const catalog of streamCatalogs) {
+  (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+}
+
 import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
@@ -42,6 +56,12 @@ import type {
   LocalAgentEffectiveSettings,
   LocalAgentMemberRun,
   LocalAgentModelBroker,
+  LocalAgentMemberBinding,
+  LocalAgentMemberControlState,
+  LocalAgentMemberInbox,
+  LocalAgentMemberConfiguration,
+  LocalAgentControlReceipt,
+  LocalAgentAppliedConfiguration,
   LocalAgentRosterRow,
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
@@ -50,6 +70,11 @@ import type {
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 import { MemberChannel } from './member-channel.ts'
+import { MemberInbox } from './member-inbox.ts'
+import { PreparedMembers } from './prepared-members.ts'
+import { MemberControls } from './member-controls.ts'
+import { FileMemberControlStorage } from './member-control-storage.ts'
+import type { MemberConfigurationController } from './member-control.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'local-agent'
@@ -86,6 +111,13 @@ export type {
 } from './types.ts'
 
 export { delegationEnv } from './env.ts'
+export { ModelDirectoryCache, extendModelDirectory, modelDirectoryContextKey } from './model-directory.ts'
+export { MemberConfigurationController } from './member-control.ts'
+export type { MemberConfigurationAdapter, MemberControlStorage, MemberControlRecord } from './member-control.ts'
+export { FileMemberControlStorage } from './member-control-storage.ts'
+export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
+import { LocalAgentStreams } from './live-stream.ts'
+export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'
 
 export {
@@ -310,7 +342,16 @@ export interface LocalAgentScopeProvisionResult {
 /**
  * One registered local code-agent harness.
  */
+export interface LocalAgentPreparation {
+  binding: LocalAgentMemberBinding
+  childSession: Session
+  configuration: LocalAgentAppliedConfiguration
+  signal: AbortSignal
+}
+
 export interface LocalAgentHarness {
+  /** Native handshake/configuration only; no prompt, turn, or side-effecting task. */
+  prepareMember?: (request: LocalAgentPreparation) => Promise<void>
   /** Command prefix and scoped-home directory name (lowercase, dashed). */
   name: string
   /** Human display name, used in command replies and UI labels. */
@@ -685,6 +726,8 @@ function parseDelegationLine(
     // The model the delegation requested. A line without one is a delegation
     // that named none — which every line written before the field existed is.
     ...typeof model === 'string' && model !== '' ? { model } : {},
+    ...typeof record['effort'] === 'string' && record['effort'] !== '' ? { effort: record['effort'] } : {},
+    ...typeof record['configurationLock'] === 'string' && record['configurationLock'] !== '' ? { configurationLock: record['configurationLock'] } : {},
   }
 }
 
@@ -877,6 +920,99 @@ function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signa
  * @module @khorsheed/dsh-local-agent
  */
 export class LocalAgentRegistry {
+  private readonly preparedMembers: PreparedMembers
+  private readonly preparations = new Map<string, { signature: string; promise: Promise<string> }>()
+  readonly memberInbox: MemberInbox
+  private readonly memberControls: MemberControls
+  /** All provider starts, including direct tool starts, acquire the same whole-turn lease. */
+  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>): Promise<SubagentRun> {
+    this.memberInbox.assertAdmission(binding.childSessionId)
+    return this.memberControls.run(binding, start, signal, () => { this.memberInbox.assertAdmission(binding.childSessionId); return onAdmitted?.() })
+  }
+
+  private requireInboxMember(childSessionId: string): LocalAgentDelegationRecord {
+    const record = this.getDelegation(childSessionId)
+    if (record === undefined) throw new Error('localAgent: no delegation recorded for this member')
+    if (!this.supportsMemberConfiguration(record.provider)) throw new Error('The member provider does not support queued input admission')
+    if (record.configurationLock !== undefined) throw new Error('Frozen evaluation members do not accept extra human input')
+    return record
+  }
+
+  enqueueMemberInput(childSessionId: string, text: string, requestId: string): string {
+    const record = this.requireInboxMember(childSessionId)
+    this.requireLiveParent(record.parentSessionId)
+    return this.memberInbox.enqueue(childSessionId, text, requestId).id
+  }
+  resumeMemberInbox(childSessionId: string): void {
+    const record = this.requireInboxMember(childSessionId)
+    this.requireLiveParent(record.parentSessionId)
+    this.memberInbox.resume(childSessionId)
+  }
+  readMemberInbox(childSessionId: string): LocalAgentMemberInbox {
+    // Preparation establishes the same stable child identity before a delegation
+    // transcript exists. Its empty inbox must be readable by the composer.
+    if (this.isPreparedMember(childSessionId)) return this.memberInbox.read(childSessionId)
+    this.requireInboxMember(childSessionId)
+    return this.memberInbox.read(childSessionId)
+  }
+
+  queuedMemberRounds(childSessionId: string): number { return this.memberControls.queuedCount(childSessionId) }
+
+  /** The admitted snapshot belongs to this exact run object, including after settle. */
+  runConfiguration(run: object): LocalAgentAppliedConfiguration | undefined { return this.memberControls.configurationOf(run) }
+  supportsMemberConfiguration(provider: string): boolean { return this.harnessForProvider(provider)?.modelBroker?.configurationAdapter !== undefined }
+
+  private memberControl(childSessionId: string): MemberConfigurationController {
+    let binding = this.memberControls.binding(childSessionId)
+    if (binding === undefined) {
+      const record = this.getDelegation(childSessionId)
+      if (record === undefined || record.cwd === undefined) binding = this.preparedMembers.read(childSessionId)?.binding
+      else binding = { ...record, cwd: record.cwd }
+      if (binding === undefined) throw new Error('localAgent: member execution identity is unavailable')
+    }
+    return this.memberControls.get(binding)
+  }
+
+  /** Execution identity is available before the first native transcript exists. */
+  memberBinding(childSessionId: string): LocalAgentMemberBinding | undefined {
+    const known = this.memberControls.binding(childSessionId)
+    if (known !== undefined) return known
+    const record = this.getDelegation(childSessionId)
+    if (record?.cwd !== undefined) return { ...record, cwd: record.cwd }
+    return this.preparedMembers.read(childSessionId)?.binding
+  }
+
+  memberConfiguration(childSessionId: string): LocalAgentMemberControlState {
+    return this.memberControl(childSessionId).read()
+  }
+
+  selectMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number, selection: LocalAgentMemberConfiguration): Promise<LocalAgentControlReceipt> {
+    return this.memberControl(childSessionId).select(requestId, expectedRevision, selection)
+  }
+
+  cancelMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number): LocalAgentControlReceipt {
+    return this.memberControl(childSessionId).cancel(requestId, expectedRevision)
+  }
+
+  retryMemberConfiguration(childSessionId: string, expectedRevision: number): Promise<void> {
+    return this.memberControl(childSessionId).retry(expectedRevision)
+  }
+
+  followMemberConfiguration(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentMemberControlState> {
+    return this.memberControl(childSessionId).follow(signal)
+  }
+
+  /** Compatibility write routes through the durable slot, including while busy. */
+  async setMemberModel(childSessionId: string, model: string | undefined): Promise<void> {
+    const state = this.memberConfiguration(childSessionId)
+    const selection = state.pending?.selection ?? state.current.selection
+    const receipt = await this.selectMemberConfiguration(childSessionId, randomUUID(), state.revision, {
+      ...selection, model: model?.trim() ? { mode: 'value', value: model } : { mode: 'inherit' },
+    })
+    if (!['pending', 'applying', 'applied'].includes(receipt.status)) throw new Error(receipt.error ?? receipt.status)
+  }
+  /** Independent live output transport for mirrored sessions without native Agents. */
+  readonly liveStreams: LocalAgentStreams = new LocalAgentStreams()
   private readonly harnesses = new Map<string, LocalAgentHarness>()
   /**
    * Named scopes materialized in this host process, keyed exactly like their
@@ -1048,10 +1184,24 @@ export class LocalAgentRegistry {
     private readonly homesRoot: string,
     private readonly loginPromptTimeoutMs: number,
   ) {
+    this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
+    this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, text, signal, onAdmitted) => {
+      const record = this.requireInboxMember(childSessionId)
+      return this.resume(record.parentSessionId, record.provider, childSessionId, [{ type: 'text', text }], {
+        signal, onAdmitted, ...record.scope === undefined ? {} : { scope: record.scope }, ...record.cwd === undefined ? {} : { cwd: record.cwd },
+      })
+    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
+    this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
+      const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
+      if (adapter === undefined) throw new Error(`localAgent: ${binding.provider} exposes no configuration admission adapter`)
+      return adapter
+    }, error => { this.ctx.logger.warn(`localAgent: member control persistence failed: ${String(error)}`) })
     // Reattached child sessions leave the live store, in-flight run
     // heartbeats stop, and every cached child-session write handle closes,
     // when the plugin unloads.
     ctx.effect(() => () => {
+      this.memberInbox.dispose()
+      this.liveStreams.dispose()
       for (const entry of this.runs.values()) {
         if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
       }
@@ -1418,6 +1568,12 @@ export class LocalAgentRegistry {
    *   parent session id, and CLI session id.
    */
   recordDelegation(record: LocalAgentDelegationRecord): void {
+    const binding = this.memberControls.binding(record.childSessionId)
+    if (binding !== undefined) record = {
+      ...record,
+      ...binding.effort === undefined ? {} : { effort: binding.effort },
+      ...binding.configurationLock === undefined ? {} : { configurationLock: binding.configurationLock },
+    }
     // A settle that beat the record (see pendingRoundObservations) fills only
     // the fields the record itself does not carry — the record's own values
     // win.
@@ -1639,6 +1795,7 @@ export class LocalAgentRegistry {
   recordRoundSettled(
     childSessionId: string,
     round: {
+      readonly observedEffort?: string
       readonly observedModel?: string
       readonly cliVersion?: string
       readonly usage?: TokenUsage
@@ -1674,6 +1831,7 @@ export class LocalAgentRegistry {
     // previous round's count with the newest one.
     this.reportRunProgress(childSessionId, {
       kind: 'settled',
+      ...round.observedEffort === undefined ? {} : { observedEffort: round.observedEffort },
       ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
       ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
       ...round.usage === undefined ? {} : { usage: round.usage },
@@ -1715,6 +1873,17 @@ export class LocalAgentRegistry {
    */
   isResumeLocked(childSessionId: string): boolean {
     return this.resumeLocks.has(childSessionId)
+  }
+
+  private memberBridgeAvailable = false
+
+  /** Listener lifecycle owns this flag; it is never persisted across host restarts. */
+  setMemberBridgeAvailable(available: boolean): void { this.memberBridgeAvailable = available }
+
+  /** Transport/readiness capability only; authenticated generation needs separate acceptance. */
+  canCoordinateRoom(childSessionId: string): boolean {
+    const binding = this.memberBinding(childSessionId)
+    return this.memberBridgeAvailable && binding !== undefined && this.harnessForProvider(binding.provider)?.prepareMember !== undefined
   }
 
   /**
@@ -1771,6 +1940,66 @@ export class LocalAgentRegistry {
     return { command: process.execPath, args: [fileURLToPath(new URL('./member-bridge.js', import.meta.url))] }
   }
 
+  /** Prepare a roster-owned identity without a paid prompt; repeated calls coalesce. */
+  prepareMember(parentSessionId: string, provider: string, childSessionId: string, options: DelegationCallOptions = {}): Promise<string> {
+    const signature = JSON.stringify([parentSessionId, provider, options.cwd, options.scope, options.model, options.effort, options.configurationLock, options.exec, options.preparedMemberId])
+    const existing = this.preparations.get(childSessionId)
+    if (existing !== undefined) return existing.signature === signature ? existing.promise : Promise.reject(new Error('Prepared member identity cannot change'))
+    const preparation = this.prepareMemberNow(parentSessionId, provider, childSessionId, options)
+      .finally(() => this.preparations.delete(childSessionId))
+    this.preparations.set(childSessionId, { signature, promise: preparation })
+    return preparation
+  }
+
+  private async prepareMemberNow(parentSessionId: string, provider: string, childSessionId: string, options: DelegationCallOptions): Promise<string> {
+    options.signal?.throwIfAborted()
+    if (options.exec !== undefined || options.preparedMemberId !== undefined) throw new Error('Member preparation requires a live local harness')
+    const parent = this.requireLiveParent(parentSessionId)
+    this.requireProvider(this.requireSubagents(), provider)
+    const harness = this.harnessForProvider(provider)
+    if (harness?.prepareMember === undefined) throw new Error('Harness has no native member preparation capability')
+    const cwd = resolveChildCwd(parent.session.header.cwd, options.cwd)
+    if (cwd === undefined || !statSync(cwd).isDirectory()) throw new Error('Member working directory is unavailable')
+    const binding: LocalAgentMemberBinding = { childSessionId, parentSessionId, provider, cwd,
+      ...options.scope === undefined ? {} : { scope: options.scope },
+      ...options.model === undefined ? {} : { model: options.model },
+      ...options.effort === undefined ? {} : { effort: options.effort },
+      ...options.configurationLock === undefined ? {} : { configurationLock: options.configurationLock },
+    }
+    const previous = this.preparedMembers.read(childSessionId)
+    if (previous !== undefined && JSON.stringify(previous.binding) !== JSON.stringify(binding)) throw new Error('Prepared member identity cannot change')
+    if (previous?.phase === 'starting' || previous?.phase === 'used' || this.getDelegation(childSessionId) !== undefined) throw new Error('Member has already entered execution; use its existing controls')
+    const status = await this.statusOf(harness.name, options.scope)
+    if (!status.authenticated) throw new Error('Member harness is not authenticated in its bound scope')
+    this.preparedMembers.write({ version: 1, binding, phase: 'preparing' })
+    const sessions = this.ctx.get('sessions')
+    if (sessions === undefined) throw new Error('Session store is unavailable')
+    let childSession = sessions.get(SessionId(childSessionId))
+    if (childSession === undefined) {
+      const stored = await this.ctx.get('sessionPersistence')?.stat(SessionId(childSessionId))
+      if (stored !== undefined && stored !== null) {
+        await this.reattachChildSession(childSessionId)
+        childSession = sessions.get(SessionId(childSessionId))
+      }
+      childSession ??= sessions.create(SessionId(childSessionId), { meta: { cwd, parentSession: parent.session.id, origin: 'subagent', delegationDepth: (parent.session.header.delegationDepth ?? 0) + 1 } })
+    }
+    if (childSession.header.parentSession !== parent.session.id || childSession.header.cwd !== cwd) throw new Error('Prepared transcript identity does not match its parent')
+    const control = this.memberControls.get(binding)
+    // An explicit repeated preparation retries only pre-execution failure.
+    // The durable starting/used barrier above never admits uncertain paid work.
+    if (control.read().status === 'failed') await control.retry(control.read().revision)
+    const lease = await control.admit(`prepare:${randomUUID()}`)
+    try {
+      await harness.prepareMember({ binding, childSession, configuration: lease.configuration, signal: options.signal ?? AbortSignal.timeout(30_000) })
+      await this.syncChildSession(childSession, true)
+      this.preparedMembers.write({ version: 1, binding, phase: 'ready' })
+    } catch (error) { control.rejectAdmission(error); throw error }
+    finally { lease.release() }
+    return childSessionId
+  }
+
+  isPreparedMember(childSessionId: string): boolean { return this.preparedMembers.read(childSessionId)?.phase === 'ready' && this.getDelegation(childSessionId) === undefined }
+
   /**
    * Start a FRESH delegation on one subagent provider — the programmatic
    * equivalent of the family tool's fresh call, for plugins acting on the
@@ -1804,6 +2033,17 @@ export class LocalAgentRegistry {
     prompt: ContentBlock[],
     options?: DelegationCallOptions,
   ): Promise<SubagentRun> {
+    const prepared = options?.preparedMemberId === undefined ? undefined : this.preparedMembers.read(options.preparedMemberId)
+    if (options?.preparedMemberId !== undefined) {
+      if (prepared?.phase !== 'ready' || prepared.binding.parentSessionId !== parentSessionId || prepared.binding.provider !== provider) throw new Error('Prepared member is unavailable or belongs to another parent/provider')
+      if (options.model !== undefined || options.effort !== undefined || options.cwd !== undefined || options.scope !== undefined || options.exec !== undefined || options.configurationLock !== undefined) throw new Error('Prepared member start inherits its fixed creation identity')
+      this.requireProvider(this.requireSubagents(), provider)
+      this.requireLiveParent(parentSessionId)
+      if (this.preparations.has(prepared.binding.childSessionId)) throw new Error('Member preparation is still in progress')
+      this.preparedMembers.write({ ...prepared, phase: 'starting' })
+      options = { ...options, ...prepared.binding, preparedMemberId: prepared.binding.childSessionId }
+      await this.reattachChildSession(prepared.binding.childSessionId)
+    }
     const subagents = this.requireSubagents()
     this.requireProvider(subagents, provider)
     const parent = this.requireLiveParent(parentSessionId)
@@ -1812,6 +2052,8 @@ export class LocalAgentRegistry {
     // the provider consumes it as the resolveChildCwd override.
     const intent: LocalAgentDelegationIntent = {
       kind: 'fresh',
+      ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
+      ...options?.preparedMemberId === undefined ? {} : { preparedMemberId: options.preparedMemberId },
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
       // The container exec target rides the same channel for the same
       // reason: it is a family-private start fact, and the host
@@ -1825,6 +2067,8 @@ export class LocalAgentRegistry {
       // records it, so a resume round re-requests the same value without the
       // caller restating it (and without being able to change it).
       ...options?.model === undefined ? {} : { model: options.model },
+      ...options?.effort === undefined ? {} : { effort: options.effort },
+      ...options?.configurationLock === undefined ? {} : { configurationLock: options.configurationLock },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -1841,6 +2085,14 @@ export class LocalAgentRegistry {
       throw error
     }
     this.trackRun(run.id, controller, run, options?.onProgress)
+    if (prepared !== undefined) {
+      try { this.preparedMembers.write({ ...prepared, phase: 'used' }) }
+      catch (error) {
+        // The durable starting barrier still prevents replay. Keep the actual
+        // published run reachable for cancellation and result delivery.
+        this.ctx.logger.warn(`localAgent: finalizing prepared member ${run.id} failed: ${String(error)}`)
+      }
+    }
     return run
   }
 
@@ -1887,6 +2139,8 @@ export class LocalAgentRegistry {
    *   const unstored = session.snapshotEvents().slice(cold.events.length)
    *   if (unstored.length > 0) await handle.append(unstored)
    *   const detach = ctx.sessions.enter(session)
+   *   try { ctx.sessions.announce(session) }
+   *   catch (error) { detach(); throw error }
    *   // Hold BOTH for the reattached lifetime: the backend routes live
    *   // session/event appends into the per-id writer only while the write
    *   // handle is open; closing it ends persistence for the session.
@@ -1896,20 +2150,10 @@ export class LocalAgentRegistry {
    * }
    * ```
    *
-   * Hold `detach` and `handle` for the plugin lifetime. The publication is
-   * ENTER-ONLY, deliberately WITHOUT `ctx.sessions.announce()`: `enter`
-   * installs the append-publication hooks and the store entry — everything the
-   * provider's liveness probe (`sessions.get`) and the transcript mirror's
-   * `session/event` broadcast need — while `announce` only emits
-   * `session/created`, whose semantics are NEW-session creation. A persisted
-   * child already fired `session/created` in its original lifetime (fresh
-   * delegations publish through `sessions.create()`), and re-firing would
-   * re-trigger creation listeners (apiproxy projections, per-session setup
-   * invariants) for a session being RESTORED, not created. The official agent
-   * resume (`agentLoop.resume` → publish) announces because it publishes a
-   * brand-new live agent+session pair for this process lifetime; a CLI
-   * provider's child is a pure transcript container with no agent on it, so
-   * only `enter` applies.
+   * Hold `detach` and `handle` for the plugin lifetime. Announce the restored
+   * live session after entering it, rolling back detach if announcement fails.
+   * History followers need this lifecycle edge to replay the constructor's
+   * end-seed suffix before the provider publishes subsequent events.
    * @param parentSessionId - the delegating parent session id; must match the
    *   recorded one and have a live agent.
    * @param provider - the `ctx.subagents` provider that owns the CLI session.
@@ -1943,13 +2187,16 @@ export class LocalAgentRegistry {
     // that. Naming one here would switch a live conversation's model mid-way
     // — which the CLI would honour and the transcript would not show — so it
     // is a caller error, not a silently ignored field.
+    if (options?.effort !== undefined || options?.configurationLock !== undefined) {
+      throw new Error('localAgent: resume reuses the member configuration; use member controls to change effort')
+    }
     if (options?.model !== undefined) {
       throw new Error(
         `localAgent: resume does not take a model — child session ${childSessionId} re-requests the model its first `
         + 'round recorded; start a new delegation to run another model',
       )
     }
-    if (this.isResumeLocked(childSessionId)) {
+    if (this.isResumeLocked(childSessionId) && !this.supportsMemberConfiguration(provider)) {
       throw new Error(`localAgent: child session ${childSessionId} already has an in-flight resume`)
     }
     const parent = this.requireLiveParent(parentSessionId)
@@ -1967,6 +2214,7 @@ export class LocalAgentRegistry {
     // and fails loud on a mismatch.
     const intent: LocalAgentDelegationIntent = {
       kind: 'resume',
+      ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
       childSessionId,
       cliSessionId,
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
@@ -2008,7 +2256,7 @@ export class LocalAgentRegistry {
    */
   cancel(childSessionId: string): boolean {
     const entry = this.runs.get(childSessionId)
-    if (entry === undefined) return false
+    if (entry === undefined) return this.memberInbox.cancelStarting(childSessionId)
     if (entry.controller !== undefined) {
       entry.controller.abort()
     } else {
@@ -2150,9 +2398,10 @@ export class LocalAgentRegistry {
 
   /**
    * Restore a persisted child session into the live store when it is absent —
-   * the reattach recipe documented on {@link resume}. Enter-only on purpose;
-   * the detach disposer is held in {@link reattachDisposers} until plugin
-   * dispose, and the write handle comes from the shared
+   * the reattach recipe documented on {@link resume}. Announce the restored
+   * lifecycle so open history followers receive the constructor suffix before
+   * subsequent appends. Hold detach in {@link reattachDisposers} until plugin
+   * dispose; the write handle comes from the shared
    * {@link childWriteHandles} cache so a later {@link syncChildSession}
    * reuses it instead of failing SessionAlreadyOwnedError on a second open.
    */
@@ -2187,9 +2436,13 @@ export class LocalAgentRegistry {
       const unstored = session.snapshotEvents().slice(cold.events.length)
       if (unstored.length > 0) await handle.append(unstored)
       const detach = sessions.enter(session)
-      this.reattachDisposers.set(childSessionId, () => {
+      try {
+        sessions.announce(session)
+      } catch (error) {
         detach()
-      })
+        throw error
+      }
+      this.reattachDisposers.set(childSessionId, detach)
     } catch (error) {
       // A failed reattach keeps no ownership: the cached handle would hold
       // write ownership of a session that never went live.
@@ -2212,7 +2465,7 @@ export class LocalAgentRegistry {
    * fail the delegation round.
    * @param session - the live child session to sync.
    */
-  async syncChildSession(session: Session): Promise<void> {
+  async syncChildSession(session: Session, strict: boolean = false): Promise<void> {
     try {
       const handle = await this.acquireChildWriteHandle(String(session.id), session.header)
       const stored = await handle.read(0)
@@ -2220,6 +2473,7 @@ export class LocalAgentRegistry {
       if (suffix.length > 0) await handle.append(suffix)
       await handle.flush()
     } catch (error: unknown) {
+      if (strict) throw error
       this.ctx.logger.warn(`localAgent: syncing child session ${String(session.id)} to persistence failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -2867,7 +3121,18 @@ function stopDelegation(registry: LocalAgentRegistry, childSessionId: string): C
  * @param ctx - plugin context carrying the command registry.
  * @param config - shared scoped-homes root and login prompt wait.
  */
-export function apply(ctx: Context, config: Config): void {
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  // A linked development plugin can have its own installed host peers. Resolve
+  // through the mounted loader too, so the running backend sees the same set.
+  const loader = ctx.get('loader') as { import?: (name: string) => Promise<{ KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string> }> } | undefined
+  if (loader?.import !== undefined) {
+    for (const specifier of ['@deepseek-ai/dsh-session', streamCatalogSpecifier]) {
+      try {
+        const catalog = await loader.import(specifier)
+        ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+      } catch { /* Optional source export or loader capability; root registration remains. */ }
+    }
+  }
   const registry = new LocalAgentRegistry(ctx, config.homesRoot, config.loginPromptTimeoutMs ?? 10_000)
   ctx.provide(LOCAL_AGENT_SERVICE, registry)
   // The read-only Remote channel the web client polls through; it depends on

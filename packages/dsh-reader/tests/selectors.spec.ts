@@ -9,7 +9,9 @@ import { describe, expect, it } from 'vitest'
 import type { ReaderEntry } from '../src/client/parse-rss.ts'
 import {
   countUnread,
+  dedupeRows,
   flattenEntries,
+  fetchStateOf,
   hueForSource,
   isToday,
   selectRows,
@@ -23,8 +25,9 @@ const entry = (over: Partial<ReaderEntry> & { id: string; sourceId: string }): R
 })
 
 const sources: ReadonlyMap<string, SourcePresentation> = new Map([
-  ['s1', { id: 's1', label: 'Hacker News', tile: 'H', hue: 'rgb(41,41,41)' }],
-  ['s2', { id: 's2', label: '阮一峰周刊', tile: '阮', hue: 'rgb(84,85,87)' }],
+  ['s1', { id: 's1', label: 'Hacker News', tile: 'H', hue: 'rgb(41,41,41)', kind: 'rss', addedAt: '2026-09-01T00:00:00.000Z' }],
+  ['s2', { id: 's2', label: '阮一峰周刊', tile: '阮', hue: 'rgb(84,85,87)', kind: 'rss', addedAt: '2026-09-02T00:00:00.000Z' }],
+  ['s3', { id: 's3', label: '保存的文章', tile: '保', hue: 'rgb(65,118,230)', kind: 'link', addedAt: '2026-09-17T11:00:00.000Z' }],
 ])
 
 const today = new Date('2026-09-17T12:00:00.000Z')
@@ -95,6 +98,29 @@ describe('selectRows', () => {
     const rows = selectRows([...entries, entry({ id: 'orphan', sourceId: 'gone' })], sources, base)
     expect(rows.map(row => row.entry.id)).toEqual(['a', 'b', 'c'])
   })
+
+  it('narrows by source KIND as well as by source id', () => {
+    // Both narrowings write a `#…` selector into the search box, so they share
+    // one mechanism — and the kind vocabulary cannot collide with a source id,
+    // which is always `<kind>-<hash>`.
+    const saved = entry({ id: 'link-1', sourceId: 's3', title: '保存的文章' })
+    const all = [...entries, saved]
+    expect(selectRows(all, sources, { ...base, query: '#link' }).map(r => r.entry.id)).toEqual(['link-1'])
+    expect(selectRows(all, sources, { ...base, query: '#rss' }).map(r => r.entry.id)).toEqual(['a', 'b', 'c'])
+    expect(selectRows(all, sources, { ...base, query: '#s1' }).map(r => r.entry.id)).toEqual(['a'])
+  })
+
+  it('dates an undated saved link by when its source was added', () => {
+    // Before this, a link the reader had JUST added sorted to the bottom of
+    // "newest first" (an entry with no date scored 0), which is the opposite of
+    // where they look for it.
+    const saved = entry({ id: 'link-1', sourceId: 's3', title: '保存的文章' })
+    const rows = selectRows([...entries, saved], sources, base)
+    // s3 was added 11:00 today, which lands it above the 08:00 entry.
+    expect(rows.map(row => row.entry.id)).toEqual(['link-1', 'a', 'b', 'c'])
+    expect(selectRows([...entries, saved], sources, { ...base, sort: 'oldest' }).map(r => r.entry.id))
+      .toEqual(['c', 'b', 'a', 'link-1'])
+  })
 })
 
 describe('isToday', () => {
@@ -123,5 +149,196 @@ describe('source presentation', () => {
     expect(tileForSource('   ')).toBe('·')
     expect(hueForSource('Hacker News')).toBe(hueForSource('Hacker News'))
     expect(hueForSource('Hacker News')).toMatch(/^rgb\(/)
+  })
+})
+
+describe('a text search ranks what it matched', () => {
+  it('puts a title match above a newer summary match', () => {
+    // Reported: searching a paper's title returned newer posts first, so the
+    // entry the reader meant sat at the bottom of the wall. Relevance comes
+    // before the chosen order; the order still decides inside one tier.
+    const titleMatch = entry({ id: 'title', sourceId: 's1', title: 'Verbalizable Representations Form a Global Workspace', publishedAt: '2026-08-01T00:00:00.000Z' })
+    const summaryMatch = entry({ id: 'summary', sourceId: 's1', title: 'Something else entirely', publishedAt: '2026-09-17T00:00:00.000Z', summary: 'inside OpenAI, agents explore verbalizable representations daily' })
+    const rows = selectRows([titleMatch, summaryMatch], sources, { ...base, query: 'verbalizable representations' })
+    expect(rows.map(row => row.entry.id)).toEqual(['title', 'summary'])
+  })
+
+  it('leaves a source selector unranked', () => {
+    const rows = selectRows(entries, sources, { ...base, query: '#s1' })
+    expect(rows.map(row => row.entry.id)).toEqual(['a'])
+  })
+})
+
+
+describe('fetchStateOf', () => {
+  it('defaults to none for an entry the host has no record of', () => {
+    expect(fetchStateOf({}, 'a')).toEqual({ state: 'none' })
+  })
+
+  it('hands back the mirrored record, failure reason and code included', () => {
+    // The code is what the card's sentence is chosen by, and what the ingest
+    // milestone's reason taxonomy will consume — the mirror must carry it
+    // through, not just the fact of the failure.
+    const failed = { state: 'failed' as const, at: '2026-09-20T00:00:00.000Z', message: 'HTTP 403', code: 'blocked' as const }
+    expect(fetchStateOf({ a: { state: 'ready' }, b: failed }, 'b')).toBe(failed)
+  })
+})
+
+/**
+ * Wall dedupe: aggregated feeds republish the same article (the reader's wall
+ * had "An Alien Mind" from two feeds). Group by normalized link first, then by
+ * folded title + same published day — never fuzzy: a miss costs a duplicate
+ * card, a false positive costs an article.
+ */
+describe('dedupeRows', () => {
+  /** A row as selectRows emits it, straight from the parts a group cares about. */
+  const row = (over: {
+    id: string
+    sourceId?: string
+    title?: string
+    link?: string
+    publishedAt?: string
+    unread?: boolean
+    sourceLabel?: string
+  }) => {
+    const sourceId = over.sourceId ?? 's1'
+    const source = sources.get(sourceId)!
+    return {
+      entry: entry({
+        id: over.id,
+        sourceId,
+        ...(over.title === undefined ? {} : { title: over.title }),
+        ...(over.link === undefined ? {} : { link: over.link }),
+        ...(over.publishedAt === undefined ? {} : { publishedAt: over.publishedAt }),
+      }),
+      sourceId,
+      sourceLabel: over.sourceLabel ?? source.label,
+      sourceTile: source.tile,
+      sourceHue: source.hue,
+      sourceAddedAt: source.addedAt,
+      sourceKind: source.kind,
+      unread: over.unread ?? true,
+    }
+  }
+
+  it('groups the same link across feeds, protocol/www/utm differences included', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/papers/alien?utm_source=feed&utm_medium=rss', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', link: 'https://www.example.com/papers/alien/?ref=share', publishedAt: yesterday }),
+      row({ id: 'c', sourceId: 's1', link: 'https://example.com/papers/other', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.entry.id)).toEqual(['a', 'c'])
+    expect(result.hiddenCount).toBe(1)
+    // The survivor is the NEWEST member; the hidden one rides with it.
+    expect(result.dupesBy.get('a')?.map(r => r.entry.id)).toEqual(['b'])
+  })
+
+  it('groups by folded title + same day only when no link matches', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', title: 'An Alien Mind: Notes', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', title: 'an alien mind— notes!', publishedAt: '2026-09-17T01:00:00.000Z' }),
+      // Same title, another day: NOT a duplicate — a miss beats a false positive.
+      row({ id: 'c', sourceId: 's2', title: 'An Alien Mind: Notes', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.entry.id)).toEqual(['a', 'c'])
+    expect(result.dupesBy.get('a')?.map(r => r.entry.id)).toEqual(['b'])
+  })
+
+  it('never groups undated or untitled entries, and never two links that differ', () => {
+    const rows = [
+      row({ id: 'a', title: 'Same Title Same Title' }),                    // no date
+      row({ id: 'b', title: 'same title same title' }),                    // no date
+      row({ id: 'c', link: 'https://example.com/a?utm_campaign=x', publishedAt: todayIso }),
+      row({ id: 'd', link: 'https://example.com/a?page=2', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows).toHaveLength(4)
+    expect(result.hiddenCount).toBe(0)
+  })
+
+  it('prefers the member with a fetched body when the mirror says so', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', link: 'https://example.com/p', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows, { b: { state: 'ready', at: todayIso } })
+    expect(result.rows.map(r => r.entry.id)).toEqual(['b'])
+    expect(result.dupesBy.get('b')?.map(r => r.entry.id)).toEqual(['a'])
+  })
+
+  it('merges read state across the group: one read copy reads the card', () => {
+    const rows = [
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso, unread: true }),
+      row({ id: 'b', sourceId: 's2', link: 'https://example.com/p', publishedAt: yesterday, unread: false }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows[0]?.unread).toBe(false)
+    // …but nothing unread was invented, either.
+    const bothUnread = dedupeRows(rows.map(r => ({ ...r, unread: true })))
+    expect(bothUnread.rows[0]?.unread).toBe(true)
+  })
+
+  it('keeps the survivor at its own position in the row order', () => {
+    const rows = [
+      row({ id: 'x', sourceId: 's1', link: 'https://example.com/else', publishedAt: todayIso }),
+      row({ id: 'a', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'b', sourceId: 's2', link: 'https://example.com/p', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.entry.id)).toEqual(['x', 'a'])
+  })
+
+  it('folds copies that share ONE entry id — the strongest duplicate signal', () => {
+    // Measured live: two aggregator feeds carried the same article with an
+    // IDENTICAL guid, so both copies' stableEntryId is `g:<same>` — the id is
+    // shared BY DESIGN (it buys shared fetch/read/translation state). The fold
+    // must be positional: keyed by id, both rows ARE the survivor.
+    const rows = [
+      row({ id: 'g:https://openai.com/index/an-alien-mind/', sourceId: 's1', link: 'https://openai.com/index/an-alien-mind/', title: 'An Alien Mind', publishedAt: todayIso }),
+      row({ id: 'g:https://openai.com/index/an-alien-mind/', sourceId: 's2', link: 'https://openai.com/index/an-alien-mind/', title: 'An Alien Mind', publishedAt: todayIso, sourceLabel: '阮一峰周刊' }),
+      row({ id: 'c', sourceId: 's1', link: 'https://example.com/other', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows).toHaveLength(2)
+    expect(result.hiddenCount).toBe(1)
+    // The badge bookkeeping survives the id collision: the survivor's id IS the
+    // hidden copy's id, and the one hidden row is still named.
+    expect(result.dupesBy.get('g:https://openai.com/index/an-alien-mind/')?.map(r => r.sourceLabel)).toEqual(['阮一峰周刊'])
+  })
+
+  it('folds same-id copies even when links and titles differ (the publisher said "same item")', () => {
+    const rows = [
+      row({ id: 'g:same-item', sourceId: 's1', link: 'https://a.example.com/one', title: 'One title', publishedAt: todayIso }),
+      row({ id: 'g:same-item', sourceId: 's2', link: 'https://b.example.com/two', title: 'Another title', publishedAt: yesterday }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows.map(r => r.sourceId)).toEqual(['s1'])
+  })
+
+  it('treats same-id copies as sharing every signal — input order survives', () => {
+    // A shared id shares the id-keyed fetch-state record too, so the ready
+    // preference cannot tell same-id copies apart: the first survives, at its
+    // own position. (They share all annotations anyway.)
+    const rows = [
+      row({ id: 'x', sourceId: 's1', link: 'https://example.com/else', publishedAt: todayIso }),
+      row({ id: 'g:shared', sourceId: 's1', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'g:shared', sourceId: 's2', link: 'https://example.com/p', publishedAt: todayIso, sourceLabel: '阮一峰周刊' }),
+    ]
+    expect(dedupeRows(rows).rows.map(r => r.sourceId)).toEqual(['s1', 's1'])
+    expect(dedupeRows(rows, { 'g:shared': { state: 'ready', at: todayIso } }).rows.map(r => r.sourceId)).toEqual(['s1', 's1'])
+  })
+
+  it('bridges transitively: id on one side, link on the other, one card', () => {
+    // A≡B by shared id, B≡C by normalized link — all three are one article.
+    const rows = [
+      row({ id: 'g:x', sourceId: 's1', link: 'https://example.com/p?utm_source=a', publishedAt: todayIso }),
+      row({ id: 'g:x', sourceId: 's2', link: 'https://example.com/p', publishedAt: todayIso }),
+      row({ id: 'l:https://example.com/p', sourceId: 's3', link: 'https://www.example.com/p', publishedAt: todayIso }),
+    ]
+    const result = dedupeRows(rows)
+    expect(result.rows).toHaveLength(1)
+    expect(result.hiddenCount).toBe(2)
   })
 })

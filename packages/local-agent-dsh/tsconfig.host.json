@@ -14,6 +14,7 @@
     "src/live-driver.ts",
     "src/live-switch.ts",
     "src/model-broker.ts",
+    "src/model-catalog.ts",
     "src/session-mirror.ts",
     "src/session-log.ts"
   ]

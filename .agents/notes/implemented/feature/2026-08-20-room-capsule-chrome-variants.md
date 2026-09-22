@@ -35,7 +35,7 @@ Both variants ship in one bundle, keyed off the root section's `data-variant` at
 
 ## Testing
 
-The existing capsule client spec (`room-dock-capsules.client.spec.tsx`, 10 tests) pins the unchanged behavior against the new DOM. Visual verification is manual: Playwright screenshots of both variants collapsed/expanded on the scratch instance (scratch-screenshots/variant-a-*.png / variant-b-*.png), taken against the live :3199 room session.
+The existing capsule client spec (`room-dock-capsules.client.spec.tsx`, 10 tests) pins the unchanged behavior against the new DOM. Visual verification is manual: Playwright screenshots of both variants collapsed/expanded on the scratch instance (variant-a-*.png / variant-b-*.png screenshots were local scratch and have since been cleared), taken against the live :3199 room session.
 
 ## Related
 

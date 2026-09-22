@@ -10,6 +10,7 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the generated Remote API (ctx.remote merge + namespace).
@@ -26,12 +27,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
-  BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardAttachImageOutcome, BoardAttachImageRequest, BoardCardKind, BoardChatStatusResult, BoardCreateRequest,
+  BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest,
   BoardReadOutcome, BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
+  CanvasStroke,
 } from '../types.ts'
 import type {} from './locales.ts'
+import type { CanvasImageRevSource, CanvasImageSrcs } from './images.ts'
 import type { CanvasSelectionSource } from './space/selection.ts'
 
 /** The canvas Remote namespace, as mounted by this plugin. */
@@ -56,11 +60,25 @@ export interface CanvasChatInjected {
 }
 
 /**
+ * The image seam both seats share (§10.3). Pixels go to the host's attachment
+ * store and never into card text; what a card keeps is the pointer, and
+ * `images` is the one cache that reads those bytes back for display. It is
+ * shared by every seat, so a pointer read for one render is already paid for
+ * by the next.
+ */
+export interface CanvasImageInjected {
+  /** Commit one pasted image's bytes; the answer is the pointer to write into the card. */
+  attachImage: (request: BoardAttachImageRequest) => Promise<RemoteResult<BoardAttachImageOutcome>>
+  /** The pointer cache: `resolve` answers the renderers synchronously, `cardHtml` inlines an HTML card's sources. */
+  images: CanvasImageSrcs
+}
+
+/**
  * Business face injected into the canvas tab (M3's single seat). The tab is
  * session scope: its mutations name the tab's own session, which resolves
  * the fence mode the host stamps onto the write.
  */
-export interface CanvasTabInjected extends CanvasChatInjected {
+export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
   /** Create one canvas (a topic, optionally with workspaces attached). */
@@ -69,7 +87,7 @@ export interface CanvasTabInjected extends CanvasChatInjected {
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
   /** Add one user card (createdBy user, straight to kept). */
   putCard: (sessionId: SessionId, request: BoardPutCardRequest) => Promise<RemoteResult<BoardMutationResult>>
-  /** Edit one card: text, a status transition, or a question-state transition. */
+  /** Edit one card: text, its drawing, a status transition, or a question state. */
   patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Comment on one card. */
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
@@ -110,6 +128,12 @@ export interface CanvasTabInjected extends CanvasChatInjected {
   hooks: {
     /** The selection/freshness feed (open canvas, open card, board rev), bound by the slot renderer. */
     selection: CanvasSelectionSource
+    /**
+     * The image cache's read-landed feed, bound as `useImageRev`. The TAB reads
+     * it once and hands the fresh `pathImages` down to whichever body shows —
+     * one subscription per tab, and every renderer in it repaints together.
+     */
+    imageRev: CanvasImageRevSource
   }
 }
 
@@ -125,10 +149,10 @@ export type CanvasTabProps =
  * card-detail component consumes. A structural subset of the tab face, so
  * the tab passes its own members down.
  */
-export interface CanvasDetailInjected extends CanvasChatInjected {
+export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInjected {
   /** Read one board with the freshness token a later mutation must present. */
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
-  /** Edit one card: text, a status transition, or a question-state transition. */
+  /** Edit one card: text, its drawing, a status transition, or a question state. */
   patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Comment on one card. */
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
@@ -141,11 +165,48 @@ export interface CanvasDetailInjected extends CanvasChatInjected {
 }
 
 /**
+ * The new-card draft the detail page carries (v2.2 ②, §11.6): the detail is
+ * the ONLY card editor, so ＋新卡 opens this same page with a `create` face
+ * instead of drilling into a card. The content is the OWNER's — the tab holds
+ * the text and the strokes so its single exit gesture can ask about them — and
+ * nothing reaches the disk until `onSave`.
+ */
+export interface CanvasDetailCreate {
+  /** The kind picked in the ＋新卡 menu. */
+  readonly kind: BoardCardKind
+  /** The draft's current text (the owner's, reported by `onTextChange`). */
+  readonly text: string
+  /** The draft's current drawing (the owner's too, reported by `onDrawChange`). */
+  readonly draw: readonly CanvasStroke[]
+  /** Reports every keystroke, so the owner's dirty flag can gate the discard confirm. */
+  onTextChange: (text: string) => void
+  /** Reports a committed stroke list; a draft's ink costs nothing until the save. */
+  onDrawChange: (draw: readonly CanvasStroke[]) => void
+  /** The first save; resolves true once the card is on the board. */
+  onSave: (kind: BoardCardKind, text: string, draw: readonly CanvasStroke[]) => Promise<boolean>
+  /**
+   * The draft's ONE exit (Esc, the same gesture the back bar fires): the
+   * OWNER decides whether to ask first — it holds the draft's content.
+   */
+  onLeave: () => void
+}
+
+/**
  * Full props of the card-detail reader. `sessionId` is optional: with none
- * the reader renders read-only (no edits, no comments, no asks).
+ * the reader renders read-only (no edits, no comments, no asks). `create`
+ * switches the page from reading a card to drafting a new one.
  */
 export type CanvasDetailProps =
-  & { sessionId: SessionId | undefined }
+  & {
+    sessionId: SessionId | undefined
+    readonly create?: CanvasDetailCreate | undefined
+    /**
+     * The tab's bound image vocabulary (fresh identity whenever a read has
+     * landed). Optional: a host without the attachment store renders text
+     * cards exactly as before, and a pointer stays inert alt text.
+     */
+    readonly pathImages?: MarkdownPathImages | undefined
+  }
   & GlobalStandardProps
   & InjectFace<CanvasDetailInjected>
   & PropsLocale<'canvas'>

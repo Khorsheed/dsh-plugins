@@ -15,6 +15,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { describe, expect, it, vi } from 'vitest'
+import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { DshCliProvider } from '../src/dsh-cli-provider.ts'
 import { DshLiveDriver } from '../src/live-driver.ts'
 
@@ -114,6 +115,9 @@ class FakeServeChild {
             protocolVersion: 1,
           },
         })
+        return
+      case 'session/prepare':
+        this.send({ jsonrpc: '2.0', id: message.id, result: { prepared: true } })
         return
       case 'turn/start': {
         const turn = this.script.turn?.(params) ?? {}
@@ -341,6 +345,53 @@ function roundSpec(m: Mount, child: Session, over: { resume?: { turn: number } }
 }
 
 describe('dsh live driver rounds', () => {
+  it('flushes the final turn boundary before reporting a settled result', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-final-durability'))
+    let durable: ReturnType<Session['snapshotEvents']> = []
+    Object.assign(m.ctx.sessions, { get: () => child })
+    Object.assign(m.ctx.localAgent, {
+      syncChildSession: async () => {
+        const captured = structuredClone(child.snapshotEvents())
+        await new Promise(resolve => setTimeout(resolve, 5))
+        durable = captured
+      },
+    })
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '第一条回复') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(durable.at(-1)?.type).toBe('turn/end')
+    expect(durable).toEqual(child.snapshotEvents())
+    await m.driver.disposeAll()
+  })
+
+  it('presents native stream chunks before completion and preserves a stopped partial', async () => {
+    const m = mount()
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-dsh-stream'))
+    const fake = new FakeServeChild({ turn: () => ({ reason: null }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    fake.pushEvent(String(child.id), 1, { type: 'step/start', data: { turn: 1, step: 1 } })
+    const sendFrame = (turn: number, frame: Record<string, unknown>) => fake.pushRaw(Buffer.from(JSON.stringify({
+      jsonrpc: '2.0', method: 'session/assistant-stream', params: { sessionId: String(child.id), turn, frame },
+    }) + '\n'))
+    sendFrame(1, { type: 'start', attemptId: 'dsh-attempt', revision: 1, turn: 1, step: 1 })
+    sendFrame(0, { type: 'chunk', attemptId: 'dsh-attempt', revision: 1, index: 0, time: 1, chunk: { type: 'text-delta', index: 0, text: 'stale' } })
+    sendFrame(1, { type: 'chunk', attemptId: 'dsh-attempt', revision: 1, index: 0, time: 2, chunk: { type: 'reasoning-delta', index: 0, text: '推理片段' } })
+    sendFrame(1, { type: 'chunk', attemptId: 'dsh-attempt', revision: 1, index: 1, time: 3, chunk: { type: 'text-delta', index: 1, text: '部分内容' } })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(event => event.type === 'local-agent/stream').map(event => event.data)).toMatchObject([{ kind: 'think', text: '推理片段' }, { kind: 'text', text: '部分内容' }]) })
+    expect(child.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(false)
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    const final = child.snapshotEvents().find(event => event.type === 'assistant/message')
+    expect(final?.data).toMatchObject({ interrupted: true, message: { content: [{ type: 'reasoning', text: '推理片段' }, { type: 'text', text: '部分内容' }] } })
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('spawns the resident serve process, drives a fresh turn, and mirrors events live', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-live-1'))
@@ -372,6 +423,20 @@ describe('dsh live driver rounds', () => {
     await run.dispose()
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('keeps native reasoning in the member transcript while returning only the answer', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-reasoning-answer'))
+    const events = answerEvents(1, 'Short answer', 'Visible answer')
+    const assistant = events.find(event => event.type === 'assistant/message')!
+    const data = assistant.data as { message: { content: unknown[] } }
+    data.message.content.unshift({ type: 'reasoning', text: 'Native reasoning' })
+    m.queueChild(new FakeServeChild({ turn: () => ({ events }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).output).toEqual([{ type: 'text', text: 'Visible answer' }])
+    expect(child.snapshotEvents().find(event => event.type === 'assistant/message')?.data).toMatchObject({ message: { content: [{ type: 'reasoning', text: 'Native reasoning' }, { type: 'text', text: 'Visible answer' }] } })
+    await m.driver.disposeAll()
   })
 
   it('reports the settled round’s observation read off the sub-dsh session log', async () => {
@@ -927,7 +992,7 @@ describe('dsh live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-dsh-drain4'))
     m.queueChild(new FakeServeChild({
@@ -951,7 +1016,7 @@ describe('dsh live driver drain (settings handoff)', () => {
     // Retired chunk-shaped rows stay behind in BOTH granularities (host 0.1.5
     // has no per-chunk event); the message rows cross.
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
-    m.driver.setLiveMirrorGranularity('token')
+    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
     await second.result
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)
@@ -1095,4 +1160,21 @@ describe('dsh live driver member-aware model', () => {
     expect(modelFlag(m.spawns[1]!.spec.argv)).toBe('model-b')
     await m.driver.disposeAll()
   })
+})
+
+
+it('prepares native protocol without a prompt, then reuses it for the first real turn', async () => {
+  const m = mount()
+  const child = Session.create(SessionId('prepared-member'))
+  const fake = new FakeServeChild()
+  m.queueChild(fake)
+  const spec = roundSpec(m, child)
+  await m.driver.prepare(spec, new AbortController().signal)
+  expect(fake.requests.some(request => request.method === 'turn/start')).toBe(false)
+  expect(child.snapshotEvents().some(event => event.type === 'turn/start' || event.type === 'user/message')).toBe(false)
+  const run = await m.driver.startRound(request() as never, spec)
+  await run.result
+  expect(fake.requests.filter(request => request.method === 'turn/start')).toHaveLength(1)
+  expect(m.spawns).toHaveLength(1)
+  await m.driver.disposeAll()
 })

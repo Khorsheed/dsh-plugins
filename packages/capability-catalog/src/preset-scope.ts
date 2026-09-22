@@ -25,6 +25,17 @@
 export interface PresetRosterSlice {
   readonly defaultId?: string
   readonly standingKeyFor?: (id?: string) => Promise<unknown>
+  /** Every preset the deployment supplies, for a scope picker. */
+  readonly list?: () => Promise<readonly PresetRosterRow[]>
+}
+
+/** One roster row, structurally narrowed to what a picker needs. */
+export interface PresetRosterRow {
+  readonly id: string
+  readonly name?: string
+  readonly description?: string
+  /** Why this preset cannot compose a session, when it cannot. */
+  readonly broken?: string
 }
 
 /** A resolved reading position: the scope key, and the preset it is honestly labelled with. */

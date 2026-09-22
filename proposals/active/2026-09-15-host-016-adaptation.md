@@ -1,7 +1,7 @@
 # 宿主 0.1.6 适配（host-016-adaptation）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress（2026-09-18 重钉 alpha.2：全量 build/test 绿、实例冒烟过；3080 合线与 npm 波等官方 rc，遗留四项见「遗留与放行条件」）
 - **最后更新**：2026-09-18
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：host-015-adaptation（第一~三批已完成，第四批余量见该提案；本提案承接其 readByteRange 与 guard 租约两项欠账）、message-tools-projection-restore（本波子项，独立提案）、local-agent-dsh-sdk-resume（S8 仍堵，不排）、room-composer-parity / context-clearing（波后讨论，不进本波）。无「0.1.6 整体适配」提案，新建。
 - **官方依赖**：纯插件。所有切换走官方 0.1.6-alpha.1 已发布的扩展面，不含新 seam 请求。

@@ -1,3 +1,5 @@
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { claudeDirectory } from './model-catalog.ts'
 /**
  * The claude provider's live driver: one resident Claude Code stream-json
  * process per member (child session), driven over the vendor's
@@ -30,11 +32,10 @@
  * (`system`/`assistant`/`user`/`result`), so each turn folds through the
  * shared `ClaudeStreamParser` with the exec live mirror's hold-back rule (the
  * volatile last line waits for `result`, which carries the round's usage).
- * BOTH granularities fold every line 1:1 — nothing is withheld. Token
- * granularity (`--include-partial-messages` at spawn) adds the streaming
- * channel on top: each `stream_event` partial accumulates into its kind's
- * stream (claude's deltas carry no item id, so thinking and text each share
- * one per-turn stream), which reserves a (turn, step) at its first delta and
+ * Every line folds 1:1. The always-enabled
+ * `--include-partial-messages` adds incremental output on top: each `stream_event` partial accumulates into its kind's
+ * stream (native message id + block index, with ordered legacy fallback),
+ * which reserves a (turn, step) at its first delta and
  * appends throttled snapshot `assistant/message`s there — the host folds
  * repeated settles at one coordinate into one live-updating chat node, the
  * only streaming channel left after 0.1.5 retired the durable per-chunk
@@ -61,6 +62,7 @@
  * @module @khorsheed/dsh-local-agent-claude-code/live-driver
  */
 
+import { ClaudeControlRequests } from './control-requests.ts'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -75,7 +77,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
@@ -106,10 +108,10 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 const RECLAIM_EOF_GRACE_MS = 1_000
 
 /** Default minimum interval between one streaming kind's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = 300
+export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = LIVE_FLUSH_INTERVAL_MS
 
 /** Default minimum text growth between one streaming kind's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_CHARS = 200
+export const DEFAULT_SNAPSHOT_MIN_CHARS = 0
 
 /**
  * The stream-json channel could not come up (spawn failure or the first
@@ -162,6 +164,7 @@ export interface ClaudeLiveRoundSpec {
    * other layer.
    */
   readonly model?: string | undefined
+  readonly configuration?: LocalAgentResolvedConfiguration
   /** Fresh round: called with the session id from the turn's system/init. */
   readonly onSessionId?: ((sessionId: string) => void) | undefined
 }
@@ -189,14 +192,13 @@ class ClaudeLiveRuntime {
   /** The member's claude session id (first turn's system/init). */
   sessionId: string | undefined
   /** The model this runtime's process was spawned with (undefined = no flag). */
+  configurationKey: string | undefined
   model: string | undefined
   /** Serializes turns per member (converge-before-next-message). */
   turnChain: Promise<unknown> = Promise.resolve()
   /** The active round's event sink; installed per round, cleared at settle. */
   onEvent: ((event: JsonObject) => void) | undefined
-  /** Control responses by request_id (the interrupt ack). */
-  private readonly controlResponses = new Map<string, () => void>()
-  private controlSeq = 0
+  private readonly controls = new ClaudeControlRequests(message => this.send(message))
   onDead: (() => void) | undefined
   private buffer = ''
   private readonly decoder = new StringDecoder('utf8')
@@ -245,15 +247,7 @@ class ClaudeLiveRuntime {
   }
 
   private dispatchEvent(event: JsonObject): void {
-    if (event['type'] === 'control_response') {
-      const response = event['response'] as JsonObject | undefined
-      const requestId = response?.['request_id']
-      if (typeof requestId === 'string') {
-        this.controlResponses.get(requestId)?.()
-        this.controlResponses.delete(requestId)
-      }
-      return
-    }
+    if (this.controls.accept(event)) return
     if (event['type'] === 'control_request') {
       this.answerControlRequest(event)
       return
@@ -307,19 +301,27 @@ class ClaudeLiveRuntime {
     this.child.stdin?.write(JSON.stringify(message) + '\n')
   }
 
-  /** The graceful runtime interrupt; resolves when the control ack lands (or never). */
-  interrupt(): Promise<void> {
-    if (this.dead) return Promise.resolve()
-    this.controlSeq += 1
-    const requestId = `live-interrupt-${this.controlSeq}`
-    const acked = new Promise<void>((resolve) => { this.controlResponses.set(requestId, resolve) })
-    this.send({ type: 'control_request', request_id: requestId, request: { subtype: 'interrupt' } })
-    return acked
+  /** Native initialization and model binding precede any user prompt. */
+  async configure(configuration: LocalAgentResolvedConfiguration, signal: AbortSignal): Promise<void> {
+    const initialized = await this.controls.request({ subtype: 'initialize', hooks: {} }, signal)
+    const directory = claudeDirectory(initialized)
+    const entry = directory.entries.find(entry => entry.value === configuration.model || entry.resolvedModel === configuration.model)
+    if (configuration.effort !== undefined && !entry?.reasoning?.options.some(option => option.value === configuration.effort)) {
+      throw new Error('The running Claude CLI does not advertise the requested model/effort combination')
+    }
+    if (configuration.model !== undefined) await this.controls.request({ subtype: 'set_model', model: configuration.model }, signal)
+  }
+
+  /** The graceful runtime interrupt, bounded and checked for an actual success ack. */
+  async interrupt(): Promise<void> {
+    if (this.dead) return
+    await this.controls.request({ subtype: 'interrupt' })
   }
 
   private markDead(): void {
     if (this.dead) return
     this.dead = true
+    this.controls.close()
     this.onDead?.()
   }
 
@@ -369,8 +371,9 @@ export class ClaudeLiveDriver {
     private readonly config: Pick<Config, 'permissionMode' | 'baseUrl'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: ClaudeLiveMirrorGranularity
-      /** Snapshot throttle for the token granularity's streaming messages. */
+      /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
+      /** @deprecated Character growth no longer gates live publication. */
       snapshotMinChars?: number
       /**
        * Resolver for the member's effective model, read at each RUNTIME SPAWN
@@ -412,13 +415,8 @@ export class ClaudeLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: ClaudeLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: ClaudeLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -473,7 +471,8 @@ export class ClaudeLiveDriver {
   private ensureRuntime(spec: ClaudeLiveRoundSpec, signal: AbortSignal): Promise<ClaudeLiveRuntime> {
     const key = String(spec.childSession.id)
     const existing = this.runtimes.get(key)
-    if (existing !== undefined && !existing.dead && existing.model === this.spawnModel(key, spec)) {
+    if (existing !== undefined && !existing.dead && existing.model === this.spawnModel(key, spec)
+      && existing.configurationKey === (spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration))) {
       this.clearIdleTimer(key)
       return Promise.resolve(existing)
     }
@@ -494,6 +493,7 @@ export class ClaudeLiveDriver {
 
   /** The model a spawn for this round would bind (the argv `--model` value). */
   private spawnModel(key: string, spec: ClaudeLiveRoundSpec): string | undefined {
+    if (spec.configuration !== undefined) return spec.configuration.model
     const model = this.config.model?.(key, spec.model)?.trim()
     return model === undefined || model === '' ? undefined : model
   }
@@ -541,7 +541,6 @@ export class ClaudeLiveDriver {
     // exactly as in the exec path; the resident process serves one member, so
     // its token lives with the process.
     const member = registerClaudeMemberRun(this.ctx, String(spec.childSession.id), spec.parentSessionId)
-    const granularity = this.config.liveMirrorGranularity ?? 'event'
     // The resident process serves one member, so the model resolved here binds
     // that member's runtime; a later change reaches it when the runtime is next
     // respawned (idle reclaim, crash, a broker-initiated retire, or the
@@ -550,7 +549,7 @@ export class ClaudeLiveDriver {
     // The settings.json scratch: a --resume respawn restores the session's
     // stored model over the --model flag, so the effective model also goes
     // into the scoped file (best-effort — the argv flag still applies).
-    if (this.config.provisionModel !== undefined) {
+    if (spec.configuration === undefined && this.config.provisionModel !== undefined) {
       await this.config.provisionModel(spec.homeDir, model).catch(() => undefined)
     }
     const argv = [
@@ -558,12 +557,12 @@ export class ClaudeLiveDriver {
       ...model === undefined ? [] : ['--model', model],
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
+      '--include-partial-messages',
       ...(this.config.permissionMode ?? 'skip') === 'skip' ? ['--dangerously-skip-permissions'] : [],
       ...spec.resume === undefined ? [] : ['--resume', spec.resume.cliSessionId],
       // `--allowedTools` is variadic: without the `--` terminator it swallows
       // every following flag (the exec path's e191e27 lesson, same shape here).
       ...member === undefined ? [] : ['--mcp-config', member.mcpConfig, '--allowedTools', member.allowedTool, '--'],
-      ...granularity === 'token' ? ['--include-partial-messages'] : [],
     ]
     const spawnSpec: SubprocessSpawnSpec = {
       argv,
@@ -574,6 +573,7 @@ export class ClaudeLiveDriver {
       // dir, plus the configured base URL override only.
       env: delegationEnv({
         CLAUDE_CONFIG_DIR: spec.homeDir,
+        ...spec.configuration === undefined ? {} : { CLAUDE_CODE_EFFORT_LEVEL: spec.configuration.effort ?? 'auto' },
         ...this.config.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.config.baseUrl },
       }),
     }
@@ -587,6 +587,7 @@ export class ClaudeLiveDriver {
     }
     const runtime = new ClaudeLiveRuntime(child, message => { this.ctx.logger.warn(message) })
     runtime.model = model
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     runtime.onDead = () => {
       // Delete only OUR registration (crash-then-respawn interleave safety).
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
@@ -597,6 +598,10 @@ export class ClaudeLiveDriver {
       await runtime.reclaim()
       if (signal.aborted) throw new Error('subagent-claude: run cancelled locally')
       throw new LiveChannelUnavailableError('the live driver was disposed during spawn')
+    }
+    if (spec.configuration !== undefined) {
+      try { await runtime.configure(spec.configuration, signal) }
+      catch (error) { await runtime.reclaim(); throw error }
     }
     this.channelBrokenAt = undefined
     this.runtimes.set(key, runtime)
@@ -613,6 +618,20 @@ export class ClaudeLiveDriver {
    * turn/end bookkeeping); cancel is the interrupt control request and the
    * process survives.
    */
+  /** Initialize native controls without sending a user prompt. Native history starts on its first real turn. */
+  async prepare(spec: ClaudeLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      await this.ensureRuntime(spec, signal)
+      signal.throwIfAborted()
+      this.armIdleTimer(String(spec.childSession.id))
+    } catch (error) {
+      await this.reclaim(String(spec.childSession.id))
+      throw error
+    }
+  }
+
   async startRound(request: SubagentStartRequest, spec: ClaudeLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.
@@ -647,7 +666,6 @@ export class ClaudeLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: ClaudeLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
 
     const runAbort = new AbortController()
@@ -682,7 +700,7 @@ export class ClaudeLiveDriver {
      */
     const reservedSteps: number[] = []
     /**
-     * The streaming kinds seen this round (token granularity), by stream key:
+     * The streaming kinds seen this round by stream key:
      * deltas accumulate into throttled snapshot assistant/messages appended
      * at the kind's reserved (turn, step) — the host folds repeated settles
      * at one coordinate into one live-updating chat node, which is the only
@@ -707,7 +725,9 @@ export class ClaudeLiveDriver {
       // Live sessions sync through the core's cached write handle, standalone
       // ones through a one-shot handle — the suffix append is idempotent on
       // both paths (the kimi session-mirror root cause).
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-claude: live persistence failed: ${thrown(error).message}`)
+      })
     }
 
     const requestCancel = (): void => {
@@ -731,32 +751,57 @@ export class ClaudeLiveDriver {
       return text === undefined || text === '' ? [] : [{ type: 'text', text: parser.text as string }]
     }
 
-    /**
-     * The stream key one delta/completion pairs by. Claude's `stream_event`
-     * partials carry no item id, so thinking and text each share one per-turn
-     * stream — the codex driver's per-kind fallback for id-less deltas.
-     */
-    const streamKey = (kind: 'think' | 'text'): string => `claude-stream-${kind}-${turn}`
+    // Native message identity plus content-block index separates same-kind
+    // blocks. Older partials without those fields use a message-generation
+    // key, paired with their completion in arrival order.
+    let messageKey: string | undefined
+    let legacyMessage = 0
+    const streamKey = (kind: 'think' | 'text', index: unknown): string =>
+      `${messageKey ?? `legacy-${turn}-${legacyMessage}`}:${typeof index === 'number' ? index : kind}`
 
     /**
      * Append one snapshot of a streaming kind at its reserved (turn, step).
-     * Throttled per stream by interval and growth unless `force`; the forced
+     * Batched per stream on a bounded deadline unless `force`; the forced
      * final snapshot carries `interrupted` (a cancelled turn reads 已停止
      * legitimately) and, when `withUsage` and no folded line carried it, the
      * round's usage.
      */
+    const streamPublisher = localAgent?.liveStreams === undefined ? undefined
+      : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
+        error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
+    const liveFlush = new LiveFlush(
+      error => this.ctx.logger.warn(`live mirror flush failed: ${String(error)}`),
+      this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
+    )
+
+    const pendingStreamArrival = new Map<number, number>()
     const appendStreamSnapshot = (
       stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
       force: boolean,
       interrupted: boolean,
       withUsage = false,
+      final = false,
     ): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
-      const minInterval = this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS
-      const minChars = this.config.snapshotMinChars ?? DEFAULT_SNAPSHOT_MIN_CHARS
-      if (!force && now - stream.lastSnapshotAt < minInterval) return
-      if (!force && stream.text.length - stream.lastSnapshotLen < minChars) return
+      if (!force) {
+        if (!pendingStreamArrival.has(stream.step)) pendingStreamArrival.set(stream.step, now)
+        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
+        return
+      }
+      liveFlush.cancel(stream.step)
+      const receivedAt = pendingStreamArrival.get(stream.step) ?? now
+      pendingStreamArrival.delete(stream.step)
+      if (streamPublisher !== undefined && !final) {
+        if (!stream.opened) {
+          childSession.append('step/start', { turn, step: stream.step })
+          stream.opened = true
+        }
+        streamPublisher.update(stream.step, stream.kind, stream.text, { receivedAt })
+        stream.lastSnapshotAt = now
+        stream.lastSnapshotLen = stream.text.length
+        return
+      }
       if (!stream.opened) {
         childSession.append('step/start', { turn, step: stream.step })
         stream.opened = true
@@ -834,12 +879,15 @@ export class ClaudeLiveDriver {
         if (line === undefined) continue
         const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
         if (lineUsage !== undefined) usageCarried = true
-        const itemId = line.kind === 'tool' ? undefined : streamKey(line.kind)
-        const stream = itemId === undefined ? undefined : streams.get(itemId)
+        const stream = line.kind === 'tool' ? undefined
+          : (line.streamId === undefined ? undefined : streams.get(line.streamId))
+            ?? [...streams.values()].find(candidate => candidate.kind === line.kind && (line.streamId === undefined || candidate.itemId.startsWith('legacy-')))
+        const itemId = stream?.itemId
         if (itemId !== undefined && stream !== undefined) {
           // A streamed line folds at its reserved step, finalizing the
           // snapshots: the step opens only if no snapshot ever landed (a
           // fast stream that stayed under the throttle), and closes here.
+          liveFlush.cancel(stream.step)
           streams.delete(itemId)
           if (activeStream === itemId) activeStream = undefined
           if (!stream.opened) childSession.append('step/start', { turn, step: stream.step })
@@ -853,6 +901,7 @@ export class ClaudeLiveDriver {
             stream: [],
             ...lineUsage === undefined ? {} : { usage: lineUsage },
           }, { surfaceOp: 'append' })
+          streamPublisher?.finish(stream.step)
           childSession.append('step/end', { turn, step: stream.step })
         } else {
           appendClaudeTranscriptLine(childSession, turn, foldStep(index), line, lineUsage)
@@ -895,14 +944,18 @@ export class ClaudeLiveDriver {
         return
       }
       if (type === 'stream_event') {
-        if (granularity !== 'token') return
         const inner = event['event'] as JsonObject | undefined
+        if (inner?.['type'] === 'message_start') {
+          const message = inner['message'] as JsonObject | undefined
+          messageKey = typeof message?.['id'] === 'string' ? message['id'] : `legacy-${turn}-${++legacyMessage}`
+          return
+        }
         const delta = inner?.['delta'] as JsonObject | undefined
         const deltaType = delta?.['type']
         const text = delta?.['text'] ?? delta?.['thinking']
         if ((deltaType === 'text_delta' || deltaType === 'thinking_delta') && typeof text === 'string' && text !== '') {
           const kind = deltaType === 'thinking_delta' ? 'think' as const : 'text' as const
-          reserveStream(streamKey(kind), kind)
+          reserveStream(streamKey(kind, inner?.['index']), kind)
           const stream = activeStream === undefined ? undefined : streams.get(activeStream)
           if (stream !== undefined) {
             stream.text += text
@@ -918,6 +971,7 @@ export class ClaudeLiveDriver {
       // stdout carried them.
       parser.push(JSON.stringify(event) + '\n')
       mirrorUpTo(parser.lines.length - 1, false)
+      if (type === 'assistant') { messageKey = undefined; legacyMessage++ }
     }
 
     const sendAndInit = async (): Promise<void> => {
@@ -1025,8 +1079,9 @@ export class ClaudeLiveDriver {
       },
       signal: request.signal,
       onAbort,
-    }).then((settled) => {
+    }).then(async (settled) => {
       roundSettled = true
+      liveFlush.dispose()
       turnInFlight = false
       if (turnOpened) {
         // An aborted or failed turn never sees the result event, so its
@@ -1040,7 +1095,8 @@ export class ClaudeLiveDriver {
         if (streams.size > 0) {
           const remaining = [...streams.values()]
           for (const [position, stream] of remaining.entries()) {
-            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
+            streamPublisher?.finish(stream.step)
             if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
           }
           streams.clear()
@@ -1062,6 +1118,13 @@ export class ClaudeLiveDriver {
       // reach this round's resolver so the chain can converge.
       if (runtime !== undefined && runtime.onEvent === onEvent && !awaitingResult) {
         runtime.onEvent = undefined
+      }
+      streamPublisher?.dispose()
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
       }
       return settled
     })

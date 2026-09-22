@@ -47,11 +47,13 @@ async function setup(
   const sessionsStub = {
     liveIds: undefined as readonly string[] | undefined,
     entered: [] as string[],
+    announced: [] as string[],
     get(id: string) {
       return this.liveIds === undefined || this.liveIds.includes(id) ? { id } : undefined
     },
     prepare: () => ({ id: 'child-1', snapshotEvents: () => [] }),
     enter(session: { id: string }) { this.entered.push(session.id); return () => {} },
+    announce(session: { id: string }) { this.announced.push(session.id) },
   }
   ctx.provide('sessions', sessionsStub as never)
   ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
@@ -175,6 +177,7 @@ describe('dsh-local-agent-tool-subagent', () => {
     expect(text(result)).toContain('done: 接着做')
     expect(opened).toEqual(['child-1:write'])
     expect(sessionsStub.entered).toEqual(['child-1'])
+    expect(sessionsStub.announced).toEqual(['child-1'])
     expect(taken).toEqual([{
       kind: 'resume',
       childSessionId: 'child-1',

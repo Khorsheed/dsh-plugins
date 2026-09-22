@@ -1,17 +1,18 @@
 import { useState, type ChangeEvent, type DragEvent } from 'react'
   import { Button, IconFolderOpenOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-  import type { CatalogAddSkillRequest, CatalogDirSkillInfo } from '@khorsheed/dsh-capability-catalog/types'
+  import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { ModalShell } from './ModalShell.tsx'
+  import { installedNames } from './settle.ts'
   import css from './CapabilityCatalogCard.module.css'
 
 /** Add-skill modal: file upload (drag-drop), clone-from-source, or local dir. */
-export function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refresh, t }: {
+export function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refreshSettled, t }: {
   onClose: () => void
   addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string; exists?: boolean }>
   listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   pickDirectory: () => Promise<string | null>
-  refresh: () => Promise<void>
+  refreshSettled: (settled: (snapshot: CapabilityCatalogSnapshot) => boolean) => Promise<boolean>
   t: (key: CapabilityCatalogKey) => string
 }) {
   const [tab, setTab] = useState<'upload' | 'command' | 'localdir'>('upload')
@@ -73,6 +74,17 @@ export function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory,
     if (file !== undefined) readFile(file)
   }
 
+  /**
+   * Wait for the installed skill(s) to reach the catalog snapshot. The host
+   * writes the files before its watcher invalidates the registry, so a single
+   * refresh here returns the pre-install snapshot and the new card stays absent
+   * until the panel is reopened.
+   */
+  const settleInstalled = async (name: string | undefined): Promise<void> => {
+    const wanted = installedNames(name)
+    await refreshSettled(s => wanted.every(n => s.skills.some(skill => skill.name === n)))
+  }
+
   const submit = async (): Promise<void> => {
     if (!canSubmit || busy) return
     setBusy(true)
@@ -92,7 +104,7 @@ export function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory,
     })()
     const res = await addSkill(req)
     if (res.ok) {
-      await refresh()
+      await settleInstalled(res.name)
       setMsg({ ok: true, text: `${t('addSuccess')}${res.name ?? ''}` })
     } else if (res.exists === true) {
       // Soft refusal: a same-name skill already lives in the target root. Offer overwrite.
@@ -111,7 +123,7 @@ export function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory,
     setMsg(null)
     const res = await addSkill({ ...req, overwrite: true })
     if (res.ok) {
-      await refresh()
+      await settleInstalled(res.name)
       setMsg({ ok: true, text: `${t('addSuccess')}${res.name ?? ''}` })
     } else {
       setMsg({ ok: false, text: res.error ?? t('addError') })

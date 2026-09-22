@@ -2,6 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { Context } from '@deepseek-ai/cordis'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
@@ -82,7 +83,7 @@ function fakePersistence(): {
         }
         writeHandles.set(id, 1)
       }
-      return makeHandle(id, { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false }, access === 'write')
+      return makeHandle(id, { id, version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false, cwd: '/home/user/project' }, access === 'write')
     },
   }
 }
@@ -174,6 +175,56 @@ describe('LocalAgentRegistry.syncChildSession', () => {
     expect(persistence.stored.get('child-1')).toHaveLength(live!.snapshotEvents().length)
   })
 
+  it('keeps an already-open official history follower contiguous across cold member restoration', async () => {
+    const persistence = fakePersistence()
+    const cold = Session.create(SessionId('child-1'))
+    cold.append('turn/start', { turn: 1 })
+    cold.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const events = cold.snapshotEvents()
+    persistence.stored.set('child-1', [...events])
+    const { ctx, registry } = await mount(persistence)
+    ctx.provide('sessionQuery', { observeSession: async () => ({
+      events, cursor: events.at(-1)!.seq, source: 'stored',
+      header: { ...cold.header, cwd: '/home/user/project' },
+      inheritedEventCount: 0,
+      [Symbol.dispose]() {},
+    }) } as never)
+    const history = new SessionHistoryController(ctx, () => { throw new Error('must not activate a host agent') })
+    const abort = new AbortController()
+    const stream = history.follow({ address: { kind: 'session', sessionId: cold.id } }, abort.signal)[Symbol.asyncIterator]()
+    try {
+      expect((await stream.next()).value?.type).toBe('snapshot')
+      await registry.ensureChildLive('child-1')
+      const live = ctx.sessions.get(cold.id)!
+      live.append('turn/start', { turn: 2 })
+      live.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+      const suffix = live.snapshotEvents().slice(events.length)
+      expect(suffix[0]?.type).toBe('session/end-seed')
+      // The real controller throws "skipped seq" without the creation edge.
+      for (const event of suffix) {
+        const frame = (await stream.next()).value
+        expect(frame).toMatchObject({ type: 'event', event: { seq: event.seq, type: event.type } })
+      }
+      await registry.ensureChildLive('child-1')
+      live.append('turn/start', { turn: 3 })
+      expect((await stream.next()).value).toMatchObject({ type: 'event', event: { seq: live.snapshotEvents().at(-1)!.seq } })
+    } finally {
+      abort.abort()
+      await stream.return?.()
+    }
+  })
+
+  it('rolls back a rejected restore announcement and allows a clean retry', async () => {
+    const persistence = fakePersistence()
+    const { ctx, registry } = await mount(persistence)
+    const dispose = ctx.on('session/created', () => { throw new Error('announcement rejected') })
+    await expect(registry.ensureChildLive('child-1')).rejects.toThrow('announcement rejected')
+    expect(ctx.sessions.get(SessionId('child-1'))).toBeUndefined()
+    dispose()
+    await expect(registry.ensureChildLive('child-1')).resolves.toBeUndefined()
+    expect(ctx.sessions.get(SessionId('child-1'))).toBeDefined()
+  })
+
   it('downgrades a sync failure to a warn, never throws, and keeps the handle for the next sync', async () => {
     const persistence = fakePersistence()
     const { ctx, registry, warns } = await mount(persistence)
@@ -229,5 +280,23 @@ describe('persistChildSession', () => {
     // and the repeat is a stored-prefix no-op.
     await localAgent.persistChildSession(ctx, child)
     expect(persistence.appended).toHaveLength(1)
+  })
+})
+
+
+describe('linked-plugin stream vocabulary', () => {
+  it('registers through the mounted loader before publishing the registry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(CommandRuntime)
+    const runtimeCatalog = new Set<string>()
+    ctx.provide('loader', { import: async (name: string) => {
+      if (name !== '@deepseek-ai/dsh-session') throw new Error('source exports unavailable')
+      expect(ctx.get(LOCAL_AGENT_SERVICE)).toBeUndefined()
+      return { KNOWN_SESSION_EVENT_TYPES: runtimeCatalog }
+    } } as never)
+    const fiber = await ctx.plugin(localAgent, { homesRoot: mkdtempSync(join(tmpdir(), 'stream-catalog-')) })
+    try { expect(runtimeCatalog.has('local-agent/stream')).toBe(true) }
+    finally { await fiber.dispose() }
   })
 })

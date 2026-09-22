@@ -5,10 +5,10 @@
  */
 
 import { PassThrough } from 'node:stream'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle, CreateAgentOptions, Inbox, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { AssistantStreamFrame, Agent, AgentHandle, CreateAgentOptions, Inbox, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
@@ -218,6 +218,26 @@ describe('headless serve mode', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('forwards native generation frames with the active round identity before idle', async () => {
+    const test = await bench({
+      afterPrompt(session, message, agent) {
+        const frames = [
+          { type: 'start', attemptId: 'attempt-one', revision: 1, turn: 1, step: 1 },
+          { type: 'chunk', attemptId: 'attempt-one', revision: 1, index: 0, time: 10, chunk: { type: 'text-delta', index: 0, text: 'partial' } },
+        ] as AssistantStreamFrame[]
+        for (const frame of frames) agent.ctx.emit('agent/assistant-stream', { agent, frame })
+        appendTurn(session, 1, message, 'partial final')
+      },
+    })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-stream', text: 'do it', resume: false, turn: 1 } })
+    const idle = await test.waitLine(isNotification('session/idle'))
+    const frames = test.observed.lines.slice(0, test.observed.lines.indexOf(idle)).filter(line => line['method'] === 'session/assistant-stream')
+    expect(frames).toHaveLength(2)
+    expect(frames[1]?.['params']).toMatchObject({ sessionId: 'member-stream', turn: 1, frame: { type: 'chunk', chunk: { text: 'partial' } } })
+    test.stdin.end()
+    await test.ctx.fiber.dispose()
+  })
+
   it('reuses the loaded agent for the next turn of the same session', async () => {
     let turn = 0
     const test = await bench({
@@ -349,4 +369,17 @@ describe('headless serve mode', () => {
     test.stdin.end()
     await test.ctx.fiber.dispose()
   })
+})
+
+
+it('validates the sub-instance model on preparation without creating an agent or prompting', async () => {
+  const afterPrompt = vi.fn()
+  const test = await bench({ afterPrompt })
+  test.ctx.provide('llm', { resolveModelInfo: async () => ({ id: 'test-model' }) } as never)
+  test.send({ jsonrpc: '2.0', id: 101, method: 'session/prepare', params: { sessionId: 'prepared' } })
+  expect((await test.waitLine(isResponseTo(101)))['result']).toEqual({ prepared: true })
+  expect(test.trace.creates).toEqual([])
+  expect(afterPrompt).not.toHaveBeenCalled()
+  test.stdin.end()
+  await test.ctx.fiber.dispose()
 })
