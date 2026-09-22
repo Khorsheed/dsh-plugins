@@ -56,7 +56,6 @@ export type PreviewKey =
   | 'detail.preview'
   | 'detail.source'
   | 'detail.deleted'
-  | 'detail.unreadable'
   | 'search.placeholder'
   | 'search.noMatch'
   | 'search.hit'
@@ -77,7 +76,6 @@ export type PreviewKey =
   | 'local.binary'
   | 'local.tooLarge'
   | 'local.noSelection'
-  | 'local.deleted'
   | 'local.unreadable'
   | 'state.loading'
   | 'state.error'
@@ -95,7 +93,6 @@ export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'detail.preview',
   'detail.source',
   'detail.deleted',
-  'detail.unreadable',
   'search.placeholder',
   'search.noMatch',
   'search.hit',
@@ -116,7 +113,6 @@ export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'local.binary',
   'local.tooLarge',
   'local.noSelection',
-  'local.deleted',
   'local.unreadable',
   'state.loading',
   'state.error',

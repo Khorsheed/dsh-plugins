@@ -1458,6 +1458,9 @@ importers:
 
   packages/local-files:
     dependencies:
+      '@khorsheed/dsh-client-ui-content-preview':
+        specifier: workspace:*
+        version: link:../ui-content-preview
       zod:
         specifier: ^4.4.3
         version: 4.4.3

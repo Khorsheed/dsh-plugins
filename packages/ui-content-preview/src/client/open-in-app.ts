@@ -10,7 +10,7 @@
  * 404 (or the request fails outright), which reads exactly like "no apps":
  * the gestures stay hidden, silently.
  *
- * @module @khorsheed/dsh-local-files/client
+ * @module @khorsheed/dsh-client-ui-content-preview/client
  */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
