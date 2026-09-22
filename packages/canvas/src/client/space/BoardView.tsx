@@ -1,17 +1,17 @@
 /**
  * The canvas board: the right side of the space page — the topic topbar, the
- * kind filter chips, the selection bar, the card grid (kept cards, the ghost
- * proposal affordance, the new-card draft), and the archived well.
+ * kind filter chips, the selection bar, the card grid (kept cards and the
+ * ghost proposal affordance), and the archived well.
  *
- * M1.5's summary/detail split: every card renders a SUMMARY — clamped at
- * ~6 lines with a fade and a word count for long texts, and document cards
- * lead with their derived heading instead of the raw `#` opener. Clicking a
- * card body opens the card in the right-Sidebar detail reader; selection is
- * a hover checkbox in the card's corner, so the two gestures never fight.
+ * v2.2 ②: the board is a READER. Every card body click — kept, ghost or
+ * archived — opens the detail page, which is the only editor; the in-place
+ * card textarea and the board's inline new-card draft are gone (the topbar's
+ * ＋新卡 hands the draft to the detail page too). Selection stays a hover
+ * checkbox in the card's corner, so the two gestures never fight.
  *
- * Text editing follows the pad's three invariants exactly (see
- * CardTextarea.tsx): uncontrolled textareas, IME composition as a hard stop,
- * and `.boardScroll` as the one scroll container.
+ * The one editor left on the board is the comment box under a card, which
+ * follows the pad's invariants through CardTextarea (uncontrolled text, IME
+ * composition as a hard stop, `.boardScroll` as the one scroll container).
  *
  * Kind is told by icon + words only, never by colour (the storyboard rule).
  *
@@ -32,15 +32,12 @@ import {
 } from '../../types.ts'
 import type {} from '../locales.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
 import css from './board.module.css'
 
 /** The mutations the board can ask for (the page wires them to the Remote). */
 export interface BoardActions {
-  /** Create the draft card (the ＋新卡 flow); an empty text discards instead. */
-  submitDraft: (text: string) => void
-  /** Save one card's edited text. */
-  saveCard: (cardId: string, text: string) => void
   /** Move one card to a status (kept = accept/restore, archived = reject/archive). */
   setCardStatus: (cardId: string, status: BoardCardStatus) => void
   /** Settle a question card answered (the user's call, always). */
@@ -62,7 +59,10 @@ export interface BoardViewProps {
   readonly selection: ReadonlySet<string>
   readonly onToggleSelect: (cardId: string) => void
   readonly onClearSelection: () => void
-  /** Open one card in the right-Sidebar detail reader (a body click). */
+  /**
+   * Open one card in the detail page — the ONLY editor (v2.2 ②). Kept, ghost
+   * and archived cards all take this route; the board itself never edits text.
+   */
   readonly onOpenDetail: (cardId: string) => void
   /** Whether the side-chat seam answered the probe (the lens bar and 追问 hide without it). */
   readonly chatAvailable: boolean
@@ -70,10 +70,6 @@ export interface BoardViewProps {
   readonly onAsk: (lens: CanvasLensId) => void
   /** Follow up on one comment (card id + the comment's text). */
   readonly onFollowUp: (cardId: string, commentText: string) => void
-  readonly editingId: string | null
-  readonly onEditingChange: (cardId: string | null) => void
-  readonly draftKind: BoardCardKind | null
-  readonly onDraftKindChange: (kind: BoardCardKind | null) => void
   readonly actions: BoardActions
   readonly showArchived: boolean
   readonly onToggleArchived: () => void
@@ -149,17 +145,26 @@ function CardSummary({ t, card }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
 }): ReactNode {
+  // A drawing is content, so the board shows it (demand ④): a card whose body
+  // is ink would otherwise read as a card with nothing in it.
+  const ink = card.draw ?? []
+  const thumb = ink.length === 0 ? null : (
+    <div className={css.cardDraw}><DrawFigure strokes={ink} /></div>
+  )
   // Format wins over kind: an HTML card renders a compact placeholder on the
   // board (the full sandbox render is the detail page's), never the raw markup.
   if (detectCardFormat(card.text) === 'html') {
     return (
-      <div className={css.cardText}>
-        <div className={css.htmlPlaceholder}>
-          <IconCodeOutline16 size={12} />
-          <span>{htmlTitleOf(card.text) ?? t('card.htmlDocument')}</span>
-          <span className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</span>
+      <>
+        {thumb}
+        <div className={css.cardText}>
+          <div className={css.htmlPlaceholder}>
+            <IconCodeOutline16 size={12} />
+            <span>{htmlTitleOf(card.text) ?? t('card.htmlDocument')}</span>
+            <span className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</span>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
   const long = isLongCardText(card.text)
@@ -168,6 +173,7 @@ function CardSummary({ t, card }: {
   const heading = card.kind === 'document' ? documentHeadingOf(card.text) : undefined
   return (
     <>
+      {thumb}
       {heading !== undefined && <div className={css.docTitle}>{heading.title}</div>}
       <div className={css.cardTextWrap} data-clamped={long || undefined}>
         <div className={css.cardText}>{heading?.body ?? card.text}</div>
@@ -178,19 +184,17 @@ function CardSummary({ t, card }: {
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, readonly, selected, editing, archivedWell, chatAvailable, onToggleSelect, onOpenDetail, onFollowUp, onEditingChange, actions }: {
+function CardItem({ t, card, readonly, selected, archivedWell, chatAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
   readonly readonly: boolean
   readonly selected: boolean
-  readonly editing: boolean
-  /** Rendered inside the archived well (restore is the only gesture). */
+  /** Rendered inside the archived well (open + restore are the only gestures). */
   readonly archivedWell?: boolean
   readonly chatAvailable: boolean
   readonly onToggleSelect: () => void
   readonly onOpenDetail: () => void
   readonly onFollowUp: (commentText: string) => void
-  readonly onEditingChange: (cardId: string | null) => void
   readonly actions: BoardActions
 }): ReactNode {
   const [threadOpen, setThreadOpen] = useState(false)
@@ -201,7 +205,7 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, chatAvai
     <div
       className={`${css.card}${proposed ? ` ${css.cardGhost}` : ''}`}
       data-selected={selected || undefined}
-      onClick={archivedWell || editing ? undefined : onOpenDetail}
+      onClick={onOpenDetail}
     >
       {!proposed && !archivedWell && (
         <button
@@ -228,24 +232,7 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, chatAvai
         {card.createdBy === 'agent' && !proposed ? ` · ${t('card.fromAgent')}` : ''}
       </span>
 
-      {editing ? (
-        <div onClick={event => { event.stopPropagation() }}>
-          <CardTextarea
-            defaultValue={card.text}
-            submitOn="mod-enter"
-            autoFocus
-            onSubmit={text => {
-              const trimmed = text.trim()
-              if (trimmed.length > 0 && trimmed !== card.text) actions.saveCard(card.id, trimmed)
-              onEditingChange(null)
-            }}
-            onCancel={() => { onEditingChange(null) }}
-          />
-          <span className={css.editHint}>{t('card.editHint')}</span>
-        </div>
-      ) : (
-        <CardSummary t={t} card={card} />
-      )}
+      <CardSummary t={t} card={card} />
 
       {card.source !== undefined && (
         <div className={css.cardSrc}>
@@ -295,14 +282,14 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, chatAvai
           </button>
         </div>
       ) : (
-        !readonly && !editing && (
+        !readonly && (
           <div className={css.cardActions}>
             <button
               type="button"
               className={css.iconButton}
-              title={t('card.edit')}
-              aria-label={t('card.edit')}
-              onClick={event => { event.stopPropagation(); onEditingChange(card.id) }}
+              title={t('card.enterDetail')}
+              aria-label={t('card.enterDetail')}
+              onClick={event => { event.stopPropagation(); onOpenDetail() }}
             >
               <IconEditOutline16 size={13} />
             </button>
@@ -364,8 +351,7 @@ function CardItem({ t, card, readonly, selected, editing, archivedWell, chatAvai
 /** The board view. */
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
-  chatAvailable, onAsk, onFollowUp,
-  editingId, onEditingChange, draftKind, onDraftKindChange, actions, showArchived, onToggleArchived,
+  chatAvailable, onAsk, onFollowUp, actions, showArchived, onToggleArchived,
 }: BoardViewProps): ReactNode {
 
   const visible = board.cards.filter(card => card.status !== 'archived')
@@ -435,7 +421,7 @@ export function BoardView({
           </div>
         )}
 
-        {shown.length === 0 && draftKind === null ? (
+        {shown.length === 0 ? (
           <div className={css.notice}>
             {visible.length === 0 ? (
               <>
@@ -451,29 +437,6 @@ export function BoardView({
           </div>
         ) : (
           <div className={css.grid}>
-            {draftKind !== null && (
-              <div className={css.card}>
-                <span className={css.kindTag}>
-                  {(() => {
-                    const DraftIcon = KIND_ICONS[draftKind]
-                    return <DraftIcon size={12} />
-                  })()}
-                  {t(`kind.${draftKind}`)}
-                </span>
-                <CardTextarea
-                  placeholder={t('board.newCardPlaceholder')}
-                  submitOn="mod-enter"
-                  autoFocus
-                  onSubmit={text => {
-                    const trimmed = text.trim()
-                    if (trimmed.length > 0) actions.submitDraft(trimmed)
-                    onDraftKindChange(null)
-                  }}
-                  onCancel={() => { onDraftKindChange(null) }}
-                />
-                <span className={css.editHint}>{t('card.editHint')}</span>
-              </div>
-            )}
             {shown.map(card => (
               <CardItem
                 key={card.id}
@@ -481,12 +444,10 @@ export function BoardView({
                 card={card}
                 readonly={readonly}
                 selected={selection.has(card.id)}
-                editing={editingId === card.id}
                 chatAvailable={chatAvailable}
                 onToggleSelect={() => { onToggleSelect(card.id) }}
                 onOpenDetail={() => { onOpenDetail(card.id) }}
                 onFollowUp={commentText => { onFollowUp(card.id, commentText) }}
-                onEditingChange={onEditingChange}
                 actions={actions}
               />
             ))}
@@ -508,13 +469,11 @@ export function BoardView({
                     card={card}
                     readonly={readonly}
                     selected={false}
-                    editing={false}
                     archivedWell
                     chatAvailable={chatAvailable}
                     onToggleSelect={() => {}}
-                    onOpenDetail={() => {}}
+                    onOpenDetail={() => { onOpenDetail(card.id) }}
                     onFollowUp={() => {}}
-                    onEditingChange={() => {}}
                     actions={actions}
                   />
                 ))}

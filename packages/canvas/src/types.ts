@@ -410,6 +410,93 @@ export interface BoardComment {
   readonly createdAt: string
 }
 
+/* --------------------------------------------------- freehand drawing (§11.3) */
+
+/**
+ * The drawing's LOGICAL box: every stored point lives inside it, whatever the
+ * pad's on-screen width. Device-independent units are the whole point — a
+ * stroke drawn in a 378px sidebar must still land in the same place when the
+ * panel is wide, so the pad maps pointer pixels into this box on the way in and
+ * the renderer scales the box back out with one `viewBox` (§11.3's "存归一化
+ * 坐标这条不变").
+ */
+export const DRAW_BOX = { width: 600, height: 400 } as const
+
+/** Most strokes one card holds. A drawing is a note, not a sketchbook. */
+export const MAX_DRAW_STROKES = 60
+
+/** Most sampled points in one stroke (the pad samples by distance, not count). */
+export const MAX_DRAW_POINTS = 120
+
+/** Widest a pen half-width may be, in the logical box's units. */
+export const MAX_DRAW_WIDTH = 14
+
+/** One sampled point: box units, plus the pen's half-width at that instant. */
+export interface CanvasDrawPoint {
+  readonly x: number
+  readonly y: number
+  readonly w: number
+}
+
+/**
+ * Which token a stroke inks with. Deliberately NOT a colour: a drawing must
+ * follow the theme the way every other surface here does, so the renderer owns
+ * the mapping and the card stores the intent.
+ */
+export type CanvasStrokeColor = 'ink' | 'faint'
+
+/** One unbroken stroke: the sampled points, in the order they were drawn. */
+export interface CanvasStroke {
+  readonly pts: readonly CanvasDrawPoint[]
+  readonly color: CanvasStrokeColor
+}
+
+/** Whether a value is a stroke colour the renderer knows how to ink. */
+export function isCanvasStrokeColor(value: unknown): value is CanvasStrokeColor {
+  return value === 'ink' || value === 'faint'
+}
+
+/** One finite number inside `[min, max]`, or undefined (never a rounded guess). */
+function boxNumber(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return Math.min(max, Math.max(min, value))
+}
+
+/**
+ * Read an untrusted drawing into the strokes this package can actually draw.
+ * Per-entry problems drop that entry; the rest survive, because a hand-edited
+ * `canvas.json` must never make a card unreadable (§11.3's per-field rule).
+ * A stroke needs two points to be a line, and a point is kept only with a
+ * finite coordinate pair and a positive width.
+ * @param raw - a `draw` value from a file or a wire request.
+ * @returns at most {@link MAX_DRAW_STROKES} well-formed strokes.
+ */
+export function normalizeDraw(raw: unknown): CanvasStroke[] {
+  if (!Array.isArray(raw)) return []
+  const strokes: CanvasStroke[] = []
+  for (const entry of raw as unknown[]) {
+    if (strokes.length >= MAX_DRAW_STROKES) break
+    if (typeof entry !== 'object' || entry === null) continue
+    const points = (entry as Record<string, unknown>)['pts']
+    const color = (entry as Record<string, unknown>)['color']
+    if (!Array.isArray(points)) continue
+    const pts: CanvasDrawPoint[] = []
+    for (const item of points as unknown[]) {
+      if (pts.length >= MAX_DRAW_POINTS) break
+      if (typeof item !== 'object' || item === null) continue
+      const point = item as Record<string, unknown>
+      const x = boxNumber(point['x'], 0, DRAW_BOX.width)
+      const y = boxNumber(point['y'], 0, DRAW_BOX.height)
+      const w = boxNumber(point['w'], 0.5, MAX_DRAW_WIDTH)
+      if (x === undefined || y === undefined || w === undefined) continue
+      pts.push({ x, y, w })
+    }
+    if (pts.length < 2) continue
+    strokes.push({ pts, color: isCanvasStrokeColor(color) ? color : 'ink' })
+  }
+  return strokes
+}
+
 /** One board card. */
 export interface BoardCard {
   readonly id: string
@@ -420,6 +507,8 @@ export interface BoardCard {
   /** Present only on question cards. */
   question?: { state: QuestionState }
   comments: BoardComment[]
+  /** The card's drawing, absent when nothing was ever inked (§11.4's field). */
+  draw?: CanvasStroke[]
   readonly createdBy: 'user' | 'agent'
   readonly createdAt: string
   updatedAt: string
@@ -521,6 +610,8 @@ function normalizeCard(raw: unknown, now: string): BoardCard | undefined {
     createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : now,
     updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
   }
+  const draw = normalizeDraw(record['draw'])
+  if (draw.length > 0) card.draw = draw
   if (typeof record['source'] === 'object' && record['source'] !== null) {
     const source = record['source'] as Record<string, unknown>
     const type = source['type']
@@ -640,21 +731,31 @@ export type BoardReadOutcome =
   | ({ readonly ok: true } & BoardReadResult)
   | { readonly ok: false; readonly error: CanvasError }
 
-/** Add one user card (createdBy user, straight to kept — the board's CRUD). */
+/**
+ * Add one user card (createdBy user, straight to kept — the board's CRUD).
+ * `text` may be empty only when the card carries a drawing: a picture is
+ * content, not a missing caption (§11.4).
+ */
 export interface BoardPutCardRequest {
   readonly canvasId: string
   readonly kind: BoardCardKind
   readonly text: string
   readonly source?: BoardCardSource
+  readonly draw?: readonly CanvasStroke[]
 }
 
-/** Edit one card: text, a status transition, or a question-state transition. */
+/**
+ * Edit one card: text, its drawing, a status transition, or a question-state
+ * transition. A `draw` of `[]` clears the drawing (absent leaves it alone) —
+ * the two must stay distinguishable, or 「清空」 could never be saved.
+ */
 export interface BoardPatchCardRequest {
   readonly canvasId: string
   readonly cardId: string
   readonly text?: string
   readonly status?: BoardCardStatus
   readonly question?: { state: QuestionState }
+  readonly draw?: readonly CanvasStroke[]
 }
 
 /** Comment on one card. */
@@ -676,6 +777,71 @@ export interface BoardArchiveRequest {
 export type BoardMutationResult =
   | ({ readonly ok: true } & BoardReadResult)
   | { readonly ok: false; readonly error: CanvasError }
+
+/* ------------------------------------------------------------------ images (§10.3) */
+
+/** The raster media types the host's attachment store admits. */
+export const CANVAS_IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+
+/** One admitted media type. */
+export type CanvasImageMediaType = (typeof CANVAS_IMAGE_MEDIA_TYPES)[number]
+
+/** Whether a value is one of the four. */
+export function isCanvasImageMediaType(value: unknown): value is CanvasImageMediaType {
+  return typeof value === 'string' && (CANVAS_IMAGE_MEDIA_TYPES as readonly string[]).includes(value)
+}
+
+/**
+ * The durable pointer to one stored image: exactly the five fields the host
+ * re-derives and compares when it reads the object back, which is why a card
+ * carries all five (§10.3's display arm) and never just an id.
+ */
+export interface CanvasImageRef {
+  readonly attachmentId: string
+  readonly mediaType: CanvasImageMediaType
+  readonly bytes: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * What the image arm can report, in the four shapes the user can act on. The
+ * host's longer admission vocabulary folds into these at the store's boundary
+ * — the client never sees a raw `AttachmentError` code.
+ */
+export type CanvasImageError =
+  /** No attachment store is mounted (the whole arm degrades; text pastes still work). */
+  | 'unavailable'
+  /** The bytes are not one of the four raster types, or do not decode at all. */
+  | 'not-image'
+  /** Over the host's byte or pixel gates. */
+  | 'too-large'
+  /** The stored object is gone, or fails the digest check on read. */
+  | 'unreadable'
+
+/** Commit one pasted image to the host's attachment store. */
+export interface BoardAttachImageRequest {
+  /** Canonical base64 of the image bytes — they ride THIS request, never card text. */
+  readonly data: string
+  readonly mediaType: CanvasImageMediaType
+  /** Browser display name; the host strips any path out of it. */
+  readonly name?: string
+}
+
+/** An attach either returns the pointer to store in the card, or one image code. */
+export type BoardAttachImageOutcome =
+  | { readonly ok: true; readonly ref: CanvasImageRef }
+  | { readonly ok: false; readonly error: CanvasImageError }
+
+/** Fetch one stored image's bytes back for display (the resolver's read leg). */
+export interface BoardImageBytesRequest {
+  readonly ref: CanvasImageRef
+}
+
+/** A read either returns canonical base64, or one image code. */
+export type BoardImageBytesOutcome =
+  | { readonly ok: true; readonly data: string; readonly mediaType: CanvasImageMediaType }
+  | { readonly ok: false; readonly error: CanvasImageError }
 
 
 /* ------------------------------------------------------- summary heuristics */

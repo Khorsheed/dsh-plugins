@@ -1,0 +1,1341 @@
+<!doctype html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵感画布 · 第六轮：一组 = 你点的那几张（顺线改成手动开关）/ 分类管理补回来</title>
+<style>
+  /* 宿主 design-platform.css 的实测值，逐条抄录（亮 = body{}，暗 = body[data-ds-dark-theme]{}） */
+  body {
+    --bg-base: rgb(255,255,255); --layer-1: rgb(255,255,255); --layer-2: rgb(255,255,255);
+    --outer: rgb(233,236,242); --overlay: rgb(233,236,242); --mask: rgba(0,0,0,.24);
+    --l1: rgba(0,0,0,.04); --l2: rgba(0,0,0,.1);
+    --brand: rgb(15,17,21); --brand-invert: rgb(255,255,255);
+    --t1: rgb(15,17,21); --t2: rgb(97,102,107); --t3: rgb(129,133,140);
+    --blue: rgb(65,118,230);
+    --blue-wash: color-mix(in srgb, rgb(65,118,230) 8%, transparent);
+    --blue-edge: color-mix(in srgb, rgb(65,118,230) 45%, transparent);
+  }
+  body[data-ds-dark-theme] {
+    --bg-base: rgb(21,21,23); --layer-1: rgb(35,35,36); --layer-2: rgb(44,44,46);
+    --outer: rgb(21,21,23); --overlay: rgb(97,102,107); --mask: rgba(0,0,0,.5);
+    --l1: rgba(255,255,255,.06); --l2: rgba(255,255,255,.12);
+    --brand: rgb(249,250,251); --brand-invert: rgb(15,17,21);
+    --t1: rgb(249,250,251); --t2: rgb(207,211,214); --t3: rgb(173,178,184);
+    --blue: rgb(103,158,254);
+    --blue-wash: color-mix(in srgb, rgb(103,158,254) 12%, transparent);
+    --blue-edge: color-mix(in srgb, rgb(103,158,254) 45%, transparent);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px; background: var(--outer); color: var(--t1);
+    font: 14px/1.6 -apple-system, "SF Pro SC", "PingFang SC", "Helvetica Neue", sans-serif;
+    transition: background .18s;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -.1px; }
+  h2 { font-size: 13px; margin: 0 0 6px; color: var(--t2); font-weight: 600; }
+  .sub { color: var(--t3); font-size: 12px; margin: 0 0 16px; max-width: 1100px; }
+  .toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .frame { display: grid; grid-template-columns: 380px 1fr; gap: 14px; align-items: start; max-width: 1360px; }
+  body.wide .frame { grid-template-columns: 620px 1fr; }
+  .pane { background: var(--layer-1); border: 1px solid var(--l1); border-radius: 10px; overflow: hidden; }
+  .caption {
+    display: flex; align-items: center; gap: 8px; padding: 7px 11px; border-bottom: 1px solid var(--l1);
+    background: var(--layer-2); font-size: 11.5px; color: var(--t3); flex-wrap: wrap; line-height: 1.5;
+  }
+  .caption b { color: var(--t2); font-weight: 600; }
+
+  button { font: inherit; }
+  .btn {
+    border: 1px solid var(--l2); background: var(--layer-1); color: var(--t1); font-size: 12px;
+    padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap; flex: none;
+  }
+  .btn:hover { border-color: var(--brand); }
+  .btn.on { background: var(--brand); border-color: transparent; color: var(--brand-invert); font-weight: 600; }
+  .btn.lit { background: var(--blue-wash); border-color: var(--blue-edge); color: var(--t1); font-weight: 600; }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--t2); }
+  .btn.sm { font-size: 11.5px; padding: 2px 7px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .seg { display: flex; flex: none; border: 1px solid var(--l1); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--t2); font-size: 12px; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+  .seg button[aria-pressed="true"] { background: var(--blue-wash); color: var(--t1); font-weight: 600; }
+  .spacer { flex: 1; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--l2); color: var(--t2); flex: none; white-space: nowrap; }
+  .pill.blue { color: var(--blue); background: var(--blue-wash); border-color: transparent; }
+  .pill.warn { color: rgb(150,100,0); background: rgba(150,100,0,.12); border-color: transparent; }
+  body[data-ds-dark-theme] .pill.warn { color: rgb(224,170,78); background: rgba(224,170,78,.14); }
+  .pill.bad { color: rgb(163,39,31); background: rgba(163,39,31,.10); border-color: transparent; }
+  body[data-ds-dark-theme] .pill.bad { color: rgb(240,119,108); background: rgba(240,119,108,.14); }
+  .pill.ok { color: rgb(23,114,69); background: rgba(23,114,69,.10); border-color: transparent; }
+  body[data-ds-dark-theme] .pill.ok { color: rgb(78,194,127); background: rgba(78,194,127,.14); }
+
+  /* 顶栏 */
+  .topbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--l1); }
+  /* 宿主右栏的标签条（照它本来的样子：纯文字 chip，激活的那张起一个浅色药丸，末尾一个 ＋） */
+  .tabs { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--l1); background: var(--layer-1); overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs .tb {
+    display: flex; align-items: center; gap: 5px; flex: 0 1 auto; min-width: 60px; max-width: 190px; padding: 3px 8px; font: inherit; font-size: 12.5px;
+    color: var(--t2); background: transparent; border: 1px solid transparent; border-radius: 7px; cursor: pointer; white-space: nowrap;
+  }
+  .tabs .tb.page { flex: 0 0 auto; min-width: 0; }
+  .tabs .tb:hover { color: var(--t1); background: var(--layer-2); }
+  .tabs .tb[aria-selected="true"] { background: var(--layer-2); color: var(--t1); border-color: var(--l1); font-weight: 600; }
+  .tabs .tb .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tabs .tb .x { flex: none; border: 0; background: transparent; color: var(--t3); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 1px; border-radius: 3px; }
+  .tabs .tb .x:hover { background: var(--blue-wash); color: var(--t1); }
+  .tabs .add { flex: none; border: 0; background: transparent; color: var(--t2); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 7px; border-radius: 7px; }
+  .tabs .add:hover { background: var(--layer-2); color: var(--t1); }
+  .tabs .hint { margin-left: auto; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 10.5px; color: var(--t3); padding-right: 2px; }
+  .switcher { display: flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; }
+  .switcher .caret { color: var(--t3); font-weight: 400; }
+  .deleted { font-size: 11px; color: var(--t3); padding: 0 10px 7px; }
+  .deleted s { color: var(--t3); }
+
+  /* 批量条 */
+  .batch { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--l1); background: var(--blue-wash); font-size: 12px; }
+
+  /* 卡板 */
+  .chips { display: flex; gap: 6px; padding: 9px 10px 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; border: 1px solid var(--l1); background: var(--layer-1); color: var(--t2); font-size: 11.5px; padding: 2px 9px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .chip[data-active="true"] { background: var(--blue-wash); border-color: var(--blue-edge); color: var(--t1); font-weight: 600; }
+  .chip .n { color: var(--t3); margin-left: 4px; }
+  .chip.mgr { border-style: dashed; color: var(--t3); position: sticky; right: 0; z-index: 1; }
+  /* 分类管理：展开在筛选条下面，不弹模态——378 宽的栏里摆一个模态，比它挡住的还挤 */
+  .catmgr { margin: 8px 10px 0; border: 1px solid var(--l1); border-radius: 8px; background: var(--layer-1); padding: 8px 10px; }
+  .catmgr .hd { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--t3); margin-bottom: 5px; }
+  .catmgr .hd b { color: var(--t1); font-size: 12px; }
+  .catrow { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+  .catrow input {
+    flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; color: var(--t1);
+    background: var(--layer-2); border: 1px solid var(--l1); border-radius: 6px; padding: 3px 6px;
+  }
+  .catrow input:focus { border-color: var(--brand); outline: none; }
+  .catrow.off input { color: var(--t3); }
+  .catrow .n { flex: none; width: 34px; text-align: right; font-size: 10.5px; color: var(--t3); }
+  .catmgr .newcat { display: flex; gap: 6px; margin-top: 7px; }
+  .catmgr .newcat input { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; color: var(--t1); background: var(--layer-2); border: 1px dashed var(--l2); border-radius: 6px; padding: 3px 6px; }
+  .catmgr .tip { display: block; margin: 7px 0 0; line-height: 1.5; }
+  .mask { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--mask); }
+  .dialog { width: 300px; padding: 14px; background: var(--layer-1); border: 1px solid var(--l2); border-radius: 10px; }
+  .dialog p { margin: 0 0 12px; font-size: 12.5px; line-height: 1.55; color: var(--t2); }
+  .dialog .acts { display: flex; justify-content: flex-end; gap: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: 8px; padding: 10px; max-height: 420px; overflow-y: auto; }
+  .card {
+    position: relative; display: flex; flex-direction: column; gap: 5px; background: var(--layer-1);
+    border: 1px solid var(--l1); border-radius: 8px; padding: 9px 10px; cursor: pointer; min-height: 84px;
+    transition: border-color .15s;
+  }
+  .card:hover { border-color: var(--l2); }
+  /* 选中 = 外框亮起（brand-primary 是唯一随主题翻边的中性色） */
+  .card[data-selected="true"] { border-color: var(--brand); }
+  .box {
+    position: absolute; top: 6px; right: 6px; z-index: 2; width: 16px; height: 16px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--l2);
+    border-radius: 5px; background: var(--layer-1); color: var(--brand-invert); cursor: pointer; opacity: 0; transition: opacity .12s;
+  }
+  .card:hover .box { opacity: 1; }
+  .card[data-selected="true"] .box { opacity: 1; background: var(--brand); border-color: var(--brand); }
+  .kind { font-size: 11px; color: var(--t3); }
+  .txt { font-size: 12px; color: var(--t1); white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .foot { display: flex; align-items: center; gap: 7px; margin-top: auto; font-size: 11px; color: var(--t3); }
+  .thumb { border: 1px solid var(--l1); border-radius: 5px; background: var(--layer-2); height: 58px; overflow: hidden; }
+  .thumb svg { display: block; width: 100%; height: 100%; }
+
+  /* 归档抽屉 */
+  .well { border-top: 1px solid var(--l1); }
+  .well > button {
+    display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border: 0; background: transparent;
+    color: var(--t2); font-size: 12px; padding: 8px 10px; cursor: pointer;
+  }
+  .well .caret { color: var(--t3); width: 10px; display: inline-block; }
+
+  /* 连线视图 */
+  .stage { position: relative; height: 400px; overflow: hidden; background: var(--layer-2);
+    background-image: radial-gradient(var(--l2) 1px, transparent 1px); background-size: 18px 18px; }
+  .stage svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .node { position: absolute; width: 152px; background: var(--layer-1); border: 1px solid var(--l1); border-radius: 8px; padding: 8px 9px; cursor: grab; user-select: none; }
+  .node:hover { border-color: var(--l2); }
+  .node[data-picked="true"] { border-color: var(--brand); }
+  .node .txt { -webkit-line-clamp: 3; }
+  .port {
+    position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px;
+    border-radius: 50%; border: 1px solid var(--brand); background: var(--layer-1); cursor: crosshair; opacity: 0;
+  }
+  .node:hover .port { opacity: 1; }
+  /* 分区框：库里的容器节点（parentId + extent:'parent'） */
+  .lane {
+    position: absolute; border: 1px dashed var(--l2); border-radius: 10px; background: var(--blue-wash);
+    display: flex; align-items: flex-start; cursor: move;
+  }
+  .lane > .laneTitle {
+    position: absolute; top: -17px; left: 2px; border: 0; background: transparent; color: var(--t2); font: inherit; font-size: 11.5px; font-weight: 600;
+    padding: 0 2px; cursor: text; width: auto; text-align: left;
+  }
+  .lane > .laneSize { position: absolute; right: 2px; bottom: 2px; width: 12px; height: 12px; cursor: nwse-resize; border-right: 1px solid var(--l2); border-bottom: 1px solid var(--l2); border-bottom-right-radius: 6px; }
+  .node[data-cluster="true"] { box-shadow: 0 0 0 1px var(--brand) inset; }
+  .node[data-inlane="true"] { background: var(--layer-1); }
+  .node > .openTab {
+    position: absolute; top: -9px; right: -6px; width: 19px; height: 19px; padding: 0; border-radius: 5px;
+    border: 1px solid var(--l2); background: var(--layer-1); color: var(--t2); cursor: pointer;
+    display: none; place-items: center; z-index: 3;
+  }
+  .node:hover > .openTab { display: grid; }
+  .node > .openTab svg { width: 11px; height: 11px; }
+  .node > .openTab:hover { color: var(--t1); border-color: var(--brand); }
+  .wires path.wire { pointer-events: stroke; cursor: pointer; }
+  .wires path.hit { stroke: transparent; stroke-width: 14; fill: none; pointer-events: stroke; cursor: pointer; }
+  .marquee { position: absolute; border: 1px solid var(--brand); background: var(--blue-wash); pointer-events: none; }
+  .stagescroll { padding: 8px 10px; border-top: 1px solid var(--l1); display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--t3); flex-wrap: wrap; }
+
+  /* 详情 */
+  .dhead { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-bottom: 1px solid var(--l1); flex-wrap: nowrap; }
+  .dhead .spacer { flex: 1 1 auto; min-width: 4px; }
+  .dhead .title { font-size: 13px; font-weight: 600; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dops { display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-bottom: 1px solid var(--l1); flex-wrap: nowrap; }
+  .dops .spacer { flex: 1 1 auto; min-width: 4px; }
+  .dbody { display: grid; gap: 1px; background: var(--l1); min-height: 260px; }
+  body[data-mode="render"] .dbody, body[data-mode="source"] .dbody { grid-template-columns: 1fr; }
+  body[data-mode="split"] .dbody { grid-template-columns: 1fr 1fr; }
+  /* 画板要占满整幅：半栏宽的框里 600×400 会被缩到一笔都圈不准。渲染列只是让位，内容一个字没动 */
+  body[data-tool="pen"] .dbody, body[data-tool="erase"] .dbody { grid-template-columns: 1fr; }
+  body[data-tool="pen"] .rend, body[data-tool="erase"] .rend { display: none; }
+  .src, .rend { background: var(--layer-1); padding: 11px; position: relative; }
+  .src { display: flex; flex-direction: column; gap: 7px; }
+  .toolrow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .tip { font-size: 11px; color: var(--t3); }
+  .tip.on { color: var(--t2); font-weight: 600; }
+  .src textarea {
+    width: 100%; min-height: 220px; resize: vertical; border: 1px solid var(--l1); border-radius: 6px;
+    background: var(--layer-2); color: var(--t1); font: 12.5px/1.7 ui-monospace, Menlo, monospace; padding: 8px 9px;
+  }
+  /* 画板：固定 3:2 逻辑框 600×400，两块面板同比例 → 画在哪就渲染在哪 */
+  .board-wrap { position: relative; width: 100%; aspect-ratio: 3 / 2; border: 1px solid var(--l1); border-radius: 6px; background: var(--layer-2); }
+  .board-wrap svg.doodle { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .board-pad { position: absolute; inset: 0; touch-action: none; }
+  .board-pad.tool-pen { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M3 19 L5 14 L14 4 L18 8 L9 17 Z' fill='%23fff' stroke='%23000' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 3 19, crosshair; }
+  .board-pad.tool-erase { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M4 15 L11 5 L19 9 L14 17 L6 17 Z' fill='%23fff' stroke='%23000' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M6 17 L14 17' stroke='%23000' stroke-width='1.5'/%3E%3C/svg%3E") 6 17, cell; }
+  .board-wrap.ro { cursor: pointer; }
+  .board-hint { position: absolute; right: 6px; bottom: 5px; font-size: 11px; color: var(--t3); background: var(--layer-1); border: 1px solid var(--l1); border-radius: 4px; padding: 1px 6px; display: flex; align-items: center; gap: 4px; }
+  .board-hint svg { width: 10px; height: 10px; }
+  .tools { display: flex; flex: none; border: 1px solid var(--l1); border-radius: 6px; overflow: hidden; background: var(--layer-1); }
+  .tools button { border: 0; background: transparent; color: var(--t2); padding: 3px 8px; cursor: pointer; display: grid; place-items: center; }
+  .tools button + button { border-left: 1px solid var(--l1); }
+  .tools button[aria-pressed="true"] { background: var(--blue-wash); color: var(--t1); }
+  .tools svg { display: block; width: 15px; height: 15px; }
+  .src.withboard textarea { min-height: 118px; }
+  .rendered .board-wrap { margin: 8px 0; }
+  .rendered h3 { font-size: 14px; margin: 10px 0 4px; }
+  .rendered p { margin: 6px 0; font-size: 13px; }
+  .rendered blockquote { margin: 8px 0; padding: 3px 10px; border-left: 3px solid var(--l2); color: var(--t2); font-size: 13px; }
+  .rendered code { font: 12px ui-monospace, Menlo, monospace; background: var(--layer-2); border: 1px solid var(--l1); border-radius: 4px; padding: 0 4px; }
+  /* 网页那份进真沙箱 iframe（sandbox="" 连同源都不给），和包内同一条路 */
+  .rendered iframe.sandbox { display: block; width: 100%; min-height: 220px; height: 320px; border: 1px solid var(--l1); border-radius: 6px; background: #fff; }
+  .hidden { display: none !important; }
+
+  .thread { border-top: 1px solid var(--l1); padding: 9px 11px; display: grid; gap: 5px; }
+  .one { display: flex; gap: 7px; align-items: baseline; font-size: 12.5px; }
+  .who { font-size: 11px; color: var(--t3); flex: none; width: 34px; }
+  .who.agent { color: var(--blue); }
+  .newc { display: flex; gap: 6px; align-items: center; }
+  .newc input { flex: 1; min-width: 0; border: 1px solid var(--l1); border-radius: 6px; background: var(--layer-2); color: var(--t1); font: inherit; font-size: 12.5px; padding: 4px 8px; }
+  .fmt { font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .bytes { font: 11.5px/1.5 ui-monospace, Menlo, monospace; color: var(--t3); }
+
+  /* 会话区 */
+  .chat { padding: 11px; display: grid; gap: 9px; min-height: 520px; align-content: start; }
+  .turn { border: 1px solid var(--l1); border-radius: 8px; padding: 9px 10px; background: var(--layer-1); }
+  .turn .lbl { font-size: 11px; color: var(--t3); margin-bottom: 4px; }
+  .turn.me { background: var(--blue-wash); border-color: var(--blue-edge); }
+  .turn pre { margin: 0; font: 11.5px/1.65 ui-monospace, Menlo, monospace; color: var(--t2); white-space: pre-wrap; word-break: break-word; }
+  .reflist { display: grid; gap: 5px; }
+  .ref { border: 1px solid var(--l1); border-radius: 6px; padding: 6px 8px; background: var(--layer-2); }
+  .ref .rl { font-size: 11.5px; color: var(--t1); font-weight: 600; }
+  .ref .rt { font-size: 11.5px; color: var(--t2); white-space: pre-wrap; }
+  .ref .rc { font-size: 11.5px; color: var(--blue); white-space: pre-wrap; }
+  .proposal { border-left: 3px solid var(--blue); }
+  .empty { color: var(--t3); font-size: 12px; padding: 8px 2px; }
+
+  /* 注释区 */
+  .notes { display: grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap: 12px; margin-top: 20px; max-width: 1360px; }
+  .note { background: var(--layer-1); border: 1px solid var(--l1); border-radius: 10px; padding: 11px 13px; }
+  .note p, .note li { font-size: 12.5px; color: var(--t2); }
+  .note ul { margin: 0; padding-left: 17px; }
+  .note li { margin: 3px 0; }
+  .note p { margin: 0 0 6px; }
+  .f { font: 11.5px/1.6 ui-monospace, Menlo, monospace; color: var(--t3); }
+  .verdict { margin-top: 16px; max-width: 1360px; background: var(--layer-1); border: 1px solid var(--l1); border-left: 3px solid var(--brand); border-radius: 10px; padding: 11px 13px; font-size: 13px; }
+  .verdict p { margin: 0 0 9px; line-height: 1.65; }
+  .verdict p:last-child { margin-bottom: 0; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--brand); color: var(--brand-invert); font-size: 12.5px; padding: 6px 14px; border-radius: 7px; opacity: 0; transition: opacity .18s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-mode="split">
+
+<h1>灵感画布 · 第六轮：一组 = 你点的那几张（顺线改成手动开关）、分类自由增删改补回来了</h1>
+<p class="sub">
+  可点的示意，不是截图。<b>卡板 / 连线</b>两个视图（长文那一档已经拿掉），卡片可多选、可加批注、可一键成稿，
+  详情页里画笔能画，归档抽屉里的卡也能打开。右边那栏是<b>会话区</b>：上面每点一次"生成文章 / 就这一组提问"，
+  就能看到真实会被送出去的那份内容——批注在不在里面，一眼能查。
+  <b>这一版按你这两条改的</b>：① <b>连线不再替你选卡</b>——「就这一组提问」默认只发你点的那几张，想把邻居带进来就点底栏那个「顺线扩一圈」（开关是这一页新加的，见 ⑩）；
+  ② <b>分类的自由增删改补回来了</b>：筛选条末尾「管理分类」展开一个面板，改名 / ＋加一个 / 停用，停用还有卡在用的分类会弹确认（<b>这一轮之前那页把它丢了，和上一轮丢粘贴是同一类错</b>，见 ⑪）；
+  ③ 顺手上次那个"贴进来一屏死标记"：<b>往有正文的卡里贴网页，现在落的是纯文本那一份</b>，不再留一堆渲染不出来的 <code class="f">&lt;div&gt;</code>（见 ⑨ 末段）。
+  <b>上一版改的三条还在</b>：详情顶栏两行（保存不再往下找）、那句「还没落盘…」删了、粘贴走包内同形嗅探。
+  往前几轮的：标签条照宿主重画、条尾 ＋ 开新卡、进详情用笔、画画的三条出口、图标工具条 + 鼠标换形、画板和渲染同一个 3:2 框、橡皮一笔一笔擦、保存后画板常驻编辑区、连线可选中单删、空白处框选、分区做成容器框。
+</p>
+
+<div class="toolbar">
+  <span class="seg" id="viewSeg">
+    <button data-v="board" aria-pressed="true">卡板</button><button data-v="link" aria-pressed="false">连线</button>
+  </span>
+  <button class="btn" id="wideBtn">右栏宽 380</button>
+  <button class="btn" id="themeBtn">亮色</button>
+  <span class="pill">粘贴演示 · 没开详情时自动先开一张新卡</span>
+  <button class="btn" id="tryMd" title="走的就是 textarea 的 onpaste">试贴 md</button>
+  <button class="btn" id="tryHtml" title="clipboard 同时给 text/html 和 text/plain">试贴网页</button>
+  <button class="btn" id="tryMix" title="正文里夹内联标签 + markdown 记号：包内那条判断故意保守">试贴混着写的</button>
+  <span class="pill">宿主色值逐条抄自 design-platform.css</span>
+</div>
+
+<div class="frame">
+
+  <!-- 左：画布面板 -->
+  <section class="pane">
+    <div class="caption"><b>画布面板</b> 宿主右侧栏 · <span id="capView">卡板</span></div>
+    <div class="tabs" id="tabs"></div>
+    <div class="topbar">
+      <span class="switcher">写作·第二章 <span class="caret">▾</span></span>
+      <span class="spacer"></span>
+      <button class="btn" id="newBtn">＋ 新卡</button>
+    </div>
+    <div class="deleted"><s>卡板 | 长文</s> → 只剩一档：成稿改在工作区写文件，那边已有「预览」能看</div>
+    <div id="batchBar"></div>
+    <div id="viewHost"></div>
+    <div id="detailHost"></div>
+  </section>
+
+  <!-- 右：会话区 -->
+  <section class="pane">
+    <div class="caption"><b>会话区</b> 会被送出去的原文长这样 · 真实链路 <span class="f">askAgent → sideChat</span></div>
+    <div class="chat" id="chat"></div>
+  </section>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h2>① 长文 tab 为什么可以删</h2>
+    <ul>
+      <li>模型压根没有碰它的工具：<code class="f">tools.ts</code> 只有 <code class="f">canvas_propose_card</code> 与 <code class="f">canvas_comment</code></li>
+      <li>它存在插件 state 目录里，提案里那个"导出到工作区"的动词<b>在代码里不存在</b>——今天这份稿是关着的</li>
+      <li>你说的替代路已经是活的：<code class="f">openFile → ctx.sidebarRight.openResource</code>（client/index.ts:184-190），详情页那个"预览"按钮就是它</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h2>② 连线视图 + 分区：库的实测结论</h2>
+    <ul>
+      <li><b>React Flow（@xyflow/react 12.11.6）</b>：MIT，1.2MB，3 个依赖。它的节点就是"你自己写的 React 组件"，所以这里一个节点 = 卡板上那张卡原样复用</li>
+      <li><b>Excalidraw</b>：MIT 但 46.8MB，且它想拥有整个表面（自带工具栏/主题/存储）。我们现在整个 bundle 是 362KB</li>
+      <li><b>tldraw</b>：许可写明<b>禁止生产环境使用</b>、要 license key、且会为授权校验上报使用数据。排除</li>
+      <li><b>泳道 / kanban / 分区不用自己写引擎。</b>库的节点自带 <code class="f">parentId</code>（system/src/types/nodes.ts:54）+ <code class="f">extent:'parent'</code>（同文件 :60）+ <code class="f">expandParent</code>，另有 <code class="f">NodeResizer</code> / <code class="f">SelectionMode</code> / <code class="f">SnapGrid</code> 开箱。所以"分区"就是一个能装卡、能改大小、卡进去就跟它走的<b>容器节点</b>——上面那块带标题的框就是它</li>
+      <li>这条视图唯一的后端改动：<b>连线和分区都是今天没有的新数据</b>——<code class="f">canvas.json</code> 里要加 <code class="f">links</code> 与 <code class="f">lanes</code> 两个数组（卡片坐标同理，现在也没地方存）</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h2>③ 画笔：存矢量不存位图，局部擦得掉</h2>
+    <p>位图 = base64 = 又撞回图片那条指针路；矢量写进卡正文，图就成了正经卡格式，能被成稿引用、能永远再编辑。</p>
+    <p><b>上一版"定位不到"的原因是我这边的错，不是没保存。</b>画的框和渲染的框比例不一致：指针按一个固定尺寸换算，渲染却按面板宽度铺满，所以画在哪都往边上偏。现在两边共用同一个 <b>600×400 的 3:2 逻辑框</b>，指针等比换算——量过：在框的 25%/25% 处落笔，存下来是 <code class="f">150,100</code>，正好是 600×400 的四分之一。</p>
+    <p><b>保留一直是好的</b>：划几笔 → 保存 → 切回卡板，那张卡正面就有缩略图，卡角标的字节数也已经把画板算进去；再点开，笔画还在（这一轮我在页上跑过）。</p>
+    <p><b>三个图标 + 一个「全部清空」</b>（这一轮改的）：笔 / 橡皮 / 撤销做成一组图标按钮，点亮的那个就是当前工具；<b>鼠标形状跟着换</b>——笔工具是斜笔尖，橡皮工具是橡皮头，所以不用回头看按钮也知道现在划下去是画还是擦。再点一次当前工具 = 回到打字。<b>「全部清空」从组里退出来</b>单独一个文字按钮（它是这批里唯一不可逆的，做成图标容易和撤销混）。没有笔画时点橡皮只会提示"先划一笔"，不会进那个工具。</p>
+    <p><b>局部擦</b>：橡皮亮着时，鼠标移到哪一笔会<b>先亮</b>，点下去只擦那一条（容差按屏幕 12 像素算，框大框小都圈得准）；撤销只退最后一笔。</p>
+    <p><b>画完保存，编辑区也要看得见</b>（你第 3 条问的就是这个）：之前只有右侧渲染列画了东西，左侧编辑区是个空textarea——<b>那一栏其实什么都没丢</b>，只是画板只在"正在画"的时候才占位。现在画板<b>常驻编辑区顶部</b>：不打字不画图时它是一块只读的画（铺的就是那份点列，和渲染列同一份数据），右下角一个「点一下接着画」，点它就切回笔工具。所以"只能在预览区看到"这一条不是限制，是上一版少画了一块。</p>
+    <p><b>量过的数</b>（在这页上真算）：一笔 <b>24 个采样点</b>，存<b>点列</b>（x,y,粗细）= <b>287 B</b>，存<b>收尖轮廓</b> = <b>834 B</b>（2.9 倍）。真版存点列，轮廓渲染时再算——这也正是 <b>perfect-freehand 1.2.3</b>（MIT，112KB）自己的数据形状。上面那行"落盘 / 轮廓"两个数就是同一张卡上现算的对照。</p>
+  </div>
+  <div class="note">
+    <h2>⑥ 选中：三个数分开报，不再让人自己算</h2>
+    <ul>
+      <li>之前那行"选了 2 张 · 顺线连成一簇的是 4 张"确实读不出到底发几张。现在写成算式：<b>要发出去 4 张 = 你点的 1 + 顺线带进来 2 + 同分区带进来 1</b>，按钮上直接跟"· 4 张"，被算进那一组的卡一起亮内框</li>
+      <li><b>框选</b>：空白处按住拖一个框，框到的全选（量过：框住 2 张 → 报"框住了 2 张"）</li>
+      <li><b>删线</b>：点一条线 = 选中它（变粗），底栏出「删掉这条线」，只断这一条，卡还在。双击线不再兼作删除——一个动作只留一个入口</li>
+      <li>那个按钮原来叫"清连线选择"，读起来像"清掉所有连线"。<b>它不清任何连线</b>，所以改名<b>「取消选择」</b>：一次清掉选中的卡和选中的线，并按住说清"一张卡、一条线都没删"</li>
+      <li>同分区只走<b>一跳</b>（你点的那张所在分区的兄弟），不像连线那样传递——两条规则都传递的话，整板会被一根链吸进"一组"，又回到算不清的老问题</li>
+      <li><b>第六轮推翻的是那条默认值</b>：这算式当时是<b>自动</b>的——你点一张，线把邻居拖进来一起发。现在<b>默认只发你点的那几张</b>，算式那行只在「顺线扩一圈」开着的时候才出现（见 ⑩）。老问题没变，变的是"谁替你做这个决定"</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h2>④ 成稿：三件套都已经在，只缺两处各十几行</h2>
+    <ul>
+      <li>多选已有（批量归档就在它上面）；批注已有模型、动词和入口（<code class="f">addComment</code>）</li>
+      <li>送进聊天已有：<code class="f">askAgent</code> 的请求里就有 cardIds（types.ts:783）</li>
+      <li><b>缺 1</b>：<code class="f">promptFormOf</code>（prompt.ts:60-71）只送正文——批注没进去。看右边那栏，这一轮我把它送进去了</li>
+      <li><b>缺 2</b>：一句"生成文章"的模板 = <code class="f">lensSendText</code>（prompt.ts:178-196）加一档。这正是 M3.2 删掉的透镜条的形状</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h2>⑤ 归档：同一个文件里的一个状态，不是别处</h2>
+    <p><code class="f">status:'archived'</code>（types.ts:317），板底一个折叠抽屉，还原可用，模型侧计数不含它。不是删，也没有第二个文件。</p>
+    <p><b>真洞：</b>抽屉里那张卡的"打开"在代码里是空函数（BoardView.tsx:515 <code class="f">onOpenDetail={() => {}}</code>）——归档卡只能还原，看不了。点卡一律进详情就顺手补上了，本页抽屉里点一下能验。</p>
+  </div>
+  <div class="note">
+    <h2>③′ 弹窗按钮：宿主有什么（实测清单）</h2>
+    <p>有 <b>Modal</b>（纯受控组件，portal 到 body，不需要 provider 也不需要 slot——这推翻我之前"宿主没有模态"的说法）、Button、Menu、Tooltip、Toast、Input、Switch、Tag、Pill、HoverCard。</p>
+    <p>没有 Dialog / Popover / Select / Checkbox / SegmentedControl / ColorPicker / DragHandle。所以：三态切换和卡片勾选仍是我们自己的，确认框改用 Modal。RiskConfirmation 强制勾一个确认框，用在"删分类"上会误伤，不用。</p>
+  </div>
+  <div class="note">
+    <h2>⑦ 多标签：右栏本来就是真多标签，但画布只注册了一个 kind</h2>
+    <p><b>能，而且不用我们自己造标签条。</b>右侧栏是一个 dockkit：一个 pane 里放着 <code class="f">tabs: readonly TabId[]</code> 加一个 <code class="f">activeTabId</code>（<code class="f">ui-dockkit/src/contract/types.ts:71-80</code>），标签条把所有 chip 都渲染出来（<code class="f">components/TabPanel.tsx:219</code>）；<code class="f">openResource/openTab</code> 默认是<b>追加</b>（<code class="f">engine/planner.ts:192-208</code>），只有调用方显式传 <code class="f">replaceTab</code> 才换掉当前那张。</p>
+    <p><b>卡点在这：</b>"页面"是<b>每个 pane 唯一</b>的。同一个 pane 里第二次 <code class="f">openTab('canvas')</code> 只会聚焦那张已有的、把 params 再递一遍（<code class="f">ui-sidebar-right/src/client/stores.ts:315-332</code>），<code class="f">duplicateTab</code> 对 page 直接拒绝（<code class="f">:339-343</code>）。而画布今天只注册了 <b>一个</b> kind（<code class="f">packages/canvas/src/client/definition.ts:22-45</code>），详情是那张 tab 内部的下钻，不是另一张标签。</p>
+    <p><b>所以"连线一张 + 详情一张"有三条路</b>：① 详情注册成<b>自己的 kind</b>（<code class="f">canvasDetail</code>）——两种 kind 天然并排，最省事；② 详情走 <b>resource</b>——按 (kind, contentId) 去重，<code class="f">revealIfOpened:false</code> 能开同一张卡的第二份；③ 保持一个 kind，用 <code class="f">split()</code> 开第二个 pane（停靠 pane 上限 2，浮动 pane 每个只装一张）。</p>
+    <p><b>你提的悬浮按钮</b>"在新标签页打开详情"是现成动词：<code class="f">ctx.sidebarRight.openResource(地址, {params})</code>，我们已经在用它开文件预览。"点的是哪张卡"走 <code class="f">params</code>——它会以 <code class="f">navigation.params</code> 交给 body，带一个 <code class="f">revision</code> 计数，每次重开都再给一遍。</p>
+    <p><b>代价先说清：</b>这套布局是<b>按会话存在内存里</b>的（<code class="f">stores.ts:41-57</code>；<code class="f">docs/subsystems/sidebar-right.md:140</code> 原文 "layout state is memory-only; a reload starts every session collapsed"）。刷一次页面，你摆好的两张标签就没了——所以它适合当"顺手开一张"，不适合当工作区配置来设计。另外<b>对话区没有</b>这种标签条（它的 slot 只有 <code class="f">conversation.session*</code> / <code class="f">conversation.chat.*</code>），你说的"本 sidebar 的多标签"正好是唯一走得通的那条。</p>
+    <p><b>这一轮已经按 ① 画进这页了</b>：顶上那条标签条就是它——画布那张一个 pane 唯一（卡板/连线只是它自己的两档），每张详情同一张卡只占一格；<b>关掉激活的那张会落到隔壁那张</b>，全关掉才回画布；每张标签<b>各自记自己的"未保存"</b>，切回来还在。"页面 / 资源"这套区分<b>退到悬停提示里</b>（第四轮改的，见 ⑧）。</p>
+  </div>
+  <div class="note">
+    <h2>⑧ 第四轮四条：标签条照宿主的画、条尾 ＋、进详情用笔、画画要有出口</h2>
+    <ul>
+      <li><b>标签条之前做错了两件事</b>：把"页面 / 资源"这种<b>实现语义当文字挂在标签上</b>，还做成了浏览器那种上圆角页签——宿主那条是<b>纯文字 chip，激活的起一个浅色药丸</b>（你给的第三张截图就是它）。现在照它重画，× 只在激活那张上出现，语义进 <code class="f">title</code> 悬停提示。</li>
+      <li><b>条尾 ＋</b>：宿主那条本来就有 ＋（"开一张标签"）。我们点它<b>直接开一张新卡详情</b>——和顶栏「＋ 新卡」是同一个动作，<b>两个入口要不要留一个</b>由你定。两处实测细节：标签多了以后<b>详情那张自己变窄、末尾起省略号，＋ 永远挤不掉</b>（宿主那条也是这样按可用宽度截断的）；<b>草稿那张已经开着时再点 ＋，只会聚焦它</b>，不会堆出第二张空白草稿——同一个未落盘的草稿在宿主那儿也是一家一格。</li>
+      <li><b>"两个框"换成笔</b>：那个 ⧉ 读不出"进详情"。详情页本身就是<b>唯一的编辑面</b>，所以"去改这张"= 笔，和工具条那支笔同一个形状；只读画板右下角的「点一下接着画」也带上它。</li>
+      <li><b>退不出去有一半是我的布局错</b>：工具条原来在画板<b>下面</b>，一开画（画板铺满整幅）就被顶到视野外——你截图里那张就是这样。现在工具条固定排在画板<b>上方</b>。出口三条：<b>再点一次铅笔</b>（按钮的悬停文案当场变成"再点一下退出画画"）、<b>按 Esc</b>、<b>点隔壁那张标签</b>（切标签一律回到打字）。第一次进详情多一行灰字提示，点过一次铅笔就不再出现。</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h2>⑨ 粘贴没"自动识别"，是因为这一页根本没画那一臂——补上了，判断用的是包内那条</h2>
+    <p><b>先纠正一句你的猜测：</b>不是"功能会做、html 没支持"。嗅探和三个「试贴」按钮<b>上一版原型就有</b>（<code class="f">canvas-detail-editor.html</code>），我搬这一页时漏带了——这页今天之前<b>连 paste 处理器都没有</b>。现在补上了，而且用的是包内那条判断的<b>原样移植</b>，不是另写一条演示路。</p>
+    <p><b>包内实测三件事：</b>① <code class="f">detectCardFormat</code>（<code class="f">card-format.ts:54-75</code>）已经在跑，但只在<b>渲染期从整张卡的正文</b>猜，注释写明<b>故意保守</b>——"宁可漏判真 HTML，也不让一段夹了内联标签的 markdown 被关进沙箱 iframe"；② <b>整个 client 里没有任何 paste 事件处理器</b>：<code class="f">paste-table.ts</code> 只被 <code class="f">client/index.ts:58</code> 导出，<b>没有一处 UI 调它</b>（它有 spec：<code class="f">tests/paste-table.spec.ts</code>）——识别表格这件事写好了、测过了、没接上；③ 卡片<b>没有格式字段</b>，格式永远从正文推（同文件顶部注释 "never from a flag"）。</p>
+    <p><b>这一页现在这么接：</b>粘贴时读 clipboard 的<b>两份</b>（<code class="f">text/html</code> + <code class="f">text/plain</code>）。浏览器复制网页时两份都给，<b>那份 <code class="f">text/html</code> 才是"这是网页"的信号</b>——所以不用猜字符串。存进卡的是选中的那一份原文，渲染期再按包内规则判一次，判成网页就起<b>真沙箱 iframe</b>（<code class="f">sandbox=""</code>，连同源都不给）。</p>
+    <p><b>你会当场撞上的那条，这一轮改了做法：</b>往一张<b>已经有正文</b>的卡里贴网页，整张卡<b>仍按 markdown</b>——判断看的是整张卡的正文，混进散文就不"通体是标记"了。上一版于是把那堆 <code class="f">&lt;div style="font:13px…"</code> 原样塞进正文，你在卡上看到的就是一屏<b>渲染不出来的死标记</b>。<b>现在这一步退回 clipboard 的纯文本那一份</b>（浏览器复制网页时两份都给，纯文本那份正是网页里的字，内容不丢），提示里说清为什么。<b>要它真成网页，出路还是让那段单独占一张卡</b>（条尾 ＋）——这是包内那条规则的后果，不是这页的限制。<b>要不要开一个"整卡格式手动改"的口子，仍是阶段 ④ 要裁的那件事</b>，我没替你先定。</p>
+    <p><b>图片那一腿仍是示意：</b>clipboard 里有文件时只插一行 <code class="f">attachment://</code> 指针（这一轮顺手把那句提示里报的字节数改对了——原来报的是整篇正文的长度，不是插进去那行的），真写入归宿主 <code class="f">ctx.attachments</code>（阶段 ④）。</p>
+  </div>
+  <div class="note">
+    <h2>⑩ 「一组」不该由线替你决定（你第 1 条）</h2>
+    <p><b>你说得对，那是我默认给错了。</b>之前点一张卡，只要它连着线，那一簇就自动算进"要发出去"的那一批——连线上挂的是"这两张有关系"，<b>不是"发的时候把它们捆一起"</b>。这两件事在图上是两码事，我却合并成了一个动作。</p>
+    <p><b>现在底栏多一个开关：「顺线扩一圈 关 / 开」</b>（排在「就这一组提问」左边，因为它是那支按钮的前置条件）。<b>关着</b>：一组 = 你点的那几张，一行灰字直接写"就是你点的那些"，一条线都不参与；<b>开着</b>：才顺线传递地拉邻居 + 同分区一跳，那行算式（"= 你点的 1 + 顺线带进来 2"）当场才出现。「取消选择」把开关一并拨回关——<b>它是个临时取景，不是一个应该记住的偏好</b>。</p>
+    <p><b>量过的：</b>点 <code class="f">c5</code>（有两根线指进来）关着时"要发出去 1 张"、按钮上"· 1 张"、亮内框的只有它自己；开一下变成 3 张（c3、c4 顺线进来），提示说清规则；点「取消选择」后 <code class="f">expandGroup</code> 回到 false。</p>
+    <p><b>实现代价（照旧只说这一视图的）：</b>纯客户端状态，一个布尔。<b>不进 canvas.json、不动协议、不加 Remote 动词</b>——"发哪几张"今天就是这个请求里的 <code class="f">cardIds</code>（<code class="f">BoardAskAgentRequest</code>，<code class="f">types.ts:779</code>；<code class="f">askAgent</code> 这个 Remote 动词还在，<code class="f">remote.ts:185</code>），开关只改那个数组在客户端怎么算出来。</p>
+  </div>
+  <div class="note">
+    <h2>⑪ 分类管理：确实做丢了（你第 2 条），补在这页的筛选条末尾</h2>
+    <p><b>不是做假，是搬丢了。</b>"每块画板自由增删改分类 + 底下有卡就弹窗确认"这件事<b>第一轮那页就有</b>（<code class="f">canvas-detail-editor.html</code> 的 <code class="f">openCats/renderCats/askDelete</code>），我搬到这页时只带了筛选条、没带管理面板——和上一轮丢 paste 处理器<b>是同一个错</b>：我按"这一页要展示什么"来搬，而不是按"包内已经有什么"。两处都在提案 §10.7 里定过，页面上却没有。</p>
+    <p><b>这页现在这么摆：</b>筛选条末尾一个虚线的「管理分类」，点开<b>就地展开一块面板</b>（不弹模态——378 宽的栏里摆模态，比它挡住的还挤；真版这里也一样，只有<b>确认框</b>用宿主那个 <code class="f">Modal</code>）。面板里三件事：<b>改名</b>（输入框，失焦即改，卡上存的还是那个 id，一张卡都不动）、<b>＋ 加一个</b>（现分一个 id；<b>代价在模型那一侧</b>——<code class="f">canvas_propose_card</code> 的 enum 要跟着这块画板的目录走，提案「风险」那节 ⑪ 那条）、<b>停用</b>。</p>
+    <p><b>"停用"而不是"删除"，是 §10.7 已经定死的一条</b>：目录项写 <code class="f">enabled:false</code>，不物理删。为什么——<code class="f">normalizeCard</code>（<code class="f">types.ts:511</code>）对认不出的 kind 是<b>丢整张卡</b>，只删定义等于下次打开板子那几张凭空消失，写回去就永久没了。所以停用一个底下还有卡的分类时弹一次确认，文案就那一句「<b>「参考」下还有 1 张卡。停用之后这几张一起进归档，正文保留、随时能恢复</b>」，按钮只有<b>取消 / 确认停用</b>。底下没卡 = 不弹，直接停用。</p>
+    <p><b>不引入"挑个去处"的选择器</b>（那是 §10.7 的原判）：想把卡留在板上，就用卡板上那个<b>勾选框批量选中 → 改分类</b>——这一轮为了兑现这句话，批量条里补了「改分类」那颗（点它把这一行换成"把这 N 张移到 ‹分类 chips›"）。停用之后卡上的标签还在、卡照常渲染，只是不再出现在筛选条里，面板下方那节"已停用"里能一键启用回来（<b>之前进归档的那几张不会跟着回来</b>，得一张张还原——这条我在提示里明说了）。</p>
+    <p><b>量过的：</b>改名「资料→参考」，chip 和卡角标同时跟上；停用「参考」→ 弹确认 → 确认后 1 张进归档（抽屉 2→3），chip 消失、"已停用"节里报 0 张；启用回来 chip 复位；新增「风险」→ 勾选 2 张 → 改分类 → 那两张的角标变「风险」、chip 计数 0→2。全程 console 干净。</p>
+  </div>
+
+  <div class="note">
+    <h2>⑫ 那句「还没落盘」删了之后，拦误删的那一道补在哪（你说"弹一次确认"）</h2>
+    <p><b>只管从没保存过的那张。</b>点 ＋ 开一张新卡详情，只要<b>写过字或落过笔</b>，再点标签上那个 × 就弹一次：「这张新卡还没保存过：正文写了 N 个字，画板上落了 N 笔。丢掉就一个字都不剩，板面上也不会多这张卡。」两个按钮——<b>继续编辑</b>（什么都不动，字和笔画原样还在）和<b>丢掉</b>（标签关掉，板上一张卡不多）。<b>空草稿不弹</b>：它没有可丢的东西；顶栏那个 × 走同一条路，因为它是同一个动作的第二个入口。实测四格：空草稿 × → 不弹、直接关；写了 12 个字 → 弹，报"12 个字"；点继续编辑 → 那 12 个字一个不少；重新点 × 选丢掉 → 标签没了、板上 <code class="f">.card</code> 仍是 5 张。只画一笔不写字也弹，那句变「画板上落了 1 笔」。全程无异常。</p>
+    <p><b>说清没管的那半：</b>一张<b>已经保存过</b>的卡，改了字再关标签，今天照样直接关（实测：给「碎片」那张加一句、点 ×，没弹，卡还在板上）。真版里那半也会丢编辑——但它在包里是 <code class="f">patchCard</code> 的事，要不要一起拦，我不替你定。<b>这一条等你一句"就这样"或"那张也拦"。</b></p>
+  </div>
+</div>
+
+<div class="verdict">
+  <p><b>这一轮的体验顺序：</b>切到<b>连线</b>视图 → 点一张连着线的卡（比如那张「依据」），看底栏写"<b>要发出去 1 张，就是你点的那些</b>"、只有它自己亮内框 → 点<b>「顺线扩一圈 关」</b>，同一张卡立刻变 3 张、算式那行出来 → 点「取消选择」，开关自己弹回关。<b>回卡板</b> → 点筛选条末尾的<b>「管理分类」</b>：改个名（卡角标跟着变）、＋加一个、然后勾两张卡 →「改分类」把它们移进新分类 → 对着一个<b>底下还有卡</b>的分类点「停用」，看那次确认弹窗（底下没卡的不弹）。最后开一张<b>已经有正文</b>的卡点「试贴网页」：这次落的是纯文本那一份，不再给你一屏死标记。</p>
+
+  <p><b>要点头的四件事：</b>① 「顺线扩一圈」这个默认关 + 它是<b>临时取景</b>（取消选择就弹回关）——定不定？② 分类管理<b>就地展开面板</b>（只有确认框用宿主 Modal），"停用而非删除、带卡一起进归档"这套照 §10.7 落地——定不定？③ 批量条补的那颗<b>「改分类」</b>要不要留在批量操作里（不留，⑪ 那句"想留在板上就先移空"就没有出口）；④ 粘贴在"会留下死标记"的场合<b>退回纯文本</b>——还是你要的是另一个做法（比如照样贴 html，但自动把整张卡转成网页）？</p>
+
+  <p><b>第五轮那两条，你回话了，已经做进这页：</b>① <b>「＋ 新卡」保留</b>——顶栏和标签条尾那颗 ＋ 是同一个动作（"先保留"那个"先"字我记在提案里，窄栏真挤了再回来判）；② <b>带字或带笔画的草稿点 × 弹一次确认</b>——试试：点 ＋，写几个字或画一笔，再点标签上那个 ×，会弹"这张新卡还没保存过：正文写了 N 个字……丢掉就一个字都不剩"，两个按钮<b>继续编辑 / 丢掉</b>。什么都没写的空草稿不弹（它本来就没有可丢的东西），保存过的卡关标签也不弹。</p>
+</div>
+
+<div class="mask hidden" id="mask"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* 这五个只是每块画板的<b>初始默认值</b>——真实数据是 canvas.json 里的 categories: [{id,label,order,enabled}]，每张画板各存各的 */
+let cats = [
+  { id: 'frag', label: '碎片', order: 0, enabled: true }, { id: 'q', label: '问题', order: 1, enabled: true },
+  { id: 'ground', label: '依据', order: 2, enabled: true }, { id: 'ref', label: '资料', order: 3, enabled: true },
+  { id: 'doc', label: '文档', order: 4, enabled: true },
+];
+const catOf = id => cats.find(c => c.id === id);
+const labelOf = id => (catOf(id) || { label: '未分类' }).label;
+const cardsIn = id => live().filter(c => c.cat === id).length;
+
+const BOARD = { w: 600, h: 400 };
+/** 落盘的是点列；收尖轮廓只在渲染时算（真版这一步交给 perfect-freehand） */
+function pointForm(strokes) {
+  return strokes.map(st => st.pts.map(p => `${Math.round(p.x)},${Math.round(p.y)},${p.w.toFixed(1)}`).join(' ')).join('\n');
+}
+function svgOf(draw, hl, extra) {
+  const list = extra ? (draw || []).concat(extra) : draw;
+  if (!list || !list.length) return '';
+  const paths = list.map((st, i) => `<path d="${ribbon(st.pts)}" fill="${i === hl ? 'var(--brand)' : st.color}" stroke="none"/>`).join('');
+  return `<svg class="doodle" viewBox="0 0 ${BOARD.w} ${BOARD.h}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">${paths}</svg>`;
+}
+function boardOf(draw) { return draw && draw.length ? `<div class="board-wrap">${svgOf(draw)}</div>` : ''; }
+/** 卡的正文 = 文字 + 点列（这就是要落进 card.text 的那个片段） */
+function textOf(card) {
+  if (!card.draw || !card.draw.length) return card.prose;
+  return card.prose + '\n<board points="' + pointForm(card.draw) + '" />\n';
+}
+function renderOf(card) {
+  if (!card.draw || !card.draw.length) return '';
+  return `<board width="${BOARD.w}" height="${BOARD.h}">\n` + svgOf(card.draw) + '\n</board>';
+}
+function bytesOf(card) { return new Blob([textOf(card)]).size; }
+function outlineBytesOf(card) { return new Blob([renderOf(card)]).size; }
+
+let seq = 100;
+const cards = [
+  { id: 'c1', cat: 'frag', status: 'kept', prose: '「我记不住它存在哪，我只记得我往里扔过。」', comments: [], x: 12, y: 36 },
+  { id: 'c2', cat: 'q', status: 'kept', prose: '卡板是「暂存」还是「整理后的产物」？\n\n如果是暂存，筛选就是多余的负担。',
+    comments: [{ who: 'agent', text: '这个二分本身可疑：暂存与整理可以同板分层。' }], x: 12, y: 200 },
+  { id: 'c3', cat: 'ground', status: 'kept', prose: '右栏折叠宽度下，选区条 10 个按钮换行为 3 行，主操作被推离拇指区。', comments: [], x: 200, y: 36 },
+  { id: 'c4', cat: 'ref', status: 'kept', prose: 'Linear 交互拆解：乐观更新 + 撤销的三段式反馈。',
+    comments: [{ who: 'user', text: '重点在"撤销"而不是"乐观"——我们只有前者。' }], x: 200, y: 200 },
+  { id: 'c5', cat: 'doc', status: 'kept', prose: '### 结论\n\n键盘优先不等于极客模式；**焦点环本身就是可发现性**。\n\n> 这段用来验渲染：源码里是井号，这里是标题和引用。', comments: [], x: 12, y: 310 },
+  { id: 'c6', cat: 'frag', status: 'archived', prose: '把「追问」从按钮变成一个动词键：选中 → ? → 直接进 sidechat。', comments: [], x: 12, y: 420 },
+  { id: 'c7', cat: 'frag', status: 'archived', prose: '旧的三态按钮条文案：太长了，且和透镜条重复。', comments: [], x: 200, y: 420 },
+];
+let links = [{ from: 'c3', to: 'c5' }, { from: 'c4', to: 'c5' }, { from: 'c1', to: 'c2' }];
+
+let view = 'board', filter = 'all', openId = null, mode = 'split', dirty = false, expandGroup = false;
+let tool = 'text';                                   // text | pen | erase
+let drawHintSeen = false;                            // 第一次进详情时提示"怎么进、怎么出"画画
+const drawing = () => tool !== 'text';               // 画板开着（不管是笔还是橡皮）
+const erasing = () => tool === 'erase';
+let draft = null;
+const sel = new Set(); const picked = new Set();
+let showWell = false, dragFrom = null, tempWire = null;
+let wireSel = null, marquee = null;
+const lanes = [
+  { id: 'L1', label: '第一章 · 现场', x: 8, y: 26, w: 352, h: 148 },
+  { id: 'L2', label: '还没归章', x: 8, y: 296, w: 200, h: 96 },
+];
+const CARD_W = 152, CARD_H = 60, LANE_MIN_Y = 24;
+
+const $ = id => document.getElementById(id);
+const live = () => cards.filter(c => c.status !== 'archived');
+const archived = () => cards.filter(c => c.status === 'archived');
+const byId = id => (draft && id === 'draft' ? draft : cards.find(c => c.id === id));
+const esc = s => s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+const clamp = (v, lo, hi) => hi < lo ? lo : Math.max(lo, Math.min(hi, v));
+
+function toast(msg) {
+  const el = $('toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => { el.classList.remove('show'); }, 1700);
+}
+/* ── 标签页：一张画布 + 每张卡详情各一张（宿主那套 dockkit 的 1:1 示意） ──
+   画布是"页面"：一个 pane 里唯一，所以卡板/连线只是它内部的 params 切换，不各占一格。
+   卡详情是"资源"：按 (kind, contentId) 去重，所以同一张卡再点一次是聚焦那一格，不会堆。 */
+let active = 'canvas';                                 // 'canvas' | 'card:<id>'
+const cardTabs = [];                                   // 打开顺序
+const ICO = {
+  pen: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l1.5-4.5L14 3l3 3L8 15.5 3 17z"/></svg>',
+  erase: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 14.5L10 6l5.5 3.2-4.2 5.3H6z"/><path d="M3 17.2h14"/></svg>',
+  undo: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4.5L3 8l3.5 3.5"/><path d="M3 8h7.5a4.5 4.5 0 1 1 0 9H8"/></svg>',
+};
+const activeCard = () => active.startsWith('card:') ? active.slice(5) : null;
+/** 点卡一律开一张详情（归档卡也走这里——抽屉里那个空函数就是它该补的洞） */
+function openCard(id) {
+  if (!cardTabs.includes(id)) cardTabs.push(id);
+  activate('card:' + id);
+}
+function activate(a) {
+  if (active === a) return;
+  const was = activeCard();
+  if (was) { const c = byId(was); if (c) c.unsaved = dirty; }
+  active = a;
+  const now = activeCard();
+  dirty = now ? !!(byId(now) || {}).unsaved : false;
+  tool = 'text';
+  render();
+}
+function closeTab(id) {
+  const i = cardTabs.indexOf(id);
+  const wasActive = activeCard() === id;
+  const c = byId(id);
+  if (id === 'draft') draft = null;
+  if (i >= 0) cardTabs.splice(i, 1);
+  if (c) { delete c.unsaved; }
+  if (wasActive) {
+    const next = cardTabs.length ? 'card:' + cardTabs[Math.max(0, i - 1)] : 'canvas';
+    active = next;
+    const now = activeCard();
+    dirty = now ? !!(byId(now) || {}).unsaved : false;
+    tool = 'text';
+    if (id === 'draft') toast('草稿关了就是关了：它从没落过盘，所以没有垃圾要清');
+  }
+  render();
+}
+/** 拦一道：只拦"从没保存过、但已经写了字或落了笔"的那张——那句落盘提示删了，这里就是唯一的出口 */
+function requestClose(id) {
+  if (id !== 'draft' || draft === null) { closeTab(id); return; }
+  const chars = draft.prose.trim().length, strokes = draft.draw.length;
+  if (!chars && !strokes) { closeTab(id); return; }
+  openMask(`<div class="dialog"><p>这张新卡还没保存过：${chars ? '正文写了 ' + chars + ' 个字' : ''}${chars && strokes ? '，' : ''}${strokes ? '画板上落了 ' + strokes + ' 笔' : ''}。丢掉就一个字都不剩，板面上也不会多这张卡。</p>
+    <div class="acts"><button class="btn ghost" id="xKeep">继续编辑</button><button class="btn on" id="xDrop">丢掉</button></div></div>`);
+  $('xKeep').onclick = () => { closeMask(); toast('拦下来了：字和笔画都还在，接着写'); };
+  $('xDrop').onclick = () => { closeMask(); closeTab(id); };
+}
+function renderTabs() {
+  const chip = (id, kindLabel, title, on, closeId, cls) => `<button class="tb${cls || ''}" data-tab="${id}" title="${esc(title)} · ${esc(kindLabel)}" aria-selected="${on}"><span class="tt">${esc(title)}</span>${on && closeId ? `<span class="x" data-close="${closeId}" title="关闭这张标签">×</span>` : ''}</button>`;
+  const cn = id => {
+    const d = byId(id);
+    return !d ? '（这张卡没了）' : id === 'draft' ? '未保存的新卡' : (firstLine(d) || '（空卡）').slice(0, 24);
+  };
+  $('tabs').innerHTML =
+    chip('canvas', '页面：一个画板栏里唯一一张，卡板/连线是它自己的两档', '画布', active === 'canvas', null, ' page') +
+    cardTabs.map(id => chip('card:' + id, '资源：同一张卡只占一格，再点只会聚焦这格', cn(id), active === 'card:' + id, id)).join('') +
+    `<button class="add" id="tabAdd" title="新开一张标签 · 默认直接进新卡详情">＋</button>` +
+    (cardTabs.length < 2 ? `<span class="hint">${cardTabs.length ? '1 张详情' : '点卡在这里开一张标签'}</span>` : '');
+  Array.from($('tabs').querySelectorAll('.tb')).forEach(el => { el.onclick = () => activate(el.dataset.tab); });
+  Array.from($('tabs').querySelectorAll('[data-close]')).forEach(el => {
+    el.onclick = ev => { ev.stopPropagation(); requestClose(el.dataset.close); };
+  });
+  $('tabAdd').onclick = () => newCardTab();
+}
+/** 标签条的 ＋ 和顶栏的 ＋新卡 是同一个动作：开一张详情标签，首次保存才落盘 */
+function newCardTab() {
+  if (!cardTabs.includes('draft')) { draft = { id: 'draft', cat: 'frag', status: 'draft', prose: '', comments: [], draw: [] }; cardTabs.push('draft'); }
+  view = 'board'; active = 'card:draft'; mode = 'split'; dirty = true; tool = 'text'; render();
+  toast('开了一张「未保存的新卡」标签：板上没多一张卡，首次保存才落盘');
+  setTimeout(() => { const t = $('dSrc'); if (t) t.focus(); }, 0);
+}
+
+/* ── 会被送出去的原文 ───────────────────────────────────────── */
+/** 画板发出去的就是那串点列——和落盘的完全同一份，不另做表示 */
+function boardTag(card) {
+  const pts = pointForm(card.draw);
+  const n = card.draw.reduce((s, st) => s + st.pts.length, 0);
+  return '<board points="' + (pts.length > 120 ? pts.slice(0, 120) + '…' : pts) + '" />'
+    + (pts.length > 120 ? ' （' + n + ' 个点 / ' + pts.length + ' 字符，真版整段发）' : '');
+}
+function refOf(card) {
+  const head = `[${labelOf(card.cat)}] `;
+  const body = card.prose.length > 4000 ? card.prose.slice(0, 4000) + '\n…(截断，全文 ' + card.prose.length + ' 字在卡 ' + card.id + ')' : card.prose;
+  const drawn = card.draw && card.draw.length ? '\n' + boardTag(card) : '';
+  return { label: (card.prose.split('\n')[0].replace(/^#+\s*/, '') || labelOf(card.cat)).slice(0, 36),
+    text: head + body + drawn,
+    // ↓ 这一轮补的那十几行：批注进 ref（今天 promptFormOf 只送正文）
+    comments: card.comments.map(c => (c.who === 'agent' ? 'Agent' : '你') + '：' + c.text) };
+}
+/** 「一组」默认 = 你点的那几张。顺线（可传递）和同分区（只走一跳）两条扩展规则要<b>你按「顺线扩一圈」才生效</b>——第五轮之前是自动的，你说发出去的应该由你选。 */
+function groupOf(ids) {
+  const ok = id => { const c = byId(id); return c && c.status !== 'archived'; };
+  const seeds = ids.filter(ok);
+  if (!expandGroup) return { ids: seeds, seeds, viaLine: [], viaLane: [] };
+  const members = new Set(seeds);
+  const viaLine = [], viaLane = [];
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const l of links) {
+      const other = members.has(l.from) ? l.to : members.has(l.to) ? l.from : null;
+      if (other && !members.has(other) && ok(other)) { members.add(other); viaLine.push(other); grew = true; }
+    }
+  }
+  for (const id of seeds) {
+    const lane = laneAt(byId(id));
+    if (!lane) continue;
+    for (const c of live()) {
+      if (!members.has(c.id) && laneHolds(lane, c)) { members.add(c.id); viaLane.push(c.id); }
+    }
+  }
+  return { ids: Array.from(members), seeds, viaLine, viaLane };
+}
+
+/* ── 会话区 ───────────────────────────────────────── */
+function pushTurn(html, cls) {
+  const box = document.createElement('div');
+  box.className = 'turn ' + (cls || '');
+  box.innerHTML = html;
+  $('chat').appendChild(box);
+  box.scrollIntoView({ block: 'nearest' });
+}
+function sendToChat(ids, template, askLabel) {
+  const refs = ids.map(byId).filter(Boolean).map(refOf);
+  const nC = refs.reduce((n, r) => n + r.comments.length, 0);
+  const list = refs.map(r => `<div class="ref"><div class="rl">${esc(r.label)}</div><div class="rt">${esc(r.text)}</div>${
+    r.comments.map(c => `<div class="rc">批注 · ${esc(c)}</div>`).join('')}</div>`).join('');
+  pushTurn(`<div class="lbl">${esc(askLabel)} · ${refs.length} 张卡 · ${nC} 条批注</div><div class="reflist">${list}</div>`);
+  pushTurn(`<div class="lbl">发给 Agent 的那一句</div><pre>${esc(template)}</pre>`, 'me');
+  if (nC === 0) pushTurn('<div class="lbl">提示</div><div class="empty">这批卡一条批注都没有——"批注进 ref"那条改动这次没有可展示的内容。回卡板给某张卡加一条再试。</div>');
+}
+
+/* ── 卡板 ───────────────────────────────────────── */
+let catMgrOpen = false, catPick = false;
+function chipRow() {
+  const rows = [{ id: 'all', label: '全部', n: live().length }]
+    .concat(cats.filter(c => c.enabled).map(c => ({ id: c.id, label: c.label, n: cardsIn(c.id) })));
+  return rows.map(r => `<button class="chip" data-f="${r.id}" ${filter === r.id ? 'data-active="true"' : ''}>${esc(r.label)}<span class="n">${r.n}</span></button>`).join('')
+    + `<button class="chip mgr" id="catMgr" title="每个画板各存一份：canvas.json 的 categories">${catMgrOpen ? '收起分类管理' : '管理分类'}</button>`;
+}
+/** 管理面板：改名 / 新增 / 停用（= enabled:false，目录项不物理删，见提案 10.7） */
+function catMgrHtml() {
+  const row = c => `<div class="catrow${c.enabled ? '' : ' off'}">
+      <input value="${esc(c.label)}" data-cat-rename="${c.id}" placeholder="分类名">
+      <span class="n">${cardsIn(c.id)} 张</span>
+      ${c.enabled ? `<button class="btn sm ghost" data-cat-off="${c.id}">停用</button>`
+        : `<button class="btn sm" data-cat-on="${c.id}">启用</button>`}
+    </div>`;
+  const on = cats.filter(c => c.enabled), off = cats.filter(c => !c.enabled);
+  return `<div class="catmgr">
+    <div class="hd"><b>分类</b><span>这块画板自己存一份 · <code class="f">canvas.json → categories</code></span></div>
+    ${on.map(row).join('') || '<div class="empty">全停用了。</div>'}
+    ${off.length ? `<div class="empty" style="padding-top:7px">已停用 ${off.length} 个 · 卡上的标签还在，只是不再进筛选条</div>${off.map(row).join('')}` : ''}
+    <div class="newcat"><input id="newCat" placeholder="新分类名"><button class="btn sm" id="addCat">＋ 加一个</button></div>
+    <p class="tip">改名只改显示：卡上存的是 id，不动任何一张卡。<b>停用</b>一个还有卡在用的分类会弹一次确认——那几张一起进归档，正文保留、随时能恢复。<b>没有"挑个去处"的选择器</b>：想把卡留在板上，用勾选框批量选中后「改分类」。</p>
+  </div>`;
+}
+function renameCat(id, label) {
+  const c = catOf(id); if (!c) return;
+  c.label = label.trim() || c.label;
+  render(); toast('改的是显示名，卡上那个 id 一个字没动');
+}
+function addCat() {
+  const el = $('newCat'), label = el.value.trim();
+  if (!label) { toast('先起个名'); return; }
+  cats.push({ id: 'k' + Date.now().toString(36).slice(-4), label, order: cats.length, enabled: true });
+  render(); toast('新分类只在这块画板的目录里 · id 现分一个，模型那侧的 enum 要跟着它走（提案 10.7 那条代价）');
+}
+function askDisable(id) {
+  const c = catOf(id), n = cardsIn(id);
+  if (n === 0) { c.enabled = false; render(); toast('「' + c.label + '」停用了：底下没卡，板面什么都没动'); return; }
+  openMask(`<div class="dialog"><p>「${esc(c.label)}」下还有 ${n} 张卡。停用之后这几张一起进归档，正文保留、随时能恢复。</p>
+    <div class="acts"><button class="btn ghost" id="mNo">取消</button><button class="btn on" id="mYes">确认停用</button></div></div>`);
+  $('mNo').onclick = closeMask;
+  $('mYes').onclick = () => {
+    cards.forEach(x => { if (x.cat === id && x.status !== 'archived') x.status = 'archived'; });
+    c.enabled = false;
+    if (filter === id) filter = 'all';
+    closeMask(); render(); toast('停了「' + c.label + '」，那 ' + n + ' 张进了归档 · 目录项还在，随时能启用回来');
+  };
+}
+function enableCat(id) {
+  catOf(id).enabled = true; render();
+  toast('标签回到筛选条了 · 之前进归档的那几张还躺在抽屉里，得一张张还原');
+}
+function openMask(html) { const m = $('mask'); m.innerHTML = html; m.classList.remove('hidden'); m.onclick = e => { if (e.target === m) closeMask(); }; }
+function closeMask() { const m = $('mask'); m.classList.add('hidden'); m.innerHTML = ''; }
+
+/** 板面/节点上的预览：只把 markdown 的记号摘掉（渲染归详情，不在卡上再跑一遍） */
+function previewOf(card) {
+  return card.prose.split('\n')
+    .map(l => l.replace(/^#{1,6}\s*/, '').replace(/^>\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1'))
+    .join('\n').trim();
+}
+function cardHtml(card, opts) {
+  const o = opts || {};
+  const pickedOn = o.selectable !== false && sel.has(card.id);
+  const drawn = card.draw && card.draw.length;
+  return `<div class="card" data-id="${card.id}" data-selected="${pickedOn}">
+    ${o.selectable === false ? '' : `<button class="box" data-box="${card.id}" aria-label="勾选">${pickedOn ? '✓' : ''}</button>`}
+    <div class="kind">${esc(labelOf(card.cat))}${o.well ? ' · 已归档' : ''}</div>
+    ${drawn ? `<div class="thumb">${svgOf(card.draw)}</div>` : ''}
+    <div class="txt">${esc(previewOf(card) || '（空卡 · 进详情写）')}</div>
+    <div class="foot"><span>${bytesOf(card)} B</span>${card.comments.length ? `<span>批注 ${card.comments.length}</span>` : ''}</div>
+  </div>`;
+}
+function renderBoard() {
+  const shown = filter === 'all' ? live() : live().filter(c => c.cat === filter);
+  const arch = archived();
+  $('viewHost').innerHTML = `<div class="chips" id="chips">${chipRow()}</div>
+    ${catMgrOpen ? catMgrHtml() : ''}
+    <div class="grid" id="grid">${shown.length ? shown.map(c => cardHtml(c)).join('') : '<div class="empty">这个筛选下没有卡。</div>'}</div>
+    ${arch.length ? `<div class="well"><button id="wellBtn"><span class="caret">${showWell ? '▾' : '▸'}</span>已归档 ${arch.length} 张卡</button>
+      ${showWell ? `<div class="grid">${arch.map(c => cardHtml(c, { well: true, selectable: false })).join('')}</div>` : ''}</div>` : ''}`;
+  Array.from($('chips').querySelectorAll('.chip[data-f]')).forEach(el => { el.onclick = () => { filter = el.dataset.f; render(); }; });
+  $('catMgr').onclick = () => { catMgrOpen = !catMgrOpen; render(); };
+  Array.from(document.querySelectorAll('[data-cat-rename]')).forEach(el => {
+    el.onchange = () => renameCat(el.dataset.catRename, el.value);
+  });
+  Array.from(document.querySelectorAll('[data-cat-off]')).forEach(el => { el.onclick = () => askDisable(el.dataset.catOff); });
+  Array.from(document.querySelectorAll('[data-cat-on]')).forEach(el => { el.onclick = () => enableCat(el.dataset.catOn); });
+  const ac = $('addCat'); if (ac) ac.onclick = addCat;
+  const nc = $('newCat'); if (nc) nc.onkeydown = ev => { if (ev.key === 'Enter') addCat(); };
+  Array.from($('grid').children).forEach(el => {
+    if (!el.dataset.id) return;
+    el.onclick = ev => { if (ev.target.classList.contains('box')) return; openCard(el.dataset.id); };
+  });
+  Array.from(document.querySelectorAll('[data-box]')).forEach(el => {
+    el.onclick = ev => { ev.stopPropagation(); const id = el.dataset.box; if (sel.has(id)) sel.delete(id); else sel.add(id); render(); };
+  });
+  const wb = $('wellBtn');
+  if (wb) wb.onclick = () => { showWell = !showWell; render(); };
+  Array.from(document.querySelectorAll('.well .card')).forEach(el => {
+    el.onclick = () => { openCard(el.dataset.id); toast('归档卡也能读——这就是原来那个空函数该去的地方'); };
+  });
+  const n = sel.size;
+  if (catPick && !n) catPick = false;
+  $('batchBar').innerHTML = !n ? '' : catPick
+    ? `<div class="batch" style="flex-wrap:wrap">把这 ${n} 张移到<span class="spacer"></span>
+        ${cats.filter(c => c.enabled).map(c => `<button class="chip" data-move="${c.id}">${esc(c.label)}</button>`).join('')}
+        <button class="btn sm ghost" id="bCatBack">回去</button></div>`
+    : `<div class="batch">选中 ${n} 张<span class="spacer"></span>
+    <button class="btn sm" id="bCompose">生成文章</button>
+    <button class="btn sm" id="bAsk">就此提问</button>
+    <button class="btn sm" id="bArch">归档</button>
+    <button class="btn sm" id="bCat">改分类</button>
+    <button class="btn sm ghost" id="bClear">取消</button></div>`;
+  if (n && catPick) {
+    Array.from(document.querySelectorAll('[data-move]')).forEach(el => {
+      el.onclick = () => {
+        const ids = Array.from(sel); ids.forEach(i => { byId(i).cat = el.dataset.move; });
+        catPick = false; render(); toast('移了 ' + ids.length + ' 张进「' + labelOf(el.dataset.move) + '」——停用一个分类前先把它的卡移空，就不用进归档了');
+      };
+    });
+    $('bCatBack').onclick = () => { catPick = false; render(); };
+  } else if (n) {
+    $('bCompose').onclick = () => { sendToChat(Array.from(sel), TEMPLATES.compose, '生成文章'); suggest(); propose(Array.from(sel), 'compose'); };
+    $('bAsk').onclick = () => { sendToChat(Array.from(sel), TEMPLATES.why, '就此提问'); };
+    $('bArch').onclick = () => { const ids = Array.from(sel); ids.forEach(i => { byId(i).status = 'archived'; }); sel.clear(); render(); toast('已归档 ' + ids.length + ' 张（没删，只是从板面收进抽屉）'); };
+    $('bClear').onclick = () => { sel.clear(); render(); };
+    $('bCat').onclick = () => { catPick = true; render(); };
+  }
+}
+const TEMPLATES = {
+  compose: '【生成文章】以这些卡片为材料写一篇成稿：保留卡片里的判断，把批注当作修改意见吸收进正文，被批注推翻的那条不要再写；结构自己定；末尾列出哪些卡片没有用到。',
+  why: '【追问原因】往深追问一层「为什么会是这样」，把值得回答的新问题提议成卡。',
+  group: '【就这一组提问】这几张卡已被连线连成一簇：把它们当作同一论证的几段，指出这条链断在哪一步，并提议一张能把链接上的卡。',
+};
+function suggest() { if (!document.body.classList.contains('wide')) { document.body.classList.add('wide'); $('wideBtn').textContent = '宽模式'; toast('宽模式已开：成稿要看的是整篇，不是 380 栏'); } }
+
+/* ── 提议卡（真版走 canvas_propose_card，用户 ✓ 才落板） ───────── */
+function propose(ids, kind) {
+  const src = ids.map(byId).filter(Boolean);
+  const text = '（模拟回复 · 真版由模型生成）把 ' + src.map(c => '「' + c.prose.split('\n')[0].slice(0, 10) + '」').join(' + ') + ' 合成一节的骨架：先给结论，再给那张依据。';
+  const host = $('chat');
+  pushTurn(`<div class="lbl">Agent 提议一张卡（<span class="f">canvas_propose_card</span> · 要你 ✓ 才上板）</div>
+    <div class="ref"><div class="rt">${esc(text)}</div></div>
+    <div style="margin-top:7px;display:flex;gap:6px"><button class="btn sm" id="pYes">收下</button><button class="btn sm ghost" id="pNo">不要</button></div>`, 'proposal');
+  $('pYes').onclick = () => {
+    cards.unshift({ id: 'p' + (++seq), cat: 'doc', status: 'kept', prose: text, comments: [{ who: 'agent', text: '由 ' + ids.length + ' 张卡合成' }], x: 200, y: 310 });
+    host.lastElementChild && host.lastElementChild.remove();
+    render(); toast('已上板，标了 Agent'); suggest();
+  };
+  $('pNo').onclick = () => { host.lastElementChild && host.lastElementChild.remove(); toast('没有落板——提议本来就该是这个默认'); };
+}
+
+/* ── 连线视图 ───────────────────────────────────────── */
+function renderLink() {
+  const list = live();
+  const grp = groupOf(Array.from(picked));
+  $('viewHost').innerHTML = `<div class="stage" id="stage">
+    <svg class="wires" id="wires"></svg>${lanes.map(l => `<div class="lane" data-lane="${l.id}" style="left:${l.x}px;top:${l.y}px;width:${l.w}px;height:${l.h}px">
+      <button class="laneTitle" data-lane-edit="${l.id}">${esc(l.label)}</button><span class="laneSize" data-lane-size="${l.id}"></span></div>`).join('')}
+    ${list.map(c => `<div class="node" data-n="${c.id}" data-picked="${picked.has(c.id)}" data-cluster="${grp.ids.includes(c.id)}" data-inlane="${laneAt(c) ? 'true' : 'false'}" style="left:${c.x}px;top:${c.y}px">
+      <div class="kind">${esc(labelOf(c.cat))}${laneAt(c) ? ' · ' + esc(laneAt(c).label) : ''}</div>${c.draw && c.draw.length ? `<div class="thumb">${svgOf(c.draw)}</div>` : ''}<div class="txt">${esc(previewOf(c) || '（空卡）')}</div>
+      <span class="port" data-port="${c.id}"></span><button class="openTab" data-open="${c.id}" title="进详情 · 开一张标签">${ICO.pen}</button></div>`).join('')}</div>
+    <div class="stagescroll"><span id="gInfo"></span><span class="spacer"></span>
+      <button class="btn sm hidden" id="wireDel">删掉这条线</button>
+      <button class="btn sm ${expandGroup ? 'on' : ''}" id="gExpand" title="默认关：发出去的就是你点的那几张，线不参与选择。开了才顺线（可传递）+ 同分区（一跳）把邻居带进来">顺线扩一圈 ${expandGroup ? '开' : '关'}</button>
+      <button class="btn sm" id="laneBtn">＋ 分区</button>
+      <button class="btn sm" id="gAsk">就这一组提问</button><button class="btn sm ghost" id="gClear">取消选择</button></div>
+    <div class="stagescroll" style="border-top:1px solid var(--l1);display:block">
+      <b>卡板 = 改卡（单击开一张详情标签）；连线 = 选卡（单击选中，<b>悬停点右上角那支笔、或双击，才开详情标签</b>）</b>。拖卡片挪位置 · 拖右侧小圆点到另一张卡 = 连一条线 · <b>空白处按住拖 = 框选一批</b> · <b>点一条线 = 选中它，再点「删掉这条线」</b> · 拖分区框 = 框里的卡跟着走 · 点分区标题 = 改名。
+      <b>连线和分区都是新数据</b>：<span class="f">canvas.json</span> 里今天没有存它们的地方，要加 links 与 lanes 两个数组。<b>线不替你选卡</b>：连着谁不代表要发给谁，一次想发一串就点「顺线扩一圈」。
+    </div>`;
+  drawWires();
+  Array.from(document.querySelectorAll('.node')).forEach(el => {
+    const card = byId(el.dataset.n);
+    let sx = 0, sy = 0, ox = 0, oy = 0, moved = false;
+    el.onpointerdown = ev => {
+      if (ev.target.classList.contains('port') || (ev.target.closest && ev.target.closest('.openTab'))) return;
+      sx = ev.clientX; sy = ev.clientY; ox = card.x; oy = card.y; moved = false;
+      el.setPointerCapture(ev.pointerId); el.style.cursor = 'grabbing';
+      const mv = e2 => {
+        const dx = e2.clientX - sx, dy = e2.clientY - sy;
+        if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+        const st = $('stage');
+        card.x = clamp(ox + dx, 0, st.clientWidth - el.offsetWidth);
+        card.y = clamp(oy + dy, 0, st.clientHeight - el.offsetHeight);
+        el.style.left = card.x + 'px'; el.style.top = card.y + 'px'; drawWires();
+      };
+      const up = () => {
+        document.removeEventListener('pointermove', mv); el.style.cursor = 'grab';
+        if (!moved) { if (picked.has(card.id)) picked.delete(card.id); else picked.add(card.id); render(); }
+        else { const l = laneAt(card); render(); toast(l ? '这张进到了「' + l.label + '」' : '这张不在任何分区里了'); }
+      };
+      document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up, { once: true });
+    };
+    el.ondblclick = () => openCard(card.id);
+  });
+  Array.from(document.querySelectorAll('[data-open]')).forEach(b => {
+    b.onpointerdown = ev => ev.stopPropagation();
+    b.onclick = () => { openCard(b.dataset.open); toast('开成一张标签：真版走 ctx.sidebarRight.openResource(这张卡) —— 已开着的就是聚焦那格'); };
+  });
+  Array.from(document.querySelectorAll('.lane')).forEach(el => {
+    const lane = lanes.find(l => l.id === el.dataset.lane);
+    let sx = 0, sy = 0, mode = 'move', box = null, inside = [];
+    el.onpointerdown = ev => {
+      if (ev.target.classList.contains('laneTitle')) return;
+      ev.stopPropagation();
+      sx = ev.clientX; sy = ev.clientY;
+      box = { x: lane.x, y: lane.y, w: lane.w, h: lane.h };
+      inside = live().filter(c => laneHolds(lane, c)).map(c => ({ c, x: c.x, y: c.y }));
+      mode = ev.target.classList.contains('laneSize') ? 'size' : 'move';
+      el.setPointerCapture(ev.pointerId);
+      const mv = e2 => {
+        const dx = e2.clientX - sx, dy = e2.clientY - sy;
+        const st = $('stage'), W = st.clientWidth, H = st.clientHeight;
+        if (mode === 'size') {
+          lane.w = clamp(box.w + dx, 150, W - lane.x); lane.h = clamp(box.h + dy, 80, H - lane.y);
+        } else {
+          let mx = clamp(dx, -box.x, W - box.x - box.w), my = clamp(dy, LANE_MIN_Y - box.y, H - box.y - box.h);
+          inside.forEach(o => { mx = clamp(mx, -o.x, W - CARD_W - o.x); my = clamp(my, -o.y, H - CARD_H - o.y); });
+          lane.x = box.x + mx; lane.y = box.y + my;
+          inside.forEach(o => { o.c.x = o.x + mx; o.c.y = o.y + my; });
+        }
+        el.style.left = lane.x + 'px'; el.style.top = lane.y + 'px';
+        el.style.width = lane.w + 'px'; el.style.height = lane.h + 'px';
+        inside.forEach(o => {
+          const ne = document.querySelector('.node[data-n="' + o.c.id + '"]');
+          if (ne) { ne.style.left = o.c.x + 'px'; ne.style.top = o.c.y + 'px'; }
+        });
+        drawWires();
+      };
+      const up = () => { document.removeEventListener('pointermove', mv); render(); if (mode === 'move') toast('框走了 ' + inside.length + ' 张——分区是容器，线也跟着走'); };
+      document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up, { once: true });
+    };
+  });
+  Array.from(document.querySelectorAll('[data-lane-edit]')).forEach(el => {
+    el.onclick = () => {
+      const lane = lanes.find(l => l.id === el.dataset.laneEdit);
+      const inp = document.createElement('input');
+      inp.value = lane.label; inp.style.cssText = 'position:absolute;top:-18px;left:2px;width:170px;font:inherit;font-size:11.5px;border:1px solid var(--l2);border-radius:4px;background:var(--layer-1);color:var(--t1)';
+      el.replaceWith(inp); inp.focus(); inp.select();
+      const commit = () => { lane.label = inp.value.trim() || lane.label; render(); };
+      inp.onblur = commit;
+      inp.onkeydown = ev => { if (ev.key === 'Enter') commit(); };
+    };
+  });
+  Array.from(document.querySelectorAll('[data-port]')).forEach(el => {
+    el.onpointerdown = ev => {
+      ev.stopPropagation(); dragFrom = el.dataset.port;
+      const stage = $('stage');
+      const mv = e2 => {
+        const r = stage.getBoundingClientRect();
+        const src = document.querySelector('.node[data-n="' + dragFrom + '"]');
+        const a = byId(dragFrom);
+        tempWire = { x1: a.x + 158, y1: a.y + (src ? src.offsetHeight / 2 : 26), x2: e2.clientX - r.left, y2: e2.clientY - r.top };
+        drawWires();
+      };
+      const up = e2 => {
+        document.removeEventListener('pointermove', mv); tempWire = null;
+        const target = e2.target.closest ? e2.target.closest('.node') : null;
+        if (target && target.dataset.n !== dragFrom) {
+          const pair = [dragFrom, target.dataset.n];
+          const exists = links.some(l => (l.from === pair[0] && l.to === pair[1]) || (l.from === pair[1] && l.to === pair[0]));
+          if (!exists) { links.push({ from: pair[0], to: pair[1] }); toast('连上了'); }
+        }
+        dragFrom = null; render();
+      };
+      document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up, { once: true });
+    };
+  });
+  const stage = $('stage');
+  stage.onpointerdown = ev => {
+    if (ev.target !== stage && !ev.target.classList.contains('wires')) return;
+    const r = stage.getBoundingClientRect();
+    marquee = { x0: ev.clientX - r.left, y0: ev.clientY - r.top, x1: 0, y1: 0 };
+    const box = document.createElement('div');
+    box.className = 'marquee'; stage.appendChild(box);
+    const mv = e2 => {
+      marquee.x1 = e2.clientX - r.left; marquee.y1 = e2.clientY - r.top;
+      const x = Math.min(marquee.x0, marquee.x1), y = Math.min(marquee.y0, marquee.y1);
+      box.style.cssText = `left:${x}px;top:${y}px;width:${Math.abs(marquee.x1 - marquee.x0)}px;height:${Math.abs(marquee.y1 - marquee.y0)}px`;
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', mv);
+      const x = Math.min(marquee.x0, marquee.x1), y = Math.min(marquee.y0, marquee.y1);
+      const w = Math.abs(marquee.x1 - marquee.x0), h = Math.abs(marquee.y1 - marquee.y0);
+      marquee = null; box.remove();
+      if (w < 8 && h < 8) { if (wireSel !== null) { wireSel = null; render(); } return; }
+      let hit = 0;
+      live().forEach(c => {
+        const el = document.querySelector('.node[data-n="' + c.id + '"]');
+        if (!el) return;
+        if (c.x < x + w && c.x + el.offsetWidth > x && c.y < y + h && c.y + el.offsetHeight > y) { picked.add(c.id); hit += 1; }
+      });
+      render(); toast('框住了 ' + hit + ' 张');
+    };
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up, { once: true });
+  };
+  $('gInfo').innerHTML = picked.size
+    ? (expandGroup
+      ? '要发出去 <b>' + grp.ids.length + ' 张</b> = 你点的 ' + grp.seeds.length
+        + (grp.viaLine.length ? ' + 顺线带进来 ' + grp.viaLine.length : '')
+        + (grp.viaLane.length ? ' + 同分区带进来 ' + grp.viaLane.length : '')
+      : '要发出去 <b>' + grp.ids.length + ' 张</b>，就是你点的那些')
+      + '。板上有 ' + links.length + ' 条线、' + lanes.length + ' 个分区。'
+    : '还没选。点卡 / 框选都行；<b>发出去的就是你点的那几张</b>——线不自动把邻居带进来，要带就点「顺线扩一圈」。';
+  $('gAsk').disabled = picked.size === 0;
+  $('gAsk').textContent = '就这一组提问' + (picked.size ? ' · ' + grp.ids.length + ' 张' : '');
+  $('gAsk').onclick = () => { sendToChat(grp.ids, TEMPLATES.group, '就这一组提问'); propose(grp.ids, 'group'); };
+  $('gExpand').onclick = () => {
+    expandGroup = !expandGroup; render();
+    toast(expandGroup ? '开了：这一组会顺线（可传递）+ 同分区（一跳）把邻居带进来' : '关了：一组 = 你点的那几张，一条线都不参与选择');
+  };
+  $('gClear').onclick = () => {
+    const had = picked.size + (wireSel === null ? 0 : 1);
+    picked.clear(); wireSel = null; expandGroup = false; render();
+    toast(had ? '只是取消高亮：一张卡、一条线都没删' : '本来就没选');
+  };
+  $('laneBtn').onclick = () => { const st = $('stage'); lanes.push({ id: 'L' + Date.now().toString(36).slice(-4), label: '新分区 · 点标题改名', x: clamp(190, 0, st.clientWidth - 170), y: 190, w: 170, h: 110 }); render(); toast('分区就是一个容器节点：卡拖进去就跟它走'); };
+  const wd = $('wireDel');
+  wd.classList.toggle('hidden', wireSel === null);
+  if (wireSel !== null) wd.onclick = () => { const l = links.splice(wireSel, 1)[0]; wireSel = null; render(); toast('删掉了 ' + l.from + ' ↔ ' + l.to + ' 这一条（卡还在，只断线）'); };
+}
+/** 卡片归在哪个分区：按中心点判包含（真版交给库的 extent:'parent'） */
+function laneHolds(lane, c) {
+  const el = document.querySelector('.node[data-n="' + c.id + '"]');
+  const w = el ? el.offsetWidth : 152, h = el ? el.offsetHeight : 60;
+  const cx = c.x + w / 2, cy = c.y + h / 2;
+  return cx >= lane.x && cx <= lane.x + lane.w && cy >= lane.y && cy <= lane.y + lane.h;
+}
+function laneAt(card) { return lanes.find(l => laneHolds(l, card)) || null; }
+/** 线走中心到中心、控制点沿主轴外推：不管两张卡谁在谁左边/上边都不会打结（穿过卡片的部分被不透明的卡挡住，读起来就是"两端各出一截"） */
+function wirePath(a, b) {
+  const ea = document.querySelector('.node[data-n="' + a.id + '"]'), eb = document.querySelector('.node[data-n="' + b.id + '"]');
+  const wa = ea ? ea.offsetWidth : CARD_W, wb = eb ? eb.offsetWidth : CARD_W;
+  const ha = ea ? ea.offsetHeight : CARD_H, hb = eb ? eb.offsetHeight : CARD_H;
+  const x1 = a.x + wa / 2, y1 = a.y + ha / 2, x2 = b.x + wb / 2, y2 = b.y + hb / 2;
+  const dx = x2 - x1, dy = y2 - y1;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const k = Math.max(24, Math.abs(dx) / 2) * (dx < 0 ? -1 : 1);
+    return `M ${x1} ${y1} C ${x1 + k} ${y1}, ${x2 - k} ${y2}, ${x2} ${y2}`;
+  }
+  const k = Math.max(24, Math.abs(dy) / 2) * (dy < 0 ? -1 : 1);
+  return `M ${x1} ${y1} C ${x1} ${y1 + k}, ${x2} ${y2 - k}, ${x2} ${y2}`;
+}
+function drawWires() {
+  const g = $('wires'); if (!g) return;
+  const lines = links.map((l, i) => {
+    const a = byId(l.from), b = byId(l.to);
+    if (!a || !b || a.status === 'archived' || b.status === 'archived') return '';
+    const d = wirePath(a, b);
+    const on = wireSel === i;
+    return `<path class="hit" d="${d}" data-wire="${i}"/><path class="wire" d="${d}" stroke="${on ? 'var(--brand)' : 'var(--t3)'}" stroke-width="${on ? 3 : 1.6}" fill="none" opacity="${on ? 1 : .8}"/>`;
+  }).join('');
+  g.innerHTML = lines + (tempWire ? `<path d="M ${tempWire.x1} ${tempWire.y1} L ${tempWire.x2} ${tempWire.y2}" stroke="var(--brand)" stroke-width="1.4" stroke-dasharray="4 3" fill="none"/>` : '');
+  Array.from(g.querySelectorAll('[data-wire]')).forEach(el => {
+    el.onclick = () => { wireSel = Number(el.dataset.wire); render(); };
+  });
+}
+
+/* ── 详情：唯一编辑面 ───────────────────────────────── */
+function firstLine(c) {
+  if (detectFormat(c.prose) === 'html') {
+    const t = htmlTitleOf(c.prose) || c.prose.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return (t || '（网页片段）').slice(0, 20);
+  }
+  return (c.prose.split('\n')[0].replace(/^#+\s*/, '') || '（无标题）').slice(0, 20);
+}
+function mdLite(src) {
+  return src.split('\n').map(l => {
+    const t = esc(l.trim());
+    if (!t) return '';
+    if (t.startsWith('### ')) return '<h3>' + inline(t.slice(4)) + '</h3>';
+    if (t.startsWith('> ')) return '<blockquote>' + inline(t.slice(2)) + '</blockquote>';
+    return '<p>' + inline(t) + '</p>';
+  }).join('');
+  function inline(s) { return s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>'); }
+}
+/* 包内 card-format.ts:54-75 的原样移植：故意保守——宁可漏判真 HTML，也不让一段夹了内联标签的 markdown 被关进沙箱 */
+const MD_BLOCK = /(^|\n)\s*(#{1,6}\s|[-*+]\s|>\s|```)/;
+const INLINE_ONLY = /<(code|em|strong|a|span|b|i|u|s|mark|small|sub|sup|kbd|abbr|cite|q)\b/i;
+const BLOCKISH = /<(div|table|ul|ol|p|section|article|figure|video|img|h[1-6])\b/i;
+function detectFormat(text) {
+  const s = (text || '').trim();
+  if (s === '') return 'markdown';
+  if (/^<!doctype\s+html[\s>]/i.test(s)) return 'html';
+  if (/^<html[\s>]/i.test(s)) return 'html';
+  if (/^<(head|body)[\s>]/i.test(s)) return 'html';
+  if (s.startsWith('<') && s.endsWith('>')) {
+    if (MD_BLOCK.test(s)) return 'markdown';
+    if (INLINE_ONLY.test(s) && !BLOCKISH.test(s)) return 'markdown';
+    let pairs = 0;
+    for (const m of s.matchAll(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g)) {
+      if (new RegExp('</' + m[1] + '\\s*>', 'i').test(s.slice(m.index + m[0].length))) pairs += 1;
+    }
+    if (pairs >= 2) return 'html';
+  }
+  return 'markdown';
+}
+function htmlTitleOf(text) {
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(text || '');
+  return m ? m[1].replace(/\s+/g, ' ').trim().slice(0, 80) : null;
+}
+const escAttr = s => esc(s).replace(/"/g, '&quot;');
+/** 渲染列：网页那份走真沙箱 iframe（和包内同一件事），markdown 走轻量渲染 */
+function bodyOf(card) {
+  const src = card.prose;
+  if (detectFormat(src) === 'html') {
+    return `<iframe class="sandbox" title="沙箱预览" sandbox="" srcdoc="${escAttr(src)}"></iframe>`;
+  }
+  return mdLite(src);
+}
+function fmtOf(card) {
+  return detectFormat(card.prose) === 'html' ? '认成网页 · 沙箱里渲染' : '认成 markdown';
+}
+function insertAt(ta, text) {
+  const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? s;
+  ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+  ta.selectionStart = ta.selectionEnd = s + text.length;
+  return new Blob([text]).size;
+}
+/** 只有"贴进去整张卡仍通体是标记"才拿 text/html 那一份；否则退回纯文本——
+ *  往有正文的卡里贴一堆 <div>，包内那条判断必然判成 markdown，留下的就是渲染不出来的死标记 */
+function pickPaste(html, plain, merged) {
+  const h = (html || '').trim();
+  if (h && detectFormat(h) === 'html' && detectFormat(merged(h)) === 'html') return h;
+  return (plain || '').trim() || h;
+}
+function pasteVerdict(html, card) {
+  const h = (html || '').trim();
+  const fragIsHtml = h !== '' && detectFormat(h) === 'html';
+  const table = /<table\b/i.test(h);
+  const wholeIsHtml = detectFormat(card.prose) === 'html';
+  if (wholeIsHtml) {
+    return (fragIsHtml ? 'clipboard 带了 text/html 那一份，用它——' : '') + '整张卡通体是标记 → 认成网页，沙箱里渲染'
+      + (table ? '。真版这一步还有一件事：表格归 paste-table.ts 转成 markdown 表（包里已写好、有 spec，但今天没有任何 UI 调它）' : '');
+  }
+  if (fragIsHtml) return '这段单独看是网页，可这张卡已经有正文——贴标记进去整张仍判 markdown，那会留下一堆渲染不出来的死标记。所以这次落的是 clipboard 里的纯文本那一份（网页里的字，不丢）。要它成网页：让这段单独占一张卡（条尾 ＋）';
+  return h ? '仍按 markdown：正文里有 markdown 块记号——包内那条判断故意保守，宁可漏判真 HTML' : '认成 markdown';
+}
+function renderDetail() {
+  const card = byId(openId);
+  if (!card) { $('detailHost').innerHTML = ''; $('viewHost').classList.remove('hidden'); document.body.dataset.tool = 'text'; return; }
+  $('viewHost').classList.add('hidden');
+  document.body.dataset.mode = mode;
+  document.body.dataset.tool = tool;
+  const drawn = card.draw && card.draw.length;
+  $('detailHost').innerHTML = `
+    <div class="dhead">
+      <button class="btn sm ghost" id="dBack" title="关闭这张详情标签，回到画布那张标签">×</button>
+      <span class="title" id="dTitle">${openId === 'draft' ? '未保存的新卡' : esc(firstLine(card))}</span>
+      <span class="pill" title="分类">${esc(labelOf(card.cat))}</span>
+      ${card.status === 'archived' ? '<span class="pill warn" title="只读着不改：状态收了，文件没动">已归档</span>' : ''}
+      <span class="spacer"></span>
+      <span class="pill ${dirty ? 'warn' : 'ok'}" id="dStat">${dirty ? '未保存' : '已保存'}</span>
+      ${openId === 'draft' ? '' : card.status === 'archived'
+        ? '<button class="btn sm" id="dRestore" title="还原到板面">还原</button>'
+        : '<button class="btn sm ghost" id="dArchive">归档</button>'}
+      <button class="btn on sm" id="dSave">保存</button>
+    </div>
+    <div class="dops">
+      <span class="seg" id="dMode">
+        <button data-m="render" aria-pressed="${mode === 'render'}">渲染</button>
+        <button data-m="source" aria-pressed="${mode === 'source'}">源码</button>
+        <button data-m="split" aria-pressed="${mode === 'split'}">分栏</button>
+      </span>
+      <button class="btn sm" id="dCompose">就这张成稿</button>
+      <span class="spacer"></span>
+      <span class="fmt" id="dFmt" title="格式不让你选，由正文嗅探（card-format.ts:54）">${fmtOf(card)}</span>
+    </div>
+    <div class="dbody">
+      <div class="src ${drawing() || drawn ? 'withboard' : ''} ${mode === 'render' ? 'hidden' : ''}" id="srcWrap">
+        <div class="toolrow">
+          <span class="tools">
+            <button id="toolPen" aria-pressed="${tool === 'pen'}" title="${tool === 'pen' ? '再点一下退出画画' : '画笔：点一下开始画'}">${ICO.pen}</button>
+            <button id="toolEra" aria-pressed="${tool === 'erase'}" title="${tool === 'erase' ? '再点一下退出橡皮' : '橡皮：移到哪一笔那一笔亮，点一下只擦那一条'}">${ICO.erase}</button>
+            <button id="toolUndo" title="撤销上一笔">${ICO.undo}</button>
+          </span>
+          ${drawn ? '<button class="btn sm" id="penClear">全部清空</button>' : ''}
+          ${drawing() ? `<span class="tip on">${tool === 'erase' ? '橡皮模式 · 再点一次橡皮（或按 Esc）退出' : '画画中 · 再点一次铅笔（或按 Esc）退出'}</span>`
+            : !drawHintSeen ? '<span class="tip">想画？点铅笔开始，再点一下（或按 Esc）就退出</span>' : ''}
+          <span class="bytes">${card.prose.length} 字正文 · ${drawn ? card.draw.length + ' 笔 · 落盘 ' + bytesOf(card) + ' B · 轮廓（只算不落盘） ' + outlineBytesOf(card) + ' B' : '无笔画'}</span>
+        </div>
+        ${drawing() || drawn ? `<div class="board-wrap ${drawing() ? '' : 'ro'}" id="boardBox">
+          ${drawing() ? '' : svgOf(card.draw)}
+          ${drawing() ? `<div class="board-pad tool-${tool}" id="pad"></div>` : `<span class="board-hint">${ICO.pen}点一下接着画</span>`}
+        </div>` : ''}
+        <textarea id="dSrc" spellcheck="false" placeholder="在这里写。另一侧实时渲染。">${esc(card.prose)}</textarea>
+      </div>
+      <div class="rend rendered ${mode === 'source' ? 'hidden' : ''}" id="dRend">${bodyOf(card)}${boardOf(card.draw)}</div>
+    </div>
+    <div class="thread">
+      ${card.comments.length ? card.comments.map(c => `<div class="one"><span class="who ${c.who}">${c.who === 'agent' ? 'Agent' : '你'}</span><span>${esc(c.text)}</span></div>`).join('') : '<div class="empty">还没有批注。批注会跟着卡片一起进聊天上下文——这是这一轮补的那条。</div>'}
+      <div class="newc"><input id="cIn" placeholder="加一条批注…" ${card.status === 'archived' ? 'disabled' : ''}><button class="btn sm" id="cAdd">加上</button></div>
+    </div>`;
+  $('dBack').onclick = () => requestClose(openId);
+  Array.from($('dMode').children).forEach(b => { b.onclick = () => { mode = b.dataset.m; render(); }; });
+  const ta = $('dSrc');
+  const live = () => {
+    card.prose = ta.value; dirty = true;
+    const drawnNow = card.draw && card.draw.length;
+    const r = $('dRend'); if (r) r.innerHTML = bodyOf(card) + boardOf(card.draw);
+    const f = $('dFmt'); if (f) f.textContent = fmtOf(card);
+    const b = document.querySelector('.bytes');
+    if (b) b.textContent = card.prose.length + ' 字正文 · ' + (drawnNow ? card.draw.length + ' 笔 · 落盘 ' + bytesOf(card) + ' B · 轮廓（只算不落盘） ' + outlineBytesOf(card) + ' B' : '无笔画');
+    const ttl = $('dTitle'); if (ttl && openId !== 'draft') ttl.textContent = firstLine(card);
+    const st = $('dStat');
+    if (st) { st.textContent = '未保存'; st.className = 'pill warn'; }
+  };
+  // 打字只做局部更新：整块重画会抢走光标
+  if (ta) ta.oninput = live;
+  if (ta) ta.onpaste = ev => {
+    const cd = ev.clipboardData || window.clipboardData;
+    if (!cd) return;
+    ev.preventDefault();
+    if (cd.files && cd.files.length) {
+      const name = cd.files[0].name || '剪贴板图片';
+      const at = insertAt(ta, '![' + name + '](attachment://obj/' + Date.now().toString(36) + ')');
+      live();
+      toast('像素进宿主附件库（阶段 ④ 那条），卡里只多了这 ' + at + ' 字节的指针');
+      return;
+    }
+    const html = cd.getData('text/html'), plain = cd.getData('text/plain');
+    const s0 = ta.selectionStart ?? ta.value.length, e0 = ta.selectionEnd ?? s0;
+    const merged = cand => ta.value.slice(0, s0) + cand + ta.value.slice(e0);
+    const picked0 = pickPaste(html, plain, merged);
+    const at = insertAt(ta, picked0);
+    live();
+    toast(pasteVerdict(html, card));
+  };
+  $('cAdd').onclick = () => {
+    const v = $('cIn').value.trim(); if (!v) return;
+    card.comments.push({ who: 'user', text: v }); render(); toast('批注已挂上：addComment 这个动词今天就有');
+  };
+  $('cIn').onkeydown = ev => { if (ev.key === 'Enter') $('cAdd').click(); };
+  $('dSave').onclick = () => {
+    if (openId === 'draft') {
+      draft.id = 'n' + (++seq); draft.x = 200; draft.y = 310;
+      cards.unshift(draft);
+      cardTabs[cardTabs.indexOf('draft')] = draft.id;
+      active = 'card:' + draft.id; draft = null;
+      toast('首次保存才 putCard：这一张现在是板上第 ' + live().length + ' 张，标签跟着换了名字');
+    } else toast('已保存（真版走 patchCard，版本围栏在 store 里）');
+    dirty = false; card.unsaved = false; render();
+  };
+  $('dCompose').onclick = () => { sendToChat([card.id], TEMPLATES.compose, '生成文章 · 单张'); propose([card.id], 'compose'); suggest(); };
+  if (openId !== 'draft') {
+    if (card.status === 'archived') { $('dRestore').onclick = () => { card.status = 'kept'; render(); toast('已还原'); }; }
+    else { $('dArchive').onclick = () => { card.status = 'archived'; closeTab(openId); toast('归档：文件没动，只是收了状态，这张标签也一并收掉'); }; }
+  }
+  const hasInk = () => !!(card.draw && card.draw.length);
+  const setTool = t => {
+    if (t === 'erase' && !hasInk()) { toast('这张卡上还没有笔画：先划一笔再擦'); return; }
+    tool = t;
+    if (t !== 'text') drawHintSeen = true;
+    if (t !== 'text' && mode === 'render') mode = 'split';
+    render();
+    if (t === 'pen') toast('画画中：鼠标已经变成笔 · 再点一次铅笔就退出');
+    if (t === 'erase') toast('橡皮：移过去哪一笔会亮，点一下只擦那一条 · 再点一次橡皮退出');
+    if (t === 'text') toast('已退出画画：回到打字，画板还在原处（只读）');
+  };
+  $('toolPen').onclick = () => setTool(tool === 'pen' ? 'text' : 'pen');
+  $('toolEra').onclick = () => setTool(tool === 'erase' ? 'text' : 'erase');
+  $('toolUndo').onclick = () => {
+    if (!hasInk()) { toast('没有笔画可撤'); return; }
+    card.draw.pop(); dirty = true; render(); toast('撤掉最后一笔，剩 ' + card.draw.length + ' 笔');
+  };
+  const pc = $('penClear'); if (pc) pc.onclick = () => { const n = card.draw.length; card.draw = []; tool = 'text'; dirty = true; render(); toast('全部清空：' + n + ' 笔没了，正文一个字没动'); };
+  const bb = $('boardBox');
+  if (bb && !drawing()) bb.onclick = () => setTool('pen');
+  if (drawing()) armBoard(card);
+}
+/** 画板：600×400 的固定逻辑框，指针按框宽等比换算 → 画的坐标与渲染的坐标同一个空间 */
+function armBoard(card) {
+  const box = $('boardBox'), pad = $('pad');
+  if (!box || !pad) return;
+  card.draw = card.draw || [];
+  let pts = [], lastT = 0, hover = -1;
+  /** 每屏幕像素对应多少逻辑单位：橡皮容差按屏幕算，框大小变了也好点 */
+  const upp = () => BOARD.w / box.getBoundingClientRect().width;
+  const toBoard = ev => {
+    const r = box.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * BOARD.w / r.width, y: (ev.clientY - r.top) * BOARD.h / r.height };
+  };
+  const repaint = () => {
+    Array.from(box.querySelectorAll('svg.doodle')).forEach(n => { n.remove(); });
+    box.insertAdjacentHTML('afterbegin', svgOf(card.draw, erasing() ? hover : -1, pts.length > 1 ? [{ pts, color: 'var(--t1)' }] : null));
+  };
+  const nearest = p => {
+    let best = -1, bd = 12 * upp();
+    card.draw.forEach((st, i) => {
+      for (const q of st.pts) {
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d < bd) { bd = d; best = i; }
+      }
+    });
+    return best;
+  };
+  pad.onpointerdown = ev => {
+    pad.setPointerCapture(ev.pointerId);
+    const p = toBoard(ev);
+    if (erasing()) {
+      const i = nearest(p);
+      if (i < 0) { toast('这一下没碰到任何一笔：会亮的才是它'); return; }
+      card.draw.splice(i, 1); hover = -1; dirty = true; render();
+      toast('只擦掉那一笔（原第 ' + (i + 1) + ' 笔），还剩 ' + card.draw.length + ' 笔');
+      return;
+    }
+    pts = [{ x: p.x, y: p.y, w: 6 }]; lastT = ev.timeStamp;
+  };
+  pad.onpointermove = ev => {
+    const p = toBoard(ev);
+    if (!pts.length) {
+      if (!erasing()) return;
+      const i = nearest(p);
+      if (i !== hover) { hover = i; repaint(); }
+      return;
+    }
+    const p0 = pts[pts.length - 1];
+    const dt = Math.max(1, ev.timeStamp - lastT);
+    const sp = Math.hypot(p.x - p0.x, p.y - p0.y) / upp() / dt;   // 速度按屏幕像素算，框大框小笔粗一致
+    pts.push({ x: p.x, y: p.y, w: Math.max(2, Math.min(7, 7 - sp * 1.6)) });
+    lastT = ev.timeStamp;
+    repaint();
+  };
+  pad.onpointerup = () => {
+    if (pts.length < 2) { pts = []; return; }
+    card.draw.push({ pts, color: 'var(--t1)' });
+    pts = []; dirty = true; render();
+  };
+  repaint();
+}
+function ribbon(ps) {
+  const n = ps.length, left = [], right = [];
+  for (let i = 0; i < n; i++) {
+    const p = ps[i], a = ps[Math.max(0, i - 1)], b = ps[Math.min(n - 1, i + 1)];
+    let dx = b.x - a.x, dy = b.y - a.y; const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const taper = Math.min(1, (i + 1) / 3, (n - i) / 3);
+    const w = p.w * taper;
+    left.push((p.x - dy * w).toFixed(1) + ' ' + (p.y + dx * w).toFixed(1));
+    right.push((p.x + dy * w).toFixed(1) + ' ' + (p.y - dx * w).toFixed(1));
+  }
+  return 'M ' + left.join(' L ') + ' L ' + right.reverse().join(' L ') + ' Z';
+}
+/* ── 渲染 ───────────────────────────────────────── */
+function render() {
+  openId = activeCard();
+  $('capView').textContent = view === 'board' ? '卡板' : '连线';
+  Array.from($('viewSeg').children).forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.v === view)); });
+  renderTabs();
+  if (openId) { $('viewHost').innerHTML = ''; renderDetail(); }
+  else { $('detailHost').innerHTML = ''; $('viewHost').classList.remove('hidden'); document.body.dataset.tool = 'text'; (view === 'board' ? renderBoard : renderLink)(); }
+}
+Array.from($('viewSeg').children).forEach(b => { b.onclick = () => { view = b.dataset.v; if (activeCard()) { active = 'canvas'; tool = 'text'; } render(); if (view === 'link') toast('连线视图：这一簇 = 提问的单位'); }; });
+$('wideBtn').onclick = () => { const on = document.body.classList.toggle('wide'); $('wideBtn').textContent = on ? '宽模式' : '右栏宽 380'; };
+$('themeBtn').onclick = () => { const on = document.body.toggleAttribute('data-ds-dark-theme'); $('themeBtn').textContent = on ? '暗色' : '亮色'; };
+/* 试贴：造一个真 ClipboardEvent 打到 textarea 上，走的就是 onpaste 那条臂，不是另开一条演示路 */
+function fakePaste(html, plain) {
+  if (!$('dSrc')) newCardTab();
+  const ta = $('dSrc');
+  if (!ta) { toast('详情没打开，贴不了'); return; }
+  const dt = new DataTransfer();
+  if (html) dt.setData('text/html', html);
+  dt.setData('text/plain', plain);
+  let ev;
+  try { ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }); }
+  catch (e) { ev = new Event('paste', { bubbles: true, cancelable: true }); ev.clipboardData = dt; }
+  ta.dispatchEvent(ev);
+  ta.focus();
+}
+$('tryMd').onclick = () => fakePaste('', '\n### 贴进来的一段笔记\n\n- 票根是**信物**，不是道具\n- 引用来源要留出处\n');
+$('tryHtml').onclick = () => fakePaste('<div style="font:13px sans-serif;padding:8px"><h4 style="margin:0 0 4px">1937 年客轮夜航班次表</h4><table border="1" cellpadding="3" style="border-collapse:collapse;font-size:12px"><tr><td>航线</td><td>台风季</td></tr><tr><td>宁波→台山</td><td>停航</td></tr></table></div>', '1937 年客轮夜航班次表 航线 台风季 宁波→台山 停航');
+$('tryMix').onclick = () => fakePaste('<p>引用来源：<a href="#">某报</a></p>', '引用来源：<a href="#">某报</a>，那段写的是 **停航**。\n\n<div>补一张小卡片</div>');
+$('newBtn').onclick = () => newCardTab();
+/* 画画的"出口焦虑"：键盘也给一条退路，和再点一次铅笔等价 */
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape' && drawing()) { tool = 'text'; drawHintSeen = true; render(); toast('Esc：退出画画，画板回到只读'); }
+});
+render();
+</script>
+</body>
+</html>

@@ -11,7 +11,8 @@
  */
 import { detectCardFormat, htmlTitleOf } from './card-format.ts'
 import {
-  BOARD_CARD_KINDS, type BoardCard, type CanvasBoard, type CanvasLensId,
+  BOARD_CARD_KINDS, DRAW_BOX, type BoardCard, type CanvasBoard, type CanvasLensId,
+  type CanvasStroke,
 } from './types.ts'
 
 /** Cap the kept-card title list in the board summary (a summary, not a dump). */
@@ -26,7 +27,11 @@ function summaryOf(card: BoardCard): string {
     ? displayTitleOf(card)
     : (card.text.split('\n').find(line => line.trim().length > 0) ?? '')
   const capped = firstLine.length > SUMMARY_TEXT_LENGTH ? `${firstLine.slice(0, SUMMARY_TEXT_LENGTH)}…` : firstLine
-  return `[${card.kind}] ${capped}`
+  // A drawing-only card still has content — say what it holds, in words.
+  const shown = capped.length > 0 || card.draw === undefined
+    ? capped
+    : `${card.draw.length}-stroke drawing`
+  return `[${card.kind}] ${shown}`
 }
 
 /** Strip tags from a first line (the HTML fallback title's plain text). */
@@ -48,26 +53,49 @@ function displayTitleOf(card: BoardCard): string {
 /** Longest markdown card text handed to the model in one ref (the model-facing cap). */
 export const MAX_PROMPT_CARD_CHARS = 4000
 
+/** One decimal place is plenty for a coordinate; the tail is payload. */
+function tenths(value: number): string {
+  return (Math.round(value * 10) / 10).toFixed(1)
+}
+
+/**
+ * The drawing's model-facing form: the points themselves, in the logical box
+ * (§11.4's "the drawing still rides the prompt"). A drawing is card CONTENT, so
+ * the agent that reads a card reads its ink too — as coordinates it can reason
+ * about, never as a raster it would have to be given separately.
+ * @param draw - the card's strokes.
+ * @returns the `<board>` block, or '' when there is nothing inked.
+ */
+export function drawPromptOf(draw: readonly CanvasStroke[]): string {
+  if (draw.length === 0) return ''
+  const points = draw
+    .map(stroke => stroke.pts.map(p => `${tenths(p.x)},${tenths(p.y)},${tenths(p.w)}`).join(' '))
+    .join('\n')
+  return `\n<board width="${DRAW_BOX.width}" height="${DRAW_BOX.height}" strokes="${draw.length}">\n${points}\n</board>`
+}
+
 /**
  * The card's model-facing form: HTML cards are pointers, never the document
  * (the proposal §8 boundary — an HTML card's content never enters the model
  * context in full: the agent sees the title and a handle, and asks the user
  * for an excerpt when it needs one); markdown cards carry their text capped
- * with an explicit truncation note.
+ * with an explicit truncation note. A drawing is appended in either case —
+ * it is never the part being pointed out.
  * @param card - the card to render for the model.
  * @returns the model-facing text (English, the model's own language).
  */
 export function promptFormOf(card: BoardCard): string {
+  const draw = card.draw === undefined ? '' : drawPromptOf(card.draw)
   const format = detectCardFormat(card.text)
   if (format === 'html') {
     const title = displayTitleOf(card)
     return `[html] ${title} — HTML document, ${card.text.length} chars, on canvas card ${card.id}; `
-      + 'ask the user to paste an excerpt when its content is needed'
+      + 'ask the user to paste an excerpt when its content is needed' + draw
   }
   if (card.text.length > MAX_PROMPT_CARD_CHARS) {
-    return `${card.text.slice(0, MAX_PROMPT_CARD_CHARS)}\n…(truncated, full text ${card.text.length} chars on card ${card.id})`
+    return `${card.text.slice(0, MAX_PROMPT_CARD_CHARS)}\n…(truncated, full text ${card.text.length} chars on card ${card.id})${draw}`
   }
-  return card.text
+  return `${card.text}${draw}`
 }
 
 /**
