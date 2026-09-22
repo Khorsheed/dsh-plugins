@@ -20,6 +20,7 @@ Two doors onto things that were already there, and one narrowing of a fallback t
 - **Rendered verbatim, not as markdown.** `stage1.md` is *evidence* on this page, not a document. A renderer would silently swallow a malformed heading or an unclosed fence, and on this page that is a finding rather than a blemish.
 - **Every judge round gets the player's button.** `judgeSessionsOf` projects the `kind: 'judge'` annotations into rows — condition, model, sample, 自评 mark — each with 打开判官会话. A round that failed before its delegation started is **kept**, with a dead button and its error beside it: «this judge round did not run» is an answer, and dropping the row would read as the judge never having judged.
 - **The player fallback now means the player.** A cell with no `refs.sessions` fell back to the last annotation carrying a `childSessionId`, and three kinds carry one — `delegation`, `readiness`, `judge`. So on every judged cell that got there, 打开子会话 opened the JUDGE's session, and on a refused one the readiness probe's. Nothing ever failed; it just answered a different question. Both `cell-detail.ts` and `read.ts` now read only the player's own rounds.
+- **A child session is opened at its SUBAGENT address, or it does not open.** `sessions.open(childId)` selects the row and then fails to load its history — *subagent Sessions require their durable parent address (session/agent-busy)* — which is what pilot D did on **every** one of these buttons, the player's included, and had been doing since the button shipped. The drawer now carries the run's `originSession` (decision 1: the run's parent is the parent of every delegation it made) and the client refreshes that parent's catalog before handing the host `{parentSessionId, childSessionId, mode: 'one-shot'}`. Every way that can fail — no parent recorded, a refresh that rejects, a child the catalog does not call healthy — falls back to selecting by id, which is exactly what the code did before.
 - **A report number is a door to its records.** Each side of a pair row opens the (题目 × 对比组) behind it on the 运行记录 stage. The mean is over the run's reps, so the jump names the pair and lets the record list resolve how many that is: **one** record opens its detail, **several** leave the list standing under a chip that says what was narrowed and can be cleared. The five bucket chips count within that narrowing — counts and rows have to describe one population, or a chip reads 「失败 3」 over an empty list.
 
 ## The container round needed nothing
@@ -30,7 +31,7 @@ The task's plan was to verify whether the host could **claim** a sub-dsh session
 2. **Does it open** — the premise ("a session that never went through session/create") does not hold: the provider creates the child session, and `local-agent-dsh`'s session mirror folds the sub-dsh's events into it round by round, `persistChildSession` putting them on disk. `session/page` under the subagent address returns **98 records** for `dsh-full` and **88** for `dsh-lean` — messages, `tool/call`, `tool/result`, `todo/write` — and the judge rounds answer the same way (18 and 29). Addressed **on its own** (`kind: 'session'`) the host refuses it: *subagent Sessions require their durable parent address*, which is exactly why the drawer hands the id to `sessions.open` and lets the host's own controller resolve the parent.
 3. **`workspace-attach-failed`** — none, in any payload. The container round's host-side cwd is `/private/tmp`, which exists on the host.
 
-So no copy, no `childSessionId` re-recording, and no self-rendered timeline. The one real gap on that path was the fallback naming the judge's session, which is fixed above.
+So no copy, no `childSessionId` re-recording, and no self-rendered timeline. What the acceptance DID surface is the third bullet above: the button had never opened anything, on either path, because it addressed a subagent session without its parent. The plan's three questions were all aimed at whether the transcript was reachable; it always was, and the door was locked from our side.
 
 ## Alternatives considered
 
@@ -53,7 +54,8 @@ So no copy, no `childSessionId` re-recording, and no self-rendered timeline. The
 - The `record.filePending` string is gone from both dictionaries — the sentence it apologized with is no longer true.
 - The page can now put a harness's own output on screen un-scrubbed. That is correct here and would be wrong one page over; the two reads are deliberately different functions over the same files, and the blind one still goes through `deidentify`.
 - The criteria × comparison-group table (T54, in flight on `fix/eval-report-per-criterion`) carries a `missionId` per sample, so its cells wire into the same jump — `focusRecords` takes the pair, and an id-shaped caller wants `openCell` directly. That wiring is one line at graft time and is NOT in this branch, which is based on `main` where the table does not exist.
-- `judgeSessions` is a new required field on `EvalCellDetail`; a fixture that builds one by hand needs it.
+- `judgeSessions` and `parentSessionId` are new required fields on `EvalCellDetail`; a fixture that builds one by hand needs both.
+- `openSession` on the client contract takes the parent as a second argument. It is the only caller, but the signature change is the record of why: a child id alone is not an address the host will read a subagent session at.
 
 ## Testing
 
@@ -63,3 +65,10 @@ So no copy, no `childSessionId` re-recording, and no self-rendered timeline. The
 - The same file pins the fallback fix: a judged cell with **no refs at all** answers `childSessionId: 'player-1'`, not the judge round that ran after it, and the judge's own round is reported under its own name.
 - `tests/MatrixCells.client.spec.tsx` (+4): an attachment fetches on click with the **current** attempt (a retry is a different directory and the same filename there is a different file), a second click collapses it, a directory's entry opens through the same door, a refused binary prints its reason and size, and the judge rows open the host session while the round with none is disabled.
 - `tests/Report.client.spec.tsx` (+2): a side with two reps lands on the record list under its chip with the third record filtered out and **no** detail opened for the reader, and clearing the chip brings it back; a side with one rep opens that record.
+
+Accepted on a throwaway web-eval instance carrying this build over a copy of the 3171 ledger, against pilot D (`run-20260918054718-8o0o`), in a real browser:
+
+- `stage1.md` expands in place under its row and shows the submission (7905 bytes); `archive` and `probe-verdicts` list their entries; a sibling cell's real `stage1.md` and an absolute path are both refused.
+- 打开子会话 opens the container round's sub-dsh conversation in the host's own child-session view — the prompt, the replies, `8 tool calls · 3 messages`, `Ran for 2m 19s`.
+- 打开判官会话 opens the judge round and shows the thing that had been invisible: `This turn failed — You've hit your session limit · resets 4pm`, which is why that cell has a second judge round at all.
+- A number in the pair table jumps to the records behind it, chip and all.

@@ -327,6 +327,10 @@ export async function runCellDetail(
     childSessionId: sessions !== undefined && sessions.length > 0
       ? (sessions[sessions.length - 1] as string)
       : annotatedSession,
+    // Every session on this page — the player's and each judge round's — is a
+    // SUBAGENT of this one, and the host's reader refuses a subagent session
+    // addressed without it.
+    parentSessionId: status.run.originSession ?? null,
     judgeSessions: judgeSessionsOf(annotations),
     attempts: attempts.map(attemptView),
     annotations: summarizeAnnotations(annotations),

@@ -139,10 +139,38 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // (ui-spec R1): the final verdict is a person's, and the toolset has
         // no path to the verb on the other side of this line.
         submitHumanFinal: (sid: SessionId, request: EvalHumanFinalRequest) => remote.humanFinal(sid, request),
-        // The host's own session controller: the drawer OPENS the player's
-        // child session so a person can read the transcript; the member
-        // composer and dock there are local-agent's, not this tab's.
-        openSession: (childSessionId: SessionId) => { ctx.sessions.open(childSessionId) },
+        // The host's own session controller: the drawer OPENS the player's (or
+        // a judge's) child session so a person can read the transcript; the
+        // member composer and dock there are local-agent's, not this tab's.
+        //
+        // Through the SUBAGENT address, because that is the only address the
+        // host will read one at. `sessions.open(childId)` selects the row and
+        // then fails to load its history — «subagent Sessions require their
+        // durable parent address (session/agent-busy)» — which is what pilot D
+        // did on every one of these buttons until this call learned the
+        // parent. The parent's catalog is refreshed first (a run finished days
+        // ago is not in any catalog this browser has loaded), and every way
+        // that can fail — no parent recorded, a refresh that throws, a child
+        // the catalog does not call healthy — falls back to selecting by id,
+        // which is strictly what this code did before.
+        openSession: (childSessionId: SessionId, parentSessionId: SessionId | null) => {
+          const byId = (): void => { ctx.sessions.open(childSessionId) }
+          const retained = ctx.sessions.subagentAddress(childSessionId)
+          if (retained !== undefined) {
+            ctx.sessions.openSubagent(retained)
+            return
+          }
+          if (parentSessionId === null) {
+            byId()
+            return
+          }
+          void ctx.sessions.refreshSubagents(parentSessionId).then(() => {
+            // One-shot: an evaluation delegation is `{ mode: 'one-shot' }` on
+            // its own descriptor, which is the mode the catalog entry has to
+            // match for the host to accept the address.
+            ctx.sessions.openSubagent({ parentSessionId, childSessionId, mode: 'one-shot' })
+          }).catch(byId)
+        },
       }),
     }, LabView),
     () => chrome.show(ctx.sessions.list.getSnapshot().current),

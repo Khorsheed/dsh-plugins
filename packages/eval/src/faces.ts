@@ -511,7 +511,21 @@ export interface MissionAttemptFace {
  */
 export interface MissionReadFace {
   runStatus(runId: string): {
-    run: { id: string; state: string; createdAt: number; templateName?: string; meta: Record<string, unknown> }
+    run: {
+      id: string
+      state: string
+      createdAt: number
+      templateName?: string
+      meta: Record<string, unknown>
+      /**
+       * The session that started the run — and, by decision 1, the PARENT of
+       * every delegation it made. The drawer needs it to open a child
+       * session at all: the host refuses a subagent session addressed on its
+       * own («subagent Sessions require their durable parent address»), so a
+       * child id without its parent is a navigation that lands on an error.
+       */
+      originSession?: string
+    }
     rows: MissionStatusRow[]
     buckets: Record<string, string[]>
     unreleased: string[]

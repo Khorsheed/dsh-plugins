@@ -242,7 +242,7 @@ function RecordDetail(props: {
   onRetry: (reason: string, category: string) => void
   onRelease: () => void
   onExport: () => void
-  onOpenSession: (sessionId: string) => void
+  onOpenSession: (sessionId: string, parentSessionId: string | null) => void
   /** Which attachment is expanded, and what the read answered with. */
   artifactPath: string | null
   artifact: EvalCellArtifactView | null
@@ -411,7 +411,7 @@ function RecordDetail(props: {
                       size="sm"
                       disabled={round.childSessionId === null}
                       title={round.childSessionId === null ? t('record.judgeNoSession') : undefined}
-                      onClick={() => { if (round.childSessionId !== null) onOpenSession(round.childSessionId) }}
+                      onClick={() => { if (round.childSessionId !== null) onOpenSession(round.childSessionId, cell.parentSessionId) }}
                     >
                       {t('record.openJudgeSession')}
                     </Button>
@@ -487,7 +487,7 @@ function RecordDetail(props: {
                 size="sm"
                 disabled={cell.childSessionId === null}
                 title={cell.childSessionId === null ? t('drawer.noSession') : undefined}
-                onClick={() => { if (cell.childSessionId !== null) onOpenSession(cell.childSessionId) }}
+                onClick={() => { if (cell.childSessionId !== null) onOpenSession(cell.childSessionId, cell.parentSessionId) }}
               >
                 {t('drawer.openSession')}
               </Button>
@@ -556,7 +556,7 @@ export function RunsPage(props: {
   onRetry: (reason: string, category: string) => void
   onRelease: () => void
   onExport: () => void
-  onOpenSession: (sessionId: string) => void
+  onOpenSession: (sessionId: string, parentSessionId: string | null) => void
   /** The open record's expanded attachment (see {@link ArtifactPane}). */
   artifactPath: string | null
   artifact: EvalCellArtifactView | null

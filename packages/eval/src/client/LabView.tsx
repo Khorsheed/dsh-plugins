@@ -921,7 +921,7 @@ export function LabView(props: LabViewProps) {
                       onRetry={onRetry}
                       onRelease={onRelease}
                       onExport={() => { actions.setExportOpen(true) }}
-                      onOpenSession={(childId) => { openSession(childId as SessionId) }}
+                      onOpenSession={(childId, parentId) => { openSession(childId as SessionId, parentId === null ? null : parentId as SessionId) }}
                       artifactPath={artifactPath}
                       artifact={artifact}
                       artifactLoading={artifactLoading}

@@ -135,6 +135,7 @@ const CELL: EvalCellDetail = {
   refs: { resource: 'unit-b', fingerprint: 'lab-env:aaaa' },
   materializationSha: 'deadbeef',
   childSessionId: 'child-c',
+  parentSessionId: 'session-parent-1',
   judgeSessions: [
     {
       judgeCondition: 't31-judge-other', judgeModel: 'other/m1', sample: 1, attempt: 2,
@@ -529,7 +530,9 @@ describe('the cells page and its drawer', () => {
     const buttons = screen.getAllByText('record.openJudgeSession')
     expect(buttons).toHaveLength(2)
     fireEvent.click(buttons[0] as HTMLElement)
-    expect(h.openSession).toHaveBeenCalledWith('judge-c')
+    // WITH the run's parent: the host refuses a subagent session addressed
+    // on its own, so a child id alone navigates to a failed history.
+    expect(h.openSession).toHaveBeenCalledWith('judge-c', 'session-parent-1')
     // The round that failed before it started has no session, so its button
     // is dead rather than pointing somewhere plausible.
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true)
@@ -579,7 +582,7 @@ describe('the cells page and its drawer', () => {
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
     await screen.findByText('unit-b')
     fireEvent.click(screen.getByRole('button', { name: 'drawer.openSession' }))
-    expect(h.openSession).toHaveBeenCalledWith('child-c')
+    expect(h.openSession).toHaveBeenCalledWith('child-c', 'session-parent-1')
 
     // The other cell recorded none: the button says so instead of doing nothing.
     h.fetchCell.mockResolvedValue({ ok: true, value: { ...CELL, missionId: 'p0-codex-b-rep1', childSessionId: null } })

@@ -910,6 +910,15 @@ export interface EvalCellDetail {
    */
   childSessionId: string | null
   /**
+   * The run's originSession — the PARENT of every delegation it made
+   * (decision 1), and the address without which no child session on this
+   * page can be opened at all: the host refuses a subagent session addressed
+   * on its own («subagent Sessions require their durable parent address»).
+   * Null on a run the ledger recorded without one, which makes the buttons
+   * fall back to selecting by id.
+   */
+  parentSessionId: string | null
+  /**
    * The JUDGE's rounds on this cell, each with its own child session. A judge
    * is a delegation like any other and its transcript is a host session the
    * same way the player's is — it simply never had a door on this page, so

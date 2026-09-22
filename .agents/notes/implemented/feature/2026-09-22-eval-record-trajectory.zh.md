@@ -20,6 +20,7 @@ Status: implemented
 - **原样贴出，不按 markdown 渲染。** `stage1.md` 在这页是**证据**不是文档。渲染器会把写坏的标题或没闭合的围栏悄悄吞掉，而那在这页是发现，不是瑕疵。
 - **判官每一轮都拿到选手那颗按钮。** `judgeSessionsOf` 把 `kind: 'judge'` 注解投影成行——条件、模型、采样、自评标记——每行一颗「打开判官会话」。委派没起成的那一轮**保留**，按钮禁用、错误原文写在旁边：「这一轮判官没跑起来」是个答案，删掉这行会读成判官根本没判过。
 - **选手那条回落现在真的指选手。** `refs.sessions` 为空的格子回落到最后一条带 `childSessionId` 的注解，而带它的有三种：`delegation`、`readiness`、`judge`。于是每一个走到这条回落的已判格子，打开子会话开的是**判官**那条；被拒的格子开的是就绪探针那条。从来没有失败过，只是答了另一个问题。`cell-detail.ts` 与 `read.ts` 现在都只读选手自己那几轮。
+- **子会话要按它的 SUBAGENT 地址开，否则开不出来。** `sessions.open(childId)` 会选中那一行，然后历史加载失败——*subagent Sessions require their durable parent address (session/agent-busy)*。pilot D 上**每一颗**这样的按钮都是这个结果，包括选手那颗，而且自这颗按钮上线起一直如此。抽屉现在带上 run 的 `originSession`（决策 1：run 的父会话就是它每一次委派的父），客户端先刷该父的 catalog，再把 `{parentSessionId, childSessionId, mode: 'one-shot'}` 交给宿主。所有可能失败的路——没记父会话、刷新被拒、catalog 不认这个孩子——一律回落到按 id 选中，也就是这段代码原本做的事。
 - **报告里的一个数是通往它那些记录的门。** 配对表每一侧的数点开，落到 运行记录 上那个（题目 × 对比组）。这个数是**这个 run 各次重复的均值**，所以跳转只报出这一对，由记录列表去解它到底是几条：**一条**就把它的详情打开，**多条**就把列表留在那儿，上面一枚说清缩到了什么、可以清掉的提示。五枚状态筹码在缩窄后按缩窄的那一群计数——计数与行必须描述同一个总体，否则会出现「失败 3」压在一张空列表上。
 
 ## 容器轮什么都不需要做
@@ -30,7 +31,7 @@ Status: implemented
 2. **开不开得出** —— 前提（「没经过 session/create 的会话」）不成立：子会话是 provider 建的，`local-agent-dsh` 的 session mirror 逐轮把 sub-dsh 的事件并进去，`persistChildSession` 落盘。按 subagent 地址调 `session/page`，`dsh-full` 回 **98 条**、`dsh-lean` 回 **88 条**——消息、`tool/call`、`tool/result`、`todo/write` 都在；判官两轮同样开得出（18 与 29 条）。**单独**按 `kind: 'session'` 寻址会被宿主拒：*subagent Sessions require their durable parent address*——这正是抽屉把 id 交给 `sessions.open`、由宿主自己的控制器去解父地址的原因。
 3. **workspace-attach-failed** —— 任何载荷里都没有。容器轮的宿主侧 cwd 是 `/private/tmp`，宿主上存在。
 
-所以不拷贝、不重记 `childSessionId`、也不自渲染时间线。那条路上唯一真实的缺口是回落指向了判官的会话，已在上面修掉。
+所以不拷贝、不重记 `childSessionId`、也不自渲染时间线。真机验收真正翻出来的是上面第三条：这颗按钮从来就没开出过东西，两条路都没有，因为它拿一个子会话的 id 去寻址而不带父。计划里的三问问的都是「转录够不够得着」——它一直够得着，门是从我们这一侧锁上的。
 
 ## Alternatives considered
 
@@ -53,7 +54,8 @@ Status: implemented
 - `record.filePending` 这个词条从中英两份词表里删掉了——它道歉的那句话不再为真。
 - 这一页现在会把某个 harness 自己的产出**不刷指纹**地放到屏幕上。在这页是对的，隔壁一页就是错的；两处的读是有意写成两个函数读同一批文件，盲的那个仍然走 `deidentify`。
 - 判据 × 对比组表（T54，正在 `fix/eval-report-per-criterion` 上）每条样本都带 `missionId`，它的格子接同一套跳转——`focusRecords` 收那一对，带 id 的调用方直接要 `openCell`。这行接线是 graft 时的一行，**不在**本分支里：本分支基于 `main`，那张表在 main 上还不存在。
-- `judgeSessions` 是 `EvalCellDetail` 上新增的必填字段；手搓 fixture 的地方要补上。
+- `judgeSessions` 与 `parentSessionId` 是 `EvalCellDetail` 上新增的两个必填字段；手搓 fixture 的地方两个都要补。
+- 客户端契约上的 `openSession` 多了第二个参数（父会话）。调用方只有一个，但这次签名变化本身是理由的记录：光有子会话 id，宿主不认那是一个能读 subagent 会话的地址。
 
 ## Testing
 
@@ -63,3 +65,10 @@ Status: implemented
 - 同一份文件钉住回落的修复：一个**完全没有 refs** 的已判格子答 `childSessionId: 'player-1'`，不是它之后跑的那轮判官；而判官那轮在它自己的名下被报出来。
 - `tests/MatrixCells.client.spec.tsx`（+4）：点开附件时带的是**当前**那次 attempt（重跑是另一个目录，同名文件是另一个文件）、再点一下收起、目录的条目走同一扇门、拒掉的二进制把理由与大小印出来、判官那几行开得出宿主会话而没有会话的那一轮按钮是死的。
 - `tests/Report.client.spec.tsx`（+2）：两次重复的那一侧落到记录列表、顶着提示、第三条记录被滤掉、**没有**替读者打开任何详情，清掉提示后它回来；只有一次重复的那一侧直接把那条记录打开。
+
+另在一台一次性 web-eval 实例上真机验收（装本次构建，拷一份 3171 的账本），对 pilot D（`run-20260918054718-8o0o`）用真浏览器走通：
+
+- `stage1.md` 在它那一行下面就地展开，读出提交原文（7905 字节）；`archive` 与 `probe-verdicts` 列出条目；同 run 另一格真实存在的 `stage1.md` 与绝对路径都被拒。
+- 打开子会话，在宿主自己的子对话视图里开出容器轮 sub-dsh 那次对话——题面、回复、`8 tool calls · 3 messages`、`Ran for 2m 19s`。
+- 打开判官会话，开出的那一轮直接把一直看不见的东西摆出来：`This turn failed — You've hit your session limit · resets 4pm`——这也正是这一格为什么会有第二轮判官。
+- 配对表里的数点得开，落到它背后的记录，提示也在。
