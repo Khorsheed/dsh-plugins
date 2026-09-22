@@ -14,7 +14,7 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
   type CompositionEvent, type FormEvent, type ReactNode,
 } from 'react'
-import { IconCheckOutline16, MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutline16, MarkdownText, type MarkdownLabels, type MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -40,6 +40,8 @@ export interface DraftViewProps {
   readonly rev: number
   readonly readDraft: (request: { canvasId: string }) => Promise<RemoteResult<BoardReadDraftOutcome>>
   readonly writeDraft: (sessionId: SessionId, request: BoardWriteDraftRequest) => Promise<RemoteResult<BoardWriteDraftResult>>
+  /** The tab's bound image vocabulary, so a card's pasted image still reads in the manuscript. */
+  readonly pathImages?: MarkdownPathImages | undefined
   readonly onFatal: (message: string) => void
 }
 
@@ -51,7 +53,7 @@ interface LoadedDraft {
 }
 
 /** The draft view. */
-export function DraftView({ t, sessionId, canvasId, rev, readDraft, writeDraft, onFatal }: DraftViewProps): ReactNode {
+export function DraftView({ t, sessionId, canvasId, rev, readDraft, writeDraft, pathImages, onFatal }: DraftViewProps): ReactNode {
   const [loaded, setLoaded] = useState<LoadedDraft | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mode, setMode] = useState<DraftMode>('edit')
@@ -224,7 +226,7 @@ export function DraftView({ t, sessionId, canvasId, rev, readDraft, writeDraft, 
         {mode === 'preview' || mode === 'split' ? (
           <div className={css.previewPane}>
             <div className={css.markdown}>
-              <MarkdownText text={preview} labels={markdownLabels} />
+              <MarkdownText text={preview} labels={markdownLabels} pathImages={pathImages} />
             </div>
           </div>
         ) : null}

@@ -677,6 +677,71 @@ export type BoardMutationResult =
   | ({ readonly ok: true } & BoardReadResult)
   | { readonly ok: false; readonly error: CanvasError }
 
+/* ------------------------------------------------------------------ images (§10.3) */
+
+/** The raster media types the host's attachment store admits. */
+export const CANVAS_IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+
+/** One admitted media type. */
+export type CanvasImageMediaType = (typeof CANVAS_IMAGE_MEDIA_TYPES)[number]
+
+/** Whether a value is one of the four. */
+export function isCanvasImageMediaType(value: unknown): value is CanvasImageMediaType {
+  return typeof value === 'string' && (CANVAS_IMAGE_MEDIA_TYPES as readonly string[]).includes(value)
+}
+
+/**
+ * The durable pointer to one stored image: exactly the five fields the host
+ * re-derives and compares when it reads the object back, which is why a card
+ * carries all five (§10.3's display arm) and never just an id.
+ */
+export interface CanvasImageRef {
+  readonly attachmentId: string
+  readonly mediaType: CanvasImageMediaType
+  readonly bytes: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * What the image arm can report, in the four shapes the user can act on. The
+ * host's longer admission vocabulary folds into these at the store's boundary
+ * — the client never sees a raw `AttachmentError` code.
+ */
+export type CanvasImageError =
+  /** No attachment store is mounted (the whole arm degrades; text pastes still work). */
+  | 'unavailable'
+  /** The bytes are not one of the four raster types, or do not decode at all. */
+  | 'not-image'
+  /** Over the host's byte or pixel gates. */
+  | 'too-large'
+  /** The stored object is gone, or fails the digest check on read. */
+  | 'unreadable'
+
+/** Commit one pasted image to the host's attachment store. */
+export interface BoardAttachImageRequest {
+  /** Canonical base64 of the image bytes — they ride THIS request, never card text. */
+  readonly data: string
+  readonly mediaType: CanvasImageMediaType
+  /** Browser display name; the host strips any path out of it. */
+  readonly name?: string
+}
+
+/** An attach either returns the pointer to store in the card, or one image code. */
+export type BoardAttachImageOutcome =
+  | { readonly ok: true; readonly ref: CanvasImageRef }
+  | { readonly ok: false; readonly error: CanvasImageError }
+
+/** Fetch one stored image's bytes back for display (the resolver's read leg). */
+export interface BoardImageBytesRequest {
+  readonly ref: CanvasImageRef
+}
+
+/** A read either returns canonical base64, or one image code. */
+export type BoardImageBytesOutcome =
+  | { readonly ok: true; readonly data: string; readonly mediaType: CanvasImageMediaType }
+  | { readonly ok: false; readonly error: CanvasImageError }
+
 
 /* ------------------------------------------------------- summary heuristics */
 

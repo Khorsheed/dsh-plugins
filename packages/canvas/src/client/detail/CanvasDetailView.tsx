@@ -13,8 +13,10 @@
  * both land on the same pad invariants (CardTextarea: uncontrolled, IME
  * composition as a hard stop, ⌘⏎ saves, and this root stays the one scroll
  * container). The paste arm lives here too — the one place the clipboard is
- * read, so a pasted page, table, or markup is decided against the card text it
- * would produce (§11.6 item 3).
+ * read, so a pasted page, table, image, or markup is decided against the card
+ * text it would produce (§11.6 item 3). A pasted image's bytes go to the host's
+ * attachment store and only its pointer enters the text (§10.3); the tab's
+ * `pathImages` and `images` resolve that pointer back for both renderers.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -33,11 +35,14 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
 import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/srcdoc.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { imageHtmlOf, imageMarkdownOf } from '../../image-token.ts'
 import {
   documentHeadingOf,
-  type BoardAskAgentRequest, type BoardCard, type BoardMutationResult, type CanvasBoard, type CanvasError,
+  type BoardAskAgentRequest, type BoardCard, type BoardMutationResult, type CanvasBoard,
+  type CanvasError, type CanvasImageError,
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
+import { base64Of, imageFilesOf, type CanvasImageFile } from '../images.ts'
 import { choosePaste, type PasteArm } from '../paste-table.ts'
 import type { CanvasKey } from '../locales.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
@@ -49,6 +54,14 @@ const PASTE_VERDICT: Record<Exclude<PasteArm, 'plain'>, CanvasKey> = {
   table: 'paste.table',
   words: 'paste.words',
   markup: 'paste.markup',
+}
+
+/** What each image failure says (§10.3's four codes; `unreadable` rides the store's news). */
+const IMAGE_FAILURE: Record<CanvasImageError, CanvasKey> = {
+  unavailable: 'paste.imageUnavailable',
+  'not-image': 'paste.imageType',
+  'too-large': 'paste.imageSize',
+  unreadable: 'paste.imageUnavailable',
 }
 
 /** The kind icon set (the board's own vocabulary). */
@@ -127,7 +140,7 @@ function HtmlFrame({ html }: { html: string }): ReactNode {
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const {
     t, sessionId, create, readBoard, patchCard, addComment, openFile, useSelection,
-    askAgent, chatStatus, openSideChat,
+    askAgent, chatStatus, openSideChat, attachImage, images, pathImages,
   } = props
   const selection = useSelection(current => current)
   const useSessions = props.useSessions ?? useNoSessions
@@ -260,6 +273,42 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   }, [sessionId, selection.canvasId, askAgent, openSideChat, run, showToast, errorText, t])
 
   /**
+   * The image arm of a paste (§10.3): the clipboard's files go to the host's
+   * attachment store and the card keeps the pointer, spelled for whichever
+   * renderer the card it would produce uses — an `<img>` inside a page,
+   * markdown everywhere else. Pixels never enter card text.
+   */
+  const pasteImages = useCallback(async (
+    files: readonly CanvasImageFile[], element: HTMLTextAreaElement, from: number, to: number,
+  ): Promise<void> => {
+    // The form is decided against the card WITHOUT the pasted run, exactly as
+    // `choosePaste` decides markup: clearing the selection first is what makes
+    // "replace the whole page with one image" a markdown card, correctly.
+    const page = detectCardFormat(`${element.value.slice(0, from)}${element.value.slice(to)}`) === 'html'
+    const lines: string[] = []
+    let failure: CanvasImageError | undefined
+    for (const { file, mediaType } of files) {
+      const data = await base64Of(file)
+      const outcome = await run(() => attachImage({ data, mediaType, name: file.name }))
+      if (outcome === null) return
+      if (!outcome.ok) {
+        failure = outcome.error
+        continue
+      }
+      lines.push(page ? imageHtmlOf(outcome.ref, file.name) : imageMarkdownOf(outcome.ref, file.name))
+    }
+    // A refused file is the news that matters; a partial success still says
+    // what landed. With nothing inserted there is nothing to report.
+    if (failure !== undefined) showToast(t(IMAGE_FAILURE[failure]))
+    else if (lines.length > 0) showToast(t('paste.image'))
+    if (lines.length === 0) return
+    // The caret may have moved while the bytes were in flight: the insertion
+    // goes where the paste was, which is what the user aimed at.
+    element.setRangeText(lines.join('\n'), from, to, 'end')
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  }, [attachImage, run, showToast, t])
+
+  /**
    * The paste arm (§11.6 item 3, §11.2 row 12): markup may only land when the
    * card it would produce still reads as one page, because THAT is what the
    * renderer sniffs. The decision is `choosePaste`'s — this is the one place
@@ -268,12 +317,20 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const onPaste = useCallback((event: ReactClipboardEvent<HTMLTextAreaElement>) => {
     const clipboard = event.clipboardData
     if (clipboard === null) return
-    const markup = clipboard.getData('text/html')
-    if (markup.trim().length === 0) return
-    const words = clipboard.getData('text/plain')
     const element = event.currentTarget
     const from = element.selectionStart ?? element.value.length
     const to = element.selectionEnd ?? from
+    const files = imageFilesOf(clipboard.files)
+    if (files.length > 0) {
+      // Taken over BEFORE the first await: after one, the browser has already
+      // run its own (empty) text insertion.
+      event.preventDefault()
+      void pasteImages(files, element, from, to)
+      return
+    }
+    const markup = clipboard.getData('text/html')
+    if (markup.trim().length === 0) return
+    const words = clipboard.getData('text/plain')
     const choice = choosePaste(markup, words, candidate =>
       `${element.value.slice(0, from)}${candidate}${element.value.slice(to)}`)
     if (choice.arm !== 'plain') showToast(t(PASTE_VERDICT[choice.arm]))
@@ -285,7 +342,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     // The textarea is uncontrolled, so only an input event moves the owner's
     // copy of its text (the draft's dirty flag rides that report).
     element.dispatchEvent(new Event('input', { bubbles: true }))
-  }, [showToast, t])
+  }, [pasteImages, showToast, t])
 
   /* -------------------------------------------------------------- rendering */
 
@@ -345,9 +402,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               {create.text.trim().length === 0 ? (
                 <div className={css.notice}>{t('detail.nothingToRender')}</div>
               ) : detectCardFormat(create.text) === 'html' ? (
-                <HtmlFrame html={create.text} />
+                <HtmlFrame html={images.cardHtml(create.text)} />
               ) : (
-                <MarkdownText text={create.text} labels={markdownLabels} />
+                <MarkdownText text={create.text} labels={markdownLabels} pathImages={pathImages} />
               )}
             </div>
           ) : null}
@@ -490,9 +547,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         {mode === 'render' || mode === 'split' ? (
           <div className={css.renderPane}>
             {detectCardFormat(card.text) === 'html' ? (
-              <HtmlFrame key={card.id} html={card.text} />
+              <HtmlFrame key={card.id} html={images.cardHtml(card.text)} />
             ) : (
-              <MarkdownText text={card.text} labels={markdownLabels} />
+              <MarkdownText text={card.text} labels={markdownLabels} pathImages={pathImages} />
             )}
           </div>
         ) : null}

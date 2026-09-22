@@ -10,6 +10,7 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the generated Remote API (ctx.remote merge + namespace).
@@ -26,12 +27,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
-  BoardCardKind, BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardAttachImageOutcome, BoardAttachImageRequest, BoardCardKind, BoardChatStatusResult, BoardCreateRequest,
+  BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest,
   BoardReadOutcome, BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
 } from '../types.ts'
 import type {} from './locales.ts'
+import type { CanvasImageRevSource, CanvasImageSrcs } from './images.ts'
 import type { CanvasSelectionSource } from './space/selection.ts'
 
 /** The canvas Remote namespace, as mounted by this plugin. */
@@ -56,11 +59,25 @@ export interface CanvasChatInjected {
 }
 
 /**
+ * The image seam both seats share (§10.3). Pixels go to the host's attachment
+ * store and never into card text; what a card keeps is the pointer, and
+ * `images` is the one cache that reads those bytes back for display. It is
+ * shared by every seat, so a pointer read for one render is already paid for
+ * by the next.
+ */
+export interface CanvasImageInjected {
+  /** Commit one pasted image's bytes; the answer is the pointer to write into the card. */
+  attachImage: (request: BoardAttachImageRequest) => Promise<RemoteResult<BoardAttachImageOutcome>>
+  /** The pointer cache: `resolve` answers the renderers synchronously, `cardHtml` inlines an HTML card's sources. */
+  images: CanvasImageSrcs
+}
+
+/**
  * Business face injected into the canvas tab (M3's single seat). The tab is
  * session scope: its mutations name the tab's own session, which resolves
  * the fence mode the host stamps onto the write.
  */
-export interface CanvasTabInjected extends CanvasChatInjected {
+export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
   /** Create one canvas (a topic, optionally with workspaces attached). */
@@ -110,6 +127,12 @@ export interface CanvasTabInjected extends CanvasChatInjected {
   hooks: {
     /** The selection/freshness feed (open canvas, open card, board rev), bound by the slot renderer. */
     selection: CanvasSelectionSource
+    /**
+     * The image cache's read-landed feed, bound as `useImageRev`. The TAB reads
+     * it once and hands the fresh `pathImages` down to whichever body shows —
+     * one subscription per tab, and every renderer in it repaints together.
+     */
+    imageRev: CanvasImageRevSource
   }
 }
 
@@ -125,7 +148,7 @@ export type CanvasTabProps =
  * card-detail component consumes. A structural subset of the tab face, so
  * the tab passes its own members down.
  */
-export interface CanvasDetailInjected extends CanvasChatInjected {
+export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInjected {
   /** Read one board with the freshness token a later mutation must present. */
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
   /** Edit one card: text, a status transition, or a question-state transition. */
@@ -172,6 +195,12 @@ export type CanvasDetailProps =
   & {
     sessionId: SessionId | undefined
     readonly create?: CanvasDetailCreate | undefined
+    /**
+     * The tab's bound image vocabulary (fresh identity whenever a read has
+     * landed). Optional: a host without the attachment store renders text
+     * cards exactly as before, and a pointer stays inert alt text.
+     */
+    readonly pathImages?: MarkdownPathImages | undefined
   }
   & GlobalStandardProps
   & InjectFace<CanvasDetailInjected>

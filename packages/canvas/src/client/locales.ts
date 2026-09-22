@@ -130,6 +130,10 @@ export const zh = {
   'paste.table': '表格转成了 markdown 表',
   'paste.words': '这段单独看是一整页网页，可这张卡已有正文——标记贴进去只会留下一堆渲染不出来的字，所以落的是网页里的文字那一份。想让这段单独成网页：按 Esc 回卡板，用「新卡」贴进空卡',
   'paste.markup': '剪贴板里只有标记、没有纯文本，原样贴进来了',
+  'paste.image': '图片贴上来了；卡片正文里存的不是图，而是它的位置',
+  'paste.imageUnavailable': '这个部署没有装图片存储，图片没能贴上（文字照常粘贴）',
+  'paste.imageType': '只收 png、jpg、webp、gif 四种图片，这个没能贴上',
+  'paste.imageSize': '这张图太大，没能存下来',
 
   'confirm.discardTitle': '丢掉这张还没保存的新卡？',
   'confirm.discardBody': '正文已经写了 {count} 个字。丢掉就一个字都不剩，卡板上也不会多这张卡。',
@@ -327,6 +331,10 @@ export const en: Record<keyof typeof zh, string> = {
   'paste.table': 'The table became a markdown table',
   'paste.words': 'That reads as a whole page on its own, but this card already has text — the markup would leave words that render as nothing. What landed is the text of the page. For the page itself: Esc back to the board and paste it into an empty card via "New card"',
   'paste.markup': 'The clipboard carried markup only, so it went in as it came',
+  'paste.image': 'Image added — the card text holds where it lives, not the picture',
+  'paste.imageUnavailable': 'This deployment has no image store, so the picture was not added (text still pasted)',
+  'paste.imageType': 'Only png, jpg, webp and gif can be stored, so this one was not added',
+  'paste.imageSize': 'That image is too large to store',
 
   'confirm.discardTitle': 'Discard this unsaved card?',
   'confirm.discardBody': 'The text already holds {count} characters. Discarding leaves nothing behind, and the board does not gain the card.',

@@ -15,7 +15,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import {
-  useCallback, useEffect, useRef, useState, type ReactNode,
+  useCallback, useEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 import {
   IconChevronLeftOutline14, IconFolderOpenOutline16, IconPlusOutline16,
@@ -71,11 +71,17 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
     archiveCanvas, selectCard, openCanvas: showCanvas, clearCard, focusCanvas,
     readDraft, writeDraft, askAgent, chatStatus, openSideChat, suggestWideMode,
-    useSelection,
+    images, useImageRev, useSelection,
   } = props
   const sessionId = props.sessionId
   const useWorkspaces = props.useWorkspaces ?? useNoWorkspaces
   const selection = useSelection(current => current)
+  // One image subscription for the whole tab (§10.3): a read landing gives the
+  // renderer a FRESH vocabulary object, which is what re-runs its memoized
+  // pass — and the HTML body rebuilds on the same repaint. Every markdown
+  // surface in the tab therefore shows a pasted image at once.
+  const imageRev = useImageRev(current => current)
+  const pathImages = useMemo(() => images.vocabulary(), [images, imageRev])
   const openId = selection.canvasId
   const detailCardId = selection.cardId
   const selectionRev = selection.rev
@@ -471,6 +477,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           <CanvasDetailView
             {...props}
             sessionId={sessionId}
+            pathImages={pathImages}
             create={newCard === null ? undefined : {
               kind: newCard.kind,
               text: newCard.text,
@@ -491,6 +498,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             rev={selectionRev}
             readDraft={readDraft}
             writeDraft={writeDraft}
+            pathImages={pathImages}
             onFatal={setFatal}
           />
         )

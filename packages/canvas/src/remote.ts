@@ -20,7 +20,9 @@ import type { CanvasService } from './service.ts'
 import type { CanvasBoardService } from './store.ts'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
+  BoardAttachImageOutcome, BoardAttachImageRequest,
   BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardImageBytesOutcome, BoardImageBytesRequest,
   BoardListResult, BoardMutationResult, BoardPatchCardRequest,
   BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest, BoardReadOutcome,
   BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
@@ -219,6 +221,27 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('writeDraft')
   writeDraft(agent: Agent, request: BoardWriteDraftRequest): Promise<BoardWriteDraftResult> {
     return this.board.writeDraft(request, agent.session)
+  }
+
+  /* ---------------------------------------------------------------- images (§10.3) */
+
+  /**
+   * Commit one pasted image to the host's attachment store. This is the ONLY
+   * call that carries image bytes, and it takes no agent: there is no board
+   * file to fence — the store is content-addressed outside every workspace and
+   * admits (or refuses) the bytes on its own gates.
+   * @param request - canonical base64, the declared media type, and a display name.
+   * @returns the pointer to write into the card, or one image code.
+   */
+  @Remote('attachImage')
+  attachImage(request: BoardAttachImageRequest): Promise<BoardAttachImageOutcome> {
+    return this.board.attachImage(request)
+  }
+
+  /** The stored image behind one card pointer, as base64 for the browser's object URL. */
+  @Remote('imageBytes')
+  imageBytes(request: BoardImageBytesRequest): Promise<BoardImageBytesOutcome> {
+    return this.board.imageBytes(request)
   }
 }
 

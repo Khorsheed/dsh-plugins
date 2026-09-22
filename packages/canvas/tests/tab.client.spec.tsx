@@ -14,11 +14,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasTabProps } from '../src/client/contract.ts'
+import { CanvasImageSrcs } from '../src/client/images.ts'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { CanvasTab } from '../src/client/tab/CanvasTab.tsx'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardAskAgentOutcome, BoardChatStatusResult, BoardFocusResult,
+  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardFocusResult,
   BoardListResult, BoardMutationResult, BoardReadDraftOutcome, BoardReadOutcome,
   BoardWriteDraftResult, CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
@@ -27,6 +28,10 @@ type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; me
 
 const NOW = '2026-09-16T08:00:00.000Z'
 const CANVAS_ID = 'canvas_01234567abcdefgh'
+/** One stored image's id: the digest shape a card-held pointer insists on. */
+const IMG_ID = `sha256:${'0123456789abcdef'.repeat(4)}`
+/** The same image's pointer, as a card holds it (§10.3). */
+const IMG_SRC = `attachment://${IMG_ID}?mediaType=image/png&bytes=3&width=2&height=1`
 
 /** A plain translate over the zh dictionary (the key-set source of truth). */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -110,6 +115,12 @@ function makeHarness(options: {
   const boards = new Map((options.boards ?? [board()]).map(value => [value.id, value]))
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
   const store = new CanvasSelectionStore()
+  // The REAL image cache over a fake read leg (§10.3): the tab reads its feed
+  // as a subscription, so the feed is exercised here rather than faked away.
+  const images = new CanvasImageSrcs(async () => ({
+    ok: true as const,
+    value: { ok: true as const, data: 'AAEC', mediaType: 'image/png' as const },
+  }))
   const mutationFor = (canvasId: string): Result<BoardMutationResult> => {
     const current = boards.get(canvasId)
     if (current === undefined) return { ok: true, value: { ok: false, error: 'missing' } }
@@ -165,6 +176,9 @@ function makeHarness(options: {
       ok({ available: options.chatAvailable ?? true })),
     openSideChat: vi.fn(),
     suggestWideMode: vi.fn(),
+    attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> =>
+      ok({ ok: true, ref: { attachmentId: IMG_ID, mediaType: 'image/png', bytes: 3, width: 2, height: 1 } })),
+    images,
   }
   const sessionId = options.sessionId === 'none' ? undefined : (options.sessionId ?? 's1')
   const props = {
@@ -178,6 +192,9 @@ function makeHarness(options: {
     useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
       return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
     } as CanvasTabProps['useSelection'],
+    useImageRev: function useImageRev<S>(selector: (snapshot: number) => S): S {
+      return selector(useSyncExternalStore(images.source.subscribe, images.source.getSnapshot))
+    } as CanvasTabProps['useImageRev'],
   } as unknown as CanvasTabProps
   return { store, mocks, props, boards }
 }
@@ -392,6 +409,33 @@ describe('CanvasTab — the drill', () => {
     expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /返回卡板/ }))
     await screen.findByRole('button', { name: /新卡/ })
+  })
+
+  it('paints a card\'s image pointer the moment the tab\'s read lands', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_img', { text: `![截图](${IMG_SRC})` })])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('为什么人们不愿表达异议')
+    fireEvent.click(screen.getByRole('button', { name: '进入详情页编辑' }))
+    // The first paint only STARTS the read; the cache's feed is what repaints
+    // this tab, and the fresh vocabulary is what the memoized renderer needs.
+    const image = await screen.findByRole('img', { name: '截图' })
+    await waitFor(() => {
+      expect(image.getAttribute('src')).toBe('data:image/png;base64,AAEC')
+    })
+  })
+
+  it('inlines a pointer held by an HTML card, inside the sandbox CSP', async () => {
+    const page = `<!doctype html><html><head><title>页</title></head><body><img src="${IMG_SRC}"></body></html>`
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_page', { kind: 'document', text: page })])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('为什么人们不愿表达异议')
+    fireEvent.click(screen.getByRole('button', { name: '进入详情页编辑' }))
+    await waitFor(() => {
+      const frame = document.querySelector('iframe')
+      expect(frame?.getAttribute('srcdoc') ?? '').toContain('src="data:image/png;base64,AAEC"')
+    })
+    // The frame still runs the strict policy — inlining bytes did not open it.
+    expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain("img-src data: blob:")
   })
 
   it('is a reader on the board: the pencil opens the detail, and no editor sits on the card', async () => {

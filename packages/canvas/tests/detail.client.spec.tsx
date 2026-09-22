@@ -7,23 +7,33 @@
  * full-text render (no summary clamp in the reader), the selection and rev
  * following, the ghost ✓/✗ wiring, the edit toggle's ⌘⏎ save through
  * patchCard, the comment form, the attachment gestures (url link, file →
- * openFile), and the archived card's restore.
+ * openFile), the archived card's restore, and every paste arm — sheet to
+ * table, page to its words, and an image FILE to a pointer line whose pixels
+ * stayed in the store (§10.3).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasDetailProps } from '../src/client/contract.ts'
 import { CanvasDetailView } from '../src/client/detail/CanvasDetailView.tsx'
+import { CanvasImageSrcs } from '../src/client/images.ts'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
+import { imageSrcOf } from '../src/image-token.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardAskAgentOutcome, BoardChatStatusResult, BoardMutationResult, BoardReadOutcome, CanvasBoard,
+  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardMutationResult,
+  BoardReadOutcome, CanvasBoard, CanvasImageRef,
 } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
 const NOW = '2026-09-16T08:00:00.000Z'
 const CANVAS_ID = 'canvas_01234567abcdefgh'
+/** One stored image's pointer parts: the digest the read leg re-derives. */
+const IMG_ID = `sha256:${'0123456789abcdef'.repeat(4)}`
+const IMG_REF: CanvasImageRef = {
+  attachmentId: IMG_ID, mediaType: 'image/png', bytes: 3, width: 2, height: 1,
+}
 
 /** A plain translate over the zh dictionary (the key-set source of truth). */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -60,19 +70,25 @@ function card(id: string, overrides: Record<string, unknown> = {}): CanvasBoard[
 }
 
 /**
- * Fires a paste carrying the given clipboard flavors, and reports whether the
- * handler took the event over (jsdom ships no DataTransfer, so the flavors are
- * the object the handler reads).
+ * Fires a paste carrying the given clipboard flavors (and files), and reports
+ * whether the handler took the event over (jsdom ships no DataTransfer, so the
+ * flavors are the object the handler reads).
  */
-function pasteInto(element: HTMLElement, flavors: Record<string, string>): boolean {
+function pasteInto(element: HTMLElement, flavors: Record<string, string>, files: readonly File[] = []): boolean {
   const event = new Event('paste', { bubbles: true, cancelable: true })
-  Object.defineProperty(event, 'clipboardData', { value: { getData: (type: string): string => flavors[type] ?? '' } })
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      getData: (type: string): string => flavors[type] ?? '',
+      files: [...files],
+    },
+  })
   element.dispatchEvent(event)
   return event.defaultPrevented
 }
 
 interface Harness {
   readonly store: CanvasSelectionStore
+  readonly images: CanvasImageSrcs
   readonly mocks: {
     readBoard: ReturnType<typeof vi.fn>
     patchCard: ReturnType<typeof vi.fn>
@@ -81,6 +97,7 @@ interface Harness {
     askAgent: ReturnType<typeof vi.fn>
     chatStatus: ReturnType<typeof vi.fn>
     openSideChat: ReturnType<typeof vi.fn>
+    attachImage: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasDetailProps
   readonly current: { board: CanvasBoard }
@@ -91,6 +108,12 @@ function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boo
   const current = { board: board(cards) }
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
   const store = new CanvasSelectionStore()
+  // The REAL pointer cache (§10.3): the read leg is a fake store that hands
+  // back three bytes, so a resolve is asynchronous exactly as in the browser.
+  const images = new CanvasImageSrcs(async () => ({
+    ok: true as const,
+    value: { ok: true as const, data: 'AAEC', mediaType: 'image/png' as const },
+  }))
   const mocks = {
     readBoard: vi.fn(async (): Promise<Result<BoardReadOutcome>> => ok({ ok: true, board: current.board, version: '1' })),
     patchCard: vi.fn(async (_sessionId: string, request: { cardId: string; text?: string; status?: 'kept' | 'archived' }): Promise<Result<BoardMutationResult>> => {
@@ -112,10 +135,12 @@ function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boo
     chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
       ok({ available: options.chatAvailable ?? true })),
     openSideChat: vi.fn(),
+    attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> => ok({ ok: true, ref: IMG_REF })),
   }
   const props = {
     t,
     sessionId: 's1',
+    images,
     ...mocks,
     useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
       return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
@@ -123,7 +148,7 @@ function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boo
     useSessions: ((selector: (snapshot: { byId: Record<string, { cwd: string }> }) => unknown) =>
       selector({ byId: { s1: { cwd: '/ws' } } })) as CanvasDetailProps['useSessions'],
   } as CanvasDetailProps
-  return { store, mocks, props, current }
+  return { store, images, mocks, props, current }
 }
 
 afterEach(() => { cleanup() })
@@ -267,6 +292,58 @@ describe('CanvasDetailView', () => {
     expect(taken).toBe(true)
     expect((editor as HTMLTextAreaElement).value.startsWith('<div>')).toBe(true)
     await screen.findByText(/这张卡按网页渲染/)
+  })
+
+  it('pastes an image file as a pointer line — the pixels never enter the card', async () => {
+    const { store, mocks, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const area = (await screen.findByDisplayValue('卡片 c_1 的正文')) as HTMLTextAreaElement
+    area.setSelectionRange(0, 0)
+    const taken = pasteInto(area, {}, [new File([new Uint8Array([0, 1, 2])], '截图.png', { type: 'image/png' })])
+    // Taken over at once (before the store call), so the browser adds nothing.
+    expect(taken).toBe(true)
+    await waitFor(() => {
+      expect(area.value).toBe(`![截图.png](${imageSrcOf(IMG_REF)})卡片 c_1 的正文`)
+    })
+    expect(mocks.attachImage).toHaveBeenCalledWith({ data: 'AAEC', mediaType: 'image/png', name: '截图.png' })
+    await screen.findByText(/卡片正文里存的不是图/)
+    // The pointer is the whole of what the card carries.
+    expect(area.value).not.toContain('AAEC')
+  })
+
+  it('pastes the tag form when the card it lands in is a page', async () => {
+    const { store, props } = makeHarness([card('c_page', {
+      kind: 'document',
+      text: '<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
+    })])
+    store.select(CANVAS_ID, 'c_page')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('文档')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const area = (await screen.findByDisplayValue(/<title>报告<\/title>/)) as HTMLTextAreaElement
+    area.setSelectionRange(area.value.length, area.value.length)
+    pasteInto(area, {}, [new File([new Uint8Array([0, 1, 2])], '图 1.png', { type: 'image/png' })])
+    await waitFor(() => {
+      expect(area.value).toBe(
+        `<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html><img src="${imageSrcOf(IMG_REF)}" alt="图 1.png">`,
+      )
+    })
+  })
+
+  it('says which refusal stopped an image, and pastes nothing for it', async () => {
+    const { store, mocks, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const area = (await screen.findByDisplayValue('卡片 c_1 的正文')) as HTMLTextAreaElement
+    mocks.attachImage.mockResolvedValue({ ok: true, value: { ok: false, error: 'too-large' } })
+    pasteInto(area, {}, [new File([new Uint8Array([0, 1, 2])], '大图.png', { type: 'image/png' })])
+    await screen.findByText(/这张图太大/)
+    expect(area.value).toBe('卡片 c_1 的正文')
   })
 
   it('posts a comment from the thread', async () => {
