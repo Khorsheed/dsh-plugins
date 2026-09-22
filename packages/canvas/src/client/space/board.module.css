@@ -328,10 +328,12 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The one place hue is spent: the wash and the frame, never the label (blue
+   text on an 8% blue wash reads 3.84:1 at 12px in light). */
 .chip[data-active="true"] {
-  background: var(--dsw-alias-interactive-bg-active);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
   color: var(--dsw-alias-label-primary);
-  border-color: var(--dsw-alias-border-l2);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
 }
 
 .chipCount {
@@ -389,7 +391,7 @@
 }
 
 .selCount {
-  color: var(--dsw-static-deepseek-400);
+  color: var(--dsw-alias-state-business-primary);
   font-weight: 500;
 }
 
@@ -413,7 +415,7 @@
 
 .lensPrimary {
   border: none;
-  background: var(--dsw-static-deepseek-400);
+  background: var(--dsw-alias-state-business-primary);
   border-radius: 999px;
   font-size: 12px;
   font-family: var(--dsw-font-family);
@@ -436,7 +438,7 @@
   padding: 0;
   font-size: 11.5px;
   font-family: var(--dsw-font-family);
-  color: var(--dsw-static-deepseek-400);
+  color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
 
@@ -486,8 +488,11 @@
   border-color: var(--dsw-alias-border-l2);
 }
 
+/* Selection owns the border channel; brand-primary is the one neutral that
+   flips with the palette (18.9:1 light / 15.0:1 dark — the static blue this
+   carried read 2.66:1 in light, i.e. invisible in one theme out of two). */
 .card[data-selected="true"] {
-  border-color: var(--dsw-static-deepseek-400);
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 /* The selection checkbox: top-right corner, hover-revealed, always on when
@@ -518,8 +523,8 @@
 
 .card[data-selected="true"] .selectBox {
   opacity: 1;
-  background: var(--dsw-static-deepseek-400);
-  border-color: var(--dsw-static-deepseek-400);
+  background: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 
 .kindTag {
@@ -604,8 +609,8 @@
 }
 
 .qState[data-state="exploring"] .qDot {
-  background: var(--dsw-static-deepseek-400);
-  border-color: var(--dsw-static-deepseek-400);
+  background: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 
 .qState[data-state="answered"] .qDot {
@@ -637,7 +642,7 @@
   align-items: center;
   gap: 4px;
   font-size: 10.5px;
-  color: var(--dsw-static-deepseek-400);
+  color: var(--dsw-alias-state-business-primary);
   letter-spacing: 0.2px;
   align-self: flex-start;
 }
@@ -733,7 +738,7 @@
 }
 
 .commentAuthor {
-  color: var(--dsw-static-deepseek-400);
+  color: var(--dsw-alias-state-business-primary);
   font-weight: 500;
 }
 
