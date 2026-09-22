@@ -4,9 +4,9 @@
 
 ## 概览
 
-- 包总数:**39**
+- 包总数:**40**
 - 自挂载 bundle(`dsh.bundle.patch`):**31**
-- 组合组件(不自挂载,`dsh.composition.component`):**8** — `preset-composed-row` 6、`provider-mounted-row` 1、`sub-profile-patch` 1
+- 组合组件(不自挂载,`dsh.composition.component`):**9** — `preset-composed-row` 6、`provider-mounted-row` 1、`source-plane-library` 1、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**28**
 - 整合 profile(默认安装单元):**3** — `web-basic`、`web-dev`、`web-eval`
 
@@ -51,6 +51,7 @@
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
