@@ -32,10 +32,13 @@ import { isAbsolute, join, resolve } from 'node:path'
 import type { MissionReadFace } from './faces.ts'
 import { readExportState, type EvalExportNote } from './export-note.ts'
 import { EvalReadRefused } from './read.ts'
-import { analyzeBundle, type EvalReport, type JudgeAssignment } from './report.ts'
+import {
+  analyzeBundle,
+  type CriterionGroupResult, type CriterionSample, type EvalReport, type JudgeAssignment,
+} from './report.ts'
 import type {
-  EvalFinalizeView, EvalReportEfficiencyRow, EvalReportJudgeTag, EvalReportPair,
-  EvalReportPairRow, EvalRunReportView,
+  EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportEfficiencyRow,
+  EvalReportJudgeTag, EvalReportPair, EvalReportPairRow, EvalReportTaskCriteria, EvalRunReportView,
 } from './types.ts'
 import { expandHome } from './validate.ts'
 import type { FinalizeReport } from './finalize.ts'
@@ -192,6 +195,71 @@ function efficiencyOf(report: EvalReport): EvalReportEfficiencyRow[] {
   }))
 }
 
+/** One verdict, column for column — the drawer behind a criteria-table cell. */
+function criterionSampleOf(sample: CriterionSample): EvalReportCriterionSample {
+  return {
+    missionId: sample.missionId,
+    rep: sample.rep,
+    ns: sample.ns,
+    pass: sample.pass,
+    ratio: sample.ratio === null ? null : { passed: sample.ratio.passed, total: sample.ratio.total },
+    evidence: sample.evidence,
+    by: sample.by,
+    judge: sample.judge === null
+      ? null
+      : {
+        condition: sample.judge.condition,
+        model: sample.judge.model,
+        selfJudged: sample.judge.selfJudged,
+        sample: sample.judge.sample,
+      },
+  }
+}
+
+/** One (criterion × group) cell, with both its scoring samples and the ones it replaced. */
+function criterionCellOf(cell: CriterionGroupResult): EvalReportCriterionCell {
+  return {
+    condition: cell.condition,
+    reps: cell.reps,
+    heldReps: cell.heldReps,
+    credit: cell.credit,
+    holds: cell.holds,
+    proportional: cell.proportional,
+    sources: { ...cell.sources },
+    samples: cell.samples.map(criterionSampleOf),
+    superseded: cell.superseded.map(criterionSampleOf),
+  }
+}
+
+/**
+ * The 判据 × 对比组 tables for the wire.
+ *
+ * Projection only, as everywhere on this seam: the per-criterion merge, the
+ * majority over reps and the per-task total are all decided in `analyzeBundle`
+ * and reshaped here. `criteriaTables` arrives EMPTY when the four invariants
+ * did not hold, so this function cannot open a section the bundle closed —
+ * exactly the rule `pairs` follows.
+ */
+function criteriaOf(report: EvalReport): EvalReportTaskCriteria[] {
+  return report.criteriaTables.map((table): EvalReportTaskCriteria => ({
+    task: table.task,
+    conditions: [...table.conditions],
+    rows: table.criteria.map((facts) => {
+      const row = table.rows.find(candidate => candidate.criterion === facts.id)
+      return {
+        id: facts.id,
+        axis: facts.axis,
+        kind: facts.kind,
+        weight: facts.weight,
+        negative: facts.negative,
+        undeclared: facts.undeclared,
+        cells: (row?.cells ?? []).map(criterionCellOf),
+      }
+    }),
+    totals: table.totals.map(total => ({ ...total })),
+  }))
+}
+
 /**
  * Reshape one analyzed bundle for the report page.
  *
@@ -238,6 +306,9 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
         rankReason: pair.rankReason,
       }))
       : [],
+    // Same gate, decided in `analyzeBundle`: a closed comparison ships no
+    // per-criterion table either.
+    criteria: criteriaOf(report),
     efficiency: efficiencyOf(report),
     efficiencyExcluded: report.efficiencyExcluded.map(entry => ({ ...entry })),
     judge: {
@@ -284,6 +355,7 @@ function notExported(runId: string, searched: string[]): EvalRunReportView {
     comparisonAllowed: false,
     singleCondition: false,
     pairs: [],
+    criteria: [],
     efficiency: [],
     efficiencyExcluded: [],
     judge: {

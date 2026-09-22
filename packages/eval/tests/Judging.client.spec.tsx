@@ -323,7 +323,7 @@ describe('the criteria table', () => {
     // bench cannot change that rule; it can refuse to let it happen quietly.
     // It is per COLUMN: answer 1 has something to lose and answer 2 does not,
     // and side by side that difference has to stay visible.
-    expect(screen.getAllByText('judge.scoringWarning {"count":1,"criteria":"H1"}')).toHaveLength(1)
+    expect(screen.getAllByText('judge.scoringMix {"count":1,"criteria":"H1"}')).toHaveLength(1)
   })
 
   it('shows what a graded cell already carries, and warns that recording appends', async () => {

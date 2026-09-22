@@ -90,6 +90,98 @@ const REPORT: EvalRunReportView = {
     rank: null,
     rankReason: 'n = 2 < 3，不排名',
   }],
+  criteria: [{
+    task: 'P0',
+    conditions: ['cond-a', 'cond-b'],
+    rows: [
+      {
+        id: 'C1', axis: '正确性', kind: 'llm-draft', weight: 25, negative: false, undeclared: false,
+        cells: [
+          {
+            condition: 'cond-a', reps: 1, heldReps: 1, credit: 1, holds: true, proportional: false,
+            // The cell T54 exists for: a person re-judged this one criterion,
+            // and the judge's original verdict is kept beside it.
+            sources: { 'human-final': 1 },
+            samples: [{
+              missionId: 'p0-cond-a-rep1', rep: 1, ns: 'human-final', pass: true, ratio: null,
+              evidence: '人复核：三处引用均可核对', by: 'bench', judge: null,
+            }],
+            superseded: [{
+              missionId: 'p0-cond-a-rep1', rep: 1, ns: 'llm-draft', pass: false, ratio: null,
+              evidence: '判官原判：第二处引用查不到', by: 'judge-x',
+              judge: { condition: 'judge-x', model: 'gpt-5.6-sol', selfJudged: false, sample: 1 },
+            }],
+          },
+          {
+            condition: 'cond-b', reps: 1, heldReps: 0, credit: 0, holds: false, proportional: false,
+            sources: { 'llm-draft': 1 },
+            samples: [{
+              missionId: 'p0-cond-b-rep1', rep: 1, ns: 'llm-draft', pass: false, ratio: null,
+              evidence: '缺少可核对的引用', by: 'judge-x',
+              judge: { condition: 'judge-x', model: 'gpt-5.6-sol', selfJudged: true, sample: 1 },
+            }],
+            superseded: [],
+          },
+        ],
+      },
+      {
+        id: 'D1', axis: '代价', kind: 'llm-draft', weight: -16, negative: true, undeclared: false,
+        cells: [
+          {
+            // The mixed cell: a person re-judged rep 1 and left rep 2 on the
+            // judge's word, which is the state T54 created and the label has
+            // to be able to say — 「人 1 / 判官 1」, counts and all.
+            condition: 'cond-a', reps: 2, heldReps: 0, credit: 0, holds: false, proportional: false,
+            sources: { 'human-final': 1, 'llm-draft': 1 },
+            samples: [
+              {
+                missionId: 'p0-cond-a-rep1', rep: 1, ns: 'human-final', pass: false, ratio: null,
+                evidence: '人复核 rep 1：没有出现这个缺陷', by: 'bench', judge: null,
+              },
+              {
+                missionId: 'p0-cond-a-rep2', rep: 2, ns: 'llm-draft', pass: false, ratio: null,
+                evidence: '判官 rep 2：没有出现这个缺陷', by: 'judge-x',
+                judge: { condition: 'judge-x', model: 'gpt-5.6-sol', selfJudged: false, sample: 1 },
+              },
+            ],
+            superseded: [],
+          },
+          {
+            condition: 'cond-b', reps: 2, heldReps: 2, credit: 1, holds: true, proportional: false,
+            sources: { 'llm-draft': 2 },
+            samples: [{
+              missionId: 'p0-cond-b-rep1', rep: 1, ns: 'llm-draft', pass: true, ratio: null,
+              evidence: '出现 worth-the-cost 措辞', by: 'judge-x',
+              judge: { condition: 'judge-x', model: 'gpt-5.6-sol', selfJudged: false, sample: 1 },
+            }],
+            superseded: [],
+          },
+        ],
+      },
+      {
+        id: 'S9', axis: null, kind: null, weight: null, negative: false, undeclared: true,
+        cells: [
+          {
+            condition: 'cond-a', reps: 1, heldReps: 1, credit: 0.75, holds: true, proportional: true,
+            sources: { script: 1 },
+            samples: [{
+              missionId: 'p0-cond-a-rep1', rep: 1, ns: 'script', pass: true, ratio: { passed: 3, total: 4 },
+              evidence: '4 条探针过 3', by: 'probes/probe.mjs', judge: null,
+            }],
+            superseded: [],
+          },
+          {
+            condition: 'cond-b', reps: 0, heldReps: 0, credit: null, holds: null, proportional: false,
+            sources: {}, samples: [], superseded: [],
+          },
+        ],
+      },
+    ],
+    totals: [
+      { condition: 'cond-a', scored: 3, weighted: 6, reps: 2 },
+      { condition: 'cond-b', scored: 2, weighted: 4, reps: 2 },
+    ],
+  }],
   efficiency: [
     {
       condition: 'cond-a', model: 'deepseek-v4', activeMs: 1_260_000, rounds: 8,
@@ -128,8 +220,10 @@ const BLOCKED: EvalRunReportView = {
   ],
   comparisonAllowed: false,
   // The host sends no pairs at all when the gate is shut — this is the shape
-  // the page must be able to render.
+  // the page must be able to render. The criteria table rides the SAME gate:
+  // a closed comparison must not be reopened one criterion at a time.
   pairs: [],
+  criteria: [],
   toolOnlyNs: ['human-final'],
 }
 
@@ -146,6 +240,7 @@ const NOT_EXPORTED: EvalRunReportView = {
   invariants: [],
   comparisonAllowed: false,
   pairs: [],
+  criteria: [],
   efficiency: [],
   efficiencyExcluded: [],
   notes: [],
@@ -395,16 +490,75 @@ describe('the pair table', () => {
     await screen.findByText('report.col.task')
 
     expect(screen.getByText('report.factorSingle {"factor":"model.declared","detail":"deepseek-v4 vs gpt-5.6-sol"}')).toBeTruthy()
-    expect(screen.getByText('P0')).toBeTruthy()
-    expect(screen.getByText('judge-x')).toBeTruthy()
+    // The item names the pair row and the criteria table's own heading; the
+    // judge and its 自评 mark ride both the pair row and the evidence lines.
+    expect(screen.getAllByText('P0').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('judge-x').length).toBeGreaterThan(0)
     // 决策 9: the judge's model is the b side's own, and the row says so.
-    expect(screen.getByText('report.selfJudged')).toBeTruthy()
+    expect(screen.getAllByText('report.selfJudged').length).toBeGreaterThan(0)
     // The weighted columns appear because the rubric carried weights.
     expect(screen.getByText('report.col.weightedDelta')).toBeTruthy()
     // A mean keeps three decimals; an integer stays an integer (summary.md's rule).
     expect(screen.getByText('report.ci {"mean":"1","lo":"0.500","hi":"1.500","samples":2000,"seed":7}')).toBeTruthy()
     // The refusal to rank is the report's own sentence, kept whole.
     expect(screen.getByText(/n = 2 < 3，不排名/)).toBeTruthy()
+  })
+})
+
+describe('the 判据 × 对比组 table (T54 补一)', () => {
+  it('names the dimension, the polarity and where each cell SCORED from', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    await screen.findByText('report.col.criterion')
+
+    expect(screen.getByText('report.col.axis')).toBeTruthy()
+    expect(screen.getByText('正确性')).toBeTruthy()
+    // The three shapes of the source label, on one table: one layer prints
+    // the WORD alone, and the 自评 / weight columns stay per row.
+    expect(screen.getAllByText('source.human')).toHaveLength(1)
+    expect(screen.getAllByText('source.llm').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('source.script')).toHaveLength(1)
+    // …and a MIXED cell prints the counts, because that is where the count
+    // carries information: one criterion of this cell scores on a person's
+    // word and the rest still score on the judge's.
+    expect(screen.getByText('source.human 1 / source.llm 1')).toBeTruthy()
+    // ✓ / ✗ for the boolean criteria, n/N over several reps, a proportion for
+    // the proportionally scored one, and a dash where the arm never judged it.
+    expect(screen.getByText('75%')).toBeTruthy()
+    expect(screen.getByText('✓ 2/2')).toBeTruthy()
+    expect(screen.getByText('report.polarityNegative')).toBeTruthy()
+    // The bottom row is the report's own per-item score.
+    expect(screen.getByText('report.criteriaTotal')).toBeTruthy()
+  })
+
+  it('opens a cell onto the verdicts behind it, with the judge and the replaced judgement', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    await screen.findByText('report.col.criterion')
+
+    // Nothing is on screen until a reader asks: the table is the conclusion,
+    // the expansion is the grounds.
+    expect(screen.queryByText('人复核：三处引用均可核对')).toBeNull()
+    fireEvent.click(screen.getByTitle('report.criteriaExpand {"criterion":"C1","condition":"cond-a"}'))
+
+    expect(await screen.findByText('人复核：三处引用均可核对')).toBeTruthy()
+    // The person re-judged this criterion, so the cell is marked — and the
+    // judge's original verdict is still there, marked as replaced.
+    expect(screen.getByText('report.humanOverride')).toBeTruthy()
+    expect(screen.getByText('判官原判：第二处引用查不到')).toBeTruthy()
+    expect(screen.getByText('report.supersededBy')).toBeTruthy()
+    // Un-blinded here and nowhere earlier: the判官 condition and its model.
+    expect(screen.getAllByText('judge-x').length).toBeGreaterThan(0)
+    // Clicking again closes it.
+    fireEvent.click(screen.getByTitle('report.criteriaExpand {"criterion":"C1","condition":"cond-a"}'))
+    expect(screen.queryByText('人复核：三处引用均可核对')).toBeNull()
+  })
+
+  it('renders no criteria section at all when the comparison gate is shut', async () => {
+    const h = makeHarness(BLOCKED)
+    await openReport(h)
+    await screen.findByText(/report.comparisonClosed/)
+    expect(screen.queryByText('report.col.criterion')).toBeNull()
   })
 })
 
@@ -704,5 +858,41 @@ describe('from a report number to the records behind it', () => {
     await waitFor(() => {
       expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-cond-b-rep1' })
     })
+  })
+
+  it('a criteria cell takes the SAME road, and names the record when it knows it', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    await screen.findByText('report.col.criterion')
+    // A criteria cell carries the missionId of every verdict behind it, so a
+    // cell with ONE record behind it can open that record outright — no third
+    // mechanism, just the id the pair table never had.
+    fireEvent.click(screen.getByTitle('report.criteriaExpand {"criterion":"C1","condition":"cond-a"}'))
+    const jump = await screen.findByRole('button', { name: 'report.criteriaOpenRecord' })
+    // The hover names the record, because here the page KNOWS which one.
+    expect(jump.getAttribute('title')).toBe('report.openRecord {"record":"p0-cond-a-rep1"}')
+    fireEvent.click(jump)
+
+    await waitFor(() => {
+      expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-cond-a-rep1' })
+    })
+    // It lands on 运行记录 narrowed the same way the pair table narrows it.
+    expect(await screen.findByText(/runs\.focus.*"task":"P0".*"condition":"cond-a"/)).toBeTruthy()
+  })
+
+  it('a criteria cell spanning several records leaves the choice to the reader', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    await screen.findByText('report.col.criterion')
+    // D1 on cond-a was judged over two reps — one re-judged by a person, one
+    // still the judge's — so there is no single record to open, and picking
+    // one would be picking FOR the reader (T69's own rule).
+    fireEvent.click(screen.getByTitle('report.criteriaExpand {"criterion":"D1","condition":"cond-a"}'))
+    // Addressed by the button's own label: its hover is the pair table's
+    // sentence, deliberately — it is the same jump, named the same way.
+    fireEvent.click(await screen.findByRole('button', { name: 'report.criteriaOpenRecords' }))
+
+    expect(await screen.findByText(/runs\.focus.*"task":"P0".*"condition":"cond-a".*"matched":2/)).toBeTruthy()
+    expect(h.fetchCell).not.toHaveBeenCalled()
   })
 })

@@ -422,6 +422,9 @@ describe('the cells page and its drawer', () => {
     // is on the results page and the panel says so.
     expect(screen.getAllByText('verdict.script').length).toBe(2)
     expect(screen.getByText('record.scoreWhere')).toBeTruthy()
+    // One layer on this record, so no mixed-source line: the sentence appears
+    // only when the merge actually has more than one layer to merge.
+    expect(screen.queryByText(/record.scoreMixed/)).toBeNull()
 
     // The timeline, from the ledger's own transition times.
     expect(screen.getByText('record.timeline')).toBeTruthy()

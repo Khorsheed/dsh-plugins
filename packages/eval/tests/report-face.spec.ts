@@ -235,6 +235,7 @@ describe('the projection', () => {
       weightsAvailable: true,
       polarity: { available: true, origin: 'report/weights.json', criteria: 3, negative: 1, weighted: true },
       negativeHits: [],
+      criteriaTables: [],
       notes: ['判官本身有误差'],
       ...overrides,
     }
@@ -266,6 +267,86 @@ describe('the projection', () => {
     // to the ROW, because the row's number is what it could have biased.
     expect(row?.judges).toEqual([{ condition: 'judge-x', model: 'gpt-x', selfJudged: true }])
     expect(pair?.rankReason).toBe('n = 2 < 3，不排名')
+  })
+
+  it('projects the criteria table verbatim — rubric order, the source mix, and the replaced judgement', () => {
+    const view = projectReport(reportWith({
+      comparisonAllowed: true,
+      criteriaTables: [{
+        task: 'P0',
+        conditions: ['cond-a', 'cond-b'],
+        criteria: [
+          { id: 'C1', axis: '正确性', kind: 'human', weight: 10, negative: false, undeclared: false },
+          { id: 'N1', axis: null, kind: null, weight: null, negative: true, undeclared: true },
+        ],
+        rows: [
+          {
+            criterion: 'C1',
+            cells: [
+              {
+                condition: 'cond-a', reps: 1, heldReps: 1, credit: 1, holds: true, proportional: false,
+                sources: { 'human-final': 1 },
+                samples: [{
+                  missionId: 'm1', rep: 1, ns: 'human-final', pass: true, ratio: null,
+                  evidence: '人复核', by: 'judge-bench', judge: null,
+                }],
+                superseded: [{
+                  missionId: 'm1', rep: 1, ns: 'llm-draft', pass: false, ratio: null,
+                  evidence: '判官原判', by: 'judge-x',
+                  judge: { condition: 'judge-x', model: 'gpt-x', selfJudged: true, sample: 1 },
+                }],
+              },
+              {
+                condition: 'cond-b', reps: 0, heldReps: 0, credit: null, holds: null, proportional: false,
+                sources: {}, samples: [], superseded: [],
+              },
+            ],
+          },
+          {
+            criterion: 'N1',
+            cells: [
+              {
+                condition: 'cond-a', reps: 2, heldReps: 1, credit: 0.5, holds: false, proportional: true,
+                sources: { script: 2 }, samples: [], superseded: [],
+              },
+              {
+                condition: 'cond-b', reps: 2, heldReps: 2, credit: 1, holds: true, proportional: false,
+                sources: { script: 2 }, samples: [], superseded: [],
+              },
+            ],
+          },
+        ],
+        totals: [
+          { condition: 'cond-a', scored: 3, weighted: 6, reps: 2 },
+          { condition: 'cond-b', scored: 2, weighted: 4, reps: 2 },
+        ],
+      }],
+    }), 'run-1')
+
+    expect(view.criteria).toHaveLength(1)
+    const table = view.criteria[0]
+    expect(table?.conditions).toEqual(['cond-a', 'cond-b'])
+    // The rubric's own order and its own facts; the undeclared one is flagged
+    // rather than given a weight the rubric never declared.
+    expect(table?.rows.map(row => row.id)).toEqual(['C1', 'N1'])
+    expect(table?.rows[1]).toMatchObject({ undeclared: true, weight: null, negative: true, axis: null })
+    const c1 = table?.rows[0]?.cells[0]
+    expect(c1?.sources).toEqual({ 'human-final': 1 })
+    expect(c1?.samples[0]).toMatchObject({ ns: 'human-final', pass: true, evidence: '人复核' })
+    // The judge is un-blinded HERE, after the verdicts are settled — and the
+    // verdict a person replaced travels with the one that replaced it.
+    expect(c1?.superseded[0]?.judge).toEqual({ condition: 'judge-x', model: 'gpt-x', selfJudged: true, sample: 1 })
+    // The bottom row is the report's own score, not a sum this seam invented.
+    expect(table?.totals).toEqual([
+      { condition: 'cond-a', scored: 3, weighted: 6, reps: 2 },
+      { condition: 'cond-b', scored: 2, weighted: 4, reps: 2 },
+    ])
+  })
+
+  it('sends no criteria table either when an invariant did not hold', () => {
+    // `analyzeBundle` empties `criteriaTables` behind the gate; the projection
+    // simply cannot invent one, which is the property this pins.
+    expect(projectReport(reportWith({}), 'run-1').criteria).toEqual([])
   })
 
   it('a κ that is NaN crosses as null — a degenerate agreement is not a number', () => {

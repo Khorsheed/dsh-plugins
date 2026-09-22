@@ -246,15 +246,16 @@ function AnswerColumn(props: {
         <span className={css.sectionMeta}>rep {cell.rep ?? DASH}</span>
       </div>
       {cell.graded && <div className={css.notice}>{t('judge.regrade')}</div>}
-      {/* The cost of the first verdict on this answer. The report scores a
-          cell from ONE namespace — the most authoritative that has any
-          verdict — so a single human answer here drops every llm-draft-only
-          criterion from this cell's score. The bench cannot change that rule
-          without moving every report ever produced; what it can do is refuse
-          to let a person spend it unknowingly. */}
+      {/* What a verdict here DOES, said before the button. Until T54 it was a
+          warning with a real cost behind it: the report scored a cell from one
+          namespace, so a single human answer dropped every llm-draft-only
+          criterion from the score. Since the per-criterion merge it is the
+          opposite fact — those criteria keep counting on the judge's word —
+          and a grader still has to know, because the record's score stops
+          having a single author the moment this is sent. */}
       {cell.draftOnlyCriteria.length > 0 && (
-        <div className={css.blocked}>
-          {t('judge.scoringWarning', {
+        <div className={css.notice}>
+          {t('judge.scoringMix', {
             count: cell.draftOnlyCriteria.length,
             criteria: cell.draftOnlyCriteria.join(', '),
           })}

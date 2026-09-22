@@ -952,6 +952,15 @@ export function LabView(props: LabViewProps) {
                       onReexport={onReexport}
                       onLookIn={(dir) => { actions.setLookIn(dir) }}
                       onOpenRecords={(task, condition) => { actions.focusRecords({ task, condition }) }}
+                      // The same landing, then the record the criteria cell
+                      // already named. `focusRecords` is what moves the stage
+                      // and sets the chip; `openCell` is what selects the row
+                      // — the sole-match effect above would pick the same one
+                      // when there IS only one, so the two never disagree.
+                      onOpenRecord={(task, condition, missionId) => {
+                        actions.focusRecords({ task, condition })
+                        actions.openCell(missionId)
+                      }}
                       t={t}
                     />
                   )

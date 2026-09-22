@@ -51,7 +51,9 @@ import { ErrorState } from './ErrorState.tsx'
 import { LiveGrid } from './Grid.tsx'
 import type { EvalKey } from './locales.ts'
 import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone } from './parts.tsx'
-import { RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf } from './vocab.ts'
+import {
+  RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf, verdictSourcesOf,
+} from './vocab.ts'
 import { RUN_FILTERS, type RunFilter } from './store.ts'
 import css from './LabView.module.css'
 
@@ -261,6 +263,9 @@ function RecordDetail(props: {
     ? undefined
     : cell.attempts.find(entry => entry.attempt === cell.attempt)
   const verdict = cell === null ? null : verdictSourceOf(annotationCounts(cell))
+  // Every layer this record carries, not just the most authoritative one: the
+  // report merges per criterion, so a record with both is scored from both.
+  const verdictSources = cell === null ? [] : verdictSourcesOf(annotationCounts(cell))
   // 成功 / 异常 is the ledger's, not a judgement: `halted` is the one state
   // that says this cell stopped rather than finished.
   const halted = cell?.state === 'halted'
@@ -300,6 +305,15 @@ function RecordDetail(props: {
                 </Chip>
               )}
             </div>
+            {/* Which layers this record carries, and the one sentence that
+                says the number is not here. Both, because since the merge the
+                top layer alone is not the record's scoring source — it is
+                only the most authoritative of the ones scoring it. */}
+            {verdictSources.length > 1 && (
+              <div className={css.dim}>
+                {t('record.scoreMixed', { sources: verdictSources.map(source => t(verdictKey(source))).join(' + ') })}
+              </div>
+            )}
             {verdict !== null && <div className={css.dim}>{t('record.scoreWhere')}</div>}
 
             <Field label={t('record.timeline')}>
